@@ -32,12 +32,13 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
 
   const form = useForm<CreateClientInput>({
     resolver: zodResolver(createClientSchema),
+    // No unit defaults. Weights and lengths on this payload are canonical
+    // kilograms/centimetres; the form converts from the coach's own display
+    // units on the way in (components/clients/add-client-manual-form.tsx).
     defaultValues: {
       name: "",
       email: "",
       notes: "",
-      weightUnit: "lbs",
-      heightUnit: "in",
     },
   });
 

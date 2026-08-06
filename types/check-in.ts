@@ -415,9 +415,10 @@ export type Client = {
   createdAt: string;
   updatedAt: string;
 
-  // Static profile fields
+  // Static profile fields. `height` is canonical CENTIMETRES; there is no
+  // companion unit tag, because the unit belongs to whoever is reading the
+  // number, not to the row (docs/UNITS-CANONICALIZATION-PLAN.md).
   height?: number;
-  heightUnit?: "in" | "cm";
   gender?: "male" | "female" | "other";
   dateOfBirth?: string; // ISO date string (YYYY-MM-DD)
   phone?: string;

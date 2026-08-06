@@ -13,7 +13,6 @@ import { sendInvitation } from "@/services/invitation-service";
 import { invalidateClientAuthCache } from "@/lib/auth-cache";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { updateGoals } from "@/services/client-goals-service";
-import { toCanonicalWeightKg, toCanonicalLengthCm } from "@/utils/unit-conversions";
 
 // Extended client type with check-in info
 export type ClientWithCheckInInfo = Client & {
@@ -42,17 +41,13 @@ export const createClient = async (
 ): Promise<Client & { inviteSent?: boolean }> => {
   const isIntakeMode = clientData.setupMode === "intake";
 
-  // The add-client form still submits in its own toggle's unit — Phase 4 moves
-  // it to the viewer preference. Storage is canonical (migration 141), so the
-  // conversion happens here and every downstream write below uses the converted
-  // values, not the raw payload.
-  //
-  // The submitted tag is trustworthy on this form, unlike the check-in form's:
-  // add-client-dialog.tsx:39-40 defaults to lbs/in and lib/validations/client.ts:19,26
-  // default to the same, so an untouched toggle and the schema agree.
-  const currentWeightKg = toCanonicalWeightKg(clientData.currentWeight, clientData.weightUnit);
-  const goalWeightKg = toCanonicalWeightKg(clientData.goalWeight, clientData.weightUnit);
-  const heightCm = toCanonicalLengthCm(clientData.height, clientData.heightUnit);
+  // No conversion here. The payload is already canonical: the add-client form
+  // collects in the coach's own display units and converts before submitting
+  // (hooks/use-unit-inputs.ts), and the schema no longer carries a unit tag to
+  // convert on.
+  const currentWeightKg = clientData.currentWeight;
+  const goalWeightKg = clientData.goalWeight;
+  const heightCm = clientData.height;
 
   const baseInsert = {
     coach_id: coachId,
@@ -218,14 +213,13 @@ export const updateClient = async (
   clientData: UpdateClientInput,
   coachId?: string
 ): Promise<Client> => {
-  // Converted ONCE, up front, exactly as createClient does — every write below
-  // must use these and never the raw payload. The dual-writes are the trap: the
-  // body_metrics one writes its own denormalized cache back to
-  // clients.current_weight (body-metrics-service.ts), so passing the raw value
-  // there silently OVERWRITES the converted value in the same request.
-  const currentWeightKg = toCanonicalWeightKg(clientData.currentWeight, clientData.weightUnit);
-  const goalWeightKg = toCanonicalWeightKg(clientData.goalWeight, clientData.weightUnit);
-  const heightCm = toCanonicalLengthCm(clientData.height, clientData.heightUnit);
+  // Canonical on arrival — see createClient. The aliases stay because the
+  // dual-write below is a trap worth naming: body-metrics-service writes its
+  // own denormalized cache back to clients.current_weight in the same request,
+  // so both writers must be handed the same number.
+  const currentWeightKg = clientData.currentWeight;
+  const goalWeightKg = clientData.goalWeight;
+  const heightCm = clientData.height;
 
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString(),

@@ -131,8 +131,6 @@ describe('Client Service', () => {
         email: 'test@example.com',
         currentWeight: 180,
         goalWeight: 170,
-        weightUnit: 'lbs',
-        heightUnit: 'in',
       } as any)
 
       expect(result.id).toBe('client-123')
@@ -154,8 +152,6 @@ describe('Client Service', () => {
         createClient('coach-456', {
           name: 'Test Client',
           email: 'duplicate@example.com',
-          weightUnit: 'lbs',
-          heightUnit: 'in',
         } as any)
       ).rejects.toThrow('A client with this email already exists')
     })
@@ -172,8 +168,6 @@ describe('Client Service', () => {
         createClient('coach-456', {
           name: 'Test Client',
           email: 'test@example.com',
-          weightUnit: 'lbs',
-          heightUnit: 'in',
         } as any)
       ).rejects.toThrow('Failed to create client')
     })
@@ -191,8 +185,6 @@ describe('Client Service', () => {
         email: 'test@example.com',
         currentWeight: 180,
         currentBodyFatPercentage: 15,
-        weightUnit: 'kg',
-        heightUnit: 'cm',
       } as any)
 
       expect(mockQuery.insert).toHaveBeenCalled()
@@ -203,12 +195,33 @@ describe('Client Service', () => {
       expect(insertCall.starting_body_fat_percentage).toBe(15)
     })
 
-    // Storage is canonical kg/cm since migration 141, and the add-client form
-    // still submits in its own toggle's unit until Phase 4. An imperial payload
-    // must therefore be converted on the way in — a regression here writes lbs
-    // into a kg column, which is undetectable afterwards because the tag that
-    // would have revealed it no longer exists.
-    it('converts an imperial payload to canonical kg/cm before inserting', async () => {
+    // The service no longer converts. It used to key on a `weightUnit` /
+    // `heightUnit` tag riding on the payload; those tags are gone from
+    // createClientSchema, and the add-client form converts from the coach's own
+    // display units before submitting (hooks/use-unit-inputs.ts). A service that
+    // still converted would double-convert everything that form sends.
+    it('stores the payload verbatim — it is already canonical kg/cm', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+        currentWeight: 81.6466,
+        goalWeight: 77.1107,
+        height: 180.34,
+      } as any)
+
+      const insertCall = mockQuery.insert.mock.calls[0][0]
+      expect(insertCall.current_weight).toBe(81.6466)
+      expect(insertCall.starting_weight).toBe(81.6466)
+      expect(insertCall.goal_weight).toBe(77.1107)
+      expect(insertCall.height).toBe(180.34)
+    })
+
+    // Regression guard for the double-conversion this batch could reintroduce:
+    // a pounds-magnitude number must land in storage unchanged, not scaled.
+    it('does not scale a large weight, whatever it looks like', async () => {
       const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
 
@@ -216,35 +229,12 @@ describe('Client Service', () => {
         name: 'Test Client',
         email: 'test@example.com',
         currentWeight: 180,
-        goalWeight: 170,
         height: 71,
-        weightUnit: 'lbs',
-        heightUnit: 'in',
       } as any)
 
       const insertCall = mockQuery.insert.mock.calls[0][0]
-      expect(insertCall.current_weight).toBeCloseTo(81.6466, 4)
-      expect(insertCall.starting_weight).toBeCloseTo(81.6466, 4)
-      expect(insertCall.goal_weight).toBeCloseTo(77.1107, 4)
-      expect(insertCall.height).toBeCloseTo(180.34, 4)
-    })
-
-    it('leaves a metric payload untouched', async () => {
-      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-
-      await createClient('coach-456', {
-        name: 'Test Client',
-        email: 'test@example.com',
-        currentWeight: 82.5,
-        height: 180,
-        weightUnit: 'kg',
-        heightUnit: 'cm',
-      } as any)
-
-      const insertCall = mockQuery.insert.mock.calls[0][0]
-      expect(insertCall.current_weight).toBe(82.5)
-      expect(insertCall.height).toBe(180)
+      expect(insertCall.current_weight).toBe(180)
+      expect(insertCall.height).toBe(71)
     })
 
     it('dual-writes body metrics when currentWeight provided', async () => {
@@ -255,18 +245,17 @@ describe('Client Service', () => {
       await createClient('coach-456', {
         name: 'Test Client',
         email: 'test@example.com',
-        currentWeight: 180,
-        weightUnit: 'lbs',
-        heightUnit: 'in',
+        currentWeight: 81.6466,
       } as any)
 
-      // 180 lbs is stored as kilograms (migration 141), and the dual-write must
-      // receive the SAME converted value the clients row got — not the raw
-      // payload, which is what it used to pass.
+      // The dual-write must receive the SAME kilograms the clients row got.
+      // body-metrics-service writes its own denormalized cache back to
+      // clients.current_weight in this request, so a divergence here silently
+      // overwrites the row that was just inserted.
       expect(recordBodyMetrics).toHaveBeenCalledWith(
         expect.objectContaining({
           clientId: 'client-123',
-          weight: expect.closeTo(180 * 0.45359237, 6),
+          weight: 81.6466,
           source: 'intake_sync',
         })
       )
@@ -280,15 +269,13 @@ describe('Client Service', () => {
       await createClient('coach-456', {
         name: 'Test Client',
         email: 'test@example.com',
-        goalWeight: 170,
-        weightUnit: 'lbs',
-        heightUnit: 'in',
+        goalWeight: 77.1107,
       } as any)
 
-      // Goal weight converts too — client_goals.goal_weight is canonical kg.
+      // client_goals.goal_weight is canonical kg, same as clients.goal_weight.
       expect(updateGoals).toHaveBeenCalledWith(
         'client-123',
-        expect.objectContaining({ goalWeight: expect.closeTo(170 * 0.45359237, 6) }),
+        expect.objectContaining({ goalWeight: 77.1107 }),
         'coach-456'
       )
     })
@@ -304,8 +291,6 @@ describe('Client Service', () => {
           name: 'Test Client',
           email: 'test@example.com',
           currentWeight: 180,
-          weightUnit: 'lbs',
-          heightUnit: 'in',
         } as any)
       ).resolves.toBeDefined()
     })

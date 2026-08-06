@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+// Weights are KILOGRAMS and lengths are CENTIMETRES on this wire, always.
+//
+// `weightUnit` / `heightUnit` are gone from both schemas. They were per-payload
+// tags describing what the sender happened to be looking at, which is exactly
+// the model migration 141 removed from storage — and while they existed,
+// client-settings-dialog round-tripped one back through `client.heightUnit`,
+// so a save that touched only the phone number could multiply a stored 178 cm
+// by 2.54. The forms convert from the coach's own display units before
+// submitting (hooks/use-unit-inputs.ts).
+
 // Schema for creating a new client
 export const createClientSchema = z.object({
   name: z
@@ -15,15 +25,13 @@ export const createClientSchema = z.object({
   notes: z.string().max(5000, "Notes must be less than 5000 characters").optional(),
 
   // Static profile fields
-  height: z.number().positive("Height must be positive").optional(),
-  heightUnit: z.enum(["in", "cm"]).optional().default("in"),
+  height: z.number().positive("Height must be positive").optional(), // centimetres
   gender: z.enum(["male", "female", "other"]).optional(),
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").optional(),
 
   // Goal fields
   goalWeight: z.number().positive("Goal weight must be positive").optional(),
   goalBodyFatPercentage: z.number().min(0).max(100, "Body fat must be between 0 and 100").optional(),
-  weightUnit: z.enum(["lbs", "kg"]).optional().default("lbs"),
 
   // Initial current metrics
   currentWeight: z.number().positive("Current weight must be positive").optional(),
@@ -51,8 +59,7 @@ export const updateClientSchema = z.object({
   active: z.boolean().optional(),
 
   // Static profile fields
-  height: z.number().positive("Height must be positive").optional(),
-  heightUnit: z.enum(["in", "cm"]).optional(),
+  height: z.number().positive("Height must be positive").optional(), // centimetres
   gender: z.enum(["male", "female", "other"]).optional(),
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").optional(),
   // Free text — phone formats vary too much for a shape constraint
@@ -62,7 +69,6 @@ export const updateClientSchema = z.object({
   // Goal fields
   goalWeight: z.number().positive("Goal weight must be positive").optional(),
   goalBodyFatPercentage: z.number().min(0).max(100, "Body fat must be between 0 and 100").optional(),
-  weightUnit: z.enum(["lbs", "kg"]).optional(),
 
   // Current metrics (typically updated automatically, but can be manually set)
   currentWeight: z.number().positive("Current weight must be positive").optional(),

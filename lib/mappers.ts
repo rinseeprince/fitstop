@@ -67,20 +67,12 @@ export function mapClientRow(row: ClientRow): Client {
     active: row.active ?? true,
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? new Date().toISOString(),
+    // Centimetres, canonical. No `heightUnit` companion any more: the shim that
+    // used to sit here existed solely to keep client-settings-dialog's unit
+    // <Select> from reading "in" and multiplying a save by 2.54 (178 -> 452).
+    // That dialog now renders height in the VIEWER's units and converts back
+    // through hooks/use-unit-inputs.ts, so the tag has no reader and no writer.
     height: row.height ?? undefined,
-    // DELIBERATELY RETAINED — do not remove with the other unit shims.
-    //
-    // Stored height is canonical centimetres, so as a *display* tag this is
-    // dead. But components/clients/overview/client-settings-dialog.tsx is Phase
-    // 4 work and still round-trips it: :80 seeds its unit <Select> from
-    // `client.heightUnit ?? "in"` and :127 sends the result back, where
-    // services/client-service.ts converts on the tag. Drop this and every save
-    // of that dialog reads "in", multiplies the height by 2.54 and stores it —
-    // 178 cm becomes 452. It fires on ANY save, not just a height edit, because
-    // toDefaults() pre-populates the field.
-    //
-    // Retire this and the dialog's height field together, in Phase 4.
-    heightUnit: "cm",
     gender: (row.gender ?? undefined) as "male" | "female" | "other" | undefined,
     dateOfBirth: row.date_of_birth ?? undefined,
     phone: row.phone ?? undefined,
@@ -139,7 +131,7 @@ function pickAllowed<T>(source: T, keys: readonly (keyof T)[]): Partial<T> {
 // "allowlist, don't denylist" posture as CLIENT_SELF_COLUMNS on the read path.
 const CLIENT_SELF_KEYS = [
   "id", "coachId", "name", "email", "avatarUrl", "active", "createdAt", "updatedAt",
-  "height", "heightUnit", "gender", "dateOfBirth", "goalWeight", "goalBodyFatPercentage",
+  "height", "gender", "dateOfBirth", "goalWeight", "goalBodyFatPercentage",
   "currentWeight", "currentBodyFatPercentage", "bmr", "tdee",
   "checkInFrequency", "checkInFrequencyDays", "expectedCheckInDay", "lastReminderSentAt",
   "reminderPreferences", "totalCheckInsExpected", "totalCheckInsCompleted",

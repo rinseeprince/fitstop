@@ -168,12 +168,22 @@ export function formatHeight(valueCm: number, viewer: UnitSystem): HeightDisplay
 }
 
 /**
- * Request-payload value + the unit tag that payload carried → canonical storage.
+ * Request-payload weight + the unit tag that payload carried → canonical kg.
  *
- * Distinct from `parseWeightToKg`/`parseLengthToCm`, which take the VIEWER's
- * preference: these take the `"lbs" | "kg"` / `"in" | "cm"` tag that a form
- * still sends on the wire until Phase 4 moves those forms onto the viewer
- * preference. Write paths use these; render paths never do.
+ * Distinct from `parseWeightToKg`, which takes the VIEWER's preference: this
+ * takes a `"lbs" | "kg"` tag travelling on the wire beside the value. Exactly
+ * one caller remains — `services/training-log-service.ts`, for
+ * `logTrainingEventSchema`'s REQUIRED `weightUnit` field, which exists so a
+ * non-web client (React Native) can log in its own unit. The web log form
+ * converts first and sends `"kg"` (`log-form-types.ts`).
+ *
+ * Its length counterpart was deleted with the client-profile forms in Phase 4:
+ * no wire schema carries a length tag any more.
+ *
+ * The tag being REQUIRED where this is used is what makes it safe. A tag that
+ * can be absent needs a fallback, and a fallback silently decides the unit for
+ * a payload that never stated one — which is how pounds got stored as
+ * kilograms in the first place.
  *
  * `undefined` in, `undefined` out, so a caller can pass an absent optional field
  * straight through without a null dance.
@@ -183,13 +193,6 @@ export function toCanonicalWeightKg(
   tag: "lbs" | "kg" | undefined
 ): number | undefined {
   return value != null && tag === "lbs" ? lbsToKg(value) : value;
-}
-
-export function toCanonicalLengthCm(
-  value: number | undefined,
-  tag: "in" | "cm" | undefined
-): number | undefined {
-  return value != null && tag === "in" ? inToCm(value) : value;
 }
 
 /** Form input in the viewer's unit → canonical kilograms for storage. */

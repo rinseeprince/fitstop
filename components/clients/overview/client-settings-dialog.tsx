@@ -25,8 +25,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { FOCUS_RING, MONO_INPUT_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import {
+  FOCUS_RING,
+  LABEL_CLASS,
+  MONO_INPUT_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { DAY_NAMES } from "@/lib/date-helpers";
+import { useUnits } from "@/contexts/units-context";
+import { useHeightInput } from "@/hooks/use-unit-inputs";
 import type { Client, DayOfWeek } from "@/types/check-in";
 
 // Select recipes match the Metrics "Log measurement" dialog so every
@@ -39,23 +45,61 @@ const ITEM_CLASS =
 
 const UNSET = "unset";
 
+/** Numeric field with an inline unit suffix — the Metrics log dialog's recipe. */
+function SuffixedInput({
+  id,
+  ariaLabel,
+  suffix,
+  placeholder,
+  value,
+  onChange,
+}: {
+  id?: string;
+  ariaLabel?: string;
+  suffix: string;
+  placeholder?: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className="relative flex-1">
+      <Input
+        id={id}
+        aria-label={ariaLabel}
+        inputMode="decimal"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(MONO_INPUT_CLASS, FOCUS_RING, "h-8 pr-9 text-[13px]")}
+      />
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-y-0 right-2.5 flex items-center",
+          LABEL_CLASS,
+        )}
+      >
+        {suffix}
+      </span>
+    </div>
+  );
+}
+
 // Monday-first, off the shared weekday map so the names cannot drift.
 const DAY_OPTIONS: DayOfWeek[] = [1, 2, 3, 4, 5, 6, 0].map((n) => DAY_NAMES[n]);
 
 /**
- * Coercing mirror of the profile slice of `updateClientSchema` — the API schema
- * takes a number for height, but an <input> hands back a string, so the form
- * needs its own coercion layer. Bounds stay in step with the API's.
+ * Coercing mirror of the profile slice of `updateClientSchema`.
+ *
+ * Height is NOT here. It is composite for an imperial viewer (feet + inches)
+ * and lives in `useHeightInput`, which owns the conversion to canonical
+ * centimetres and the untouched-field guard. The old shape — a bare number
+ * plus a per-record `heightUnit` <Select> — is what made ANY save of this
+ * dialog multiply a stored 178 cm by 2.54 into 452 once the unit tag stopped
+ * describing the value. The tag is gone; the viewer's preference decides how
+ * the same canonical number is shown.
  */
 const settingsFormSchema = z.object({
   gender: z.enum([UNSET, "male", "female", "other"]),
-  height: z
-    .string()
-    .trim()
-    .refine((v) => v === "" || (Number.isFinite(Number(v)) && Number(v) > 0), {
-      message: "Enter a height above 0",
-    }),
-  heightUnit: z.enum(["in", "cm"]),
   startDate: z
     .string()
     .refine((v) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v), { message: "Use a valid date" }),
@@ -76,8 +120,6 @@ type ClientSettingsDialogProps = {
 function toDefaults(client: Client): SettingsFormValues {
   return {
     gender: client.gender ?? UNSET,
-    height: client.height != null ? String(client.height) : "",
-    heightUnit: client.heightUnit ?? "in",
     startDate: client.startDate ?? "",
     phone: client.phone ?? "",
     expectedCheckInDay: client.expectedCheckInDay ?? UNSET,
@@ -103,6 +145,7 @@ export function ClientSettingsDialog({
   onSaved,
 }: ClientSettingsDialogProps) {
   const { toast } = useToast();
+  const { preference } = useUnits();
   const [isSaving, setIsSaving] = useState(false);
 
   const form = useForm<SettingsFormValues>({
@@ -110,22 +153,37 @@ export function ClientSettingsDialog({
     defaultValues: toDefaults(client),
   });
 
+  const height = useHeightInput(preference, client.height);
+
   // Always-mounted dialog: re-seed from the live client record on each open so
   // a cancelled edit never persists into the next one.
   const { reset } = form;
+  const resetHeight = height.reset;
   useEffect(() => {
-    if (open) reset(toDefaults(client));
-  }, [open, client, reset]);
+    if (open) {
+      reset(toDefaults(client));
+      resetHeight(client.height);
+    }
+  }, [open, client, reset, resetHeight]);
 
   const onSubmit = async (values: SettingsFormValues) => {
+    if (height.hasParseError) {
+      toast({
+        title: "Save failed",
+        description: "Enter a height above 0, or clear the field.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       const profile: Record<string, unknown> = { phone: values.phone };
       if (values.gender !== UNSET) profile.gender = values.gender;
-      if (values.height !== "") {
-        profile.height = Number(values.height);
-        profile.heightUnit = values.heightUnit;
-      }
+      // `commitCm` is the untouched seed unless the field was edited, so a save
+      // that changed only the phone number cannot drift the stored height
+      // through a rounded display string (178 cm shows as 5'10" = 177.8).
+      if (height.commitCm != null) profile.height = height.commitCm;
       if (values.startDate !== "") profile.startDate = values.startDate;
 
       await patchJson(`/api/clients/${client.id}`, profile);
@@ -202,40 +260,38 @@ export function ClientSettingsDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor="settings-height">Height</Label>
-              <div className="flex gap-2">
-                <Input
+              {/* No unit picker. The stored value is centimetres either way;
+                  this renders it in whichever units the COACH reading the
+                  screen prefers, and feet+inches rather than decimal inches
+                  because that is how imperial height is spoken. */}
+              {height.system === "imperial" ? (
+                <div className="flex gap-2">
+                  <SuffixedInput
+                    id="settings-height"
+                    suffix="ft"
+                    placeholder="Not set"
+                    value={height.fields.feet}
+                    onChange={height.setFeet}
+                  />
+                  <SuffixedInput
+                    ariaLabel="Height, inches"
+                    suffix="in"
+                    placeholder="0"
+                    value={height.fields.inches}
+                    onChange={height.setInches}
+                  />
+                </div>
+              ) : (
+                <SuffixedInput
                   id="settings-height"
-                  inputMode="decimal"
+                  suffix="cm"
                   placeholder="Not set"
-                  {...form.register("height")}
-                  className={cn(MONO_INPUT_CLASS, FOCUS_RING, "h-8 flex-1 text-[13px]")}
+                  value={height.fields.cm}
+                  onChange={height.setCm}
                 />
-                <Select
-                  value={form.watch("heightUnit")}
-                  onValueChange={(v) =>
-                    form.setValue("heightUnit", v as SettingsFormValues["heightUnit"])
-                  }
-                >
-                  <SelectTrigger
-                    aria-label="Height unit"
-                    className={cn(TRIGGER_CLASS, "h-8 w-[80px]")}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white p-1 shadow-lg">
-                    <SelectItem value="in" className={ITEM_CLASS}>
-                      in
-                    </SelectItem>
-                    <SelectItem value="cm" className={ITEM_CLASS}>
-                      cm
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {form.formState.errors.height && (
-                <p className="text-[11px] text-[#c06060]">
-                  {form.formState.errors.height.message}
-                </p>
+              )}
+              {height.hasParseError && (
+                <p className="text-[11px] text-[#c06060]">Enter a height above 0</p>
               )}
             </div>
 

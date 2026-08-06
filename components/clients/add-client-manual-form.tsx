@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Loader2, UserPlus } from "lucide-react";
 import { UseFormReturn } from "react-hook-form";
 import {
@@ -20,7 +21,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useUnits } from "@/contexts/units-context";
+import { useCanonicalInput, useHeightInput } from "@/hooks/use-unit-inputs";
+import { formatLength, formatWeight } from "@/utils/unit-conversions";
 import type { CreateClientInput } from "@/lib/validations/client";
+
+// Every number this form submits is CANONICAL — kilograms and centimetres —
+// and the coach types in whichever units they prefer. The unit <Select>s that
+// used to sit beside Height and Goal Weight are gone: they described the
+// payload rather than the reader, so two coaches sharing a client could
+// disagree about what the same stored number meant.
 
 type AddClientManualFormProps = {
   form: UseFormReturn<CreateClientInput>;
@@ -29,6 +39,36 @@ type AddClientManualFormProps = {
 };
 
 export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualFormProps) {
+  const { preference } = useUnits();
+  const weightUnit = formatWeight(0, preference).unit;
+  const lengthUnit = formatLength(0, preference).unit;
+
+  const height = useHeightInput(preference, form.getValues("height"));
+  const currentWeight = useCanonicalInput(
+    preference,
+    form.getValues("currentWeight"),
+    "weight",
+  );
+  const goalWeight = useCanonicalInput(
+    preference,
+    form.getValues("goalWeight"),
+    "weight",
+  );
+
+  // The RHF fields hold canonical values; these inputs hold the coach's display
+  // string. Pushing the conversion through on each keystroke keeps zodResolver
+  // validating the number that will actually be stored.
+  const { setValue } = form;
+  useEffect(() => {
+    setValue("height", height.commitCm ?? undefined);
+  }, [height.commitCm, setValue]);
+  useEffect(() => {
+    setValue("currentWeight", currentWeight.commit ?? undefined);
+  }, [currentWeight.commit, setValue]);
+  useEffect(() => {
+    setValue("goalWeight", goalWeight.commit ?? undefined);
+  }, [goalWeight.commit, setValue]);
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -89,57 +129,50 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
         />
 
         {/* Static Profile Fields */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormField
-            control={form.control}
-            name="height"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Height</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    placeholder="70"
-                    {...field}
-                    value={field.value ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      field.onChange(value === "" ? undefined : parseFloat(value));
-                    }}
-                    className="rounded-xs"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="heightUnit"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Height Unit</FormLabel>
-                <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
-                  <FormControl>
-                    <SelectTrigger className="rounded-xs">
-                      <SelectValue placeholder="Select unit" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="in">in</SelectItem>
-                    <SelectItem value="cm">cm</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+        {height.system === "imperial" ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormItem>
+              <FormLabel>Height (ft)</FormLabel>
+              <FormControl>
+                <Input
+                  inputMode="numeric"
+                  placeholder="5"
+                  value={height.fields.feet}
+                  onChange={(e) => height.setFeet(e.target.value)}
+                  className="rounded-xs"
+                />
+              </FormControl>
+            </FormItem>
+            <FormItem>
+              <FormLabel>Height (in)</FormLabel>
+              <FormControl>
+                <Input
+                  inputMode="numeric"
+                  placeholder="11"
+                  value={height.fields.inches}
+                  onChange={(e) => height.setInches(e.target.value)}
+                  className="rounded-xs"
+                />
+              </FormControl>
+            </FormItem>
+          </div>
+        ) : (
+          <FormItem>
+            <FormLabel>Height ({lengthUnit})</FormLabel>
+            <FormControl>
+              <Input
+                inputMode="decimal"
+                placeholder="180"
+                value={height.fields.cm}
+                onChange={(e) => height.setCm(e.target.value)}
+                className="rounded-xs"
+              />
+            </FormControl>
+          </FormItem>
+        )}
+        {height.hasParseError && (
+          <p className="text-sm text-destructive">Enter a height above 0</p>
+        )}
 
         <FormField
           control={form.control}
@@ -188,30 +221,21 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
 
         {/* Current Metrics */}
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField
-            control={form.control}
-            name="currentWeight"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Current Weight</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    placeholder="180"
-                    {...field}
-                    value={field.value ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      field.onChange(value === "" ? undefined : parseFloat(value));
-                    }}
-                    className="rounded-xs"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
+          <FormItem>
+            <FormLabel>Current Weight ({weightUnit})</FormLabel>
+            <FormControl>
+              <Input
+                inputMode="decimal"
+                placeholder={preference === "imperial" ? "180" : "82"}
+                value={currentWeight.value}
+                onChange={(e) => currentWeight.setValue(e.target.value)}
+                className="rounded-xs"
+              />
+            </FormControl>
+            {currentWeight.hasParseError && (
+              <p className="text-sm text-destructive">Enter a weight above 0</p>
             )}
-          />
+          </FormItem>
 
           <FormField
             control={form.control}
@@ -240,31 +264,22 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
         </div>
 
         {/* Goal Metrics */}
-        <div className="grid gap-4 sm:grid-cols-3">
-          <FormField
-            control={form.control}
-            name="goalWeight"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Goal Weight</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    placeholder="150"
-                    {...field}
-                    value={field.value ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      field.onChange(value === "" ? undefined : parseFloat(value));
-                    }}
-                    className="rounded-xs"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormItem>
+            <FormLabel>Goal Weight ({weightUnit})</FormLabel>
+            <FormControl>
+              <Input
+                inputMode="decimal"
+                placeholder={preference === "imperial" ? "150" : "68"}
+                value={goalWeight.value}
+                onChange={(e) => goalWeight.setValue(e.target.value)}
+                className="rounded-xs"
+              />
+            </FormControl>
+            {goalWeight.hasParseError && (
+              <p className="text-sm text-destructive">Enter a weight above 0</p>
             )}
-          />
+          </FormItem>
 
           <FormField
             control={form.control}
@@ -291,30 +306,6 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
             )}
           />
 
-          <FormField
-            control={form.control}
-            name="weightUnit"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Weight Unit</FormLabel>
-                <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
-                  <FormControl>
-                    <SelectTrigger className="rounded-xs">
-                      <SelectValue placeholder="Select unit" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="lbs">lbs</SelectItem>
-                    <SelectItem value="kg">kg</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
         </div>
 
         <div className="flex gap-2 pt-2">
