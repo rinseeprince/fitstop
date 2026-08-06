@@ -1,7 +1,12 @@
 # Units canonicalization — implementation plan
 
-**Status**: Phase 1 shipped (`b9bbfac`, 2026-08-06, migration 140) · Phases 2-4 not
-started · **Logged**: 2026-08-05 · **Next migration number**: 141
+**Status**: Phases 1-2 shipped (2026-08-06, migrations 140 + 141) · Phases 3-4 not
+started · **Logged**: 2026-08-05 · **Next migration number**: 142
+
+> **Phase 2 disproved four of its own trap-list claims.** Corrections are inline
+> in the Phase 2 section below, marked **CORRECTED**. Read them before Phase 3 —
+> two of them were "the tag is trustworthy" assumptions that would have corrupted
+> data if followed literally.
 
 Fixes the platform-wide unit problem: weights and measurements are stored in
 whatever unit the user happened to be looking at, the "preference" lives on the
@@ -367,12 +372,18 @@ tags, in the same migration.
 
 **Known traps**
 
-- **Intake-created clients already store kg but are labelled lbs.**
-  `components/client/onboarding/intake-step-1.tsx:97` converts to kg *before*
-  persisting; `services/client-service.ts:50` then inserts NULL units and
-  `lib/mappers.ts:74` coerces NULL → `"lbs"`. A backfill keyed naively on
-  `weight_unit` converts these **the wrong way**. Treat NULL as already-kg, not
-  as lbs.
+- **CORRECTED — the intake trap's stated mechanism is false.** The claim was that
+  `services/client-service.ts:50` inserts NULL units, so a backfill should treat
+  NULL as already-kg. It does not: `lib/validations/client.ts:19,26` are
+  `.optional().default("in")` / `.default("lbs")`, so `clientData.heightUnit` /
+  `weightUnit` are always defined and the `isIntakeMode ? null : …` branch never
+  yields null. Intake clients are labelled `'in'`/`'lbs'` **explicitly**.
+  What actually makes the tag rule safe is a different mechanism:
+  `client_intake.weight_unit` defaults to `'kg'`
+  (`034_add_client_intake_and_onboarding_status.sql:30`) and
+  `services/intake-review-service.ts:173` copied it to `clients.weight_unit`, so
+  an intake-synced client carries a **kg tag over a kg value**. Migration 141
+  therefore keys on the tag, and it converted zero `clients` rows.
 - **Three unit columns disagree.** On Dev, 52 of 208 clients have
   `unit_preference='imperial'` while `weight_unit='kg'` and `height_unit='cm'`.
   Trust `weight_unit`/`height_unit` for the value conversion, not
@@ -382,6 +393,31 @@ tags, in the same migration.
 - **Untagged tables** (`set_logs`, `client_metric_entries`) can only be inferred
   from the owning client's `weight_unit` at backfill time. Best-effort is fine
   on test data.
+- **CORRECTED — `exercise_logs.weight_unit` looks like a per-row tag for
+  `set_logs`, and using it would have corrupted 9,630 rows.** It is noise: the
+  column defaults to `'lbs'` (`027:35`), `scripts/seed-scale-client.ts:235` and
+  `scripts/perf-correctness.ts:206` hardcode `"lbs"` beside kg-magnitude values,
+  and `set-tracker.tsx:163` falls back to `"lbs"`. Proof it carries no meaning:
+  the kg-tagged rows have a median of **42.3 for every exercise** — Archer Pull
+  Up, Band Dislocate, Axle Press alike — which is scale-seed noise. Keying on the
+  owning client instead converted 21 rows.
+- **CORRECTED — an `'in'` measurement tag does not mean the girths are inches.**
+  8 of the 111 `in`-tagged rows carrying a waist were centimetres wearing an
+  `'in'` tag (waist 88.5–92.0, arms 38–39, thighs 58–60 — coherent in cm,
+  impossible in inches). Migration 141 guards on the VALUE
+  (`COALESCE(waist, hips, chest) < 60`), because legitimate inches reach waist
+  36.1 / hips 40.0 / chest 42.0 while centimetres start at 62.0 / 70.0 / 75.0.
+  `arms`/`thighs` are excluded from that COALESCE — their ranges straddle 60.
+- **CORRECTED — a `'lbs'` weight tag on `check_ins` is ambiguous by
+  construction.** The column defaults to `'lbs'` (`001:16`) and
+  `app/api/client/check-ins/route.ts` stored `?? "lbs"`, while
+  `components/check-in/step-metrics.tsx:81` highlights **kg** when the toggle is
+  untouched — so an unset form recorded a kg number as pounds, indistinguishable
+  afterwards from a real lbs choice. Migration 141 requires corroboration from
+  the client's own tag; Phase 2 also flipped that API fallback to `'kg'` so new
+  rows cannot repeat it. Girths keep the `'in'` fallback, where the toggle and
+  the default agree. **Residual, accepted:** a kg-tagged client who deliberately
+  picks lbs on one check-in is under-converted — unresolvable from data.
 - **Tests hardcode the old constants**: `services/nutrition-calc-inputs.test.ts:46,47,81,139`
   assert against `2.205`; `app/api/clients/[id]/nutrition/route.test.ts:67` and
   `app/api/clients/[id]/training/route.test.ts:35` mock `weightToKg` as
@@ -593,9 +629,15 @@ accepts input in the viewer's unit while storing kg/cm.
   `timezone` only; extend them with `unitPreference`.
 - **Client settings.** `app/client/settings/page.tsx` already has an
   Imperial/Metric radio group. Rewire it to write only the viewer preference.
-  `services/client-service.ts:354-357` must stop deriving `weight_unit` — that
-  column no longer exists after Phase 2. The settings label promises a cm switch
-  it never performed; with canonical cm that promise now holds.
+  **DONE IN PHASE 2, not here** — `services/client-service.ts` no longer derives
+  `weight_unit`. This entry used to schedule that removal for Phase 4 while also
+  stating the column is gone after Phase 2, which is a contradiction: the derived
+  write is reached by `PATCH /api/client/settings`
+  (`app/api/client/settings/route.ts:44`), so leaving it would have PGRST204'd
+  and 500'd every client settings save — including the unit toggle this phase
+  wires. Nothing to do here; do not go looking for it.
+  The settings label promises a cm switch it never performed; with canonical cm
+  that promise now holds.
 - **Delete the drawer toggle outright.** `hooks/use-nutrition-plan.ts:107-119`
   currently PATCHes `/api/clients/{id}/nutrition` to mutate the *client's*
   `unit_preference` when the coach flips the drawer toggle — a cross-user write.
@@ -661,8 +703,9 @@ Deliver:
    updateCoachSettingsSchema (lib/validations/coach.ts) currently accept timezone
    only; extend both with unitPreference.
 2. Client settings: rewire app/client/settings/page.tsx to write only the viewer
-   preference. services/client-service.ts must stop deriving weight_unit — that
-   column no longer exists.
+   preference. (services/client-service.ts already stopped deriving weight_unit —
+   that landed in Phase 2, because leaving it would have 500'd every settings
+   save the moment the column was dropped. Nothing to do there.)
    LANDMINE (Phase 1): the coach's preference lives in TWO client-side SWR caches
    — the units route AND /api/auth/me, which carries it inside coach.unitPreference.
    Every site that writes a preference must call useInvalidateUnitPreference()

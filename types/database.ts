@@ -132,7 +132,6 @@ export type Database = {
           source_id: string | null
           tdee: number | null
           weight: number | null
-          weight_unit: string | null
         }
         Insert: {
           bmr?: number | null
@@ -145,7 +144,6 @@ export type Database = {
           source_id?: string | null
           tdee?: number | null
           weight?: number | null
-          weight_unit?: string | null
         }
         Update: {
           bmr?: number | null
@@ -158,7 +156,6 @@ export type Database = {
           source_id?: string | null
           tdee?: number | null
           weight?: number | null
-          weight_unit?: string | null
         }
         Relationships: [
           {
@@ -180,7 +177,6 @@ export type Database = {
           highlight_type: string
           id: string
           reps: number | null
-          weight_unit: string | null
           weight_value: number | null
         }
         Insert: {
@@ -192,7 +188,6 @@ export type Database = {
           highlight_type: string
           id?: string
           reps?: number | null
-          weight_unit?: string | null
           weight_value?: number | null
         }
         Update: {
@@ -204,7 +199,6 @@ export type Database = {
           highlight_type?: string
           id?: string
           reps?: number | null
-          weight_unit?: string | null
           weight_value?: number | null
         }
         Relationships: [
@@ -347,7 +341,6 @@ export type Database = {
           energy: number | null
           hips: number | null
           id: string
-          measurement_unit: string | null
           mood: number | null
           notes: string | null
           nutrition_days_on_target: number | null
@@ -369,7 +362,6 @@ export type Database = {
           uses_daily_logs: boolean
           waist: number | null
           weight: number | null
-          weight_unit: string | null
           workouts_completed: number | null
         }
         Insert: {
@@ -392,7 +384,6 @@ export type Database = {
           energy?: number | null
           hips?: number | null
           id?: string
-          measurement_unit?: string | null
           mood?: number | null
           notes?: string | null
           nutrition_days_on_target?: number | null
@@ -414,7 +405,6 @@ export type Database = {
           uses_daily_logs?: boolean
           waist?: number | null
           weight?: number | null
-          weight_unit?: string | null
           workouts_completed?: number | null
         }
         Update: {
@@ -437,7 +427,6 @@ export type Database = {
           energy?: number | null
           hips?: number | null
           id?: string
-          measurement_unit?: string | null
           mood?: number | null
           notes?: string | null
           nutrition_days_on_target?: number | null
@@ -459,7 +448,6 @@ export type Database = {
           uses_daily_logs?: boolean
           waist?: number | null
           weight?: number | null
-          weight_unit?: string | null
           workouts_completed?: number | null
         }
         Relationships: [
@@ -552,7 +540,6 @@ export type Database = {
           goal_details: string | null
           has_tracked_macros_before: boolean | null
           height: number | null
-          height_unit: string | null
           id: string
           injuries_or_limitations: string | null
           meals_per_day: number | null
@@ -572,7 +559,6 @@ export type Database = {
           training_location: string | null
           training_time_preference: string | null
           updated_at: string | null
-          weight_unit: string | null
           work_activity_level: string | null
         }
         Insert: {
@@ -598,7 +584,6 @@ export type Database = {
           goal_details?: string | null
           has_tracked_macros_before?: boolean | null
           height?: number | null
-          height_unit?: string | null
           id?: string
           injuries_or_limitations?: string | null
           meals_per_day?: number | null
@@ -618,7 +603,6 @@ export type Database = {
           training_location?: string | null
           training_time_preference?: string | null
           updated_at?: string | null
-          weight_unit?: string | null
           work_activity_level?: string | null
         }
         Update: {
@@ -644,7 +628,6 @@ export type Database = {
           goal_details?: string | null
           has_tracked_macros_before?: boolean | null
           height?: number | null
-          height_unit?: string | null
           id?: string
           injuries_or_limitations?: string | null
           meals_per_day?: number | null
@@ -664,7 +647,6 @@ export type Database = {
           training_location?: string | null
           training_time_preference?: string | null
           updated_at?: string | null
-          weight_unit?: string | null
           work_activity_level?: string | null
         }
         Relationships: [
@@ -849,7 +831,6 @@ export type Database = {
           goal_deadline: string | null
           goal_weight: number | null
           height: number | null
-          height_unit: string | null
           id: string
           include_activity_burn: boolean
           last_reminder_sent_at: string | null
@@ -872,7 +853,6 @@ export type Database = {
           updated_at: string | null
           user_id: string | null
           walkthrough_completed_at: string | null
-          weight_unit: string | null
           welcome_message: string | null
           work_activity_level: string | null
         }
@@ -897,7 +877,6 @@ export type Database = {
           goal_deadline?: string | null
           goal_weight?: number | null
           height?: number | null
-          height_unit?: string | null
           id?: string
           include_activity_burn?: boolean
           last_reminder_sent_at?: string | null
@@ -920,7 +899,6 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
           walkthrough_completed_at?: string | null
-          weight_unit?: string | null
           welcome_message?: string | null
           work_activity_level?: string | null
         }
@@ -945,7 +923,6 @@ export type Database = {
           goal_deadline?: string | null
           goal_weight?: number | null
           height?: number | null
-          height_unit?: string | null
           id?: string
           include_activity_burn?: boolean
           last_reminder_sent_at?: string | null
@@ -968,7 +945,6 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
           walkthrough_completed_at?: string | null
-          weight_unit?: string | null
           welcome_message?: string | null
           work_activity_level?: string | null
         }
@@ -1584,7 +1560,6 @@ export type Database = {
           session_log_id: string
           training_exercise_id: string | null
           updated_at: string
-          weight_unit: string | null
         }
         Insert: {
           completed?: boolean | null
@@ -1597,7 +1572,6 @@ export type Database = {
           session_log_id: string
           training_exercise_id?: string | null
           updated_at?: string
-          weight_unit?: string | null
         }
         Update: {
           completed?: boolean | null
@@ -1610,7 +1584,6 @@ export type Database = {
           session_log_id?: string
           training_exercise_id?: string | null
           updated_at?: string
-          weight_unit?: string | null
         }
         Relationships: [
           {

@@ -42,12 +42,10 @@ function fakeSupabase(opts: {
 describe("getClientProgressData unit resolution", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns kg + cm for a metric client and surfaces goals/streak", async () => {
+  it("returns canonical kg + cm and surfaces goals/streak", async () => {
     vi.mocked(createPortalClient).mockResolvedValue(
       fakeSupabase({
         client: {
-          weight_unit: "kg",
-          unit_preference: "metric",
           current_streak: 6,
           check_in_adherence_rate: 92,
           goal_weight: 78,
@@ -64,18 +62,25 @@ describe("getClientProgressData unit resolution", () => {
     expect(result.client.goalWeight).toBe(78);
   });
 
-  it("returns lbs + in for an imperial client", async () => {
+  // Replaces the old "returns lbs + in for an imperial client". Since migration
+  // 141 these labels describe what is STORED, not what the viewer prefers, so an
+  // imperial client must still get kg/cm here — Phase 3 converts at render. If a
+  // preference ever leaks back into the stored-unit label, this fails.
+  it("returns kg + cm even for an imperial client (preference never leaks)", async () => {
     vi.mocked(createPortalClient).mockResolvedValue(
-      fakeSupabase({ client: { weight_unit: "lbs", unit_preference: "imperial" } }) as never,
+      fakeSupabase({ client: { unit_preference: "imperial" } }) as never,
     );
 
     const result = await getClientProgressData("c1");
 
-    expect(result.client.weightUnit).toBe("lbs");
-    expect(result.client.measurementUnit).toBe("in");
+    expect(result.client.weightUnit).toBe("kg");
+    expect(result.client.measurementUnit).toBe("cm");
   });
 
-  it("logs and does not throw when the client query errors (no silent lbs fallback bug)", async () => {
+  // The historic bug: this query selected a column that does not exist, PostgREST
+  // rejected the whole thing, clientData came back null and every metric client
+  // silently fell back to lbs/in. The request must still surface the error.
+  it("logs and does not throw when the client query errors (no silent fallback bug)", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(createPortalClient).mockResolvedValue(
       fakeSupabase({ client: null, clientError: { message: "boom" } }) as never,
@@ -83,7 +88,7 @@ describe("getClientProgressData unit resolution", () => {
 
     const result = await getClientProgressData("c1");
 
-    expect(result.client.weightUnit).toBeUndefined();
+    expect(result.client.weightUnit).toBe("kg");
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -112,7 +117,7 @@ describe("getClientProgressData render-ready series", () => {
     vi.mocked(createPortalClient).mockResolvedValue(
       fakeSupabase({
         checkIns: TWO_WEIGHT_CHECK_INS,
-        client: { weight_unit: "lbs", unit_preference: "imperial" },
+        client: { unit_preference: "imperial" },
       }) as never,
     );
 
@@ -120,7 +125,7 @@ describe("getClientProgressData render-ready series", () => {
     const weight = findSeries(result.bodyMetrics, "weight");
 
     expect(weight.name).toBe("Weight");
-    expect(weight.unit).toBe("lbs");
+    expect(weight.unit).toBe("kg");
     expect(weight.currentValue).toBe(79); // last point
     // (79 - 80) / 80 * 100 = -1.25, rounded to 1dp by the helper -> -1.3
     expect(weight.percentChange).toBe(-1.3);
@@ -131,13 +136,13 @@ describe("getClientProgressData render-ready series", () => {
     expect(weight.chartData[0]).toEqual({ date: "2026-05-01", value: 80 });
   });
 
-  it("resolves metric units: Weight 'kg' + measurement series 'cm' for a metric client", async () => {
+  it("labels Weight 'kg' and measurement series 'cm' (canonical storage)", async () => {
     vi.mocked(createPortalClient).mockResolvedValue(
       fakeSupabase({
         checkIns: [
           { created_at: "2026-05-01T08:00:00+00:00", weight: 80, waist: 90 },
         ],
-        client: { weight_unit: "kg", unit_preference: "metric" },
+        client: { unit_preference: "metric" },
       }) as never,
     );
 
@@ -149,7 +154,7 @@ describe("getClientProgressData render-ready series", () => {
 
   it("returns every series present with empty defaults when there is no history", async () => {
     vi.mocked(createPortalClient).mockResolvedValue(
-      fakeSupabase({ checkIns: [], client: { weight_unit: "lbs", unit_preference: "imperial" } }) as never,
+      fakeSupabase({ checkIns: [], client: { unit_preference: "imperial" } }) as never,
     );
 
     const result = await getClientProgressData("c1");

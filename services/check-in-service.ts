@@ -115,15 +115,15 @@ export const submitCheckIn = async (
       soreness,
       notes: formData.notes,
       // Body metrics
+      // Canonical kg/cm (migration 141). Callers convert at the API boundary —
+      // this service never sees a display unit.
       weight: formData.weight,
-      weight_unit: formData.weightUnit,
       body_fat_percentage: formData.bodyFatPercentage,
       waist: formData.waist,
       hips: formData.hips,
       chest: formData.chest,
       arms: formData.arms,
       thighs: formData.thighs,
-      measurement_unit: formData.measurementUnit,
       // Photos
       photo_front: formData.photoFront,
       photo_side: formData.photoSide,

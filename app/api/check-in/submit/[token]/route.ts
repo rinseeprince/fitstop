@@ -6,6 +6,7 @@ import {
   updateTokenWithCheckInId,
   releaseToken,
 } from "@/services/check-in-service";
+import { toCanonicalCheckInMetrics } from "@/utils/check-in-canonical-metrics";
 import { getClientById } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { markReminderAsResponded } from "@/services/reminder-service";
@@ -195,10 +196,15 @@ export async function POST(
       }
     }
 
+    // Display units in, canonical kg/cm out — see toCanonicalCheckInMetrics.
+    // This public token route writes the same columns as the authenticated one,
+    // so it must normalize identically.
+    const canonical = toCanonicalCheckInMetrics(body);
+
     try {
       // Create the check-in (token is already claimed, safe from duplicates)
       checkInId = await submitCheckIn(clientId, {
-        ...body,
+        ...canonical,
         ...photoUrls,
       });
 
@@ -229,7 +235,7 @@ export async function POST(
     try {
       // Update client's current weight and body fat from check-in, then calculate BMR
       if (client) {
-        await updateClientMetricsFromCheckIn(client, body, checkInId);
+        await updateClientMetricsFromCheckIn(client, canonical, checkInId);
       }
 
       // Update client adherence stats

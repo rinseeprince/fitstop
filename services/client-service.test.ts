@@ -65,12 +65,10 @@ function createMockClientRow(overrides: Record<string, unknown> = {}) {
     notes: null,
     active: true,
     height: 72,
-    height_unit: 'in',
     gender: 'male',
     date_of_birth: '1990-01-01',
     goal_weight: 170,
     goal_body_fat_percentage: 12,
-    weight_unit: 'lbs',
     current_weight: 180,
     current_body_fat_percentage: 15,
     bmr: 1800,
@@ -193,8 +191,8 @@ describe('Client Service', () => {
         email: 'test@example.com',
         currentWeight: 180,
         currentBodyFatPercentage: 15,
-        weightUnit: 'lbs',
-        heightUnit: 'in',
+        weightUnit: 'kg',
+        heightUnit: 'cm',
       } as any)
 
       expect(mockQuery.insert).toHaveBeenCalled()
@@ -203,6 +201,50 @@ describe('Client Service', () => {
       expect(insertCall.starting_weight).toBe(180)
       expect(insertCall.current_body_fat_percentage).toBe(15)
       expect(insertCall.starting_body_fat_percentage).toBe(15)
+    })
+
+    // Storage is canonical kg/cm since migration 141, and the add-client form
+    // still submits in its own toggle's unit until Phase 4. An imperial payload
+    // must therefore be converted on the way in — a regression here writes lbs
+    // into a kg column, which is undetectable afterwards because the tag that
+    // would have revealed it no longer exists.
+    it('converts an imperial payload to canonical kg/cm before inserting', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+        currentWeight: 180,
+        goalWeight: 170,
+        height: 71,
+        weightUnit: 'lbs',
+        heightUnit: 'in',
+      } as any)
+
+      const insertCall = mockQuery.insert.mock.calls[0][0]
+      expect(insertCall.current_weight).toBeCloseTo(81.6466, 4)
+      expect(insertCall.starting_weight).toBeCloseTo(81.6466, 4)
+      expect(insertCall.goal_weight).toBeCloseTo(77.1107, 4)
+      expect(insertCall.height).toBeCloseTo(180.34, 4)
+    })
+
+    it('leaves a metric payload untouched', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+        currentWeight: 82.5,
+        height: 180,
+        weightUnit: 'kg',
+        heightUnit: 'cm',
+      } as any)
+
+      const insertCall = mockQuery.insert.mock.calls[0][0]
+      expect(insertCall.current_weight).toBe(82.5)
+      expect(insertCall.height).toBe(180)
     })
 
     it('dual-writes body metrics when currentWeight provided', async () => {
@@ -218,10 +260,13 @@ describe('Client Service', () => {
         heightUnit: 'in',
       } as any)
 
+      // 180 lbs is stored as kilograms (migration 141), and the dual-write must
+      // receive the SAME converted value the clients row got — not the raw
+      // payload, which is what it used to pass.
       expect(recordBodyMetrics).toHaveBeenCalledWith(
         expect.objectContaining({
           clientId: 'client-123',
-          weight: 180,
+          weight: expect.closeTo(180 * 0.45359237, 6),
           source: 'intake_sync',
         })
       )
@@ -240,9 +285,10 @@ describe('Client Service', () => {
         heightUnit: 'in',
       } as any)
 
+      // Goal weight converts too — client_goals.goal_weight is canonical kg.
       expect(updateGoals).toHaveBeenCalledWith(
         'client-123',
-        expect.objectContaining({ goalWeight: 170 }),
+        expect.objectContaining({ goalWeight: expect.closeTo(170 * 0.45359237, 6) }),
         'coach-456'
       )
     })
@@ -575,34 +621,29 @@ describe('Client Service', () => {
   })
 
   describe('updateClientSettings', () => {
-    it("derives weight_unit='kg' when unitPreference is 'metric'", async () => {
-      const mockQuery = createMockQuery({
-        data: createMockClientRow({ unit_preference: 'metric', weight_unit: 'kg' }),
-        error: null,
-      })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+    // Replaces the two tests that asserted weight_unit was DERIVED from
+    // unitPreference. That derivation was the platform's worst data bug — it
+    // flipped the tag while converting zero stored numbers, so a 180 lbs client
+    // choosing Metric silently became a 180 kg client everywhere — and since
+    // migration 141 the column does not exist, so writing it would PGRST204 and
+    // 500 every settings save. This asserts it stays gone in both directions.
+    it.each(['metric', 'imperial'] as const)(
+      "writes unit_preference=%s and never derives a weight unit from it",
+      async (preference) => {
+        const mockQuery = createMockQuery({
+          data: createMockClientRow({ unit_preference: preference }),
+          error: null,
+        })
+        vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
 
-      await updateClientSettings('client-123', { unitPreference: 'metric' })
+        await updateClientSettings('client-123', { unitPreference: preference })
 
-      const updateCall = mockQuery.update.mock.calls[0][0]
-      expect(updateCall.unit_preference).toBe('metric')
-      expect(updateCall.weight_unit).toBe('kg')
-      expect(updateCall.updated_at).toBeDefined()
-    })
-
-    it("derives weight_unit='lbs' when unitPreference is 'imperial'", async () => {
-      const mockQuery = createMockQuery({
-        data: createMockClientRow({ unit_preference: 'imperial', weight_unit: 'lbs' }),
-        error: null,
-      })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-
-      await updateClientSettings('client-123', { unitPreference: 'imperial' })
-
-      const updateCall = mockQuery.update.mock.calls[0][0]
-      expect(updateCall.unit_preference).toBe('imperial')
-      expect(updateCall.weight_unit).toBe('lbs')
-    })
+        const updateCall = mockQuery.update.mock.calls[0][0]
+        expect(updateCall.unit_preference).toBe(preference)
+        expect(updateCall.weight_unit).toBeUndefined()
+        expect(updateCall.updated_at).toBeDefined()
+      }
+    )
 
     it('writes only timezone when only timezone is supplied', async () => {
       const mockQuery = createMockQuery({

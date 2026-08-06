@@ -115,7 +115,6 @@ export const insertExerciseHighlights = async (
     highlight_type: h.highlightType,
     details: h.details ?? null,
     weight_value: h.weightValue ?? null,
-    weight_unit: h.weightUnit ?? null,
     reps: h.reps ?? null,
   }));
 
@@ -139,7 +138,8 @@ export const mapExerciseHighlight = (
   highlightType: row.highlight_type as CheckInExerciseHighlight["highlightType"],
   details: row.details ?? undefined,
   weightValue: row.weight_value ? parseFloat(String(row.weight_value)) : undefined,
-  weightUnit: row.weight_unit as CheckInExerciseHighlight["weightUnit"],
+  // Canonical kilograms since migration 141 — a constant, not a column.
+  weightUnit: "kg",
   reps: row.reps ?? undefined,
 });
 

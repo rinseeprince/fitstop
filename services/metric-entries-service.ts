@@ -5,6 +5,7 @@ import {
 } from "./body-metrics-service";
 import type { MetricEntry, MetricEntryRow } from "@/types/metric-entries";
 import type { MetricEntryKey } from "@/lib/metrics/metric-entry-definitions";
+import { inToCm } from "@/utils/unit-conversions";
 
 export type UpsertMetricEntryInput = {
   metricKey: MetricEntryKey;
@@ -30,10 +31,42 @@ function mapMetricEntryRow(row: MetricEntryRow): MetricEntry {
   };
 }
 
+/** Girth keys, which the coach surface still collects in INCHES. */
+const GIRTH_KEYS: ReadonlySet<MetricEntryKey> = new Set<MetricEntryKey>([
+  "waist",
+  "hips",
+  "chest",
+  "arms",
+  "thighs",
+]);
+
+/**
+ * Coach-entered value → canonical storage.
+ *
+ * `client_metric_entries.value` is canonical since migration 141 (kilograms for
+ * weight, centimetres for girths). The coach's Log-measurement dialog still
+ * labels girths "in" — `use-merged-metrics.ts:27` hardcodes `MEASUREMENT_UNIT =
+ * "in"` and feeds `METRIC_DEFINITIONS.getUnit` — so a girth arrives in inches
+ * and must be converted here. Without this the column mixes inches (new coach
+ * entries) with the centimetres migration 141 converted the history to, and
+ * nothing distinguishes them.
+ *
+ * Weight needs no conversion: its label resolves from `client.weightUnit`, which
+ * is now the canonical "kg" constant, so the coach sees kg and types kg.
+ *
+ * Phase 3 fixes the stale "in" label; until then this matches the check-in girth
+ * path, which converts on write for the same reason.
+ */
+function toCanonicalEntryValue(key: MetricEntryKey, value: number): number {
+  return GIRTH_KEYS.has(key) ? inToCm(value) : value;
+}
+
 export const upsertMetricEntry = async (
   clientId: string,
   input: UpsertMetricEntryInput
 ): Promise<MetricEntry> => {
+  const canonicalValue = toCanonicalEntryValue(input.metricKey, input.value);
+
   // created_at is intentionally absent from the payload: the insert default
   // applies and a conflict-update (same-date replace) never touches it.
   const { data, error } = await supabaseAdmin
@@ -42,7 +75,7 @@ export const upsertMetricEntry = async (
       {
         client_id: clientId,
         metric_key: input.metricKey,
-        value: input.value,
+        value: canonicalValue,
         entry_date: input.entryDate,
         note: input.note ?? null,
         created_by: input.coachId,
@@ -61,7 +94,10 @@ export const upsertMetricEntry = async (
   const entry = mapMetricEntryRow(data);
 
   if (input.metricKey === "weight" || input.metricKey === "bodyFat") {
-    await dualWriteBodyMetrics(clientId, input, entry.id);
+    // Pass the canonical value, not the raw input — weight is already kilograms
+    // here, but routing the converted value keeps the two writes impossible to
+    // diverge if a future key needs converting.
+    await dualWriteBodyMetrics(clientId, { ...input, value: canonicalValue }, entry.id);
   }
 
   return entry;
@@ -86,20 +122,12 @@ async function dualWriteBodyMetrics(
     const isCurrent =
       latest === null || input.entryDate >= latest.recordedAt.slice(0, 10);
 
-    let weightUnit: string | undefined;
-    if (isWeight) {
-      const { data: client } = await supabaseAdmin
-        .from("clients")
-        .select("weight_unit")
-        .eq("id", clientId)
-        .maybeSingle();
-      weightUnit = client?.weight_unit ?? "lbs";
-    }
-
+    // The clients.weight_unit lookup that used to sit here is gone with
+    // migration 141 — one fewer round trip, and the value needs no tag: weight
+    // entries are kilograms and girth entries centimetres, canonically.
     await recordBodyMetrics({
       clientId,
       weight: isWeight ? input.value : undefined,
-      weightUnit,
       bodyFatPercentage: isWeight ? undefined : input.value,
       source: "coach_entry",
       sourceId: entryId,

@@ -8,7 +8,6 @@ import type { NutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import {
   getWeightChange as getWeightChangeUtil,
   formatWeight as formatWeightUtil,
-  weightToKg,
   kgToLbs,
 } from "@/utils/nutrition-helpers";
 
@@ -135,8 +134,9 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
   const getWeightRemaining = useCallback(() => {
     if (!client.goalWeight || !client.currentWeight) return null;
 
-    const currentWeightKg = weightToKg(client.currentWeight, client.weightUnit || "lbs");
-    const goalWeightKg = weightToKg(client.goalWeight, client.weightUnit || "lbs");
+    // Already kilograms (migration 141) — no normalization step any more.
+    const currentWeightKg = client.currentWeight;
+    const goalWeightKg = client.goalWeight;
     const remainingKg = Math.abs(currentWeightKg - goalWeightKg);
     const isLoss = currentWeightKg > goalWeightKg;
 
@@ -176,6 +176,5 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
     formatWeight: (kg: number) => formatWeightUtil(kg, unitPreference),
     getWeightChange: (current: number, base: number) =>
       getWeightChangeUtil(current, base, unitPreference),
-    weightToKg: (weight: number) => weightToKg(weight, client.weightUnit || "lbs"),
   };
 }

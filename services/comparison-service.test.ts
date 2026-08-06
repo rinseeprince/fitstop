@@ -200,15 +200,16 @@ describe('Comparison Service - read-switch behavior', () => {
     )
   })
 
-  it('imperial (lbs) client: the whole pace path runs in display units — no kg/lbs mixing', async () => {
-    // Regression guard for the 7.8 rewire: resolveEffectiveGoal returns goalWeightKg
-    // in KG (normalized from the display-unit client goal), but comparison-service
-    // converts it BACK to display (weightFromKg) before any math. This test runs the
-    // REAL calculateGoalProgress (computeGoalPace is already un-mocked here) so the
-    // actual subtraction executes. A 165.4 lb client goal round-trips through kg;
-    // against a 178 lb check-in, remaining = 165.4 - 178 = -12.6 lb. If kg ever
-    // leaked into the pace math, remaining would read ~-103 and the pace would
-    // falsely read "unrealistic".
+  it('the whole pace path runs in ONE unit — no kg/display mixing', async () => {
+    // Regression guard for the 7.8 rewire, restated for canonical storage
+    // (migration 141): there is no longer a kg↔display round trip at all —
+    // resolveEffectiveGoal returns the stored kilograms and comparison-service
+    // uses them directly. The invariant this protects is unchanged: goal and
+    // check-in weight must be in the SAME unit before subtracting. This runs the
+    // REAL calculateGoalProgress (computeGoalPace is already un-mocked here) so
+    // the actual subtraction executes. If a stray conversion ever re-entered one
+    // side, remaining would swing by ~2.2x and the pace would falsely read
+    // "unrealistic".
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-06-05T00:00:00Z'))
     try {

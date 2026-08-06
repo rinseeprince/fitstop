@@ -25,7 +25,8 @@ function mapBodyMetricsRow(row: BodyMetricsEventRow): BodyMetricsEvent {
     id: row.id,
     clientId: row.client_id,
     weight: row.weight ?? undefined,
-    weightUnit: row.weight_unit ?? undefined,
+    // Canonical kilograms since migration 141 — a constant, not a column.
+    weightUnit: "kg",
     bodyFatPercentage: row.body_fat_percentage ?? undefined,
     bmr: row.bmr ?? undefined,
     tdee: row.tdee ?? undefined,
@@ -38,8 +39,9 @@ function mapBodyMetricsRow(row: BodyMetricsEventRow): BodyMetricsEvent {
 
 export const recordBodyMetrics = async (params: {
   clientId: string;
+  /** KILOGRAMS. Callers convert before calling — the column is canonical since
+   *  migration 141 and there is no longer a unit tag to carry a display value. */
   weight?: number;
-  weightUnit?: string;
   bodyFatPercentage?: number;
   bmr?: number;
   tdee?: number;
@@ -59,7 +61,6 @@ export const recordBodyMetrics = async (params: {
     .insert({
       client_id: params.clientId,
       weight: params.weight ?? null,
-      weight_unit: params.weightUnit ?? null,
       body_fat_percentage: params.bodyFatPercentage ?? null,
       bmr: params.bmr ?? null,
       tdee: params.tdee ?? null,

@@ -69,8 +69,6 @@ describe('Intake Review Service', () => {
       goal_body_fat_percentage: null,
       goal_deadline: null,
       work_activity_level: null,
-      height_unit: null,
-      weight_unit: null,
       unit_preference: null,
     }
 

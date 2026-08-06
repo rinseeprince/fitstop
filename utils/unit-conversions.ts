@@ -157,6 +157,31 @@ export function formatHeight(valueCm: number, viewer: UnitSystem): HeightDisplay
   return { system: "imperial", feet, inches };
 }
 
+/**
+ * Request-payload value + the unit tag that payload carried → canonical storage.
+ *
+ * Distinct from `parseWeightToKg`/`parseLengthToCm`, which take the VIEWER's
+ * preference: these take the `"lbs" | "kg"` / `"in" | "cm"` tag that a form
+ * still sends on the wire until Phase 4 moves those forms onto the viewer
+ * preference. Write paths use these; render paths never do.
+ *
+ * `undefined` in, `undefined` out, so a caller can pass an absent optional field
+ * straight through without a null dance.
+ */
+export function toCanonicalWeightKg(
+  value: number | undefined,
+  tag: "lbs" | "kg" | undefined
+): number | undefined {
+  return value != null && tag === "lbs" ? lbsToKg(value) : value;
+}
+
+export function toCanonicalLengthCm(
+  value: number | undefined,
+  tag: "in" | "cm" | undefined
+): number | undefined {
+  return value != null && tag === "in" ? inToCm(value) : value;
+}
+
 /** Form input in the viewer's unit → canonical kilograms for storage. */
 export function parseWeightToKg(input: number, viewer: UnitSystem): number {
   return viewer === "imperial" ? lbsToKg(input) : input;

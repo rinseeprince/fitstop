@@ -6,10 +6,7 @@ import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import type { Client, ActivityLevel, DietType } from "@/types/check-in";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
-import {
-  weightToKg,
-  getActivityMultiplier,
-} from "@/utils/nutrition-helpers";
+import { getActivityMultiplier } from "@/utils/nutrition-helpers";
 import { addDays } from "date-fns";
 import { useManualTargets, macroCalories, type MacroTargets, type ManualDraft } from "@/hooks/use-manual-targets";
 // A PURE module (types + one arithmetic helper, no DB imports), so the browser
@@ -283,8 +280,9 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     const tdee = client.tdee || (client.bmr ? Math.round(client.bmr * getActivityMultiplier(settings.workActivityLevel)) : null);
     if (!tdee) return null;
 
-    const currentWeightKg = weightToKg(client.currentWeight, client.weightUnit || "lbs");
-    const goalWeightKg = weightToKg(client.goalWeight, client.weightUnit || "lbs");
+    // Already kilograms (migration 141) — no normalization step any more.
+    const currentWeightKg = client.currentWeight;
+    const goalWeightKg = client.goalWeight;
     const weightToLoseKg = currentWeightKg - goalWeightKg;
 
     if (Math.abs(weightToLoseKg) < 0.1) return null;

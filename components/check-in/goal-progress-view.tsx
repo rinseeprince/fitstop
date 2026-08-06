@@ -93,11 +93,9 @@ export const GoalProgressView = ({
 
       {/* Nutrition Regeneration Banner */}
       {clientData.currentWeight &&
-        clientData.nutritionPlanBaseWeightKg &&
-        clientData.weightUnit && (
+        clientData.nutritionPlanBaseWeightKg && (
           <NutritionRegenerationBanner
             currentWeight={clientData.currentWeight}
-            weightUnit={clientData.weightUnit}
             nutritionPlanBaseWeightKg={clientData.nutritionPlanBaseWeightKg}
             nutritionPlanCreatedDate={clientData.nutritionPlanCreatedDate}
             unitPreference={clientData.unitPreference}

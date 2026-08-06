@@ -45,7 +45,6 @@ describe('Body Metrics Service', () => {
       const mockRow = createMockBodyMetricsRow({
         clientId: 'client-1',
         weight: 180,
-        weightUnit: 'lbs',
         bodyFatPercentage: 15,
       });
 
@@ -61,7 +60,6 @@ describe('Body Metrics Service', () => {
       const result = await recordBodyMetrics({
         clientId: 'client-1',
         weight: 180,
-        weightUnit: 'lbs',
         bodyFatPercentage: 15,
         source: 'check_in',
       });
@@ -162,7 +160,6 @@ describe('Body Metrics Service', () => {
         expect(insertQuery.insert).toHaveBeenCalledWith({
           client_id: 'client-1',
           weight: 80,
-          weight_unit: null,
           body_fat_percentage: 18,
           bmr: null,
           tdee: null,

@@ -17,7 +17,6 @@ import {
   deriveWeekComparison,
   deriveWindowChange,
 } from "@/utils/metric-derived-stats";
-import { weightFromKg, weightToKg } from "@/utils/nutrition-helpers";
 import { METRIC_DEFINITIONS } from "./use-metrics-data";
 import type { LogRow, MetricSummary, MetricTab } from "../metrics-view-types";
 import type { Client } from "@/types/check-in";
@@ -67,12 +66,10 @@ export const useMergedMetrics = (
 
   const { metricsByTab, logRowsByTab } = useMemo(() => {
     const today = getTodayDateString();
-    const unit: "lbs" | "kg" = client.weightUnit === "kg" ? "kg" : "lbs";
     const pointsByMetric = buildMetricPoints(checkIns, entries, METRIC_DEFINITIONS);
 
     const currentGoals = goalsData?.data ?? null;
     const effectiveGoal = resolveEffectiveGoal({
-      weightUnit: unit,
       // Legacy fallback to the denormalized client fields mirrors
       // services/comparison-service's read switch.
       clientGoal: {
@@ -97,17 +94,14 @@ export const useMergedMetrics = (
       let goal: number | null = null;
       let goalToGo: string | null = null;
       if (def.id === "weight" && effectiveGoal.goalWeightKg != null) {
-        goal = Number(
-          (unit === "lbs"
-            ? weightFromKg(effectiveGoal.goalWeightKg, "lbs")
-            : effectiveGoal.goalWeightKg
-          ).toFixed(1)
-        );
+        // Goal, hero value and difference are all kilograms (migration 141), so
+        // the round-trip through display units is gone. Phase 3 converts these
+        // at the render boundary.
+        goal = Number(effectiveGoal.goalWeightKg.toFixed(1));
         if (hero) {
-          const diffKg = Math.abs(
-            weightToKg(hero.current.value, unit) - effectiveGoal.goalWeightKg
-          );
-          goalToGo = (unit === "lbs" ? weightFromKg(diffKg, "lbs") : diffKg).toFixed(1);
+          goalToGo = Math.abs(
+            hero.current.value - effectiveGoal.goalWeightKg
+          ).toFixed(1);
         }
       } else if (
         def.id === "bodyFat" &&

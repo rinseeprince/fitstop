@@ -43,8 +43,12 @@ describe("resolveNutritionCalcInputs", () => {
 
     expect(result.bmr).toBe(1800);
     expect(result.gender).toBe("male");
-    expect(result.currentWeightKg).toBeCloseTo(180 / 2.205, 4);
-    expect(result.goalWeightKg).toBeCloseTo(165 / 2.205, 4);
+    // Stored values are kilograms (migration 141), so these pass through
+    // untouched. Previously both were divided by 2.205. Asserting the exact
+    // input value means a reintroduced conversion fails here rather than
+    // producing a plausible-looking number.
+    expect(result.currentWeightKg).toBe(180);
+    expect(result.goalWeightKg).toBe(165);
     expect(result.goalDeadline).toBe("2026-12-31");
     // Named `startDate`, NOT `goalStartDate`. The calculator's field is
     // optional, so a mismatched name would compile and silently fall back to
@@ -78,7 +82,7 @@ describe("resolveNutritionCalcInputs", () => {
     if (result.status !== "ready") throw new Error("expected ready");
     expect(result.bmr).toBe(1900);
     expect(result.tdee).toBe(2500);
-    expect(result.currentWeightKg).toBeCloseTo(200 / 2.205, 4);
+    expect(result.currentWeightKg).toBe(200);
   });
 
   // The whole reason this is a union: a read path must be able to render
@@ -136,7 +140,7 @@ describe("resolveNutritionCalcInputs", () => {
 
     const result = await resolveNutritionCalcInputs("client-1", CLIENT);
     if (result.status !== "ready") throw new Error("expected ready");
-    expect(result.goalWeightKg).toBeCloseTo(154 / 2.205, 4);
+    expect(result.goalWeightKg).toBe(154);
     expect(result.goalDeadline).toBe("2027-01-31");
     expect(result.startDate).toBe("2026-10-01");
   });

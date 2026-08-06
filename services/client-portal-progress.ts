@@ -141,20 +141,19 @@ export async function getClientProgressData(
       starting_weight,
       starting_body_fat_percentage,
       current_weight,
-      current_body_fat_percentage,
-      weight_unit,
-      unit_preference
+      current_body_fat_percentage
     `)
     .eq("id", clientId)
     .single();
 
   // Surface a failed client fetch instead of swallowing it. A silent failure
   // here is exactly what made every weight/measurement default to lbs/in for
-  // metric clients: the previous query selected `measurement_unit`, which does
-  // not exist on `clients` (it lives on `check_ins`), so PostgREST rejected the
-  // whole query and `clientData` came back null. The weight unit lives on
-  // `clients.weight_unit`; metric-vs-imperial (cm/in) is derived from
-  // `clients.unit_preference`.
+  // metric clients: a previous version of this query selected a column that does
+  // not exist on `clients`, so PostgREST rejected the whole query and
+  // `clientData` came back null — with the error logged and the request
+  // continuing. `weight_unit` was removed from this select for the same reason
+  // when migration 141 dropped it; do not reintroduce a column here without
+  // checking it against the live schema.
   if (clientError) {
     console.error(
       `Failed to load client unit/goal fields for ${clientId}:`,
@@ -162,12 +161,9 @@ export async function getClientProgressData(
     );
   }
 
-  const measurementUnit: "in" | "cm" | undefined =
-    clientData?.unit_preference === "metric"
-      ? "cm"
-      : clientData?.unit_preference === "imperial"
-        ? "in"
-        : undefined;
+  // Stored values are canonical kg/cm (migration 141), so these describe the
+  // STORED unit, not a preference. Phase 3 converts for the viewer at render.
+  const measurementUnit: "in" | "cm" = "cm";
 
   const weightHistory: ProgressDataPoint[] = [];
   const bodyFatHistory: ProgressDataPoint[] = [];
@@ -225,11 +221,10 @@ export async function getClientProgressData(
     }
   }
 
-  // Render-ready series. Match the unit defaults + metric set/names the browser
-  // hook used verbatim so nothing renders differently: weight defaults to lbs,
-  // measurements to in; wellness units are fixed strings.
-  const weightUnit: string = clientData?.weight_unit ?? "lbs";
-  const measurementUnitLabel: string = measurementUnit ?? "in";
+  // Render-ready series. Units describe what is STORED — canonical kg/cm since
+  // migration 141 — not a preference; Phase 3 converts for the viewer at render.
+  const weightUnit = "kg";
+  const measurementUnitLabel: string = measurementUnit;
 
   const bodyMetrics: ClientMetricSeries[] = [
     buildMetricSeries(weightHistory, "weight", "weight", "Weight", weightUnit),
@@ -271,7 +266,7 @@ export async function getClientProgressData(
       startingBodyFatPercentage: clientData?.starting_body_fat_percentage ?? undefined,
       currentWeight: clientData?.current_weight ?? undefined,
       currentBodyFatPercentage: clientData?.current_body_fat_percentage ?? undefined,
-      weightUnit: (clientData?.weight_unit ?? undefined) as "lbs" | "kg" | undefined,
+      weightUnit: "kg",
       measurementUnit,
     },
   };

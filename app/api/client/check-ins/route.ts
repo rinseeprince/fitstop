@@ -3,6 +3,7 @@ import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientById } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { submitCheckIn, getClientCheckIns } from "@/services/check-in-service";
+import { toCanonicalCheckInMetrics } from "@/utils/check-in-canonical-metrics";
 import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/services/client-check-in-service";
 import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
 import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
@@ -200,6 +201,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Display units in, canonical kg/cm out — see toCanonicalCheckInMetrics.
+    // Both this call and updateClientMetricsFromCheckIn below take the result.
+    const canonical = toCanonicalCheckInMetrics(body);
+
     // Submit the comprehensive check-in
     const checkInId = await submitCheckIn(clientId, {
       // Subjective metrics
@@ -209,16 +214,14 @@ export async function POST(request: NextRequest) {
       stress: body.stress,
       notes: body.notes,
 
-      // Body metrics
-      weight: body.weight,
-      weightUnit: body.weightUnit ?? "lbs",
+      // Body metrics — canonical kg/cm.
+      weight: canonical.weight,
       bodyFatPercentage: body.bodyFatPercentage,
-      waist: body.waist,
-      hips: body.hips,
-      chest: body.chest,
-      arms: body.arms,
-      thighs: body.thighs,
-      measurementUnit: body.measurementUnit ?? "in",
+      waist: canonical.waist,
+      hips: canonical.hips,
+      chest: canonical.chest,
+      arms: canonical.arms,
+      thighs: canonical.thighs,
 
       // Progress photos
       ...photoUrls,
@@ -231,7 +234,7 @@ export async function POST(request: NextRequest) {
 
       // Enhanced tracking
       sessionCompletions: body.sessionCompletions ?? [],
-      exerciseHighlights: body.exerciseHighlights ?? [],
+      exerciseHighlights: canonical.exerciseHighlights ?? [],
       nutritionAdherence: body.nutritionAdherence,
     });
 
@@ -257,7 +260,7 @@ export async function POST(request: NextRequest) {
     // Update client metadata
     if (client) {
       // Update client's current weight, body fat, BMR, and TDEE from check-in data
-      await updateClientMetricsFromCheckIn(client, body, checkInId);
+      await updateClientMetricsFromCheckIn(client, canonical, checkInId);
 
       // Update adherence stats
       await updateClientAdherenceStats(clientId);

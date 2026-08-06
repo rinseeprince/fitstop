@@ -18,14 +18,18 @@ export function mapCheckInRow(row: CheckInRow): CheckIn {
     soreness: row.soreness ?? undefined,
     notes: row.notes ?? undefined,
     weight: row.weight ?? undefined,
-    weightUnit: row.weight_unit as "lbs" | "kg" | undefined,
+    // Storage is canonical kilograms/centimetres since migration 141, so these
+    // are constants rather than columns. The fields survive only because ~50
+    // display sites still read them for a label; Phase 3 deletes the fields and
+    // those labels together. Nothing may branch on them.
+    weightUnit: "kg",
     bodyFatPercentage: row.body_fat_percentage ?? undefined,
     waist: row.waist ?? undefined,
     hips: row.hips ?? undefined,
     chest: row.chest ?? undefined,
     arms: row.arms ?? undefined,
     thighs: row.thighs ?? undefined,
-    measurementUnit: row.measurement_unit as "in" | "cm" | undefined,
+    measurementUnit: "cm",
     photoFront: row.photo_front ?? undefined,
     photoSide: row.photo_side ?? undefined,
     photoBack: row.photo_back ?? undefined,
@@ -66,13 +70,14 @@ export function mapClientRow(row: ClientRow): Client {
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? new Date().toISOString(),
     height: row.height ?? undefined,
-    heightUnit: (row.height_unit ?? undefined) as "in" | "cm" | undefined,
+    // Canonical since migration 141 — see mapCheckInRow above.
+    heightUnit: "cm",
     gender: (row.gender ?? undefined) as "male" | "female" | "other" | undefined,
     dateOfBirth: row.date_of_birth ?? undefined,
     phone: row.phone ?? undefined,
     goalWeight: row.goal_weight ?? undefined,
     goalBodyFatPercentage: row.goal_body_fat_percentage ?? undefined,
-    weightUnit: (row.weight_unit ?? "lbs") as "lbs" | "kg",
+    weightUnit: "kg",
     currentWeight: row.current_weight ?? undefined,
     currentBodyFatPercentage: row.current_body_fat_percentage ?? undefined,
     bmr: row.bmr ?? undefined,
@@ -203,9 +208,11 @@ export function mapClientIntakeRow(row: ClientIntakeRow): ClientIntake {
     dateOfBirth: row.date_of_birth ?? undefined,
     gender: (row.gender ?? undefined) as ClientIntake["gender"],
     height: row.height ?? undefined,
-    heightUnit: (row.height_unit ?? undefined) as ClientIntake["heightUnit"],
+    // client_intake always stored kg/cm (intake-step-1.tsx converts before
+    // persisting); migration 141 dropped its never-written tag columns.
+    heightUnit: "cm",
     currentWeight: row.current_weight ?? undefined,
-    weightUnit: (row.weight_unit ?? undefined) as ClientIntake["weightUnit"],
+    weightUnit: "kg",
     bodyFatPercentage: row.body_fat_percentage ?? undefined,
     workActivityLevel: (row.work_activity_level ?? undefined) as ClientIntake["workActivityLevel"],
     primaryGoal: (row.primary_goal ?? undefined) as ClientIntake["primaryGoal"],

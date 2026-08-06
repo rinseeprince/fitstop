@@ -36,7 +36,6 @@ export type NutritionCalculationInput = {
   // Client-local today (the goal deadline lives on the client's calendar);
   // server-local midnight is only the fallback.
   today?: string;
-  weightUnit: "lbs" | "kg";
 };
 
 /**

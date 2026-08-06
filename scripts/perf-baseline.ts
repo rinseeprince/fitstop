@@ -190,7 +190,7 @@ async function simulateGetClientProgressDataViaAdmin(clientId: string, days: num
   const clientData = await supabaseAdmin
     .from("clients")
     .select(
-      "current_streak, check_in_adherence_rate, goal_weight, goal_body_fat_percentage, starting_weight, starting_body_fat_percentage, current_weight, current_body_fat_percentage, weight_unit, unit_preference"
+      "current_streak, check_in_adherence_rate, goal_weight, goal_body_fat_percentage, starting_weight, starting_body_fat_percentage, current_weight, current_body_fat_percentage, unit_preference"
     )
     .eq("id", clientId)
     .single();

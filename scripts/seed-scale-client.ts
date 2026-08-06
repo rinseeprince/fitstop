@@ -232,11 +232,14 @@ async function insertCoachAndClient() {
         name: PERF_CLIENT_NAME,
         email: PERF_CLIENT_EMAIL,
         active: true,
-        weight_unit: "lbs",
+        // unit_preference is the VIEWER's choice and stays imperial — this
+        // fixture deliberately exercises an imperial viewer. The VALUES below
+        // are canonical kg/cm regardless (migration 141); they used to be the
+        // same person in lbs/in (185 lb = 83.9 kg, matching base_weight_kg: 84).
         unit_preference: "imperial",
-        current_weight: 185,
-        goal_weight: 170,
-        starting_weight: 195,
+        current_weight: 83.9,
+        goal_weight: 77.1,
+        starting_weight: 88.5,
         current_body_fat_percentage: 22,
         goal_body_fat_percentage: 15,
         starting_body_fat_percentage: 26,
@@ -344,7 +347,7 @@ async function insertClientGoal() {
   const { error } = await supabaseAdmin.from("client_goals").insert({
     id: PERF_CLIENT_GOAL_ID,
     client_id: PERF_CLIENT_ID,
-    goal_weight: 170,
+    goal_weight: 77.1, // kg (was 170 lb)
     goal_body_fat_percentage: 15,
     primary_goal: "fat_loss",
     set_by: "coach",
@@ -834,15 +837,14 @@ async function insertCheckIns(months: number, rng: Rng): Promise<CheckInRow[]> {
       sleep: rng.int(5, 9),
       stress: rng.int(2, 6),
       soreness: rng.int(2, 6),
-      weight: 185 - i * 0.2,
-      weight_unit: "lbs",
+      // Canonical kg/cm. Was 185 lb ramping by 0.2 lb and 34/40/42/14/24 in.
+      weight: 83.9 - i * 0.09,
       body_fat_percentage: 22 - i * 0.05,
-      waist: 34 - i * 0.05,
-      hips: 40,
-      chest: 42,
-      arms: 14,
-      thighs: 24,
-      measurement_unit: "in",
+      waist: 86.4 - i * 0.13,
+      hips: 101.6,
+      chest: 106.7,
+      arms: 35.6,
+      thighs: 61,
       adherence_percentage: rng.int(70, 100),
       workouts_completed: rng.int(2, 4),
       created_at: dateStr + "T12:00:00.000Z",
@@ -868,8 +870,7 @@ async function insertBodyMetrics(checkIns: CheckInRow[], rng: Rng) {
     const nearest = nearestCheckIn(checkIns, dateStr);
     rows.push({
       client_id: PERF_CLIENT_ID,
-      weight: 185 - i * 0.5 + rng.int(-1, 1),
-      weight_unit: "lbs",
+      weight: 83.9 - i * 0.23 + rng.next() - 0.5, // kg; was 185 lb ramping by 0.5 lb
       body_fat_percentage: 22 - i * 0.2 + rng.next() * 0.5,
       source: "check_in",
       source_id: nearest?.id ?? null,

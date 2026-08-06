@@ -145,7 +145,6 @@ export async function GET(
     // at exactly one place — the startDate fallback — and detectGoalDrift
     // consumes only goalWeightKg and deadline, neither of which touches it.
     const effectiveGoal = resolveEffectiveGoal({
-      weightUnit: client.weightUnit ?? "lbs",
       clientGoal: {
         goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
         goalBodyFatPercentage:

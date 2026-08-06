@@ -25,7 +25,6 @@ export type BodyMetricsEventRow = {
   id: string;
   client_id: string;
   weight: number | null;
-  weight_unit: string | null;
   body_fat_percentage: number | null;
   bmr: number | null;
   tdee: number | null;

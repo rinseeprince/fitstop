@@ -3,7 +3,6 @@ import { getCurrentGoals } from "@/services/client-goals-service";
 import { getClientTodayString } from "@/services/today-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
-import { weightToKg } from "@/utils/nutrition-helpers";
 import type { Client } from "@/types/check-in";
 import type { ClientGoal } from "@/types/client-goals";
 
@@ -34,7 +33,6 @@ export type NutritionCalcInputs =
       currentWeightKg: number;
       bmr: number;
       gender: "male" | "female" | "other";
-      weightUnit: "lbs" | "kg";
       tdee: number | null;
       goalWeightKg?: number;
       goalDeadline?: string;
@@ -86,8 +84,10 @@ export async function resolveNutritionCalcInputs(
 
   // Prefer the event tables, fall back to the denormalized client.* cache for
   // pre-migration clients. Same ladder the write path has always used.
+  //
+  // The parallel weight-unit ladder is gone: both sources are canonical
+  // kilograms since migration 141, so there is no unit to resolve.
   const currentWeight = latestMetrics?.weight ?? client.currentWeight;
-  const weightUnit = (latestMetrics?.weightUnit ?? client.weightUnit ?? "lbs") as "lbs" | "kg";
   const bmr = latestMetrics?.bmr ?? client.bmr;
   const tdee = latestMetrics?.tdee ?? client.tdee;
 
@@ -97,18 +97,16 @@ export async function resolveNutritionCalcInputs(
     bmr: bmr ?? undefined,
     tdee: tdee ?? undefined,
     gender: client.gender,
-    weightUnit,
   });
 
   if (!validation.valid) {
     return { status: "incomplete", missing: validation.errors, today };
   }
 
-  // The long-term client goal drives. This is the ONE place display-unit goal
-  // weights are normalized to kg, and the deadline comes from this single scope
-  // — never from a request body.
+  // The long-term client goal drives, and the deadline comes from this single
+  // scope — never from a request body. No unit normalization happens anywhere
+  // any more: goal weights are stored in kilograms (migration 141).
   const effective = resolveEffectiveGoal({
-    weightUnit,
     clientGoal: {
       goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
       goalBodyFatPercentage:
@@ -123,10 +121,9 @@ export async function resolveNutritionCalcInputs(
     status: "ready",
     // Non-null by construction: validateClientForNutrition rejected falsy
     // values for all four above, so this branch is unreachable without them.
-    currentWeightKg: weightToKg(currentWeight as number, weightUnit),
+    currentWeightKg: currentWeight as number,
     bmr: bmr as number,
     gender: client.gender as "male" | "female" | "other",
-    weightUnit,
     tdee: tdee ?? null,
     goalWeightKg: effective.goalWeightKg ?? undefined,
     goalDeadline: effective.deadline ?? undefined,

@@ -1,10 +1,10 @@
 import type { Client } from "@/types/check-in";
 
 export type BMRCalculationData = {
-  weight: number; // in lbs or kg
-  weightUnit: "lbs" | "kg";
-  height: number; // in inches or cm
-  heightUnit: "in" | "cm";
+  /** Kilograms. Canonical since migration 141 — no conversion happens here. */
+  weight: number;
+  /** Centimetres. */
+  height: number;
   gender: "male" | "female" | "other";
   age?: number; // Age in years (optional, defaults to 30 if not provided)
   bodyFatPercentage?: number; // Optional for more accurate calculation
@@ -26,10 +26,8 @@ export type BMRResult = {
  * @returns BMR result with calculated values and method used
  */
 export function calculateBMR(data: BMRCalculationData): BMRResult {
-  // Convert to metric if needed
-  const weightKg =
-    data.weightUnit === "lbs" ? data.weight * 0.453592 : data.weight;
-  const heightCm = data.heightUnit === "in" ? data.height * 2.54 : data.height;
+  const weightKg = data.weight;
+  const heightCm = data.height;
   const age = data.age ?? 30;
 
   let bmr: number;
@@ -124,14 +122,11 @@ function calculateAge(dateOfBirth: string): number {
  * @returns BMR value in calories/day, or null if data is missing
  */
 export function updateClientBMR(client: Client): number | null {
-  // Check if we have all required data
-  if (
-    !client.currentWeight ||
-    !client.height ||
-    !client.gender ||
-    !client.weightUnit ||
-    !client.heightUnit
-  ) {
+  // Check if we have all required data. The old weightUnit/heightUnit guards are
+  // gone with migration 141: there is no unit to be missing, and leaving them
+  // would have returned null for EVERY client once the mapper stopped reading
+  // those columns — silently freezing BMR with nothing erroring.
+  if (!client.currentWeight || !client.height || !client.gender) {
     return null;
   }
 
@@ -140,9 +135,7 @@ export function updateClientBMR(client: Client): number | null {
 
   const data: BMRCalculationData = {
     weight: client.currentWeight,
-    weightUnit: client.weightUnit,
     height: client.height,
-    heightUnit: client.heightUnit,
     gender: client.gender,
     age,
     bodyFatPercentage: client.currentBodyFatPercentage,

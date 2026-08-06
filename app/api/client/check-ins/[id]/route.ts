@@ -58,14 +58,17 @@ export async function GET(
         soreness: checkIn.soreness,
         notes: checkIn.notes,
         weight: checkIn.weight,
-        weightUnit: checkIn.weight_unit,
+        // Canonical kg/cm since migration 141. Kept in the payload rather than
+        // dropped so the response shape stays stable for the RN client; Phase 3
+        // removes the fields once every renderer converts for itself.
+        weightUnit: "kg",
         bodyFatPercentage: checkIn.body_fat_percentage,
         waist: checkIn.waist,
         hips: checkIn.hips,
         chest: checkIn.chest,
         arms: checkIn.arms,
         thighs: checkIn.thighs,
-        measurementUnit: checkIn.measurement_unit,
+        measurementUnit: "cm",
         photoFront: checkIn.photo_front,
         photoSide: checkIn.photo_side,
         photoBack: checkIn.photo_back,

@@ -63,10 +63,6 @@ vi.mock('@/lib/validations/nutrition', () => ({
   validateClientForNutrition: vi.fn().mockReturnValue({ valid: true, errors: [] }),
 }))
 
-vi.mock('@/utils/nutrition-helpers', () => ({
-  weightToKg: vi.fn((w: number) => w * 0.453592),
-}))
-
 vi.mock('@/services/nutrition-plan-service', () => ({
   createNutritionPlan: vi.fn().mockResolvedValue({}),
   archiveNutritionPlan: vi.fn().mockResolvedValue(undefined),
@@ -95,7 +91,6 @@ import {
 import { deleteFutureNutritionEventsForPlan } from '@/services/nutrition-event-service'
 import { getLatestBodyMetrics } from '@/services/body-metrics-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
-import { weightToKg } from '@/utils/nutrition-helpers'
 import { getClientTodayString } from '@/services/today-service'
 import { getAuthenticatedCoachId } from '@/lib/auth-helpers'
 import { POST, DELETE } from './route'
@@ -172,8 +167,13 @@ describe('Nutrition Route POST - read-switch behavior', () => {
     const request = makeRequest(mockBody)
     await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
 
-    // Should use body_metrics weight (175) not client weight (180)
-    expect(weightToKg).toHaveBeenCalledWith(175, 'lbs')
+    // Should use body_metrics weight (175) not client weight (180). Stored
+    // values are kilograms (migration 141), so it must arrive UNCONVERTED —
+    // asserting the number itself catches a reintroduced conversion, which
+    // asserting "a converter was called" could not.
+    expect(generateNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ currentWeightKg: 175 })
+    )
     // Should use body_metrics bmr (1750) not client bmr (1700)
     expect(generateNutritionPlan).toHaveBeenCalledWith(
       expect.objectContaining({ bmr: 1750 })
@@ -198,8 +198,10 @@ describe('Nutrition Route POST - read-switch behavior', () => {
     const request = makeRequest(mockBody)
     await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
 
-    // Should fall back to client.currentWeight (180)
-    expect(weightToKg).toHaveBeenCalledWith(180, 'lbs')
+    // Should fall back to client.currentWeight (180), unconverted.
+    expect(generateNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ currentWeightKg: 180 })
+    )
     // Should fall back to client.bmr (1700)
     expect(generateNutritionPlan).toHaveBeenCalledWith(
       expect.objectContaining({ bmr: 1700 })
@@ -223,13 +225,11 @@ describe('Nutrition Route POST - read-switch behavior', () => {
     const request = makeRequest(mockBody)
     await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
 
-    // Should use body_metrics weight (175)
-    expect(weightToKg).toHaveBeenCalledWith(175, 'lbs')
-    // goalWeight falls back to client.goalWeight (170) -> converted to kg
-    const goalWeightKgCall = vi.mocked(weightToKg).mock.calls.find(
-      (call) => call[0] === 170
+    // Should use body_metrics weight (175); goalWeight falls back to
+    // client.goalWeight (170). Both are already kilograms.
+    expect(generateNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ currentWeightKg: 175, goalWeightKg: 170 })
     )
-    expect(goalWeightKgCall).toBeTruthy()
   })
 })
 
@@ -278,8 +278,10 @@ describe('Nutrition Route POST - goal resolution', () => {
     const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
     const data = await response.json()
 
-    // Client goal weight (165 lbs) converted via weightToKg
-    expect(weightToKg).toHaveBeenCalledWith(165, 'lbs')
+    // Client goal weight (165 kg) flows through unconverted.
+    expect(generateNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ goalWeightKg: 165 })
+    )
     expect(response.status).toBe(200)
   })
 })

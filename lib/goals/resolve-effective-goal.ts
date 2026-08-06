@@ -1,5 +1,3 @@
-import { weightToKg } from "@/utils/nutrition-helpers";
-
 /**
  * Single source of truth for "which goal drives this client right now?".
  *
@@ -7,9 +5,13 @@ import { weightToKg } from "@/utils/nutrition-helpers";
  * **maintenance** — the "zero active goal" case is represented purely by
  * `goalWeightKg: null`.
  *
- * This function is PURE: callers fetch the inputs (live client goal, weight
- * unit) and pass them in. It is the ONE place display-unit goal weights are
- * normalized to kg.
+ * This function is PURE: callers fetch the live client goal and pass it in.
+ *
+ * It no longer normalizes units. `client_goals.goal_weight` is canonical
+ * kilograms since migration 141, so there is nothing to convert and no
+ * `weightUnit` to pass — the old parameter is gone rather than ignored, so a
+ * caller still holding a display unit fails to compile instead of silently
+ * having it dropped.
  */
 
 export type EffectiveGoal = {
@@ -23,8 +25,8 @@ export type EffectiveGoal = {
 };
 
 /**
- * The client's long-term goal in DISPLAY units (the resolver normalizes weight
- * to kg). null = no live goal at all (→ maintenance).
+ * The client's long-term goal. `goalWeight` is kilograms, like everything else
+ * stored. null = no live goal at all (→ maintenance).
  */
 export type ClientGoalInput = {
   goalWeight: number | null;
@@ -35,7 +37,6 @@ export type ClientGoalInput = {
 };
 
 export type ResolveEffectiveGoalInput = {
-  weightUnit: "lbs" | "kg";
   /** null = no live client goal. */
   clientGoal: ClientGoalInput | null;
   /** ISO YYYY-MM-DD; used as the start-date fallback. */
@@ -45,14 +46,11 @@ export type ResolveEffectiveGoalInput = {
 export function resolveEffectiveGoal(
   input: ResolveEffectiveGoalInput
 ): EffectiveGoal {
-  const { weightUnit, clientGoal, today } = input;
+  const { clientGoal, today } = input;
 
   // The long-term client goal drives (null weight = maintenance).
   return {
-    goalWeightKg:
-      clientGoal?.goalWeight != null
-        ? weightToKg(clientGoal.goalWeight, weightUnit)
-        : null,
+    goalWeightKg: clientGoal?.goalWeight ?? null,
     goalBodyFatPercentage: clientGoal?.goalBodyFatPercentage ?? null,
     deadline: clientGoal?.deadline ?? null,
     startDate: clientGoal?.startDate ?? today,

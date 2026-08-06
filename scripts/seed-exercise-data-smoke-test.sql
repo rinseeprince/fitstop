@@ -65,37 +65,37 @@ VALUES
 --    - Barbell Row: 5 sessions, NO prescribed snapshot (tests compliance empty state), no RPE
 -- ---------------------------------------------------------------------------
 
-INSERT INTO exercise_logs (id, session_log_id, training_exercise_id, exercise_id, performed_name, completed, weight_unit, prescribed_exercise_snapshot)
+INSERT INTO exercise_logs (id, session_log_id, training_exercise_id, exercise_id, performed_name, completed, prescribed_exercise_snapshot)
 VALUES
   -- Bench Press (10 entries across push days)
-  ('cccccccc-0001-4000-8000-000000000001', 'bbbbbbbb-0001-4000-8000-000000000001', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, 'kg', '{"name": "Bench Press", "sets": 3, "reps_min": 8, "reps_max": 12, "rpe_target": 7}'),
-  ('cccccccc-0001-4000-8000-000000000002', 'bbbbbbbb-0001-4000-8000-000000000003', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, 'kg', '{"name": "Bench Press", "sets": 3, "reps_min": 8, "reps_max": 12, "rpe_target": 7}'),
-  ('cccccccc-0001-4000-8000-000000000003', 'bbbbbbbb-0001-4000-8000-000000000006', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, 'kg', '{"name": "Bench Press", "sets": 3, "reps_min": 6, "reps_max": 10, "rpe_target": 8}'),
-  ('cccccccc-0001-4000-8000-000000000004', 'bbbbbbbb-0001-4000-8000-000000000008', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, 'kg', '{"name": "Bench Press", "sets": 3, "reps_min": 6, "reps_max": 10, "rpe_target": 8}'),
-  ('cccccccc-0001-4000-8000-000000000005', 'bbbbbbbb-0001-4000-8000-000000000011', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, 'kg', '{"name": "Bench Press", "sets": 4, "reps_min": 4, "reps_max": 6,  "rpe_target": 8.5}'),
-  ('cccccccc-0001-4000-8000-000000000006', 'bbbbbbbb-0001-4000-8000-000000000013', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, 'kg', '{"name": "Bench Press", "sets": 4, "reps_min": 4, "reps_max": 6,  "rpe_target": 9}'),
+  ('cccccccc-0001-4000-8000-000000000001', 'bbbbbbbb-0001-4000-8000-000000000001', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, '{"name": "Bench Press", "sets": 3, "reps_min": 8, "reps_max": 12, "rpe_target": 7}'),
+  ('cccccccc-0001-4000-8000-000000000002', 'bbbbbbbb-0001-4000-8000-000000000003', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, '{"name": "Bench Press", "sets": 3, "reps_min": 8, "reps_max": 12, "rpe_target": 7}'),
+  ('cccccccc-0001-4000-8000-000000000003', 'bbbbbbbb-0001-4000-8000-000000000006', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, '{"name": "Bench Press", "sets": 3, "reps_min": 6, "reps_max": 10, "rpe_target": 8}'),
+  ('cccccccc-0001-4000-8000-000000000004', 'bbbbbbbb-0001-4000-8000-000000000008', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, '{"name": "Bench Press", "sets": 3, "reps_min": 6, "reps_max": 10, "rpe_target": 8}'),
+  ('cccccccc-0001-4000-8000-000000000005', 'bbbbbbbb-0001-4000-8000-000000000011', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, '{"name": "Bench Press", "sets": 4, "reps_min": 4, "reps_max": 6,  "rpe_target": 8.5}'),
+  ('cccccccc-0001-4000-8000-000000000006', 'bbbbbbbb-0001-4000-8000-000000000013', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, '{"name": "Bench Press", "sets": 4, "reps_min": 4, "reps_max": 6,  "rpe_target": 9}'),
   -- Extra bench sessions for volume
-  ('cccccccc-0001-4000-8000-000000000007', 'bbbbbbbb-0001-4000-8000-000000000005', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, 'kg', '{"name": "Bench Press", "sets": 3, "reps_min": 8, "reps_max": 12, "rpe_target": 7}'),
-  ('cccccccc-0001-4000-8000-000000000008', 'bbbbbbbb-0001-4000-8000-000000000009', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, 'kg', '{"name": "Bench Press", "sets": 3, "reps_min": 6, "reps_max": 10, "rpe_target": 8}'),
-  ('cccccccc-0001-4000-8000-000000000009', 'bbbbbbbb-0001-4000-8000-000000000014', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, 'kg', '{"name": "Bench Press", "sets": 4, "reps_min": 3, "reps_max": 5,  "rpe_target": 9}'),
-  ('cccccccc-0001-4000-8000-000000000010', 'bbbbbbbb-0001-4000-8000-000000000015', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, 'kg', '{"name": "Bench Press", "sets": 4, "reps_min": 1, "reps_max": 3,  "rpe_target": 9.5}'),
+  ('cccccccc-0001-4000-8000-000000000007', 'bbbbbbbb-0001-4000-8000-000000000005', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, '{"name": "Bench Press", "sets": 3, "reps_min": 8, "reps_max": 12, "rpe_target": 7}'),
+  ('cccccccc-0001-4000-8000-000000000008', 'bbbbbbbb-0001-4000-8000-000000000009', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, '{"name": "Bench Press", "sets": 3, "reps_min": 6, "reps_max": 10, "rpe_target": 8}'),
+  ('cccccccc-0001-4000-8000-000000000009', 'bbbbbbbb-0001-4000-8000-000000000014', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, '{"name": "Bench Press", "sets": 4, "reps_min": 3, "reps_max": 5,  "rpe_target": 9}'),
+  ('cccccccc-0001-4000-8000-000000000010', 'bbbbbbbb-0001-4000-8000-000000000015', NULL, 'aaaaaaaa-0001-4000-8000-000000000001', 'Bench Press (Test)', TRUE, '{"name": "Bench Press", "sets": 4, "reps_min": 1, "reps_max": 3,  "rpe_target": 9.5}'),
 
   -- Back Squat (8 entries across leg days)
-  ('cccccccc-0001-4000-8000-000000000011', 'bbbbbbbb-0001-4000-8000-000000000002', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, 'kg', '{"name": "Back Squat", "sets": 3, "reps_min": 8, "reps_max": 12}'),
-  ('cccccccc-0001-4000-8000-000000000012', 'bbbbbbbb-0001-4000-8000-000000000004', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, 'kg', '{"name": "Back Squat", "sets": 3, "reps_min": 8, "reps_max": 12}'),
-  ('cccccccc-0001-4000-8000-000000000013', 'bbbbbbbb-0001-4000-8000-000000000007', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, 'kg', '{"name": "Back Squat", "sets": 3, "reps_min": 6, "reps_max": 10}'),
-  ('cccccccc-0001-4000-8000-000000000014', 'bbbbbbbb-0001-4000-8000-000000000010', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, 'kg', '{"name": "Back Squat", "sets": 4, "reps_min": 4, "reps_max": 8}'),
-  ('cccccccc-0001-4000-8000-000000000015', 'bbbbbbbb-0001-4000-8000-000000000012', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, 'kg', '{"name": "Back Squat", "sets": 4, "reps_min": 4, "reps_max": 6}'),
-  ('cccccccc-0001-4000-8000-000000000016', 'bbbbbbbb-0001-4000-8000-000000000015', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, 'kg', '{"name": "Back Squat", "sets": 4, "reps_min": 1, "reps_max": 3}'),
-  ('cccccccc-0001-4000-8000-000000000017', 'bbbbbbbb-0001-4000-8000-000000000005', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, 'kg', '{"name": "Back Squat", "sets": 3, "reps_min": 8, "reps_max": 12}'),
-  ('cccccccc-0001-4000-8000-000000000018', 'bbbbbbbb-0001-4000-8000-000000000014', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, 'kg', '{"name": "Back Squat", "sets": 4, "reps_min": 3, "reps_max": 5}'),
+  ('cccccccc-0001-4000-8000-000000000011', 'bbbbbbbb-0001-4000-8000-000000000002', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, '{"name": "Back Squat", "sets": 3, "reps_min": 8, "reps_max": 12}'),
+  ('cccccccc-0001-4000-8000-000000000012', 'bbbbbbbb-0001-4000-8000-000000000004', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, '{"name": "Back Squat", "sets": 3, "reps_min": 8, "reps_max": 12}'),
+  ('cccccccc-0001-4000-8000-000000000013', 'bbbbbbbb-0001-4000-8000-000000000007', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, '{"name": "Back Squat", "sets": 3, "reps_min": 6, "reps_max": 10}'),
+  ('cccccccc-0001-4000-8000-000000000014', 'bbbbbbbb-0001-4000-8000-000000000010', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, '{"name": "Back Squat", "sets": 4, "reps_min": 4, "reps_max": 8}'),
+  ('cccccccc-0001-4000-8000-000000000015', 'bbbbbbbb-0001-4000-8000-000000000012', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, '{"name": "Back Squat", "sets": 4, "reps_min": 4, "reps_max": 6}'),
+  ('cccccccc-0001-4000-8000-000000000016', 'bbbbbbbb-0001-4000-8000-000000000015', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, '{"name": "Back Squat", "sets": 4, "reps_min": 1, "reps_max": 3}'),
+  ('cccccccc-0001-4000-8000-000000000017', 'bbbbbbbb-0001-4000-8000-000000000005', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, '{"name": "Back Squat", "sets": 3, "reps_min": 8, "reps_max": 12}'),
+  ('cccccccc-0001-4000-8000-000000000018', 'bbbbbbbb-0001-4000-8000-000000000014', NULL, 'aaaaaaaa-0001-4000-8000-000000000002', 'Back Squat (Test)',  TRUE, '{"name": "Back Squat", "sets": 4, "reps_min": 3, "reps_max": 5}'),
 
   -- Barbell Row (5 entries, NO prescribed snapshot = tests "No prescribed data" in compliance)
-  ('cccccccc-0001-4000-8000-000000000019', 'bbbbbbbb-0001-4000-8000-000000000005', NULL, 'aaaaaaaa-0001-4000-8000-000000000003', 'Barbell Row (Test)', TRUE, 'kg', NULL),
-  ('cccccccc-0001-4000-8000-000000000020', 'bbbbbbbb-0001-4000-8000-000000000009', NULL, 'aaaaaaaa-0001-4000-8000-000000000003', 'Barbell Row (Test)', TRUE, 'kg', NULL),
-  ('cccccccc-0001-4000-8000-000000000021', 'bbbbbbbb-0001-4000-8000-000000000011', NULL, 'aaaaaaaa-0001-4000-8000-000000000003', 'Barbell Row (Test)', TRUE, 'kg', NULL),
-  ('cccccccc-0001-4000-8000-000000000022', 'bbbbbbbb-0001-4000-8000-000000000013', NULL, 'aaaaaaaa-0001-4000-8000-000000000003', 'Barbell Row (Test)', TRUE, 'kg', NULL),
-  ('cccccccc-0001-4000-8000-000000000023', 'bbbbbbbb-0001-4000-8000-000000000014', NULL, 'aaaaaaaa-0001-4000-8000-000000000003', 'Barbell Row (Test)', TRUE, 'kg', NULL);
+  ('cccccccc-0001-4000-8000-000000000019', 'bbbbbbbb-0001-4000-8000-000000000005', NULL, 'aaaaaaaa-0001-4000-8000-000000000003', 'Barbell Row (Test)', TRUE, NULL),
+  ('cccccccc-0001-4000-8000-000000000020', 'bbbbbbbb-0001-4000-8000-000000000009', NULL, 'aaaaaaaa-0001-4000-8000-000000000003', 'Barbell Row (Test)', TRUE, NULL),
+  ('cccccccc-0001-4000-8000-000000000021', 'bbbbbbbb-0001-4000-8000-000000000011', NULL, 'aaaaaaaa-0001-4000-8000-000000000003', 'Barbell Row (Test)', TRUE, NULL),
+  ('cccccccc-0001-4000-8000-000000000022', 'bbbbbbbb-0001-4000-8000-000000000013', NULL, 'aaaaaaaa-0001-4000-8000-000000000003', 'Barbell Row (Test)', TRUE, NULL),
+  ('cccccccc-0001-4000-8000-000000000023', 'bbbbbbbb-0001-4000-8000-000000000014', NULL, 'aaaaaaaa-0001-4000-8000-000000000003', 'Barbell Row (Test)', TRUE, NULL);
 
 -- ---------------------------------------------------------------------------
 -- 4. Set logs

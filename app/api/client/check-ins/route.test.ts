@@ -9,6 +9,9 @@ vi.mock('@/services/check-in-service', () => ({
   submitCheckIn: vi.fn(),
   getClientCheckIns: vi.fn(),
 }));
+// @/utils/check-in-canonical-metrics is deliberately NOT mocked: it is a pure
+// payload transform with no DB imports, and it is the thing the POST path must
+// not skip. Mocking it away would let a lost lbs→kg conversion pass unnoticed.
 
 // The GET handler uses none of the POST-path collaborators, but importing ./route
 // loads them — and several create clients (Supabase, Resend) at module load and

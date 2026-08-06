@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { weightToKg } from "@/utils/nutrition-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -58,7 +57,8 @@ export async function PUT(
 
     // Validate metric ranges
     if (body.currentWeight !== undefined) {
-      const weightKg = weightToKg(body.currentWeight, (client.weight_unit || "lbs") as "lbs" | "kg");
+      // Kilograms on the wire and in storage (migration 141) — no conversion.
+      const weightKg = body.currentWeight;
       if (weightKg < 20 || weightKg > 250) {
         return NextResponse.json(
           { error: "Weight must be between 20-250 kg (44-550 lbs)" },
@@ -103,7 +103,6 @@ export async function PUT(
         client_id: clientId,
         submitted_at: new Date().toISOString(),
         weight: body.currentWeight,
-        weight_unit: client.weight_unit || "lbs",
         body_fat_percentage: body.currentBodyFatPercentage,
       };
 
@@ -154,8 +153,9 @@ export async function PUT(
       updates.bmr_manual_override = false;
       // Recalculate BMR based on current data
       if (client.current_weight && client.height && client.gender && client.date_of_birth) {
-        const weightKg = weightToKg(client.current_weight, (client.weight_unit || "lbs") as "lbs" | "kg");
-        const heightCm = client.height_unit === "in" ? client.height * 2.54 : client.height;
+        // Stored canonically since migration 141 — read straight through.
+        const weightKg = client.current_weight;
+        const heightCm = client.height;
         const age = new Date().getFullYear() - new Date(client.date_of_birth).getFullYear();
 
         let bmr;

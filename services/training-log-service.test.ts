@@ -301,7 +301,9 @@ describe("logTrainingEvent", () => {
               { reps: 10, weight: 105 },
               { reps: 8, weight: 105 },
             ],
-            weightUnit: "lbs",
+            // kg so this test stays about set fidelity; the lbs→kg conversion
+            // has its own test below.
+            weightUnit: "kg",
           },
         ],
       },
@@ -331,6 +333,62 @@ describe("logTrainingEvent", () => {
 
     // payload completionQuality='full' → status='completed' (mapping).
     expect(linkQ.update.mock.calls[0][0].status).toBe("completed");
+  });
+
+  // -------------------------------------------------------------------------
+  // 3b. Logged loads are canonicalized to kilograms on the way in.
+  // -------------------------------------------------------------------------
+  it("[3b] converts an lbs-tagged payload to canonical kg in set_logs", async () => {
+    const eventQ = createMockQuery({ data: eventRow(), error: null });
+    const clientQ = createMockQuery({
+      data: { expected_check_in_day: null },
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({
+      data: SESSION_PRESCRIPTION,
+      error: null,
+    });
+    const exerciseSnapQ = createMockQuery({ data: [], error: null });
+    const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const existingExLogsQ = createMockQuery({ data: [], error: null });
+    const deleteExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-a"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
+    const linkQ = createMockQuery({ data: null, error: null });
+
+    installRouter({
+      training_events: [eventQ, linkQ],
+      clients: [clientQ],
+      training_sessions: [sessionSnapQ],
+      training_exercises: [exerciseSnapQ],
+      session_logs: [upsertQ],
+      exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: [setLogsInsertQ],
+    });
+
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "full",
+        exercises: [
+          {
+            trainingExerciseId: EXERCISE_A,
+            exerciseName: "Bench Press",
+            sets: [{ reps: 5, weight: 225 }],
+            weightUnit: "lbs",
+          },
+        ],
+      },
+    });
+
+    // set_logs.weight is canonical kilograms (migration 141) and carries no tag,
+    // so the payload unit must be applied here. Storing 225 raw would put pounds
+    // in a kg column with nothing left to reveal it — and the client's log form
+    // can still label itself "lbs" when /api/client/me is unavailable.
+    const setRows = setLogsInsertQ.insert.mock.calls[0][0];
+    expect(setRows).toHaveLength(1);
+    expect(setRows[0].weight).toBeCloseTo(225 * 0.45359237, 6);
   });
 
   // -------------------------------------------------------------------------
@@ -488,7 +546,7 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 6. Per-set fidelity via set_logs (replaces the old scalar-collapse rule).
   // -------------------------------------------------------------------------
-  it("[6] per-set fidelity: writes one set_logs row per set with reps/weight/rpe; exercise_logs row carries weight_unit + completed", async () => {
+  it("[6] per-set fidelity: writes one set_logs row per set with reps/weight/rpe; exercise_logs row carries completed", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -536,7 +594,8 @@ describe("logTrainingEvent", () => {
     });
 
     const inserted = insertExQ.insert.mock.calls[0][0][0];
-    expect(inserted.weight_unit).toBe("kg");
+    // weight_unit is gone with migration 141 — logged loads are canonical kg.
+    expect(inserted.weight_unit).toBeUndefined();
     expect(inserted.completed).toBe(true);
     expect(inserted.performed_name).toBe("Bench");
 
@@ -1365,7 +1424,6 @@ describe("getTrainingEventDetail", () => {
           actual_sets: 3,
           actual_reps: "10,10,8",
           actual_weight: 105,
-          weight_unit: "lbs",
           notes: null,
           prescribed_exercise_snapshot: null,
           created_at: "2026-05-04T12:00:00Z",
@@ -1626,7 +1684,6 @@ describe("getTrainingEventDetail", () => {
           actual_sets: 3,
           actual_reps: "10,10,8",
           actual_weight: 100,
-          weight_unit: "lbs",
           notes: null,
           prescribed_exercise_snapshot: EXERCISE_A_SNAPSHOT,
           created_at: "2026-05-04T12:00:00Z",
@@ -1743,7 +1800,6 @@ describe("getTrainingEventDetail", () => {
           actual_sets: 3,
           actual_reps: "10,10,8",
           actual_weight: 100,
-          weight_unit: "lbs",
           notes: null,
           prescribed_exercise_snapshot: null,
           created_at: "2026-05-04T12:00:00Z",
@@ -1757,7 +1813,6 @@ describe("getTrainingEventDetail", () => {
           actual_sets: 2,
           actual_reps: "8,8",
           actual_weight: 50,
-          weight_unit: "lbs",
           notes: null,
           prescribed_exercise_snapshot: orphanSnapshot,
           created_at: "2026-05-04T12:01:00Z",

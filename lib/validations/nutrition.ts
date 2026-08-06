@@ -118,7 +118,6 @@ export function validateClientForNutrition(client: {
   bmr?: number;
   tdee?: number;
   gender?: "male" | "female" | "other";
-  weightUnit?: "lbs" | "kg";
 }): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
@@ -134,9 +133,10 @@ export function validateClientForNutrition(client: {
     errors.push("Client must have gender specified in profile");
   }
 
-  if (!client.weightUnit) {
-    errors.push("Client must have weight unit set");
-  }
+  // No weight-unit check: storage is canonical kilograms since migration 141, so
+  // there is no unit to be missing. Keeping it would have marked EVERY client
+  // incomplete once callers stopped passing weightUnit — the nutrition tab would
+  // render "missing data" and POST /nutrition would 400 platform-wide.
 
   return {
     valid: errors.length === 0,

@@ -92,9 +92,6 @@ const FIELD_NAME_MAP: Record<string, string> = {
   goal_deadline: "goal deadline",
   goal_body_fat_percentage: "goal body fat",
   work_activity_level: "activity level",
-  height_unit: "height unit",
-  weight_unit: "weight unit",
-  unit_preference: "unit preference",
 };
 
 /**
@@ -111,7 +108,7 @@ export async function syncMetricsToClient(
   const { data: client, error: clientError } = await db
     .from("clients")
     .select(
-      "current_weight, starting_weight, height, gender, date_of_birth, current_body_fat_percentage, starting_body_fat_percentage, goal_weight, goal_body_fat_percentage, goal_deadline, work_activity_level, height_unit, weight_unit, unit_preference"
+      "current_weight, starting_weight, height, gender, date_of_birth, current_body_fat_percentage, starting_body_fat_percentage, goal_weight, goal_body_fat_percentage, goal_deadline, work_activity_level"
     )
     .eq("id", clientId)
     .single();
@@ -165,19 +162,15 @@ export async function syncMetricsToClient(
   if (client.work_activity_level == null && intake.workActivityLevel != null) {
     updates.work_activity_level = intake.workActivityLevel;
   }
-  // Always sync units alongside their metrics — a value without its unit is meaningless
-  if (intake.heightUnit != null) {
-    updates.height_unit = intake.heightUnit;
-  }
-  if (intake.weightUnit != null) {
-    updates.weight_unit = intake.weightUnit;
-  }
-  if (intake.weightUnit === "kg" || intake.heightUnit === "cm") {
-    updates.unit_preference = "metric";
-  } else if (intake.weightUnit || intake.heightUnit) {
-    updates.unit_preference = "imperial";
-  }
-
+  // No unit sync any more. The intake values above are already canonical kg/cm
+  // (intake-step-1.tsx converts before persisting) and the tag columns are gone
+  // with migration 141, so there is no unit to carry alongside them.
+  //
+  // The unit_preference derivation that used to live here is gone too, and
+  // deliberately not replaced: it force-set every approved intake client to
+  // metric, because client_intake.weight_unit defaults to 'kg' (034:30) and the
+  // intake toggle only ever reached localStorage. Overwriting a client's own
+  // display preference from a field they never actually set is not a sync.
   const syncedFields = Object.keys(updates)
     .filter((k) => k !== "updated_at")
     .map((k) => FIELD_NAME_MAP[k] ?? k);
@@ -199,9 +192,9 @@ export async function syncMetricsToClient(
     try {
       await recordBodyMetrics({
         clientId,
+        // Already kilograms — client_intake stores canonical kg.
         weight: updates.current_weight as number | undefined,
         bodyFatPercentage: updates.current_body_fat_percentage as number | undefined,
-        weightUnit: updates.weight_unit as string | undefined,
         source: "intake_sync",
       });
     } catch (dualWriteError) {

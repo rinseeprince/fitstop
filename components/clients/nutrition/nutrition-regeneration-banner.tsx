@@ -7,13 +7,12 @@ import {
   shouldShowRegenerationBanner,
   getWeightChange,
   formatWeight,
-  weightToKg,
 } from "@/utils/nutrition-helpers";
 import type { UnitPreference } from "@/types/check-in";
 
 type NutritionRegenerationBannerProps = {
+  /** KILOGRAMS — canonical since migration 141, so no conversion happens here. */
   currentWeight: number;
-  weightUnit: "lbs" | "kg";
   nutritionPlanBaseWeightKg: number;
   nutritionPlanCreatedDate?: string;
   unitPreference?: UnitPreference;
@@ -23,14 +22,13 @@ type NutritionRegenerationBannerProps = {
 
 export const NutritionRegenerationBanner = ({
   currentWeight,
-  weightUnit,
   nutritionPlanBaseWeightKg,
   nutritionPlanCreatedDate,
   unitPreference = "imperial",
   onRegenerate,
   showRegenerateButton = true,
 }: NutritionRegenerationBannerProps) => {
-  const currentWeightKg = weightToKg(currentWeight, weightUnit);
+  const currentWeightKg = currentWeight;
   const showBanner = shouldShowRegenerationBanner(
     currentWeightKg,
     nutritionPlanBaseWeightKg

@@ -55,6 +55,7 @@ import type {
   TrainingSession,
 } from "@/types/training";
 import type { SessionCompletionQuality } from "@/types/check-in";
+import { toCanonicalWeightKg } from "@/utils/unit-conversions";
 
 // =============================================================================
 // Event-keyed training log service.
@@ -127,9 +128,10 @@ function mapExerciseLogRow(row: ExerciseLogRow): ExerciseLog {
     trainingExerciseId: row.training_exercise_id,
     exerciseId: row.exercise_id,
     completed: row.completed ?? false,
-    // weight_unit is nullable in the DB schema but writers always send "lbs"|"kg".
-    // Default to "lbs" defensively for any historical row that's null.
-    weightUnit: ((row.weight_unit as "lbs" | "kg" | null) ?? "lbs"),
+    // Logged loads are canonical kilograms since migration 141 — a constant, not
+    // a column. The old `?? "lbs"` default was the mechanism that mislabelled
+    // every seeded and untouched-form row.
+    weightUnit: "kg",
     notes: row.notes,
     performedName: row.performed_name,
     prescribedExerciseSnapshot:
@@ -562,7 +564,6 @@ async function writeSessionLog(params: {
         training_exercise_id: ex.trainingExerciseId ?? null,
         exercise_id: ex.exerciseId ?? null,
         completed,
-        weight_unit: ex.weightUnit,
         notes: ex.notes ?? null,
         performed_name: ex.exerciseName,
         prescribed_exercise_snapshot:
@@ -607,7 +608,13 @@ async function writeSessionLog(params: {
           set_number: setIdx + 1,
           set_type: prescribedSpecs[setIdx]?.set_type ?? "working",
           reps: s.reps ?? null,
-          weight: s.weight ?? null,
+          // set_logs.weight is canonical kilograms (migration 141) and no longer
+          // carries a tag, so the payload's unit is applied HERE and then
+          // discarded. The client's log form still labels the field from
+          // set-tracker.tsx's `meData?.data?.weightUnit`, which can fall back to
+          // "lbs" when /api/client/me is unavailable — storing that raw would put
+          // pounds in a kg column with nothing left to reveal it.
+          weight: toCanonicalWeightKg(s.weight ?? undefined, ex.weightUnit) ?? null,
           rpe: s.rpe ?? null,
         });
       });

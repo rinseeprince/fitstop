@@ -203,7 +203,6 @@ async function seedClient() {
     name: "Perf Correctness Client",
     email: "perf-correctness@fixture.local",
     active: true,
-    weight_unit: "lbs",
     unit_preference: "imperial",
   });
   if (error) throw new Error(`client seed: ${error.message}`);
@@ -422,7 +421,6 @@ async function seedStreakAndCheckin() {
     name: "Perf 3.7 Client",
     email: "perf-3-7@fixture.local",
     active: true,
-    weight_unit: "lbs",
     unit_preference: "imperial",
   });
   if (cErr) throw new Error(`3.7 client seed: ${cErr.message}`);

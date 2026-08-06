@@ -31,10 +31,6 @@ vi.mock('@/lib/csrf-protection', () => ({
   requireCSRFProtection: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/utils/nutrition-helpers', () => ({
-  weightToKg: vi.fn((w: number) => w * 0.453592),
-}))
-
 vi.mock('@/services/body-metrics-service', () => ({
   getLatestBodyMetrics: vi.fn(),
 }))

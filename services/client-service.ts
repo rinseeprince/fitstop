@@ -13,6 +13,7 @@ import { sendInvitation } from "@/services/invitation-service";
 import { invalidateClientAuthCache } from "@/lib/auth-cache";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { updateGoals } from "@/services/client-goals-service";
+import { toCanonicalWeightKg, toCanonicalLengthCm } from "@/utils/unit-conversions";
 
 // Extended client type with check-in info
 export type ClientWithCheckInInfo = Client & {
@@ -41,20 +42,30 @@ export const createClient = async (
 ): Promise<Client & { inviteSent?: boolean }> => {
   const isIntakeMode = clientData.setupMode === "intake";
 
+  // The add-client form still submits in its own toggle's unit — Phase 4 moves
+  // it to the viewer preference. Storage is canonical (migration 141), so the
+  // conversion happens here and every downstream write below uses the converted
+  // values, not the raw payload.
+  //
+  // The submitted tag is trustworthy on this form, unlike the check-in form's:
+  // add-client-dialog.tsx:39-40 defaults to lbs/in and lib/validations/client.ts:19,26
+  // default to the same, so an untouched toggle and the schema agree.
+  const currentWeightKg = toCanonicalWeightKg(clientData.currentWeight, clientData.weightUnit);
+  const goalWeightKg = toCanonicalWeightKg(clientData.goalWeight, clientData.weightUnit);
+  const heightCm = toCanonicalLengthCm(clientData.height, clientData.heightUnit);
+
   const baseInsert = {
     coach_id: coachId,
     name: clientData.name,
     email: clientData.email,
     notes: clientData.notes ?? null,
-    height: clientData.height ?? null,
-    height_unit: clientData.heightUnit ?? (isIntakeMode ? null : "in"),
+    height: heightCm ?? null,
     gender: clientData.gender ?? null,
-    goal_weight: clientData.goalWeight ?? null,
+    goal_weight: goalWeightKg ?? null,
     goal_body_fat_percentage: clientData.goalBodyFatPercentage ?? null,
-    weight_unit: clientData.weightUnit ?? (isIntakeMode ? null : "lbs"),
-    current_weight: clientData.currentWeight ?? null,
+    current_weight: currentWeightKg ?? null,
     current_body_fat_percentage: clientData.currentBodyFatPercentage ?? null,
-    starting_weight: clientData.currentWeight ?? null,
+    starting_weight: currentWeightKg ?? null,
     starting_body_fat_percentage: clientData.currentBodyFatPercentage ?? null,
     active: true,
   };
@@ -85,7 +96,7 @@ export const createClient = async (
     try {
       await recordBodyMetrics({
         clientId: client.id,
-        weight: clientData.currentWeight,
+        weight: currentWeightKg,
         bodyFatPercentage: clientData.currentBodyFatPercentage,
         source: "intake_sync",
       });
@@ -98,7 +109,7 @@ export const createClient = async (
   if (clientData.goalWeight !== undefined || clientData.goalBodyFatPercentage !== undefined) {
     try {
       await updateGoals(client.id, {
-        goalWeight: clientData.goalWeight,
+        goalWeight: goalWeightKg,
         goalBodyFatPercentage: clientData.goalBodyFatPercentage,
       }, coachId);
     } catch (dualWriteError) {
@@ -207,6 +218,15 @@ export const updateClient = async (
   clientData: UpdateClientInput,
   coachId?: string
 ): Promise<Client> => {
+  // Converted ONCE, up front, exactly as createClient does — every write below
+  // must use these and never the raw payload. The dual-writes are the trap: the
+  // body_metrics one writes its own denormalized cache back to
+  // clients.current_weight (body-metrics-service.ts), so passing the raw value
+  // there silently OVERWRITES the converted value in the same request.
+  const currentWeightKg = toCanonicalWeightKg(clientData.currentWeight, clientData.weightUnit);
+  const goalWeightKg = toCanonicalWeightKg(clientData.goalWeight, clientData.weightUnit);
+  const heightCm = toCanonicalLengthCm(clientData.height, clientData.heightUnit);
+
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
@@ -215,15 +235,13 @@ export const updateClient = async (
   if (clientData.email !== undefined) updateData.email = clientData.email;
   if (clientData.notes !== undefined) updateData.notes = clientData.notes ?? null;
   if (clientData.active !== undefined) updateData.active = clientData.active;
-  if (clientData.height !== undefined) updateData.height = clientData.height ?? null;
-  if (clientData.heightUnit !== undefined) updateData.height_unit = clientData.heightUnit;
+  if (clientData.height !== undefined) updateData.height = heightCm ?? null;
   if (clientData.gender !== undefined) updateData.gender = clientData.gender ?? null;
   if (clientData.phone !== undefined) updateData.phone = clientData.phone || null;
   if (clientData.startDate !== undefined) updateData.start_date = clientData.startDate ?? null;
-  if (clientData.goalWeight !== undefined) updateData.goal_weight = clientData.goalWeight ?? null;
+  if (clientData.goalWeight !== undefined) updateData.goal_weight = goalWeightKg ?? null;
   if (clientData.goalBodyFatPercentage !== undefined) updateData.goal_body_fat_percentage = clientData.goalBodyFatPercentage ?? null;
-  if (clientData.weightUnit !== undefined) updateData.weight_unit = clientData.weightUnit;
-  if (clientData.currentWeight !== undefined) updateData.current_weight = clientData.currentWeight ?? null;
+  if (clientData.currentWeight !== undefined) updateData.current_weight = currentWeightKg ?? null;
   if (clientData.currentBodyFatPercentage !== undefined) updateData.current_body_fat_percentage = clientData.currentBodyFatPercentage ?? null;
 
   const { data, error } = await supabaseAdmin
@@ -254,7 +272,7 @@ export const updateClient = async (
     try {
       await recordBodyMetrics({
         clientId,
-        weight: clientData.currentWeight,
+        weight: currentWeightKg,
         bodyFatPercentage: clientData.currentBodyFatPercentage,
         source: "metrics_api",
       });
@@ -267,7 +285,7 @@ export const updateClient = async (
   if (clientData.goalWeight !== undefined || clientData.goalBodyFatPercentage !== undefined) {
     try {
       await updateGoals(clientId, {
-        goalWeight: clientData.goalWeight,
+        goalWeight: goalWeightKg,
         goalBodyFatPercentage: clientData.goalBodyFatPercentage,
       }, coachId ?? "coach");
     } catch (dualWriteError) {
@@ -341,8 +359,16 @@ export const permanentlyDeleteClient = async (clientId: string): Promise<void> =
 };
 
 // Update client-controlled settings (PATCH /api/client/settings)
-// Writes only the fields supplied. weight_unit is derived from unit_preference
-// in the same UPDATE so the two columns stay in sync.
+// Writes only the fields supplied.
+//
+// It no longer derives weight_unit. That column is gone (migration 141), so the
+// old derivation would now PGRST204 and 500 every settings save — including the
+// unit toggle itself. It was also the platform's worst data bug: it flipped the
+// tag while converting zero stored numbers, so a 180 lbs client choosing Metric
+// silently became a 180 kg client across every table and chart.
+//
+// (docs/UNITS-CANONICALIZATION-PLAN.md:562-563 schedules this removal for Phase
+// 4, which is too late — see the correction noted there.)
 export const updateClientSettings = async (
   clientId: string,
   settings: UpdateSettingsInput
@@ -353,7 +379,6 @@ export const updateClientSettings = async (
 
   if (settings.unitPreference !== undefined) {
     updateData.unit_preference = settings.unitPreference;
-    updateData.weight_unit = settings.unitPreference === "metric" ? "kg" : "lbs";
   }
 
   if (settings.timezone !== undefined) {

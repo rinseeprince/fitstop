@@ -145,9 +145,7 @@ export type ClientIntakeRow = {
   date_of_birth: string | null;
   gender: string | null;
   height: number | null;
-  height_unit: string | null;
   current_weight: number | null;
-  weight_unit: string | null;
   body_fat_percentage: number | null;
   work_activity_level: string | null;
   primary_goal: string | null;

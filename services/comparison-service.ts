@@ -7,7 +7,6 @@ import { computeGoalPace } from "@/lib/check-in/goal-pace";
 import { getBodyMetricsHistory } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
-import { weightFromKg } from "@/utils/nutrition-helpers";
 import { getTodayDateStringInTimezone, getTodayInTimezone, differenceInDays } from "@/lib/date-helpers";
 import type {
   CheckInComparison,
@@ -57,10 +56,8 @@ export const getCheckInComparison = async (
   // Single-scope effective goal (Session 7.8): the live client goal. Weight AND
   // deadline come from ONE scope — fixing the cross-scope "Deadline unrealistic"
   // false alarm (the old code paired the client-scope goal weight with the active
-  // nutrition plan's deadline). Displayed in the client's unit.
-  const weightUnit = client.weightUnit ?? "lbs";
+  // nutrition plan's deadline).
   const effectiveGoal = resolveEffectiveGoal({
-    weightUnit,
     clientGoal: {
       goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
       goalBodyFatPercentage:
@@ -73,11 +70,12 @@ export const getCheckInComparison = async (
     today: getTodayDateStringInTimezone(client.timezone),
   });
 
-  // Effective goal in DISPLAY units so the displayed goal and the pace share scope.
-  // Round to 1 decimal (display precision) to kill kg↔display float round-trip noise.
+  // Kilograms, like every other weight this service returns (migration 141), so
+  // the goal and the pace still share scope. Rounded to 1 decimal for display
+  // precision. Phase 3 converts to the viewer's unit at the render boundary.
   const goalWeight =
     effectiveGoal.goalWeightKg != null
-      ? Math.round(weightFromKg(effectiveGoal.goalWeightKg, weightUnit) * 10) / 10
+      ? Math.round(effectiveGoal.goalWeightKg * 10) / 10
       : undefined;
   const goalBodyFatPercentage = effectiveGoal.goalBodyFatPercentage ?? undefined;
   const earliestWeight = earliestMetrics[0]?.weight ?? client.startingWeight;

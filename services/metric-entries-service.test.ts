@@ -36,14 +36,6 @@ const upsertQuery = (row: MetricEntryRow) => ({
   single: vi.fn().mockResolvedValue({ data: row, error: null }),
 });
 
-const clientsQuery = (weightUnit: string | null = "kg") => ({
-  select: vi.fn().mockReturnThis(),
-  eq: vi.fn().mockReturnThis(),
-  maybeSingle: vi
-    .fn()
-    .mockResolvedValue({ data: { weight_unit: weightUnit }, error: null }),
-});
-
 const listQuery = (result: { data: unknown; error: unknown }) => ({
   select: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
@@ -52,13 +44,11 @@ const listQuery = (result: { data: unknown; error: unknown }) => ({
     Promise.resolve(result).then(resolve),
 });
 
-const wireFrom = (
-  entries: ReturnType<typeof upsertQuery>,
-  clients: ReturnType<typeof clientsQuery> = clientsQuery()
-) => {
-  vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
-    table === "client_metric_entries" ? entries : clients) as never);
-  return { entries, clients };
+// The service no longer reads `clients` at all — migration 141 removed the
+// weight_unit lookup — so this only needs to wire the entries table.
+const wireFrom = (entries: ReturnType<typeof upsertQuery>) => {
+  vi.mocked(supabaseAdmin.from).mockImplementation((() => entries) as never);
+  return { entries };
 };
 
 beforeEach(() => {
@@ -69,12 +59,14 @@ beforeEach(() => {
 
 describe("upsertMetricEntry", () => {
   it("upserts on client_id,metric_key,entry_date with the full payload and no created_at", async () => {
-    const row = mockEntryRow({ metric_key: "waist", value: 84, note: "am" });
+    const row = mockEntryRow({ metric_key: "waist", value: 86.36, note: "am" });
     const { entries } = wireFrom(upsertQuery(row));
 
+    // 34 inches — the unit the coach's Log-measurement dialog still labels the
+    // field with — stored as its canonical 86.36 cm (migration 141).
     const result = await upsertMetricEntry("client-1", {
       metricKey: "waist",
-      value: 84,
+      value: 34,
       entryDate: "2026-07-20",
       note: "am",
       coachId: "coach-1",
@@ -84,7 +76,7 @@ describe("upsertMetricEntry", () => {
       expect.objectContaining({
         client_id: "client-1",
         metric_key: "waist",
-        value: 84,
+        value: expect.closeTo(34 * 2.54, 6),
         entry_date: "2026-07-20",
         note: "am",
         created_by: "coach-1",
@@ -113,9 +105,9 @@ describe("upsertMetricEntry", () => {
     );
   });
 
-  it("dual-writes a current weight entry with updateClientCache: true and the client's weight unit", async () => {
+  it("dual-writes a current weight entry with updateClientCache: true", async () => {
     const row = mockEntryRow({ id: "entry-w", entry_date: "2026-07-20" });
-    wireFrom(upsertQuery(row), clientsQuery("kg"));
+    wireFrom(upsertQuery(row));
     vi.mocked(getLatestBodyMetrics).mockResolvedValue({
       recordedAt: "2026-07-15T12:00:00.000Z",
     } as never);
@@ -133,7 +125,6 @@ describe("upsertMetricEntry", () => {
     expect(recordBodyMetrics).toHaveBeenCalledWith({
       clientId: "client-1",
       weight: 82.5,
-      weightUnit: "kg",
       bodyFatPercentage: undefined,
       source: "coach_entry",
       sourceId: "entry-w",
@@ -177,7 +168,7 @@ describe("upsertMetricEntry", () => {
     );
   });
 
-  it("dual-writes a bodyFat entry as bodyFatPercentage without weight or weightUnit", async () => {
+  it("dual-writes a bodyFat entry as bodyFatPercentage without weight", async () => {
     const row = mockEntryRow({ id: "entry-bf", metric_key: "bodyFat", value: 18.2 });
     wireFrom(upsertQuery(row));
 
@@ -194,7 +185,6 @@ describe("upsertMetricEntry", () => {
     const params = vi.mocked(recordBodyMetrics).mock.calls[0][0];
     expect(params.bodyFatPercentage).toBe(18.2);
     expect(params.weight).toBeUndefined();
-    expect(params.weightUnit).toBeUndefined();
     expect(params.sourceId).toBe("entry-bf");
   });
 

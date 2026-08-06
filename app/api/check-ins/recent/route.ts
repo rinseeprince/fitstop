@@ -49,7 +49,9 @@ export async function GET(request: NextRequest) {
       clientAvatar: checkIn.clients?.avatar_url,
       status: checkIn.status,
       weight: checkIn.weight,
-      weightUnit: checkIn.weight_unit,
+      // Canonical kilograms since migration 141. Kept in the payload so the
+      // response shape stays stable; Phase 3 removes it.
+      weightUnit: "kg",
       workoutsCompleted: checkIn.workouts_completed,
       adherencePercentage: checkIn.adherence_percentage,
       mood: checkIn.mood,
