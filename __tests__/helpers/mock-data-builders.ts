@@ -5,7 +5,7 @@
 
 import { generateUUID, generateISODate } from './test-utils'
 import type { Client } from '@/types/check-in'
-import type { CheckInRow, CheckInTokenRow, ClientRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow, TrainingEventRow } from '@/lib/database-helpers'
+import type { CheckInRow, ClientRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow, TrainingEventRow } from '@/lib/database-helpers'
 import type { ClientGoalRow } from '@/types/client-goals'
 import type { BodyMetricsEventRow } from '@/types/body-metrics'
 import type { TrainingEvent, TrainingEventStatus } from '@/types/training'
@@ -173,32 +173,6 @@ export function createMockCheckInRow(options: MockCheckInOptions = {}): CheckInR
 // =============================================================================
 // Check-In Token Builders
 // =============================================================================
-
-export interface MockCheckInTokenOptions {
-  id?: string
-  clientId?: string
-  token?: string
-  expiresAt?: string
-  usedAt?: string | null
-  checkInId?: string | null
-  createdAt?: string
-}
-
-export function createMockCheckInTokenRow(options: MockCheckInTokenOptions = {}): CheckInTokenRow {
-  const now = generateISODate()
-  const expiresAt = new Date()
-  expiresAt.setDate(expiresAt.getDate() + 7) // Default 7 days expiry
-
-  return {
-    id: options.id ?? generateUUID(),
-    client_id: options.clientId ?? generateUUID(),
-    token: options.token ?? `tok_${generateUUID().replace(/-/g, '')}`,
-    expires_at: options.expiresAt ?? expiresAt.toISOString(),
-    used_at: options.usedAt ?? null,
-    check_in_id: options.checkInId ?? null,
-    created_at: options.createdAt ?? now,
-  }
-}
 
 // =============================================================================
 // Training Plan Builders

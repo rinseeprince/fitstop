@@ -275,51 +275,6 @@ export type Database = {
           },
         ]
       }
-      check_in_tokens: {
-        Row: {
-          check_in_id: string | null
-          client_id: string
-          created_at: string | null
-          expires_at: string
-          id: string
-          token: string
-          used_at: string | null
-        }
-        Insert: {
-          check_in_id?: string | null
-          client_id: string
-          created_at?: string | null
-          expires_at: string
-          id?: string
-          token: string
-          used_at?: string | null
-        }
-        Update: {
-          check_in_id?: string | null
-          client_id?: string
-          created_at?: string | null
-          expires_at?: string
-          id?: string
-          token?: string
-          used_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "check_in_tokens_check_in_id_fkey"
-            columns: ["check_in_id"]
-            isOneToOne: false
-            referencedRelation: "check_ins"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "check_in_tokens_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       check_ins: {
         Row: {
           adherence_percentage: number | null

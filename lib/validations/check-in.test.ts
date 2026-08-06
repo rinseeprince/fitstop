@@ -8,19 +8,14 @@ import {
 
 describe('Check-in Validation Schemas', () => {
   describe('submitCheckInSchema', () => {
-    it('validates a minimal valid check-in', () => {
-      const data = { token: 'valid-token' }
-      const result = submitCheckInSchema.safeParse(data)
+    it('validates a minimal (empty) check-in — every field is optional', () => {
+      const result = submitCheckInSchema.safeParse({})
 
       expect(result.success).toBe(true)
-      if (result.success) {
-        expect(result.data.token).toBe('valid-token')
-      }
     })
 
     it('validates a full check-in with all fields', () => {
       const data = {
-        token: 'valid-token',
         mood: 4,
         energy: 7,
         sleep: 8,
@@ -43,22 +38,15 @@ describe('Check-in Validation Schemas', () => {
       expect(result.success).toBe(true)
     })
 
-    it('rejects check-in without token', () => {
-      const data = { mood: 4 }
-      const result = submitCheckInSchema.safeParse(data)
-
-      expect(result.success).toBe(false)
-    })
-
     it('rejects mood outside 1-5 range', () => {
-      const data = { token: 'valid-token', mood: 10 }
+      const data = { mood: 10 }
       const result = submitCheckInSchema.safeParse(data)
 
       expect(result.success).toBe(false)
     })
 
     it('rejects energy outside 1-10 range', () => {
-      const data = { token: 'valid-token', energy: 15 }
+      const data = { energy: 15 }
       const result = submitCheckInSchema.safeParse(data)
 
       expect(result.success).toBe(false)
@@ -66,7 +54,6 @@ describe('Check-in Validation Schemas', () => {
 
     it('accepts string numbers and converts them', () => {
       const data = {
-        token: 'valid-token',
         mood: '4',
         energy: '7',
         weight: '180.5',
@@ -83,7 +70,6 @@ describe('Check-in Validation Schemas', () => {
 
     it('converts null and empty strings to undefined', () => {
       const data = {
-        token: 'valid-token',
         notes: null,
         prs: '',
         challenges: '',
@@ -99,14 +85,14 @@ describe('Check-in Validation Schemas', () => {
     })
 
     it('rejects weight over 1000', () => {
-      const data = { token: 'valid-token', weight: 1500 }
+      const data = { weight: 1500 }
       const result = submitCheckInSchema.safeParse(data)
 
       expect(result.success).toBe(false)
     })
 
     it('rejects body fat percentage over 100', () => {
-      const data = { token: 'valid-token', bodyFatPercentage: 150 }
+      const data = { bodyFatPercentage: 150 }
       const result = submitCheckInSchema.safeParse(data)
 
       expect(result.success).toBe(false)
@@ -114,7 +100,6 @@ describe('Check-in Validation Schemas', () => {
 
     it('validates sessionCompletions array', () => {
       const data = {
-        token: 'valid-token',
         sessionCompletions: [
           {
             trainingSessionId: 'session-1',
@@ -136,7 +121,7 @@ describe('Check-in Validation Schemas', () => {
         completed: true,
       }))
 
-      const data = { token: 'valid-token', sessionCompletions }
+      const data = { sessionCompletions }
       const result = submitCheckInSchema.safeParse(data)
 
       expect(result.success).toBe(false)
@@ -144,7 +129,6 @@ describe('Check-in Validation Schemas', () => {
 
     it('validates exerciseHighlights array', () => {
       const data = {
-        token: 'valid-token',
         exerciseHighlights: [
           {
             exerciseName: 'Bench Press',

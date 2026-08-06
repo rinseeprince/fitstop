@@ -16,12 +16,6 @@ export const formatRelativeTime = (dateString: string): string => {
   return formatDistanceToNow(new Date(dateString), { addSuffix: true });
 };
 
-// Generate check-in link
-export const generateCheckInLink = (token: string, baseUrl?: string): string => {
-  const url = baseUrl || (typeof window !== "undefined" ? window.location.origin : "");
-  return `${url}/check-in/${token}`;
-};
-
 // Calculate progress comparison between two check-ins
 export const calculateProgressComparison = (
   current: CheckIn,

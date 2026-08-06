@@ -1,0 +1,31 @@
+-- =============================================================================
+-- Drop check_in_tokens — the magic-link check-in flow is sunsetted.
+--
+-- WHY: clients now check in through the portal (app/client/check-in), which
+-- authenticates them properly. The token flow predates it: a coach reminder
+-- minted a single-use token and the client submitted through a public,
+-- unauthenticated URL carrying that token as its only credential.
+--
+-- It had already stopped working in practice long before this migration. No
+-- code path sent a link: services/reminder-service.ts built one into a variable
+-- named `_checkInLink` and dropped it, under a "TODO: Integration point for
+-- email/SMS service" that was never implemented. Nothing called the send route.
+-- The newest row in this table is from 2026-04-22 and has never been used.
+--
+-- The code went with this migration: the public page, its form, the submit and
+-- send routes, and the token service are all deleted, along with the `token`
+-- field on the check-in submission schema.
+--
+-- SAFE TO DROP WITHOUT CASCADE: no foreign key anywhere references this table.
+-- Its own two FKs point OUT (to check_ins and clients), so dropping it takes
+-- nothing else with it. Verified against the live catalog via pg_constraint
+-- rather than inferred from the migration files.
+--
+-- NOT REVERSIBLE, deliberately. The one surviving row is an expired, unused
+-- token for a flow that no longer has a UI; preserving it would mean keeping a
+-- table whose only effect is to tempt someone into reviving an unauthenticated
+-- submission path. If check-in-by-link is ever wanted again, it should be built
+-- against the authenticated client portal, not restored from here.
+-- =============================================================================
+
+DROP TABLE IF EXISTS public.check_in_tokens;

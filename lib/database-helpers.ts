@@ -2,7 +2,6 @@ import type { Database } from "@/types/database";
 
 // Database row types for easy reference
 export type CheckInRow = Database["public"]["Tables"]["check_ins"]["Row"];
-export type CheckInTokenRow = Database["public"]["Tables"]["check_in_tokens"]["Row"];
 export type TrainingPlanRow = Database["public"]["Tables"]["training_plans"]["Row"];
 export type TrainingSessionRow = Database["public"]["Tables"]["training_sessions"]["Row"];
 export type TrainingExerciseRow = Database["public"]["Tables"]["training_exercises"]["Row"];

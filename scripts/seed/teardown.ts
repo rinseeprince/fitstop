@@ -143,7 +143,6 @@ const CASCADE_WITNESS_TABLES: readonly string[] = [
   "client_intake",
   "content_assignments",
   "check_in_reminders",
-  "check_in_tokens",
   "nutrition_weekly_summaries",
   "training_logs",
 ];

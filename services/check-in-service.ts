@@ -18,16 +18,6 @@ import { getClientById } from "./client-service";
 
 // Re-export split modules so existing imports continue to work
 export {
-  generateCheckInToken,
-  createCheckInToken,
-  validateCheckInToken,
-  claimTokenForProcessing,
-  updateTokenWithCheckInId,
-  releaseToken,
-  markTokenAsUsed,
-} from "./check-in-token-service";
-
-export {
   deriveSessionCompletionsForCheckIn,
   getCheckInExerciseHighlights,
   getCheckInWithDetails,

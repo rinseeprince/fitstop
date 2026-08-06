@@ -113,14 +113,9 @@ export const submitCheckInSchema = z.object({
   sessionCompletions: z.array(sessionCompletionSchema).max(20).optional().nullable().transform((v) => v ?? undefined),
   exerciseHighlights: z.array(exerciseHighlightSchema).max(10).optional().nullable().transform((v) => v ?? undefined),
   nutritionAdherence: nutritionAdherenceSchema.optional().nullable().transform((v) => v ?? undefined),
-
-  // Token (required for submission)
-  token: z.string().min(1).max(500),
 });
 
-export const clientSubmitCheckInSchema = submitCheckInSchema
-  .omit({ token: true })
-  .refine(
+export const clientSubmitCheckInSchema = submitCheckInSchema.refine(
     (data) => {
       const meaningfulFields = [
         data.mood, data.energy, data.sleep, data.stress,
@@ -133,7 +128,6 @@ export const clientSubmitCheckInSchema = submitCheckInSchema
     { message: "Check-in must include at least one data field" }
   );
 
-export type SubmitCheckInInput = z.infer<typeof submitCheckInSchema>;
 export type ClientSubmitCheckInInput = z.infer<typeof clientSubmitCheckInSchema>;
 export type SessionCompletionInput = z.infer<typeof sessionCompletionSchema>;
 export type ExerciseHighlightInput = z.infer<typeof exerciseHighlightSchema>;
@@ -146,8 +140,4 @@ export const aiSummaryRequestSchema = z.object({
 
 export const reviewCheckInSchema = z.object({
   coachResponse: z.string().min(1, "Coach response is required").max(10000),
-});
-
-export const sendCheckInSchema = z.object({
-  clientId: z.string().uuid("Invalid client ID"),
 });

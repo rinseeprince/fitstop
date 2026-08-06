@@ -24,7 +24,6 @@ const EXCLUDED_PATHS = [
   "/signup",
   "/forgot-password",
   "/reset-password",
-  "/check-in/",
   "/client/",
   "/client",
 ]

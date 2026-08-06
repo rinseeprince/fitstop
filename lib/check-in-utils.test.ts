@@ -3,7 +3,6 @@ import {
   formatCheckInDate,
   formatCheckInTime,
   formatRelativeTime,
-  generateCheckInLink,
   calculateProgressComparison,
   prepareChartData,
   getStatusColor,
@@ -76,24 +75,6 @@ describe('Check-in Utilities', () => {
       vi.setSystemTime(new Date('2024-01-18T10:30:00Z'))
       const result = formatRelativeTime('2024-01-15T10:30:00Z')
       expect(result).toContain('3 days ago')
-    })
-  })
-
-  describe('generateCheckInLink', () => {
-    it('generates a link with provided base URL', () => {
-      const result = generateCheckInLink('abc123', 'https://example.com')
-      expect(result).toBe('https://example.com/check-in/abc123')
-    })
-
-    it('uses window.location.origin when no base URL provided in browser', () => {
-      const result = generateCheckInLink('abc123')
-      // In jsdom test environment, window.location.origin is set
-      expect(result).toContain('/check-in/abc123')
-    })
-
-    it('handles tokens with special characters', () => {
-      const result = generateCheckInLink('token_with_underscore', 'https://app.com')
-      expect(result).toBe('https://app.com/check-in/token_with_underscore')
     })
   })
 
