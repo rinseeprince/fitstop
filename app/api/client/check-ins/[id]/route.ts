@@ -4,8 +4,10 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import {
   deriveSessionCompletionsForCheckIn,
   getCheckInExerciseHighlights,
+  mapExerciseHighlight,
 } from "@/services/check-in-service";
 import { mapCheckInRow } from "@/lib/mappers";
+import type { CheckInExerciseHighlight } from "@/types/check-in";
 
 // GET /api/client/check-ins/[id] - Get specific check-in details for authenticated client
 export async function GET(
@@ -40,10 +42,20 @@ export async function GET(
     // (training_events + session_logs) for the check-in's stored period — there
     // is no backing table. The IDOR guard above (eq client_id) already scoped
     // this row to the authenticated client.
-    const [sessionCompletions, exerciseHighlights] = await Promise.all([
+    const [sessionCompletions, highlightRows] = await Promise.all([
       deriveSessionCompletionsForCheckIn(mapCheckInRow(checkIn)),
       getCheckInExerciseHighlights(id),
     ]);
+
+    // getCheckInExerciseHighlights returns RAW snake_case rows (it is a
+    // `select("*")` with no mapper), so this route must map them exactly as
+    // getCheckInWithDetails does — the client page reads the camelCase domain
+    // shape. The annotation is deliberate: it is the only thing anchoring this
+    // field to a real type, because app/client/check-in/[id]/page.tsx types the
+    // fetch response as `any` and tsc therefore checks the page against its own
+    // declaration rather than against what this route actually sends.
+    const exerciseHighlights: CheckInExerciseHighlight[] =
+      highlightRows.map(mapExerciseHighlight);
 
     return NextResponse.json({
       success: true,

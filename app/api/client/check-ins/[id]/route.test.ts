@@ -10,9 +10,16 @@ vi.mock("@/services/supabase-admin", () => ({
   supabaseAdmin: { from: (...args: unknown[]) => fromMock(...args) },
 }));
 
+// A spy, not the identity stub used in app/api/check-in/[id]/route.test.ts:20 —
+// an identity mapper would let a snake_case/camelCase mismatch through, which is
+// exactly the regression this route carried. The mapper's own field mapping is
+// covered in services/check-in-details-service.test.ts; here we only prove the
+// route maps at all rather than serving the raw row.
+const mapExerciseHighlightMock = vi.fn();
 vi.mock("@/services/check-in-service", () => ({
   deriveSessionCompletionsForCheckIn: vi.fn(),
   getCheckInExerciseHighlights: vi.fn(),
+  mapExerciseHighlight: (...args: unknown[]) => mapExerciseHighlightMock(...args),
 }));
 
 vi.mock("@/lib/mappers", () => ({
@@ -86,6 +93,53 @@ describe("GET /api/client/check-ins/[id]", () => {
     expect(deriveSessionCompletionsForCheckIn).toHaveBeenCalledWith(
       expect.objectContaining({ id: "ci-1", clientId: "client-1", periodStart: "2026-05-08" })
     );
+  });
+
+  // Regression guard for 0c4cebf: this route served RAW snake_case highlight
+  // rows while the client page was rewritten to read camelCase, so the card
+  // rendered empty for every client. tsc could not see it —
+  // app/client/check-in/[id]/page.tsx types the fetch response as `any`, so the
+  // compiler checks the page against its own declaration, never against what
+  // this route sends. Hence an explicit shape assertion.
+  it("maps exercise highlights rather than serving the raw row", async () => {
+    mockCheckInRow({
+      data: { id: "ci-1", client_id: "client-1", status: "pending", created_at: "2026-05-14T12:00:00Z" },
+      error: null,
+    });
+    const rawRow = {
+      id: "h-1",
+      check_in_id: "ci-1",
+      exercise_id: null,
+      exercise_name: "Back Squat",
+      highlight_type: "pr",
+      details: null,
+      weight_value: 102.5,
+      reps: 3,
+      created_at: "2026-05-14T12:00:00Z",
+    };
+    vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([rawRow] as any);
+    mapExerciseHighlightMock.mockReturnValue({
+      id: "h-1",
+      exerciseName: "Back Squat",
+      highlightType: "pr",
+      weightValue: 102.5,
+      reps: 3,
+    });
+
+    const res = await GET(req(), params("ci-1"));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(mapExerciseHighlightMock.mock.calls[0][0]).toEqual(rawRow);
+    expect(body.data.exerciseHighlights).toHaveLength(1);
+    expect(body.data.exerciseHighlights[0]).toMatchObject({
+      exerciseName: "Back Squat",
+      highlightType: "pr",
+      weightValue: 102.5,
+    });
+    // The raw column names must not survive the boundary.
+    expect(body.data.exerciseHighlights[0]).not.toHaveProperty("exercise_name");
+    expect(body.data.exerciseHighlights[0]).not.toHaveProperty("weight_value");
   });
 
   it("IDOR: scopes the read to the authenticated client and 404s a foreign row", async () => {

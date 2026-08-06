@@ -25,7 +25,10 @@ vi.mock("@/lib/date-helpers", () => ({
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./check-in-service", () => ({ getCheckInById: vi.fn() }));
 
-import { deriveSessionCompletionsForCheckIn } from "./check-in-details-service";
+import {
+  deriveSessionCompletionsForCheckIn,
+  mapExerciseHighlight,
+} from "./check-in-details-service";
 
 const baseCheckIn = (overrides: Partial<CheckIn> = {}): CheckIn => ({
   id: "ci-1",
@@ -170,5 +173,55 @@ describe("deriveSessionCompletionsForCheckIn", () => {
       "2025-01-05",
       "2025-01-11"
     );
+  });
+});
+
+// No test covered this mapper before, which is how 0c4cebf shipped: the client
+// check-in route served raw snake_case rows, the page was rewritten to read
+// camelCase, and nothing failed. The field names ARE the contract here.
+describe("mapExerciseHighlight", () => {
+  it("converts a raw row to the camelCase domain shape", () => {
+    const mapped = mapExerciseHighlight({
+      id: "h-1",
+      check_in_id: "ci-1",
+      exercise_id: "ex-1",
+      exercise_name: "Back Squat",
+      highlight_type: "pr",
+      details: "felt strong",
+      weight_value: 102.5,
+      reps: 3,
+    } as never);
+
+    expect(mapped).toMatchObject({
+      id: "h-1",
+      checkInId: "ci-1",
+      exerciseId: "ex-1",
+      exerciseName: "Back Squat",
+      highlightType: "pr",
+      details: "felt strong",
+      weightValue: 102.5,
+      reps: 3,
+    });
+    expect(mapped).not.toHaveProperty("exercise_name");
+    expect(mapped).not.toHaveProperty("weight_value");
+  });
+
+  it("maps absent optional columns to undefined rather than null", () => {
+    const mapped = mapExerciseHighlight({
+      id: "h-2",
+      check_in_id: "ci-1",
+      exercise_id: null,
+      exercise_name: "Bench Press",
+      highlight_type: "note",
+      details: null,
+      weight_value: null,
+      reps: null,
+    } as never);
+
+    expect(mapped.exerciseId).toBeUndefined();
+    expect(mapped.details).toBeUndefined();
+    expect(mapped.weightValue).toBeUndefined();
+    expect(mapped.reps).toBeUndefined();
+    expect(mapped.exerciseName).toBe("Bench Press");
   });
 });
