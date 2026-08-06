@@ -1,7 +1,7 @@
 # Units canonicalization — implementation plan
 
 **Status**: Phases 1-2 shipped (2026-08-06, migrations 140 + 141) · Phases 3-4 not
-started · **Logged**: 2026-08-05 · **Next migration number**: 142
+started · **Logged**: 2026-08-05 · **Next migration number**: 143 (142 was used by the unrelated magic-link check-in removal)
 
 > **Phase 2 disproved four of its own trap-list claims.** Corrections are inline
 > in the Phase 2 section below, marked **CORRECTED**. Read them before Phase 3 —
