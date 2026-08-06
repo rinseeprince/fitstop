@@ -50,7 +50,6 @@ export function DrawerFormBody() {
               SWR key — so it has to tell the drawer to re-resolve. */}
           <ClientGoalEditor
             clientId={builder.client.id}
-            unit={builder.client.weightUnit || "lbs"}
             onSaved={builder.refetchNutrition}
           />
         </div>

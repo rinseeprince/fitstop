@@ -20,9 +20,10 @@ export type ActivityItem =
       type: "measurement";
       at: string;
       metricKey: string;
+      /** Canonical kg/cm. The unit label is resolved at the render boundary from
+       *  METRIC_DEFINITIONS + the viewer's preference, never server-side. */
       value: number;
       previousValue: number | null;
-      unit: string;
     }
   | { type: "pr"; at: string; exerciseName: string; weight: number; previousBest: number }
   | { type: "session_completed"; at: string; sessionName: string; exerciseCount: number };

@@ -96,7 +96,7 @@ export const getOverviewBrief = async (
     evaluateSingleClientAlerts(coachId, clientId),
     getUnreviewedCheckIn(clientId),
     lastViewedAt
-      ? getActivitySince(clientId, lastViewedAt, client?.weightUnit)
+      ? getActivitySince(clientId, lastViewedAt)
       : Promise.resolve([]),
     getCheckInTiming(client, clientId),
   ]);

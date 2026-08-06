@@ -6,6 +6,13 @@ import { ClientStatusCard } from "./client-status-card";
 import type { Client } from "@/types/check-in";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
 
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars.
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
+
 const BASE: Client = {
   id: "client-1",
   coachId: "coach-1",

@@ -17,14 +17,24 @@ import {
   deriveWeekComparison,
   deriveWindowChange,
 } from "@/utils/metric-derived-stats";
-import { METRIC_DEFINITIONS } from "./use-metrics-data";
+import { METRIC_DEFINITIONS, type MetricDefinition } from "./use-metrics-data";
+import { useUnits } from "@/contexts/units-context";
+import { formatLength, formatWeight, type UnitSystem } from "@/utils/unit-conversions";
 import type { LogRow, MetricSummary, MetricTab } from "../metrics-view-types";
 import type { Client } from "@/types/check-in";
 import type { CreateMetricEntryRequest } from "@/types/metric-entries";
 
-// Coach-side measurement unit is fixed to inches on this page (pre-existing
-// behavior — client.unitPreference is deliberately not consulted here).
-const MEASUREMENT_UNIT = "in";
+// Stored values are canonical kg/cm and are converted HERE, at the point the
+// series is built, rather than at each of the six render sites downstream.
+// Every derived stat — hero, 30-day change, week comparison, avgRate, best,
+// goalToGo — is computed from these points, so converting at source is what
+// keeps a delta consistent with the two numbers it sits between.
+const convertPoint = (value: number, kind: MetricDefinition["convert"], viewer: UnitSystem) =>
+  kind === "weight"
+    ? formatWeight(value, viewer).value
+    : kind === "length"
+      ? formatLength(value, viewer).value
+      : value;
 
 // Method bivariance makes the narrow ReadonlySet<MetricEntryKey> usable where
 // plain string ids are looked up.
@@ -64,9 +74,18 @@ export const useMergedMetrics = (
     { revalidateOnFocus: false, errorRetryCount: 1 }
   );
 
+  const { preference } = useUnits();
+
   const { metricsByTab, logRowsByTab } = useMemo(() => {
     const today = getTodayDateString();
-    const pointsByMetric = buildMetricPoints(checkIns, entries, METRIC_DEFINITIONS);
+    const rawPointsByMetric = buildMetricPoints(checkIns, entries, METRIC_DEFINITIONS);
+    const convertBy = new Map(METRIC_DEFINITIONS.map((d) => [d.id, d.convert]));
+    const pointsByMetric = new Map(
+      [...rawPointsByMetric].map(([id, pts]) => [
+        id,
+        pts.map((p) => ({ ...p, value: convertPoint(p.value, convertBy.get(id), preference) })),
+      ]),
+    );
 
     const currentGoals = goalsData?.data ?? null;
     const effectiveGoal = resolveEffectiveGoal({
@@ -97,11 +116,12 @@ export const useMergedMetrics = (
         // Goal, hero value and difference are all kilograms (migration 141), so
         // the round-trip through display units is gone. Phase 3 converts these
         // at the render boundary.
-        goal = Number(effectiveGoal.goalWeightKg.toFixed(1));
+        // The goal is canonical kilograms; convert it the same way the series
+        // was, so the difference below is taken between two like numbers.
+        const goalDisplay = formatWeight(effectiveGoal.goalWeightKg, preference).value;
+        goal = Number(goalDisplay.toFixed(1));
         if (hero) {
-          goalToGo = Math.abs(
-            hero.current.value - effectiveGoal.goalWeightKg
-          ).toFixed(1);
+          goalToGo = Math.abs(hero.current.value - goalDisplay).toFixed(1);
         }
       } else if (
         def.id === "bodyFat" &&
@@ -117,7 +137,7 @@ export const useMergedMetrics = (
         id: def.id,
         name: def.name,
         tab: def.category,
-        unit: def.getUnit(client.weightUnit, MEASUREMENT_UNIT),
+        unit: def.getUnit(preference),
         points,
         latest: hero?.current ?? null,
         first: points.length
@@ -139,7 +159,7 @@ export const useMergedMetrics = (
     const unitById = new Map(
       METRIC_DEFINITIONS.map((d) => [
         d.id,
-        d.getUnit(client.weightUnit, MEASUREMENT_UNIT),
+        d.getUnit(preference),
       ])
     );
     const decorate = (category: MetricTab): LogRow[] =>
@@ -155,7 +175,9 @@ export const useMergedMetrics = (
       metricsByTab: byTab,
       logRowsByTab: { body: decorate("body"), wellness: decorate("wellness") },
     };
-  }, [checkIns, entries, goalsData, client]);
+    // `preference` is a real dependency: it changes every value in the series,
+    // not just the label.
+  }, [checkIns, entries, goalsData, client, preference]);
 
   const logMeasurement = useCallback(
     async (input: CreateMetricEntryRequest) => {

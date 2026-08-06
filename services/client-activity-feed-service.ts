@@ -1,6 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getExercisePRs } from "./exercise-analytics-service";
-import { metricEntryUnit, type MetricEntryKey } from "@/lib/metrics/metric-entry-definitions";
 import type { ActivityItem } from "@/types/coach-brief";
 
 /**
@@ -73,8 +72,7 @@ export function predecessorKey(metricKey: string, entryDate: string): string {
  */
 export function buildMeasurementItems(
   newRows: MetricEntryFeedRow[],
-  predecessorValues: Map<string, number>,
-  weightUnit: string | null | undefined
+  predecessorValues: Map<string, number>
 ): ActivityItem[] {
   return newRows.map((row) => {
     const previous = predecessorValues.get(predecessorKey(row.metric_key, row.entry_date));
@@ -84,7 +82,6 @@ export function buildMeasurementItems(
       metricKey: row.metric_key,
       value: Number(row.value),
       previousValue: previous === undefined ? null : Number(previous),
-      unit: metricEntryUnit(row.metric_key as MetricEntryKey, weightUnit),
     };
   });
 }
@@ -175,8 +172,7 @@ async function fetchCheckInItems(clientId: string, since: string): Promise<Activ
 
 async function fetchMeasurementItems(
   clientId: string,
-  since: string,
-  weightUnit: string | null | undefined
+  since: string
 ): Promise<ActivityItem[]> {
   const { data: newRows, error } = await supabaseAdmin
     .from("client_metric_entries")
@@ -216,7 +212,7 @@ async function fetchMeasurementItems(
     })
   );
 
-  return buildMeasurementItems(newRows, predecessorValues, weightUnit);
+  return buildMeasurementItems(newRows, predecessorValues);
 }
 
 async function fetchSessionActivity(
@@ -355,12 +351,11 @@ async function detectPrItems(
 /** The merged since-last-visit feed. Caller passes a non-null anchor. */
 export const getActivitySince = async (
   clientId: string,
-  since: string,
-  weightUnit: string | null | undefined
+  since: string
 ): Promise<ActivityItem[]> => {
   const [checkInItems, measurementItems, sessionActivity] = await Promise.all([
     fetchCheckInItems(clientId, since),
-    fetchMeasurementItems(clientId, since, weightUnit),
+    fetchMeasurementItems(clientId, since),
     fetchSessionActivity(clientId, since),
   ]);
 

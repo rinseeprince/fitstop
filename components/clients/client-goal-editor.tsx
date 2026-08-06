@@ -18,12 +18,21 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import type { ClientGoal } from "@/types/client-goals";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight, parseWeightToKg } from "@/utils/unit-conversions";
+
+const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 // Coach editor for the client's long-term goal (Session 7.8). Drives the existing
-// PUT /api/clients/[id]/goals (previously orphaned — no UI consumer). Weight is
-// stored in the client's display unit (client_goals.goal_weight), so no kg
-// conversion here. Shows a read-only "Goal: X by Y" summary + an Edit dialog;
-// SWR keeps the summary live after a save.
+// PUT /api/clients/[id]/goals (previously orphaned — no UI consumer). Shows a
+// read-only "Goal: X by Y" summary + an Edit dialog; SWR keeps the summary live
+// after a save.
+//
+// client_goals.goal_weight is canonical KILOGRAMS (migration 141). The comment
+// here used to say it was stored in the client's display unit, which predates
+// that migration and was load-bearing: it justified sending the typed number
+// straight through. Display converts to the viewer's unit and submit converts
+// back, so the round trip holds.
 
 type GoalsResponse = { success: boolean; data: ClientGoal | null };
 
@@ -35,7 +44,6 @@ const SWR_OPTS = {
 
 type ClientGoalEditorProps = {
   clientId: string;
-  unit: "lbs" | "kg";
   /**
    * Fired after a successful goal save, IN ADDITION to this component's own
    * SWR revalidation.
@@ -50,7 +58,8 @@ type ClientGoalEditorProps = {
   onSaved?: () => void;
 };
 
-export function ClientGoalEditor({ clientId, unit, onSaved }: ClientGoalEditorProps) {
+export function ClientGoalEditor({ clientId, onSaved }: ClientGoalEditorProps) {
+  const { preference } = useUnits();
   const [open, setOpen] = useState(false);
   const { data, mutate } = useSWR<GoalsResponse>(
     `/api/clients/${clientId}/goals`,
@@ -59,9 +68,10 @@ export function ClientGoalEditor({ clientId, unit, onSaved }: ClientGoalEditorPr
   );
   const goal = data?.data ?? null;
 
+  const shown = goal?.goalWeight != null ? formatWeight(goal.goalWeight, preference) : null;
   const summary =
-    goal?.goalWeight != null
-      ? `${goal.goalWeight} ${unit}${goal.goalDeadline ? ` by ${goal.goalDeadline}` : ""}`
+    shown != null
+      ? `${round1(shown.value)} ${shown.unit}${goal?.goalDeadline ? ` by ${goal.goalDeadline}` : ""}`
       : "No goal set yet";
 
   return (
@@ -85,7 +95,6 @@ export function ClientGoalEditor({ clientId, unit, onSaved }: ClientGoalEditorPr
       </p>
       <GoalEditDialog
         clientId={clientId}
-        unit={unit}
         goal={goal}
         open={open}
         onOpenChange={setOpen}
@@ -100,7 +109,6 @@ export function ClientGoalEditor({ clientId, unit, onSaved }: ClientGoalEditorPr
 
 type GoalEditDialogProps = {
   clientId: string;
-  unit: "lbs" | "kg";
   goal: ClientGoal | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -109,13 +117,14 @@ type GoalEditDialogProps = {
 
 function GoalEditDialog({
   clientId,
-  unit,
   goal,
   open,
   onOpenChange,
   onSaved,
 }: GoalEditDialogProps) {
   const { toast } = useToast();
+  const { preference } = useUnits();
+  const unit = formatWeight(0, preference).unit;
   const [goalWeight, setGoalWeight] = useState("");
   const [bodyFat, setBodyFat] = useState("");
   const [deadline, setDeadline] = useState("");
@@ -125,13 +134,18 @@ function GoalEditDialog({
   // Sync fields when the dialog opens (or the underlying goal changes).
   useEffect(() => {
     if (!open) return;
-    setGoalWeight(goal?.goalWeight != null ? String(goal.goalWeight) : "");
+    // Seeded in the viewer's unit; handleSubmit converts back.
+    setGoalWeight(
+      goal?.goalWeight != null
+        ? String(round1(formatWeight(goal.goalWeight, preference).value))
+        : "",
+    );
     setBodyFat(
       goal?.goalBodyFatPercentage != null ? String(goal.goalBodyFatPercentage) : ""
     );
     setDeadline(goal?.goalDeadline ?? "");
     setStartDate(goal?.goalStartDate ?? "");
-  }, [goal, open]);
+  }, [goal, open, preference]);
 
   const handleSubmit = async () => {
     const weight = parseFloat(goalWeight);
@@ -142,8 +156,20 @@ function GoalEditDialog({
     setSubmitting(true);
     try {
       // Presence-based merge server-side: explicit null clears the optional fields.
+      // The seeded string is rounded for legibility, so re-parsing an UNTOUCHED
+      // field would store a slightly different kilogram value than the one it
+      // was seeded from. Same drift the builder's load inputs guard against.
+      const seeded =
+        goal?.goalWeight != null
+          ? String(round1(formatWeight(goal.goalWeight, preference).value))
+          : "";
+      const goalWeightKg =
+        goalWeight.trim() === seeded && goal?.goalWeight != null
+          ? goal.goalWeight
+          : parseWeightToKg(weight, preference);
+
       const body: Record<string, string | number | null> = {
-        goalWeight: weight,
+        goalWeight: goalWeightKg,
         goalBodyFatPercentage: bodyFat.trim() ? parseFloat(bodyFat) : null,
         goalDeadline: deadline || null,
         goalStartDate: startDate || null,

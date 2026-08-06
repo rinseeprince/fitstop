@@ -42,30 +42,6 @@ export const METRIC_VALUE_RANGES: Record<
   soreness: { min: 1, max: 10, integer: true },
 };
 
-// Display unit for a metric entry, resolved from client prefs. Mirrors the
-// Metrics page's per-definition getUnit (use-metrics-data.ts + use-merged-metrics:
-// weight = client.weight_unit, girths fixed to inches on the coach surface,
-// wellness = its scale suffix) so server payloads and the page can never
-// disagree. Keep in lockstep with METRIC_DEFINITIONS when units change.
-export function metricEntryUnit(key: MetricEntryKey, weightUnit?: string | null): string {
-  switch (key) {
-    case "weight":
-      return weightUnit || "lbs";
-    case "bodyFat":
-      return "%";
-    case "waist":
-    case "hips":
-    case "chest":
-    case "arms":
-    case "thighs":
-      return "in";
-    case "mood":
-      return "/5";
-    default:
-      return "/10";
-  }
-}
-
 // The metric's good direction: a falling value reads as improvement for these
 // (mirrors the shared chart's stress/soreness inversion plus the body metrics).
 export const DOWN_IS_GOOD: ReadonlySet<MetricEntryKey> = new Set<MetricEntryKey>([

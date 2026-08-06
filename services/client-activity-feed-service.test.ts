@@ -27,10 +27,10 @@ const entry = (
 });
 
 describe("buildMeasurementItems", () => {
-  it("attaches the resolved predecessor value and the client's weight unit", () => {
+  it("attaches the resolved predecessor value and the canonical stored value", () => {
     const newRow = entry("weight", 80.2, "2026-06-15", "2026-06-15T08:00:00Z");
     const predecessors = new Map([[predecessorKey("weight", "2026-06-15"), 81]]);
-    const items = buildMeasurementItems([newRow], predecessors, "kg");
+    const items = buildMeasurementItems([newRow], predecessors);
     expect(items).toEqual([
       {
         type: "measurement",
@@ -38,18 +38,19 @@ describe("buildMeasurementItems", () => {
         metricKey: "weight",
         value: 80.2,
         previousValue: 81,
-        unit: "kg",
       },
     ]);
   });
 
-  it("returns null previousValue with no predecessor, and the fixed unit for girths", () => {
+  it("returns null previousValue with no predecessor, and leaves the value canonical", () => {
     const newRow = entry("hips", 100, "2026-06-15", "2026-06-15T08:00:00Z");
-    const items = buildMeasurementItems([newRow], new Map(), "kg");
+    const items = buildMeasurementItems([newRow], new Map());
     expect(items[0].type).toBe("measurement");
     if (items[0].type === "measurement") {
       expect(items[0].previousValue).toBeNull();
-      expect(items[0].unit).toBe("in");
+      // No `unit` on the payload any more: it resolved server-side to "in" over
+      // a centimetre value. The render boundary owns the label now.
+      expect(items[0].value).toBe(newRow.value);
     }
   });
 
@@ -57,7 +58,7 @@ describe("buildMeasurementItems", () => {
     const weightRow = entry("weight", 80, "2026-06-15", "2026-06-15T08:00:00Z");
     const waistRow = entry("waist", 89, "2026-06-15", "2026-06-15T08:05:00Z");
     const predecessors = new Map([[predecessorKey("waist", "2026-06-15"), 90]]);
-    const items = buildMeasurementItems([weightRow, waistRow], predecessors, "kg");
+    const items = buildMeasurementItems([weightRow, waistRow], predecessors);
     const byKey = new Map(
       items.map((i) => [i.type === "measurement" ? i.metricKey : "", i])
     );

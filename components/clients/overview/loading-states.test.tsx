@@ -7,6 +7,13 @@ import type { Client } from "@/types/check-in";
 import type { CheckInTiming } from "@/types/coach-brief";
 import type { ClientNote } from "@/types/coach-overview";
 
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars.
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
+
 // Both cards receive `null`-shaped data both while loading AND when the client
 // genuinely has none. Without an explicit loading flag they render a confident
 // empty state first and contradict it a moment later — which is what these

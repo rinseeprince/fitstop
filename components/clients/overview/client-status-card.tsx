@@ -13,6 +13,8 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { Client } from "@/types/check-in";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight } from "@/utils/unit-conversions";
 
 type ClientStatusCardProps = {
   client: Client;
@@ -153,16 +155,21 @@ export function ClientStatusCard({
   onCalculateBMR,
   onOpenMetrics,
 }: ClientStatusCardProps) {
-  const weightUnit = client.weightUnit || "lbs";
-  const weightDelta = formatDelta(client.currentWeight, client.startingWeight);
+  // client.weightUnit is a mapper constant, not the viewer's choice (Batch F
+  // deletes it). Body weights convert freely — formatWeight, never formatLoad.
+  const { preference } = useUnits();
+  const kg = (v: number | null | undefined) =>
+    v == null ? undefined : formatWeight(v, preference).value;
+  const weightUnit = formatWeight(0, preference).unit;
+
+  const startWeight = kg(client.startingWeight);
+  const currentWeight = kg(client.currentWeight);
+  const goalWeight = kg(client.goalWeight);
+  // Delta between the DISPLAYED values so it reconciles with the cells above it.
+  const weightDelta = formatDelta(currentWeight, startWeight);
   const bfDelta = formatDelta(client.currentBodyFatPercentage, client.startingBodyFatPercentage);
 
-  const weightChip = goalChip(
-    client.startingWeight,
-    client.currentWeight,
-    client.goalWeight,
-    weightUnit
-  );
+  const weightChip = goalChip(startWeight, currentWeight, goalWeight, weightUnit);
   const bfChip = goalChip(
     client.startingBodyFatPercentage,
     client.currentBodyFatPercentage,
@@ -204,13 +211,13 @@ export function ClientStatusCard({
         <div className="grid grid-cols-3 gap-3 px-5 pb-3">
           <MetricCell
             label="Start weight"
-            value={client.startingWeight?.toFixed(1)}
+            value={startWeight?.toFixed(1)}
             unit={weightUnit}
             size="lg"
           />
           <MetricCell
             label="Current weight"
-            value={client.currentWeight?.toFixed(1)}
+            value={currentWeight?.toFixed(1)}
             unit={weightUnit}
             size="lg"
             sub={weightDelta ? `${weightDelta}${weightUnit}` : undefined}
@@ -219,7 +226,7 @@ export function ClientStatusCard({
           />
           <MetricCell
             label="Goal weight"
-            value={client.goalWeight?.toFixed(1)}
+            value={goalWeight?.toFixed(1)}
             unit={weightUnit}
             size="lg"
             chip={weightChip}

@@ -5,9 +5,19 @@ import userEvent from "@testing-library/user-event";
 import { SinceLastVisitSection } from "./since-last-visit-section";
 import type { ActivityItem } from "@/types/coach-brief";
 
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars.
+const units = vi.hoisted(() => ({ preference: "metric" as "metric" | "imperial" }));
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: units.preference, isLoading: false, error: null }),
+}));
+
 const NOOP = { onMarkSeen: vi.fn(), isMarkingSeen: false };
 
-beforeEach(() => cleanup());
+beforeEach(() => {
+  cleanup();
+  units.preference = "metric";
+});
 
 describe("SinceLastVisitSection", () => {
   it("first visit: names the state and what will appear next time", () => {
@@ -36,7 +46,6 @@ describe("SinceLastVisitSection", () => {
         metricKey: "weight",
         value: 82.4,
         previousValue: 83,
-        unit: "kg",
       },
       {
         type: "pr",
@@ -71,7 +80,6 @@ describe("SinceLastVisitSection", () => {
         metricKey: "weight",
         value: 82.4,
         previousValue: 83,
-        unit: "kg",
       },
     ];
 
@@ -91,7 +99,6 @@ describe("SinceLastVisitSection", () => {
         metricKey: "waist",
         value: 32,
         previousValue: null,
-        unit: "in",
       },
     ];
 

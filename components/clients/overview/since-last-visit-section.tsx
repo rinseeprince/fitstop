@@ -12,6 +12,13 @@ import {
 import { CardHeader, OverviewCard } from "./overview-primitives";
 import { formatMetricValue, formatRelativeShort, pluralize } from "./overview-format";
 import type { ActivityItem } from "@/types/coach-brief";
+import { useUnits } from "@/contexts/units-context";
+import {
+  formatLength,
+  formatLoad,
+  formatWeight,
+  type UnitSystem,
+} from "@/utils/unit-conversions";
 
 type SinceLastVisitSectionProps = {
   lastViewedAt: string | null;
@@ -20,12 +27,22 @@ type SinceLastVisitSectionProps = {
   isMarkingSeen: boolean;
 };
 
-// PR weights come off set_logs, which the coach exercise-data surface renders
-// in kilograms (components/training/exercise-data/exercise-pr-view.tsx).
-const PR_WEIGHT_UNIT = "kg";
+function definitionFor(metricKey: string) {
+  return METRIC_DEFINITIONS.find((definition) => definition.id === metricKey);
+}
 
 function metricName(metricKey: string): string {
-  return METRIC_DEFINITIONS.find((definition) => definition.id === metricKey)?.name ?? "Measurement";
+  return definitionFor(metricKey)?.name ?? "Measurement";
+}
+
+// Feed values arrive as canonical kg/cm (types/coach-brief.ts). The unit label
+// and the conversion both resolve here, from the same METRIC_DEFINITIONS entry
+// the Metrics page uses — so the two surfaces cannot disagree.
+function toViewer(metricKey: string, value: number, viewer: UnitSystem): number {
+  const convert = definitionFor(metricKey)?.convert;
+  if (convert === "weight") return formatWeight(value, viewer).value;
+  if (convert === "length") return formatLength(value, viewer).value;
+  return value;
 }
 
 function Mono({ children }: { children: ReactNode }) {
@@ -33,14 +50,23 @@ function Mono({ children }: { children: ReactNode }) {
 }
 
 /** One feed row's icon, headline and detail line. */
-function describe(item: ActivityItem): { icon: ReactNode; title: string; detail?: ReactNode } {
+function describe(
+  item: ActivityItem,
+  viewer: UnitSystem,
+): { icon: ReactNode; title: string; detail?: ReactNode } {
   switch (item.type) {
     case "check_in":
       return { icon: <ClipboardCheck className="h-4 w-4" strokeWidth={1.5} />, title: "Check-in submitted" };
 
     case "measurement": {
-      const value = formatMetricValue(item.value, item.unit);
-      const delta = item.previousValue === null ? null : item.value - item.previousValue;
+      const unit = definitionFor(item.metricKey)?.getUnit(viewer) ?? "";
+      const shown = toViewer(item.metricKey, item.value, viewer);
+      const value = formatMetricValue(shown, unit);
+      // The delta is taken between DISPLAYED values so it reconciles with them.
+      const delta =
+        item.previousValue === null
+          ? null
+          : shown - toViewer(item.metricKey, item.previousValue, viewer);
       return {
         icon: <Ruler className="h-4 w-4" strokeWidth={1.5} />,
         title: `${metricName(item.metricKey)} logged`,
@@ -70,12 +96,15 @@ function describe(item: ActivityItem): { icon: ReactNode; title: string; detail?
           <>
             {item.exerciseName}
             {" · "}
+            {/* A PR is a barbell load, so formatLoad — it snaps to something
+                you can actually put on a bar. */}
             <Mono>
-              {item.weight} {PR_WEIGHT_UNIT}
+              {formatLoad(item.weight, viewer).value} {formatLoad(item.weight, viewer).unit}
             </Mono>
             {", was "}
             <Mono>
-              {item.previousBest} {PR_WEIGHT_UNIT}
+              {formatLoad(item.previousBest, viewer).value}{" "}
+              {formatLoad(item.previousBest, viewer).unit}
             </Mono>
           </>
         ),
@@ -102,6 +131,7 @@ export function SinceLastVisitSection({
   onMarkSeen,
   isMarkingSeen,
 }: SinceLastVisitSectionProps) {
+  const { preference } = useUnits();
   return (
     <OverviewCard animationDelay="0.04s">
       <CardHeader
@@ -138,7 +168,7 @@ export function SinceLastVisitSection({
       ) : (
         <div className="px-3 pb-4">
           {activity.map((item, i) => {
-            const { icon, title, detail } = describe(item);
+            const { icon, title, detail } = describe(item, preference);
             return (
               <div key={`${item.type}-${item.at}-${i}`} className="flex items-start gap-3 px-2 py-2">
                 <span className={cn(THUMB_CLASS, "h-8 w-8")}>{icon}</span>

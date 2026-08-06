@@ -15,6 +15,17 @@ import { ClientSettingsDialog } from "./client-settings-dialog";
 import { formatDateOnlyWeekday, pluralize, relativeDayPhrase } from "./overview-format";
 import type { Client } from "@/types/check-in";
 import type { CheckInTiming } from "@/types/coach-brief";
+import { useUnits } from "@/contexts/units-context";
+import { formatHeight, type UnitSystem } from "@/utils/unit-conversions";
+
+// Imperial height is COMPOSITE — 5'11", never 71 in — which is why formatHeight
+// returns a discriminated union rather than {value, unit} like the others.
+function formatHeightLabel(valueCm: number, viewer: UnitSystem): string {
+  const h = formatHeight(valueCm, viewer);
+  return h.system === "metric"
+    ? `${Math.round(h.value)} ${h.unit}`
+    : `${h.feet}'${h.inches}"`;
+}
 
 type ClientScheduleCardProps = {
   client: Client;
@@ -208,6 +219,7 @@ export function ClientScheduleCard({
   isTimingLoading,
   onClientUpdated,
 }: ClientScheduleCardProps) {
+  const { preference } = useUnits();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const openSettings = () => setSettingsOpen(true);
 
@@ -274,7 +286,7 @@ export function ClientScheduleCard({
           />
           <Field
             label="Height"
-            value={client.height != null ? `${client.height} ${client.heightUnit ?? "in"}` : null}
+            value={client.height != null ? formatHeightLabel(client.height, preference) : null}
             isNumeric
             onAdd={openSettings}
           />

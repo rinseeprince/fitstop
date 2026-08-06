@@ -83,7 +83,7 @@ describe("getOverviewBrief", () => {
 
     expect(brief.lastViewedAt).toBe("2026-06-01T00:00:00Z");
     expect(brief.activity).toEqual(feed);
-    expect(getActivitySinceMock).toHaveBeenCalledWith("client-1", "2026-06-01T00:00:00Z", "kg");
+    expect(getActivitySinceMock).toHaveBeenCalledWith("client-1", "2026-06-01T00:00:00Z");
     expect(brief.waitingOnYou.unreviewedCheckIn).toEqual({
       id: "ci-1",
       submittedAt: "2026-06-03T10:00:00Z",
