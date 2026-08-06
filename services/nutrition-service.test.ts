@@ -135,3 +135,53 @@ describe('calculateBaselineCalories', () => {
     })
   })
 })
+
+// The safety-cap warnings used to be sentences with "kg/week" baked in, which
+// put the number out of reach of the only layer that knows the viewer's unit.
+// They are structured codes carrying raw KILOGRAMS now; the wording lives in
+// components/clients/nutrition/nutrition-warnings.tsx.
+describe('calculateBaselineCalories — capped-rate warnings', () => {
+  const soon = () => {
+    const d = new Date()
+    d.setDate(d.getDate() + 14)
+    return d.toISOString()
+  }
+
+  it('emits deficit_capped with the raw kilogram cap, not a sentence', () => {
+    // 15kg in two weeks is far past any safe rate.
+    const result = calculateBaselineCalories(2400, 90, 75, soon(), 'male')
+
+    expect(result.warnings).toContainEqual({
+      code: 'deficit_capped',
+      maxWeeklyChangeKg: 1.0,
+    })
+    expect(result.weeklyRate).toBe(-1.0)
+  })
+
+  it('uses the lower female cap', () => {
+    const result = calculateBaselineCalories(2400, 90, 75, soon(), 'female')
+
+    expect(result.warnings).toContainEqual({
+      code: 'deficit_capped',
+      maxWeeklyChangeKg: 0.75,
+    })
+  })
+
+  it('emits surplus_capped when gaining too fast', () => {
+    const result = calculateBaselineCalories(2400, 75, 90, soon(), 'male')
+
+    expect(result.warnings).toContainEqual({
+      code: 'surplus_capped',
+      maxWeeklyChangeKg: 0.5,
+    })
+  })
+
+  it('emits deadline_passed for a deadline in the past', () => {
+    const past = new Date()
+    past.setDate(past.getDate() - 30)
+
+    const result = calculateBaselineCalories(2400, 90, 75, past.toISOString(), 'male')
+
+    expect(result.warnings).toEqual([{ code: 'deadline_passed' }])
+  })
+})

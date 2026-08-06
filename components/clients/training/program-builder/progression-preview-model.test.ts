@@ -175,7 +175,7 @@ describe("buildPreviewRows", () => {
 
   it("pairs source and progressed exercises positionally with changed flags + diffs", () => {
     const source = sourceWeek();
-    const rule = { kind: "load", unit: "kg", amount: 2.5 } as const;
+    const rule = { kind: "load", mode: "absolute", amount: 2.5 } as const;
     const { week: progressed, changedExerciseUids } = progressWeek(source, rule, () => true);
     const days = buildPreviewRows(source, progressed, changedExerciseUids, rule);
 

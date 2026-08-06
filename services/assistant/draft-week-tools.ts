@@ -67,9 +67,9 @@ type WireRule = {
 const toEngineRule = (rule: WireRule): ProgressionRule => {
   switch (rule.kind) {
     case "load_kg":
-      return { kind: "load", unit: "kg", amount: rule.amount };
+      return { kind: "load", mode: "absolute", amount: rule.amount };
     case "load_percent":
-      return { kind: "load", unit: "percent", amount: rule.amount };
+      return { kind: "load", mode: "percent", amount: rule.amount };
     case "reps":
       return { kind: "reps", amount: rule.amount };
     case "sets":

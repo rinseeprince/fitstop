@@ -73,7 +73,7 @@ export function DuplicateWeekDialog({
     useExerciseCatalog();
 
   const [ruleKind, setRuleKind] = useState<RuleKind>("load");
-  const [loadUnit, setLoadUnit] = useState<"kg" | "percent">("kg");
+  const [loadMode, setLoadMode] = useState<"absolute" | "percent">("absolute");
   const [loadAmount, setLoadAmount] = useState("2.5");
   const [repsAmount, setRepsAmount] = useState("1");
   const [setsAmount, setSetsAmount] = useState("1");
@@ -97,7 +97,7 @@ export function DuplicateWeekDialog({
     amount == null || amount === 0
       ? null
       : ruleKind === "load"
-        ? { kind: "load", unit: loadUnit, amount }
+        ? { kind: "load", mode: loadMode, amount }
         : { kind: ruleKind, amount };
 
   const scope: ProgressionScope =
@@ -111,7 +111,7 @@ export function DuplicateWeekDialog({
   const displayRule: ProgressionRule =
     rule ??
     (ruleKind === "load"
-      ? { kind: "load", unit: loadUnit, amount: 0 }
+      ? { kind: "load", mode: loadMode, amount: 0 }
       : { kind: ruleKind, amount: 0 });
   const previewDays = buildPreviewRows(
     week,
@@ -178,11 +178,11 @@ export function DuplicateWeekDialog({
                   </label>
                   <SegmentedControl
                     options={[
-                      { value: "kg", label: "kg" },
+                      { value: "absolute", label: "kg" },
                       { value: "percent", label: "%" },
                     ]}
-                    value={loadUnit}
-                    onChange={(v) => setLoadUnit(v as "kg" | "percent")}
+                    value={loadMode}
+                    onChange={(v) => setLoadMode(v as "absolute" | "percent")}
                   />
                   <span className={cn("pb-2 text-[10px]", TEXT_MUTED)}>
                     Use a negative number for a deload.

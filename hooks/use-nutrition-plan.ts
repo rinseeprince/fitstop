@@ -5,11 +5,6 @@ import { useToast } from "@/hooks/use-toast";
 import type { Client, UnitPreference, DietType, ActivityLevel } from "@/types/check-in";
 import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
 import type { NutritionCalcInputs } from "@/services/nutrition-calc-inputs";
-import {
-  getWeightChange as getWeightChangeUtil,
-  formatWeight as formatWeightUtil,
-  kgToLbs,
-} from "@/utils/nutrition-helpers";
 
 type UseNutritionPlanProps = {
   client: Client;
@@ -130,22 +125,6 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
     [client.id, client.unitPreference, onUpdate, toast]
   );
 
-  // Weight remaining calculation
-  const getWeightRemaining = useCallback(() => {
-    if (!client.goalWeight || !client.currentWeight) return null;
-
-    // Already kilograms (migration 141) — no normalization step any more.
-    const currentWeightKg = client.currentWeight;
-    const goalWeightKg = client.goalWeight;
-    const remainingKg = Math.abs(currentWeightKg - goalWeightKg);
-    const isLoss = currentWeightKg > goalWeightKg;
-
-    const value = unitPreference === "imperial" ? kgToLbs(remainingKg) : remainingKg;
-    const unit = unitPreference === "imperial" ? "lbs" : "kg";
-
-    return { value: value.toFixed(1), unit, isLoss };
-  }, [client, unitPreference]);
-
   return {
     // Client data
     client,
@@ -165,16 +144,10 @@ export function useNutritionPlan({ client, onUpdate }: UseNutritionPlanProps) {
 
     // Computed values
     showRegenerationBanner,
-    weightRemaining: getWeightRemaining(),
 
     // Nutrition data from plan
     nutritionData,
     isLoadingNutrition,
     refetchNutrition: () => setRefreshKey((k) => k + 1),
-
-    // Helper functions
-    formatWeight: (kg: number) => formatWeightUtil(kg, unitPreference),
-    getWeightChange: (current: number, base: number) =>
-      getWeightChangeUtil(current, base, unitPreference),
   };
 }

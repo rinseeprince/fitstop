@@ -44,8 +44,8 @@ function exercise(over: Partial<ProgressionExercise> = {}): ProgressionExercise 
   };
 }
 
-const kg = (amount: number): ProgressionRule => ({ kind: "load", unit: "kg", amount });
-const pct = (amount: number): ProgressionRule => ({ kind: "load", unit: "percent", amount });
+const kg = (amount: number): ProgressionRule => ({ kind: "load", mode: "absolute", amount });
+const pct = (amount: number): ProgressionRule => ({ kind: "load", mode: "percent", amount });
 const reps = (amount: number): ProgressionRule => ({ kind: "reps", amount });
 const sets = (amount: number): ProgressionRule => ({ kind: "sets", amount });
 

@@ -174,7 +174,6 @@ describe('Check-in Utilities', () => {
       const result = prepareChartData(checkIns)
 
       expect(result.sleep).toHaveLength(2)
-      expect(result.sleep[0].label).toBe('7/10')
       expect(result.stress).toHaveLength(2)
       expect(result.stress[1].value).toBe(2)
     })
@@ -188,7 +187,6 @@ describe('Check-in Utilities', () => {
       const result = prepareChartData(checkIns)
 
       expect(result.soreness).toHaveLength(2)
-      expect(result.soreness[0].label).toBe('7/10')
       expect(result.soreness[1].value).toBe(4)
     })
 
@@ -202,7 +200,6 @@ describe('Check-in Utilities', () => {
 
       expect(result.weight).toHaveLength(2)
       expect(result.weight[0].value).toBe(180)
-      expect(result.weight[0].label).toBe('180 lbs')
       expect(result.weight[1].value).toBe(178)
     })
 
@@ -215,7 +212,6 @@ describe('Check-in Utilities', () => {
       const result = prepareChartData(checkIns)
 
       expect(result.bodyFat).toHaveLength(2)
-      expect(result.bodyFat[0].label).toBe('16%')
     })
 
     it('prepares mood chart data', () => {
@@ -227,7 +223,6 @@ describe('Check-in Utilities', () => {
       const result = prepareChartData(checkIns)
 
       expect(result.mood).toHaveLength(2)
-      expect(result.mood[0].label).toBe('4/5')
     })
 
     it('prepares energy chart data', () => {
@@ -239,7 +234,6 @@ describe('Check-in Utilities', () => {
       const result = prepareChartData(checkIns)
 
       expect(result.energy).toHaveLength(2)
-      expect(result.energy[0].label).toBe('7/10')
     })
 
     it('sorts check-ins by date ascending', () => {

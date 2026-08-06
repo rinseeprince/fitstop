@@ -95,7 +95,6 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
       chartData.weight.push({
         date,
         value: checkIn.weight,
-        label: `${checkIn.weight} ${checkIn.weightUnit || "lbs"}`,
       });
     }
 
@@ -103,7 +102,6 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
       chartData.bodyFat.push({
         date,
         value: checkIn.bodyFatPercentage,
-        label: `${checkIn.bodyFatPercentage}%`,
       });
     }
 
@@ -111,7 +109,6 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
       chartData.adherence.push({
         date,
         value: checkIn.adherencePercentage,
-        label: `${checkIn.adherencePercentage}%`,
       });
     }
 
@@ -119,7 +116,6 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
       chartData.mood.push({
         date,
         value: checkIn.mood,
-        label: `${checkIn.mood}/5`,
       });
     }
 
@@ -127,7 +123,6 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
       chartData.energy.push({
         date,
         value: checkIn.energy,
-        label: `${checkIn.energy}/10`,
       });
     }
 
@@ -135,7 +130,6 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
       chartData.sleep.push({
         date,
         value: checkIn.sleep,
-        label: `${checkIn.sleep}/10`,
       });
     }
 
@@ -143,7 +137,6 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
       chartData.stress.push({
         date,
         value: checkIn.stress,
-        label: `${checkIn.stress}/10`,
       });
     }
 
@@ -151,7 +144,6 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
       chartData.soreness.push({
         date,
         value: checkIn.soreness,
-        label: `${checkIn.soreness}/10`,
       });
     }
   });

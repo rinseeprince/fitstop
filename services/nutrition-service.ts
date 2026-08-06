@@ -2,6 +2,7 @@ import type {
   ActivityLevel,
   TrainingVolume,
   DietType,
+  NutritionWarning,
 } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import {
@@ -18,7 +19,7 @@ export type NutritionPlan = {
   adjustedTdee: number; // Keep for backward compat (same as tdee now)
   weeklyWeightChangeKg: number;
   requiredDailyDeficit: number; // The deficit needed per day to hit goal
-  warnings: string[];
+  warnings: NutritionWarning[];
 };
 
 export type NutritionCalculationInput = {
@@ -66,9 +67,9 @@ export function calculateBaselineCalories(
   baselineCalories: number;
   requiredDailyDeficit: number;
   weeklyRate: number;
-  warnings: string[];
+  warnings: NutritionWarning[];
 } {
-  const warnings: string[] = [];
+  const warnings: NutritionWarning[] = [];
 
   // If no goal weight or deadline, use maintenance calories (no deficit)
   if (!goalWeightKg || !goalDeadline) {
@@ -120,7 +121,7 @@ export function calculateBaselineCalories(
   ) + 1;
 
   if (daysToGoal <= 0) {
-    warnings.push("Goal deadline has passed. Using maintenance calories.");
+    warnings.push({ code: "deadline_passed" });
     return {
       baselineCalories: tdee,
       requiredDailyDeficit: 0,
@@ -151,15 +152,17 @@ export function calculateBaselineCalories(
   if (isWeightLoss && weeklyRate < -maxWeeklyDeficitKg) {
     weeklyRate = -maxWeeklyDeficitKg;
     requiredDailyChange = (maxWeeklyDeficitKg * 7700) / 7;
-    warnings.push(
-      `Weekly deficit capped at ${maxWeeklyDeficitKg}kg/week for safety. Goal timeline may need adjustment.`
-    );
+    warnings.push({
+      code: "deficit_capped",
+      maxWeeklyChangeKg: maxWeeklyDeficitKg,
+    });
   } else if (!isWeightLoss && weeklyRate > maxWeeklySurplusKg) {
     weeklyRate = maxWeeklySurplusKg;
     requiredDailyChange = (maxWeeklySurplusKg * 7700) / 7;
-    warnings.push(
-      `Weekly surplus capped at ${maxWeeklySurplusKg}kg/week for optimal muscle gain. Goal timeline may need adjustment.`
-    );
+    warnings.push({
+      code: "surplus_capped",
+      maxWeeklyChangeKg: maxWeeklySurplusKg,
+    });
   }
 
   // Calculate baseline calories
@@ -171,9 +174,7 @@ export function calculateBaselineCalories(
   // Ensure minimum calories
   const minimumCalories = gender === "female" ? 1200 : 1500;
   if (baselineCalories < minimumCalories) {
-    warnings.push(
-      `Calorie target raised to minimum safe level (${minimumCalories} cal/day). Consider adjusting goal timeline.`
-    );
+    warnings.push({ code: "calories_raised_to_minimum", minimumCalories });
     baselineCalories = minimumCalories;
   }
 
@@ -208,7 +209,7 @@ export function calculateTargetCalories(
   goalWeightKg: number | undefined,
   goalDeadline: string | undefined,
   gender: "male" | "female" | "other"
-): { calories: number; weeklyRate: number; warnings: string[] } {
+): { calories: number; weeklyRate: number; warnings: NutritionWarning[] } {
   const result = calculateBaselineCalories(
     tdee,
     currentWeightKg,
@@ -236,9 +237,9 @@ export function calculateMacros(
   proteinG: number;
   carbG: number;
   fatG: number;
-  warnings: string[];
+  warnings: NutritionWarning[];
 } {
-  const warnings: string[] = [];
+  const warnings: NutritionWarning[] = [];
 
   // Step 1: Calculate protein (always in kg)
   let proteinG = Math.round(currentWeightKg * proteinTargetGPerKg);
@@ -246,22 +247,16 @@ export function calculateMacros(
 
   // Validate protein isn't too low or high
   if (proteinTargetGPerKg < 1.6) {
-    warnings.push(
-      "Protein target is below recommended minimum (1.6g/kg). Consider increasing for better results."
-    );
+    warnings.push({ code: "protein_below_minimum" });
   } else if (proteinTargetGPerKg > 2.5) {
-    warnings.push(
-      "Protein target is higher than necessary (>2.5g/kg). Excess protein provides no additional benefit."
-    );
+    warnings.push({ code: "protein_above_necessary" });
   }
 
   // Step 2: Calculate remaining calories for carbs/fat
   const remainingCalories = calorieTarget - proteinCalories;
 
   if (remainingCalories < 0) {
-    warnings.push(
-      "Protein alone exceeds calorie target. Adjusting protein down to fit."
-    );
+    warnings.push({ code: "protein_exceeds_calories" });
     proteinG = Math.round((calorieTarget * 0.4) / 4);
     const adjustedProteinCalories = proteinG * 4;
     const adjustedRemainingCalories = calorieTarget - adjustedProteinCalories;
@@ -294,9 +289,7 @@ export function calculateMacros(
 
   // Ensure minimum fat intake
   if (fatCalories < minFatCalories) {
-    warnings.push(
-      `Fat intake increased to meet ${gender === "female" ? "25%" : "20%"} minimum for hormonal health.`
-    );
+    warnings.push({ code: "fat_increased_for_minimum", gender });
     fatCalories = minFatCalories;
     carbCalories = remainingCalories - fatCalories;
   }
@@ -318,7 +311,7 @@ export function calculateMacros(
 export function generateNutritionPlan(
   input: NutritionCalculationInput
 ): NutritionPlan {
-  const warnings: string[] = [];
+  const warnings: NutritionWarning[] = [];
 
   // Calculate pure TDEE (BMR x activity multiplier, no training calories)
   const tdee = calculateTDEE(input.bmr, input.workActivityLevel);

@@ -22,8 +22,16 @@ import {
 //   flooring at one. AMRAP-result-keyed rules are a future seam (no logged
 //   results exist at library-authoring time).
 
+// `mode` is a progression MODE, not a physical unit. It used to be
+// `unit: "kg" | "percent"`, which fused two independent axes: how the delta is
+// applied (add a fixed amount vs scale by a percentage) and what unit the amount
+// is expressed in. That made an imperial coach's typed "5" arrive here as 5 kg.
+//
+// The axes are now separate. `amount` on an "absolute" rule is always
+// KILOGRAMS, matching canonical storage — the caller converts from the viewer's
+// unit before building the rule, never here.
 export type ProgressionRule =
-  | { kind: "load"; unit: "kg" | "percent"; amount: number }
+  | { kind: "load"; mode: "absolute" | "percent"; amount: number }
   | { kind: "reps"; amount: number }
   | { kind: "sets"; amount: number };
 
@@ -72,11 +80,11 @@ const cloneSpec = (s: SetSpec): SetSpec => ({
   drops: s.drops ? s.drops.map((d) => ({ ...d })) : s.drops,
 });
 
-function progressLoad(s: SetSpec, unit: "kg" | "percent", amount: number): SetSpec {
+function progressLoad(s: SetSpec, mode: "absolute" | "percent", amount: number): SetSpec {
   // load_type null with a load_value set is schema-legal — skip, never guess.
   if (s.load_value == null || s.load_type == null) return s;
   let next: number;
-  if (unit === "kg") {
+  if (mode === "absolute") {
     if (s.load_type !== "absolute") return s;
     next = clamp(round2(s.load_value + amount), 0, 2000); // 2dp scrubs float dust
   } else if (s.load_type === "absolute") {
@@ -141,7 +149,7 @@ export function progressSetSpecs(specs: SetSpec[], rule: ProgressionRule): SetSp
   const next = specs.map((s) => {
     if (!isWorking(s)) return s;
     return rule.kind === "load"
-      ? progressLoad(s, rule.unit, rule.amount)
+      ? progressLoad(s, rule.mode, rule.amount)
       : progressReps(s, rule.amount);
   });
   return next.every((s, i) => s === specs[i]) ? null : next;
@@ -168,7 +176,7 @@ export function progressExercise(
   // compact percent through rounding alone.
   const pctMirror =
     rule.kind === "load" &&
-    rule.unit === "percent" &&
+    rule.mode === "percent" &&
     pct != null &&
     Number.isFinite(rule.amount) &&
     rule.amount !== 0

@@ -4,7 +4,12 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
-import type { Client, ActivityLevel, DietType } from "@/types/check-in";
+import type {
+  Client,
+  ActivityLevel,
+  DietType,
+  NutritionWarning,
+} from "@/types/check-in";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
 import { getActivityMultiplier } from "@/utils/nutrition-helpers";
 import { addDays } from "date-fns";
@@ -168,7 +173,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
 
   const [coachNotes, setCoachNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [warnings, setWarnings] = useState<NutritionWarning[]>([]);
 
   // Settings change handler
   const handleSettingsChange = useCallback((newSettings: Partial<NutritionSettings>) => {

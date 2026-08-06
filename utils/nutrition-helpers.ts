@@ -181,38 +181,17 @@ export function getSuggestedTrainingVolume(
   return "8+";
 }
 
-/**
- * Unit conversion utilities
- */
+// The unit-conversion helpers that used to live here are gone: lbsToKg,
+// inchesToCm, cmToInches, weightToKg and weightFromKg were all dead once storage
+// became canonical (migration 141), and their 2.205 was one of the four
+// conflicting lbs<->kg constants utils/unit-conversions.ts exists to replace.
+//
+// kgToLbs survives only because formatWeight below still calls it. Both, plus
+// PROTEIN_TARGETS.gPerLb, are deleted with formatWeight's last two callers (the
+// nutrition banners) — they are the only reason this file still knows about lbs.
 
-export function lbsToKg(lbs: number): number {
-  return lbs / 2.205;
-}
-
-export function kgToLbs(kg: number): number {
+function kgToLbs(kg: number): number {
   return kg * 2.205;
-}
-
-export function inchesToCm(inches: number): number {
-  return inches * 2.54;
-}
-
-export function cmToInches(cm: number): number {
-  return cm / 2.54;
-}
-
-/**
- * Convert weight to kg for internal calculations
- */
-export function weightToKg(weight: number, unit: "lbs" | "kg"): number {
-  return unit === "lbs" ? lbsToKg(weight) : weight;
-}
-
-/**
- * Convert weight from kg to display unit
- */
-export function weightFromKg(weightKg: number, unit: "lbs" | "kg"): number {
-  return unit === "lbs" ? kgToLbs(weightKg) : weightKg;
 }
 
 /**
@@ -238,22 +217,6 @@ export const PROTEIN_TARGETS = {
   high: { gPerKg: 2.0, gPerLb: 0.91 },
   veryHigh: { gPerKg: 2.2, gPerLb: 1.0 },
 } as const;
-
-/**
- * Get protein target label based on g/kg value and unit preference
- */
-export function getProteinTargetLabel(
-  gPerKg: number,
-  unitPreference: UnitPreference
-): string {
-  if (unitPreference === "metric") {
-    return `${gPerKg.toFixed(1)}g per kg`;
-  }
-
-  // Convert to g/lb for imperial
-  const gPerLb = gPerKg / 2.205;
-  return `${gPerLb.toFixed(2)}g per lb`;
-}
 
 /**
  * Get activity level multiplier for TDEE calculation

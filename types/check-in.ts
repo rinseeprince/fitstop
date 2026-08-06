@@ -555,10 +555,13 @@ export type ProgressComparison = {
 };
 
 // Chart data for visualizations
+// No `label` field: it was built for all eight metrics and read by nothing but
+// its own test. The weight one baked a unit into the string inside a pure module
+// (lib/check-in-utils.ts), which is unfixable at the render boundary — and did
+// not need fixing, because it never reached a screen.
 export type ChartDataPoint = {
   date: string;
   value: number;
-  label?: string;
 };
 
 export type ProgressChartData = {
@@ -674,6 +677,30 @@ export type GenerateNutritionPlanRequest = {
   effectiveFrom?: string;
 };
 
+/**
+ * A nutrition-calculator warning as structured data, never a finished sentence.
+ *
+ * `services/nutrition-service.ts` is PURE and deliberately runs in two places:
+ * on the server via `nutrition-plan-orchestrator.ts`, and in the coach's BROWSER
+ * via `hooks/use-nutrition-builder.ts`, which previews a plan before it is
+ * saved. It can therefore reach neither `useUnits()` (no React context) nor
+ * `getViewerUnitPreference(request)` (server-only).
+ *
+ * That is why the rate caps used to read "0.75kg/week" for every viewer: the
+ * only layer that knows the viewer's unit is the renderer, and a baked sentence
+ * put the number out of its reach. These codes carry raw KILOGRAMS;
+ * `components/clients/nutrition/nutrition-warnings.tsx` words them.
+ */
+export type NutritionWarning =
+  | { code: "deadline_passed" }
+  | { code: "deficit_capped"; maxWeeklyChangeKg: number }
+  | { code: "surplus_capped"; maxWeeklyChangeKg: number }
+  | { code: "calories_raised_to_minimum"; minimumCalories: number }
+  | { code: "protein_below_minimum" }
+  | { code: "protein_above_necessary" }
+  | { code: "protein_exceeds_calories" }
+  | { code: "fat_increased_for_minimum"; gender: "male" | "female" | "other" };
+
 export type GenerateNutritionPlanResponse = {
   success: boolean;
   plan?: {
@@ -683,7 +710,9 @@ export type GenerateNutritionPlanResponse = {
     fatTargetG: number;
     adjustedTdee: number;
     weeklyWeightChangeKg: number;
-    warnings?: string[];
+    // Structured codes, not sentences — the calculator is pure and cannot
+    // resolve the viewer's unit. See NutritionWarning in services/nutrition-service.ts.
+    warnings?: NutritionWarning[];
   };
   errorMessage?: string;
 };
