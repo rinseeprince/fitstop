@@ -19,6 +19,39 @@ export const NUTRITION_ADHERENCE_PARTIAL_THRESHOLD = 200; // Within 200 calories
 export const WEEKLY_NUTRITION_HIT_PER_DAY = 50;
 export const WEEKLY_NUTRITION_PARTIAL_PER_DAY = 143;
 
+// Sanity bounds for stored body measurements and loads.
+//
+// Storage is canonical: every weight is KILOGRAMS and every length is
+// CENTIMETRES (docs/UNITS-CANONICALIZATION-PLAN.md). These bounds describe
+// STORAGE, so a form collecting in the viewer's unit converts first and
+// validates the converted value — never the number that was typed.
+//
+// They live here because the same ceiling was written out at six separate
+// sites, three of which were pounds-shaped (20-700) sitting on kg columns and
+// accepting 699 kg, while a fourth narrowed the same quantity to 20-250 kg
+// inline in a route handler. CONVENTIONS §3: a threshold that appears twice
+// belongs in one place.
+export const WEIGHT_KG_MIN = 20;
+export const WEIGHT_KG_MAX = 250; // ~550 lb — above any plausible client
+
+// Girths: waist/hips/chest run larger than arms/thighs, hence two bounds. The
+// VALUES are unchanged from what each site already used — they were unit-blind
+// (one range serving both inches and centimetres), not wrong for centimetres.
+export const GIRTH_TORSO_CM_MAX = 200;
+export const GIRTH_LIMB_CM_MAX = 100;
+
+// A logged or reported training load, in kilograms. Deliberately generous and
+// deliberately UNCHANGED from the 2000 each site already used: a plate-loaded
+// leg press legitimately exceeds any bound a barbell would suggest, so this is
+// a nonsense-catcher, not a business rule.
+//
+// NOT for `setSpecSchema.load_value` (lib/validations/training.ts), which
+// shares one bound across two quantities — an absolute kg load when load_type
+// is "absolute", a PERCENTAGE when it is pct_1rm/pct_top. Naming that bound
+// "KG" would assert something false about half its values, so it keeps its
+// literal. Do not "unify" it.
+export const LOAD_KG_MAX = 2000;
+
 // Date limits
 export const MAX_DATE_LOOKBACK_DAYS = 30;
 

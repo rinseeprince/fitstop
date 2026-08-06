@@ -45,4 +45,22 @@ describe("updateGoalsSchema", () => {
   it("rejects an empty payload (at least one field required)", () => {
     expect(updateGoalsSchema.safeParse({}).success).toBe(false);
   });
+
+  // goalWeight is canonical KILOGRAMS (migration 141) and had no bounds
+  // coverage at all while carrying a pounds ceiling of 700 — so a goal of
+  // 699 kg validated, and the number only ever made sense as pounds.
+  describe("goalWeight is bounded in kilograms", () => {
+    it("accepts a plausible kg goal", () => {
+      expect(updateGoalsSchema.safeParse({ goalWeight: 82.5 }).success).toBe(true);
+    });
+
+    it("rejects a pounds-shaped goal that the old 20-700 range let through", () => {
+      expect(updateGoalsSchema.safeParse({ goalWeight: 300 }).success).toBe(false);
+      expect(updateGoalsSchema.safeParse({ goalWeight: 699 }).success).toBe(false);
+    });
+
+    it("rejects a goal below the kg floor", () => {
+      expect(updateGoalsSchema.safeParse({ goalWeight: 15 }).success).toBe(false);
+    });
+  });
 });

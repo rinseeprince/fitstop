@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WEIGHT_KG_MAX, WEIGHT_KG_MIN } from "@/lib/constants";
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 const dateMessage = "Date must be in YYYY-MM-DD format";
@@ -17,10 +18,14 @@ const dateMessage = "Date must be in YYYY-MM-DD format";
  * "not in the past" bound is enforced route-side against the coach's local today
  * (`getCoachTodayString`) — a server-clock bound in the schema would reject an
  * east-of-UTC coach's own today as past (same rule as `dailyHabitLogSchema`).
+ *
+ * `goalWeight` is canonical KILOGRAMS (migration 141) — client-goal-editor.tsx
+ * converts from the viewer's unit before sending. Its bound was `.max(700)`, a
+ * pounds ceiling left over from display-unit storage.
  */
 export const updateGoalsSchema = z
   .object({
-    goalWeight: z.number().min(20).max(700).optional(),
+    goalWeight: z.number().min(WEIGHT_KG_MIN).max(WEIGHT_KG_MAX).optional(),
     goalBodyFatPercentage: z.number().min(3).max(60).nullable().optional(),
     goalDeadline: z.string().regex(dateRegex, dateMessage).nullable().optional(),
     goalStartDate: z.string().regex(dateRegex, dateMessage).nullable().optional(),

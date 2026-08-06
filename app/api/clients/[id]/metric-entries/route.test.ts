@@ -153,9 +153,13 @@ describe("/api/clients/[id]/metric-entries", () => {
       expect(upsertMetricEntry).not.toHaveBeenCalled();
     });
 
-    it("rejects a weight outside the range (719 > 700)", async () => {
+    // The bound is KILOGRAMS (WEIGHT_KG_MAX = 250). 300 is the case that
+    // matters: it passed the old pounds-shaped 20-700 range, so a coach could
+    // store 300 kg — a number that only made sense as pounds, on a column that
+    // has been canonical kilograms since migration 141.
+    it("rejects a weight above the kg ceiling (300 kg)", async () => {
       const response = await POST(
-        createMockRequest("POST", validBody({ value: 719 })),
+        createMockRequest("POST", validBody({ value: 300 })),
         mockParams
       );
       const data = await response.json();
@@ -163,6 +167,26 @@ describe("/api/clients/[id]/metric-entries", () => {
       expect(response.status).toBe(400);
       expect(data.success).toBe(false);
       expect(upsertMetricEntry).not.toHaveBeenCalled();
+    });
+
+    it("rejects a weight below the kg floor (15 kg)", async () => {
+      const response = await POST(
+        createMockRequest("POST", validBody({ value: 15 })),
+        mockParams
+      );
+
+      expect(response.status).toBe(400);
+      expect(upsertMetricEntry).not.toHaveBeenCalled();
+    });
+
+    it("accepts a plausible kg weight at the top of the range", async () => {
+      const response = await POST(
+        createMockRequest("POST", validBody({ value: 249 })),
+        mockParams
+      );
+
+      expect(response.status).toBe(200);
+      expect(upsertMetricEntry).toHaveBeenCalled();
     });
 
     it("rejects a mood above its 1-5 scale (6)", async () => {

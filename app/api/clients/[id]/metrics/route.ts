@@ -55,18 +55,11 @@ export async function PUT(
 
     const client = clientData;
 
-    // Validate metric ranges
-    if (body.currentWeight !== undefined) {
-      // Kilograms on the wire and in storage (migration 141) — no conversion.
-      const weightKg = body.currentWeight;
-      if (weightKg < 20 || weightKg > 250) {
-        return NextResponse.json(
-          { error: "Weight must be between 20-250 kg (44-550 lbs)" },
-          { status: 400 }
-        );
-      }
-    }
-
+    // Validate the ranges the schema does not already cover. The weight bound
+    // that used to sit here was a second, tighter copy of the schema's — the
+    // schema said 20-700 (pounds-shaped) and this said 20-250 kg. Both now read
+    // WEIGHT_KG_MIN/MAX from lib/constants, so updateClientMetricsSchema
+    // rejects an out-of-range weight before this handler runs.
     if (body.currentBodyFatPercentage !== undefined) {
       if (body.currentBodyFatPercentage < 3 || body.currentBodyFatPercentage > 60) {
         return NextResponse.json(

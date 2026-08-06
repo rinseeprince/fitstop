@@ -1,6 +1,11 @@
 import { z } from "zod";
+import {
+  GIRTH_LIMB_CM_MAX,
+  GIRTH_TORSO_CM_MAX,
+  LOAD_KG_MAX,
+} from "@/lib/constants";
 
-const VALID_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+const VALID_DAYS =["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
 
 const dayOfWeekSchema = z.enum(VALID_DAYS);
 
@@ -61,7 +66,8 @@ export const exerciseHighlightSchema = z.object({
   exerciseName: z.string().min(1).max(100),
   highlightType: z.enum(["pr", "struggle", "note"]),
   details: optionalString(500),
-  weightValue: optionalNumber(z.number().positive().max(2000)),
+  // A lifted LOAD, not a body weight — canonical kilograms, own ceiling.
+  weightValue: optionalNumber(z.number().positive().max(LOAD_KG_MAX)),
   weightUnit: z.enum(["lbs", "kg"]).optional().nullable().transform((v) => v ?? undefined),
   reps: optionalInt(z.number().int().min(1).max(1000)),
 });
@@ -85,17 +91,28 @@ export const submitCheckInSchema = z.object({
   stress: optionalInt(z.number().int().min(1).max(10)),
   notes: optionalString(5000),
 
-  // Body metrics
-  weight: optionalNumber(z.number().positive().max(1000)), // max 1000 lbs/kg
+  // Body metrics.
+  //
+  // The `.max(1000) // max 1000 lbs/kg` ceiling is deliberately NOT tightened
+  // to WEIGHT_KG_MAX here: this form still submits in the unit its own toggle
+  // showed and lets the server convert, and a pounds value is numerically
+  // LARGER than the kilograms it becomes — so a kg ceiling applied before the
+  // form converts would reject a 300 lb client outright. The bound moves with
+  // the form's conversion, in the same commit, not before it.
+  weight: optionalNumber(z.number().positive().max(1000)),
   weightUnit: z.enum(["lbs", "kg"]).optional().nullable().transform((v) => v ?? undefined),
   bodyFatPercentage: optionalNumber(z.number().min(0).max(100)),
 
-  // Body measurements
-  waist: optionalNumber(z.number().positive().max(200)), // max 200 in/cm
-  hips: optionalNumber(z.number().positive().max(200)),
-  chest: optionalNumber(z.number().positive().max(200)),
-  arms: optionalNumber(z.number().positive().max(100)),
-  thighs: optionalNumber(z.number().positive().max(100)),
+  // Body measurements — canonical CENTIMETRES. Values unchanged; they read
+  // correctly as centimetres and were merely labelled "in/cm". Safe to name
+  // ahead of the form conversion, unlike weight above: an inches value is
+  // numerically SMALLER than the centimetres it becomes, so a cm ceiling
+  // cannot reject an inches payload.
+  waist: optionalNumber(z.number().positive().max(GIRTH_TORSO_CM_MAX)),
+  hips: optionalNumber(z.number().positive().max(GIRTH_TORSO_CM_MAX)),
+  chest: optionalNumber(z.number().positive().max(GIRTH_TORSO_CM_MAX)),
+  arms: optionalNumber(z.number().positive().max(GIRTH_LIMB_CM_MAX)),
+  thighs: optionalNumber(z.number().positive().max(GIRTH_LIMB_CM_MAX)),
   measurementUnit: z.enum(["in", "cm"]).optional().nullable().transform((v) => v ?? undefined),
 
   // Progress photos (base64 or URLs)

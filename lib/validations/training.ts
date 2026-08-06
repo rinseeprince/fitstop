@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LOAD_KG_MAX } from "@/lib/constants";
 import type { TrainingPlan } from "@/types/training";
 
 export const planStatusSchema = z.enum(["active", "archived", "draft", "planned"]);
@@ -338,7 +339,9 @@ export const completionQualitySchema = z.enum(["full", "partial", "skipped"]);
 
 export const setPerformanceSchema = z.object({
   reps: z.number().int().min(1).max(100).optional(),
-  weight: z.number().min(0).max(2000).optional(),
+  // Canonical kilograms (migration 141). Unlike setSpecSchema.load_value above,
+  // this field is never a percentage, so it can carry the named kg bound.
+  weight: z.number().min(0).max(LOAD_KG_MAX).optional(),
   rpe: z.number().min(1).max(10).optional(),
   // Accepted-but-ignored: set_type is coach-prescribed, derived server-side from
   // the prescription snapshot's set_specs at log time (never chosen by the
