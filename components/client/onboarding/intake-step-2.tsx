@@ -12,8 +12,17 @@ import {
   Calendar,
   Shield,
 } from "lucide-react"
+import { useEffect, useRef } from "react"
 import type { ClientIntake, PrimaryGoal } from "@/types/client-intake"
 import { getTodayDateString } from "@/lib/date-helpers"
+import { useUnits } from "@/contexts/units-context"
+import { useCanonicalInput } from "@/hooks/use-unit-inputs"
+import { formatWeight } from "@/utils/unit-conversions"
+
+// `client_intake.target_weight` is canonical KILOGRAMS. The label here read a
+// hardcoded "(kg)" while step 1 let the client enter their weight in pounds —
+// so an imperial client typed 155 meaning pounds into a box asking for
+// kilograms, one screen after entering 165 lbs correctly.
 
 type IntakeStep2Props = {
   data: Partial<ClientIntake>
@@ -34,10 +43,25 @@ const needsTargetWeight = (goal?: PrimaryGoal) =>
   goal === "lose_weight" || goal === "build_muscle"
 
 export function IntakeStep2({ data, onChange, errors }: IntakeStep2Props) {
+  const { preference } = useUnits()
+  const weightUnit = formatWeight(0, preference).unit
+  const targetWeight = useCanonicalInput(preference, data.targetWeight, "weight")
+
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+
+  useEffect(() => {
+    onChangeRef.current({ targetWeight: targetWeight.commit ?? undefined })
+  }, [targetWeight.commit])
+
+  const resetTargetWeight = targetWeight.reset
   const handleGoalChange = (goal: PrimaryGoal) => {
     const updates: Partial<ClientIntake> = { primaryGoal: goal }
     if (!needsTargetWeight(goal)) {
       updates.targetWeight = undefined
+      // Clear the box too, or switching to "Maintain" and back would re-show a
+      // number the draft no longer holds.
+      resetTargetWeight(null)
     }
     onChange(updates)
   }
@@ -71,12 +95,16 @@ export function IntakeStep2({ data, onChange, errors }: IntakeStep2Props) {
       {/* Conditional: Target Weight */}
       {needsTargetWeight(data.primaryGoal) && (
         <div className="space-y-2">
-          <Label>What&apos;s your target weight? (kg)</Label>
+          <Label htmlFor="intake-target-weight">
+            What&apos;s your target weight? ({weightUnit})
+          </Label>
           <Input
+            id="intake-target-weight"
             type="number"
-            placeholder="e.g. 70"
-            value={data.targetWeight || ""}
-            onChange={(e) => onChange({ targetWeight: parseFloat(e.target.value) || undefined })}
+            inputMode="decimal"
+            placeholder={preference === "imperial" ? "e.g. 155" : "e.g. 70"}
+            value={targetWeight.value}
+            onChange={(e) => targetWeight.setValue(e.target.value)}
             className="min-h-[44px]"
           />
           {errors.targetWeight && <p className="text-sm text-destructive">{errors.targetWeight}</p>}

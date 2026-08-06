@@ -1,12 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SelectableCard } from "./selectable-card"
 import { getDateString } from "@/lib/date-helpers"
 import type { ClientIntake } from "@/types/client-intake"
-import { formatHeight, kgToLbs, lbsToKg } from "@/utils/unit-conversions"
+import { useInvalidateUnitPreference, useUnits } from "@/contexts/units-context"
+import { useCanonicalInput, useHeightInput } from "@/hooks/use-unit-inputs"
+import { formatWeight, type UnitSystem } from "@/utils/unit-conversions"
 
 type IntakeStep1Props = {
   data: Partial<ClientIntake>
@@ -21,102 +23,110 @@ const genderOptions = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
 ] as const
 
-// Conversion goes through utils/unit-conversions.ts. This file used to carry a
-// local 2.20462 — one of the four conflicting lbs<->kg constants that module
-// exists to replace, and the least accurate of them. The display rounding stays
-// here because it is a presentation choice, not a conversion.
+// ONE units control, and it writes the client's REAL preference.
 //
-// Both directions moved, not just display: the pair has to agree on a constant
-// or the round trip is worse than either alone. The unit TOGGLE still reads
-// localStorage rather than the viewer preference — that is Phase 4.
-const cmToDisplay = (cm: number, unit: string) => {
-  if (unit === "ft") {
-    // formatHeight carries 12 inches into the next foot; the hand-rolled
-    // modulo here could render 5'12".
-    const h = formatHeight(cm, "imperial")
-    return h.system === "imperial" ? { feet: h.feet, inches: h.inches } : { cm }
-  }
-  return { cm }
-}
-
-const toDisplayLbs = (kg: number) => Math.round(kgToLbs(kg) * 10) / 10
-const toStoredKg = (lbs: number) => Math.round(lbsToKg(lbs) * 10) / 10
-
-const VALID_HEIGHT_UNITS = ["cm", "ft"] as const
-const VALID_WEIGHT_UNITS = ["kg", "lbs"] as const
+// This used to be two independent toggles (cm/ft and kg/lbs) backed by
+// localStorage, which made it the only place a pre-activation client could
+// express a unit at all: app/client/layout.tsx sends a `pending_intake` client
+// straight to this form and blocks every other route, so /client/settings is
+// unreachable until their coach activates them. Deleting the toggle in favour
+// of `useUnits()` alone would have stranded an imperial client typing kilograms
+// into a form with no switch, because clients.unit_preference defaults to
+// 'metric' (migration 141).
+//
+// So it stays — repointed at PATCH /api/client/settings, which is reachable
+// pre-activation (getAuthenticatedClientId gates on clients.active, set true at
+// creation, NOT on onboarding_status). That is the client setting their own
+// preference, which is the whole point of the phase, and it means they arrive
+// in the portal already in their unit instead of having it reset on them.
 
 // Minimum 16 years old
 const maxDob = new Date()
 maxDob.setFullYear(maxDob.getFullYear() - 16)
 const MAX_DOB_STRING = getDateString(maxDob)
 
-function readValidUnit<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-  try {
-    const val = localStorage.getItem(key)
-    return val && (allowed as readonly string[]).includes(val) ? val as T : fallback
-  } catch (err) { console.warn("Failed to read localStorage key:", key, err); return fallback }
-}
-
 export function IntakeStep1({ data, onChange, errors }: IntakeStep1Props) {
-  const [heightUnit, setHeightUnit] = useState(() => readValidUnit("intake-height-unit", VALID_HEIGHT_UNITS, "cm"))
-  const [weightUnit, setWeightUnit] = useState(() => readValidUnit("intake-weight-unit", VALID_WEIGHT_UNITS, "kg"))
-  // Local display values for ft/in
-  const [ftVal, setFtVal] = useState("")
-  const [inVal, setInVal] = useState("")
+  const { preference } = useUnits()
+  const invalidateUnitPreference = useInvalidateUnitPreference()
+  const [isSavingUnit, setIsSavingUnit] = useState(false)
+  const [unitError, setUnitError] = useState<string | null>(null)
 
-  // Sync ft/in display when switching to ft or on mount
-  useEffect(() => {
-    if (heightUnit === "ft" && data.height) {
-      const { feet, inches } = cmToDisplay(data.height, "ft")
-      setFtVal(String(feet))
-      setInVal(String(inches))
+  const height = useHeightInput(preference, data.height)
+  const weight = useCanonicalInput(preference, data.currentWeight, "weight")
+  const weightUnit = formatWeight(0, preference).unit
+
+  // The parent re-creates onChange each render; a ref keeps the sync effects
+  // below keyed on the VALUE changing rather than on the callback identity.
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+
+  // Persisted immediately, not at submit: the fields below re-render in the new
+  // unit the moment it changes, so a preference that only landed at the end of
+  // the form would show the client one unit and store another.
+  const chooseUnit = async (next: UnitSystem) => {
+    if (next === preference || isSavingUnit) return
+    setIsSavingUnit(true)
+    setUnitError(null)
+    try {
+      const res = await fetch("/api/client/settings", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unitPreference: next }),
+      })
+      if (!res.ok) throw new Error("Failed to save units")
+      await invalidateUnitPreference()
+    } catch {
+      setUnitError("Couldn't save your units. Please try again.")
+    } finally {
+      setIsSavingUnit(false)
     }
-  }, [heightUnit, data.height])
-
-  const toggleHeightUnit = (unit: typeof VALID_HEIGHT_UNITS[number]) => {
-    setHeightUnit(unit)
-    // eslint-disable-next-line no-empty
-    try { localStorage.setItem("intake-height-unit", unit) } catch {}
   }
 
-  const toggleWeightUnit = (unit: typeof VALID_WEIGHT_UNITS[number]) => {
-    setWeightUnit(unit)
-    // eslint-disable-next-line no-empty
-    try { localStorage.setItem("intake-weight-unit", unit) } catch {}
-  }
-
-  const handleHeightCm = (val: string) => {
-    const num = parseFloat(val)
-    onChange({ height: isNaN(num) ? undefined : num })
-  }
-
-  const handleHeightFt = (feet: string, inches: string) => {
-    setFtVal(feet)
-    setInVal(inches)
-    const f = parseInt(feet) || 0
-    const i = parseInt(inches) || 0
-    const cm = Math.round((f * 12 + i) * 2.54)
-    onChange({ height: cm > 0 ? cm : undefined })
-  }
-
-  const handleWeight = (val: string) => {
-    const num = parseFloat(val)
-    if (isNaN(num)) { onChange({ currentWeight: undefined }); return }
-    onChange({ currentWeight: weightUnit === "lbs" ? toStoredKg(num) : num })
-  }
-
-  const displayWeight = () => {
-    if (!data.currentWeight) return ""
-    return weightUnit === "lbs"
-      ? String(toDisplayLbs(data.currentWeight))
-      : String(data.currentWeight)
-  }
+  // The hooks own the display strings; the intake draft holds canonical cm/kg.
+  // They seed once and on a unit change, never from these writes, so there is
+  // no loop back into the fields.
+  useEffect(() => {
+    onChangeRef.current({ height: height.commitCm ?? undefined })
+  }, [height.commitCm])
+  useEffect(() => {
+    onChangeRef.current({ currentWeight: weight.commit ?? undefined })
+  }, [weight.commit])
 
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold mb-1">About You</h3>
         <p className="text-sm text-muted-foreground">Basic info to get started</p>
+      </div>
+
+      {/* Units — one choice for the whole app, saved to this client's profile */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label>Which units do you use?</Label>
+          <div className="flex rounded-lg border text-xs overflow-hidden">
+            <button
+              type="button"
+              onClick={() => void chooseUnit("metric")}
+              disabled={isSavingUnit}
+              className={`px-3 py-1 ${preference === "metric" ? "bg-primary text-primary-foreground" : ""}`}
+            >
+              kg / cm
+            </button>
+            <button
+              type="button"
+              onClick={() => void chooseUnit("imperial")}
+              disabled={isSavingUnit}
+              className={`px-3 py-1 ${preference === "imperial" ? "bg-primary text-primary-foreground" : ""}`}
+            >
+              lbs / ft
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          You can change this later in Settings.
+        </p>
+        {unitError && <p className="text-sm text-destructive">{unitError}</p>}
       </div>
 
       {/* Date of Birth */}
@@ -151,80 +161,54 @@ export function IntakeStep1({ data, onChange, errors }: IntakeStep1Props) {
 
       {/* Height */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label>How tall are you?</Label>
-          <div className="flex rounded-lg border text-xs overflow-hidden">
-            <button
-              type="button"
-              onClick={() => toggleHeightUnit("cm")}
-              className={`px-3 py-1 ${heightUnit === "cm" ? "bg-primary text-primary-foreground" : ""}`}
-            >
-              cm
-            </button>
-            <button
-              type="button"
-              onClick={() => toggleHeightUnit("ft")}
-              className={`px-3 py-1 ${heightUnit === "ft" ? "bg-primary text-primary-foreground" : ""}`}
-            >
-              ft
-            </button>
-          </div>
-        </div>
-        {heightUnit === "cm" ? (
-          <Input
-            type="number"
-            placeholder="e.g. 175"
-            value={data.height || ""}
-            onChange={(e) => handleHeightCm(e.target.value)}
-            className="min-h-[44px]"
-          />
-        ) : (
+        <Label htmlFor="intake-height">How tall are you?</Label>
+        {height.system === "imperial" ? (
           <div className="flex gap-2">
             <Input
+              id="intake-height"
               type="number"
+              inputMode="numeric"
               placeholder="ft"
-              value={ftVal}
-              onChange={(e) => handleHeightFt(e.target.value, inVal)}
+              value={height.fields.feet}
+              onChange={(e) => height.setFeet(e.target.value)}
               className="min-h-[44px]"
             />
             <Input
               type="number"
+              inputMode="numeric"
+              aria-label="Height, inches"
               placeholder="in"
-              value={inVal}
-              onChange={(e) => handleHeightFt(ftVal, e.target.value)}
+              value={height.fields.inches}
+              onChange={(e) => height.setInches(e.target.value)}
               className="min-h-[44px]"
             />
           </div>
+        ) : (
+          <Input
+            id="intake-height"
+            type="number"
+            inputMode="decimal"
+            placeholder="e.g. 175"
+            value={height.fields.cm}
+            onChange={(e) => height.setCm(e.target.value)}
+            className="min-h-[44px]"
+          />
         )}
         {errors.height && <p className="text-sm text-destructive">{errors.height}</p>}
       </div>
 
       {/* Weight */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label>What do you currently weigh?</Label>
-          <div className="flex rounded-lg border text-xs overflow-hidden">
-            <button
-              type="button"
-              onClick={() => toggleWeightUnit("kg")}
-              className={`px-3 py-1 ${weightUnit === "kg" ? "bg-primary text-primary-foreground" : ""}`}
-            >
-              kg
-            </button>
-            <button
-              type="button"
-              onClick={() => toggleWeightUnit("lbs")}
-              className={`px-3 py-1 ${weightUnit === "lbs" ? "bg-primary text-primary-foreground" : ""}`}
-            >
-              lbs
-            </button>
-          </div>
-        </div>
+        <Label htmlFor="intake-weight">
+          What do you currently weigh? ({weightUnit})
+        </Label>
         <Input
+          id="intake-weight"
           type="number"
-          placeholder={weightUnit === "kg" ? "e.g. 75" : "e.g. 165"}
-          value={displayWeight()}
-          onChange={(e) => handleWeight(e.target.value)}
+          inputMode="decimal"
+          placeholder={preference === "imperial" ? "e.g. 165" : "e.g. 75"}
+          value={weight.value}
+          onChange={(e) => weight.setValue(e.target.value)}
           className="min-h-[44px]"
         />
         {errors.currentWeight && <p className="text-sm text-destructive">{errors.currentWeight}</p>}
