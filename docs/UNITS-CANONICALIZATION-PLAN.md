@@ -1,8 +1,14 @@
 # Units canonicalization — implementation plan
 
-**Status**: Phases 1-2 shipped (2026-08-06, migrations 140 + 141) · Phases 3-4 not
-started · **Logged**: 2026-08-05 · **Next migration number**: 143 (142 was used by the unrelated magic-link check-in removal)
+**Status**: Phases 1-3 shipped (2026-08-06, migrations 140 + 141) · **Phase 4 is
+all that remains** · **Logged**: 2026-08-05 · **Next migration number**: 143 (142
+was used by the unrelated magic-link check-in removal)
 
+> **Phase 3 disproved five of its own claims, two of which would have corrupted
+> data.** They are listed at the top of the Phase 3 section under "What this
+> section got wrong". Read that before trusting any bullet in it — and note the
+> three carve-outs Phase 4 must retire WITH their forms, not before.
+>
 > **Phase 2 disproved four of its own trap-list claims.** Corrections are inline
 > in the Phase 2 section below, marked **CORRECTED**. Read them before Phase 3 —
 > two of them were "the tag is trustworthy" assumptions that would have corrupted
@@ -207,7 +213,7 @@ Phase 4 corrects these lines. Until then, treat them as known-false.
 |---|---|---|---|---|
 | 1 | ✅ **Shipped** `b9bbfac` 2026-08-06 | Conversion module, `coaches.unit_preference`, viewer resolver, `UnitsProvider` | New files + 1 migration | Low — nothing reads it yet |
 | 2 | ✅ **Shipped** `0a99622` 2026-08-06 | All storage converted to kg/cm; unit-tag columns dropped | 1 migration + write paths | Medium — UI shows wrong labels until Phase 3 |
-| 3 | Not started | Every render path converts through the helpers | ~40 component files | Medium — wide but mechanical |
+| 3 | ✅ **Shipped** 2026-08-06 (11 commits, `ebf1bb6`…`9f1fe3a`) | Every render path converts through the helpers | ~60 files | Was NOT mechanical — see its STATUS block |
 | 4 | Not started | Coach + client settings toggles; forms write kg | Settings pages, forms | Low |
 
 **Expect a broken-looking UI between Phase 2 and Phase 3.** After Phase 2 the
@@ -487,7 +493,82 @@ full runs — re-run it before assuming you broke it.
 
 ---
 
-## Phase 3 — Presentation sweep
+## Phase 3 — Presentation sweep · **SHIPPED** 2026-08-06
+
+Batch 0 + A–F: `ebf1bb6` `8716087` `bc7b417` `34a11d7` `041b6af` `ef6cf5c`
+`2378db4` `f6c3313` `c9bec09` `33b3b46` `9f1fe3a`.
+
+### What this section got wrong — read before trusting any bullet below
+
+**The sweep was not "wide but mechanical".** Five claims in this section were
+false at execution time and two of them would have corrupted data:
+
+1. **`set-row-editor.tsx` and `drop-set-editor.tsx` are editable INPUTS, not
+   displays.** This section says they "render through `formatLoad`". They must
+   NOT. `formatLoad` snaps, those inputs are uncontrolled and write on every
+   blur, so the snap round-trips into `set_specs`: an imperial coach opens a
+   100 kg session, sees 220, tabs past without editing, and stores 99.79 kg —
+   per field, having changed nothing. Editable loads seed from an UNSNAPPED
+   conversion and commit behind a **field-level** dirty guard
+   (`program-builder/commit-input.ts`). Row-level is not enough: a row is dirty
+   the moment its reps change.
+2. **`formatWeight` (the canonical one) had ZERO call sites**, not three. The
+   "three coach-facing nutrition banners" were calling the OLD `formatWeight`
+   from `utils/nutrition-helpers.ts` — a name collision, and a migration target
+   rather than evidence of prior work.
+3. **`nutrition-targets-block.tsx` needed no prop thread.** The appendix blames
+   a missing prop at `drawer-form-body.tsx:62`. Both are `"use client"` inside
+   the builder tree, so the block reads `useUnits()` directly. The missing-prop
+   framing belonged to the old model where the CLIENT's preference had to travel.
+4. **`progression-rules.ts:83` is `roundHalf` (0.5), not 2.5 kg plate math**, and
+   `duplicate-week-dialog.tsx`'s 2.5 is a default input value (its step is 0.5).
+   The inline correction above this section is right; the bullets below were not.
+5. **The imperial snap is 2.5 lb, not 5** (`33b3b46`, superseding Phase 1). At
+   5 lb a coach's 2.5 kg weekly bump renders as +10 lb against a real +5.5 —
+   roughly double — on the light dumbbell loads that dominate real prescriptions.
+   Above ~40 kg the two increments are indistinguishable.
+
+### Three carve-outs Phase 4 must retire WITH their forms
+
+Each is a live WRITE path, not a display shim, and each is commented at its
+declaration. Removing one alone corrupts data:
+
+- **`lib/mappers.ts`'s `heightUnit: "cm"` + `Client.heightUnit`.**
+  `client-settings-dialog.tsx:80` seeds its unit `<Select>` from
+  `client.heightUnit ?? "in"` and `:127` sends it back, where `client-service`
+  converts on the tag. Remove the shim and ANY save of that dialog stores
+  height × 2.54 (178 → 452 cm) — `toDefaults()` pre-populates the field, so it
+  does not need a height edit to fire.
+- **`BodyMetrics.weightUnit` / `measurementUnit`** — the check-in FORM's wire
+  tags (`step-metrics.tsx` toggles → `check-in-canonical-metrics.ts`). This
+  section listed them for deletion; tsc proved otherwise.
+- **`CheckInExerciseHighlight.weightUnit`**, same, via
+  `exercise-highlights-section.tsx`.
+
+### Two bugs found that were not unit bugs
+
+- **`0c4cebf` was a regression, not a fix** (corrected in `ebf1bb6`). The client
+  check-in route serves RAW snake_case rows; the page's original snake_case reads
+  were correct and that commit rewrote them to camelCase. Its stated guard —
+  "tsc now verifies every field name" — does not hold across a fetch, because
+  `response.json()` is `any`.
+- **`training-log-service.ts` carried a LOCAL `mapExerciseRow`** that dropped
+  `set_specs`/`video_url`, so the client portal had never seen a prescribed load,
+  per-set rest or set types — while the compact reps/RPE columns came through and
+  made the payload look complete (`c9bec09`).
+
+### Notes for Phase 4
+
+- **`useUnits()` reaches `auth-context` → the browser Supabase client, which
+  throws without env vars.** ~20 test suites needed
+  `vi.mock("@/contexts/units-context")`. Expect it on every new consumer.
+- **A green suite repeatedly proved nothing.** The warning strings, the nutrition
+  targets block, `buildLogPayload` and `exercise-insight` all had zero coverage,
+  so the full suite passed identically before and after each change.
+- **tsc cannot gate route-shape vs page-shape drift.** Batch F ends with an
+  explicit grep over `app/api/**` for hand-built unit keys instead.
+
+---
 
 **Goal**: no component invents a unit. Every unit-bearing value renders through
 the Phase 1 helpers with the viewer's preference from `useUnits()`.
