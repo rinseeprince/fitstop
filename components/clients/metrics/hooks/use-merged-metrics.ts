@@ -29,11 +29,19 @@ import type { CreateMetricEntryRequest } from "@/types/metric-entries";
 // Every derived stat — hero, 30-day change, week comparison, avgRate, best,
 // goalToGo — is computed from these points, so converting at source is what
 // keeps a delta consistent with the two numbers it sits between.
+// Rounded to one decimal, deliberately. A converted value carries the full
+// float — 170 kg is 374.78584571429193 lbs — and metric-hero renders
+// `latest.value` raw, so an imperial coach saw fifteen decimal places where a
+// metric one saw "170". One decimal is also what every other figure on the card
+// already shows (total change, 30-day change, goal), so this makes the hero
+// consistent with them rather than introducing a new precision.
+const round1 = (n: number): number => Math.round(n * 10) / 10;
+
 const convertPoint = (value: number, kind: MetricDefinition["convert"], viewer: UnitSystem) =>
   kind === "weight"
-    ? formatWeight(value, viewer).value
+    ? round1(formatWeight(value, viewer).value)
     : kind === "length"
-      ? formatLength(value, viewer).value
+      ? round1(formatLength(value, viewer).value)
       : value;
 
 // Method bivariance makes the narrow ReadonlySet<MetricEntryKey> usable where
@@ -118,7 +126,7 @@ export const useMergedMetrics = (
         // at the render boundary.
         // The goal is canonical kilograms; convert it the same way the series
         // was, so the difference below is taken between two like numbers.
-        const goalDisplay = formatWeight(effectiveGoal.goalWeightKg, preference).value;
+        const goalDisplay = round1(formatWeight(effectiveGoal.goalWeightKg, preference).value);
         goal = Number(goalDisplay.toFixed(1));
         if (hero) {
           goalToGo = Math.abs(hero.current.value - goalDisplay).toFixed(1);

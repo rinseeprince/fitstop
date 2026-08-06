@@ -39,3 +39,21 @@ describe("METRIC_DEFINITIONS units", () => {
     expect(convertible.sort()).toEqual(["weight", ...GIRTHS].sort());
   });
 });
+
+// Regression: an imperial coach saw "374.7858457142919 lbs" in the hero. The
+// stored value is a clean 170 kg; converting it produces the full float, and
+// metric-hero renders `latest.value` directly. The pipeline rounds now.
+describe("converted values are display-rounded", () => {
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  const KG_PER_LB = 0.45359237;
+
+  it("a 170 kg weight reads 374.8 lbs, not fifteen decimals", () => {
+    const lbs = 170 / KG_PER_LB;
+    expect(lbs.toString()).toContain("374.78584571429");
+    expect(round1(lbs)).toBe(374.8);
+  });
+
+  it("a 92 cm waist reads 36.2 in", () => {
+    expect(round1(92 / 2.54)).toBe(36.2);
+  });
+});
