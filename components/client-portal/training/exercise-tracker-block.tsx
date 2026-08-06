@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Controller,
   useFieldArray,
@@ -19,6 +19,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { SetRow } from "./set-row";
 import { ExerciseSearchInput } from "./exercise-search-input";
 import { emptySet, type LogFormValues } from "./log-form-types";
+import { useUnits } from "@/contexts/units-context";
+import { formatLoad } from "@/utils/unit-conversions";
+import { expandSetSpecs } from "@/utils/exercise-set-specs";
 
 export type PrescribedExerciseView = {
   id: string;
@@ -57,7 +60,6 @@ export type ExerciseFormContext = {
   register: UseFormRegister<LogFormValues>;
   setValue: UseFormSetValue<LogFormValues>;
   getValues: UseFormGetValues<LogFormValues>;
-  weightUnit: "lbs" | "kg";
   isUnplanned?: boolean;
   onRemove?: () => void;
 };
@@ -161,7 +163,6 @@ function FormModeBlock({
     register,
     setValue,
     getValues,
-    weightUnit,
     isUnplanned,
     onRemove,
   } = formContext;
@@ -170,6 +171,35 @@ function FormModeBlock({
     control,
     name: `exercises.${index}.sets`,
   });
+
+  const { preference } = useUnits();
+
+  // The coach's prescribed load, shown as the input's placeholder. This form
+  // never displayed it, which is how the coach-authors-kg / client-logs-lbs
+  // mismatch stayed invisible for so long. It is a placeholder and is never
+  // committed, so formatLoad is correct here — it snaps to a number the client
+  // can actually put on the bar.
+  const prescribedSpecs = useMemo(
+    () =>
+      expandSetSpecs({
+        setSpecs: exercise.setSpecs ?? null,
+        sets: exercise.sets,
+        repsMin: exercise.repsMin ?? null,
+        repsMax: exercise.repsMax ?? null,
+        repsTarget: exercise.repsTarget ?? null,
+        rpeTarget: exercise.rpeTarget ?? null,
+        restSeconds: exercise.restSeconds ?? null,
+      }),
+    [exercise],
+  );
+  const prescribedLoadHint = (setIndex: number): string | undefined => {
+    const spec = prescribedSpecs[setIndex];
+    if (!spec || spec.load_value == null || spec.load_type !== "absolute") {
+      return undefined;
+    }
+    const { value, unit } = formatLoad(spec.load_value, preference);
+    return `${value}${unit}`;
+  };
 
   const initialNotes = getValues(`exercises.${index}.notes`) ?? "";
   const [notesOpen, setNotesOpen] = useState(initialNotes.trim().length > 0);
@@ -371,8 +401,8 @@ function FormModeBlock({
                   register={register}
                   exerciseIndex={index}
                   setIndex={i}
-                  weightUnit={weightUnit}
                   disabled={skipped}
+                  weightPlaceholder={prescribedLoadHint(i)}
                   onCopyPrevious={
                     i > 0 ? () => handleCopyPrevious(i) : undefined
                   }

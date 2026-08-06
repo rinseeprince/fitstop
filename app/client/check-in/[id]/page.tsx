@@ -21,10 +21,30 @@ import {
   Target,
 } from "lucide-react";
 import type { CheckInWithDetails } from "@/types/check-in";
+import { useUnits } from "@/contexts/units-context";
+import { formatLength, formatLoad, formatWeight } from "@/utils/unit-conversions";
 
 export default function CheckInDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const { preference } = useUnits();
+
+  // Stored weights are kilograms and girths centimetres. The exercise-highlight
+  // weight is a barbell load, so it goes through formatLoad and snaps; body
+  // data does not.
+  const showWeight = (kg: number) => {
+    const { value, unit } = formatWeight(kg, preference);
+    return `${Math.round(value * 10) / 10} ${unit}`;
+  };
+  const showLength = (cm: number) => {
+    const { value, unit } = formatLength(cm, preference);
+    return `${Math.round(value * 10) / 10} ${unit}`;
+  };
+  const showLoad = (kg: number) => {
+    const { value, unit } = formatLoad(kg, preference);
+    return `${value} ${unit}`;
+  };
+
   const [checkIn, setCheckIn] = useState<CheckInWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +154,7 @@ export default function CheckInDetailPage() {
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Weight</span>
                 <span className="font-medium">
-                  {checkIn.weight} {checkIn.weightUnit || "lbs"}
+                  {showWeight(checkIn.weight)}
                 </span>
               </div>
             )}
@@ -157,7 +177,7 @@ export default function CheckInDetailPage() {
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">Waist</span>
                       <span className="font-medium">
-                        {checkIn.waist} {checkIn.measurementUnit || "in"}
+                        {showLength(checkIn.waist)}
                       </span>
                     </div>
                   )}
@@ -165,7 +185,7 @@ export default function CheckInDetailPage() {
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">Hips</span>
                       <span className="font-medium">
-                        {checkIn.hips} {checkIn.measurementUnit || "in"}
+                        {showLength(checkIn.hips)}
                       </span>
                     </div>
                   )}
@@ -173,7 +193,7 @@ export default function CheckInDetailPage() {
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">Chest</span>
                       <span className="font-medium">
-                        {checkIn.chest} {checkIn.measurementUnit || "in"}
+                        {showLength(checkIn.chest)}
                       </span>
                     </div>
                   )}
@@ -181,7 +201,7 @@ export default function CheckInDetailPage() {
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">Arms</span>
                       <span className="font-medium">
-                        {checkIn.arms} {checkIn.measurementUnit || "in"}
+                        {showLength(checkIn.arms)}
                       </span>
                     </div>
                   )}
@@ -189,7 +209,7 @@ export default function CheckInDetailPage() {
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">Thighs</span>
                       <span className="font-medium">
-                        {checkIn.thighs} {checkIn.measurementUnit || "in"}
+                        {showLength(checkIn.thighs)}
                       </span>
                     </div>
                   )}
@@ -319,7 +339,7 @@ export default function CheckInDetailPage() {
                   )}
                   <div className="flex gap-4 text-xs text-muted-foreground">
                     {highlight.weightValue && (
-                      <span>{highlight.weightValue} {highlight.weightUnit}</span>
+                      <span>{showLoad(highlight.weightValue)}</span>
                     )}
                     {highlight.reps && (
                       <span>{highlight.reps} reps</span>

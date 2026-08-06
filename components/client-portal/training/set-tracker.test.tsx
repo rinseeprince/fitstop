@@ -57,6 +57,13 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars.
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
+
 const ISO = "2026-05-01T00:00:00.000Z";
 const REAL_UUID_A = "11111111-1111-4111-8111-111111111111";
 const REAL_UUID_B = "22222222-2222-4222-8222-222222222222";
@@ -299,7 +306,9 @@ describe("SetTracker", () => {
     expect(payload.exercises![0]).toMatchObject({
       trainingExerciseId: REAL_UUID_A,
       exerciseName: "Bench Press",
-      weightUnit: "lbs",
+      // Was "lbs" — the client's display unit, sent for the server to apply. The
+      // form converts before sending now, so the wire is always canonical.
+      weightUnit: "kg",
       sets: [{ reps: 10, weight: 100 }],
     });
   });

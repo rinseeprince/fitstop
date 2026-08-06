@@ -7,8 +7,10 @@ import { ExerciseSearchInput } from "./exercise-search-input";
 import type { ExerciseFormValues } from "./log-form-types";
 import { emptySet } from "./log-form-types";
 
+// No weightUnit prop. It threaded a mapper constant down from set-tracker into
+// the payload this component builds, so an unplanned exercise carried the same
+// wrong tag as everything else. buildLogPayload emits canonical kilograms now.
 type AddExerciseRowProps = {
-  weightUnit: "lbs" | "kg";
   onAdd: (exercise: ExerciseFormValues) => void;
 };
 
@@ -16,7 +18,7 @@ const DEFAULT_SETS = 3;
 const MIN_SETS = 1;
 const MAX_SETS = 10;
 
-export function AddExerciseRow({ weightUnit, onAdd }: AddExerciseRowProps) {
+export function AddExerciseRow({ onAdd }: AddExerciseRowProps) {
   const [name, setName] = useState("");
   const [exerciseId, setExerciseId] = useState<string | undefined>(undefined);
   const [sets, setSets] = useState(String(DEFAULT_SETS));
@@ -35,7 +37,6 @@ export function AddExerciseRow({ weightUnit, onAdd }: AddExerciseRowProps) {
       exerciseName: trimmed,
       prescribedName: undefined,
       isSwapped: false,
-      weightUnit,
       skipped: false,
       notes: "",
       sets: Array.from({ length: setsCount }, () => emptySet()),

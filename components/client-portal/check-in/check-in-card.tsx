@@ -5,8 +5,11 @@ import { MessageSquare } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { CheckIn } from "@/types/check-in";
+import { useUnits } from "@/contexts/units-context";
+import { formatLength, formatWeight } from "@/utils/unit-conversions";
 
 export function CheckInCard({ checkIn }: { checkIn: CheckIn }) {
+  const { preference } = useUnits();
   const router = useRouter();
   const date = new Date(checkIn.createdAt);
   const formattedDate = date.toLocaleDateString("en-US", {
@@ -15,14 +18,26 @@ export function CheckInCard({ checkIn }: { checkIn: CheckIn }) {
     year: "numeric",
   });
 
+  // Stored weights are kilograms and girths centimetres; checkIn.weightUnit and
+  // measurementUnit are mapper constants, so the `|| "lbs"` / `|| "in"` never
+  // fired and the labels described the storage, not the client's preference.
+  const showWeight = (kg: number) => {
+    const { value, unit } = formatWeight(kg, preference);
+    return `${Math.round(value * 10) / 10} ${unit}`;
+  };
+  const showLength = (cm: number) => {
+    const { value, unit } = formatLength(cm, preference);
+    return `${Math.round(value * 10) / 10} ${unit}`;
+  };
+
   const bodyMetrics = [];
-  if (checkIn.weight) bodyMetrics.push(`Weight: ${checkIn.weight} ${checkIn.weightUnit || "lbs"}`);
+  if (checkIn.weight) bodyMetrics.push(`Weight: ${showWeight(checkIn.weight)}`);
   if (checkIn.bodyFatPercentage) bodyMetrics.push(`Body Fat: ${checkIn.bodyFatPercentage}%`);
-  if (checkIn.waist) bodyMetrics.push(`Waist: ${checkIn.waist} ${checkIn.measurementUnit || "in"}`);
-  if (checkIn.hips) bodyMetrics.push(`Hips: ${checkIn.hips} ${checkIn.measurementUnit || "in"}`);
-  if (checkIn.chest) bodyMetrics.push(`Chest: ${checkIn.chest} ${checkIn.measurementUnit || "in"}`);
-  if (checkIn.arms) bodyMetrics.push(`Arms: ${checkIn.arms} ${checkIn.measurementUnit || "in"}`);
-  if (checkIn.thighs) bodyMetrics.push(`Thighs: ${checkIn.thighs} ${checkIn.measurementUnit || "in"}`);
+  if (checkIn.waist) bodyMetrics.push(`Waist: ${showLength(checkIn.waist)}`);
+  if (checkIn.hips) bodyMetrics.push(`Hips: ${showLength(checkIn.hips)}`);
+  if (checkIn.chest) bodyMetrics.push(`Chest: ${showLength(checkIn.chest)}`);
+  if (checkIn.arms) bodyMetrics.push(`Arms: ${showLength(checkIn.arms)}`);
+  if (checkIn.thighs) bodyMetrics.push(`Thighs: ${showLength(checkIn.thighs)}`);
 
   const wellnessMetrics = [];
   if (checkIn.mood) wellnessMetrics.push(`Mood: ${checkIn.mood}/5`);

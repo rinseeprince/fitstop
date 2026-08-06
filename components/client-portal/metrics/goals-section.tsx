@@ -3,6 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Target, TrendingUp, TrendingDown } from "lucide-react";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight } from "@/utils/unit-conversions";
 
 interface GoalsSectionProps {
   client: {
@@ -12,19 +14,25 @@ interface GoalsSectionProps {
     startingBodyFatPercentage?: number;
     currentWeight?: number;
     currentBodyFatPercentage?: number;
-    weightUnit?: string;
   };
   latestWeight?: number;
   latestBodyFat?: number;
 }
 
 export function GoalsSection({ client, latestWeight, latestBodyFat }: GoalsSectionProps) {
+  // The client's own unit. client.weightUnit was a mapper constant, so the
+  // `|| "lbs"` never fired and everyone saw kilograms. Body weight, so
+  // formatWeight — converts freely, never snaps.
+  const { preference } = useUnits();
+  const w = (kg: number) => Math.round(formatWeight(kg, preference).value * 10) / 10;
+  const weightUnit = formatWeight(0, preference).unit;
+
   const currentWeight = client.currentWeight || latestWeight;
   const currentBodyFat = client.currentBodyFatPercentage || latestBodyFat;
-  const weightUnit = client.weightUnit || "lbs";
 
-  const weightProgress = client.goalWeight && currentWeight 
-    ? currentWeight - client.goalWeight 
+  // Between the DISPLAYED values, so "to go" reconciles with the two numbers.
+  const weightProgress = client.goalWeight && currentWeight
+    ? w(currentWeight) - w(client.goalWeight)
     : null;
 
   const bodyFatProgress = client.goalBodyFatPercentage && currentBodyFat 
@@ -51,7 +59,7 @@ export function GoalsSection({ client, latestWeight, latestBodyFat }: GoalsSecti
               <div>
                 <p className="text-sm text-muted-foreground">Current Weight</p>
                 <p className="text-2xl font-bold">
-                  {currentWeight?.toFixed(1) || "--"}
+                  {currentWeight !== undefined ? w(currentWeight).toFixed(1) : "--"}
                   <span className="ml-1 text-sm font-normal text-muted-foreground">
                     {weightUnit}
                   </span>
@@ -60,7 +68,7 @@ export function GoalsSection({ client, latestWeight, latestBodyFat }: GoalsSecti
               <div className="text-right">
                 <p className="text-sm text-muted-foreground">Goal Weight</p>
                 <p className="text-2xl font-bold">
-                  {client.goalWeight.toFixed(1)}
+                  {w(client.goalWeight).toFixed(1)}
                   <span className="ml-1 text-sm font-normal text-muted-foreground">
                     {weightUnit}
                   </span>

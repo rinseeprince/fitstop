@@ -2,6 +2,8 @@ import type { UseFormRegister } from "react-hook-form";
 import { Copy, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { LogFormValues } from "./log-form-types";
+import { useUnits } from "@/contexts/units-context";
+import { formatLoad } from "@/utils/unit-conversions";
 
 type SetRowProps = {
   setNumber: number;
@@ -11,7 +13,6 @@ type SetRowProps = {
   register?: UseFormRegister<LogFormValues>;
   exerciseIndex?: number;
   setIndex?: number;
-  weightUnit?: "lbs" | "kg";
   disabled?: boolean;
   onCopyPrevious?: () => void;
   canCopyPrevious?: boolean;
@@ -26,12 +27,15 @@ export function SetRow({
   register,
   exerciseIndex,
   setIndex,
-  weightUnit,
   disabled,
   onCopyPrevious,
   canCopyPrevious,
   onRemove,
 }: SetRowProps) {
+  // The client's own unit. It used to arrive as a prop carrying a mapper
+  // constant, so every client logged under a "kg" label whatever they preferred.
+  const { preference } = useUnits();
+  const loadUnit = formatLoad(0, preference).unit;
   const editable =
     register !== undefined && exerciseIndex != null && setIndex != null;
 
@@ -73,11 +77,9 @@ export function SetRow({
             aria-label={`Set ${setNumber} weight`}
             className="h-9 pr-9 text-center text-[13px] font-mono-display"
           />
-          {weightUnit && (
-            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
-              {weightUnit}
-            </span>
-          )}
+          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
+            {loadUnit}
+          </span>
         </div>
       </div>
       <div className="col-span-3">

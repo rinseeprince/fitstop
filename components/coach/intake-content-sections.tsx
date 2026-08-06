@@ -16,6 +16,26 @@ import type {
   TrainingExperience,
   CookingFrequency,
 } from "@/types/client-intake"
+import { useUnits } from "@/contexts/units-context"
+import { formatHeight, formatWeight, type UnitSystem } from "@/utils/unit-conversions"
+
+// The COACH is the viewer here — this is the coach-side intake review. Intake
+// values are canonical kg/cm; heightUnit/weightUnit were mapper constants, so
+// the `?? "cm"` / `?? "kg"` fallbacks never fired.
+//
+// Imperial height is COMPOSITE — 5'11", never 71 in — hence formatHeight's
+// discriminated union rather than a {value, unit} pair.
+function showHeightIn(valueCm: number, viewer: UnitSystem): string {
+  const h = formatHeight(valueCm, viewer)
+  return h.system === "metric"
+    ? `${Math.round(h.value)} ${h.unit}`
+    : `${h.feet}'${h.inches}"`
+}
+
+function showWeightIn(valueKg: number, viewer: UnitSystem): string {
+  const { value, unit } = formatWeight(valueKg, viewer)
+  return `${Math.round(value * 10) / 10} ${unit}`
+}
 
 const GOAL_LABELS: Record<PrimaryGoal, string> = {
   lose_weight: "Lose Weight",
@@ -90,6 +110,7 @@ type IntakeContentSectionsProps = {
 }
 
 export function IntakeContentSections({ intake, compact }: IntakeContentSectionsProps) {
+  const { preference } = useUnits()
   // Compact (floating panel): no border, spacing does the separation on white bg
   // Full page: white cards on #f4f7f6, no border needed per design system
   const sectionClass = compact
@@ -105,8 +126,8 @@ export function IntakeContentSections({ intake, compact }: IntakeContentSections
           <div className="grid grid-cols-2 gap-4">
             <MetricItem mono label="Date of Birth" value={intake.dateOfBirth} />
             <MetricItem label="Gender" value={intake.gender ? intake.gender.charAt(0).toUpperCase() + intake.gender.slice(1) : undefined} />
-            <MetricItem mono label="Height" value={intake.height ? `${intake.height} ${intake.heightUnit ?? "cm"}` : undefined} />
-            <MetricItem mono label="Current Weight" value={intake.currentWeight ? `${intake.currentWeight} ${intake.weightUnit ?? "kg"}` : undefined} />
+            <MetricItem mono label="Height" value={intake.height ? showHeightIn(intake.height, preference) : undefined} />
+            <MetricItem mono label="Current Weight" value={intake.currentWeight ? showWeightIn(intake.currentWeight, preference) : undefined} />
             <MetricItem mono label="Body Fat %" value={intake.bodyFatPercentage ? `${intake.bodyFatPercentage}%` : undefined} />
             <MetricItem label="Activity Level" value={intake.workActivityLevel ? ACTIVITY_LABELS[intake.workActivityLevel] : undefined} />
           </div>
@@ -138,7 +159,7 @@ export function IntakeContentSections({ intake, compact }: IntakeContentSections
               )}
               {intake.targetWeight != null && (
                 <span className={cn(MONO_META_CLASS, "text-[12px]")}>
-                  Target: {intake.targetWeight} {intake.weightUnit ?? "kg"}
+                  Target: {showWeightIn(intake.targetWeight, preference)}
                 </span>
               )}
               {intake.goalBodyFatPercentage != null && (

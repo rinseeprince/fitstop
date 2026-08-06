@@ -2,11 +2,28 @@ import type { LogTrainingEventInput } from "@/lib/validations/training";
 import type { ExerciseLog, SessionLog } from "@/types/training";
 import type { PrescribedExerciseView } from "./exercise-tracker-block";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
+import { parseWeightToKg, type UnitSystem } from "@/utils/unit-conversions";
+import { displayLoad } from "@/components/clients/training/program-builder/commit-input";
 
 export const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type SetRowValues = { reps: string; weight: string; rpe: string };
+export type SetRowValues = {
+  reps: string;
+  weight: string;
+  rpe: string;
+  /**
+   * The canonical KILOGRAMS this row was seeded from, carried alongside the
+   * display string it produced.
+   *
+   * The display string is rounded for legibility, so re-parsing an untouched
+   * field would not land back on the value it came from — a set logged at 100 kg
+   * seeds as "220.5" for an imperial client and parses back to 100.017. Keeping
+   * the original means an untouched weight resubmits byte-identical. null for a
+   * fresh row that has never been logged.
+   */
+  weightKg: number | null;
+};
 
 export type ExerciseFormValues = {
   trainingExerciseId: string;
@@ -14,7 +31,6 @@ export type ExerciseFormValues = {
   exerciseName: string;
   prescribedName?: string;
   isSwapped: boolean;
-  weightUnit: "lbs" | "kg";
   skipped: boolean;
   notes: string;
   sets: SetRowValues[];
@@ -28,18 +44,38 @@ export type LogFormValues = {
 };
 
 export function emptySet(): SetRowValues {
-  return { reps: "", weight: "", rpe: "" };
+  return { reps: "", weight: "", rpe: "", weightKg: null };
 }
 
+/**
+ * Build the wire payload, converting to canonical kilograms HERE rather than
+ * sending the client's display unit and a tag for the server to apply.
+ *
+ * The conversion is evaluated PER WEIGHT FIELD, never per row. A set row is
+ * dirty the moment the client edits its reps — under a row-level rule its
+ * untouched weight would still round-trip through the rounded display string
+ * and drift the logged value, on the commonest edit in this form. An untouched
+ * weight resubmits the exact kilograms it was seeded with.
+ *
+ * `weightUnit` therefore leaves as "kg" always. The wire schema still carries it
+ * (lib/validations/training.ts) and training-log-service still applies it, so
+ * any other caller — the React Native client — is unaffected.
+ */
 export function buildLogPayload(
   values: LogFormValues,
+  viewer: UnitSystem,
+  isWeightDirty: (exerciseIndex: number, setIndex: number) => boolean,
 ): LogTrainingEventInput {
   const detailed = values.exercises
-    .map((ex) => {
+    .map((ex, exIndex) => {
       const filledSets = ex.sets
-        .map((s) => ({
+        .map((s, setIndex) => ({
           reps: s.reps.trim() ? Number(s.reps) : undefined,
-          weight: s.weight.trim() ? Number(s.weight) : undefined,
+          weight: isWeightDirty(exIndex, setIndex)
+            ? s.weight.trim()
+              ? parseWeightToKg(Number(s.weight), viewer)
+              : undefined
+            : (s.weightKg ?? undefined),
           rpe: s.rpe.trim() ? Number(s.rpe) : undefined,
         }))
         .filter((s) => s.reps != null || s.weight != null || s.rpe != null);
@@ -56,7 +92,8 @@ export function buildLogPayload(
           UUID_RE.test(ex.exerciseId) && { exerciseId: ex.exerciseId }),
         exerciseName: ex.exerciseName,
         sets: ex.skipped ? [] : filledSets,
-        weightUnit: ex.weightUnit,
+        // Already canonical — see the note above.
+        weightUnit: "kg" as const,
         ...(trimmedNotes && { notes: trimmedNotes }),
         ...(ex.skipped && { skipped: true }),
       };
@@ -77,14 +114,17 @@ export function buildLogPayload(
 // Restoration reads structured set data from set_logs (attached to ExerciseLog
 // by the service reader). Per-set fidelity (reps, weight, RPE) is preserved
 // exactly as logged.
-function restoreSetsFromLog(log: ExerciseLog): SetRowValues[] {
+function restoreSetsFromLog(log: ExerciseLog, viewer: UnitSystem): SetRowValues[] {
   if (log.sets.length === 0) return [emptySet()];
   return [...log.sets]
     .sort((a, b) => a.setNumber - b.setNumber)
     .map((s) => ({
       reps: s.reps != null ? String(s.reps) : "",
-      weight: s.weight != null ? String(s.weight) : "",
+      // Unsnapped, never formatLoad: this seeds an editable field, and a snap
+      // would round-trip into the logged value.
+      weight: displayLoad(s.weight, viewer),
       rpe: s.rpe != null ? String(s.rpe) : "",
+      weightKg: s.weight ?? null,
     }));
 }
 
@@ -120,9 +160,10 @@ export function seedDefaultValues(args: {
   prescribedViews: PrescribedExerciseView[];
   sessionLog: SessionLog | null;
   exerciseLogs: ExerciseLog[];
-  weightUnit: "lbs" | "kg";
+  /** The VIEWER's system. Display seeds convert to it; storage stays kilograms. */
+  viewer: UnitSystem;
 }): LogFormValues {
-  const { prescribedViews, sessionLog, exerciseLogs, weightUnit } = args;
+  const { prescribedViews, sessionLog, exerciseLogs, viewer } = args;
 
   if (sessionLog === null) {
     return {
@@ -134,7 +175,6 @@ export function seedDefaultValues(args: {
         exerciseName: v.name,
         prescribedName: v.name,
         isSwapped: false,
-        weightUnit,
         skipped: false,
         notes: "",
         sets: seededSetRows(v),
@@ -159,7 +199,6 @@ export function seedDefaultValues(args: {
         exerciseName: v.name,
         prescribedName: v.name,
         isSwapped: false,
-        weightUnit,
         skipped: false,
         notes: "",
         sets: seededSetRows(v),
@@ -178,10 +217,9 @@ export function seedDefaultValues(args: {
       exerciseName: performed,
       prescribedName: v.name,
       isSwapped,
-      weightUnit: log.weightUnit ?? weightUnit,
       skipped,
       notes: log.notes ?? "",
-      sets: skipped ? [emptySet()] : restoreSetsFromLog(log),
+      sets: skipped ? [emptySet()] : restoreSetsFromLog(log, viewer),
       isUnplanned: false,
     };
   });
@@ -200,10 +238,9 @@ export function seedDefaultValues(args: {
       exerciseName: displayName(log),
       prescribedName: undefined,
       isSwapped: false,
-      weightUnit: log.weightUnit ?? weightUnit,
       skipped,
       notes: log.notes ?? "",
-      sets: skipped ? [emptySet()] : restoreSetsFromLog(log),
+      sets: skipped ? [emptySet()] : restoreSetsFromLog(log, viewer),
       isUnplanned: true,
     };
   });

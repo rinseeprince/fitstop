@@ -35,6 +35,7 @@ import {
 import { QuickLogControls } from "./quick-log-controls";
 import { AddExerciseRow } from "./add-exercise-row";
 import { SessionPicker } from "./session-picker";
+import { useUnits } from "@/contexts/units-context";
 import {
   buildLogPayload,
   seedDefaultValues,
@@ -160,8 +161,6 @@ function EventModeTracker({
   }
   if (eventError || !eventData) return <LoadFailed />;
 
-  const weightUnit: "lbs" | "kg" = meData?.data?.weightUnit ?? "lbs";
-
   // Date-edit lock (client mirror of the server rule): past + logged → read-only.
   const editable = canEditDay(
     eventData.data.event.date,
@@ -195,7 +194,6 @@ function EventModeTracker({
       key={boundSessionId ?? "prescribed"}
       detail={detail}
       date={date}
-      weightUnit={weightUnit}
       save={save}
       editable={editable}
       onChangeSession={() => setShowPicker(true)}
@@ -240,7 +238,6 @@ function SessionModeTracker({
   if (sessionLoading || meLoading) return <TrackerSkeleton />;
   if (sessionError || !sessionData?.data?.session) return <LoadFailed />;
 
-  const weightUnit: "lbs" | "kg" = meData?.data?.weightUnit ?? "lbs";
   const session = sessionData.data.session;
   const detail = syntheticDetailFromSession(
     session,
@@ -257,7 +254,6 @@ function SessionModeTracker({
     <TrainingLogForm
       detail={detail}
       date={date}
-      weightUnit={weightUnit}
       save={{ kind: "session", date, performedSessionId: sessionId }}
       editable={editable}
       onChangeSession={onChangeSession}
@@ -268,7 +264,6 @@ function SessionModeTracker({
 function TrainingLogForm({
   detail,
   date,
-  weightUnit,
   save,
   editable = true,
   onChangeSession,
@@ -276,13 +271,13 @@ function TrainingLogForm({
 }: {
   detail: TrainingEventDetail;
   date: string | undefined;
-  weightUnit: "lbs" | "kg";
   save: SaveStrategy;
   editable?: boolean;
   onChangeSession?: () => void;
   onResetSwap?: () => void;
 }) {
   const { toast } = useToast();
+  const { preference } = useUnits();
   const router = useRouter();
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -300,9 +295,9 @@ function TrainingLogForm({
         prescribedViews,
         sessionLog: detail.sessionLog,
         exerciseLogs: detail.exerciseLogs,
-        weightUnit,
+        viewer: preference,
       }),
-    [prescribedViews, detail.sessionLog, detail.exerciseLogs, weightUnit],
+    [prescribedViews, detail.sessionLog, detail.exerciseLogs, preference],
   );
 
   const {
@@ -311,7 +306,7 @@ function TrainingLogForm({
     setValue,
     getValues,
     handleSubmit,
-    formState: { isSubmitting },
+    formState: { isSubmitting, dirtyFields },
   } = useForm<LogFormValues>({ defaultValues });
 
   const {
@@ -325,7 +320,11 @@ function TrainingLogForm({
 
   const onSubmit = async (values: LogFormValues) => {
     if (!editable) return; // locked day — server also rejects with 403
-    const base = buildLogPayload(values);
+    // Per WEIGHT FIELD, not per row: editing a set's reps must not cause its
+    // untouched weight to round-trip through the rounded display string.
+    const base = buildLogPayload(values, preference, (exIndex, setIndex) =>
+      Boolean(dirtyFields.exercises?.[exIndex]?.sets?.[setIndex]?.weight),
+    );
     const parsed = logTrainingEventSchema.safeParse(base);
     if (!parsed.success) {
       toast({
@@ -501,7 +500,6 @@ function TrainingLogForm({
                 register,
                 setValue,
                 getValues,
-                weightUnit: field.weightUnit,
                 isUnplanned: field.isUnplanned,
                 onRemove: field.isUnplanned
                   ? () => removeExercise(i)
@@ -521,7 +519,7 @@ function TrainingLogForm({
                 />
               );
             })}
-            <AddExerciseRow weightUnit={weightUnit} onAdd={handleAddUnplanned} />
+            <AddExerciseRow onAdd={handleAddUnplanned} />
           </CollapsibleContent>
         </Collapsible>
       )}

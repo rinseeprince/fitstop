@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label"
 import { SelectableCard } from "./selectable-card"
 import { getDateString } from "@/lib/date-helpers"
 import type { ClientIntake } from "@/types/client-intake"
+import { formatHeight, kgToLbs, lbsToKg } from "@/utils/unit-conversions"
 
 type IntakeStep1Props = {
   data: Partial<ClientIntake>
@@ -20,19 +21,26 @@ const genderOptions = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
 ] as const
 
-// Unit conversion helpers
+// Conversion goes through utils/unit-conversions.ts. This file used to carry a
+// local 2.20462 — one of the four conflicting lbs<->kg constants that module
+// exists to replace, and the least accurate of them. The display rounding stays
+// here because it is a presentation choice, not a conversion.
+//
+// Both directions moved, not just display: the pair has to agree on a constant
+// or the round trip is worse than either alone. The unit TOGGLE still reads
+// localStorage rather than the viewer preference — that is Phase 4.
 const cmToDisplay = (cm: number, unit: string) => {
   if (unit === "ft") {
-    const totalInches = cm / 2.54
-    const feet = Math.floor(totalInches / 12)
-    const inches = Math.round(totalInches % 12)
-    return { feet, inches }
+    // formatHeight carries 12 inches into the next foot; the hand-rolled
+    // modulo here could render 5'12".
+    const h = formatHeight(cm, "imperial")
+    return h.system === "imperial" ? { feet: h.feet, inches: h.inches } : { cm }
   }
   return { cm }
 }
 
-const kgToLbs = (kg: number) => Math.round(kg * 2.20462 * 10) / 10
-const lbsToKg = (lbs: number) => Math.round(lbs / 2.20462 * 10) / 10
+const toDisplayLbs = (kg: number) => Math.round(kgToLbs(kg) * 10) / 10
+const toStoredKg = (lbs: number) => Math.round(lbsToKg(lbs) * 10) / 10
 
 const VALID_HEIGHT_UNITS = ["cm", "ft"] as const
 const VALID_WEIGHT_UNITS = ["kg", "lbs"] as const
@@ -94,13 +102,13 @@ export function IntakeStep1({ data, onChange, errors }: IntakeStep1Props) {
   const handleWeight = (val: string) => {
     const num = parseFloat(val)
     if (isNaN(num)) { onChange({ currentWeight: undefined }); return }
-    onChange({ currentWeight: weightUnit === "lbs" ? lbsToKg(num) : num })
+    onChange({ currentWeight: weightUnit === "lbs" ? toStoredKg(num) : num })
   }
 
   const displayWeight = () => {
     if (!data.currentWeight) return ""
     return weightUnit === "lbs"
-      ? String(kgToLbs(data.currentWeight))
+      ? String(toDisplayLbs(data.currentWeight))
       : String(data.currentWeight)
   }
 

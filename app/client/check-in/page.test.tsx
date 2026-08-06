@@ -57,6 +57,13 @@ vi.mock("@/utils/daily-logs-aggregation", () => ({
   aggregateDailyLogs: () => ({ nutritionHitDays: 0, sessionsCompleted: 0 }),
 }));
 
+// Required, not optional: units-context imports auth-context, which constructs
+// the browser Supabase client at module load and throws without env vars.
+vi.mock("@/contexts/units-context", () => ({
+  useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
+}));
+
+
 function setSWR({
   data,
   error,

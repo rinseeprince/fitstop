@@ -610,10 +610,12 @@ async function writeSessionLog(params: {
           reps: s.reps ?? null,
           // set_logs.weight is canonical kilograms (migration 141) and no longer
           // carries a tag, so the payload's unit is applied HERE and then
-          // discarded. The client's log form still labels the field from
-          // set-tracker.tsx's `meData?.data?.weightUnit`, which can fall back to
-          // "lbs" when /api/client/me is unavailable — storing that raw would put
-          // pounds in a kg column with nothing left to reveal it.
+          // discarded.
+          //
+          // The web client now converts before sending and always tags "kg"
+          // (log-form-types.ts), so this is an identity for that caller. It is
+          // kept because the wire schema still accepts a tag and the React
+          // Native client is entitled to send one.
           weight: toCanonicalWeightKg(s.weight ?? undefined, ex.weightUnit) ?? null,
           rpe: s.rpe ?? null,
         });
