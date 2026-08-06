@@ -1,6 +1,7 @@
 # Units canonicalization — implementation plan
 
-**Status**: not started · **Logged**: 2026-08-05 · **Next migration number**: 140
+**Status**: Phase 1 shipped (`b9bbfac`, 2026-08-06, migration 140) · Phases 2-4 not
+started · **Logged**: 2026-08-05 · **Next migration number**: 141
 
 Fixes the platform-wide unit problem: weights and measurements are stored in
 whatever unit the user happened to be looking at, the "preference" lives on the
@@ -114,9 +115,23 @@ they will put 225 on the bar. A precise-looking unloadable number is worse than
 no conversion at all.
 
 So every **prescribed or logged training load** renders through `formatLoad`,
-which converts and then snaps to the smallest loadable increment in the target
-system: **2.5 kg** metric, **5 lb** imperial. Body weight, goal weight and body
-measurements keep using `formatWeight` / `formatLength` with no snapping.
+which converts and then snaps to the smallest loadable increment: **5 lb** for an
+imperial viewer, to the *nearest* increment (100 kg → 220 lb, not 220.5 and not
+225). Body weight, goal weight and body measurements keep using `formatWeight` /
+`formatLength` with no snapping.
+
+> **Superseded by Phase 1 (`b9bbfac`): metric does NOT snap.** This section
+> originally specified a 2.5 kg metric snap as well. Metric is the *identity*
+> path — no conversion happens — so snapping there does not round away a
+> conversion artefact, it rewrites stored data at the display layer: a client's
+> logged 47 kg would render as 47.5, an Epley e1RM of 102.3 as 102.5, and a
+> session volume total of 12,347 as 12,347.5. `formatLoad` is pass-through for a
+> metric viewer, and its JSDoc says so. **Do not restore the 2.5 kg snap.**
+>
+> Related correction: this plan's Phase 3 section claims `utils/progression-rules.ts:83`
+> is 2.5 kg plate math. It is not — that line rounds to 0.5 via `roundHalf`
+> (`:66`). The only 2.5 in the tree is a default input value at
+> `duplicate-week-dialog.tsx:77`.
 
 This is a display rule that applies to every load-bearing surface — the program
 builder, the client's log form, PR and e1RM readouts, exercise analytics — not
@@ -201,9 +216,29 @@ a tag exists, best-effort where it does not, and move on.
 
 ---
 
-## Phase 1 — Foundation
+## Phase 1 — Foundation · **SHIPPED** `b9bbfac` 2026-08-06
 
 **Goal**: build the machinery. Change no existing behaviour.
+
+**Shipped with three deliberate deviations from this document.** Each is recorded
+in the shipping code's JSDoc; do not read them as mistakes and do not revert them
+to match the text around them:
+
+1. **`formatLoad` is pass-through for a metric viewer** — see the superseded note
+   under "Training load is not body weight" above. Imperial still snaps to 5 lb.
+2. **`UnitsProvider`'s coach branch reads `useAuth().coach.unitPreference`**
+   rather than fetching `/api/me/unit-preference` (this section says "SWR-backed
+   against that route"). The value already arrives on the `/api/auth/me` payload,
+   so fetching it again would duplicate both a request and a cache copy. Only the
+   client branch calls the route.
+3. **The route returns `{ success, data: { preference } }`**, not a bare
+   `{ preference }` — `CONVENTIONS.md:520` and the `/api/auth/me` precedent.
+
+Also shipped, and load-bearing for Phase 4: `resolveViewerUnitPreference` **throws**
+on a database error (route → 500) and returns `null` only when no principal
+resolves (→ 401), while `getViewerUnitPreference` keeps a lossy metric fallback
+for server-rendered prompt strings only. Do not unify them — a guessed unit
+served under a 200 is indistinguishable from a real answer.
 
 **Scope**
 
