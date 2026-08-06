@@ -108,14 +108,35 @@ describe("formatLoad", () => {
     expect(result.unit).toBe("lbs");
     // The faithful conversion is 220.46 lbs, which cannot be loaded on a bar.
     expect(result.value).not.toBeCloseTo(220.5, 1);
-    expect(result.value % 5).toBe(0);
+    expect(result.value % 2.5).toBe(0);
     expect(result.value).toBe(220);
   });
 
   it("snaps every imperial load, not just round ones", () => {
     for (const kg of [20, 42.5, 60, 77.5, 102.3, 140]) {
-      expect(formatLoad(kg, "imperial").value % 5).toBe(0);
+      expect(formatLoad(kg, "imperial").value % 2.5).toBe(0);
     }
+  });
+
+  // Why the increment is 2.5 rather than the barbell's 5: at 5 lb a light
+  // dumbbell reads ~9% under, and a coach's 2.5 kg weekly bump renders as a
+  // 10 lb jump against a real 5.5 lb — a progression twice its true size.
+  it("keeps light dumbbell loads honest", () => {
+    expect(formatLoad(10, "imperial").value).toBe(22.5); // was 20 at a 5 lb snap
+    expect(formatLoad(12.5, "imperial").value).toBe(27.5); // was 30
+    expect(formatLoad(15, "imperial").value).toBe(32.5); // was 35
+  });
+
+  it("renders a 2.5 kg progression as ~5 lb, not ~10", () => {
+    const before = formatLoad(10, "imperial").value;
+    const after = formatLoad(12.5, "imperial").value;
+    expect(after - before).toBe(5);
+  });
+
+  it("is indistinguishable from a 5 lb snap at barbell loads", () => {
+    expect(formatLoad(100, "imperial").value).toBe(220);
+    expect(formatLoad(60, "imperial").value).toBe(132.5);
+    expect(formatLoad(140, "imperial").value).toBe(307.5);
   });
 
   it("passes metric loads through untouched — the identity path", () => {
@@ -132,9 +153,10 @@ describe("formatLoad", () => {
   it("handles zero and fractional inputs", () => {
     expect(formatLoad(0, "metric")).toEqual({ value: 0, unit: "kg" });
     expect(formatLoad(0, "imperial")).toEqual({ value: 0, unit: "lbs" });
-    // 1 kg is 2.2 lbs — below half an increment, so it snaps down to nothing.
-    expect(formatLoad(1, "imperial").value).toBe(0);
-    expect(formatLoad(1.5, "imperial").value).toBe(5);
+    // 1 kg is 2.2 lbs — just above half an increment, so it snaps up to 2.5.
+    expect(formatLoad(1, "imperial").value).toBe(2.5);
+    expect(formatLoad(0.5, "imperial").value).toBe(0);
+    expect(formatLoad(1.5, "imperial").value).toBe(2.5);
   });
 });
 

@@ -47,11 +47,12 @@ describe("computeKpis — weight", () => {
   });
 
   it("derives the delta from the DISPLAYED values, so the meta line reconciles", () => {
-    // 90 kg -> 200 lbs and 100 kg -> 220 lbs after snapping, so the period delta
-    // a coach can verify by subtraction is 20, not the 22.05 a separate
-    // conversion of the 10 kg difference would give.
+    // 90 kg -> 197.5 lbs and 100 kg -> 220 lbs after snapping, so the period
+    // delta a coach can verify by subtracting the two displayed numbers is 22.5.
+    // The true difference is 22.05, so the 2.5 lb increment lands within half a
+    // pound of it; the old 5 lb increment reported 20.
     const kpis = computeKpis("weight", data, "imperial");
-    expect(kpis[0].meta).toBe("+20 over period");
+    expect(kpis[0].meta).toBe("+22.5 over period");
 
     expect(computeKpis("weight", data, "metric")[0].meta).toBe("+10 over period");
   });

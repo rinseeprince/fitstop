@@ -49,10 +49,20 @@ export const KG_PER_LB = 0.45359237;
 export const CM_PER_IN = 2.54;
 
 /**
- * Smallest increment loadable on a barbell in an imperial gym. Only used by
+ * Smallest increment worth showing an imperial viewer. Only used by
  * `formatLoad` — see its note on why loads snap and body weights do not.
+ *
+ * 2.5, not 5. Five is the barbell increment (a pair of 2.5 lb plates) and was
+ * the original choice, but most prescriptions in practice are dumbbells and
+ * machine stacks, which step in 2.5 lb through the range where the error hurts.
+ * At 5 lb a 10 kg lateral raise renders as 20 lb rather than 22.5 — 9% light —
+ * and worse, a coach's 2.5 kg weekly bump renders as a 10 lb jump against a real
+ * 5.5 lb, so the client reads a progression nearly twice the size of the actual
+ * one. Above ~40 kg the two increments are indistinguishable.
+ *
+ * Product owner signed off 2026-08-06, superseding the 5 lb choice in Phase 1.
  */
-const IMPERIAL_LOAD_INCREMENT_LB = 5;
+const IMPERIAL_LOAD_INCREMENT_LB = 2.5;
 
 /** Composite-unit arithmetic for imperial height, not a conversion factor. */
 const INCHES_PER_FOOT = 12;
@@ -107,7 +117,7 @@ export function formatLength(valueCm: number, viewer: UnitSystem): LengthDisplay
  * a prescribed 100 kg faithfully and an imperial gym sees 220.5 lbs, which
  * cannot be loaded — they will put 220 on the bar. A precise-looking
  * unloadable number is worse than no conversion at all, so an imperial viewer
- * gets the conversion snapped to the nearest 5 lb.
+ * gets the conversion snapped to the nearest loadable increment.
  *
  * DELIBERATE DEVIATION from docs/UNITS-CANONICALIZATION-PLAN.md:429, which
  * also specifies a 2.5 kg snap for metric viewers. Metric is the IDENTITY path:
@@ -124,7 +134,7 @@ export function formatLength(valueCm: number, viewer: UnitSystem): LengthDisplay
 export function formatLoad(valueKg: number, viewer: UnitSystem): WeightDisplay {
   if (viewer !== "imperial") return { value: valueKg, unit: "kg" };
 
-  // 5 is exactly representable in binary floating point and the quotient is
+  // 2.5 is exactly representable in binary floating point and the quotient is
   // rounded to an integer first, so the product carries no float dust.
   const lbs = kgToLbs(valueKg);
   const snapped =
