@@ -360,9 +360,6 @@ export const permanentlyDeleteClient = async (clientId: string): Promise<void> =
 // unit toggle itself. It was also the platform's worst data bug: it flipped the
 // tag while converting zero stored numbers, so a 180 lbs client choosing Metric
 // silently became a 180 kg client across every table and chart.
-//
-// (docs/UNITS-CANONICALIZATION-PLAN.md:562-563 schedules this removal for Phase
-// 4, which is too late — see the correction noted there.)
 export const updateClientSettings = async (
   clientId: string,
   settings: UpdateSettingsInput

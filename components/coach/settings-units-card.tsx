@@ -16,7 +16,7 @@ import type { UnitSystem } from "@/utils/unit-conversions";
  * Storage is canonical kg/cm — this only decides what THIS coach is shown. A
  * metric coach and an imperial client work on the same rows and each see their
  * own unit, so nothing here reaches a client's data
- * (docs/UNITS-CANONICALIZATION-PLAN.md, principle 2). It replaces the nutrition
+ * (CONVENTIONS.md §20 Units). It replaces the nutrition
  * drawer's toggle, which wrote the CLIENT's preference from the coach's screen.
  */
 

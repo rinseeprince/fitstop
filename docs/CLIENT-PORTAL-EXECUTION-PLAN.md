@@ -104,7 +104,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 7.85 | Timezone: audit remediation — write-path day stamps + UTC fallbacks + swallowed-tz-error guards | 7 | COMPLETE
 | 7.86 | Timezone: audit remediation — calendar drag gating, deadline validation, days-remaining anchors | 7 | COMPLETE
 | 7.9–7.12 | Goal/roadmap lifecycle — REMOVED: roadmaps/phases deleted 2026-07-25 (rebuild post-launch; sessions + history in git, tag roadmap-v2-pre-removal) | 7 | REMOVED
-| 8.1–8.3 | Units — SUPERSEDED by docs/UNITS-CANONICALIZATION-PLAN.md: shipped 2026-08-07 as canonical kg/cm storage with the preference on the viewer (migs 140+141), not render-time conversion over per-record tags (session bodies in git) | 8 | SUPERSEDED
+| 8.1–8.3 | Units — SUPERSEDED: units canonicalization shipped 2026-08-07 as canonical kg/cm storage with the preference on the viewer (migs 140+141), not render-time conversion over per-record tags (session bodies in git) | 8 | SUPERSEDED
 | 9.1 | Document required environment variables in .env.example | 9 Pre-launch hardening |
 | 9.2 | Auth callback rate limit + magic-link onboarding fix | 9 |
 | 9.3 | Sentry capture on fire-and-forget background tasks | 9 |
@@ -2636,8 +2636,8 @@ Commit.
 > `rewindowNutritionToActivePhase` design live in git history (tag `roadmap-v2-pre-removal`).
 
 > **SUPERSEDED (2026-08-07):** Sessions 8.1-8.3 (viewer-relative unit display)
-> were replaced by `docs/UNITS-CANONICALIZATION-PLAN.md`, which shipped in four
-> phases across migrations 140 + 141.
+> were replaced by units canonicalization, which shipped in four phases across
+> migrations 140 + 141 (plan doc deleted after shipping; it is in git history).
 >
 > They specified render-time conversion over per-record `weight_unit` tags with
 > **no canonical-storage migration**. That premise was false: `set_logs` (236k

@@ -29,7 +29,7 @@ export const METRIC_ENTRY_KEYS = [
 export type MetricEntryKey = (typeof METRIC_ENTRY_KEYS)[number];
 
 // Value bounds are CANONICAL: weight in kilograms, girths in centimetres
-// (docs/UNITS-CANONICALIZATION-PLAN.md). A dialog that collects in the viewer's
+// (CONVENTIONS.md §20 Units). A dialog that collects in the viewer's
 // unit must convert BEFORE validating against these — see
 // components/clients/metrics/log-measurement-dialog.tsx.
 //

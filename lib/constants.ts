@@ -22,7 +22,7 @@ export const WEEKLY_NUTRITION_PARTIAL_PER_DAY = 143;
 // Sanity bounds for stored body measurements and loads.
 //
 // Storage is canonical: every weight is KILOGRAMS and every length is
-// CENTIMETRES (docs/UNITS-CANONICALIZATION-PLAN.md). These bounds describe
+// CENTIMETRES (CONVENTIONS.md §20 Units). These bounds describe
 // STORAGE, so a form collecting in the viewer's unit converts first and
 // validates the converted value — never the number that was typed.
 //

@@ -260,7 +260,7 @@ Roadmaps/phases were removed entirely on 2026-07-25 (rebuild post-launch; the sh
 
 This section specified render-time conversion over per-record `weight_unit` tags,
 with **no canonical-storage migration**. That was built the other way and shipped
-2026-08-07: `docs/UNITS-CANONICALIZATION-PLAN.md`, migrations 140 + 141.
+2026-08-07 in migrations 140 + 141. The rule is `CONVENTIONS.md` §20 Units.
 
 Its premise was that every record carries a trustworthy unit tag. It does not —
 `set_logs` (236k weight rows) and `client_metric_entries` never had one, and the

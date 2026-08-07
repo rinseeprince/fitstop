@@ -12,7 +12,7 @@ import type { GoalDrift } from "@/lib/goals/detect-goal-drift";
 
 // No unitPreference prop: it carried the CLIENT's preference into a
 // COACH-facing banner. A coach sees their own unit whoever they are looking at
-// (docs/UNITS-CANONICALIZATION-PLAN.md principle 2), so this reads useUnits().
+// (CONVENTIONS.md §20 Units — the preference is the VIEWER's), so this reads useUnits().
 type NutritionGoalChangedBannerProps = {
   drift: GoalDrift | null | undefined;
 };

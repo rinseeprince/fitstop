@@ -4,7 +4,7 @@ import type { UnitPreference } from "@/types/check-in";
  * Unit conversion and presentation-boundary formatting.
  *
  * Storage is canonical: every weight is kilograms, every length is centimetres
- * (docs/UNITS-CANONICALIZATION-PLAN.md). Nothing between the database and the
+ * (CONVENTIONS.md §20 Units). Nothing between the database and the
  * render layer knows about lbs or inches — these helpers are that boundary, so
  * a formatter takes the stored value plus the VIEWER's preference and there is
  * no per-record unit to pass.
@@ -19,10 +19,10 @@ import type { UnitPreference } from "@/types/check-in";
  * rounding. The one exception is `formatHeight`, which must round to whole
  * inches itself in order to carry 12 inches into the next foot.
  *
- * NAME COLLISION, until Phase 3 deletes the older one: `utils/nutrition-helpers.ts`
- * also exports a `formatWeight`, with a different signature and a string return
- * (`formatWeight(weight, unitPreference): string`). Editor auto-import will
- * offer both. This module's is the canonical-storage one.
+ * This is the ONLY module that converts units. `utils/nutrition-helpers.ts`
+ * used to export a colliding `formatWeight` plus its own lbs/kg helpers; all of
+ * them are deleted. If you find yourself writing a conversion factor anywhere
+ * else, it belongs here.
  */
 
 /**
@@ -34,9 +34,10 @@ import type { UnitPreference } from "@/types/check-in";
 export type UnitSystem = UnitPreference;
 
 /**
- * What an unresolved viewer is shown. Metric deliberately — the legacy
- * `clients.unit_preference` / `clients.weight_unit` defaults are imperial and
- * are backwards for this platform (migration 140's header records why).
+ * What an unresolved viewer is shown. Metric deliberately: the ORIGINAL column
+ * defaults were imperial, which is backwards for this platform (206 of 208 Dev
+ * clients were kg). Migrations 140 and 141 flipped both preference columns to
+ * 'metric' and dropped the unit-tag columns entirely.
  *
  * Declared here rather than beside the server resolver so the client bundle can
  * import it without pulling in `supabaseAdmin`.
@@ -119,8 +120,8 @@ export function formatLength(valueCm: number, viewer: UnitSystem): LengthDisplay
  * unloadable number is worse than no conversion at all, so an imperial viewer
  * gets the conversion snapped to the nearest loadable increment.
  *
- * DELIBERATE DEVIATION from docs/UNITS-CANONICALIZATION-PLAN.md:429, which
- * also specifies a 2.5 kg snap for metric viewers. Metric is the IDENTITY path:
+ * DELIBERATE DEVIATION from the original spec, which also called for a 2.5 kg
+ * snap for metric viewers. Metric is the IDENTITY path:
  * no conversion happens, so snapping there does not round a conversion artefact,
  * it rewrites stored data at the display layer — a client's logged 47 kg would
  * render as 47.5, an Epley e1RM of 102.3 as 102.5, and a session volume total

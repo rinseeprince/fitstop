@@ -16,7 +16,7 @@ import {
  *
  * A coach has their own preference and a client has theirs; neither can change
  * the other's. Storage stays canonical kg/cm either way — this only decides
- * what a given person is shown (docs/UNITS-CANONICALIZATION-PLAN.md).
+ * what a given person is shown (CONVENTIONS.md §20 Units).
  *
  * The two exports below have DELIBERATELY DIFFERENT failure contracts. Read
  * both before picking one.

@@ -41,7 +41,7 @@ function renderBlock(weeklyWeightChangeKg: number) {
   );
 }
 
-// THE originally reported bug (docs/UNITS-CANONICALIZATION-PLAN.md appendix):
+// THE originally reported bug (the bug that started units canonicalization):
 // this block appended the literal {" kg/week"} while its sibling banner fourteen
 // lines earlier did receive a unit. It was structurally unable to react.
 describe("NutritionTargetsBlock — weekly rate unit", () => {
