@@ -104,9 +104,7 @@ The point of this bar is to catch real bugs, not to pad coverage. If a test asse
 | 7.85 | Timezone: audit remediation — write-path day stamps + UTC fallbacks + swallowed-tz-error guards | 7 | COMPLETE
 | 7.86 | Timezone: audit remediation — calendar drag gating, deadline validation, days-remaining anchors | 7 | COMPLETE
 | 7.9–7.12 | Goal/roadmap lifecycle — REMOVED: roadmaps/phases deleted 2026-07-25 (rebuild post-launch; sessions + history in git, tag roadmap-v2-pre-removal) | 7 | REMOVED
-| 8.1 | Coach unit preference column + viewer-resolver foundation | 8 Viewer-relative units |
-| 8.2 | Render-path sweep for viewer-relative weight display | 8 |
-| 8.3 | Coach + client unit preference settings + form write paths | 8 |
+| 8.1–8.3 | Units — SUPERSEDED by docs/UNITS-CANONICALIZATION-PLAN.md: shipped 2026-08-07 as canonical kg/cm storage with the preference on the viewer (migs 140+141), not render-time conversion over per-record tags (session bodies in git) | 8 | SUPERSEDED
 | 9.1 | Document required environment variables in .env.example | 9 Pre-launch hardening |
 | 9.2 | Auth callback rate limit + magic-link onboarding fix | 9 |
 | 9.3 | Sentry capture on fire-and-forget background tasks | 9 |
