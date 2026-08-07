@@ -47,7 +47,7 @@ Three principles, applied everywhere:
 
 ### Why canonical storage (and not the alternative)
 
-`docs/CLIENT-PORTAL-REDESIGN.md:260-338` already specifies a "viewer-relative
+`docs/CLIENT-PORTAL-REDESIGN.md` (section since removed) specified a "viewer-relative
 unit display" architecture that agrees with principles 2 and 3 but **explicitly
 rejects** principle 1 (line 279: *"No canonical-storage migration… conversion
 happens at render time"*). That plan is superseded by this one.
@@ -69,9 +69,9 @@ flipping a preference silently relabels history. Render-time conversion cannot
 work on data that does not know what it is. Canonical kg is the only model that
 survives.
 
-**Reconciling `docs/CLIENT-PORTAL-REDESIGN.md` and its Phase 8 sessions is
-deferred until all four phases below have shipped.** Do not edit those docs
-during this work.
+**Both were reconciled on 2026-08-07**, after all four phases shipped: the
+"Viewer-relative unit display" section and Sessions 8.1-8.3 now carry superseded
+pointers instead of a competing spec.
 
 ### Why convert in the render layer, not at the API boundary
 
@@ -827,9 +827,9 @@ accepts input in the viewer's unit while storing kg/cm.
   no longer exist, and the "Phase 8, not yet built" references dangle. This is
   not deferrable doc reconciliation — it is part of finishing the job.
 
-Still deferred: reconciling `docs/CLIENT-PORTAL-REDESIGN.md:260-338` and the
-Phase 8 sessions in `docs/CLIENT-PORTAL-EXECUTION-PLAN.md`, which this plan
-supersedes wholesale.
+**Done 2026-08-07.** `docs/CLIENT-PORTAL-REDESIGN.md`'s "Viewer-relative unit
+display" section and Sessions 8.1-8.3 of `docs/CLIENT-PORTAL-EXECUTION-PLAN.md`
+were both replaced with superseded pointers; their specs live in git history.
 
 ### Pasteable prompt
 
@@ -947,8 +947,8 @@ sibling `NutritionGoalChangedBanner` fourteen lines earlier *did* receive
 **Documentation state at the time**: `TECHNICAL-DEBT.md` contained **zero**
 entries about units across 107KB and 60 headings. `CONVENTIONS.md` had no unit
 convention. `docs/newdesignsystem.md` had no rule for rendering a unit-bearing
-value. The only written treatment was the superseded
-`docs/CLIENT-PORTAL-REDESIGN.md:260-338`.
+value. The only written treatment was the superseded "Viewer-relative unit
+display" section of `docs/CLIENT-PORTAL-REDESIGN.md`, since removed.
 
 **`UnitToggle`** (`components/clients/shared/unit-toggle.tsx`) was rendered in
 exactly one place in the entire application: `drawer-header.tsx:50`.
