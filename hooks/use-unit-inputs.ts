@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   formatHeight,
   parseHeightToCm,
@@ -131,20 +131,37 @@ export function useCanonicalInput(
   const isPristine = state.value === state.baseline;
   const canonical = toCanonicalNumber(state.value, viewer, kind);
 
-  return {
-    value: state.value,
-    setValue: (next) => setState((prev) => ({ ...prev, value: next })),
-    canonical,
-    commit: isPristine ? state.seed : canonical,
-    isPristine,
-    hasParseError: state.value.trim() !== "" && canonical === null,
-    reset: (nextSeed) =>
+  // Both callbacks are memoized, and that is load-bearing rather than tidiness.
+  // A consumer that re-seeds on dialog-open naturally writes
+  // `useEffect(..., [open, record, reset])`; if `reset` were a fresh closure
+  // each render the effect would re-run every render, and because it setStates
+  // a brand-new object that render is guaranteed — an infinite loop that only
+  // appears once the hook is mounted inside a component, which is exactly what
+  // shipped in client-settings-dialog. See the stability test.
+  const setValue = useCallback(
+    (next: string) => setState((prev) => ({ ...prev, value: next })),
+    [],
+  );
+
+  const reset = useCallback(
+    (nextSeed?: number | null) =>
       setState({
         value: toDisplayString(nextSeed, viewer, kind),
         baseline: toDisplayString(nextSeed, viewer, kind),
         seed: nextSeed ?? null,
         viewer,
       }),
+    [viewer, kind],
+  );
+
+  return {
+    value: state.value,
+    setValue,
+    canonical,
+    commit: isPristine ? state.seed : canonical,
+    isPristine,
+    hasParseError: state.value.trim() !== "" && canonical === null,
+    reset,
   };
 }
 
@@ -241,25 +258,38 @@ export function useHeightInput(
 
   const isPristine = sameHeight(state.fields, state.baseline);
   const canonicalCm = heightFieldsToCm(state.fields, viewer);
-  const setField = (key: keyof HeightFields) => (next: string) =>
-    setState((prev) => ({ ...prev, fields: { ...prev.fields, [key]: next } }));
 
-  return {
-    system: viewer,
-    fields: state.fields,
-    setCm: setField("cm"),
-    setFeet: setField("feet"),
-    setInches: setField("inches"),
-    canonicalCm,
-    commitCm: isPristine ? state.seed : canonicalCm,
-    isPristine,
-    hasParseError: !isHeightBlank(state.fields) && canonicalCm === null,
-    reset: (nextSeed) =>
+  // Memoized for the same reason as useCanonicalInput's — see the note there.
+  const setField = useCallback(
+    (key: keyof HeightFields) => (next: string) =>
+      setState((prev) => ({ ...prev, fields: { ...prev.fields, [key]: next } })),
+    [],
+  );
+  const setCm = useMemo(() => setField("cm"), [setField]);
+  const setFeet = useMemo(() => setField("feet"), [setField]);
+  const setInches = useMemo(() => setField("inches"), [setField]);
+
+  const reset = useCallback(
+    (nextSeed?: number | null) =>
       setState({
         fields: toHeightFields(nextSeed, viewer),
         baseline: toHeightFields(nextSeed, viewer),
         seed: nextSeed ?? null,
         viewer,
       }),
+    [viewer],
+  );
+
+  return {
+    system: viewer,
+    fields: state.fields,
+    setCm,
+    setFeet,
+    setInches,
+    canonicalCm,
+    commitCm: isPristine ? state.seed : canonicalCm,
+    isPristine,
+    hasParseError: !isHeightBlank(state.fields) && canonicalCm === null,
+    reset,
   };
 }

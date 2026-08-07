@@ -228,3 +228,63 @@ describe("useHeightInput", () => {
     expect(result.current.commitCm).toBeNull();
   });
 });
+
+// Regression: the callbacks MUST be referentially stable across renders.
+//
+// They were not, and it shipped a hang. A consumer that re-seeds on open writes
+// `useEffect(..., [open, record, reset])`; with a fresh `reset` each render that
+// effect re-runs every render, and since it setStates a brand-new object the
+// next render is guaranteed — "Maximum update depth exceeded", every time the
+// dialog opened. The isolated hook tests above all passed, because renderHook
+// never puts the callbacks in a dependency array. Only mounting a consumer does.
+describe("callback identity is stable across renders", () => {
+  it("useCanonicalInput keeps setValue and reset stable", () => {
+    const { result, rerender } = renderHook(() =>
+      useCanonicalInput("metric", 80, "weight"),
+    );
+    const first = { setValue: result.current.setValue, reset: result.current.reset };
+
+    rerender();
+    act(() => result.current.setValue("81"));
+    rerender();
+
+    expect(result.current.setValue).toBe(first.setValue);
+    expect(result.current.reset).toBe(first.reset);
+  });
+
+  it("useHeightInput keeps every setter and reset stable", () => {
+    const { result, rerender } = renderHook(() => useHeightInput("metric", 178));
+    const first = {
+      setCm: result.current.setCm,
+      setFeet: result.current.setFeet,
+      setInches: result.current.setInches,
+      reset: result.current.reset,
+    };
+
+    rerender();
+    act(() => result.current.setCm("180"));
+    rerender();
+
+    expect(result.current.setCm).toBe(first.setCm);
+    expect(result.current.setFeet).toBe(first.setFeet);
+    expect(result.current.setInches).toBe(first.setInches);
+    expect(result.current.reset).toBe(first.reset);
+  });
+
+  // reset closes over the viewer, so it MUST change when the viewer does —
+  // otherwise a re-seed after a unit flip would write the old unit's display.
+  it("reset changes identity when the viewer changes, and only then", () => {
+    const { result, rerender } = renderHook(
+      ({ viewer }: { viewer: UnitSystem }) =>
+        useCanonicalInput(viewer, 80, "weight"),
+      { initialProps: { viewer: "metric" as UnitSystem } },
+    );
+    const beforeFlip = result.current.reset;
+
+    rerender({ viewer: "metric" });
+    expect(result.current.reset).toBe(beforeFlip);
+
+    rerender({ viewer: "imperial" });
+    expect(result.current.reset).not.toBe(beforeFlip);
+  });
+});
