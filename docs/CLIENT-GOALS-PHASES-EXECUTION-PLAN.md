@@ -1166,3 +1166,186 @@ Zero branches, zero production writers, free `TEXT` with no CHECK. Removal is ~3
 ## 8. STATUS blocks
 
 *Sessions append here at commit time. Do not delete this section — it is how each session inherits the previous one's decisions.*
+
+---
+
+### Task 0.1 — Goal-merge presence fix ✅ SHIPPED 2026-08-10
+
+A re-land of `53abf0a`, which `d58120c` reverted as collateral of removing an unrelated
+feature and listed as *"worth re-landing on its own"*. Line numbers below are as of this
+commit.
+
+**What shipped.** `services/client-goals-service.ts:104` — `has()` is now
+`hasOwnProperty(goals, key) && goals[key] !== undefined`. Plus the ordering belt on
+`getCurrentGoals` (`:43`), four tests, and the `ARCHITECTURE.md:74` caller-list correction.
+
+**THREE live clobber sites, not four.** `services/intake-review-service.ts:208` (the one that
+fires in the common case — its sibling syncs are `== null` guards at `:153-161`, so "only body
+fat lands in `updates`" is exactly the case where the client already has a goal weight) ·
+`services/client-service.ts:281` (`updateClient`) · `app/api/clients/[id]/metrics/route.ts:211`.
+`services/client-service.ts:106` (`createClient`) builds the same literal shape but is
+**vacuous** — it runs straight after the client INSERT, so `getCurrentGoals` returns null and
+both merge branches already yielded null.
+
+> **`53abf0a`'s own code comment said "four … NULLed the sibling goal"** even though its commit
+> message and STATUS block both said three. That comment is the artifact that ships inside the
+> file, and this document gets deleted when the workstream lands (§16), so it would have become
+> the only surviving record. The re-landed comment names `createClient` explicitly as
+> same-shape-but-vacuous and tells the reader not to "correct" the count upward.
+
+**Reachability.** `hooks/use-client-metrics.ts` sends one field per PUT, so editing goal body
+fat alone reproduced it. The guarded mirror writes are actively defeated: all three harmful
+callers correctly guard their own `clients.*` write, and then `updateGoals`' unguarded
+dual-write (`:141-149`) overwrites those columns from the NULLed `merged` later in the same
+request.
+
+**The goals PUT is safe** — verified empirically, not assumed: zod 3.25.76
+`safeParse({"goalBodyFatPercentage":22})` yields an object where
+`hasOwnProperty(data,"goalWeight")` is `false`. Absent optional keys are stripped, and JSON
+cannot carry `undefined`.
+
+---
+
+#### The ordering belt, and what it is not
+
+`getCurrentGoals` now carries `.order("effective_from", { ascending: false }).limit(1)`.
+
+Verified against the **live catalog** (DEV `aeaphsslctwcmebldrzx`), not the migration tree: both
+`idx_client_goals_active_unique` and `idx_client_goals_client_effective` are alive and
+byte-identical to `060:26-31`. `EXPLAIN (ANALYZE, BUFFERS)` on the new query shape gives
+`Index Scan using idx_client_goals_client_effective`, `Filter: (superseded_at IS NULL)`,
+**no Sort node**, cost `0.19..2.41`, 4 shared buffer hits.
+
+**No tie-break, deliberately.** A `created_at`/`id` tie-break buys determinism, not correctness
+(`id` is a random UUID), and would cost the index-only ordering.
+
+**Its hole:** `effective_from` is stamped from one app-side timestamp (`:66`), so two racing
+writers tie and the pick is arbitrary. **This is insurance against a dropped index, not a fix
+for the write race** (§7). What it prevents: if the partial unique index were ever lost, two
+active rows make `maybeSingle()` throw `PGRST116` forever — which 500s the goals GET, blanks
+the whole nutrition tab (`nutrition/route.ts:87` sits in an unguarded `Promise.all`), and
+bricks `updateGoals` itself, whose first statement is that same call, so the supersede that
+would heal the duplicate is unreachable. No in-app recovery; a human runs SQL.
+
+---
+
+#### `notes` — CLOSED for Session 0's scope only; TWO questions remain OPEN
+
+**CLOSED:** `notes` is **not carried forward** in the merge. Both legs of `53abf0a`'s reasoning
+stand as recorded — per-row `set_by` provenance, and the unclearable-ratchet argument.
+
+**OPEN, owned by Task 0b.6, and NOT settled by anything in Session 0:**
+**(a)** does `notes` get a writer? **(b)** do `notes` and `primary_goal` get dropped?
+
+**Why deferred — state the right reason, because the wrong one is easy to inherit.**
+Deferred **solely because Session 0 has no migration by design.** *Not* because the data is
+worth preserving. That argument was raised during planning and then **withdrawn on evidence**:
+a live probe found 67 of 219 `client_goals` rows non-null, **every one seed-script filler**
+(`scripts/seed/generate.ts:269`), zero human-written. **0b.6 must not re-derive a
+data-preservation caution that has already been retired.**
+
+**Owner's words, verbatim (2026-08-10), so this records an answer and not an inference:**
+- On `notes`: *"ok don't worry we'll leave it."*
+- On dropping the column: *"would it not make sense to drop the column and remove all code
+  around it? If nothing writes or reads from it?"*
+- On timing: *"yes do it now. We are not to leave anything just because there's not clients. No
+  clients just means we don't have to worry about preserving data if we need to make
+  architectural changes."*
+
+**Reading (labelled as a reading, not as the owner's ruling):** *"we'll leave it"* followed a
+long answer covering both carry-forward and dropping, so its range is ambiguous. It is recorded
+as assent to leaving the merge alone in Session 0. **The drop question is recorded as raised and
+open**, not as re-confirmed.
+
+**Banked for 0b.6 so it is not re-derived:**
+1. **Ordering, if the drop happens.** `primary_goal` must come out of the INSERT
+   (`client-goals-service.ts:119-121`) **before** the `DROP` lands, or every goal write
+   `PGRST204`s — it is an unconditional key in the `merged` literal, which the INSERT spreads
+   via `...merged`. `notes` is in neither, so it is unordered. Separately, `types/client-goals.ts:35` (`ClientGoalRow`) is **hand-written** and
+   must be edited alongside: once `database.ts` regenerates without the column, the row handed
+   to `mapClientGoalRow` no longer satisfies that type and `tsc` fails. That is a belt, not a
+   hazard — and note the failure is *not* in `select("*")`, which is simply indifferent to a
+   dropped column.
+2. **A prod probe is mandatory before any `DROP`.** §1's caveat names `DROP COLUMN` explicitly.
+   The 67/219 count is **DEV**; prod (`etezzztgafcotyahgijk`) has never been queried by anyone
+   on this workstream.
+
+---
+
+#### Carried to Session 0b — `updateGoals` non-atomicity, and why 0b.2 makes it worse
+
+**`updateGoals` is not atomic** (§7): supersede (`:73-77`) then insert (`:124-133`) with no
+transaction. A failed insert leaves the client with **zero active goals**. Deliberately not
+fixed here — the honest fix is an RPC, and Session 0 has no migration by design.
+
+**Correction to `53abf0a`'s STATUS block, which this session inherited and re-checked:** it says
+*"all four callers swallow the error."* That is wrong, and `dc9898c` already corrected it. There
+are **five** call sites — `metrics/route.ts:211`, `goals/route.ts:94`,
+`intake-review-service.ts:208`, `client-service.ts:106` and `:281`. The **four object-literal
+dual-write callers swallow** (log-and-continue); the **goals PUT surfaces it**, catching at
+`goals/route.ts:109-115` and returning **500**.
+
+**Two distinct swallows — do not conflate them.** The inner one at `client-goals-service.ts:152`
+is the *mirror UPDATE* failing: logged, and `updateGoals` still returns success, so the caller
+never learns. The caller-level one is *`updateGoals` throwing* and being caught. Different
+boundaries, different data outcomes.
+
+**Trace for Task 0b.2, which deletes the four direct `clients.*` writes.** Note first that
+**`5d5fd99` — the fix that removed the caller-level swallow — was also reverted by `d58120c`**
+and is on the same "worth re-landing" list, so **the swallow is live in `main` today.**
+
+`updateGoals` throws after the supersede commits but the insert fails → `client_goals` has zero
+active rows either way.
+
+| | Mirror holds | Coach sees | Net |
+|---|---|---|---|
+| **Before 0b.2** | the **new** value (caller wrote it directly; it committed) | 200 | intent **survives** — reads fall through `?? client.goalWeight` (`comparison-service.ts:62`, `nutrition-calc-inputs.ts:111`, `nutrition/route.ts:149`) |
+| **After 0b.2** | the **old** value — `updateGoals` threw before reaching its dual-write | 200 | the edit is **silently and completely lost**; every surface confidently renders the old goal |
+
+**So 0b.2 strictly widens the blast radius of the non-atomicity defect by removing an accidental
+backup.** It is shippable alone — the happy path is unaffected and it does buy a single
+auditable write path — but it **should not ship alone**. Re-land `5d5fd99`'s swallow removal (or
+the atomicity RPC) **before or with** 0b.2, or the trade is a recoverable silent divergence for
+an unrecoverable silent loss.
+
+**Scope limit on that accidental backup:** it covers **goal weight and body fat only**.
+`mapClientRow` maps those two (`lib/mappers.ts:79-80`) but **not** `goal_deadline` — the dead
+fallback §7 documents. **A lost deadline is already unrecoverable today**, before 0b.2 touches
+anything.
+
+---
+
+#### Gates
+
+`tsc --noEmit` clean · `eslint .` **0 errors** (209 pre-existing warnings, none in the changed
+files) · `vitest run` **249 files / 2560 tests, all passing** · `check:labels` OK (634 files) ·
+no `as any` · no leftover markers. **No migration**, so no `check:rls`, no `db push`, no
+`gen types`.
+
+**Tests are mutation-proven.** The four were written and run **before** the fix existed: all
+four failed (the mirror pin showing `clients.goal_weight` arriving as `null` instead of `170`),
+then all 14 passed with the fix. No `git stash` was used at any point — this repo's stash stack
+holds two abandoned WIPs (`stash@{0}` = "phase2-wip KILLED 2026-07-01", whose migration is
+already on the prod DB), so a `pop` would restore someone else's work.
+
+**Honest limit on the fourth test:** against a mocked query builder it pins the query *chain*,
+not real ordering. Proving the newest row wins needs a DB integration test this repo lacks.
+
+**Baseline caveat.** The intended clean-tree baseline run raced the first test edit, so it is
+derived rather than independently measured: that run showed **249 files / 2556 pre-existing
+tests passing**, with the single failure being the newly-added ordering-belt test. The
+known-flaky `components/client-portal/training/set-tracker.test.tsx` passed in that run. The
+post-fix run confirms the arithmetic exactly: 2556 + 4 new = **2560, all passing**.
+
+**No "no real clients" claim is made anywhere in this commit.** An earlier draft asserted that
+no data was at risk; it was removed. Nothing was queried to establish it, PROD has never been
+queried, and `5d5fd99` records a live client ("Sam Kay") holding mirror 78/15 against
+`client_goals` 92/9 for six weeks from 2026-06-16 — a divergence caused by a *different* defect,
+but more than enough to retire the framing.
+
+**Browser smoke — OWED, NOT RUN. The UI is unverified.** Open a client with a goal weight and no
+goal body fat, ensure the intake carries a body-fat value, run "Sync metrics to profile" from
+the intake review page, and confirm **the goal weight survives** on both the Overview status
+card and the nutrition builder's goal line. Then edit goal body fat alone from the Metrics page
+and confirm the same. Negative control: clear the deadline from the goals editor and confirm it
+still clears.

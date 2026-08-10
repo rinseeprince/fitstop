@@ -71,7 +71,14 @@ Versioned goals using the `effective_from` / `superseded_at` pattern:
 
 ### Effective goal resolution
 
-A single pure resolver, `resolveEffectiveGoal()` (`lib/goals/resolve-effective-goal.ts`), turns the live `client_goals` record into the goal that drives nutrition + pace. It normalizes **nothing** — `client_goals.goal_weight` is canonical kilograms (migration 141), so the resolver reads it straight through and its old `weightUnit` parameter is gone rather than ignored. A NULL weight means **maintenance** (`goalWeightKg: null`). `startDate` falls back to `today` when `client_goals.goal_start_date` (migration 104) is unset. Callers: `services/nutrition-plan-orchestrator.ts` (plan creation), `services/comparison-service.ts` (check-in weight pace — weight **and** deadline come from one scope), the nutrition GET's goal-drift check, and the coach Metrics page.
+A single pure resolver, `resolveEffectiveGoal()` (`lib/goals/resolve-effective-goal.ts`), turns the live `client_goals` record into the goal that drives nutrition + pace. It normalizes **nothing** — `client_goals.goal_weight` is canonical kilograms (migration 141), so the resolver reads it straight through and its old `weightUnit` parameter is gone rather than ignored. A NULL weight means **maintenance** (`goalWeightKg: null`). `startDate` falls back to `today` when `client_goals.goal_start_date` (migration 104) is unset.
+
+**Four direct callers** (re-derived 2026-08-10; the previous list named the orchestrator, which has not called this resolver since it moved to `resolveNutritionCalcInputs`, and omitted `nutrition-calc-inputs.ts` entirely):
+
+- `services/nutrition-calc-inputs.ts:109` — the shared calculator-input resolver, and the **only** route to `resolveEffectiveGoal` for both the nutrition write path (`nutrition-plan-orchestrator.ts:178` calls `resolveNutritionCalcInputs`, not this resolver) and the coach nutrition GET (`app/api/clients/[id]/nutrition/route.ts:112`).
+- `services/comparison-service.ts:60` — check-in weight pace; weight **and** deadline come from one scope.
+- `app/api/clients/[id]/nutrition/route.ts:147` — the goal-drift check ("Goal changed — regenerate"), a second independent resolve in the same request as the one above.
+- `components/clients/metrics/hooks/use-merged-metrics.ts:99` — the coach Metrics page; the only browser-side caller, and it hardcodes `deadline: null`/`startDate: null` (a divergence Session 0b Task 0b.3 owns).
 
 ### body_metrics table
 

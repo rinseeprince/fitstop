@@ -24,11 +24,24 @@ function mapClientGoalRow(row: ClientGoalRow): ClientGoal {
 export const getCurrentGoals = async (
   clientId: string
 ): Promise<ClientGoal | null> => {
+  // Ordering belt. `idx_client_goals_active_unique` (migration 060) makes two
+  // active rows impossible, so this changes nothing today. It matters if that
+  // index is ever lost: two active rows make `maybeSingle()` throw PGRST116
+  // forever, and because `updateGoals` opens with this very call, the set-based
+  // supersede that would heal the duplicate is unreachable — there is no in-app
+  // recovery, a human runs SQL. Ordering turns a permanent wedge into a
+  // recoverable wrong answer.
+  //
+  // Its hole: `effective_from` is stamped from one app-side timestamp (see
+  // `updateGoals` below), so two racing writers tie and the pick is arbitrary.
+  // This is insurance against a lost index, NOT a fix for the write race.
   const { data, error } = await supabaseAdmin
     .from("client_goals")
     .select("*")
     .eq("client_id", clientId)
     .is("superseded_at", null)
+    .order("effective_from", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error) {
@@ -71,12 +84,27 @@ export const updateGoals = async (
     }
   }
 
-  // Presence-based per-field merge: a key PRESENT in the payload wins (even when
-  // it is explicit null → clears the column); a key ABSENT carries the existing
-  // value forward. Plain `??` could never clear a field — passing null fell
-  // through to the existing value. `goalWeight` is never cleared (required field).
+  // Per-field merge on DEFINED presence: a key carrying a real value wins, and an
+  // explicit null still wins (it clears the column — `null !== undefined`). A key
+  // that is absent OR explicitly `undefined` carries the existing value forward.
+  //
+  // The `!== undefined` half is load-bearing. `hasOwnProperty` alone is true for a
+  // key present with value `undefined`, which is exactly what the object-literal
+  // callers build: the intake metrics sync, `updateClient` and the metrics PUT each
+  // spread possibly-undefined fields into a fixed key set, so a single-field goal
+  // edit reached here with its sibling present-and-undefined and NULLed it. Because
+  // the dual-write below mirrors `merged` unconditionally, BOTH stores lost the
+  // value in the same request — there was no surviving copy to reconcile from.
+  //
+  // `createClient` builds the same shape but could never clobber: it runs straight
+  // after the client INSERT, so there is no existing row and both branches already
+  // yielded null. THREE clobber sites, not four — do not "correct" that upward.
+  //
+  // Plain `??` is not the fix either — it could never clear a field. `goalWeight`
+  // is the one field no caller can clear: it is `number | undefined` here and
+  // `.optional()` but not `.nullable()` in `updateGoalsSchema`.
   const has = (key: keyof typeof goals) =>
-    Object.prototype.hasOwnProperty.call(goals, key);
+    Object.prototype.hasOwnProperty.call(goals, key) && goals[key] !== undefined;
   const merged = {
     goal_weight: has("goalWeight")
       ? goals.goalWeight ?? null
