@@ -1,6 +1,6 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Not started · **Owner decision date:** 2026-08-10
+**Status:** Session 0 ✅ SHIPPED + smoked 2026-08-10 (`c010741`, `f821a1e`) · seven sessions remain · **Owner decision date:** 2026-08-10
 **Eight sessions.** Three largely independent features share this document. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
@@ -140,7 +140,7 @@ Listed in execution order.
 
 | Session | Theme | Migrations | Ships user-visible change? |
 |---|---|---|---|
-| **0** | Goals: stop the live data loss | none | No — one correctness commit |
+| **0** ✅ | Goals: stop the live data loss — **SHIPPED + smoked 2026-08-10** | none | No — one correctness commit |
 | **1** | Foundations: the cascade, the energy helper, the plan-row date lie | **1** (RPC body swap, same arity) | The nutrition hero |
 | **2** | Blocks backend: table, service, routes | **1** (`client_phases`) | No — API only |
 | **3** | Journey tab: rename, Blocks list, chart shading | none | Yes — the coach block feature |
@@ -165,7 +165,12 @@ Read this before assuming the order above is forced. It mostly is not.
 
 ---
 
-# SESSION 0 — Stop the live data loss
+# SESSION 0 — Stop the live data loss ✅ COMPLETE
+
+> **SHIPPED + browser-smoked 2026-08-10** — `c010741` (fix) and `f821a1e` (smoke record).
+> The session brief below is kept as-authored for provenance; **the STATUS block in §8 is
+> authoritative** for what actually shipped, the decisions it closed, and the two items it
+> hands to Session 0b. Read that, not this, before touching the goal layer.
 
 **Zero migrations. ONE task, one commit.**
 
@@ -187,7 +192,7 @@ This session exists for a single reason: `services/client-goals-service.ts:79` i
 
 ---
 
-### Task 0.1 — Goal service: presence must mean "present and not undefined"
+### Task 0.1 — Goal service: presence must mean "present and not undefined" ✅ SHIPPED
 
 *(This fix already shipped once. `d58120c` reverted it as collateral of removing an unrelated feature; `git show 53abf0a` is the exact one-line diff plus three tests. Read it first — do not re-derive.)*
 
