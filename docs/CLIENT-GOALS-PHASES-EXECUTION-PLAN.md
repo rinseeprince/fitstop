@@ -215,7 +215,7 @@ This session exists for a single reason: `services/client-goals-service.ts:79` i
 
 - `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`, `npm run check:labels`. **No migration**, so no `check:rls`, no `db push`, no `gen types`.
 - New tests: the goal-merge caller shape **and** the mirror payload; the ordering belt returning the newest row.
-- **Browser smoke (owner runs it):** open a client with a goal weight and no goal body fat, run "Sync metrics to profile" from the intake review page with a body-fat value present in the intake, and confirm **the goal weight survives**. That is the regression this session exists for.
+- **Browser smoke (owner runs it) — ✅ PASSED 2026-08-10; full evidence and the exact recipe are in the Task 0.1 STATUS block.** The setup is NOT one intake pass, and "body fat" is ambiguous here: the client needs a goal weight **already set** and **no goal body fat**, while the intake carries a value in **step 2's "Goal body fat %?"** field (not step 1's *current* body fat). Then "Sync metrics to profile" and confirm the goal weight survives. Verify via the `client_goals` row count increasing by one — otherwise `updateGoals` never ran and the test proved nothing.
 
 ---
 
@@ -1343,9 +1343,32 @@ queried, and `5d5fd99` records a live client ("Sam Kay") holding mirror 78/15 ag
 `client_goals` 92/9 for six weeks from 2026-06-16 — a divergence caused by a *different* defect,
 but more than enough to retire the framing.
 
-**Browser smoke — OWED, NOT RUN. The UI is unverified.** Open a client with a goal weight and no
-goal body fat, ensure the intake carries a body-fat value, run "Sync metrics to profile" from
-the intake review page, and confirm **the goal weight survives** on both the Overview status
-card and the nutrition builder's goal line. Then edit goal body fat alone from the Metrics page
-and confirm the same. Negative control: clear the deadline from the goals editor and confirm it
-still clears.
+**Browser smoke — RUN BY THE OWNER 2026-08-10, PASSED.** Client "TEST BF GOAL". The two
+`client_goals` versions are the artifact:
+
+| version | `set_by` | goal weight | goal body fat | state |
+|---|---|---|---|---|
+| v1 22:16:17 | coach uuid (the goal editor) | 72 | **null** | superseded |
+| v2 22:17:30 | **`intake`** | **72 — carried forward** | 12 | **ACTIVE** |
+
+`set_by: "intake"` proves the write came from `intake-review-service.ts:208`, the worst-case
+clobber site, with `goalWeight` arriving as `undefined`. Under the old code v2's `goal_weight`
+would have been `NULL`. The `clients` mirror agrees (72.0 / 12.00), so both stores are correct.
+
+**The repro is NOT reachable in one intake pass — record this, it cost two false starts.** Sync
+#1 on a fresh client sets goal weight *and* goal body fat together (both defined, no clobber),
+and sync #2 then does nothing because both `== null` guards are closed. The bug needs the client
+to **already have a goal weight while still having no goal body fat**. The reliable setup:
+
+1. Client's intake fills **step 2's "Goal body fat %? (optional)"** — a *different* field from
+   step 1's *current* body fat. Only the step-2 field arms the guard
+   (`client.goal_body_fat_percentage == null && intake.goalBodyFatPercentage != null`).
+2. **Before syncing**, the coach sets a goal weight in the nutrition-drawer goal editor and
+   leaves its body-fat box empty (which sends explicit `null`).
+3. Then run "Sync metrics to profile".
+
+**Verify the path actually ran, not just the screen.** `updateGoals` supersedes-and-inserts on
+every call, so the `client_goals` row count **must increase by one**. A first attempt on client
+"test bf" looked like a pass and was not: its intake carried a *current* body fat but no *goal*
+body fat, so no goal field entered `updates`, the `if (updates.goal_weight !== undefined || …)`
+guard was false, `updateGoals` was never called, and the row count stayed at 1.
