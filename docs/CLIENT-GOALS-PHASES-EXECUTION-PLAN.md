@@ -2793,3 +2793,44 @@ service 9 — era pin, is_modified exclusion, all-modified fallback, lived-day c
 paging-union pin, multi-change count; route 3 — foreign-404-before-read, no-store +
 today threading, no-raw-error-leak; block-weight 5; timeline 4; arithmetic closes
 from 2690) · `check:labels` OK (652) · no `as any` · no markers · no migration.
+
+---
+
+### Task 3.3 — "Add a block" ✅ SHIPPED 2026-08-11
+
+**What shipped.** `blocks/add-block-form.tsx` — an INLINE form per the task brief,
+taking the habits manage-drawer's `showAddForm` swap for the SHELL only (its
+raw-useState internals predate the react-hook-form rule — the §4 collision table's
+class (a); the form complies instead of copying). Form state is react-hook-form +
+`zodResolver` (name 1..`BLOCK_NAME_MAX`; weeks int 1..`BLOCK_WEEKS_MAX` via
+`valueAsNumber`; focus ≤`BLOCK_FOCUS_MAX`, labelled **"Focus"** with the mandated
+**"What's this block for?"** prompt). Target weight collects in the VIEWER's unit
+through `useCanonicalInput` and commits canonical kg, with the RHF field holding the
+canonical number so the schema's `WEIGHT_KG_MIN/MAX` bounds validate storage — the
+`add-client-manual-form.tsx` pattern, unit suffix from `formatWeight(0, preference)
+.unit` (no unit literal in JSX, §20). The live line — *"Starts 7 Sep, ends 4 Oct.
+Journey becomes 20 weeks."* — is a sentence and therefore 100% sans (the prose
+rule), derived from the chain end + `weeks` via the same `DAYS_PER_BLOCK_WEEK`
+arithmetic the backend uses. The **empty-chain case adds a start-date field**
+(defaults to today) — the PUT requires an anchor and a first block has no stored
+one; an existing chain anchors at its stored `startsOn` and the form shows no date.
+
+**The payload discipline is a tested pure helper**, `blocks/block-chain-payload.ts`
+(`buildAppendPayload`): stored rows echo verbatim — **elapsed rows OMIT `weeks`**
+(pinned from storage; a truncated 29-day block has no reproducing weeks value),
+current/future rows echo theirs (reproducing stored dates exactly — only elapsed
+blocks can be non-whole-weeks), nulls echo as nulls (the service echo-checks them)
+— with the id-less new row appended last. Mounted in `blocks-subtab.tsx` behind the
+SectionLabel rail's `+` (the Programs-library action recipe) and the empty state's
+primary CTA; the open form renders at the chain's end, where the block will land.
+Submit → `putBlockChain` → `useInvalidateClientBlocks` (area) → success toast
+quoting the name (`"Cut 2" added`) → swap back; service 422s (window-floor
+violations) surface as destructive toasts with the server's message.
+
+**No block-edit affordance — explicit non-goal.** Session 3 has no edit task; add +
+delete is the whole v1 write surface.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged) ·
+`vitest run` **265 files / 2715 tests, all passing** (+1 file, +4 payload-builder
+tests; arithmetic closes from 2711) · `check:labels` OK (655) · no `as any` · no
+markers · no migration.
