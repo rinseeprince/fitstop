@@ -2344,3 +2344,73 @@ perf baselines stay comparable.
 **Full-session smoke now unblocked end-to-end** — coach AND client surfaces are
 version-aware. The four checklist smokes plus the D1 pre-start logging check are ready
 whenever you are (after 1b.5's doc pass, or before it — docs don't gate behaviour).
+
+---
+
+### Task 1b.5 — Documentation reconciliation ✅ SHIPPED 2026-08-11 · SESSION 1B COMPLETE
+
+**Owner-mandated reconciliation, checklist floor + re-grepped stragglers:**
+- **`CONVENTIONS.md` §8 status-lifecycle** — the normative single-durable-plan bullet
+  REWRITTEN to the versioned model, recording the reversal inline (owner 2026-08-11,
+  stale premise) and what survives it (events-SOT, per-day edits materialize onto
+  events, one target per day).
+- **`docs/ARCHITECTURE.md`** — hierarchy line (`DATE-RANGED VERSIONS`); the "deliberate
+  asymmetry" block rewritten as "both tracks are date-ranged" with what still differs
+  (training coexists additively with capped windows and normal gaps; nutrition chains
+  contiguously via derived closes, gapless except after a delete); the durable-plan
+  section replaced by "**Nutrition plan versions + per-version daily-targets
+  template**" (model, write-path lineage 048→110→115→139→143→144, the three branches +
+  sweep + belt, the resolver family, the GET's three roles, delete semantics, the
+  both-ends template gate); the cascade bullet now describes version segmentation +
+  the loud lookup; the baseline-leak bullet records closure-by-construction; the
+  typical-week path names the covering version's grid + both-ends gate; activation
+  flow's `hasNutritionPlan` = covering-or-future.
+- **`TECHNICAL-DEBT.md`** — entries 2/3/5 were reconciled in 1b.2's commit (verified);
+  entry 6's "nutrition is now one durable plan" rationale re-worded historically
+  ("…and then to date-ranged VERSIONS in migration 144 — under both, 'current' is
+  never a status flip").
+- **`NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md`** (repo root, not docs/) — SUPERSEDED
+  banner at top naming exactly what was reversed (Mig B / in-place upsert / every
+  "no versioning" claim) and what still stands; the doc stays as its era's
+  design-decision record.
+- **`docs/CLIENT-PORTAL-EXECUTION-PLAN.md`** `:1070`/`:2483` — the two "⊘ superseded"
+  annotations that stated the durable model as current fact gained
+  "superseded again 2026-08-11 (migration 144 versions)" suffixes.
+- **Straggler grep beyond the listed lines** (md + code comments): one code straggler
+  found and fixed — the deletion orchestrator's docstring still said "durable nutrition
+  plan" (now chain-aware wording). All remaining "durable"/"in place"/"upsert" hits
+  verified to be either unrelated word uses, historical statements in annotated
+  context, or correct current mechanics (the events upsert).
+- **This doc's supersession banners** (Task 1.3 §-body + STATUS) verified present from
+  1B insertion time.
+
+**Gates.** `tsc --noEmit` clean · `vitest run` 253/2621 all passing · `eslint .` 0
+errors (209 pre-existing warnings, unchanged the whole session) · `check:labels` OK ·
+`check:rls` OK (40/40) · §2 review: not applicable (docs + one docstring).
+
+---
+
+**SESSION 1B COMPLETE — 5 commits, 1 migration (144), pushed to DEV.** Prod receives
+144 through its normal replay (prod pre-flight probe ran clean 12/12 before anything
+was pushed — the workstream's first prod probe). The as-never casts remain with the
+24-key pin green (Session 5's contract). Training-side deletion and
+`training_events.calorie_surplus_percentage` population verified untouched
+(session-brief constraint — the only cascade-adjacent diffs are the version
+segmentation inside the nutrition helper).
+
+**Browser smoke checklist (owner runs it — UI is unverified by the executor):**
+1. **The original leak repro:** regenerate a plan with a future apply date, then move a
+   training event inside the gap week → the moved day keeps the OLD prescription's
+   numbers (calendar + client day view).
+2. **Chain:** queue two future versions → hero shows the EARLIEST as "New targets
+   from"; open the drawer → seeds are the LATEST queued version's numbers; the apply
+   dialog shows "This replaces the change queued for {date}." when the picked date is
+   on/before it — and replacing it works.
+3. **Delete with a chain:** today's targets survive, tomorrow-forward gone (queued
+   versions included), no orphaned targets on the calendar; hero reads "Active since"
+   today and "No active nutrition plan" tomorrow; a same-day re-generate seeds the
+   deleted era's numbers, not defaults.
+4. **Save on/before a queued change** → the dialog warns, the queued version is
+   replaced (hero's "New targets from" updates to the new date).
+5. **D1:** activate a client whose FIRST plan is queued for a future date → they can
+   log food today (no 422); the log's row carries no plan stamp.

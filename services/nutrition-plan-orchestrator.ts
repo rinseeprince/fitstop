@@ -96,15 +96,15 @@ async function stampCoachNote(
 }
 
 /**
- * Delete (archive) the client's durable nutrition plan and clear its upcoming
+ * Delete the client's nutrition plan CHAIN (migration 144): close the
+ * covering version at their today, remove queued versions, and clear upcoming
  * scheduled events so no orphaned prescription lingers on the calendar. Today
  * and past days are untouched; coach-edited (is_modified) FUTURE days go too,
  * deliberately — a deleted plan leaves no forward prescription.
  *
- * Events are cleared BEFORE the status flip so a mid-flight failure is
- * retryable: with the plan still active, a re-DELETE resolves it again and
- * repeats the (idempotent) event delete. Throws NutritionPlanError for
- * ownership / not-found failures.
+ * Events are cleared FIRST so a mid-flight failure is retryable: with the
+ * chain intact, a re-DELETE resolves it again and repeats the (idempotent)
+ * steps. Throws NutritionPlanError for ownership / not-found failures.
  */
 export async function orchestrateNutritionPlanDeletion(
   clientId: string,
