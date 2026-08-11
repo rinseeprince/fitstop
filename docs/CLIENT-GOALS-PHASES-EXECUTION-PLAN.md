@@ -2537,3 +2537,41 @@ half; the route half lands with Task 2.4's module-spy test).
 `vitest run` **255 files / 2657 tests, all passing** (arithmetic closes: +2 files,
 +33 tests) · `check:labels` OK (636) · no `as any` · no markers · no migration in this
 commit.
+
+---
+
+### Task 2.3 — Derived reads ✅ SHIPPED 2026-08-11
+
+**What shipped.** `lib/blocks/block-derivations.ts` — pure, client-safe, no rounding
+anywhere (renderer rounds; the 1.2 precedent): `deriveBlockState`
+(current/past/future, ISO-string comparison), `deriveWeekOfTotal` ("week X of Y",
+current block only, null otherwise — `total` = `weeksSpanned` (ceil), the SAME single
+derivation as the GET's `weeks` field, so a truncated 29-day block reads "week 5 of 5"
+on its final day and lists as 5 weeks, one solver), and `derivePace`.
+
+**Pace is a pure, UNIT-AGNOSTIC function — the plan-review Q1 correction, restated so
+Session 3 inherits it:** the plan doc's Task 3.2 row assigns the Weight column AND the
+pace readout to the client-side merged series ("no new API"), and the merged series
+both tie-ranks differently from `body_metrics` (coach entry wins same-day ties) and is
+converted+rounded to the viewer's unit at source — so **the GET carries no pace and no
+weight reads**, and pace's three weight inputs must share ONE unit system (documented
+in the JSDoc; outputs are in that system). Session 3 feeds it from
+`use-merged-metrics` so the readout matches the column beside it by construction;
+Session 4's `/api/client/journey` picks its source at its own owner-decision time —
+named server-side reuse target if it goes that way: `getBodyMetricsHistory`
+(`services/body-metrics-service.ts`, `requireFields`/`to`/`limit`, `created_at`
+tiebreak baked in).
+
+**Semantics pinned by test:** null — never a fabricated zero — when target, start
+weight, or current weight is missing; `expected` interpolates linearly start→target
+(`start` on day one, `target` on the last day, exact fraction between); `remaining =
+current − target` (positive = above target; the renderer picks wording from direction
+of travel, the goal-state.ts lesson); `delta = current − expected` (sign readable only
+with direction); `weeksLeft` fractional, floored at 0; the elapsed fraction clamps to
+[0,1] so out-of-window callers get endpoint values (an elapsed block reads
+`expected = target`), and a single-day window (truncate's day-two edge) reads fully
+elapsed rather than dividing by zero.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged) ·
+`vitest run` **256 files / 2669 tests, all passing** (+1 file, +12 tests; arithmetic
+closes) · `check:labels` OK (636) · no `as any` · no markers · no migration.
