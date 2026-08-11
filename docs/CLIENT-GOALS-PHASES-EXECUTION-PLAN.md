@@ -2628,3 +2628,36 @@ chain.
 `vitest run` **258 files / 2684 tests, all passing** (+2 files, +15 tests; arithmetic
 closes) · `check:labels` OK (640 — the four new files scanned) · no `as any` · no
 markers · no migration.
+
+---
+
+### Task 2.5 — Doc update ✅ SHIPPED 2026-08-11 · SESSION 2 COMPLETE
+
+**§4's mandated correction landed:** ARCHITECTURE's Overview bullet no longer claims
+*"No roadmap or phase concept exists"* — rewritten (§3 class (b), stale-once-shipped)
+keeping the distinction the plan doc requires: the status card's chips describe the
+active **training** block; a **journey** block (`client_phases`) is an unrelated
+concept sharing the word, and neither surface reads the other. The bullet also states
+explicitly that journey blocks are NOT the migration-133 roadmaps feature returning.
+
+**New section** "Journey blocks (`client_phases`, migration 145)" under Client Goals &
+Body Metrics: the four-field entity, the naming divergence, date-derived
+state/week/pace in the client's timezone, durations-in/dates-out with the pinned
+elapsed prefix + symmetric window floor, delete-as-shift (truncate-current in one
+atomic upsert; the day-one remove and the CHECK it justifies; the shared
+`computeDeleteShift` preview contract; gap-only-after-partial-failure + self-heal),
+pace off the wire and fed by the merged series, the route surface, and the RLS
+posture.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings — verified on this
+tree earlier in the session; docs-only diff) · `vitest run` 258 files / 2684 tests, all
+passing · `check:labels` OK (640) · `check:rls` OK (41/41) · docs-only commit.
+
+**Session totals: 5 commits, 1 migration (145), 60 new tests (33 + 12 + 15) across 5
+new test files — baseline 253 files / 2624 at session start, 258 / 2684 at close;
+arithmetic closes exactly.** The blocks backend is complete and browser-unverified by
+design — nothing
+user-visible ships in Session 2; Session 3's UI smoke is the first end-to-end
+exercise of these routes. The §2 security/load/perf review was delivered with the
+session summary (triggers: migration + new routes + new write path; item 4
+compensated-not-ticked per the Task 2.2 STATUS block; residuals recorded there).
