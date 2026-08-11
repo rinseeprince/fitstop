@@ -1,0 +1,313 @@
+import { supabaseAdmin } from "./supabase-admin";
+import { addDaysToDateString } from "@/lib/date-helpers";
+import {
+  computeBlockChain,
+  computeDeleteShift,
+} from "@/lib/blocks/block-chain";
+import type { TablesInsert } from "@/types/database";
+import type {
+  BlockDateChange,
+  ClientBlock,
+  ReplaceBlockChainInput,
+} from "@/types/client-blocks";
+
+/**
+ * Journey blocks (client_phases — the table keeps the phases name, the
+ * coach-facing noun is "block"; see the table comment, migration 145).
+ *
+ * Shape B: routes verify the coach owns the client; every query here filters
+ * on the passed clientId. `clientToday` is the CLIENT's calendar day, resolved
+ * once at the route via getClientTodayString and threaded in — the service
+ * never derives time itself (the migration-144 clientToday-threading
+ * precedent).
+ *
+ * Dates are computed, never accepted: the caller sends a start date plus
+ * durations and lib/blocks/block-chain.ts walks the chain, so overlaps and
+ * gaps are unexpressible. Elapsed blocks (ends_on < clientToday) are read-only
+ * history; the symmetric window floor keeps every edit from re-labelling lived
+ * days (only DELETE re-attributes them, and only by ending a block at today).
+ */
+
+/** 422: the block (or its elapsed prefix) is read-only history. */
+export class ElapsedBlockImmutableError extends Error {}
+/** 422: an edit would re-label lived days (symmetric window floor). */
+export class BlockWindowError extends Error {}
+/** 422: the payload is structurally wrong for the stored chain. */
+export class BlockPayloadError extends Error {}
+/** 404: the DELETE target does not exist for this client. */
+export class UnknownBlockIdError extends Error {}
+
+type BlockRow = {
+  id: string;
+  name: string;
+  focus: string | null;
+  target_weight: number | null;
+  starts_on: string;
+  ends_on: string;
+};
+
+const BLOCK_COLUMNS = "id, name, focus, target_weight, starts_on, ends_on";
+
+function mapBlockRow(row: BlockRow): ClientBlock {
+  return {
+    id: row.id,
+    name: row.name,
+    focus: row.focus,
+    targetWeightKg: row.target_weight,
+    startsOn: row.starts_on,
+    endsOn: row.ends_on,
+  };
+}
+
+/** The client's chain in date order. */
+export const listBlocks = async (clientId: string): Promise<ClientBlock[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("client_phases")
+    .select(BLOCK_COLUMNS)
+    .eq("client_id", clientId)
+    .order("starts_on", { ascending: true });
+
+  if (error) {
+    console.error("Failed to fetch blocks:", error);
+    throw new Error(`Failed to fetch blocks: ${error.message}`);
+  }
+  return (data ?? []).map(mapBlockRow);
+};
+
+const isCurrent = (block: ClientBlock, today: string): boolean =>
+  block.startsOn <= today && today <= block.endsOn;
+
+/**
+ * Replace the whole chain: elapsed rows pinned verbatim, the editable suffix
+ * recomputed from durations. Removal is NOT expressible here — an existing
+ * non-elapsed id missing from the payload is a 422, because DELETE owns the
+ * shift-and-report contract.
+ */
+export const replaceBlockChain = async (
+  clientId: string,
+  clientToday: string,
+  input: ReplaceBlockChainInput
+): Promise<ClientBlock[]> => {
+  const stored = await listBlocks(clientId);
+  const storedById = new Map(stored.map((block) => [block.id, block]));
+  const elapsed = stored.filter((block) => block.endsOn < clientToday);
+
+  // The elapsed prefix is immutable: the payload must lead with it — same ids,
+  // same order, same fields. Its dates come from STORAGE, not from a walk: a
+  // truncated block's day count is not whole weeks, so no `weeks` value could
+  // reproduce it.
+  elapsed.forEach((storedBlock, i) => {
+    const echo = input.blocks[i];
+    if (!echo || echo.id !== storedBlock.id) {
+      throw new ElapsedBlockImmutableError(
+        "Past blocks are read-only and must lead the chain unchanged."
+      );
+    }
+    if (
+      echo.name !== storedBlock.name ||
+      (echo.focus ?? null) !== storedBlock.focus ||
+      (echo.targetWeightKg ?? null) !== storedBlock.targetWeightKg
+    ) {
+      throw new ElapsedBlockImmutableError("Past blocks can't be edited.");
+    }
+  });
+
+  if (elapsed.length > 0 && input.startsOn !== stored[0].startsOn) {
+    throw new BlockPayloadError(
+      "The journey start can't move while past blocks exist."
+    );
+  }
+
+  const suffix = input.blocks.slice(elapsed.length);
+  for (const entry of suffix) {
+    if (entry.id !== undefined) {
+      const storedBlock = storedById.get(entry.id);
+      if (!storedBlock) {
+        throw new BlockPayloadError("Unknown block id in payload.");
+      }
+      if (storedBlock.endsOn < clientToday) {
+        throw new ElapsedBlockImmutableError(
+          "Past blocks are read-only and must lead the chain unchanged."
+        );
+      }
+    }
+    if (entry.weeks === undefined) {
+      throw new BlockPayloadError(
+        "weeks is required for current and future blocks."
+      );
+    }
+  }
+
+  const payloadIds = new Set(
+    input.blocks.flatMap((entry) => (entry.id ? [entry.id] : []))
+  );
+  for (const block of stored) {
+    if (block.endsOn >= clientToday && !payloadIds.has(block.id)) {
+      throw new BlockPayloadError(
+        "Removing a block goes through its delete action, which reports the date changes."
+      );
+    }
+  }
+
+  const anchor =
+    elapsed.length > 0
+      ? addDaysToDateString(elapsed[elapsed.length - 1].endsOn, 1)
+      : input.startsOn;
+  const windows = computeBlockChain(
+    anchor,
+    suffix.map((entry) => entry.weeks as number)
+  );
+
+  // Symmetric window floor: an edit never re-labels lived days. A stored
+  // current block must still contain today (may neither end before today nor
+  // start after it); a stored future block may become current but never
+  // wholly past. New id-less rows may land anywhere — history backfill.
+  suffix.forEach((entry, i) => {
+    if (!entry.id) return;
+    const storedBlock = storedById.get(entry.id) as ClientBlock;
+    const window = windows[i];
+    if (isCurrent(storedBlock, clientToday)) {
+      if (window.startsOn > clientToday || window.endsOn < clientToday) {
+        throw new BlockWindowError(
+          "The block in progress must still cover today. To end it now, delete it — the next block starts today."
+        );
+      }
+    } else if (window.endsOn < clientToday) {
+      throw new BlockWindowError(
+        "A scheduled block can't be moved entirely into the past."
+      );
+    }
+  });
+
+  const now = new Date().toISOString();
+  const updates: TablesInsert<"client_phases">[] = [];
+  const inserts: TablesInsert<"client_phases">[] = [];
+  suffix.forEach((entry, i) => {
+    const row: TablesInsert<"client_phases"> = {
+      client_id: clientId,
+      name: entry.name,
+      focus: entry.focus ?? null,
+      target_weight: entry.targetWeightKg ?? null,
+      starts_on: windows[i].startsOn,
+      ends_on: windows[i].endsOn,
+      updated_at: now,
+    };
+    if (entry.id) {
+      updates.push({ ...row, id: entry.id });
+    } else {
+      inserts.push(row);
+    }
+  });
+
+  // SECURITY: an upsert cannot carry a tenant filter, and a foreign id in this
+  // array would not match zero rows — the DO UPDATE arm would rewrite the
+  // foreign row, client_id included, stealing it into this tenant. Every id
+  // here has been validated against this client's stored rows (the
+  // storedById checks above). Never let an id reach this array straight from
+  // a payload. created_at is deliberately absent so the UPDATE arm keeps the
+  // row's birth date (PostgREST builds DO UPDATE SET from payload keys).
+  if (updates.length > 0) {
+    const { error } = await supabaseAdmin
+      .from("client_phases")
+      .upsert(updates, { onConflict: "id" });
+    if (error) {
+      console.error("Failed to update blocks:", error);
+      throw new Error(`Failed to save blocks: ${error.message}`);
+    }
+  }
+  if (inserts.length > 0) {
+    const { error } = await supabaseAdmin.from("client_phases").insert(inserts);
+    if (error) {
+      console.error("Failed to insert blocks:", error);
+      throw new Error(`Failed to save blocks: ${error.message}`);
+    }
+  }
+
+  return listBlocks(clientId);
+};
+
+/**
+ * Delete one block. A future block's row is removed and what follows shifts
+ * back by its full duration; the current block TRUNCATES at yesterday (its
+ * lived days stay attributed — no gap) and the next block starts today; on
+ * its own first day it is removed instead (zero lived days; truncating would
+ * invert the window — the CHECK constraint's one scenario). Elapsed blocks
+ * refuse (belt — the UI never offers it).
+ */
+export const deleteBlock = async (
+  clientId: string,
+  clientToday: string,
+  blockId: string
+): Promise<{
+  mode: "removed" | "truncated";
+  changes: BlockDateChange[];
+  blocks: ClientBlock[];
+}> => {
+  const stored = await listBlocks(clientId);
+  const outcome = computeDeleteShift(stored, blockId, clientToday);
+  if (!outcome) {
+    throw new UnknownBlockIdError("Block not found");
+  }
+  if (outcome.kind === "elapsed") {
+    throw new ElapsedBlockImmutableError("Past blocks are read-only.");
+  }
+
+  const now = new Date().toISOString();
+  const storedById = new Map(stored.map((block) => [block.id, block]));
+  // SECURITY: same rule as the save upsert above — every id here comes from
+  // computeDeleteShift over this client's stored chain, never from a payload.
+  const rewrites: TablesInsert<"client_phases">[] = outcome.changes.map(
+    (change) => {
+      const block = storedById.get(change.id) as ClientBlock;
+      return {
+        id: block.id,
+        client_id: clientId,
+        name: block.name,
+        focus: block.focus,
+        target_weight: block.targetWeightKg,
+        starts_on: change.next.startsOn,
+        ends_on: change.next.endsOn,
+        updated_at: now,
+      };
+    }
+  );
+
+  if (outcome.kind === "truncated") {
+    // Truncate + shifted suffix are all UPDATEs to existing rows, issued as
+    // ONE statement (INSERT … ON CONFLICT (id) DO UPDATE) — atomic, so the
+    // invariant-3-critical path has no partial-failure window.
+    const { error } = await supabaseAdmin
+      .from("client_phases")
+      .upsert(rewrites, { onConflict: "id" });
+    if (error) {
+      console.error("Failed to truncate block:", error);
+      throw new Error(`Failed to delete block: ${error.message}`);
+    }
+  } else {
+    // Remove variant: delete-first, so a failure between the two statements
+    // leaves a GAP (the sanctioned post-delete shape) rather than an overlap
+    // that would render two current blocks. The next save re-walks the suffix
+    // contiguously and heals it; retrying the delete completes it too.
+    const { error: deleteError } = await supabaseAdmin
+      .from("client_phases")
+      .delete()
+      .eq("client_id", clientId)
+      .eq("id", blockId);
+    if (deleteError) {
+      console.error("Failed to delete block:", deleteError);
+      throw new Error(`Failed to delete block: ${deleteError.message}`);
+    }
+    if (rewrites.length > 0) {
+      const { error } = await supabaseAdmin
+        .from("client_phases")
+        .upsert(rewrites, { onConflict: "id" });
+      if (error) {
+        console.error("Failed to shift blocks after delete:", error);
+        throw new Error(`Failed to delete block: ${error.message}`);
+      }
+    }
+  }
+
+  const blocks = await listBlocks(clientId);
+  return { mode: outcome.kind, changes: outcome.changes, blocks };
+};

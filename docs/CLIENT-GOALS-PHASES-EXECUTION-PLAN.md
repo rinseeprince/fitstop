@@ -2475,3 +2475,65 @@ unchanged) · `vitest run` **253 files / 2624 tests, all passing** — note the 
 moved from 1B's 2621 before this session via the two builder-smoke fix commits
 (`ac924a5`, `5074d01`, +3 tests); this commit adds none · `check:labels` OK (636) · no
 `as any` · no markers. Migration + regenerated types committed **together** per §8.
+
+---
+
+### Task 2.2 — Chain math + service ✅ SHIPPED 2026-08-11
+
+**What shipped.** `lib/blocks/block-chain.ts` (pure, client-safe, UTC-anchored via
+`addDaysToDateString` + `utils/metric-points.ts`'s `daysBetween` — reused, not
+duplicated): `computeBlockChain` (durations in, dates out), `inclusiveDays`,
+`weeksSpanned` (**ceil — the ONE derivation behind both the GET's `weeks` and
+`weekOfTotal.total`**), and `computeDeleteShift`. `types/client-blocks.ts` (domain +
+wire types). `services/client-blocks-service.ts`: `listBlocks` / `replaceBlockChain` /
+`deleteBlock`, every query `.eq("client_id", clientId)`, `clientToday` threaded in from
+the route (the 1b.1 precedent — the service never derives time). Typed errors:
+`ElapsedBlockImmutableError` / `BlockWindowError` / `BlockPayloadError` (422-class) and
+`UnknownBlockIdError` (404) — a fourth class (`BlockPayloadError`) beyond the plan's
+illustrative three, so payload-shape rejections don't masquerade as window problems.
+
+**The PUT contract as coded (plan-review decisions, all owner-locked):** the elapsed
+prefix is pinned VERBATIM from storage (ids/order/fields echo-checked; `weeks` ignored
+on elapsed rows — a truncated block's day count isn't whole weeks, so no `weeks` could
+reproduce it); `startsOn` immovable while past blocks exist; the editable suffix walks
+from last-elapsed-end + 1; the **symmetric window floor** — a stored current block must
+still contain today (neither shrink-below-elapsed nor anchor-forward can re-label lived
+days), a stored future block may become current but never wholly past, new id-less rows
+land anywhere (history backfill); omission of a stored non-elapsed id → 422 (DELETE is
+the single removal path); removal is unexpressible through PUT.
+
+**DELETE as coded:** future → row removed, suffix re-anchors at the deleted
+`starts_on` (invariant 8 literally); current mid-block → **TRUNCATE at yesterday**
+(lived days stay attributed — invariant 3 holds, no gap; the next block starts today,
+Task 3.4's copy) issued as **ONE atomic upsert statement** (truncate + shifted suffix
+are all conflict-updates), so the invariant-3-critical path has no partial-failure
+window; current on day one → removed (zero lived days; truncating would invert the
+window — the CHECK's scenario). Remove variants are delete-FIRST so a failure residue
+is a gap (sanctioned shape), never an overlap. Uniform re-anchor expression:
+`max(deleted.starts_on, today)`.
+
+**Upsert discipline (owner-reviewed at plan time):** full rows minus `created_at`
+(UPDATE arm keeps the birth date — the mig-144 absorb rule), `updated_at` explicit
+(app-managed, no trigger), typed `TablesInsert<"client_phases">[]` so the NOT NULL set
+is compile-enforced, `onConflict: "id"` explicit. **§2 item 4 is COMPENSATED, not
+ticked:** an upsert cannot carry a tenant filter, and a foreign id would be STOLEN into
+this tenant by the DO UPDATE arm — the control is that every id reaching an upsert
+array comes from a client-scoped read (`storedById` validation in the PUT;
+`computeDeleteShift` over the client's own chain in DELETE), with a SECURITY comment at
+both sites so a future caller trips the warning where the bug would be written.
+
+**Tests: 255 files / 2657 (2624 + 33).** Chain contiguity 1–12 blocks; exact dates
+incl. US spring-forward + fall-back straddles (UTC string math — holds under any server
+TZ); `weeksSpanned` authored vs truncated (29d → 5); delete shift for future / current
+mid-block / day-one / last-block / elapsed / unknown; service: elapsed-pin violations
+(edit, reorder, omission-from-prefix), startsOn pin, omission 422, unknown payload id,
+missing weeks, window floor BOTH ends + both allowed cases (anchor-back with grown
+duration; future→current), truncate = one upsert with no delete issued, remove =
+delete-first with both `.eq` scopes pinned, day-one remove, payloads carry no
+`created_at`, and **only `client_phases` is ever touched** (invariant 7's service
+half; the route half lands with Task 2.4's module-spy test).
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged) ·
+`vitest run` **255 files / 2657 tests, all passing** (arithmetic closes: +2 files,
++33 tests) · `check:labels` OK (636) · no `as any` · no markers · no migration in this
+commit.
