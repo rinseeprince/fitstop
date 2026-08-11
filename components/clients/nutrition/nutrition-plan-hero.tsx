@@ -33,6 +33,11 @@ export function NutritionPlanHero({ onOpenSettings }: NutritionPlanHeroProps) {
   // comparison (see the route) — same wording and formatter as the training
   // hero's queued line.
   const scheduledFor = nutritionData?.scheduledFor ?? null;
+  // Server-resolved: does an event exist on the client's today? With a queued
+  // change this is what separates "new targets from X" (existing client — the
+  // current numbers keep running until then) from "starts X" (first plan,
+  // nothing in the interim).
+  const hasCurrentTargets = nutritionData?.hasCurrentTargets ?? false;
 
   // Title ladder. A client can carry nutrition without training, and then there
   // is no program to name — fall back to the plan's own identity (its start
@@ -64,7 +69,16 @@ export function NutritionPlanHero({ onOpenSettings }: NutritionPlanHeroProps) {
         {/* No space before InlineMono — it owns its own gap. */}
         {hasPlan && scheduledFor && (
           <p className="mt-1 text-[11px] font-medium text-[rgba(255,255,255,0.45)]">
-            Starts<InlineMono>{formatDateOnlyWeekday(scheduledFor)}</InlineMono>
+            {hasCurrentTargets ? "New targets from" : "Starts"}
+            <InlineMono>{formatDateOnlyWeekday(scheduledFor)}</InlineMono>
+          </p>
+        )}
+        {/* An active plan whose title slot is taken by the program name still
+            owes the coach its date; without a program the title itself reads
+            "Active since X", so no sub-line — never both. */}
+        {hasPlan && !scheduledFor && effectiveFrom && trainingPlanName && (
+          <p className="mt-1 text-[11px] font-medium text-[rgba(255,255,255,0.45)]">
+            Active since<InlineMono>{formatDateOnlyShort(effectiveFrom)}</InlineMono>
           </p>
         )}
       </div>

@@ -20,6 +20,7 @@ import {
   orchestrateNutritionPlanDeletion,
   NutritionPlanError,
 } from "@/services/nutrition-plan-orchestrator";
+import { getNutritionEventForDate } from "@/services/nutrition-event-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import { captureApiError } from "@/lib/error-handler";
@@ -73,7 +74,7 @@ export async function GET(
     // `getCurrentGoals` is hoisted into this batch from below: the drift check
     // needs it AND the calc-input resolver needs it, so fetching it once here
     // costs one query instead of two and removes a sequential hop.
-    const [planResult, activePlan, nextPlan, currentGoals] = await Promise.all([
+    const [planResult, activePlan, nextPlan, currentGoals, todayEvent] = await Promise.all([
       supabaseAdmin
         .from("nutrition_plans")
         .select("*")
@@ -85,6 +86,13 @@ export async function GET(
       getTrainingPlanSummaryForDate(clientId, clientToday),
       getNextFutureTrainingPlan(clientId, clientToday),
       getCurrentGoals(clientId),
+      // Does the client have a target TODAY? The plan row can't answer this
+      // for a queued regenerate — its old prescription was overwritten in
+      // place — but the EVENTS still carry it (rows before effective_from keep
+      // the outgoing numbers). One indexed single-row read; lets the hero
+      // distinguish "numbers change on X, current ones run until then" from a
+      // first plan that genuinely starts on X.
+      getNutritionEventForDate(clientId, clientToday),
     ]);
     const plan = planResult.data;
     const hasTrainingPlan = Boolean(activePlan ?? nextPlan);
@@ -183,6 +191,12 @@ export async function GET(
       // way GET /training resolves its own `scheduledFor`. The browser must not
       // make this call: its local date can differ from the client's by a day.
       scheduledFor: plan.effective_from > clientToday ? plan.effective_from : null,
+      // Whether a nutrition event exists on the client's today — i.e. the
+      // client is on live targets right now. With `scheduledFor` set this is
+      // what separates "new targets from X, current ones until then" (an
+      // existing client whose plan was regenerated) from "starts X" (a first
+      // plan with nothing running in the interim).
+      hasCurrentTargets: todayEvent != null,
       goalChanged,
       hasTrainingPlan,
       trainingPlanName,

@@ -21,9 +21,14 @@ vi.mock('@/services/training-service', () => ({
 
 // The orchestrator now PROPAGATES event-rewrite failures (previously
 // swallowed), so the success-path tests must mock the rewrite as succeeding.
+// getNutritionEventForDate serves the GET's `hasCurrentTargets`; this file has
+// no GET tests (the whole GET chain is unmocked here), but the factory must
+// declare the module's full imported surface — the behaviour is pinned at the
+// consumer (nutrition-plan-hero.test.tsx).
 vi.mock('@/services/nutrition-event-service', () => ({
   regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
   deleteFutureNutritionEventsForPlan: vi.fn().mockResolvedValue(undefined),
+  getNutritionEventForDate: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('@/services/supabase-admin', () => ({

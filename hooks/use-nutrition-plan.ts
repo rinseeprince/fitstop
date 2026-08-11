@@ -38,6 +38,12 @@ type NutritionTargetsData = {
    *  can differ from the client's), mirroring GET /training's field of the same
    *  name. */
   scheduledFor?: string | null;
+  /** A nutrition event exists on the client's today — they are on live targets
+   *  right now. With `scheduledFor` set, this separates "new targets from X"
+   *  (existing client, current numbers run until then) from "starts X" (first
+   *  plan, nothing in the interim). Server-resolved for the same reason as
+   *  `scheduledFor`. */
+  hasCurrentTargets?: boolean;
   goalChanged?: GoalDrift;
   /** Does a training plan cover today, or start after it? Mirrors GET /training's
    *  `plan: activePlan ?? nextFullPlan`, so the tab no longer fetches that
