@@ -2715,4 +2715,81 @@ Training↔Nutrition pair specifically.
 unchanged) · `vitest run` **259 files / 2686 tests, all passing** (+1 file, +2 tests —
 the `isJourneySubtab` guard pins; arithmetic closes from S2's 258/2684) ·
 `check:labels` OK (642 — the two new files scanned) · no `as any` · no markers · no
-migration.
+migration. *(The amendment commit moved the suite to 260 / 2690 — +1 file, +4
+`buildClientTabUrl` tests.)*
+
+---
+
+### Task 3.2 — The Blocks list + facts endpoint ✅ SHIPPED 2026-08-11
+
+**What shipped — server.** `GET /api/clients/[id]/blocks/facts` (static segment
+beside `[blockId]`; chain per the blocks GET: `coachApiRateLimit` →
+`requireCoachOwnsClient` → service, `no-store`) + `services/
+client-blocks-facts-service.ts`. Round trips are constant: chain read, then three
+parallel reads over the whole journey span, partitioned per block in memory.
+`getTrainingPlansOverlapping` joined `services/training-service.ts` — an overlap
+question, not the starts-later question `getNextFutureTrainingPlan` owns, carrying
+the same `deleted_at IS NULL` + `status <> 'archived'` exclusions for the same
+resurfaced-retired-plans reason.
+
+**The events read is PAGED (owner-mandated at plan review; two prior repo bites
+cited).** `fetchAllPages` (`lib/paged-fetch.ts` — the factored-out copy of the
+library-placement loop) with a narrow 3-column select ordered on `date`, which is
+unique per client (`nutrition_events UNIQUE(client_id, date)`) and so satisfies the
+deterministic-order contract with no extra tiebreak. **Row counts, as demanded:**
+≤1000 rows/page; a 20-block × 12-week journey (1,680 days) is 2 pages; the
+structural ceiling (20 × 52 weeks = 7,280 days) is 8 pages; a realistic 12–40-week
+journey is 84–280 rows, one page. Complete by construction — a short page terminates
+the loop. The wire payload is ≤20 fact rows regardless of span. **Per owner ruling,
+the GROUP-BY RPC is NOT recorded as debt** — paging here is a complete solution, and
+§8's aggregate-server-side bullet codifies the RN hot path, not a coach pane.
+
+**Era handling (owner-accepted design).** The Nutrition fact's headline is the MODAL
+`baseline_calories` over the block's lived days (current blocks clamp to
+[startsOn, today]); the deficit resolves the version covering the modal's latest
+observed date — that era's tdee against that era's baseline by construction, since
+144 regenerates each version only inside its own window (pinned by the "era pin"
+test: dominant era 2000@tdee 2800 beside newer 1800@2600 must read −800, never
+−600). **`is_modified` days are excluded from both the modal and the change
+detection** — a hand-edited day can neither skew the headline nor fake a change;
+an all-modified window falls back to all days with the marker suppressed. **A block
+spanning a prescription change SAYS so:** `changeCount` + `lastChangedOn` on the
+wire (transitions across consecutive unmodified baselines — a re-save with identical
+numbers doesn't flag), rendered as "Changed 14 Sep" / "Changed 2×". The versions
+read is facts-local (with `tdee`) rather than a widening of
+`getActiveNutritionPlanVersionsOverlapping` — that helper is the cascade's
+segmentation primitive, and a write-path type shouldn't grow a read-only column;
+`versionCoversDate` is reused.
+
+**What shipped — client.** `components/clients/metrics/hooks/use-client-blocks.ts`
+(co-located key builders + `useInvalidateClientBlocks` matching the
+`/api/clients/{id}/blocks` AREA, covering chain + facts; `putBlockChain` /
+`deleteBlockRequest` helpers for 3.3/3.4). `blocks/`: `block-colors.ts` (static
+palette indexed by chain position — METRIC_COLORS discipline, no picker),
+`block-weight.ts` (pure: start = latest merged point at-or-before startsOn, end =
+in-window for past / latest overall for current / null for future),
+`block-format.ts` (local-midnight date formatting), `block-card.tsx` (collapsed:
+swatch dot · sans name · mono `week X of Y` chip current / sans `Not started` chip
+future / none past · mono dates+weeks · right-aligned mono weight change; expanded:
+Training / Nutrition / Weight+pace columns + timeline; `rowAction` slot reserved for
+3.4's delete), `block-timeline.tsx` (start/placements/end entries; "Nothing yet.");
+`blocks-subtab.tsx` rebuilt from the 3.1 shell (SectionLabel + mono meta
+`N blocks · M weeks`, skeletons, error line, empty state). Pace feeds `derivePace`
+in viewer units (target converted via `formatWeight` like the merged series), so the
+readout matches the Weight column beside it by construction; block STATE always
+comes from the wire (client-tz) — device today is used only for the pace fraction.
+
+**Recorded, not worked around:** plan amendments are invisible in the v1 timeline
+(`audit_logs` has no readers by design); the coach-note quote block + first-name
+util are DEFERRED to Session 6 with their only data source (owner-approved); a
+training placement made on another tab stales the facts cache until the pane
+remounts (SWR revalidates on mount — the blocks area owes no other area an
+invalidator since blocks writes touch only `client_phases`). ARCHITECTURE.md's
+blocks route-surface bullet gained the facts GET in this commit (§3 class (b)).
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged) ·
+`vitest run` **264 files / 2711 tests, all passing** (+4 files, +21 tests: facts
+service 9 — era pin, is_modified exclusion, all-modified fallback, lived-day clamp,
+paging-union pin, multi-change count; route 3 — foreign-404-before-read, no-store +
+today threading, no-raw-error-leak; block-weight 5; timeline 4; arithmetic closes
+from 2690) · `check:labels` OK (652) · no `as any` · no markers · no migration.

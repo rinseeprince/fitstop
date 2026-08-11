@@ -71,7 +71,12 @@ export const MetricsTabContent = ({
       />
 
       {pane === "blocks" ? (
-        <BlocksSubtab clientId={client.id} />
+        <BlocksSubtab
+          clientId={client.id}
+          weightMetric={
+            metricsByTab.body.find((metric) => metric.id === "weight") ?? null
+          }
+        />
       ) : isError ? (
         <p className="py-12 text-center text-[13px] text-[#93b0b4]">
           Failed to load metrics.

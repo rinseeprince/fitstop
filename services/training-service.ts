@@ -215,6 +215,50 @@ export const getNextFutureTrainingPlan = async (
   };
 };
 
+export type TrainingPlanWindowSummary = {
+  id: string;
+  name: string;
+  effectiveFrom: string;
+  effectiveUntil: string | null;
+};
+
+/**
+ * Every coach-visible plan whose window OVERLAPS [rangeStart, rangeEnd],
+ * earliest-starting first — the journey-block facts read ("which programs ran
+ * during this block"). An overlap question, not the starts-later question
+ * getNextFutureTrainingPlan owns, but it carries the same exclusions
+ * (`deleted_at IS NULL`, `status <> 'archived'`) for the same reason: the copy
+ * that forgot them re-surfaced retired plans. Overlap is
+ * `effective_from <= rangeEnd AND (effective_until >= rangeStart OR open)` —
+ * the range-widened form of coversDate's single-date predicate.
+ */
+export const getTrainingPlansOverlapping = async (
+  clientId: string,
+  rangeStart: string,
+  rangeEnd: string
+): Promise<TrainingPlanWindowSummary[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("training_plans")
+    .select("id, name, effective_from, effective_until")
+    .eq("client_id", clientId)
+    .is("deleted_at", null)
+    .neq("status", "archived")
+    .lte("effective_from", rangeEnd)
+    .or(`effective_until.gte.${rangeStart},effective_until.is.null`)
+    .order("effective_from", { ascending: true })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to fetch overlapping training plans: ${error.message}`);
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    effectiveFrom: row.effective_from,
+    effectiveUntil: row.effective_until,
+  }));
+};
+
 // The "active" training plan is the provenance plan whose range covers the
 // client's local today (date-driven; no status='active' singleton, no promotion).
 export const getActiveTrainingPlan = async (clientId: string): Promise<TrainingPlan | null> => {
