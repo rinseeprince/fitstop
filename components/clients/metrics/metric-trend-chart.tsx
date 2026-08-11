@@ -7,6 +7,7 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   CartesianGrid,
@@ -20,21 +21,38 @@ import {
   ExerciseChartCard,
   LegendItem,
 } from "@/components/training/exercise-data/exercise-chart-card";
-import type { MetricPoint } from "@/utils/metric-points";
+import { getTodayDateString } from "@/lib/date-helpers";
+import { toUtcMs, type MetricPoint } from "@/utils/metric-points";
+import {
+  clampBlockBands,
+  DAY_MS,
+  type BlockBandIdentity,
+} from "./blocks/block-chart-bands";
 import type { MetricSummary } from "./metrics-view-types";
 
 // Generic entry-series fork of exercise-trend-chart.tsx: one teal Area over the
-// merged check-in + coach-entry points, with an amber dashed goal line.
-// Chart constants are copied verbatim from that file.
+// merged check-in + coach-entry points, with an amber dashed goal line and
+// (Session 3.5) journey-block background bands.
+//
+// The X axis is NUMERIC TIME (UTC-midnight epoch ms), not the old category
+// scale over entry dates: a category axis spaces points by entry COUNT, which
+// made block bands impossible (a block with no entries had no category to
+// anchor to) and lied about time — uneven logging now renders as real gaps.
 
 type MetricTrendChartProps = {
   metric: MetricSummary;
   points: MetricPoint[];
+  /** The selected range in days; null = "All" (domain from the first entry). */
+  windowDays: number | null;
+  blockBands?: BlockBandIdentity[];
+  showBlocks?: boolean;
+  onToggleBlocks?: (show: boolean) => void;
 };
 
 const SERIES_COLOR = "#0d9488";
 const GOAL_COLOR = "#d97706";
 const GRID_LINE = "rgba(13, 148, 136, 0.06)";
+const TICK_COUNT = 5;
 
 const TICK_STYLE = { fontSize: 10, fill: "#93b0b4", fontFamily: "var(--font-mono-display)" };
 const X_TICK_STYLE = { fontSize: 10, fill: "#93b0b4", fontFamily: "var(--font-mono-display)" };
@@ -52,8 +70,14 @@ const TOOLTIP_STYLE = {
   },
 };
 
+// Local-midnight parse: a bare `new Date(iso)` parses UTC midnight and
+// renders the PREVIOUS day in negative-offset timezones.
 function formatDateShort(iso: string) {
-  return format(new Date(iso), "MMM d");
+  return format(new Date(iso + "T00:00:00"), "MMM d");
+}
+
+function formatTickMs(ms: number) {
+  return formatDateShort(new Date(ms).toISOString().slice(0, 10));
 }
 
 function EntryTooltip({ active, payload, unit }: Record<string, unknown>) {
@@ -95,12 +119,39 @@ function EntryDot(props: Record<string, unknown>) {
   );
 }
 
-export function MetricTrendChart({ metric, points }: MetricTrendChartProps) {
+export function MetricTrendChart({
+  metric,
+  points,
+  windowDays,
+  blockBands,
+  showBlocks = false,
+  onToggleBlocks,
+}: MetricTrendChartProps) {
   const gradientId = `metric-trend-${metric.id}`;
 
-  // Sparse x-axis: show every 3rd or 4th tick
-  const xInterval =
-    points.length <= 8 ? 0 : Math.max(1, Math.floor(points.length / 5));
+  // The domain is the WINDOW, not the entries: [window start, end of today].
+  // "All" anchors at the first entry. Day-slab semantics (+1 day) keep
+  // today's dot off the right edge and let the current block's band reach
+  // the end of today.
+  const domainMax = toUtcMs(getTodayDateString()) + DAY_MS;
+  const domainMin =
+    windowDays != null
+      ? domainMax - windowDays * DAY_MS
+      : points.length > 0
+        ? toUtcMs(points[0].date)
+        : domainMax - DAY_MS;
+
+  const ticks = Array.from(
+    { length: TICK_COUNT },
+    (_, i) => domainMin + ((domainMax - domainMin) * i) / (TICK_COUNT - 1)
+  );
+
+  const { bands, boundaries } =
+    blockBands && showBlocks
+      ? clampBlockBands(blockBands, domainMin, domainMax)
+      : { bands: [], boundaries: [] };
+
+  const data = points.map((p) => ({ ...p, ts: toUtcMs(p.date) }));
 
   const legend = (
     <>
@@ -110,6 +161,17 @@ export function MetricTrendChart({ metric, points }: MetricTrendChartProps) {
           <span className="w-[14px] border-t-2 border-dashed border-[#d97706]" />
           Goal
         </span>
+      )}
+      {onToggleBlocks && blockBands && blockBands.length > 0 && (
+        <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[#93b0b4]">
+          <input
+            type="checkbox"
+            checked={showBlocks}
+            onChange={(event) => onToggleBlocks(event.target.checked)}
+            className="h-3 w-3 accent-[#0d9488]"
+          />
+          Show blocks
+        </label>
       )}
     </>
   );
@@ -132,7 +194,7 @@ export function MetricTrendChart({ metric, points }: MetricTrendChartProps) {
         <div className="h-[260px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
-              data={points}
+              data={data}
               margin={{ top: 10, right: 5, bottom: 0, left: 20 }}
             >
               <defs>
@@ -141,14 +203,38 @@ export function MetricTrendChart({ metric, points }: MetricTrendChartProps) {
                   <stop offset="100%" stopColor={SERIES_COLOR} stopOpacity={0} />
                 </linearGradient>
               </defs>
+              {/* Bands paint first — background context behind grid + series.
+                  Identity is never colour-alone: every band carries its name
+                  label, and boundaries carry white dividers. */}
+              {bands.map((band) => (
+                <ReferenceArea
+                  key={band.id}
+                  x1={band.x1}
+                  x2={band.x2}
+                  fill={band.color}
+                  fillOpacity={band.muted ? 0.04 : 0.07}
+                  strokeOpacity={0}
+                  label={{
+                    value: band.name,
+                    position: "insideTop",
+                    fill: band.color,
+                    fontSize: 10,
+                  }}
+                />
+              ))}
+              {boundaries.map((edge) => (
+                <ReferenceLine key={edge} x={edge} stroke="#fff" strokeWidth={2} />
+              ))}
               <CartesianGrid horizontal vertical={false} stroke={GRID_LINE} />
               <XAxis
-                dataKey="date"
-                tickFormatter={formatDateShort}
+                dataKey="ts"
+                type="number"
+                domain={[domainMin, domainMax]}
+                ticks={ticks}
+                tickFormatter={formatTickMs}
                 tick={X_TICK_STYLE}
                 tickLine={false}
                 axisLine={false}
-                interval={xInterval}
               />
               <YAxis
                 tick={TICK_STYLE}

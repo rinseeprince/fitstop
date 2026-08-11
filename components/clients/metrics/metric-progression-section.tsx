@@ -7,6 +7,7 @@ import { addDaysToDate } from "@/utils/metric-points";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { MetricStatCards } from "./metric-stat-cards";
 import { MetricTrendChart } from "./metric-trend-chart";
+import type { BlockBandIdentity } from "./blocks/block-chart-bands";
 import type { MetricSummary } from "./metrics-view-types";
 
 // PROGRESSION rail + 30/60/90/All window control + stat cards + entry chart.
@@ -20,6 +21,9 @@ type MetricProgressionSectionProps = {
   range: ProgressionRange;
   onRangeChange: (r: ProgressionRange) => void;
   onLogFirst: () => void;
+  blockBands?: BlockBandIdentity[];
+  showBlocks?: boolean;
+  onToggleBlocks?: (show: boolean) => void;
 };
 
 const RANGE_OPTIONS: { value: ProgressionRange; label: string }[] = [
@@ -34,6 +38,9 @@ export function MetricProgressionSection({
   range,
   onRangeChange,
   onLogFirst,
+  blockBands,
+  showBlocks,
+  onToggleBlocks,
 }: MetricProgressionSectionProps) {
   const filtered =
     range === "all"
@@ -98,7 +105,14 @@ export function MetricProgressionSection({
           </div>
           {/* The section's closing mb-4 = the 16px above the next rail */}
           <div className="mb-4">
-            <MetricTrendChart metric={metric} points={filtered} />
+            <MetricTrendChart
+              metric={metric}
+              points={filtered}
+              windowDays={range === "all" ? null : range}
+              blockBands={blockBands}
+              showBlocks={showBlocks}
+              onToggleBlocks={onToggleBlocks}
+            />
           </div>
         </>
       )}

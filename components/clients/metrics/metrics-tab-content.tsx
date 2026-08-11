@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MetricsTopBar } from "./metrics-top-bar";
@@ -9,7 +9,9 @@ import { MetricProgressionSection } from "./metric-progression-section";
 import { MeasurementLogSection } from "./measurement-log-section";
 import { LogMeasurementDialog } from "./log-measurement-dialog";
 import { useMergedMetrics } from "./hooks/use-merged-metrics";
+import { useClientBlocks } from "./hooks/use-client-blocks";
 import { BlocksSubtab } from "./blocks/blocks-subtab";
+import { shapeBlockBandIdentity } from "./blocks/block-chart-bands";
 import {
   DEFAULT_FOCUS,
   isJourneySubtab,
@@ -55,9 +57,15 @@ export const MetricsTabContent = ({
 
   const [range, setRange] = useState<30 | 60 | 90 | "all">(30);
   const [logOpen, setLogOpen] = useState(false);
+  // Chart-band toggle: ON by default when blocks exist (owner-reviewed at
+  // plan time); the checkbox lives in the chart card's legend slot.
+  const [showBlocks, setShowBlocks] = useState(true);
 
   const { metricsByTab, logRowsByTab, isLoading, isError, logMeasurement } =
     useMergedMetrics(client, onClientUpdated);
+  // Shares the SWR cache with the Blocks pane — one read serves both.
+  const { blocks } = useClientBlocks(client.id);
+  const blockBands = useMemo(() => shapeBlockBandIdentity(blocks), [blocks]);
 
   const metrics = metricsByTab[tab];
   const focusedMetric = metrics.find((m) => m.id === focusedId) ?? metrics[0] ?? null;
@@ -105,6 +113,9 @@ export const MetricsTabContent = ({
             range={range}
             onRangeChange={setRange}
             onLogFirst={() => setLogOpen(true)}
+            blockBands={blockBands}
+            showBlocks={showBlocks}
+            onToggleBlocks={setShowBlocks}
           />
           {/* key={tab} resets the log's page state when the tab switches */}
           <MeasurementLogSection key={tab} rows={logRowsByTab[tab]} />

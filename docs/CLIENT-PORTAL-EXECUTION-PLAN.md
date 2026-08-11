@@ -1302,7 +1302,7 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 ## Session 3.4: Client metrics hub + Performance view + nav swap
 
-**Status**: COMPLETE (commits `0343aef`, `c3f3013`, `5d17874`, `c2bc944`)
+**Status**: COMPLETE (commits `0343aef`, `c3f3013`, `5d17874`, `cb2165b`)
 
 **Commit message**: `feat(client-portal): add client exercise-analytics API + performance view` (lead commit; see list below)
 
@@ -1312,13 +1312,13 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 - `0343aef` — **Client exercise-analytics API** `GET /api/client/training/exercise-history` (`clientApiRateLimit` + `getAuthenticatedClientId`, scoped to the authed client, `Cache-Control: no-store`, `metric=list|progression|prs`) reusing the Session 1.8 service functions directly — no new service layer. Plus the **Performance view** that consumes it.
 - `c3f3013` — **`/client/metrics` hub**: Embla-swipe shell with 4 tabs (Performance among them). **Nav swap** (Check-in → Metrics in the bottom tab bar) and a home **"Weekly check-in"** card so check-in stays one tap away after losing its tab slot.
 - `5d17874` — **unit-resolution fix**: `getClientProgressData` was selecting a non-existent `clients.measurement_unit`, silently nulling units/goals so all kg clients saw "lbs". Now reads `weight_unit` + derives the measurement unit from `unit_preference`. (Session 3.9 builds its render-ready-series work on top of this fix.)
-- `c2bc944` — **chart-viz relocation** to a neutral tier (`components/training/exercise-data/`, `components/metrics/`, `components/client-portal/metrics/`) so coach and client surfaces share one chart implementation instead of forking it.
+- `cb2165b` — **chart-viz relocation** to a neutral tier (`components/training/exercise-data/`, `components/metrics/`, `components/client-portal/metrics/`) so coach and client surfaces share one chart implementation instead of forking it. *(Previously cited as `c2bc944` — a dangling pre-rebase object not on main; `cb2165b` is the identical on-main commit.)*
 
 **Carried-forward design decisions** (still the RN reference):
 - Client analytics are **motivational-framed and reduced** vs. coach-side: weight progression + PRs + consistency only — **no** e1RM / volume / RPE / compliance toggle (coach-level analytics).
 - The hub is the destination; per-exercise history is reached **inside** the Performance tab, not via a separate top-level route or bottom-tab entry.
 
-**Do NOT** (still binding): Build a standalone `/client/exercise-history` page or add it to the bottom tab bar. Re-expose coach-only metrics (e1RM/volume/RPE/compliance) to clients. Fork a second client chart component — the neutral-tier viz from `c2bc944` is shared.
+**Do NOT** (still binding): Build a standalone `/client/exercise-history` page or add it to the bottom tab bar. Re-expose coach-only metrics (e1RM/volume/RPE/compliance) to clients. Fork a second client chart component — the neutral-tier viz from `cb2165b` is shared.
 
 **Tests**: API route (`metric=list|progression|prs` scoped to authed client, 401), Performance view render + empty states, and the unit-resolution regression all shipped green with the commits above.
 

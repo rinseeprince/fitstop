@@ -2874,3 +2874,58 @@ device day**, and the subtab's `getTodayDateString` usage is gone.
 `vitest run` **266 files / 2722 tests, all passing** (+1 file, +7
 sentence-builder tests; arithmetic closes from 2715) · `check:labels` OK (658) ·
 no `as any` · no markers · no migration.
+
+---
+
+### Task 3.5 — Chart shading + the c2bc944 repoint ✅ SHIPPED 2026-08-11 · SESSION 3 CODE COMPLETE
+
+**The hard blocker first, as mandated:** `metric-trend-chart.tsx`'s X axis is now
+**numeric time** (UTC-midnight epoch ms via `toUtcMs`, newly exported from
+`utils/metric-points.ts`), replacing the category scale over entry dates. The
+domain is the WINDOW, not the entries — `[today−(range−1), end-of-today]` for
+30/60/90, `[first entry, end-of-today]` for All — with 5 explicit ticks; day-slab
+semantics (+1 day) keep today's dot off the right edge and let the current
+block's band reach the end of today. **Accepted visual change, recorded:** points
+now space by real elapsed time, not entry index — uneven logging renders as real
+gaps. That is the point of a time axis; it is on the smoke checklist.
+**Adjacent root-fix, called out per §2:** the old `formatDateShort` parsed bare
+ISO (`new Date(iso)` = UTC midnight), rendering the PREVIOUS day on axis ticks
+and tooltips for negative-offset viewers — a live pre-existing off-by-one in the
+exact path the conversion rebuilds; it now parses local midnight (the
+delete-event-dialog precedent).
+
+**Bands:** one `ReferenceArea` day-slab per block, painted behind grid and
+series, clamped to the domain by a pure tested module
+(`blocks/block-chart-bands.ts`: identity shaped ONCE from the chain — colour by
+chain position so a range window never repaints survivors — geometry clamped
+in-chart; adjacent blocks tile exactly and the shared edges carry white
+`ReferenceLine` dividers, interior-only). **ALL blocks render, elapsed ones
+muted** (fill 0.04 vs 0.07 — invariant 10; the muted rendering IS the view-past-
+blocks story); every band carries its name label `insideTop` in the block's
+colour (sans — names are words). The goal `ReferenceLine` + its
+`ifOverflow="extendDomain"` are byte-identical. The **"Show blocks"
+checkbox** rides the chart card's existing `legend` slot (no neutral-shell
+edit), state beside `range` in `metrics-tab-content`, **default ON** when blocks
+exist; the blocks read shares the Blocks pane's SWR cache.
+
+**Palette re-stepped, validator-driven (dataviz six checks, run not eyeballed):**
+the 3.2 palette copied METRIC_COLORS' five hues, whose "one metric at a time"
+justification does not transfer to ADJACENT bands — the validator failed
+`#0a5c55` outright (lightness band + chroma floor: reads gray as a mark) and the
+teal↔cyan adjacency at normal-vision ΔE 7.9 (hard floor 15). `BLOCK_COLORS` is
+now **four hues cycling** (`#0d9488, #c8923a, #2d8fb5, #c06060`) — re-ordered so
+the near-pair is never adjacent INCLUDING the cycle's wrap, validated PASS; the
+two surviving WARNs (wrap-pair CVD 7.3 in the legal-with-secondary-encoding
+band; honey contrast) are relieved by design — direct name labels on every band
++ white dividers. Amber stays out: it is the goal line's reserved meaning.
+
+**Same commit:** the three stale `c2bc944` citations in
+`docs/CLIENT-PORTAL-EXECUTION-PLAN.md` (:1305/:1315/:1321) repointed to
+`cb2165b` (verified: `c2bc944` dangling, `cb2165b` on main, identical message),
+with a one-line provenance note at the first descriptive citation.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged) ·
+`vitest run` **267 files / 2728 tests, all passing** (+1 file, +6 band-geometry
+tests; arithmetic closes from 2722; one unrelated intermittent failure appeared
+in a single run and did not reproduce on re-run — the documented flaky-full-run
+pattern) · `check:labels` OK (660) · no `as any` · no markers · no migration.

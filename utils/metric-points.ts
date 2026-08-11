@@ -32,7 +32,9 @@ export type MetricSeriesDefinition = {
   category: "body" | "wellness";
 };
 
-function toUtcMs(date: string): number {
+/** UTC-midnight epoch ms for a YYYY-MM-DD string — the numeric form of a
+ *  calendar day (the metric chart's time axis runs on these). */
+export function toUtcMs(date: string): number {
   const [y, m, d] = date.split("-").map(Number);
   return Date.UTC(y, m - 1, d);
 }
