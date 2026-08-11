@@ -2441,3 +2441,37 @@ questions with different answers** — "can the client log today?" (covering onl
 client set up?" (a queued plan counts) — and must NOT share a predicate. The plan's D1 and
 1b.3's "same predicate as the client log guard" note (ARCHITECTURE) were both wrong on this
 and are corrected. Gates: tsc, vitest 253/2621, eslint 0 errors, check:labels.
+
+---
+
+### Task 2.1 — Migration 145: `client_phases` ✅ SHIPPED 2026-08-11
+
+**What shipped.** `145_create_client_phases.sql` — the table exactly as §Task 2.1 specifies
+(id / client_id CASCADE / name / focus / target_weight NUMERIC / starts_on / ends_on DATE /
+timestamps), `idx_client_phases_client_start (client_id, starts_on)`, RLS enabled with **no
+policies**, `GRANT ALL … TO service_role` (CONVENTIONS:360-366), the column comment, and a
+**table comment** recording the phases-vs-block naming divergence (session-prompt mandate —
+the doc's SQL block carried only the column comment). `updated_at` is app-managed, no
+trigger (migration-134 precedent, stated in the header).
+
+**One deviation from the doc's verbatim SQL, owner-approved at plan review:**
+`CONSTRAINT client_phases_window_valid CHECK (ends_on >= starts_on)` — a single-row
+backstop in migration 144's never-fire posture. It earns its place because Session 2's
+delete design **truncates** the current block (see the Task 2.2 STATUS block): the one
+write that could invert a window is a truncate on the block's own first day, which app
+code special-cases; the CHECK turns that bug class into a loud 23514 instead of silent
+corruption. Deliberately NOT added: any overlap/contiguity constraint — invariant 3 keeps
+cross-row structure service-computed ("there is no overlap validation to write"), and
+unlike 144 there is no multi-branch RPC with an absorb/close race behind it.
+
+**Verification.** Push run by the owner (`db push` is classifier-blocked): one migration
+applied cleanly to linked DEV. `gen types` diff: **exactly one new table, 44 insertions,
+nothing else** — and the generated `Insert` type requires precisely the NOT NULL set
+(`client_id`, `name`, `starts_on`, `ends_on`), which Task 2.2's upsert-payload typing
+relies on. `npm run check:rls`: **41/41 tables** (was 40 — the new table lands deny-all).
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing warnings,
+unchanged) · `vitest run` **253 files / 2624 tests, all passing** — note the baseline
+moved from 1B's 2621 before this session via the two builder-smoke fix commits
+(`ac924a5`, `5074d01`, +3 tests); this commit adds none · `check:labels` OK (636) · no
+`as any` · no markers. Migration + regenerated types committed **together** per §8.
