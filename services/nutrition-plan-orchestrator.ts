@@ -226,6 +226,11 @@ async function handleCustomMacros(
   const newPlanId = await createNutritionPlan({
     clientId,
     coachId,
+    // The same client-local today the route's past-date guard judged
+    // (threaded via calcInputs.today) — the RPC's belt compares
+    // effectiveFrom against it, so a recompute here could straddle client
+    // midnight and fail a save the route accepted.
+    clientToday,
     workActivityLevel: body.workActivityLevel,
     trainingVolumeHours: body.trainingVolumeHours || "2-3",
     proteinTargetGPerKg: body.proteinTargetGPerKg,
@@ -253,9 +258,10 @@ async function handleCustomMacros(
     throw new NutritionPlanError("Failed to create nutrition plan", 500);
   }
 
-  // In-place durable plan: the RPC upserts the single active plan (stable id),
-  // so we regenerate its future events from one client-local anchor. No
-  // separate old-plan cleanup — there is no old plan to delete.
+  // Versioned plan (migration 144): the RPC closed/absorbed the open version
+  // and returned the version now governing [effectiveDate, ∞) — regenerate
+  // that window's events from its prescription. Days before effectiveDate
+  // belong to earlier versions and are untouched.
   const effectiveDate = body.effectiveFrom ?? clientToday;
   await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
   await stampCoachNote(clientId, effectiveDate, validatedData.coachNotes);
@@ -312,6 +318,8 @@ async function handleCalculatedPlan(
   const newPlanId = await createNutritionPlan({
     clientId,
     coachId,
+    // Same threading as the custom-macro branch: the route-validated today.
+    clientToday,
     workActivityLevel: body.workActivityLevel,
     trainingVolumeHours: body.trainingVolumeHours || "2-3",
     proteinTargetGPerKg: body.proteinTargetGPerKg,
@@ -339,9 +347,10 @@ async function handleCalculatedPlan(
     throw new NutritionPlanError("Failed to create nutrition plan", 500);
   }
 
-  // In-place durable plan: the RPC upserts the single active plan (stable id),
-  // so we regenerate its future events from one client-local anchor. No
-  // separate old-plan cleanup — there is no old plan to delete.
+  // Versioned plan (migration 144): the RPC closed/absorbed the open version
+  // and returned the version now governing [effectiveDate, ∞) — regenerate
+  // that window's events from its prescription. Days before effectiveDate
+  // belong to earlier versions and are untouched.
   const effectiveDate = body.effectiveFrom ?? clientToday;
   await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
   await stampCoachNote(clientId, effectiveDate, validatedData.coachNotes);

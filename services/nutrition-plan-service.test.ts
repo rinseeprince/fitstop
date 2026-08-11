@@ -24,7 +24,32 @@ vi.mock('./today-service', () => ({
 import { supabaseAdmin } from './supabase-admin'
 import { recordBodyMetrics } from './body-metrics-service'
 import { getClientTodayString } from './today-service'
-import { createNutritionPlan } from './nutrition-plan-service'
+import {
+  createNutritionPlan,
+  getNutritionPlanForDate,
+  getNutritionPlanIdForDate,
+  getNextFutureNutritionPlan,
+} from './nutrition-plan-service'
+
+/**
+ * Chain stub for the date resolvers: every filter/order method self-returns,
+ * maybeSingle resolves the given result. Mock-level only — the three-branch
+ * RPC semantics are proven by the live behavioral probe, not here; these pin
+ * the QUERY SHAPE (the coversDate window predicate, the status filter, the
+ * ordering) so a refactor cannot silently drop a clause.
+ */
+function createResolverQuery(result: { data: unknown; error: { message: string } | null }) {
+  return {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    lte: vi.fn().mockReturnThis(),
+    or: vi.fn().mockReturnThis(),
+    gt: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue(result),
+  }
+}
 
 describe('Nutrition Plan Service', () => {
   beforeEach(() => {
@@ -36,6 +61,7 @@ describe('Nutrition Plan Service', () => {
     const baseParams = {
       clientId: 'client-123',
       coachId: 'coach-456',
+      clientToday: '2024-01-17',
       workActivityLevel: 'moderate',
       trainingVolumeHours: '5-7',
       proteinTargetGPerKg: 2.0,
@@ -94,10 +120,13 @@ describe('Nutrition Plan Service', () => {
       expect(recordBodyMetrics).not.toHaveBeenCalled()
     })
 
-    it('passes the client-local today to the RPC as p_today', async () => {
-      // London client at 00:30 BST: server UTC day is still 2026-06-09, but
-      // the client-local today (and thus the active/planned anchor) is 06-10.
-      vi.mocked(getClientTodayString).mockResolvedValue('2026-06-10')
+    it('threads the caller-supplied clientToday to the RPC as p_today — never recomputes it', async () => {
+      // Single-source invariant (migration 144): the RPC's belt raises when
+      // effectiveFrom < p_today, so p_today must be the SAME string the
+      // route's past-date guard judged. A second getClientTodayString call
+      // here could straddle client midnight and fail a save the route
+      // accepted. This pins both halves: the threaded value reaches the RPC,
+      // and this service performs no today lookup of its own.
       vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
 
       const updateQuery = {
@@ -106,9 +135,13 @@ describe('Nutrition Plan Service', () => {
       }
       vi.mocked(supabaseAdmin.from).mockReturnValue(updateQuery as any)
 
-      await createNutritionPlan({ ...baseParams, effectiveFrom: '2026-06-10' })
+      await createNutritionPlan({
+        ...baseParams,
+        clientToday: '2026-06-10',
+        effectiveFrom: '2026-06-10',
+      })
 
-      expect(getClientTodayString).toHaveBeenCalledWith('client-123')
+      expect(getClientTodayString).not.toHaveBeenCalled()
       expect(supabaseAdmin.rpc).toHaveBeenCalledWith(
         'create_nutrition_plan_atomic',
         expect.objectContaining({
@@ -122,7 +155,9 @@ describe('Nutrition Plan Service', () => {
     // about it: a key that no longer exists on the function makes PostgREST
     // unable to resolve the overload (PGRST202) and every plan save fails,
     // with tsc/eslint/vitest all green. This asserts the payload keys match
-    // migration 139's 24-arg signature exactly.
+    // migration 144's 24-arg signature exactly (identical to 139's — the
+    // close-and-insert rewrite deliberately kept the arity; Session 5 changes
+    // it and re-pins this count).
     it('sends no arguments the RPC does not declare', async () => {
       vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
       const updateQuery = {
@@ -149,6 +184,93 @@ describe('Nutrition Plan Service', () => {
       expect(sentKeys).toHaveLength(24)
       expect(sentKeys).not.toContain('p_coach_notes')
       expect(sentKeys).not.toContain('p_recalc_snapshots')
+    })
+  })
+
+  describe('getNutritionPlanForDate — the covering-version resolver', () => {
+    const ROW = { id: 'v2', client_id: 'client-123', effective_from: '2026-08-01', effective_until: null }
+
+    it('applies the coversDate window predicate, the active filter, and training-identical ordering', async () => {
+      const query = createResolverQuery({ data: ROW, error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(query as any)
+
+      const row = await getNutritionPlanForDate('client-123', '2026-08-11')
+
+      expect(supabaseAdmin.from).toHaveBeenCalledWith('nutrition_plans')
+      expect(query.select).toHaveBeenCalledWith('*')
+      expect(query.eq).toHaveBeenCalledWith('client_id', 'client-123')
+      expect(query.eq).toHaveBeenCalledWith('status', 'active')
+      // The shared window predicate (services/training-plan-window.ts) —
+      // both halves, pinned as strings so a hand-rolled rewrite fails here.
+      expect(query.lte).toHaveBeenCalledWith('effective_from', '2026-08-11')
+      expect(query.or).toHaveBeenCalledWith('effective_until.gte.2026-08-11,effective_until.is.null')
+      expect(query.order).toHaveBeenNthCalledWith(1, 'effective_from', { ascending: false })
+      expect(query.order).toHaveBeenNthCalledWith(2, 'created_at', { ascending: false })
+      expect(query.limit).toHaveBeenCalledWith(1)
+      expect(row).toEqual(ROW)
+    })
+
+    it('resolves null when no version covers the date', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(createResolverQuery({ data: null, error: null }) as any)
+      expect(await getNutritionPlanForDate('client-123', '2026-08-11')).toBeNull()
+    })
+
+    it('throws on a query error instead of masking it as "no plan"', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(
+        createResolverQuery({ data: null, error: { message: 'boom' } }) as any
+      )
+      await expect(getNutritionPlanForDate('client-123', '2026-08-11')).rejects.toThrow(/boom/)
+    })
+  })
+
+  describe('getNutritionPlanIdForDate — the id-only twin', () => {
+    it('selects only the id through the same window predicate and returns it', async () => {
+      const query = createResolverQuery({ data: { id: 'v2' }, error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(query as any)
+
+      const id = await getNutritionPlanIdForDate('client-123', '2026-08-11')
+
+      expect(query.select).toHaveBeenCalledWith('id')
+      expect(query.eq).toHaveBeenCalledWith('status', 'active')
+      expect(query.lte).toHaveBeenCalledWith('effective_from', '2026-08-11')
+      expect(query.or).toHaveBeenCalledWith('effective_until.gte.2026-08-11,effective_until.is.null')
+      expect(id).toBe('v2')
+    })
+
+    it('resolves null (never throws) when no version covers the date', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(createResolverQuery({ data: null, error: null }) as any)
+      expect(await getNutritionPlanIdForDate('client-123', '2026-08-11')).toBeNull()
+    })
+  })
+
+  describe('getNextFutureNutritionPlan — the window-flipped twin', () => {
+    it('takes the EARLIEST strictly-future active version, newest-created on a tie', async () => {
+      const query = createResolverQuery({
+        data: { id: 'v3', effective_from: '2026-09-01' },
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(query as any)
+
+      const next = await getNextFutureNutritionPlan('client-123', '2026-08-11')
+
+      expect(query.eq).toHaveBeenCalledWith('status', 'active')
+      expect(query.gt).toHaveBeenCalledWith('effective_from', '2026-08-11')
+      expect(query.order).toHaveBeenNthCalledWith(1, 'effective_from', { ascending: true })
+      expect(query.order).toHaveBeenNthCalledWith(2, 'created_at', { ascending: false })
+      expect(query.limit).toHaveBeenCalledWith(1)
+      expect(next).toEqual({ id: 'v3', effectiveFrom: '2026-09-01' })
+    })
+
+    it('resolves null when nothing is queued', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(createResolverQuery({ data: null, error: null }) as any)
+      expect(await getNextFutureNutritionPlan('client-123', '2026-08-11')).toBeNull()
+    })
+
+    it('throws on a query error', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(
+        createResolverQuery({ data: null, error: { message: 'boom' } }) as any
+      )
+      await expect(getNextFutureNutritionPlan('client-123', '2026-08-11')).rejects.toThrow(/boom/)
     })
   })
 })

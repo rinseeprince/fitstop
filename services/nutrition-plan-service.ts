@@ -1,12 +1,24 @@
 import { supabaseAdmin } from "./supabase-admin";
+import { coversDate } from "./training-plan-window";
 import { calculateDailyMacros, DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
+import type { Database } from "@/types/database";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
-import { getClientTodayString } from "@/services/today-service";
+
+type NutritionPlanRow = Database["public"]["Tables"]["nutrition_plans"]["Row"];
+
 export type CreateNutritionPlanParams = {
   clientId: string;
   coachId: string;
+  /**
+   * The client-local today the ROUTE's past-date guard judged against —
+   * threaded, never recomputed here. The RPC's belt raises when
+   * effectiveFrom < p_today, so a second getClientTodayString call straddling
+   * client midnight would make a route-accepted save fail in the RPC with a
+   * generic error. Single source: orchestrator :166 → calcInputs.today → here.
+   */
+  clientToday: string;
   workActivityLevel: string;
   trainingVolumeHours: string;
   proteinTargetGPerKg: number;
@@ -31,9 +43,13 @@ export type CreateNutritionPlanParams = {
 };
 
 /**
- * Create a new nutrition plan: archive any current active plan, insert a new
- * active plan with 7 daily target rows in a single database transaction.
- * Returns the new plan ID or null on error.
+ * Save a nutrition plan VERSION (migration 144, close-and-insert — one
+ * transaction). Three branches on the client's open version: none → insert;
+ * open starts before the new date → close it at new_start − 1 and insert;
+ * open starts on/after → absorb it in place (same-day re-saves collapse,
+ * saving earlier than a queued change replaces it). A universal sweep removes
+ * fully-replaced queued versions and re-closes any straddler, so windows can
+ * never overlap. Returns the surviving version's id or null on error.
  */
 export async function createNutritionPlan(params: CreateNutritionPlanParams): Promise<string | null> {
   // Compute daily target rows before calling the atomic RPC
@@ -76,11 +92,8 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
     }
   }
 
-  // Client-local today (coach-tz fallback) — computed here, not threaded from
-  // callers, so every placement path judges active-vs-planned correctly.
-  const pToday = await getClientTodayString(params.clientId);
-
-  // Single transactional RPC: archive old plan + insert new plan + insert daily targets
+  // Single transactional RPC: close/absorb the open version + insert/update
+  // the new version + replace its daily-target grid (migration 144).
   const { data: newPlanId, error: rpcError } = await supabaseAdmin
     .rpc("create_nutrition_plan_atomic" as never, {
       p_client_id: params.clientId,
@@ -106,13 +119,13 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_regeneration_reason: params.regenerationReason,
       p_daily_targets: dailyTargets,
       p_effective_from: params.effectiveFrom || null,
-      p_today: pToday,
+      p_today: params.clientToday,
       // NOTE: this object is cast `as never`, so TypeScript checks NOTHING
       // about it. A key that no longer exists on the function makes PostgREST
       // unable to resolve the overload (PGRST202), rpcError is set below, this
       // returns null, and EVERY plan save fails with "Failed to create
       // nutrition plan" — while tsc, eslint and vitest all stay green. Keep
-      // these keys in exact sync with the RPC signature (migration 139).
+      // these keys in exact sync with the RPC signature (migration 144).
     } as never) as unknown as { data: string | null; error: { message: string } | null };
 
   if (rpcError || !newPlanId) {
@@ -164,13 +177,13 @@ export async function archiveNutritionPlan(planId: string): Promise<void> {
 }
 
 /**
- * Returns the id of the client's currently active nutrition plan, or null.
- *
- * Single durable plan: there is exactly one active plan per client
- * (`idx_nutrition_plans_active_unique`). Mirrors the active-plan resolution
- * inlined in `client-portal-service` and the activation-readiness route. Used by
- * `resolvePlanContextForDate` to stamp `nutrition_logs.nutrition_plan_id` on days
- * with no nutrition event.
+ * LEGACY singleton read — newest status='active' row, date-blind. Under the
+ * versioned model (migration 144) this picks a QUEUED FUTURE version whenever
+ * a chain exists, so it is only correct while the client has a single active
+ * row. Its four call sites (deletion orchestrator, both reset routes, the
+ * daily-context stamp fallback) are rewired per-date in Session 1B Task 1b.2,
+ * which converts this into a thin covering-today wrapper over
+ * `getNutritionPlanIdForDate`. Do not add new callers.
  */
 export async function getActiveNutritionPlanId(clientId: string): Promise<string | null> {
   const { data, error } = await supabaseAdmin
@@ -186,4 +199,98 @@ export async function getActiveNutritionPlanId(clientId: string): Promise<string
     throw new Error(`Failed to fetch active nutrition plan: ${error.message}`);
   }
   return data?.id ?? null;
+}
+
+/**
+ * The version whose [effective_from, effective_until] window covers `date` —
+ * the nutrition twin of `getTrainingPlanForDate`, sharing `coversDate` so the
+ * two tracks can never disagree about the window predicate. The status half is
+ * a plain `.eq("status", "active")`, deliberately simpler than training's
+ * `.neq("status", "archived")`: nutrition has only the two coach-act statuses
+ * (active | archived) and no `deleted_at` — do not "unify" the two filters.
+ * Ordering matches training (`effective_from DESC, created_at DESC`) so every
+ * resolver picks the same row on a tie.
+ */
+export async function getNutritionPlanForDate(
+  clientId: string,
+  date: string
+): Promise<NutritionPlanRow | null> {
+  const { data, error } = await coversDate(
+    supabaseAdmin
+      .from("nutrition_plans")
+      .select("*")
+      .eq("client_id", clientId)
+      .eq("status", "active"),
+    date
+  )
+    .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to resolve nutrition plan for date: ${error.message}`);
+  }
+  return data;
+}
+
+/**
+ * Id-only twin of `getNutritionPlanForDate` for hot per-write paths (the
+ * daily-log stamp fallback) that must not pay for the full row.
+ * `.maybeSingle()` so no covering version resolves to null, never a throw.
+ */
+export async function getNutritionPlanIdForDate(
+  clientId: string,
+  date: string
+): Promise<string | null> {
+  const { data, error } = await coversDate(
+    supabaseAdmin
+      .from("nutrition_plans")
+      .select("id")
+      .eq("client_id", clientId)
+      .eq("status", "active"),
+    date
+  )
+    .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to resolve nutrition plan id for date: ${error.message}`);
+  }
+  return data?.id ?? null;
+}
+
+export type NextFutureNutritionPlan = {
+  id: string;
+  effectiveFrom: string;
+};
+
+/**
+ * The earliest version starting strictly after `today` — the window-flipped
+ * twin of `getNutritionPlanForDate`, mirroring `getNextFutureTrainingPlan`.
+ * Earliest first so a chain of queued changes reports the NEXT one; tiebreak
+ * on `created_at DESC` so a correction saved over a queued version for the
+ * same start date is the one announced.
+ */
+export async function getNextFutureNutritionPlan(
+  clientId: string,
+  today: string
+): Promise<NextFutureNutritionPlan | null> {
+  const { data, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id, effective_from")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .gt("effective_from", today)
+    .order("effective_from", { ascending: true })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to resolve next future nutrition plan: ${error.message}`);
+  }
+  return data ? { id: data.id, effectiveFrom: data.effective_from } : null;
 }

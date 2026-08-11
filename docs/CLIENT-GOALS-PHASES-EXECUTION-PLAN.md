@@ -2005,3 +2005,111 @@ today→null, past→disabled). Sole consumer verified: the nutrition drawer foo
 Session 5 note: the deficit-input drawer work lands on this dialog's surface — inherit
 the single-button shape and the null-when-today contract; do not reintroduce a second
 action.
+
+---
+
+### Task 1b.1 — Migration 144 + the resolver family ✅ SHIPPED 2026-08-11
+
+**What shipped.** `144_nutrition_plan_versioning.sql`: (A1) archived rows' windows closed
+(`COALESCE(effective_until, effective_from)`, 116 precedent — 14 DEV rows; prod scope was 0);
+(A2) `idx_nutrition_plans_active_unique` dropped, **`idx_nutrition_plans_open_unique`**
+created (`(client_id) WHERE status='active' AND effective_until IS NULL`); (A3) `btree_gist`
++ the **non-deferrable** exclusion constraint `nutrition_plans_active_window_overlap`
+(`daterange(effective_from, effective_until, '[]')` overlap, active rows only); (A4) the RPC
+rewritten **close-and-insert at the identical 24-arg signature** — full header restated
+(`SECURITY DEFINER`, `SET search_path = public`), no DROP/REVOKE (same-signature replace
+preserves ACL, catalog-verified both sides). Plus the resolver family in
+`nutrition-plan-service.ts` (`getNutritionPlanForDate` / `getNutritionPlanIdForDate` /
+`getNextFutureNutritionPlan` — `coversDate` reuse, training-identical ordering, active-only
+status filter documented as deliberately simpler than training's `neq archived`) and the
+**clientToday threading** (`CreateNutritionPlanParams.clientToday`; the service's internal
+`getClientTodayString` recompute is deleted; both orchestrator call sites pass the
+`:166`-validated value via `calcInputs.today`, which is handed in, not re-derived).
+
+**The RPC body beyond the three-branch design text — completions forced by the constraint
+arithmetic, reviewed and approved with the session plan:**
+1. **Universal sweep, both paths.** s1 deletes active rows `effective_from >= new_start AND
+   id IS DISTINCT FROM v_open_id` (plain `<>` against NULL matches nothing — the insert-path
+   sweep would silently no-op); s2 re-closes the straddler at `new_start − 1` (required on
+   the insert path for delete-today-then-recreate-today, where the closed covering version
+   still claims today).
+2. **Fully-replaced queued versions are hard-DELETEd** (owner ruling): they governed at most
+   part of one day, the `nutrition_logs` snapshot is the sub-day history mechanism, same-day
+   collapse is the absorb branch's own semantics, and any retained window corrupts
+   no-status-filter history attribution. Daily targets CASCADE; events/logs FKs SET NULL.
+3. **Past-date belt** — `RAISE` when `v_new_start < v_today`. **Caller-cooperative, not a DB
+   invariant** (p_today is caller-supplied): it stops a future caller that skips the route's
+   past-date guard from turning s1 into a history shredder. Verified: the RPC has exactly
+   one caller; seeds insert directly. The threading makes route-accept ⇒ RPC-accept (single
+   source, no midnight race), pinned by the rewritten p_today test.
+4. **`FOR UPDATE` on the open-row lookup** — existing-plan races serialize; first-save races
+   collide loudly on the open-row index (or last-writer-replace in one interleaving — same
+   end state as sequential absorb, never corruption; recorded in the migration header).
+
+**Deliberately NOT in this commit (Q1 review resequencing):** `getActiveNutritionPlanId` is
+**unconverted** — the covering-today wrapper conversion moved to 1b.2, because converting it
+here would have broken the queued-first-plan client's ability to log nutrition (the
+Saturday-logger trace) before 1b.2's D1 guard exists. **1b.1 therefore changes zero existing
+read/stamp/guard behavior; the only production delta is the RPC body itself.** Its docstring
+now names it a legacy singleton read with a no-new-callers rule.
+
+**Decisions inherited by 1b.2 (approved with the session plan):**
+- **D1**: nutrition log guard = covering OR future version exists (same predicate as 1b.3's
+  readiness rule); stamp = covering version's id or NULL (zero SELECT-side readers of
+  `nutrition_logs.nutrition_plan_id`, verified; the writer's omit-when-null inserts NULL
+  fresh and preserves the prior era's stamp on re-log — both wanted).
+- **D2**: on delete, the covering version stays **active** with `effective_until =
+  clientToday` (design 3 read correctly: a version closed at today no longer "reaches past
+  today", so the archive clause scopes to queued versions; this is also the only reading
+  under which s2/the constraint guard the re-create). Queued versions: hard-DELETE.
+  `archiveNutritionPlan` loses its last caller and is deleted in 1b.2.
+
+**Live-DB proof (all against DEV `aeaphsslctwcmebldrzx`).** Pre-flight: 12/12 facts clean.
+**Prod pre-flight (`etezzztgafcotyahgijk`, run by owner — first prod probe of this
+workstream): 12/12 clean**, function state identical to DEV, old index genuinely present
+(no mig-125-style drift), zero strays; no remediation needed. Post-push: catalog identical
+(prosecdef / search_path / ACL / single overload), old index gone, new index + constraint +
+btree_gist present, backfill complete, body carries belt + IS DISTINCT FROM + FOR UPDATE,
+`ON CONFLICT (client_id)` and `DO UPDATE SET` gone (the one remaining "ON CONFLICT" string
+is the explanatory comment). **Behavioral probe: 10/10 scenarios in one rolled-back
+transaction** — branch (a); branch (b) close-at-new−1; 3-version chain; per-date resolution
+correct at six boundary dates; absorb with intermediate deleted + straddler re-closed;
+same-day collapse (same id, grid replaced at 7 rows, prescription overwritten); the belt
+raising; second open row → unique_violation; manufactured overlap → exclusion_violation;
+delete-today-then-recreate-today with s2 closing the old covering row at today−1. Zero probe
+rows persisted (verified). `gen types` diff **EMPTY** as predicted (same-signature body swap)
+— regen + skim performed; migration + types together satisfied vacuously (143's precedent).
+
+**Gates.** `tsc --noEmit` clean · `vitest run` **252 files / 2597 tests, all passing**
+(inherited baseline 2589 after the two Session-1 smoke follow-ups; +8 resolver query-shape
+tests here — mock-level by design, the branch semantics are proven by the live probe) ·
+`eslint .` 0 errors (209 pre-existing warnings, unchanged) · `check:labels` OK (635) ·
+`check:rls` OK (40/40) · no new `as any` (the two RPC `as never` casts stay per the session
+brief; the 24-key pin is green and now cites migration 144) · no markers. The transient
+probe SQL files were deleted before commit; the behavioral probe script lives in the session
+scratchpad only.
+
+**§2 security/load/perf review (triggers: migration + SECURITY DEFINER surface).**
+Security: same-signature replace preserved the service_role-only EXECUTE (catalog-verified
+pre and post — the silent-downgrade failure mode is why both sides were probed); header
+restates SECURITY DEFINER + pinned search_path; no dynamic SQL; every statement in the body
+is scoped `client_id = p_client_id` or by the locked row's id; no route auth changed.
+Performance: the open-row lookup is exactly covered by the new partial index; the sweep's
+worst case is one client's chain (single-digit rows); the RPC remains one transaction (plan
++ grid); zero new round trips in the service (one was removed — the deleted today recompute).
+Consistency: the RPC is atomic; the orchestrator's regenerate still runs outside it behind
+its established loud-failure wrapper; the belt converts the one cross-boundary skew
+(route-today vs RPC-today) from a possible silent... rather, from a generic 500 into an
+impossibility by threading. Not load-tested; verified by catalog probe, behavioral probe,
+and the unit suite.
+
+**Exposure window (accepted by sequencing ruling A, closes at 1b.2/1b.3):** a queued save
+now mints a real second active row, which the unmigrated readers mishandle exactly as the
+Ground-truth block documents — the cascade silently no-ops for that client
+(`nutrition-event-service.ts:380-385`), the seven quiet reads pick the future row,
+delete-with-chain archives only the covering version (plan-scoped event delete misses queued
+versions' events), delete-of-queued-only 404s. Same-day saves (the dominant path) leave one
+active row and behave identically to before. **No queued saves or browser smokes until 1b.3.**
+
+**Durable defect records:** none new — the exposure above is transient by design and closed
+within this session; nothing else surfaced that outlives it.
