@@ -91,11 +91,10 @@ export function DrawerFooter() {
         title={hasPlan ? "When should changes take effect?" : "When should this plan start?"}
         description={
           hasPlan
-            ? "The new nutrition plan will replace the current one. Choose when the updated targets should start."
-            : "Targets are generated from this date forward. Choose a future date if you are setting this client up ahead of time."
+            ? "The new targets replace the current ones from the date below — leave it on today to apply now."
+            : "Targets are generated from the date below — leave it on today to start now, or pick a future date to set this client up ahead of time."
         }
-        nowLabel={hasPlan ? "Apply Now" : "Start Today"}
-        fromLabel={hasPlan ? "Apply From Date" : "Start From Date"}
+        applyLabel={hasPlan ? "Apply" : "Start plan"}
         onApply={handleApply}
       />
     </>

@@ -1612,3 +1612,49 @@ suite.
 Session 1 verification): (1) move a training event → nutrition updates on exactly the
 moved-from and moved-to days, nothing else changes; (2) regenerate a plan with a future
 apply date → the hero reads "Starts \<date\>" and today's targets are unchanged.
+
+---
+
+### Session 1 smoke — ✅ RUN BY THE OWNER 2026-08-11, PASSED with three UX findings
+
+Both checklist items passed as specified ("everything else checks out and works"). The
+findings, all owner-reviewed and shipped same-day as two follow-up commits:
+
+**`4ed4017` — the hero dates an active plan and names a queued CHANGE.**
+1. An active plan whose title slot was taken by the program name showed **no date
+   anywhere** — "Active since" existed only as the title fallback for program-less
+   clients. Fixed: an "Active since \<date\>" sub-line in the queued line's slot when
+   the title is the program name; never rendered when the title already carries the
+   date (pinned: exactly one "Active since" in either layout).
+2. A queued regenerate on an **existing** client read "Starts \<date\>" — the interim
+   was invisible and the hero looked plan-less. The plan row cannot distinguish this
+   from a first plan (the conflict upsert overwrote the outgoing prescription), but the
+   **events** can: rows before `effective_from` keep the old numbers. `GET /nutrition`
+   gains one indexed single-row read in its existing `Promise.all`
+   (`getNutritionEventForDate(clientId, clientToday)` → `hasCurrentTargets`), and the
+   queued line splits: **"New targets from \<date\>"** when current numbers keep
+   running, **"Starts \<date\>"** when nothing does. *Test-scope deviation from the
+   follow-up plan, stated: the route test gained only the mock-factory declaration, not
+   GET assertions — that file has zero GET coverage and an unmocked GET chain
+   (`resolveNutritionCalcInputs`), so standing it up for one `!= null` mapping was
+   disproportionate; the behaviour is pinned at the consumer
+   (`nutrition-plan-hero.test.tsx`, all four states).*
+
+**"apply-date dialog is one picker, one button" (the commit carrying this addendum —
+a self-hash can't be written).** The two-action
+layout saved on "Apply From Date", which read as the control that OPENS the picker —
+the owner repeatedly applied before setting the date. Now: date input defaulting to
+**today**, one primary Apply (labels: "Apply" / first plan "Start plan"), Cancel.
+**Load-bearing and non-obvious: today is sent as `null`, not as the date string.** The
+picker renders the coach's calendar day; plan dates live on the client's. Across a
+midnight offset the literal string schedules the client's tomorrow; `null` routes the
+decision to the server, which resolves today in the client's stored device-synced
+timezone — the old Apply Now behaviour, preserved through the redesign. A future pick
+names the same calendar square everywhere and is sent as typed. Contract pinned in
+`apply-date-dialog.test.tsx` (default-today→null, future→literal, re-picked
+today→null, past→disabled). Sole consumer verified: the nutrition drawer footer;
+`nowLabel`/`fromLabel` collapsed to `applyLabel`.
+
+Session 5 note: the deficit-input drawer work lands on this dialog's surface — inherit
+the single-button shape and the null-when-today contract; do not reintroduce a second
+action.

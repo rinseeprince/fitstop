@@ -20,39 +20,36 @@ type ApplyDateDialogProps = {
   description?: string;
   onApply: (effectiveFrom: string | null) => void;
   maxDate?: string;
-  /** Verb for the two actions. Defaults suit an EDIT to something that already
-   *  exists; creating a plan reads as "start", not "apply". */
-  nowLabel?: string;
-  fromLabel?: string;
+  /** Verb for the single confirm. An EDIT reads as "apply"; a first plan reads
+   *  as "start". */
+  applyLabel?: string;
 };
 
 export function ApplyDateDialog({
   open,
   onOpenChange,
   title = "When should changes take effect?",
-  description = "Choose when the updated schedule should start. Today's existing data will be preserved if you choose a future date.",
+  description = "Changes apply from the date below — leave it on today to apply now, or pick a future date.",
   onApply,
   maxDate,
-  nowLabel = "Apply Now",
-  fromLabel = "Apply From Date",
+  applyLabel = "Apply",
 }: ApplyDateDialogProps) {
+  // One picker, one button. The old two-action layout ("Apply Now" over a
+  // date + "Apply From Date") saved on the second button's click, which read
+  // as the control that OPENS the picker — coaches applied before setting the
+  // date. Defaulting the picker to today keeps apply-now one click.
   const today = getTodayDateString();
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  });
+  const [selectedDate, setSelectedDate] = useState(today);
 
-  const handleApplyNow = () => {
-    onApply(null);
-    onOpenChange(false);
-  };
-
-  const handleApplyFrom = () => {
-    onApply(selectedDate);
+  const handleApply = () => {
+    // Today means NOW, and now is sent as null, not as the date string: the
+    // picker renders the COACH's calendar day, but plan dates live on the
+    // CLIENT's. Across a midnight offset (coach Tuesday, client Monday) the
+    // literal string would schedule the client's TOMORROW; null lets the
+    // server resolve today in the client's stored timezone, exactly as the
+    // old Apply Now did. A genuinely future pick is unambiguous — the same
+    // calendar square everywhere — and is sent as typed.
+    onApply(selectedDate === today ? null : selectedDate);
     onOpenChange(false);
   };
 
@@ -64,20 +61,8 @@ export function ApplyDateDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
 
-        <div className="flex flex-col gap-3 py-2">
-          <button
-            onClick={handleApplyNow}
-            className="w-full flex items-center justify-center gap-2 bg-[#0d9488] text-white text-[13px] font-semibold rounded-[6px] px-4 py-2.5 transition-all hover:bg-[#0a7c72]"
-          >
-            {nowLabel}
-          </button>
-
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-px bg-[rgba(0,0,0,0.06)]" />
-            <span className={LABEL_CLASS}>or</span>
-            <div className="flex-1 h-px bg-[rgba(0,0,0,0.06)]" />
-          </div>
-
+        <div className="flex flex-col gap-2 py-2">
+          <span className={LABEL_CLASS}>Takes effect</span>
           <div className="flex items-center gap-2">
             <input
               type="date"
@@ -88,11 +73,11 @@ export function ApplyDateDialog({
               className="flex-1 border border-[rgba(13,148,136,0.15)] rounded-[6px] px-3 py-2 text-[13px] text-[#0c1a1e] focus:outline-none focus:ring-1 focus:ring-[#0d9488]"
             />
             <button
-              onClick={handleApplyFrom}
-              disabled={!selectedDate || selectedDate <= today}
-              className="bg-white border border-[rgba(13,148,136,0.15)] text-[#0c1a1e] text-[13px] font-medium rounded-[6px] px-4 py-2 transition-all hover:bg-[#f0f5f4] disabled:opacity-40 disabled:pointer-events-none"
+              onClick={handleApply}
+              disabled={!selectedDate || selectedDate < today}
+              className="flex items-center justify-center gap-2 bg-[#0d9488] text-white text-[13px] font-semibold rounded-[6px] px-4 py-2 transition-all hover:bg-[#0a7c72] disabled:opacity-40 disabled:pointer-events-none"
             >
-              {fromLabel}
+              {applyLabel}
             </button>
           </div>
         </div>
