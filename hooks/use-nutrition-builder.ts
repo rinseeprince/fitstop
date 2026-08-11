@@ -175,25 +175,38 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
 
   // Settings change handler. Only fired by a coach picker interaction — the
   // seed effect above writes setSettings directly, so this never runs on open.
-  const { manualEnabled, resplitManualByDietType } = manual;
+  const { manualEnabled, recomposeManualMacros } = manual;
   const handleSettingsChange = useCallback(
     (newSettings: Partial<NutritionSettings>) => {
-      // Diet type is a split preference with no editable box of its own, so in
-      // manual mode it is otherwise inert. A GENUINE diet-type change (not an
-      // activity/protein-per-kg change, which resend the same dietType)
-      // re-splits the manual carbs/fat so the boxes follow the picker. Guarded
-      // to manual mode; auto mode already recomputes autoTargets from the diet.
-      if (
-        manualEnabled &&
-        newSettings.dietType !== undefined &&
-        newSettings.dietType !== settings.dietType
-      ) {
-        resplitManualByDietType(newSettings.dietType);
+      // The pickers above the target boxes have no editable box of their own
+      // (diet type is only a split, protein-per-kg is only a protein figure),
+      // so in manual mode they were inert. A GENUINE change to either now
+      // recomposes the manual macros — holding the coach's calorie target,
+      // which is the point of the override. Guarded to manual mode; auto mode
+      // already recomputes autoTargets from the pickers. Activity-level changes
+      // resend the same diet/protein and are ignored (each Select sends the
+      // full object, so a real change is detected by comparing to `settings`).
+      if (manualEnabled && calcInputs?.status === "ready") {
+        const dietChanged =
+          newSettings.dietType !== undefined && newSettings.dietType !== settings.dietType;
+        const proteinChanged =
+          newSettings.proteinTargetGPerKg !== undefined &&
+          newSettings.proteinTargetGPerKg !== settings.proteinTargetGPerKg;
+        if (dietChanged || proteinChanged) {
+          const merged = { ...settings, ...newSettings };
+          // Reuse the calculator so the re-derived protein figure matches the
+          // auto path EXACTLY (protein-per-kg × body weight), rather than
+          // duplicating that formula here. Only needed when protein changed.
+          const proteinG = proteinChanged
+            ? generateNutritionPlan({ ...calcInputs, ...merged }).proteinTargetG
+            : undefined;
+          recomposeManualMacros({ proteinG, dietType: merged.dietType });
+        }
       }
       setSettings((prev) => ({ ...prev, ...newSettings }));
       setSettingsChanged(true);
     },
-    [manualEnabled, resplitManualByDietType, settings.dietType]
+    [manualEnabled, recomposeManualMacros, settings, calcInputs]
   );
 
   // Generate nutrition plan. `useManual` posts the coach's typed targets as the

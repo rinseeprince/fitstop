@@ -142,27 +142,36 @@ export function useManualTargets(seed: ManualSeed) {
   }, []);
 
   /**
-   * Re-split carbs + fat by a DIET TYPE (holding calories and protein). The
-   * diet-type picker has no editable box of its own — its only expression is
-   * the carb:fat split — so in manual mode it is otherwise inert: a coach
-   * changing "Low Carb" would never see the boxes follow. Wired to fire ONLY
-   * on a deliberate diet-type change (a discrete picker action, never a
-   * keystroke), so it does not reintroduce the per-keystroke derivation the
-   * "typing never mutates another field" invariant above exists to prevent.
-   * A no-op while calories or protein is mid-edit (null).
+   * Recompose the macros from a PICKER change, holding the coach's CALORIE
+   * target (the whole point of a manual override). The pickers above the boxes
+   * have no editable box of their own — diet type is only a carb:fat split,
+   * protein-per-kg is only a protein figure — so in manual mode they were
+   * otherwise inert: a coach changing "Low Carb" or the protein target never
+   * saw the boxes follow. `proteinG` (supplied on a protein-per-kg change)
+   * replaces the protein box; otherwise the current protein is held. Carbs and
+   * fat are always re-split by `dietType`.
+   *
+   * Fired ONLY on a deliberate picker change (a discrete action, never a
+   * keystroke), so it does NOT reintroduce the per-keystroke derivation the
+   * "typing never mutates another field" invariant above exists to prevent. A
+   * no-op while calories or the resolved protein is mid-edit (null).
    */
-  const resplitByDietType = useCallback((dietType: DietType) => {
-    setDraft((prev) => {
-      if (!prev.calories || !prev.proteinG) return prev;
-      const { carbsG, fatG } = calculateDailyMacros(
-        prev.calories,
-        prev.proteinG,
-        false,
-        dietType
-      );
-      return { ...prev, carbG: Math.max(0, carbsG), fatG: Math.max(0, fatG) };
-    });
-  }, []);
+  const recomposeMacros = useCallback(
+    ({ proteinG, dietType }: { proteinG?: number; dietType: DietType }) => {
+      setDraft((prev) => {
+        const protein = proteinG ?? prev.proteinG;
+        if (!prev.calories || !protein) return prev;
+        const { carbsG, fatG } = calculateDailyMacros(prev.calories, protein, false, dietType);
+        return {
+          ...prev,
+          proteinG: protein,
+          carbG: Math.max(0, carbsG),
+          fatG: Math.max(0, fatG),
+        };
+      });
+    },
+    []
+  );
 
   const complete = completeTargets(draft);
   const macroTotal = complete ? macroCalories(complete) : null;
@@ -196,6 +205,6 @@ export function useManualTargets(seed: ManualSeed) {
     revertToAuto,
     setManualField: setField,
     matchMacrosToCalories,
-    resplitManualByDietType: resplitByDietType,
+    recomposeManualMacros: recomposeMacros,
   };
 }

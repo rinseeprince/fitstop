@@ -109,22 +109,22 @@ describe("useManualTargets", () => {
   });
 
   // =========================================================================
-  // A diet-type change re-splits the manual macros (Option B).
+  // A picker change recomposes the manual macros (Option B).
   //
-  // The diet-type picker has no editable box of its own, so in manual mode it
-  // was inert — a coach changing "Balanced" to "Low Carb" saw the boxes stay
-  // put. `resplitManualByDietType` (fired ONLY on a deliberate picker change,
-  // never on a keystroke) holds calories and protein and re-derives carbs/fat
-  // from the diet split, so the boxes follow the picker.
+  // The pickers above the boxes have no editable box of their own (diet type =
+  // split, protein-per-kg = protein figure), so in manual mode they were inert.
+  // `recomposeManualMacros` (fired ONLY on a deliberate picker change, never on
+  // a keystroke) holds the coach's CALORIE target and re-derives the split, so
+  // the boxes follow the picker.
   // =========================================================================
-  describe("a diet-type change re-splits carbs/fat, holding calories and protein", () => {
-    it("moves fat up and carbs down for low_carb, keeping the calorie total", () => {
+  describe("a picker change recomposes the split, holding the calorie target", () => {
+    it("a diet-type change moves fat up and carbs down for low_carb, protein and calories held", () => {
       const { result } = renderHook(() => useManualTargets(null));
       act(() => result.current.enableManualTargets(AUTO));
-      act(() => result.current.resplitManualByDietType("low_carb"));
+      act(() => result.current.recomposeManualMacros({ dietType: "low_carb" }));
 
       const d = result.current.manualDraft;
-      // Calories and protein are untouched.
+      // No proteinG supplied → calories and protein are untouched.
       expect(d.calories).toBe(AUTO.calories);
       expect(d.proteinG).toBe(AUTO.proteinG);
       // Low carb (25/75 carb/fat of the post-protein calories) pushes fat up and
@@ -136,13 +136,28 @@ describe("useManualTargets", () => {
       expect(macroCalories(completeTargets(d)!)).toBeCloseTo(AUTO.calories, -2);
     });
 
-    it("is a no-op while calories or protein is mid-edit (null)", () => {
+    it("a protein-per-kg change replaces protein and re-splits carbs/fat, calories held", () => {
+      const { result } = renderHook(() => useManualTargets(null));
+      act(() => result.current.enableManualTargets(AUTO));
+      // The builder derives the new protein from the calculator; here we pass a
+      // higher figure directly (the hook does not know about g/kg).
+      act(() => result.current.recomposeManualMacros({ proteinG: 240, dietType: "balanced" }));
+
+      const d = result.current.manualDraft;
+      expect(d.calories).toBe(AUTO.calories); // the coach's calorie target is held
+      expect(d.proteinG).toBe(240); // the picker drives the protein box
+      // Still coherent: the whole budget is re-split around the new protein.
+      expect(result.current.manualCaloriesMismatch).toBe(false);
+      expect(macroCalories(completeTargets(d)!)).toBeCloseTo(AUTO.calories, -2);
+    });
+
+    it("is a no-op while calories is mid-edit (null)", () => {
       const { result } = renderHook(() => useManualTargets(null));
       act(() => result.current.enableManualTargets(AUTO));
       act(() => result.current.setManualField("calories", null));
-      act(() => result.current.resplitManualByDietType("low_carb"));
+      act(() => result.current.recomposeManualMacros({ dietType: "low_carb" }));
 
-      // Nothing re-split — carbs/fat stay exactly as they were.
+      // Nothing recomposed — carbs/fat stay exactly as they were.
       expect(result.current.manualDraft.carbG).toBe(AUTO.carbG);
       expect(result.current.manualDraft.fatG).toBe(AUTO.fatG);
     });
