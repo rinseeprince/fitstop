@@ -1469,3 +1469,49 @@ the real UNIQUE constraint on `nutrition_events(client_id, date)`. Consistency: 
 narrow paths' no-row window is CLOSED (the fix itself); the remaining known divergences
 are exactly the five debt entries above. Nothing was load-tested; claims are from code
 reading and the unit suite.
+
+---
+
+### Task 1.2 — One shared energy helper, floor recomputes its pair ✅ SHIPPED 2026-08-11
+
+**What shipped.** `CALORIES_PER_KG = 7700` in `lib/constants.ts` (§3: the constant's one
+home). New pure module `utils/energy-conversions.ts` — `weeklyRateToDailyDelta` /
+`dailyDeltaToWeeklyRate`, **signed convention positive = surplus/gain** documented in the
+module; no rounding (display rounding belongs to the renderer). This is Session 5's
+deficit⇄date equation, landed as its prerequisite. The three calculator sites now go
+through the constant/helper with **bit-identical arithmetic** (same expression, same
+order — pinned by `toBe`-not-`toBeCloseTo` tests against the literal expressions).
+
+**The floor fix.** When the minimum-calorie floor raises `baselineCalories`
+(`services/nutrition-service.ts`), it now re-derives `requiredDailyDeficit = tdee −
+baseline` and `weeklyRate` through the shared equation, so the trio the targets block
+renders is self-consistent. The caps already recomputed their pair; the floor was the odd
+one out — a floored plan showed "TDEE 2000 · −900/day · −0.82 kg/week" beside a 1500 kcal
+target that only implies −500/day. `requiredDailyDeficit` keeps its legacy
+deficit-positive convention at this boundary (the block renders `> 0 ? "−" : "+"` from
+it); call sites negate, the helper does not carry two conventions. Nothing stores these
+two values — the RPC's 24 args carry neither — so the blast radius is display + response.
+
+**One pre-existing test updated because it pinned the bug.** `nutrition-service.test.ts`'s
+"emits deficit_capped" case (TDEE 2400, capped to 1100/day → floored at 1500) asserted
+`weeklyRate = −1.0` — the cap's wish, exactly the pre-floor pair the defect returned. It
+now asserts both warnings and the floored-truth trio (900/day, −0.818 kg/wk); the
+cap-alone behaviour is separately pinned at TDEE 3000 where the floor stays out of frame.
+
+**Deletions, all verified zero-consumer before removal (production AND tests):**
+`calculateAdjustedTDEE`, `calculateTargetCalories` (`nutrition-service.ts` — the latter
+was the trap: it called `calculateBaselineCalories` without `calcStartDate`/`today`, so
+building Session 5's entry point on it would silently lose future-start and
+client-timezone handling), and `getProjectedDate`/`projectedDate`
+(`use-nutrition-builder.ts` — read the stale `clients.*` mirror, disagreed with
+`calcInputs` by construction; the duplicate per-render `CALORIES_PER_KG` local went with
+it, as did the hook's now-unused `getActivityMultiplier` and `date-fns/addDays` imports).
+*(Session 0b Task 0b.3 also names the `getProjectedDate` deletion — done here; 0b
+confirms rather than re-deletes.)* **No stored rate column anywhere**, per the task.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing warnings,
+unchanged) · `vitest run` **251 files / 2580 tests, all passing** (+1 file = 3
+energy-conversion tests; +3 floor tests; 2574 + 6 = 2580 ✓) · `check:labels` OK · no new
+`as any` · no markers · dead-export grep clean repo-wide. §2 review: not applicable — no
+route, migration, auth, or write-path change; a pure-calculation module + display-path
+fix.

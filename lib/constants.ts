@@ -10,6 +10,12 @@ export const DEBOUNCE_DELAY_MS = 300;
 // Custom macros validation
 export const CUSTOM_MACRO_CALORIE_TOLERANCE = 50; // Max allowed difference between stated calories and macro totals
 
+// Energy density of one kilogram of body-mass change, in kcal. The single
+// source for every rate <-> calorie conversion (utils/energy-conversions.ts);
+// it previously lived as an inline 7700 at three calculator sites and a
+// per-render hook local, which is exactly the drift §3 forbids.
+export const CALORIES_PER_KG = 7700;
+
 // Nutrition adherence thresholds
 export const NUTRITION_ADHERENCE_HIT_THRESHOLD = 50; // Within 50 calories = "hit"
 export const NUTRITION_ADHERENCE_PARTIAL_THRESHOLD = 200; // Within 200 calories = "partial"

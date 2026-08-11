@@ -8,6 +8,8 @@ import type { TrainingPlan } from "@/types/training";
 import {
   getActivityMultiplier,
 } from "@/utils/nutrition-helpers";
+import { CALORIES_PER_KG } from "@/lib/constants";
+import { weeklyRateToDailyDelta, dailyDeltaToWeeklyRate } from "@/utils/energy-conversions";
 
 export type NutritionPlan = {
   baselineCalories: number; // Rest day calories (TDEE - deficit)
@@ -134,8 +136,8 @@ export function calculateBaselineCalories(
   const weightChangeKg = goalWeightKg - currentWeightKg;
   const isWeightLoss = weightChangeKg < 0;
 
-  // Calculate total calorie deficit/surplus needed (1kg = 7700 calories)
-  const totalCalorieChange = Math.abs(weightChangeKg) * 7700;
+  // Calculate total calorie deficit/surplus needed (CALORIES_PER_KG per kg)
+  const totalCalorieChange = Math.abs(weightChangeKg) * CALORIES_PER_KG;
 
   // Calculate required daily deficit/surplus
   let requiredDailyChange = totalCalorieChange / daysToGoal;
@@ -148,17 +150,18 @@ export function calculateBaselineCalories(
   const maxWeeklyDeficitKg = gender === "female" ? 0.75 : 1.0;
   const maxWeeklySurplusKg = gender === "female" ? 0.35 : 0.5;
 
-  // Cap the rate if too aggressive
+  // Cap the rate if too aggressive. The helper is signed (+ = gain); a
+  // magnitude in gives a magnitude out, which is what requiredDailyChange is.
   if (isWeightLoss && weeklyRate < -maxWeeklyDeficitKg) {
     weeklyRate = -maxWeeklyDeficitKg;
-    requiredDailyChange = (maxWeeklyDeficitKg * 7700) / 7;
+    requiredDailyChange = weeklyRateToDailyDelta(maxWeeklyDeficitKg);
     warnings.push({
       code: "deficit_capped",
       maxWeeklyChangeKg: maxWeeklyDeficitKg,
     });
   } else if (!isWeightLoss && weeklyRate > maxWeeklySurplusKg) {
     weeklyRate = maxWeeklySurplusKg;
-    requiredDailyChange = (maxWeeklySurplusKg * 7700) / 7;
+    requiredDailyChange = weeklyRateToDailyDelta(maxWeeklySurplusKg);
     warnings.push({
       code: "surplus_capped",
       maxWeeklyChangeKg: maxWeeklySurplusKg,
@@ -168,14 +171,22 @@ export function calculateBaselineCalories(
   // Calculate baseline calories
   // For weight loss: baseline = TDEE - deficit
   // For weight gain: baseline = TDEE + surplus
-  const requiredDailyDeficit = isWeightLoss ? requiredDailyChange : -requiredDailyChange;
+  let requiredDailyDeficit = isWeightLoss ? requiredDailyChange : -requiredDailyChange;
   let baselineCalories = Math.round(tdee - requiredDailyDeficit);
 
-  // Ensure minimum calories
+  // Ensure minimum calories. Raising the target changes the ACTUAL deficit, so
+  // the returned pair must be re-derived from what the floor made true — the
+  // two caps above recompute their pair, and this used to be the odd one out:
+  // a floored plan rendered "TDEE 2000 · −900/day · −0.82 kg/week" beside a
+  // 1500 kcal target that only implies −500/day.
   const minimumCalories = gender === "female" ? 1200 : 1500;
   if (baselineCalories < minimumCalories) {
     warnings.push({ code: "calories_raised_to_minimum", minimumCalories });
     baselineCalories = minimumCalories;
+    // Legacy deficit-positive convention at this boundary; the helper is
+    // signed (+ = surplus), hence the negation of (baseline − TDEE).
+    requiredDailyDeficit = tdee - baselineCalories;
+    weeklyRate = dailyDeltaToWeeklyRate(baselineCalories - tdee);
   }
 
   return {
@@ -183,44 +194,6 @@ export function calculateBaselineCalories(
     requiredDailyDeficit,
     weeklyRate,
     warnings,
-  };
-}
-
-/**
- * @deprecated Use calculateTDEE instead. Kept for backward compatibility.
- * This now returns pure TDEE without training calories.
- */
-export function calculateAdjustedTDEE(
-  bmr: number,
-  workActivityLevel: ActivityLevel,
-  _trainingVolumeHours?: TrainingVolume,
-  _trainingPlan?: TrainingPlan | null
-): number {
-  // Now returns pure TDEE - training calories are added per-day
-  return calculateTDEE(bmr, workActivityLevel);
-}
-
-/**
- * @deprecated Use calculateBaselineCalories instead.
- */
-export function calculateTargetCalories(
-  tdee: number,
-  currentWeightKg: number,
-  goalWeightKg: number | undefined,
-  goalDeadline: string | undefined,
-  gender: "male" | "female" | "other"
-): { calories: number; weeklyRate: number; warnings: NutritionWarning[] } {
-  const result = calculateBaselineCalories(
-    tdee,
-    currentWeightKg,
-    goalWeightKg,
-    goalDeadline,
-    gender
-  );
-  return {
-    calories: result.baselineCalories,
-    weeklyRate: result.weeklyRate,
-    warnings: result.warnings,
   };
 }
 

@@ -148,14 +148,24 @@ describe('calculateBaselineCalories — capped-rate warnings', () => {
   }
 
   it('emits deficit_capped with the raw kilogram cap, not a sentence', () => {
-    // 15kg in two weeks is far past any safe rate.
+    // 15kg in two weeks is far past any safe rate. At TDEE 2400 the capped
+    // 1100/day deficit lands at 1300, under the male 1500 floor — so BOTH
+    // warnings fire, and the returned pair describes the floored truth
+    // (2400 − 1500 = 900/day), not the cap's wish. The cap-alone case (no
+    // floor) is pinned by the floor suite's TDEE-3000 test below.
     const result = calculateBaselineCalories(2400, 90, 75, soon(), 'male')
 
     expect(result.warnings).toContainEqual({
       code: 'deficit_capped',
       maxWeeklyChangeKg: 1.0,
     })
-    expect(result.weeklyRate).toBe(-1.0)
+    expect(result.warnings).toContainEqual({
+      code: 'calories_raised_to_minimum',
+      minimumCalories: 1500,
+    })
+    expect(result.baselineCalories).toBe(1500)
+    expect(result.requiredDailyDeficit).toBe(900)
+    expect(result.weeklyRate).toBeCloseTo((-900 * 7) / 7700, 10)
   })
 
   it('uses the lower female cap', () => {
@@ -183,5 +193,66 @@ describe('calculateBaselineCalories — capped-rate warnings', () => {
     const result = calculateBaselineCalories(2400, 90, 75, past.toISOString(), 'male')
 
     expect(result.warnings).toEqual([{ code: 'deadline_passed' }])
+  })
+})
+
+describe('calculateBaselineCalories — the floor recomputes the pair it invalidates', () => {
+  const soon = () => {
+    const d = new Date()
+    d.setDate(d.getDate() + 14)
+    return d.toISOString()
+  }
+
+  it('floored loss: deficit and rate describe the floored target, not the wish', () => {
+    // TDEE 2000, male floor 1500. The capped deficit (825/day) would put the
+    // target at 1175 — floored to 1500, so the ACTUAL deficit is 500/day and
+    // the readouts must say so. Pre-fix they returned the capped pair
+    // unchanged: "−825/day · −0.75 kg/week" beside a 1500 target.
+    const result = calculateBaselineCalories(2000, 95, 75, soon(), 'female')
+
+    expect(result.warnings).toContainEqual({
+      code: 'calories_raised_to_minimum',
+      minimumCalories: 1200,
+    })
+    expect(result.baselineCalories).toBe(1200)
+    // The trio is self-consistent: baseline = tdee − deficit, exactly.
+    expect(result.requiredDailyDeficit).toBe(800)
+    expect(result.baselineCalories).toBe(2000 - result.requiredDailyDeficit)
+    // Rate re-derived from the actual deficit through the shared equation.
+    expect(result.weeklyRate).toBeCloseTo((-800 * 7) / 7700, 10)
+  })
+
+  it('floored gain: a tiny TDEE below the floor flips the readout to the true surplus', () => {
+    // An uncapped gentle gain (1 kg over ~29 weeks ≈ +38/day) puts the target
+    // at 1138, under the male 1500 floor. Flooring makes the ACTUAL surplus
+    // 400/day, and both readouts must follow — independent of daysToGoal, so
+    // the assertion is immune to the ±1-day ISO/local slice.
+    const far = new Date()
+    far.setDate(far.getDate() + 200)
+    const result = calculateBaselineCalories(1100, 74, 75, far.toISOString(), 'male')
+
+    expect(result.warnings).toContainEqual({
+      code: 'calories_raised_to_minimum',
+      minimumCalories: 1500,
+    })
+    expect(result.baselineCalories).toBe(1500)
+    // Deficit-positive convention: a surplus is negative here.
+    expect(result.requiredDailyDeficit).toBe(-400)
+    // And the rate is a GAIN of the size the floor actually created.
+    expect(result.weeklyRate).toBeCloseTo((400 * 7) / 7700, 10)
+  })
+
+  it('unfloored results are untouched: caps still return their own recomputed pair', () => {
+    // Same shape as the capped-rate suite, with a TDEE high enough that the
+    // floor never fires — pins that the recompute is scoped to the floor.
+    const result = calculateBaselineCalories(3000, 90, 75, soon(), 'male')
+
+    expect(result.warnings).toContainEqual({
+      code: 'deficit_capped',
+      maxWeeklyChangeKg: 1.0,
+    })
+    expect(result.weeklyRate).toBe(-1.0)
+    expect(result.requiredDailyDeficit).toBeCloseTo((1.0 * 7700) / 7, 10)
+    expect(result.baselineCalories).toBe(3000 - Math.round((1.0 * 7700) / 7))
   })
 })

@@ -11,8 +11,6 @@ import type {
   NutritionWarning,
 } from "@/types/check-in";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
-import { getActivityMultiplier } from "@/utils/nutrition-helpers";
-import { addDays } from "date-fns";
 import { useManualTargets, macroCalories, type MacroTargets, type ManualDraft } from "@/hooks/use-manual-targets";
 // A PURE module (types + one arithmetic helper, no DB imports), so the browser
 // runs the identical calculator the server does. That is what makes the preview
@@ -273,33 +271,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     ]
   );
 
-  // Calculate projected goal date
-  // 7700 calories = approximately 1kg of body weight
-  const CALORIES_PER_KG = 7700;
-
-  const getProjectedDate = useCallback(() => {
-    const nd = nutritionPlan.nutritionData;
-    const baseline = nd?.baselineCalories ?? nd?.calorieTarget;
-    if (!client.goalWeight || !client.currentWeight || !baseline) return null;
-
-    const tdee = client.tdee || (client.bmr ? Math.round(client.bmr * getActivityMultiplier(settings.workActivityLevel)) : null);
-    if (!tdee) return null;
-
-    // Already kilograms (migration 141) — no normalization step any more.
-    const currentWeightKg = client.currentWeight;
-    const goalWeightKg = client.goalWeight;
-    const weightToLoseKg = currentWeightKg - goalWeightKg;
-
-    if (Math.abs(weightToLoseKg) < 0.1) return null;
-
-    const dailyDeficit = tdee - baseline;
-    const weeklyWeightChangeKg = (dailyDeficit * 7) / CALORIES_PER_KG;
-    if (Math.abs(weeklyWeightChangeKg) < 0.01) return null;
-
-    const weeksNeeded = weightToLoseKg / weeklyWeightChangeKg;
-    return addDays(new Date(), Math.round(weeksNeeded * 7));
-  }, [client, nutritionPlan.nutritionData, settings.workActivityLevel]);
-
   return {
     // Spread base nutrition plan state
     ...nutritionPlan,
@@ -338,9 +309,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     // Loading states
     isGenerating,
     warnings,
-
-    // Computed
-    projectedDate: getProjectedDate(),
 
     // Actions
     generatePlan,
