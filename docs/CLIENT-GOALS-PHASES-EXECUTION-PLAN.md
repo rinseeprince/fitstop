@@ -1515,3 +1515,100 @@ energy-conversion tests; +3 floor tests; 2574 + 6 = 2580 ✓) · `check:labels` 
 `as any` · no markers · dead-export grep clean repo-wide. §2 review: not applicable — no
 route, migration, auth, or write-path change; a pure-calculation module + display-path
 fix.
+
+---
+
+### Task 1.3 — `effective_from` advances on the conflict path ✅ SHIPPED 2026-08-11
+
+**Migration `143_advance_nutrition_plan_effective_from.sql`** — `CREATE OR REPLACE` at
+the **identical 24-arg signature**: the whole CREATE statement verbatim from 139 plus one
+`DO UPDATE SET` line, `effective_from = EXCLUDED.effective_from`. `SECURITY DEFINER` and
+`SET search_path = public` are restated because `CREATE OR REPLACE` is a total
+redefinition — omitting either silently drops it with **no error at push time and no
+runtime symptom** (the only granted caller is `service_role`, which has full table
+rights either way; the regression would be invisible outside the catalog). No `DROP`, no
+REVOKE/GRANT — a same-signature replace preserves ownership + ACL; verified rather than
+assumed, both directions:
+
+- **Pre-flight (live DEV catalog):** 24 args · 1 overload · `prosecdef` · `search_path=public`
+  · `acl = {postgres=X/postgres,service_role=X/postgres}` · the assignment ABSENT (defect live).
+- **Post-push:** all of the above identical, the assignment PRESENT.
+- **Behavioral probe (DEV, namespaced throwaway coach/client, cleaned to 0 rows after):**
+  call 1 inserted at `2026-08-11`; call 2 hit the conflict path with future `2026-09-01`
+  → one plan row, `effective_from = 2026-09-01` (**advanced — silently discarded under
+  139**), `baseline_calories` updated, `created_at` kept the first-insert day.
+- **`gen types` diff: EMPTY**, as predicted for a same-signature body swap — so this
+  commit carries no `types/database.ts` change; §8's "migration + types together" is
+  satisfied vacuously and the regen + skim were still performed.
+- DEV/PROD caveat: push + probes ran against the linked DEV project
+  (`aeaphsslctwcmebldrzx`); prod picks the file up through its normal replay.
+
+**Migration-comment bookkeeping (the record the next reader diffs against 139 AND this
+plan doc):** stated in both universes because the two prior documents counted different
+ones and both were right — over the 23 INSERT columns (139's framing), never-update
+shrinks `{client_id, status, effective_from}` → `{client_id, status}` (+`created_at`,
+auto, unlisted); over all 28 table columns (this doc's §Task 1.3 framing, verified
+28 − 22 = 6), untouched-on-conflict shrinks `{id, client_id, name, status,
+effective_from, created_at}` → minus `effective_from`, with `id`/`name` additionally
+absent from the INSERT itself (`id` by column default; `name` written by nothing).
+
+**Every reader of `nutrition_plans.effective_from`, enumerated before the meaning
+changed:**
+
+| Reader | Kind | Under the new meaning |
+|---|---|---|
+| `nutrition-plan-service.ts:181` · `check-in-context-service.ts:70` · `comparison-service.ts:49` · `client-portal-service.ts:107` · `nutrition/route.ts:82` | `.order(desc)` on the single-active read | Vestigial tie-break — `idx_nutrition_plans_active_unique` guarantees one row; unchanged |
+| `nutrition/route.ts:181` (`effectiveFrom`) + `:185` (`scheduledFor`) → `nutrition-plan-hero.tsx:31-47` → `use-nutrition-plan.ts:35`, `types/check-in.ts:682` | Value → the hero | **The point of the fix** — both branches already assumed "when the current numbers took effect"; `scheduledFor` becomes reachable for existing plans |
+| `schedule-data-service.ts` nutrition query (`.lte("effective_from", periodEnd)`) → `nutrition-period-summary.ts` `findActiveNutritionPlan` (`p.effectiveFrom <= date`); consumers: `history/nutrition` route + `check-in-snapshot-service.ts` | Period-overlap predicate | **The one real semantic change.** After a regenerate, fully-past periods stop matching the plan — reachable only on the THIRD fallback (unlogged **and** event-less days; logs then events shadow it), and `classifyAdherence` returns `not_logged` on a null actual regardless, so **status is unchanged**; only such a legacy-shaped day's displayed target goes from today's-numbers-as-history (a lie) to null. Accepted, recorded |
+| `utils/build-daily-targets.ts` (**new reader, this task**) | The template gate | A no-event day dated before `effective_from` returns **no entry** (never the next prescription's numbers); event days are never gated — pre-`effective_from` events deliberately keep the old prescription |
+| Write side (`orchestrator:169-173` past-date rejection, `nutrition-plan-service.ts:108` transmission, drawer-footer / apply-date-dialog / validations) | Producers, not readers | Confirmed unchanged |
+
+**The gate ships as one REQUIRED trailing param** (`weekWindow: { weekStart,
+effectiveFrom }`), deliberately not optional: optional would let a caller silently skip
+the gate with every gate unit test green. tsc enumerated all 10 test call sites + the one
+production caller (`client-portal-service.ts:134`) — including the second test file
+(`utils/__tests__/build-daily-targets.test.ts`) a name-based search misses.
+`client-portal-service.test.ts` gains an `args[8]` assertion because it MOCKS the util:
+that assertion is the only thing distinguishing "gate exists" from "gate is wired". Four
+new gate tests: pre-`effective_from` template days dropped; event days never gated (old
+numbers served verbatim); null `effective_from` gates nothing; boundary day is governed.
+The `dailyTargets` array can now be shorter than 7 — `hasDailyTargets` handles it on the
+page, and for the RN contract fewer entries reads as "no target for that day".
+
+**Accepted behaviour change, named per the task:** regenerating today makes the hero read
+"Active since today". True — the numbers changed today.
+
+**Untouched on purpose:** the `as never` casts at `nutrition-plan-service.ts` (§4 —
+Session 5 removes them with the arity change; the 24-key payload test still pins the
+contract and the signature did not move) · `deleteFutureNutritionEventsForPlan` ·
+`training_events.calorie_surplus_percentage` population everywhere.
+
+**Docs, same commit:** ARCHITECTURE's durable-plan paragraph rewritten — `goal_source`
+dropped from the snapshot list (mig 133), the `p_recalc_snapshots` description replaced
+(removed by 139; snapshots unconditionally re-stamped), the new `effective_from`
+semantics + the gate documented. (The plan doc's `ARCHITECTURE.md:199` pointer had
+drifted to `:206`; same sentence.)
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing warnings,
+unchanged all session) · `vitest run` **252 files / 2584 tests, all passing** (2580 + 4
+gate tests; the known-flaky set-tracker test passed) · `check:labels` OK ·
+`check:rls` OK (40/40 tables) · no new `as any` · no markers.
+
+**§2 security/load/perf review (triggers: migration + completed session).** Security: the
+RPC keeps `SECURITY DEFINER` + pinned `search_path` + service_role-only EXECUTE
+(catalog-verified pre/post; the silent-downgrade failure mode is exactly why it was
+verified); no route auth/validation changed; the route already rejects past
+`effectiveFrom` dates server-side against client-local today. Performance: zero new round
+trips — the gate is in-memory arithmetic on data the caller already fetched; the RPC body
+change is one additional SET column on an existing conflict-update. Consistency: the
+upsert remains a single transaction (plan + daily-targets grid together, unchanged); the
+orchestrator's regenerate still runs outside it with its established loud-failure
+wrapper. Not load-tested; verified by catalog probe, behavioral probe, and the unit
+suite.
+
+---
+
+**SESSION 1 COMPLETE — 3 commits, 1 migration.** Browser smoke (owner runs it, per
+Session 1 verification): (1) move a training event → nutrition updates on exactly the
+moved-from and moved-to days, nothing else changes; (2) regenerate a plan with a future
+apply date → the hero reads "Starts \<date\>" and today's targets are unchanged.

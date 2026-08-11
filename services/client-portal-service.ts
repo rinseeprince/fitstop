@@ -139,7 +139,12 @@ export async function getClientNutritionTargets(
     dietType,
     surplusAsCarbs,
     trainingEvents,
-    nutritionEvents
+    nutritionEvents,
+    // Dates the weekday grid so the template fallback is gated to days the
+    // plan governs — effective_from means "when the current numbers took
+    // effect" since migration 143, and a no-event day before it must not
+    // render the next prescription's numbers as current.
+    { weekStart, effectiveFrom: plan.effective_from ?? null }
   );
 
   return {

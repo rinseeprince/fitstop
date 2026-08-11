@@ -2,6 +2,7 @@ import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { DAYS_OF_WEEK, calculateDailyMacros, applySurplusSplit } from "@/utils/nutrition-helpers";
 import { getTrainingSessionsSummary } from "@/utils/training-calorie-helpers";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
+import { addDaysToDateString, expandDateRange } from "@/lib/date-helpers";
 import type { TrainingPlan, TrainingEvent } from "@/types/training";
 import type { DietType, NutritionEvent } from "@/types/check-in";
 
@@ -72,6 +73,18 @@ type PlanBaseline = {
  *     `applySurplusSplit`, preserving the coach's stored carb/fat ratio (never
  *     re-derived from the diet type), with stored macros shown verbatim on rest
  *     days / when burn is off.
+ *
+ * `weekWindow` is REQUIRED, and deliberately last-and-required rather than
+ * optional: it dates the weekday grid (`weekStart` + 6 days) so the TEMPLATE
+ * fallback can be gated to days the plan actually governs. Since migration 143,
+ * `nutrition_plans.effective_from` means "when the current numbers took
+ * effect" — for a no-event day BEFORE it, the template holds the NEXT
+ * prescription's numbers, so serving it would show future numbers today. Such
+ * days return no entry at all ("no target yet" — the page's empty state, and
+ * for the RN contract simply a shorter array). Event-present days are never
+ * gated: events are the dated SOT and pre-`effective_from` rows deliberately
+ * keep the old prescription. An optional param would let a caller silently
+ * skip the gate; required means tsc enumerates every call site.
  */
 export function buildDailyTargetsFromPlan(
   plan: PlanBaseline,
@@ -80,10 +93,22 @@ export function buildDailyTargetsFromPlan(
   includeActivityBurn: boolean,
   dietType: DietType,
   surplusAsCarbs: boolean,
-  trainingEvents?: TrainingEvent[],
-  nutritionEvents?: NutritionEvent[]
+  trainingEvents: TrainingEvent[] | undefined,
+  nutritionEvents: NutritionEvent[] | undefined,
+  weekWindow: { weekStart: string; effectiveFrom: string | null }
 ): DailyNutritionTargets[] {
   const surplusByDay = trainingEvents ? getEventSurplusByDay(trainingEvents) : {};
+
+  // Weekday -> calendar date for the rendered week. The week can start on any
+  // weekday (getTrainingWeekStart honors the client's check-in day), so the
+  // map is derived from the actual 7 dates, not from index arithmetic.
+  const dateByWeekday = new Map<string, string>();
+  for (const date of expandDateRange(
+    weekWindow.weekStart,
+    addDaysToDateString(weekWindow.weekStart, 6)
+  )) {
+    dateByWeekday.set(DAY_NAMES[new Date(date + "T00:00:00").getDay()], date);
+  }
 
   const targetsByDay = new Map(
     (dailyTargetRows || []).map((dt) => [dt.day_of_week, dt])
@@ -101,7 +126,7 @@ export function buildDailyTargetsFromPlan(
       ? getEventSessionsSummary(trainingEvents, day)
       : getTrainingSessionsSummary(trainingPlan, day);
 
-  return DAYS_OF_WEEK.map((day) => {
+  return DAYS_OF_WEEK.flatMap((day): DailyNutritionTargets[] => {
     const dayLabel = day.charAt(0).toUpperCase() + day.slice(1);
 
     // Event-present day -> reuse the calendar mapper for full parity, then
@@ -109,7 +134,7 @@ export function buildDailyTargetsFromPlan(
     // mapper already honors includeActivityBurn, is_modified, and surplusAsCarbs.
     const event = eventsByWeekday.get(day);
     if (event) {
-      return {
+      return [{
         ...mapNutritionEventToDisplayTarget(event, includeActivityBurn, surplusAsCarbs),
         trainingSessions: trainingSessionsFor(day),
         // `note` only. `event.coachNote` is COACH-PRIVATE and must never be
@@ -118,7 +143,17 @@ export function buildDailyTargetsFromPlan(
         // coachNote cannot arrive by accident; do not "tidy" that into
         // `...event`.
         note: event.note ?? null,
-      };
+      }];
+    }
+
+    // The template gate (see the docstring): a no-event day dated before the
+    // plan's effective_from would render the NEXT prescription's numbers as
+    // current. No entry beats a wrong one. An underivable date fails OPEN
+    // (unreachable — 7 dates cover 7 weekdays — but a template target beats a
+    // crashed program card if that ever breaks).
+    const dayDate = dateByWeekday.get(day);
+    if (weekWindow.effectiveFrom && dayDate && dayDate < weekWindow.effectiveFrom) {
+      return [];
     }
 
     // No-event (template) day.
@@ -167,7 +202,7 @@ export function buildDailyTargetsFromPlan(
     const proteinPercent = totalCal > 0 ? Math.round((proteinG * 4 / totalCal) * 100) : 0;
     const carbsPercent = totalCal > 0 ? Math.round((carbsG * 4 / totalCal) * 100) : 0;
 
-    return {
+    return [{
       day,
       dayLabel,
       isTrainingDay,
@@ -184,6 +219,6 @@ export function buildDailyTargetsFromPlan(
       totalCaloriesWithActivities: dayCalories,
       includeActivityBurn,
       calorieSurplusPercentage: daySurplus,
-    };
+    }];
   });
 }

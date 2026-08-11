@@ -11,6 +11,10 @@ const PLAN = {
   fat_target_g: 67,
 };
 
+// weekWindow that gates nothing: effectiveFrom null. 2026-06-08 is the Monday
+// the fixtures' dates sit in, so weekday->date derivation matches them.
+const NO_GATE = { weekStart: "2026-06-08", effectiveFrom: null };
+
 // 2026-06-08 is a Monday.
 function tev(overrides: Partial<TrainingEvent>): TrainingEvent {
   return {
@@ -74,7 +78,7 @@ const find = (targets: ReturnType<typeof buildDailyTargetsFromPlan>, day: string
 
 describe("buildDailyTargetsFromPlan", () => {
   it("always returns one entry per weekday (7), even with sparse rows/events", () => {
-    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false);
+    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, undefined, undefined, NO_GATE);
     expect(targets).toHaveLength(7);
   });
 
@@ -82,7 +86,7 @@ describe("buildDailyTargetsFromPlan", () => {
     // Stored split is high-carb/low-fat; the old calculateDailyMacros path would
     // have re-derived it to the balanced ratio. It must not.
     const rows = [row("monday", { carb_g: 250, fat_g: 47, is_training_day: false })];
-    const mon = find(buildDailyTargetsFromPlan(PLAN, rows, null, true, "balanced", false), "monday");
+    const mon = find(buildDailyTargetsFromPlan(PLAN, rows, null, true, "balanced", false, undefined, undefined, NO_GATE), "monday");
     expect(mon.calories).toBe(2000);
     expect(mon.carbsG).toBe(250);
     expect(mon.fatG).toBe(47);
@@ -92,7 +96,7 @@ describe("buildDailyTargetsFromPlan", () => {
     const rows = [row("monday", { carb_g: 100, fat_g: 50, is_training_day: true })];
     const events = [tev({ calorieSurplusPercentage: 10 })];
     const mon = find(
-      buildDailyTargetsFromPlan(PLAN, rows, null, true, "balanced", false, events),
+      buildDailyTargetsFromPlan(PLAN, rows, null, true, "balanced", false, events, undefined, NO_GATE),
       "monday",
     );
     expect(mon.calories).toBe(2200);
@@ -105,7 +109,7 @@ describe("buildDailyTargetsFromPlan", () => {
     const rows = [row("monday", { carb_g: 100, fat_g: 50, is_training_day: true })];
     const events = [tev({ calorieSurplusPercentage: 10 })];
     const mon = find(
-      buildDailyTargetsFromPlan(PLAN, rows, null, true, "balanced", true, events),
+      buildDailyTargetsFromPlan(PLAN, rows, null, true, "balanced", true, events, undefined, NO_GATE),
       "monday",
     );
     expect(mon.calories).toBe(2200);
@@ -120,7 +124,7 @@ describe("buildDailyTargetsFromPlan", () => {
     ];
     const trainingEvents = [tev({ sessionName: "Push", estimatedCalories: 200, calorieSurplusPercentage: 10 })];
     const mon = find(
-      buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, trainingEvents, nutritionEvents),
+      buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, trainingEvents, nutritionEvents, NO_GATE),
       "monday",
     );
 
@@ -140,7 +144,7 @@ describe("buildDailyTargetsFromPlan", () => {
     // A live training event with a real surplus still exists on this day...
     const trainingEvents = [tev({ calorieSurplusPercentage: 15 })];
     const mon = find(
-      buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, trainingEvents, nutritionEvents),
+      buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, trainingEvents, nutritionEvents, NO_GATE),
       "monday",
     );
     // ...but the frozen event wins: 2586, not 2586*(1.15).
@@ -153,7 +157,7 @@ describe("buildDailyTargetsFromPlan", () => {
     const rows = [row("monday", { carb_g: 100, fat_g: 50, is_training_day: true })];
     const events = [tev({ calorieSurplusPercentage: 10 })];
     const mon = find(
-      buildDailyTargetsFromPlan(PLAN, rows, null, false, "balanced", false, events),
+      buildDailyTargetsFromPlan(PLAN, rows, null, false, "balanced", false, events, undefined, NO_GATE),
       "monday",
     );
     expect(mon.calories).toBe(2000);
@@ -164,7 +168,7 @@ describe("buildDailyTargetsFromPlan", () => {
 
   it("surfaces the event's coach note on the program card (event days only)", () => {
     const nutritionEvents = [nev({ dayOfWeek: "monday", note: "Deload week — go easy" })];
-    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, [], nutritionEvents);
+    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, [], nutritionEvents, NO_GATE);
     expect(find(targets, "monday").note).toBe("Deload week — go easy");
     // A template (no-event) day carries no per-date note.
     expect(find(targets, "tuesday").note ?? null).toBeNull();
@@ -172,11 +176,49 @@ describe("buildDailyTargetsFromPlan", () => {
 
   it("gap day (no event, no stored row): falls back to plan baseline + diet split", () => {
     const nutritionEvents = [nev({ dayOfWeek: "monday" })];
-    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, [], nutritionEvents);
+    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, [], nutritionEvents, NO_GATE);
     const tue = find(targets, "tuesday");
     expect(tue.calories).toBe(PLAN.baseline_calories);
     // balanced split: (2000 - 600) / 2 between carb/fat
     expect(tue.carbsG).toBe(175);
     expect(tue.fatG).toBe(78);
+  });
+});
+
+describe("buildDailyTargetsFromPlan — the effective_from template gate (migration 143)", () => {
+  // Week Mon 2026-06-08 .. Sun 2026-06-14; the plan's current numbers take
+  // effect Thu 2026-06-11. Since 143, effective_from means "when the current
+  // numbers took effect", so a NO-EVENT day before it must not render the next
+  // prescription's template as current.
+  const GATED = { weekStart: "2026-06-08", effectiveFrom: "2026-06-11" };
+
+  it("drops template days dated before effective_from and keeps the rest", () => {
+    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, undefined, undefined, GATED);
+
+    // Mon/Tue/Wed (08/09/10) are gone; Thu..Sun (11..14) are served.
+    expect(targets.map((t) => t.day)).toEqual(["thursday", "friday", "saturday", "sunday"]);
+  });
+
+  it("never gates an event day — events are the dated SOT and pre-effective_from rows keep the old prescription", () => {
+    const nutritionEvents = [nev({ dayOfWeek: "monday", date: "2026-06-08", baselineCalories: 1800 })];
+    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, [], nutritionEvents, GATED);
+
+    // Monday survives via its event, carrying the OLD numbers verbatim…
+    expect(find(targets, "monday").calories).toBe(1800);
+    // …while the event-less pre-effective_from days are still dropped.
+    expect(targets.map((t) => t.day)).toEqual(["monday", "thursday", "friday", "saturday", "sunday"]);
+  });
+
+  it("a null effective_from gates nothing (first insert has no prior prescription to protect)", () => {
+    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, undefined, undefined, NO_GATE);
+    expect(targets).toHaveLength(7);
+  });
+
+  it("an effective_from on the week's first day gates nothing — the boundary day is governed", () => {
+    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, undefined, undefined, {
+      weekStart: "2026-06-08",
+      effectiveFrom: "2026-06-08",
+    });
+    expect(targets).toHaveLength(7);
   });
 });
