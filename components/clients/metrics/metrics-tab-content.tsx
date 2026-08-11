@@ -9,7 +9,13 @@ import { MetricProgressionSection } from "./metric-progression-section";
 import { MeasurementLogSection } from "./measurement-log-section";
 import { LogMeasurementDialog } from "./log-measurement-dialog";
 import { useMergedMetrics } from "./hooks/use-merged-metrics";
-import { DEFAULT_FOCUS, type MetricTab } from "./metrics-view-types";
+import { BlocksSubtab } from "./blocks/blocks-subtab";
+import {
+  DEFAULT_FOCUS,
+  isJourneySubtab,
+  type JourneySubtab,
+  type MetricTab,
+} from "./metrics-view-types";
 import type { Client } from "@/types/check-in";
 
 type MetricsTabContentProps = {
@@ -29,12 +35,15 @@ export const MetricsTabContent = ({
   // the wrong pane during a tab switch.
   const rawSubtab =
     searchParams.get("tab") === "metrics" ? searchParams.get("subtab") : null;
-  const tab: MetricTab = rawSubtab === "wellness" ? "wellness" : "body";
-  const setTab = (t: MetricTab) => {
+  const pane: JourneySubtab = isJourneySubtab(rawSubtab) ? rawSubtab : "body";
+  const setPane = (t: JourneySubtab) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("subtab", t);
     router.replace(`?${params.toString()}`, { scroll: false });
   };
+  // The metric-keyed derivations below want a MetricTab; on the Blocks pane
+  // they idle on "body" (nothing metric-keyed renders there).
+  const tab: MetricTab = pane === "blocks" ? "body" : pane;
 
   // Focused metric resets on tab switch by derivation (no effects): a stored
   // focus applies only while its own tab is active.
@@ -55,12 +64,14 @@ export const MetricsTabContent = ({
   return (
     <div>
       <MetricsTopBar
-        tab={tab}
-        onTabChange={setTab}
+        tab={pane}
+        onTabChange={setPane}
         onLogClick={() => setLogOpen(true)}
       />
 
-      {isError ? (
+      {pane === "blocks" ? (
+        <BlocksSubtab clientId={client.id} />
+      ) : isError ? (
         <p className="py-12 text-center text-[13px] text-[#93b0b4]">
           Failed to load metrics.
         </p>

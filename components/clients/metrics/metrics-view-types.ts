@@ -10,6 +10,20 @@ export type { Tone };
 
 export type MetricTab = "body" | "wellness";
 
+// The Journey tab's pane switcher: the two metric panes plus Blocks. Kept
+// separate from MetricTab so "blocks" can never leak into the metric-keyed
+// data shapes below (metricsByTab, logRowsByTab, DEFAULT_FOCUS).
+export const JOURNEY_SUBTABS = ["body", "wellness", "blocks"] as const;
+
+export type JourneySubtab = (typeof JOURNEY_SUBTABS)[number];
+
+// Derived from the const array so a new pane added to JOURNEY_SUBTABS is
+// resolvable without touching this guard — the old two-way ternary silently
+// sent every unknown value to "body" with no type error.
+export function isJourneySubtab(value: string | null): value is JourneySubtab {
+  return (JOURNEY_SUBTABS as readonly string[]).includes(value ?? "");
+}
+
 export const DEFAULT_FOCUS: Record<MetricTab, string> = {
   body: "weight",
   wellness: "sleep",

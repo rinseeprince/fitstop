@@ -36,8 +36,15 @@ export default function ClientProfilePage() {
 
   const handleTabChange = useCallback((tab: ClientTab) => {
     setActiveTab(tab)
-    router.replace(`/clients/${clientId}?tab=${tab}`, { scroll: false })
-  }, [clientId, router])
+    // Preserve the rest of the query (notably ?subtab=) so a pane selection
+    // survives a top-level tab round-trip — the bare `?tab=` rewrite silently
+    // dropped it. Every tab's content already ignores a subtab written while
+    // another tab was active, so a carried-over value is inert until its own
+    // tab is back.
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("tab", tab)
+    router.replace(`/clients/${clientId}?${params.toString()}`, { scroll: false })
+  }, [clientId, router, searchParams])
 
   const { isCalculatingBMR, handleCalculateBMR } = useClientMetrics({
     clientId,

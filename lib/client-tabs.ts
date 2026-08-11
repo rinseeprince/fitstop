@@ -1,6 +1,8 @@
 export const CLIENT_TABS = [
   { value: "overview", label: "Overview" },
-  { value: "metrics", label: "Metrics" },
+  // Label-only rename (Metrics → Journey, Session 3.1): the URL value stays
+  // "metrics" so every existing link keeps resolving.
+  { value: "metrics", label: "Journey" },
   { value: "training", label: "Training" },
   { value: "nutrition", label: "Nutrition" },
   { value: "wellness", label: "Wellness" },

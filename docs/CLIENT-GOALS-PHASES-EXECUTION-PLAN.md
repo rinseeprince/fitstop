@@ -2668,3 +2668,43 @@ user-visible ships in Session 2; Session 3's UI smoke is the first end-to-end
 exercise of these routes. The §2 security/load/perf review was delivered with the
 session summary (triggers: migration + new routes + new write path; item 4
 compensated-not-ticked per the Task 2.2 STATUS block; residuals recorded there).
+
+---
+
+### Task 3.1 — Rename Metrics → Journey + third sub-tab ✅ SHIPPED 2026-08-11
+
+**What shipped.** `lib/client-tabs.ts` label `"Metrics"` → `"Journey"` — **label only;
+the URL value stays `metrics`** (a value change buys nothing and breaks every existing
+link; recorded per the task brief). H1 and sidebar both derive from `CLIENT_TABS`, so
+one edit covers both; `VALID_TABS` (`app/clients/[id]/page.tsx`) stores values only and
+needed no edit (confirmed, not assumed). The sub-tab relabel `body` → "Physique" was
+**already true on main** (`metrics-top-bar.tsx`) — only the third segment was added.
+
+**The typed union, shaped to protect the data layer:** `MetricTab` stays
+`"body" | "wellness"` because `metricsByTab` / `logRowsByTab` / `DEFAULT_FOCUS` are
+`Record<MetricTab, …>` — letting `"blocks"` into that union corrupts
+`use-merged-metrics`' types. The pane switcher gets its own
+`JOURNEY_SUBTABS = ["body","wellness","blocks"] as const` + `JourneySubtab` +
+`isJourneySubtab` guard (`metrics-view-types.ts`), replacing the two-way ternary whose
+silent `body` fallback the task brief flags. `metrics-tab-content.tsx` resolves
+`pane: JourneySubtab` through the guard; `pane === "blocks"` renders the new
+`BlocksSubtab` shell (`components/clients/metrics/blocks/blocks-subtab.tsx` —
+SectionLabel + empty state in this commit; Tasks 3.2–3.4 fill it); the metric panes
+narrow `pane` to `MetricTab` and are otherwise untouched. "Log measurement" stays
+visible on the Blocks pane — it remains functional there, and hiding it is per-pane
+conditional UI nobody asked for.
+
+**The known `handleTabChange` bug is FIXED (owner-approved at plan review):** the
+replace URL is now built from the current search params (preserving `?subtab=`) instead
+of the bare `?tab=` string, so a Blocks selection survives an Overview↔Journey
+round-trip. **Residual, recorded:** the Training tab writes the same `subtab` key
+(`data`/`plans`/`exercise-data`), so a Journey→Training→Journey trip still lands on the
+default pane — fixing that means namespacing the key across both tabs, out of scope
+here. Each tab's content already ignores a subtab written while another tab was active,
+so a carried-over value is inert until its own tab is back.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing warnings,
+unchanged) · `vitest run` **259 files / 2686 tests, all passing** (+1 file, +2 tests —
+the `isJourneySubtab` guard pins; arithmetic closes from S2's 258/2684) ·
+`check:labels` OK (642 — the two new files scanned) · no `as any` · no markers · no
+migration.

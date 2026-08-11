@@ -1,15 +1,15 @@
 "use client";
 
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
-import type { MetricTab } from "./metrics-view-types";
+import type { JourneySubtab } from "./metrics-view-types";
 
 export type MetricsTopBarProps = {
-  tab: MetricTab;
-  onTabChange: (t: MetricTab) => void;
+  tab: JourneySubtab;
+  onTabChange: (t: JourneySubtab) => void;
   onLogClick: () => void;
 };
 
-// The Metrics page's tab bar: the Training tab's TopContentBar silhouette.
+// The Journey tab's pane bar: the Training tab's TopContentBar silhouette.
 export function MetricsTopBar({
   tab,
   onTabChange,
@@ -21,9 +21,10 @@ export function MetricsTopBar({
         options={[
           { value: "body", label: "Physique" },
           { value: "wellness", label: "Wellness" },
+          { value: "blocks", label: "Blocks" },
         ]}
         value={tab}
-        onChange={(value) => onTabChange(value as MetricTab)}
+        onChange={(value) => onTabChange(value as JourneySubtab)}
       />
 
       <div className="ml-auto flex items-center gap-3">
