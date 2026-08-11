@@ -5,6 +5,7 @@ import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import type { Database } from "@/types/database";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
+import { getClientTodayString } from "@/services/today-service";
 
 type NutritionPlanRow = Database["public"]["Tables"]["nutrition_plans"]["Row"];
 
@@ -160,45 +161,16 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
 }
 
 /**
- * Archive the durable plan (status flip, row preserved as provenance for
- * logged days and historical events — mirrors `archiveTrainingPlan`). The
- * partial unique index only covers status='active', so a later Generate
- * creates a fresh active plan cleanly.
- */
-export async function archiveNutritionPlan(planId: string): Promise<void> {
-  const { error } = await supabaseAdmin
-    .from("nutrition_plans")
-    .update({ status: "archived", updated_at: new Date().toISOString() })
-    .eq("id", planId);
-
-  if (error) {
-    throw new Error(`Failed to archive nutrition plan: ${error.message}`);
-  }
-}
-
-/**
- * LEGACY singleton read — newest status='active' row, date-blind. Under the
- * versioned model (migration 144) this picks a QUEUED FUTURE version whenever
- * a chain exists, so it is only correct while the client has a single active
- * row. Its four call sites (deletion orchestrator, both reset routes, the
- * daily-context stamp fallback) are rewired per-date in Session 1B Task 1b.2,
- * which converts this into a thin covering-today wrapper over
- * `getNutritionPlanIdForDate`. Do not add new callers.
+ * Thin covering-today wrapper over `getNutritionPlanIdForDate` — the id of
+ * the version governing the client's current calendar day, or null (a client
+ * whose only versions are queued or ended resolves null). Kept per the
+ * versioning design as the canonical "what governs today" entry point (the
+ * training twin is `getActiveTrainingPlanId`); the 1b.2 rewiring left it with
+ * no production callers, so any new caller should first check whether a
+ * per-date resolution fits better.
  */
 export async function getActiveNutritionPlanId(clientId: string): Promise<string | null> {
-  const { data, error } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .order("effective_from", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`Failed to fetch active nutrition plan: ${error.message}`);
-  }
-  return data?.id ?? null;
+  return getNutritionPlanIdForDate(clientId, await getClientTodayString(clientId));
 }
 
 /**
@@ -260,6 +232,48 @@ export async function getNutritionPlanIdForDate(
     throw new Error(`Failed to resolve nutrition plan id for date: ${error.message}`);
   }
   return data?.id ?? null;
+}
+
+export type NutritionPlanVersionWindow = {
+  id: string;
+  effectiveFrom: string;
+  effectiveUntil: string | null;
+};
+
+/**
+ * Every ACTIVE version whose window overlaps [rangeStart, rangeEnd], earliest
+ * first. The version-segmentation primitive: the training cascade maps each
+ * date in its scope to the version covering it (the schedule-data windowed
+ * query shape), and the bulk reset groups its date list the same way. Overlap
+ * is `effective_from <= rangeEnd AND (effective_until >= rangeStart OR open)`.
+ */
+export async function getActiveNutritionPlanVersionsOverlapping(
+  clientId: string,
+  rangeStart: string,
+  rangeEnd: string
+): Promise<NutritionPlanVersionWindow[]> {
+  const { data, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id, effective_from, effective_until")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .lte("effective_from", rangeEnd)
+    .or(`effective_until.gte.${rangeStart},effective_until.is.null`)
+    .order("effective_from", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch nutrition plan versions: ${error.message}`);
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    effectiveFrom: row.effective_from,
+    effectiveUntil: row.effective_until,
+  }));
+}
+
+/** Pure window test shared by the in-memory date→version mappers. */
+export function versionCoversDate(v: NutritionPlanVersionWindow, date: string): boolean {
+  return v.effectiveFrom <= date && (v.effectiveUntil === null || v.effectiveUntil >= date);
 }
 
 export type NextFutureNutritionPlan = {

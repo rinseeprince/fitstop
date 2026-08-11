@@ -87,6 +87,7 @@ describe("POST /api/client/training/session-logs", () => {
     vi.mocked(resolvePlanContextForDate).mockResolvedValue({
       nutritionPlanId: null,
       trainingPlanId: "tp-1",
+      nutritionSetUp: false,
     });
     vi.mocked(assertHasActivePlan).mockReturnValue(undefined);
   });

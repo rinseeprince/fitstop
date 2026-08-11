@@ -4,7 +4,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getClientTodayString } from "@/services/today-service";
-import { getActiveNutritionPlanId } from "@/services/nutrition-plan-service";
+import { getNutritionPlanIdForDate } from "@/services/nutrition-plan-service";
 import { resetNutritionEvent } from "@/services/nutrition-event-edit-service";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -52,15 +52,18 @@ export async function PATCH(
       );
     }
 
-    const activePlanId = await getActiveNutritionPlanId(clientId);
-    if (!activePlanId) {
+    // Versioned model (migration 144): reset regenerates the date from the
+    // version COVERING it — a reset across an era boundary must restore that
+    // era's numbers, never the current template's.
+    const coveringPlanId = await getNutritionPlanIdForDate(clientId, date);
+    if (!coveringPlanId) {
       return NextResponse.json(
-        { success: false, error: "No active nutrition plan" },
+        { success: false, error: "No nutrition plan covers this date" },
         { status: 404 }
       );
     }
 
-    await resetNutritionEvent(clientId, date, activePlanId);
+    await resetNutritionEvent(clientId, date, coveringPlanId);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

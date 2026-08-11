@@ -49,12 +49,14 @@ Four routes rewrite `nutrition_events` server-side but currently have **no web c
 
 ---
 
-## Nutrition cascade — five defects recorded, not fixed, by the S1.1 narrow-scope re-land
+## Nutrition cascade — five defects recorded by the S1.1 narrow-scope re-land (two since closed by S1B.2)
 
-Logged: 2026-08-11 (goals/blocks execution plan, Session 1 Task 1.1). The session-level
-*decisions* live in that plan doc's §8 STATUS block; **this file is the durable record of
-the defects**, because the plan doc is deleted when its workstream lands (its own §1 rule)
-and a defect filed only there survives solely in git history.
+Logged: 2026-08-11 (goals/blocks execution plan, Session 1 Task 1.1); updated same day by
+Session 1B Task 1b.2 (nutrition plan versioning, migration 144), which closed defects 3
+and 5 and partially resolved defect 2. The session-level *decisions* live in that plan
+doc's §8 STATUS blocks; **this file is the durable record of the defects**, because the
+plan doc is deleted when its workstream lands (its own §1 rule) and a defect filed only
+there survives solely in git history.
 
 - **Stale training-surplus tail after a plan deletion.** The two plan-clear routes
   (`DELETE /api/clients/[id]/training`, `DELETE …/training/[planId]`) cancel the plan's
@@ -70,22 +72,25 @@ and a defect filed only there survives solely in git history.
   `to`; `NutritionRegenScope`'s `from` arm regains `to?` and `resolveScopeDates` extends
   past the horizon when `to` exceeds it. `training_plans.effective_until` is NOT a
   substitute — it is NULL on placed plans.
-- **The cascade swallows regeneration failures, and its plan lookup can't tell "failed"
-  from "no plan".** `cascadeNutritionAfterTrainingChange`
-  (`services/nutrition-event-service.ts:389-390`) catches every regeneration error into
-  `captureApiError`, so the calling route returns success over a stale/gapped calendar
-  (violates CONVENTIONS §12's "never swallow"); and the active-plan read (`:380-386`)
-  does not destructure `error`, so a failed lookup silently no-ops as "client has no
-  plan" (violates the destructure-and-log rule, memory of the 7.81 cluster). Fix shape:
-  destructure and log the lookup error; decide per-route whether a failed cascade should
-  surface (the orchestrator's `regenerateEventsOrThrow` shows the loud pattern).
-- **The client-scoped upsert can silently rewrite a foreign plan's event.** The from-arm
-  DELETE is plan-scoped (`.eq("nutrition_plan_id", planId)`) but the generator's upsert
-  conflicts on client-scoped `(client_id, date)` — an event owned by a *different* plan
-  inside the window survives the delete and is overwritten, `nutrition_plan_id`
-  included. One durable active plan per client bounds the exposure, but rows from an
-  archived plan (SET NULL'd or not yet cleaned) are reachable. Previously only the
-  `is_modified` half of this asymmetry was documented.
+- **The cascade swallows PER-VERSION regeneration failures** (partially resolved by
+  S1B.2). The lookup half is FIXED: the version query's error is destructured, logged,
+  and Sentried, so a failed read can no longer impersonate "client has no plan" — the
+  loud break the versioned model would otherwise have tripped on its first chain. What
+  REMAINS: each version's `regenerateFutureNutritionEvents` call is still caught into
+  `captureApiError` (deliberate — the calling route's primary write already committed),
+  so a route can return success over a stale slice of the calendar (CONVENTIONS §12
+  tension, recorded). One visible cost: the coach hero derives `hasCurrentTargets` from
+  the covering version (1b.3), so a swallowed regen failure shows a hero reporting the
+  prescription while the client's day view shows the event hole — the divergence points
+  at this entry. Fix shape: surface per-version failures to the caller (the
+  orchestrator's `regenerateEventsOrThrow` shows the loud pattern).
+- ~~**The client-scoped upsert can silently rewrite a foreign plan's event.**~~
+  **CLOSED by S1B.2 (migration 144 versioning).** The from-arm DELETE is now
+  client-scoped AND clamped to the version's own window, matching the upsert's
+  `(client_id, date)` conflict key — the delete/upsert scoping asymmetry is gone. A row
+  inside a version's window carrying another version's id (or NULL) being re-stamped to
+  the covering version is now CORRECT behaviour, not corruption: the covering version
+  owns its window by construction (gist-constraint-backed).
 - **A cascade flips a `logged` day back to `scheduled`.** The DELETE spares
   non-scheduled rows (`.eq("status", "scheduled")`), then the generator's payload
   hardcodes `status: "scheduled"` (`nutrition-event-service.ts:169`), so PostgREST's
@@ -95,17 +100,17 @@ and a defect filed only there survives solely in git history.
   Pre-existing on every path; the narrow scope only shrinks the covered set. Fix shape:
   drop already-non-scheduled dates during row build (the protected-days read already
   returns the rows; it just doesn't select `status`).
-- **Baseline leak onto pre-`effective_from` days after a future-dated regenerate.** The
-  single durable plan is edited in place, so after a save with a future
-  `effective_from` the template holds the NEXT prescription while events before that
-  date still carry the old one. Any cascade covering such a day rebuilds it from the
-  current template — next plan's numbers on days still governed by the old one. There
-  is no stored source for the old numbers except the event row itself (no plan
-  versioning), so the fix shape is a cascade that updates only
-  `calorie_surplus_percentage`/`is_training_day` on *existing* rows instead of
-  rebuilding them — the behaviour ARCHITECTURE's pre-2026-08-11 "baseline is preserved"
-  bullet described and the code never had. Becomes more visible once S1.3 makes
-  future-dated saves real (`effective_from` advancing on the conflict path).
+- ~~**Baseline leak onto pre-`effective_from` days after a future-dated regenerate.**~~
+  **CLOSED by S1B.2 (migration 144 versioning) — fixed by construction.** The premise
+  ("there is no stored source for the old numbers") died with versioning: a queued save
+  now closes the outgoing version at `new_start − 1` and inserts a new one, so the old
+  prescription's template survives as the closed version's own daily-targets grid. The
+  cascade fetches every active version overlapping its scope and hands each the same
+  scope; `regenerateFutureNutritionEvents` clamps to the version's window, so a
+  training edit inside the pre-window era rebuilds those days from THAT era's grid —
+  never from the next prescription's. Pinned by the segmentation tests in
+  `services/nutrition-event-service.test.ts` and the owner's original-leak browser
+  smoke (Session 1B checklist item 1).
 
 ---
 

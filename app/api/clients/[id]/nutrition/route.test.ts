@@ -27,23 +27,25 @@ vi.mock('@/services/training-service', () => ({
 // consumer (nutrition-plan-hero.test.tsx).
 vi.mock('@/services/nutrition-event-service', () => ({
   regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
-  deleteFutureNutritionEventsForPlan: vi.fn().mockResolvedValue(undefined),
+  deleteFutureNutritionEventsForClient: vi.fn().mockResolvedValue(undefined),
   getNutritionEventForDate: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/services/supabase-admin', () => ({
-  supabaseAdmin: {
-    from: vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            maybeSingle: vi.fn().mockResolvedValue({ data: null }),
-          }),
-        }),
-      }),
-    }),
-  },
-}))
+// One self-returning, THENABLE chain serves every direct supabaseAdmin read
+// this file reaches: the POST's existing-plan lookup awaits .maybeSingle()
+// ({ data: null } → "initial"), and the DELETE's queued-versions select awaits
+// the builder itself ({ data: [], error: null } → no queued chain). The deep
+// chain semantics are pinned in nutrition-plan-orchestrator.test.ts, not here.
+vi.mock('@/services/supabase-admin', () => {
+  const chain: Record<string, unknown> = {}
+  for (const m of ['select', 'eq', 'gt', 'in', 'update', 'delete', 'order', 'limit']) {
+    chain[m] = vi.fn().mockReturnValue(chain)
+  }
+  chain.maybeSingle = vi.fn().mockResolvedValue({ data: null })
+  chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+    Promise.resolve({ data: [], error: null }).then(resolve, reject)
+  return { supabaseAdmin: { from: vi.fn().mockReturnValue(chain) } }
+})
 
 vi.mock('@/lib/auth-helpers', () => ({
   getAuthenticatedCoachId: vi.fn().mockResolvedValue('coach-1'),
@@ -70,8 +72,11 @@ vi.mock('@/lib/validations/nutrition', () => ({
 
 vi.mock('@/services/nutrition-plan-service', () => ({
   createNutritionPlan: vi.fn().mockResolvedValue({}),
-  archiveNutritionPlan: vi.fn().mockResolvedValue(undefined),
-  getActiveNutritionPlanId: vi.fn().mockResolvedValue('plan-1'),
+  getNutritionPlanForDate: vi.fn().mockResolvedValue({
+    id: 'plan-1',
+    effective_from: '2025-12-01',
+    effective_until: null,
+  }),
 }))
 
 vi.mock('@/services/body-metrics-service', () => ({
@@ -90,10 +95,9 @@ import { getClientById } from '@/services/client-service'
 import { generateNutritionPlan, calculateTDEE } from '@/services/nutrition-service'
 import {
   createNutritionPlan,
-  archiveNutritionPlan,
-  getActiveNutritionPlanId,
+  getNutritionPlanForDate,
 } from '@/services/nutrition-plan-service'
-import { deleteFutureNutritionEventsForPlan } from '@/services/nutrition-event-service'
+import { deleteFutureNutritionEventsForClient } from '@/services/nutrition-event-service'
 import { getLatestBodyMetrics } from '@/services/body-metrics-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { getClientTodayString } from '@/services/today-service'
@@ -342,11 +346,15 @@ describe('Nutrition Route DELETE', () => {
     vi.clearAllMocks()
     vi.mocked(getAuthenticatedCoachId).mockResolvedValue('coach-1')
     vi.mocked(getClientById).mockResolvedValue(mockClient as never)
-    vi.mocked(getActiveNutritionPlanId).mockResolvedValue('plan-1')
+    vi.mocked(getNutritionPlanForDate).mockResolvedValue({
+      id: 'plan-1',
+      effective_from: '2025-12-01',
+      effective_until: null,
+    } as never)
     vi.mocked(getClientTodayString).mockResolvedValue('2026-01-15')
   })
 
-  it('archives the plan and clears its events from the day after the client-local today', async () => {
+  it('clears the CLIENT\'s events from the day after the client-local today and succeeds', async () => {
     const response = await DELETE(makeDeleteRequest(), {
       params: Promise.resolve({ id: 'client-1' }),
     })
@@ -354,8 +362,11 @@ describe('Nutrition Route DELETE', () => {
 
     expect(response.status).toBe(200)
     expect(data.success).toBe(true)
-    expect(deleteFutureNutritionEventsForPlan).toHaveBeenCalledWith('plan-1', '2026-01-16')
-    expect(archiveNutritionPlan).toHaveBeenCalledWith('plan-1')
+    // Client-scoped (migration 144): a chain's future events may be stamped by
+    // queued versions' ids, which the old plan-scoped delete missed. The
+    // close/queued-delete statement semantics are pinned in
+    // nutrition-plan-orchestrator.test.ts.
+    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith('client-1', '2026-01-16')
   })
 
   it('returns 401 when unauthenticated', async () => {
@@ -366,7 +377,7 @@ describe('Nutrition Route DELETE', () => {
     })
 
     expect(response.status).toBe(401)
-    expect(archiveNutritionPlan).not.toHaveBeenCalled()
+    expect(deleteFutureNutritionEventsForClient).not.toHaveBeenCalled()
   })
 
   it("returns 403 when the coach does not own the client", async () => {
@@ -377,12 +388,11 @@ describe('Nutrition Route DELETE', () => {
     })
 
     expect(response.status).toBe(403)
-    expect(deleteFutureNutritionEventsForPlan).not.toHaveBeenCalled()
-    expect(archiveNutritionPlan).not.toHaveBeenCalled()
+    expect(deleteFutureNutritionEventsForClient).not.toHaveBeenCalled()
   })
 
-  it('returns 404 when there is no active plan', async () => {
-    vi.mocked(getActiveNutritionPlanId).mockResolvedValue(null)
+  it('returns 404 when no version covers today and none is queued', async () => {
+    vi.mocked(getNutritionPlanForDate).mockResolvedValue(null)
 
     const response = await DELETE(makeDeleteRequest(), {
       params: Promise.resolve({ id: 'client-1' }),
@@ -391,6 +401,6 @@ describe('Nutrition Route DELETE', () => {
 
     expect(response.status).toBe(404)
     expect(data.error).toBe('No active nutrition plan to delete')
-    expect(archiveNutritionPlan).not.toHaveBeenCalled()
+    expect(deleteFutureNutritionEventsForClient).not.toHaveBeenCalled()
   })
 })

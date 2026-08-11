@@ -2113,3 +2113,100 @@ active row and behave identically to before. **No queued saves or browser smokes
 
 **Durable defect records:** none new — the exposure above is transient by design and closed
 within this session; nothing else surfaced that outlives it.
+
+---
+
+### Task 1b.2 — Write-path correctness: cascade, deletes, resets, stamping ✅ SHIPPED 2026-08-11
+
+**What shipped.**
+- **Cascade version-segmentation** (`cascadeNutritionAfterTrainingChange`): fetches every
+  active version overlapping the scope (`getActiveNutritionPlanVersionsOverlapping`, new in
+  `nutrition-plan-service.ts`, shared with the bulk reset) and hands each the SAME scope —
+  `regenerateFutureNutritionEvents` now clamps to the version's own window, so the loop IS
+  the segmentation. The version-lookup error is destructured, logged, and Sentried (loud
+  break #1 closed); the orchestrator's `regeneration_reason` lookup gained
+  order/limit/error-logging (loud break #2 closed). From-scopes additionally sweep GAP
+  dates no version covers (the post-delete interregnum) so stale targets from a deleted
+  era cannot survive.
+- **The from-scope delete re-keyed CLIENT-scoped** with the window clamp making the wider
+  scoping safe (a version can never delete outside its own era); all six survival
+  predicates preserved (`scheduled`, `is_modified=false`, `coach_note IS NULL`, both
+  bounds, now clamped).
+- **Per-date stamping + the D1 guard** (`resolvePlanContextForDate`): the nutrition
+  fallback is `getNutritionPlanIdForDate(clientId, date)` — a backdated log stamps its own
+  day's era, a queued save no longer mis-stamps today. `PlanContextForDate` gained
+  `nutritionSetUp` (covering-or-future, the same predicate as 1b.3's readiness rule);
+  `assertHasActivePlan`'s nutrition arm gates on it, so the queued-first-plan client logs
+  food pre-start with an honest NULL stamp (the Saturday-logger fix, pinned). Training arm
+  byte-identical; its today-anchor (rather than the log's date) is a pre-existing
+  observation, recorded here, deliberately untouched (training-side is out of session
+  scope).
+- **Reset routes per-date-grouped**: the single-date route resolves the version covering
+  ITS date; the bulk route groups the date list per covering version (shared
+  `versionCoversDate`) and resets group by group — a straddling selection restores each
+  era's own numbers. Uncovered dates are skipped (nothing to reset to); all-uncovered
+  404s. First-ever tests for the bulk route (4).
+- **Deletion chain (design 3 + D2, as ruled)**: `orchestrateNutritionPlanDeletion` closes
+  the covering version at `clientToday` with **status untouched** (D2(a) — the ended,
+  successor-less window is the record; also the only reading under which 1b.1's s2 and the
+  gist constraint guard a same-day re-create), hard-DELETEs queued versions (D2(b)), and
+  sweeps future events **client-scoped** from `clientToday + 1` via the new
+  `deleteFutureNutritionEventsForClient` (the plan-scoped variant missed queued versions'
+  stamped rows). Precondition = a version reaches past today (covering-or-future), so
+  queued-only chains delete cleanly and a same-day second delete 404s. Steps ordered
+  idempotently (events → queued rows → close); a mid-flight failure leaves a state a retry
+  completes — non-transactional like its predecessor, recorded.
+- **Deleted on the zero-caller test** (Session 1.2 precedent, owner-approved with the
+  plan): `archiveNutritionPlan` (last caller replaced by close-at-today) and
+  `deleteFutureNutritionEventsForPlan` (last caller replaced by the client-scoped sweep).
+  Nothing mints `status='archived'` any more — it survives on legacy rows only (1b.5
+  documents this).
+- **`getActiveNutritionPlanId` → thin covering-today wrapper** over
+  `getNutritionPlanIdForDate` + `getClientTodayString`. All four former call sites are
+  rewired in this same commit; kept despite zero remaining production callers per the
+  design-4 mandate (API symmetry with `getActiveTrainingPlanId`), docstring says so.
+
+**TECHNICAL-DEBT.md reconciled**: cascade entry 5 (baseline leak) CLOSED — fixed by
+construction (each era rebuilds from its own grid; the "no stored source for the old
+numbers" premise died with versioning); entry 3 (delete/upsert scoping asymmetry) CLOSED —
+the re-key + clamp made the scopes symmetric, and re-stamping to the covering version is
+now correct behaviour; entry 2 re-scoped — the lookup half is fixed, the per-version regen
+swallow remains (deliberate, with the 1b.3 hero-divergence cost named). Entries 1 (stale
+tail) and 4 (logged→scheduled flip) stay open, text untouched.
+
+**Tests.** 2610 passing (baseline 2597 + 13): cascade segmentation across an era boundary
+(each side rebuilt from ITS version's baseline — the leak's regression pin), the gap
+sweep's exact date list + predicates, both loud-break regressions, the window clamp (both
+ends; out-of-window scope writes nothing), delete-guard pins re-pointed at
+`client_id`-scoping, per-date stamping + the D1 Saturday-logger pin + guard semantics,
+delete-chain semantics (close-without-status-write pinned via
+`not.toHaveBeenCalledWith(status)`, queued hard-delete, queued-only delete, same-day
+second delete 404, events-before-close ordering), bulk-reset grouping ×4. The route test's
+supabase mock became a thenable chain (the deep statement semantics live in the
+orchestrator test, stated in a comment).
+
+**Gates.** `tsc --noEmit` clean · `vitest run` **253 files / 2610 tests, all passing** ·
+`eslint .` 0 errors (209 pre-existing warnings, unchanged) · `check:labels` OK (636) ·
+`check:rls` OK (40/40) · no new `as any` outside sanctioned test-mock casts · no markers ·
+no migration in this commit (144 carries the whole session's schema).
+
+**§2 security/load/perf review (trigger: changed write path, ~10 files).** Security: no
+route auth/ownership/validation changed — diffs sit behind the existing guards; every new
+statement is tenant-scoped (`client_id` or a resolved version id). Performance: a narrow
+cascade for a single-version client is unchanged (one version fetch replaces one plan
+fetch); a chain client pays one windowed version query + per-overlapping-version
+regeneration (overlapping versions are single-digit; worst-case rows unchanged at 57/
+version-slice, the slices partition the range). The bulk reset adds one windowed query and
+replaces N per-date lookups with in-memory grouping. Per-date stamping swaps one singleton
+read for one windowed read (same count); the D1 future-check runs only when nothing covers
+the date. Deletion adds one queued-select (+1 round trip) — constant. Consistency: the
+deletion remains non-transactional with idempotent step order (stated in code); the
+cascade's per-version swallow is the re-scoped debt entry 2. Not load-tested; verified by
+the unit suite against mocked chains.
+
+**Behaviour changes a smoke will see** (still: no queued-save smokes until 1b.3 — the
+GET/hero still read the old shape): training edits inside a pre-`effective_from` window
+now rebuild those days from the OLD era's numbers (the original leak repro, checklist
+item 1); a queued-first-plan client can log food before their start date; resets across a
+boundary restore each era's numbers; deleting a chain removes queued versions and their
+events.

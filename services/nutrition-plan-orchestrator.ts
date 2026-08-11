@@ -6,14 +6,13 @@ import {
   type NutritionCalcInputs,
 } from "@/services/nutrition-calc-inputs";
 import {
-  archiveNutritionPlan,
   createNutritionPlan,
-  getActiveNutritionPlanId,
+  getNutritionPlanForDate,
 } from "@/services/nutrition-plan-service";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 import {
-  deleteFutureNutritionEventsForPlan,
+  deleteFutureNutritionEventsForClient,
   regenerateFutureNutritionEvents,
 } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
@@ -120,25 +119,81 @@ export async function orchestrateNutritionPlanDeletion(
     throw new NutritionPlanError("Forbidden: You don't have access to this client", 403);
   }
 
-  const planId = await getActiveNutritionPlanId(clientId);
-  if (!planId) {
+  // The versioned chain (migration 144). Delete = close, never erase, for
+  // governed days; hard-delete for never-effective queued versions (D2):
+  //  - the COVERING version stays ACTIVE with effective_until = clientToday —
+  //    its ended, successor-less window IS the record of the delete, and it
+  //    keeps explaining today and the past in history reads;
+  //  - QUEUED versions governed nothing, and any retained window would
+  //    corrupt no-status-filter history attribution, so their rows go
+  //    (daily targets CASCADE; event/log FKs are SET NULL).
+  // Deletable = something reaches PAST today (an open or future-closed
+  // covering window, or a queued version); a chain already ending at today
+  // has nothing left to remove and 404s, which also makes a same-day second
+  // delete a clean 404 rather than a silent success.
+  const clientToday = await getClientTodayString(clientId);
+  const covering = await getNutritionPlanForDate(clientId, clientToday);
+  const coveringReachesPastToday =
+    covering != null &&
+    (covering.effective_until === null || covering.effective_until > clientToday);
+
+  const { data: queuedRows, error: queuedError } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .gt("effective_from", clientToday);
+  if (queuedError) {
+    throw new NutritionPlanError(
+      `Failed to resolve queued nutrition versions: ${queuedError.message}`,
+      500
+    );
+  }
+  const queuedIds = (queuedRows ?? []).map((row) => row.id);
+
+  if (!coveringReachesPastToday && queuedIds.length === 0) {
     throw new NutritionPlanError("No active nutrition plan to delete", 404);
   }
 
-  // Client-local today anchors the cutoff on the client's calendar — never let
-  // the event helper fall back to its UTC default. Delete strictly AFTER
-  // today: nutrition events never leave 'scheduled' status, so a today the
-  // client already part-logged would otherwise be deleted and the per-card
-  // nutrition writer would 422 mid-day (no event, no active plan). The kept
-  // event carries its own plan stamp, and the dialog's "Today and past days
-  // are kept" stays literally true.
-  const clientToday = await getClientTodayString(clientId);
+  // Client-local today anchors the cutoff on the client's calendar — never a
+  // UTC fallback. Delete strictly AFTER today: nutrition events never leave
+  // 'scheduled' status, so a today the client already part-logged would
+  // otherwise be deleted and the per-card nutrition writer would 422 mid-day.
+  // The kept event carries its own plan stamp, and the dialog's "Today and
+  // past days are kept" stays literally true. Client-scoped so events stamped
+  // by queued versions' ids are swept too. Steps are ordered idempotently: a
+  // mid-flight failure leaves a state a retry completes (events first — a
+  // re-run deletes nothing; then queued rows; then the close).
   const deleteFrom = addDaysToDateString(clientToday, 1);
+  await deleteFutureNutritionEventsForClient(clientId, deleteFrom);
 
-  await deleteFutureNutritionEventsForPlan(planId, deleteFrom);
-  await archiveNutritionPlan(planId);
+  if (queuedIds.length > 0) {
+    const { error: queuedDeleteError } = await supabaseAdmin
+      .from("nutrition_plans")
+      .delete()
+      .in("id", queuedIds);
+    if (queuedDeleteError) {
+      throw new NutritionPlanError(
+        `Failed to remove queued nutrition versions: ${queuedDeleteError.message}`,
+        500
+      );
+    }
+  }
 
-  return { planId };
+  if (coveringReachesPastToday && covering) {
+    const { error: closeError } = await supabaseAdmin
+      .from("nutrition_plans")
+      .update({ effective_until: clientToday, updated_at: new Date().toISOString() })
+      .eq("id", covering.id);
+    if (closeError) {
+      throw new NutritionPlanError(
+        `Failed to close the covering nutrition version: ${closeError.message}`,
+        500
+      );
+    }
+  }
+
+  return { planId: covering?.id ?? queuedIds[0] };
 }
 
 /**
@@ -290,13 +345,22 @@ async function handleCalculatedPlan(
 ): Promise<NutritionPlanResult> {
   const { currentWeightKg, bmr, today: clientToday } = calcInputs;
 
-  // Only to distinguish an "initial" plan from a "regenerated" one.
-  const { data: existingPlan } = await supabaseAdmin
+  // Only to distinguish an "initial" plan from a "regenerated" one. Order +
+  // limit because the versioned model (migration 144) legitimately holds
+  // several active rows — a bare maybeSingle() would error on any chain. The
+  // error is destructured and logged (house rule): a failed read defaults the
+  // label to "initial", which is cosmetic, but it must never be silent.
+  const { data: existingPlan, error: existingPlanError } = await supabaseAdmin
     .from("nutrition_plans")
     .select("id")
     .eq("client_id", clientId)
     .eq("status", "active")
+    .order("effective_from", { ascending: false })
+    .limit(1)
     .maybeSingle();
+  if (existingPlanError) {
+    console.error("Failed to read existing nutrition plan for regeneration_reason:", existingPlanError);
+  }
 
   // THE contract of this rework: the browser previewed the plan by calling this
   // exact pure function over these exact inputs, so what the coach saw is what

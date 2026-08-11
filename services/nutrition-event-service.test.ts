@@ -18,6 +18,15 @@ vi.mock("@/services/training-service", () => ({
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
+vi.mock("@/lib/error-handler", () => ({
+  captureApiError: vi.fn(),
+}));
+// Partial mock: the cascade's version lookup is stubbed; versionCoversDate
+// stays REAL (pure) so the gap-sweep computation under test is the shipped one.
+vi.mock("@/services/nutrition-plan-service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/nutrition-plan-service")>();
+  return { ...actual, getActiveNutritionPlanVersionsOverlapping: vi.fn() };
+});
 
 // Inline query-builder mock (mirrors services/training-event-service.test.ts):
 // every chain method returns `this`; single/maybeSingle resolve to `result`; a
@@ -59,9 +68,12 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { getClientTodayString } from "@/services/today-service";
+import { captureApiError } from "@/lib/error-handler";
+import { getActiveNutritionPlanVersionsOverlapping } from "@/services/nutrition-plan-service";
 import {
   generateNutritionEvents,
   regenerateFutureNutritionEvents,
+  cascadeNutritionAfterTrainingChange,
 } from "./nutrition-event-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -195,14 +207,16 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
       const upsertQuery = createMockQuery({ data: [], error: null });
 
-      // One generic "fat" row satisfies every nutrition_plans read (baseline,
-      // status, planned-sibling); planned-sibling effective_from:null -> no cap.
+      // Versioned model: the plan read carries the version's window, and the
+      // regenerate clamps to it. An open version covering the whole range
+      // keeps the clamp out of this test's frame.
       const planRow = {
         baseline_calories: 2000,
         protein_target_g: 150,
         diet_type: "balanced",
         status: "active",
-        effective_from: null,
+        effective_from: "2026-01-01",
+        effective_until: null,
       };
 
       mockFrom.mockImplementation((table: string) => {
@@ -228,7 +242,10 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       });
 
       expect(deleteQuery.delete).toHaveBeenCalled();
-      expect(deleteQuery.eq).toHaveBeenCalledWith("nutrition_plan_id", "plan-1");
+      // CLIENT-scoped since 1b.2: rows inside the version's window may carry a
+      // prior version's id (or NULL), which the old plan-id scoping missed.
+      expect(deleteQuery.eq).toHaveBeenCalledWith("client_id", "client-1");
+      expect(deleteQuery.eq).not.toHaveBeenCalledWith("nutrition_plan_id", "plan-1");
       expect(deleteQuery.gte).toHaveBeenCalledWith("date", "2026-04-10");
       expect(deleteQuery.eq).toHaveBeenCalledWith("status", "scheduled");
       // The guard under test: edited rows survive the cascade delete.
@@ -257,7 +274,8 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
         protein_target_g: 150,
         diet_type: "balanced",
         status: "active",
-        effective_from: null,
+        effective_from: "2026-01-01",
+        effective_until: null,
       };
 
       mockFrom.mockImplementation((table: string) => {
@@ -309,7 +327,13 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
         }
         if (table === "nutrition_plans")
           return createMockQuery({
-            data: { baseline_calories: 2000, protein_target_g: 150, diet_type: "balanced" },
+            data: {
+              baseline_calories: 2000,
+              protein_target_g: 150,
+              diet_type: "balanced",
+              effective_from: "2026-01-01",
+              effective_until: null,
+            },
             error: null,
           }) as any;
         if (table === "nutrition_plan_daily_targets")
@@ -430,7 +454,13 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
         }
         if (table === "nutrition_plans") {
           return createMockQuery({
-            data: { baseline_calories: 2000, protein_target_g: 150, diet_type: "balanced" },
+            data: {
+              baseline_calories: 2000,
+              protein_target_g: 150,
+              diet_type: "balanced",
+              effective_from: "2026-01-01",
+              effective_until: null,
+            },
             error: null,
           }) as any;
         }
@@ -476,6 +506,228 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       // range guard — a "deleted the calendar, returned success" shape.
       expect(anyQuery.delete).not.toHaveBeenCalled();
       expect(anyQuery.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // Migration 144: the version-window clamp. A version can only write or
+  // delete inside its own [effective_from, effective_until] — the property
+  // the cascade's segmentation is built on.
+  // =========================================================================
+  describe("regenerateFutureNutritionEvents version clamp", () => {
+    it("clamps a from-scope's delete AND regenerate to a closed version's window", async () => {
+      let nutCount = 0;
+      const deleteQuery = createMockQuery({ data: null, error: null });
+      const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          if (nutCount === 1) return deleteQuery as any;
+          if (nutCount === 2) return protectedQuery as any;
+          return upsertQuery as any;
+        }
+        if (table === "nutrition_plans")
+          return createMockQuery({
+            data: {
+              baseline_calories: 2000,
+              protein_target_g: 150,
+              diet_type: "balanced",
+              effective_from: "2026-04-01",
+              effective_until: "2026-04-20", // closed version — superseded era
+            },
+            error: null,
+          }) as any;
+        return createMockQuery({ data: [], error: null }) as any;
+      });
+
+      await regenerateFutureNutritionEvents("client-1", "plan-1", {
+        kind: "from",
+        from: "2026-04-10",
+      });
+
+      // The 8-week scope reaches 2026-06-05; the version ends 2026-04-20 — the
+      // delete stops at the window's edge, never reaching the next era.
+      expect(deleteQuery.gte).toHaveBeenCalledWith("date", "2026-04-10");
+      expect(deleteQuery.lte).toHaveBeenCalledWith("date", "2026-04-20");
+      const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{ date: string }>;
+      expect(rows[0].date).toBe("2026-04-10");
+      expect(rows[rows.length - 1].date).toBe("2026-04-20");
+      expect(rows).toHaveLength(11);
+    });
+
+    it("writes nothing at all when the scope falls entirely outside the version's window", async () => {
+      let nutCount = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") nutCount += 1;
+        if (table === "nutrition_plans")
+          return createMockQuery({
+            data: {
+              baseline_calories: 2000,
+              protein_target_g: 150,
+              diet_type: "balanced",
+              effective_from: "2026-05-01",
+              effective_until: null,
+            },
+            error: null,
+          }) as any;
+        return createMockQuery({ data: [], error: null }) as any;
+      });
+
+      await regenerateFutureNutritionEvents("client-1", "plan-1", {
+        kind: "dates",
+        dates: ["2026-04-01"],
+      });
+
+      expect(nutCount).toBe(0);
+    });
+  });
+
+  // =========================================================================
+  // Migration 144: cascade version segmentation — the FIRST cascade coverage.
+  // The cascade hands the SAME scope to every overlapping version; each
+  // version's clamp does the splitting.
+  // =========================================================================
+  describe("cascadeNutritionAfterTrainingChange version segmentation", () => {
+    const V1 = { id: "v1", effectiveFrom: "2026-01-01", effectiveUntil: "2026-04-30" };
+    const V2 = { id: "v2", effectiveFrom: "2026-05-01", effectiveUntil: null };
+
+    it("regenerates each side of an era boundary from its OWN version's grid", async () => {
+      vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([V1, V2]);
+
+      let planCount = 0;
+      let nutCount = 0;
+      const upserts: Array<ReturnType<typeof createMockQuery>> = [];
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_plans") {
+          planCount += 1;
+          return createMockQuery({
+            data:
+              planCount === 1
+                ? { baseline_calories: 1800, protein_target_g: 150, diet_type: "balanced",
+                    effective_from: V1.effectiveFrom, effective_until: V1.effectiveUntil }
+                : { baseline_calories: 2200, protein_target_g: 150, diet_type: "balanced",
+                    effective_from: V2.effectiveFrom, effective_until: V2.effectiveUntil },
+            error: null,
+          }) as any;
+        }
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          // Per version, a dates-scope touches events twice: protected read,
+          // then upsert (no delete). Odd = protected, even = upsert.
+          if (nutCount % 2 === 1) return createMockQuery({ data: [], error: null }) as any;
+          const upsert = createMockQuery({ data: [], error: null });
+          upserts.push(upsert);
+          return upsert as any;
+        }
+        return createMockQuery({ data: [], error: null }) as any;
+      });
+
+      // A training move straddling the boundary: one date in each era.
+      await cascadeNutritionAfterTrainingChange(
+        "client-1",
+        { kind: "dates", dates: ["2026-04-29", "2026-05-02"] },
+        "test-move"
+      );
+
+      expect(getActiveNutritionPlanVersionsOverlapping).toHaveBeenCalledWith(
+        "client-1",
+        "2026-04-29",
+        "2026-05-02"
+      );
+      // v1 wrote only its own day, from ITS baseline; v2 likewise.
+      const v1Rows = upserts[0].upsert.mock.calls[0][0] as Array<{ date: string; baseline_calories: number }>;
+      const v2Rows = upserts[1].upsert.mock.calls[0][0] as Array<{ date: string; baseline_calories: number }>;
+      expect(v1Rows.map((r) => r.date)).toEqual(["2026-04-29"]);
+      expect(v1Rows[0].baseline_calories).toBe(1800);
+      expect(v2Rows.map((r) => r.date)).toEqual(["2026-05-02"]);
+      expect(v2Rows[0].baseline_calories).toBe(2200);
+    });
+
+    it("from-scope: sweeps stale rows on gap dates no version covers (the post-delete interregnum)", async () => {
+      // One version covering only the first 7 days of the 57-day scope.
+      vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([
+        { id: "v1", effectiveFrom: "2026-01-01", effectiveUntil: "2026-04-16" },
+      ]);
+
+      let nutCount = 0;
+      const gapDeleteQuery = createMockQuery({ data: null, error: null });
+      const versionDeleteQuery = createMockQuery({ data: null, error: null });
+      const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          // 1 = the cascade-level gap sweep, 2 = v1's clamped delete,
+          // 3 = protected read, 4 = upsert.
+          if (nutCount === 1) return gapDeleteQuery as any;
+          if (nutCount === 2) return versionDeleteQuery as any;
+          if (nutCount === 3) return protectedQuery as any;
+          return upsertQuery as any;
+        }
+        if (table === "nutrition_plans")
+          return createMockQuery({
+            data: { baseline_calories: 2000, protein_target_g: 150, diet_type: "balanced",
+                    effective_from: "2026-01-01", effective_until: "2026-04-16" },
+            error: null,
+          }) as any;
+        return createMockQuery({ data: [], error: null }) as any;
+      });
+
+      await cascadeNutritionAfterTrainingChange(
+        "client-1",
+        { kind: "from", from: "2026-04-10" },
+        "test-clear"
+      );
+
+      // The gap sweep covers exactly the 50 uncovered dates, client-scoped,
+      // with the three survival predicates intact.
+      const gapDates = vi.mocked(gapDeleteQuery.in).mock.calls[0][1] as string[];
+      expect(gapDates).toHaveLength(50);
+      expect(gapDates[0]).toBe("2026-04-17");
+      expect(gapDates[gapDates.length - 1]).toBe("2026-06-05");
+      expect(gapDeleteQuery.eq).toHaveBeenCalledWith("client_id", "client-1");
+      expect(gapDeleteQuery.eq).toHaveBeenCalledWith("is_modified", false);
+      expect(gapDeleteQuery.is).toHaveBeenCalledWith("coach_note", null);
+      // The version's own delete stays inside its window.
+      expect(versionDeleteQuery.gte).toHaveBeenCalledWith("date", "2026-04-10");
+      expect(versionDeleteQuery.lte).toHaveBeenCalledWith("date", "2026-04-16");
+    });
+
+    it("LOUD-BREAK REGRESSION: a failed version lookup is logged, never mistaken for 'no plan'", async () => {
+      const boom = new Error("connection reset");
+      vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockRejectedValue(boom);
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await cascadeNutritionAfterTrainingChange(
+        "client-1",
+        { kind: "dates", dates: ["2026-04-29"] },
+        "test-fail"
+      );
+
+      // The old shape discarded the error and silently no-opped every cascade.
+      // Now: logged, Sentried, and no event write attempted.
+      expect(consoleSpy).toHaveBeenCalled();
+      expect(captureApiError).toHaveBeenCalledWith(boom, {
+        action: "test-fail",
+        clientId: "client-1",
+      });
+      expect(mockFrom).not.toHaveBeenCalledWith("nutrition_events");
+      consoleSpy.mockRestore();
+    });
+
+    it("no overlapping versions → clean no-op", async () => {
+      vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([]);
+
+      await cascadeNutritionAfterTrainingChange(
+        "client-1",
+        { kind: "dates", dates: ["2026-04-29"] },
+        "test-none"
+      );
+
+      expect(mockFrom).not.toHaveBeenCalledWith("nutrition_events");
     });
   });
 });

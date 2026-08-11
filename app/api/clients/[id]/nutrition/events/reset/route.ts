@@ -4,7 +4,10 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getClientTodayString } from "@/services/today-service";
-import { getActiveNutritionPlanId } from "@/services/nutrition-plan-service";
+import {
+  getActiveNutritionPlanVersionsOverlapping,
+  versionCoversDate,
+} from "@/services/nutrition-plan-service";
 import { nutritionResetDaysSchema } from "@/lib/validations/nutrition";
 import { resetNutritionEventDays } from "@/services/nutrition-event-edit-service";
 
@@ -53,20 +56,36 @@ export async function PATCH(
       );
     }
 
-    const activePlanId = await getActiveNutritionPlanId(clientId);
-    if (!activePlanId) {
+    // Versioned model (migration 144): a date list can straddle an era
+    // boundary, and each date must regenerate from the version COVERING it —
+    // group the dates per covering version and reset group by group. Dates no
+    // version covers are skipped (there is no prescription to reset them to).
+    const sortedDates = [...futureDates].sort();
+    const versions = await getActiveNutritionPlanVersionsOverlapping(
+      clientId,
+      sortedDates[0],
+      sortedDates[sortedDates.length - 1]
+    );
+    const groups = new Map<string, string[]>();
+    for (const date of sortedDates) {
+      const covering = versions.find((v) => versionCoversDate(v, date));
+      if (!covering) continue;
+      const group = groups.get(covering.id);
+      if (group) group.push(date);
+      else groups.set(covering.id, [date]);
+    }
+    if (groups.size === 0) {
       return NextResponse.json(
-        { success: false, error: "No active nutrition plan" },
+        { success: false, error: "No nutrition plan covers the selected dates" },
         { status: 404 }
       );
     }
 
-    const { reset } = await resetNutritionEventDays(
-      clientId,
-      futureDates,
-      activePlanId,
-      clientToday
-    );
+    let reset = 0;
+    for (const [versionId, dates] of groups) {
+      const result = await resetNutritionEventDays(clientId, dates, versionId, clientToday);
+      reset += result.reset;
+    }
 
     return NextResponse.json({ success: true, reset }, { status: 200 });
   } catch (error) {

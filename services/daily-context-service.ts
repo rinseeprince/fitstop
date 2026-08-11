@@ -7,7 +7,10 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getEventForDate } from "./training-event-service";
 import { getNutritionEventForDate } from "./nutrition-event-service";
-import { getActiveNutritionPlanId } from "./nutrition-plan-service";
+import {
+  getNutritionPlanIdForDate,
+  getNextFutureNutritionPlan,
+} from "./nutrition-plan-service";
 import { getActiveTrainingPlanId } from "./training-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 
@@ -66,12 +69,23 @@ export const getPlanTargetForDate = async (
 export type PlanContextForDate = {
   nutritionPlanId: string | null;
   trainingPlanId: string | null;
+  /**
+   * "Is this client set up for nutrition?" — a version COVERS the date, or a
+   * future version exists after it. The same predicate as activation
+   * readiness, so the two surfaces can never disagree about a queued-first-
+   * plan client. The nutrition log guard passes on this flag, not on the
+   * stamp: a pre-start day logs with a NULL stamp (honest per-date
+   * provenance — no era governed it) rather than being rejected.
+   */
+  nutritionSetUp: boolean;
 };
 
 /**
  * Single resolver every per-card write calls to populate the child `*_plan_id`
- * links. Each id prefers the date-accurate event, then falls back to the
- * client's active plan, so the link is populated even on a no-event day.
+ * links. Each id prefers the date-accurate event, then falls back to the plan
+ * resolved FOR THAT DATE (versioned model, migration 144) — a backdated log
+ * stamps the version that governed its own day, and a queued save no longer
+ * mis-stamps today's log with the future version's id.
  */
 export const resolvePlanContextForDate = async (
   clientId: string,
@@ -82,19 +96,30 @@ export const resolvePlanContextForDate = async (
     getEventForDate(clientId, date),
   ]);
 
-  // nutrition_plan_id is written by upsertNutritionLog, so fall back to the active plan
-  // when the day has no nutrition event.
+  // nutrition_plan_id is written by upsertNutritionLog; on a no-event day it
+  // falls back to the version covering the LOG's date (never a date-blind
+  // singleton read). The date is already in scope — this costs nothing.
   const nutritionPlanId =
-    nutritionEvent?.nutritionPlanId ?? (await getActiveNutritionPlanId(clientId));
+    nutritionEvent?.nutritionPlanId ?? (await getNutritionPlanIdForDate(clientId, date));
+
+  // D1: set-up = covering-or-future. The future check only runs when nothing
+  // covers the date (the rare pre-start day), so the common path pays zero
+  // extra round trips.
+  const nutritionSetUp =
+    nutritionPlanId != null ||
+    (await getNextFutureNutritionPlan(clientId, date)) != null;
 
   // training_plan_id prefers the date's event, then falls back to the active
   // plan so the per-card training write (Session 5.3) links even on a no-event
   // day. Uses the lightweight id-only getActiveTrainingPlanId (NOT the heavy
-  // getActiveTrainingPlan, which loads sessions+exercises).
+  // getActiveTrainingPlan, which loads sessions+exercises). Deliberately
+  // untouched by the nutrition versioning work: its today-anchor (rather than
+  // `date`) is a separate, pre-existing observation recorded in the Session 1B
+  // STATUS block.
   const trainingPlanId =
     trainingEvent?.trainingPlanId ?? (await getActiveTrainingPlanId(clientId));
 
-  return { nutritionPlanId, trainingPlanId };
+  return { nutritionPlanId, trainingPlanId, nutritionSetUp };
 };
 
 /**
@@ -104,10 +129,9 @@ export const resolvePlanContextForDate = async (
 export type PlanGatedResource = "nutrition" | "training";
 
 /**
- * Thrown by `assertHasActivePlan` when the plan id we'd stamp onto the log row is null.
+ * Thrown by `assertHasActivePlan` when the client is not set up for the resource.
  * Routes translate `instanceof NoActivePlanError` into a 422 — perimeter guard against
- * nutrition/training logs with no plan to score against (their `*_plan_id` stamps feed
- * the adherence reads). Sibling to `DayLockedError`.
+ * logs from clients with no plan at all. Sibling to `DayLockedError`.
  */
 export class NoActivePlanError extends Error {
   readonly resource: PlanGatedResource;
@@ -120,16 +144,24 @@ export class NoActivePlanError extends Error {
 }
 
 /**
- * Reject the write when the plan id we'd stamp would be null: nutrition →
- * `nutrition_plan_id`, training → `training_plan_id` (Session 5.3). Wellness writes are
- * ungated — a plan-less client logging mood/sleep is valid, not an orphan.
+ * The orphan-log perimeter. Nutrition gates on `nutritionSetUp`
+ * (covering-or-future — D1): a queued-first-plan client may log food before
+ * their start date (the row carries a NULL stamp; the column has zero
+ * SELECT-side readers and its FK has been SET NULL since migration 113), while
+ * a client with no versions at all is still rejected. Training keeps the
+ * stamp-presence gate — an event-less training log is structurally scored
+ * against a plan's session, so a null link there is a real orphan. Wellness
+ * writes are ungated — a plan-less client logging mood/sleep is valid.
  */
 export const assertHasActivePlan = (
   ctx: PlanContextForDate,
   resource: PlanGatedResource
 ): void => {
-  const id = resource === "nutrition" ? ctx.nutritionPlanId : ctx.trainingPlanId;
-  if (id == null) throw new NoActivePlanError(resource);
+  if (resource === "nutrition") {
+    if (!ctx.nutritionSetUp) throw new NoActivePlanError(resource);
+    return;
+  }
+  if (ctx.trainingPlanId == null) throw new NoActivePlanError(resource);
 };
 
 export type NutritionForDate = {

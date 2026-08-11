@@ -3,12 +3,15 @@ import type { NutritionEvent, NutritionEventStatus, DietType } from "@/types/che
 import type { NutritionEventRow, NutritionEventInsert } from "@/lib/database-helpers";
 import type { TrainingPlan } from "@/types/training";
 import {
-  getTodayDateString,
   getDateString,
   expandDateRange,
   DAY_NUM,
 } from "@/lib/date-helpers";
 import { getClientTodayString } from "@/services/today-service";
+import {
+  getActiveNutritionPlanVersionsOverlapping,
+  versionCoversDate,
+} from "@/services/nutrition-plan-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
@@ -255,11 +258,13 @@ function resolveScopeDates(scope: NutritionRegenScope): string[] {
 }
 
 /**
- * Regenerate a plan's scheduled nutrition events over an explicit scope.
- * Past events and non-scheduled events (logged, missed) are preserved by the
- * delete; the upsert then overwrites any surviving row on a covered date with
- * current-plan values (see ARCHITECTURE.md → Training → Nutrition cascade for
- * what that means for logged rows).
+ * Regenerate a plan VERSION's scheduled nutrition events over an explicit
+ * scope, clamped to the version's own [effective_from, effective_until]
+ * window (migration 144). Past events and non-scheduled events (logged,
+ * missed) are preserved by the delete; the upsert then overwrites any
+ * surviving row on a covered date with this version's values (see
+ * ARCHITECTURE.md → Training → Nutrition cascade for what that means for
+ * logged rows).
  */
 export async function regenerateFutureNutritionEvents(
   clientId: string,
@@ -275,11 +280,38 @@ export async function regenerateFutureNutritionEvents(
   const dates = resolveScopeDates(resolvedScope);
   if (dates.length === 0) return;
 
+  // Fetch the version FIRST (window columns included, error surfaced — a
+  // failed read must never masquerade as "no plan"). The clamp below is the
+  // whole segmentation story: this version can only ever write or delete
+  // inside its own window, so the cascade hands the SAME scope to every
+  // overlapping version and each regenerates exactly its own slice. A save's
+  // regenerate is unaffected — the just-saved version is open, so the clamp
+  // is a no-op past its start.
+  const { data: planRow, error: planError } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("baseline_calories, protein_target_g, diet_type, effective_from, effective_until")
+    .eq("id", planId)
+    .single();
+
+  if (planError || !planRow) throw planError ?? new Error("Nutrition plan not found");
+
+  const clampedDates = dates.filter(
+    (d) =>
+      d >= planRow.effective_from &&
+      (planRow.effective_until === null || d <= planRow.effective_until)
+  );
+  if (clampedDates.length === 0) return;
+
   // A `dates` scope skips the delete entirely (see NutritionRegenScope). A
-  // `from` scope deletes over exactly the range it is about to regenerate — the
-  // upper bound is load-bearing: an unbounded ray (`date >= from`) paired with
-  // the fixed 8-week regeneration below meant any cascade anchored EARLIER than
-  // the anchor that wrote the rows deleted a tail it never rebuilt.
+  // `from` scope deletes over exactly the clamped range it is about to
+  // regenerate — the upper bound is load-bearing: an unbounded ray paired
+  // with the fixed 8-week regeneration below meant any cascade anchored
+  // EARLIER than the anchor that wrote the rows deleted a tail it never
+  // rebuilt. CLIENT-scoped since 1b.2: rows inside this version's window may
+  // still carry a PRIOR version's id (or NULL after a version delete), and a
+  // plan-id-scoped delete silently missed them — the clamp is what makes the
+  // wider scoping safe, because this statement can never reach another
+  // version's era.
   //
   // Always preserve coach-edited days (is_modified): nutrition preserves edits
   // across the cascade unconditionally (no force param, unlike training); an
@@ -294,24 +326,15 @@ export async function regenerateFutureNutritionEvents(
     const { error: deleteError } = await supabaseAdmin
       .from("nutrition_events")
       .delete()
-      .eq("nutrition_plan_id", planId)
-      .gte("date", dates[0])
-      .lte("date", dates[dates.length - 1])
+      .eq("client_id", clientId)
+      .gte("date", clampedDates[0])
+      .lte("date", clampedDates[clampedDates.length - 1])
       .eq("status", "scheduled")
       .eq("is_modified", false)
       .is("coach_note", null);
 
     if (deleteError) throw deleteError;
   }
-
-  // Fetch plan metadata
-  const { data: planRow, error: planError } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("baseline_calories, protein_target_g, diet_type")
-    .eq("id", planId)
-    .single();
-
-  if (planError || !planRow) throw planError ?? new Error("Nutrition plan not found");
 
   // Fetch daily target rows
   const { data: dailyTargetRows, error: targetsError } = await supabaseAdmin
@@ -341,7 +364,7 @@ export async function regenerateFutureNutritionEvents(
     },
     dailyTargetRows,
     null, // trainingPlan param is vestigial; training days derive from training_events
-    dates
+    clampedDates
   );
 }
 
@@ -357,13 +380,19 @@ function calculateNutritionEndDate(today: string): string {
 // --- Cascade helper ---
 
 /**
- * Regenerate future nutrition events for every active/planned nutrition plan
- * a client has. Shared by all training-side mutations that affect training
- * events (placement, duplicate, move, surplus edits) so calorie targets
- * always stay in sync with the training calendar.
+ * Regenerate a client's nutrition events after a training change, across
+ * every plan VERSION the scope touches (migration 144). Each overlapping
+ * active version receives the SAME scope; `regenerateFutureNutritionEvents`
+ * clamps to the version's own window, so the loop IS the segmentation — a
+ * training edit inside an old era rebuilds those days from that era's grid,
+ * never from the current template (the pre-window baseline leak, closed by
+ * construction).
  *
- * Errors are logged to Sentry so a failing regen doesn't block the caller's
- * primary operation.
+ * Per-version regeneration failures are logged to Sentry so a failing regen
+ * doesn't block the caller's primary operation (recorded trade-off — see
+ * TECHNICAL-DEBT "Nutrition cascade"). The VERSION LOOKUP is different: its
+ * error is surfaced loudly, because a failed read silently impersonating
+ * "no plan" is how every training cascade used to no-op.
  *
  * @param scope which dates this change actually touched. Routes that know their
  *   exact dates pass `{kind:"dates"}` (move = [source, target]; duplicate =
@@ -375,42 +404,80 @@ export async function cascadeNutritionAfterTrainingChange(
   scope: NutritionRegenScope,
   actionTag: string,
 ): Promise<void> {
-  // Single durable plan: regenerate the one active plan's future events.
-  // (The 'planned' nutrition model was removed in migration 116.)
-  const { data: activePlan } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .maybeSingle();
+  const scopeDates = resolveScopeDates(scope);
+  if (scopeDates.length === 0) return;
+  const orderedDates = [...scopeDates].sort();
+  const rangeStart = orderedDates[0];
+  const rangeEnd = orderedDates[orderedDates.length - 1];
 
-  if (!activePlan) return;
+  let versions;
+  try {
+    versions = await getActiveNutritionPlanVersionsOverlapping(clientId, rangeStart, rangeEnd);
+  } catch (err) {
+    console.error(`Nutrition cascade version lookup failed (${actionTag}):`, err);
+    captureApiError(err, { action: actionTag, clientId });
+    return;
+  }
 
-  await regenerateFutureNutritionEvents(clientId, activePlan.id, scope).catch((err) =>
-    captureApiError(err, { action: actionTag, planId: activePlan.id }),
-  );
+  if (versions.length === 0) return;
+
+  // From-scope only: sweep regenerable rows on GAP dates — dates in the range
+  // covered by NO version (the interregnum after a plan delete followed by a
+  // queued re-create). Nothing regenerates them, so without this they would
+  // survive as stale targets from a deleted era. Client-scoped, same three
+  // survival predicates as the regenerate's own delete. Narrow (dates) scopes
+  // stay pure-upsert by contract and leave uncovered dates untouched.
+  if (scope.kind === "from") {
+    const gapDates = orderedDates.filter(
+      (d) => !versions.some((v) => versionCoversDate(v, d))
+    );
+    if (gapDates.length > 0) {
+      const { error: gapError } = await supabaseAdmin
+        .from("nutrition_events")
+        .delete()
+        .eq("client_id", clientId)
+        .in("date", gapDates)
+        .eq("status", "scheduled")
+        .eq("is_modified", false)
+        .is("coach_note", null);
+      if (gapError) {
+        console.error(`Nutrition cascade gap sweep failed (${actionTag}):`, gapError);
+        captureApiError(gapError, { action: actionTag, clientId });
+      }
+    }
+  }
+
+  // Sequential on purpose: overlapping versions are single-digit per client,
+  // and each version's failure is isolated from its neighbours'.
+  for (const version of versions) {
+    await regenerateFutureNutritionEvents(clientId, version.id, scope).catch((err) =>
+      captureApiError(err, { action: actionTag, planId: version.id }),
+    );
+  }
 }
 
 // --- Delete future events ---
 
 /**
- * Delete all future scheduled events for a plan.
- * Used when a plan is being replaced or deactivated.
+ * Delete a client's future scheduled nutrition events — the plan-deletion
+ * sweep (chain-aware since migration 144).
  */
-export async function deleteFutureNutritionEventsForPlan(
-  planId: string,
-  fromDate?: string
+export async function deleteFutureNutritionEventsForClient(
+  clientId: string,
+  fromDate: string
 ): Promise<void> {
-  // UTC fallback only: no clientId in scope to resolve a client-local today.
-  // Callers that know the client should pass an explicit date.
-  const deleteFrom = fromDate ?? getTodayDateString();
-
-  // supabaseAdmin: system-level write for event cleanup
+  // CLIENT-scoped deliberately (1b.2): a chain's future events may be stamped
+  // by queued versions' ids — or carry a NULL plan id after a version delete —
+  // so the old plan-id-scoped delete silently missed them. No is_modified /
+  // coach_note sparing: the plan is being deleted and the dialog says
+  // everything upcoming goes, edited days included. `fromDate` is required —
+  // the caller owns the client-local "keep today" boundary; a UTC fallback
+  // here would silently move it across midnight.
   const { error } = await supabaseAdmin
     .from("nutrition_events")
     .delete()
-    .eq("nutrition_plan_id", planId)
-    .gte("date", deleteFrom)
+    .eq("client_id", clientId)
+    .gte("date", fromDate)
     .eq("status", "scheduled");
 
   if (error) throw error;
