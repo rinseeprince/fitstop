@@ -2414,3 +2414,30 @@ segmentation inside the nutrition helper).
    replaced (hero's "New targets from" updates to the new date).
 5. **D1:** activate a client whose FIRST plan is queued for a future date → they can
    log food today (no 422); the log's row carries no plan stamp.
+
+---
+
+### Session 1B smoke — ✅ RUN BY THE OWNER 2026-08-11 · one correction applied (D1 reversed)
+
+Tests 1–4 passed. **Test 5 corrected the D1 decision.** The plan's expectation — a
+queued-first-plan client CAN log nutrition before their start date (covering-or-future
+guard, null stamp) — was **wrong on the product**: the owner confirmed the client
+correctly sees "No nutrition target today" and cannot log, because there is no target
+before the plan starts ("why would they log before they've started?"). Two facts settled
+it: (a) the client nutrition log is **consumed calories + macros**, not food items, and it
+is gated in the UI by a target existing (no event → no target → no log affordance), so the
+observable behaviour was already correct and independent of the guard; (b) the guard I
+shipped was permissive where the owner wants restrictive — latent, but a real contract gap
+for the RN client.
+
+**Change applied (follow-up commit):** the client nutrition write guard
+(`assertHasActivePlan`, nutrition arm) reverts to **covering-only** — the stamp being null
+(no version covers the log's date) rejects the write with 422. `nutritionSetUp` and the
+`getNextFutureNutritionPlan` call are removed from `resolvePlanContextForDate`. **Kept:**
+per-date stamping (a backdated log still stamps its own era — the genuine 1b.2 improvement),
+and **activation-readiness stays covering-OR-future** (a coach who queued a first plan IS
+ready). The correction: the client log guard and activation-readiness are **different
+questions with different answers** — "can the client log today?" (covering only) vs "is the
+client set up?" (a queued plan counts) — and must NOT share a predicate. The plan's D1 and
+1b.3's "same predicate as the client log guard" note (ARCHITECTURE) were both wrong on this
+and are corrected. Gates: tsc, vitest 253/2621, eslint 0 errors, check:labels.

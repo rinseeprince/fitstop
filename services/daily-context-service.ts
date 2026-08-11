@@ -7,10 +7,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getEventForDate } from "./training-event-service";
 import { getNutritionEventForDate } from "./nutrition-event-service";
-import {
-  getNutritionPlanIdForDate,
-  getNextFutureNutritionPlan,
-} from "./nutrition-plan-service";
+import { getNutritionPlanIdForDate } from "./nutrition-plan-service";
 import { getActiveTrainingPlanId } from "./training-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 
@@ -69,15 +66,6 @@ export const getPlanTargetForDate = async (
 export type PlanContextForDate = {
   nutritionPlanId: string | null;
   trainingPlanId: string | null;
-  /**
-   * "Is this client set up for nutrition?" — a version COVERS the date, or a
-   * future version exists after it. The same predicate as activation
-   * readiness, so the two surfaces can never disagree about a queued-first-
-   * plan client. The nutrition log guard passes on this flag, not on the
-   * stamp: a pre-start day logs with a NULL stamp (honest per-date
-   * provenance — no era governed it) rather than being rejected.
-   */
-  nutritionSetUp: boolean;
 };
 
 /**
@@ -97,17 +85,14 @@ export const resolvePlanContextForDate = async (
   ]);
 
   // nutrition_plan_id is written by upsertNutritionLog; on a no-event day it
-  // falls back to the version covering the LOG's date (never a date-blind
-  // singleton read). The date is already in scope — this costs nothing.
+  // falls back to the version COVERING the log's date (never a date-blind
+  // singleton read). The date is already in scope — this costs nothing. A
+  // pre-start day (a queued-first-plan client) has no covering version, so the
+  // stamp is null and the guard below rejects the write: a client cannot log
+  // nutrition before their plan starts, which is correct — there is no target
+  // that day.
   const nutritionPlanId =
     nutritionEvent?.nutritionPlanId ?? (await getNutritionPlanIdForDate(clientId, date));
-
-  // D1: set-up = covering-or-future. The future check only runs when nothing
-  // covers the date (the rare pre-start day), so the common path pays zero
-  // extra round trips.
-  const nutritionSetUp =
-    nutritionPlanId != null ||
-    (await getNextFutureNutritionPlan(clientId, date)) != null;
 
   // training_plan_id prefers the date's event, then falls back to the active
   // plan so the per-card training write (Session 5.3) links even on a no-event
@@ -119,7 +104,7 @@ export const resolvePlanContextForDate = async (
   const trainingPlanId =
     trainingEvent?.trainingPlanId ?? (await getActiveTrainingPlanId(clientId));
 
-  return { nutritionPlanId, trainingPlanId, nutritionSetUp };
+  return { nutritionPlanId, trainingPlanId };
 };
 
 /**
@@ -144,24 +129,24 @@ export class NoActivePlanError extends Error {
 }
 
 /**
- * The orphan-log perimeter. Nutrition gates on `nutritionSetUp`
- * (covering-or-future — D1): a queued-first-plan client may log food before
- * their start date (the row carries a NULL stamp; the column has zero
- * SELECT-side readers and its FK has been SET NULL since migration 113), while
- * a client with no versions at all is still rejected. Training keeps the
- * stamp-presence gate — an event-less training log is structurally scored
- * against a plan's session, so a null link there is a real orphan. Wellness
- * writes are ungated — a plan-less client logging mood/sleep is valid.
+ * The orphan-log perimeter. Both resources reject a write whose `*_plan_id`
+ * stamp would be null: nutrition → `nutrition_plan_id`, training →
+ * `training_plan_id` (Session 5.3). Under versioning (migration 144) a
+ * nutrition stamp is null exactly when no version COVERS the log's date — a
+ * pre-start day for a queued-first-plan client, or a gap after a delete — so
+ * the client cannot log nutrition when there is no target that day. This is
+ * deliberately NARROWER than activation-readiness, which is covering-OR-future:
+ * "is the client set up?" (a queued first plan counts) and "can the client log
+ * TODAY?" (only a covering version counts) are different questions with
+ * legitimately different answers. Wellness writes are ungated — a plan-less
+ * client logging mood/sleep is valid, not an orphan.
  */
 export const assertHasActivePlan = (
   ctx: PlanContextForDate,
   resource: PlanGatedResource
 ): void => {
-  if (resource === "nutrition") {
-    if (!ctx.nutritionSetUp) throw new NoActivePlanError(resource);
-    return;
-  }
-  if (ctx.trainingPlanId == null) throw new NoActivePlanError(resource);
+  const id = resource === "nutrition" ? ctx.nutritionPlanId : ctx.trainingPlanId;
+  if (id == null) throw new NoActivePlanError(resource);
 };
 
 export type NutritionForDate = {
