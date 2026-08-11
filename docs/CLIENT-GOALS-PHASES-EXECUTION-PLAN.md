@@ -2694,14 +2694,22 @@ narrow `pane` to `MetricTab` and are otherwise untouched. "Log measurement" stay
 visible on the Blocks pane — it remains functional there, and hiding it is per-pane
 conditional UI nobody asked for.
 
-**The known `handleTabChange` bug is FIXED (owner-approved at plan review):** the
-replace URL is now built from the current search params (preserving `?subtab=`) instead
-of the bare `?tab=` string, so a Blocks selection survives an Overview↔Journey
-round-trip. **Residual, recorded:** the Training tab writes the same `subtab` key
-(`data`/`plans`/`exercise-data`), so a Journey→Training→Journey trip still lands on the
-default pane — fixing that means namespacing the key across both tabs, out of scope
-here. Each tab's content already ignores a subtab written while another tab was active,
-so a carried-over value is inert until its own tab is back.
+**The known `handleTabChange` bug is FIXED — after one same-session correction
+(amendment commit).** The first cut preserved the whole query including `?subtab=`,
+on the false premise that a carried-over subtab is inert until its own tab is back.
+It is not: Training and Nutrition **share** the `subtab` key, and their tab-match
+guards (`training-plan-builder.tsx:27-36`,
+`nutrition/builder/nutrition-plan-builder.tsx:27-33`) defend a render-order race, not
+a persisted param — a preserved `?tab=nutrition&subtab=plans` satisfies Nutrition's
+guard and opened its Plans calendar instead of Data (owner-caught, mirror-image on
+the way back). **Corrected model:** Journey's pane moved to a **single-owner
+`?journey=` key** (values unchanged; read unconditionally — nothing else writes it,
+so no cross-tab guard is needed and the pane restores with no flash), and
+`buildClientTabUrl` (`lib/client-tabs.ts`) preserves the query **except `subtab`**,
+which drops on every top-level switch — Training and Nutrition behave bit-for-bit as
+before Session 3, and Journey's round trip restores through ANY intermediate tab.
+Pinned by `lib/client-tabs.test.ts`, whose first two cases are the regressed
+Training↔Nutrition pair specifically.
 
 **Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing warnings,
 unchanged) · `vitest run` **259 files / 2686 tests, all passing** (+1 file, +2 tests —

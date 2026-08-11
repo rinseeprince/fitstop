@@ -17,7 +17,7 @@ import { WellnessTabContent } from "@/components/clients/wellness/wellness-tab-c
 import { NotesTabContent } from "@/components/clients/notes/notes-tab-content"
 import { useClient } from "@/hooks/use-check-in-data"
 import { useClientMetrics } from "@/hooks/use-client-metrics"
-import { type ClientTab } from "@/lib/client-tabs"
+import { buildClientTabUrl, type ClientTab } from "@/lib/client-tabs"
 import { AlertCircle } from "lucide-react"
 
 const VALID_TABS = new Set<ClientTab>(["overview", "metrics", "training", "nutrition", "wellness", "daily-habits", "check-ins", "notes"])
@@ -36,14 +36,11 @@ export default function ClientProfilePage() {
 
   const handleTabChange = useCallback((tab: ClientTab) => {
     setActiveTab(tab)
-    // Preserve the rest of the query (notably ?subtab=) so a pane selection
-    // survives a top-level tab round-trip — the bare `?tab=` rewrite silently
-    // dropped it. Every tab's content already ignores a subtab written while
-    // another tab was active, so a carried-over value is inert until its own
-    // tab is back.
-    const params = new URLSearchParams(searchParams.toString())
-    params.set("tab", tab)
-    router.replace(`/clients/${clientId}?${params.toString()}`, { scroll: false })
+    // Single-owner params (Journey's ?journey=) survive the switch so that
+    // pane restores on the return trip; the SHARED ?subtab= (written by both
+    // Training and Nutrition) is dropped — carried across, it satisfies the
+    // other tab's pane guard and opens the wrong pane. See buildClientTabUrl.
+    router.replace(buildClientTabUrl(clientId, tab, searchParams.toString()), { scroll: false })
   }, [clientId, router, searchParams])
 
   const { isCalculatingBMR, handleCalculateBMR } = useClientMetrics({

@@ -30,15 +30,16 @@ export const MetricsTabContent = ({
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Honor `subtab` only when the URL's `tab` is actually ours (same guard as
-  // the training page): a stale subtab written by another tab must not flash
-  // the wrong pane during a tab switch.
-  const rawSubtab =
-    searchParams.get("tab") === "metrics" ? searchParams.get("subtab") : null;
-  const pane: JourneySubtab = isJourneySubtab(rawSubtab) ? rawSubtab : "body";
+  // Journey owns its pane param outright (?journey=), unlike Training and
+  // Nutrition, which SHARE ?subtab= and therefore need tab-match guards
+  // against each other's writes. Nothing else writes ?journey=, so it is read
+  // unconditionally: the value deliberately persists across top-level tab
+  // switches (handleTabChange preserves it) and restores this pane on return.
+  const rawPane = searchParams.get("journey");
+  const pane: JourneySubtab = isJourneySubtab(rawPane) ? rawPane : "body";
   const setPane = (t: JourneySubtab) => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set("subtab", t);
+    params.set("journey", t);
     router.replace(`?${params.toString()}`, { scroll: false });
   };
   // The metric-keyed derivations below want a MetricTab; on the Blocks pane
