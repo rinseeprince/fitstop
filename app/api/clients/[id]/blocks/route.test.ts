@@ -149,6 +149,9 @@ describe("/api/clients/[id]/blocks", () => {
       // No pace field on the wire: pace is a client-side derivation fed by
       // the merged series (plan doc Task 3.2 — "no new API").
       expect(payload.data.blocks[0]).not.toHaveProperty("pace");
+      // clientToday rides the payload (Session 3.4) so the delete-preview
+      // runs computeDeleteShift with the SAME today the DELETE executes with.
+      expect(payload.data.clientToday).toBe(TODAY);
     });
   });
 

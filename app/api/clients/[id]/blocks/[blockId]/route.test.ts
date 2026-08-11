@@ -115,6 +115,7 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
     expect(deleteBlock).toHaveBeenCalledWith("client-1", TODAY, "block-b");
     expect(payload.data.mode).toBe("truncated");
     expect(payload.data.changes).toEqual(CHANGES);
+    expect(payload.data.clientToday).toBe(TODAY);
     expect(payload.data.blocks[0]).toEqual(
       expect.objectContaining({ id: "a", state: "past", weeks: 2 })
     );

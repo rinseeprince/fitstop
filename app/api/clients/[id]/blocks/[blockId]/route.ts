@@ -56,6 +56,7 @@ export async function DELETE(
           mode: result.mode,
           changes: result.changes,
           blocks: decorateBlocks(result.blocks, clientToday),
+          clientToday,
         },
       },
       { status: 200 }

@@ -55,8 +55,15 @@ export async function GET(
       listBlocks(clientId),
     ]);
 
+    // clientToday rides the payload so the browser previews the delete shift
+    // (computeDeleteShift) with the SAME today the DELETE will execute with —
+    // a device-tz today diverges from the client's around midnight, which is
+    // exactly the preview-vs-execution drift the shared pure helper forbids.
     return NextResponse.json(
-      { success: true, data: { blocks: decorateBlocks(blocks, clientToday) } },
+      {
+        success: true,
+        data: { blocks: decorateBlocks(blocks, clientToday), clientToday },
+      },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
@@ -118,7 +125,10 @@ export async function PUT(
     });
 
     return NextResponse.json(
-      { success: true, data: { blocks: decorateBlocks(blocks, clientToday) } },
+      {
+        success: true,
+        data: { blocks: decorateBlocks(blocks, clientToday), clientToday },
+      },
       { status: 200 }
     );
   } catch (error) {

@@ -2834,3 +2834,43 @@ delete is the whole v1 write surface.
 `vitest run` **265 files / 2715 tests, all passing** (+1 file, +4 payload-builder
 tests; arithmetic closes from 2711) · `check:labels` OK (655) · no `as any` · no
 markers · no migration.
+
+---
+
+### Task 3.4 — Delete a block ✅ SHIPPED 2026-08-11
+
+**What shipped.** A hover-revealed danger icon on **current and future rows only**
+(elapsed rows render no affordance — they are read-only and never reach the
+dialog; a one-action kebab is the wrong affordance per the design doc, so it is a
+bare rail icon in the card's `rowAction` slot, outside the expand toggle because
+buttons cannot nest). `blocks/delete-block-dialog.tsx` follows the
+destructive-confirm recipe exactly (`newdesignsystem.md:417-421`, the
+delete-event-dialog silhouette): styled `Dialog` — never AlertDialog — danger
+thumb, ONE plain-sans consequence sentence, ghost Cancel + danger-**outline** CTA
+repeating the verb ("Delete block") with `Loader2` while pending.
+
+**The sentence is a tested pure function** (`blocks/delete-block-sentence.ts`)
+whose tests drive the REAL `computeDeleteShift` — the same helper the DELETE route
+executes — pinning all the shapes: future block with one shifted successor (*"The
+journey shortens to 16 weeks and ends 20 Sep. Peak moves to 24 Aug."*), last-block
+delete (no moves clause), two moved blocks both named, ≥3 collapsing to a count
+(*"3 later blocks move earlier."*), current mid-block (*"Cut 2 starts today."*),
+current with no successor (*"The journey now ends yesterday."*), and the
+only-block case. Success toasts name the outcome (`"Cut 2" deleted` /
+`"Cut 2" now ends yesterday`); failures surface the server's message as a
+destructive toast. Delete → `deleteBlockRequest` → blocks-area invalidation.
+
+**Additive wire change, recorded:** the blocks GET/PUT/DELETE responses now carry
+**`clientToday`** beside the decorated chain. The preview must run
+`computeDeleteShift` with the SAME today the DELETE executes with — the coach's
+device day diverges from the client's around midnight, which is exactly the
+preview-vs-execution drift the shared-pure-helper design forbids. The S2 route
+tests assert by path (`data.blocks`, `data.mode`), so the field is purely
+additive; both tests gained a pin on it. Side benefit: the pace fraction now also
+uses the wire's client-tz today — **no block math anywhere runs on the coach's
+device day**, and the subtab's `getTodayDateString` usage is gone.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged) ·
+`vitest run` **266 files / 2722 tests, all passing** (+1 file, +7
+sentence-builder tests; arithmetic closes from 2715) · `check:labels` OK (658) ·
+no `as any` · no markers · no migration.

@@ -1,15 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Flag, Plus } from "lucide-react";
+import { Flag, Plus, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
 import { useToast } from "@/hooks/use-toast";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
-import { getTodayDateString } from "@/lib/date-helpers";
-import { derivePace } from "@/lib/blocks/block-derivations";
+import { computeDeleteShift } from "@/lib/blocks/block-chain";
+import { derivePace, type ClientBlockView } from "@/lib/blocks/block-derivations";
 import {
+  deleteBlockRequest,
   putBlockChain,
   useBlockFacts,
   useClientBlocks,
@@ -20,6 +23,8 @@ import { deriveBlockWeightFacts } from "./block-weight";
 import { BlockCard } from "./block-card";
 import { AddBlockForm } from "./add-block-form";
 import { buildAppendPayload, type NewBlockEntry } from "./block-chain-payload";
+import { buildDeleteSentence } from "./delete-block-sentence";
+import { DeleteBlockDialog } from "./delete-block-dialog";
 import type { MetricSummary } from "../metrics-view-types";
 
 // The Journey tab's Blocks pane: the chain (decorated server-side in the
@@ -37,7 +42,7 @@ type BlocksSubtabProps = {
 };
 
 export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
-  const { blocks, isLoading, isError } = useClientBlocks(clientId);
+  const { blocks, clientToday, isLoading, isError } = useClientBlocks(clientId);
   const {
     facts,
     isLoading: factsLoading,
@@ -47,11 +52,47 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
   const { toast } = useToast();
   const invalidateBlocks = useInvalidateClientBlocks();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ClientBlockView | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const factsById = useMemo(
     () => new Map(facts.map((fact) => [fact.blockId, fact])),
     [facts]
   );
+
+  // Previewed with the SAME pure helper and the SAME client-tz today the
+  // DELETE route executes with, so the approved sentence and the executed
+  // shift cannot differ.
+  const deleteSentence = useMemo(() => {
+    if (!deleteTarget || !clientToday) return null;
+    const outcome = computeDeleteShift(blocks, deleteTarget.id, clientToday);
+    if (!outcome || outcome.kind === "elapsed") return null;
+    return buildDeleteSentence(blocks, deleteTarget.id, outcome);
+  }, [blocks, deleteTarget, clientToday]);
+
+  const handleDeleteConfirm = async (block: ClientBlockView) => {
+    setIsDeleting(true);
+    try {
+      const result = await deleteBlockRequest(clientId, block.id);
+      void invalidateBlocks(clientId);
+      toast({
+        title:
+          result.mode === "truncated"
+            ? `"${block.name}" now ends yesterday`
+            : `"${block.name}" deleted`,
+      });
+      setDeleteTarget(null);
+    } catch (error) {
+      toast({
+        title: "Delete failed",
+        description:
+          error instanceof Error ? error.message : "Could not delete the block",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleAdd = async (entry: NewBlockEntry, firstStartsOn?: string) => {
     try {
@@ -75,9 +116,6 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
   const weightPoints = weightMetric?.points ?? [];
   const weightUnit =
     weightMetric?.unit ?? (preference === "imperial" ? "lbs" : "kg");
-  // Device today, for the pace interpolation fraction ONLY — block state
-  // always comes from the wire, derived in the client's timezone.
-  const today = getTodayDateString();
 
   const totalWeeks = blocks.reduce((sum, block) => sum + block.weeks, 0);
   const meta =
@@ -156,15 +194,17 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
               block.targetWeightKg != null
                 ? round1(formatWeight(block.targetWeightKg, preference).value)
                 : null;
+            // The wire's client-tz today drives the pace fraction too — no
+            // block math ever runs on the coach's device day.
             const pace =
-              targetDisplay != null
+              targetDisplay != null && clientToday != null
                 ? derivePace({
                     startsOn: block.startsOn,
                     endsOn: block.endsOn,
                     targetWeight: targetDisplay,
                     startWeight: weight.start?.value ?? null,
                     currentWeight: weight.end?.value ?? null,
-                    today,
+                    today: clientToday,
                   })
                 : null;
             return (
@@ -180,6 +220,22 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
                 targetDisplay={targetDisplay}
                 weightUnit={weightUnit}
                 defaultOpen={block.state === "current"}
+                rowAction={
+                  block.state !== "past" ? (
+                    <button
+                      type="button"
+                      aria-label={`Delete ${block.name}`}
+                      title="Delete block"
+                      onClick={() => setDeleteTarget(block)}
+                      className={cn(
+                        "mr-2 rounded p-1 text-[#93b0b4] opacity-0 transition-colors hover:text-[#c06060] focus-visible:opacity-100 group-hover/row:opacity-100",
+                        FOCUS_RING
+                      )}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                  ) : undefined
+                }
               />
             );
           })}
@@ -187,6 +243,14 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
           {showAddForm && addForm}
         </div>
       )}
+
+      <DeleteBlockDialog
+        block={deleteTarget}
+        sentence={deleteSentence}
+        isDeleting={isDeleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={(block) => void handleDeleteConfirm(block)}
+      />
     </div>
   );
 }

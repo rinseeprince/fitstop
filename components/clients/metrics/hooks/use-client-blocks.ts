@@ -29,7 +29,7 @@ function blocksAreaKeyPrefix(clientId: string) {
 
 type BlocksResponse = {
   success: boolean;
-  data: { blocks: ClientBlockView[] };
+  data: { blocks: ClientBlockView[]; clientToday: string };
 };
 
 type BlockFactsResponse = {
@@ -43,6 +43,7 @@ type DeleteBlockResponse = {
     mode: "removed" | "truncated";
     changes: BlockDateChange[];
     blocks: ClientBlockView[];
+    clientToday: string;
   };
 };
 
@@ -53,7 +54,10 @@ const SWR_CONFIG = {
 } as const;
 
 /** The client's block chain, decorated (weeks/state/weekOfTotal) server-side
- *  in the CLIENT's timezone — never re-derive state in the browser. */
+ *  in the CLIENT's timezone — never re-derive state in the browser.
+ *  `clientToday` is the client-tz day the decoration used; every client-side
+ *  date derivation (pace fraction, delete-shift preview) uses it, never the
+ *  coach's device day. */
 export function useClientBlocks(clientId: string) {
   const { data, error, isLoading } = useSWR<BlocksResponse>(
     clientBlocksKey(clientId),
@@ -62,6 +66,7 @@ export function useClientBlocks(clientId: string) {
   );
   return {
     blocks: data?.data.blocks ?? [],
+    clientToday: data?.data.clientToday ?? null,
     isLoading,
     isError: Boolean(error),
   };
