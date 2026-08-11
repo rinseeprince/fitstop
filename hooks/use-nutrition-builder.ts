@@ -173,11 +173,28 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const [isGenerating, setIsGenerating] = useState(false);
   const [warnings, setWarnings] = useState<NutritionWarning[]>([]);
 
-  // Settings change handler
-  const handleSettingsChange = useCallback((newSettings: Partial<NutritionSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
-    setSettingsChanged(true);
-  }, []);
+  // Settings change handler. Only fired by a coach picker interaction — the
+  // seed effect above writes setSettings directly, so this never runs on open.
+  const { manualEnabled, resplitManualByDietType } = manual;
+  const handleSettingsChange = useCallback(
+    (newSettings: Partial<NutritionSettings>) => {
+      // Diet type is a split preference with no editable box of its own, so in
+      // manual mode it is otherwise inert. A GENUINE diet-type change (not an
+      // activity/protein-per-kg change, which resend the same dietType)
+      // re-splits the manual carbs/fat so the boxes follow the picker. Guarded
+      // to manual mode; auto mode already recomputes autoTargets from the diet.
+      if (
+        manualEnabled &&
+        newSettings.dietType !== undefined &&
+        newSettings.dietType !== settings.dietType
+      ) {
+        resplitManualByDietType(newSettings.dietType);
+      }
+      setSettings((prev) => ({ ...prev, ...newSettings }));
+      setSettingsChanged(true);
+    },
+    [manualEnabled, resplitManualByDietType, settings.dietType]
+  );
 
   // Generate nutrition plan. `useManual` posts the coach's typed targets as the
   // custom-macro override; otherwise the server recalculates from the same

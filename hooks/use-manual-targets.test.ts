@@ -108,6 +108,46 @@ describe("useManualTargets", () => {
     });
   });
 
+  // =========================================================================
+  // A diet-type change re-splits the manual macros (Option B).
+  //
+  // The diet-type picker has no editable box of its own, so in manual mode it
+  // was inert — a coach changing "Balanced" to "Low Carb" saw the boxes stay
+  // put. `resplitManualByDietType` (fired ONLY on a deliberate picker change,
+  // never on a keystroke) holds calories and protein and re-derives carbs/fat
+  // from the diet split, so the boxes follow the picker.
+  // =========================================================================
+  describe("a diet-type change re-splits carbs/fat, holding calories and protein", () => {
+    it("moves fat up and carbs down for low_carb, keeping the calorie total", () => {
+      const { result } = renderHook(() => useManualTargets(null));
+      act(() => result.current.enableManualTargets(AUTO));
+      act(() => result.current.resplitManualByDietType("low_carb"));
+
+      const d = result.current.manualDraft;
+      // Calories and protein are untouched.
+      expect(d.calories).toBe(AUTO.calories);
+      expect(d.proteinG).toBe(AUTO.proteinG);
+      // Low carb (25/75 carb/fat of the post-protein calories) pushes fat up and
+      // carbs down from the balanced seed.
+      expect(d.fatG!).toBeGreaterThan(AUTO.fatG);
+      expect(d.carbG!).toBeLessThan(AUTO.carbG);
+      // The re-split stays coherent with the calorie target (no mismatch left).
+      expect(result.current.manualCaloriesMismatch).toBe(false);
+      expect(macroCalories(completeTargets(d)!)).toBeCloseTo(AUTO.calories, -2);
+    });
+
+    it("is a no-op while calories or protein is mid-edit (null)", () => {
+      const { result } = renderHook(() => useManualTargets(null));
+      act(() => result.current.enableManualTargets(AUTO));
+      act(() => result.current.setManualField("calories", null));
+      act(() => result.current.resplitManualByDietType("low_carb"));
+
+      // Nothing re-split — carbs/fat stay exactly as they were.
+      expect(result.current.manualDraft.carbG).toBe(AUTO.carbG);
+      expect(result.current.manualDraft.fatG).toBe(AUTO.fatG);
+    });
+  });
+
   it("hydrates from a stored manual override and starts in manual mode", () => {
     const { result } = renderHook(() =>
       useManualTargets({

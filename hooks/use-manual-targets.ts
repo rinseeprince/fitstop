@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { applySurplusSplit } from "@/utils/nutrition-helpers";
+import { applySurplusSplit, calculateDailyMacros } from "@/utils/nutrition-helpers";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
+import type { DietType } from "@/types/check-in";
 
 /** A complete set of targets — what the calculator emits and what gets saved. */
 export type MacroTargets = {
@@ -120,8 +121,9 @@ export function useManualTargets(seed: ManualSeed) {
 
   /**
    * Explicitly rebalance carbs + fat so the macros match the entered calories,
-   * holding protein. Offered as an action rather than applied automatically —
-   * it is destructive to two fields, so the coach asks for it.
+   * holding protein AND the current carb:fat ratio. Offered as an action
+   * rather than applied automatically — it is destructive to two fields, so
+   * the coach asks for it.
    */
   const matchMacrosToCalories = useCallback(() => {
     setDraft((prev) => {
@@ -134,6 +136,29 @@ export function useManualTargets(seed: ManualSeed) {
         prev.carbG || 1,
         prev.fatG || 1,
         false
+      );
+      return { ...prev, carbG: Math.max(0, carbsG), fatG: Math.max(0, fatG) };
+    });
+  }, []);
+
+  /**
+   * Re-split carbs + fat by a DIET TYPE (holding calories and protein). The
+   * diet-type picker has no editable box of its own — its only expression is
+   * the carb:fat split — so in manual mode it is otherwise inert: a coach
+   * changing "Low Carb" would never see the boxes follow. Wired to fire ONLY
+   * on a deliberate diet-type change (a discrete picker action, never a
+   * keystroke), so it does not reintroduce the per-keystroke derivation the
+   * "typing never mutates another field" invariant above exists to prevent.
+   * A no-op while calories or protein is mid-edit (null).
+   */
+  const resplitByDietType = useCallback((dietType: DietType) => {
+    setDraft((prev) => {
+      if (!prev.calories || !prev.proteinG) return prev;
+      const { carbsG, fatG } = calculateDailyMacros(
+        prev.calories,
+        prev.proteinG,
+        false,
+        dietType
       );
       return { ...prev, carbG: Math.max(0, carbsG), fatG: Math.max(0, fatG) };
     });
@@ -171,5 +196,6 @@ export function useManualTargets(seed: ManualSeed) {
     revertToAuto,
     setManualField: setField,
     matchMacrosToCalories,
+    resplitManualByDietType: resplitByDietType,
   };
 }
