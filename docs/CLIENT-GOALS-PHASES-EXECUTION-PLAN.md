@@ -1377,3 +1377,95 @@ every call, so the `client_goals` row count **must increase by one**. A first at
 "test bf" looked like a pass and was not: its intake carried a *current* body fat but no *goal*
 body fat, so no goal field entered `updates`, the `if (updates.goal_weight !== undefined || …)`
 guard was false, `updateGoals` was never called, and the row count stayed at 1.
+
+---
+
+### Task 1.1 — Narrow-path cascade: pure upsert, no DELETE ✅ SHIPPED 2026-08-11
+
+A rescoped re-land of `3abbfa5` (reverted by `d58120c` as collateral; `d83f707` re-landed
+the bounded-DELETE subset; `0163705` later added the `coach_note` predicate + carry-forward
+this re-land preserves). Line numbers below are as of this commit.
+
+**What shipped.** `NutritionRegenScope` (`services/nutrition-event-service.ts:247`) —
+`{kind:"dates"}` = pure upsert, NO delete; `{kind:"from"}` = d83f707's bounded DELETE
+verbatim (all six predicates, `.is("coach_note", null)` included) over `[from, from+8w]`.
+`generateNutritionEvents` (`:67`) takes an explicit date LIST; its two-job read (edit guard
++ note carry-forward) is keyed `.in("date", orderedDates)` (`:190`), never a [min,max]
+range. Both reset paths (`nutrition-event-edit-service.ts`) pass `{kind:"dates"}` over
+exactly the reset days — the clear-flags-BEFORE-regen ordering still matters, now because
+of the generator's protected-days filter rather than the DELETE. The two scripts expand
+their ranges via the re-landed `expandDateRange` (`lib/date-helpers.ts:299`).
+
+**Counts, re-derived from the tree (do not trust any doc's count, including `3abbfa5`'s).**
+12 cascade invocations = **7 narrow** ({kind:"dates"}: move `[source, target]` · duplicate ·
+event-surplus PATCH · event DELETE (service now returns the date) · sessions PUT
+(`surplusAffectedDates`) · sessions PATCH (`updateSurplusForFutureEvents` returns dates) ·
+place-from-library session drop) + **5 wide** ({kind:"from"}: place-from-library plan +
+inline placements (via its local wrapper — a bare grep undercounts it), amendment floor,
+`[planId]` DELETE, client-level training DELETE). Narrow invocations live in 5 route
+files. `3abbfa5`'s "six routes" reconciles under no counting scheme; its 12-not-8
+correction holds. The two session handlers now skip the cascade entirely when zero events
+changed (`affectedDates.length === 0`) — previously a full-horizon no-op regen.
+
+**Two deviations from `3abbfa5`, both deliberate (owner, 2026-08-11):**
+1. **No `to` on the from arm; `training-event-service.ts` untouched.** The rescope is
+   narrow-paths-only, and re-landing `cancelFutureEventsForPlan → lastDate` would pull the
+   `calorie_surplus_percentage`-landmine file back into the riskiest task. The stale-tail
+   defect that half closed is **left open** and filed in `TECHNICAL-DEBT.md → "Nutrition
+   cascade — five defects"` with the full re-land recipe. It is NOT fixed by this session.
+2. **The verification bullet's "neighbours' `updated_at` untouched" test was not written**
+   — it is unwritable: `updated_at` is `DEFAULT NOW()` with no trigger and the upsert
+   payload omits it, so a conflict-UPDATE leaves it frozen whether or not the cascade
+   over-writes (3abbfa5's own recorded finding). The honest assertions, which prove
+   non-interference directly: the upserted date list is exactly the scope, "no `.delete()`
+   issued", and the `from()` call count (`nutrition-event-service.test.ts`, narrow-scope
+   describe).
+
+**Why the obvious failure mode does not fire.** "The DELETE was destroying something the
+upsert now preserves" — checked, and the answer is no for `note`: both reset paths null it
+in their own UPDATE (`nutrition-event-edit-service.ts:170`, `:203`) and the generator's
+payload omits the key entirely; structurally a `note` exists only on `is_modified = true`
+rows (materialize is its sole writer and sets both together), and those rows are excluded
+from the upsert by the protected-days filter. `coach_note` is the opposite case: preserved
+deliberately, re-supplied explicitly on every upserted row.
+
+**Recorded, NOT fixed — durable copies in `TECHNICAL-DEBT.md → "Nutrition cascade — five
+defects recorded, not fixed, by the S1.1 narrow-scope re-land"** (filed there because this
+plan doc is deleted when the workstream lands): (1) the stale tail above; (2) the
+doc-mandated pair — `cascadeNutritionAfterTrainingChange:389-390` swallows regeneration
+failures, `:380-386` does not destructure the plan-lookup `error`; (3) the plan-scoped
+DELETE vs client-scoped upsert asymmetry (a foreign plan's event silently rewritten);
+(4) the `logged`→`scheduled` status flip (DELETE spares non-scheduled rows, upsert payload
+hardcodes `status: "scheduled"` at `:169` — pre-existing on every path, narrowed by this
+change); (5) the baseline leak onto pre-`effective_from` days after a future-dated
+regenerate (surfaced reviewing this task; becomes more visible once Task 1.3 lands).
+
+**Inherited observation, re-verified.** `sessions/[sessionId]` DELETE still does not
+cascade — and that is correct, not a gap: `deleteSession` soft-deletes the session +
+exercises and never touches `training_events`, so no nutrition input changed.
+
+**Docs.** ARCHITECTURE's "Training → Nutrition cascade" section rewritten: the per-anchor
+contract (falsified by this change) replaced by the scope contract, and two additional
+bullets corrected because they described behaviour the code never had — "logged/missed
+immutable across the cascade" (false via defect 4's mechanism) and "baseline is preserved"
+(false via defect 5's; the same value usually lands, which is not the same claim).
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing warnings, count
+unchanged from Session 0's baseline — none new) · `vitest run` **250 files / 2574 tests,
+all passing** (Session 0 baseline 249/2560; +1 file, +14 tests = 12 expandDateRange + 2
+narrow-scope; arithmetic closes exactly) · `check:labels` OK (634 files) · no new
+`as any` (test-file mock casts are the sanctioned exception; the three in
+`seed-scale-client.ts` predate this commit on untouched lines) · no markers. No migration
+in this commit, so no `check:rls` / `db push` / `gen types`.
+
+**§2 security/load/perf review (trigger: changed write path, ~28 files).** Security: no
+auth chain, ownership check, or validation changed on any touched route — diffs are
+confined to the cascade call shape after the existing guards; every write keeps its
+tenant scoping (`client_id` / `nutrition_plan_id` predicates unchanged). Performance:
+a narrow cascade is now 5 round trips writing |dates| rows (a move: 2) where it was 6
+round trips deleting + rewriting up to 57; from-scope worst case unchanged (57 rows);
+the `.in("date", …)` reads and the upsert's `onConflict: client_id,date` are covered by
+the real UNIQUE constraint on `nutrition_events(client_id, date)`. Consistency: the
+narrow paths' no-row window is CLOSED (the fix itself); the remaining known divergences
+are exactly the five debt entries above. Nothing was load-tested; claims are from code
+reading and the unit suite.

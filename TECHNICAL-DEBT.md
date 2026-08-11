@@ -49,6 +49,66 @@ Four routes rewrite `nutrition_events` server-side but currently have **no web c
 
 ---
 
+## Nutrition cascade — five defects recorded, not fixed, by the S1.1 narrow-scope re-land
+
+Logged: 2026-08-11 (goals/blocks execution plan, Session 1 Task 1.1). The session-level
+*decisions* live in that plan doc's §8 STATUS block; **this file is the durable record of
+the defects**, because the plan doc is deleted when its workstream lands (its own §1 rule)
+and a defect filed only there survives solely in git history.
+
+- **Stale training-surplus tail after a plan deletion.** The two plan-clear routes
+  (`DELETE /api/clients/[id]/training`, `DELETE …/training/[planId]`) cancel the plan's
+  **entire forward event ray**, then cascade `{kind:"from"}`, which rebuilds only
+  `[today, today+56]`. Nutrition rows exist out to `lastAnchor+56`, so days past the
+  cascade horizon keep a `calorie_surplus_percentage` from training events that no longer
+  exist — and after a full plan clear there may be no further training writes to sweep
+  them, so "nothing would ever revisit it" is exact. **Closed by `3abbfa5`, re-opened by
+  the `d58120c` revert, deliberately not re-closed by the rescoped re-land** (owner
+  decision 2026-08-11: narrow paths only). Re-land recipe, already worked out in
+  `3abbfa5`: `cancelFutureEventsForPlan` returns the max deleted date via
+  `.delete().select("date")` (same round trip); the two routes thread it as an explicit
+  `to`; `NutritionRegenScope`'s `from` arm regains `to?` and `resolveScopeDates` extends
+  past the horizon when `to` exceeds it. `training_plans.effective_until` is NOT a
+  substitute — it is NULL on placed plans.
+- **The cascade swallows regeneration failures, and its plan lookup can't tell "failed"
+  from "no plan".** `cascadeNutritionAfterTrainingChange`
+  (`services/nutrition-event-service.ts:389-390`) catches every regeneration error into
+  `captureApiError`, so the calling route returns success over a stale/gapped calendar
+  (violates CONVENTIONS §12's "never swallow"); and the active-plan read (`:380-386`)
+  does not destructure `error`, so a failed lookup silently no-ops as "client has no
+  plan" (violates the destructure-and-log rule, memory of the 7.81 cluster). Fix shape:
+  destructure and log the lookup error; decide per-route whether a failed cascade should
+  surface (the orchestrator's `regenerateEventsOrThrow` shows the loud pattern).
+- **The client-scoped upsert can silently rewrite a foreign plan's event.** The from-arm
+  DELETE is plan-scoped (`.eq("nutrition_plan_id", planId)`) but the generator's upsert
+  conflicts on client-scoped `(client_id, date)` — an event owned by a *different* plan
+  inside the window survives the delete and is overwritten, `nutrition_plan_id`
+  included. One durable active plan per client bounds the exposure, but rows from an
+  archived plan (SET NULL'd or not yet cleaned) are reachable. Previously only the
+  `is_modified` half of this asymmetry was documented.
+- **A cascade flips a `logged` day back to `scheduled`.** The DELETE spares
+  non-scheduled rows (`.eq("status", "scheduled")`), then the generator's payload
+  hardcodes `status: "scheduled"` (`nutrition-event-service.ts:169`), so PostgREST's
+  conflict-UPDATE includes it: a covered date the client already logged (practically:
+  today) has its event status reverted and its targets rewritten. Display survives via
+  the `nutrition_logs` snapshot (read priority 1); the event row is corrupted.
+  Pre-existing on every path; the narrow scope only shrinks the covered set. Fix shape:
+  drop already-non-scheduled dates during row build (the protected-days read already
+  returns the rows; it just doesn't select `status`).
+- **Baseline leak onto pre-`effective_from` days after a future-dated regenerate.** The
+  single durable plan is edited in place, so after a save with a future
+  `effective_from` the template holds the NEXT prescription while events before that
+  date still carry the old one. Any cascade covering such a day rebuilds it from the
+  current template — next plan's numbers on days still governed by the old one. There
+  is no stored source for the old numbers except the event row itself (no plan
+  versioning), so the fix shape is a cascade that updates only
+  `calorie_surplus_percentage`/`is_training_day` on *existing* rows instead of
+  rebuilding them — the behaviour ARCHITECTURE's pre-2026-08-11 "baseline is preserved"
+  bullet described and the code never had. Becomes more visible once S1.3 makes
+  future-dated saves real (`effective_from` advancing on the conflict path).
+
+---
+
 ## Training builder week model — deferred tails (builder S2.5)
 
 Logged: 2026-07-01.

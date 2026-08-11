@@ -109,18 +109,22 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
         PLAN,
         null,
         null,
-        "2026-04-10",
-        "2026-04-12",
+        ["2026-04-10", "2026-04-11", "2026-04-12"],
       );
 
-      // Read is keyed on client_id + date range (NOT plan id), because the
-      // upsert conflict key is client-scoped. is_modified is now partitioned
-      // in memory rather than filtered in SQL, so one round trip serves both
-      // the edit guard and the coach-note carry-forward.
+      // Read is keyed on client_id + the exact date list (NOT plan id, NOT a
+      // [min,max] range), because the upsert conflict key is client-scoped and
+      // a scattered narrow cascade must not reason about days it is not
+      // writing. is_modified is partitioned in memory rather than filtered in
+      // SQL, so one round trip serves both the edit guard and the coach-note
+      // carry-forward.
       expect(protectedQuery.eq).toHaveBeenCalledWith("client_id", "client-1");
       expect(protectedQuery.select).toHaveBeenCalledWith("date, is_modified, coach_note");
-      expect(protectedQuery.gte).toHaveBeenCalledWith("date", "2026-04-10");
-      expect(protectedQuery.lte).toHaveBeenCalledWith("date", "2026-04-12");
+      expect(protectedQuery.in).toHaveBeenCalledWith("date", [
+        "2026-04-10",
+        "2026-04-11",
+        "2026-04-12",
+      ]);
 
       // The edited day (04-11) is omitted; the other two days are regenerated.
       expect(upsertQuery.upsert).toHaveBeenCalledTimes(1);
@@ -148,8 +152,7 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
         PLAN,
         null,
         null,
-        "2026-04-10",
-        "2026-04-12",
+        ["2026-04-10", "2026-04-11", "2026-04-12"],
       );
 
       const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{ date: string }>;
@@ -170,7 +173,11 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       });
 
       await expect(
-        generateNutritionEvents("client-1", "plan-1", PLAN, null, null, "2026-04-10", "2026-04-12"),
+        generateNutritionEvents("client-1", "plan-1", PLAN, null, null, [
+          "2026-04-10",
+          "2026-04-11",
+          "2026-04-12",
+        ]),
       ).rejects.toMatchObject({ message: "boom" });
 
       // A read failure must NOT silently overwrite an edited day.
@@ -215,7 +222,10 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
         return createMockQuery({ data: null, error: null }) as any;
       });
 
-      await regenerateFutureNutritionEvents("client-1", "plan-1", "2026-04-10");
+      await regenerateFutureNutritionEvents("client-1", "plan-1", {
+        kind: "from",
+        from: "2026-04-10",
+      });
 
       expect(deleteQuery.delete).toHaveBeenCalled();
       expect(deleteQuery.eq).toHaveBeenCalledWith("nutrition_plan_id", "plan-1");
@@ -262,7 +272,10 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
         return createMockQuery({ data: null, error: null }) as any;
       });
 
-      await regenerateFutureNutritionEvents("client-1", "plan-1", "2026-04-10");
+      await regenerateFutureNutritionEvents("client-1", "plan-1", {
+        kind: "from",
+        from: "2026-04-10",
+      });
 
       // 8 weeks (56 days) inclusive of both ends.
       const EXPECTED_END = "2026-06-05";
@@ -304,7 +317,10 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
         return createMockQuery({ data: null, error: null }) as any;
       });
 
-      await regenerateFutureNutritionEvents("client-1", "plan-1", "2026-04-10");
+      await regenerateFutureNutritionEvents("client-1", "plan-1", {
+        kind: "from",
+        from: "2026-04-10",
+      });
 
       expect(deleteQuery.is).toHaveBeenCalledWith("coach_note", null);
     });
@@ -344,8 +360,7 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
         PLAN,
         null,
         null,
-        "2026-04-10",
-        "2026-04-12",
+        ["2026-04-10", "2026-04-11", "2026-04-12"],
       );
 
       const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{
@@ -380,11 +395,87 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       });
 
       await generateNutritionEvents(
-        "client-1", "plan-1", PLAN, null, null, "2026-04-10", "2026-04-12",
+        "client-1", "plan-1", PLAN, null, null,
+        ["2026-04-10", "2026-04-11", "2026-04-12"],
       );
 
       const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{ date: string }>;
       expect(rows.map((r) => r.date)).toEqual(["2026-04-10", "2026-04-12"]);
+    });
+  });
+
+  // =========================================================================
+  // Narrow scope — the no-row window. Routes that know their exact dates pass
+  // {kind:"dates"} and get a pure upsert: those days NEVER lose their row. The
+  // old delete-then-regenerate left every date in the window row-less across
+  // four network round trips, and getPlanTargetForDate resolves a missing row
+  // to null — which nutrition_logs snapshots permanently.
+  // =========================================================================
+  describe("regenerateFutureNutritionEvents narrow scope", () => {
+    it("upserts exactly the given dates and issues no delete", async () => {
+      let nutCount = 0;
+      const protectedQuery = createMockQuery<
+        { date: string; is_modified: boolean; coach_note: string | null }[]
+      >({ data: [], error: null });
+      const upsertQuery = createMockQuery({ data: [], error: null });
+      const deleteQuery = createMockQuery({ data: null, error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "nutrition_events") {
+          nutCount += 1;
+          // With no delete, the FIRST nutrition_events access is the protected
+          // read. If an implementation regressed to deleting, this dispatch would
+          // hand the delete the protected query and the assertions below trip.
+          return (nutCount === 1 ? protectedQuery : upsertQuery) as any;
+        }
+        if (table === "nutrition_plans") {
+          return createMockQuery({
+            data: { baseline_calories: 2000, protein_target_g: 150, diet_type: "balanced" },
+            error: null,
+          }) as any;
+        }
+        return createMockQuery({ data: [], error: null }) as any;
+      });
+
+      // A move: the day it left and the day it landed on, three months apart.
+      await regenerateFutureNutritionEvents("client-1", "plan-1", {
+        kind: "dates",
+        dates: ["2026-07-20", "2026-04-27"],
+      });
+
+      // Sorted, and NOT expanded to the 85 days between them.
+      const rows = upsertQuery.upsert.mock.calls[0][0] as Array<{ date: string }>;
+      expect(rows.map((r) => r.date)).toEqual(["2026-04-27", "2026-07-20"]);
+
+      // The protected read is keyed on the exact list too — a scattered narrow
+      // cascade must not read (or reason about) days it is not writing.
+      expect(protectedQuery.in).toHaveBeenCalledWith("date", [
+        "2026-04-27",
+        "2026-07-20",
+      ]);
+
+      // The whole point: no DELETE, so the dates never lose their row. A missing
+      // row reads as null from getPlanTargetForDate, and that null is snapshotted
+      // permanently into nutrition_logs.
+      expect(deleteQuery.delete).not.toHaveBeenCalled();
+      expect(protectedQuery.delete).not.toHaveBeenCalled();
+      expect(upsertQuery.delete).not.toHaveBeenCalled();
+      expect(nutCount).toBe(2); // protected-read + upsert only
+    });
+
+    it("does nothing at all when the date list is empty", async () => {
+      const anyQuery = createMockQuery({ data: [], error: null });
+      mockFrom.mockImplementation(() => anyQuery as any);
+
+      await regenerateFutureNutritionEvents("client-1", "plan-1", {
+        kind: "dates",
+        dates: [],
+      });
+
+      // Bails BEFORE any write. The old code deleted first and only then hit its
+      // range guard — a "deleted the calendar, returned success" shape.
+      expect(anyQuery.delete).not.toHaveBeenCalled();
+      expect(anyQuery.upsert).not.toHaveBeenCalled();
     });
   });
 });

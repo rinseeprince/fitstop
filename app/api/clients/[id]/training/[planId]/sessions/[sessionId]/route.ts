@@ -136,10 +136,13 @@ export async function PUT(
       input: { ...validation.data, exercises },
     });
 
-    if (result.surplusChanged) {
+    // The affected days are this session's future scheduled events — a scattered
+    // set, not a range — so the service reports them and the cascade rewrites
+    // exactly those. `surplusAffectedDates` is empty unless the surplus changed.
+    if (result.surplusAffectedDates.length > 0) {
       await cascadeNutritionAfterTrainingChange(
         clientId,
-        today,
+        { kind: "dates", dates: result.surplusAffectedDates },
         "cascade-nutrition-from-session-full-edit",
       );
     }
@@ -225,16 +228,18 @@ export async function PATCH(
       // Client-local today: "future" events live on the CLIENT's calendar, so
       // the surplus update + nutrition cascade anchor to the client's day.
       const today = await getClientTodayString(clientId);
-      await updateSurplusForFutureEvents(
+      const affectedDates = await updateSurplusForFutureEvents(
         sessionId,
         validation.data.calorieSurplusPercentage ?? null,
         today,
       );
-      await cascadeNutritionAfterTrainingChange(
-        clientId,
-        today,
-        "cascade-nutrition-from-session-surplus-edit",
-      );
+      if (affectedDates.length > 0) {
+        await cascadeNutritionAfterTrainingChange(
+          clientId,
+          { kind: "dates", dates: affectedDates },
+          "cascade-nutrition-from-session-surplus-edit",
+        );
+      }
     }
 
     return NextResponse.json({ success: true, session }, { status: 200 });

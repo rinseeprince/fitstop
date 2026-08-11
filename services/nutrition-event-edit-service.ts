@@ -153,9 +153,12 @@ export async function materializeNutritionEventDays(
 
 /**
  * Reset a coach-edited day back to auto. Clears `is_modified` FIRST (order
- * matters — the regen delete only removes `is_modified=false` rows), then
- * regenerates forward from that date so the now-unfrozen day is re-derived from
- * the plan while other edited/logged days are preserved.
+ * matters — the regenerator's protected-days filter skips `is_modified` rows,
+ * so a day reset after the regen would be skipped and never re-derived), then
+ * regenerates exactly that date so the now-unfrozen day is re-derived from the
+ * plan. Other edited/logged days are untouched because they are not in the
+ * date list at all. A `coach_note` on the day survives via the generator's
+ * carry-forward; `note` is cleared here, and the upsert payload omits it.
  */
 export async function resetNutritionEvent(
   clientId: string,
@@ -171,15 +174,19 @@ export async function resetNutritionEvent(
 
   if (error) throw error;
 
-  await regenerateFutureNutritionEvents(clientId, activePlanId, date);
+  await regenerateFutureNutritionEvents(clientId, activePlanId, {
+    kind: "dates",
+    dates: [date],
+  });
 }
 
 /**
  * Reset a LIST of coach-edited days back to auto in one call: clear `is_modified`
- * on every today-forward scheduled day in `dates`, then regenerate forward from
- * the EARLIEST of them (one regen pass re-derives the un-frozen days from the
- * plan; other is_modified/logged days are preserved). Order matters — clear the
- * flags BEFORE regenerating, since the regen delete only removes is_modified=false
+ * on every today-forward scheduled day in `dates`, then regenerate exactly those
+ * days from the plan. A scattered selection resets exactly the chosen days and
+ * leaves the gaps untouched — it no longer collapses to the earliest date and
+ * rewrites everything after it. Order matters: clear the flags BEFORE
+ * regenerating, since the regenerator's protected-days filter skips is_modified
  * rows. Returns the days reset.
  */
 export async function resetNutritionEventDays(
@@ -200,8 +207,10 @@ export async function resetNutritionEventDays(
 
   if (error) throw error;
 
-  const fromDate = eligibleDates.reduce((min, d) => (d < min ? d : min), eligibleDates[0]);
-  await regenerateFutureNutritionEvents(clientId, activePlanId, fromDate);
+  await regenerateFutureNutritionEvents(clientId, activePlanId, {
+    kind: "dates",
+    dates: eligibleDates,
+  });
 
   return { reset: eligibleDates.length };
 }

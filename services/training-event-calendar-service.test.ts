@@ -113,10 +113,12 @@ describe("training-event-calendar-service", () => {
         return deleteQuery as any; // delete
       });
 
-      await deleteEvent("event-1", "client-1", "plan-1");
+      const result = await deleteEvent("event-1", "client-1", "plan-1");
 
       expect(deleteQuery.delete).toHaveBeenCalled();
       expect(deleteQuery.eq).toHaveBeenCalledWith("id", "event-1");
+      // The deleted day, so the route can cascade nutrition over exactly it.
+      expect(result).toEqual({ date: "2026-04-20" });
     });
 
     it("rejects completed events", async () => {
@@ -353,7 +355,9 @@ describe("training-event-calendar-service", () => {
         return createMockQuery({ data: null, error: null }) as any;
       });
 
-      await expect(deleteEvent("event-1", clientId, planId)).resolves.toBeUndefined();
+      await expect(deleteEvent("event-1", clientId, planId)).resolves.toEqual({
+        date: "2026-06-09",
+      });
       expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
     });
 

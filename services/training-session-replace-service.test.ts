@@ -241,7 +241,7 @@ describe("replaceSessionFull", () => {
       .mockReturnValueOnce(read.chain)
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(exercisesRead.chain);
-    mockSurplusUpdate.mockResolvedValue(3);
+    mockSurplusUpdate.mockResolvedValue(["2026-04-23", "2026-04-25", "2026-04-28"]);
 
     const result = await replaceSessionFull(
       baseParams(makeInput({ calorieSurplusPercentage: 20 })),
@@ -252,6 +252,8 @@ describe("replaceSessionFull", () => {
     expect(result.surplusChanged).toBe(true);
     expect(result.identityChanged).toBe(false);
     expect(result.futureEventsUpdated).toBe(3);
+    // The route cascades nutrition over exactly these days.
+    expect(result.surplusAffectedDates).toEqual(["2026-04-23", "2026-04-25", "2026-04-28"]);
   });
 
   it("treats clearing the surplus (value -> null) as a change", async () => {
@@ -265,7 +267,7 @@ describe("replaceSessionFull", () => {
       .mockReturnValueOnce(read.chain)
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(exercisesRead.chain);
-    mockSurplusUpdate.mockResolvedValue(1);
+    mockSurplusUpdate.mockResolvedValue(["2026-04-23"]);
 
     const result = await replaceSessionFull(
       baseParams(makeInput({ calorieSurplusPercentage: null })),

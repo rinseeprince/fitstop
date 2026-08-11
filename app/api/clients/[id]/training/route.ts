@@ -145,9 +145,11 @@ export async function DELETE(
     }
 
     // Cascade once: nutrition burn estimates depend on training events.
+    // Open-ended forward, bounded at the 8-week horizon — see the stale-tail
+    // entry in TECHNICAL-DEBT.md for the days past it.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      today,
+      { kind: "from", from: today },
       "cascade-nutrition-events-from-clear-all-training"
     );
 

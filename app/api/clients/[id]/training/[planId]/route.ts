@@ -132,10 +132,14 @@ export async function DELETE(
     await archiveTrainingPlan(planId);
     await cancelFutureEventsForPlan(planId, today);
 
-    // Cascade: nutrition burn estimates depend on training events.
+    // Cascade: nutrition burn estimates depend on training events. Open-ended
+    // forward, bounded at the 8-week horizon — days past it keep stale surplus
+    // rows the cancelled plan no longer justifies (recorded in
+    // TECHNICAL-DEBT.md → nutrition stale tail; 3abbfa5's `to` half re-lands
+    // there, not here).
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      today,
+      { kind: "from", from: today },
       "cascade-nutrition-events-from-clear-plan"
     );
 

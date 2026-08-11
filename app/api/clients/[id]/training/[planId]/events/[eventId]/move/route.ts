@@ -60,15 +60,13 @@ export async function POST(
     const { targetDate } = validation.data;
 
     const result = await moveEvent(eventId, targetDate, clientId, planId);
-    const earliestAffectedDate =
-      result.sourceDate < targetDate ? result.sourceDate : targetDate;
 
-    // Cascade: regenerate nutrition events for affected dates.
-    // Use min(source, target) so a forward-in-time move also clears the stale
-    // nutrition_event row on the source date.
+    // Cascade: a move changes exactly two days — the one it left (now a rest day)
+    // and the one it landed on. Passing both, rather than min(source, target) as a
+    // floor, stops a three-day move from rewriting eight weeks of nutrition.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      earliestAffectedDate,
+      { kind: "dates", dates: [result.sourceDate, targetDate] },
       "cascade-nutrition-events-from-move"
     );
 

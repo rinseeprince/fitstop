@@ -93,6 +93,7 @@ const replaceResult = {
   surplusChanged: false,
   identityChanged: true,
   futureEventsUpdated: 2,
+  surplusAffectedDates: [],
 } as unknown as Awaited<ReturnType<typeof replaceSessionFull>>;
 
 function makeParams() {
@@ -199,10 +200,11 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
     expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
   });
 
-  it("fires the nutrition cascade anchored at today when the surplus changed", async () => {
+  it("fires the nutrition cascade over exactly the affected days when the surplus changed", async () => {
     vi.mocked(replaceSessionFull).mockResolvedValue({
       ...(replaceResult as object),
       surplusChanged: true,
+      surplusAffectedDates: ["2026-04-23", "2026-04-25"],
     } as unknown as Awaited<ReturnType<typeof replaceSessionFull>>);
 
     const response = await PUT(makePutRequest(validBody), makeParams());
@@ -210,7 +212,7 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
     expect(response.status).toBe(200);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       CLIENT_ID,
-      TODAY,
+      { kind: "dates", dates: ["2026-04-23", "2026-04-25"] },
       "cascade-nutrition-from-session-full-edit",
     );
   });

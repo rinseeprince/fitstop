@@ -206,11 +206,11 @@ describe("PUT /api/clients/[id]/training/[planId]/amendment", () => {
     );
   });
 
-  it("cascades nutrition anchored at the amendment floor", async () => {
+  it("cascades nutrition open-ended from the amendment floor", async () => {
     await PUT(makePut(validBody), routeParams);
     expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
       clientId,
-      "2026-07-22",
+      { kind: "from", from: "2026-07-22" },
       "cascade-nutrition-from-plan-amendment",
     );
   });

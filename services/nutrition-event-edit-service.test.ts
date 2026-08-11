@@ -297,7 +297,7 @@ describe("nutrition-event-edit-service", () => {
       expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
         clientId,
         "plan-1",
-        "2026-02-01"
+        { kind: "dates", dates: ["2026-02-01"] }
       );
       expect(updateSpy.mock.invocationCallOrder[0]).toBeLessThan(
         vi.mocked(regenerateFutureNutritionEvents).mock.invocationCallOrder[0]
@@ -306,7 +306,7 @@ describe("nutrition-event-edit-service", () => {
   });
 
   describe("resetNutritionEventDays (multi)", () => {
-    it("clears the date list then regenerates from the EARLIEST day", async () => {
+    it("clears the date list then regenerates exactly those days", async () => {
       mockEvents([]);
 
       const { reset } = await resetNutritionEventDays(
@@ -325,11 +325,12 @@ describe("nutrition-event-edit-service", () => {
         "2026-02-01",
         "2026-02-05",
       ]);
-      // Regen anchors on the earliest reset day so all of them are re-derived.
+      // Regen covers exactly the reset days — a scattered selection no longer
+      // collapses to the earliest date and rewrites everything after it.
       expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
         clientId,
         "plan-1",
-        "2026-02-01"
+        { kind: "dates", dates: ["2026-02-10", "2026-02-01", "2026-02-05"] }
       );
       expect(updateSpy.mock.invocationCallOrder[0]).toBeLessThan(
         vi.mocked(regenerateFutureNutritionEvents).mock.invocationCallOrder[0]
@@ -351,7 +352,7 @@ describe("nutrition-event-edit-service", () => {
       expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
         clientId,
         "plan-1",
-        "2026-02-01"
+        { kind: "dates", dates: ["2026-02-01"] }
       );
     });
 
