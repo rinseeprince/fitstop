@@ -2575,3 +2575,56 @@ elapsed rather than dividing by zero.
 **Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged) ·
 `vitest run` **256 files / 2669 tests, all passing** (+1 file, +12 tests; arithmetic
 closes) · `check:labels` OK (636) · no `as any` · no markers · no migration.
+
+---
+
+### Task 2.4 — Routes, validation, audit ✅ SHIPPED 2026-08-11
+
+**What shipped.** `GET`+`PUT /api/clients/[id]/blocks` and `DELETE
+/api/clients/[id]/blocks/[blockId]` (the notes-route sub-route precedent — plan-review
+decision), chain per the notes route verbatim: `coachApiRateLimit` →
+`requireCSRFProtection` (mutating) → `requireCoachOwnsClient(clientId, request)` → zod
+→ service. `clientToday` resolved once per request via `getClientTodayString` and
+threaded down (GET parallelises it with the list read — §2 item 11). GET is
+`Cache-Control: no-store`. PUT responds with the same decorated payload as GET (one
+shape, no drift); DELETE adds `{ mode, changes }` — the realized shift from the same
+pure helper the Session-3 dialog will preview with. `decorateBlocks`
+(`lib/blocks/block-derivations.ts`) is the single response assembler: row +
+`weeks`/`state`/`weekOfTotal`; **no pace field on the wire** (pinned by test).
+
+**Reconciliation, recorded per the session brief:** the Session-2 verification bullet
+says a foreign `clientId` "403s"; the house helper `requireCoachOwnsClient` returns
+**404** to avoid leaking existence (CONVENTIONS §8 step 4 allows either; ARCHITECTURE's
+IDOR section prescribes 404). The routes use the helper; the tests pin 404.
+
+**Validation** (`lib/validations/client-blocks.ts`): `startsOn` format AND
+calendar-validity checked (`Date.parse` refine — the value feeds UTC date math before
+Postgres, so a regex-passing "2026-13-99" must 400, not crash the walk); `blocks`
+1..`BLOCKS_PER_CLIENT_MAX`; per block `id` uuid optional, `name` 1..`BLOCK_NAME_MAX`
+trimmed, `weeks` int 1..`BLOCK_WEEKS_MAX` optional-in-schema (elapsed echoes omit it;
+the service 422s editable rows without it), `focus` trimmed ≤`BLOCK_FOCUS_MAX` with
+empty→null, `targetWeightKg` `WEIGHT_KG_MIN..MAX` nullable — canonical kg on the wire,
+no unit tag (§20). Constants in `lib/constants.ts`; **`BLOCK_WEEKS_MAX = 52` is a
+deliberate MIRROR of the builder's `MAX_WEEKS`** (`program-builder-types.ts`), commented
+with why it is a copy (lib must not import components/; the two bound different things;
+drift tolerated but deliberate) — owner-reviewed at plan time.
+
+**Audit:** `AUDIT_ACTIONS.BLOCK_CHAIN_UPDATE` (`block.chain_update`) and
+`BLOCK_DELETE` (`block.delete`); `void recordAuditEvent(...)` after each authorized
+write, `targetTable: "client_phases"`, metadata = counts/dates/mode only (no weights,
+no focus text).
+
+**Tests: 258 files / 2684 (2669 + 15).** Foreign client **404s** before any read on all
+three verbs; **the PUT never touches the goal layer** (invariant 7's route half —
+`client-goals-service` mocked with spies as a tripwire; the service half shipped in
+2.2); zod 400s (fake calendar date, empty chain, empty name, zero weeks) before the
+service runs; each service error class maps to 422 with its message (the mock factory
+defines the classes so route and test share them for instanceof); unknown `blockId`
+404s; elapsed delete 422s; 500s never leak raw errors; audit events pinned with action,
+target and mode metadata; DELETE returns mode + realized changes + decorated fresh
+chain.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged) ·
+`vitest run` **258 files / 2684 tests, all passing** (+2 files, +15 tests; arithmetic
+closes) · `check:labels` OK (640 — the four new files scanned) · no `as any` · no
+markers · no migration.

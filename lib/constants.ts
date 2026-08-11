@@ -58,6 +58,17 @@ export const GIRTH_LIMB_CM_MAX = 100;
 // literal. Do not "unify" it.
 export const LOAD_KG_MAX = 2000;
 
+// Journey blocks (client_phases). BLOCK_WEEKS_MAX deliberately MIRRORS the
+// program builder's MAX_WEEKS (components/clients/training/program-builder/
+// program-builder-types.ts) rather than importing it: lib must not depend on
+// components/, and the two bound different things — an authored program's
+// length vs one journey block's. Drift is tolerated but must be deliberate;
+// if you change one, decide about the other on purpose.
+export const BLOCK_WEEKS_MAX = 52;
+export const BLOCKS_PER_CLIENT_MAX = 20;
+export const BLOCK_NAME_MAX = 80;
+export const BLOCK_FOCUS_MAX = 500;
+
 // Date limits
 export const MAX_DATE_LOOKBACK_DAYS = 30;
 
@@ -108,6 +119,8 @@ export const AUDIT_ACTIONS = {
   TRAINING_PLAN_CREATE: "training_plan.create",
   TRAINING_PLAN_AMEND: "training_plan.amend",
   INVITATION_SEND: "invitation.send",
+  BLOCK_CHAIN_UPDATE: "block.chain_update",
+  BLOCK_DELETE: "block.delete",
 } as const;
 
 export type AuditActionKey = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

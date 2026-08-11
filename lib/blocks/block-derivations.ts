@@ -1,6 +1,6 @@
 import { daysBetween } from "@/utils/metric-points";
 import { weeksSpanned } from "@/lib/blocks/block-chain";
-import type { BlockState } from "@/types/client-blocks";
+import type { BlockState, ClientBlock } from "@/types/client-blocks";
 
 // The three derived reads for journey blocks (Session 2 Task 2.3) — pure,
 // client-safe, all from dates. Nothing here is stored: current/past/future,
@@ -40,6 +40,29 @@ export function deriveWeekOfTotal(
     current: Math.floor(daysBetween(block.startsOn, today) / 7) + 1,
     total: weeksSpanned(block.startsOn, block.endsOn),
   };
+}
+
+/** The wire shape of every blocks response: the stored row plus the
+ *  date-only derived fields. `weeks` = weeksSpanned (ceil) — equals the
+ *  authored count for untruncated blocks and the week reached for truncated
+ *  ones; dates are the truth, `weeks` is display + form seed. Pace is
+ *  deliberately absent — see derivePace. */
+export interface ClientBlockView extends ClientBlock {
+  weeks: number;
+  state: BlockState;
+  weekOfTotal: BlockWeekOfTotal | null;
+}
+
+export function decorateBlocks(
+  blocks: ClientBlock[],
+  today: string
+): ClientBlockView[] {
+  return blocks.map((block) => ({
+    ...block,
+    weeks: weeksSpanned(block.startsOn, block.endsOn),
+    state: deriveBlockState(block, today),
+    weekOfTotal: deriveWeekOfTotal(block, today),
+  }));
 }
 
 /**
