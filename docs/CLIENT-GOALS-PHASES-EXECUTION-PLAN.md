@@ -71,7 +71,7 @@ They do not prescribe training. They do not restrict placement. They do not feed
 12. **The stored deficit is intent, not a result.** It records what the coach chose (a % of TDEE or an absolute kcal). The suggestion, the caps and the floor are recomputed from it; it is never overwritten by them.
 13. **Caps and the floor gate the SUGGESTION, never the coach's typed number.** `services/nutrition-service.ts:147-166` (0.75/1.0 kg-wk loss, 0.35/0.5 gain by gender) and `:174-179` (1200/1500 kcal floor) stay exactly as they are. A coach may type lower. The app must *say* it capped, not silently do it.
 14. **Coach-action rows are not alerts.** They render like the unreviewed-check-in row (thumb + title + meta + outline button), are **not dismissible**, and do **not** go through `evaluateAndSortTriggers`. They clear by the world changing.
-15. **One migration number, taken at execution time.** Never pre-assign a number in this document. Slot 139 has already been burned once by a reverted commit (`dc9898c` shipped `139_update_client_goals_atomic.sql`; the live 139 is `139_nutrition_event_coach_note.sql`). As of 2026-08-10 the tree ends at `142_drop_check_in_tokens.sql`.
+15. **One migration number, taken at execution time.** Never pre-assign a number in this document. Slot 139 has already been burned once by a reverted commit (`dc9898c` shipped `139_update_client_goals_atomic.sql`; the live 139 is `139_nutrition_event_coach_note.sql`). As of 2026-08-11 the tree ends at `143_advance_nutrition_plan_effective_from.sql` (Session 1 Task 1.3).
 16. **One goal writer, one goal read path.** Every coach-side goal write goes through `updateGoals`; every coach-side goal read resolves through `resolveEffectiveGoal`. A second editor, or a direct `clients.*` goal read on a coach surface, is a regression. **Session 0 makes the single writer correct; Session 0b makes the read path single and gives the editor a home.** Until 0b lands, the surfaces it names are known exceptions, not oversights.
 
 ---
@@ -106,6 +106,7 @@ Rule of thumb: a rule about **safety** (RLS, GRANT, auth chain ordering, rate li
 | `ARCHITECTURE.md:199` | Two stale claims in one sentence: it lists **`goal_source`** in the goal snapshot (dropped by migration 133:278) and describes **`p_recalc_snapshots`** (removed by 139:63-69 — those three columns are now unconditionally overwritten at 139:164-166). | Rewrite the sentence. **Session 1**, alongside the RPC change. |
 | `ARCHITECTURE.md:545` | *"**No roadmap or phase concept exists.**"* — true today, false once Feature A ships. | Rewrite in Session 2, keeping the distinction that a *training* block ≠ a *journey* block. |
 | `docs/CLIENT-PORTAL-EXECUTION-PLAN.md:1305, :1315, :1321` | Cites commit **`c2bc944`**, which is **not on main** — `git merge-base --is-ancestor c2bc944 HEAD` fails and `git branch --contains` is empty. It is a dangling pre-rebase object. | Repoint all **three** occurrences to `cb2165b` (identical message, author and `--stat`). **Session 3**, when the chart is touched. |
+| `CONVENTIONS.md:404` + `ARCHITECTURE.md:173` (and its echoes at `:39`, `:204-206`, `:234`, `:237`, `:246`, `:723`) | The single-durable-nutrition-plan rule ("no versioning/archival", "deliberate asymmetry — do NOT consistency-refactor") — a recorded decision whose premise died with migration 143. | **Reversed by owner decision 2026-08-11** (§3 class (b), stale premise). Rewritten in **Session 1B Task 1b.5**, recording the reversal; grep beyond the listed lines. `NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md` gets a superseded banner in the same task. |
 
 ### Rule collisions to expect
 
@@ -141,7 +142,8 @@ Listed in execution order.
 | Session | Theme | Migrations | Ships user-visible change? |
 |---|---|---|---|
 | **0** ✅ | Goals: stop the live data loss — **SHIPPED + smoked 2026-08-10** | none | No — one correctness commit |
-| **1** | Foundations: the cascade, the energy helper, the plan-row date lie | **1** (RPC body swap, same arity) | The nutrition hero |
+| **1** ✅ | Foundations: the cascade, the energy helper, the plan-row date lie — **SHIPPED + smoked 2026-08-11** | **1** (RPC body swap, same arity) | The nutrition hero |
+| **1B** | Nutrition plan versioning: date-ranged versions, close-and-insert RPC, date-resolved reads — **inserted 2026-08-11 by owner decision** | **1** (index swap + exclusion constraint + RPC rewrite, same arity) | Correct queued-change behaviour; the hero's chain-aware lines |
 | **2** | Blocks backend: table, service, routes | **1** (`client_phases`) | No — API only |
 | **3** | Journey tab: rename, Blocks list, chart shading | none | Yes — the coach block feature |
 | **4** | Client-facing block + the "Waiting on you" row | none | Yes — the client block feature |
@@ -156,6 +158,8 @@ Read this before assuming the order above is forced. It mostly is not.
 - **2 → 3 → 4.** A real chain: each needs the previous one's API. This is the only hard chain in the document.
 - **5 → 6.** The note lives beside the deficit in the same drawer.
 - **1.2 → 5.** Session 1's shared energy helper is the deficit input's prerequisite, and Session 5 assumes the two dead calculator exports are already gone.
+- **1B → 5, HARD.** Session 5's two new columns must be born on versioned rows — landing a stored deficit on the in-place singleton and versioning afterwards would version a column nothing backfills. Run 1B first.
+- **1B → 3.2, correctness not code.** Task 3.2's nutrition column resolves the version covering the block's window (see the note in its table row); without 1B an elapsed block would read the CURRENT plan's `tdee` against an old era's event baseline and print a wrong deficit.
 - **0b.1's DECISION → 4.2 — a decision dependency, NOT a code dependency.** Task 4.2 needs one authoritative answer to: *is `clients.goal_deadline` mapped, or are the three dead `?? client.goalDeadline` fallbacks deleted?* It does **not** need 0b.1's Overview code to have shipped. The question can be settled in isolation, in a sentence, without touching a file. **If 0b has not run, Session 4 settles it and records the answer in its STATUS block; 0b then inherits that decision rather than re-litigating it.** An executor who reads this as "Session 4 is blocked on a UI change" has misread it — Session 4 is blocked on nothing.
 - **0 → 0b, softly.** 0b inherits Session 0's `notes` decision from its STATUS block, and consolidating readers onto a write path that still nulls sibling fields would be premature. Not a hard block.
 
@@ -319,6 +323,16 @@ Three of the four narrow call sites already have their exact dates and throw the
 
 ### Task 1.3 — The plan row must stop lying about when its numbers took effect
 
+> ⚠️ **SHIPPED as specified (`c96896b`, migration 143) — then SUPERSEDED by SESSION 1B**
+> (owner decision 2026-08-11, same day). 143's conflict-path fix made queued changes
+> real, which exposed that the single in-place row cannot describe the time before its
+> own `effective_from` (the pre-window cascade leak, owner-reported within hours of the
+> smoke). SESSION 1B replaces the in-place model with date-ranged versions; under it
+> `effective_from` means "when this version started" and the never-update bucket
+> question below dissolves (each save is a new row). The section is kept as-authored
+> for provenance; the "Rejected alternative: `pending_effective_from`" note still
+> stands — 1B is NOT that shape (windows are date-derived; no status lifecycle).
+
 **Verified against the live catalog, not just the migration file.** The live RPC is migration 139's 24-arg `create_nutrition_plan_atomic` (`139:73-193`). Its `ON CONFLICT (client_id) WHERE status = 'active'` `DO UPDATE SET` has **22 assignments** (`139:146-168`) and **`effective_from` is not among them** (never-update set: `{id, client_id, name, status, effective_from, created_at}`).
 
 Consequence, for any client with an existing active plan:
@@ -397,6 +411,319 @@ Rules for this session:
 - Append a STATUS block to the plan doc as each task lands.
 
 Start by reading the three documents and the three commits, then show me your plan for 1.1.
+```
+
+---
+
+# SESSION 1B — Nutrition plan versioning (date-ranged versions)
+
+**One migration. Inserted 2026-08-11 by owner decision — runs after Session 1, before
+Sessions 2–6 (hard prerequisite for Session 5; corrects a latent bug in Session 3 Task
+3.2's nutrition column).**
+
+> **What this session reverses, and why that is legitimate.** `CONVENTIONS.md §8`
+> ("Nutrition plans stay one durable active plan per client … no versioning/archival")
+> and `ARCHITECTURE.md`'s "deliberate asymmetry — do NOT consistency-refactor" are a
+> **recorded owner decision**, and this session overturns it — §3 class (b),
+> stale-premise, owner-approved 2026-08-11. The premise died with migration 143: the
+> decision assumed a plan row whose window opened at birth and never moved. Once
+> `effective_from` could sit in the future, the single row could only describe the
+> NEXT prescription, and nothing anywhere described the time before it except the
+> generated events. Five symptoms of that one gap: (1) the cascade leak — any training
+> edit in the pre-`effective_from` window rebuilt those days from the new template
+> (owner-reported 2026-08-11, screenshot in session log; TECHNICAL-DEBT entry 5);
+> (2) the client-card template gate shipped in 1.3 returns NOTHING for pre-window days
+> because the true value was unknowable; (3) reset-on-a-pre-window-day cannot restore;
+> (4) history attribution returns null targets for every unlogged day older than the
+> last save; (5) Session 3 Task 3.2's elapsed-block deficit (`plan.tdee − event
+> baseline`) would mix eras by construction. Versioning is also a RESTORATION: the
+> nutrition RPC was close-and-insert from migration 048 through 110 (078 is the
+> closest template); 115 flattened it.
+>
+> **This does NOT violate invariant 2 or §1's "no status column" rule — it is the
+> same side of that argument.** Versions are resolved BY DATE (`coversDate`);
+> planned/current/ended are derived at read time; nothing promotes at midnight.
+> `status` records coach ACTS only (`active` | `archived` = deleted-by-coach;
+> superseded versions stay `active` with closed windows). There is NO `planned`
+> status — that shape was built and retired twice (migrations 079→116, and the
+> roadmaps feature §1 documents). Events remain the per-date SOT; per-day edits still
+> materialize onto events (`is_modified`) and never mint versions; versions are minted
+> ONLY by plan saves.
+
+## Design — closed 2026-08-11, do not re-litigate
+
+1. **Model.** N `nutrition_plans` rows per client whose `[effective_from,
+   effective_until]` windows tile the client's timeline; `effective_until IS NULL` =
+   the open (latest-saved) version. Each version owns its own
+   `nutrition_plan_daily_targets` grid (already FK'd per row — free). The coach never
+   supplies an end date: **starts in, windows out** — every close is derived, so
+   overlaps and gaps are unexpressible through the API (the blocks-invariant-3
+   principle). "Placing a plan on top" of a chain replaces the overlapped days from
+   its start forward, at both the plan layer (close/absorb below) and the event layer
+   (the save's regeneration sweeps its window).
+2. **The write path (RPC, one transaction, SAME 24-arg signature — the close date
+   derives from `p_effective_from`, so no new args).** Three branches on the client's
+   open row: **(a)** none → plain INSERT. **(b)** open row starts BEFORE the new date
+   → close it at `new − 1 day`, INSERT the new version. **(c)** open row starts
+   ON/AFTER the new date → **absorb**: update that row in place (all prescription
+   columns + `effective_from`; the daily-targets DELETE-then-INSERT from 143 stays
+   load-bearing here), and re-close the predecessor at `new − 1` if one exists —
+   same-day re-saves collapse into one version, inverted windows are impossible, and
+   saving earlier than a queued change replaces it.
+3. **Delete = close, never erase.** `orchestrateNutritionPlanDeletion` closes the
+   covering version at the client's today and archives-AND-closes every version
+   reaching past today (a queued version gets `status='archived'` + its window shut —
+   an archived row must never carry an open window). Future scheduled events are
+   deleted **client-scoped by date** (`deleteFutureNutritionEventsForPlan`'s plan-id
+   scoping misses events stamped by a queued version's id). Today and the past stay,
+   matching the dialog copy.
+4. **One resolver family, training's pattern, reusing `coversDate`**
+   (`services/training-plan-window.ts` — table-agnostic, verified): in
+   `nutrition-plan-service.ts` add `getNutritionPlanForDate(clientId, date)`,
+   `getNutritionPlanIdForDate`, and `getNextFutureNutritionPlan(clientId, today)`
+   (earliest-first, mirroring `getNextFutureTrainingPlan`); keep
+   `getActiveNutritionPlanId` as a thin covering-today wrapper. Live resolution
+   filters `status='active'`; **history reads keep NO status filter** (a deleted
+   plan's rows still explain their past — `schedule-data-service.ts:172-183` already
+   does this and is already version-correct; leave it).
+5. **The coach GET returns three roles** (the two-row shape is insufficient for
+   chains — a third queued version made `scheduledFor` skip the next change):
+   **covering** version → `effectiveFrom` ("Active since") and `hasCurrentTargets`
+   (now derived from covering-row existence — **retire the `todayEvent` probe added
+   by `4ed4017`**, route + hook + hero threading); **earliest-future** version →
+   `scheduledFor` ("Starts / New targets from"); **open** version → drawer seeds
+   (`workActivityLevel`, `proteinTargetGPerKg`, custom macros, targets) and
+   `goalChanged` — seeding from anything else lets Generate clobber a queued
+   prescription, the exact failure `use-nutrition-builder.ts:43-49`'s seed-key
+   exists to prevent. `hasPlan` becomes an explicit response field (no covering AND
+   no future = none); `use-nutrition-plan.ts:84`'s `!!calorieTarget` derivation dies.
+6. **Guards, bottom to top:** construction (starts-only API) → the open-row partial
+   unique index (`(client_id) WHERE status='active' AND effective_until IS NULL` —
+   racing saves collide loudly) → a **DB-level exclusion constraint**
+   (`EXCLUDE USING gist (client_id WITH =, daterange(effective_from, effective_until,
+   '[]') WITH &&) WHERE (status = 'active')`, `CREATE EXTENSION IF NOT EXISTS
+   btree_gist`) so the database physically refuses overlapping active windows. The
+   constraint is a backstop that must never fire; a violation surfaces as a loud RPC
+   error, never silent drift.
+7. **`regenerateFutureNutritionEvents` keeps its one-planId contract; CALLERS
+   segment.** Its plan select gains `effective_from, effective_until` and clamps its
+   window to the version's own range. The cascade fetches every `status='active'`
+   version overlapping its scope (the `schedule-data` windowed-array query shape),
+   splits the scope's dates per covering version, and loops the regenerate — which
+   closes the leak **by construction**. Fix the two `maybeSingle()`-without-limit
+   sites while in there (`nutrition-event-service.ts:380-385` — destructure and log
+   `error` per the house rule; `nutrition-plan-orchestrator.ts:288-293`), and re-key
+   the from-scope delete client-scoped by date (plan-scoped misses prior-version
+   rows).
+8. **The client-card template gate becomes a WINDOW test** (both ends of the covering
+   version), replacing 1.3's one-sided `effectiveFrom` gate: no-event days outside
+   the covering window drop exactly as today; days inside it are always served from
+   the right era's grid. (Full per-date multi-version week rendering — the
+   `findActiveNutritionPlan` shape — stays available later if a real straddling case
+   demands it; record, don't build.)
+9. **Absorb warning in the apply dialog:** when `scheduledFor` exists and the picked
+   date is on/before it, one sentence states the queued change will be replaced
+   (the amendment surface's re-lay-warning register). Warn, then do what was asked.
+
+## Ground truth from the 2026-08-11 sweeps — do not re-derive
+
+Three read-only agent sweeps (write path / read consumers / tests+UI+docs) + a live
+DEV probe. Full inventories in the session transcript; the load-bearing subset:
+
+- **Live DEV** (`aeaphsslctwcmebldrzx`, 2026-08-11): 209 plan rows — 185 `active`,
+  24 `archived`; 5 clients already multi-row (max 8); `effective_until` non-null on
+  10 rows; **no CHECK constraints on the table**; FKs: events SET NULL (live truth —
+  113's rebuild, not 077's original CASCADE), logs SET NULL, daily-targets CASCADE.
+  Indexes: pkey, `idx_nutrition_plans_active_unique (client_id) WHERE
+  status='active'`, `(client_id, effective_from DESC)`. Prod never probed — §1's
+  DEV/PROD caveat applies; the migration's backfill must be idempotent.
+- **Two LOUD breaks** the moment a second `status='active'` row exists —
+  `nutrition-event-service.ts:380-385` (cascade lookup, `maybeSingle` no limit,
+  error DISCARDED → every training cascade silently no-ops) and
+  `nutrition-plan-orchestrator.ts:288-293` (same shape, wrong
+  `regeneration_reason`).
+- **Seven QUIET-corruption reads** (`.eq("status","active").order("effective_from",
+  desc).limit(1).maybeSingle()` — would silently pick the FUTURE row):
+  `nutrition-plan-service.ts:177-183` · `app/api/clients/[id]/nutrition/route.ts:78-85`
+  · `services/client-portal-service.ts:103-109` · `check-in-context-service.ts:66-72`
+  · `comparison-service.ts:45-51` · `overview-plan-summary-service.ts:226-234` ·
+  `activation-readiness/route.ts:45-50` (no order — arbitrary row).
+- **Per-date resolution sites:** `daily-context-service.ts:87-88`
+  (`resolvePlanContextForDate` — stamps `nutrition_logs.nutrition_plan_id`
+  PERMANENTLY; already mis-stamps backdated logs today, fixed by per-date) and both
+  reset routes (`nutrition/events/[date]/reset/route.ts:55`,
+  `nutrition/events/reset/route.ts:56` — a date list can straddle a boundary; group
+  by covering version).
+- **Already version-correct, zero changes:** `schedule-data-service.ts:161-228`,
+  `utils/nutrition-period-summary.ts:28-36` (`findActiveNutritionPlan` — the
+  reference implementation), `scripts/cleanup-duplicate-events.ts`. **Three free
+  behavioural repairs** land with no code: per-era history attribution (currently
+  null for unlogged days older than the last save), check-in snapshots across a
+  change, and the drift banner's "since" date (`comparison-service` reads
+  `created_at`, which the in-place RPC never re-stamped — it prints the FIRST-EVER
+  plan date today; switch it to the covering version's `effective_from`).
+- **Green-but-wrong test pins that must be rewritten, not appeased** (the
+  workaround-enforcers): `utils/__tests__/build-daily-targets.test.ts:188-222` (the
+  four 1.3 gate tests), `services/client-portal-service.test.ts:164-167` (pins
+  `effectiveFrom: null`), `daily-context-service.test.ts:39-45` (pins today's-plan
+  stamping), `nutrition-plan-orchestrator.test.ts:127-131` (pins stable-id reuse),
+  hero tests' `hasCurrentTargets` fixtures. The `nutrition-plan-service.test.ts`
+  **24-key pin SURVIVES** (same signature) and stays the PGRST202 belt.
+- **Zero-coverage surfaces needing tests:** the cascade helper (none exist),
+  `archiveNutritionPlan`, `getActiveNutritionPlanId`, the coach GET (no GET tests),
+  both reset routes, `findActiveNutritionPlan` with 2+ windows.
+
+### Task 1b.1 — Migration + the resolver family
+
+ONE migration, next free number at execution time (tree ends at `143` as of
+2026-08-11): **(1)** backfill `effective_until` on archived rows where NULL
+(migration 116's `COALESCE(effective_until, effective_from)` precedent — required
+before the new index predicate is clean); **(2)** drop
+`idx_nutrition_plans_active_unique`; create the open-row guard
+`(client_id) WHERE status='active' AND effective_until IS NULL`; **(3)**
+`CREATE EXTENSION IF NOT EXISTS btree_gist` + the exclusion constraint (design 6);
+**(4)** the RPC rewritten close-and-insert with the three branches (design 2) —
+**same 24-arg signature**, so `CREATE OR REPLACE` with the FULL header restated
+(`SECURITY DEFINER`, `SET search_path = public` — 143's warning: a replace inherits
+neither) and no REVOKE/GRANT dance; the `ON CONFLICT` clause dies with the index it
+targeted. Migration comment records the reversal + the three branches. Then the
+resolver family (design 4) in `nutrition-plan-service.ts`. Pre-flight + post-push
+live probes: catalog (prosecdef/config/ACL/single overload) + behavioral
+`BEGIN…ROLLBACK`-style probe rows for ALL THREE branches, a 3-version chain, the
+absorb-with-earlier-date re-close, and the race (second open row → unique
+violation). `db push` is classifier-blocked — the owner runs it. `gen types` diff
+expected EMPTY (no column changes). 24-key test unchanged; new unit tests for the
+resolvers (mock-level) ride here.
+
+### Task 1b.2 — Write-path correctness: cascade, deletes, resets, stamping
+
+Design 7 + 3 in full: cascade version-segmentation (+ the two error-handling fixes),
+from-scope delete re-keyed client-scoped, regenerate window-clamping,
+`resolvePlanContextForDate` per-date, both reset routes per-date-grouped,
+`deleteFutureNutritionEventsForPlan` client-scoped, `archiveNutritionPlan` →
+close-and-archive semantics, deletion orchestrator handles the chain. Tests: FIRST
+cascade coverage (boundary segmentation, both loud-break regressions), window
+clamps, per-date stamping (backdated log gets its era's id), reset-across-boundary,
+delete-chain semantics. TECHNICAL-DEBT entry 5 (baseline leak) is CLOSED by this
+task — rewrite it as fixed-by-1b.2; entries 1–4 stay open (stale tail, swallow —
+partially addressed by the destructure fix, re-scope its text — foreign-plan
+rewrite, logged→scheduled flip).
+
+### Task 1b.3 — Coach surface: the three-role GET + everything that reads it
+
+Design 5 + 9: the GET's three resolutions and field re-mapping; retire the
+`todayEvent` probe (route, `use-nutrition-plan.ts` type, hero threading — added
+`4ed4017`, removed cleanly); explicit `hasPlan`; `activation-readiness` = covering
+OR future version exists (a coach who queued a first plan IS ready);
+`check-in-context` covering-existence; `comparison-service` covering version +
+`effective_from` as the banner's "since" date; `overview-plan-summary` covering;
+the absorb-warning dialog line; UI copy sweep (`drawer-form-body.tsx:95-104`'s
+"no versioning" comment + copy, `delete-nutrition-plan-dialog` plural-safe copy,
+`nutrition-plan-builder` delete toast). Hero tests rewritten from plan-row states;
+the green-but-wrong pins above.
+
+### Task 1b.4 — Client portal + scripts
+
+Portal read → covering-today; the gate → window test (design 8;
+`buildDailyTargetsFromPlan`'s required `weekWindow` param gains the window's other
+end — tsc enumerates all call sites again); `backfill-nutrition-events.ts` restores
+its per-version window branch (the pre-115 shape its own comment mourns, bounded by
+`effective_until`); both seed scripts emit a **closed + open version pair** so the
+resolution path is exercised (`seed/generate.ts:477`'s index comment updated);
+portal test fixtures gain `effective_from`/`effective_until`.
+
+### Task 1b.5 — Documentation reconciliation (owner-mandated, not optional)
+
+**`docs/ARCHITECTURE.md` and `CONVENTIONS.md` WILL need reconciliation to match the
+new versioning model — treat the list below as the checklist FLOOR and grep for
+stragglers at execution time** (`single durable`, `one durable`, `in place`,
+`in-place`, `idx_nutrition_plans_active_unique`, `no versioning`):
+
+- `CONVENTIONS.md:404` — the normative single-durable-plan rule: REWRITTEN to the
+  versioned model, recording the reversal (owner 2026-08-11, stale-premise per §3
+  class (b)) and what survives (events-SOT, per-day edits materialize, one target
+  per day).
+- `docs/ARCHITECTURE.md` — `:39` (hierarchy line), `:173` (the "deliberate
+  asymmetry" paragraph — now BOTH tracks are date-ranged; state what still differs:
+  nutrition chains contiguously via derived closes, training coexists additively),
+  `:204-206` (heading + the durable-plan paragraph — rewrite around versions;
+  `effective_from` again means "born AND took effect", they now coincide),
+  `:234` (cascade fetches all versions overlapping the scope), `:237` (the baseline
+  leak paragraph — fixed by construction, point at the closed debt entry), `:246`
+  (template fallback = the covering version's grid), `:723` (`hasNutritionPlan`
+  meaning).
+- `TECHNICAL-DEBT.md` — close entry 5; re-scope entry 2's text (destructure fix
+  landed); fix `:85-88`'s "one durable plan bounds the exposure" and `:709`'s
+  single-plan rationale.
+- `NUTRITION-CALENDAR-IMPLEMENTATION-SPEC.md` — superseded-banner at top: its Mig B
+  / in-place upsert design (`:65,:68,:93,:95`) is reversed by this session; the doc
+  stays as history.
+- THIS DOCUMENT's Task 1.3 + its STATUS block carry supersession banners (added at
+  1B insertion time); Session 5 note likewise. STATUS blocks per task as always.
+
+### Session 1B verification
+
+- Full `CONVENTIONS.md §13` per task + `npm run check:rls` (migration) + the §2
+  security/load/perf review at 1b.1 and 1b.2 (SECURITY DEFINER surface + write-path
+  change both trigger it).
+- Live-DB proof, not just unit green: all three RPC branches, a 3-version chain
+  resolving correctly per date, the exclusion constraint rejecting a manufactured
+  overlap, the race producing a loud unique violation.
+- **Browser smoke (owner runs it):** (1) the ORIGINAL leak repro — future-dated
+  regenerate, then move a training event inside the gap week → the moved day keeps
+  the OLD prescription's numbers; (2) queue two future versions → hero shows the
+  EARLIEST as "New targets from", drawer seeds from the LATEST; (3) delete with a
+  chain → today survives, tomorrow-forward gone, calendar shows no orphaned targets;
+  (4) save with a date on/before a queued change → the dialog warns, the queued
+  version is replaced.
+
+---
+
+### 📋 SESSION 1B PROMPT — paste this into a fresh session
+
+```
+Read these in full before planning anything:
+  1. CONVENTIONS.md  (mandatory — it says so at the top; do not skip sections)
+  2. docs/ARCHITECTURE.md
+  3. docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md — §1, §2 (invariants), §3, §4, §5,
+     the SESSION 1 STATUS blocks in §8, and ALL of SESSION 1B including "Ground truth
+     from the 2026-08-11 sweeps". You are executing SESSION 1B only.
+
+Session 1B converts nutrition_plans from one in-place-upserted row per client to
+DATE-RANGED VERSIONS (the training-plans model): saving closes the open row at
+new_start − 1 and inserts the new version; "active" resolves BY DATE via coversDate;
+status records coach acts only (active | archived) — there is NO planned status,
+planned/current/ended are derived. The design section is CLOSED owner decisions —
+do not re-litigate them, including the §8-recorded reversal of CONVENTIONS'
+single-durable-plan rule (stale-premise, owner-approved 2026-08-11).
+
+The "Ground truth" block lists every resolution site, the two loud breaks, the seven
+quiet-corruption reads, the green-but-wrong test pins, and the zero-coverage
+surfaces. Trust it as the floor, not the ceiling — re-grep before claiming done.
+
+Rules for this session:
+- CONVENTIONS §2: show me a plan and get approval before writing any code.
+- One commit per numbered task (1b.1–1b.5); migration + regenerated types same commit.
+- Take the NEXT FREE migration number at execution time. Never pre-assign.
+- §8 migration workflow exactly. npx supabase db push is classifier-blocked — tell me
+  and I run it with `!`. Verify the RPC against the LIVE catalog before and after
+  (prosecdef, search_path, ACL, single overload) — CREATE OR REPLACE inherits
+  neither SECURITY DEFINER nor SET search_path; restate the full header.
+- The RPC keeps its 24-arg signature. The as-never casts stay (Session 5 removes
+  them with its arity change); nutrition-plan-service.test.ts's 24-key pin is the
+  only belt against a silent PGRST202 — keep it green, never delete it.
+- Do not touch training-side deletion (deleteEvent, cancelFutureEventsForPlan, the
+  plan-clear routes) — verified unchanged by design. Do not touch
+  training_events.calorie_surplus_percentage population anywhere.
+- Task 1b.5's doc reconciliation is owner-mandated: ARCHITECTURE.md and
+  CONVENTIONS.md must be reconciled to the versioned model in the same session,
+  greping beyond the listed lines for stragglers.
+- If a doc rule blocks you, follow §3: quote, classify, comply/update/STOP AND ASK.
+- Commit-ready = all of CONVENTIONS §13 + npm run check:rls.
+- Append a STATUS block per task; file durable defect records in TECHNICAL-DEBT.md,
+  not only in STATUS (this plan doc is deleted when the workstream lands).
+
+Start by reading the documents, then show me your plan for 1b.1 before any code.
 ```
 
 ---
@@ -556,7 +883,7 @@ A list of cards, **not a metric picker**. Do not copy `metric-switcher.tsx` (`:3
 | Column | Source |
 |---|---|
 | **Training** — program name, when placed | `training_plans` rows overlapping `[starts_on, ends_on]`. `getNextFutureTrainingPlan` (`services/training-service.ts`) is the ONE owner of the "starts later" predicate — do not write a fourth copy. Empty: "No program placed". |
-| **Nutrition** — calories, what the deficit was | The **events**, not the plan row (events are SOT). Deficit = `plan.tdee − event baseline` until Session 5 stores it. Empty: "Not set". |
+| **Nutrition** — calories, what the deficit was | The **events**, not the plan row (events are SOT). Deficit = `plan.tdee − event baseline` until Session 5 stores it — **where `plan` is the VERSION covering the block's window** (`getNutritionPlanForDate`, Session 1B), never the current row: an elapsed block read against today's `tdee` mixes eras and prints a wrong deficit. Empty: "Not set". |
 | **Weight** — start → end, plus the pace readout when the block has a target | The merged coach series (`components/clients/metrics/hooks/use-merged-metrics.ts` + `utils/metric-points.ts`) — no new API. |
 
 **Vertical timeline, "What happened":** block start · mid-block changes · block end. v1 sources: block boundaries (derived), training placements in range (`training_plans.effective_from`), and nutrition save notes once Session 6 ships. Entries may carry a coach note rendered as a **quote block** labelled "visible to \<client first name\>" — which needs a new shared first-name util (none exists; see §4). Empty timeline reads **"Nothing yet."**
@@ -904,7 +1231,18 @@ Start by reading the documents and the STATUS blocks, then show me your plan for
 
 **One migration, and it changes the RPC arity. This is the highest-risk session in the document.**
 
-Depends on Session 1 Task 1.2 (the shared energy helper). Independent of Sessions 2–4, 0 and 0b.
+Depends on Session 1 Task 1.2 (the shared energy helper) **and on SESSION 1B (hard —
+see §5)**: the two new columns are born on VERSIONED rows, so a stored deficit is
+date-scoped per era for free. Independent of Sessions 2–4, 0 and 0b.
+
+> **1B reconciliation notes for this session:** (a) Task 5.2's "always-update bucket
+> of the `DO UPDATE SET`" language predates 1B — there is no ON CONFLICT any more;
+> the two columns join the INSERT column list and branch (c)'s absorb-UPDATE in the
+> close-and-insert RPC. (b) The arity-change discipline below (DROP by exact type
+> list, re-apply the 106 lockdown at the new arity, re-pin the key-count test) is
+> UNCHANGED and now applies to the 1B RPC body. (c) The drawer work inherits the
+> single-button apply dialog and its null-means-client-today contract (Session 1
+> smoke STATUS), plus 1B's absorb-warning line.
 
 ### Task 5.1 — The arity change, and the landmine that hides it
 
@@ -1519,6 +1857,15 @@ fix.
 ---
 
 ### Task 1.3 — `effective_from` advances on the conflict path ✅ SHIPPED 2026-08-11
+
+> ⚠️ **Record of what was true AT SHIP TIME — superseded by SESSION 1B the same day.**
+> Read before relying on any claim below: the reader-enumeration table's "ordering is
+> vestigial — the unique index guarantees one row" rows, the accepted
+> schedule-data/history behaviour change, the template gate's premise, and the
+> `hasCurrentTargets` event probe are all rewritten by 1B (versions make ordering
+> load-bearing, repair history attribution, dissolve the gate's cause, and answer
+> "is anything running" from plan rows). The conflict-path mechanics this block
+> verifies remain accurate for migration 143 itself, which 1B's RPC replaces.
 
 **Migration `143_advance_nutrition_plan_effective_from.sql`** — `CREATE OR REPLACE` at
 the **identical 24-arg signature**: the whole CREATE statement verbatim from 139 plus one
