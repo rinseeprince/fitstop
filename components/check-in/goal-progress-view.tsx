@@ -100,7 +100,7 @@ export const GoalProgressView = ({
           <NutritionRegenerationBanner
             currentWeight={clientData.currentWeight}
             nutritionPlanBaseWeightKg={clientData.nutritionPlanBaseWeightKg}
-            nutritionPlanCreatedDate={clientData.nutritionPlanCreatedDate}
+            nutritionPlanEffectiveDate={clientData.nutritionPlanEffectiveDate}
             onRegenerate={handleRegenerateNutrition}
             showRegenerateButton={true}
           />

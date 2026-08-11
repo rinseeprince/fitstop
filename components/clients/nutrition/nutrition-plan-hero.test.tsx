@@ -68,8 +68,9 @@ describe("NutritionPlanHero", () => {
   });
 
   it("announces a queued CHANGE as New targets from — the current numbers keep running", () => {
-    // An existing client: their today still has a nutrition event (the old
-    // prescription), so the hero must not read as if no plan is active.
+    // An existing client: a version still COVERS their today (migration 144 —
+    // hasCurrentTargets derives from the covering plan row, no longer from a
+    // per-event probe), so the hero must not read as if no plan is active.
     state.builder = {
       hasPlan: true,
       trainingPlanName: "4 Week training program",

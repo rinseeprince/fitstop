@@ -17,7 +17,7 @@ type NutritionRegenerationBannerProps = {
   /** KILOGRAMS — canonical since migration 141, so no conversion happens here. */
   currentWeight: number;
   nutritionPlanBaseWeightKg: number;
-  nutritionPlanCreatedDate?: string;
+  nutritionPlanEffectiveDate?: string;
   onRegenerate?: () => void;
   showRegenerateButton?: boolean;
 };
@@ -25,7 +25,7 @@ type NutritionRegenerationBannerProps = {
 export const NutritionRegenerationBanner = ({
   currentWeight,
   nutritionPlanBaseWeightKg,
-  nutritionPlanCreatedDate,
+  nutritionPlanEffectiveDate,
   onRegenerate,
   showRegenerateButton = true,
 }: NutritionRegenerationBannerProps) => {
@@ -62,13 +62,13 @@ export const NutritionRegenerationBanner = ({
                 {weightChange.isLoss ? "-" : "+"}
                 {weightChange.value} {weightChange.unit}
               </span>{" "}
-              since nutrition plan was created
-              {nutritionPlanCreatedDate && (
+              since these targets took effect
+              {nutritionPlanEffectiveDate && (
                 <>
                   {" "}
                   on{" "}
                   <span className="font-medium text-foreground">
-                    {format(new Date(nutritionPlanCreatedDate), "MMM d, yyyy")}
+                    {format(new Date(nutritionPlanEffectiveDate), "MMM d, yyyy")}
                   </span>
                 </>
               )}

@@ -32,17 +32,21 @@ type NutritionTargetsData = {
    *  and no-plan responses; null only when the resolver itself failed. */
   calcInputs?: NutritionCalcInputs | null;
   includeActivityBurn: boolean;
-  effectiveFrom?: string;
-  /** Set only when the plan's window opens AFTER the client's today — i.e. the
-   *  plan is queued, not running. Resolved server-side (the browser's local date
-   *  can differ from the client's), mirroring GET /training's field of the same
-   *  name. */
+  /** A plan exists — a version covers today OR one is queued. The server's
+   *  explicit verdict (migration 144); never derive it from a target field. */
+  hasPlan?: boolean;
+  /** The COVERING version's start — "Active since". Null for a queued-only
+   *  chain, where nothing governs today yet. */
+  effectiveFrom?: string | null;
+  /** The EARLIEST queued version's start. Resolved server-side (the browser's
+   *  local date can differ from the client's), mirroring GET /training's field
+   *  of the same name. */
   scheduledFor?: string | null;
-  /** A nutrition event exists on the client's today — they are on live targets
-   *  right now. With `scheduledFor` set, this separates "new targets from X"
-   *  (existing client, current numbers run until then) from "starts X" (first
-   *  plan, nothing in the interim). Server-resolved for the same reason as
-   *  `scheduledFor`. */
+  /** A version COVERS the client's today — they are on live targets right now
+   *  (migration 144: the plan rows answer this; the old per-event probe is
+   *  retired). With `scheduledFor` set, this separates "New targets from X"
+   *  (the covering version keeps running until then) from "Starts X" (a first
+   *  plan, nothing in the interim). */
   hasCurrentTargets?: boolean;
   goalChanged?: GoalDrift;
   /** Does a training plan cover today, or start after it? Mirrors GET /training's
@@ -80,8 +84,11 @@ export function useNutritionPlan({ client }: UseNutritionPlanProps) {
     fetchNutrition();
   }, [client.id, refreshKey]);
 
-  // Computed values
-  const hasPlan = !!nutritionData?.calorieTarget;
+  // The server's explicit verdict (migration 144). The old `!!calorieTarget`
+  // derivation broke on legitimate states — a queued-only chain has a plan and
+  // a calorie target of its own era, and a zero-target sentinel would read as
+  // "no plan" — so the GET now says it outright on both branches.
+  const hasPlan = nutritionData?.hasPlan ?? false;
 
   // Regeneration banner: uses base_weight_kg from the active plan
   // This is now handled via the plan data, not client fields

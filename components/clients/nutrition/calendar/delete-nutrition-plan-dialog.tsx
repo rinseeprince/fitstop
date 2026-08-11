@@ -42,7 +42,8 @@ export function DeleteNutritionPlanDialog({
         </DialogHeader>
         <p className="text-sm text-[#5a7d82]">
           Removes this client&apos;s nutrition plan and all upcoming daily
-          targets, including edited days. Today and past days are kept.
+          targets — edited days and any queued changes included. Today and past
+          days are kept.
         </p>
         <DialogFooter>
           <Button variant="ghost" onClick={onCancel} disabled={isDeleting}>

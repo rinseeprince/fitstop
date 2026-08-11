@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getActiveTrainingPlan } from "./training-service";
+import { getNutritionPlanForDate } from "./nutrition-plan-service";
 import { countEventsInRange, getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
@@ -62,16 +63,16 @@ export const getCheckInNutritionContext = async (
   // week rollover, server-UTC today would show last week's targets.
   const today = await getClientTodayString(clientId);
 
-  const { data: nutritionPlan, error } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("baseline_calories, protein_target_g, carb_target_g, fat_target_g, diet_type")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .order("effective_from", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Versioned model (migration 144): the gate is COVERING-existence — is a
+  // version governing the client's today? The row is used only as this gate
+  // (real targets come from the week's events below), and a queued-only chain
+  // correctly reads as "no targets this week yet".
+  const nutritionPlan = await getNutritionPlanForDate(clientId, today).catch((err) => {
+    console.error("Check-in nutrition context plan lookup failed:", err);
+    return null;
+  });
 
-  if (error || !nutritionPlan || !nutritionPlan.baseline_calories) {
+  if (!nutritionPlan || !nutritionPlan.baseline_calories) {
     return { hasNutritionPlan: false };
   }
 

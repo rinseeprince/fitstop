@@ -20,7 +20,11 @@ import {
   orchestrateNutritionPlanDeletion,
   NutritionPlanError,
 } from "@/services/nutrition-plan-orchestrator";
-import { getNutritionEventForDate } from "@/services/nutrition-event-service";
+import {
+  getNutritionPlanForDate,
+  getOpenNutritionPlan,
+  getNextFutureNutritionPlan,
+} from "@/services/nutrition-plan-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import { captureApiError } from "@/lib/error-handler";
@@ -68,34 +72,42 @@ export async function GET(
     // nutrition tab fired purely to ask "does a plan exist?". It reproduces that
     // route's `plan: activePlan ?? nextFullPlan` predicate using the summary
     // lookups, so no sessions or exercises are hydrated on either side. It rides
-    // alongside the active-plan read because neither depends on the other, and it
+    // alongside the plan-role reads because none depends on another, and it
     // must be resolved BEFORE the no-plan early return — the tab's training
     // section is independent of whether a nutrition plan exists.
     // `getCurrentGoals` is hoisted into this batch from below: the drift check
     // needs it AND the calc-input resolver needs it, so fetching it once here
     // costs one query instead of two and removes a sequential hop.
-    const [planResult, activePlan, nextPlan, currentGoals, todayEvent] = await Promise.all([
-      supabaseAdmin
-        .from("nutrition_plans")
-        .select("*")
-        .eq("client_id", clientId)
-        .eq("status", "active")
-        .order("effective_from", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      getTrainingPlanSummaryForDate(clientId, clientToday),
-      getNextFutureTrainingPlan(clientId, clientToday),
-      getCurrentGoals(clientId),
-      // Does the client have a target TODAY? The plan row can't answer this
-      // for a queued regenerate — its old prescription was overwritten in
-      // place — but the EVENTS still carry it (rows before effective_from keep
-      // the outgoing numbers). One indexed single-row read; lets the hero
-      // distinguish "numbers change on X, current ones run until then" from a
-      // first plan that genuinely starts on X.
-      getNutritionEventForDate(clientId, clientToday),
-    ]);
-    const plan = planResult.data;
+    //
+    // THREE PLAN ROLES (migration 144 — versions, resolved by date):
+    //   covering  → what governs TODAY: "Active since" + hasCurrentTargets.
+    //   open      → the latest-saved prescription: the drawer's seeds and the
+    //               goal-drift comparison. Seeding from anything else lets
+    //               Generate clobber a queued prescription.
+    //   future    → the EARLIEST queued version: "New targets from" / "Starts".
+    //               A two-row shape hid the next change behind a third queued
+    //               version; earliest-first cannot.
+    // The old todayEvent probe is retired: under versioning the covering ROW
+    // answers "is anything running" directly (events before a queued change
+    // belong to the still-covering old version).
+    const [covering, openPlan, nextFuture, activePlan, nextPlan, currentGoals] =
+      await Promise.all([
+        getNutritionPlanForDate(clientId, clientToday),
+        getOpenNutritionPlan(clientId),
+        getNextFutureNutritionPlan(clientId, clientToday),
+        getTrainingPlanSummaryForDate(clientId, clientToday),
+        getNextFutureTrainingPlan(clientId, clientToday),
+        getCurrentGoals(clientId),
+      ]);
     const hasTrainingPlan = Boolean(activePlan ?? nextPlan);
+
+    // hasPlan = a version covers today OR one is queued (design: no covering
+    // AND no future = none). The drawer seeds from `open ?? covering` — never
+    // fresh defaults while hasPlan is true (the post-delete same-day state has
+    // a closed covering version and no open row; an untouched Regenerate must
+    // re-mint ITS numbers, not sedentary defaults).
+    const seedPlan = openPlan ?? covering;
+    const hasPlan = (covering != null || nextFuture != null) && seedPlan != null;
 
     // `nutrition_plans.name` is never written, so the Plans-tab hero titles
     // itself with the program the client is on — the same "which block is this"
@@ -125,7 +137,7 @@ export async function GET(
       return null;
     });
 
-    if (!plan) {
+    if (!hasPlan || !seedPlan) {
       return NextResponse.json({
         success: true,
         hasPlan: false,
@@ -162,41 +174,47 @@ export async function GET(
       },
       today: clientToday,
     });
+    // Drift compares against the version the drawer will actually seed and
+    // overwrite (open ?? covering) — comparing anything else would flag or
+    // clear the banner against numbers Generate does not touch.
     const goalChanged = detectGoalDrift(
-      { goalWeightKg: plan.goal_weight_kg ?? null, deadline: plan.goal_deadline ?? null },
+      { goalWeightKg: seedPlan.goal_weight_kg ?? null, deadline: seedPlan.goal_deadline ?? null },
       effectiveGoal
     );
 
     return NextResponse.json({
-      calorieTarget: plan.custom_macros_enabled && plan.custom_calories ? plan.custom_calories : plan.baseline_calories,
-      proteinTargetG: plan.protein_target_g,
-      carbTargetG: plan.carb_target_g,
-      fatTargetG: plan.fat_target_g,
-      baselineCalories: plan.baseline_calories,
-      customMacrosEnabled: plan.custom_macros_enabled,
-      customCalories: plan.custom_calories,
-      customProteinG: plan.custom_protein_g,
-      customCarbG: plan.custom_carb_g,
-      customFatG: plan.custom_fat_g,
-      dietType: plan.diet_type,
+      hasPlan: true,
+      calorieTarget: seedPlan.custom_macros_enabled && seedPlan.custom_calories ? seedPlan.custom_calories : seedPlan.baseline_calories,
+      proteinTargetG: seedPlan.protein_target_g,
+      carbTargetG: seedPlan.carb_target_g,
+      fatTargetG: seedPlan.fat_target_g,
+      baselineCalories: seedPlan.baseline_calories,
+      customMacrosEnabled: seedPlan.custom_macros_enabled,
+      customCalories: seedPlan.custom_calories,
+      customProteinG: seedPlan.custom_protein_g,
+      customCarbG: seedPlan.custom_carb_g,
+      customFatG: seedPlan.custom_fat_g,
+      dietType: seedPlan.diet_type,
       // The two remaining calculator settings, so the builder's pickers seed
-      // from the ACTIVE PLAN instead of their hardcoded defaults. Without these
-      // a coach opening a keto plan sees "Balanced" and a regenerate silently
-      // rewrites the plan they never meant to change.
-      workActivityLevel: plan.work_activity_level,
-      proteinTargetGPerKg: Number(plan.protein_target_g_per_kg),
+      // from the LATEST-SAVED version instead of their hardcoded defaults.
+      // Without these a coach opening a keto plan sees "Balanced" and a
+      // regenerate silently rewrites the plan they never meant to change.
+      workActivityLevel: seedPlan.work_activity_level,
+      proteinTargetGPerKg: Number(seedPlan.protein_target_g_per_kg),
       includeActivityBurn,
-      effectiveFrom: plan.effective_from,
-      // Queued-not-running, resolved SERVER-side against the client's today the
-      // way GET /training resolves its own `scheduledFor`. The browser must not
-      // make this call: its local date can differ from the client's by a day.
-      scheduledFor: plan.effective_from > clientToday ? plan.effective_from : null,
-      // Whether a nutrition event exists on the client's today — i.e. the
-      // client is on live targets right now. With `scheduledFor` set this is
-      // what separates "new targets from X, current ones until then" (an
-      // existing client whose plan was regenerated) from "starts X" (a first
-      // plan with nothing running in the interim).
-      hasCurrentTargets: todayEvent != null,
+      // "Active since": the COVERING version's start — the version governing
+      // the client's today. Null for a queued-only chain (nothing runs yet).
+      effectiveFrom: covering?.effective_from ?? null,
+      // The EARLIEST queued version's start, resolved SERVER-side against the
+      // client's today. The browser must not make this call: its local date
+      // can differ from the client's by a day.
+      scheduledFor: nextFuture?.effectiveFrom ?? null,
+      // Is anything governing the client's today? Under versioning the plan
+      // rows answer this directly (the old per-event probe is retired): with
+      // `scheduledFor` set this separates "New targets from X, current ones
+      // until then" (a covering version keeps running) from "Starts X" (a
+      // first plan with nothing running in the interim).
+      hasCurrentTargets: covering != null,
       goalChanged,
       hasTrainingPlan,
       trainingPlanName,

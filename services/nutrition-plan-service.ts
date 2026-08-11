@@ -276,6 +276,29 @@ export function versionCoversDate(v: NutritionPlanVersionWindow, date: string): 
   return v.effectiveFrom <= date && (v.effectiveUntil === null || v.effectiveUntil >= date);
 }
 
+/**
+ * The client's OPEN version (`effective_until IS NULL`) — the latest-saved
+ * prescription, and therefore the drawer's seed source: seeding from anything
+ * else lets Generate silently clobber a queued prescription. At most one
+ * exists (`idx_nutrition_plans_open_unique`). Null after a delete, when a
+ * closed covering version may still govern today — seed `open ?? covering`,
+ * never fresh defaults while a plan exists.
+ */
+export async function getOpenNutritionPlan(clientId: string): Promise<NutritionPlanRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .is("effective_until", null)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch open nutrition plan: ${error.message}`);
+  }
+  return data;
+}
+
 export type NextFutureNutritionPlan = {
   id: string;
   effectiveFrom: string;

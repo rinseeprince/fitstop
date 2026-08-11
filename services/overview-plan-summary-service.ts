@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import { coversDate } from "./training-plan-window";
 import { getNextFutureTrainingPlan, getTrainingPlanForDate } from "./training-service";
 import {
   getTrainingWeekSummary,
@@ -222,14 +223,21 @@ async function buildNutritionSummary(
   weekStart: string,
   weekEnd: string
 ): Promise<OverviewPlanSummary["nutrition"]> {
-  const { data: plan, error } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select(
-      "diet_type, baseline_calories, protein_target_g, carb_target_g, fat_target_g, protein_target_g_per_kg, custom_macros_enabled, custom_calories, custom_protein_g, custom_carb_g, custom_fat_g"
-    )
-    .eq("client_id", clientId)
-    .eq("status", "active")
+  // The version COVERING the client's today (migration 144) — the Overview
+  // card describes what the client is on NOW, so a queued future version must
+  // not surface here and a superseded era must not linger.
+  const { data: plan, error } = await coversDate(
+    supabaseAdmin
+      .from("nutrition_plans")
+      .select(
+        "diet_type, baseline_calories, protein_target_g, carb_target_g, fat_target_g, protein_target_g_per_kg, custom_macros_enabled, custom_calories, custom_protein_g, custom_carb_g, custom_fat_g"
+      )
+      .eq("client_id", clientId)
+      .eq("status", "active"),
+    clientToday
+  )
     .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 

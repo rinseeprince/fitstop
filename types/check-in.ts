@@ -748,7 +748,9 @@ export type CheckInComparison = {
     currentBodyFatPercentage?: number;
     unitPreference?: UnitPreference;
     nutritionPlanBaseWeightKg?: number;
-    nutritionPlanCreatedDate?: string;
+    /** The covering nutrition version's effective_from — when the numbers the
+     *  drift banner compares against took effect (migration 144). */
+    nutritionPlanEffectiveDate?: string;
   };
   changes: {
     weight?: MetricChange;

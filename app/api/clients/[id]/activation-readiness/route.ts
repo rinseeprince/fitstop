@@ -3,7 +3,11 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { getClientHabits } from "@/services/daily-habits-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
+import {
+  getNutritionPlanIdForDate,
+  getNextFutureNutritionPlan,
+} from "@/services/nutrition-plan-service";
+import { getClientTodayString } from "@/services/today-service";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 
 async function safeQuery<T>(fn: () => Promise<T>): Promise<T | null> {
@@ -37,18 +41,17 @@ export async function GET(
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const [trainingPlan, habits, nutritionPlan] = await Promise.all([
+    const [trainingPlan, habits, hasNutritionPlan] = await Promise.all([
       safeQuery(() => getActiveTrainingPlan(clientId)),
       safeQuery(() => getClientHabits(clientId)),
+      // Versioned model (migration 144): ready = a version covers the client's
+      // today OR one is queued — a coach who queued a first plan IS set up.
+      // The same covering-or-future predicate as the client log guard, so the
+      // two surfaces can never disagree about the same client.
       safeQuery(async () => {
-        const { data } = await supabaseAdmin
-          .from("nutrition_plans")
-          .select("id")
-          .eq("client_id", clientId)
-          .eq("status", "active")
-          .limit(1)
-          .maybeSingle();
-        return data;
+        const today = await getClientTodayString(clientId);
+        if ((await getNutritionPlanIdForDate(clientId, today)) != null) return true;
+        return (await getNextFutureNutritionPlan(clientId, today)) != null;
       }),
     ]);
 
@@ -56,7 +59,7 @@ export async function GET(
       success: true,
       data: {
         hasTrainingPlan: trainingPlan !== null,
-        hasNutritionPlan: nutritionPlan !== null,
+        hasNutritionPlan: hasNutritionPlan === true,
         hasHabits: Array.isArray(habits) && habits.length > 0,
       },
     });

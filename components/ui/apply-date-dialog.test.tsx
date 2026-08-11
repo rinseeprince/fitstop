@@ -63,4 +63,42 @@ describe("ApplyDateDialog", () => {
     expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
     expect(onApply).not.toHaveBeenCalled();
   });
+
+  it("absorb warning: picking on/before a queued change says it will be replaced — warn, never block", () => {
+    const queued = addDaysToDateString(today, 10);
+    const onApply = vi.fn();
+    render(
+      <ApplyDateDialog
+        open
+        onOpenChange={vi.fn()}
+        onApply={onApply}
+        queuedChangeDate={queued}
+      />,
+    );
+
+    // The default (today) is before the queued date → the sentence renders…
+    expect(screen.getByText(/This replaces the change queued for/)).toBeInTheDocument();
+
+    // …and Apply still works exactly as asked (warn, then do).
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onApply).toHaveBeenCalledWith(null);
+  });
+
+  it("absorb warning: a pick AFTER the queued change shows no warning", () => {
+    const queued = addDaysToDateString(today, 10);
+    render(
+      <ApplyDateDialog
+        open
+        onOpenChange={vi.fn()}
+        onApply={vi.fn()}
+        queuedChangeDate={queued}
+      />,
+    );
+
+    fireEvent.change(screen.getByDisplayValue(today), {
+      target: { value: addDaysToDateString(today, 11) },
+    });
+
+    expect(screen.queryByText(/This replaces the change queued for/)).toBeNull();
+  });
 });

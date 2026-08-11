@@ -92,13 +92,15 @@ export function DrawerFormBody() {
           onChange={(v) => builder.setCoachNotes(v.slice(0, 500))}
         />
 
-        {/* Regeneration note — in-place replacement, no versioning/Plan History. */}
+        {/* Regeneration note — versioned model (migration 144): each save
+            starts a new version from its chosen date; earlier days keep the
+            numbers their own era prescribed. */}
         {builder.hasPlan && (
           <div className="bg-[rgba(245,158,11,0.07)] rounded-[6px] p-3.5 flex items-start gap-2.5">
             <Info className="w-3 h-3 text-[#d97706] mt-0.5 flex-shrink-0" strokeWidth={1.5} />
             <p className="text-[11.5px] font-medium text-[#d97706] leading-[1.4]">
-              Regenerating replaces the targets from the effective date forward. Past
-              and logged days are unchanged.
+              Saving starts a new version from the chosen date. Earlier days keep
+              the numbers they had.
             </p>
           </div>
         )}

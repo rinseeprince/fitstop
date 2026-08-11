@@ -1,6 +1,6 @@
 import { getCheckInById, getPreviousCheckIn, getClientCheckIns, getFirstCheckIn } from "./check-in-service";
 import { getClientById } from "./client-service";
-import { supabaseAdmin } from "./supabase-admin";
+import { getNutritionPlanForDate } from "./nutrition-plan-service";
 import { prepareChartData } from "@/lib/check-in-utils";
 import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } from "@/utils/comparison-utils";
 import { computeGoalPace } from "@/lib/check-in/goal-pace";
@@ -35,20 +35,22 @@ export const getCheckInComparison = async (
     checkInId
   );
 
-  // Fetch all check-ins for chart data (last 10), first check-in for starting values,
-  // active nutrition plan for base weight and created date, goal_deadline from clients table,
-  // earliest body_metrics for starting values, and current goals from client_goals
-  const [{ checkIns }, firstCheckIn, { data: activePlan }, earliestMetrics, currentGoals] = await Promise.all([
+  // Fetch all check-ins for chart data (last 10), first check-in for starting
+  // values, the nutrition version COVERING the client's today (migration 144 —
+  // the drift banner must compare against the era actually governing them, and
+  // date its "since" from when those numbers took effect, not from when the
+  // first-ever plan row was born), earliest body_metrics for starting values,
+  // and current goals from client_goals.
+  const clientLocalToday = getTodayDateStringInTimezone(client.timezone);
+  const [{ checkIns }, firstCheckIn, activePlan, earliestMetrics, currentGoals] = await Promise.all([
     getClientCheckIns(currentCheckIn.clientId, { limit: 10 }),
     getFirstCheckIn(currentCheckIn.clientId),
-    supabaseAdmin
-      .from("nutrition_plans")
-      .select("base_weight_kg, created_at")
-      .eq("client_id", currentCheckIn.clientId)
-      .eq("status", "active")
-      .order("effective_from", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    getNutritionPlanForDate(currentCheckIn.clientId, clientLocalToday).catch((err) => {
+      // Degrade to "no plan" for the banner rather than failing the whole
+      // comparison read — but never silently.
+      console.error("Comparison covering-plan lookup failed:", err);
+      return null;
+    }),
     getBodyMetricsHistory(currentCheckIn.clientId, { limit: 1, ascending: true }),
     getCurrentGoals(currentCheckIn.clientId),
   ]);
@@ -116,7 +118,11 @@ export const getCheckInComparison = async (
       currentBodyFatPercentage: client.currentBodyFatPercentage,
       unitPreference: client.unitPreference,
       nutritionPlanBaseWeightKg: activePlan?.base_weight_kg ?? undefined,
-      nutritionPlanCreatedDate: activePlan?.created_at ?? undefined,
+      // The covering version's effective_from — when the numbers the banner
+      // compares against actually took effect (renamed from
+      // nutritionPlanCreatedDate, which under in-place editing had drifted to
+      // meaning "when the first-ever plan row was born").
+      nutritionPlanEffectiveDate: activePlan?.effective_from ?? undefined,
     },
     changes: {
       weight: calculateMetricChange(

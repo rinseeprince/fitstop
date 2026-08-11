@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import { formatDateOnlyShort } from "@/components/clients/overview/overview-format";
 
 type ApplyDateDialogProps = {
   open: boolean;
@@ -23,6 +24,11 @@ type ApplyDateDialogProps = {
   /** Verb for the single confirm. An EDIT reads as "apply"; a first plan reads
    *  as "start". */
   applyLabel?: string;
+  /** The date a queued change is scheduled for (the GET's `scheduledFor`).
+   *  When the picked date lands ON or BEFORE it, the save ABSORBS that queued
+   *  change — one sentence says so, then the apply does what was asked (warn,
+   *  never block; same register as the amendment surface's re-lay warning). */
+  queuedChangeDate?: string | null;
 };
 
 export function ApplyDateDialog({
@@ -33,6 +39,7 @@ export function ApplyDateDialog({
   onApply,
   maxDate,
   applyLabel = "Apply",
+  queuedChangeDate,
 }: ApplyDateDialogProps) {
   // One picker, one button. The old two-action layout ("Apply Now" over a
   // date + "Apply From Date") saved on the second button's click, which read
@@ -80,6 +87,12 @@ export function ApplyDateDialog({
               {applyLabel}
             </button>
           </div>
+          {queuedChangeDate && selectedDate && selectedDate <= queuedChangeDate && (
+            <p className="text-[12px] leading-relaxed text-[#b45309]">
+              This replaces the change queued for{" "}
+              {formatDateOnlyShort(queuedChangeDate)}.
+            </p>
+          )}
         </div>
 
         <AlertDialogFooter>

@@ -95,6 +95,9 @@ export function DrawerFooter() {
             : "Targets are generated from the date below — leave it on today to start now, or pick a future date to set this client up ahead of time."
         }
         applyLabel={hasPlan ? "Apply" : "Start plan"}
+        // The absorb warning (migration 144): saving on/before a queued
+        // change's start replaces that queued version — the dialog says so.
+        queuedChangeDate={builder.nutritionData?.scheduledFor ?? null}
         onApply={handleApply}
       />
     </>

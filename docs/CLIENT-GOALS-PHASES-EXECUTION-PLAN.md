@@ -2210,3 +2210,79 @@ now rebuild those days from the OLD era's numbers (the original leak repro, chec
 item 1); a queued-first-plan client can log food before their start date; resets across a
 boundary restore each era's numbers; deleting a chain removes queued versions and their
 events.
+
+---
+
+### Task 1b.3 — Coach surface: the three-role GET + everything that reads it ✅ SHIPPED 2026-08-11
+
+**The GET returns three roles** (`app/api/clients/[id]/nutrition/route.ts`): **covering**
+(`getNutritionPlanForDate(clientId, clientToday)`) → `effectiveFrom` ("Active since") and
+`hasCurrentTargets := covering != null` — **the `todayEvent` probe added by `4ed4017` is
+retired** (route Promise.all member + response derivation, the hook's type doc, the route
+test factory's declaration; the hero itself consumes the same field names and needed no
+code change); **earliest-future** (`getNextFutureNutritionPlan`) → `scheduledFor` (a third
+queued version can no longer hide the next change); **open** (`getOpenNutritionPlan`, new
+resolver — the `effective_until IS NULL` row) → the drawer seeds and `goalChanged` (drift
+now compares the version Generate will actually overwrite). **Seed rule implemented as
+approved: seeds resolve `open ?? covering`, and the drawer never seeds fresh defaults
+while `hasPlan` is true** — the post-delete same-day state re-mints the closed covering
+version's numbers on an untouched Regenerate (pinned). `hasPlan` is an explicit response
+field on BOTH branches (covering-or-future, guarded to seed availability);
+`use-nutrition-plan.ts`'s `!!calorieTarget` derivation is dead, replaced by the server's
+verdict, with the type docs rewritten to the versioned meanings.
+
+**Readers rewired:** `activation-readiness` → covering-or-future via the resolvers (the
+queued-first-plan coach IS ready — pinned, and provably the same predicate as 1b.2's log
+guard); `check-in-context` → covering-existence gate (queued-only correctly reads "no
+targets this week yet"; the lookup degrades loudly, never silently); `comparison-service`
+→ covering version with **`effective_from` as the drift banner's "since" date** — field
+renamed `nutritionPlanCreatedDate` → `nutritionPlanEffectiveDate` through
+`types/check-in.ts` → `goal-progress-view` → the banner, whose copy now reads "since these
+targets took effect on {date}" (the old value printed the FIRST-EVER plan row's birth date
+forever); `overview-plan-summary` → `coversDate` + clientToday (a queued version no longer
+surfaces as "what the client is on now").
+
+**Absorb warning (design 9):** `ApplyDateDialog` gains `queuedChangeDate`; when the picked
+date lands on/before it, one amber sentence renders — "This replaces the change queued for
+{date}." — and Apply proceeds unchanged (warn, never block; single-button +
+null-means-today contract untouched, re-verified by the existing four pins).
+`drawer-footer` threads `nutritionData.scheduledFor`. **Copy sweep:** the drawer's
+in-place note → "Saving starts a new version from the chosen date. Earlier days keep the
+numbers they had."; the delete dialog is chain-safe ("…edited days and any queued changes
+included.").
+
+**Recorded, no code (as approved):** with `hasCurrentTargets` from the covering row, a
+swallowed regeneration failure shows a hero reporting the plan-layer truth while the
+client's day view shows the event-layer hole — debt entry 2's named visible cost (the old
+event probe lied in the opposite direction, denying a mostly-materialized prescription).
+On the deletion day itself the hero truthfully reads "Active since X" (today is still
+governed); an explicit "Ends {date}" line for a successor-less closed covering version is
+future polish, not built.
+
+**Tests.** 2618 passing (2610 + 8): **first-ever GET coverage** — five states (single
+version; a chain proving "hero dates the EARLIEST, drawer seeds the LATEST"; queued-only
+"Starts"; the post-delete `open ?? covering` seed rule; explicit `hasPlan:false` with
+calcInputs) — the ground truth's zero-coverage GET surface is closed; the absorb warning
+×2 (shown-and-still-applies; hidden after the queued date); readiness queued-first-plan
+pin. The readiness test's supabase chain mock is replaced by resolver mocks; the route
+test factory drops the retired probe.
+
+**Gates.** `tsc --noEmit` clean · `vitest run` **253 files / 2618 tests, all passing** ·
+`eslint .` 0 errors (209 pre-existing warnings, unchanged) · `check:labels` OK (636) ·
+`check:rls` OK (40/40) · no new `as any` outside test-mock casts · no markers · no
+migration.
+
+**§2 review (trigger: route changes, ~14 files).** Security: no auth chain, ownership, or
+validation changed on any touched route — the GET's guards are byte-identical above the
+read swap; the readiness route's reads moved from an inline query to scoped service
+resolvers. Performance: the GET swaps one plan read + one event probe for three indexed
+single-row plan reads inside the same Promise.all (net +1 parallel round trip, no
+sequential depth added); readiness adds a today lookup + at most two indexed reads inside
+its existing safeQuery batch; comparison/check-in/overview swap one read for one read.
+Consistency: read-only surfaces; the one write path this task touches (none) — n/a.
+Not load-tested; verified by the unit suites.
+
+**Smoke unblocked:** with 1b.1–1b.3 landed, the queued-save embargo is LIFTED — the four
+Session 1B checklist smokes (leak repro, chain hero/drawer, chain delete, absorb warning)
+are now meaningful. 1b.4 (portal + scripts) is still pending, so the CLIENT program card
+may show stale template behaviour until it lands; coach-side smokes are fully valid.

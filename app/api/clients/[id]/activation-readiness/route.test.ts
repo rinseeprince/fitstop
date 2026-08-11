@@ -27,24 +27,11 @@ vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn().mockResolvedValue("2026-01-15"),
 }));
 
-const mockMaybeSingle = vi.fn();
-vi.mock("@/services/supabase-admin", () => ({
-  supabaseAdmin: {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            limit: vi.fn(() => ({
-              maybeSingle: mockMaybeSingle,
-            })),
-            lte: vi.fn(() => ({
-              maybeSingle: vi.fn().mockResolvedValue({ data: null }),
-            })),
-          })),
-        })),
-      })),
-    })),
-  },
+// Versioned model (migration 144): readiness resolves through the date
+// resolvers — covering-or-future, the same predicate as the client log guard.
+vi.mock("@/services/nutrition-plan-service", () => ({
+  getNutritionPlanIdForDate: vi.fn(),
+  getNextFutureNutritionPlan: vi.fn(),
 }));
 
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -52,6 +39,10 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { getActiveTrainingPlan } from "@/services/training-service";
 import { getClientHabits } from "@/services/daily-habits-service";
+import {
+  getNutritionPlanIdForDate,
+  getNextFutureNutritionPlan,
+} from "@/services/nutrition-plan-service";
 
 const mockParams = { params: Promise.resolve({ id: "client-1" }) };
 
@@ -77,7 +68,8 @@ describe("/api/clients/[id]/activation-readiness", () => {
     vi.mocked(getClientById).mockResolvedValue(mockClient as never);
     vi.mocked(getActiveTrainingPlan).mockResolvedValue({ id: "tp-1" } as never);
     vi.mocked(getClientHabits).mockResolvedValue([{ id: "habit-1" }] as never);
-    mockMaybeSingle.mockResolvedValue({ data: { id: "np-1" }, error: null });
+    vi.mocked(getNutritionPlanIdForDate).mockResolvedValue("np-1");
+    vi.mocked(getNextFutureNutritionPlan).mockResolvedValue(null);
   });
 
   it("returns the three required readiness flags", async () => {
@@ -147,5 +139,18 @@ describe("/api/clients/[id]/activation-readiness", () => {
     expect(json.data.hasTrainingPlan).toBe(false);
     expect(json.data.hasNutritionPlan).toBe(true);
     expect(json.data.hasHabits).toBe(true);
+  });
+
+  it("a coach who queued a FIRST plan is ready — covering-or-future, aligned with the client log guard", async () => {
+    vi.mocked(getNutritionPlanIdForDate).mockResolvedValue(null);
+    vi.mocked(getNextFutureNutritionPlan).mockResolvedValue({
+      id: "np-queued",
+      effectiveFrom: "2026-02-01",
+    });
+
+    const response = await GET(createMockRequest(), mockParams);
+    const json = await response.json();
+
+    expect(json.data.hasNutritionPlan).toBe(true);
   });
 });
