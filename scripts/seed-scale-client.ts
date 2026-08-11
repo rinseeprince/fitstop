@@ -31,6 +31,7 @@ import {
   PERF_CLIENT_ID,
   PERF_PLAN_ID,
   PERF_NUTRITION_PLAN_ID,
+  PERF_NUTRITION_PLAN_V1_ID,
   PERF_CLIENT_GOAL_ID,
   PERF_HABIT_IDS,
   PERF_COACH_EMAIL,
@@ -362,45 +363,69 @@ async function insertClientGoal() {
 // ---------------------------------------------------------------------------
 
 async function insertNutritionPlan() {
-  console.log("Inserting nutrition_plans placeholder + 7 daily targets...");
+  console.log("Inserting nutrition_plans version pair (closed + open) + daily targets...");
 
-  const effectiveFrom = getDateDaysAgo(365);
-  const { error: planErr } = await supabaseAdmin.from("nutrition_plans").insert({
-    id: PERF_NUTRITION_PLAN_ID,
+  // Versioned model (migration 144): a closed predecessor + the open current
+  // version, tiling the client's tenure, so date-resolved lookups
+  // (coversDate, per-era history attribution) are exercised by the fixture
+  // instead of degenerating to a single covering row.
+  const v1From = getDateDaysAgo(365);
+  const v1Until = getDateDaysAgo(91);
+  const v2From = getDateDaysAgo(90);
+
+  const shared = {
     client_id: PERF_CLIENT_ID,
     coach_id: PERF_COACH_ID,
     name: "Perf seed plan",
     status: "active",
-    effective_from: effectiveFrom,
     work_activity_level: "moderately_active",
     training_volume_hours: "3-5",
     protein_target_g_per_kg: 2.0,
     diet_type: "balanced",
-    baseline_calories: 2400,
     protein_target_g: 170,
     carb_target_g: 280,
     fat_target_g: 70,
     base_weight_kg: 84,
     bmr: 1850,
     tdee: 2700,
-  });
+  };
+  const { error: planErr } = await supabaseAdmin.from("nutrition_plans").insert([
+    {
+      ...shared,
+      id: PERF_NUTRITION_PLAN_V1_ID,
+      effective_from: v1From,
+      effective_until: v1Until,
+      baseline_calories: 2300,
+    },
+    {
+      ...shared,
+      id: PERF_NUTRITION_PLAN_ID,
+      effective_from: v2From,
+      effective_until: null,
+      baseline_calories: 2400,
+    },
+  ]);
   if (planErr) throw new Error(`nutrition_plans insert: ${planErr.message}`);
 
   const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
-  const dailyTargets = days.map((dow) => ({
-    nutrition_plan_id: PERF_NUTRITION_PLAN_ID,
-    day_of_week: dow,
-    calories: dow === "sunday" ? 2200 : 2400,
-    protein_g: 170,
-    carb_g: 280,
-    fat_g: 70,
-    is_training_day: ["monday", "tuesday", "thursday", "saturday"].includes(dow),
-  }));
+  const gridFor = (planId: string, baseline: number) =>
+    days.map((dow) => ({
+      nutrition_plan_id: planId,
+      day_of_week: dow,
+      calories: dow === "sunday" ? baseline - 200 : baseline,
+      protein_g: 170,
+      carb_g: 280,
+      fat_g: 70,
+      is_training_day: ["monday", "tuesday", "thursday", "saturday"].includes(dow),
+    }));
+  const dailyTargets = gridFor(PERF_NUTRITION_PLAN_ID, 2400);
   const { error: tgtErr } = await supabaseAdmin
     .from("nutrition_plan_daily_targets")
-    .insert(dailyTargets);
+    .insert([...gridFor(PERF_NUTRITION_PLAN_V1_ID, 2300), ...dailyTargets]);
   if (tgtErr) throw new Error(`nutrition_plan_daily_targets insert: ${tgtErr.message}`);
 
+  // The OPEN version's grid — event generation fills the forward window from
+  // the current prescription (v1's era already has its own generated rows).
   return dailyTargets;
 }
 
@@ -423,13 +448,30 @@ async function insertNutritionEvents(
   }>
 ) {
   console.log("Inserting dense nutrition_events via generateNutritionEvents()...");
+  // Versioned model (migration 144): each era's events carry its OWN
+  // version's id and prescription — v1's closed window first, then the open
+  // version from its start through the forward horizon. The tenure window may
+  // start after v1's era began; clamp so a short seed still splits correctly.
+  const tenureStart = getDateDaysAgo(months * 30);
+  const v1Until = getDateDaysAgo(91);
+  const v2From = getDateDaysAgo(90);
+  if (tenureStart <= v1Until) {
+    await generateNutritionEvents(
+      PERF_CLIENT_ID,
+      PERF_NUTRITION_PLAN_V1_ID,
+      { baselineCalories: 2300, proteinTargetG: 170, dietType: "balanced" },
+      dailyTargets.map((t) => ({ ...t, calories: t.calories - 100 })),
+      null, // trainingPlan — generateNutritionEvents fetches training events by date range
+      expandDateRange(tenureStart, v1Until)
+    );
+  }
   await generateNutritionEvents(
     PERF_CLIENT_ID,
     PERF_NUTRITION_PLAN_ID,
     { baselineCalories: 2400, proteinTargetG: 170, dietType: "balanced" },
     dailyTargets,
-    null, // trainingPlan — generateNutritionEvents fetches training events by date range
-    expandDateRange(getDateDaysAgo(months * 30), getDateDaysFrom(new Date(), 8 * 7))
+    null,
+    expandDateRange(v2From, getDateDaysFrom(new Date(), 8 * 7))
   );
 }
 

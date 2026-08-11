@@ -39,6 +39,8 @@ function createMockQuery(result: { data: unknown; error: unknown }) {
   const query = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    lte: vi.fn().mockReturnThis(),
+    or: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
@@ -70,6 +72,9 @@ describe("getClientNutritionTargets", () => {
     const planQuery = createMockQuery({
       data: {
         id: "plan-1",
+        status: "active",
+        effective_from: "2026-05-01",
+        effective_until: null,
         diet_type: "balanced",
         custom_macros_enabled: false,
         custom_calories: null,
@@ -130,6 +135,9 @@ describe("getClientNutritionTargets", () => {
     const planQuery = createMockQuery({
       data: {
         id: "plan-1",
+        status: "active",
+        effective_from: "2026-05-01",
+        effective_until: "2026-09-30",
         diet_type: "balanced",
         custom_macros_enabled: false,
         baseline_calories: 2200,
@@ -163,7 +171,8 @@ describe("getClientNutritionTargets", () => {
     // with every gate unit test green.
     expect(args[8]).toEqual({
       weekStart: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      effectiveFrom: null,
+      effectiveFrom: "2026-05-01",
+      effectiveUntil: "2026-09-30",
     });
   });
 });

@@ -2286,3 +2286,61 @@ Not load-tested; verified by the unit suites.
 Session 1B checklist smokes (leak repro, chain hero/drawer, chain delete, absorb warning)
 are now meaningful. 1b.4 (portal + scripts) is still pending, so the CLIENT program card
 may show stale template behaviour until it lands; coach-side smokes are fully valid.
+
+---
+
+### Task 1b.4 — Client portal + scripts ✅ SHIPPED 2026-08-11
+
+**Portal read → covering-today** (`client-portal-service.ts:102`): the program card's
+plan read swaps newest-active for `coversDate(query, today)` + the training-identical
+ordering — a queued future version no longer reaches a client still living on the
+current one, and the portal resolves the same row every coach surface resolves.
+
+**The template gate is a WINDOW test** (design 8): `buildDailyTargetsFromPlan`'s
+required `weekWindow` param gains `effectiveUntil`; a no-event day before
+`effectiveFrom` OR after `effectiveUntil` returns no entry (both boundaries inclusive,
+null leaves that side open, underivable dates still fail open, event days still never
+gated). The required-param discipline enumerated every call site again — exactly the two
+test files, no production caller missed. The portal threads both window ends; its
+mocked-util `args[8]` pin (the only thing distinguishing "gate exists" from "gate is
+wired") now pins a CLOSED window's both ends against real fixture values.
+
+**`backfill-nutrition-events.ts` restores its per-version branch**: selects every active
+version with `effective_until`, walks each, and fills exactly its own window — an open
+version extends to today+8w, a closed version never writes past its own end (days after
+it belong to the next era's grid), inverted/empty windows skip. The "the old
+archived-window/per-version branch is gone" mourning comment is replaced by the restored
+truth.
+
+**Both seeds emit a closed + open version pair** so date resolution is exercised by
+fixture data: `seed-scale-client.ts` splits the tenure at −90d (v1 closed at 2300 kcal
+with its own grid + its era's events stamped `PERF_NUTRITION_PLAN_V1_ID`, new fixture id
+in `perf-fixtures.ts`; the open version keeps `PERF_NUTRITION_PLAN_ID` so existing
+consumers are untouched); `seed/generate.ts` splits each client's tenure at its midpoint
+(≥14-day tenures; shorter fall back to a single open version), with per-era daily-target
+grids and per-date `nutrition_events`/`nutrition_logs` stamping following the covering
+version (`eraPlanId`) — the old `:477` index comment now names
+`idx_nutrition_plans_open_unique` and why two active rows are legal.
+
+**Tests.** 2621 passing (2618 + 3): the until-end gate (template days after
+`effective_until` dropped; the boundary day governed; an event past the window still
+served verbatim — events carry their own era). Portal fixtures gain
+`status`/`effective_from`/`effective_until`; the mock chain gains `lte`/`or` for
+`coversDate`.
+
+**Gates.** `tsc --noEmit` clean · `vitest run` **253 files / 2621 tests, all passing** ·
+`eslint .` 0 errors (209 pre-existing warnings, unchanged) · `check:labels` OK ·
+`check:rls` OK (40/40) · no markers · no migration.
+
+**§2 review (trigger: client-portal read path).** Security: no auth changes;
+`getClientNutritionTargets` keeps its `requireClientAuth`-verified `clientId` scoping;
+the read swap adds two filter clauses to the same tenant-scoped query. Performance: zero
+new round trips anywhere (the covering read replaces the newest-active read one-for-one;
+the gate is in-memory; the backfill is an operator script). Consistency: read-only +
+scripts. Not load-tested; the perf fixture's shape change (two versions) slightly enriches
+the benchmark data and `PERF_NUTRITION_PLAN_ID` remains the open version, so existing
+perf baselines stay comparable.
+
+**Full-session smoke now unblocked end-to-end** — coach AND client surfaces are
+version-aware. The four checklist smokes plus the D1 pre-start logging check are ready
+whenever you are (after 1b.5's doc pass, or before it — docs don't gate behaviour).

@@ -15,13 +15,15 @@ async function backfillEvents() {
   const today = getTodayDateString();
   console.log(`Backfill started — today is ${today}`);
 
-  // 1. Fetch active nutrition plans with daily targets. Under the durable-plan
-  // model there is exactly one active plan per client → one dense window; the
-  // old archived-window/per-version branch is gone.
+  // 1. Fetch active nutrition plan VERSIONS with daily targets. Under the
+  // versioned model (migration 144) a client's timeline is tiled by N rows,
+  // each owning [effective_from, effective_until] — so this walks every
+  // version and fills exactly its own window (the per-version branch the
+  // in-place era deleted, restored with the window bounded at BOTH ends).
   const { data: plans, error: plansError } = await supabaseAdmin
     .from("nutrition_plans")
     .select(
-      "id, client_id, effective_from, baseline_calories, protein_target_g, diet_type, nutrition_plan_daily_targets(day_of_week, calories, protein_g, carb_g, fat_g, is_training_day)"
+      "id, client_id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, nutrition_plan_daily_targets(day_of_week, calories, protein_g, carb_g, fat_g, is_training_day)"
     )
     .eq("status", "active");
 
@@ -56,12 +58,22 @@ async function backfillEvents() {
     endStart.setDate(endStart.getDate() + 8 * 7);
     let endDate: string = getDateString(endStart);
 
-    // Always extend the dense forward window to today + 8 weeks.
+    // An OPEN version extends its dense forward window to today + 8 weeks.
     const futureLimit = new Date(today + "T00:00:00");
     futureLimit.setDate(futureLimit.getDate() + 8 * 7);
     const futureLimitStr = getDateString(futureLimit);
-    if (endDate < futureLimitStr) {
+    if (plan.effective_until === null && endDate < futureLimitStr) {
       endDate = futureLimitStr;
+    }
+
+    // A CLOSED version never writes past its own window — days after
+    // effective_until belong to the next era's grid.
+    if (plan.effective_until !== null && endDate > plan.effective_until) {
+      endDate = plan.effective_until;
+    }
+    if (endDate < startDate) {
+      plansSkipped++;
+      continue;
     }
 
     try {

@@ -468,18 +468,25 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
     const fatG = Math.round((baseCals * logRng.float(0.22, 0.3)) / 9);
     const carbG = Math.max(40, Math.round((baseCals - proteinG * 4 - fatG * 9) / 4));
 
+    // Versioned model (migration 144): each client gets a CLOSED predecessor
+    // version + the OPEN current one, tiling the tenure at its midpoint, so
+    // "which version governed date X" is a real lookup against seed data
+    // (mirroring the training side's consecutive blocks). Short tenures fall
+    // back to a single open version. The open guard is now the partial unique
+    // index idx_nutrition_plans_open_unique — (client_id) WHERE
+    // status='active' AND effective_until IS NULL — so a pair of active rows
+    // is legal as long as exactly one is open.
     const nPlanId = seedUuid("nplan", coachIdx, c);
-    nPlans.push({
-      id: nPlanId,
+    const splitVersions = tenureDays >= 14;
+    const v2FromIso = splitVersions ? addDays(startIso, Math.floor(tenureDays / 2)) : startIso;
+    const sharedPlanCols = {
       client_id: clientId,
       coach_id: coachId,
       name: "Seeded nutrition plan",
-      status: "active", // partial unique (client_id) WHERE status='active'
-      effective_from: startIso,
+      status: "active",
       work_activity_level: "moderately_active",
       training_volume_hours: "3-5",
       diet_type: dietType,
-      baseline_calories: baseCals,
       protein_target_g: proteinG,
       carb_target_g: carbG,
       fat_target_g: fatG,
@@ -489,13 +496,43 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       custom_macros_enabled: false,
       created_at: createdAt,
       updated_at: createdAt,
+    };
+    const nPlanV1Id = seedUuid("nplanv1", coachIdx, c);
+    if (splitVersions) {
+      nPlans.push({
+        ...sharedPlanCols,
+        id: nPlanV1Id,
+        effective_from: startIso,
+        effective_until: addDays(v2FromIso, -1),
+        baseline_calories: Math.max(1200, baseCals - 100),
+      });
+    }
+    nPlans.push({
+      ...sharedPlanCols,
+      id: nPlanId,
+      effective_from: v2FromIso,
+      effective_until: null,
+      baseline_calories: baseCals,
     });
 
-    // All 7 weekday rows, always. A missing weekday falls through to
-    // calculateDailyMacros and the seeded numbers stop matching the plan.
+    // All 7 weekday rows, always, PER VERSION. A missing weekday falls through
+    // to calculateDailyMacros and the seeded numbers stop matching the plan.
     for (let d = 0; d < 7; d++) {
       const dowName = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][d];
       const training = d !== 0 && d !== 3 && d !== 6;
+      if (splitVersions) {
+        const v1Cals = Math.max(1200, baseCals - 100);
+        nTargets.push({
+          id: seedUuid("ntargetv1", coachIdx, c, d),
+          nutrition_plan_id: nPlanV1Id,
+          day_of_week: dowName,
+          is_training_day: training,
+          calories: training ? Math.round(v1Cals * 1.08) : v1Cals,
+          protein_g: proteinG,
+          carb_g: training ? Math.round(carbG * 1.2) : carbG,
+          fat_g: fatG,
+        });
+      }
       nTargets.push({
         id: seedUuid("ntarget", coachIdx, c, d),
         nutrition_plan_id: nPlanId,
@@ -552,14 +589,17 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
         eventRowById.set(eventId, eventRow);
       }
 
-      // --- nutrition event (dense prescription, one per client-day)
+      // --- nutrition event (dense prescription, one per client-day) —
+      // stamped with the version whose window covers this date (migration 144)
+      const eraPlanId = splitVersions && iso < v2FromIso ? nPlanV1Id : nPlanId;
+      const eraBaseCals = splitVersions && iso < v2FromIso ? Math.max(1200, baseCals - 100) : baseCals;
       nEvents.push({
         id: seedUuid("nevent", coachIdx, c, dayIdx),
         client_id: clientId,
-        nutrition_plan_id: nPlanId,
+        nutrition_plan_id: eraPlanId,
         date: iso,
         day_of_week: dayOfWeekName(iso),
-        baseline_calories: baseCals,
+        baseline_calories: eraBaseCals,
         training_burn_calories: isTrainingDay ? logRng.int(250, 550) : 0,
         protein_g: proteinG,
         carb_g: isTrainingDay ? Math.round(carbG * 1.2) : carbG,
@@ -612,7 +652,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
             daily_log_id: dailyLogId,
             client_id: clientId,
             date: iso,
-            nutrition_plan_id: nPlanId,
+            nutrition_plan_id: eraPlanId,
             calories_consumed: consumed,
             protein_g: Math.round(proteinG * logRng.float(0.7, 1.15)),
             carbs_g: Math.round(carbG * logRng.float(0.6, 1.3)),

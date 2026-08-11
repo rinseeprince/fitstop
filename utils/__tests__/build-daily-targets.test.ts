@@ -13,7 +13,7 @@ const PLAN = {
 
 // weekWindow that gates nothing: effectiveFrom null. 2026-06-08 is the Monday
 // the fixtures' dates sit in, so weekday->date derivation matches them.
-const NO_GATE = { weekStart: "2026-06-08", effectiveFrom: null };
+const NO_GATE = { weekStart: "2026-06-08", effectiveFrom: null, effectiveUntil: null };
 
 // 2026-06-08 is a Monday.
 function tev(overrides: Partial<TrainingEvent>): TrainingEvent {
@@ -190,7 +190,7 @@ describe("buildDailyTargetsFromPlan — the effective_from template gate (migrat
   // effect Thu 2026-06-11. Since 143, effective_from means "when the current
   // numbers took effect", so a NO-EVENT day before it must not render the next
   // prescription's template as current.
-  const GATED = { weekStart: "2026-06-08", effectiveFrom: "2026-06-11" };
+  const GATED = { weekStart: "2026-06-08", effectiveFrom: "2026-06-11", effectiveUntil: null };
 
   it("drops template days dated before effective_from and keeps the rest", () => {
     const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, undefined, undefined, GATED);
@@ -218,7 +218,65 @@ describe("buildDailyTargetsFromPlan — the effective_from template gate (migrat
     const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, undefined, undefined, {
       weekStart: "2026-06-08",
       effectiveFrom: "2026-06-08",
+      effectiveUntil: null,
     });
     expect(targets).toHaveLength(7);
+  });
+
+  // ── The window's OTHER end (migration 144): a closed version stops serving
+  //    template targets past effective_until — those days belong to the next
+  //    era, and its own grid must not impersonate it. ──────────────────────────
+  it("drops template days dated after effective_until and keeps the rest", () => {
+    // Week Mon 06-08 .. Sun 06-14; the version ends Wed 06-10.
+    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, undefined, undefined, {
+      weekStart: "2026-06-08",
+      effectiveFrom: null,
+      effectiveUntil: "2026-06-10",
+    });
+    expect(targets.map((t) => t.day)).toEqual(["monday", "tuesday", "wednesday"]);
+  });
+
+  it("an effective_until on the week's last day gates nothing — the boundary day is governed", () => {
+    const targets = buildDailyTargetsFromPlan(PLAN, [], null, true, "balanced", false, undefined, undefined, {
+      weekStart: "2026-06-08",
+      effectiveFrom: null,
+      effectiveUntil: "2026-06-14",
+    });
+    expect(targets).toHaveLength(7);
+  });
+
+  it("never gates an event day past the window — events carry their own era's numbers", () => {
+    const targets = buildDailyTargetsFromPlan(
+      PLAN,
+      [],
+      null,
+      true,
+      "balanced",
+      false,
+      undefined,
+      [
+        {
+          dayOfWeek: "sunday",
+          date: "2026-06-14",
+          baselineCalories: 1700,
+          trainingBurnCalories: 0,
+          externalBurnCalories: 0,
+          proteinG: 150,
+          carbG: 150,
+          fatG: 55,
+          isTrainingDay: false,
+          isModified: false,
+          calorieSurplusPercentage: null,
+        } as never,
+      ],
+      {
+        weekStart: "2026-06-08",
+        effectiveFrom: null,
+        effectiveUntil: "2026-06-10",
+      }
+    );
+    // Mon-Wed from the template (inside the window) + Sunday from its event.
+    expect(targets.map((t) => t.day)).toEqual(["monday", "tuesday", "wednesday", "sunday"]);
+    expect(targets.find((t) => t.day === "sunday")?.calories).toBe(1700);
   });
 });

@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "./supabase-admin";
+import { coversDate } from "./training-plan-window";
 import type { Client, DietType, UnitPreference } from "@/types/check-in";
 import type { Database } from "@/types/database";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
@@ -98,13 +99,20 @@ export async function getClientNutritionTargets(
   // a UTC week boundary, server-UTC today would show last week's targets.
   const today = await getClientTodayString(clientId);
 
-  // Read active nutrition plan from new tables
-  const { data: plan, error: planError } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("*")
-    .eq("client_id", clientId)
-    .eq("status", "active")
+  // The version COVERING the client's today (migration 144): the portal's
+  // program card shows what governs them NOW. The old newest-active read
+  // handed a queued future version to a client still living on the current
+  // one; coversDate resolves the same row the coach surfaces resolve.
+  const { data: plan, error: planError } = await coversDate(
+    supabaseAdmin
+      .from("nutrition_plans")
+      .select("*")
+      .eq("client_id", clientId)
+      .eq("status", "active"),
+    today
+  )
     .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -140,11 +148,16 @@ export async function getClientNutritionTargets(
     surplusAsCarbs,
     trainingEvents,
     nutritionEvents,
-    // Dates the weekday grid so the template fallback is gated to days the
-    // plan governs — effective_from means "when the current numbers took
-    // effect" since migration 143, and a no-event day before it must not
-    // render the next prescription's numbers as current.
-    { weekStart, effectiveFrom: plan.effective_from ?? null }
+    // Dates the weekday grid so the template fallback is gated to the days
+    // THIS version governs — both window ends (migration 144): a no-event day
+    // before effective_from belongs to an earlier era, one after
+    // effective_until to the next, and neither may render this version's
+    // template as its target.
+    {
+      weekStart,
+      effectiveFrom: plan.effective_from ?? null,
+      effectiveUntil: plan.effective_until ?? null,
+    }
   );
 
   return {

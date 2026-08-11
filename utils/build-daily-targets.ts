@@ -76,15 +76,16 @@ type PlanBaseline = {
  *
  * `weekWindow` is REQUIRED, and deliberately last-and-required rather than
  * optional: it dates the weekday grid (`weekStart` + 6 days) so the TEMPLATE
- * fallback can be gated to days the plan actually governs. Since migration 143,
- * `nutrition_plans.effective_from` means "when the current numbers took
- * effect" — for a no-event day BEFORE it, the template holds the NEXT
- * prescription's numbers, so serving it would show future numbers today. Such
- * days return no entry at all ("no target yet" — the page's empty state, and
- * for the RN contract simply a shorter array). Event-present days are never
- * gated: events are the dated SOT and pre-`effective_from` rows deliberately
- * keep the old prescription. An optional param would let a caller silently
- * skip the gate; required means tsc enumerates every call site.
+ * fallback can be gated to the days the passed version actually GOVERNS.
+ * Under the versioned model (migration 144) the caller passes the COVERING
+ * version and BOTH ends of its window: a no-event day before `effectiveFrom`
+ * belongs to an earlier era, and one after `effectiveUntil` belongs to the
+ * next — serving this version's template on either would show the wrong era's
+ * numbers. Such days return no entry at all ("no target yet" — the page's
+ * empty state, and for the RN contract simply a shorter array). Event-present
+ * days are never gated: events are the dated SOT and carry their own era's
+ * numbers. An optional param would let a caller silently skip the gate;
+ * required means tsc enumerates every call site.
  */
 export function buildDailyTargetsFromPlan(
   plan: PlanBaseline,
@@ -95,7 +96,7 @@ export function buildDailyTargetsFromPlan(
   surplusAsCarbs: boolean,
   trainingEvents: TrainingEvent[] | undefined,
   nutritionEvents: NutritionEvent[] | undefined,
-  weekWindow: { weekStart: string; effectiveFrom: string | null }
+  weekWindow: { weekStart: string; effectiveFrom: string | null; effectiveUntil: string | null }
 ): DailyNutritionTargets[] {
   const surplusByDay = trainingEvents ? getEventSurplusByDay(trainingEvents) : {};
 
@@ -146,14 +147,17 @@ export function buildDailyTargetsFromPlan(
       }];
     }
 
-    // The template gate (see the docstring): a no-event day dated before the
-    // plan's effective_from would render the NEXT prescription's numbers as
-    // current. No entry beats a wrong one. An underivable date fails OPEN
+    // The template gate is a WINDOW test (see the docstring): a no-event day
+    // outside [effectiveFrom, effectiveUntil] belongs to another era, and
+    // this version's template would render the wrong era's numbers there. No
+    // entry beats a wrong one. Boundary days are governed (inclusive window);
+    // a null end leaves that side open; an underivable date fails OPEN
     // (unreachable — 7 dates cover 7 weekdays — but a template target beats a
     // crashed program card if that ever breaks).
     const dayDate = dateByWeekday.get(day);
-    if (weekWindow.effectiveFrom && dayDate && dayDate < weekWindow.effectiveFrom) {
-      return [];
+    if (dayDate) {
+      if (weekWindow.effectiveFrom && dayDate < weekWindow.effectiveFrom) return [];
+      if (weekWindow.effectiveUntil && dayDate > weekWindow.effectiveUntil) return [];
     }
 
     // No-event (template) day.

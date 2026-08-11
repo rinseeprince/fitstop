@@ -81,7 +81,7 @@ const build = (
     trainingEvents,
     undefined,
     // effectiveFrom null = the template gate stays out of this suite's frame.
-    { weekStart: "2026-08-03", effectiveFrom: null },
+    { weekStart: "2026-08-03", effectiveFrom: null, effectiveUntil: null },
   );
 
 describe("buildDailyTargetsFromPlan — trainingPlan is inert when events are supplied", () => {
