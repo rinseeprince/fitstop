@@ -143,7 +143,7 @@ Listed in execution order.
 |---|---|---|---|
 | **0** ✅ | Goals: stop the live data loss — **SHIPPED + smoked 2026-08-10** | none | No — one correctness commit |
 | **1** ✅ | Foundations: the cascade, the energy helper, the plan-row date lie — **SHIPPED + smoked 2026-08-11** | **1** (RPC body swap, same arity) | The nutrition hero |
-| **1B** | Nutrition plan versioning: date-ranged versions, close-and-insert RPC, date-resolved reads — **inserted 2026-08-11 by owner decision** | **1** (index swap + exclusion constraint + RPC rewrite, same arity) | Correct queued-change behaviour; the hero's chain-aware lines |
+| **1B** ✅ | Nutrition plan versioning: date-ranged versions, close-and-insert RPC, date-resolved reads — **SHIPPED + smoked 2026-08-11** (5 commits + a D1 guard-tightening follow-up; migration 144) | **1** (index swap + exclusion constraint + RPC rewrite, same arity) | Correct queued-change behaviour; the hero's chain-aware lines |
 | **2** | Blocks backend: table, service, routes | **1** (`client_phases`) | No — API only |
 | **3** | Journey tab: rename, Blocks list, chart shading | none | Yes — the coach block feature |
 | **4** | Client-facing block + the "Waiting on you" row | none | Yes — the client block feature |
@@ -279,7 +279,7 @@ Start by reading the documents and the two commits, then show me your plan.
 
 ---
 
-# SESSION 1 — Foundations
+# SESSION 1 — Foundations ✅ COMPLETE (SHIPPED + smoked 2026-08-11)
 
 **One migration.** Task 1.1 is a partial re-land of work that already shipped and was reverted as collateral; read `git show 3abbfa5` before writing anything. Tasks 1.2 and 1.3 are new.
 
@@ -415,7 +415,7 @@ Start by reading the three documents and the three commits, then show me your pl
 
 ---
 
-# SESSION 1B — Nutrition plan versioning (date-ranged versions)
+# SESSION 1B — Nutrition plan versioning (date-ranged versions) ✅ COMPLETE (SHIPPED + smoked 2026-08-11)
 
 **One migration. Inserted 2026-08-11 by owner decision — runs after Session 1, before
 Sessions 2–6 (hard prerequisite for Session 5; corrects a latent bug in Session 3 Task
