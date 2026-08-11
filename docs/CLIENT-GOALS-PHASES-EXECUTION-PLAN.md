@@ -1,6 +1,6 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Session 0 ✅ SHIPPED + smoked 2026-08-10 (`c010741`, `f821a1e`) · seven sessions remain · **Owner decision date:** 2026-08-10
+**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 (blocks backend; Session 3 smokes the routes) · five sessions remain (3, 4, 0b, 5, 6) · **Owner decision date:** 2026-08-10
 **Eight sessions.** Three largely independent features share this document. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
@@ -144,7 +144,7 @@ Listed in execution order.
 | **0** ✅ | Goals: stop the live data loss — **SHIPPED + smoked 2026-08-10** | none | No — one correctness commit |
 | **1** ✅ | Foundations: the cascade, the energy helper, the plan-row date lie — **SHIPPED + smoked 2026-08-11** | **1** (RPC body swap, same arity) | The nutrition hero |
 | **1B** ✅ | Nutrition plan versioning: date-ranged versions, close-and-insert RPC, date-resolved reads — **SHIPPED + smoked 2026-08-11** (5 commits + a D1 guard-tightening follow-up; migration 144) | **1** (index swap + exclusion constraint + RPC rewrite, same arity) | Correct queued-change behaviour; the hero's chain-aware lines |
-| **2** | Blocks backend: table, service, routes | **1** (`client_phases`) | No — API only |
+| **2** ✅ | Blocks backend: table, service, routes — **SHIPPED 2026-08-11** (5 commits; migration 145; no browser smoke by design — Session 3's UI smoke is the routes' first live exercise) | **1** (`client_phases`) | No — API only |
 | **3** | Journey tab: rename, Blocks list, chart shading | none | Yes — the coach block feature |
 | **4** | Client-facing block + the "Waiting on you" row | none | Yes — the client block feature |
 | **0b** | Goals: one read path, one writer, one editor, history | none | Yes — the goal editor |
@@ -728,7 +728,14 @@ Start by reading the documents, then show me your plan for 1b.1 before any code.
 
 ---
 
-# SESSION 2 — Blocks backend
+# SESSION 2 — Blocks backend ✅ COMPLETE (SHIPPED 2026-08-11)
+
+> **Shipped 2026-08-11 — 5 commits (`aad286f`…`cbf95d0`), migration 145.** The §8
+> STATUS blocks are authoritative for what actually shipped and the decisions made at
+> plan review (truncate-on-current-delete, the symmetric window floor, pace as a
+> client-side pure derivation, DELETE at `/blocks/[blockId]`, foreign-client 404).
+> No browser smoke by design — nothing user-visible; Session 3's UI smoke is these
+> routes' first live exercise.
 
 **One migration. Backend and API only — nothing user-visible ships.**
 
