@@ -287,6 +287,8 @@ export function ClientStatusCard({
             unit="cal/day"
           />
           {edit.isEditing ? (
+            // Mirrors MetricCell's own rhythm — label, mt-1 value, mt-0.5
+            // sub — so swapping the number for an input does not shift the row.
             <div className={cn("border-l pl-3", DIVIDER)}>
               <p className={STAT_LABEL_DARK_CLASS}>TDEE</p>
               <div className="mt-1">
@@ -297,21 +299,26 @@ export function ClientStatusCard({
                     onChange={edit.setCustomTdee}
                   />
                 ) : (
-                  <p className={cn(STAT_VALUE_DARK_CLASS, "text-[20px] leading-tight")}>
-                    {edit.autoEnergy ? edit.autoEnergy.tdee : "—"}
-                  </p>
+                  <>
+                    <span className={cn(STAT_VALUE_DARK_CLASS, "text-[20px] leading-tight")}>
+                      {edit.autoEnergy ? edit.autoEnergy.tdee : "—"}
+                    </span>
+                    <span className="ml-1 text-[10px] text-[rgba(255,255,255,0.30)]">
+                      cal/day
+                    </span>
+                  </>
                 )}
               </div>
               <button
                 type="button"
                 onClick={() => edit.setIsCustomTdee(!edit.isCustomTdee)}
-                className="mt-1 text-[10px] font-medium text-[#5eead4] transition-colors hover:text-white"
+                className="mt-0.5 text-[10px] font-medium text-[#5eead4] transition-colors hover:text-white"
               >
-                {edit.isCustomTdee ? "Back to auto" : "Set a custom value"}
+                {edit.isCustomTdee ? "Back to auto" : "Custom"}
               </button>
               {edit.customTdeeBelowBmr && edit.autoEnergy && (
-                <p className="mt-1 text-[10px] leading-[1.4] text-[#f0a0a0]">
-                  Can&apos;t be below BMR ({edit.autoEnergy.bmr} cal/day)
+                <p className="mt-0.5 text-[10px] leading-[1.4] text-[#f0a0a0]">
+                  Can&apos;t be below BMR ({edit.autoEnergy.bmr})
                 </p>
               )}
             </div>

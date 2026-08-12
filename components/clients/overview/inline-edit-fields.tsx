@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { Check, Loader2, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -13,8 +12,8 @@ import {
 import { Input } from "@/components/ui/input";
 import {
   FOCUS_RING,
-  LABEL_CLASS,
   MONO_INPUT_CLASS,
+  STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { ClientProfileEdit } from "./use-client-profile-edit";
 
@@ -74,42 +73,6 @@ export function EditRailActions({ edit }: { edit: ClientProfileEdit }) {
           <Check className="h-3.5 w-3.5" strokeWidth={1.5} />
         )}
       </button>
-    </div>
-  );
-}
-
-/** A light-card field: label above, value or editor below. */
-export function InlineField({
-  label,
-  value,
-  isNumeric,
-  editor,
-  hint,
-}: {
-  label: string;
-  value: string | null;
-  isNumeric?: boolean;
-  /** Rendered instead of the value while editing. */
-  editor?: ReactNode;
-  hint?: ReactNode;
-}) {
-  return (
-    <div className="min-w-0">
-      <p className={LABEL_CLASS}>{label}</p>
-      {editor ? (
-        <div className="mt-1">{editor}</div>
-      ) : (
-        <p
-          className={cn(
-            "mt-1 truncate text-[13px] font-medium",
-            value ? "text-[#0c1a1e]" : "text-[#93b0b4]",
-            value && isNumeric && MONO_INPUT_CLASS
-          )}
-        >
-          {value ?? "Not set"}
-        </p>
-      )}
-      {hint}
     </div>
   );
 }
@@ -186,8 +149,9 @@ export function InlineDarkInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
-        MONO_INPUT_CLASS,
-        "h-8 w-full rounded-[6px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] px-2 text-[15px] text-white outline-none transition-colors focus:border-[rgba(13,148,136,0.6)]"
+        STAT_VALUE_DARK_CLASS,
+        FOCUS_RING,
+        "h-9 w-full rounded-[6px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] px-2 text-[20px] leading-tight text-white outline-none transition-colors focus:border-[rgba(13,148,136,0.6)]"
       )}
     />
   );
@@ -208,7 +172,10 @@ export function InlineDarkSelect({
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger
         aria-label={ariaLabel}
-        className="h-8 rounded-[6px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] text-[13px] font-medium text-white focus:ring-0 [&>svg]:text-[rgba(255,255,255,0.5)]"
+        className={cn(
+          FOCUS_RING,
+          "h-8 rounded-[6px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] text-[13px] font-medium text-white [&>svg]:text-[rgba(255,255,255,0.5)]"
+        )}
       >
         <SelectValue />
       </SelectTrigger>

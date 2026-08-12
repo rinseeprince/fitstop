@@ -1,13 +1,10 @@
 "use client";
 
 import { Calendar, Mail } from "lucide-react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { DAY_NAMES } from "@/lib/date-helpers";
-import {
-  InlineField,
-  InlineSelect,
-  InlineTextInput,
-} from "./inline-edit-fields";
+import { InlineSelect, InlineTextInput } from "./inline-edit-fields";
 import { UNSET } from "./use-client-profile-edit";
 import type { ClientProfileEdit } from "./use-client-profile-edit";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -85,12 +82,30 @@ function Field({
   value,
   isNumeric,
   onAdd,
+  editor,
+  hint,
 }: {
   label: string;
   value: string | null;
   isNumeric?: boolean;
   onAdd?: () => void;
+  /** Replaces the value while the section is in edit mode. The value's own
+   *  typography below is untouched: MONO is the DISPLAY token, whereas
+   *  MONO_INPUT_CLASS centres its text and belongs only inside an input —
+   *  using it here is what once rendered these values centre-aligned. */
+  editor?: ReactNode;
+  hint?: ReactNode;
 }) {
+  if (editor) {
+    return (
+      <div className="min-w-0">
+        <p className={LABEL_CLASS}>{label}</p>
+        <div className="mt-0.5">{editor}</div>
+        {hint}
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0">
       <p className={LABEL_CLASS}>{label}</p>
@@ -274,7 +289,7 @@ export function ClientScheduleCard({
 
         <div className="grid grid-cols-2 gap-x-3 gap-y-3 px-5 pb-5 pt-4">
           <Field label="Frequency" value={frequencyLabel(client)} />
-          <InlineField
+          <Field
             label="Check-in day"
             value={dayLabel(client.expectedCheckInDay)}
             editor={
@@ -291,7 +306,7 @@ export function ClientScheduleCard({
               ) : undefined
             }
           />
-          <InlineField
+          <Field
             label="Gender"
             value={client.gender ? sentenceCase(client.gender) : null}
             editor={
@@ -310,7 +325,7 @@ export function ClientScheduleCard({
               ) : undefined
             }
           />
-          <InlineField
+          <Field
             label="Date of birth"
             value={client.dateOfBirth ? formatDateOnlyWeekday(client.dateOfBirth) : null}
             isNumeric
@@ -332,7 +347,7 @@ export function ClientScheduleCard({
               ) : undefined
             }
           />
-          <InlineField
+          <Field
             label="Started"
             value={client.startDate ? formatDateOnlyWeekday(client.startDate) : null}
             isNumeric
@@ -347,7 +362,7 @@ export function ClientScheduleCard({
               ) : undefined
             }
           />
-          <InlineField
+          <Field
             label="Height"
             value={client.height != null ? formatHeightLabel(client.height, preference) : null}
             isNumeric
@@ -387,7 +402,7 @@ export function ClientScheduleCard({
               ) : undefined
             }
           />
-          <InlineField
+          <Field
             label="Phone"
             value={client.phone || null}
             isNumeric
