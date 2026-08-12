@@ -231,6 +231,10 @@ export const updateClient = async (
   if (clientData.active !== undefined) updateData.active = clientData.active;
   if (clientData.height !== undefined) updateData.height = heightCm ?? null;
   if (clientData.gender !== undefined) updateData.gender = clientData.gender ?? null;
+  // date_of_birth was accepted by updateClientSchema but never mapped here, so a
+  // PATCH carrying it returned 200 and changed nothing. Age feeds Mifflin-St Jeor,
+  // so a client with no birth date is silently costed at the assumed default.
+  if (clientData.dateOfBirth !== undefined) updateData.date_of_birth = clientData.dateOfBirth ?? null;
   if (clientData.phone !== undefined) updateData.phone = clientData.phone || null;
   if (clientData.startDate !== undefined) updateData.start_date = clientData.startDate ?? null;
   if (clientData.goalWeight !== undefined) updateData.goal_weight = goalWeightKg ?? null;

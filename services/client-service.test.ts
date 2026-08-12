@@ -480,6 +480,36 @@ describe('Client Service', () => {
       expect(updateCall.updated_at).toBeDefined()
     })
 
+    it('persists dateOfBirth, which updateClientSchema accepts', async () => {
+      // Regression: the schema accepted dateOfBirth and this mapper dropped it,
+      // so a PATCH carrying a birth date returned 200 and changed nothing.
+      const mockQuery = createMockQuery({
+        data: createMockClientRow({ date_of_birth: '1991-04-17' }),
+        error: null,
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', { dateOfBirth: '1991-04-17' })
+
+      const updateCall = mockQuery.update.mock.calls[0][0]
+      expect(updateCall.date_of_birth).toBe('1991-04-17')
+    })
+
+    it('omits date_of_birth when dateOfBirth is not supplied', async () => {
+      const mockQuery = createMockQuery({
+        data: createMockClientRow(),
+        error: null,
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', { name: 'New Name' })
+
+      const updateCall = mockQuery.update.mock.calls[0][0]
+      expect('date_of_birth' in updateCall).toBe(false)
+    })
+
     it('throws error for duplicate email', async () => {
       const mockQuery = createMockQuery({
         data: null,
