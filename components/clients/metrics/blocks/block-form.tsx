@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import {
   FOCUS_RING,
   MONO_INPUT_CLASS,
+  MONO_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { useUnits } from "@/contexts/units-context";
 import { useCanonicalInput } from "@/hooks/use-unit-inputs";
@@ -23,6 +24,7 @@ import {
   inclusiveDays,
   weeksSpanned,
 } from "@/lib/blocks/block-chain";
+import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import {
   BLOCK_FOCUS_MAX,
   BLOCK_NAME_MAX,
@@ -31,16 +33,17 @@ import {
   WEIGHT_KG_MIN,
 } from "@/lib/constants";
 import { formatBlockDate, formatBlockLength } from "./block-format";
-import type { NewBlockEntry } from "./block-chain-payload";
 
-// Inline add-a-block form (the habits manage-drawer swap precedent for the
-// SHELL only — its raw-useState internals predate the react-hook-form rule).
-// The block's length is picked as an END DATE (day-granular, Session 3.6-B);
-// its start is derived from the chain, so the coach never enters a date pair.
-// Target weight collects in the VIEWER's unit through useCanonicalInput and
-// commits canonical kg; the RHF field holds the canonical number so
-// zodResolver validates what will actually be stored (the
-// add-client-manual-form pattern).
+// One inline form for both adding and editing a block (the habits
+// manage-drawer swap precedent for the SHELL only — its raw-useState
+// internals predate the react-hook-form rule). Lengths are picked as an END
+// DATE (day-granular, 3.6-B); the start is derived from the chain, so the
+// coach never enters a date pair — except the chain's very first block while
+// nothing is lived, where the anchor itself is theirs to move. Elapsed edits
+// are fields-only: their dates render as fixed text. Target weight collects
+// in the VIEWER's unit through useCanonicalInput and commits canonical kg;
+// the RHF field holds the canonical number so zodResolver validates what
+// will actually be stored (the add-client-manual-form pattern).
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -52,7 +55,8 @@ const baseSchema = z.object({
     .regex(DATE_RE, "Pick an end date")
     .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), {
       message: "Not a real calendar date",
-    }),
+    })
+    .optional(),
   focus: z.string().trim().max(BLOCK_FOCUS_MAX).optional(),
   targetWeightKg: z
     .number()
@@ -61,29 +65,49 @@ const baseSchema = z.object({
     .optional(),
 });
 
-// Cross-field: the end is validated against the DERIVED start, which depends
-// on where the block lands (a resolver replaces RHF field-level `validate`,
-// so this must live in the schema).
-function makeAddBlockSchema(appendAfterEndsOn: string | null) {
+type SchemaOptions = {
+  needsStartField: boolean;
+  requiresEnd: boolean;
+  fixedStart: string | null;
+  /** The current block's end floor (the client's today) — the window floor
+   *  expressed as validation instead of a server 422. */
+  minEnd: string | null;
+};
+
+// Cross-field checks live in the schema: a zodResolver replaces RHF
+// field-level `validate`, and the end is judged against the DERIVED start.
+function makeBlockSchema(opts: SchemaOptions) {
   return baseSchema.superRefine((data, ctx) => {
-    const nextStart = appendAfterEndsOn
-      ? addDaysToDateString(appendAfterEndsOn, 1)
-      : data.startsOn && DATE_RE.test(data.startsOn)
-        ? data.startsOn
-        : null;
-    if (!appendAfterEndsOn && !data.startsOn) {
+    if (opts.needsStartField && !data.startsOn) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["startsOn"],
         message: "Pick a start date",
       });
     }
-    if (!nextStart || !DATE_RE.test(data.endsOn)) return;
-    if (data.endsOn < nextStart) {
+    if (!opts.requiresEnd) return;
+    if (!data.endsOn || !DATE_RE.test(data.endsOn)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["endsOn"],
-        message: "Ends before the block starts",
+        message: "Pick an end date",
+      });
+      return;
+    }
+    const nextStart =
+      opts.fixedStart ??
+      (data.startsOn && DATE_RE.test(data.startsOn) ? data.startsOn : null);
+    if (!nextStart) return;
+    const floor =
+      opts.minEnd && opts.minEnd > nextStart ? opts.minEnd : nextStart;
+    if (data.endsOn < floor) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endsOn"],
+        message:
+          floor === opts.minEnd
+            ? "The block in progress can't end before today"
+            : "Ends before the block starts",
       });
     } else if (
       data.endsOn >
@@ -98,15 +122,35 @@ function makeAddBlockSchema(appendAfterEndsOn: string | null) {
   });
 }
 
-type AddBlockFormValues = z.infer<typeof baseSchema>;
+type SchemaValues = z.infer<typeof baseSchema>;
 
-type AddBlockFormProps = {
-  /** The last stored block's endsOn; null = empty chain (show a start-date
-   *  field — the coach anchors the journey). */
-  appendAfterEndsOn: string | null;
-  /** Sum of the stored chain's weeks, for the live journey-total sentence. */
-  journeyWeeksSoFar: number;
-  onAdd: (entry: NewBlockEntry, firstStartsOn?: string) => Promise<void>;
+/** Normalized submission — the parent builds the PUT payload from these. */
+export interface BlockFormValues {
+  name: string;
+  endsOn?: string;
+  focus: string | null;
+  targetWeightKg: number | null;
+  startsOn?: string;
+}
+
+export type BlockFormMode =
+  | { kind: "add"; appendAfterEndsOn: string | null }
+  | {
+      kind: "edit";
+      block: ClientBlockView;
+      /** True only for the chain's first block while nothing is lived. */
+      startEditable: boolean;
+      /** The client's today when editing the CURRENT block; null otherwise. */
+      minEnd: string | null;
+    };
+
+type BlockFormProps = {
+  mode: BlockFormMode;
+  /** Sum of every OTHER block's weeks, for the live journey-total sentence. */
+  otherBlocksWeeks: number;
+  /** Edit-mode push-forward preview: the moved-blocks clause for an end. */
+  shiftPreview?: (endsOn: string) => string | null;
+  onSubmit: (values: BlockFormValues) => Promise<void>;
   onCancel: () => void;
 };
 
@@ -116,19 +160,44 @@ const FIELD_INPUT = cn(
   FOCUS_RING
 );
 
-export function AddBlockForm({
-  appendAfterEndsOn,
-  journeyWeeksSoFar,
-  onAdd,
+export function BlockForm({
+  mode,
+  otherBlocksWeeks,
+  shiftPreview,
+  onSubmit,
   onCancel,
-}: AddBlockFormProps) {
+}: BlockFormProps) {
   const { preference } = useUnits();
   const weightUnit = formatWeight(0, preference).unit;
-  const weightInput = useCanonicalInput(preference, null, "weight");
+
+  const editing = mode.kind === "edit" ? mode.block : null;
+  const isElapsedEdit = editing?.state === "past";
+  const needsStartField =
+    mode.kind === "add"
+      ? mode.appendAfterEndsOn === null
+      : mode.startEditable;
+  const fixedStart = needsStartField
+    ? null
+    : mode.kind === "add"
+      ? addDaysToDateString(mode.appendAfterEndsOn as string, 1)
+      : (editing as ClientBlockView).startsOn;
+  const minEnd = mode.kind === "edit" ? mode.minEnd : null;
+
+  const weightInput = useCanonicalInput(
+    preference,
+    editing?.targetWeightKg ?? null,
+    "weight"
+  );
 
   const schema = useMemo(
-    () => makeAddBlockSchema(appendAfterEndsOn),
-    [appendAfterEndsOn]
+    () =>
+      makeBlockSchema({
+        needsStartField,
+        requiresEnd: !isElapsedEdit,
+        fixedStart,
+        minEnd,
+      }),
+    [needsStartField, isElapsedEdit, fixedStart, minEnd]
   );
   const {
     register,
@@ -136,19 +205,22 @@ export function AddBlockForm({
     watch,
     setValue,
     formState: { errors, isSubmitting },
-  } = useForm<AddBlockFormValues>({
+  } = useForm<SchemaValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      startsOn: appendAfterEndsOn ? undefined : getTodayDateString(),
-      name: "",
-      // Seed a 4-week block so the live line reads immediately.
-      endsOn: addDaysToDateString(
-        appendAfterEndsOn
-          ? addDaysToDateString(appendAfterEndsOn, 1)
-          : getTodayDateString(),
-        4 * DAYS_PER_BLOCK_WEEK - 1
-      ),
-      focus: "",
+      startsOn: needsStartField
+        ? (editing?.startsOn ?? getTodayDateString())
+        : undefined,
+      name: editing?.name ?? "",
+      // Adds seed a 4-week block so the live line reads immediately.
+      endsOn: isElapsedEdit
+        ? undefined
+        : (editing?.endsOn ??
+          addDaysToDateString(
+            fixedStart ?? getTodayDateString(),
+            4 * DAYS_PER_BLOCK_WEEK - 1
+          )),
+      focus: editing?.focus ?? "",
     },
   });
 
@@ -162,34 +234,40 @@ export function AddBlockForm({
 
   const endsOnValue = watch("endsOn");
   const startsOnValue = watch("startsOn");
-  const nextStart = appendAfterEndsOn
-    ? addDaysToDateString(appendAfterEndsOn, 1)
-    : startsOnValue && DATE_RE.test(startsOnValue)
-      ? startsOnValue
-      : null;
+  const nextStart =
+    fixedStart ??
+    (startsOnValue && DATE_RE.test(startsOnValue) ? startsOnValue : null);
   const maxEnd = nextStart
     ? addDaysToDateString(nextStart, BLOCK_WEEKS_MAX * DAYS_PER_BLOCK_WEEK - 1)
     : undefined;
   const endValid =
+    !isElapsedEdit &&
     nextStart != null &&
-    DATE_RE.test(endsOnValue ?? "") &&
-    endsOnValue >= nextStart &&
+    endsOnValue != null &&
+    DATE_RE.test(endsOnValue) &&
+    endsOnValue >= (minEnd && minEnd > nextStart ? minEnd : nextStart) &&
     (maxEnd === undefined || endsOnValue <= maxEnd);
   const journeyTotal =
-    journeyWeeksSoFar +
-    (endValid && nextStart ? weeksSpanned(nextStart, endsOnValue) : 0);
+    otherBlocksWeeks +
+    (isElapsedEdit
+      ? editing.weeks
+      : endValid && nextStart
+        ? weeksSpanned(nextStart, endsOnValue)
+        : 0);
+  const shiftClause =
+    endValid && shiftPreview && endsOnValue !== editing?.endsOn
+      ? shiftPreview(endsOnValue)
+      : null;
 
   const submit = handleSubmit(async (values) => {
     if (weightInput.hasParseError) return;
-    await onAdd(
-      {
-        name: values.name.trim(),
-        endsOn: values.endsOn,
-        focus: values.focus?.trim() ? values.focus.trim() : null,
-        targetWeightKg: values.targetWeightKg ?? null,
-      },
-      appendAfterEndsOn ? undefined : values.startsOn
-    );
+    await onSubmit({
+      name: values.name.trim(),
+      ...(isElapsedEdit ? {} : { endsOn: values.endsOn }),
+      focus: values.focus?.trim() ? values.focus.trim() : null,
+      targetWeightKg: values.targetWeightKg ?? null,
+      ...(needsStartField ? { startsOn: values.startsOn } : {}),
+    });
   });
 
   return (
@@ -213,24 +291,7 @@ export function AddBlockForm({
           )}
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="block-ends" className={FIELD_LABEL}>
-            Ends
-          </Label>
-          <Input
-            id="block-ends"
-            type="date"
-            min={nextStart ?? undefined}
-            max={maxEnd}
-            className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-[150px] text-xs")}
-            {...register("endsOn")}
-          />
-          {errors.endsOn && (
-            <p className="text-[11px] text-[#c06060]">{errors.endsOn.message}</p>
-          )}
-        </div>
-
-        {!appendAfterEndsOn && (
+        {needsStartField && (
           <div className="space-y-1.5">
             <Label htmlFor="block-starts" className={FIELD_LABEL}>
               Starts
@@ -245,6 +306,34 @@ export function AddBlockForm({
               <p className="text-[11px] text-[#c06060]">
                 {errors.startsOn.message}
               </p>
+            )}
+          </div>
+        )}
+
+        {isElapsedEdit ? (
+          <div className="space-y-1.5">
+            <Label className={FIELD_LABEL}>Dates</Label>
+            {/* A past block's window is history — fields edit, dates don't. */}
+            <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal pt-2.5")}>
+              {formatBlockDate(editing.startsOn)} –{" "}
+              {formatBlockDate(editing.endsOn)}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Label htmlFor="block-ends" className={FIELD_LABEL}>
+              Ends
+            </Label>
+            <Input
+              id="block-ends"
+              type="date"
+              min={minEnd && nextStart && minEnd > nextStart ? minEnd : nextStart ?? undefined}
+              max={maxEnd}
+              className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-[150px] text-xs")}
+              {...register("endsOn")}
+            />
+            {errors.endsOn && (
+              <p className="text-[11px] text-[#c06060]">{errors.endsOn.message}</p>
             )}
           </div>
         )}
@@ -295,8 +384,9 @@ export function AddBlockForm({
         // A sentence, therefore 100% sans — the prose rule.
         <p className="text-xs text-[#5a7d82]">
           Starts {formatBlockDate(nextStart)}, ends {formatBlockDate(endsOnValue)}{" "}
-          — {formatBlockLength(inclusiveDays(nextStart, endsOnValue))}. Journey
-          becomes {journeyTotal} {journeyTotal === 1 ? "week" : "weeks"}.
+          — {formatBlockLength(inclusiveDays(nextStart, endsOnValue))}.
+          {shiftClause ? ` ${shiftClause}` : ""} Journey becomes {journeyTotal}{" "}
+          {journeyTotal === 1 ? "week" : "weeks"}.
         </p>
       )}
 
@@ -317,7 +407,7 @@ export function AddBlockForm({
           className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
         >
           {isSubmitting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-          Add block
+          {mode.kind === "add" ? "Add block" : "Save block"}
         </Button>
       </div>
     </form>

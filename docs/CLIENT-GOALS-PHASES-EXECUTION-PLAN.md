@@ -3035,3 +3035,45 @@ current/future fields always have.
 fields-reject pin replaced by edit-in-place with stored dates, plus
 elapsed-date-change 422 and no-needless-write pins; arithmetic closes from
 2740) · `check:labels` OK (661) · no `as any` · no markers · no migration.
+
+---
+
+### Task 3.6-D — Edit-block UI ✅ SHIPPED 2026-08-12 · SESSION 3.6 CODE COMPLETE
+
+**What shipped.** A hover-revealed **pencil on every row** (elapsed included —
+fields are editable there since 3.6-C; the trash stays current/future-only and
+rightmost, per the rail order rule). Clicking it swaps the card for the form in
+place: `add-block-form.tsx` **generalized into `block-form.tsx`** (one
+component, `mode: add | edit` — no fork), seeded from the block, with target
+weight included per owner call (`useCanonicalInput` seeded from stored kg — its
+untouched-field guard means an unedited box commits the seed exactly). Field
+rules by mode: elapsed edit shows the fixed date range as text (no end field —
+dates are history); the CURRENT block's end picker floors at the client's
+today (the window floor as UX; the schema message names it); the **start date
+is editable only on the chain's first block while nothing is lived** —
+everywhere else starts are derived, so "moving" a middle block is its
+predecessor's end.
+
+**Push-forward, previewed with the executing math:** `computeEditShift`
+(tested) re-anchors every later block duration-preserved — the same walk the
+service's derived-starts contract executes, so the live sentence ("Ends 4 Oct
+— 6 weeks 2 days. Peak moves to 5 Oct. Journey becomes 22 weeks.") and the
+result cannot differ. The moved-blocks clause is shared with the delete
+confirm (`movedBlocksClause`, extracted — delete outputs byte-identical,
+its count verb stays "move earlier" while edits use direction-neutral
+"move"). `buildEditPayload` (tested) substitutes the edited row's fields,
+re-anchors later ends, carries the anchor move for the unlivedfirst-block
+case (ignored elsewhere — belt), and returns `journeyWeeks` for the sentence.
+Submit → PUT → blocks-area invalidation → `"Cut 2" updated` toast; service
+422s (floor violations the UI can't pre-empt, e.g. a shrink that would push a
+later block wholly past) surface as destructive toasts with the server's
+sentence.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged)
+· `vitest run` **268 files / 2751 tests, all passing** (+9: computeEditShift
+extend/shrink/last-block, buildEditPayload substitution / elapsed fields-only /
+unchanged-end / unknown-id, anchor-move + not-first-belt; arithmetic closes
+from 2742) · `check:labels` OK (661) · no `as any` · no markers · no
+migration. **Session 3.6 totals: 4 commits, zero migrations, +23 tests
+(2728 → 2751).** Browser-unverified; the smoke checklist below supersedes
+Session 3's for the blocks pane.

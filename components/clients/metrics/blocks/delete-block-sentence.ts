@@ -1,5 +1,6 @@
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import type { DeleteShiftOutcome } from "@/lib/blocks/block-chain";
+import type { BlockDateChange } from "@/types/client-blocks";
 import { formatBlockDate } from "./block-format";
 
 // The delete confirm's ONE plain-sans sentence, built from the same pure
@@ -8,6 +9,23 @@ import { formatBlockDate } from "./block-format";
 // reach here (no delete affordance renders for them).
 
 const weeksNoun = (weeks: number) => (weeks === 1 ? "week" : "weeks");
+
+/** "Cut 2 moves to 29 Sep." / "…and Peak to 27 Oct." / "3 later blocks
+ *  move earlier." — shared by the delete confirm and the edit form's
+ *  push-forward preview (whose count verb is direction-neutral "move"). */
+export function movedBlocksClause(
+  moved: BlockDateChange[],
+  manyVerb: string
+): string | null {
+  if (moved.length === 0) return null;
+  if (moved.length === 1) {
+    return `${moved[0].name} moves to ${formatBlockDate(moved[0].next.startsOn)}.`;
+  }
+  if (moved.length === 2) {
+    return `${moved[0].name} moves to ${formatBlockDate(moved[0].next.startsOn)} and ${moved[1].name} to ${formatBlockDate(moved[1].next.startsOn)}.`;
+  }
+  return `${moved.length} later blocks ${manyVerb}.`;
+}
 
 export function buildDeleteSentence(
   chain: ClientBlockView[],
@@ -38,13 +56,6 @@ export function buildDeleteSentence(
 
   const base = `The journey shortens to ${totalWeeks} ${weeksNoun(totalWeeks)} and ends ${formatBlockDate(journeyEnd)}.`;
 
-  const moved = outcome.changes;
-  if (moved.length === 0) return base;
-  if (moved.length === 1) {
-    return `${base} ${moved[0].name} moves to ${formatBlockDate(moved[0].next.startsOn)}.`;
-  }
-  if (moved.length === 2) {
-    return `${base} ${moved[0].name} moves to ${formatBlockDate(moved[0].next.startsOn)} and ${moved[1].name} to ${formatBlockDate(moved[1].next.startsOn)}.`;
-  }
-  return `${base} ${moved.length} later blocks move earlier.`;
+  const clause = movedBlocksClause(outcome.changes, "move earlier");
+  return clause ? `${base} ${clause}` : base;
 }
