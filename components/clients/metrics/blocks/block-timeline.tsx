@@ -5,7 +5,7 @@ import {
   MONO_LABEL_CLASS,
   TEXT_SECONDARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { formatBlockDate } from "./block-format";
+import { formatBlockDate } from "@/lib/blocks/block-format";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import type { BlockTrainingFact } from "@/types/client-blocks";
 

@@ -15,7 +15,7 @@ import {
   TEXT_SECONDARY,
   TRAINING_CARD_BORDER,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { formatBlockDate } from "./block-format";
+import { formatBlockDate } from "@/lib/blocks/block-format";
 import { BlockTimeline, deriveTimelineEntries } from "./block-timeline";
 import type { BlockWeightFacts } from "@/lib/blocks/block-weight";
 import type { BlockPace, ClientBlockView } from "@/lib/blocks/block-derivations";

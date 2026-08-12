@@ -1,7 +1,7 @@
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import type { DeleteShiftOutcome } from "@/lib/blocks/block-chain";
 import type { BlockDateChange } from "@/types/client-blocks";
-import { formatBlockDate } from "./block-format";
+import { formatBlockDate } from "@/lib/blocks/block-format";
 
 // The delete confirm's ONE plain-sans sentence, built from the same pure
 // computeDeleteShift outcome the DELETE route executes — the sentence the

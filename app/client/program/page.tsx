@@ -2,10 +2,12 @@
 
 import useSWR from "swr";
 
+import { JourneySection } from "@/components/client-portal/program/journey-section";
 import { NutritionPlanCard } from "@/components/client-portal/program/nutrition-plan-card";
 import { TrainingPlanCard } from "@/components/client-portal/program/training-plan-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import type { ClientJourney } from "@/types/client-journey";
 import type { ClientTrainingPlan } from "@/types/client-training-plan";
 import type { NutritionTargets } from "@/services/client-portal-service";
 
@@ -16,6 +18,10 @@ type TrainingPlanResponse = {
 type NutritionPlanResponse = {
   success: boolean;
   data: NutritionTargets | null;
+};
+type JourneyResponse = {
+  success: boolean;
+  data: ClientJourney | null;
 };
 
 function ProgramSkeleton() {
@@ -87,12 +93,28 @@ export default function ProgramPage() {
     },
   );
 
+  const {
+    data: journeyData,
+    error: journeyError,
+    isLoading: journeyLoading,
+    mutate: mutateJourney,
+  } = useSWR<JourneyResponse>(
+    "/api/client/journey",
+    swrFetcher,
+    {
+      revalidateOnFocus: false,
+      errorRetryCount: 3,
+      errorRetryInterval: 1000,
+    },
+  );
+
   if (trainingPlanError && nutritionPlanError) {
     return (
       <ProgramLoadError
         onRetry={() => {
           void mutateTrainingPlan();
           void mutateNutritionPlan();
+          void mutateJourney();
         }}
       />
     );
@@ -100,20 +122,29 @@ export default function ProgramPage() {
 
   const loading =
     (trainingPlanLoading && !trainingPlanData) ||
-    (nutritionPlanLoading && !nutritionPlanData);
+    (nutritionPlanLoading && !nutritionPlanData) ||
+    (journeyLoading && !journeyData);
   if (loading) return <ProgramSkeleton />;
 
   const trainingPlan = trainingPlanData?.data ?? null;
   const nutritionPlan = nutritionPlanData?.data ?? null;
-
-  if (!trainingPlan && !nutritionPlan) return <EmptyProgram />;
+  // A journey fetch failure only drops this section (the page's per-card
+  // error posture); the plan cards below stay useful.
+  const journey = !journeyError ? (journeyData?.data ?? null) : null;
 
   return (
     <div className="flex flex-col gap-2 pb-6">
-      {!trainingPlanError && trainingPlan && (
-        <TrainingPlanCard plan={trainingPlan} />
+      {journey && <JourneySection journey={journey} />}
+      {!trainingPlan && !nutritionPlan ? (
+        <EmptyProgram />
+      ) : (
+        <>
+          {!trainingPlanError && trainingPlan && (
+            <TrainingPlanCard plan={trainingPlan} />
+          )}
+          {!nutritionPlanError && nutritionPlan && <NutritionPlanCard />}
+        </>
       )}
-      {!nutritionPlanError && nutritionPlan && <NutritionPlanCard />}
     </div>
   );
 }

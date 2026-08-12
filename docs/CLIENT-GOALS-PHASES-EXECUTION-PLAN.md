@@ -3490,3 +3490,65 @@ bare-pairs case (+1).
 **Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing
 warnings, unchanged) · `vitest run` **270 files / 2780 tests, all passing** ·
 `check:labels` OK (661) · no `as any` · no markers · no migration.
+
+---
+
+### Task 4.1 — `/client/program` shows the current block ✅ SHIPPED 2026-08-12
+
+**What shipped.** `components/client-portal/program/journey-section.tsx`,
+mounted by `app/client/program/page.tsx` above the two plan cards from a third
+SWR read of `GET /api/client/journey` (same options as the page's existing
+reads; the journey participates in the initial-load skeleton gate; a journey
+fetch failure drops only the section — the page's per-card error posture; the
+"both plans failed" full-error gate is unchanged). Portal idiom throughout
+(shadcn tokens + `font-mono-display` numerals — the tree is
+check:labels-whitelisted; Teal-Summit does not apply). The **current block
+card**: name (sans semibold) · focus sentence · `Week 2 of 3 · ends 22 Aug`
+(mono meta) · a **hand-rolled progress bar** (the
+`check-in/weight-goal-card.tsx` track + inline-width-fill shape with portal
+tokens `bg-muted`/`bg-primary`, NOT `components/ui/progress.tsx`) whose width
+is the same clamped elapsed-days fraction `derivePace` uses, anchored on the
+wire's `clientToday` — no device-day math (the S3.4 rule) · the two labelled
+target lines, `This block: 89.0 kg by 6 Sep, 0.9 kg to go` and
+`Your goal: 85.0 kg by 1 Dec, 4.9 kg to go` (spec copy plus the viewer unit
+from `formatWeight`/`useUnits` — no unit literals in JSX; "to go" omitted when
+either side is missing, the goal line omitted on maintenance, "by …" omitted
+without a deadline, the block line omitted without a block target).
+**Finished blocks** below under a small heading: name ·
+`1 Jun – 28 Jun · 4 weeks` (mono meta) · right-aligned signed change
+(`+1.2 kg`) — the coach collapsed-row wording; future blocks deliberately not
+rendered. **Every delta renders round-then-subtract** (convert each endpoint
+to the viewer's unit, round to 1dp, THEN subtract — pinned by a test where
+90.06→89.94 kg must read −0.2, not the −0.1 a raw `round(end − start)`
+prints).
+
+**Shared-formatter move (§2 extract-shared, declared in plan review):**
+`block-format.ts` (+ its test) moved
+`components/clients/metrics/blocks/` → `lib/blocks/` so the portal renders
+"6 Sep" byte-identically to the coach side without a cross-audience import;
+the four coach importers repointed (`block-card`, `block-timeline`,
+`block-form`, `delete-block-sentence`), zero behaviour change.
+
+**One landmine hit and fixed in the same commit:** the page's existing
+`page.test.tsx` (not in the plan's file list) failed on first full-suite run —
+the new `JourneySection` import chain reaches `units-context` →
+`auth-context`, which constructs the browser Supabase client at module load
+and throws without env vars (the exact failure the
+`performance-view.test.tsx` comment documents). Fix: the page test stubs
+`JourneySection` like it already stubs the two cards (the section has its own
+suite), which also severs that import chain; four new page-gating pins rode
+along (section-above-cards DOM order, section-beside-empty-state when blocks
+exist but no plans, journey-error drops only the section, journey in the
+skeleton gate).
+
+**Tests: 271 files / 2790 (270/2780 + 1 file, +10: journey-section 6 — full
+current-card render incl. 50% bar width and both target lines, maintenance +
+no-target omissions, no-current-weight tail drops, finished-row wording + the
+round-then-subtract pin, imperial conversion, only-future renders nothing;
+page 4 — the gating pins above; arithmetic closes).** One unrelated
+intermittent failure appeared in a single full run and did not reproduce on
+re-run — the documented flaky-full-run pattern.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing
+warnings, unchanged) · `vitest run` **271 files / 2790 tests, all passing** ·
+`check:labels` OK (661) · no `as any` · no markers · no migration.

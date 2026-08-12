@@ -32,7 +32,7 @@ import {
   WEIGHT_KG_MAX,
   WEIGHT_KG_MIN,
 } from "@/lib/constants";
-import { formatBlockDate, formatBlockLength } from "./block-format";
+import { formatBlockDate, formatBlockLength } from "@/lib/blocks/block-format";
 
 // One inline form for both adding and editing a block (the habits
 // manage-drawer swap precedent for the SHELL only — its raw-useState
