@@ -171,6 +171,15 @@ export async function PUT(
           })
         : null;
 
+    // An impossible override is a 400, not a silent no-op: the coach typed a
+    // number and must be told it was not stored.
+    if (energy?.status === "rejected_invalid_override") {
+      return NextResponse.json(
+        { error: energy.rejection ?? "Invalid energy override" },
+        { status: 400 }
+      );
+    }
+
     // Dual-write body metrics (non-blocking). The pair comes from the helper's
     // result, never recomputed here, so the event matches the profile.
     if (body.currentWeight !== undefined || body.currentBodyFatPercentage !== undefined ||

@@ -3997,3 +3997,21 @@ writer); it reads as "energy not computed yet" and any weight edit repairs it.
 
 `calculateTDEE` was left with zero production callers and is **deleted**, with the
 two imports it left dead.
+
+
+### An impossible BMR/TDEE pair is now refused ✅ 2026-08-12 (owner-caught)
+
+A coach could store TDEE 1,500 against BMR 1,787. Nothing anywhere compared the
+two: `updateClientMetricsSchema` checked only absolute bounds (1000-8000), the
+route turned the value into a `set` instruction, and the writer froze it
+verbatim while BMR kept auto-recomputing from weight and body fat. Two numbers,
+never compared — the same class of defect as the 3712/3515 pair that opened this
+session, arrived at from the other direction.
+
+`recalculateClientEnergy` now REFUSES an explicit override that would make TDEE
+lower than BMR (and the mirror case, a custom BMR above the TDEE), returning
+`status: "rejected_invalid_override"` with a coach-facing sentence and writing
+nothing. The metrics route surfaces it as a 400; the settings dialog shows it
+inline as the coach types and blocks the save. **Rejected rather than clamped:**
+a coach who typed 1,500 meant 1,500, and silently storing something else is how
+these numbers stopped being explicable in the first place.

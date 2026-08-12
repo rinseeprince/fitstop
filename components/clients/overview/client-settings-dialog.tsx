@@ -233,11 +233,31 @@ export function ClientSettingsDialog({
   const showBirthDateNudge =
     watchedDob === "" && autoReady?.ageSource === "assumed_default";
 
+  // TDEE is BMR x a multiplier that is never below 1.2, so a custom value under
+  // the BMR is impossible rather than merely unusual. Caught here so the coach
+  // sees it as they type; the server rejects it too (that is the real guard).
+  const parsedCustomTdee = Number(customTdee);
+  const customTdeeBelowBmr =
+    isCustomTdee &&
+    customTdee.trim() !== "" &&
+    Number.isFinite(parsedCustomTdee) &&
+    autoReady != null &&
+    parsedCustomTdee < autoReady.bmr;
+
   const onSubmit = async (values: SettingsFormValues) => {
     if (height.hasParseError) {
       toast({
         title: "Save failed",
         description: "Enter a height above 0, or clear the field.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (customTdeeBelowBmr) {
+      toast({
+        title: "Save failed",
+        description: `TDEE can't be below BMR (${formatCalories(autoReady.bmr)} cal/day).`,
         variant: "destructive",
       });
       return;
@@ -439,11 +459,18 @@ export function ClientSettingsDialog({
                     onChange={(e) => setCustomTdee(e.target.value)}
                     className={cn(FOCUS_RING, MONO_INPUT_CLASS, "h-8 text-[13px]")}
                   />
-                  <p className="text-[11px] text-[#5c7a80]">
-                    {autoReady
-                      ? `Frozen at your number. Auto would be ${formatCalories(autoReady.tdee)} cal/day.`
-                      : "Frozen at your number."}
-                  </p>
+                  {customTdeeBelowBmr ? (
+                    <p className="text-[11px] text-[#c06060]">
+                      Can&apos;t be below BMR ({formatCalories(autoReady.bmr)} cal/day) —
+                      total daily energy always exceeds resting energy.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-[#5c7a80]">
+                      {autoReady
+                        ? `Frozen at your number. Auto would be ${formatCalories(autoReady.tdee)} cal/day.`
+                        : "Frozen at your number."}
+                    </p>
+                  )}
                 </>
               ) : autoReady ? (
                 <p className="text-[11px] text-[#5c7a80]">

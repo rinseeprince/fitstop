@@ -72,6 +72,9 @@ export type ClientEnergyStatus =
   | "noop_all_frozen"
   | "skipped_insufficient_data"
   | "skipped_client_not_found"
+  /** An explicit override was physically impossible and nothing was written —
+   *  see the guard in the writer. */
+  | "rejected_invalid_override"
   | "failed";
 
 export type ClientEnergyResult = {
@@ -91,6 +94,8 @@ export type ClientEnergyResult = {
   /** `clients.date_of_birth IS NULL` — for LOGGING. A UI nudge reads the row,
    *  because this is transient per-write state. */
   missingDateOfBirth: boolean;
+  /** Set only on "rejected_invalid_override" — a coach-facing sentence. */
+  rejection: string | null;
 };
 
 const ENERGY_COLUMNS =
@@ -108,6 +113,7 @@ function emptyResult(status: ClientEnergyStatus): ClientEnergyResult {
     computation: null,
     missing: [],
     missingDateOfBirth: false,
+    rejection: null,
   };
 }
 
@@ -249,6 +255,46 @@ export async function recalculateClientEnergy(
     tdeeDisposition = "carried";
   }
 
+  // TDEE is BMR x a multiplier that is never below 1.2, so a TDEE under the
+  // BMR is not a preference — it is arithmetically impossible, and every macro
+  // downstream would be solved against it. Rejected rather than clamped: a
+  // coach who typed 1,500 meant 1,500, and silently storing something else is
+  // how the numbers stopped being explicable in the first place.
+  if (
+    tdeeInstruction?.action === "set" &&
+    nextTdee != null &&
+    nextBmr != null &&
+    nextTdee < nextBmr
+  ) {
+    return {
+      ...emptyResult("rejected_invalid_override"),
+      bmr: storedBmr,
+      tdee: storedTdee,
+      bmrManualOverride: storedBmrFrozen,
+      tdeeManualOverride: storedTdeeFrozen,
+      missingDateOfBirth,
+      rejection: `TDEE cannot be lower than BMR (${nextBmr} cal/day). Total daily energy always exceeds resting energy.`,
+    };
+  }
+
+  // The mirror case: a custom BMR above the TDEE it would sit under.
+  if (
+    bmrInstruction?.action === "set" &&
+    nextTdee != null &&
+    nextBmr != null &&
+    nextBmr > nextTdee
+  ) {
+    return {
+      ...emptyResult("rejected_invalid_override"),
+      bmr: storedBmr,
+      tdee: storedTdee,
+      bmrManualOverride: storedBmrFrozen,
+      tdeeManualOverride: storedTdeeFrozen,
+      missingDateOfBirth,
+      rejection: `BMR cannot be higher than TDEE (${nextTdee} cal/day). Resting energy is always a fraction of total daily energy.`,
+    };
+  }
+
   // Always both keys. A flag key appears only when an instruction asked for it,
   // so a plain recompute cannot clobber a concurrently-set flag.
   // `updated_at` is not written: clients carries a BEFORE UPDATE trigger.
@@ -303,6 +349,7 @@ export async function recalculateClientEnergy(
     tdeeManualOverride: tdeeFrozen,
     bmrDisposition,
     tdeeDisposition,
+    rejection: null,
     computation: computed
       ? {
           method: computed.method,

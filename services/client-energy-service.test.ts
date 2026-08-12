@@ -264,6 +264,65 @@ describe("recalculateClientEnergy", () => {
     });
   });
 
+  describe("an impossible pair is rejected, not stored", () => {
+    it("refuses a custom TDEE below the BMR and writes nothing", async () => {
+      // TDEE is BMR x a multiplier never below 1.2, so this is arithmetically
+      // impossible — and every macro downstream would be solved against it.
+      const row = clientRow();
+      wire(row);
+
+      const result = await recalculateClientEnergy("client-1", {
+        now: NOW,
+        overrides: { tdee: { action: "set", value: 1200 } },
+      });
+
+      expect(result.status).toBe("rejected_invalid_override");
+      expect(result.rejection).toContain("cannot be lower than BMR");
+      expect(updateQuery.update).not.toHaveBeenCalled();
+    });
+
+    it("leaves the stored pair and flags untouched when it rejects", async () => {
+      const row = clientRow({ tdee_manual_override: true, tdee: 3100 });
+      wire(row);
+
+      const result = await recalculateClientEnergy("client-1", {
+        now: NOW,
+        overrides: { tdee: { action: "set", value: 900 } },
+      });
+
+      expect(result.bmr).toBe(1700);
+      expect(result.tdee).toBe(3100);
+      expect(result.tdeeManualOverride).toBe(true);
+    });
+
+    it("refuses a custom BMR above the TDEE — the mirror case", async () => {
+      const row = clientRow({ tdee_manual_override: true, tdee: 2040 });
+      wire(row);
+
+      const result = await recalculateClientEnergy("client-1", {
+        now: NOW,
+        overrides: { bmr: { action: "set", value: 5000 } },
+      });
+
+      expect(result.status).toBe("rejected_invalid_override");
+      expect(result.rejection).toContain("cannot be higher than TDEE");
+      expect(updateQuery.update).not.toHaveBeenCalled();
+    });
+
+    it("allows a custom TDEE at or above the BMR", async () => {
+      const row = clientRow();
+      wire(row);
+
+      const result = await recalculateClientEnergy("client-1", {
+        now: NOW,
+        overrides: { tdee: { action: "set", value: 4000 } },
+      });
+
+      expect(result.status).toBe("written");
+      expect(result.tdee).toBe(4000);
+    });
+  });
+
   describe("insufficient data", () => {
     it("writes nothing and nulls nothing", async () => {
       wire(clientRow({ height: null, bmr: 1700, tdee: 2040 }));
