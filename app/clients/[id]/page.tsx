@@ -34,13 +34,17 @@ export default function ClientProfilePage() {
   const { client, isLoading: clientLoading, isError: clientError, mutate: mutateClient } = useClient(clientId)
   const [activeTab, setActiveTab] = useState<ClientTab>(initialTab)
 
-  const handleTabChange = useCallback((tab: ClientTab) => {
+  const handleTabChange = useCallback((tab: ClientTab, extraParams?: Record<string, string>) => {
     setActiveTab(tab)
     // Single-owner params (Journey's ?journey=) survive the switch so that
     // pane restores on the return trip; the SHARED ?subtab= (written by both
     // Training and Nutrition) is dropped — carried across, it satisfies the
     // other tab's pane guard and opens the wrong pane. See buildClientTabUrl.
-    router.replace(buildClientTabUrl(clientId, tab, searchParams.toString()), { scroll: false })
+    // extraParams ADDRESS a pane on arrival (the Overview's block-ending row
+    // sends { journey: "blocks" }); navigation must run through here rather
+    // than a bare router.replace, because activeTab is React state seeded
+    // from ?tab= only at mount — a URL-only change would not switch the tab.
+    router.replace(buildClientTabUrl(clientId, tab, searchParams.toString(), extraParams), { scroll: false })
   }, [clientId, router, searchParams])
 
   const { isCalculatingBMR, handleCalculateBMR } = useClientMetrics({

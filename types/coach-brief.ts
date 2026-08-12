@@ -10,6 +10,22 @@ export type UnreviewedCheckIn = {
 } | null;
 
 /**
+ * The current journey block entering its final 7 days — the Overview's
+ * coach-action row ("Build ends Sunday. Cut is next."). A coach-action row is
+ * NOT an alert (workstream invariant 14): not dismissible, never through
+ * evaluateAndSortTriggers, never on the dashboard feed; it clears by the
+ * world changing (the next block starting, or the chain changing). Null when
+ * no current block is ending.
+ */
+export type BlockEnding = {
+  blockName: string;
+  /** ISO date — the current block's last day (client-calendar). */
+  endsOn: string;
+  /** The following block's name; null when nothing is scheduled after. */
+  nextBlockName: string | null;
+} | null;
+
+/**
  * One item in the since-last-visit activity feed (newest first, capped).
  * `at` is the feed timeline anchor: when the row became visible to the coach
  * (created_at), not the day it is attributed to.
@@ -52,6 +68,7 @@ export type OverviewBrief = {
   waitingOnYou: {
     unreviewedCheckIn: UnreviewedCheckIn;
     attentionAlerts: AttentionAlert[];
+    blockEnding: BlockEnding;
   };
   activity: ActivityItem[];
   checkInTiming: CheckInTiming | null;

@@ -18,6 +18,7 @@ describe("WaitingOnYouSection", () => {
         clientName="Alex"
         unreviewedCheckIn={null}
         attentionAlerts={[]}
+        blockEnding={null}
         onTabChange={vi.fn()}
         onDismissAlert={vi.fn()}
       />
@@ -34,6 +35,7 @@ describe("WaitingOnYouSection", () => {
         clientName="Alex"
         unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
         attentionAlerts={[alert("no_log_gap", "high", "No logs in 5 days")]}
+        blockEnding={null}
         onTabChange={vi.fn()}
         onDismissAlert={vi.fn()}
       />
@@ -53,6 +55,7 @@ describe("WaitingOnYouSection", () => {
         clientName="Alex"
         unreviewedCheckIn={{ id: "ci-1", submittedAt: threeDaysAgo.toISOString() }}
         attentionAlerts={[]}
+        blockEnding={null}
         onTabChange={onTabChange}
         onDismissAlert={vi.fn()}
       />
@@ -71,6 +74,7 @@ describe("WaitingOnYouSection", () => {
         clientName="Alex"
         unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
         attentionAlerts={[]}
+        blockEnding={null}
         onTabChange={vi.fn()}
         onDismissAlert={vi.fn()}
       />
@@ -88,6 +92,7 @@ describe("WaitingOnYouSection", () => {
           alert("habit_dropoff", "medium", "Habits slipping"),
           alert("training_missed", "high", "Two sessions missed"),
         ]}
+        blockEnding={null}
         onTabChange={vi.fn()}
         onDismissAlert={vi.fn()}
       />
@@ -109,6 +114,7 @@ describe("WaitingOnYouSection", () => {
         clientName="Alex"
         unreviewedCheckIn={null}
         attentionAlerts={[alert("high_stress", "medium", "Stress elevated")]}
+        blockEnding={null}
         onTabChange={vi.fn()}
         onDismissAlert={onDismissAlert}
       />
@@ -127,6 +133,7 @@ describe("WaitingOnYouSection", () => {
         clientName="Alex"
         unreviewedCheckIn={null}
         attentionAlerts={[alert("high_stress", "medium", "Stress elevated")]}
+        blockEnding={null}
         onTabChange={onTabChange}
         onDismissAlert={vi.fn()}
       />
@@ -148,6 +155,7 @@ describe("WaitingOnYouSection", () => {
           alert("high_soreness", "medium", "Soreness elevated"),
           alert("habit_dropoff", "medium", "Habits slipping"),
         ]}
+        blockEnding={null}
         onTabChange={onTabChange}
         onDismissAlert={vi.fn()}
       />
@@ -161,5 +169,71 @@ describe("WaitingOnYouSection", () => {
 
     await user.click(screen.getByText("Habits slipping"));
     expect(onTabChange).toHaveBeenCalledWith("daily-habits");
+  });
+
+  it("renders the block-ending row and routes Open Journey to the Blocks pane", async () => {
+    const user = userEvent.setup();
+    const onTabChange = vi.fn();
+
+    render(
+      <WaitingOnYouSection
+        clientName="Alex"
+        unreviewedCheckIn={null}
+        attentionAlerts={[]}
+        blockEnding={{
+          blockName: "Build",
+          endsOn: "2026-08-23", // a Sunday
+          nextBlockName: "Cut",
+        }}
+        onTabChange={onTabChange}
+        onDismissAlert={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Build ends Sunday.")).toBeInTheDocument();
+    expect(screen.getByText("Cut is next.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Open Journey" }));
+    expect(onTabChange).toHaveBeenCalledWith("metrics", { journey: "blocks" });
+  });
+
+  it("says nothing is scheduled when no block follows, and offers no dismiss", () => {
+    render(
+      <WaitingOnYouSection
+        clientName="Alex"
+        unreviewedCheckIn={null}
+        attentionAlerts={[]}
+        blockEnding={{
+          blockName: "Build",
+          endsOn: "2026-08-23",
+          nextBlockName: null,
+        }}
+        onTabChange={vi.fn()}
+        onDismissAlert={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Nothing scheduled after it.")).toBeInTheDocument();
+    // A coach-action row is not an alert: it carries no dismiss affordance.
+    expect(screen.queryByRole("button", { name: /dismiss/i })).toBeNull();
+  });
+
+  it("counts the block-ending row alongside the check-in and alerts", () => {
+    render(
+      <WaitingOnYouSection
+        clientName="Alex"
+        unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
+        attentionAlerts={[alert("no_log_gap", "high", "No logs in 5 days")]}
+        blockEnding={{
+          blockName: "Build",
+          endsOn: "2026-08-23",
+          nextBlockName: "Cut",
+        }}
+        onTabChange={vi.fn()}
+        onDismissAlert={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("3")).toBeInTheDocument();
   });
 });

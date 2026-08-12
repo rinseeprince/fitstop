@@ -65,6 +65,41 @@ export function decorateBlocks(
   }));
 }
 
+export interface BlockEndingFacts {
+  name: string;
+  /** The current block's last day. */
+  endsOn: string;
+  /** The following chain entry's name; null when nothing is scheduled after. */
+  nextName: string | null;
+}
+
+/**
+ * The "this block is in its final 7 days" signal behind the Overview's
+ * coach-action row: fires while `today` sits within [endsOn − 6, endsOn] of
+ * the CURRENT block. Days-remaining, deliberately NOT
+ * `weekOfTotal.current === total`: ceil-weeks makes a truncated block's
+ * "last week" as short as one day — useless for a row whose job is getting
+ * the next block scheduled before this one ends. `blocks` is the chain in
+ * date order (the listBlocks contract); the next block is simply the
+ * following entry, which can never be archived (only elapsed blocks can be).
+ */
+export function deriveBlockEnding(
+  blocks: (BlockDates & { name: string })[],
+  today: string
+): BlockEndingFacts | null {
+  const index = blocks.findIndex(
+    (candidate) => deriveBlockState(candidate, today) === "current"
+  );
+  if (index === -1) return null;
+  const current = blocks[index];
+  if (daysBetween(today, current.endsOn) > 6) return null;
+  return {
+    name: current.name,
+    endsOn: current.endsOn,
+    nextName: blocks[index + 1]?.name ?? null,
+  };
+}
+
 /**
  * Pace inputs are UNIT-AGNOSTIC: the three weights must share one unit
  * system, and every output weight is in that system. Session 3 feeds the

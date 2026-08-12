@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ChevronRight, ClipboardCheck, X } from "lucide-react";
+import { CheckCircle2, ChevronRight, ClipboardCheck, Flag, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { alertDestination } from "@/lib/attention-alert-destinations";
@@ -14,13 +14,16 @@ import { CardHeader, OverviewCard } from "./overview-primitives";
 import { relativeDayPhrase } from "./overview-format";
 import type { ClientTab } from "@/lib/client-tabs";
 import type { AlertSeverity, AlertType, AttentionAlert } from "@/types/attention-feed";
-import type { UnreviewedCheckIn } from "@/types/coach-brief";
+import type { BlockEnding, UnreviewedCheckIn } from "@/types/coach-brief";
 
 type WaitingOnYouSectionProps = {
   clientName: string;
   unreviewedCheckIn: UnreviewedCheckIn;
   attentionAlerts: AttentionAlert[];
-  onTabChange: (tab: ClientTab) => void;
+  /** The current journey block entering its final 7 days — a coach-action
+   *  row, not an alert: no dismiss, it clears when the next block starts. */
+  blockEnding: BlockEnding;
+  onTabChange: (tab: ClientTab, extraParams?: Record<string, string>) => void;
   /**
    * Dismisses one alert type for this client. Dismissal is shared with the coach
    * dashboard's feed — the same `attention_dismissals` row drives both — and it
@@ -28,6 +31,10 @@ type WaitingOnYouSectionProps = {
    */
   onDismissAlert: (alertType: AlertType) => void;
 };
+
+// Sentence prose, so the weekday stays sans like the words around it.
+const endsWeekday = (iso: string) =>
+  new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
 
 // High takes the destructive-soft accent, medium the warning tone. There is no
 // filled red anywhere in the system, so severity reads through the dot only.
@@ -43,10 +50,12 @@ export function WaitingOnYouSection({
   clientName,
   unreviewedCheckIn,
   attentionAlerts,
+  blockEnding,
   onTabChange,
   onDismissAlert,
 }: WaitingOnYouSectionProps) {
-  const pendingCount = attentionAlerts.length + (unreviewedCheckIn ? 1 : 0);
+  const pendingCount =
+    attentionAlerts.length + (unreviewedCheckIn ? 1 : 0) + (blockEnding ? 1 : 0);
   const sortedAlerts = [...attentionAlerts].sort(
     (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
   );
@@ -95,6 +104,35 @@ export function WaitingOnYouSection({
                 className="h-7 shrink-0 rounded-[6px] border-[rgba(13,148,136,0.08)] px-3 text-[12px] font-medium text-[#5a7d82] hover:text-[#0c1a1e]"
               >
                 Review
+              </Button>
+            </div>
+          )}
+
+          {blockEnding && (
+            // A coach-action row, not an alert (invariant 14): the check-in
+            // row's anatomy with the standard h-8 thumb, no dismiss, and it
+            // clears when the next block starts.
+            <div className="flex items-center gap-3 rounded-[6px] px-2 py-2">
+              <span className={cn(THUMB_CLASS, "h-8 w-8")}>
+                <Flag className="h-4 w-4" strokeWidth={1.5} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-semibold text-[#0c1a1e]">
+                  {blockEnding.blockName} ends {endsWeekday(blockEnding.endsOn)}.
+                </p>
+                <p className="mt-0.5 truncate text-[11px] text-[#93b0b4]">
+                  {blockEnding.nextBlockName
+                    ? `${blockEnding.nextBlockName} is next.`
+                    : "Nothing scheduled after it."}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onTabChange("metrics", { journey: "blocks" })}
+                className="h-7 shrink-0 rounded-[6px] border-[rgba(13,148,136,0.08)] px-3 text-[12px] font-medium text-[#5a7d82] hover:text-[#0c1a1e]"
+              >
+                Open Journey
               </Button>
             </div>
           )}

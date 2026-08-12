@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  deriveBlockEnding,
   deriveBlockState,
   deriveWeekOfTotal,
   derivePace,
@@ -115,5 +116,64 @@ describe("derivePace", () => {
     });
     expect(lbs?.remaining).toBeCloseTo(194 - 187.4, 10);
     expect(lbs?.expected).toBe(202.8); // day one
+  });
+});
+
+describe("deriveBlockEnding", () => {
+  const chain = [
+    { name: "Base", startsOn: "2026-06-01", endsOn: "2026-06-28" },
+    { name: "Build", startsOn: "2026-06-29", endsOn: "2026-08-23" },
+    { name: "Cut", startsOn: "2026-08-24", endsOn: "2026-09-20" },
+  ];
+
+  it("fires through the current block's final 7 days, boundary-exact", () => {
+    // endsOn − 7: still quiet. endsOn − 6: the last week has started.
+    expect(deriveBlockEnding(chain, "2026-08-16")).toBeNull();
+    expect(deriveBlockEnding(chain, "2026-08-17")).toEqual({
+      name: "Build",
+      endsOn: "2026-08-23",
+      nextName: "Cut",
+    });
+    // The block's own last day still fires.
+    expect(deriveBlockEnding(chain, "2026-08-23")).toEqual({
+      name: "Build",
+      endsOn: "2026-08-23",
+      nextName: "Cut",
+    });
+  });
+
+  it("clears by the world changing: the next block's first day is quiet again", () => {
+    // Cut (28 days) is current on Aug 24 but nowhere near ITS last week.
+    expect(deriveBlockEnding(chain, "2026-08-24")).toBeNull();
+  });
+
+  it("names nothing after the last block", () => {
+    expect(deriveBlockEnding(chain, "2026-09-20")).toEqual({
+      name: "Cut",
+      endsOn: "2026-09-20",
+      nextName: null,
+    });
+  });
+
+  it("null when no block is current (gap or empty chain)", () => {
+    expect(deriveBlockEnding(chain, "2026-09-21")).toBeNull();
+    expect(deriveBlockEnding([], "2026-08-17")).toBeNull();
+  });
+
+  it("still names the next block across a post-delete gap", () => {
+    const gapped = [
+      { name: "Build", startsOn: "2026-06-29", endsOn: "2026-08-23" },
+      { name: "Cut", startsOn: "2026-08-27", endsOn: "2026-09-20" },
+    ];
+    expect(deriveBlockEnding(gapped, "2026-08-20")?.nextName).toBe("Cut");
+  });
+
+  it("a short current block can fire on day one — days-remaining, not week arithmetic", () => {
+    const short = [{ name: "Deload", startsOn: "2026-08-17", endsOn: "2026-08-21" }];
+    expect(deriveBlockEnding(short, "2026-08-17")).toEqual({
+      name: "Deload",
+      endsOn: "2026-08-21",
+      nextName: null,
+    });
   });
 });

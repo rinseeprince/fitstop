@@ -22,14 +22,24 @@ export type ClientTab = (typeof CLIENT_TABS)[number]["value"]
  * stale param. Dropping it restores their pre-Journey behaviour bit for bit.
  * Single-owner params (Journey's `journey`) ride through — carrying one is
  * always safe and is exactly what restores that tab's pane on the return trip.
+ *
+ * `extraParams` ADDRESSES a pane on arrival (the Overview's block-ending row
+ * sends `{ journey: "blocks" }`): each entry is set after the tab, overriding
+ * any carried value. Only single-owner params belong here — setting `subtab`
+ * through it would reintroduce the cross-tab guard bug this function exists
+ * to prevent.
  */
 export function buildClientTabUrl(
   clientId: string,
   tab: ClientTab,
-  currentSearch: string
+  currentSearch: string,
+  extraParams?: Record<string, string>
 ): string {
   const params = new URLSearchParams(currentSearch)
   params.delete("subtab")
   params.set("tab", tab)
+  for (const [key, value] of Object.entries(extraParams ?? {})) {
+    params.set(key, value)
+  }
   return `/clients/${clientId}?${params.toString()}`
 }

@@ -32,7 +32,9 @@ interface ClientOverviewTabProps {
   isCalculatingBMR: boolean;
   onCalculateBMR: () => void;
   onClientUpdated?: () => void;
-  onTabChange?: (tab: ClientTab) => void;
+  /** extraParams address a pane on arrival (the block-ending row sends
+   *  `{ journey: "blocks" }`); every plain-tab caller ignores it. */
+  onTabChange?: (tab: ClientTab, extraParams?: Record<string, string>) => void;
 }
 
 /**
@@ -72,7 +74,11 @@ export function ClientOverviewTab({
   const wellnessDates = useMemo(() => trailingDates(WELLNESS_WINDOW_DAYS), []);
   const { toast } = useToast();
 
-  const goToTab = useCallback((tab: ClientTab) => onTabChange?.(tab), [onTabChange]);
+  const goToTab = useCallback(
+    (tab: ClientTab, extraParams?: Record<string, string>) =>
+      onTabChange?.(tab, extraParams),
+    [onTabChange]
+  );
 
   // The check-in day lives on the client record but drives the brief's timing
   // strip, so a settings save has to revalidate both.
@@ -145,6 +151,7 @@ export function ClientOverviewTab({
               clientName={client.name}
               unreviewedCheckIn={brief.waitingOnYou.unreviewedCheckIn}
               attentionAlerts={brief.waitingOnYou.attentionAlerts}
+              blockEnding={brief.waitingOnYou.blockEnding}
               onTabChange={goToTab}
               onDismissAlert={handleDismissAlert}
             />

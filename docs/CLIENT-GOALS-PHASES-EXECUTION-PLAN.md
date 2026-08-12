@@ -3552,3 +3552,69 @@ re-run — the documented flaky-full-run pattern.
 **Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing
 warnings, unchanged) · `vitest run` **271 files / 2790 tests, all passing** ·
 `check:labels` OK (661) · no `as any` · no markers · no migration.
+
+---
+
+### Task 4.3 — The "Waiting on you" row ✅ SHIPPED 2026-08-12 · SESSION 4 CODE COMPLETE
+
+**What shipped — the five files the plan named, plus the pane-addressing
+wiring the plan review added.** One coach-action row on the Overview's
+Waiting-on-you card, between the check-in row and the alerts, fired while the
+current journey block is inside its **final 7 calendar days**:
+*"Build ends Sunday."* + *"Cut is next."* / *"Nothing scheduled after it."*
+Check-in-row anatomy with the corrected **`h-8 w-8` thumb** (not the h-9
+outlier) and `Flag h-4 w-4` (the pane's journey mark); both strings are full
+sentences and therefore 100% sans (the prose rule — the weekday is a word);
+**no dismiss affordance, nothing through `evaluateAndSortTriggers`, nothing
+on the dashboard feed** (invariant 14 — it clears by the world changing);
+`pendingCount` counts it.
+
+- **`deriveBlockEnding`** (`lib/blocks/block-derivations.ts`, pure + tested):
+  fires while `daysBetween(today, endsOn) <= 6` for the current block —
+  days-remaining, deliberately NOT `weekOfTotal.current === total`, because
+  ceil-weeks makes a truncated block's "last week" as short as one day,
+  useless for a row whose job is getting the next block scheduled. The next
+  block is the following chain entry (never archived — only elapsed blocks
+  can be), named even across a post-delete gap.
+- **`types/coach-brief.ts`**: `waitingOnYou.blockEnding:
+  { blockName, endsOn, nextBlockName | null } | null`.
+- **`client-overview-brief-service.ts`**: one more `Promise.all` entry —
+  `listBlocks` ∥ `getClientTodayString` (client tz: block dates live on the
+  client's calendar, the same anchor as every blocks route) →
+  `deriveBlockEnding`, wrapped log-and-null like `getUnreviewedCheckIn` so a
+  blocks failure degrades the row, never the Overview. Route unchanged.
+- **`Open Journey` lands on the Blocks pane** (plan-review correction): the
+  Overview has no router — navigation runs through the page's
+  `handleTabChange`, which must also flip its mount-seeded `activeTab` state
+  (a bare `router.replace` would change the URL without switching the
+  rendered tab). Wired backward-compatibly: `buildClientTabUrl` gains an
+  optional `extraParams` (set after the tab; only single-owner params belong
+  there — `subtab` through it would reintroduce the cross-tab guard bug),
+  the `onTabChange` chain (`page.tsx` → `ClientOverviewTab` →
+  `WaitingOnYouSection`) widens to `(tab, extraParams?)`, and the button
+  sends `onTabChange("metrics", { journey: "blocks" })` — which
+  `metrics-tab-content` reads unconditionally, so the Blocks pane renders on
+  landing. Every existing caller passes one arg and is untouched.
+
+**Tests: 271 files / 2804 (271/2790 + 14; arithmetic closes).**
+`deriveBlockEnding` 6 — the ±1-day boundary (`endsOn − 7` quiet,
+`endsOn − 6` fires, ends-today fires), clears on the next block's first day,
+last-block → null next, no-current/empty null, next named across a gap, a
+short block firing on day one. `buildClientTabUrl` 2 — extraParams override a
+carried `journey`; omitted extraParams byte-identical to the three-arg call.
+Section 3 — both copy variants + `Open Journey` →
+`("metrics", { journey: "blocks" })`, no dismiss on the row, the count
+includes it (existing renders gained the required `blockEnding={null}`).
+Brief service 3 — row surfaced with the client-today anchor pinned, null
+mid-block, blocks-read failure degrades to null with the brief intact.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing
+warnings, unchanged) · `vitest run` **271 files / 2804 tests, all passing** ·
+`check:labels` OK (661) · no `as any` · no markers · no migration.
+
+**Session 4 totals: 3 commits, zero migrations, +40 tests (2764 → 2804), +3
+test files (268 → 271: journey service, journey route, journey section; the
+block-weight and block-format suites moved, net zero).** The client surfaces
+are browser-unverified by design — the owner's smoke checklist is in the
+session summary. §2 security/load/perf review delivered with the session
+summary (trigger: one new API route; zero new write paths).

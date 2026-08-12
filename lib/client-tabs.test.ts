@@ -38,4 +38,19 @@ describe("buildClientTabUrl", () => {
     expect(url).not.toContain("subtab");
     expect(url).toContain("journey=wellness");
   });
+
+  it("extraParams address a pane on arrival, overriding a carried value", () => {
+    const url = buildClientTabUrl("c1", "metrics", "tab=overview&journey=wellness", {
+      journey: "blocks",
+    });
+    expect(url).toContain("tab=metrics");
+    expect(url).toContain("journey=blocks");
+    expect(url).not.toContain("journey=wellness");
+  });
+
+  it("omitted extraParams leave the URL byte-identical to the three-arg call", () => {
+    expect(buildClientTabUrl("c1", "nutrition", "tab=training&subtab=plans")).toBe(
+      buildClientTabUrl("c1", "nutrition", "tab=training&subtab=plans", undefined)
+    );
+  });
 });
