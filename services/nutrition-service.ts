@@ -1,13 +1,9 @@
 import type {
-  ActivityLevel,
   TrainingVolume,
   DietType,
   NutritionWarning,
 } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
-import {
-  getActivityMultiplier,
-} from "@/utils/nutrition-helpers";
 import { CALORIES_PER_KG } from "@/lib/constants";
 import { weeklyRateToDailyDelta, dailyDeltaToWeeklyRate } from "@/utils/energy-conversions";
 
@@ -28,14 +24,16 @@ export type NutritionCalculationInput = {
   currentWeightKg: number;
   goalWeightKg?: number;
   bmr: number;
-  /** The PROFILE's TDEE — authoritative since Session 4B, and already
-   *  reflecting a coach's custom override. When present it is USED, not
-   *  recomputed: deriving it again from bmr x activity here silently discarded
-   *  every override a coach set. */
-  tdee?: number | null;
+  /** The PROFILE's TDEE. REQUIRED, and used verbatim.
+   *
+   *  This calculator does not derive TDEE and does not know about activity
+   *  levels. `clients.work_activity_level` feeds exactly one thing — the energy
+   *  helper that computes the profile pair (`computeEnergyPair`) — and this
+   *  reads the result. Re-deriving it here was how a coach's custom TDEE got
+   *  silently discarded: they set 4,000 and every macro was solved against
+   *  1787 x 1.9 = 3,395. Two ways to obtain one number is one way too many. */
+  tdee: number;
   gender: "male" | "female" | "other";
-  /** Only the fallback path uses this — see `tdee` above. */
-  workActivityLevel: ActivityLevel;
   trainingVolumeHours?: TrainingVolume; // Deprecated: kept for backward compat
   trainingPlan?: TrainingPlan | null; // Used for per-day calorie additions
   proteinTargetGPerKg: number;
@@ -46,18 +44,6 @@ export type NutritionCalculationInput = {
   // server-local midnight is only the fallback.
   today?: string;
 };
-
-/**
- * Calculate pure TDEE based on activity level only (no training calories)
- * Training calories are added per-day in the weekly nutrition targets
- */
-export function calculateTDEE(
-  bmr: number,
-  workActivityLevel: ActivityLevel
-): number {
-  const activityMultiplier = getActivityMultiplier(workActivityLevel);
-  return Math.round(bmr * activityMultiplier);
-}
 
 /**
  * Calculate baseline calories (rest day calories)
@@ -295,11 +281,8 @@ export function generateNutritionPlan(
 ): NutritionPlan {
   const warnings: NutritionWarning[] = [];
 
-  // The profile owns TDEE. Recomputing it from bmr x activity ignored a custom
-  // value entirely — a coach who set 4,000 got 3,395 back and every macro was
-  // solved against a number they had explicitly overridden. The fallback covers
-  // a client whose profile pair was never written.
-  const tdee = input.tdee ?? calculateTDEE(input.bmr, input.workActivityLevel);
+  // Used verbatim — see the type. The profile owns this number.
+  const tdee = input.tdee;
 
   // Calculate baseline calories (TDEE - required deficit to hit goal)
   const baselineResult = calculateBaselineCalories(

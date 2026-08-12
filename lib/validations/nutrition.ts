@@ -127,7 +127,17 @@ export function validateClientForNutrition(client: {
   }
 
   if (!client.bmr) {
-    errors.push("Client must have BMR calculated (use Calculate BMR button)");
+    errors.push("Client must have BMR calculated");
+  }
+
+  // This function accepted `tdee` and never checked it. It matters now: the
+  // calculator CONSUMES the profile's TDEE rather than re-deriving it, so a
+  // missing one must read as "energy not computed yet" rather than silently
+  // falling back to a guess. One helper writes bmr and tdee together, so a row
+  // with one and not the other can only predate Session 4B; any weight edit or
+  // a save from the client settings dialog repairs it.
+  if (!client.tdee) {
+    errors.push("Client must have TDEE calculated");
   }
 
   if (!client.gender) {

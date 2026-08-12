@@ -7,7 +7,6 @@ vi.mock('@/services/client-service', () => ({
 
 vi.mock('@/services/nutrition-service', () => ({
   generateNutritionPlan: vi.fn(),
-  calculateTDEE: vi.fn(),
 }))
 
 vi.mock('@/services/training-service', () => ({
@@ -91,7 +90,7 @@ vi.mock('@/services/today-service', () => ({
 }))
 
 import { getClientById } from '@/services/client-service'
-import { generateNutritionPlan, calculateTDEE } from '@/services/nutrition-service'
+import { generateNutritionPlan } from '@/services/nutrition-service'
 import {
   createNutritionPlan,
   getNutritionPlanForDate,
@@ -149,7 +148,6 @@ describe('Nutrition Route POST - read-switch behavior', () => {
       requiredDailyDeficit: 500,
       warnings: [],
     } as never)
-    vi.mocked(calculateTDEE).mockReturnValue(2400)
   })
 
   it('takes weight from body_metrics and the energy pair from the profile', async () => {
@@ -261,7 +259,6 @@ describe('Nutrition Route POST - goal resolution', () => {
       requiredDailyDeficit: 500,
       warnings: [],
     } as never)
-    vi.mocked(calculateTDEE).mockReturnValue(2400)
   })
 
   it('uses the client goal weight', async () => {
@@ -313,7 +310,6 @@ describe('Nutrition Route POST - effectiveFrom judged against client-local today
       requiredDailyDeficit: 500,
       warnings: [],
     } as never)
-    vi.mocked(calculateTDEE).mockReturnValue(2400)
     vi.mocked(getLatestBodyMetrics).mockResolvedValue(null)
     vi.mocked(getCurrentGoals).mockResolvedValue(null)
     // Far-future dates so these tests can ONLY pass/fail via the mocked

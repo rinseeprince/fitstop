@@ -34,12 +34,13 @@ export type NutritionCalcInputs =
       currentWeightKg: number;
       bmr: number;
       gender: "male" | "female" | "other";
-      tdee: number | null;
-      /** The CLIENT's activity level, resolved here so the preview and the save
-       *  cannot disagree. It used to arrive on the request body from a dropdown
-       *  in the nutrition drawer, which meant activity lived in two places —
-       *  `clients.work_activity_level` and `nutrition_plans.work_activity_level`
-       *  — and they routinely disagreed. The drawer is a pure consumer now. */
+      /** Non-null by construction: validateClientForNutrition rejects a client
+       *  without one, because the calculator now CONSUMES this rather than
+       *  re-deriving it from bmr x activity. */
+      tdee: number;
+      /** The CLIENT's activity level. NOT a calculator input — the calculator
+       *  takes `tdee` directly. This is carried solely so the saved plan can
+       *  SNAPSHOT what the client's activity was at generation time. */
       workActivityLevel: ActivityLevel;
       goalWeightKg?: number;
       goalDeadline?: string;
@@ -154,7 +155,7 @@ export async function resolveNutritionCalcInputs(
     currentWeightKg: currentWeight as number,
     bmr: bmr as number,
     gender: client.gender as "male" | "female" | "other",
-    tdee: tdee ?? null,
+    tdee: tdee as number,
     workActivityLevel: toActivityLevel(client.workActivityLevel).level,
     goalWeightKg: effective.goalWeightKg ?? undefined,
     goalDeadline: effective.deadline ?? undefined,

@@ -3970,3 +3970,30 @@ now defaults to Sedentary and always sends a concrete level; the status card
 shows the effective level rather than "Not set". The explicit NULL at
 `createClient` stays, because that is what still lets an intake answer land for a
 client whose settings dialog was never opened.
+
+
+### The calculator takes TDEE, full stop ✅ 2026-08-12 (owner-directed simplification)
+
+Owner's question after the override fix: *"should the nutrition calculator
+calculate off the TDEE rather than the formula? Surely that's simpler than
+BMR x activity for auto and read TDEE for custom?"* — correct, and it exposed a
+SECOND live instance of the same bug.
+
+`input.tdee ?? calculateTDEE(...)` was two ways to obtain one number. Removed:
+`tdee` is now a **required** field on `NutritionCalculationInput`, used verbatim,
+and **`workActivityLevel` is gone from the calculator entirely** (zero references
+in `nutrition-service.ts`). Activity feeds exactly one thing — `computeEnergyPair`,
+which produces the profile pair — and the calculator reads the result.
+
+**The second instance:** `nutrition-plan-orchestrator.ts`'s CUSTOM-MACROS branch
+also did `calculateTDEE(bmr, activity)`, so a custom-macros plan discarded a
+coach's custom TDEE exactly like the calculated branch had. Fixed by the same
+change.
+
+`validateClientForNutrition` now actually checks `tdee` — it accepted the param
+and ignored it, which was survivable while the calculator re-derived TDEE and is
+not now. A row with a BMR but no TDEE can only predate 4B (the old bmr-only
+writer); it reads as "energy not computed yet" and any weight edit repairs it.
+
+`calculateTDEE` was left with zero production callers and is **deleted**, with the
+two imports it left dead.

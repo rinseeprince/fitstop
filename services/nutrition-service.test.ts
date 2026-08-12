@@ -263,7 +263,6 @@ describe('generateNutritionPlan — the profile owns TDEE', () => {
     currentWeightKg: 82,
     bmr: 1787,
     gender: 'male' as const,
-    workActivityLevel: 'extremely_active' as const,
     proteinTargetGPerKg: 2.0,
     dietType: 'balanced' as const,
     today: '2026-08-12',
@@ -278,10 +277,15 @@ describe('generateNutritionPlan — the profile owns TDEE', () => {
     expect(plan.tdee).toBe(4000)
   })
 
-  it('falls back to bmr x activity when the profile has no TDEE', () => {
-    const plan = generateNutritionPlan({ ...BASE, tdee: null })
+  it('uses the TDEE verbatim — it never re-derives one from the BMR', () => {
+    // The calculator has no activity level to derive from any more, by design.
+    // Two clients with the same TDEE and different BMRs must get the same
+    // energy budget; a re-derivation here is what discarded overrides.
+    const lean = generateNutritionPlan({ ...BASE, bmr: 1500, tdee: 4000 })
+    const large = generateNutritionPlan({ ...BASE, bmr: 2200, tdee: 4000 })
 
-    expect(plan.tdee).toBe(Math.round(1787 * 1.9))
+    expect(lean.tdee).toBe(4000)
+    expect(large.tdee).toBe(4000)
   })
 
   it('maintains at the custom TDEE when the goal equals current weight', () => {

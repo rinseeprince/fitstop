@@ -1,5 +1,5 @@
 import { getClientById } from "@/services/client-service";
-import { generateNutritionPlan, calculateTDEE } from "@/services/nutrition-service";
+import { generateNutritionPlan } from "@/services/nutrition-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import {
   resolveNutritionCalcInputs,
@@ -274,13 +274,10 @@ async function handleCustomMacros(
     );
   }
 
-  // The CLIENT's activity level, resolved once in calcInputs. It used to come
-  // off the request body from a dropdown in this drawer, so the plan and the
-  // profile could disagree about how active the same person is — and the plan
-  // won, writing its answer onto clients.tdee.
-  const tdee = bmr
-    ? calculateTDEE(bmr, calcInputs.workActivityLevel)
-    : tdeeValue;
+  // The profile's TDEE, verbatim. This branch used to recompute it from
+  // bmr x activity, so a custom-macros plan discarded a coach's custom TDEE
+  // exactly like the calculated branch did — the same bug, one function down.
+  const tdee = tdeeValue;
 
   const newPlanId = await createNutritionPlan({
     clientId,
@@ -332,7 +329,7 @@ async function handleCustomMacros(
       proteinTargetG: body.customProteinG,
       carbTargetG: body.customCarbG,
       fatTargetG: body.customFatG,
-      adjustedTdee: tdee ?? tdeeValue!,
+      adjustedTdee: tdee,
       weeklyWeightChangeKg: 0,
       warnings: [],
     },
@@ -375,7 +372,6 @@ async function handleCalculatedPlan(
   // number they want and it is stored as the target.
   const plan = generateNutritionPlan({
     ...calcInputs,
-    workActivityLevel: calcInputs.workActivityLevel,
     trainingVolumeHours: body.trainingVolumeHours,
     trainingPlan: null, // vestigial param (generateNutritionPlan ignores it)
     proteinTargetGPerKg: body.proteinTargetGPerKg,
