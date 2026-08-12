@@ -49,8 +49,6 @@ const UPCOMING: NonNullable<OverviewPlanSummary["upcomingTraining"]> = {
 
 const PROPS = {
   upcomingTraining: null,
-  isCalculatingBMR: false,
-  onCalculateBMR: vi.fn(),
   onOpenMetrics: vi.fn(),
 };
 
@@ -201,8 +199,6 @@ describe("ClientStatusCard — actions", () => {
         client={BASE}
         training={null}
         upcomingTraining={null}
-        isCalculatingBMR={false}
-        onCalculateBMR={vi.fn()}
         onOpenMetrics={onOpenMetrics}
       />
     );

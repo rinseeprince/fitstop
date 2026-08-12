@@ -106,6 +106,27 @@ describe("resolveNutritionCalcInputs", () => {
     expect(result.tdee).toBe(4454);
   });
 
+  it("takes the activity level from the CLIENT, not a request body", async () => {
+    // It used to arrive from a dropdown in the nutrition drawer, so activity
+    // had two homes — clients.work_activity_level and the plan's — and they
+    // routinely disagreed about how active the same person was.
+    const result = await resolveNutritionCalcInputs("client-1", {
+      ...CLIENT,
+      workActivityLevel: "very_active",
+    });
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.workActivityLevel).toBe("very_active");
+  });
+
+  it("defaults the activity level when the client has never had one set", async () => {
+    const result = await resolveNutritionCalcInputs("client-1", {
+      ...CLIENT,
+      workActivityLevel: undefined,
+    });
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.workActivityLevel).toBe("sedentary");
+  });
+
   it("falls back to body_metrics when the profile pair is still NULL", async () => {
     // A rescue, not a preference: a client the energy helper has never reached
     // must not 400 the plan save.

@@ -23,7 +23,6 @@ type UseNutritionBuilderProps = {
 };
 
 export type NutritionSettings = {
-  workActivityLevel: ActivityLevel;
   proteinTargetGPerKg: number;
   dietType: DietType;
 };
@@ -34,7 +33,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
 
   const [settings, setSettings] = useState<NutritionSettings>({
-    workActivityLevel: "sedentary",
     proteinTargetGPerKg: 2.0,
     dietType: "balanced",
   });
@@ -52,15 +50,14 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   // edits the coach has already made in this session.
   const nd = nutritionPlan.nutritionData;
   const settingsSeedKey =
-    nd?.workActivityLevel && nd?.proteinTargetGPerKg && nd?.dietType
-      ? `${nd.workActivityLevel}|${nd.proteinTargetGPerKg}|${nd.dietType}`
+    nd?.proteinTargetGPerKg && nd?.dietType
+      ? `${nd.proteinTargetGPerKg}|${nd.dietType}`
       : null;
   const settingsSeededRef = useRef<string | null>(null);
   useEffect(() => {
     if (!settingsSeedKey || settingsSeededRef.current === settingsSeedKey) return;
-    const [workActivityLevel, proteinTargetGPerKg, dietType] = settingsSeedKey.split("|");
+    const [proteinTargetGPerKg, dietType] = settingsSeedKey.split("|");
     setSettings({
-      workActivityLevel: workActivityLevel as ActivityLevel,
       proteinTargetGPerKg: Number(proteinTargetGPerKg),
       dietType: dietType as DietType,
     });
@@ -227,7 +224,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
       setIsGenerating(true);
       try {
         const body: Record<string, unknown> = {
-          workActivityLevel: settings.workActivityLevel,
           proteinTargetGPerKg: settings.proteinTargetGPerKg,
           dietType: settings.dietType,
           // goalDeadline is no longer sent: the deadline is owned by

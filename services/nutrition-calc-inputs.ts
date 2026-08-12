@@ -3,7 +3,8 @@ import { getCurrentGoals } from "@/services/client-goals-service";
 import { getClientTodayString } from "@/services/today-service";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
-import type { Client } from "@/types/check-in";
+import type { ActivityLevel, Client } from "@/types/check-in";
+import { toActivityLevel } from "@/services/client-energy-calc";
 import type { ClientGoal } from "@/types/client-goals";
 
 /**
@@ -34,6 +35,12 @@ export type NutritionCalcInputs =
       bmr: number;
       gender: "male" | "female" | "other";
       tdee: number | null;
+      /** The CLIENT's activity level, resolved here so the preview and the save
+       *  cannot disagree. It used to arrive on the request body from a dropdown
+       *  in the nutrition drawer, which meant activity lived in two places —
+       *  `clients.work_activity_level` and `nutrition_plans.work_activity_level`
+       *  — and they routinely disagreed. The drawer is a pure consumer now. */
+      workActivityLevel: ActivityLevel;
       goalWeightKg?: number;
       goalDeadline?: string;
       /** Named to match `NutritionCalculationInput.startDate` exactly — a
@@ -148,6 +155,7 @@ export async function resolveNutritionCalcInputs(
     bmr: bmr as number,
     gender: client.gender as "male" | "female" | "other",
     tdee: tdee ?? null,
+    workActivityLevel: toActivityLevel(client.workActivityLevel).level,
     goalWeightKg: effective.goalWeightKg ?? undefined,
     goalDeadline: effective.deadline ?? undefined,
     startDate: effective.startDate,

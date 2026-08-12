@@ -422,6 +422,10 @@ export type Client = {
   gender?: "male" | "female" | "other";
   dateOfBirth?: string; // ISO date string (YYYY-MM-DD)
   phone?: string;
+  /** How active the client's daily life is, independent of training. A CLIENT
+   *  fact: it drives their TDEE and nothing under the nutrition builder writes
+   *  it. Undefined means never set — the calculator falls back to sedentary. */
+  workActivityLevel?: ActivityLevel;
 
   // Goal fields (manually set by coach)
   goalWeight?: number;

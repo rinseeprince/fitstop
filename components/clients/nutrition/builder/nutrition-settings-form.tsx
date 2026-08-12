@@ -1,6 +1,6 @@
 "use client";
 
-import type { ActivityLevel, DietType } from "@/types/check-in";
+import type { DietType } from "@/types/check-in";
 import {
   Select,
   SelectContent,
@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PROTEIN_TARGETS } from "@/utils/nutrition-helpers";
-import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import { MONO, SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { useUnits } from "@/contexts/units-context";
 import { KG_PER_LB } from "@/utils/unit-conversions";
 
@@ -23,11 +23,15 @@ import { KG_PER_LB } from "@/utils/unit-conversions";
 // No `client` prop: its only use was client.unitPreference for the protein
 // picker's kg/lb labels, and a coach reads their own unit (useUnits()).
 type NutritionSettingsFormProps = {
-  workActivityLevel: ActivityLevel;
+  /** Read-only, from the client profile. */
+  tdee: number | null;
+  /** Human label for the profile's activity level; null when never set. */
+  activityLabel: string | null;
+  /** The covering plan version's snapshot, for the drift courtesy line. */
+  planTdee: number | null;
   proteinTargetGPerKg: number;
   dietType: DietType;
   onSettingsChange: (settings: {
-    workActivityLevel: ActivityLevel;
     proteinTargetGPerKg: number;
     dietType: DietType;
   }) => void;
@@ -43,7 +47,9 @@ const selectItemClass =
   "rounded-[6px] cursor-pointer text-[13px] text-[#0c1a1e] focus:bg-[rgba(13,148,136,0.05)]";
 
 export function NutritionSettingsForm({
-  workActivityLevel,
+  tdee,
+  activityLabel,
+  planTdee,
   proteinTargetGPerKg,
   dietType,
   onSettingsChange,
@@ -59,15 +65,8 @@ export function NutritionSettingsForm({
       preference === "metric" ? 1 : 2,
     );
 
-  const handleChange = (
-    field: string,
-    value: ActivityLevel | number | DietType | string
-  ) => {
+  const handleChange = (field: string, value: number | DietType | string) => {
     onSettingsChange({
-      workActivityLevel:
-        field === "workActivityLevel"
-          ? (value as ActivityLevel)
-          : workActivityLevel,
       proteinTargetGPerKg:
         field === "proteinTargetGPerKg"
           ? (value as number)
@@ -78,39 +77,35 @@ export function NutritionSettingsForm({
 
   return (
     <div className="space-y-4">
-      {/* Work Activity Level */}
+      {/* Work activity level is NOT editable here. It is a CLIENT fact and it
+          lives on the client profile (Overview -> Client settings). A dropdown
+          in this drawer meant activity had two homes that routinely disagreed,
+          and a coach had no way to know that regenerating a plan was how they
+          were supposed to update the client's TDEE. Read-only, from the
+          profile. */}
       <div className="space-y-1.5">
-        <label className={SECTION_LABEL_CLASS}>
-          Work Activity Level
-        </label>
-        <Select
-          value={workActivityLevel}
-          onValueChange={(value) =>
-            handleChange("workActivityLevel", value as ActivityLevel)
-          }
-        >
-          <SelectTrigger id="activity-level" className={selectTriggerClass}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className={selectContentClass}>
-            <SelectItem value="sedentary" className={selectItemClass}>Sedentary (desk job)</SelectItem>
-            <SelectItem value="lightly_active" className={selectItemClass}>
-              Lightly Active (light movement)
-            </SelectItem>
-            <SelectItem value="moderately_active" className={selectItemClass}>
-              Moderately Active (on feet most of day)
-            </SelectItem>
-            <SelectItem value="very_active" className={selectItemClass}>
-              Very Active (physical job)
-            </SelectItem>
-            <SelectItem value="extremely_active" className={selectItemClass}>
-              Extremely Active (athlete/heavy labor)
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
-          Daily work activity level (multiplier: 1.2x to 1.9x)
-        </p>
+        <label className={SECTION_LABEL_CLASS}>Energy</label>
+        <div className="rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[rgba(13,148,136,0.03)] px-3 py-2">
+          <p className="text-[13px] font-medium text-[#0c1a1e]">
+            TDEE{" "}
+            <span className={MONO}>
+              {tdee != null ? tdee.toLocaleString("en-US") : "—"}
+            </span>{" "}
+            cal/day
+          </p>
+          <p className="mt-0.5 text-[11px] leading-[1.4] text-[#93b0b4]">
+            {activityLabel
+              ? `From the client profile — ${activityLabel}.`
+              : "From the client profile."}
+          </p>
+          {planTdee != null && tdee != null && planTdee !== tdee && (
+            <p className="mt-1 text-[11px] leading-[1.4] text-[#c8923a]">
+              This plan was built at{" "}
+              <span className={MONO}>{planTdee.toLocaleString("en-US")}</span>. Regenerate
+              to use the current figure.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Protein Target */}

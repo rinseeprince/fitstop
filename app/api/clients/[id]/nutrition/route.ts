@@ -200,6 +200,11 @@ export async function GET(
       // Without these a coach opening a keto plan sees "Balanced" and a
       // regenerate silently rewrites the plan they never meant to change.
       workActivityLevel: seedPlan.work_activity_level,
+      // The version's TDEE snapshot, for the drawer's drift line. A plan is
+      // never mutated by a weight change, so this legitimately diverges from
+      // the live profile until someone regenerates — the coach should be able
+      // to SEE that rather than discover it.
+      tdee: seedPlan.tdee != null ? Number(seedPlan.tdee) : null,
       proteinTargetGPerKg: Number(seedPlan.protein_target_g_per_kg),
       includeActivityBurn,
       // "Active since": the COVERING version's start — the version governing

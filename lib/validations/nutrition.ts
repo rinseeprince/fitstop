@@ -35,7 +35,11 @@ export const nutritionSettingsPatchSchema = z.object({
 );
 
 export const nutritionPlanSchema = z.object({
-  workActivityLevel: activityLevelSchema,
+  // Accepted-but-IGNORED. Activity level is a client fact read from
+  // clients.work_activity_level (resolveNutritionCalcInputs); the orchestrator
+  // no longer reads this field. Kept optional rather than removed so an
+  // in-flight request from an older client build still validates.
+  workActivityLevel: activityLevelSchema.optional(),
   trainingVolumeHours: trainingVolumeSchema.optional(), // Now optional - auto-calculated from training plan
   proteinTargetGPerKg: z
     .number()

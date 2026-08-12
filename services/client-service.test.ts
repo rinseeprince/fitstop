@@ -30,6 +30,7 @@ vi.mock('./invitation-service', () => ({
 }))
 
 import { supabaseAdmin } from './supabase-admin'
+import { recalculateClientEnergy } from './client-energy-service'
 import { recordBodyMetrics } from './body-metrics-service'
 import { updateGoals } from './client-goals-service'
 import {
@@ -484,6 +485,27 @@ describe('Client Service', () => {
       expect(updateCall.name).toBe('New Name')
       expect(updateCall.email).toBeUndefined()
       expect(updateCall.updated_at).toBeDefined()
+    })
+
+    it('recomputes energy when the activity level changes', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', { workActivityLevel: 'very_active' })
+
+      expect(recalculateClientEnergy).toHaveBeenCalledWith('client-123', {
+        coachId: undefined,
+      })
+      expect(mockQuery.update.mock.calls[0][0].work_activity_level).toBe('very_active')
+    })
+
+    it('does not recompute energy for a name-only update', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', { name: 'New Name' })
+
+      expect(recalculateClientEnergy).not.toHaveBeenCalled()
     })
 
     it('persists dateOfBirth, which updateClientSchema accepts', async () => {

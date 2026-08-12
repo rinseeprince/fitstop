@@ -66,6 +66,12 @@ export const updateClientSchema = z.object({
   phone: z.string().trim().max(30, "Phone must be less than 30 characters").optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").optional(),
 
+  // A CLIENT fact that drives their TDEE. Set from the client settings dialog;
+  // nothing under the nutrition builder may write it.
+  workActivityLevel: z
+    .enum(["sedentary", "lightly_active", "moderately_active", "very_active", "extremely_active"])
+    .optional(),
+
   // Goal fields
   goalWeight: z.number().positive("Goal weight must be positive").optional(),
   goalBodyFatPercentage: z.number().min(0).max(100, "Body fat must be between 0 and 100").optional(),

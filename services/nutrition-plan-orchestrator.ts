@@ -274,8 +274,12 @@ async function handleCustomMacros(
     );
   }
 
+  // The CLIENT's activity level, resolved once in calcInputs. It used to come
+  // off the request body from a dropdown in this drawer, so the plan and the
+  // profile could disagree about how active the same person is — and the plan
+  // won, writing its answer onto clients.tdee.
   const tdee = bmr
-    ? calculateTDEE(bmr, body.workActivityLevel)
+    ? calculateTDEE(bmr, calcInputs.workActivityLevel)
     : tdeeValue;
 
   const newPlanId = await createNutritionPlan({
@@ -286,7 +290,7 @@ async function handleCustomMacros(
     // effectiveFrom against it, so a recompute here could straddle client
     // midnight and fail a save the route accepted.
     clientToday,
-    workActivityLevel: body.workActivityLevel,
+    workActivityLevel: calcInputs.workActivityLevel,
     trainingVolumeHours: body.trainingVolumeHours || "2-3",
     proteinTargetGPerKg: body.proteinTargetGPerKg,
     dietType: body.dietType,
@@ -371,7 +375,7 @@ async function handleCalculatedPlan(
   // number they want and it is stored as the target.
   const plan = generateNutritionPlan({
     ...calcInputs,
-    workActivityLevel: body.workActivityLevel,
+    workActivityLevel: calcInputs.workActivityLevel,
     trainingVolumeHours: body.trainingVolumeHours,
     trainingPlan: null, // vestigial param (generateNutritionPlan ignores it)
     proteinTargetGPerKg: body.proteinTargetGPerKg,
@@ -384,7 +388,7 @@ async function handleCalculatedPlan(
     coachId,
     // Same threading as the custom-macro branch: the route-validated today.
     clientToday,
-    workActivityLevel: body.workActivityLevel,
+    workActivityLevel: calcInputs.workActivityLevel,
     trainingVolumeHours: body.trainingVolumeHours || "2-3",
     proteinTargetGPerKg: body.proteinTargetGPerKg,
     dietType: body.dietType,

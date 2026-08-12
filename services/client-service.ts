@@ -80,6 +80,15 @@ export const createClient = async (
     starting_body_fat_percentage: clientData.currentBodyFatPercentage ?? null,
     bmr: energy.status === "ready" ? energy.bmr : null,
     tdee: energy.status === "ready" ? energy.tdee : null,
+    // Explicitly NULL rather than letting the column DEFAULT ('sedentary')
+    // apply. The default made "never set" indistinguishable from "the coach
+    // chose sedentary", which silently disabled the intake sync's
+    // `work_activity_level == null` guard: a client answering "very active" on
+    // their questionnaire landed as sedentary forever, and only a coach
+    // noticing and fixing it by hand could correct it. NULL reads as sedentary
+    // in the calculator either way (DEFAULT_WORK_ACTIVITY_LEVEL), so nothing
+    // downstream changes — only the ability to tell unset from chosen.
+    work_activity_level: null,
     active: true,
   };
 
@@ -255,6 +264,7 @@ export const updateClient = async (
   // PATCH carrying it returned 200 and changed nothing. Age feeds Mifflin-St Jeor,
   // so a client with no birth date is silently costed at the assumed default.
   if (clientData.dateOfBirth !== undefined) updateData.date_of_birth = clientData.dateOfBirth ?? null;
+  if (clientData.workActivityLevel !== undefined) updateData.work_activity_level = clientData.workActivityLevel;
   if (clientData.phone !== undefined) updateData.phone = clientData.phone || null;
   if (clientData.startDate !== undefined) updateData.start_date = clientData.startDate ?? null;
   if (clientData.goalWeight !== undefined) updateData.goal_weight = goalWeightKg ?? null;
@@ -295,7 +305,8 @@ export const updateClient = async (
     clientData.currentBodyFatPercentage !== undefined ||
     clientData.height !== undefined ||
     clientData.gender !== undefined ||
-    clientData.dateOfBirth !== undefined;
+    clientData.dateOfBirth !== undefined ||
+    clientData.workActivityLevel !== undefined;
 
   let energyBmr: number | undefined;
   let energyTdee: number | undefined;

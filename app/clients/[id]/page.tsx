@@ -16,7 +16,6 @@ import { CheckInsTabContent } from "@/components/clients/check-ins/check-ins-tab
 import { WellnessTabContent } from "@/components/clients/wellness/wellness-tab-content"
 import { NotesTabContent } from "@/components/clients/notes/notes-tab-content"
 import { useClient } from "@/hooks/use-check-in-data"
-import { useClientMetrics } from "@/hooks/use-client-metrics"
 import { buildClientTabUrl, type ClientTab } from "@/lib/client-tabs"
 import { AlertCircle } from "lucide-react"
 
@@ -47,10 +46,6 @@ export default function ClientProfilePage() {
     router.replace(buildClientTabUrl(clientId, tab, searchParams.toString(), extraParams), { scroll: false })
   }, [clientId, router, searchParams])
 
-  const { isCalculatingBMR, handleCalculateBMR } = useClientMetrics({
-    clientId,
-    onSuccess: () => void mutateClient(),
-  })
 
   const displayClient = client ?? { id: clientId, name: "", email: "" as string }
 
@@ -84,8 +79,6 @@ export default function ClientProfilePage() {
           <TabsContent value="overview" className="mt-0">
             <ClientOverviewTab
               client={client}
-              isCalculatingBMR={isCalculatingBMR}
-              onCalculateBMR={handleCalculateBMR}
               onClientUpdated={() => mutateClient()}
               onTabChange={handleTabChange}
             />

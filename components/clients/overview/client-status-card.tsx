@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Calculator, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { goalState } from "@/lib/goals/goal-state";
 import { containsDigit } from "@/components/clients/metrics/metrics-format";
@@ -11,7 +10,7 @@ import {
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import type { Client } from "@/types/check-in";
+import type { ActivityLevel, Client } from "@/types/check-in";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
@@ -20,8 +19,6 @@ type ClientStatusCardProps = {
   client: Client;
   training: OverviewPlanSummary["training"];
   upcomingTraining: OverviewPlanSummary["upcomingTraining"];
-  isCalculatingBMR: boolean;
-  onCalculateBMR: () => void;
   onOpenMetrics: () => void;
 };
 
@@ -32,11 +29,22 @@ const CHIP_DARK_CLASS =
 
 const DIVIDER = "border-[rgba(255,255,255,0.07)]";
 
-type ChipTone = "positive" | "warning";
+type ChipTone = "positive" | "warning" | "neutral";
 
 const GOAL_CHIP_TONE: Record<ChipTone, string> = {
   positive: "bg-[rgba(13,148,136,0.15)] text-[#0d9488]",
   warning: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
+  neutral: "bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.55)]",
+};
+
+/** Short enough for the status card's third column; the dialog carries the
+ *  full "(desk job)" style descriptions. */
+const ACTIVITY_SHORT_LABELS: Record<ActivityLevel, string> = {
+  sedentary: "Sedentary",
+  lightly_active: "Lightly active",
+  moderately_active: "Moderately active",
+  very_active: "Very active",
+  extremely_active: "Extremely active",
 };
 
 function formatDelta(current?: number, start?: number): string | null {
@@ -151,8 +159,6 @@ export function ClientStatusCard({
   client,
   training,
   upcomingTraining,
-  isCalculatingBMR,
-  onCalculateBMR,
   onOpenMetrics,
 }: ClientStatusCardProps) {
   // client.weightUnit is a mapper constant, not the viewer's choice (Batch F
@@ -261,6 +267,11 @@ export function ClientStatusCard({
 
         <div className={cn("mx-5 border-t", DIVIDER)} />
 
+        {/* The "Calculate BMR" button that used to sit here is gone. The pair
+            recomputes automatically whenever any input to it changes, so a
+            manual recalculate button was an admission that it didn't. The slot
+            now says what the TDEE was derived FROM, which is the question a
+            coach looking at these two numbers actually has. */}
         <div className="grid grid-cols-3 items-end gap-3 px-5 pt-3">
           <MetricCell
             label="BMR"
@@ -271,22 +282,16 @@ export function ClientStatusCard({
             label="TDEE"
             value={client.tdee ? Math.round(client.tdee).toString() : undefined}
             unit="cal/day"
+            chip={client.tdeeManualOverride ? { text: "Custom", tone: "neutral" } : null}
             showLeftBorder
           />
-          <div className={cn("flex justify-end border-l pl-3", DIVIDER)}>
-            <button
-              type="button"
-              onClick={onCalculateBMR}
-              disabled={isCalculatingBMR}
-              className="inline-flex h-7 items-center gap-1 rounded-[6px] border border-[rgba(13,148,136,0.25)] bg-[rgba(13,148,136,0.15)] px-3 text-[11px] font-medium text-[#0d9488] transition-colors hover:bg-[rgba(13,148,136,0.25)] disabled:opacity-50"
-            >
-              {isCalculatingBMR ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Calculator className="h-3 w-3" strokeWidth={1.5} />
-              )}
-              Calculate BMR
-            </button>
+          <div className={cn("border-l pl-3", DIVIDER)}>
+            <p className={STAT_LABEL_DARK_CLASS}>Activity</p>
+            <p className="mt-1 text-[13px] font-medium text-white">
+              {client.workActivityLevel
+                ? ACTIVITY_SHORT_LABELS[client.workActivityLevel]
+                : "Not set"}
+            </p>
           </div>
         </div>
       </div>

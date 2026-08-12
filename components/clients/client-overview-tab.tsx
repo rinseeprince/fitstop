@@ -29,8 +29,6 @@ import type { ClientNote } from "@/types/coach-overview";
 
 interface ClientOverviewTabProps {
   client: Client;
-  isCalculatingBMR: boolean;
-  onCalculateBMR: () => void;
   onClientUpdated?: () => void;
   /** extraParams address a pane on arrival (the block-ending row sends
    *  `{ journey: "blocks" }`); every plain-tab caller ignores it. */
@@ -44,8 +42,6 @@ interface ClientOverviewTabProps {
  */
 export function ClientOverviewTab({
   client,
-  isCalculatingBMR,
-  onCalculateBMR,
   onClientUpdated,
   onTabChange,
 }: ClientOverviewTabProps) {
@@ -187,8 +183,6 @@ export function ClientOverviewTab({
           client={client}
           training={summary?.training ?? null}
           upcomingTraining={summary?.upcomingTraining ?? null}
-          isCalculatingBMR={isCalculatingBMR}
-          onCalculateBMR={onCalculateBMR}
           onOpenMetrics={() => goToTab("metrics")}
         />
       </div>

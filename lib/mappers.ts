@@ -1,4 +1,4 @@
-import type { CheckIn, Client, Coach, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
+import type { ActivityLevel, CheckIn, Client, Coach, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
 import { toUnitSystem } from "@/utils/unit-conversions";
 import type { CheckInRow, ClientRow, CoachRow } from "./database-helpers";
@@ -82,6 +82,7 @@ export function mapClientRow(row: ClientRow): Client {
     currentBodyFatPercentage: row.current_body_fat_percentage ?? undefined,
     bmr: row.bmr ?? undefined,
     tdee: row.tdee ?? undefined,
+    workActivityLevel: (row.work_activity_level ?? undefined) as ActivityLevel | undefined,
     checkInFrequency: (row.check_in_frequency ?? "weekly") as "weekly" | "biweekly" | "monthly" | "none",
     checkInFrequencyDays: row.check_in_frequency_days ?? undefined,
     expectedCheckInDay: (row.expected_check_in_day ?? undefined) as "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday" | undefined,
