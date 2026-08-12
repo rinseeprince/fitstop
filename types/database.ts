@@ -766,6 +766,7 @@ export type Database = {
       }
       client_phases: {
         Row: {
+          archived_at: string | null
           client_id: string
           created_at: string
           ends_on: string
@@ -777,6 +778,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          archived_at?: string | null
           client_id: string
           created_at?: string
           ends_on: string
@@ -788,6 +790,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          archived_at?: string | null
           client_id?: string
           created_at?: string
           ends_on?: string

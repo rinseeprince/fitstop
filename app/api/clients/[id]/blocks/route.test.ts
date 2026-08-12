@@ -72,6 +72,7 @@ const CURRENT_BLOCK = {
   targetWeightKg: null,
   startsOn: "2026-08-11",
   endsOn: "2026-09-07",
+  archivedAt: null,
 };
 const FUTURE_BLOCK = {
   id: "b",
@@ -80,6 +81,7 @@ const FUTURE_BLOCK = {
   targetWeightKg: 85,
   startsOn: "2026-09-08",
   endsOn: "2026-10-19",
+  archivedAt: null,
 };
 
 const VALID_PUT_BODY = {

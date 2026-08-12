@@ -5,7 +5,10 @@
 export type BlockState = "past" | "current" | "future";
 
 /** A stored block. Weights are canonical kilograms (CONVENTIONS §20); dates
- *  are YYYY-MM-DD strings. */
+ *  are YYYY-MM-DD strings. `archivedAt` is a coach VIEW PREFERENCE (hides an
+ *  elapsed block from the main Journey list) — no derivation consults it, the
+ *  chain PUT never writes it (the archive PATCH owns it), and the chain
+ *  contracts always see ALL blocks; filtering happens only at render. */
 export interface ClientBlock {
   id: string;
   name: string;
@@ -13,6 +16,7 @@ export interface ClientBlock {
   targetWeightKg: number | null;
   startsOn: string;
   endsOn: string;
+  archivedAt: string | null;
 }
 
 /**

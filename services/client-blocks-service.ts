@@ -50,9 +50,11 @@ type BlockRow = {
   target_weight: number | null;
   starts_on: string;
   ends_on: string;
+  archived_at: string | null;
 };
 
-const BLOCK_COLUMNS = "id, name, focus, target_weight, starts_on, ends_on";
+const BLOCK_COLUMNS =
+  "id, name, focus, target_weight, starts_on, ends_on, archived_at";
 
 function mapBlockRow(row: BlockRow): ClientBlock {
   return {
@@ -62,6 +64,7 @@ function mapBlockRow(row: BlockRow): ClientBlock {
     targetWeightKg: row.target_weight,
     startsOn: row.starts_on,
     endsOn: row.ends_on,
+    archivedAt: row.archived_at,
   };
 }
 
@@ -352,4 +355,55 @@ export const deleteBlock = async (
 
   const blocks = await listBlocks(clientId);
   return { mode: outcome.kind, changes: outcome.changes, blocks };
+};
+
+/**
+ * Archive (or restore) one ELAPSED block — a coach view preference (Session
+ * 3.7): the block leaves the main Journey list and lives in the Archive view.
+ * Nothing else changes: no derivation consults archived_at, the chain
+ * contracts keep seeing every block, and un-archiving is always legal (an
+ * archived block was elapsed when archived, and elapsed is permanent). A
+ * current or future block refuses — hiding live or upcoming context is a
+ * footgun, not decluttering.
+ */
+export const setBlockArchived = async (
+  clientId: string,
+  clientToday: string,
+  blockId: string,
+  archived: boolean
+): Promise<ClientBlock[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("client_phases")
+    .select(BLOCK_COLUMNS)
+    .eq("client_id", clientId)
+    .eq("id", blockId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to read block for archive:", error);
+    throw new Error(`Failed to archive block: ${error.message}`);
+  }
+  if (!data) {
+    throw new UnknownBlockIdError("Block not found");
+  }
+  const block = mapBlockRow(data as BlockRow);
+  if (archived && block.endsOn >= clientToday) {
+    throw new BlockWindowError("Only completed blocks can be archived.");
+  }
+
+  const { error: updateError } = await supabaseAdmin
+    .from("client_phases")
+    .update({
+      archived_at: archived ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("client_id", clientId)
+    .eq("id", blockId);
+
+  if (updateError) {
+    console.error("Failed to archive block:", updateError);
+    throw new Error(`Failed to archive block: ${updateError.message}`);
+  }
+
+  return listBlocks(clientId);
 };

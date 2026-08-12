@@ -24,6 +24,7 @@ const block = (
   targetWeightKg: null,
   startsOn,
   endsOn,
+  archivedAt: null,
 });
 
 const TODAY = "2026-08-11";

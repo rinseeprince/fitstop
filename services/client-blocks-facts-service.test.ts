@@ -66,7 +66,7 @@ const block = (
   startsOn: string,
   endsOn: string,
   name = `Block ${id}`
-) => ({ id, name, focus: null, targetWeightKg: null, startsOn, endsOn });
+) => ({ id, name, focus: null, targetWeightKg: null, startsOn, endsOn, archivedAt: null });
 
 const version = (
   id: string,

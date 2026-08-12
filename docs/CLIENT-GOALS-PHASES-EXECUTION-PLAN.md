@@ -3077,3 +3077,47 @@ from 2742) · `check:labels` OK (661) · no `as any` · no markers · no
 migration. **Session 3.6 totals: 4 commits, zero migrations, +23 tests
 (2728 → 2751).** Browser-unverified; the smoke checklist below supersedes
 Session 3's for the blocks pane.
+
+---
+
+## SESSION 3.7 — Coach-curated archive (owner-directed, 2026-08-12)
+
+> Owner-decided design after two iterations: NOT derived-by-elapsed (a live
+> 16-week program's finished phases must stay on the main list — the coach
+> reads the whole program as one journey) — a per-block CHOICE, which
+> therefore lives in the DB. `archived_at` is a **view preference, not
+> lifecycle**: invariant 2 forbids deriving current/past/future from status
+> (the mig-133 disaster), and nothing here does — state stays date-derived,
+> no derivation consults the column, nothing fires at boundaries. The
+> `client_notes.is_pinned` shape. Invariant 10's "rendered in the list"
+> clause is amended (owner-directed): elapsed blocks render in the list until
+> the coach archives them; chart shading renders ALL blocks regardless,
+> forever. The `BLOCKS_PER_CLIENT_MAX` raise was offered and not taken —
+> still 20.
+
+### Task 3.7-1 — `archived_at` column + archive PATCH ✅ SHIPPED 2026-08-12
+
+**Migration 146** (`client_phases.archived_at TIMESTAMPTZ` nullable, column
+comment naming it a view preference; no RLS/GRANT work — existing deny-all
+table; gen-types diff: exactly the one column across Row/Insert/Update; owner
+ran the push; `check:rls` 41/41). **Service `setBlockArchived`** — elapsed
+blocks only (archiving current/future hides live context: 422 "Only completed
+blocks can be archived"); restore always legal (an archived block was elapsed
+when archived, and elapsed is permanent); both writes tenant-scoped. **Route:**
+`PATCH /api/clients/[id]/blocks/[blockId]` `{ archived: boolean }` — full
+coach chain, audited (`block.archive`, metadata `{archived}`), responds with
+the decorated chain + `clientToday` (the siblings' shape). **The chain
+contracts never see the field:** the PUT's upsert writes only its own keys
+(so chain rewrites can't clobber `archived_at`, the created_at mechanism),
+the payload builders don't send it, the GET returns ALL blocks with
+`archivedAt` on the wire — filtering is render-only, so echo discipline,
+shift math and the add-form anchor keep operating on the full chain.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings) ·
+`vitest run` **268 files / 2762 tests, all passing** (+11: 5 service — set /
+clear / current-422 / future-422 / unknown-404 with tenant-scope pins; 6 PATCH
+route — foreign-404-before-read, zod 400, audit + chain-shape, 422 message
+passthrough, unknown 404, no-raw-error 500; every block fixture helper across
+8 test files gained `archivedAt`, the §-cascade rule) · `check:labels` OK
+(661) · `check:rls` OK (41/41) · migration + regenerated types in this
+commit.

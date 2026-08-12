@@ -19,6 +19,7 @@ const view = (
   targetWeightKg: null,
   startsOn,
   endsOn,
+  archivedAt: null,
   weeks,
   state,
   weekOfTotal: null,

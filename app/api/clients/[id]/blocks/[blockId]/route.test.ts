@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
-import { DELETE } from "./route";
+import { DELETE, PATCH } from "./route";
 
 vi.mock("@/lib/rate-limit", () => ({
   coachApiRateLimit: vi.fn().mockResolvedValue(null),
@@ -33,6 +33,7 @@ vi.mock("@/services/client-blocks-service", () => {
     listBlocks: vi.fn(),
     replaceBlockChain: vi.fn(),
     deleteBlock: vi.fn(),
+    setBlockArchived: vi.fn(),
     ElapsedBlockImmutableError,
     BlockWindowError,
     BlockPayloadError,
@@ -44,8 +45,10 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import {
+  BlockWindowError,
   deleteBlock,
   ElapsedBlockImmutableError,
+  setBlockArchived,
   UnknownBlockIdError,
 } from "@/services/client-blocks-service";
 
@@ -61,6 +64,7 @@ const REMAINING_BLOCK = {
   targetWeightKg: null,
   startsOn: "2026-08-01",
   endsOn: "2026-08-10", // truncated at yesterday
+  archivedAt: null,
 };
 
 const CHANGES = [
@@ -158,5 +162,109 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
 
     expect(response.status).toBe(500);
     expect(payload.error).toBe("Failed to delete block");
+  });
+});
+
+function createPatchRequest(body: Record<string, unknown>) {
+  return new NextRequest(
+    "http://localhost:3000/api/clients/client-1/blocks/block-b",
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    }
+  );
+}
+
+describe("/api/clients/[id]/blocks/[blockId] PATCH (archive)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(requireCoachOwnsClient).mockResolvedValue({
+      authorized: true,
+      coachId: "coach-1",
+    });
+    vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
+  });
+
+  it("404s a client the coach does not own, before any read", async () => {
+    vi.mocked(requireCoachOwnsClient).mockResolvedValue({
+      authorized: false,
+      response: NextResponse.json({ error: "Client not found" }, { status: 404 }),
+    });
+
+    const response = await PATCH(createPatchRequest({ archived: true }), mockParams);
+
+    expect(response.status).toBe(404);
+    expect(setBlockArchived).not.toHaveBeenCalled();
+  });
+
+  it("400s a non-boolean payload before the service runs", async () => {
+    const response = await PATCH(
+      createPatchRequest({ archived: "yes" }),
+      mockParams
+    );
+    expect(response.status).toBe(400);
+    expect(setBlockArchived).not.toHaveBeenCalled();
+  });
+
+  it("archives with the client's today, audits, and returns the decorated chain", async () => {
+    vi.mocked(setBlockArchived).mockResolvedValue([
+      { ...REMAINING_BLOCK, archivedAt: "2026-08-12T09:00:00Z" },
+    ]);
+
+    const response = await PATCH(createPatchRequest({ archived: true }), mockParams);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(setBlockArchived).toHaveBeenCalledWith(
+      "client-1",
+      TODAY,
+      "block-b",
+      true
+    );
+    expect(payload.data.clientToday).toBe(TODAY);
+    expect(payload.data.blocks[0]).toEqual(
+      expect.objectContaining({ id: "a", archivedAt: "2026-08-12T09:00:00Z" })
+    );
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "block.archive",
+        targetTable: "client_phases",
+        targetId: "block-b",
+        clientId: "client-1",
+        metadata: { archived: true },
+      })
+    );
+  });
+
+  it("422s a non-elapsed block with the service's message", async () => {
+    vi.mocked(setBlockArchived).mockRejectedValue(
+      new BlockWindowError("Only completed blocks can be archived.")
+    );
+
+    const response = await PATCH(createPatchRequest({ archived: true }), mockParams);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error).toBe("Only completed blocks can be archived.");
+  });
+
+  it("404s an unknown block id", async () => {
+    vi.mocked(setBlockArchived).mockRejectedValue(
+      new UnknownBlockIdError("Block not found")
+    );
+
+    const response = await PATCH(createPatchRequest({ archived: false }), mockParams);
+    expect(response.status).toBe(404);
+  });
+
+  it("500s unexpected failures without leaking the raw error", async () => {
+    vi.mocked(setBlockArchived).mockRejectedValue(new Error("connection reset"));
+
+    const response = await PATCH(createPatchRequest({ archived: true }), mockParams);
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload.error).toBe("Failed to archive block");
   });
 });

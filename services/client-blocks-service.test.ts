@@ -3,6 +3,7 @@ import {
   listBlocks,
   replaceBlockChain,
   deleteBlock,
+  setBlockArchived,
   ElapsedBlockImmutableError,
   BlockPayloadError,
   BlockWindowError,
@@ -29,9 +30,11 @@ function createMockQuery(result: MockResult) {
     select: vi.fn(chain),
     insert: vi.fn(chain),
     upsert: vi.fn(chain),
+    update: vi.fn(chain),
     delete: vi.fn(chain),
     eq: vi.fn(chain),
     order: vi.fn(chain),
+    maybeSingle: vi.fn(() => Promise.resolve(result)),
     then: (resolve: (value: MockResult) => void) =>
       Promise.resolve(result).then(resolve),
   });
@@ -61,6 +64,7 @@ const row = (
   target_weight: null,
   starts_on,
   ends_on,
+  archived_at: null,
   ...over,
 });
 
@@ -530,5 +534,65 @@ describe("deleteBlock", () => {
     expect(result.mode).toBe("removed");
     expect(deleteQuery.delete).toHaveBeenCalledTimes(1);
     expect(result.changes).toEqual([]);
+  });
+});
+
+describe("setBlockArchived", () => {
+  it("archives an elapsed block: timestamp set, tenant-scoped, chain re-read", async () => {
+    const [readQuery, updateQuery] = queueResults(
+      { data: ELAPSED, error: null }, // maybeSingle read
+      { error: null }, // update
+      { data: [], error: null } // re-read
+    );
+
+    await setBlockArchived(CLIENT_ID, TODAY, "e", true);
+
+    expect(readQuery.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
+    expect(readQuery.eq).toHaveBeenCalledWith("id", "e");
+    const [patch] = updateQuery.update.mock.calls[0];
+    expect(typeof patch.archived_at).toBe("string");
+    expect(typeof patch.updated_at).toBe("string");
+    expect(updateQuery.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
+    expect(updateQuery.eq).toHaveBeenCalledWith("id", "e");
+  });
+
+  it("restore clears the timestamp and needs no elapsed check", async () => {
+    const [, updateQuery] = queueResults(
+      { data: { ...ELAPSED, archived_at: "2026-08-12T00:00:00Z" }, error: null },
+      { error: null },
+      { data: [], error: null }
+    );
+
+    await setBlockArchived(CLIENT_ID, TODAY, "e", false);
+
+    const [patch] = updateQuery.update.mock.calls[0];
+    expect(patch.archived_at).toBeNull();
+  });
+
+  it("refuses to archive a current block — hiding live context is not decluttering", async () => {
+    queueResults({ data: CURRENT, error: null });
+
+    await expect(
+      setBlockArchived(CLIENT_ID, TODAY, "a", true)
+    ).rejects.toBeInstanceOf(BlockWindowError);
+  });
+
+  it("refuses to archive a future block", async () => {
+    queueResults({
+      data: row("f", "2026-09-01", "2026-09-28"),
+      error: null,
+    });
+
+    await expect(
+      setBlockArchived(CLIENT_ID, TODAY, "f", true)
+    ).rejects.toBeInstanceOf(BlockWindowError);
+  });
+
+  it("404-shape: unknown block id", async () => {
+    queueResults({ data: null, error: null });
+
+    await expect(
+      setBlockArchived(CLIENT_ID, TODAY, "zz", true)
+    ).rejects.toBeInstanceOf(UnknownBlockIdError);
   });
 });

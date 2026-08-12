@@ -58,3 +58,9 @@ export const replaceBlockChainSchema = z.object({
 });
 
 export type ReplaceBlockChainPayload = z.infer<typeof replaceBlockChainSchema>;
+
+/** PATCH /blocks/[blockId]: archive (true) or restore (false) an elapsed
+ *  block — a coach view preference, not lifecycle. */
+export const archiveBlockSchema = z.object({
+  archived: z.boolean(),
+});

@@ -121,6 +121,7 @@ export const AUDIT_ACTIONS = {
   INVITATION_SEND: "invitation.send",
   BLOCK_CHAIN_UPDATE: "block.chain_update",
   BLOCK_DELETE: "block.delete",
+  BLOCK_ARCHIVE: "block.archive",
 } as const;
 
 export type AuditActionKey = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
