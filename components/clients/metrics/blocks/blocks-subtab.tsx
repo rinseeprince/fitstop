@@ -187,10 +187,13 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
   const weightUnit =
     weightMetric?.unit ?? (preference === "imperial" ? "lbs" : "kg");
 
-  const totalWeeks = blocks.reduce((sum, block) => sum + block.weeks, 0);
+  // The rail meta describes the JOURNEY: archived phases belong to closed
+  // eras and count for nothing here; the archive view carries no meta at all.
+  const unarchived = blocks.filter((block) => block.archivedAt == null);
+  const journeyWeeks = unarchived.reduce((sum, block) => sum + block.weeks, 0);
   const meta =
-    blocks.length > 0
-      ? `${blocks.length} ${blocks.length === 1 ? "block" : "blocks"} · ${totalWeeks} weeks`
+    view === "journey" && unarchived.length > 0
+      ? `${unarchived.length} ${unarchived.length === 1 ? "block" : "blocks"} · ${journeyWeeks} weeks`
       : undefined;
 
   // Colour by FULL-chain position, then filter — archiving a block must
@@ -212,7 +215,7 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
         kind: "add",
         appendAfterEndsOn: blocks[blocks.length - 1]?.endsOn ?? null,
       }}
-      otherBlocksWeeks={totalWeeks}
+      otherBlocksWeeks={journeyWeeks}
       onSubmit={handleAdd}
       onCancel={() => setShowAddForm(false)}
     />
@@ -330,7 +333,9 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
                       blocks[0]?.id === block.id && block.state === "future",
                     minEnd: block.state === "current" ? clientToday : null,
                   }}
-                  otherBlocksWeeks={totalWeeks - block.weeks}
+                  otherBlocksWeeks={
+                    journeyWeeks - (block.archivedAt ? 0 : block.weeks)
+                  }
                   shiftPreview={(endsOn) =>
                     movedBlocksClause(
                       computeEditShift(blocks, block.id, endsOn),

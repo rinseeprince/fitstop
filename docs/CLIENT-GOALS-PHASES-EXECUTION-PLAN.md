@@ -3155,3 +3155,10 @@ Browser-unverified.
 the tooltip), `Flag` (the pane's established journey mark, its empty state's
 icon) leads back; the `+` sits inward of the toggle, journey-view only. All
 gates re-run green.
+
+**Amendment 2 (owner-directed, same day):** the rail meta ("N blocks · M
+weeks") now describes the JOURNEY only — unarchived blocks — and the archive
+view carries no meta at all. The add/edit forms' "Journey becomes N weeks"
+sentence computes from the same unarchived figure, so the meta and the
+sentence cannot disagree (an archived-block edit renders no sentence anyway —
+elapsed edits are fields-only). Gates re-run green.
