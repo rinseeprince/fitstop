@@ -3632,3 +3632,68 @@ Sessions 3 (including the 3.6 and 3.7 follow-ups) and 4 are **COMPLETE** by
 owner decision. This closes the browser-verification residuals recorded in
 the 3.6-D, 3.7-2, Task 4.1 and Task 4.3 STATUS blocks — those lines stand as
 history of what was true at commit time, superseded here.
+
+---
+
+### Task 4b.1 — The unexplained writer, pinned ✅ 2026-08-12 (investigation only, no code)
+
+> **DEV-only.** Every row-level claim below was probed against the linked DEV
+> project `aeaphsslctwcmebldrzx`. PROD (`etezzztgafcotyahgijk`) was NOT queried.
+
+**Verdict: `tdee = 3515` on the fixture's `clients` row was written by the
+nutrition plan save. There is no sixth writer** — the candidate set in the
+session's findings table is closed.
+
+The impossible pair (BMR 3712 beside TDEE 3515) is a **two-step by two known
+writers**, not one bad write:
+
+**Step 1 — 10:48:19. The plan save wrote the pair from the PLAN's activity
+level.** `services/nutrition-plan-service.ts` reaches the profile through *two*
+sites in a single call: `:137-143` (a direct `.update({ tdee })` on `clients`)
+and `:148-154` (`recordBodyMetrics`, whose cache write at
+`services/body-metrics-service.ts:83-84` sets `clients.bmr` **and**
+`clients.tdee`). The second site is not named in the findings table and is the
+reason a plan save writes the profile pair twice.
+
+**Step 2 — 10:49:53. A BMR-only write stranded it.** `clients.bmr` became 3712 =
+Katch-McArdle(170 kg, 9 % BF) with no accompanying tdee write, leaving tdee at
+3515. **Attribution at its true strength: `calculate-bmr`, or a direct DB
+write.** The repo contains exactly one code path that writes `{ bmr }` alone
+(`app/api/clients/[id]/calculate-bmr/route.ts:78-81`), and the 10:49:53 mutation
+carries that path's exact signature — no audit event, no `body_metrics` event,
+no override-flag change. But this fixture has been churned by hand throughout
+the investigation, and a manual SQL edit has the same signature, so the code
+path is not proven beyond the class. The fix is unaffected either way.
+
+**Evidence (probe → fact):**
+
+| Fact | Probe |
+|---|---|
+| `clients`: bmr **3712**, tdee **3515**, `work_activity_level` **sedentary**, both override flags **false**, `date_of_birth` **NULL**, `updated_at` **10:49:53** | 1 |
+| 11 `body_metrics` events with `source='nutrition_plan'` are the **only** events for this client that have ever carried a tdee | 4 |
+| The other 13 events (12 `check_in`, 1 `coach_entry`) carry NULL bmr and NULL tdee | 4 |
+| Those 11 tdee values span exactly {2220, 3515} = 1850 × {1.2, 1.9} | 4 |
+| Open plan version `2bf38907-…`: `work_activity_level` **extremely_active**, bmr 1850, tdee 3515, `updated_at` **10:48:19.002** | 3 |
+| Its predecessor version: `work_activity_level` **sedentary**, tdee 2220 | 3 |
+| Newest `nutrition_plan` event **10:48:20.94** (tdee 3515); audit `nutrition_plan.create` **10:48:19.51** | 2, 5 |
+| No audit event, no `metrics_api` event and no flag change anywhere near 10:49:53 | 4, 5 |
+
+**Corroborations.** The 2220 ↔ 3515 toggling across those 11 events is the owner
+flipping the drawer's work-activity dropdown and re-saving during the Session
+3.2 smoke — **each save rewrote the client's PROFILE**, which demonstrates the
+"activity lives in two places and they disagree" defect live rather than by
+inference (`clients.work_activity_level` stayed `sedentary` throughout). Two
+events 38 ms apart (10:38:34.425 / .463) with identical values and `source_id`
+are a double-submit absorbing into the same open version.
+
+**Seed exoneration.** `scripts/seed-scale-client.ts:248-249` seeds bmr 1850 /
+tdee **2700**. Neither number survives on the row, so every value now present is
+post-seed mutation — which is why the fixture reseed is deliberately sequenced
+*after* this block is committed rather than before it.
+
+**Consequence for 4b.2 (recorded here so the next task inherits it):** the
+`recordBodyMetrics` cache write at `body-metrics-service.ts:83-84` is a
+back-door writer of the profile pair. Removing `bmr`/`tdee` from that cache
+update is what makes "one helper owns the pair" enforceable rather than
+aspirational — without it, any caller can still write the pair by passing them
+to `recordBodyMetrics`.
