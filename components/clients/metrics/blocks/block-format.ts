@@ -14,3 +14,13 @@ export function formatBlockDate(iso: string): string {
     date.getFullYear() === new Date().getFullYear() ? "d MMM" : "d MMM yyyy"
   );
 }
+
+/** "4 weeks", "4 weeks 3 days", "5 days" — a day-granular block length. */
+export function formatBlockLength(days: number): string {
+  const weeks = Math.floor(days / 7);
+  const rest = days % 7;
+  const dayPart = `${rest} ${rest === 1 ? "day" : "days"}`;
+  if (weeks === 0) return dayPart;
+  const weekPart = `${weeks} ${weeks === 1 ? "week" : "weeks"}`;
+  return rest === 0 ? weekPart : `${weekPart} ${dayPart}`;
+}

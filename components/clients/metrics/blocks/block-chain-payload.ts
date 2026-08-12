@@ -6,15 +6,14 @@ import type {
 
 // The add-block PUT payload: the stored chain echoed + the new row appended.
 // The echo discipline is the service's elapsed-pin contract (Session 2):
-// elapsed rows are pinned verbatim and OMIT `weeks` (a truncated block's day
-// count is not whole weeks, so no weeks value could reproduce it);
-// current/future rows echo their `weeks`, which reproduces their stored dates
-// exactly — only elapsed blocks can be non-whole-weeks. Name, focus and
-// target echo verbatim (nulls included) because the service echo-checks them.
+// elapsed rows are pinned verbatim and OMIT `endsOn` (their dates come from
+// storage, never the walk); current/future rows echo their stored `endsOn`
+// verbatim, reproducing their windows exactly. Name, focus and target echo
+// verbatim (nulls included) because the service echo-checks them.
 
 export interface NewBlockEntry {
   name: string;
-  weeks: number;
+  endsOn: string;
   focus: string | null;
   targetWeightKg: number | null;
 }
@@ -34,7 +33,7 @@ export function buildAppendPayload(
   const echoed: BlockChainEntryInput[] = views.map((view) => ({
     id: view.id,
     name: view.name,
-    ...(view.state !== "past" ? { weeks: view.weeks } : {}),
+    ...(view.state !== "past" ? { endsOn: view.endsOn } : {}),
     focus: view.focus,
     targetWeightKg: view.targetWeightKg,
   }));
@@ -45,7 +44,7 @@ export function buildAppendPayload(
       ...echoed,
       {
         name: entry.name,
-        weeks: entry.weeks,
+        endsOn: entry.endsOn,
         focus: entry.focus,
         targetWeightKg: entry.targetWeightKg,
       },

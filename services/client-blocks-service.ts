@@ -1,9 +1,12 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import {
-  computeBlockChain,
+  computeBlockChainFromEnds,
   computeDeleteShift,
+  inclusiveDays,
+  DAYS_PER_BLOCK_WEEK,
 } from "@/lib/blocks/block-chain";
+import { BLOCK_WEEKS_MAX } from "@/lib/constants";
 import type { TablesInsert } from "@/types/database";
 import type {
   BlockDateChange,
@@ -21,11 +24,13 @@ import type {
  * never derives time itself (the migration-144 clientToday-threading
  * precedent).
  *
- * Dates are computed, never accepted: the caller sends a start date plus
- * durations and lib/blocks/block-chain.ts walks the chain, so overlaps and
- * gaps are unexpressible. Elapsed blocks (ends_on < clientToday) are read-only
- * history; the symmetric window floor keeps every edit from re-labelling lived
- * days (only DELETE re-attributes them, and only by ending a block at today).
+ * Ends in, starts out: the caller sends the chain anchor plus each editable
+ * block's END date; every start is derived by the walk
+ * (lib/blocks/block-chain.ts), so date pairs never cross the wire and
+ * overlaps and gaps stay unexpressible. Elapsed blocks (ends_on < clientToday)
+ * are read-only history; the symmetric window floor keeps every edit from
+ * re-labelling lived days (only DELETE re-attributes them, and only by ending
+ * a block at today).
  */
 
 /** 422: the block (or its elapsed prefix) is read-only history. */
@@ -79,9 +84,9 @@ const isCurrent = (block: ClientBlock, today: string): boolean =>
 
 /**
  * Replace the whole chain: elapsed rows pinned verbatim, the editable suffix
- * recomputed from durations. Removal is NOT expressible here — an existing
- * non-elapsed id missing from the payload is a 422, because DELETE owns the
- * shift-and-report contract.
+ * recomputed from its end dates (starts derived). Removal is NOT expressible
+ * here — an existing non-elapsed id missing from the payload is a 422,
+ * because DELETE owns the shift-and-report contract.
  */
 export const replaceBlockChain = async (
   clientId: string,
@@ -93,9 +98,8 @@ export const replaceBlockChain = async (
   const elapsed = stored.filter((block) => block.endsOn < clientToday);
 
   // The elapsed prefix is immutable: the payload must lead with it — same ids,
-  // same order, same fields. Its dates come from STORAGE, not from a walk: a
-  // truncated block's day count is not whole weeks, so no `weeks` value could
-  // reproduce it.
+  // same order, same fields. Its dates come from STORAGE, never from the
+  // walk — elapsed history is not an input.
   elapsed.forEach((storedBlock, i) => {
     const echo = input.blocks[i];
     if (!echo || echo.id !== storedBlock.id) {
@@ -131,9 +135,9 @@ export const replaceBlockChain = async (
         );
       }
     }
-    if (entry.weeks === undefined) {
+    if (entry.endsOn === undefined) {
       throw new BlockPayloadError(
-        "weeks is required for current and future blocks."
+        "An end date is required for current and future blocks."
       );
     }
   }
@@ -153,10 +157,27 @@ export const replaceBlockChain = async (
     elapsed.length > 0
       ? addDaysToDateString(elapsed[elapsed.length - 1].endsOn, 1)
       : input.startsOn;
-  const windows = computeBlockChain(
+  const windows = computeBlockChainFromEnds(
     anchor,
-    suffix.map((entry) => entry.weeks as number)
+    suffix.map((entry) => entry.endsOn as string)
   );
+
+  // Structural window checks the walk deliberately leaves to us: an end
+  // before its DERIVED start (which zod can't know) inverts the window, and
+  // everything after it; the length cap mirrors the old weeks ceiling.
+  const maxBlockDays = BLOCK_WEEKS_MAX * DAYS_PER_BLOCK_WEEK;
+  windows.forEach((window, i) => {
+    if (window.endsOn < window.startsOn) {
+      throw new BlockWindowError(
+        `"${suffix[i].name}" would end before it starts (${window.startsOn}).`
+      );
+    }
+    if (inclusiveDays(window.startsOn, window.endsOn) > maxBlockDays) {
+      throw new BlockPayloadError(
+        `A block can't run longer than ${BLOCK_WEEKS_MAX} weeks.`
+      );
+    }
+  });
 
   // Symmetric window floor: an edit never re-labels lived days. A stored
   // current block must still contain today (may neither end before today nor

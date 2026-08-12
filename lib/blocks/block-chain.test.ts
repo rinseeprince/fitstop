@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  computeBlockChain,
+  computeBlockChainFromEnds,
   computeDeleteShift,
   inclusiveDays,
   weeksSpanned,
 } from "./block-chain";
+import { addDaysToDateString } from "@/lib/date-helpers";
 import type { ClientBlock } from "@/types/client-blocks";
 
 // All math is UTC string arithmetic, so these exact-date assertions hold under
@@ -27,48 +28,63 @@ const block = (
 
 const TODAY = "2026-08-11";
 
-describe("computeBlockChain", () => {
-  it("produces a contiguous chain — no overlaps, no gaps — for 1 to 12 blocks", () => {
+describe("computeBlockChainFromEnds", () => {
+  it("derives a contiguous chain — no overlaps, no gaps — for 1 to 12 blocks", () => {
     for (let count = 1; count <= 12; count++) {
-      const weeks = Array.from({ length: count }, (_, i) => (i % 4) + 1);
-      const windows = computeBlockChain("2026-08-11", weeks);
+      // Day-granular lengths (not whole weeks) — ends built cumulatively.
+      const lengths = Array.from({ length: count }, (_, i) => (i % 4) * 9 + 5);
+      const ends: string[] = [];
+      let cursor = "2026-08-11";
+      for (const length of lengths) {
+        const endsOn = addDaysToDateString(cursor, length - 1);
+        ends.push(endsOn);
+        cursor = addDaysToDateString(endsOn, 1);
+      }
+
+      const windows = computeBlockChainFromEnds("2026-08-11", ends);
 
       expect(windows).toHaveLength(count);
       expect(windows[0].startsOn).toBe("2026-08-11");
       for (let i = 0; i < count; i++) {
+        expect(windows[i].endsOn).toBe(ends[i]);
         expect(inclusiveDays(windows[i].startsOn, windows[i].endsOn)).toBe(
-          weeks[i] * 7
+          lengths[i]
         );
         if (i > 0) {
           // Contiguity: each block starts the day after the previous ends.
           expect(inclusiveDays(windows[i - 1].endsOn, windows[i].startsOn)).toBe(2);
         }
       }
-      const totalDays = inclusiveDays(
-        windows[0].startsOn,
-        windows[count - 1].endsOn
-      );
-      expect(totalDays).toBe(weeks.reduce((sum, w) => sum + w * 7, 0));
     }
   });
 
-  it("computes exact dates", () => {
-    expect(computeBlockChain("2026-08-11", [4, 6])).toEqual([
+  it("computes exact derived starts", () => {
+    expect(
+      computeBlockChainFromEnds("2026-08-11", ["2026-09-07", "2026-10-19"])
+    ).toEqual([
       { startsOn: "2026-08-11", endsOn: "2026-09-07" },
       { startsOn: "2026-09-08", endsOn: "2026-10-19" },
     ]);
   });
 
   it("does not skip or duplicate a date across the US spring-forward boundary", () => {
-    expect(computeBlockChain("2026-03-02", [1, 1])).toEqual([
+    expect(
+      computeBlockChainFromEnds("2026-03-02", ["2026-03-08", "2026-03-15"])
+    ).toEqual([
       { startsOn: "2026-03-02", endsOn: "2026-03-08" },
       { startsOn: "2026-03-09", endsOn: "2026-03-15" },
     ]);
   });
 
   it("does not skip or duplicate a date across the US fall-back boundary", () => {
-    expect(computeBlockChain("2026-10-26", [2])).toEqual([
+    expect(computeBlockChainFromEnds("2026-10-26", ["2026-11-08"])).toEqual([
       { startsOn: "2026-10-26", endsOn: "2026-11-08" },
+    ]);
+  });
+
+  it("passes an inverted window through untouched — validation is the service's", () => {
+    expect(computeBlockChainFromEnds("2026-08-11", ["2026-08-01"])).toEqual([
+      { startsOn: "2026-08-11", endsOn: "2026-08-01" },
     ]);
   });
 });

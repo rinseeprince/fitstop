@@ -7,8 +7,10 @@ import type { BlockDateChange, ClientBlock } from "@/types/client-blocks";
 // "T00:00:00")`, which parses server-local and can duplicate or skip a date
 // across a DST boundary).
 //
-// Durations in, dates out: `ends_on = starts_on + weeks*7 − 1`, the next
-// block's `starts_on = ends_on + 1`, so overlaps and gaps are unexpressible.
+// Ends in, starts out (Session 3.6-B — day-granular lengths, owner-directed):
+// the caller supplies each block's END date, the next block's
+// `starts_on = ends_on + 1` is always derived, so overlaps and gaps stay
+// unexpressible — invariant 3's mechanism with the duration unit now a date.
 // The delete shift lives here too so the coach UI's confirm dialog computes
 // its consequence sentence with the same function the service executes — the
 // lib/daily-log-permissions.ts one-rule-both-sides precedent.
@@ -20,12 +22,19 @@ export interface BlockWindow {
   endsOn: string;
 }
 
-/** Walk a duration list from an anchor date into contiguous windows. */
-export function computeBlockChain(anchor: string, weeks: number[]): BlockWindow[] {
+/**
+ * Walk an end-date list from an anchor date into contiguous windows. Pure
+ * geometry — an end BEFORE its derived start passes through as an inverted
+ * window for the SERVICE to 422; validating here would hide which entry the
+ * coach got wrong.
+ */
+export function computeBlockChainFromEnds(
+  anchor: string,
+  ends: string[]
+): BlockWindow[] {
   const windows: BlockWindow[] = [];
   let startsOn = anchor;
-  for (const blockWeeks of weeks) {
-    const endsOn = addDaysToDateString(startsOn, blockWeeks * DAYS_PER_BLOCK_WEEK - 1);
+  for (const endsOn of ends) {
     windows.push({ startsOn, endsOn });
     startsOn = addDaysToDateString(endsOn, 1);
   }

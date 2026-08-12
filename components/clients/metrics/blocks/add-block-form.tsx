@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,7 +18,11 @@ import { useUnits } from "@/contexts/units-context";
 import { useCanonicalInput } from "@/hooks/use-unit-inputs";
 import { formatWeight } from "@/utils/unit-conversions";
 import { addDaysToDateString, getTodayDateString } from "@/lib/date-helpers";
-import { DAYS_PER_BLOCK_WEEK } from "@/lib/blocks/block-chain";
+import {
+  DAYS_PER_BLOCK_WEEK,
+  inclusiveDays,
+  weeksSpanned,
+} from "@/lib/blocks/block-chain";
 import {
   BLOCK_FOCUS_MAX,
   BLOCK_NAME_MAX,
@@ -26,27 +30,29 @@ import {
   WEIGHT_KG_MAX,
   WEIGHT_KG_MIN,
 } from "@/lib/constants";
-import { formatBlockDate } from "./block-format";
+import { formatBlockDate, formatBlockLength } from "./block-format";
 import type { NewBlockEntry } from "./block-chain-payload";
 
 // Inline add-a-block form (the habits manage-drawer swap precedent for the
 // SHELL only — its raw-useState internals predate the react-hook-form rule).
+// The block's length is picked as an END DATE (day-granular, Session 3.6-B);
+// its start is derived from the chain, so the coach never enters a date pair.
 // Target weight collects in the VIEWER's unit through useCanonicalInput and
 // commits canonical kg; the RHF field holds the canonical number so
 // zodResolver validates what will actually be stored (the
 // add-client-manual-form pattern).
 
-const addBlockSchema = z.object({
-  startsOn: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a start date")
-    .optional(),
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const baseSchema = z.object({
+  startsOn: z.string().regex(DATE_RE, "Pick a start date").optional(),
   name: z.string().trim().min(1, "Name the block").max(BLOCK_NAME_MAX),
-  weeks: z
-    .number({ invalid_type_error: "How many weeks?" })
-    .int("Whole weeks only")
-    .min(1, "At least 1 week")
-    .max(BLOCK_WEEKS_MAX, `At most ${BLOCK_WEEKS_MAX} weeks`),
+  endsOn: z
+    .string()
+    .regex(DATE_RE, "Pick an end date")
+    .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), {
+      message: "Not a real calendar date",
+    }),
   focus: z.string().trim().max(BLOCK_FOCUS_MAX).optional(),
   targetWeightKg: z
     .number()
@@ -55,7 +61,44 @@ const addBlockSchema = z.object({
     .optional(),
 });
 
-type AddBlockFormValues = z.infer<typeof addBlockSchema>;
+// Cross-field: the end is validated against the DERIVED start, which depends
+// on where the block lands (a resolver replaces RHF field-level `validate`,
+// so this must live in the schema).
+function makeAddBlockSchema(appendAfterEndsOn: string | null) {
+  return baseSchema.superRefine((data, ctx) => {
+    const nextStart = appendAfterEndsOn
+      ? addDaysToDateString(appendAfterEndsOn, 1)
+      : data.startsOn && DATE_RE.test(data.startsOn)
+        ? data.startsOn
+        : null;
+    if (!appendAfterEndsOn && !data.startsOn) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["startsOn"],
+        message: "Pick a start date",
+      });
+    }
+    if (!nextStart || !DATE_RE.test(data.endsOn)) return;
+    if (data.endsOn < nextStart) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endsOn"],
+        message: "Ends before the block starts",
+      });
+    } else if (
+      data.endsOn >
+      addDaysToDateString(nextStart, BLOCK_WEEKS_MAX * DAYS_PER_BLOCK_WEEK - 1)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endsOn"],
+        message: `At most ${BLOCK_WEEKS_MAX} weeks`,
+      });
+    }
+  });
+}
+
+type AddBlockFormValues = z.infer<typeof baseSchema>;
 
 type AddBlockFormProps = {
   /** The last stored block's endsOn; null = empty chain (show a start-date
@@ -83,6 +126,10 @@ export function AddBlockForm({
   const weightUnit = formatWeight(0, preference).unit;
   const weightInput = useCanonicalInput(preference, null, "weight");
 
+  const schema = useMemo(
+    () => makeAddBlockSchema(appendAfterEndsOn),
+    [appendAfterEndsOn]
+  );
   const {
     register,
     handleSubmit,
@@ -90,10 +137,17 @@ export function AddBlockForm({
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<AddBlockFormValues>({
-    resolver: zodResolver(addBlockSchema),
+    resolver: zodResolver(schema),
     defaultValues: {
       startsOn: appendAfterEndsOn ? undefined : getTodayDateString(),
       name: "",
+      // Seed a 4-week block so the live line reads immediately.
+      endsOn: addDaysToDateString(
+        appendAfterEndsOn
+          ? addDaysToDateString(appendAfterEndsOn, 1)
+          : getTodayDateString(),
+        4 * DAYS_PER_BLOCK_WEEK - 1
+      ),
       focus: "",
     },
   });
@@ -106,27 +160,31 @@ export function AddBlockForm({
     });
   }, [weightInput.commit, weightInput.isPristine, setValue]);
 
-  const weeksValue = watch("weeks");
+  const endsOnValue = watch("endsOn");
   const startsOnValue = watch("startsOn");
   const nextStart = appendAfterEndsOn
     ? addDaysToDateString(appendAfterEndsOn, 1)
-    : startsOnValue && /^\d{4}-\d{2}-\d{2}$/.test(startsOnValue)
+    : startsOnValue && DATE_RE.test(startsOnValue)
       ? startsOnValue
       : null;
-  const weeksValid =
-    Number.isInteger(weeksValue) && weeksValue >= 1 && weeksValue <= BLOCK_WEEKS_MAX;
-  const endsOn =
-    nextStart && weeksValid
-      ? addDaysToDateString(nextStart, weeksValue * DAYS_PER_BLOCK_WEEK - 1)
-      : null;
-  const journeyTotal = journeyWeeksSoFar + (weeksValid ? weeksValue : 0);
+  const maxEnd = nextStart
+    ? addDaysToDateString(nextStart, BLOCK_WEEKS_MAX * DAYS_PER_BLOCK_WEEK - 1)
+    : undefined;
+  const endValid =
+    nextStart != null &&
+    DATE_RE.test(endsOnValue ?? "") &&
+    endsOnValue >= nextStart &&
+    (maxEnd === undefined || endsOnValue <= maxEnd);
+  const journeyTotal =
+    journeyWeeksSoFar +
+    (endValid && nextStart ? weeksSpanned(nextStart, endsOnValue) : 0);
 
   const submit = handleSubmit(async (values) => {
     if (weightInput.hasParseError) return;
     await onAdd(
       {
         name: values.name.trim(),
-        weeks: values.weeks,
+        endsOn: values.endsOn,
         focus: values.focus?.trim() ? values.focus.trim() : null,
         targetWeightKg: values.targetWeightKg ?? null,
       },
@@ -156,19 +214,19 @@ export function AddBlockForm({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="block-weeks" className={FIELD_LABEL}>
-            Weeks
+          <Label htmlFor="block-ends" className={FIELD_LABEL}>
+            Ends
           </Label>
           <Input
-            id="block-weeks"
-            type="number"
-            min={1}
-            max={BLOCK_WEEKS_MAX}
-            className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-20 text-xs")}
-            {...register("weeks", { valueAsNumber: true })}
+            id="block-ends"
+            type="date"
+            min={nextStart ?? undefined}
+            max={maxEnd}
+            className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-[150px] text-xs")}
+            {...register("endsOn")}
           />
-          {errors.weeks && (
-            <p className="text-[11px] text-[#c06060]">{errors.weeks.message}</p>
+          {errors.endsOn && (
+            <p className="text-[11px] text-[#c06060]">{errors.endsOn.message}</p>
           )}
         </div>
 
@@ -233,11 +291,12 @@ export function AddBlockForm({
         )}
       </div>
 
-      {nextStart && endsOn && (
+      {nextStart && endValid && (
         // A sentence, therefore 100% sans — the prose rule.
         <p className="text-xs text-[#5a7d82]">
-          Starts {formatBlockDate(nextStart)}, ends {formatBlockDate(endsOn)}.
-          Journey becomes {journeyTotal} {journeyTotal === 1 ? "week" : "weeks"}.
+          Starts {formatBlockDate(nextStart)}, ends {formatBlockDate(endsOnValue)}{" "}
+          — {formatBlockLength(inclusiveDays(nextStart, endsOnValue))}. Journey
+          becomes {journeyTotal} {journeyTotal === 1 ? "week" : "weeks"}.
         </p>
       )}
 

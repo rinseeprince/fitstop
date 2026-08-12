@@ -16,21 +16,23 @@ export interface ClientBlock {
 }
 
 /**
- * One entry in the PUT payload. `weeks` drives the date recompute for current
- * and future rows and is ignored for pinned elapsed rows — their dates come
- * from storage, and a truncated block's day count is not a whole number of
- * weeks, so no `weeks` value could reproduce it.
+ * One entry in the PUT payload. `endsOn` sets the block's END for current and
+ * future rows (day-granular — Session 3.6-B, owner-directed); its START is
+ * always derived (the previous end + 1, or the chain anchor), so date PAIRS
+ * still never cross the wire. Elapsed rows omit it — their dates are pinned
+ * from storage.
  */
 export interface BlockChainEntryInput {
   id?: string;
   name: string;
-  weeks?: number;
+  endsOn?: string;
   focus?: string | null;
   targetWeightKg?: number | null;
 }
 
-/** The PUT body: the whole chain. The caller never sends date pairs —
- *  durations in, dates out (workstream invariant 3). */
+/** The PUT body: the whole chain. Ends in, starts out — the caller never
+ *  sends date pairs, so overlaps and gaps stay unexpressible (workstream
+ *  invariant 3's mechanism, with the duration unit now a date). */
 export interface ReplaceBlockChainInput {
   startsOn: string;
   blocks: BlockChainEntryInput[];

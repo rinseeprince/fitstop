@@ -59,7 +59,7 @@ They do not prescribe training. They do not restrict placement. They do not feed
 
 1. **No `phase_id` (or `block_id`) column on any other table.** Attribution is a date-range join at read time.
 2. **"Current" is derived from dates.** Never a status column, never a partial unique index on an active flag.
-3. **Durations in, dates out.** The coach enters a start date plus a list of lengths; the service computes the chain. Overlaps and gaps are structurally impossible, so there is no overlap validation to write.
+3. **Durations in, dates out.** The coach enters a start date plus a list of lengths; the service computes the chain. Overlaps and gaps are structurally impossible, so there is no overlap validation to write. *(Amended 2026-08-12, owner-approved — Session 3.6-B: a length is now expressed as the block's END DATE, day-granular. Starts stay derived and date pairs still never cross the wire, so the mechanism this invariant protects is unchanged; only the unit moved from weeks to days.)*
 4. **Nothing computes from `focus`.** It is rendered and nothing else. The moment something parses it, it has become a typed field by accident.
 5. **Nothing computes from `target_weight` except the pace readout.** It never reaches `calculateBaselineCalories`, `resolveNutritionCalcInputs`, or any nutrition write path. The calculator solves against `client_goals` only.
 6. **Blocks are `DATE`**, not `TIMESTAMPTZ`. (`client_goals.effective_from` is the odd one out in this schema — do not copy it.)
@@ -2973,3 +2973,41 @@ Session 6's notes land.
 leak, capped-successor handback, same-day tie, and 2 direct segment pins;
 arithmetic closes from 2728) · `check:labels` OK (660) · no `as any` · no
 markers · no migration.
+
+---
+
+### Task 3.6-B — End-dates-in contract (weeks → endsOn) ✅ SHIPPED 2026-08-12
+
+**The unit change, owner-directed:** block lengths are now day-granular, entered
+as each block's **end date**. Invariant 3's mechanism is untouched — the caller
+still never sends a date pair; `computeBlockChainFromEnds` derives every start
+(previous end + 1, or the chain anchor), so overlaps and gaps stay structurally
+unexpressible. The invariant's text carries the amendment note. Week-granularity
+was never load-bearing: the DB stores arbitrary DATE pairs, `weeksSpanned` was
+already a ceil over days, and every derivation (state, week-of-total, pace,
+delete-shift) compares dates — the GET's `weeks` field is unchanged as the
+display derivation.
+
+**What changed where:** `BlockChainEntryInput.weeks` → `endsOn` (optional in the
+schema — elapsed rows omit it; their dates come from storage, never the walk,
+which also dissolves the old "weeks is ignored on elapsed rows" wart). The
+service 422s an editable row without an end date, an **end before its DERIVED
+start** (which zod cannot know — the walk deliberately passes inverted windows
+through for the service to name), and a window over `BLOCK_WEEKS_MAX` weeks of
+days (the old ceiling, boundary pinned: exactly 52 weeks passes, 52w + 1 day
+422s). The add form's weeks field became an **end-date picker** (min = the
+derived start — the window floor as UX; max = start + 363; seeded to a 4-week
+block so the live line reads immediately); the cross-field end-vs-start check
+lives in a schema factory because a zodResolver replaces RHF field-level
+validation. The live sentence went day-aware via `formatBlockLength` ("Starts
+7 Sep, ends 4 Oct — 4 weeks 3 days. Journey becomes 20 weeks.").
+`buildAppendPayload` echoes stored `endsOn` verbatim for current/future rows.
+ARCHITECTURE's blocks bullet rewritten ("Ends in, starts out").
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged) ·
+`vitest run` **268 files / 2740 tests, all passing** (+1 file, +7: 3
+formatBlockLength, inverted-window pass-through, end-before-derived-start 422,
+length-cap 422 + exact-52-week boundary pass; the weeks-era pins across chain /
+service / route / payload tests re-targeted to end dates with identical
+windows; arithmetic closes from 2733) · `check:labels` OK (661) · no `as any` ·
+no markers · no migration.

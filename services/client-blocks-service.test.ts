@@ -104,8 +104,8 @@ describe("replaceBlockChain", () => {
     await replaceBlockChain(CLIENT_ID, TODAY, {
       startsOn: "2026-08-11",
       blocks: [
-        { name: "Build", weeks: 4 },
-        { name: "Cut", weeks: 6, targetWeightKg: 85 },
+        { name: "Build", endsOn: "2026-09-07" },
+        { name: "Cut", endsOn: "2026-10-19", targetWeightKg: 85 },
       ],
     });
 
@@ -150,8 +150,8 @@ describe("replaceBlockChain", () => {
     await replaceBlockChain(CLIENT_ID, TODAY, {
       startsOn: "2026-07-06",
       blocks: [
-        { id: "a", name: "Block a", weeks: 6 },
-        { name: "Peak", weeks: 2 },
+        { id: "a", name: "Block a", endsOn: "2026-08-16" },
+        { name: "Peak", endsOn: "2026-08-30" },
       ],
     });
 
@@ -185,7 +185,7 @@ describe("replaceBlockChain", () => {
         startsOn: "2026-06-01",
         blocks: [
           { id: "e", name: "Renamed" },
-          { id: "a", name: "Block a", weeks: 6 },
+          { id: "a", name: "Block a", endsOn: "2026-08-16" },
         ],
       })
     ).rejects.toBeInstanceOf(ElapsedBlockImmutableError);
@@ -198,7 +198,7 @@ describe("replaceBlockChain", () => {
       replaceBlockChain(CLIENT_ID, TODAY, {
         startsOn: "2026-06-01",
         blocks: [
-          { id: "a", name: "Block a", weeks: 6 },
+          { id: "a", name: "Block a", endsOn: "2026-08-16" },
           { ...elapsedEcho },
         ],
       })
@@ -213,7 +213,7 @@ describe("replaceBlockChain", () => {
         startsOn: "2026-06-08",
         blocks: [
           { ...elapsedEcho },
-          { id: "a", name: "Block a", weeks: 6 },
+          { id: "a", name: "Block a", endsOn: "2026-08-16" },
         ],
       })
     ).rejects.toBeInstanceOf(BlockPayloadError);
@@ -237,14 +237,14 @@ describe("replaceBlockChain", () => {
       replaceBlockChain(CLIENT_ID, TODAY, {
         startsOn: "2026-07-06",
         blocks: [
-          { id: "a", name: "Block a", weeks: 6 },
-          { id: "forged", name: "X", weeks: 2 },
+          { id: "a", name: "Block a", endsOn: "2026-08-16" },
+          { id: "forged", name: "X", endsOn: "2026-08-30" },
         ],
       })
     ).rejects.toBeInstanceOf(BlockPayloadError);
   });
 
-  it("rejects a current or future block without weeks", async () => {
+  it("rejects a current or future block without an end date", async () => {
     queueResults({ data: [CURRENT], error: null });
 
     await expect(
@@ -258,11 +258,11 @@ describe("replaceBlockChain", () => {
   it("window floor: the current block cannot shrink below its elapsed weeks", async () => {
     queueResults({ data: [CURRENT], error: null });
 
-    // In week 6 of 6 on TODAY; shrinking to 2 weeks ends it on 2026-07-19.
+    // In its final week on TODAY; ending it 2026-07-19 puts it wholly past.
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
         startsOn: "2026-07-06",
-        blocks: [{ id: "a", name: "Block a", weeks: 2 }],
+        blocks: [{ id: "a", name: "Block a", endsOn: "2026-07-19" }],
       })
     ).rejects.toBeInstanceOf(BlockWindowError);
   });
@@ -273,7 +273,7 @@ describe("replaceBlockChain", () => {
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
         startsOn: "2026-08-20",
-        blocks: [{ id: "a", name: "Block a", weeks: 6 }],
+        blocks: [{ id: "a", name: "Block a", endsOn: "2026-09-30" }],
       })
     ).rejects.toBeInstanceOf(BlockWindowError);
   });
@@ -285,7 +285,7 @@ describe("replaceBlockChain", () => {
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
         startsOn: "2026-05-01",
-        blocks: [{ id: "f", name: "Block f", weeks: 4 }],
+        blocks: [{ id: "f", name: "Block f", endsOn: "2026-05-28" }],
       })
     ).rejects.toBeInstanceOf(BlockWindowError);
   });
@@ -299,11 +299,11 @@ describe("replaceBlockChain", () => {
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        // Anchor moved a week earlier, duration grown to 7 weeks: the window
-        // becomes 2026-06-29..2026-08-16 and still contains today — legal
+        // Anchor moved a week earlier, same end kept: the window becomes
+        // 2026-06-29..2026-08-16 and still contains today — legal
         // ("we actually started earlier").
         startsOn: "2026-06-29",
-        blocks: [{ id: "a", name: "Block a", weeks: 7 }],
+        blocks: [{ id: "a", name: "Block a", endsOn: "2026-08-16" }],
       })
     ).resolves.toEqual([]);
   });
@@ -321,7 +321,50 @@ describe("replaceBlockChain", () => {
         // 2026-08-04..2026-08-31 covers today: a stored future block may
         // become current — only wholly-past is forbidden.
         startsOn: "2026-08-04",
-        blocks: [{ id: "f", name: "Block f", weeks: 4 }],
+        blocks: [{ id: "f", name: "Block f", endsOn: "2026-08-31" }],
+      })
+    ).resolves.toEqual([]);
+  });
+
+  it("rejects an end date before the block's DERIVED start", async () => {
+    queueResults({ data: [CURRENT], error: null });
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        startsOn: "2026-07-06",
+        blocks: [
+          { id: "a", name: "Block a", endsOn: "2026-08-16" },
+          // Derived start is 2026-08-17; ending 2026-08-10 inverts the window.
+          { name: "Peak", endsOn: "2026-08-10" },
+        ],
+      })
+    ).rejects.toBeInstanceOf(BlockWindowError);
+  });
+
+  it("caps a block's length at BLOCK_WEEKS_MAX weeks of days", async () => {
+    queueResults({ data: [], error: null });
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        startsOn: "2026-08-11",
+        // 365 inclusive days — one past the 52-week ceiling.
+        blocks: [{ name: "Endless", endsOn: "2027-08-10" }],
+      })
+    ).rejects.toBeInstanceOf(BlockPayloadError);
+  });
+
+  it("allows a block of exactly BLOCK_WEEKS_MAX weeks", async () => {
+    queueResults(
+      { data: [], error: null },
+      { error: null }, // insert
+      { data: [], error: null } // re-read
+    );
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        startsOn: "2026-08-11",
+        // 364 inclusive days = exactly 52 weeks.
+        blocks: [{ name: "Year block", endsOn: "2027-08-09" }],
       })
     ).resolves.toEqual([]);
   });
@@ -337,8 +380,8 @@ describe("replaceBlockChain", () => {
       replaceBlockChain(CLIENT_ID, TODAY, {
         startsOn: "2026-06-01",
         blocks: [
-          { name: "Old build", weeks: 5 }, // 2026-06-01..2026-07-05, fully past
-          { name: "Cut", weeks: 6 },
+          { name: "Old build", endsOn: "2026-07-05" }, // fully past
+          { name: "Cut", endsOn: "2026-08-16" },
         ],
       })
     ).resolves.toEqual([]);
