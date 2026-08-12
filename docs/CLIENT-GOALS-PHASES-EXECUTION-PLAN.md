@@ -3697,3 +3697,153 @@ back-door writer of the profile pair. Removing `bmr`/`tdee` from that cache
 update is what makes "one helper owns the pair" enforceable rather than
 aspirational — without it, any caller can still write the pair by passing them
 to `recordBodyMetrics`.
+
+---
+
+### `dateOfBirth` mapping fix ✅ SHIPPED 2026-08-12 (own commit, ahead of 4b.2)
+
+`updateClientSchema` accepted `dateOfBirth` (`lib/validations/client.ts:64`) and
+`updateClient` never mapped it — a coach PATCHing a birth date got a 200 and no
+change. The only writer of the column was the intake sync
+(`intake-review-service.ts:138-139`).
+
+**Behaviour change, named deliberately:** a request that silently did nothing now
+writes, and age feeds Mifflin-St Jeor, so BMR moves for any client whose birth
+date a coach sets. Its own revertible commit rather than a line inside 4b.2,
+because 4b.2's recompute trigger names `dateOfBirth` and would otherwise ship a
+dead branch. Also the prerequisite for 4b.3's "add a birth date" nudge having
+somewhere to save.
+
+**Gates.** `tsc` clean · `eslint` 0 errors (209 warnings) · `vitest run`
+**271 files / 2806 tests** (+2; closes from Task 4.3's 2804) · `check:labels` OK.
+
+---
+
+### Task 4b.2 — One owner for `clients.bmr`/`tdee` ✅ SHIPPED 2026-08-12
+
+**Two modules, not one — a blocking constraint found at plan time.**
+`scripts/check-service-key-leak.ts:9-11` walks value imports upward from
+`services/supabase-admin.ts` and fails on any reachable `"use client"` module,
+and 4b.3 needs the calculator in the browser. So `services/client-energy-calc.ts`
+is PURE (both formulas, `calculateAge`, a `toActivityLevel` normalizer) and
+`services/client-energy-service.ts` owns `recalculateClientEnergy` and imports
+`supabaseAdmin`. The service re-exports the calc module's **types only** — a
+value re-export recreates the leak edge.
+
+**The helper reads its own row rather than taking one.** Importing
+`getClientById` would be a two-node cycle (`client-service` imports this module),
+and because `client-service` exports `export const` arrows it fails at runtime as
+a **TDZ throw**, not an `undefined`. There is no `import/no-cycle` rule to catch
+it. A self-read is also required at the metrics route, which calls the helper
+*after* its own write commits.
+
+**Invariants as shipped.** Every UPDATE carries both keys; a flag key appears
+only when an override instruction asked for it, so a plain recompute cannot
+clobber a concurrent flag. `updated_at` is left to the BEFORE UPDATE trigger. An
+override freezes exactly its own half. **A flag set over a NULL value is not a
+freeze** and is recomputed, so a stray boolean cannot permanently block
+`validateClientForNutrition`. Insufficient data writes nothing and nulls nothing;
+an explicit override still lands, carrying the other half. **TDEE derives from
+the ROUNDED BMR** — the columns are `NUMERIC(6,1)`, not integers, so an unrounded
+value would be silently re-rounded by Postgres and stop matching; it also makes
+the pair agree exactly with `calculateTDEE`, which the old raw-BMR multiply never
+did.
+
+**Rewired:** `updateClient` (one site covering both the coach PATCH and the
+check-in sync), `createClient` (pure calculator **in the INSERT** — atomic, no
+failure window), the check-in service (its ×1.2 and its own `clients` write
+deleted; it now issues no `clients` write at all), the metrics PUT (both ×1.2
+hardcodes and the inline Mifflin gone, empty-update guarded), `calculate-bmr`
+(returns both values, killing the literal `"TDEE: undefined cal/day"` toast;
+deliberately does **not** clear overrides), the intake sync, and current-dated
+metric entries. **Back doors closed:** `nutrition-plan-service` no longer writes
+`clients.tdee` (`createNutritionPlan` touches `clients` zero times) and
+`recordBodyMetrics` no longer caches `bmr`/`tdee`. `services/bmr-service.ts`
+DELETED — grep-verified at execution.
+
+**Found while typing what had been `any`:** the check-in insert wrote a
+`submitted_at` column that does not exist on `check_ins` (PostgREST would have
+rejected it), and the route's bmr/tdee range checks duplicated the zod schema's.
+
+**`services/client-energy-ownership.test.ts` — the guard, and the carve-out.**
+A source scan for a seventh writer. **The invariant is one writer for UPDATES;
+`createClient`'s INSERT sets the pair once at row birth through the same pure
+calculator and is deliberately outside the scan** — that sentence sits beside the
+guard so nobody widens the scan to inserts (breaking the build) or narrows the
+invariant (re-opening the hole). Its own self-check caught that the first version
+missed a payload built in a variable, which is how the owner writes, so it now
+resolves an identifier argument back to its declaration or mutation.
+
+**Gates.** `tsc` clean · `eslint` **0 errors, 207 warnings** (down from 209 — two
+`any` annotations replaced with generated types) · `vitest run` **276 files /
+2877 tests** (+5 files, +71) · `check:labels` OK 663 · `check:service-key` PASS
+(validates the module split) · `check:rls` 41/41 · no migration. The three
+pre-existing `intake-review-service.ts` TODOs about `client_intake` type
+regeneration are **reported, not deleted** — 4b.6 adds the §13 item 6 standing
+rule.
+
+---
+
+### Read-order inversion ✅ SHIPPED 2026-08-12 (Commit 3b, split from 4b.2)
+
+Split on owner direction: "the pair has one owner" and "plans read the profile"
+are two behaviour changes, and bundled, a surprising regenerate would have two
+candidate causes.
+
+`nutrition-calc-inputs.ts:91-92` resolved BMR as `latestMetrics?.bmr ??
+client.bmr`. Every calorie in a generated plan rests on that value, so a
+regenerate built the plan from a stale snapshot — 1850 instead of 3712 on the
+fixture — contradicting the owner's rule that a regenerate is exactly when a plan
+picks up current numbers.
+
+**Original rationale checked before inverting, as required:** the comment cited
+"pre-migration clients" whose denormalized cache might not be populated. Giving
+the pair an owner removed that reason; no other rationale was recorded.
+
+**Weight keeps the event-first order** — a backdated coach entry is withheld from
+the `clients` cache, so the newest event can be the truer measurement. The two
+halves now run in opposite directions and the comment says so at length. The
+`?? latestMetrics` tail is **retained as a NULL-profile rescue**, pinned by test.
+
+**Interim window, named:** between 4b.2 and this commit the profile was correct
+while the calculator still preferred the snapshot — unchanged from prior
+behaviour, but a smoke in that gap would read it as a regression.
+
+**Gates.** `vitest run` **276 files / 2879 tests** (+2). One full run showed the
+documented flaky set-tracker failure; it passed in isolation and on re-run.
+
+---
+
+### Seeds + fixture repair ✅ 2026-08-12
+
+**Seeds (own commit).** Both seeds invented energy that matched no formula. The
+scale fixture hardcoded 1850/2700 — and that 1850 is what 4b.1 traced the
+impossible pair to. It carried **no height, gender or activity level at all**, so
+nothing could compute it; it now seeds those and derives
+Katch-McArdle(83.9 kg, 22 %) × 1.55 = **1784 / 2765**, with the nutrition plan
+snapshotting the same pair. `scripts/seed/generate.ts` loses a third inline
+Katch-McArdle copy and a **random 1.35–1.75 TDEE multiplier unrelated to the
+`work_activity_level` the same row stored**. Determinism note: the RNG
+consumption order changed, so a given `--seed` now yields different (still
+deterministic) data.
+
+**The reseed was NOT run as instructed, because neither flag does what was
+intended.** Without `--full-reset` the `clients` row is upserted
+`ignoreDuplicates: true`, so the incoherent pair survives and the reseed fixes
+nothing. With `--full-reset` the client row is deleted — and `client_phases`
+carries `ON DELETE CASCADE` (`confdeltype = 'c'`, verified), so it would have
+**destroyed the 3 Journey blocks built during the Session 3/4 smokes**, which the
+seed never recreates.
+
+**Repaired non-destructively through the app's own writer instead**, which also
+exercised 4b.2 end-to-end against live data:
+`3712 / 3515 → 3712 / 4454` = `round(3712 × 1.2)` — coherent with the row's
+stored `sedentary` for the first time, via Katch-McArdle, `activityLevelSource:
+"client"`, `missingDateOfBirth: true` (the 4b.3 nudge signal). Blocks, plans and
+history all intact.
+
+**Residual, stated rather than implied:** 200 of 208 other active dev clients
+still carry arithmetically incoherent pairs, because they were seeded by the old
+random-multiplier generator. The seed fix only helps future seeds. They are
+scale-benchmark rows, not smoke fixtures; a bulk repair through the helper is
+available if wanted.
