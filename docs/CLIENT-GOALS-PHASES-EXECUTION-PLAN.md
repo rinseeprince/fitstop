@@ -4241,3 +4241,50 @@ the same call Session 4B made.
 **UI unverified — owner smoke:** add a client with a goal weight and confirm the Overview shows it
 (both stores agree) · run "Sync metrics to profile" on an intake carrying a goal/deadline and
 confirm the goal lands and the confirmation still names the goal fields it synced.
+
+---
+
+### Task 0b.3 — The last divergent resolver shape ✅ SHIPPED 2026-08-13
+
+One file. `use-merged-metrics.ts` now reads through `useClientGoals` and composes the resolver
+input with `toClientGoalInput` instead of an inline SWR key, a private narrowed `GoalsResponse`
+type, and a hand-built literal hardcoding `deadline: null, startDate: null` *after* fetching the
+full goal.
+
+**Behaviour change: none, and that is measured rather than asserted.** `effectiveGoal` was read at
+exactly four places in the file and all four are `goalWeightKg` or `goalBodyFatPercentage` —
+**`deadline` and `startDate` were never read**. So the hardcoded nulls were dishonest but inert,
+and supplying the real values moves no surface. Two deltas that are real but not visible: the SWR
+key is now the shared one (same string, so the Overview and Metrics tab share one cache entry
+rather than two identical ones), and the shared options raise `errorRetryCount` 1 → 3 with a
+1000ms interval (§7 conformance).
+
+**`today` was deliberately NOT moved to the client's zone here.** The same variable anchors
+`deriveHeroStats` and `deriveWeekComparison` in the loop below, so changing it is a different
+change with a different blast radius. The resolver's only use of it is the `startDate` fallback,
+which nothing reads.
+
+**No new test, and that is the honest answer rather than a gap.** Nothing observable changed, so a
+test could only assert an unread field. The composition this file now uses is already pinned by the
+four `toClientGoalInput` cases in `lib/goals/resolve-effective-goal.test.ts` (0b.1), including the
+mirror fallback and the never-read-a-mirror-deadline rule. The full suite passing unchanged **is**
+the evidence for "inert".
+
+**The other half of this task was already done.** `use-nutrition-builder.ts`'s `getProjectedDate`
+— which computed a projected goal date off the `clients` mirror — was deleted by Session 1 Task 1.2
+(`67bfbbe`). Grep-confirmed at execution: zero matches repo-wide, and no `client.goal*` read remains
+in that hook. The plan's "whichever session ran first did it; confirm rather than duplicate" is
+confirmed. **Do not go looking for that function.**
+
+**Invariant 16 is now satisfied on the read side:** every coach-side goal read resolves through
+`resolveEffectiveGoal`, and all five callers compose their input the same way (the one browser
+caller that did not is this one).
+
+#### Gates
+
+`tsc --noEmit` clean · `eslint .` **0 errors, 209 warnings** (unchanged) · `vitest run` **275 files
+/ 2903 tests, all passing** (unchanged from 0b.2 — no tests added or removed) · `check:labels` OK
+662 · no `as any` · no markers · no migration.
+
+**UI unverified — owner smoke:** open a client's Journey → Metrics and confirm the weight and body-fat
+cards still show their goal and "to go" figures unchanged.

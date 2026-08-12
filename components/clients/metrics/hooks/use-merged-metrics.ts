@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import useSWR from "swr";
 import { useAllClientCheckIns } from "@/hooks/use-check-in-data";
+import { useClientGoals } from "@/hooks/use-client-goals";
 import { useMetricEntries } from "@/hooks/use-metric-entries";
-import { swrFetcher } from "@/lib/swr-fetcher";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { DOWN_IS_GOOD } from "@/lib/metrics/metric-entry-definitions";
-import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
+import {
+  resolveEffectiveGoal,
+  toClientGoalInput,
+} from "@/lib/goals/resolve-effective-goal";
 import { buildMetricPoints } from "@/utils/metric-points";
 import {
   buildLogRows,
@@ -48,11 +50,6 @@ const convertPoint = (value: number, kind: MetricDefinition["convert"], viewer: 
 // plain string ids are looked up.
 const DOWN_SET: ReadonlySet<string> = DOWN_IS_GOOD;
 
-type GoalsResponse = {
-  success: boolean;
-  data: { goalWeight?: number; goalBodyFatPercentage?: number | null } | null;
-};
-
 export type UseMergedMetricsResult = {
   metricsByTab: Record<MetricTab, MetricSummary[]>;
   logRowsByTab: Record<MetricTab, LogRow[]>;
@@ -76,11 +73,7 @@ export const useMergedMetrics = (
     isError: entriesError,
     mutate: mutateEntries,
   } = useMetricEntries(client.id);
-  const { data: goalsData } = useSWR<GoalsResponse>(
-    `/api/clients/${client.id}/goals`,
-    swrFetcher,
-    { revalidateOnFocus: false, errorRetryCount: 1 }
-  );
+  const { goal: currentGoals } = useClientGoals(client.id);
 
   const { preference } = useUnits();
 
@@ -95,19 +88,19 @@ export const useMergedMetrics = (
       ]),
     );
 
-    const currentGoals = goalsData?.data ?? null;
+    // One composer, shared with the three server callers, rather than a private
+    // literal. The private one hardcoded `deadline: null, startDate: null` AFTER
+    // fetching the full goal — two surfaces rendering "the same" goal from two
+    // shapes, one of them deliberately blind. Nothing here reads either field
+    // (see the goal block below), so that blindness was inert rather than a live
+    // bug — but it was one edit away from mattering, which is the whole reason
+    // the shape is shared now.
+    //
+    // `today` stays the device day: it also anchors deriveHeroStats and
+    // deriveWeekComparison below, so moving it to the client's zone is a
+    // different change with a different blast radius, not part of this one.
     const effectiveGoal = resolveEffectiveGoal({
-      // Legacy fallback to the denormalized client fields mirrors
-      // services/comparison-service's read switch.
-      clientGoal: {
-        goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
-        goalBodyFatPercentage:
-          currentGoals?.goalBodyFatPercentage ??
-          client.goalBodyFatPercentage ??
-          null,
-        deadline: null,
-        startDate: null,
-      },
+      clientGoal: toClientGoalInput(currentGoals, client),
       today,
     });
 
@@ -185,7 +178,7 @@ export const useMergedMetrics = (
     };
     // `preference` is a real dependency: it changes every value in the series,
     // not just the label.
-  }, [checkIns, entries, goalsData, client, preference]);
+  }, [checkIns, entries, currentGoals, client, preference]);
 
   const logMeasurement = useCallback(
     async (input: CreateMetricEntryRequest) => {
