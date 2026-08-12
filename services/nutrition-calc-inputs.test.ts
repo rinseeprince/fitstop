@@ -70,19 +70,59 @@ describe("resolveNutritionCalcInputs", () => {
     expect("goalWeightKg" in result).toBe(true);
   });
 
-  it("prefers body_metrics over the denormalized client cache", async () => {
+  // The two halves of this ladder run in opposite directions on purpose.
+  it("prefers body_metrics over the client cache for WEIGHT", async () => {
+    // A backdated coach entry is deliberately withheld from the clients cache,
+    // so the newest event can be the truer latest measurement.
     vi.mocked(getLatestBodyMetrics).mockResolvedValue({
       weight: 200,
-      weightUnit: "lbs",
       bmr: 1900,
       tdee: 2500,
     } as never);
 
     const result = await resolveNutritionCalcInputs("client-1", CLIENT);
     if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.currentWeightKg).toBe(200);
+  });
+
+  it("prefers the PROFILE over body_metrics for the energy pair", async () => {
+    // A generated plan's every calorie rests on this bmr. The body_metrics row
+    // a plan save leaves behind carries the PLAN's numbers, so preferring it
+    // would rebuild each plan from the previous plan's snapshot rather than the
+    // client's current metabolism.
+    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
+      weight: 200,
+      bmr: 1850,
+      tdee: 3515,
+    } as never);
+
+    const result = await resolveNutritionCalcInputs("client-1", {
+      ...CLIENT,
+      bmr: 3712,
+      tdee: 4454,
+    });
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.bmr).toBe(3712);
+    expect(result.tdee).toBe(4454);
+  });
+
+  it("falls back to body_metrics when the profile pair is still NULL", async () => {
+    // A rescue, not a preference: a client the energy helper has never reached
+    // must not 400 the plan save.
+    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
+      weight: 200,
+      bmr: 1900,
+      tdee: 2500,
+    } as never);
+
+    const result = await resolveNutritionCalcInputs("client-1", {
+      ...CLIENT,
+      bmr: undefined,
+      tdee: undefined,
+    });
+    if (result.status !== "ready") throw new Error("expected ready");
     expect(result.bmr).toBe(1900);
     expect(result.tdee).toBe(2500);
-    expect(result.currentWeightKg).toBe(200);
   });
 
   // The whole reason this is a union: a read path must be able to render

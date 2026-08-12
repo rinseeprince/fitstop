@@ -152,7 +152,7 @@ describe('Nutrition Route POST - read-switch behavior', () => {
     vi.mocked(calculateTDEE).mockReturnValue(2400)
   })
 
-  it('uses body_metrics values when available', async () => {
+  it('takes weight from body_metrics and the energy pair from the profile', async () => {
     vi.mocked(getLatestBodyMetrics).mockResolvedValue({
       id: 'bm-1',
       clientId: 'client-1',
@@ -183,13 +183,17 @@ describe('Nutrition Route POST - read-switch behavior', () => {
     expect(generateNutritionPlan).toHaveBeenCalledWith(
       expect.objectContaining({ currentWeightKg: 175 })
     )
-    // Should use body_metrics bmr (1750) not client bmr (1700)
+    // Energy runs the OTHER WAY: the profile (1700) beats the body_metrics
+    // snapshot (1750). Since Session 4B one helper owns clients.bmr/tdee, and
+    // the body_metrics row a plan save leaves behind carries the PLAN's
+    // numbers — so preferring the event here would build each plan from the
+    // previous plan's snapshot rather than the client's current metabolism.
     expect(generateNutritionPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ bmr: 1750 })
+      expect.objectContaining({ bmr: 1700 })
     )
     // Should use goals weight (165) not client goalWeight (170)
     const createCall = vi.mocked(createNutritionPlan).mock.calls[0][0]
-    expect(createCall.bmr).toBe(1750)
+    expect(createCall.bmr).toBe(1700)
   })
 
   it('falls back to client fields when body_metrics returns null', async () => {
