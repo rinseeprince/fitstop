@@ -1,8 +1,12 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { listBlocks } from "./client-blocks-service";
-import { getTrainingPlansOverlapping } from "./training-service";
+import {
+  getTrainingPlansOverlapping,
+  type TrainingPlanWindowSummary,
+} from "./training-service";
 import { versionCoversDate } from "./nutrition-plan-service";
 import { fetchAllPages } from "@/lib/paged-fetch";
+import { addDaysToDateString } from "@/lib/date-helpers";
 import type {
   BlockFacts,
   BlockNutritionFact,
@@ -185,6 +189,78 @@ function deriveNutritionFact(
   };
 }
 
+/** The plan that GOVERNS `date` under the resolution rule: latest
+ *  `effective_from` wins among covering plans. Same-day ties fall to list
+ *  order — `getTrainingPlansOverlapping` orders `created_at DESC` within a
+ *  start date, so the first-seen of a tied pair is the resolution winner. */
+function governingPlanAt(
+  plans: TrainingPlanWindowSummary[],
+  date: string
+): TrainingPlanWindowSummary | null {
+  let best: TrainingPlanWindowSummary | null = null;
+  for (const plan of plans) {
+    if (plan.effectiveFrom > date) continue;
+    if (plan.effectiveUntil !== null && plan.effectiveUntil < date) continue;
+    if (!best || plan.effectiveFrom > best.effectiveFrom) best = plan;
+  }
+  return best;
+}
+
+export interface GoverningPlanSegment {
+  plan: TrainingPlanWindowSummary;
+  from: string;
+  to: string;
+}
+
+/**
+ * Reduce coach-visible plans to the segments where each actually GOVERNED —
+ * the per-date winner under getTrainingPlanForDate's latest-start-wins rule.
+ * Raw window overlap over-includes: placed plans keep `effective_until =
+ * NULL` forever, so a January program "overlaps" every later block even
+ * though a March one took over — a client's fourth block would list all
+ * four programs. The winner only changes at a plan's start or the day after
+ * one's window closes, so those are the only boundaries evaluated. A capped
+ * plan expiring hands govern-ship BACK to the older open plan for the days
+ * after its `effective_until` — exactly what per-date resolution answers.
+ */
+export function reduceToGoverningSegments(
+  plans: TrainingPlanWindowSummary[],
+  spanStart: string,
+  spanEnd: string
+): GoverningPlanSegment[] {
+  const boundarySet = new Set<string>([spanStart]);
+  for (const plan of plans) {
+    if (plan.effectiveFrom > spanStart && plan.effectiveFrom <= spanEnd) {
+      boundarySet.add(plan.effectiveFrom);
+    }
+    if (plan.effectiveUntil !== null) {
+      const dayAfter = addDaysToDateString(plan.effectiveUntil, 1);
+      if (dayAfter > spanStart && dayAfter <= spanEnd) {
+        boundarySet.add(dayAfter);
+      }
+    }
+  }
+  const boundaries = [...boundarySet].sort();
+
+  const segments: GoverningPlanSegment[] = [];
+  for (let i = 0; i < boundaries.length; i++) {
+    const from = boundaries[i];
+    const to =
+      i + 1 < boundaries.length
+        ? addDaysToDateString(boundaries[i + 1], -1)
+        : spanEnd;
+    const winner = governingPlanAt(plans, from);
+    if (!winner) continue;
+    const last = segments[segments.length - 1];
+    if (last && last.plan.id === winner.id) {
+      last.to = to; // merge adjacent segments of the same plan
+    } else {
+      segments.push({ plan: winner, from, to });
+    }
+  }
+  return segments;
+}
+
 /** Per-block server facts for the whole chain, in chain order. */
 export async function getBlockFacts(
   clientId: string,
@@ -202,19 +278,23 @@ export async function getBlockFacts(
     fetchEventCalories(clientId, spanStart, spanEnd),
   ]);
 
-  return blocks.map((block) => ({
-    blockId: block.id,
-    training: plans
-      .filter(
-        (plan) =>
-          plan.effectiveFrom <= block.endsOn &&
-          (plan.effectiveUntil === null || plan.effectiveUntil >= block.startsOn)
-      )
-      .map((plan) => ({
-        id: plan.id,
-        name: plan.name,
-        startsOn: plan.effectiveFrom,
-      })),
-    nutrition: deriveNutritionFact(events, versions, block, clientToday),
-  }));
+  const segments = reduceToGoverningSegments(plans, spanStart, spanEnd);
+
+  return blocks.map((block) => {
+    const training: BlockFacts["training"] = [];
+    for (const segment of segments) {
+      if (segment.from > block.endsOn || segment.to < block.startsOn) continue;
+      if (training.some((fact) => fact.id === segment.plan.id)) continue;
+      training.push({
+        id: segment.plan.id,
+        name: segment.plan.name,
+        startsOn: segment.plan.effectiveFrom,
+      });
+    }
+    return {
+      blockId: block.id,
+      training,
+      nutrition: deriveNutritionFact(events, versions, block, clientToday),
+    };
+  });
 }

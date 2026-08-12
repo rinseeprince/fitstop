@@ -18,7 +18,10 @@ vi.mock("./training-service", () => ({
 import { supabaseAdmin } from "./supabase-admin";
 import { listBlocks } from "./client-blocks-service";
 import { getTrainingPlansOverlapping } from "./training-service";
-import { getBlockFacts } from "./client-blocks-facts-service";
+import {
+  getBlockFacts,
+  reduceToGoverningSegments,
+} from "./client-blocks-facts-service";
 
 const TODAY = "2026-08-11";
 const CLIENT_ID = "client-1";
@@ -265,6 +268,50 @@ describe("getBlockFacts", () => {
     expect(eventCalls).toHaveLength(2);
   });
 
+  it("does NOT leak a superseded open-window plan into later blocks", async () => {
+    // Placed plans keep effective_until = NULL forever; raw overlap would
+    // list the January program in the June block. Governing segments end a
+    // plan's reign where its successor starts.
+    vi.mocked(listBlocks).mockResolvedValue([
+      block("a", "2026-01-05", "2026-02-01"),
+      block("b", "2026-06-01", "2026-06-28"),
+    ]);
+    vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
+      { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: null },
+      { id: "p2", name: "Peak", effectiveFrom: "2026-03-01", effectiveUntil: null },
+    ]);
+
+    const facts = await getBlockFacts(CLIENT_ID, TODAY);
+    expect(facts[0].training.map((t) => t.id)).toEqual(["p1"]);
+    expect(facts[1].training.map((t) => t.id)).toEqual(["p2"]);
+  });
+
+  it("hands govern-ship back to the older open plan when a capped successor expires", async () => {
+    vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-03-01", "2026-03-28")]);
+    vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
+      { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: null },
+      { id: "p2", name: "Bridge", effectiveFrom: "2026-02-01", effectiveUntil: "2026-02-28" },
+    ]);
+
+    const facts = await getBlockFacts(CLIENT_ID, TODAY);
+    // March is past the bridge's window; the open base plan governs again —
+    // the same answer getTrainingPlanForDate gives any March date.
+    expect(facts[0].training.map((t) => t.id)).toEqual(["p1"]);
+  });
+
+  it("same-day tie: the list-first (newest-created) plan governs; the loser never appears", async () => {
+    vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-28")]);
+    // getTrainingPlansOverlapping orders created_at DESC within a start
+    // date, so p2 (list-first) is the resolution winner.
+    vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
+      { id: "p2", name: "Corrected", effectiveFrom: "2026-06-01", effectiveUntil: null },
+      { id: "p1", name: "Mistake", effectiveFrom: "2026-06-01", effectiveUntil: null },
+    ]);
+
+    const facts = await getBlockFacts(CLIENT_ID, TODAY);
+    expect(facts[0].training.map((t) => t.id)).toEqual(["p2"]);
+  });
+
   it("counts multiple prescription changes and reports the newest era's first day", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-21")]);
     versionsResult = { data: [version("v", "2026-05-01", null, null)], error: null };
@@ -283,5 +330,32 @@ describe("getBlockFacts", () => {
     expect(fact.nutrition?.calories).toBe(2000);
     expect(fact.nutrition?.changeCount).toBe(2);
     expect(fact.nutrition?.lastChangedOn).toBe("2026-06-15");
+  });
+});
+
+describe("reduceToGoverningSegments", () => {
+  it("merges adjacent same-plan segments and clips reigns at successors", () => {
+    const plans = [
+      { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: null },
+      { id: "p2", name: "Bridge", effectiveFrom: "2026-02-01", effectiveUntil: "2026-02-28" },
+    ];
+    const segments = reduceToGoverningSegments(plans, "2026-01-05", "2026-04-30");
+    expect(
+      segments.map((s) => [s.plan.id, s.from, s.to])
+    ).toEqual([
+      ["p1", "2026-01-05", "2026-01-31"],
+      ["p2", "2026-02-01", "2026-02-28"],
+      ["p1", "2026-03-01", "2026-04-30"],
+    ]);
+  });
+
+  it("leaves a true gap ungoverned (no plan covers before the first start)", () => {
+    const plans = [
+      { id: "p1", name: "Base", effectiveFrom: "2026-02-01", effectiveUntil: null },
+    ];
+    const segments = reduceToGoverningSegments(plans, "2026-01-01", "2026-03-01");
+    expect(segments.map((s) => [s.plan.id, s.from, s.to])).toEqual([
+      ["p1", "2026-02-01", "2026-03-01"],
+    ]);
   });
 });

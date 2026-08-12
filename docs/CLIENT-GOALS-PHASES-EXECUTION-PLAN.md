@@ -2929,3 +2929,47 @@ with a one-line provenance note at the first descriptive citation.
 tests; arithmetic closes from 2722; one unrelated intermittent failure appeared
 in a single run and did not reproduce on re-run — the documented flaky-full-run
 pattern) · `check:labels` OK (660) · no `as any` · no markers · no migration.
+
+---
+
+## SESSION 3.6 — Edit a block + end-date granularity (owner-directed follow-up, 2026-08-12)
+
+> Owner-approved plan: **[A]** facts reign fix · **[B]** end-dates-in contract
+> (weeks → endsOn on the PUT's editable rows; day-granular lengths; the §2
+> invariant-3 mechanism — date pairs never cross the wire, starts always
+> derived — survives with only the duration unit changing) · **[C]** elapsed
+> pin relaxed to dates-only (name/focus/target editable on past blocks —
+> owner-approved reversal of the S2 verbatim-pin decision) · **[D]** the edit
+> UI (pencil, shared form, push-forward preview; target weight included by
+> owner call). "Notes" confirmed = the derived timeline, not a new column;
+> zero migrations.
+
+### Task 3.6-A — Training column reign fix ✅ SHIPPED 2026-08-12
+
+**The defect (owner-probed, found while answering "does placing a new plan drop
+the old one from a finished block?"):** placed `training_plans` keep
+`effective_until = NULL` forever ("active" resolves by latest-start-wins, not by
+closed windows), so the facts endpoint's raw window-overlap treated a January
+program as overlapping every later block — a client's fourth sequential block
+listed all four programs.
+
+**The fix:** `reduceToGoverningSegments` (`client-blocks-facts-service.ts`,
+exported + tested) reduces the fetched plans to the segments where each
+actually GOVERNED under `getTrainingPlanForDate`'s own rule — latest
+`effective_from` wins among covering plans, same-day ties to the newest-created
+(the query's `created_at DESC` within-group order, documented reliance). The
+winner can only change at a plan's start or the day after a capped window
+closes, so only those boundaries are evaluated; adjacent same-plan segments
+merge; a capped plan expiring hands govern-ship BACK to the older open plan —
+exactly the per-date resolution answer. Blocks then list plans whose governing
+segments intersect their window. No wire or route change. Recorded edge: a plan
+placed and superseded the same day (zero governed days) now vanishes from both
+the column and the timeline — resolution-faithful, and the timeline's
+amendment-blindness note already covers the "something happened here" gap until
+Session 6's notes land.
+
+**Gates.** `tsc --noEmit` clean · `eslint` clean on touched files ·
+`vitest run` **267 files / 2733 tests, all passing** (+5: superseded-plan
+leak, capped-successor handback, same-day tie, and 2 direct segment pins;
+arithmetic closes from 2728) · `check:labels` OK (660) · no `as any` · no
+markers · no migration.
