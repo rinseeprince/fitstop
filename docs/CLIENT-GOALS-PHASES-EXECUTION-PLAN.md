@@ -3887,9 +3887,16 @@ fixing a bug nothing could reach. The pre-existing TECHNICAL-DEBT entry naming
 that hook is marked resolved rather than left stale.
 
 **4b.4 — the drawer is a pure consumer.** The dropdown is gone; in its place a
-read-only *"TDEE n cal/day — From the client profile — Moderately active."* plus
-a drift line when the covering version's snapshot differs from the live profile
-(the GET now exposes the version's `tdee`). The orchestrator's **four** reads of
+read-only **TDEE number and nothing else**. Two additions were built here and
+**removed on owner request 2026-08-12**, both wrong rather than merely noisy:
+an activity label ("From the client profile — Extremely active") which is a lie
+whenever the coach has set a custom TDEE, since the number then derives from
+their override and not the ladder; and a drift line ("This plan was built at N")
+which rendered on clients with no plan at all. The route/hook plumbing added to
+feed the drift line was reverted with it, and `lib/activity-labels.ts` deleted —
+it existed only for that label. **Standing lesson: this form has the profile's
+number and nothing else; a line that needs plan state or override state does not
+belong in it.** The orchestrator's **four** reads of
 `body.workActivityLevel` are gone — activity resolves once into `calcInputs` from
 the CLIENT, so preview and save share one source.
 `nutritionPlanSchema.workActivityLevel` is accepted-but-ignored rather than

@@ -27,8 +27,6 @@ type NutritionTargetsData = {
   /** The plan's stored calculator settings, so the builder's pickers seed from
    *  it instead of their hardcoded defaults. Absent when there is no plan. */
   workActivityLevel?: ActivityLevel;
-  /** The version's TDEE snapshot — what this plan was actually built from. */
-  tdee?: number | null;
   proteinTargetGPerKg?: number;
   /** Server-resolved inputs for the live preview. Present on BOTH the has-plan
    *  and no-plan responses; null only when the resolver itself failed. */

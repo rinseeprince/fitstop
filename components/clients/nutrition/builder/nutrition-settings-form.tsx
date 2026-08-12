@@ -25,10 +25,6 @@ import { KG_PER_LB } from "@/utils/unit-conversions";
 type NutritionSettingsFormProps = {
   /** Read-only, from the client profile. */
   tdee: number | null;
-  /** Human label for the profile's activity level; null when never set. */
-  activityLabel: string | null;
-  /** The covering plan version's snapshot, for the drift courtesy line. */
-  planTdee: number | null;
   proteinTargetGPerKg: number;
   dietType: DietType;
   onSettingsChange: (settings: {
@@ -48,8 +44,6 @@ const selectItemClass =
 
 export function NutritionSettingsForm({
   tdee,
-  activityLabel,
-  planTdee,
   proteinTargetGPerKg,
   dietType,
   onSettingsChange,
@@ -77,34 +71,21 @@ export function NutritionSettingsForm({
 
   return (
     <div className="space-y-4">
-      {/* Work activity level is NOT editable here. It is a CLIENT fact and it
-          lives on the client profile (Overview -> Client settings). A dropdown
-          in this drawer meant activity had two homes that routinely disagreed,
-          and a coach had no way to know that regenerating a plan was how they
-          were supposed to update the client's TDEE. Read-only, from the
-          profile. */}
+      {/* Read-only. Activity level is a CLIENT fact set on the client profile
+          (Overview -> Client settings); a dropdown here gave it two homes that
+          disagreed. This shows the number and nothing else on purpose: naming
+          the activity level is WRONG whenever the coach has set a custom TDEE,
+          and a "this plan was built at N" line needs plan state this form does
+          not have. Both were tried and removed. */}
       <div className="space-y-1.5">
-        <label className={SECTION_LABEL_CLASS}>Energy</label>
+        <label className={SECTION_LABEL_CLASS}>TDEE</label>
         <div className="rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[rgba(13,148,136,0.03)] px-3 py-2">
           <p className="text-[13px] font-medium text-[#0c1a1e]">
-            TDEE{" "}
             <span className={MONO}>
               {tdee != null ? tdee.toLocaleString("en-US") : "—"}
             </span>{" "}
             cal/day
           </p>
-          <p className="mt-0.5 text-[11px] leading-[1.4] text-[#93b0b4]">
-            {activityLabel
-              ? `From the client profile — ${activityLabel}.`
-              : "From the client profile."}
-          </p>
-          {planTdee != null && tdee != null && planTdee !== tdee && (
-            <p className="mt-1 text-[11px] leading-[1.4] text-[#c8923a]">
-              This plan was built at{" "}
-              <span className={MONO}>{planTdee.toLocaleString("en-US")}</span>. Regenerate
-              to use the current figure.
-            </p>
-          )}
         </div>
       </div>
 

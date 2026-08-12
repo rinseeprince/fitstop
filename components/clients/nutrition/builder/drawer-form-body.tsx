@@ -14,7 +14,6 @@ import { NutritionSettingsForm } from "./nutrition-settings-form";
 import { NutritionTargetsBlock } from "./nutrition-targets-block";
 import { NutritionSurplusSettings } from "./nutrition-surplus-settings";
 import { ClientGoalEditor } from "../../client-goal-editor";
-import { ACTIVITY_LABELS } from "@/lib/activity-labels";
 import { NutritionGoalChangedBanner } from "../nutrition-goal-changed-banner";
 
 function Divider() {
@@ -39,12 +38,6 @@ export function DrawerFormBody() {
         <div className="space-y-4">
           <NutritionSettingsForm
             tdee={builder.client.tdee ?? null}
-            activityLabel={
-              builder.client.workActivityLevel
-                ? ACTIVITY_LABELS[builder.client.workActivityLevel]
-                : null
-            }
-            planTdee={builder.nutritionData?.tdee ?? null}
             proteinTargetGPerKg={builder.settings.proteinTargetGPerKg}
             dietType={builder.settings.dietType}
             onSettingsChange={builder.handleSettingsChange}
