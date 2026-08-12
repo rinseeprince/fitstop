@@ -11,6 +11,12 @@ vi.mock('./body-metrics-service', () => ({
   recordBodyMetrics: vi.fn().mockResolvedValue({}),
 }))
 
+vi.mock('./client-energy-service', () => ({
+  recalculateClientEnergy: vi
+    .fn()
+    .mockResolvedValue({ status: 'written', bmr: 1800, tdee: 2160 }),
+}))
+
 vi.mock('./client-goals-service', () => ({
   updateGoals: vi.fn().mockResolvedValue({}),
 }))

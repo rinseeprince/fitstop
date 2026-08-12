@@ -3,6 +3,9 @@
  * Extracted from various files to centralize magic numbers
  */
 
+// Type-only: erased at compile, so this file stays a runtime leaf.
+import type { ActivityLevel } from "@/types/check-in";
+
 // Timing constants
 export const RATE_LIMIT_RETRY_DELAY_MS = 1500;
 export const DEBOUNCE_DELAY_MS = 300;
@@ -125,3 +128,11 @@ export const AUDIT_ACTIONS = {
 } as const;
 
 export type AuditActionKey = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
+
+// Client energy (BMR/TDEE) — see services/client-energy-calc.ts.
+// The activity fallback mirrors the column DEFAULT (migration 046) so a NULL
+// row and a freshly-inserted row agree on what "unset" costs.
+export const DEFAULT_WORK_ACTIVITY_LEVEL: ActivityLevel = "sedentary";
+// Mifflin-St Jeor needs an age. This was a silent `?? 30` inside the BMR
+// helper; named so it is auditable and so a UI nudge has something to cite.
+export const DEFAULT_BMR_AGE_YEARS = 30;

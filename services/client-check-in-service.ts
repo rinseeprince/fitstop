@@ -10,9 +10,7 @@ import {
   getClientCheckIns
 } from "@/services/check-in-service";
 import { getClientById, updateClient } from "@/services/client-service";
-import { updateClientBMR } from "@/services/bmr-service";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
@@ -175,35 +173,23 @@ export async function updateClientMetricsFromCheckIn(
 
     // Only update if we have new data
     if (Object.keys(updates).length > 0) {
-      // Update client with new current metrics
+      // Update client with new current metrics. This also recomputes the
+      // BMR/TDEE pair — updateClient owns that call now, so there is no
+      // clients write of our own here. What used to live here computed BMR and
+      // then hardcoded `tdee = bmr * 1.2`, which silently costed every client
+      // as sedentary and overwrote a coach's custom TDEE on every check-in.
       const updatedClient = await updateClient(client.id, updates);
 
-      // Calculate and update BMR if we have all required data
-      const bmr = updateClientBMR(updatedClient);
-      let tdee: number | undefined;
-      if (bmr !== null) {
-        // Calculate TDEE (sedentary = BMR × 1.2)
-        tdee = Math.round(bmr * 1.2);
-
-        // TODO: Replace with server client once service layer auth pattern is established
-        const { error: updateError } = await supabaseAdmin
-          .from("clients")
-          .update({ bmr, tdee })
-          .eq("id", client.id);
-
-        if (updateError) {
-          console.error("Error updating BMR/TDEE:", updateError);
-        }
-      }
-
-      // Dual-write to body_metrics (non-blocking)
+      // Dual-write to body_metrics (non-blocking). The pair comes off the
+      // updated client rather than being recomputed, so the event log and the
+      // profile cannot disagree about what this check-in recorded.
       try {
         await recordBodyMetrics({
           clientId: client.id,
           weight: checkInData.weight,
           bodyFatPercentage: checkInData.bodyFatPercentage,
-          bmr: bmr ?? undefined,
-          tdee,
+          bmr: updatedClient.bmr,
+          tdee: updatedClient.tdee,
           source: "check_in",
           sourceId: checkInId,
         });

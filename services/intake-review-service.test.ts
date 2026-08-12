@@ -22,8 +22,13 @@ vi.mock('@/services/client-service', () => ({
   getClientById: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/services/bmr-service', () => ({
-  updateClientBMR: vi.fn().mockResolvedValue(undefined),
+vi.mock('@/services/client-energy-service', () => ({
+  // Mocked at the MODULE boundary, not the query builder: this suite's
+  // supabaseAdmin.from stub routes by call ORDER, so a real energy read/write
+  // would consume two slots and reshuffle every later stub.
+  recalculateClientEnergy: vi
+    .fn()
+    .mockResolvedValue({ status: 'written', bmr: 1800, tdee: 2160 }),
 }))
 
 import { supabaseAdmin } from './supabase-admin'

@@ -6,6 +6,9 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateClientMetricsSchema } from "@/lib/validations/client-metrics";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { updateGoals } from "@/services/client-goals-service";
+import { recalculateClientEnergy } from "@/services/client-energy-service";
+import type { ClientEnergyOverrides } from "@/services/client-energy-service";
+import type { CheckInInsert, ClientUpdate } from "@/lib/database-helpers";
 
 export async function PUT(
   request: NextRequest,
@@ -53,7 +56,8 @@ export async function PUT(
       );
     }
 
-    const client = clientData;
+    // The `client` alias that used to sit here fed the inline Mifflin-St Jeor
+    // block; the read above now exists only for the ownership 404.
 
     // Validate the ranges the schema does not already cover. The weight bound
     // that used to sit here was a second, tighter copy of the schema's — the
@@ -69,32 +73,20 @@ export async function PUT(
       }
     }
 
-    if (body.bmr !== undefined) {
-      if (body.bmr < 800 || body.bmr > 5000) {
-        return NextResponse.json(
-          { error: "BMR must be between 800-5000 cal/day" },
-          { status: 400 }
-        );
-      }
-    }
-
-    if (body.tdee !== undefined) {
-      if (body.tdee < 1000 || body.tdee > 8000) {
-        return NextResponse.json(
-          { error: "TDEE must be between 1000-8000 cal/day" },
-          { status: 400 }
-        );
-      }
-    }
+    // The bmr/tdee bounds that used to sit here were exact duplicates of the
+    // schema's, so updateClientMetricsSchema has already rejected an
+    // out-of-range value before this handler runs.
 
     // If saving as check-in, create check-in record
     if (
       body.saveOption === "check-in" &&
       (body.currentWeight !== undefined || body.currentBodyFatPercentage !== undefined)
     ) {
-      const checkInData: any = {
+      // `submitted_at` was written here until typing this object surfaced that
+      // check_ins has no such column — the insert would have been rejected by
+      // PostgREST. `created_at` carries the submission time by default.
+      const checkInData: CheckInInsert = {
         client_id: clientId,
-        submitted_at: new Date().toISOString(),
         weight: body.currentWeight,
         body_fat_percentage: body.currentBodyFatPercentage,
       };
@@ -113,7 +105,7 @@ export async function PUT(
     }
 
     // Build update object
-    const updates: any = {};
+    const updates: ClientUpdate = {};
 
     if (body.currentWeight !== undefined) {
       updates.current_weight = body.currentWeight;
@@ -131,73 +123,65 @@ export async function PUT(
       updates.goal_body_fat_percentage = body.goalBodyFatPercentage;
     }
 
+    // bmr/tdee are NOT written from here. This handler used to set them
+    // directly, re-implement Mifflin-St Jeor inline for "reset to auto", and
+    // hardcode `tdee = bmr * 1.2` twice — which is how a client's TDEE came to
+    // contradict their own BMR. Both halves now go through the one owner
+    // below, as override instructions.
+    const overrides: ClientEnergyOverrides = {};
     if (body.bmr !== undefined) {
-      updates.bmr = body.bmr;
-      updates.bmr_manual_override = body.bmrManualOverride ?? true;
+      overrides.bmr = { action: "set", value: body.bmr };
+    } else if (body.bmrManualOverride === false) {
+      overrides.bmr = { action: "clear" };
     }
-
     if (body.tdee !== undefined) {
-      updates.tdee = body.tdee;
-      updates.tdee_manual_override = body.tdeeManualOverride ?? true;
+      overrides.tdee = { action: "set", value: body.tdee };
+    } else if (body.tdeeManualOverride === false) {
+      overrides.tdee = { action: "clear" };
     }
+    const hasOverrides = overrides.bmr !== undefined || overrides.tdee !== undefined;
 
-    // Reset manual overrides if requested
-    if (body.bmrManualOverride === false) {
-      updates.bmr_manual_override = false;
-      // Recalculate BMR based on current data
-      if (client.current_weight && client.height && client.gender && client.date_of_birth) {
-        // Stored canonically since migration 141 — read straight through.
-        const weightKg = client.current_weight;
-        const heightCm = client.height;
-        const age = new Date().getFullYear() - new Date(client.date_of_birth).getFullYear();
+    // An override-only body leaves `updates` empty, and an empty .update({})
+    // is a wasted round trip at best.
+    if (Object.keys(updates).length > 0) {
+      const { error: updateError } = await supabaseAdmin
+        .from("clients")
+        .update(updates)
+        .eq("id", clientId)
+        .eq("coach_id", coachId);
 
-        let bmr;
-        if (client.gender === "male") {
-          bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + 5;
-        } else if (client.gender === "female") {
-          bmr = 10 * weightKg + 6.25 * heightCm - 5 * age - 161;
-        } else {
-          bmr = 10 * weightKg + 6.25 * heightCm - 5 * age - 78;
-        }
-
-        updates.bmr = Math.round(bmr);
+      if (updateError) {
+        console.error("Error updating client:", updateError);
+        return NextResponse.json(
+          { error: "Failed to update metrics" },
+          { status: 500 }
+        );
       }
     }
 
-    if (body.tdeeManualOverride === false) {
-      updates.tdee_manual_override = false;
-      // Recalculate TDEE as BMR * 1.2 (sedentary)
-      const bmrValue = updates.bmr || client.bmr;
-      if (bmrValue) {
-        updates.tdee = Math.round(bmrValue * 1.2);
-      }
-    }
+    // Recompute the pair. Runs after the measurements above commit, so it reads
+    // the new weight/body fat rather than the pre-write row.
+    const energyInputChanged =
+      body.currentWeight !== undefined || body.currentBodyFatPercentage !== undefined;
+    const energy =
+      energyInputChanged || hasOverrides
+        ? await recalculateClientEnergy(clientId, {
+            coachId,
+            overrides: hasOverrides ? overrides : undefined,
+          })
+        : null;
 
-    // Update client record
-    const { error: updateError } = await supabaseAdmin
-      .from("clients")
-      .update(updates)
-      .eq("id", clientId)
-      .eq("coach_id", coachId);
-
-    if (updateError) {
-      console.error("Error updating client:", updateError);
-      return NextResponse.json(
-        { error: "Failed to update metrics" },
-        { status: 500 }
-      );
-    }
-
-    // Dual-write body metrics (non-blocking)
+    // Dual-write body metrics (non-blocking). The pair comes from the helper's
+    // result, never recomputed here, so the event matches the profile.
     if (body.currentWeight !== undefined || body.currentBodyFatPercentage !== undefined ||
-        body.bmr !== undefined || body.tdee !== undefined) {
+        energy?.status === "written") {
       try {
         await recordBodyMetrics({
           clientId,
           weight: body.currentWeight,
           bodyFatPercentage: body.currentBodyFatPercentage,
-          bmr: updates.bmr ?? undefined,
-          tdee: updates.tdee ?? undefined,
+          bmr: energy?.bmr ?? undefined,
+          tdee: energy?.tdee ?? undefined,
           source: "metrics_api",
         });
       } catch (dualWriteError) {

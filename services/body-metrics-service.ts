@@ -75,13 +75,18 @@ export const recordBodyMetrics = async (params: {
     throw new Error(`Failed to record body metrics: ${error.message}`);
   }
 
-  // Update denormalized cache on clients table for provided fields
+  // Update denormalized cache on clients table for provided fields.
+  //
+  // bmr/tdee are deliberately NOT cached here. This used to write them, which
+  // made every caller passing them a back-door writer of the profile pair —
+  // that is how a plan save came to set clients.tdee from the PLAN's activity
+  // level. The pair now has one owner (services/client-energy-service.ts); the
+  // bmr/tdee params below still ride onto the immutable body_metrics event as
+  // provenance, which is all they were ever meant to be.
   const cacheUpdate: Record<string, unknown> = {};
   if (params.weight !== undefined) cacheUpdate.current_weight = params.weight;
   if (params.bodyFatPercentage !== undefined)
     cacheUpdate.current_body_fat_percentage = params.bodyFatPercentage;
-  if (params.bmr !== undefined) cacheUpdate.bmr = params.bmr;
-  if (params.tdee !== undefined) cacheUpdate.tdee = params.tdee;
 
   if (params.updateClientCache !== false && Object.keys(cacheUpdate).length > 0) {
     cacheUpdate.updated_at = now;

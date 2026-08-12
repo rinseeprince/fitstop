@@ -3,6 +3,7 @@ import {
   getLatestBodyMetrics,
   recordBodyMetrics,
 } from "./body-metrics-service";
+import { recalculateClientEnergy } from "./client-energy-service";
 import { fetchAllPages } from "@/lib/paged-fetch";
 import type { MetricEntry, MetricEntryRow } from "@/types/metric-entries";
 import type { MetricEntryKey } from "@/lib/metrics/metric-entry-definitions";
@@ -136,6 +137,13 @@ async function dualWriteBodyMetrics(
       recordedAt: `${input.entryDate}T12:00:00.000Z`,
       updateClientCache: isCurrent,
     });
+
+    // Same no-regression rule as the cache write above: only an entry dated
+    // on/after the latest known event may move the profile, so a backdated
+    // measurement recomputes nothing.
+    if (isCurrent) {
+      await recalculateClientEnergy(clientId);
+    }
   } catch (error) {
     console.error("Failed to dual-write body metrics for coach entry:", error);
   }

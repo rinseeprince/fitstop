@@ -48,10 +48,6 @@ vi.mock('@/lib/viewer-preferences', () => ({
   getCoachUnitPreference: (...a: unknown[]) => getCoachUnitPreferenceMock(...a),
 }))
 
-vi.mock('./bmr-service', () => ({
-  updateClientBMR: vi.fn(),
-}))
-
 vi.mock('./body-metrics-service', () => ({
   recordBodyMetrics: vi.fn().mockResolvedValue({}),
 }))
@@ -69,7 +65,6 @@ import { getHabitLogs } from './daily-habits-service'
 import { getWeeklySummaries } from './weekly-nutrition-service'
 import { getTrainingEventDetailsForPeriod } from '@/services/check-in-context-service'
 import { getClientById, updateClient } from './client-service'
-import { updateClientBMR } from './bmr-service'
 import { supabaseAdmin } from './supabase-admin'
 import { recordBodyMetrics } from './body-metrics-service'
 
@@ -284,15 +279,17 @@ describe('Client Check-in Service', () => {
       weightUnit: 'lbs',
     } as any
 
-    it('calls recordBodyMetrics after updating client metrics from check-in', async () => {
-      vi.mocked(updateClient).mockResolvedValue({ ...mockClient, currentWeight: 175 })
-      vi.mocked(updateClientBMR).mockReturnValue(1800)
-
-      const mockQuery = {
-        update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      }
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+    it('stamps the event with the pair updateClient returned, not a recomputation', async () => {
+      // The previous assertion here pinned tdee: 2160 — literally bmr * 1.2,
+      // the hardcoded sedentary multiplier this service used to apply. It now
+      // takes whatever updateClient's energy recompute produced, so a client on
+      // any other activity level is recorded truthfully.
+      vi.mocked(updateClient).mockResolvedValue({
+        ...mockClient,
+        currentWeight: 175,
+        bmr: 1800,
+        tdee: 3105,
+      })
 
       await updateClientMetricsFromCheckIn(mockClient, { weight: 175, bodyFatPercentage: 14 } as any, 'check-in-999')
 
@@ -301,15 +298,22 @@ describe('Client Check-in Service', () => {
         weight: 175,
         bodyFatPercentage: 14,
         bmr: 1800,
-        tdee: 2160,
+        tdee: 3105,
         source: 'check_in',
         sourceId: 'check-in-999',
       })
     })
 
-    it('still updates clients table even if recordBodyMetrics fails', async () => {
+    it('issues no clients write of its own — updateClient owns the energy pair', async () => {
       vi.mocked(updateClient).mockResolvedValue({ ...mockClient, currentWeight: 175 })
-      vi.mocked(updateClientBMR).mockReturnValue(null)
+
+      await updateClientMetricsFromCheckIn(mockClient, { weight: 175 } as any)
+
+      expect(supabaseAdmin.from).not.toHaveBeenCalledWith('clients')
+    })
+
+    it('still resolves if recordBodyMetrics fails', async () => {
+      vi.mocked(updateClient).mockResolvedValue({ ...mockClient, currentWeight: 175 })
       vi.mocked(recordBodyMetrics).mockRejectedValueOnce(new Error('DB down'))
 
       // Should not throw despite dual-write failure

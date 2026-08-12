@@ -5,6 +5,13 @@ vi.mock("./body-metrics-service", () => ({
   getLatestBodyMetrics: vi.fn(),
   recordBodyMetrics: vi.fn(),
 }));
+// Mocked at the module boundary deliberately: this suite's supabaseAdmin.from
+// stub returns the ENTRIES upsert object for every table, so a real energy
+// write would throw into dualWriteBodyMetrics' catch and the suite would stay
+// green while the write silently never happened.
+vi.mock("./client-energy-service", () => ({
+  recalculateClientEnergy: vi.fn().mockResolvedValue({ status: "written" }),
+}));
 
 import { supabaseAdmin } from "./supabase-admin";
 import {

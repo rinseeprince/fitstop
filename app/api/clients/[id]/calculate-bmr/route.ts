@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { updateClientBMR } from "@/services/bmr-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
+import { recalculateClientEnergy } from "@/services/client-energy-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -48,43 +47,37 @@ export async function POST(
       );
     }
 
-    // Check if we have all required data
-    if (!client.currentWeight || !client.height || !client.gender) {
+    // Recompute through the single owner of the pair. This route used to write
+    // `{ bmr }` alone — a BMR recalc left TDEE stranded at a value derived from
+    // a BMR that no longer existed, which is exactly how a profile came to read
+    // BMR 3712 beside TDEE 3515. It does NOT clear override flags: silently
+    // discarding a coach's custom value on a button press would be worse than
+    // the bug it fixes.
+    const energy = await recalculateClientEnergy(id, { coachId });
+
+    if (energy.status === "skipped_insufficient_data") {
       return NextResponse.json(
         {
           error: "Missing required data for BMR calculation. Need: current weight, height, and gender.",
-          missing: {
-            currentWeight: !client.currentWeight,
-            height: !client.height,
-            gender: !client.gender
-          }
+          missing: energy.missing,
         },
         { status: 400 }
       );
     }
 
-    // Calculate BMR
-    const bmr = updateClientBMR(client);
-
-    if (bmr === null) {
+    if (energy.status === "failed" || energy.status === "skipped_client_not_found") {
       return NextResponse.json(
         { error: "Failed to calculate BMR" },
         { status: 500 }
       );
     }
 
-    // Update only BMR in database
-    // TDEE is calculated when nutrition settings are configured (activity level determines multiplier)
-    await supabaseAdmin
-      .from("clients")
-      .update({ bmr })
-      .eq("id", id);
-
     return NextResponse.json(
       {
         success: true,
-        bmr,
-        message: "BMR calculated. TDEE will be calculated when nutrition settings are configured."
+        bmr: energy.bmr,
+        tdee: energy.tdee,
+        message: "BMR and TDEE recalculated from the client's current metrics.",
       },
       { status: 200 }
     );

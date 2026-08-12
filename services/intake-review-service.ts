@@ -4,8 +4,7 @@ import { mapClientIntakeRow } from "@/lib/mappers";
 import { getIntake } from "@/services/client-intake-service";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { updateGoals } from "@/services/client-goals-service";
-import { getClientById } from "@/services/client-service";
-import { updateClientBMR } from "@/services/bmr-service";
+import { recalculateClientEnergy } from "@/services/client-energy-service";
 
 const db = supabaseAdmin;
 
@@ -215,21 +214,17 @@ export async function syncMetricsToClient(
     }
   }
 
-  // Calculate BMR from freshly-synced client data (non-blocking)
+  // Recompute the energy pair from the freshly-synced data (non-blocking).
+  // This used to write `{ bmr }` alone, leaving TDEE derived from a BMR that no
+  // longer existed. The helper reads the row itself, so the getClientById
+  // re-fetch that used to sit here is gone.
   try {
-    const freshClient = await getClientById(clientId);
-    if (freshClient) {
-      const bmr = updateClientBMR(freshClient);
-      if (bmr !== null) {
-        await supabaseAdmin
-          .from("clients")
-          .update({ bmr } as never)
-          .eq("id", clientId);
-        syncedFields.push("BMR");
-      }
+    const energy = await recalculateClientEnergy(clientId);
+    if (energy.status === "written") {
+      syncedFields.push("BMR & TDEE");
     }
-  } catch (bmrError) {
-    console.error("BMR calculation after sync failed:", bmrError instanceof Error ? bmrError.message : "Unknown error");
+  } catch (energyError) {
+    console.error("Energy recalculation after sync failed:", energyError instanceof Error ? energyError.message : "Unknown error");
   }
 
   return syncedFields;

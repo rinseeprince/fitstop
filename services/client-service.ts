@@ -13,6 +13,8 @@ import { sendInvitation } from "@/services/invitation-service";
 import { invalidateClientAuthCache } from "@/lib/auth-cache";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { updateGoals } from "@/services/client-goals-service";
+import { recalculateClientEnergy } from "@/services/client-energy-service";
+import { computeEnergyPair } from "@/services/client-energy-calc";
 
 // Extended client type with check-in info
 export type ClientWithCheckInInfo = Client & {
@@ -49,6 +51,20 @@ export const createClient = async (
   const goalWeightKg = clientData.goalWeight;
   const heightCm = clientData.height;
 
+  // The pair is set once, at row birth, through the same pure calculator the
+  // single UPDATE-writer uses (services/client-energy-service.ts). Doing it in
+  // the INSERT rather than as a follow-up write means it lands atomically with
+  // the measurements it derives from and leaves no window where a client exists
+  // with weight but no metabolism. Incomplete measurements simply leave both
+  // columns NULL — never one without the other.
+  const energy = computeEnergyPair({
+    weightKg: currentWeightKg,
+    heightCm,
+    gender: clientData.gender,
+    bodyFatPercentage: clientData.currentBodyFatPercentage,
+    dateOfBirth: clientData.dateOfBirth,
+  });
+
   const baseInsert = {
     coach_id: coachId,
     name: clientData.name,
@@ -62,6 +78,8 @@ export const createClient = async (
     current_body_fat_percentage: clientData.currentBodyFatPercentage ?? null,
     starting_weight: currentWeightKg ?? null,
     starting_body_fat_percentage: clientData.currentBodyFatPercentage ?? null,
+    bmr: energy.status === "ready" ? energy.bmr : null,
+    tdee: energy.status === "ready" ? energy.tdee : null,
     active: true,
   };
 
@@ -93,6 +111,8 @@ export const createClient = async (
         clientId: client.id,
         weight: currentWeightKg,
         bodyFatPercentage: clientData.currentBodyFatPercentage,
+        bmr: energy.status === "ready" ? energy.bmr : undefined,
+        tdee: energy.status === "ready" ? energy.tdee : undefined,
         source: "intake_sync",
       });
     } catch (dualWriteError) {
@@ -265,11 +285,40 @@ export const updateClient = async (
     await invalidateClientAuthCache(data.user_id);
   }
 
+  // Recompute the energy pair whenever an INPUT to it changed. The call lives
+  // here rather than at each caller so both of them — the coach PATCH and the
+  // check-in metrics sync — are covered by one site and neither can forget.
+  // It runs AFTER the update above commits, because the helper reads the row
+  // back and must see the new measurements.
+  const energyInputChanged =
+    clientData.currentWeight !== undefined ||
+    clientData.currentBodyFatPercentage !== undefined ||
+    clientData.height !== undefined ||
+    clientData.gender !== undefined ||
+    clientData.dateOfBirth !== undefined;
+
+  let energyBmr: number | undefined;
+  let energyTdee: number | undefined;
+
+  if (energyInputChanged) {
+    const energy = await recalculateClientEnergy(clientId, { coachId });
+    if (energy.status === "written") {
+      energyBmr = energy.bmr ?? undefined;
+      energyTdee = energy.tdee ?? undefined;
+      // Additive: callers already reading `client` see the fresh pair without a
+      // second fetch, and the shape is unchanged.
+      client.bmr = energyBmr;
+      client.tdee = energyTdee;
+    }
+  }
+
   // Dual-write body metrics (non-blocking)
   if (clientData.currentWeight !== undefined || clientData.currentBodyFatPercentage !== undefined) {
     try {
       await recordBodyMetrics({
         clientId,
+        bmr: energyBmr,
+        tdee: energyTdee,
         weight: currentWeightKg,
         bodyFatPercentage: clientData.currentBodyFatPercentage,
         source: "metrics_api",

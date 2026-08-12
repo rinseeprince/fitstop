@@ -134,15 +134,15 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
     return null;
   }
 
-  // Denormalize TDEE to client profile for overview display (non-transactional, safe to fail)
-  if (params.tdee != null) {
-    await supabaseAdmin
-      .from("clients")
-      .update({ tdee: params.tdee })
-      .eq("id", params.clientId);
-  }
+  // A plan save no longer touches the client profile. It used to write
+  // clients.tdee from the PLAN's own work_activity_level, which is how a
+  // client whose profile said "sedentary" ended up costed at ×1.9 — the plan
+  // and the profile disagreed and the plan won. The profile owns the pair
+  // (services/client-energy-service.ts); the plan snapshots it and a
+  // regeneration inherits whatever it is at that time.
 
-  // Dual-write TDEE to body_metrics (non-blocking)
+  // Dual-write TDEE to body_metrics (non-blocking) — provenance only, so the
+  // event log records what this version was built from.
   if (params.tdee != null) {
     try {
       await recordBodyMetrics({

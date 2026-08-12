@@ -123,16 +123,26 @@ A **block** is a named, contiguous stretch of a client's calendar carrying a coa
 - **Nothing computes from `focus`. Nothing computes from `target_weight` except the pace readout** — and pace is NOT on the wire: `derivePace` is a pure, unit-agnostic function the coach UI feeds from the merged metric series (`use-merged-metrics` + `utils/metric-points`), so the readout and the Weight column beside it share one source by construction. Neither field ever reaches the nutrition calculator, and the blocks routes never call `updateGoals` (pinned by test).
 - **Route surface:** `GET`+`PUT /api/clients/[id]/blocks`, `DELETE …/blocks/[blockId]` — full coach chain (`coachApiRateLimit` → CSRF → `requireCoachOwnsClient`, foreign client 404), canonical kg on the wire, audit events `block.chain_update` / `block.delete`. RLS deny-all + `GRANT … TO service_role` only (CONVENTIONS §8). Plus the read-only **`GET …/blocks/facts`** (Session 3.2, `services/client-blocks-facts-service.ts`): per-block training programs (governing segments, latest-start-wins) + the nutrition PRESCRIPTION (owner-specified semantics, 2026-08-12, superseding the original events-modal): the plan VERSION covering the block's reference date — today for a current block, its final day for a past one, its first day for a future one — supplies daily calories (custom-macros override honoured) and deficit (`tdee − calories`); hand edits and training surpluses are excluded by construction, era-resolution per migration 144's tiled windows. The changed-mid-block marker stays EVENT-derived (baseline transitions across unmodified lived days — catches pre-versioning history no plan row remembers). The events read is **paged** (`lib/paged-fetch.ts`) — an unpaged read silently truncates at PostgREST's ~1000-row cap. Kept off the chain GET so PUT/DELETE keep echoing that GET's exact payload.
 
-### Denormalized cache on clients table
+### Client energy: the profile OWNS bmr/tdee (Session 4B)
 
-The `clients` table retains `current_weight`, `current_body_fat_percentage`, `bmr`, `tdee` as a denormalized cache. These are updated on every body_metrics write for backward compatibility.
+`clients.current_weight` and `clients.current_body_fat_percentage` are a denormalized cache, refreshed by `recordBodyMetrics` on every `body_metrics` write (subject to its `updateClientCache` backdating guard — a backdated entry never regresses them).
+
+**`clients.bmr` and `clients.tdee` are NOT a cache. They are the source of truth for the client's metabolism**, and they have exactly one UPDATE writer: `recalculateClientEnergy()` (`services/client-energy-service.ts`). The rules are load-bearing, not stylistic — each one is a bug that actually shipped:
+
+- **The pair is written atomically.** Every UPDATE carries both keys. Six uncoordinated writers used to exist, three writing only half, which is how a profile came to read BMR 3712 beside TDEE 3515 — a TDEE derived from a BMR that no longer existed.
+- **BMR = Katch-McArdle when body fat is known, else Mifflin-St Jeor. TDEE = BMR × multiplier(`clients.work_activity_level`).** Both formulas live once, in the pure `services/client-energy-calc.ts` (importable from the browser and the seed scripts; kept out of the `supabaseAdmin`-importing module so `check:service-key` stays green). TDEE derives from the **rounded** BMR so the stored pair is reproducible and agrees with `calculateTDEE`. `getActivityMultiplier` is imported from `utils/nutrition-helpers.ts`, never reimplemented, and a junk activity value is normalized rather than allowed to yield NaN into a `NUMERIC(6,1)` column.
+- **An override flag freezes exactly its own half.** `bmr_manual_override` / `tdee_manual_override`: a custom TDEE plus a moving weight moves BMR and leaves TDEE pinned. A flag set over a NULL value is not a freeze and is recomputed.
+- **Activity level is a CLIENT fact.** Nothing under `components/clients/nutrition/**` writes it.
+- **A weight change never touches a plan row.** Plans snapshot bmr/tdee at generation; only a regeneration inherits the then-current profile numbers. `createNutritionPlan` touches the `clients` table zero times — it used to write `clients.tdee` from the *plan's* activity level, so the plan and the profile disagreed and the plan won.
+- **`createClient`'s INSERT is the one sanctioned exception**, setting the pair once at row birth through the same pure calculator. The invariant is one writer for *updates*; `services/client-energy-ownership.test.ts` scans for violations and documents that carve-out beside the scan.
+
+Callers that must recompute: `updateClient` (covering both the coach PATCH and the check-in metrics sync), the metrics PUT, `calculate-bmr`, the intake metrics sync, and current-dated coach metric entries.
 
 ### Dual-write pattern
 
 When a check-in submits body metrics (`services/client-check-in-service.ts`):
-1. Updates `clients` table with new current metrics (the denormalized cache)
-2. Recalculates BMR/TDEE from updated client data
-3. Calls `recordBodyMetrics()` to write an immutable event to `body_metrics` (non-blocking)
+1. Calls `updateClient()` with the new current metrics — which updates the denormalized cache **and** recomputes the energy pair through `recalculateClientEnergy`, honouring the client's activity level and any override flag. (This service issues no `clients` write of its own; it previously computed BMR here and hardcoded `tdee = bmr * 1.2`, costing every client as sedentary and clobbering a coach's custom TDEE on every check-in.)
+2. Calls `recordBodyMetrics()` to write an immutable event to `body_metrics` (non-blocking), stamped with the pair `updateClient` returned rather than a second recomputation, so the event log and the profile cannot disagree.
 
 ### Read switch fallback
 
