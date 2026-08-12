@@ -4146,3 +4146,98 @@ from. Smoke: open a client's Overview and confirm goal weight / goal body fat an
 their chips still render · set a goal in the nutrition drawer's editor, return to
 Overview, confirm it shows the new value (the tab unmounts, so the read
 revalidates on return) · a client with no goal reads "Not recorded" with no chip.
+
+---
+
+### Task 0b.2 — One writer for the mirror, and failures that surface ✅ SHIPPED 2026-08-13
+
+**Owner decision 2026-08-13: option (A)** — the four direct `clients.*` goal writes AND the four
+caller-level swallows, in one commit. Shipping the deletions alone was rejected because it
+*inverts* the failure mode: today a failed goal write leaves the mirror holding the NEW value and
+the `?? client.goalWeight` reads pick it up; deletions-only would leave it holding the OLD value,
+so a lost edit becomes a confident stale render behind a 200. Recoverable → silently wrong.
+
+**What shipped.** Goal columns removed from `createClient`'s INSERT and `updateClient`'s
+`updateData`; from the metrics PUT's `updates`; and from the intake sync's `updates` (into a
+separate `goalUpdates` object that never reaches the `clients` write). All four
+`try { await updateGoals(...) } catch { console.error }` wrappers deleted.
+
+**`5d5fd99` was NOT re-landed — its premise is dead.** It is an ancestor of HEAD but was undone by
+`d58120c`, and its reasoning was *"the RPC already writes `clients.*` inside the transaction"* —
+migration 139's `update_client_goals_atomic`, which exists in neither `supabase/migrations/` nor
+`types/database.ts` (grep-verified). Only its **swallow-removal half** survives, being independent
+of the RPC. The owner decision it recorded carries over unchanged: a failed goal write on
+`createClient` leaves the client with **no goal in either store** — consistent and re-editable —
+and the coach sees a real error.
+
+**Two things the plan did not name, found at execution:**
+
+1. **`syncedFields` spans both objects now.** It is built from `Object.keys(updates)` and is
+   `syncMetricsToClient`'s RETURN value — the "Synced: goal weight, goal deadline…" list the coach
+   reads. Splitting the goals out without widening it would have silently stopped reporting three
+   fields the sync still writes. Pinned by its own test and mutation-proven.
+2. **`createClient` gained the response overlay too.** `5d5fd99` added it to `updateClient` only.
+   With the goal columns out of the INSERT, `mapClientRow` returns a client with no goal, so the
+   201 reported no goal on a client that has one. No in-repo consumer reads it (`add-client-dialog`
+   types `client` as `unknown` and uses only `inviteSent`), but a knowingly-false response field is
+   the shape this session keeps removing. Both paths now echo what they wrote.
+
+#### What this does NOT buy
+
+`updateGoals` is still three autocommitted round trips with no transaction, and its **inner**
+mirror UPDATE is still logged-and-swallowed (`client-goals-service.ts:153-155`): a `client_goals`
+row can commit while the mirror write fails and the request still returns 200. This makes
+divergence **single-sourced and loud at the caller boundary**, not impossible. The atomicity RPC is
+the real fix (§7) and needs a migration, which Session 0b does not have.
+
+#### Reachability, so the risk is not overstated
+
+`createClient` (via `add-client-manual-form.tsx`) and the intake sync are **live**.
+`updateClient`'s goal branch and the metrics PUT's are **API-only** — both schemas still accept the
+fields, but no browser caller sends them since Session 4B deleted `hooks/use-client-metrics.ts`.
+API-only is not dead: RN is the real client.
+
+#### Tests
+
+**275 files / 2903 (2892 + 11; arithmetic closes).** Per site, both directions: the `clients`
+payload carries no goal column, and a rejecting `updateGoals` propagates (`createClient` rejects,
+`updateClient` rejects, the intake sync rejects, the metrics PUT 500s). Plus the two overlay pins
+and the `syncedFields` pin.
+
+- **Mutation A** (restore all four swallows) killed the four propagation pins.
+- **Mutation B** (restore the four direct writes) killed the four payload pins.
+- **Mutation C** (`syncedFields` back to `updates` only) killed the reporting pin.
+- Backed up with `cp` to the scratchpad, restored from there, verified byte-identical by `shasum`.
+  Never `git stash` / `git checkout --`.
+
+**One existing test moved rather than being deleted.** `client-service.test.ts`'s *"stores the
+payload verbatim — it is already canonical kg/cm"* asserted `insertCall.goal_weight`. Its intent is
+no-unit-conversion, so the assertion moved to the `updateGoals` payload — the writer the value now
+actually reaches. **Neither existing "does not fail if dual-write throws" test pinned the goal
+swallow** (both mock `recordBodyMetrics`, whose swallow is deliberately KEPT — a failed metrics
+event must not fail client creation). That matches `5d5fd99`'s note that the goal swallow shipped
+untested for six weeks.
+
+#### §2 security / load / performance review
+
+Triggered by "a change to how much/how often an existing write path writes". No new route, no
+migration, no auth or ownership change — every touched path keeps its existing chain. **Round
+trips go DOWN, not up:** a goal-only metrics PUT now leaves `updates` empty and skips the `clients`
+UPDATE entirely (`Object.keys(updates).length > 0` guard), and a goal-only intake sync skips it via
+`> 1`; the goal write was already happening in both cases. Worst-case row count is unchanged (one
+client row, one `client_goals` row). No new index needed. **Consistency (§2 items 12-13):** this
+change IS that item — the log-and-return-success paths are gone at the caller boundary, and what
+remains inconsistent is stated above rather than implied. Not measured under load; nothing here
+changes concurrency behaviour.
+
+#### Gates
+
+`tsc --noEmit` clean · `eslint .` **0 errors, 209 warnings** (unchanged) · `vitest run` **275 files
+/ 2903 tests, all passing** · `check:labels` OK 662 · no `as any` in changed non-test code · **no
+migration**. Three pre-existing `client_intake`-typing TODOs in `intake-review-service.ts`
+(`:23`, `:60`, `:80`) are **reported, not deleted** — outside every hunk of this commit (§13 item 6),
+the same call Session 4B made.
+
+**UI unverified — owner smoke:** add a client with a goal weight and confirm the Overview shows it
+(both stores agree) · run "Sync metrics to profile" on an intake carrying a goal/deadline and
+confirm the goal lands and the confirmation still names the goal fields it synced.

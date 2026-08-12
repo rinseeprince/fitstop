@@ -115,13 +115,9 @@ export async function PUT(
       updates.current_body_fat_percentage = body.currentBodyFatPercentage;
     }
 
-    if (body.goalWeight !== undefined) {
-      updates.goal_weight = body.goalWeight;
-    }
-
-    if (body.goalBodyFatPercentage !== undefined) {
-      updates.goal_body_fat_percentage = body.goalBodyFatPercentage;
-    }
+    // goal_weight / goal_body_fat_percentage are deliberately NOT written here.
+    // `updateGoals` below owns `client_goals` and the `clients.*` mirror; a
+    // second writer is how the two stores came to disagree.
 
     // bmr/tdee are NOT written from here. This handler used to set them
     // directly, re-implement Mifflin-St Jeor inline for "reset to auto", and
@@ -198,16 +194,15 @@ export async function PUT(
       }
     }
 
-    // Dual-write goals (non-blocking)
+    // Goals are written ONCE, by `updateGoals`, which owns both stores. **This
+    // throws**: a swallowed goal failure returned 200 while the mirror moved and
+    // `client_goals` did not, and nothing surfaced it. The measurement writes
+    // above are already committed and are unaffected.
     if (body.goalWeight !== undefined || body.goalBodyFatPercentage !== undefined) {
-      try {
-        await updateGoals(clientId, {
-          goalWeight: body.goalWeight,
-          goalBodyFatPercentage: body.goalBodyFatPercentage,
-        }, coachId);
-      } catch (dualWriteError) {
-        console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
-      }
+      await updateGoals(clientId, {
+        goalWeight: body.goalWeight,
+        goalBodyFatPercentage: body.goalBodyFatPercentage,
+      }, coachId);
     }
 
     // Get updated client data

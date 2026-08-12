@@ -222,8 +222,15 @@ describe('Client Service', () => {
       const insertCall = mockQuery.insert.mock.calls[0][0]
       expect(insertCall.current_weight).toBe(81.6466)
       expect(insertCall.starting_weight).toBe(81.6466)
-      expect(insertCall.goal_weight).toBe(77.1107)
       expect(insertCall.height).toBe(180.34)
+      // The goal weight is verbatim too, but it no longer travels in the INSERT:
+      // `updateGoals` is the single writer of both goal stores, so this asserts
+      // no-conversion at the writer it actually reaches.
+      expect(vi.mocked(updateGoals)).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ goalWeight: 77.1107 }),
+        'coach-456'
+      )
     })
 
     // Regression guard for the double-conversion this batch could reintroduce:
@@ -287,6 +294,9 @@ describe('Client Service', () => {
       )
     })
 
+    // Body metrics, NOT goals. This swallow is deliberately kept: a failed
+    // metrics event must not fail client creation. The goal swallow beside it
+    // was removed in 0b.2 — see below.
     it('does not fail if dual-write throws', async () => {
       const mockClientRow = createMockClientRow()
       const mockQuery = createMockQuery({ data: mockClientRow, error: null })
@@ -300,6 +310,55 @@ describe('Client Service', () => {
           currentWeight: 180,
         } as any)
       ).resolves.toBeDefined()
+    })
+
+    // Task 0b.2 — `updateGoals` is the sole writer of both goal stores.
+    it('writes no goal column in the INSERT', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+        goalWeight: 77,
+        goalBodyFatPercentage: 15,
+      } as any)
+
+      const insertCall = mockQuery.insert.mock.calls[0][0]
+      expect(insertCall).not.toHaveProperty('goal_weight')
+      expect(insertCall).not.toHaveProperty('goal_body_fat_percentage')
+    })
+
+    // The swallow that let a client's two goal stores disagree for six weeks.
+    it('a failed goal write fails the creation rather than reporting success', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+      vi.mocked(updateGoals).mockRejectedValueOnce(new Error('goal insert failed'))
+
+      await expect(
+        createClient('coach-456', {
+          name: 'Test Client',
+          email: 'test@example.com',
+          goalWeight: 77,
+        } as any)
+      ).rejects.toThrow('goal insert failed')
+    })
+
+    // The INSERT no longer returns the goal columns, so without the overlay a
+    // successful creation reports a client with no goal.
+    it('echoes the goal it just wrote back to the caller', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const client = await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+        goalWeight: 77,
+        goalBodyFatPercentage: 15,
+      } as any)
+
+      expect(client.goalWeight).toBe(77)
+      expect(client.goalBodyFatPercentage).toBe(15)
     })
   })
 
@@ -596,6 +655,48 @@ describe('Client Service', () => {
         expect.objectContaining({ goalWeight: 165 }),
         'coach-456'
       )
+    })
+
+    // Task 0b.2 — the same three pins as createClient, on the update path.
+    it('writes no goal column in the UPDATE', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient(
+        'client-123',
+        { goalWeight: 165, goalBodyFatPercentage: 14, phone: '123' },
+        'coach-456'
+      )
+
+      const updateCall = mockQuery.update.mock.calls[0][0]
+      expect(updateCall).not.toHaveProperty('goal_weight')
+      expect(updateCall).not.toHaveProperty('goal_body_fat_percentage')
+      // The rest of the PATCH is committed independently and is unaffected.
+      expect(updateCall).toHaveProperty('phone', '123')
+    })
+
+    it('a failed goal write surfaces rather than returning 200', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+      vi.mocked(updateGoals).mockRejectedValueOnce(new Error('goal insert failed'))
+
+      await expect(
+        updateClient('client-123', { goalWeight: 165 }, 'coach-456')
+      ).rejects.toThrow('goal insert failed')
+    })
+
+    // The row is read BEFORE updateGoals moves the mirror, so without the
+    // overlay a successful save echoes the old goal and renders as a no-op.
+    it('echoes the new goal rather than the pre-write row', async () => {
+      const mockQuery = createMockQuery({
+        data: createMockClientRow({ goalWeight: 180 }),
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const client = await updateClient('client-123', { goalWeight: 165 }, 'coach-456')
+
+      expect(client.goalWeight).toBe(165)
     })
   })
 

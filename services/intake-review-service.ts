@@ -149,14 +149,21 @@ export async function syncMetricsToClient(
   ) {
     updates.starting_body_fat_percentage = intake.bodyFatPercentage;
   }
+  // The goal fields go in their OWN object, which never reaches the `clients`
+  // UPDATE below: `updateGoals` owns `client_goals` and the `clients.*` mirror,
+  // and a second writer here is what let the two stores disagree. The
+  // only-if-currently-null guards are unchanged — they still read the raw mirror
+  // columns, which is the right question ("has this client already got one?").
+  const goalUpdates: Record<string, string | number | undefined> = {};
+
   if (client.goal_weight == null && intake.targetWeight != null) {
-    updates.goal_weight = intake.targetWeight;
+    goalUpdates.goal_weight = intake.targetWeight;
   }
   if (client.goal_deadline == null && intake.goalDeadline != null) {
-    updates.goal_deadline = intake.goalDeadline;
+    goalUpdates.goal_deadline = intake.goalDeadline;
   }
   if (client.goal_body_fat_percentage == null && intake.goalBodyFatPercentage != null) {
-    updates.goal_body_fat_percentage = intake.goalBodyFatPercentage;
+    goalUpdates.goal_body_fat_percentage = intake.goalBodyFatPercentage;
   }
   if (client.work_activity_level == null && intake.workActivityLevel != null) {
     updates.work_activity_level = intake.workActivityLevel;
@@ -170,7 +177,10 @@ export async function syncMetricsToClient(
   // metric, because client_intake.weight_unit defaults to 'kg' (034:30) and the
   // intake toggle only ever reached localStorage. Overwriting a client's own
   // display preference from a field they never actually set is not a sync.
-  const syncedFields = Object.keys(updates)
+  // Spans BOTH objects. This is the list the coach is shown ("Synced: goal
+  // weight, goal deadline…"), so splitting the goals out of `updates` without
+  // this would quietly stop reporting fields the sync still writes.
+  const syncedFields = [...Object.keys(updates), ...Object.keys(goalUpdates)]
     .filter((k) => k !== "updated_at")
     .map((k) => FIELD_NAME_MAP[k] ?? k);
 
@@ -201,17 +211,17 @@ export async function syncMetricsToClient(
     }
   }
 
-  // Dual-write goals (non-blocking)
-  if (updates.goal_weight !== undefined || updates.goal_body_fat_percentage !== undefined || updates.goal_deadline !== undefined) {
-    try {
-      await updateGoals(clientId, {
-        goalWeight: updates.goal_weight as number | undefined,
-        goalBodyFatPercentage: updates.goal_body_fat_percentage as number | undefined,
-        goalDeadline: updates.goal_deadline as string | undefined,
-      }, "intake");
-    } catch (dualWriteError) {
-      console.error("Dual-write to client_goals failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
-    }
+  // Goals are written ONCE, by `updateGoals`, from the object the `clients`
+  // UPDATE above never saw. **This throws**: a swallowed failure here left the
+  // mirror carrying an intake goal that `client_goals` never received, and the
+  // review page reported a successful sync. The metric fields are already
+  // committed and are unaffected.
+  if (Object.keys(goalUpdates).length > 0) {
+    await updateGoals(clientId, {
+      goalWeight: goalUpdates.goal_weight as number | undefined,
+      goalBodyFatPercentage: goalUpdates.goal_body_fat_percentage as number | undefined,
+      goalDeadline: goalUpdates.goal_deadline as string | undefined,
+    }, "intake");
   }
 
   // Recompute the energy pair from the freshly-synced data (non-blocking).

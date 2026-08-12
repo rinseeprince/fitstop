@@ -157,4 +157,97 @@ describe('Intake Review Service', () => {
       await expect(syncMetricsToClient('client-123')).resolves.toBeDefined()
     })
   })
+
+  // Task 0b.2: `updateGoals` is the sole writer of both goal stores, so the goal
+  // fields travel in their own object and never reach the `clients` UPDATE.
+  describe('goals do not travel in the clients UPDATE', () => {
+    const GOAL_INTAKE = {
+      currentWeight: 80,
+      bodyFatPercentage: null,
+      weightUnit: 'kg',
+      heightUnit: null,
+      height: null,
+      gender: null,
+      dateOfBirth: null,
+      targetWeight: 70,
+      goalDeadline: '2026-12-01',
+      goalBodyFatPercentage: 12,
+      workActivityLevel: null,
+    }
+
+    const nullClient = {
+      current_weight: null,
+      starting_weight: null,
+      height: null,
+      gender: null,
+      date_of_birth: null,
+      current_body_fat_percentage: null,
+      starting_body_fat_percentage: null,
+      goal_weight: null,
+      goal_body_fat_percentage: null,
+      goal_deadline: null,
+      work_activity_level: null,
+      unit_preference: null,
+    }
+
+    /** Same call-order routing as mockSupabaseChain, but keeps the UPDATE payload. */
+    function chainCapturingUpdate() {
+      const update = vi.fn().mockReturnThis()
+      let callCount = 0
+      vi.mocked(supabaseAdmin.from).mockImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({ data: nullClient, error: null }),
+          } as any
+        }
+        return { update, eq: vi.fn().mockResolvedValue({ error: null }) } as any
+      })
+      return update
+    }
+
+    it('writes no goal column to clients, and still routes the values to updateGoals', async () => {
+      vi.mocked(getIntake).mockResolvedValue(GOAL_INTAKE as any)
+      const update = chainCapturingUpdate()
+
+      await syncMetricsToClient('client-123')
+
+      const payload = update.mock.calls[0][0]
+      expect(payload).not.toHaveProperty('goal_weight')
+      expect(payload).not.toHaveProperty('goal_deadline')
+      expect(payload).not.toHaveProperty('goal_body_fat_percentage')
+      // The non-goal half is untouched by the split.
+      expect(payload).toHaveProperty('current_weight', 80)
+
+      expect(updateGoals).toHaveBeenCalledWith(
+        'client-123',
+        { goalWeight: 70, goalBodyFatPercentage: 12, goalDeadline: '2026-12-01' },
+        'intake'
+      )
+    })
+
+    // The return value is the "Synced: …" list the coach reads. Splitting the
+    // goals out of `updates` without spanning both objects would silently stop
+    // reporting three fields the sync still writes.
+    it('still reports the goal fields as synced', async () => {
+      vi.mocked(getIntake).mockResolvedValue(GOAL_INTAKE as any)
+      chainCapturingUpdate()
+
+      const synced = await syncMetricsToClient('client-123')
+
+      expect(synced).toEqual(
+        expect.arrayContaining(['goal weight', 'goal deadline', 'goal body fat'])
+      )
+    })
+
+    it('a failed goal write is no longer swallowed', async () => {
+      vi.mocked(getIntake).mockResolvedValue(GOAL_INTAKE as any)
+      chainCapturingUpdate()
+      vi.mocked(updateGoals).mockRejectedValueOnce(new Error('goal insert failed'))
+
+      await expect(syncMetricsToClient('client-123')).rejects.toThrow('goal insert failed')
+    })
+  })
 })

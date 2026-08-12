@@ -221,6 +221,24 @@ describe("PUT /api/clients/[id]/metrics", () => {
 
       expect(updateGoals).not.toHaveBeenCalled();
     });
+
+    // Task 0b.2 — updateGoals owns both goal stores.
+    it("writes no goal column to clients itself", async () => {
+      await PUT(request({ goalWeight: 75, goalBodyFatPercentage: 12 }), mockParams);
+
+      for (const call of query.update.mock.calls) {
+        expect(call[0]).not.toHaveProperty("goal_weight");
+        expect(call[0]).not.toHaveProperty("goal_body_fat_percentage");
+      }
+    });
+
+    it("a failed goal write no longer returns success", async () => {
+      vi.mocked(updateGoals).mockRejectedValueOnce(new Error("goal insert failed"));
+
+      const response = await PUT(request({ goalWeight: 75 }), mockParams);
+
+      expect(response.status).toBe(500);
+    });
   });
 
   describe("auth and validation", () => {
