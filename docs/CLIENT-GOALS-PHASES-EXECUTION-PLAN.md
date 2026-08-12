@@ -1,6 +1,6 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 (blocks backend; Session 3 smokes the routes) · five sessions remain (3, 4, 0b, 5, 6) · **Owner decision date:** 2026-08-10
+**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12 · five sessions remain (4, 4B, 0b, 5, 6) · **Owner decision date:** 2026-08-10
 **Eight sessions.** Three largely independent features share this document. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
@@ -145,8 +145,9 @@ Listed in execution order.
 | **1** ✅ | Foundations: the cascade, the energy helper, the plan-row date lie — **SHIPPED + smoked 2026-08-11** | **1** (RPC body swap, same arity) | The nutrition hero |
 | **1B** ✅ | Nutrition plan versioning: date-ranged versions, close-and-insert RPC, date-resolved reads — **SHIPPED + smoked 2026-08-11** (5 commits + a D1 guard-tightening follow-up; migration 144) | **1** (index swap + exclusion constraint + RPC rewrite, same arity) | Correct queued-change behaviour; the hero's chain-aware lines |
 | **2** ✅ | Blocks backend: table, service, routes — **SHIPPED 2026-08-11** (5 commits; migration 145; no browser smoke by design — Session 3's UI smoke is the routes' first live exercise) | **1** (`client_phases`) | No — API only |
-| **3** | Journey tab: rename, Blocks list, chart shading | none | Yes — the coach block feature |
+| **3** ✅ | Journey tab: rename, Blocks list, chart shading — **SHIPPED 2026-08-11**, plus owner-directed follow-ups 3.6 (editing + end-date granularity), 3.7 (archive, migration 146) and the nutrition-column resemantic, 2026-08-12 | **1** (146, from 3.7) | Yes — the coach block feature |
 | **4** | Client-facing block + the "Waiting on you" row | none | Yes — the client block feature |
+| **4B** | TDEE ownership: profile owns BMR/TDEE, builder consumes | none | Yes — the settings-dialog energy controls; the drawer loses its activity dropdown |
 | **0b** | Goals: one read path, one writer, one editor, history | none | Yes — the goal editor |
 | **5** | Nutrition builder: deficit as a first-class input | **1** (`nutrition_plans` + RPC arity) | Yes |
 | **6** | The save note + the Journey timeline | **1** (`nutrition_plan_notes`) | Yes |
@@ -159,6 +160,7 @@ Read this before assuming the order above is forced. It mostly is not.
 - **5 → 6.** The note lives beside the deficit in the same drawer.
 - **1.2 → 5.** Session 1's shared energy helper is the deficit input's prerequisite, and Session 5 assumes the two dead calculator exports are already gone.
 - **1B → 5, HARD.** Session 5's two new columns must be born on versioned rows — landing a stored deficit on the in-place singleton and versioning afterwards would version a column nothing backfills. Run 1B first.
+- **4B → 5, HARD.** Session 5's stored deficit is solved against TDEE; 4B is what makes TDEE trustworthy (single owner, atomic pair, activity on the client). 4B is otherwise independent of 4 and 0b and may run before either. **Shared-file note:** 4B and 0b.2 both edit `app/api/clients/[id]/metrics/route.ts` (4B: energy writes; 0b.2: the goal-mirror writes) — whichever runs second re-verifies the other's change.
 - **1B → 3.2, correctness not code.** Task 3.2's nutrition column resolves the version covering the block's window (see the note in its table row); without 1B an elapsed block would read the CURRENT plan's `tdee` against an old era's event baseline and print a wrong deficit.
 - **0b.1's DECISION → 4.2 — a decision dependency, NOT a code dependency.** Task 4.2 needs one authoritative answer to: *is `clients.goal_deadline` mapped, or are the three dead `?? client.goalDeadline` fallbacks deleted?* It does **not** need 0b.1's Overview code to have shipped. The question can be settled in isolation, in a sentence, without touching a file. **If 0b has not run, Session 4 settles it and records the answer in its STATUS block; 0b then inherits that decision rather than re-litigating it.** An executor who reads this as "Session 4 is blocked on a UI change" has misread it — Session 4 is blocked on nothing.
 - **0 → 0b, softly.** 0b inherits Session 0's `notes` decision from its STATUS block, and consolidating readers onto a write path that still nulls sibling fields would be premature. Not a hard block.
@@ -1074,6 +1076,191 @@ Rules: CONVENTIONS.md §2 (plan first, wait for approval), one commit per task, 
 §9 two-tier client rate-limit order, canonical kg on the wire, commit-ready = §13.
 Do not drive a browser — hand me a smoke checklist and say the UI is unverified.
 Append a STATUS block as each task lands.
+```
+
+---
+
+# SESSION 4B — TDEE ownership: profile owns metabolism, builder consumes it
+
+**Zero migrations (every column exists — if you believe one is needed, STOP AND ASK).
+Six tasks. Inserted 2026-08-12 by owner decision after the Session 3.2 browser smoke
+exposed the incoherence. Runs BEFORE Session 5 — hard prerequisite: 5's stored
+deficit assumes a trustworthy TDEE.**
+
+> **Design — closed 2026-08-12, do not re-litigate.** The client PROFILE is the
+> single owner of metabolic identity: `clients.work_activity_level`, `clients.bmr`,
+> `clients.tdee` + the existing `bmr_manual_override` / `tdee_manual_override`
+> flags. BMR and TDEE are **never written separately** — one shared helper writes
+> the pair atomically (BMR = Katch-McArdle when body fat is known, else
+> Mifflin-St Jeor; TDEE = BMR × multiplier(client's activity)), recomputing
+> automatically whenever weight/body-fat changes, EXCEPT values frozen by an
+> override flag. The coach edits **activity level in the client settings dialog**
+> (describe the client, never compute), with a **"Custom"** option exposing a plain
+> TDEE input that sets the override — always displayed beside what auto would say,
+> one click back to auto. **The nutrition builder is a pure consumer:** its
+> work-activity dropdown is REMOVED (owner call — "do they click it when
+> regenerating? how are they supposed to know that's how you update TDEE?"), the
+> drawer shows a read-only "TDEE · from profile" line, and plans keep
+> **snapshotting** bmr/tdee at save (owner-confirmed: plan calories are accurate to
+> generation time; a weight change updates the PROFILE only, and a regenerate — at
+> the coach's discretion — inherits the then-current profile numbers. No plan
+> auto-mutation, ever).
+
+### What the investigation found — verified live, do not re-derive
+
+Fixture client `5ca1ec1e-0000-4000-8000-000000000001`, dev DB, 2026-08-12. The
+Overview showed the impossible **BMR 3712 / TDEE 3515**; earlier **BMR 1850**,
+elsewhere **TDEE 2220**. Every number decoded exactly:
+
+- **3712** = Katch-McArdle(170 kg, 9% BF) — right math, fresh inputs.
+- **1850** = a hardcoded seed literal (`scripts/seed-scale-client.ts:248`) — never computed.
+- **2220** = 1850 × 1.2 (sedentary) · **3515** = 1850 × 1.9 (extremely active).
+- The impossible pair is `POST /api/clients/[id]/calculate-bmr` writing **`{ bmr }`
+  only** (`calculate-bmr/route.ts:78-81`; its comment: *"TDEE is calculated when
+  nutrition settings are configured"*) — a recalc updates BMR and strands TDEE at a
+  number derived from a BMR that no longer exists.
+
+**Structural diagnosis: no owner.** Five uncoordinated writers, three read paths:
+
+| Writer | Today's behaviour |
+|---|---|
+| `app/api/clients/[id]/calculate-bmr/route.ts:78-81` | writes `bmr` alone, never `tdee` |
+| `services/client-check-in-service.ts:183-191` | recomputes BMR from check-in weight, writes `tdee = bmr × 1.2` **hardcoded** — ignores activity |
+| `app/api/clients/[id]/metrics/route.ts:139-141, :167-172` | manual bmr/tdee with override flags; "reset to auto" also hardcodes × 1.2 |
+| the drawer / plan save (`hooks/use-nutrition-builder.ts`, `nutrition-plan-orchestrator.ts:277-279`) | `tdee = bmr × the PLAN's own work_activity_level` — activity lives in TWO places (`clients.` and `nutrition_plans.work_activity_level`) and they disagree on the fixture (client: sedentary; plan: extremely_active) |
+| seeds / intake sync | literals |
+
+Reads: the Overview card reads the `clients` mirror; the drawer live-computes from
+the plan's activity; `services/nutrition-calc-inputs.ts:92` prefers the latest
+`body_metrics` event's tdee snapshot over the mirror. Also `services/bmr-service.ts:51`:
+`calculateBMR()` itself returns `tdee = bmr × 1.2` ("assuming sedentary") and callers
+treat that as THE tdee. Downstream, every consumer inherits the garbage — including
+the Journey block deficit (version snapshots of a poisoned tdee).
+
+### Task 4b.1 — Pin the unexplained writer, then plan
+
+**Which flow wrote `tdee = 3515` onto the fixture's clients row is NOT conclusively
+pinned** (fixture churn made it ambiguous; candidates above). Prove it with live-DB
++ git evidence FIRST — it may reveal a sixth writer the table misses. Debug first,
+fix second (CONVENTIONS §2).
+
+### Task 4b.2 — One shared writer: `recalculateClientEnergy()`
+
+New helper beside `services/bmr-service.ts`: computes and writes the PAIR atomically
+from (current weight, body fat, height, gender, dob, `clients.work_activity_level`),
+respecting both override flags (a frozen value is never recomputed; custom TDEE +
+moving weight ⇒ BMR moves, TDEE stays pinned). Multipliers via the existing
+`getActivityMultiplier` (`services/nutrition-service.ts:52`). Route every writer
+through it: the check-in dual-write, coach metric-entry weight/BF logs, intake sync,
+the metrics route's manual edits and reset-to-auto. `calculate-bmr` dies or becomes
+"recalculate now + clear overrides". Kill `calculateBMR()`'s hardcoded ×1.2 return
+with its callers. **Landmine:** the metrics route is a Session-0 goal-clobber caller
+of `updateGoals` — do not disturb that fix while in the file.
+
+### Task 4b.3 — The client settings dialog: activity + custom override
+
+The activity select (the existing sedentary→extremely-active ladder) with a live
+TDEE preview, plus the "Custom" option → plain TDEE input → sets
+`tdee_manual_override`. Always render the frozen value beside auto ("Custom 3,100 ·
+auto would be 2,850"); "Back to auto" clears in one click. BMR override: same
+mechanics, visually de-emphasized. The status card gains the activity label and a
+"Custom" chip when overridden. Forms per CONVENTIONS §3 (RHF + zodResolver); mono =
+numbers only. **Edge:** Mifflin needs age and `clients.date_of_birth` is sometimes
+null (silent age-30 default today) — surface an "add a birth date for accuracy"
+nudge instead of defaulting silently.
+
+### Task 4b.4 — The builder becomes a pure consumer
+
+Remove the drawer's work-activity dropdown. Add the read-only "TDEE · from profile"
+line, and the **drift courtesy line** when the covering plan's snapshot ≠ the
+current profile ("TDEE is now 2,850 · this plan was built at 3,515") — visibility,
+zero automation. `nutrition_plans.work_activity_level` keeps being written as a
+snapshot of the CLIENT's value at save (the 24-arg RPC signature is untouched).
+
+### Task 4b.5 — One read path
+
+Overview, drawer and `resolveNutritionCalcInputs` all read the client pair. Drop the
+`latestMetrics?.tdee ?? client.tdee` preference (`nutrition-calc-inputs.ts:92`) —
+`body_metrics` snapshots stay as history, but nothing prefers them over the live
+profile. Enumerate every reader of `client.bmr`/`client.tdee` before changing
+precedence; do not assume the list.
+
+### Task 4b.6 — Docs reconciliation
+
+- **CONVENTIONS.md**: add the durable rules (a short "Client energy (BMR/TDEE)"
+  note under §8): BMR and TDEE are never written separately — one helper owns the
+  pair; activity level is a CLIENT fact and nothing under
+  `components/clients/nutrition/**` writes it; plans snapshot at generation and are
+  never auto-mutated by a weight change.
+- **docs/ARCHITECTURE.md**: rewrite the check-in "Dual-write pattern" step 2
+  ("Recalculates BMR/TDEE from updated client data" — now via the shared helper +
+  activity), the "Denormalized cache on clients table" note, and the Builder-flows
+  line saying the nutrition provider "calculates adjusted targets from client
+  metrics (BMR, activity level)" — activity no longer lives in the drawer.
+- **TECHNICAL-DEBT.md**: record the residuals — old plan versions keep their
+  garbage-in tdee snapshots (honest history, surfaced by Journey blocks); the
+  Mifflin age-30 default wherever the nudge can't reach.
+- Follow §3 for anything else that collides; safety rules comply, stale
+  descriptions update in the same commit.
+
+### Session 4B verification
+
+Full `CONVENTIONS.md §13`. No migration ⇒ no push/gen-types, but the §2
+security/load/perf review fires (route changes). Unit tests: the helper's matrix —
+(weight change × each override state) × (body fat present/absent); atomic pair
+writes pinned; spy tripwires that each former writer routes through the helper; the
+calc-inputs precedence change. **Browser smoke (owner runs it; hand over a checklist
+and say plainly the UI is unverified):** log a weight → BMR and TDEE both move on
+the Overview; set Extremely Active in the dialog → TDEE ×1.9 live; set Custom 3,100
+→ a weight change moves BMR only, the card shows the Custom chip + auto value; Back
+to auto → recompute; the drawer shows the same TDEE read-only with NO activity
+dropdown anywhere; regenerate a plan → the new version snapshots the current TDEE;
+the drift courtesy line appears when snapshot ≠ current.
+
+---
+
+### 📋 SESSION 4B PROMPT — paste this into a fresh session
+
+```
+Read these in full before planning anything:
+  1. CONVENTIONS.md  (mandatory — do not skip sections)
+  2. docs/ARCHITECTURE.md
+  3. docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md — §1, §2, §3, §4, §5, the SESSION
+     3/3.6/3.7 STATUS blocks (the Journey blocks read the tdee snapshots this
+     session repairs), and all of SESSION 4B. You are executing SESSION 4B only.
+     The design block is owner-approved — do not re-litigate it; the findings
+     table is verified evidence, not hypothesis.
+
+Session 4B makes the client profile the single owner of BMR/TDEE and the
+nutrition builder a pure consumer. ZERO migrations — every column already
+exists (bmr, tdee, work_activity_level, bmr_manual_override,
+tdee_manual_override). If you believe a migration is needed, STOP AND ASK.
+
+Start with Task 4b.1: pin which flow wrote tdee=3515 onto the fixture client
+(live-DB probe recipe is in the memory notes; dev ref aeaphsslctwcmebldrzx)
+BEFORE changing anything — it may reveal a sixth writer.
+
+The invariants most easily violated by accident:
+  - BMR and TDEE are NEVER written separately. One helper owns the pair.
+  - An override flag freezes exactly its own value; the other half keeps
+    auto-recomputing.
+  - Activity level is a CLIENT fact. Nothing under components/clients/nutrition/**
+    writes it.
+  - No plan row is ever touched by a weight change. Plans snapshot at
+    generation; regeneration inherits the then-current profile numbers.
+  - The metrics route carries Session 0's goal-clobber fix — do not disturb it.
+
+Rules for this session:
+- Follow CONVENTIONS.md §2: show me a plan and get approval before writing any code.
+- One commit per numbered task. Commit-ready means all of CONVENTIONS.md §13.
+- Do NOT drive a browser. Hand me a smoke checklist and say plainly that the UI
+  is unverified. I run browser smokes myself.
+- If a rule in CONVENTIONS.md or docs/ARCHITECTURE.md blocks you, follow §3:
+  quote it with file:line, classify it, and comply / update the doc in the same
+  commit / STOP AND ASK ME.
+- Append a STATUS block as each task lands.
+
+Start by reading the documents, then show me your plan for 4b.1 and 4b.2.
 ```
 
 ---
