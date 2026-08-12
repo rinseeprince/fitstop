@@ -3162,3 +3162,43 @@ view carries no meta at all. The add/edit forms' "Journey becomes N weeks"
 sentence computes from the same unarchived figure, so the meta and the
 sentence cannot disagree (an archived-block edit renders no sentence anyway —
 elapsed edits are fields-only). Gates re-run green.
+
+---
+
+### Nutrition column resemantic — PRESCRIPTION, not events-modal ✅ SHIPPED 2026-08-12
+
+**Caught in the owner's 3.2 browser smoke** (the fixture client): the column
+read "2,400 kcal · +180 kcal/day" against a calendar full of 1,967–2,633.
+Live-DB probe proved the math did exactly what 3.2 coded — and that the coded
+semantics fail in the field: **17 of the block's 20 lived days were
+hand-edited (`is_modified`)**, so the "robust" exclusion left a 3-day sliver
+(2,400×2 + 2,220×1), the modal picked 2,400, and its era's tdee (2,220) made
+a "+180 surplus". Deterministic, traceable to nothing the coach can see.
+Two compounding design errors: the hand-edit exclusion turns blind when
+edits dominate a window (a legitimate coaching pattern), and dominant-era
+history isn't the coach's question anyway.
+
+**Owner-specified semantics (verbatim intent: "current deficit across the
+block; hand-edited days ignored; training surplus ignored; daily calories,
+then the deficit"):** the fact now reads the plan VERSION covering the
+block's reference date — TODAY for a current block, the final day for a past
+one, the first day for a future one — taking `baseline_calories` (custom-
+macros override honoured) and `deficit = tdee − calories` straight from the
+row. Hand edits and surpluses excluded by construction; version windows
+can't overlap (mig-144 gist exclusion) so at most one covers any date; no
+covering version → "Not set". **The "Changed" marker keeps its event-based
+detection** (transitions across unmodified lived days) — it was correct
+through the whole incident ("Changed 26 Jul" = a real pre-versioning save)
+and catches history no plan row remembers. Recorded caveat: blocks that
+ended before migration 144 are covered by the legacy version's window, whose
+last-saved numbers stand in for eras the row no longer remembers — the
+marker is the honest signal there. Fixture now reads **1,995 kcal ·
+−225 kcal/day · Changed 26 Jul**.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings) ·
+`vitest run` **268 files / 2764 tests, all passing** (nutrition-fact tests
+rewritten for prescription semantics: current-block fixture case, past-block
+era pin via final-day version, custom-macros override, tdee-null, no-version
+null, marker-skips-edits, clamp-at-today, paging pin re-targeted to a
+page-2-only transition; +2 net from 2762) · `check:labels` OK (661) · no
+migration.

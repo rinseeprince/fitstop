@@ -72,8 +72,18 @@ const version = (
   id: string,
   effective_from: string,
   effective_until: string | null,
-  tdee: number | null
-) => ({ id, effective_from, effective_until, tdee });
+  tdee: number | null,
+  baseline_calories = 2000,
+  custom: { enabled?: boolean; calories?: number | null } = {}
+) => ({
+  id,
+  effective_from,
+  effective_until,
+  tdee,
+  baseline_calories,
+  custom_macros_enabled: custom.enabled ?? false,
+  custom_calories: custom.calories ?? null,
+});
 
 /** n sequential daily event rows from `start`. */
 function eventDays(
@@ -129,43 +139,81 @@ describe("getBlockFacts", () => {
     });
   });
 
-  it("era pin: deficit uses the tdee of the version covering the modal's days, never the newest version", async () => {
-    // 10 days under era A (2000 kcal, tdee 2800), then 4 under era B
-    // (1800 kcal, tdee 2600), all elapsed. Modal = 2000 → deficit must be
-    // 2800 − 2000 = 800. Pairing the newest version's tdee (2600) with the
-    // modal would print 600 — the era-mixing bug 1B exists to prevent.
-    vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-14")]);
+  it("past block: era pin — the version covering its FINAL day, never the newest", async () => {
+    // Block ends 2026-06-10, inside era A (baseline 2400, tdee 2800); era B
+    // (1800, tdee 2600) starts after. The block must report era A's
+    // prescription — pairing the newest version would be the era-mixing bug
+    // 1B exists to prevent.
+    vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-10")]);
     versionsResult = {
       data: [
-        version("vA", "2026-05-01", "2026-06-10", 2800),
-        version("vB", "2026-06-11", null, 2600),
+        version("vA", "2026-05-01", "2026-06-10", 2800, 2400),
+        version("vB", "2026-06-11", null, 2600, 1800),
+      ],
+      error: null,
+    };
+    eventPages = [{ data: eventDays("2026-06-01", 10, 2400), error: null }];
+
+    const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+    expect(fact.nutrition).toEqual({
+      calories: 2400,
+      deficitPerDay: 400,
+      changeCount: 0,
+      lastChangedOn: null,
+    });
+  });
+
+  it("current block: the prescription covering TODAY, hand-edits ignored — the fixture case", async () => {
+    // Every lived day is hand-edited (a fully materialized stretch). The
+    // dominant-era modal went blind here; the prescription source cannot:
+    // the version covering today supplies calories + tdee directly.
+    vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-07-24", "2026-09-03")]);
+    versionsResult = {
+      data: [
+        version("old", "2025-07-02", "2026-08-10", 2220, 2220),
+        version("new", "2026-08-11", null, 2220, 1995),
       ],
       error: null,
     };
     eventPages = [
-      {
-        data: [...eventDays("2026-06-01", 10, 2000), ...eventDays("2026-06-11", 4, 1800)],
-        error: null,
-      },
+      { data: eventDays("2026-07-27", 17, 2300, true), error: null },
     ];
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
-      calories: 2000,
-      deficitPerDay: 800,
-      changeCount: 1,
-      lastChangedOn: "2026-06-11",
+      calories: 1995,
+      deficitPerDay: 225,
+      changeCount: 0, // modified days can neither flag nor mask a change
+      lastChangedOn: null,
     });
   });
 
-  it("excludes is_modified days from the modal and the change detection", async () => {
+  it("custom-macros override supplies the calories", async () => {
+    vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-08-01", "2026-09-03")]);
+    versionsResult = {
+      data: [
+        version("v", "2026-05-01", null, 2600, 2100, { enabled: true, calories: 1850 }),
+      ],
+      error: null,
+    };
+
+    const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+    expect(fact.nutrition).toEqual({
+      calories: 1850,
+      deficitPerDay: 750,
+      changeCount: 0,
+      lastChangedOn: null,
+    });
+  });
+
+  it("the change marker skips hand-edited days: an edit stretch can neither flag nor mask", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-14")]);
     versionsResult = { data: [version("v", "2026-05-01", null, 2500)], error: null };
     eventPages = [
       {
         data: [
           ...eventDays("2026-06-01", 5, 2000),
-          // Three hand-edited days: must not skew the modal or flag a change.
+          // Three hand-edited days at a different value: no flag.
           ...eventDays("2026-06-06", 3, 1500, true),
           ...eventDays("2026-06-09", 6, 2000),
         ],
@@ -175,59 +223,46 @@ describe("getBlockFacts", () => {
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
-      calories: 2000,
+      calories: 2000, // the version's baseline, not an event aggregate
       deficitPerDay: 500,
       changeCount: 0,
       lastChangedOn: null,
     });
   });
 
-  it("falls back to modified days for the headline when no unmodified day exists, suppressing the change marker", async () => {
+  it("a version without a tdee shows calories only", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-07")]);
-    versionsResult = { data: [version("v", "2026-05-01", null, null)], error: null };
-    eventPages = [
-      {
-        data: [
-          ...eventDays("2026-06-01", 4, 1700, true),
-          ...eventDays("2026-06-05", 3, 1600, true),
-        ],
-        error: null,
-      },
-    ];
+    versionsResult = { data: [version("v", "2026-05-01", null, null, 1700)], error: null };
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
       calories: 1700,
-      deficitPerDay: null, // tdee null → no deficit, calories still shown
+      deficitPerDay: null,
       changeCount: 0,
       lastChangedOn: null,
     });
   });
 
-  it("returns null nutrition for a block with no events in its window", async () => {
+  it("returns null nutrition for a block whose reference date no version covers", async () => {
     vi.mocked(listBlocks).mockResolvedValue([
-      block("a", "2026-06-01", "2026-06-14"),
+      block("a", "2026-06-01", "2026-06-14"), // ends before the version starts
       block("b", "2026-06-15", "2026-06-28"),
     ]);
-    versionsResult = { data: [], error: null };
-    eventPages = [{ data: eventDays("2026-06-15", 5, 2000), error: null }];
+    versionsResult = { data: [version("v", "2026-06-15", null, 2500, 2000)], error: null };
 
     const facts = await getBlockFacts(CLIENT_ID, TODAY);
     expect(facts[0].nutrition).toBeNull();
     expect(facts[1].nutrition?.calories).toBe(2000);
   });
 
-  it("clamps a current block to lived days — future regenerated events do not vote", async () => {
-    // Current block: 5 lived days at 2100, then a queued change already
-    // materialized on future days at 1700. The column reports what has
-    // governed the block SO FAR.
+  it("the change window clamps at today — a queued change's future events do not flag yet", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-08-07", "2026-09-03")]);
-    versionsResult = { data: [version("v", "2026-05-01", null, 2600)], error: null };
+    versionsResult = { data: [version("v", "2026-05-01", null, 2600, 2100)], error: null };
     eventPages = [
       {
         data: [
           ...eventDays("2026-08-07", 5, 2100), // through TODAY (2026-08-11)
-          ...eventDays("2026-08-12", 10, 1700),
+          ...eventDays("2026-08-12", 10, 1700), // tomorrow's era — not lived
         ],
         error: null,
       },
@@ -242,25 +277,21 @@ describe("getBlockFacts", () => {
     });
   });
 
-  it("pages past the 1000-row cap and aggregates over the union", async () => {
-    // Page 1 is full (600×2000 + 400×1800) so the loop continues; page 2
-    // (500×1800) is short and terminates it. Union: 1800 wins 900–600. A
-    // truncated read (page 1 only) would report 2000 — this pin fails then.
+  it("pages past the 1000-row cap — a change only visible on page 2 still flags", async () => {
+    // Page 1 is full (1000×2000) so the loop continues; page 2 (500×1800) is
+    // short and terminates it. The era transition sits at page 2's first row —
+    // a truncated read (page 1 only) would report changeCount 0.
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2022-01-03", "2026-08-01")]);
-    versionsResult = { data: [version("v", "2020-01-01", null, 2400)], error: null };
-    const page1 = [
-      ...eventDays("2022-01-03", 600, 2000),
-      ...eventDays(addDaysToDateString("2022-01-03", 600), 400, 1800),
-    ];
-    const page2 = eventDays(addDaysToDateString("2022-01-03", 1000), 500, 1800);
+    versionsResult = { data: [version("v", "2020-01-01", null, 2400, 1800)], error: null };
+    const transitionDate = addDaysToDateString("2022-01-03", 1000);
     eventPages = [
-      { data: page1, error: null },
-      { data: page2, error: null },
+      { data: eventDays("2022-01-03", 1000, 2000), error: null },
+      { data: eventDays(transitionDate, 500, 1800), error: null },
     ];
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
-    expect(fact.nutrition?.calories).toBe(1800);
-    expect(fact.nutrition?.deficitPerDay).toBe(600);
+    expect(fact.nutrition?.changeCount).toBe(1);
+    expect(fact.nutrition?.lastChangedOn).toBe(transitionDate);
     // Both pages were requested: nutrition_events hit twice.
     const eventCalls = vi
       .mocked(supabaseAdmin.from)
@@ -314,7 +345,7 @@ describe("getBlockFacts", () => {
 
   it("counts multiple prescription changes and reports the newest era's first day", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-21")]);
-    versionsResult = { data: [version("v", "2026-05-01", null, null)], error: null };
+    versionsResult = { data: [version("v", "2026-05-01", null, null, 1800)], error: null };
     eventPages = [
       {
         data: [
@@ -327,7 +358,7 @@ describe("getBlockFacts", () => {
     ];
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
-    expect(fact.nutrition?.calories).toBe(2000);
+    expect(fact.nutrition?.calories).toBe(1800);
     expect(fact.nutrition?.changeCount).toBe(2);
     expect(fact.nutrition?.lastChangedOn).toBe("2026-06-15");
   });

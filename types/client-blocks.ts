@@ -67,20 +67,19 @@ export interface BlockTrainingFact {
 }
 
 /**
- * The block's nutrition story, from the EVENTS (per-date SOT), never the plan
- * row: `calories` is the modal `baseline_calories` across the block's lived
- * UNMODIFIED days (per-day coach edits are day-level overrides, not the
- * prescription), and `deficitPerDay` = covering VERSION's `tdee − calories`
- * (positive = deficit), resolved at the latest date that modal value actually
- * appeared — that era's tdee against that era's baseline, never today's.
- * Null when the version carries no tdee.
+ * The block's nutrition story — the PRESCRIPTION, owner-specified: `calories`
+ * is the plan VERSION's own daily target (custom-macros override honoured;
+ * per-day hand edits and training surpluses excluded by construction — the
+ * plan row contains neither), and `deficitPerDay` = that version's
+ * `tdee − calories` (positive = deficit; null without a tdee). The version is
+ * the one covering the block's reference date: TODAY for a current block
+ * ("what are they on now"), the final day for a past block, the first day for
+ * a future one. No covering version → the whole fact is null ("Not set").
  *
- * A block spanning a prescription change reports the DOMINANT era as the
- * headline and says so: `changeCount` counts observed baseline transitions
- * across consecutive unmodified days, `lastChangedOn` is the first day of the
- * newest era seen in-window (null when nothing changed). Detected on observed
- * baselines, not version rows, so a re-save with identical numbers does not
- * flag.
+ * `changeCount`/`lastChangedOn` stay EVENT-derived: baseline transitions
+ * across consecutive unmodified lived days — catching every prescription
+ * change that regenerated events, including pre-versioning history no plan
+ * row remembers, while hand-edited stretches can neither flag nor mask one.
  */
 export interface BlockNutritionFact {
   calories: number;
