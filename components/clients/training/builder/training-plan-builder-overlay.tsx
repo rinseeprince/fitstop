@@ -120,6 +120,7 @@ export function TrainingPlanBuilderOverlay({
               target="client-draft"
               clientId={builder.clientId}
               clientName={clientName}
+              clientTimezone={builder.clientTimezone}
               onApplied={() => {
                 // The plan landed on the client's calendar — refresh the
                 // client's plan view and return to it by CLOSING the drawer

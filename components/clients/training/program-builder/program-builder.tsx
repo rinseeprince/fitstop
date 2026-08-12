@@ -61,6 +61,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     target,
     clientId,
     clientName,
+    clientTimezone,
     onApplied,
     plan,
     isPlanLoading,
@@ -675,6 +676,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
             savedPlan={plan}
             inlinePlan={apply.inlinePlan}
             preselectedClientId={clientId ?? undefined}
+            clientTimezone={clientTimezone ?? undefined}
             onSuccess={() => onApplied?.()}
           />
         </>

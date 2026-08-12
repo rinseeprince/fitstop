@@ -105,9 +105,9 @@ export function ApplyToClientDialog({
       : 1);
 
   // Mirror the server guard's anchor (getClientTodayString): a real synced
-  // client timezone wins; the 'UTC' never-synced sentinel falls back to the
-  // coach's device (= stored coach tz). Unknown timezone → no min, the server
-  // guard backstops.
+  // client timezone wins; the 'UTC' never-synced sentinel and an unknown
+  // timezone fall back to the coach's device (= stored coach tz), so the
+  // picker always greys out the past. The server guard stays the authority.
   const selectedClientTimezone = preselectedClientId
     ? clientTimezone
     : clients.find((c) => c.id === clientId)?.timezone;
@@ -119,8 +119,7 @@ export function ApplyToClientDialog({
     selectedClientTimezone && selectedClientTimezone !== "UTC"
       ? getTodayDateStringInTimezone(selectedClientTimezone)
       : null;
-  const minStartDate =
-    clientLocalToday ?? (selectedClientTimezone ? deviceToday : undefined);
+  const minStartDate = clientLocalToday ?? deviceToday;
 
   const handleSubmit = async () => {
     if (!clientId) {

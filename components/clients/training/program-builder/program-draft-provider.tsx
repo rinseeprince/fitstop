@@ -48,6 +48,9 @@ export type ProgramDraftContextValue = ProgramBuilderState & {
   // where that context is absent, so reading it there would throw.
   clientId: string | null;
   clientName: string | null;
+  // Device-synced client timezone — anchors the apply dialog's start-date
+  // floor to the CLIENT's local today (the server guard's anchor).
+  clientTimezone: string | null;
   onApplied?: () => void;
   plan: SavedPlan | null;
   isPlanLoading: boolean;
@@ -104,6 +107,7 @@ type ProgramDraftProviderProps = {
   // Present for target="client-draft" (apply) and "placed-plan" (amend).
   clientId?: string;
   clientName?: string;
+  clientTimezone?: string;
   onApplied?: () => void;
   // Fired after a clean amendment save (the overlay refreshes the calendar
   // caches and closes).
@@ -117,6 +121,7 @@ export function ProgramDraftProvider({
   target,
   clientId,
   clientName,
+  clientTimezone,
   onApplied,
   onAmended,
   children,
@@ -239,6 +244,7 @@ export function ProgramDraftProvider({
     target,
     clientId: clientId ?? null,
     clientName: clientName ?? null,
+    clientTimezone: clientTimezone ?? null,
     onApplied,
     plan: plan ?? null,
     isPlanLoading: isPlaced ? placed.isLoading : isPlanLoading,
