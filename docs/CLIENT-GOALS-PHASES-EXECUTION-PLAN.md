@@ -1,6 +1,6 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12 · five sessions remain (4, 4B, 0b, 5, 6) · **Owner decision date:** 2026-08-10
+**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12 · Session 4 ✅ shipped 2026-08-12 (browser-unverified; its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · four sessions remain (4B, 0b, 5, 6) · **Owner decision date:** 2026-08-10
 **Eight sessions.** Three largely independent features share this document. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
@@ -146,7 +146,7 @@ Listed in execution order.
 | **1B** ✅ | Nutrition plan versioning: date-ranged versions, close-and-insert RPC, date-resolved reads — **SHIPPED + smoked 2026-08-11** (5 commits + a D1 guard-tightening follow-up; migration 144) | **1** (index swap + exclusion constraint + RPC rewrite, same arity) | Correct queued-change behaviour; the hero's chain-aware lines |
 | **2** ✅ | Blocks backend: table, service, routes — **SHIPPED 2026-08-11** (5 commits; migration 145; no browser smoke by design — Session 3's UI smoke is the routes' first live exercise) | **1** (`client_phases`) | No — API only |
 | **3** ✅ | Journey tab: rename, Blocks list, chart shading — **SHIPPED 2026-08-11**, plus owner-directed follow-ups 3.6 (editing + end-date granularity), 3.7 (archive, migration 146) and the nutrition-column resemantic, 2026-08-12 | **1** (146, from 3.7) | Yes — the coach block feature |
-| **4** | Client-facing block + the "Waiting on you" row | none | Yes — the client block feature |
+| **4** ✅ | Client-facing block + the "Waiting on you" row — **SHIPPED 2026-08-12** (3 commits; no migration; browser-unverified — the owner's smoke checklist is with the session summary) | none | Yes — the client block feature |
 | **4B** | TDEE ownership: profile owns BMR/TDEE, builder consumes | none | Yes — the settings-dialog energy controls; the drawer loses its activity dropdown |
 | **0b** | Goals: one read path, one writer, one editor, history | none | Yes — the goal editor |
 | **5** | Nutrition builder: deficit as a first-class input | **1** (`nutrition_plans` + RPC arity) | Yes |
