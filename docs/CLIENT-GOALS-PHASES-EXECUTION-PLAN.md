@@ -3389,3 +3389,104 @@ era pin via final-day version, custom-macros override, tdee-null, no-version
 null, marker-skips-edits, clamp-at-today, paging pin re-targeted to a
 page-2-only transition; +2 net from 2762) · `check:labels` OK (661) · no
 migration.
+
+---
+
+### Task 4.2 — `GET /api/client/journey` ✅ SHIPPED 2026-08-12
+
+**Owner decisions locked this session (all 2026-08-12) — Sessions 0b and later
+inherit these rather than re-opening them:**
+
+- **Goal exposure: YES to both, scoped to this endpoint only.** The endpoint
+  exposes the client's goal DEADLINE and reads `client_goals` via
+  `resolveEffectiveGoal` — the first `/api/client/**` surface to do either.
+  The `/api/client/me` + `/progress` mirror reads are unchanged;
+  `CLIENT_SELF_COLUMNS` still excludes `goal_deadline` and its comment now
+  names this endpoint as the scoped exception (so the allowlist is not read
+  as a leak-proof guarantee).
+- **The 0b.1 map-or-delete question, SETTLED for Session 0b to inherit and
+  EXECUTE (this session touches none of those files): DELETE the three dead
+  `?? client.goalDeadline` fallbacks** (`nutrition-calc-inputs.ts:114`,
+  `comparison-service.ts:67`, `nutrition/route.ts:172` — re-verified on main;
+  the plan doc's :65/:152 had drifted) **plus the dead `Client.goalDeadline`
+  field (`types/check-in.ts:429`).** Rationale: `clients.goal_deadline` exists
+  and IS written (`updateGoals`' dual-write at `client-goals-service.ts:141-150`
+  plus the direct mirror writers 0b.2 removes), so MAPPING it would make a
+  silently-divergeable mirror deadline reachable in three calculator/pace
+  paths for the first time; deleting is zero behaviour change (the fallbacks
+  are unreachable today) and matches invariant 16 and the mirror's
+  single-writer-then-removal trajectory.
+- **Weight source: MERGED-SERIES PARITY** — owner verbatim: *"the start and
+  end weight should be the same as what the coach sees. The client app simply
+  shows the client what the coach sees."* Block weights come from the SAME
+  series the coach card renders — `buildMetricPoints` over check-in weights ⊕
+  `client_metric_entries`, where a same-day coach entry outranks the check-in
+  — **not** from `body_metrics`, whose timestamp ordering ranks that tie the
+  opposite way. A divergence-accepting draft (2.3's conditional
+  `getBodyMetricsHistory` reuse target) was explicitly REJECTED at plan
+  review; that branch was never conditional-accepted, and it was not taken.
+  One latent defect observed while costing it is filed in `TECHNICAL-DEBT.md`
+  (`GET …/body-metrics`' unbounded path truncates silently at ~1000 rows; no
+  in-repo caller today).
+- **Archive semantics (owner delegated the pick): archived blocks are
+  EXCLUDED from the client payload.** `archived_at` is curation of the
+  PRESENTED journey for both audiences — coach Journey list and client app —
+  not a coach-private view preference; chart bands alone render every block,
+  forever. The two places the old semantics were written down were rewritten
+  in this commit (`types/client-blocks.ts` `archivedAt` docstring,
+  `setBlockArchived`'s JSDoc in `services/client-blocks-service.ts`).
+
+**What shipped.** `GET /api/client/journey`
+(`app/api/client/journey/route.ts`): `requireClientAuth` (the §9 two-tier
+order — IP-keyed `clientApiRateLimit` as first operation, CSRF, auth,
+`clientPerClientRateLimit` on the resolved id) → `getClientTodayString`
+resolved at the route and threaded down (the service never derives time — the
+blocks-routes precedent) → `services/client-journey-service.ts` →
+`Cache-Control: no-store`. Wire (`types/client-journey.ts`):
+`{ clientToday, blocks[], goal: { weightKg, deadline }, currentWeightKg }` —
+blocks decorated by the SAME `decorateBlocks` as the coach GET
+(`weeks`/`state`/`weekOfTotal`) plus `startWeightKg`/`endWeightKg` from the
+SAME `deriveBlockWeightFacts`. **Deliberately NO `changeKg` on the wire**: the
+coach card subtracts AFTER rounding each endpoint to 1dp in viewer units, and
+`round(end − start)` can differ from `round(end) − round(start)` by 0.1 — so
+the renderer converts + rounds each endpoint, THEN subtracts (documented on
+the type; Task 4.1 renders this way). Canonical kg, no unit tags, no server
+rounding (§20).
+
+**Parity mechanics.** The check-ins read is paged (`fetchAllPages`,
+`(created_at, id)` asc — deterministic with a unique tiebreak) and carries
+**NO status filter — parity-critical, pinned by test and by a comment at the
+query**: the coach series includes every check-in regardless of status
+(`use-check-in-data.ts`'s page key sends only limit/offset), so a status
+filter added later "for cleanliness" would silently desync the two surfaces
+with nothing failing. The `weight IS NOT NULL` DB filter is
+equivalent-by-construction (`buildMetricPoints` skips non-numeric values).
+`listMetricEntries` **is now paged internally** (same `fetchAllPages`; its
+existing `(entry_date, metric_key)` order is already unique per client via
+the table's upsert key, so no new tiebreak) — the coach Metrics page and this
+endpoint share ONE complete source, closing the silent ~1000-row truncation
+for both surfaces together. `deriveBlockWeightFacts` MOVED
+`components/clients/metrics/blocks/block-weight.ts` → `lib/blocks/block-weight.ts`
+(+ test; audience-shared pure logic belongs in `lib/` — CONVENTIONS §2's
+extract-shared rule), its points param narrowed to
+`Pick<MetricPoint, "date" | "value">[]` so the server feeds bare kg pairs;
+the two coach importers repointed, call sites untouched.
+
+**Tests: 270 files / 2780 (268/2764 + 2 files, + 16 tests; arithmetic
+closes).** Journey service 9 — the same-day tie-rank parity pin (coach entry
+89.8 beats the later-submitted 90.2 check-in), the no-status-filter pin (only
+`client_id` + `weight IS NOT NULL` reach the query; no `in()`), per-state
+weight facts incl. the exactly-on-start boundary, archived exclusion,
+short-circuit-with-no-series-reads when nothing is unarchived, goal
+resolution + maintenance shape, non-weight entries ignored, unrounded kg
+pass-through, and a two-page union whose latest weight lives on page 2. Route
+5 — payload + `no-store` + no unit fields anywhere in the JSON, the §9 tier
+order via invocation order (IP guard < auth < per-client, per-client keyed on
+the resolved id), 401-before-any-service-read, today resolved at the route
+and threaded, generic 500 with no raw-error leak. Plus the
+`listMetricEntries` paging pin (+1) and the moved block-weight suite's
+bare-pairs case (+1).
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing
+warnings, unchanged) · `vitest run` **270 files / 2780 tests, all passing** ·
+`check:labels` OK (661) · no `as any` · no markers · no migration.

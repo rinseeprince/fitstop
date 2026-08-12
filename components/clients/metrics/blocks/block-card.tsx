@@ -17,7 +17,7 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { formatBlockDate } from "./block-format";
 import { BlockTimeline, deriveTimelineEntries } from "./block-timeline";
-import type { BlockWeightFacts } from "./block-weight";
+import type { BlockWeightFacts } from "@/lib/blocks/block-weight";
 import type { BlockPace, ClientBlockView } from "@/lib/blocks/block-derivations";
 import type { BlockFacts } from "@/types/client-blocks";
 

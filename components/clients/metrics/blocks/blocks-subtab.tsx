@@ -27,7 +27,7 @@ import {
   useInvalidateClientBlocks,
 } from "../hooks/use-client-blocks";
 import { blockColor } from "./block-colors";
-import { deriveBlockWeightFacts } from "./block-weight";
+import { deriveBlockWeightFacts } from "@/lib/blocks/block-weight";
 import { BlockCard } from "./block-card";
 import { BlockForm, type BlockFormValues } from "./block-form";
 import {

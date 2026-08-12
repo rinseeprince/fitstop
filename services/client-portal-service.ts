@@ -43,6 +43,10 @@ export type NutritionTargets = {
 // client may see about themselves is named here; coach-private columns (notes)
 // are deliberately excluded so a client-facing read can never leak them, and a
 // future coach-only column is excluded by default rather than shipped.
+// SCOPE: this list governs THIS read, not every client-facing surface — the
+// goal DEADLINE (absent here) reaches the client through GET /api/client/journey
+// via client_goals/resolveEffectiveGoal (owner decision 2026-08-12, scoped to
+// that endpoint only).
 const CLIENT_SELF_COLUMNS =
   "id, coach_id, name, email, avatar_url, active, created_at, updated_at, " +
   "height, gender, date_of_birth, goal_weight, goal_body_fat_percentage, " +

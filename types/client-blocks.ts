@@ -5,10 +5,15 @@
 export type BlockState = "past" | "current" | "future";
 
 /** A stored block. Weights are canonical kilograms (CONVENTIONS §20); dates
- *  are YYYY-MM-DD strings. `archivedAt` is a coach VIEW PREFERENCE (hides an
- *  elapsed block from the main Journey list) — no derivation consults it, the
- *  chain PUT never writes it (the archive PATCH owns it), and the chain
- *  contracts always see ALL blocks; filtering happens only at render. */
+ *  are YYYY-MM-DD strings. `archivedAt` CURATES THE PRESENTED JOURNEY for
+ *  both audiences (Session 4 decision — it is not a coach-private view
+ *  preference): an archived elapsed block leaves the coach's main Journey
+ *  list AND the client journey payload (GET /api/client/journey filters it
+ *  server-side), surviving only in the coach's Archive view and the chart
+ *  bands, which render every block forever. No DATE derivation consults it
+ *  (state stays current/past/future from the range — the mig-133 lesson),
+ *  the chain PUT never writes it (the archive PATCH owns it), and the chain
+ *  contracts always see ALL blocks. */
 export interface ClientBlock {
   id: string;
   name: string;

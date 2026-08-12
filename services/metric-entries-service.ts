@@ -3,6 +3,7 @@ import {
   getLatestBodyMetrics,
   recordBodyMetrics,
 } from "./body-metrics-service";
+import { fetchAllPages } from "@/lib/paged-fetch";
 import type { MetricEntry, MetricEntryRow } from "@/types/metric-entries";
 import type { MetricEntryKey } from "@/lib/metrics/metric-entry-definitions";
 import { inToCm } from "@/utils/unit-conversions";
@@ -143,17 +144,23 @@ async function dualWriteBodyMetrics(
 export const listMetricEntries = async (
   clientId: string
 ): Promise<MetricEntry[]> => {
-  const { data, error } = await supabaseAdmin
-    .from("client_metric_entries")
-    .select("*")
-    .eq("client_id", clientId)
-    .order("entry_date", { ascending: false })
-    .order("metric_key", { ascending: true });
+  // Paged: this read feeds the merged metric series on BOTH the coach Metrics
+  // page and the client journey endpoint, so it must be complete — an unpaged
+  // read silently truncates at PostgREST's ~1000-row cap, and the two surfaces
+  // stay in parity only if they share one complete source. The order is
+  // deterministic with no extra tiebreak: (entry_date, metric_key) is unique
+  // per client via the table's upsert key (client_id, metric_key, entry_date).
+  const rows = await fetchAllPages<MetricEntryRow>(
+    (from, to) =>
+      supabaseAdmin
+        .from("client_metric_entries")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("entry_date", { ascending: false })
+        .order("metric_key", { ascending: true })
+        .range(from, to),
+    { errorLabel: "metric entries" }
+  );
 
-  if (error) {
-    console.error("Failed to fetch metric entries:", error);
-    throw new Error(`Failed to fetch metric entries: ${error.message}`);
-  }
-
-  return (data || []).map((row: MetricEntryRow) => mapMetricEntryRow(row));
+  return rows.map((row) => mapMetricEntryRow(row));
 };

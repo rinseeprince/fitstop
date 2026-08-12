@@ -1,5 +1,13 @@
 # Technical Debt Tracker
 
+## `getBodyMetricsHistory` silently truncates at ~1000 rows on its unbounded path
+
+Logged: 2026-08-12 (observed while planning Session 4 of the goals/blocks execution plan; not fixed there — the session's weight reads went through the merged series instead, so no caller changed).
+
+`getBodyMetricsHistory` (`services/body-metrics-service.ts`) issues a single unpaged query. Every in-repo caller but one passes `limit` (mostly `limit: 1` via `getLatestBodyMetrics`), so they are unaffected. The exception is `GET /api/clients/[id]/body-metrics` (`route.ts:41`), whose `limit` is clamped to 1..500 **or `undefined`** — the undefined path returns at most PostgREST's ~1000-row cap with no error. Mitigating: no in-repo UI consumes that route today (grep of `components/` and `hooks/` finds no fetcher), so the truncation is latent. Fix when the route gains a caller: page the unbounded path via `fetchAllPages` (`lib/paged-fetch.ts`) and add an `id` tertiary `.order()` tiebreak (the deterministic-order contract); the exact `.order`-call-list pins at `body-metrics-service.test.ts:327-349` and the test stub's missing `range` method will both need updating with it.
+
+---
+
 ## Typography sweep (mono=numbers-only) — deferred tails
 
 Logged: 2026-07-23 (platform-wide sweep; rule + enforcement in `docs/newdesignsystem.md` → Typography and `npm run check:labels`).

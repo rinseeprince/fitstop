@@ -358,13 +358,15 @@ export const deleteBlock = async (
 };
 
 /**
- * Archive (or restore) one ELAPSED block — a coach view preference (Session
- * 3.7): the block leaves the main Journey list and lives in the Archive view.
- * Nothing else changes: no derivation consults archived_at, the chain
- * contracts keep seeing every block, and un-archiving is always legal (an
- * archived block was elapsed when archived, and elapsed is permanent). A
- * current or future block refuses — hiding live or upcoming context is a
- * footgun, not decluttering.
+ * Archive (or restore) one ELAPSED block — curation of the presented journey
+ * (Session 3.7; client-facing since Session 4): the block leaves the coach's
+ * main Journey list AND the client journey payload (GET /api/client/journey
+ * filters it server-side), surviving in the Archive view and the chart bands,
+ * which render every block forever. No date derivation consults archived_at,
+ * the chain contracts keep seeing every block, and un-archiving is always
+ * legal (an archived block was elapsed when archived, and elapsed is
+ * permanent). A current or future block refuses — hiding live or upcoming
+ * context is a footgun, not decluttering.
  */
 export const setBlockArchived = async (
   clientId: string,

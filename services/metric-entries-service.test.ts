@@ -40,9 +40,27 @@ const listQuery = (result: { data: unknown; error: unknown }) => ({
   select: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
   order: vi.fn().mockReturnThis(),
+  range: vi.fn().mockReturnThis(),
   then: (resolve: (value: typeof result) => void) =>
     Promise.resolve(result).then(resolve),
 });
+
+// One page per await: fetchAllPages re-builds the query each iteration, so the
+// thenable serves pages in sequence.
+const pagedListQuery = (pages: MetricEntryRow[][]) => {
+  let call = 0;
+  return {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    range: vi.fn().mockReturnThis(),
+    then: (resolve: (value: { data: MetricEntryRow[]; error: null }) => void) =>
+      Promise.resolve({
+        data: pages[Math.min(call++, pages.length - 1)],
+        error: null,
+      }).then(resolve),
+  };
+};
 
 // The service no longer reads `clients` at all — migration 141 removed the
 // weight_unit lookup — so this only needs to wire the entries table.
@@ -268,5 +286,24 @@ describe("listMetricEntries", () => {
     });
     // null note/created_by map to undefined (omitted) on the camelCase shape.
     expect(result[1].note).toBeUndefined();
+    // A short first page terminates the paged read after one range.
+    expect(query.range).toHaveBeenCalledTimes(1);
+    expect(query.range).toHaveBeenCalledWith(0, 999);
+  });
+
+  it("pages past the ~1000-row PostgREST cap and returns the union", async () => {
+    const fullPage = Array.from({ length: 1000 }, (_, i) =>
+      mockEntryRow({ id: `entry-${i}`, entry_date: "2026-07-01" })
+    );
+    const shortPage = [mockEntryRow({ id: "entry-tail", entry_date: "2026-06-30" })];
+    const query = pagedListQuery([fullPage, shortPage]);
+    vi.mocked(supabaseAdmin.from).mockReturnValue(query as never);
+
+    const result = await listMetricEntries("client-1");
+
+    expect(result).toHaveLength(1001);
+    expect(result[1000].id).toBe("entry-tail");
+    expect(query.range).toHaveBeenNthCalledWith(1, 0, 999);
+    expect(query.range).toHaveBeenNthCalledWith(2, 1000, 1999);
   });
 });

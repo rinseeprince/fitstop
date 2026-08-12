@@ -73,4 +73,15 @@ describe("deriveBlockWeightFacts", () => {
       })
     ).toEqual({ start: null, end: null, change: null });
   });
+
+  it("accepts bare {date, value} pairs — the server feeds these", () => {
+    const facts = deriveBlockWeightFacts(
+      [
+        { date: "2026-06-01", value: 83.2 },
+        { date: "2026-06-27", value: 81.9 },
+      ],
+      { startsOn: "2026-06-01", endsOn: "2026-06-28", state: "past" }
+    );
+    expect(facts.change).toBeCloseTo(-1.3);
+  });
 });

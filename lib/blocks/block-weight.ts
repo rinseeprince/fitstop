@@ -1,10 +1,16 @@
 import type { MetricPoint } from "@/utils/metric-points";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 
-// Pure weight facts for a block card, from the MERGED coach series (already
-// converted to the viewer's unit at source) — the same series as the chart
-// and log beside it, so the numbers can never disagree. Values arrive rounded
-// to one decimal from use-merged-metrics; the renderer formats the delta.
+// Pure weight facts for a block, from the merged check-in ⊕ coach-entry series
+// (utils/metric-points.ts) — shared by the coach Journey card and the client
+// journey endpoint so the two surfaces read the same numbers by construction.
+// Like derivePace, the values are UNIT-AGNOSTIC: the coach feeds points already
+// converted to the viewer's unit; the server feeds canonical kg. Points must be
+// ascending (the merged-series contract); the renderer formats the delta.
+
+/** The two fields the facts walk reads — a structural subset of MetricPoint,
+ *  so a server caller can feed raw kg pairs without fabricating the rest. */
+export type BlockWeightPoint = Pick<MetricPoint, "date" | "value">;
 
 export interface BlockWeightFacts {
   /** Latest entry at or before the block's start — derivePace's baseline. */
@@ -12,12 +18,12 @@ export interface BlockWeightFacts {
   /** Past blocks: latest entry inside the window. Current: latest overall.
    *  Future: null (nothing has happened yet). */
   end: { value: number; date: string } | null;
-  /** end − start, in the series' (viewer's) unit. */
+  /** end − start, in the series' unit. */
   change: number | null;
 }
 
 export function deriveBlockWeightFacts(
-  points: MetricPoint[],
+  points: BlockWeightPoint[],
   block: Pick<ClientBlockView, "startsOn" | "endsOn" | "state">
 ): BlockWeightFacts {
   if (block.state === "future") {
