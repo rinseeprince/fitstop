@@ -110,7 +110,9 @@ describe("ClientScheduleCard check-in strip loading state", () => {
     );
 
     expect(screen.queryByText(/never asked to check in/i)).not.toBeInTheDocument();
-    expect(screen.queryByText("No check-in schedule")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("This client is never asked to check in.")
+    ).not.toBeInTheDocument();
   });
 
   it("states the no-schedule case once the brief resolves without timing", () => {
@@ -123,7 +125,7 @@ describe("ClientScheduleCard check-in strip loading state", () => {
       />
     );
 
-    expect(screen.getByText("No check-in schedule")).toBeInTheDocument();
+    expect(screen.getByText("This client is never asked to check in.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Set a schedule" })).toBeInTheDocument();
   });
 
@@ -137,7 +139,9 @@ describe("ClientScheduleCard check-in strip loading state", () => {
       />
     );
 
-    expect(screen.getByText(/Next check-in due/)).toBeInTheDocument();
-    expect(screen.queryByText("No check-in schedule")).not.toBeInTheDocument();
+    expect(screen.getByText(/Next check-in/)).toBeInTheDocument();
+    expect(
+      screen.queryByText("This client is never asked to check in.")
+    ).not.toBeInTheDocument();
   });
 });

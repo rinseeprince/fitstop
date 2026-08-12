@@ -32,8 +32,15 @@ type ClientStatusCardProps = {
 
 // Translucent on-dark chip — same recipe as the training-summary and metric
 // heroes (training-summary-hero.tsx:67-79); digit-bearing chips go mono.
+// One height, one radius (inner chips are rounded-[4px] system-wide) so the
+// header row reads as a set rather than three differently-sized labels.
 const CHIP_DARK_CLASS =
-  "rounded-[3px] bg-[rgba(255,255,255,0.12)] px-1.5 py-0.5 text-[10px] font-medium text-[rgba(255,255,255,0.4)]";
+  "inline-flex h-5 items-center rounded-[4px] bg-[rgba(255,255,255,0.12)] px-2 text-[10px] font-medium text-[rgba(255,255,255,0.4)]";
+
+// On-dark teal is reserved for the interactive/active element — the one chip
+// that reports live state earns the tint; the descriptive ones do not.
+const CHIP_DARK_ACTIVE_CLASS =
+  "inline-flex h-5 items-center rounded-[4px] bg-[rgba(13,148,136,0.15)] px-2 text-[10px] font-medium text-[#0d9488]";
 
 const DIVIDER = "border-[rgba(255,255,255,0.07)]";
 
@@ -109,7 +116,7 @@ function MetricCell({
   return (
     <div className={showLeftBorder ? cn("border-l pl-3", DIVIDER) : undefined}>
       <p className={STAT_LABEL_DARK_CLASS}>{label}</p>
-      <div className="mt-1">
+      <div className="mt-1.5">
         {value ? (
           <>
             <span
@@ -124,11 +131,11 @@ function MetricCell({
             <span className="ml-1 text-[10px] text-[rgba(255,255,255,0.30)]">{unit}</span>
           </>
         ) : (
-          <span className="text-[13px] text-[rgba(255,255,255,0.30)]">Not recorded</span>
+          <span className="text-[13px] text-[rgba(255,255,255,0.3)]">Not recorded</span>
         )}
       </div>
       {sub && (
-        <p className={cn(MONO, "mt-0.5 text-[9px]", subTone ?? "text-[rgba(255,255,255,0.25)]")}>
+        <p className={cn(MONO, "mt-1 text-[10px]", subTone ?? "text-[rgba(255,255,255,0.3)]")}>
           {sub}
         </p>
       )}
@@ -151,14 +158,41 @@ function MetricCell({
  * `mono` is explicit rather than digit-sniffed: a plan name is user-authored, so
  * any digits in it are part of the name, not the datum (design-system tie-break).
  */
-function DarkChip({ children, mono }: { children: string; mono?: boolean }) {
+function DarkChip({
+  children,
+  mono,
+  active,
+}: {
+  children: string;
+  mono?: boolean;
+  active?: boolean;
+}) {
   return (
-    <span className={cn(CHIP_DARK_CLASS, "max-w-[180px] truncate", mono && MONO)}>{children}</span>
+    <span
+      className={cn(
+        active ? CHIP_DARK_ACTIVE_CLASS : CHIP_DARK_CLASS,
+        "max-w-[180px] truncate",
+        mono && MONO
+      )}
+    >
+      {children}
+    </span>
   );
 }
 
+/**
+ * Stat-band sub tones: neutral / up / warn.
+ *
+ * Flat used to fall through to warn — a client who had not moved at all showed
+ * "0.0kg" in the warning amber, which is not a warning, it is no news. There was
+ * no zero branch; it was an oversight rather than a decision.
+ *
+ * Direction still assumes a loss goal (down = good). That IS logic rather than
+ * styling, so it is left exactly as it was.
+ */
 function deltaTone(delta: string | null): string | undefined {
   if (!delta) return undefined;
+  if (Number(delta) === 0) return "text-[rgba(255,255,255,0.3)]";
   return delta.startsWith("-") ? "text-[#0d9488]" : "text-[#d97706]";
 }
 
@@ -200,7 +234,9 @@ export function ClientStatusCard({
       {training.currentWeek !== null && training.programDurationWeeks !== null && (
         <DarkChip mono>{`Week ${training.currentWeek} of ${training.programDurationWeeks}`}</DarkChip>
       )}
-      <DarkChip>{training.currentWeek === null ? "Ended" : "Active"}</DarkChip>
+      <DarkChip active={training.currentWeek !== null}>
+        {training.currentWeek === null ? "Ended" : "Active"}
+      </DarkChip>
     </>
   ) : upcomingTraining ? (
     <>
@@ -221,8 +257,8 @@ export function ClientStatusCard({
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">{blockChips}</div>
       </div>
 
-      <div className="flex-1 pb-4">
-        <div className="grid grid-cols-3 gap-3 px-5 pb-3">
+      <div className="flex flex-1 flex-col pb-4">
+        <div className="grid flex-1 grid-cols-3 items-start gap-3 px-5 pb-3">
           <MetricCell
             label="Start weight"
             value={startWeight?.toFixed(1)}
@@ -250,7 +286,7 @@ export function ClientStatusCard({
 
         <div className={cn("mx-5 border-t", DIVIDER)} />
 
-        <div className="grid grid-cols-3 gap-3 px-5 py-3">
+        <div className="grid flex-1 grid-cols-3 items-start gap-3 px-5 py-3">
           <MetricCell
             label="Start body fat"
             value={client.startingBodyFatPercentage?.toFixed(1)}
@@ -280,7 +316,7 @@ export function ClientStatusCard({
             manual recalculate button was an admission that it didn't. The slot
             now says what the TDEE was derived FROM, which is the question a
             coach looking at these two numbers actually has. */}
-        <div className="grid grid-cols-3 items-end gap-3 px-5 pt-3">
+        <div className="grid flex-1 grid-cols-3 items-start gap-3 px-5 pt-3">
           <MetricCell
             label="BMR"
             value={client.bmr ? Math.round(client.bmr).toString() : undefined}
@@ -291,7 +327,7 @@ export function ClientStatusCard({
             // sub — so swapping the number for an input does not shift the row.
             <div className={cn("border-l pl-3", DIVIDER)}>
               <p className={STAT_LABEL_DARK_CLASS}>TDEE</p>
-              <div className="mt-1">
+              <div className="mt-1.5">
                 {edit.isCustomTdee ? (
                   <InlineDarkInput
                     ariaLabel="Custom TDEE"
@@ -299,20 +335,18 @@ export function ClientStatusCard({
                     onChange={edit.setCustomTdee}
                   />
                 ) : (
-                  <>
+                  <div className="flex h-8 items-center">
                     <span className={cn(STAT_VALUE_DARK_CLASS, "text-[20px] leading-tight")}>
                       {edit.autoEnergy ? edit.autoEnergy.tdee : "—"}
                     </span>
-                    <span className="ml-1 text-[10px] text-[rgba(255,255,255,0.30)]">
-                      cal/day
-                    </span>
-                  </>
+                    <span className="ml-1 text-[10px] text-[rgba(255,255,255,0.3)]">cal/day</span>
+                  </div>
                 )}
               </div>
               <button
                 type="button"
                 onClick={() => edit.setIsCustomTdee(!edit.isCustomTdee)}
-                className="mt-0.5 text-[10px] font-medium text-[#5eead4] transition-colors hover:text-white"
+                className="mt-1 text-[10px] font-medium text-[#0d9488] transition-colors hover:text-white"
               >
                 {edit.isCustomTdee ? "Back to auto" : "Custom"}
               </button>
@@ -333,7 +367,7 @@ export function ClientStatusCard({
           <div className={cn("border-l pl-3", DIVIDER)}>
             <p className={STAT_LABEL_DARK_CLASS}>Activity</p>
             {edit.isEditing ? (
-              <div className="mt-1">
+              <div className="mt-1.5">
                 <InlineDarkSelect
                   ariaLabel="Work activity level"
                   value={edit.form.watch("workActivityLevel")}
@@ -344,7 +378,7 @@ export function ClientStatusCard({
                 />
               </div>
             ) : (
-              <p className="mt-1 text-[13px] font-medium text-white">
+              <p className="mt-1.5 flex h-8 items-center text-[13px] font-medium text-[rgba(255,255,255,0.92)]">
                 {ACTIVITY_SHORT_LABELS[client.workActivityLevel ?? "sedentary"]}
               </p>
             )}
@@ -352,7 +386,7 @@ export function ClientStatusCard({
         </div>
       </div>
 
-      <div className="mt-auto flex justify-end border-t border-[rgba(255,255,255,0.06)] px-5 py-3">
+      <div className="mt-auto flex justify-end border-t border-[rgba(255,255,255,0.07)] px-5 py-3">
         <button
           type="button"
           onClick={onOpenMetrics}

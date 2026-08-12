@@ -185,7 +185,7 @@ export function ClientOverviewTab({
           label="Client"
           actions={<EditRailActions edit={edit} />}
         />
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[5fr_8fr]">
+        <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[2fr_3fr]">
         <ClientScheduleCard
           client={client}
           checkInTiming={brief?.checkInTiming ?? null}

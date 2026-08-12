@@ -111,7 +111,7 @@ describe("inline client profile editing", () => {
     const user = await openEditor();
 
     await user.type(screen.getByLabelText("Phone"), "123");
-    await user.click(screen.getByRole("button", { name: /cancel editing/i }));
+    await user.click(screen.getByRole("button", { name: /discard changes/i }));
 
     expect(screen.queryByLabelText("Phone")).not.toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();

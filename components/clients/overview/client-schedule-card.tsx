@@ -14,7 +14,7 @@ import {
   MONO_META_CLASS,
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { InlineMono, OverviewCard } from "./overview-primitives";
+import { OverviewCard } from "./overview-primitives";
 import { formatDateOnlyWeekday, pluralize, relativeDayPhrase } from "./overview-format";
 import type { Client, DayOfWeek } from "@/types/check-in";
 import type { CheckInTiming } from "@/types/coach-brief";
@@ -170,13 +170,14 @@ function CheckInStrip({
 
   if (timing === null) {
     return (
-      <div className="flex items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3">
+      <div className="flex items-center gap-3">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[6px] bg-[#f0f5f4] text-[#5a7d82]">
           <Calendar className="h-4 w-4" strokeWidth={1.5} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold text-[#0c1a1e]">No check-in schedule</p>
-          <p className="mt-0.5 text-[11px] text-[#93b0b4]">
+          <p className={LABEL_CLASS}>Next check-in</p>
+          <p className="mt-0.5 text-[13px] font-semibold text-[#0c1a1e]">Not scheduled</p>
+          <p className="mt-0.5 truncate text-[11px] text-[#93b0b4]">
             This client is never asked to check in.
           </p>
         </div>
@@ -197,14 +198,9 @@ function CheckInStrip({
   const subline = submitted ? `Last submitted ${submitted.text}` : "Not submitted yet";
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-3 rounded-[6px] border p-3",
-        timing.isOverdue
-          ? "border-[rgba(245,158,11,0.25)] bg-[rgba(245,158,11,0.04)]"
-          : "border-[rgba(13,148,136,0.08)]"
-      )}
-    >
+    // No nested card: this zone is separated by the card's own hairline, and
+    // reads with the same label-over-value grammar as the fields below it.
+    <div className="flex items-center gap-3">
       <span
         className={cn(
           "grid h-8 w-8 shrink-0 place-items-center rounded-[6px]",
@@ -214,14 +210,12 @@ function CheckInStrip({
         <Calendar className="h-4 w-4" strokeWidth={1.5} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-semibold text-[#0c1a1e]">
+        <p className={LABEL_CLASS}>Next check-in</p>
+        <p className="mt-0.5 truncate text-[13px] font-semibold text-[#0c1a1e]">
           {timing.nextDueDate ? (
-            <>
-              {/* No space before InlineMono — it owns its own gap. */}
-              Next check-in due<InlineMono>{formatDateOnlyWeekday(timing.nextDueDate)}</InlineMono>
-            </>
+            <span className={MONO}>{formatDateOnlyWeekday(timing.nextDueDate)}</span>
           ) : (
-            "Next check-in not scheduled"
+            "Not scheduled"
           )}
         </p>
         <p
@@ -279,7 +273,7 @@ export function ClientScheduleCard({
 
         <div className="mx-5 border-t border-[rgba(13,148,136,0.06)]" />
 
-        <div className="px-5 pt-4">
+        <div className="border-t border-[rgba(13,148,136,0.06)] px-5 py-4">
           <CheckInStrip
             timing={checkInTiming}
             isLoading={isTimingLoading}
@@ -287,7 +281,7 @@ export function ClientScheduleCard({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-x-3 gap-y-3 px-5 pb-5 pt-4">
+        <div className="grid grid-cols-2 items-start gap-x-3 gap-y-4 border-t border-[rgba(13,148,136,0.06)] px-5 pb-5 pt-4">
           <Field label="Frequency" value={frequencyLabel(client)} />
           <Field
             label="Check-in day"

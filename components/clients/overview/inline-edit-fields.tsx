@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import {
   FOCUS_RING,
   MONO_INPUT_CLASS,
-  STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { ClientProfileEdit } from "./use-client-profile-edit";
 
@@ -48,17 +47,9 @@ export function EditRailActions({ edit }: { edit: ClientProfileEdit }) {
   }
 
   return (
+    // Rail icon-action order is fixed system-wide: commit leftmost,
+    // destructive ALWAYS rightmost (newdesignsystem.md, SectionLabel actions).
     <div className="flex shrink-0 items-center gap-1">
-      <button
-        type="button"
-        onClick={edit.cancel}
-        disabled={edit.isSaving}
-        aria-label="Cancel editing"
-        title="Cancel"
-        className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0c1a1e] disabled:opacity-50"
-      >
-        <X className="h-3.5 w-3.5" strokeWidth={1.5} />
-      </button>
       <button
         type="button"
         onClick={() => void edit.save()}
@@ -72,6 +63,16 @@ export function EditRailActions({ edit }: { edit: ClientProfileEdit }) {
         ) : (
           <Check className="h-3.5 w-3.5" strokeWidth={1.5} />
         )}
+      </button>
+      <button
+        type="button"
+        onClick={edit.cancel}
+        disabled={edit.isSaving}
+        aria-label="Discard changes"
+        title="Discard changes"
+        className="rounded p-1 text-[#93b0b4] transition-colors hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060] disabled:opacity-50"
+      >
+        <X className="h-3.5 w-3.5" strokeWidth={1.5} />
       </button>
     </div>
   );
@@ -149,9 +150,11 @@ export function InlineDarkInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
-        STAT_VALUE_DARK_CLASS,
+        MONO_INPUT_CLASS,
         FOCUS_RING,
-        "h-9 w-full rounded-[6px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] px-2 text-[20px] leading-tight text-white outline-none transition-colors focus:border-[rgba(13,148,136,0.6)]"
+        // Control height + control scale. It reads as a FIELD, not as a stat
+        // rendered in a box — the number beside it is the stat.
+        "h-8 w-full rounded-[6px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] px-2 text-[13px] font-medium text-[rgba(255,255,255,0.92)] outline-none transition-colors focus:border-[rgba(13,148,136,0.6)]"
       )}
     />
   );
