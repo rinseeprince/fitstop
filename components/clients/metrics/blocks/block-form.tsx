@@ -72,6 +72,9 @@ type SchemaOptions = {
   /** The current block's end floor (the client's today) — the window floor
    *  expressed as validation instead of a server 422. */
   minEnd: string | null;
+  /** The anchor's floor (the client's today) — the journey can't start in
+   *  the past. Belt behind the input's `min`, which only greys the picker. */
+  minStart: string | null;
 };
 
 // Cross-field checks live in the schema: a zodResolver replaces RHF
@@ -83,6 +86,18 @@ function makeBlockSchema(opts: SchemaOptions) {
         code: z.ZodIssueCode.custom,
         path: ["startsOn"],
         message: "Pick a start date",
+      });
+    }
+    if (
+      opts.needsStartField &&
+      data.startsOn &&
+      opts.minStart &&
+      data.startsOn < opts.minStart
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["startsOn"],
+        message: "Can't start in the past",
       });
     }
     if (!opts.requiresEnd) return;
@@ -146,6 +161,9 @@ export type BlockFormMode =
 
 type BlockFormProps = {
   mode: BlockFormMode;
+  /** The client's today (their timezone, off the wire) — floors the Starts
+   *  field whenever it renders. Null only while the wire hasn't answered. */
+  minStart?: string | null;
   /** Sum of every OTHER block's weeks, for the live journey-total sentence. */
   otherBlocksWeeks: number;
   /** Edit-mode push-forward preview: the moved-blocks clause for an end. */
@@ -162,6 +180,7 @@ const FIELD_INPUT = cn(
 
 export function BlockForm({
   mode,
+  minStart = null,
   otherBlocksWeeks,
   shiftPreview,
   onSubmit,
@@ -196,8 +215,9 @@ export function BlockForm({
         requiresEnd: !isElapsedEdit,
         fixedStart,
         minEnd,
+        minStart,
       }),
-    [needsStartField, isElapsedEdit, fixedStart, minEnd]
+    [needsStartField, isElapsedEdit, fixedStart, minEnd, minStart]
   );
   const {
     register,
@@ -208,8 +228,9 @@ export function BlockForm({
   } = useForm<SchemaValues>({
     resolver: zodResolver(schema),
     defaultValues: {
+      // Seed from the client's today (their tz), not the coach's device day.
       startsOn: needsStartField
-        ? (editing?.startsOn ?? getTodayDateString())
+        ? (editing?.startsOn ?? minStart ?? getTodayDateString())
         : undefined,
       name: editing?.name ?? "",
       // Adds seed a 4-week block so the live line reads immediately.
@@ -299,6 +320,7 @@ export function BlockForm({
             <Input
               id="block-starts"
               type="date"
+              min={minStart ?? undefined}
               className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-[150px] text-xs")}
               {...register("startsOn")}
             />

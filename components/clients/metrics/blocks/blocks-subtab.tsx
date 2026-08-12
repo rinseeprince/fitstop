@@ -215,6 +215,7 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
         kind: "add",
         appendAfterEndsOn: blocks[blocks.length - 1]?.endsOn ?? null,
       }}
+      minStart={clientToday}
       otherBlocksWeeks={journeyWeeks}
       onSubmit={handleAdd}
       onCancel={() => setShowAddForm(false)}
@@ -333,6 +334,7 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
                       blocks[0]?.id === block.id && block.state === "future",
                     minEnd: block.state === "current" ? clientToday : null,
                   }}
+                  minStart={clientToday}
                   otherBlocksWeeks={
                     journeyWeeks - (block.archivedAt ? 0 : block.weeks)
                   }
