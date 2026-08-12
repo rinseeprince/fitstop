@@ -1,10 +1,25 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Flag, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  ChevronDown,
+  Flag,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
 import { useToast } from "@/hooks/use-toast";
 import { useUnits } from "@/contexts/units-context";
@@ -13,6 +28,7 @@ import { computeDeleteShift } from "@/lib/blocks/block-chain";
 import { derivePace, type ClientBlockView } from "@/lib/blocks/block-derivations";
 import {
   deleteBlockRequest,
+  patchBlockArchived,
   putBlockChain,
   useBlockFacts,
   useClientBlocks,
@@ -59,6 +75,11 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
   const { toast } = useToast();
   const invalidateBlocks = useInvalidateClientBlocks();
   const [showAddForm, setShowAddForm] = useState(false);
+  // Coach-curated views (Session 3.7): "journey" = everything unarchived —
+  // a live program's finished phases included; "archive" = what the coach
+  // has filed away. A pure render filter: the chain contracts (echo, shift
+  // math, add-form anchor) always operate on the FULL chain.
+  const [view, setView] = useState<"journey" | "archive">("journey");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientBlockView | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -130,6 +151,23 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
     }
   };
 
+  const handleArchive = async (block: ClientBlockView, archived: boolean) => {
+    try {
+      await patchBlockArchived(clientId, block.id, archived);
+      void invalidateBlocks(clientId);
+      toast({
+        title: archived ? `"${block.name}" archived` : `"${block.name}" restored`,
+      });
+    } catch (error) {
+      toast({
+        title: archived ? "Archive failed" : "Restore failed",
+        description:
+          error instanceof Error ? error.message : "Could not update the block",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleEdit = async (block: ClientBlockView, values: BlockFormValues) => {
     try {
       const { payload } = buildEditPayload(blocks, block.id, {
@@ -163,6 +201,19 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
       ? `${blocks.length} ${blocks.length === 1 ? "block" : "blocks"} · ${totalWeeks} weeks`
       : undefined;
 
+  // Colour by FULL-chain position, then filter — archiving a block must
+  // never repaint the survivors (colour follows the entity, not its rank).
+  const entries = useMemo(
+    () => blocks.map((block, index) => ({ block, color: blockColor(index) })),
+    [blocks]
+  );
+  const archivedCount = blocks.filter((block) => block.archivedAt != null).length;
+  const visibleEntries = entries.filter((entry) =>
+    view === "archive"
+      ? entry.block.archivedAt != null
+      : entry.block.archivedAt == null
+  );
+
   const addForm = (
     <BlockForm
       mode={{
@@ -182,15 +233,47 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
         meta={meta}
         actions={
           !isLoading && !isError ? (
-            <button
-              type="button"
-              aria-label="Add a block"
-              title="Add a block"
-              onClick={() => setShowAddForm((prev) => !prev)}
-              className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
-            >
-              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-            </button>
+            <div className="flex items-center gap-1">
+              {blocks.length > 0 && (
+                // The rail-dropdown grammar: sentence-case value + chevron.
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className={cn(
+                      "flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-[#93b0b4] transition-colors hover:text-[#0d9488] data-[state=open]:bg-[rgba(13,148,136,0.05)] data-[state=open]:text-[#0d9488]",
+                      FOCUS_RING
+                    )}
+                  >
+                    {view === "journey" ? "Journey" : "Archive"}
+                    <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" sideOffset={6} className="w-44">
+                    <DropdownMenuItem onClick={() => setView("journey")}>
+                      <span className="flex-1">Journey</span>
+                      {view === "journey" && (
+                        <Check className="h-3.5 w-3.5 text-[#0d9488]" strokeWidth={1.5} />
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setView("archive")}>
+                      <span className="flex-1">Archive ({archivedCount})</span>
+                      {view === "archive" && (
+                        <Check className="h-3.5 w-3.5 text-[#0d9488]" strokeWidth={1.5} />
+                      )}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              {view === "journey" && (
+                <button
+                  type="button"
+                  aria-label="Add a block"
+                  title="Add a block"
+                  onClick={() => setShowAddForm((prev) => !prev)}
+                  className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
+                >
+                  <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </button>
+              )}
+            </div>
           ) : undefined
         }
       />
@@ -231,7 +314,14 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
         )
       ) : (
         <div className="space-y-2">
-          {blocks.map((block, index) => {
+          {visibleEntries.length === 0 && (
+            <p className="py-8 text-center text-[13px] text-[#93b0b4]">
+              {view === "archive"
+                ? "Nothing archived yet."
+                : "All blocks are archived."}
+            </p>
+          )}
+          {visibleEntries.map(({ block, color }) => {
             if (block.id === editingId) {
               return (
                 <BlockForm
@@ -241,7 +331,8 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
                     block,
                     // The anchor is the coach's to move only while NOTHING is
                     // lived: the chain's first block, still future.
-                    startEditable: index === 0 && block.state === "future",
+                    startEditable:
+                      blocks[0]?.id === block.id && block.state === "future",
                     minEnd: block.state === "current" ? clientToday : null,
                   }}
                   otherBlocksWeeks={totalWeeks - block.weeks}
@@ -278,7 +369,7 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
               <BlockCard
                 key={block.id}
                 block={block}
-                color={blockColor(index)}
+                color={color}
                 facts={factsById.get(block.id)}
                 factsLoading={factsLoading}
                 factsError={factsError}
@@ -294,17 +385,32 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
                       aria-label={`Edit ${block.name}`}
                       title="Edit block"
                       onClick={() => setEditingId(block.id)}
-                      className={cn(
-                        ROW_ICON_BUTTON,
-                        "hover:text-[#0d9488]",
-                        block.state === "past" && "mr-2",
-                        FOCUS_RING
-                      )}
+                      className={cn(ROW_ICON_BUTTON, "hover:text-[#0d9488]", FOCUS_RING)}
                     >
                       <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
                     </button>
-                    {/* Destructive rightmost, per the rail order rule. */}
-                    {block.state !== "past" && (
+                    {view === "archive" ? (
+                      <button
+                        type="button"
+                        aria-label={`Restore ${block.name}`}
+                        title="Restore to journey"
+                        onClick={() => void handleArchive(block, false)}
+                        className={cn(ROW_ICON_BUTTON, "mr-2 hover:text-[#0d9488]", FOCUS_RING)}
+                      >
+                        <ArchiveRestore className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </button>
+                    ) : block.state === "past" ? (
+                      <button
+                        type="button"
+                        aria-label={`Archive ${block.name}`}
+                        title="Archive block"
+                        onClick={() => void handleArchive(block, true)}
+                        className={cn(ROW_ICON_BUTTON, "mr-2 hover:text-[#0d9488]", FOCUS_RING)}
+                      >
+                        <Archive className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </button>
+                    ) : (
+                      // Destructive rightmost, per the rail order rule.
                       <button
                         type="button"
                         aria-label={`Delete ${block.name}`}
@@ -321,7 +427,7 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
             );
           })}
           {/* Appends at the chain's end, so the form sits where the block will. */}
-          {showAddForm && addForm}
+          {view === "journey" && showAddForm && addForm}
         </div>
       )}
 

@@ -3121,3 +3121,31 @@ passthrough, unknown 404, no-raw-error 500; every block fixture helper across
 8 test files gained `archivedAt`, the §-cascade rule) · `check:labels` OK
 (661) · `check:rls` OK (41/41) · migration + regenerated types in this
 commit.
+
+---
+
+### Task 3.7-2 — Archive view UI ✅ SHIPPED 2026-08-12 · SESSION 3.7 COMPLETE
+
+**What shipped.** The Blocks rail gains a **view switcher** per the
+rail-dropdown grammar (sentence-case value + chevron, `align="end"`, teal
+check on the selected item): **Journey** (everything unarchived — a live
+program's finished phases included) / **Archive (N)**. Elapsed rows on the
+Journey view carry a hover **Archive** icon in the trash's slot (current and
+future rows keep the trash — the two are mutually exclusive by state, and the
+rightmost slot stays the "moves it away" action); Archive-view rows carry
+pencil + **Restore**. Toasts `"Cut 1" archived` / `"Cut 1" restored`;
+blocks-area invalidation on both. Per-view empty states ("Nothing archived
+yet." / "All blocks are archived."); the add affordance and form render on
+the Journey view only, and the add form's anchor still comes from the FULL
+chain (an archived last block still anchors the next one — the chain is
+untouched by archiving). **Colour is keyed to full-chain position before
+filtering**, so archiving never repaints survivors, and the **chart bands
+ignore archiving entirely** (`shapeBlockBandIdentity` reads the unfiltered
+chain) — history stays explained; only the list declutters.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings) ·
+`vitest run` **268 files / 2762 tests, all passing** (UI-only; the behaviour
+seams — PATCH contract, elapsed-only rule, render filter inputs — are pinned
+by 3.7-1's tests) · `check:labels` OK (661) · no `as any` · no markers · no
+migration. **Session 3.7 totals: 2 commits, 1 migration (146), +11 tests.**
+Browser-unverified.

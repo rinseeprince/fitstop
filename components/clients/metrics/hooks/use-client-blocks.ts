@@ -142,3 +142,22 @@ export async function deleteBlockRequest(
   );
   return body.data;
 }
+
+/** PATCH archive (true) / restore (false) an elapsed block — a coach view
+ *  preference. Callers invalidate the blocks area on success. */
+export async function patchBlockArchived(
+  clientId: string,
+  blockId: string,
+  archived: boolean
+): Promise<ClientBlockView[]> {
+  const res = await fetch(`${clientBlocksKey(clientId)}/${blockId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archived }),
+  });
+  const body = await parseOrThrow<BlocksResponse>(
+    res,
+    "Failed to archive block"
+  );
+  return body.data.blocks;
+}
