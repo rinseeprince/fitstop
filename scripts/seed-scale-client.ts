@@ -17,6 +17,7 @@
 import "./env-bootstrap";
 
 import { supabaseAdmin } from "@/services/supabase-admin";
+import { computeEnergyPair } from "@/services/client-energy-calc";
 import { generateTrainingEvents } from "@/services/training-event-service";
 import { generateNutritionEvents } from "@/services/nutrition-event-service";
 import {
@@ -100,6 +101,28 @@ function makeRng(seed: number) {
 }
 
 type Rng = ReturnType<typeof makeRng>;
+
+// ---------------------------------------------------------------------------
+// The fixture's metabolism, through the app's own calculator rather than a
+// literal — so a reseeded fixture can never contradict what
+// recalculateClientEnergy would compute for the same row, which is the exact
+// incoherence Session 4B removed from the app. The nutrition plan below
+// snapshots the same pair, because a plan snapshots the profile.
+// ---------------------------------------------------------------------------
+
+const FIXTURE_ENERGY = (() => {
+  const energy = computeEnergyPair({
+    weightKg: 83.9,
+    heightCm: 178,
+    gender: "male",
+    bodyFatPercentage: 22,
+    activityLevel: "moderately_active",
+  });
+  if (energy.status !== "ready") {
+    throw new Error(`Fixture client is not computable: missing ${energy.missing.join(", ")}`);
+  }
+  return { bmr: energy.bmr, tdee: energy.tdee };
+})();
 
 // ---------------------------------------------------------------------------
 // Plan: 4 sessions per week with focuses Push/Pull/Legs/Full
@@ -245,8 +268,15 @@ async function insertCoachAndClient() {
         current_body_fat_percentage: 22,
         goal_body_fat_percentage: 15,
         starting_body_fat_percentage: 26,
-        bmr: 1850,
-        tdee: 2700,
+        // The fixture carried no height, gender or activity level, so nothing
+        // could compute its metabolism and bmr/tdee were literals (1850/2700)
+        // that matched no formula. That 1850 is what the Session 4B
+        // investigation traced the impossible BMR 3712 / TDEE 3515 pair back
+        // to. These three make the row computable; the pair below is derived.
+        height: 178,
+        gender: "male",
+        work_activity_level: "moderately_active",
+        ...FIXTURE_ENERGY,
       },
       { onConflict: "id", ignoreDuplicates: true }
     );
@@ -386,8 +416,8 @@ async function insertNutritionPlan() {
     carb_target_g: 280,
     fat_target_g: 70,
     base_weight_kg: 84,
-    bmr: 1850,
-    tdee: 2700,
+    // Snapshotted from the profile, like every real plan save.
+    ...FIXTURE_ENERGY,
   };
   const { error: planErr } = await supabaseAdmin.from("nutrition_plans").insert([
     {

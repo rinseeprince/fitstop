@@ -25,6 +25,7 @@
  */
 
 import { compactFromSpecs, type SetSpec, type SetType } from "@/utils/exercise-set-specs";
+import { computeEnergyPair } from "@/services/client-energy-calc";
 import { seedUuid, seedEmail } from "./ids";
 import { streamFor, type Rng } from "./rng";
 import {
@@ -195,8 +196,20 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
     const startWeight = round(idRng.gauss(82, 12, 52, 135), 1);
     const goalWeight = round(startWeight - idRng.float(3, 14), 1);
     const startBf = round(idRng.gauss(24, 5, 10, 40), 1);
-    const bmr = Math.round(370 + 21.6 * (startWeight * (1 - startBf / 100)));
-    const tdee = Math.round(bmr * idRng.float(1.35, 1.75));
+    // Hoisted above the energy computation so the seeded pair derives from the
+    // SAME gender/age/activity the row is inserted with. They used to be picked
+    // further down while bmr came from an inline Katch-McArdle copy and tdee
+    // from a random 1.35-1.75 multiplier, so a "very_active" fixture could carry
+    // a sedentary-looking TDEE — the exact incoherence Session 4B removed from
+    // the app.
+    const gender = idRng.pick(["male", "female", "other"] as const);
+    const dateOfBirth = addDays(anchorDate, -idRng.int(19, 60) * 365);
+    const workActivityLevel = idRng.pick([
+      "sedentary",
+      "lightly_active",
+      "moderately_active",
+      "very_active",
+    ] as const);
     const checkInDay = idRng.pick(["monday", "sunday", "friday", "wednesday"] as const);
     const isPersona = ctx.personaClientIndices.has(clientIdx);
 
@@ -206,6 +219,28 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       round(startWeight + (goalWeight - startWeight) * (dayIndex / Math.max(tenureDays, 1)) * idRng.float(0.55, 0.95), 1);
     const finalWeight = weightAt(tenureDays - 1);
     const finalBf = round(Math.max(8, startBf - (startWeight - finalWeight) * 0.55), 1);
+
+    // The profile pair, through the app's own calculator — so a seeded fixture
+    // can never contradict what recalculateClientEnergy would produce for the
+    // same row. Derived from the CURRENT weight/body fat (what the clients
+    // cache holds), with the anchor date as the clock so `--seed` stays
+    // byte-deterministic.
+    const energy = computeEnergyPair({
+      weightKg: finalWeight,
+      heightCm,
+      gender,
+      bodyFatPercentage: finalBf,
+      dateOfBirth,
+      activityLevel: workActivityLevel,
+      now: new Date(`${anchorDate}T12:00:00Z`),
+    });
+    if (energy.status !== "ready") {
+      throw new Error(
+        `Seed client ${clientIdx} is not computable: missing ${energy.missing.join(", ")}`
+      );
+    }
+    const bmr = energy.bmr;
+    const tdee = energy.tdee;
 
     clients.push({
       id: clientId,
@@ -223,9 +258,9 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       expected_check_in_day: checkInDay,
       unit_preference: idRng.weighted([["metric", 7], ["imperial", 3]] as const),
       height: heightCm,
-      gender: idRng.pick(["male", "female", "other"] as const),
-      date_of_birth: addDays(anchorDate, -idRng.int(19, 60) * 365),
-      work_activity_level: idRng.pick(["sedentary", "lightly_active", "moderately_active", "very_active"] as const),
+      gender,
+      date_of_birth: dateOfBirth,
+      work_activity_level: workActivityLevel,
       include_activity_burn: idRng.bool(0.7),
       surplus_as_carbs: idRng.bool(0.4),
       starting_weight: startWeight,
