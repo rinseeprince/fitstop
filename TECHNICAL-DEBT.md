@@ -788,4 +788,38 @@ Logged: 2026-07-25 (Metrics page redesign, migration 132).
 
 ### P2 - Deferred
 - **No DELETE/edit path for `client_metric_entries`.** A mistaken entry can only be corrected by re-logging the same metric + date (upsert replaces); it cannot be removed. A DELETE handler is small, but the weight case is not: deleting the latest weight entry should re-derive `clients.current_weight` from the next-latest `body_metrics` event, which the current cache-update path (`recordBodyMetrics`'s `updateClientCache`) has no machinery for. Build the re-derivation with the DELETE, not before.
-- **`hooks/use-client-metrics.ts` still carries the dead save/dialog members** (`handleMetricSave`, `saveMetric`, `pendingMetricUpdate`, `saveDialogOpen`, `isSavingMetric` — and the broken `saveOption: "update-only"` value the schema rejects). The redesign removed their last consumer (`MetricSaveDialog` + the page wiring); only `isCalculatingBMR`/`handleCalculateBMR`/`handleResetToAuto` are live (Overview BMR). Trim the hook + `MetricSaveOption` type + the `saveOption` branch in `PUT /api/clients/[id]/metrics` in one sweep.
+- **~~`hooks/use-client-metrics.ts` dead save/dialog members~~ — RESOLVED 2026-08-12 (Session 4B, Task 4b.3).** The whole hook was deleted with the `calculate-bmr` route: the pair recomputes on every input change, so the manual button had no job, and `page.tsx` destructured only those two members. That also removed the broken `saveOption: "update-only"` value by deleting the unreachable code carrying it rather than "fixing" a bug nothing could reach.
+
+
+## Client energy (BMR/TDEE) — residuals after Session 4B
+
+### P2 - Accepted, documented
+- **Old nutrition plan versions keep their garbage-in TDEE snapshots.** A version records
+  what it was built from, and before 4B that could be a TDEE derived from the PLAN's
+  activity level rather than the client's. Those rows are honest history and are
+  deliberately not rewritten — but they are surfaced: the Journey blocks' nutrition
+  column reads the covering version's snapshot, and the nutrition drawer now shows a
+  drift line when a version's TDEE differs from the live profile. A regenerate is the
+  gesture that adopts the current numbers.
+- **The Mifflin-St Jeor age default (`DEFAULT_BMR_AGE_YEARS`, 30) still applies wherever
+  the nudge cannot reach.** The client settings dialog surfaces "add a birth date for a
+  more accurate BMR" only when age actually changes the answer (the Katch-McArdle path
+  has no age term). A client created without a birth date and never opened in that
+  dialog is silently costed at 30. `clients.date_of_birth IS NULL` is the durable
+  signal if another surface wants to warn.
+- **Existing seeded clients carry incoherent pairs.** 200 of 208 active DEV clients had a
+  TDEE unrelated to their own BMR × activity, because `scripts/seed/generate.ts` used a
+  random 1.35–1.75 multiplier. The generator is fixed, so this only affects rows seeded
+  before 2026-08-12; they are benchmark fixtures, not smoke fixtures. A bulk repair is
+  one pass of `recalculateClientEnergy` if it ever matters.
+
+### P1 - Fix the key before the tiers
+- **The rate limiter does not namespace its Redis key by tier.** `lib/rate-limit.ts`
+  hardcodes `prefix: "ratelimit:api"` and keys on the bare IP, so every tier through the
+  generic `rateLimit()` shares one counter per IP and the effective ceiling depends on
+  which limiter ran last. The in-memory fallback namespaces by config, so the two paths
+  disagree; `assistantRateLimit` sets its own prefix and is isolated. **Visible symptom:**
+  21 `/api/clients/**` route files sit on `apiRateLimit` where CONVENTIONS §9 mandates
+  `coachApiRateLimit`. Retiering them without fixing the key perturbs unrelated routes for
+  the same IP, so the tier sweep is blocked on the key fix, not the other way round.
+  Logged: 2026-08-12 (Session 4B).

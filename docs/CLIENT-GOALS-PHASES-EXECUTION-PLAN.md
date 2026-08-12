@@ -3847,3 +3847,87 @@ still carry arithmetically incoherent pairs, because they were seeded by the old
 random-multiplier generator. The seed fix only helps future seeds. They are
 scale-benchmark rows, not smoke fixtures; a bulk repair through the helper is
 available if wanted.
+
+---
+
+### Tasks 4b.3 + 4b.4 — Activity moves to the profile, the drawer consumes ✅ SHIPPED 2026-08-12
+
+**Owner-caught at smoke:** after 4b.2 the coach could see a coherent pair but the
+work-activity dropdown was still in the nutrition drawer and TDEE was not
+editable — because those are 4b.3/4b.4 and only 4b.1/4b.2 had been run. Both
+shipped in one commit.
+
+**4b.3 — the profile owns activity and the override.**
+`clients.work_activity_level` had **no read or write path in the app at all**: it
+was absent from the `Client` type, the mapper and `updateClientSchema`. All three
+added, and `updateClient` writes it (and recomputes, since activity joined the
+energy-input trigger set). The client settings dialog gains the activity select,
+a date-of-birth field, and a TDEE row with "Set a custom value" / "Back to auto".
+**The live preview runs `computeEnergyPair` in the BROWSER** — the same pure
+function the server writes with, so "auto would be 2,144" cannot disagree with
+what a save stores. `check:service-key` still passes, which is precisely why
+4b.2 split the calculator out of the `supabaseAdmin`-importing module. The
+birth-date nudge fires only when age changes the answer (Katch-McArdle has no age
+term). The status card's third column becomes the activity label, and TDEE
+carries a "Custom" chip when frozen.
+
+**The intake answer now lands.** `createClient` inserts
+`work_activity_level: null` explicitly rather than letting the column DEFAULT
+(`'sedentary'`) apply. The default made "never set" indistinguishable from "the
+coach chose sedentary", which silently disabled the intake sync's
+`work_activity_level == null` guard — a client answering "very active" landed as
+sedentary forever. NULL still reads as sedentary in the calculator, so nothing
+downstream changes; only the ability to tell unset from chosen.
+
+**`calculate-bmr` DELETED** — route and `hooks/use-client-metrics.ts` with it.
+The hook was dead beyond those two functions, which also retires the
+`saveOption: "update-only"` mismatch by deleting unreachable code rather than
+fixing a bug nothing could reach. The pre-existing TECHNICAL-DEBT entry naming
+that hook is marked resolved rather than left stale.
+
+**4b.4 — the drawer is a pure consumer.** The dropdown is gone; in its place a
+read-only *"TDEE n cal/day — From the client profile — Moderately active."* plus
+a drift line when the covering version's snapshot differs from the live profile
+(the GET now exposes the version's `tdee`). The orchestrator's **four** reads of
+`body.workActivityLevel` are gone — activity resolves once into `calcInputs` from
+the CLIENT, so preview and save share one source.
+`nutritionPlanSchema.workActivityLevel` is accepted-but-ignored rather than
+removed, so an in-flight request from an older build still validates.
+`ACTIVITY_LABELS` extracted to `lib/activity-labels.ts` (the wording had only
+ever existed inside the deleted dropdown).
+
+### Task 4b.5 — One read path ✅ VERIFIED 2026-08-12 (no code change needed)
+
+The behavioural half shipped as Commit 3b. This is the enumeration the task
+demanded rather than assumed: every reader of the profile pair is
+`nutrition-calc-inputs.ts:121-122` (profile-first, NULL rescue),
+`client-service.ts:321-322` (the helper's returned pair), 
+`client-check-in-service.ts:191-192`, `client-settings-dialog.tsx:205`,
+`drawer-footer.tsx:72`, `client-status-card.tsx:278/283` and
+`lib/validations/nutrition.ts:129`. All read `client.*`. `latestMetrics` survives
+only as the NULL rescue. Overview, drawer and `resolveNutritionCalcInputs` agree
+by construction.
+
+### Task 4b.6 — Docs reconciliation ✅ SHIPPED 2026-08-12 · SESSION 4B COMPLETE
+
+- **CONVENTIONS §8** gains "Client energy (BMR/TDEE)": the pair is never written
+  separately, formulas live once and must not reach `supabaseAdmin`, an override
+  freezes its own half, activity is a client fact nothing under
+  `components/clients/nutrition/**` writes, plans are never mutated by a weight
+  change, and `work_activity_level` is never seeded from the column DEFAULT.
+- **CONVENTIONS §9** corrected: it claimed "exactly two routes deviate". The real
+  story is that `lib/rate-limit.ts` does not namespace its Redis key by tier, so
+  every generic tier shares one counter per IP — which makes the 21 mis-tiered
+  `/api/clients/**` routes a symptom, and retiering them unpredictable. **Fix the
+  key first.**
+- **CONVENTIONS §13 item 6** gains the standing rule: the marker grep covers
+  markers *introduced* by the change; pre-existing ones are reported in STATUS and
+  left alone.
+- **ARCHITECTURE** builder-flows line rewritten — the nutrition provider no longer
+  owns activity or the energy pair.
+- **TECHNICAL-DEBT** records the residuals (old versions keep garbage-in
+  snapshots, the age-30 default where the nudge can't reach, 200/208 seeded dev
+  clients still incoherent) and the P1 rate-limit key defect.
+
+**Session 4B totals: 8 commits, ZERO migrations, +79 tests (2806 → 2875).**
+Browser-unverified; the smoke checklist is in the session summary.

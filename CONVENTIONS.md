@@ -405,6 +405,42 @@
   - Unique constraints must account for inactive rows (check for inactive before inserting, reactivate if found)
   - Provide UI for viewing and reactivating inactive items where appropriate
 
+  ### Client energy (BMR/TDEE)
+
+  The client PROFILE owns metabolic identity. These are rules, not descriptions —
+  each one is a bug that shipped and cost a session to unpick.
+
+  - **BMR and TDEE are NEVER written separately.** One helper owns the pair:
+    `recalculateClientEnergy()` (`services/client-energy-service.ts`) is the only
+    writer of an UPDATE to `clients.bmr` / `clients.tdee`, and every UPDATE it issues
+    carries both keys. Six uncoordinated writers used to exist and three wrote only
+    half, which is how a profile came to state a TDEE derived from a BMR that no
+    longer existed. `createClient`'s INSERT sets the pair once at row birth through
+    the same pure calculator and is the one sanctioned exception — the invariant is
+    one writer for *updates*. `services/client-energy-ownership.test.ts` enforces
+    this and documents the carve-out beside the scan; do not widen the scan to
+    inserts, and do not narrow the invariant.
+  - **Formulas live once**, in the pure `services/client-energy-calc.ts` (Katch-McArdle
+    when body fat is known, else Mifflin-St Jeor). That module must never import
+    `supabaseAdmin`: the browser and the seed scripts both use it, and
+    `npm run check:service-key` fails on a `"use client"` module reachable from
+    `services/supabase-admin.ts` by value imports. TDEE derives from the **rounded**
+    BMR so the stored pair is reproducible and matches `calculateTDEE`.
+  - **An override flag freezes exactly its own value**; the other half keeps
+    auto-recomputing. A flag set over a NULL value is not a freeze and is recomputed.
+  - **Activity level is a CLIENT fact.** It is set on the client profile (the Overview
+    settings dialog) and read from `clients.work_activity_level`. **Nothing under
+    `components/clients/nutrition/**` writes it** — a dropdown there gave activity two
+    homes that disagreed, and made "regenerate a plan" the accidental way to update a
+    client's TDEE. `nutrition_plans.work_activity_level` is a snapshot of the client's
+    value at save, never an input.
+  - **A weight change never touches a plan row.** Plans snapshot bmr/tdee at
+    generation; only a regeneration inherits the then-current profile numbers.
+  - **Never seed `work_activity_level` from the column DEFAULT.** `createClient` writes
+    an explicit NULL so "never set" stays distinguishable from "the coach chose
+    sedentary" — the default silently disabled the intake sync's null-guard and a
+    client's questionnaire answer never reached their profile.
+
   ### Events-as-SOT (plans are templates/provenance)
 
   Date-specific training/nutrition targets live on **events** (`training_events`, `nutrition_events`), one row per date. Plans and their templates (`training_sessions`, `nutrition_plan_daily_targets`) are **blueprints that generate events + provenance for analytics/reapply** — not the live read path for a given day, and never embedded via a live join to a deletable plan. Historical reads resolve from immutable snapshots (`session_logs`, `nutrition_logs`), never from regenerable events. When you add a date-specific feature, write it onto the event, not the plan. Full model: `docs/ARCHITECTURE.md → Nutrition & Training Events`.
@@ -478,7 +514,9 @@
   - File uploads: Validate type, size, scan (profile pics, workout plans)
 
   ### Rate Limiting Requirements
-  **ALL new API routes MUST implement rate limiting as the first operation in every handler function.** Exactly two routes deviate, both described below; everything else follows the rule literally.
+  **ALL new API routes MUST implement rate limiting as the first operation in every handler function.** Two routes deviate in *ordering* (below). Tier assignment is a separate and worse story — read the next paragraph before "fixing" one.
+
+  > **The limiter does not namespace by tier, so retiering a route is unpredictable.** `lib/rate-limit.ts` hardcodes `prefix: "ratelimit:api"` and keys on the bare IP; the config shapes only the sliding-window algorithm, never the key. So on the Redis path **every tier routed through the generic `rateLimit()` shares one counter per IP**, and which ceiling applies depends on which limiter instance ran last. (The in-memory fallback *does* namespace by `${clientId}:${maxRequests}:${windowMs}`, so the two paths disagree. `assistantRateLimit` sets its own prefix and is genuinely isolated.) The visible symptom of this is 21 `/api/clients/**` route files sitting on `apiRateLimit` where this section says `coachApiRateLimit` — but moving them is not a one-line fix, because it perturbs unrelated routes for the same IP. **Fix the key first, then the tiers.** Recorded in `TECHNICAL-DEBT.md`.
 
   > **Client-portal two-tier exception (Session 3.10).** Client routes are keyed per *client identity*, but the client id isn't known until auth resolves. So client-portal routes run **two tiers**: a generous IP-keyed burst guard stays the mandatory *first* operation (DoS / carrier-NAT safe), and a tight **per-client** limit is applied immediately *after* `getAuthenticatedClientId()` resolves. This is the one sanctioned place a rate-limit check runs post-auth; the first-operation rule still holds for the IP guard.
 
@@ -588,7 +626,7 @@
   3. `npx vitest run` - all tests pass
   4. `npm run check:labels` - typography tokens hold (mono = numbers only; no raw `font-mono-display` or hand-rolled `uppercase tracking-` outside the token modules — see `docs/newdesignsystem.md` → Typography)
   5. `grep -rn "as any" [changed files]` - no type escapes
-  6. `grep -rn "TODO\|FIXME\|HACK\|DEBUG" [changed files]` - no leftover markers
+  6. `grep -rn "TODO\|FIXME\|HACK\|DEBUG" [changed files]` - no leftover markers. This covers markers **introduced by the change**. A pre-existing marker in a region you did not touch is *reported in the session's STATUS block* and left alone — deleting a comment to make a grep pass is the band-aid §1 forbids, and it destroys a note someone left deliberately.
   7. **§2 "Security, load & performance review"** - if any of its triggers fired (new migration, new
      route, changed auth, new write path, completed plan session, ~≥5 files touching data flow), the
      review has been run and reported. Not applicable is a valid answer; skipping silently is not.
