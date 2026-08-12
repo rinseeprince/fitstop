@@ -286,9 +286,7 @@ export function ClientStatusCard({
           <div className={cn("border-l pl-3", DIVIDER)}>
             <p className={STAT_LABEL_DARK_CLASS}>Activity</p>
             <p className="mt-1 text-[13px] font-medium text-white">
-              {client.workActivityLevel
-                ? ACTIVITY_SHORT_LABELS[client.workActivityLevel]
-                : "Not set"}
+              {ACTIVITY_SHORT_LABELS[client.workActivityLevel ?? "sedentary"]}
             </p>
           </div>
         </div>

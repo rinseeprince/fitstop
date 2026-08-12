@@ -3939,3 +3939,34 @@ by construction.
 
 **Session 4B totals: 8 commits, ZERO migrations, +79 tests (2806 → 2875).**
 Browser-unverified; the smoke checklist is in the session summary.
+
+
+---
+
+### 4B follow-ups from the owner's smoke ✅ 2026-08-12
+
+**The calculator ignored a custom TDEE — the biggest miss of the session.**
+`generateNutritionPlan` opened with `calculateTDEE(input.bmr,
+input.workActivityLevel)`, recomputing TDEE unconditionally, and
+`NutritionCalculationInput` had no `tdee` field at all — so the profile's value
+(which since 4b.2 already reflects any override) could not reach it even though
+`calcInputs` was carrying it. A coach who set 4,000 got **3,395** back — literally
+`1787 x 1.9`, the activity ladder's answer for a number they had explicitly
+overridden — and every macro was solved against it. Now `input.tdee ??
+calculateTDEE(...)`: the profile owns TDEE and the calculator consumes it, with
+the ladder as the fallback for a client whose pair was never written.
+
+**Maintenance was the same bug, not a second one.** Goal 82 kg against a current
+82 kg is a zero change, so the baseline is the TDEE itself — it was simply the
+*wrong* TDEE. Pinned by test. Normalized `-0` out of `requiredDailyDeficit` while
+there: a zero change produced negative zero, which survives arithmetic and
+renders as "-0" through `toLocaleString`.
+
+**"Not set" removed from the activity select (owner call).** It could only ever
+mean sedentary — the column default, the calculator's NULL fallback and the
+seeded display are all sedentary — so it was an option worded to look like it
+meant something else, and picking it just restored the previous value. The select
+now defaults to Sedentary and always sends a concrete level; the status card
+shows the effective level rather than "Not set". The explicit NULL at
+`createClient` stays, because that is what still lets an intake answer land for a
+client whose settings dialog was never opened.

@@ -28,7 +28,13 @@ export type NutritionCalculationInput = {
   currentWeightKg: number;
   goalWeightKg?: number;
   bmr: number;
+  /** The PROFILE's TDEE — authoritative since Session 4B, and already
+   *  reflecting a coach's custom override. When present it is USED, not
+   *  recomputed: deriving it again from bmr x activity here silently discarded
+   *  every override a coach set. */
+  tdee?: number | null;
   gender: "male" | "female" | "other";
+  /** Only the fallback path uses this — see `tdee` above. */
   workActivityLevel: ActivityLevel;
   trainingVolumeHours?: TrainingVolume; // Deprecated: kept for backward compat
   trainingPlan?: TrainingPlan | null; // Used for per-day calorie additions
@@ -171,7 +177,10 @@ export function calculateBaselineCalories(
   // Calculate baseline calories
   // For weight loss: baseline = TDEE - deficit
   // For weight gain: baseline = TDEE + surplus
-  let requiredDailyDeficit = isWeightLoss ? requiredDailyChange : -requiredDailyChange;
+  // `+ 0` normalizes negative zero: a goal equal to the current weight makes
+  // requiredDailyChange 0, and `-0` survives arithmetic and renders as "-0"
+  // through toLocaleString. Object.is(-0 + 0, 0) is true.
+  let requiredDailyDeficit = (isWeightLoss ? requiredDailyChange : -requiredDailyChange) + 0;
   let baselineCalories = Math.round(tdee - requiredDailyDeficit);
 
   // Ensure minimum calories. Raising the target changes the ACTUAL deficit, so
@@ -286,8 +295,11 @@ export function generateNutritionPlan(
 ): NutritionPlan {
   const warnings: NutritionWarning[] = [];
 
-  // Calculate pure TDEE (BMR x activity multiplier, no training calories)
-  const tdee = calculateTDEE(input.bmr, input.workActivityLevel);
+  // The profile owns TDEE. Recomputing it from bmr x activity ignored a custom
+  // value entirely — a coach who set 4,000 got 3,395 back and every macro was
+  // solved against a number they had explicitly overridden. The fallback covers
+  // a client whose profile pair was never written.
+  const tdee = input.tdee ?? calculateTDEE(input.bmr, input.workActivityLevel);
 
   // Calculate baseline calories (TDEE - required deficit to hit goal)
   const baselineResult = calculateBaselineCalories(

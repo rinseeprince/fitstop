@@ -109,9 +109,13 @@ const settingsFormSchema = z.object({
     .refine((v) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v), { message: "Use a valid date" }),
   phone: z.string().trim().max(30, "Phone must be less than 30 characters"),
   expectedCheckInDay: z.string(),
-  /** UNSET means "never chosen" — the calculator reads that as sedentary, but
-   *  the distinction is what lets an intake answer land later. */
-  workActivityLevel: z.string(),
+  workActivityLevel: z.enum([
+    "sedentary",
+    "lightly_active",
+    "moderately_active",
+    "very_active",
+    "extremely_active",
+  ]),
 });
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
@@ -131,7 +135,11 @@ function toDefaults(client: Client): SettingsFormValues {
     startDate: client.startDate ?? "",
     phone: client.phone ?? "",
     expectedCheckInDay: client.expectedCheckInDay ?? UNSET,
-    workActivityLevel: client.workActivityLevel ?? UNSET,
+    // Sedentary is the default everywhere — the column default, the
+    // calculator's fallback for NULL, and what a coach sees here. There is no
+    // "not set" to choose: it was an option that could only ever mean
+    // "sedentary", worded to look like it meant something else.
+    workActivityLevel: client.workActivityLevel ?? "sedentary",
   };
 }
 
@@ -217,7 +225,7 @@ export function ClientSettingsDialog({
     gender: watchedGender === UNSET ? undefined : watchedGender,
     bodyFatPercentage: client.currentBodyFatPercentage,
     dateOfBirth: watchedDob === "" ? null : watchedDob,
-    activityLevel: watchedActivity === UNSET ? null : watchedActivity,
+    activityLevel: watchedActivity,
   });
   const autoReady = autoEnergy.status === "ready" ? autoEnergy : null;
   // Only surfaced when it actually changes the answer: Katch-McArdle uses lean
@@ -245,9 +253,7 @@ export function ClientSettingsDialog({
       if (height.commitCm != null) profile.height = height.commitCm;
       if (values.startDate !== "") profile.startDate = values.startDate;
       if (values.dateOfBirth !== "") profile.dateOfBirth = values.dateOfBirth;
-      if (values.workActivityLevel !== UNSET) {
-        profile.workActivityLevel = values.workActivityLevel;
-      }
+      profile.workActivityLevel = values.workActivityLevel;
 
       // This PATCH recomputes BMR/TDEE server-side whenever it carries an
       // energy input, so the activity change lands and the pair follows in one
@@ -391,15 +397,14 @@ export function ClientSettingsDialog({
               <Label htmlFor="settings-activity">Work activity level</Label>
               <Select
                 value={form.watch("workActivityLevel")}
-                onValueChange={(v) => form.setValue("workActivityLevel", v)}
+                onValueChange={(v) =>
+                  form.setValue("workActivityLevel", v as ActivityLevel)
+                }
               >
                 <SelectTrigger id="settings-activity" className={cn(TRIGGER_CLASS, "h-8")}>
-                  <SelectValue placeholder="Not set" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={UNSET} className={ITEM_CLASS}>
-                    Not set
-                  </SelectItem>
                   {ACTIVITY_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value} className={ITEM_CLASS}>
                       {option.label}

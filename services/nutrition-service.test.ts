@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { calculateBaselineCalories } from './nutrition-service'
+import { calculateBaselineCalories, generateNutritionPlan } from './nutrition-service'
 
 describe('calculateBaselineCalories', () => {
   afterEach(() => {
@@ -254,5 +254,47 @@ describe('calculateBaselineCalories — the floor recomputes the pair it invalid
     expect(result.weeklyRate).toBe(-1.0)
     expect(result.requiredDailyDeficit).toBeCloseTo((1.0 * 7700) / 7, 10)
     expect(result.baselineCalories).toBe(3000 - Math.round((1.0 * 7700) / 7))
+  })
+})
+
+
+describe('generateNutritionPlan — the profile owns TDEE', () => {
+  const BASE = {
+    currentWeightKg: 82,
+    bmr: 1787,
+    gender: 'male' as const,
+    workActivityLevel: 'extremely_active' as const,
+    proteinTargetGPerKg: 2.0,
+    dietType: 'balanced' as const,
+    today: '2026-08-12',
+  }
+
+  it("uses a coach's custom TDEE instead of recomputing bmr x activity", () => {
+    // The bug: a coach set 4,000 and the drawer showed 3,395 — which is
+    // 1787 x 1.9, the activity ladder's answer for a number they had
+    // explicitly overridden. Every macro was then solved against 3,395.
+    const plan = generateNutritionPlan({ ...BASE, tdee: 4000 })
+
+    expect(plan.tdee).toBe(4000)
+  })
+
+  it('falls back to bmr x activity when the profile has no TDEE', () => {
+    const plan = generateNutritionPlan({ ...BASE, tdee: null })
+
+    expect(plan.tdee).toBe(Math.round(1787 * 1.9))
+  })
+
+  it('maintains at the custom TDEE when the goal equals current weight', () => {
+    // Goal 82 against a current 82 is a zero change, so baseline must be the
+    // TDEE itself — the custom one, not the ladder's.
+    const plan = generateNutritionPlan({
+      ...BASE,
+      tdee: 4000,
+      goalWeightKg: 82,
+      goalDeadline: '2027-01-30',
+    })
+
+    expect(plan.baselineCalories).toBe(4000)
+    expect(plan.requiredDailyDeficit).toBe(0)
   })
 })
