@@ -4,8 +4,6 @@ import { useMemo, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
-  Check,
-  ChevronDown,
   Flag,
   Pencil,
   Plus,
@@ -14,12 +12,6 @@ import {
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
 import { useToast } from "@/hooks/use-toast";
 import { useUnits } from "@/contexts/units-context";
@@ -234,34 +226,6 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
         actions={
           !isLoading && !isError ? (
             <div className="flex items-center gap-1">
-              {blocks.length > 0 && (
-                // The rail-dropdown grammar: sentence-case value + chevron.
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    className={cn(
-                      "flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-[#93b0b4] transition-colors hover:text-[#0d9488] data-[state=open]:bg-[rgba(13,148,136,0.05)] data-[state=open]:text-[#0d9488]",
-                      FOCUS_RING
-                    )}
-                  >
-                    {view === "journey" ? "Journey" : "Archive"}
-                    <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" sideOffset={6} className="w-44">
-                    <DropdownMenuItem onClick={() => setView("journey")}>
-                      <span className="flex-1">Journey</span>
-                      {view === "journey" && (
-                        <Check className="h-3.5 w-3.5 text-[#0d9488]" strokeWidth={1.5} />
-                      )}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setView("archive")}>
-                      <span className="flex-1">Archive ({archivedCount})</span>
-                      {view === "archive" && (
-                        <Check className="h-3.5 w-3.5 text-[#0d9488]" strokeWidth={1.5} />
-                      )}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
               {view === "journey" && (
                 <button
                   type="button"
@@ -273,6 +237,37 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
                   <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
                 </button>
               )}
+              {blocks.length > 0 &&
+                // Icon toggle (owner-directed over the earlier dropdown):
+                // Archive opens the archive; the pane's journey mark (Flag,
+                // the empty state's icon) leads back. Count rides the title.
+                (view === "journey" ? (
+                  <button
+                    type="button"
+                    aria-label="View archive"
+                    title={`View archive (${archivedCount})`}
+                    onClick={() => setView("archive")}
+                    className={cn(
+                      "rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]",
+                      FOCUS_RING
+                    )}
+                  >
+                    <Archive className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label="Back to journey"
+                    title="Back to journey"
+                    onClick={() => setView("journey")}
+                    className={cn(
+                      "rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]",
+                      FOCUS_RING
+                    )}
+                  >
+                    <Flag className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                ))}
             </div>
           ) : undefined
         }

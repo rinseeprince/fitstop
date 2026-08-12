@@ -3149,3 +3149,9 @@ seams — PATCH contract, elapsed-only rule, render filter inputs — are pinned
 by 3.7-1's tests) · `check:labels` OK (661) · no `as any` · no markers · no
 migration. **Session 3.7 totals: 2 commits, 1 migration (146), +11 tests.**
 Browser-unverified.
+
+**Amendment (owner-directed, same day):** the rail dropdown was replaced by an
+**icon toggle** — `Archive` on the Journey view opens the archive (count in
+the tooltip), `Flag` (the pane's established journey mark, its empty state's
+icon) leads back; the `+` sits inward of the toggle, journey-view only. All
+gates re-run green.
