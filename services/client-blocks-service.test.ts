@@ -177,18 +177,67 @@ describe("replaceBlockChain", () => {
     ]);
   });
 
-  it("rejects an edit to an elapsed block's fields", async () => {
+  it("updates an elapsed block's fields in place — dates from storage (3.6-C)", async () => {
+    const [, upsertQuery] = queueResults(
+      { data: [ELAPSED, CURRENT], error: null },
+      { error: null }, // upsert (elapsed edit + current echo)
+      { data: [], error: null } // re-read
+    );
+
+    await replaceBlockChain(CLIENT_ID, TODAY, {
+      startsOn: "2026-06-01",
+      blocks: [
+        { id: "e", name: "Renamed", focus: "looking back", targetWeightKg: 90 },
+        { id: "a", name: "Block a", endsOn: "2026-08-16" },
+      ],
+    });
+
+    const [rows] = upsertQuery.upsert.mock.calls[0];
+    expect(rows).toEqual([
+      expect.objectContaining({
+        id: "e",
+        name: "Renamed",
+        focus: "looking back",
+        target_weight: 90,
+        // The pin that remains: elapsed DATES come from storage.
+        starts_on: "2026-06-01",
+        ends_on: "2026-07-05",
+      }),
+      expect.objectContaining({ id: "a", starts_on: "2026-07-06" }),
+    ]);
+  });
+
+  it("rejects an elapsed block's date change (the pin that remains)", async () => {
     queueResults({ data: [ELAPSED, CURRENT], error: null });
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
         startsOn: "2026-06-01",
         blocks: [
-          { id: "e", name: "Renamed" },
+          { id: "e", name: "Block e", endsOn: "2026-07-06" },
           { id: "a", name: "Block a", endsOn: "2026-08-16" },
         ],
       })
     ).rejects.toBeInstanceOf(ElapsedBlockImmutableError);
+  });
+
+  it("does not rewrite an unchanged elapsed echo", async () => {
+    const [, upsertQuery] = queueResults(
+      { data: [ELAPSED, CURRENT], error: null },
+      { error: null }, // upsert (current row only)
+      { data: [], error: null } // re-read
+    );
+
+    await replaceBlockChain(CLIENT_ID, TODAY, {
+      startsOn: "2026-06-01",
+      blocks: [
+        { ...elapsedEcho },
+        { id: "a", name: "Block a", endsOn: "2026-08-16" },
+      ],
+    });
+
+    const [rows] = upsertQuery.upsert.mock.calls[0];
+    expect(rows.map((r: { id: string }) => r.id)).toEqual(["a"]);
   });
 
   it("rejects a chain that does not lead with the elapsed prefix", async () => {

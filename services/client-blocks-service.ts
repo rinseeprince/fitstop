@@ -28,7 +28,8 @@ import type {
  * block's END date; every start is derived by the walk
  * (lib/blocks/block-chain.ts), so date pairs never cross the wire and
  * overlaps and gaps stay unexpressible. Elapsed blocks (ends_on < clientToday)
- * are read-only history; the symmetric window floor keeps every edit from
+ * keep their DATES as read-only history — their name/focus/target stay
+ * editable (3.6-C) — and the symmetric window floor keeps every edit from
  * re-labelling lived days (only DELETE re-attributes them, and only by ending
  * a block at today).
  */
@@ -97,9 +98,12 @@ export const replaceBlockChain = async (
   const storedById = new Map(stored.map((block) => [block.id, block]));
   const elapsed = stored.filter((block) => block.endsOn < clientToday);
 
-  // The elapsed prefix is immutable: the payload must lead with it — same ids,
-  // same order, same fields. Its dates come from STORAGE, never from the
-  // walk — elapsed history is not an input.
+  // The elapsed prefix's DATES are immutable: the payload must lead with it —
+  // same ids, same order, dates from STORAGE, never from the walk. Its
+  // name/focus/target are editable (Session 3.6-C, owner-approved relaxation
+  // of the original verbatim pin): the pin protects lived-day ATTRIBUTION,
+  // not typos in a finished block's label.
+  const elapsedEdits: { echo: (typeof input.blocks)[number]; storedBlock: ClientBlock }[] = [];
   elapsed.forEach((storedBlock, i) => {
     const echo = input.blocks[i];
     if (!echo || echo.id !== storedBlock.id) {
@@ -107,12 +111,15 @@ export const replaceBlockChain = async (
         "Past blocks are read-only and must lead the chain unchanged."
       );
     }
+    if (echo.endsOn !== undefined && echo.endsOn !== storedBlock.endsOn) {
+      throw new ElapsedBlockImmutableError("Past blocks' dates can't change.");
+    }
     if (
       echo.name !== storedBlock.name ||
       (echo.focus ?? null) !== storedBlock.focus ||
       (echo.targetWeightKg ?? null) !== storedBlock.targetWeightKg
     ) {
-      throw new ElapsedBlockImmutableError("Past blocks can't be edited.");
+      elapsedEdits.push({ echo, storedBlock });
     }
   });
 
@@ -203,6 +210,20 @@ export const replaceBlockChain = async (
   const now = new Date().toISOString();
   const updates: TablesInsert<"client_phases">[] = [];
   const inserts: TablesInsert<"client_phases">[] = [];
+  // Changed elapsed rows: payload fields over STORED dates. Unchanged echoes
+  // are deliberately not rewritten.
+  for (const { echo, storedBlock } of elapsedEdits) {
+    updates.push({
+      id: storedBlock.id,
+      client_id: clientId,
+      name: echo.name,
+      focus: echo.focus ?? null,
+      target_weight: echo.targetWeightKg ?? null,
+      starts_on: storedBlock.startsOn,
+      ends_on: storedBlock.endsOn,
+      updated_at: now,
+    });
+  }
   suffix.forEach((entry, i) => {
     const row: TablesInsert<"client_phases"> = {
       client_id: clientId,

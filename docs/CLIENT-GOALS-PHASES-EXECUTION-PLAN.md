@@ -3011,3 +3011,27 @@ length-cap 422 + exact-52-week boundary pass; the weeks-era pins across chain /
 service / route / payload tests re-targeted to end dates with identical
 windows; arithmetic closes from 2733) · `check:labels` OK (661) · no `as any` ·
 no markers · no migration.
+
+---
+
+### Task 3.6-C — Elapsed pin relaxed to dates-only ✅ SHIPPED 2026-08-12
+
+**Owner-approved reversal of the S2 verbatim pin** (the S2 Task 2.2 STATUS
+records the original decision; this supersedes its fields half): an elapsed
+block's **name, focus and target weight are now editable** through the PUT —
+the pin exists to protect lived-day ATTRIBUTION, and freezing typos in a
+finished block's label was conservatism, not the invariant. **What remains
+pinned:** ids, order, and DATES — elapsed rows still omit `endsOn` (a differing
+one 422s: "Past blocks' dates can't change"), their dates always come from
+storage, and the anchor stays immovable while past blocks exist. Changed
+elapsed rows are written with payload fields over stored dates in the same
+single upsert as the suffix; **unchanged echoes are deliberately not
+rewritten** (pinned by test — the add flow's verbatim echo issues no elapsed
+writes). Fields on elapsed rows now behave last-write-wins, exactly as
+current/future fields always have.
+
+**Gates.** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged)
+· `vitest run` **268 files / 2742 tests, all passing** (+2 net: the old
+fields-reject pin replaced by edit-in-place with stored dates, plus
+elapsed-date-change 422 and no-needless-write pins; arithmetic closes from
+2740) · `check:labels` OK (661) · no `as any` · no markers · no migration.
