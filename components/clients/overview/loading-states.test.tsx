@@ -85,7 +85,7 @@ describe("ClientScheduleCard check-in strip loading state", () => {
         client={CLIENT}
         checkInTiming={null}
         isTimingLoading
-        onClientUpdated={vi.fn()}
+        onOpenSettings={vi.fn()}
       />
     );
 
@@ -99,7 +99,7 @@ describe("ClientScheduleCard check-in strip loading state", () => {
         client={CLIENT}
         checkInTiming={null}
         isTimingLoading={false}
-        onClientUpdated={vi.fn()}
+        onOpenSettings={vi.fn()}
       />
     );
 
@@ -113,7 +113,7 @@ describe("ClientScheduleCard check-in strip loading state", () => {
         client={CLIENT}
         checkInTiming={TIMING}
         isTimingLoading={false}
-        onClientUpdated={vi.fn()}
+        onOpenSettings={vi.fn()}
       />
     );
 

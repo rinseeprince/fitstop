@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { Calendar, Mail, Pencil } from "lucide-react";
+import { Calendar, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -11,7 +10,6 @@ import {
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { InlineMono, OverviewCard } from "./overview-primitives";
-import { ClientSettingsDialog } from "./client-settings-dialog";
 import { formatDateOnlyWeekday, pluralize, relativeDayPhrase } from "./overview-format";
 import type { Client } from "@/types/check-in";
 import type { CheckInTiming } from "@/types/coach-brief";
@@ -37,7 +35,8 @@ type ClientScheduleCardProps = {
    */
   isTimingLoading: boolean;
   /** Revalidates the client record AND the brief — check-in day drives timing. */
-  onClientUpdated: () => void;
+  /** Opens the client-settings dialog, which the section rail owns. */
+  onOpenSettings: () => void;
 };
 
 const FREQUENCY_LABELS: Record<string, string> = {
@@ -217,11 +216,12 @@ export function ClientScheduleCard({
   client,
   checkInTiming,
   isTimingLoading,
-  onClientUpdated,
+  onOpenSettings,
 }: ClientScheduleCardProps) {
   const { preference } = useUnits();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const openSettings = () => setSettingsOpen(true);
+  // The dialog itself lives with the section rail that opens it
+  // (client-overview-tab); this card only routes its "Add" links to it.
+  const openSettings = onOpenSettings;
 
   return (
     <>
@@ -249,15 +249,6 @@ export function ClientScheduleCard({
               <p className="truncate text-[12px] text-[#5a7d82]">{client.email}</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={openSettings}
-            aria-label="Edit client settings"
-            title="Edit client settings"
-            className="shrink-0 rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
-          >
-            <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </button>
         </div>
 
         <div className="mx-5 border-t border-[rgba(13,148,136,0.06)]" />
@@ -294,12 +285,6 @@ export function ClientScheduleCard({
         </div>
       </OverviewCard>
 
-      <ClientSettingsDialog
-        client={client}
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onSaved={onClientUpdated}
-      />
     </>
   );
 }

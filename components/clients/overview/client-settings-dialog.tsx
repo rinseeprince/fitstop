@@ -461,8 +461,7 @@ export function ClientSettingsDialog({
                   />
                   {customTdeeBelowBmr ? (
                     <p className="text-[11px] text-[#c06060]">
-                      Can&apos;t be below BMR ({formatCalories(autoReady.bmr)} cal/day) —
-                      total daily energy always exceeds resting energy.
+                      Can&apos;t be below BMR ({formatCalories(autoReady.bmr)} cal/day)
                     </p>
                   ) : (
                     <p className="text-[11px] text-[#5c7a80]">

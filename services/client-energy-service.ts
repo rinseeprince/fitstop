@@ -273,7 +273,7 @@ export async function recalculateClientEnergy(
       bmrManualOverride: storedBmrFrozen,
       tdeeManualOverride: storedTdeeFrozen,
       missingDateOfBirth,
-      rejection: `TDEE cannot be lower than BMR (${nextBmr} cal/day). Total daily energy always exceeds resting energy.`,
+      rejection: `TDEE cannot be lower than BMR (${nextBmr} cal/day).`,
     };
   }
 
@@ -291,7 +291,7 @@ export async function recalculateClientEnergy(
       bmrManualOverride: storedBmrFrozen,
       tdeeManualOverride: storedTdeeFrozen,
       missingDateOfBirth,
-      rejection: `BMR cannot be higher than TDEE (${nextTdee} cal/day). Resting energy is always a fraction of total daily energy.`,
+      rejection: `BMR cannot be higher than TDEE (${nextTdee} cal/day).`,
     };
   }
 

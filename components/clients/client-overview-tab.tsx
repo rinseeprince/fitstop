@@ -5,7 +5,10 @@ import { ClientActivationBanner } from "@/components/clients/client-activation-b
 import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AdherenceCard } from "@/components/clients/overview/adherence-card";
+import { Pencil } from "lucide-react";
+import { SectionLabel } from "@/components/programs/shared/section-label";
 import { ClientScheduleCard } from "@/components/clients/overview/client-schedule-card";
+import { ClientSettingsDialog } from "@/components/clients/overview/client-settings-dialog";
 import { ClientStatusCard } from "@/components/clients/overview/client-status-card";
 import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
 import { CurrentPlanSection } from "@/components/clients/overview/current-plan-section";
@@ -61,6 +64,7 @@ export function ClientOverviewTab({
     setPinned,
     deleteNote,
   } = useClientNotes(client.id);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [notePendingDelete, setNotePendingDelete] = useState<ClientNote | null>(null);
   const { logs: wellnessLogs, isLoading: wellnessLoading } = useWellnessData(client.id, {
     daysBack: WELLNESS_WINDOW_DAYS - 1,
@@ -172,12 +176,30 @@ export function ClientOverviewTab({
       />
 
       {/* 3 — Who this client is + where they stand */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[5fr_8fr]">
+      {/* The edit action rides the section rail on the far right, the platform's
+          divider grammar (left = identity, right = meta/actions) — not a pencil
+          floating inside one of the two cards. */}
+      <div>
+        <SectionLabel
+          label="Client"
+          actions={
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Edit client settings"
+              title="Edit client settings"
+              className="shrink-0 rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
+            >
+              <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </button>
+          }
+        />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[5fr_8fr]">
         <ClientScheduleCard
           client={client}
           checkInTiming={brief?.checkInTiming ?? null}
           isTimingLoading={briefLoading}
-          onClientUpdated={handleClientUpdated}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
         <ClientStatusCard
           client={client}
@@ -185,7 +207,15 @@ export function ClientOverviewTab({
           upcomingTraining={summary?.upcomingTraining ?? null}
           onOpenMetrics={() => goToTab("metrics")}
         />
+        </div>
       </div>
+
+      <ClientSettingsDialog
+        client={client}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onSaved={handleClientUpdated}
+      />
 
       {/* 4 — Current plan */}
       <CurrentPlanSection
