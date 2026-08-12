@@ -28,7 +28,10 @@ import {
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import { captureApiError } from "@/lib/error-handler";
-import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
+import {
+  resolveEffectiveGoal,
+  toClientGoalInput,
+} from "@/lib/goals/resolve-effective-goal";
 import { detectGoalDrift } from "@/lib/goals/detect-goal-drift";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
@@ -165,13 +168,7 @@ export async function GET(
     // at exactly one place — the startDate fallback — and detectGoalDrift
     // consumes only goalWeightKg and deadline, neither of which touches it.
     const effectiveGoal = resolveEffectiveGoal({
-      clientGoal: {
-        goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
-        goalBodyFatPercentage:
-          currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage ?? null,
-        deadline: currentGoals?.goalDeadline ?? client.goalDeadline ?? null,
-        startDate: currentGoals?.goalStartDate ?? null,
-      },
+      clientGoal: toClientGoalInput(currentGoals, client),
       today: clientToday,
     });
     // Drift compares against the version the drawer will actually seed and

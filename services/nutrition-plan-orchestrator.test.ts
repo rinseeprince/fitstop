@@ -75,7 +75,9 @@ const client = {
   gender: "male",
   goalWeight: 170,
   goalBodyFatPercentage: null,
-  goalDeadline: null,
+  // No `goalDeadline`: `Client` has no such field. It was inert here (null
+  // either way) but named a mirror column nothing ever read — deadlines resolve
+  // from `client_goals` alone.
 };
 
 const calculatedPlan = {

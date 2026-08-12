@@ -16,6 +16,7 @@ import {
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
+import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { ActivityLevel, Client } from "@/types/check-in";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
@@ -23,9 +24,20 @@ import { formatWeight } from "@/utils/unit-conversions";
 
 type ClientStatusCardProps = {
   client: Client;
+  /**
+   * The goal driving this client now, resolved from `client_goals` by the tab.
+   * Both targets come from here, never from the `clients` mirror on `client` —
+   * this card reading the mirror directly was the last coach-side one that did.
+   */
+  goal: EffectiveGoal;
   training: OverviewPlanSummary["training"];
   upcomingTraining: OverviewPlanSummary["upcomingTraining"];
   onOpenMetrics: () => void;
+  /**
+   * Revalidation slot: fires after a write made from this card, refreshing both
+   * the goals read and the client record. Consumed by the goal editor (0b.4).
+   */
+  onClientUpdated?: () => void;
   /** Inline edit state, owned by the section rail above both cards. */
   edit: ClientProfileEdit;
 };
@@ -198,6 +210,7 @@ function deltaTone(delta: string | null): string | undefined {
 
 export function ClientStatusCard({
   client,
+  goal,
   training,
   upcomingTraining,
   onOpenMetrics,
@@ -212,7 +225,10 @@ export function ClientStatusCard({
 
   const startWeight = kg(client.startingWeight);
   const currentWeight = kg(client.currentWeight);
-  const goalWeight = kg(client.goalWeight);
+  // Start and current stay on the `clients` cache — they are measurements, kept
+  // fresh by recordBodyMetrics. Only the two TARGETS move to client_goals.
+  const goalWeight = kg(goal.goalWeightKg);
+  const goalBodyFat = goal.goalBodyFatPercentage ?? undefined;
   // Delta between the DISPLAYED values so it reconciles with the cells above it.
   const weightDelta = formatDelta(currentWeight, startWeight);
   const bfDelta = formatDelta(client.currentBodyFatPercentage, client.startingBodyFatPercentage);
@@ -221,7 +237,7 @@ export function ClientStatusCard({
   const bfChip = goalChip(
     client.startingBodyFatPercentage,
     client.currentBodyFatPercentage,
-    client.goalBodyFatPercentage,
+    goalBodyFat,
     "%"
   );
 
@@ -302,7 +318,7 @@ export function ClientStatusCard({
           />
           <MetricCell
             label="Goal body fat"
-            value={client.goalBodyFatPercentage?.toFixed(1)}
+            value={goalBodyFat?.toFixed(1)}
             unit="%"
             chip={bfChip}
             showLeftBorder

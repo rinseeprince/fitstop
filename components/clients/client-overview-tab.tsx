@@ -20,11 +20,17 @@ import {
 } from "@/components/clients/overview/wellness-cards";
 import { trailingDates } from "@/components/clients/overview/overview-format";
 import { ADHERENCE_WINDOW_DAYS, useClientAdherence } from "@/hooks/use-client-adherence";
+import { useClientGoals, useInvalidateClientGoals } from "@/hooks/use-client-goals";
 import { useClientNotes } from "@/hooks/use-client-notes";
 import { useOverviewBrief } from "@/hooks/use-overview-brief";
 import { useOverviewPlanSummary } from "@/hooks/use-overview-plan-summary";
 import { useWellnessData } from "@/hooks/use-wellness-data";
 import { useToast } from "@/hooks/use-toast";
+import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
+import {
+  resolveEffectiveGoal,
+  toClientGoalInput,
+} from "@/lib/goals/resolve-effective-goal";
 import type { ClientTab } from "@/lib/client-tabs";
 import type { AlertType } from "@/types/attention-feed";
 import type { Client } from "@/types/check-in";
@@ -57,6 +63,8 @@ export function ClientOverviewTab({
   } = useOverviewBrief(client.id);
   const { summary, isLoading: summaryLoading } = useOverviewPlanSummary(client.id);
   const { adherence, isLoading: adherenceLoading } = useClientAdherence(client.id);
+  const { goal: currentGoals } = useClientGoals(client.id);
+  const invalidateGoals = useInvalidateClientGoals();
   const {
     notes,
     isLoading: notesLoading,
@@ -73,6 +81,25 @@ export function ClientOverviewTab({
   const wellnessDates = useMemo(() => trailingDates(WELLNESS_WINDOW_DAYS), []);
   const { toast } = useToast();
 
+  // The goal the client is on RIGHT NOW, resolved from `client_goals` through
+  // the one shared resolver (invariant 16). The status card used to read the
+  // denormalized `clients` mirror directly, which made it the only coach surface
+  // rendering a goal nobody had resolved.
+  //
+  // Client-local today: the goal's start date is on the CLIENT's calendar, and
+  // the client record is already in scope, so resolve their zone directly —
+  // the same anchor and the same reasoning as comparison-service.ts:72, which
+  // feeds this identical resolver. The card consumes only the two targets today;
+  // seeding the device day would hand the next consumer the wrong anchor.
+  const effectiveGoal = useMemo(
+    () =>
+      resolveEffectiveGoal({
+        clientGoal: toClientGoalInput(currentGoals, client),
+        today: getTodayDateStringInTimezone(client.timezone),
+      }),
+    [currentGoals, client]
+  );
+
   const goToTab = useCallback(
     (tab: ClientTab, extraParams?: Record<string, string>) =>
       onTabChange?.(tab, extraParams),
@@ -87,6 +114,15 @@ export function ClientOverviewTab({
   }, [onClientUpdated, mutateBrief]);
 
   const edit = useClientProfileEdit(client, handleClientUpdated);
+
+  // The status card's revalidation slot. A goal write lands in `client_goals`
+  // AND dual-writes the `clients` mirror, so both reads have to refresh — the
+  // goals area for this card, the client record for everything else on the page
+  // still derived from the mirror. Consumed by the goal editor (Task 0b.4).
+  const handleGoalSaved = useCallback(() => {
+    void invalidateGoals(client.id);
+    handleClientUpdated();
+  }, [invalidateGoals, client.id, handleClientUpdated]);
 
   const handleMarkSeen = useCallback(() => {
     void markSeen();
@@ -194,9 +230,11 @@ export function ClientOverviewTab({
         />
         <ClientStatusCard
           client={client}
+          goal={effectiveGoal}
           training={summary?.training ?? null}
           upcomingTraining={summary?.upcomingTraining ?? null}
           onOpenMetrics={() => goToTab("metrics")}
+          onClientUpdated={handleGoalSaved}
           edit={edit}
         />
         </div>

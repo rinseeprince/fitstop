@@ -427,10 +427,18 @@ export type Client = {
    *  it. Undefined means never set — the calculator falls back to sedentary. */
   workActivityLevel?: ActivityLevel;
 
-  // Goal fields (manually set by coach)
+  // Goal fields (manually set by coach). The denormalized `clients` mirror of
+  // `client_goals`; read only through `toClientGoalInput`, never directly.
+  //
+  // There is deliberately NO `goalDeadline` here. `mapClientRow` never mapped
+  // `clients.goal_deadline`, so the field was permanently `undefined` and the
+  // three `?? client.goalDeadline` fallbacks that read it were unreachable.
+  // Deleted rather than mapped (owner decision 2026-08-12): mapping it would
+  // have made a mirror deadline that can silently diverge — updateGoals' mirror
+  // write is logged-and-swallowed — reachable in three calculator/pace paths for
+  // the first time. The deadline resolves from `client_goals` only.
   goalWeight?: number;
   goalBodyFatPercentage?: number;
-  goalDeadline?: string;
 
   // Starting metrics (original intake values for goal tracking)
   startingWeight?: number;

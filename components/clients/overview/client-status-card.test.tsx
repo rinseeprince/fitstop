@@ -3,6 +3,7 @@ import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ClientStatusCard } from "./client-status-card";
+import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { Client } from "@/types/check-in";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
 
@@ -67,9 +68,25 @@ const UPCOMING: NonNullable<OverviewPlanSummary["upcomingTraining"]> = {
   programDurationWeeks: 6,
 };
 
+// Both targets arrive resolved from `client_goals` (Task 0b.1). The card is
+// presentational about them: the tab runs resolveEffectiveGoal and hands the
+// result down, so these fixtures are what the resolver produced, not the mirror.
+const NO_GOAL: EffectiveGoal = {
+  goalWeightKg: null,
+  goalBodyFatPercentage: null,
+  deadline: null,
+  startDate: "2026-08-12",
+};
+
+const goalOf = (overrides: Partial<EffectiveGoal>): EffectiveGoal => ({
+  ...NO_GOAL,
+  ...overrides,
+});
+
 const PROPS = {
   upcomingTraining: null,
   onOpenMetrics: vi.fn(),
+  goal: NO_GOAL,
   edit: editStub,
 };
 
@@ -79,9 +96,10 @@ describe("ClientStatusCard — goal chips", () => {
   it("gap: reports the distance still to travel, in the warning tone", () => {
     render(
       <ClientStatusCard
-        client={{ ...BASE, startingWeight: 90, currentWeight: 86, goalWeight: 82 }}
+        client={{ ...BASE, startingWeight: 90, currentWeight: 86 }}
         training={null}
         {...PROPS}
+        goal={goalOf({ goalWeightKg: 82 })}
       />
     );
 
@@ -91,9 +109,10 @@ describe("ClientStatusCard — goal chips", () => {
   it("reached: says so once the client lands on the goal", () => {
     render(
       <ClientStatusCard
-        client={{ ...BASE, startingWeight: 90, currentWeight: 82, goalWeight: 82 }}
+        client={{ ...BASE, startingWeight: 90, currentWeight: 82 }}
         training={null}
         {...PROPS}
+        goal={goalOf({ goalWeightKg: 82 })}
       />
     );
 
@@ -103,9 +122,10 @@ describe("ClientStatusCard — goal chips", () => {
   it("beyond a loss goal: reads 'under goal'", () => {
     render(
       <ClientStatusCard
-        client={{ ...BASE, startingWeight: 90, currentWeight: 80, goalWeight: 82 }}
+        client={{ ...BASE, startingWeight: 90, currentWeight: 80 }}
         training={null}
         {...PROPS}
+        goal={goalOf({ goalWeightKg: 82 })}
       />
     );
 
@@ -115,9 +135,10 @@ describe("ClientStatusCard — goal chips", () => {
   it("beyond a gain goal: reads 'over goal'", () => {
     render(
       <ClientStatusCard
-        client={{ ...BASE, startingWeight: 70, currentWeight: 78, goalWeight: 76 }}
+        client={{ ...BASE, startingWeight: 70, currentWeight: 78 }}
         training={null}
         {...PROPS}
+        goal={goalOf({ goalWeightKg: 76 })}
       />
     );
 
@@ -143,14 +164,73 @@ describe("ClientStatusCard — goal chips", () => {
           ...BASE,
           startingBodyFatPercentage: 24,
           currentBodyFatPercentage: 20,
-          goalBodyFatPercentage: 18,
         }}
+        training={null}
+        {...PROPS}
+        goal={goalOf({ goalBodyFatPercentage: 18 })}
+      />
+    );
+
+    expect(screen.getByText("2.0% to go")).toBeInTheDocument();
+  });
+});
+
+// The regression these exist for: this card used to read `clients.goal_weight` /
+// `clients.goal_body_fat_percentage` directly — the denormalized mirror — and was
+// the last coach surface resolving a goal nobody had resolved (invariant 16).
+// The composition half (live goal wins, mirror backstops a pre-`client_goals`
+// client) is pinned on `toClientGoalInput`; these pin that the CARD cannot reach
+// the mirror at all any more.
+describe("ClientStatusCard — targets come from client_goals, not the mirror", () => {
+  it("renders a goal the clients mirror has no copy of", () => {
+    render(
+      <ClientStatusCard
+        client={{ ...BASE, startingWeight: 90, currentWeight: 86 }}
+        training={null}
+        {...PROPS}
+        goal={goalOf({ goalWeightKg: 82, goalBodyFatPercentage: 18 })}
+      />
+    );
+
+    expect(screen.getByText("82.0")).toBeInTheDocument();
+    expect(screen.getByText("18.0")).toBeInTheDocument();
+    expect(screen.getByText("4.0 kg to go")).toBeInTheDocument();
+  });
+
+  it("a diverged mirror cannot win: the resolved goal is what renders", () => {
+    render(
+      <ClientStatusCard
+        client={{
+          ...BASE,
+          startingWeight: 90,
+          currentWeight: 86,
+          // What a stale/failed dual-write leaves behind. Nothing may read it.
+          goalWeight: 99,
+          goalBodyFatPercentage: 30,
+        }}
+        training={null}
+        {...PROPS}
+        goal={goalOf({ goalWeightKg: 82, goalBodyFatPercentage: 18 })}
+      />
+    );
+
+    expect(screen.getByText("82.0")).toBeInTheDocument();
+    expect(screen.getByText("18.0")).toBeInTheDocument();
+    expect(screen.queryByText("99.0")).not.toBeInTheDocument();
+    expect(screen.queryByText("30.0")).not.toBeInTheDocument();
+  });
+
+  it("maintenance (no weight target) reads as unrecorded, whatever the mirror holds", () => {
+    render(
+      <ClientStatusCard
+        client={{ ...BASE, startingWeight: 90, currentWeight: 86, goalWeight: 99 }}
         training={null}
         {...PROPS}
       />
     );
 
-    expect(screen.getByText("2.0% to go")).toBeInTheDocument();
+    expect(screen.queryByText("99.0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/to go|goal reached/i)).not.toBeInTheDocument();
   });
 });
 
@@ -218,6 +298,7 @@ describe("ClientStatusCard — actions", () => {
     render(
       <ClientStatusCard
         client={BASE}
+        goal={NO_GOAL}
         training={null}
         upcomingTraining={null}
         onOpenMetrics={onOpenMetrics}

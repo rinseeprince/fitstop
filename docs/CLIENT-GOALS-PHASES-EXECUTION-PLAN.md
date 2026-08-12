@@ -4016,3 +4016,133 @@ nothing. The metrics route surfaces it as a 400; the settings dialog shows it
 inline as the coach types and blocks the save. **Rejected rather than clamped:**
 a coach who typed 1,500 meant 1,500, and silently storing something else is how
 these numbers stopped being explicable in the first place.
+
+---
+
+### Task 0b.1 — The Overview reads the resolver, not the mirror ✅ SHIPPED 2026-08-13
+
+**Inherited, not re-opened.** `notes` stays uncarried (Session 0). The
+map-or-delete question was settled by Session 4 Task 4.2 (owner, 2026-08-12):
+**delete** the three dead `?? client.goalDeadline` fallbacks and the dead
+`Client.goalDeadline` field. This task executed that decision; it did not re-take it.
+
+**What shipped.** `hooks/use-client-goals.ts` (key builder + area invalidator +
+`useClientGoals`, CONVENTIONS §7) feeds ONE new SWR read of
+`GET /api/clients/[id]/goals` in `client-overview-tab.tsx`, which resolves it
+through `resolveEffectiveGoal` and passes the result to `ClientStatusCard` as a
+`goal` prop. The card's three mirror reads are gone; start/current stay on the
+`clients` cache, because those are measurements `recordBodyMetrics` keeps fresh
+and only the two TARGETS moved. The hook returns the RAW `ClientGoal`, not a
+resolved one — `resolveEffectiveGoal` coalesces `goalStartDate` to today, which
+is right for "what drives this client now" and wrong for 0b.4's form, which would
+then write today into a field the coach never set.
+
+**`today` is the CLIENT's day**, `getTodayDateStringInTimezone(client.timezone)` —
+the same anchor and the same reasoning as `comparison-service.ts`, which feeds
+this identical resolver. The card consumes only the two targets, so it is
+currently unobservable; seeding the device day because it "doesn't matter yet"
+would hand the next consumer the wrong anchor. Rejected at plan review.
+
+**The mirror fallback SURVIVES for weight and body fat** (`?? client.goalWeight`),
+so this is a source change, not a behaviour change: a pre-`client_goals` client
+still renders, and the card does not flash "Not recorded" while the fetch is in
+flight. Only the deadline leg was deleted.
+
+#### `toClientGoalInput` — one composer, four callers
+
+Four call sites held **byte-identical** goal-input literals. Three were being
+edited anyway to delete the deadline leg, so the literal moved into
+`lib/goals/resolve-effective-goal.ts` and those three plus the new Overview one
+call it. `today` deliberately stays at each call site — the anchor differs per
+surface. Approved at plan review as §3's "extract what you are about to
+duplicate", flagged as beyond the literal task.
+
+**Boundary for 0b.3, so it inherits it rather than discovering it:**
+`use-merged-metrics.ts` is deliberately NOT converted. It does not build the same
+literal — it hardcodes `deadline: null, startDate: null`, and repointing it is a
+behaviour fix (the Metrics page starts seeing the deadline), not a substitution.
+**That is now 0b.3's whole remaining scope: the second half of its brief,
+`use-nutrition-builder.ts`'s `getProjectedDate` mirror read, was already deleted
+by Session 1 Task 1.2 (`67bfbbe`) — grep-confirmed at execution, zero matches.**
+The plan's "whichever session ran first did it; confirm rather than duplicate"
+is hereby confirmed. Do not go looking for that function.
+
+#### The fixture sweep — the cast is why tsc could not help
+
+`Client` fixtures are cast (`as unknown as Client`) or untyped, so deleting a
+field is **invisible to the compiler**. Every `goalDeadline`/`goal_deadline`
+fixture in the repo was enumerated and classified rather than extrapolated from
+the first one found:
+
+- **Client shape (3).** `nutrition-calc-inputs.test.ts`'s `CLIENT` was the only
+  fixture in the repo whose assertion **exercised the dead fallback** (`:52`,
+  with `getCurrentGoals` mocked to null) — it now sources the deadline from
+  `client_goals`, where it always came from live. `nutrition-plan-orchestrator`'s
+  and `notifications/route`'s were inert (`null` / `undefined`) but named a field
+  that no longer exists; both keys deleted.
+- **Goals shape (5 files), unaffected**: every hit is a `ClientGoal` or a
+  `getCurrentGoals` mock. Notably `comparison-service.test.ts`'s `mockClient`
+  carries no deadline at all, and neither does `nutrition/route.test.ts`'s — so
+  the fallback was provably inert in both files, and its deletion is a no-op there.
+- **Other shapes (6 files), unaffected**: `ClientRow` (snake_case — the COLUMN
+  stays), `ClientIntake`, `NutritionPlanParams`, `NutritionCalculationInput`,
+  plan snapshots. `createMockClient` is properly typed and never set the field.
+
+**Why the sweep was safe to be wrong about:** the change REMOVES a fallback, so
+anything depending on it fails red at the gate rather than passing wrongly. The
+one genuine silent risk is a test that keeps passing under a now-dishonest title
+— `nutrition-calc-inputs.test.ts`'s *"lets a live client goal win over the
+denormalized client fields"* was exactly that, since the deadline half no longer
+has two sides. Split into a weight precedence test and a "deadline and start date
+come from client_goals" test.
+
+**One mock contract broken and fixed** (CONVENTIONS §3):
+`comparison-service.test.ts` mocked the resolver module returning a hand-listed
+export set, so the new export arrived as a runtime *"No `toClientGoalInput` export
+is defined on the mock"* with nothing for tsc to catch. It now spreads `...actual`
+and overrides only the spy, so the next export cannot break it the same way.
+
+#### Threading, and what is still unconsumed
+
+`ClientStatusCard` gains `onClientUpdated?`, wired by the tab to a callback that
+invalidates the goals area AND revalidates the client record (a goal write
+dual-writes the mirror, so both reads must refresh). It is declared but not
+destructured until Task 0b.4 mounts the editor — inside the same session, so no
+editor-less slot ships.
+
+#### Tests — mutation-proven, both directions
+
+**275 files / 2892 (2883 + 9; arithmetic closes).** Card 3 — a goal the mirror has
+no copy of renders; a **diverged** mirror (99 kg / 30 %) cannot win over the
+resolved 82 / 18; maintenance reads "Not recorded" whatever the mirror holds.
+Composer 4 — live goal wins; mirror backstops a no-row client; a deadline
+smuggled in on the client object is refused; and the documented consequence that a
+NULL `goal_weight` still falls through to the mirror. Calc-inputs 2 — the deleted
+fallback pinned, plus the title split.
+
+Mutation 1 (card reads `client.goalWeight` again) killed **8** tests including all
+3 new ones. Mutation 2 (re-add the deadline mirror leg to the composer) killed
+both deletion pins. Files were backed up with `cp` to the scratchpad and restored
+from there — **never `git stash` or `git checkout --`**, both of which destroy
+uncommitted work and this repo's stash stack holds two abandoned WIPs. Restoration
+verified byte-identical by `shasum` + `diff`, not by eye.
+
+#### Gates
+
+`tsc --noEmit` clean · `eslint .` **0 errors, 209 warnings** (unchanged from the
+measured baseline; none in changed files) · `vitest run` **275 files / 2892 tests,
+all passing** (clean-tree baseline measured first: 275 / 2883) · `check:labels` OK
+662 · no `as any` in any changed code file · no markers introduced · **no
+migration**, so no `check:rls`, no `db push`, no `gen types`.
+
+**Docs corrected in the same commit (§3 class b):** `ARCHITECTURE.md`'s
+resolver-caller list (four → five, with the composer and the never-map-the-deadline
+rule recorded), the "Read switch fallback" section, and the Overview's SWR table
+(four → five reads).
+
+**UI is browser-unverified — the owner runs the smoke.** The card's goal cells,
+chips and layout should be unchanged; what changed is where the two numbers come
+from. Smoke: open a client's Overview and confirm goal weight / goal body fat and
+their chips still render · set a goal in the nutrition drawer's editor, return to
+Overview, confirm it shows the new value (the tab unmounts, so the read
+revalidates on return) · a client with no goal reads "Not recorded" with no chip.

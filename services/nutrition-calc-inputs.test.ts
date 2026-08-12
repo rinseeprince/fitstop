@@ -16,6 +16,12 @@ import { getClientTodayString } from "@/services/today-service";
 import { resolveNutritionCalcInputs } from "./nutrition-calc-inputs";
 import type { Client } from "@/types/check-in";
 
+// No `goalDeadline` here, deliberately. This fixture used to carry one and the
+// ready-arm test asserted it reached the result — through the `?? client
+// .goalDeadline` fallback, which was unreachable in production the whole time
+// because `mapClientRow` never mapped the column. The cast hides that from tsc,
+// so the fallback looked exercised while nothing real could reach it. Deadlines
+// now come from `client_goals`, which is where they always came from live.
 const CLIENT = {
   id: "client-1",
   currentWeight: 180,
@@ -24,7 +30,6 @@ const CLIENT = {
   tdee: 2400,
   gender: "male",
   goalWeight: 165,
-  goalDeadline: "2026-12-31",
 } as unknown as Client;
 
 describe("resolveNutritionCalcInputs", () => {
@@ -36,6 +41,12 @@ describe("resolveNutritionCalcInputs", () => {
   });
 
   it("returns a ready arm whose fields match NutritionCalculationInput's names and optionality", async () => {
+    // Goal weight from the mirror (that fallback survives), deadline from
+    // client_goals (its only source) — the two legs this resolver now has.
+    vi.mocked(getCurrentGoals).mockResolvedValue({
+      goalDeadline: "2026-12-31",
+    } as never);
+
     const result = await resolveNutritionCalcInputs("client-1", CLIENT);
 
     expect(result.status).toBe("ready");
@@ -61,13 +72,30 @@ describe("resolveNutritionCalcInputs", () => {
     const result = await resolveNutritionCalcInputs("client-1", {
       ...CLIENT,
       goalWeight: undefined,
-      goalDeadline: undefined,
     } as unknown as Client);
 
     if (result.status !== "ready") throw new Error("expected ready");
     expect(result.goalWeightKg).toBeUndefined();
     expect(result.goalDeadline).toBeUndefined();
     expect("goalWeightKg" in result).toBe(true);
+  });
+
+  it("no deadline reaches the calculator from the clients mirror", async () => {
+    // The deleted fallback, pinned. A `goal_deadline` on the client object can
+    // no longer influence the calculator: with no client_goals row the deficit
+    // path must see no deadline and fall through to maintenance, rather than
+    // solving against a mirror value that has no single writer.
+    const withMirrorDeadline = {
+      ...CLIENT,
+      goalDeadline: "2030-01-01",
+    } as unknown as Client;
+
+    const result = await resolveNutritionCalcInputs("client-1", withMirrorDeadline);
+
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.goalDeadline).toBeUndefined();
+    // The goal WEIGHT mirror leg is untouched by that deletion.
+    expect(result.goalWeightKg).toBe(165);
   });
 
   // The two halves of this ladder run in opposite directions on purpose.
@@ -191,7 +219,24 @@ describe("resolveNutritionCalcInputs", () => {
     expect(getCurrentGoals).toHaveBeenCalledWith("client-1");
   });
 
-  it("lets a live client goal win over the denormalized client fields", async () => {
+  // Two different claims, deliberately not merged under one title. The WEIGHT
+  // assertion is a precedence test — there is a mirror value to beat. The
+  // deadline and start date are not: neither has a mirror leg any more, so
+  // asserting them under "wins over the denormalized fields" would name a
+  // contest that no longer has two sides.
+  it("a live client goal's WEIGHT wins over the denormalized client field", async () => {
+    vi.mocked(getCurrentGoals).mockResolvedValue({
+      goalWeight: 154,
+      goalBodyFatPercentage: null,
+    } as never);
+
+    const result = await resolveNutritionCalcInputs("client-1", CLIENT);
+    if (result.status !== "ready") throw new Error("expected ready");
+    // CLIENT's mirror holds 165.
+    expect(result.goalWeightKg).toBe(154);
+  });
+
+  it("deadline and start date come from client_goals, their only source", async () => {
     vi.mocked(getCurrentGoals).mockResolvedValue({
       goalWeight: 154,
       goalBodyFatPercentage: null,
@@ -201,7 +246,6 @@ describe("resolveNutritionCalcInputs", () => {
 
     const result = await resolveNutritionCalcInputs("client-1", CLIENT);
     if (result.status !== "ready") throw new Error("expected ready");
-    expect(result.goalWeightKg).toBe(154);
     expect(result.goalDeadline).toBe("2027-01-31");
     expect(result.startDate).toBe("2026-10-01");
   });

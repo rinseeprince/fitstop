@@ -75,7 +75,6 @@ describe('/api/client/notifications', () => {
     trainingVolumeHours: undefined,
     proteinTargetGPerKg: undefined,
     dietType: undefined,
-    goalDeadline: undefined,
     nutritionPlanEffectiveDate: undefined,
     nutritionPlanBaseWeightKg: undefined,
     baselineCalories: undefined,

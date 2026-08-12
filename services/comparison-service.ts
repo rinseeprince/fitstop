@@ -6,7 +6,10 @@ import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } fr
 import { computeGoalPace } from "@/lib/check-in/goal-pace";
 import { getBodyMetricsHistory } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
-import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
+import {
+  resolveEffectiveGoal,
+  toClientGoalInput,
+} from "@/lib/goals/resolve-effective-goal";
 import { getTodayDateStringInTimezone, getTodayInTimezone, differenceInDays } from "@/lib/date-helpers";
 import type {
   CheckInComparison,
@@ -60,13 +63,7 @@ export const getCheckInComparison = async (
   // false alarm (the old code paired the client-scope goal weight with the active
   // nutrition plan's deadline).
   const effectiveGoal = resolveEffectiveGoal({
-    clientGoal: {
-      goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
-      goalBodyFatPercentage:
-        currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage ?? null,
-      deadline: currentGoals?.goalDeadline ?? client.goalDeadline ?? null,
-      startDate: currentGoals?.goalStartDate ?? null,
-    },
+    clientGoal: toClientGoalInput(currentGoals, client),
     // Client-local today: the pace window is on the client's calendar. The
     // client record is already in scope, so resolve their zone directly.
     today: getTodayDateStringInTimezone(client.timezone),

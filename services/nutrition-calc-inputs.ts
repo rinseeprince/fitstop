@@ -1,7 +1,10 @@
 import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { getClientTodayString } from "@/services/today-service";
-import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
+import {
+  resolveEffectiveGoal,
+  toClientGoalInput,
+} from "@/lib/goals/resolve-effective-goal";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
 import type { ActivityLevel, Client } from "@/types/check-in";
 import { toActivityLevel } from "@/services/client-energy-calc";
@@ -138,13 +141,7 @@ export async function resolveNutritionCalcInputs(
   // scope — never from a request body. No unit normalization happens anywhere
   // any more: goal weights are stored in kilograms (migration 141).
   const effective = resolveEffectiveGoal({
-    clientGoal: {
-      goalWeight: currentGoals?.goalWeight ?? client.goalWeight ?? null,
-      goalBodyFatPercentage:
-        currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage ?? null,
-      deadline: currentGoals?.goalDeadline ?? client.goalDeadline ?? null,
-      startDate: currentGoals?.goalStartDate ?? null,
-    },
+    clientGoal: toClientGoalInput(currentGoals, client),
     today,
   });
 
