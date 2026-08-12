@@ -29,12 +29,11 @@ const CHIP_DARK_CLASS =
 
 const DIVIDER = "border-[rgba(255,255,255,0.07)]";
 
-type ChipTone = "positive" | "warning" | "neutral";
+type ChipTone = "positive" | "warning";
 
 const GOAL_CHIP_TONE: Record<ChipTone, string> = {
   positive: "bg-[rgba(13,148,136,0.15)] text-[#0d9488]",
   warning: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
-  neutral: "bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.55)]",
 };
 
 /** Short enough for the status card's third column; the dialog carries the
@@ -282,7 +281,6 @@ export function ClientStatusCard({
             label="TDEE"
             value={client.tdee ? Math.round(client.tdee).toString() : undefined}
             unit="cal/day"
-            chip={client.tdeeManualOverride ? { text: "Custom", tone: "neutral" } : null}
             showLeftBorder
           />
           <div className={cn("border-l pl-3", DIVIDER)}>

@@ -3868,8 +3868,9 @@ function the server writes with, so "auto would be 2,144" cannot disagree with
 what a save stores. `check:service-key` still passes, which is precisely why
 4b.2 split the calculator out of the `supabaseAdmin`-importing module. The
 birth-date nudge fires only when age changes the answer (Katch-McArdle has no age
-term). The status card's third column becomes the activity label, and TDEE
-carries a "Custom" chip when frozen.
+term). The status card's third column becomes the activity label. (A "Custom" chip on
+TDEE was specified and built, then **removed on owner request 2026-08-12** — the
+override is visible where it is set, and the card is a summary.)
 
 **The intake answer now lands.** `createClient` inserts
 `work_activity_level: null` explicitly rather than letting the column DEFAULT
