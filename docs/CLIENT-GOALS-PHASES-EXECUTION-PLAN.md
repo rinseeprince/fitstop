@@ -1,6 +1,6 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · four sessions remain (4B, 0b, 5, 6) · **Owner decision date:** 2026-08-10
+**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · three sessions remain (0b, 5, 6) · **Owner decision date:** 2026-08-10
 **Eight sessions.** Three largely independent features share this document. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
@@ -147,7 +147,7 @@ Listed in execution order.
 | **2** ✅ | Blocks backend: table, service, routes — **SHIPPED 2026-08-11** (5 commits; migration 145; no browser smoke by design — Session 3's UI smoke is the routes' first live exercise) | **1** (`client_phases`) | No — API only |
 | **3** ✅ | Journey tab: rename, Blocks list, chart shading — **SHIPPED 2026-08-11**, plus owner-directed follow-ups 3.6 (editing + end-date granularity), 3.7 (archive, migration 146) and the nutrition-column resemantic, 2026-08-12 | **1** (146, from 3.7) | Yes — the coach block feature |
 | **4** ✅ | Client-facing block + the "Waiting on you" row — **SHIPPED + owner-smoked all clear 2026-08-12** (3 commits; no migration) | none | Yes — the client block feature |
-| **4B** | TDEE ownership: profile owns BMR/TDEE, builder consumes | none | Yes — the settings-dialog energy controls; the drawer loses its activity dropdown |
+| **4B** ✅ | TDEE ownership: profile owns BMR/TDEE, builder consumes — **SHIPPED 2026-08-12** (17 commits; the calculator now CONSUMES the profile's TDEE rather than re-deriving it) | none | Yes — activity + custom TDEE move to the client profile; the drawer loses its dropdown |
 | **0b** | Goals: one read path, one writer, one editor, history | none | Yes — the goal editor |
 | **5** | Nutrition builder: deficit as a first-class input | **1** (`nutrition_plans` + RPC arity) | Yes |
 | **6** | The save note + the Journey timeline | **1** (`nutrition_plan_notes`) | Yes |
@@ -160,7 +160,8 @@ Read this before assuming the order above is forced. It mostly is not.
 - **5 → 6.** The note lives beside the deficit in the same drawer.
 - **1.2 → 5.** Session 1's shared energy helper is the deficit input's prerequisite, and Session 5 assumes the two dead calculator exports are already gone.
 - **1B → 5, HARD.** Session 5's two new columns must be born on versioned rows — landing a stored deficit on the in-place singleton and versioning afterwards would version a column nothing backfills. Run 1B first.
-- **4B → 5, HARD.** Session 5's stored deficit is solved against TDEE; 4B is what makes TDEE trustworthy (single owner, atomic pair, activity on the client). 4B is otherwise independent of 4 and 0b and may run before either. **Shared-file note:** 4B and 0b.2 both edit `app/api/clients/[id]/metrics/route.ts` (4B: energy writes; 0b.2: the goal-mirror writes) — whichever runs second re-verifies the other's change.
+- **4B → 5, HARD — SATISFIED (4B shipped 2026-08-12).** Session 5's stored deficit is solved against TDEE, and 4B is what made TDEE trustworthy: one helper owns the pair atomically, activity is a client fact, and `generateNutritionPlan` now **consumes** `input.tdee` rather than re-deriving it from bmr × activity (so a coach's custom TDEE reaches the calculator). Session 5 can rely on that.
+  **Shared-file note, now one-directional:** 4B has already rewritten `app/api/clients/[id]/metrics/route.ts` (the energy writes go through `recalculateClientEnergy`; the handler writes no bmr/tdee itself). **0b.2 is the one running second** and must re-verify 4B's change rather than the reverse — in particular, the `updateGoals` dual-write it owns is pinned by a test in that route's new suite, which 0b.2 should keep green rather than replace.
 - **1B → 3.2, correctness not code.** Task 3.2's nutrition column resolves the version covering the block's window (see the note in its table row); without 1B an elapsed block would read the CURRENT plan's `tdee` against an old era's event baseline and print a wrong deficit.
 - **0b.1's DECISION → 4.2 — a decision dependency, NOT a code dependency.** Task 4.2 needs one authoritative answer to: *is `clients.goal_deadline` mapped, or are the three dead `?? client.goalDeadline` fallbacks deleted?* It does **not** need 0b.1's Overview code to have shipped. The question can be settled in isolation, in a sentence, without touching a file. **If 0b has not run, Session 4 settles it and records the answer in its STATUS block; 0b then inherits that decision rather than re-litigating it.** An executor who reads this as "Session 4 is blocked on a UI change" has misread it — Session 4 is blocked on nothing.
 - **0 → 0b, softly.** 0b inherits Session 0's `notes` decision from its STATUS block, and consolidating readers onto a write path that still nulls sibling fields would be premature. Not a hard block.
@@ -1080,7 +1081,7 @@ Append a STATUS block as each task lands.
 
 ---
 
-# SESSION 4B — TDEE ownership: profile owns metabolism, builder consumes it
+# SESSION 4B — TDEE ownership: profile owns metabolism, builder consumes it ✅ COMPLETE (SHIPPED 2026-08-12)
 
 **Zero migrations (every column exists — if you believe one is needed, STOP AND ASK).
 Six tasks. Inserted 2026-08-12 by owner decision after the Session 3.2 browser smoke
