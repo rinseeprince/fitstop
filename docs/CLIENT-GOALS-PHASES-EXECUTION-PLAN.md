@@ -1,6 +1,6 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12 · Session 4 ✅ shipped 2026-08-12 (browser-unverified; its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · four sessions remain (4B, 0b, 5, 6) · **Owner decision date:** 2026-08-10
+**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · four sessions remain (4B, 0b, 5, 6) · **Owner decision date:** 2026-08-10
 **Eight sessions.** Three largely independent features share this document. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
@@ -146,7 +146,7 @@ Listed in execution order.
 | **1B** ✅ | Nutrition plan versioning: date-ranged versions, close-and-insert RPC, date-resolved reads — **SHIPPED + smoked 2026-08-11** (5 commits + a D1 guard-tightening follow-up; migration 144) | **1** (index swap + exclusion constraint + RPC rewrite, same arity) | Correct queued-change behaviour; the hero's chain-aware lines |
 | **2** ✅ | Blocks backend: table, service, routes — **SHIPPED 2026-08-11** (5 commits; migration 145; no browser smoke by design — Session 3's UI smoke is the routes' first live exercise) | **1** (`client_phases`) | No — API only |
 | **3** ✅ | Journey tab: rename, Blocks list, chart shading — **SHIPPED 2026-08-11**, plus owner-directed follow-ups 3.6 (editing + end-date granularity), 3.7 (archive, migration 146) and the nutrition-column resemantic, 2026-08-12 | **1** (146, from 3.7) | Yes — the coach block feature |
-| **4** ✅ | Client-facing block + the "Waiting on you" row — **SHIPPED 2026-08-12** (3 commits; no migration; browser-unverified — the owner's smoke checklist is with the session summary) | none | Yes — the client block feature |
+| **4** ✅ | Client-facing block + the "Waiting on you" row — **SHIPPED + owner-smoked all clear 2026-08-12** (3 commits; no migration) | none | Yes — the client block feature |
 | **4B** | TDEE ownership: profile owns BMR/TDEE, builder consumes | none | Yes — the settings-dialog energy controls; the drawer loses its activity dropdown |
 | **0b** | Goals: one read path, one writer, one editor, history | none | Yes — the goal editor |
 | **5** | Nutrition builder: deficit as a first-class input | **1** (`nutrition_plans` + RPC arity) | Yes |
@@ -864,7 +864,7 @@ Start by reading the documents, then show me your schema plan (2.1) before anyth
 
 ---
 
-# SESSION 3 — The Journey tab
+# SESSION 3 — The Journey tab ✅ COMPLETE (SHIPPED 2026-08-11 · 3.6/3.7 follow-ups 2026-08-12 · owner sign-off 2026-08-12)
 
 **No migrations. This is where Feature A becomes visible.**
 
@@ -990,7 +990,7 @@ your plan for 3.1 and 3.2 together.
 
 ---
 
-# SESSION 4 — Client-facing block + the coach's one row
+# SESSION 4 — Client-facing block + the coach's one row ✅ COMPLETE (SHIPPED + owner-smoked all clear 2026-08-12)
 
 **No migrations. Smallest session of Feature A; do it last.**
 
@@ -3618,3 +3618,17 @@ block-weight and block-format suites moved, net zero).** The client surfaces
 are browser-unverified by design — the owner's smoke checklist is in the
 session summary. §2 security/load/perf review delivered with the session
 summary (trigger: one new API route; zero new write paths).
+
+---
+
+### Sessions 3 + 4 — owner sign-off ✅ 2026-08-12
+
+The owner ran the Session 4 smoke checklist (seven items, handed over with the
+session summary: mid-block section/bar/target lines · no-blocks empty ·
+imperial · finished-block change parity unit-matched · archived block absent
+from the client list · the coach row's both copy variants, mid-block absence
+and no-dismiss · Open Journey → Blocks pane) and reported **all clear**.
+Sessions 3 (including the 3.6 and 3.7 follow-ups) and 4 are **COMPLETE** by
+owner decision. This closes the browser-verification residuals recorded in
+the 3.6-D, 3.7-2, Task 4.1 and Task 4.3 STATUS blocks — those lines stand as
+history of what was true at commit time, superseded here.
