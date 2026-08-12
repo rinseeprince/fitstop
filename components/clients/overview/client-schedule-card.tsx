@@ -2,6 +2,14 @@
 
 import { Calendar, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DAY_NAMES } from "@/lib/date-helpers";
+import {
+  InlineField,
+  InlineSelect,
+  InlineTextInput,
+} from "./inline-edit-fields";
+import { UNSET } from "./use-client-profile-edit";
+import type { ClientProfileEdit } from "./use-client-profile-edit";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   LABEL_CLASS,
@@ -11,7 +19,7 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { InlineMono, OverviewCard } from "./overview-primitives";
 import { formatDateOnlyWeekday, pluralize, relativeDayPhrase } from "./overview-format";
-import type { Client } from "@/types/check-in";
+import type { Client, DayOfWeek } from "@/types/check-in";
 import type { CheckInTiming } from "@/types/coach-brief";
 import { useUnits } from "@/contexts/units-context";
 import { formatHeight, type UnitSystem } from "@/utils/unit-conversions";
@@ -35,8 +43,8 @@ type ClientScheduleCardProps = {
    */
   isTimingLoading: boolean;
   /** Revalidates the client record AND the brief — check-in day drives timing. */
-  /** Opens the client-settings dialog, which the section rail owns. */
-  onOpenSettings: () => void;
+  /** Inline edit state, owned by the section rail above both cards. */
+  edit: ClientProfileEdit;
 };
 
 const FREQUENCY_LABELS: Record<string, string> = {
@@ -59,6 +67,9 @@ function frequencyLabel(client: Client): string {
   if (client.checkInFrequency === "custom") return `Every ${client.checkInFrequencyDays} days`;
   return FREQUENCY_LABELS[client.checkInFrequency ?? "weekly"] ?? "Weekly";
 }
+
+// Monday-first, off the shared weekday map so the names cannot drift.
+const DAY_OPTIONS: DayOfWeek[] = [1, 2, 3, 4, 5, 6, 0].map((n) => DAY_NAMES[n]);
 
 function sentenceCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -216,12 +227,12 @@ export function ClientScheduleCard({
   client,
   checkInTiming,
   isTimingLoading,
-  onOpenSettings,
+  edit,
 }: ClientScheduleCardProps) {
   const { preference } = useUnits();
-  // The dialog itself lives with the section rail that opens it
-  // (client-overview-tab); this card only routes its "Add" links to it.
-  const openSettings = onOpenSettings;
+  const openSettings = edit.start;
+  const editing = edit.isEditing;
+  const form = edit.form;
 
   return (
     <>
@@ -263,25 +274,135 @@ export function ClientScheduleCard({
 
         <div className="grid grid-cols-2 gap-x-3 gap-y-3 px-5 pb-5 pt-4">
           <Field label="Frequency" value={frequencyLabel(client)} />
-          <Field label="Check-in day" value={dayLabel(client.expectedCheckInDay)} />
-          <Field
+          <InlineField
+            label="Check-in day"
+            value={dayLabel(client.expectedCheckInDay)}
+            editor={
+              editing ? (
+                <InlineSelect
+                  ariaLabel="Check-in day"
+                  value={form.watch("expectedCheckInDay")}
+                  onChange={(v) => form.setValue("expectedCheckInDay", v)}
+                  options={[
+                    { value: UNSET, label: "Any day" },
+                    ...DAY_OPTIONS.map((d) => ({ value: d, label: sentenceCase(d) })),
+                  ]}
+                />
+              ) : undefined
+            }
+          />
+          <InlineField
             label="Gender"
             value={client.gender ? sentenceCase(client.gender) : null}
-            onAdd={openSettings}
+            editor={
+              editing ? (
+                <InlineSelect
+                  ariaLabel="Gender"
+                  value={form.watch("gender")}
+                  onChange={(v) => form.setValue("gender", v as "male" | "female" | "other")}
+                  options={[
+                    { value: UNSET, label: "Not set" },
+                    { value: "male", label: "Male" },
+                    { value: "female", label: "Female" },
+                    { value: "other", label: "Other" },
+                  ]}
+                />
+              ) : undefined
+            }
           />
-          <Field
+          <InlineField
+            label="Date of birth"
+            value={client.dateOfBirth ? formatDateOnlyWeekday(client.dateOfBirth) : null}
+            isNumeric
+            editor={
+              editing ? (
+                <InlineTextInput
+                  ariaLabel="Date of birth"
+                  type="date"
+                  value={form.watch("dateOfBirth")}
+                  onChange={(v) => form.setValue("dateOfBirth", v)}
+                />
+              ) : undefined
+            }
+            hint={
+              edit.showBirthDateNudge && editing ? (
+                <p className="mt-1 text-[10px] leading-[1.4] text-[#c8923a]">
+                  Add one for a more accurate BMR — age is assumed 30 without it.
+                </p>
+              ) : undefined
+            }
+          />
+          <InlineField
             label="Started"
             value={client.startDate ? formatDateOnlyWeekday(client.startDate) : null}
             isNumeric
-            onAdd={openSettings}
+            editor={
+              editing ? (
+                <InlineTextInput
+                  ariaLabel="Start date"
+                  type="date"
+                  value={form.watch("startDate")}
+                  onChange={(v) => form.setValue("startDate", v)}
+                />
+              ) : undefined
+            }
           />
-          <Field
+          <InlineField
             label="Height"
             value={client.height != null ? formatHeightLabel(client.height, preference) : null}
             isNumeric
-            onAdd={openSettings}
+            editor={
+              editing ? (
+                edit.height.system === "imperial" ? (
+                  <div className="flex gap-1.5">
+                    <InlineTextInput
+                      ariaLabel="Height feet"
+                      isNumeric
+                      placeholder="ft"
+                      value={edit.height.fields.feet}
+                      onChange={edit.height.setFeet}
+                    />
+                    <InlineTextInput
+                      ariaLabel="Height inches"
+                      isNumeric
+                      placeholder="in"
+                      value={edit.height.fields.inches}
+                      onChange={edit.height.setInches}
+                    />
+                  </div>
+                ) : (
+                  <InlineTextInput
+                    ariaLabel="Height"
+                    isNumeric
+                    placeholder="cm"
+                    value={edit.height.fields.cm}
+                    onChange={edit.height.setCm}
+                  />
+                )
+              ) : undefined
+            }
+            hint={
+              editing && edit.height.hasParseError ? (
+                <p className="mt-1 text-[10px] text-[#c06060]">Enter a height above 0</p>
+              ) : undefined
+            }
           />
-          <Field label="Phone" value={client.phone || null} isNumeric onAdd={openSettings} />
+          <InlineField
+            label="Phone"
+            value={client.phone || null}
+            isNumeric
+            editor={
+              editing ? (
+                <InlineTextInput
+                  ariaLabel="Phone"
+                  type="tel"
+                  placeholder="Not set"
+                  value={form.watch("phone")}
+                  onChange={(v) => form.setValue("phone", v)}
+                />
+              ) : undefined
+            }
+          />
         </div>
       </OverviewCard>
 

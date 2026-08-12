@@ -5,10 +5,10 @@ import { ClientActivationBanner } from "@/components/clients/client-activation-b
 import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AdherenceCard } from "@/components/clients/overview/adherence-card";
-import { Pencil } from "lucide-react";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { ClientScheduleCard } from "@/components/clients/overview/client-schedule-card";
-import { ClientSettingsDialog } from "@/components/clients/overview/client-settings-dialog";
+import { EditRailActions } from "@/components/clients/overview/inline-edit-fields";
+import { useClientProfileEdit } from "@/components/clients/overview/use-client-profile-edit";
 import { ClientStatusCard } from "@/components/clients/overview/client-status-card";
 import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
 import { CurrentPlanSection } from "@/components/clients/overview/current-plan-section";
@@ -64,7 +64,6 @@ export function ClientOverviewTab({
     setPinned,
     deleteNote,
   } = useClientNotes(client.id);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [notePendingDelete, setNotePendingDelete] = useState<ClientNote | null>(null);
   const { logs: wellnessLogs, isLoading: wellnessLoading } = useWellnessData(client.id, {
     daysBack: WELLNESS_WINDOW_DAYS - 1,
@@ -86,6 +85,8 @@ export function ClientOverviewTab({
     onClientUpdated?.();
     void mutateBrief();
   }, [onClientUpdated, mutateBrief]);
+
+  const edit = useClientProfileEdit(client, handleClientUpdated);
 
   const handleMarkSeen = useCallback(() => {
     void markSeen();
@@ -182,40 +183,25 @@ export function ClientOverviewTab({
       <div>
         <SectionLabel
           label="Client"
-          actions={
-            <button
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              aria-label="Edit client settings"
-              title="Edit client settings"
-              className="shrink-0 rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
-            >
-              <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-            </button>
-          }
+          actions={<EditRailActions edit={edit} />}
         />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[5fr_8fr]">
         <ClientScheduleCard
           client={client}
           checkInTiming={brief?.checkInTiming ?? null}
           isTimingLoading={briefLoading}
-          onOpenSettings={() => setSettingsOpen(true)}
+          edit={edit}
         />
         <ClientStatusCard
           client={client}
           training={summary?.training ?? null}
           upcomingTraining={summary?.upcomingTraining ?? null}
           onOpenMetrics={() => goToTab("metrics")}
+          edit={edit}
         />
         </div>
       </div>
 
-      <ClientSettingsDialog
-        client={client}
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onSaved={handleClientUpdated}
-      />
 
       {/* 4 — Current plan */}
       <CurrentPlanSection

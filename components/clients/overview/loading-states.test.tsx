@@ -7,6 +7,26 @@ import type { Client } from "@/types/check-in";
 import type { CheckInTiming } from "@/types/coach-brief";
 import type { ClientNote } from "@/types/coach-overview";
 
+// The cards are presentational: editing state is owned by the section rail
+// above them. A not-editing stub is all these render tests need.
+const editStub = {
+  isEditing: false,
+  isSaving: false,
+  start: vi.fn(),
+  cancel: vi.fn(),
+  save: vi.fn(),
+  form: { watch: vi.fn(), setValue: vi.fn() },
+  height: { system: "metric", fields: { cm: "", feet: "", inches: "" }, hasParseError: false },
+  autoEnergy: null,
+  customTdee: "",
+  setCustomTdee: vi.fn(),
+  isCustomTdee: false,
+  setIsCustomTdee: vi.fn(),
+  customTdeeBelowBmr: false,
+  showBirthDateNudge: false,
+} as never;
+
+
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars.
 vi.mock("@/contexts/units-context", () => ({
@@ -85,7 +105,7 @@ describe("ClientScheduleCard check-in strip loading state", () => {
         client={CLIENT}
         checkInTiming={null}
         isTimingLoading
-        onOpenSettings={vi.fn()}
+        edit={editStub}
       />
     );
 
@@ -99,7 +119,7 @@ describe("ClientScheduleCard check-in strip loading state", () => {
         client={CLIENT}
         checkInTiming={null}
         isTimingLoading={false}
-        onOpenSettings={vi.fn()}
+        edit={editStub}
       />
     );
 
@@ -113,7 +133,7 @@ describe("ClientScheduleCard check-in strip loading state", () => {
         client={CLIENT}
         checkInTiming={TIMING}
         isTimingLoading={false}
-        onOpenSettings={vi.fn()}
+        edit={editStub}
       />
     );
 

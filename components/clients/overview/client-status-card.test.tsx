@@ -6,6 +6,26 @@ import { ClientStatusCard } from "./client-status-card";
 import type { Client } from "@/types/check-in";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
 
+// The cards are presentational: editing state is owned by the section rail
+// above them. A not-editing stub is all these render tests need.
+const editStub = {
+  isEditing: false,
+  isSaving: false,
+  start: vi.fn(),
+  cancel: vi.fn(),
+  save: vi.fn(),
+  form: { watch: vi.fn(), setValue: vi.fn() },
+  height: { system: "metric", fields: { cm: "", feet: "", inches: "" }, hasParseError: false },
+  autoEnergy: null,
+  customTdee: "",
+  setCustomTdee: vi.fn(),
+  isCustomTdee: false,
+  setIsCustomTdee: vi.fn(),
+  customTdeeBelowBmr: false,
+  showBirthDateNudge: false,
+} as never;
+
+
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars.
 vi.mock("@/contexts/units-context", () => ({
@@ -50,6 +70,7 @@ const UPCOMING: NonNullable<OverviewPlanSummary["upcomingTraining"]> = {
 const PROPS = {
   upcomingTraining: null,
   onOpenMetrics: vi.fn(),
+  edit: editStub,
 };
 
 beforeEach(() => cleanup());
@@ -200,6 +221,7 @@ describe("ClientStatusCard — actions", () => {
         training={null}
         upcomingTraining={null}
         onOpenMetrics={onOpenMetrics}
+        edit={editStub}
       />
     );
 

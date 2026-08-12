@@ -2,6 +2,12 @@
 
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import {
+  ACTIVITY_OPTIONS,
+  InlineDarkInput,
+  InlineDarkSelect,
+} from "./inline-edit-fields";
+import type { ClientProfileEdit } from "./use-client-profile-edit";
 import { goalState } from "@/lib/goals/goal-state";
 import { containsDigit } from "@/components/clients/metrics/metrics-format";
 import { formatDateOnlyShort } from "./overview-format";
@@ -20,6 +26,8 @@ type ClientStatusCardProps = {
   training: OverviewPlanSummary["training"];
   upcomingTraining: OverviewPlanSummary["upcomingTraining"];
   onOpenMetrics: () => void;
+  /** Inline edit state, owned by the section rail above both cards. */
+  edit: ClientProfileEdit;
 };
 
 // Translucent on-dark chip — same recipe as the training-summary and metric
@@ -159,6 +167,7 @@ export function ClientStatusCard({
   training,
   upcomingTraining,
   onOpenMetrics,
+  edit,
 }: ClientStatusCardProps) {
   // client.weightUnit is a mapper constant, not the viewer's choice (Batch F
   // deletes it). Body weights convert freely — formatWeight, never formatLoad.
@@ -277,17 +286,61 @@ export function ClientStatusCard({
             value={client.bmr ? Math.round(client.bmr).toString() : undefined}
             unit="cal/day"
           />
-          <MetricCell
-            label="TDEE"
-            value={client.tdee ? Math.round(client.tdee).toString() : undefined}
-            unit="cal/day"
-            showLeftBorder
-          />
+          {edit.isEditing ? (
+            <div className={cn("border-l pl-3", DIVIDER)}>
+              <p className={STAT_LABEL_DARK_CLASS}>TDEE</p>
+              <div className="mt-1">
+                {edit.isCustomTdee ? (
+                  <InlineDarkInput
+                    ariaLabel="Custom TDEE"
+                    value={edit.customTdee}
+                    onChange={edit.setCustomTdee}
+                  />
+                ) : (
+                  <p className={cn(STAT_VALUE_DARK_CLASS, "text-[20px] leading-tight")}>
+                    {edit.autoEnergy ? edit.autoEnergy.tdee : "—"}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => edit.setIsCustomTdee(!edit.isCustomTdee)}
+                className="mt-1 text-[10px] font-medium text-[#5eead4] transition-colors hover:text-white"
+              >
+                {edit.isCustomTdee ? "Back to auto" : "Set a custom value"}
+              </button>
+              {edit.customTdeeBelowBmr && edit.autoEnergy && (
+                <p className="mt-1 text-[10px] leading-[1.4] text-[#f0a0a0]">
+                  Can&apos;t be below BMR ({edit.autoEnergy.bmr} cal/day)
+                </p>
+              )}
+            </div>
+          ) : (
+            <MetricCell
+              label="TDEE"
+              value={client.tdee ? Math.round(client.tdee).toString() : undefined}
+              unit="cal/day"
+              showLeftBorder
+            />
+          )}
           <div className={cn("border-l pl-3", DIVIDER)}>
             <p className={STAT_LABEL_DARK_CLASS}>Activity</p>
-            <p className="mt-1 text-[13px] font-medium text-white">
-              {ACTIVITY_SHORT_LABELS[client.workActivityLevel ?? "sedentary"]}
-            </p>
+            {edit.isEditing ? (
+              <div className="mt-1">
+                <InlineDarkSelect
+                  ariaLabel="Work activity level"
+                  value={edit.form.watch("workActivityLevel")}
+                  onChange={(v) =>
+                    edit.form.setValue("workActivityLevel", v as ActivityLevel)
+                  }
+                  options={ACTIVITY_OPTIONS}
+                />
+              </div>
+            ) : (
+              <p className="mt-1 text-[13px] font-medium text-white">
+                {ACTIVITY_SHORT_LABELS[client.workActivityLevel ?? "sedentary"]}
+              </p>
+            )}
           </div>
         </div>
       </div>
