@@ -10,6 +10,7 @@ import {
 import type { ClientProfileEdit } from "./use-client-profile-edit";
 import { goalState } from "@/lib/goals/goal-state";
 import { containsDigit } from "@/components/clients/metrics/metrics-format";
+import { getTodayDateString } from "@/lib/date-helpers";
 import { formatDateOnlyShort } from "./overview-format";
 import { GoalHistoryPopover } from "./goal-history-popover";
 import {
@@ -253,6 +254,19 @@ export function ClientStatusCard({
     v == null ? undefined : formatWeight(v, preference).value;
   const weightUnit = formatWeight(0, preference).unit;
 
+  // A deadline can be neither in the past (the goals PUT rejects it against the
+  // coach's day) nor before the goal's own start (the schema's cross-field
+  // refine rejects it). Both are expressed as ONE native `min`, so the
+  // impossible days are unclickable rather than picked and then rejected —
+  // composed the same way `block-form.tsx` composes its two end-date bounds.
+  //
+  // The goal START deliberately has no bound: a goal that began three weeks ago
+  // is a real thing to record, and the route puts no bound on it either.
+  const todayString = getTodayDateString();
+  const goalStartValue = edit.form.watch("goalStartDate");
+  const deadlineMin =
+    goalStartValue && goalStartValue > todayString ? goalStartValue : todayString;
+
   const startWeight = kg(client.startingWeight);
   const currentWeight = kg(client.currentWeight);
   // Start and current stay on the `clients` cache — they are measurements, kept
@@ -475,6 +489,7 @@ export function ClientStatusCard({
                 <InlineDarkInput
                   type="date"
                   ariaLabel="Goal deadline"
+                  min={deadlineMin}
                   value={edit.form.watch("goalDeadline")}
                   onChange={(v) => edit.form.setValue("goalDeadline", v)}
                 />

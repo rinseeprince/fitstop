@@ -138,12 +138,17 @@ export function InlineDarkInput({
   onChange,
   ariaLabel,
   type = "number",
+  min,
 }: {
   value: string;
   onChange: (next: string) => void;
   ariaLabel: string;
   /** `date` for the goal-window cells; numeric everywhere else. */
   type?: "number" | "date";
+  /** Native lower bound. On a date input this GREYS OUT the impossible days in
+   *  the picker rather than letting the coach pick one and be rejected after
+   *  the fact — see the date-input rule in `docs/newdesignsystem.md`. */
+  min?: string;
 }) {
   return (
     <input
@@ -151,6 +156,7 @@ export function InlineDarkInput({
       inputMode={type === "number" ? "numeric" : undefined}
       aria-label={ariaLabel}
       value={value}
+      min={min}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
         MONO_INPUT_CLASS,

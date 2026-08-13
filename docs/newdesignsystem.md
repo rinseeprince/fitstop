@@ -250,6 +250,27 @@ Import it as `FOCUS_RING` (see system tokens) rather than retyping.
 
 Numeric fields are `font-mono-display` and `text-center`.
 
+### Date inputs express their bounds natively
+
+**A date field with a bound sets `min` / `max` on the input, not validation alone.** The impossible
+days are then greyed out and unclickable in the picker, instead of being offered, chosen, and
+rejected afterwards — a coach should never be able to select a day the app will refuse.
+
+- Validation still ships. `min`/`max` are a native affordance, not a security control: they are
+  trivially bypassed, so the schema and the route keep their own checks. They exist so the coach
+  never reaches those checks by accident.
+- **Compose multiple bounds into one attribute.** A field constrained by two rules takes the
+  tighter: `min={max(today, startDate)}` rather than one bound honoured and the other 400'd.
+- **Only bound what is genuinely impossible.** A past *deadline* is refused, so it is bounded; a
+  past *start date* is a real thing to record, so it is not. Greying out a legitimate day is the
+  same defect in the other direction.
+
+Shipped references: `components/ui/apply-date-dialog.tsx` (nutrition builder — "Takes effect",
+`min={today}`), `components/clients/metrics/blocks/block-form.tsx` (blocks — composes two bounds
+into one `min`, plus a `max`), `components/clients/metrics/log-measurement-dialog.tsx`
+(`max={today}` — a measurement cannot be logged in the future), and the Overview status card's
+goal deadline.
+
 ---
 
 ## System component tokens
