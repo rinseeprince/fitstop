@@ -65,6 +65,7 @@ describe("GET /api/clients/[id]/blocks/facts", () => {
           deficitPerDay: 500,
           changeCount: 0,
           lastChangedOn: null,
+          eras: [{ from: "2026-06-01", calories: 2200, deficitPerDay: 500 }],
         },
       },
     ];

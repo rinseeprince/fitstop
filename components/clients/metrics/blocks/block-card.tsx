@@ -15,7 +15,7 @@ import {
   TEXT_SECONDARY,
   TRAINING_CARD_BORDER,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { formatBlockDate } from "@/lib/blocks/block-format";
+import { formatBlockDate, formatDeficitPerDay } from "@/lib/blocks/block-format";
 import { BlockTimeline, deriveTimelineEntries } from "./block-timeline";
 import type { BlockWeightFacts } from "@/lib/blocks/block-weight";
 import type { BlockPace, ClientBlockView } from "@/lib/blocks/block-derivations";
@@ -101,8 +101,7 @@ function NutritionColumn({
       </p>
       {deficit != null && (
         <p className={cn(MONO_META_CLASS, "text-[11px]")}>
-          {deficit > 0 ? "−" : deficit < 0 ? "+" : "±"}
-          {Math.round(Math.abs(deficit))} kcal/day
+          {formatDeficitPerDay(deficit)}
         </p>
       )}
       {fact.changeCount > 0 && (
@@ -280,7 +279,11 @@ export function BlockCard(props: BlockCardProps) {
           <div className={cn(HAIRLINE, "pt-3")}>
             <p className={cn(LABEL_CLASS, "mb-2")}>What happened</p>
             <BlockTimeline
-              entries={deriveTimelineEntries(block, facts?.training ?? [])}
+              entries={deriveTimelineEntries(
+                block,
+                facts?.training ?? [],
+                facts?.nutrition ?? null
+              )}
               color={color}
             />
           </div>

@@ -9,6 +9,7 @@ import { fetchAllPages } from "@/lib/paged-fetch";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import type {
   BlockFacts,
+  BlockNutritionEra,
   BlockNutritionFact,
   ClientBlock,
 } from "@/types/client-blocks";
@@ -164,16 +165,72 @@ function deriveNutritionFact(
     previous = event.baseline_calories;
   }
 
-  const calories =
-    version.customMacrosEnabled && version.customCalories != null
-      ? version.customCalories
-      : version.baselineCalories;
+  const calories = versionCalories(version);
   return {
     calories,
     deficitPerDay: version.tdee != null ? version.tdee - calories : null,
     changeCount,
     lastChangedOn,
+    eras: deriveEras(versions, block.startsOn, windowEnd),
   };
+}
+
+/** A version's own daily target, custom-macros override honoured. */
+function versionCalories(version: VersionTdeeWindow): number {
+  return version.customMacrosEnabled && version.customCalories != null
+    ? version.customCalories
+    : version.baselineCalories;
+}
+
+/**
+ * The prescription era by era, for the block's "what happened" timeline.
+ *
+ * The version rows ARE the era log: `[effective_from, effective_until]` windows
+ * tile the client's timeline by construction, so this is a plain intersection
+ * with the block window — no resolution rule, unlike training, because the
+ * migration-144 gist exclusion makes overlapping active windows impossible.
+ *
+ * Each era carries the numbers off its OWN row. The block headline reads the
+ * reference-date version instead, which is right for "what are they on now" and
+ * wrong for a dated history entry: those numbers change on every plan save, so a
+ * past entry sourced from them would silently rewrite itself.
+ *
+ * `windowEnd` is the caller's — today for a current block — so a queued version
+ * dated in the future never appears in a log of what happened.
+ */
+function deriveEras(
+  versions: VersionTdeeWindow[],
+  blockStart: string,
+  windowEnd: string
+): BlockNutritionEra[] {
+  const eras: BlockNutritionEra[] = [];
+  // Query order is `effective_from ASC`, and windows cannot overlap, so this
+  // walk is already chronological.
+  for (const version of versions) {
+    if (version.effectiveFrom > windowEnd) continue;
+    if (version.effectiveUntil !== null && version.effectiveUntil < blockStart) continue;
+
+    const calories = versionCalories(version);
+    const deficitPerDay = version.tdee != null ? version.tdee - calories : null;
+
+    // A save that left the numbers where they were did not change anything the
+    // coach would recognise, so it earns no entry.
+    const previous = eras[eras.length - 1];
+    if (
+      previous &&
+      previous.calories === calories &&
+      previous.deficitPerDay === deficitPerDay
+    ) {
+      continue;
+    }
+
+    eras.push({
+      from: version.effectiveFrom > blockStart ? version.effectiveFrom : blockStart,
+      calories,
+      deficitPerDay,
+    });
+  }
+  return eras;
 }
 
 /** The plan that GOVERNS `date` under the resolution rule: latest

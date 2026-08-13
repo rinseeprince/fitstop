@@ -86,11 +86,40 @@ export interface BlockTrainingFact {
  * change that regenerated events, including pre-versioning history no plan
  * row remembers, while hand-edited stretches can neither flag nor mask one.
  */
+/**
+ * One nutrition-plan VERSION as it governed a slice of a block, carrying **its
+ * own** numbers rather than the block headline's.
+ *
+ * That distinction is the whole point. The headline `calories`/`deficitPerDay`
+ * below describe the version covering the block's REFERENCE date — today for a
+ * current block — so they move every time the coach saves a new plan. Pinning
+ * those numbers to a historical date would make a past timeline entry rewrite
+ * itself on the next edit. An era instead reads the row whose window actually
+ * contains its own dates, and a closed window is immutable (the RPC refuses
+ * `effective_from < p_today`), so a finished era can never change.
+ */
+export interface BlockNutritionEra {
+  /** First day of this era INSIDE the block — a version already running when
+   *  the block began starts at the block's own start, not the version's. */
+  from: string;
+  calories: number;
+  deficitPerDay: number | null;
+}
+
 export interface BlockNutritionFact {
   calories: number;
   deficitPerDay: number | null;
   changeCount: number;
   lastChangedOn: string | null;
+  /**
+   * Every era that governed the block, in date order, up to today. Derived from
+   * the `[effective_from, effective_until]` windows that tile the timeline by
+   * construction (migration 144: the gist exclusion forbids overlaps,
+   * close-and-insert forbids gaps), so no resolution rule is needed — just an
+   * intersection. An era whose numbers match the previous one is omitted: a
+   * re-save that changed nothing is not something that happened.
+   */
+  eras: BlockNutritionEra[];
 }
 
 /** Per-block server facts. `nutrition` null = no events in the window

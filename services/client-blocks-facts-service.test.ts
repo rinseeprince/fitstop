@@ -160,6 +160,8 @@ describe("getBlockFacts", () => {
       deficitPerDay: 400,
       changeCount: 0,
       lastChangedOn: null,
+      // vB starts the day after the block ends, so it never governed it.
+      eras: [{ from: "2026-06-01", calories: 2400, deficitPerDay: 400 }],
     });
   });
 
@@ -185,6 +187,13 @@ describe("getBlockFacts", () => {
       deficitPerDay: 225,
       changeCount: 0, // modified days can neither flag nor mask a change
       lastChangedOn: null,
+      // BOTH eras governed part of this block, and the timeline says so even
+      // though every lived day is hand-edited — the versions know what the
+      // events cannot. The first is clipped to the block's own start.
+      eras: [
+        { from: "2026-07-24", calories: 2220, deficitPerDay: 0 },
+        { from: "2026-08-11", calories: 1995, deficitPerDay: 225 },
+      ],
     });
   });
 
@@ -203,6 +212,8 @@ describe("getBlockFacts", () => {
       deficitPerDay: 750,
       changeCount: 0,
       lastChangedOn: null,
+      // The override reaches the era too, not just the headline.
+      eras: [{ from: "2026-08-01", calories: 1850, deficitPerDay: 750 }],
     });
   });
 
@@ -227,6 +238,7 @@ describe("getBlockFacts", () => {
       deficitPerDay: 500,
       changeCount: 0,
       lastChangedOn: null,
+      eras: [{ from: "2026-06-01", calories: 2000, deficitPerDay: 500 }],
     });
   });
 
@@ -240,6 +252,7 @@ describe("getBlockFacts", () => {
       deficitPerDay: null,
       changeCount: 0,
       lastChangedOn: null,
+      eras: [{ from: "2026-06-01", calories: 1700, deficitPerDay: null }],
     });
   });
 
@@ -274,6 +287,98 @@ describe("getBlockFacts", () => {
       deficitPerDay: 500,
       changeCount: 0,
       lastChangedOn: null,
+      eras: [{ from: "2026-08-07", calories: 2100, deficitPerDay: 500 }],
+    });
+  });
+
+  // The eras are what the "what happened" timeline renders. They exist because
+  // the headline reads the REFERENCE-date version — today, for a current block —
+  // so pinning those numbers to a historical date would silently rewrite a past
+  // entry every time the coach saved a new plan.
+  describe("nutrition eras", () => {
+    it("each era carries its OWN version's numbers, not the headline's", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-09-03")]);
+      versionsResult = {
+        data: [
+          version("v1", "2026-05-01", "2026-06-30", 3000, 2400),
+          version("v2", "2026-07-01", null, 3000, 2000),
+        ],
+        error: null,
+      };
+
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+
+      // The headline is era 2 (it covers today). Era 1 keeps its own 2400 —
+      // that is the property a later plan save must not be able to disturb.
+      expect(fact.nutrition?.calories).toBe(2000);
+      expect(fact.nutrition?.eras).toEqual([
+        { from: "2026-06-01", calories: 2400, deficitPerDay: 600 },
+        { from: "2026-07-01", calories: 2000, deficitPerDay: 1000 },
+      ]);
+    });
+
+    it("clips the first era to the block's start, not the version's", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-28")]);
+      versionsResult = {
+        data: [version("v", "2024-01-01", null, 2500, 2000)],
+        error: null,
+      };
+
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+      expect(fact.nutrition?.eras).toEqual([
+        { from: "2026-06-01", calories: 2000, deficitPerDay: 500 },
+      ]);
+    });
+
+    // A queued save is a plan, not a thing that happened.
+    it("stops at today: a version starting tomorrow is not in the log", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-08-01", "2026-09-03")]);
+      versionsResult = {
+        data: [
+          version("now", "2026-07-01", "2026-08-11", 2600, 2100),
+          version("queued", "2026-08-12", null, 2600, 1700),
+        ],
+        error: null,
+      };
+
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+      expect(fact.nutrition?.eras).toEqual([
+        { from: "2026-08-01", calories: 2100, deficitPerDay: 500 },
+      ]);
+    });
+
+    it("omits a re-save that left the numbers where they were", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-09-03")]);
+      versionsResult = {
+        data: [
+          version("v1", "2026-05-01", "2026-06-30", 3000, 2400),
+          // Same calories AND same tdee: nothing the coach would recognise as
+          // a change, so no entry.
+          version("v2", "2026-07-01", null, 3000, 2400),
+        ],
+        error: null,
+      };
+
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+      expect(fact.nutrition?.eras).toEqual([
+        { from: "2026-06-01", calories: 2400, deficitPerDay: 600 },
+      ]);
+    });
+
+    it("excludes a version whose window ended before the block began", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-28")]);
+      versionsResult = {
+        data: [
+          version("before", "2026-01-01", "2026-05-31", 2500, 1500),
+          version("during", "2026-06-01", null, 2500, 2000),
+        ],
+        error: null,
+      };
+
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+      expect(fact.nutrition?.eras).toEqual([
+        { from: "2026-06-01", calories: 2000, deficitPerDay: 500 },
+      ]);
     });
   });
 
