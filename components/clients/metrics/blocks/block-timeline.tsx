@@ -133,8 +133,6 @@ export function deriveTimelineEntries(
 type BlockTimelineProps = {
   entries: BlockTimelineEntry[];
   color: string;
-  /** The client's first name, or null when their record has no usable name. */
-  firstName: string | null;
 };
 
 /**
@@ -153,11 +151,9 @@ type BlockTimelineProps = {
 function TimelineNote({
   note,
   hostDate,
-  firstName,
 }: {
   note: NutritionPlanNote;
   hostDate: string;
-  firstName: string | null;
 }) {
   return (
     <div className="space-y-0.5">
@@ -169,14 +165,11 @@ function TimelineNote({
       <p className="whitespace-pre-wrap text-[12.5px] leading-[1.45] text-[#0c1a1e]">
         {note.body}
       </p>
-      <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-        Visible to {firstName ?? "your client"}
-      </p>
     </div>
   );
 }
 
-export function BlockTimeline({ entries, color, firstName }: BlockTimelineProps) {
+export function BlockTimeline({ entries, color }: BlockTimelineProps) {
   if (entries.length === 0) {
     return <p className="text-xs text-[#93b0b4]">Nothing yet.</p>;
   }
@@ -205,12 +198,7 @@ export function BlockTimeline({ entries, color, firstName }: BlockTimelineProps)
           {entry.notes && entry.notes.length > 0 && (
             <div className="mt-1.5 space-y-2 pl-[52px]">
               {entry.notes.map((note) => (
-                <TimelineNote
-                  key={note.id}
-                  note={note}
-                  hostDate={entry.date}
-                  firstName={firstName}
-                />
+                <TimelineNote key={note.id} note={note} hostDate={entry.date} />
               ))}
             </div>
           )}

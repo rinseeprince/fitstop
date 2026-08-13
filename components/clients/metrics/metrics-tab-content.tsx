@@ -81,7 +81,6 @@ export const MetricsTabContent = ({
       {pane === "blocks" ? (
         <BlocksSubtab
           clientId={client.id}
-          clientName={client.name}
           weightMetric={
             metricsByTab.body.find((metric) => metric.id === "weight") ?? null
           }

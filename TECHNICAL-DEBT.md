@@ -1,5 +1,24 @@
 # Technical Debt Tracker
 
+## `blocks/facts` payload is no longer bounded by the block count — it grows with note volume
+
+Logged: 2026-08-13 (**measured**, not inferred — `docs/perf-baseline.md`, Session 6).
+
+Session 3.2 established that `GET /api/clients/[id]/blocks/facts` returns "≤20 fact rows regardless of span", which made its wire payload bounded by the *result* rather than by history. Session 6 attached the block's plan-save notes to each fact row, so that property is now weaker: the row count is still ≤20, but each row carries every note whose `effective_on` falls in its window.
+
+Measured against the year-scale fixture (`PERF_CLIENT_ID`, 4 blocks, 365 days):
+
+| notes | queries | warm p50 | payload |
+|---:|---:|---:|---:|
+| 52 (realistic — weekly saves) | 5 | ~80–95 ms | ~10 KB |
+| 1,200 (pathological) | 6 | 149 ms | ~208 KB |
+
+**Not urgent, and here is why:** 52 notes is a coach saving a plan every week for a year, and 1,200 is over three saves a day for a year — well past anything a human does. The read itself stays complete and correct at both (the extra query at 1,200 is `fetchAllPages` taking its second page, exactly as designed). **The client path is unaffected at any volume** — `getClientJourney` reads only the current block's window and measured flat at 84 ms / 5 queries with 1,200 notes on the client.
+
+If it ever does bite, the fix is a per-block cap with a "show all" affordance, not paging the facts endpoint — a coach reading a block timeline wants the recent notes, and the endpoint already returns per-block groups to hang a cap on.
+
+---
+
 ## The plan-save note exists in two copies that cannot be reconciled
 
 Logged: 2026-08-13 (created deliberately by Session 6 of the goals/blocks plan — owner decision to keep the calendar marker AND add the durable client-visible note, rather than repoint one to the other).
