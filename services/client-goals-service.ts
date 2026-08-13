@@ -1,6 +1,7 @@
 // Uses supabaseAdmin: service-to-service calls require bypassing RLS,
 // and dual-writes to clients table are system-level operations.
 import { supabaseAdmin } from "./supabase-admin";
+import { GOAL_HISTORY_LIMIT } from "@/lib/constants";
 import type { ClientGoal, ClientGoalRow } from "@/types/client-goals";
 
 function mapClientGoalRow(row: ClientGoalRow): ClientGoal {
@@ -157,14 +158,29 @@ export const updateGoals = async (
   return mapClientGoalRow(data);
 };
 
+/**
+ * The client's SUPERSEDED goal versions, newest first — what the goal used to be.
+ *
+ * Two things changed when the unreachable `?history=true` branch was replaced by
+ * a sibling route (Task 0b.6), and both were defects rather than preferences:
+ *
+ * - **`superseded_at IS NOT NULL`.** There was no filter, so the CURRENT goal
+ *   came back inside "history" as well — once as the live goal and once as its
+ *   own predecessor. The live goal is rendered above this list from its own read.
+ * - **A bounded result.** There was no limit, so a heavily-edited client returned
+ *   every version ever written.
+ */
 export const getGoalsHistory = async (
-  clientId: string
+  clientId: string,
+  options: { limit?: number } = {}
 ): Promise<ClientGoal[]> => {
   const { data, error } = await supabaseAdmin
     .from("client_goals")
     .select("*")
     .eq("client_id", clientId)
-    .order("effective_from", { ascending: false });
+    .not("superseded_at", "is", null)
+    .order("effective_from", { ascending: false })
+    .limit(options.limit ?? GOAL_HISTORY_LIMIT);
 
   if (error) {
     console.error("Failed to fetch goals history:", error);

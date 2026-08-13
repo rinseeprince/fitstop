@@ -67,6 +67,12 @@ export const LOAD_KG_MAX = 2000;
 // components/, and the two bound different things — an authored program's
 // length vs one journey block's. Drift is tolerated but must be deliberate;
 // if you change one, decide about the other on purpose.
+/** How many superseded goal versions the history read returns. `getGoalsHistory`
+ *  had no limit at all, so a heavily-edited client returned every version ever
+ *  written; the list it feeds is a "what did I change" reference, not an audit
+ *  log, and nobody scrolls twenty of them. */
+export const GOAL_HISTORY_LIMIT = 20;
+
 export const BLOCK_WEEKS_MAX = 52;
 export const BLOCKS_PER_CLIENT_MAX = 20;
 export const BLOCK_NAME_MAX = 80;

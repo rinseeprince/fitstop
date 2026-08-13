@@ -7,6 +7,7 @@ import {
 import {
   createMockClientGoalsRow,
 } from '@/__tests__/helpers/mock-data-builders';
+import { GOAL_HISTORY_LIMIT } from '@/lib/constants';
 
 vi.mock('./supabase-admin', () => ({
   supabaseAdmin: {
@@ -24,6 +25,7 @@ function createMockQuery(result: { data: unknown; error: unknown }) {
     delete: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
+    not: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
@@ -411,7 +413,7 @@ describe('Client Goals Service', () => {
   });
 
   describe('getGoalsHistory', () => {
-    it('returns all goals ordered by effective_from DESC', async () => {
+    it('returns superseded goals ordered by effective_from DESC', async () => {
       const rows = [
         createMockClientGoalsRow({ clientId: 'client-1', goalWeight: 165 }),
         createMockClientGoalsRow({ clientId: 'client-1', goalWeight: 170 }),
@@ -425,6 +427,28 @@ describe('Client Goals Service', () => {
       expect(mockQuery.order).toHaveBeenCalledWith('effective_from', {
         ascending: false,
       });
+    });
+
+    // Two defects the old `?history=true` branch shipped with, closed by
+    // construction when history moved to its own route (Task 0b.6).
+    it('excludes the CURRENT goal, which used to come back twice', async () => {
+      const mockQuery = createMockQuery({ data: [], error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
+
+      await getGoalsHistory('client-1');
+
+      expect(mockQuery.not).toHaveBeenCalledWith('superseded_at', 'is', null);
+    });
+
+    it('bounds the result rather than returning every version ever written', async () => {
+      const mockQuery = createMockQuery({ data: [], error: null });
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
+
+      await getGoalsHistory('client-1');
+      expect(mockQuery.limit).toHaveBeenCalledWith(GOAL_HISTORY_LIMIT);
+
+      await getGoalsHistory('client-1', { limit: 5 });
+      expect(mockQuery.limit).toHaveBeenLastCalledWith(5);
     });
 
     it('returns empty array when no goals exist', async () => {

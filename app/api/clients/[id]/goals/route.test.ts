@@ -17,7 +17,6 @@ vi.mock("@/lib/require-coach-auth", () => ({
 vi.mock("@/services/client-goals-service", () => ({
   getCurrentGoals: vi.fn(),
   updateGoals: vi.fn(),
-  getGoalsHistory: vi.fn(),
 }));
 
 // The route now records an audit event (fire-and-forget). Mock it so the test
@@ -37,7 +36,6 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import {
   getCurrentGoals,
   updateGoals,
-  getGoalsHistory,
 } from "@/services/client-goals-service";
 import { getCoachTodayString } from "@/services/today-service";
 
@@ -91,12 +89,12 @@ describe("/api/clients/[id]/goals", () => {
       expect(data.data.goalWeight).toBe(75);
     });
 
-    it("returns goals with history when ?history=true", async () => {
+    // The `?history=true` branch is GONE (Task 0b.6). It switched `data` between
+    // `ClientGoal | null` and `{ current, history }` while three typed readers
+    // assumed the flat shape, so the flag was a silent break waiting to be used.
+    // History lives at the sibling `…/goals/history` route.
+    it("ignores a ?history=true query and still returns the flat shape", async () => {
       vi.mocked(getCurrentGoals).mockResolvedValue(mockGoals);
-      vi.mocked(getGoalsHistory).mockResolvedValue([
-        mockGoals,
-        { ...mockGoals, id: "goal-0", goalWeight: 80, supersededAt: "2024-01-01T00:00:00Z" },
-      ]);
 
       const response = await GET(
         createMockRequest("GET", undefined, "history=true"),
@@ -105,9 +103,9 @@ describe("/api/clients/[id]/goals", () => {
       const data = await response.json();
 
       expect(response.status).toBe(200);
-      expect(data.success).toBe(true);
-      expect(data.data.current).toBeDefined();
-      expect(data.data.history).toHaveLength(2);
+      expect(data.data.goalWeight).toBe(75);
+      expect(data.data).not.toHaveProperty("current");
+      expect(data.data).not.toHaveProperty("history");
     });
 
     it("returns empty when no goals set", async () => {

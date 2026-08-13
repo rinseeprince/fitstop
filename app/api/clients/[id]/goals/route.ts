@@ -2,11 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import {
-  getCurrentGoals,
-  updateGoals,
-  getGoalsHistory,
-} from "@/services/client-goals-service";
+import { getCurrentGoals, updateGoals } from "@/services/client-goals-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { updateGoalsSchema } from "@/lib/validations/client-goals";
@@ -25,18 +21,12 @@ export async function GET(
     const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
 
-    const { searchParams } = new URL(request.url);
-    const includeHistory = searchParams.get("history") === "true";
-
+    // `data` is a `ClientGoal | null` on every response, unconditionally. It used
+    // to SWITCH shape to `{ current, history }` under `?history=true` — a branch
+    // nothing in the product ever requested, while three typed readers assumed
+    // the flat shape. History moved to the sibling `…/goals/history` route
+    // (Task 0b.6) so the switch is not merely unused but unexpressible.
     const current = await getCurrentGoals(clientId);
-
-    if (includeHistory) {
-      const history = await getGoalsHistory(clientId);
-      return NextResponse.json(
-        { success: true, data: { current, history } },
-        { status: 200 }
-      );
-    }
 
     return NextResponse.json(
       { success: true, data: current },

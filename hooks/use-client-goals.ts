@@ -48,6 +48,23 @@ export function useClientGoals(clientId: string) {
  * dual-writes the `clients` mirror, so a caller that has other client-derived
  * data on screen must refresh that too — this covers the goals area only.
  */
+/**
+ * A client's SUPERSEDED goal versions, newest first and bounded server-side.
+ *
+ * `enabled` gates the fetch: this backs a popover, and an unconditional read
+ * would cost every Overview load a request nobody opened. The key sits under the
+ * same prefix as the current-goal read, so the invalidator below covers both.
+ */
+export function useClientGoalHistory(clientId: string, enabled: boolean) {
+  const { data, error, isLoading } = useSWR<{ success: boolean; data: ClientGoal[] }>(
+    enabled && clientId ? `${clientGoalsKeyPrefix(clientId)}/history` : null,
+    swrFetcher,
+    SWR_OPTS
+  );
+
+  return { history: data?.data ?? [], isLoading, isError: !!error };
+}
+
 export function useInvalidateClientGoals() {
   const { mutate } = useSWRConfig();
   return useCallback(

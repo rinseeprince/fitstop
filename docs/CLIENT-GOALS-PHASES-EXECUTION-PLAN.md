@@ -4446,3 +4446,99 @@ block off kills both maintenance pins and leaves the deficit case passing.
    formatted (not an ISO string).
 6. Open the drawer for a client with **no** goal → it says targets hold at maintenance and where to
    set one, instead of a bare TDEE.
+
+---
+
+### Task 0b.6 — Goal history, via a sibling route ✅ SHIPPED 2026-08-13 · SESSION 0b COMPLETE
+
+**Owner decision 2026-08-13: yes, read-only — and a SIBLING route, with the `?history=true` branch
+deleted.** The doc's landmine had got worse than it knew: the branch switched `data` between
+`ClientGoal | null` and `{ current, history }`, and there are now **three** typed readers, not two
+— `hooks/use-client-goals.ts` (shipped in 0b.1), the Metrics page, and the drawer editor 0b.5
+deleted. A blind flip would have broken the Overview too.
+
+**What shipped.** `GET /api/clients/[id]/goals/history` — `coachApiRateLimit` →
+`requireCoachOwnsClient` → service → `no-store`. Additive; it breaks no reader, and the flat
+`data: ClientGoal[]` shape cannot switch. The `?history=true` branch is **deleted** rather than left
+unused: a live shape-switching branch invites exactly the blind flip this design avoids.
+
+**`getGoalsHistory` was MODIFIED, not orphaned.** Deleting the branch removed its only production
+caller, and it could not have served the new route as it stood — it had neither defect fix. It now
+takes `{ limit }` and filters `superseded_at IS NOT NULL`, and the route calls it. No zero-caller
+export is left behind, which is the rule this session applied to `updateClientBMR`,
+`getProjectedDate` and `client-settings-dialog`.
+
+**Both defects are closed by construction rather than patched:**
+
+- **The current goal came back twice** — once as the live goal, once as `history[0]` — because
+  there was no `superseded_at` filter. History is now superseded-only; the live goal is rendered
+  above the list from its own read.
+- **No limit at all**, so a heavily-edited client returned every version ever written. Bounded by
+  `GOAL_HISTORY_LIMIT` in `lib/constants.ts` (§3 — no magic numbers), overridable per call.
+
+**UI: a lazily-fetched popover.** A muted "Goal history" text-button joins "Open Metrics" in the
+status-card footer (only the primary action keeps the teal), opening the design system's 320px
+Popover. `useClientGoalHistory(clientId, enabled)` passes a `null` SWR key until the popover opens,
+so the Overview does not pay for a fifth read on every load. Its key sits under the same prefix as
+the current-goal read, so `useInvalidateClientGoals` already covers both. Rows are standalone data
+(mono numerals); "This goal has not been changed yet." is word-only and stays sans.
+`supersededAt` is **guarded, not asserted** — the route returns superseded rows only, but a
+non-null assertion is a promise the type system cannot keep if that filter is ever loosened.
+
+#### Tests
+
+**276 files / 2922 (2915 + 7, +1 file; arithmetic closes).** New route 5 — flat shape and not the
+old `{ current, history }` · `no-store` · a foreign client 404s **before** any read · rate limit
+before authorization · a generic 500 that does not leak the raw error. Service 2 — the
+superseded filter and the bound (default and override). The goals route's `?history=true` test is
+**rewritten rather than deleted**: it now pins that the query param is ignored and the flat shape
+survives, so a future re-add fails.
+
+Mutation-proven: dropping the `superseded_at` filter kills the duplicate pin; dropping the limit
+kills the bound pin.
+
+#### §2 security / load / performance review
+
+Trigger: a new API route. **Auth chain complete and in order** — `coachApiRateLimit` first,
+`requireCoachOwnsClient` before any read (pinned by test, including that the service is never
+called on a rejection). No CSRF needed: GET only, no mutation. No new write path, no migration,
+no RLS change (`check:rls` 41/41 — the table and its policies are untouched). **Bounded by
+construction**: one indexed read on `(client_id, effective_from DESC)` — the existing
+`idx_client_goals_client_effective` — capped at 20 rows, so the payload cannot grow with a client's
+edit history. Constant round trips (one). Not measured under load; nothing here changes concurrency.
+
+#### Gates
+
+`tsc --noEmit` clean · `eslint .` **0 errors, 209 warnings** (unchanged) · `vitest run` **276 files
+/ 2922 tests, all passing** · `check:labels` OK 664 · `check:rls` 41/41 · no `as any` · no markers ·
+**no migration**.
+
+**UI unverified — owner smoke:** open Goal history on a client whose goal has been edited and
+confirm the current goal appears **once** (on the card, not in the list) · a client with an
+unedited goal reads "This goal has not been changed yet." · the list is not fetched until the
+popover opens.
+
+---
+
+## SESSION 0b — COMPLETE 2026-08-13
+
+Six tasks, six commits, **zero migrations**, `af71e09` → `0b.6`. Test count 2883 → 2922 (+39).
+
+**Invariant 16 is satisfied.** One writer: `updateGoals`, with the four direct `clients.*` goal
+writes and their four swallows gone. One read path: every coach surface resolves through
+`resolveEffectiveGoal`, and all five callers compose their input through one shared
+`toClientGoalInput`. One editor: the Overview status card, inline.
+
+**What this session deliberately did NOT close, so the next one inherits it rather than rediscovers
+it:**
+
+- **`updateGoals` is still not atomic.** Three autocommitted round trips; the inner mirror UPDATE
+  is still logged-and-swallowed. Divergence is single-sourced and loud at the caller boundary, not
+  impossible. The RPC is the fix and needs a migration (§7).
+- **The `goalStartDate <= goalDeadline` refine cannot see a partial update.** The complete check
+  belongs inside `updateGoals` after its merge. Real for React Native, whose contract that schema
+  is.
+- **The `clients.*` goal mirror survives**, now with one writer. Full removal is its own workstream,
+  costed in §7 — and `CLIENT_SELF_COLUMNS` is still the riskiest line in it.
+- **`primary_goal` and `notes` are still dead weight** on `client_goals` (§7, and the Session 0
+  STATUS block's banked ordering note for whoever drops them).

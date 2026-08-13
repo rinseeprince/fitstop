@@ -11,6 +11,7 @@ import type { ClientProfileEdit } from "./use-client-profile-edit";
 import { goalState } from "@/lib/goals/goal-state";
 import { containsDigit } from "@/components/clients/metrics/metrics-format";
 import { formatDateOnlyShort } from "./overview-format";
+import { GoalHistoryPopover } from "./goal-history-popover";
 import {
   MONO,
   STAT_LABEL_DARK_CLASS,
@@ -501,7 +502,10 @@ export function ClientStatusCard({
         </div>
       </div>
 
-      <div className="mt-auto flex justify-end border-t border-[rgba(255,255,255,0.07)] px-5 py-3">
+      {/* Two text buttons now. History is the muted one: it is a reference, not
+          a destination, and only the primary action carries the teal. */}
+      <div className="mt-auto flex items-center justify-end gap-4 border-t border-[rgba(255,255,255,0.07)] px-5 py-3">
+        <GoalHistoryPopover clientId={client.id} />
         <button
           type="button"
           onClick={onOpenMetrics}
