@@ -128,4 +128,107 @@ describe("deriveTimelineEntries", () => {
     );
     expect(entries.map((e) => e.label)).toEqual(["Base started"]);
   });
+
+  // Notes NEST under the nutrition entry they explain — they are evidence for a
+  // prescription change, not separate events, so they never add a bullet.
+  describe("coach notes (migration 147)", () => {
+    const note = (id: string, effectiveOn: string, body: string) => ({
+      id,
+      effectiveOn,
+      body,
+    });
+
+    it("nests a same-date note under its nutrition entry, adding no entry", () => {
+      const entries = deriveTimelineEntries(
+        { ...BLOCK, state: "current" },
+        [],
+        nutrition([{ from: "2026-06-15", calories: 3200, deficitPerDay: 900 }]),
+        [note("n1", "2026-06-15", "Dropping calories 200.")]
+      );
+
+      // One era is index 0, so it labels "Nutrition set" wherever it starts.
+      expect(entries.map((e) => e.label)).toEqual(["Block started", "Nutrition set"]);
+      expect(entries[1].notes).toEqual([note("n1", "2026-06-15", "Dropping calories 200.")]);
+    });
+
+    it("hangs a dedup-ORPHANED note off the preceding era rather than dropping it", () => {
+      // deriveEras omits an era whose numbers match the previous one, so a
+      // re-save that carried a note but changed no numbers has no same-date
+      // host. Under an exact-date match this note would silently vanish — the
+      // "the note just doesn't appear sometimes" failure.
+      const entries = deriveTimelineEntries(
+        { ...BLOCK, state: "current" },
+        [],
+        nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }]),
+        [note("n2", "2026-06-20", "Holding here — adherence is the focus.")]
+      );
+
+      expect(entries.map((e) => e.label)).toEqual(["Block started", "Nutrition set"]);
+      expect(entries[1].notes?.map((n) => n.id)).toEqual(["n2"]);
+    });
+
+    it("attaches to the LATEST era at or before the note, not the first", () => {
+      const entries = deriveTimelineEntries(
+        { ...BLOCK, state: "current" },
+        [],
+        nutrition([
+          { from: "2026-06-01", calories: 3471, deficitPerDay: 629 },
+          { from: "2026-06-15", calories: 3200, deficitPerDay: 900 },
+        ]),
+        [note("n3", "2026-06-20", "Two weeks in.")]
+      );
+
+      const changed = entries.find((e) => e.label === "Nutrition changed");
+      const set = entries.find((e) => e.label === "Nutrition set");
+      expect(changed?.notes?.map((n) => n.id)).toEqual(["n3"]);
+      expect(set?.notes).toBeUndefined();
+    });
+
+    it("gives a note its OWN entry when the block has no era to host it", () => {
+      // No covering version means `nutrition` is null and there is no host.
+      // A client-visible note that silently fails to render is the one outcome
+      // this feature cannot afford, so it becomes a dated entry of its own.
+      const entries = deriveTimelineEntries(
+        { ...BLOCK, state: "current" },
+        [],
+        null,
+        [note("n4", "2026-06-10", "Switching approach.")]
+      );
+
+      expect(entries.map((e) => [e.date, e.label])).toEqual([
+        ["2026-06-01", "Block started"],
+        ["2026-06-10", "Note"],
+      ]);
+      expect(entries[1].notes?.map((n) => n.id)).toEqual(["n4"]);
+    });
+
+    it("keeps multiple notes on one host, in the order given (oldest first)", () => {
+      const entries = deriveTimelineEntries(
+        { ...BLOCK, state: "current" },
+        [],
+        nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }]),
+        [note("n5", "2026-06-01", "first"), note("n6", "2026-06-01", "second")]
+      );
+
+      // Two notes on one effective date is the append-only property the old
+      // coach_notes column could not hold; both must survive to the render.
+      expect(entries[1].notes?.map((n) => n.body)).toEqual(["first", "second"]);
+    });
+
+    it("no notes leaves the entries byte-identical to before", () => {
+      const withArg = deriveTimelineEntries(
+        { ...BLOCK, state: "past" },
+        [plan("p1", "Base", "2026-06-03")],
+        nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }]),
+        []
+      );
+      const withoutArg = deriveTimelineEntries(
+        { ...BLOCK, state: "past" },
+        [plan("p1", "Base", "2026-06-03")],
+        nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }])
+      );
+      expect(withArg).toEqual(withoutArg);
+      expect(withArg.every((e) => e.notes === undefined)).toBe(true);
+    });
+  });
 });

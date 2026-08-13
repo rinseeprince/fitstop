@@ -39,6 +39,9 @@ type BlockCardProps = {
   /** Block target converted to the viewer's unit; null = no target. */
   targetDisplay: number | null;
   weightUnit: string;
+  /** The client's first name for the timeline's "Visible to X" note label, or
+   *  null when their record has no usable name. */
+  firstName: string | null;
   defaultOpen: boolean;
   /** 3.4's delete affordance mounts here, inside the row but outside the
    *  expand toggle (buttons cannot nest). */
@@ -194,7 +197,7 @@ function WeightColumn({
 }
 
 export function BlockCard(props: BlockCardProps) {
-  const { block, color, facts, weight, defaultOpen, rowAction } = props;
+  const { block, color, facts, weight, defaultOpen, rowAction, firstName } = props;
   const [open, setOpen] = useState(defaultOpen);
   const muted = block.state !== "current";
 
@@ -282,9 +285,11 @@ export function BlockCard(props: BlockCardProps) {
               entries={deriveTimelineEntries(
                 block,
                 facts?.training ?? [],
-                facts?.nutrition ?? null
+                facts?.nutrition ?? null,
+                facts?.notes ?? []
               )}
               color={color}
+              firstName={firstName}
             />
           </div>
         </div>

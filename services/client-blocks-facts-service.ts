@@ -5,6 +5,7 @@ import {
   type TrainingPlanWindowSummary,
 } from "./training-service";
 import { versionCoversDate } from "./nutrition-plan-service";
+import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
 import { fetchAllPages } from "@/lib/paged-fetch";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import type {
@@ -316,10 +317,13 @@ export async function getBlockFacts(
   const spanStart = blocks[0].startsOn;
   const spanEnd = blocks[blocks.length - 1].endsOn;
 
-  const [plans, versions, events] = await Promise.all([
+  const [plans, versions, events, notes] = await Promise.all([
     getTrainingPlansOverlapping(clientId, spanStart, spanEnd),
     fetchVersionTdeeWindows(clientId, spanStart, spanEnd),
     fetchEventCalories(clientId, spanStart, spanEnd),
+    // Fourth parallel read, partitioned per block in memory like the other
+    // three — round trips stay constant in the number of blocks, never per-block.
+    listNutritionPlanNotesInRange(clientId, spanStart, spanEnd),
   ]);
 
   const segments = reduceToGoverningSegments(plans, spanStart, spanEnd);
@@ -339,6 +343,13 @@ export async function getBlockFacts(
       blockId: block.id,
       training,
       nutrition: deriveNutritionFact(events, versions, block, clientToday),
+      // Inclusive on both ends and NOT clamped to today, unlike the nutrition
+      // eras: a note dated inside a future block is a plan the coach has
+      // already queued and explained, and hiding it until the date arrives
+      // would hide their own reasoning from them.
+      notes: notes.filter(
+        (note) => note.effectiveOn >= block.startsOn && note.effectiveOn <= block.endsOn
+      ),
     };
   });
 }

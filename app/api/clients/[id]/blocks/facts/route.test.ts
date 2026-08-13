@@ -67,6 +67,9 @@ describe("GET /api/clients/[id]/blocks/facts", () => {
           lastChangedOn: null,
           eras: [{ from: "2026-06-01", calories: 2200, deficitPerDay: 500 }],
         },
+        notes: [
+          { id: "n1", effectiveOn: "2026-06-01", body: "Starting your cut here." },
+        ],
       },
     ];
     vi.mocked(getBlockFacts).mockResolvedValue(facts);

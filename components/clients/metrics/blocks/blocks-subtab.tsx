@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 import { computeDeleteShift } from "@/lib/blocks/block-chain";
+import { getFirstName } from "@/lib/client-name";
 import { derivePace, type ClientBlockView } from "@/lib/blocks/block-derivations";
 import {
   deleteBlockRequest,
@@ -54,9 +55,14 @@ type BlocksSubtabProps = {
   /** The weight MetricSummary from useMergedMetrics (viewer units), or null
    *  while metrics load / when nothing is logged. */
   weightMetric: MetricSummary | null;
+  /** `clients.name`, for the timeline's "Visible to X" note label. Passed as
+   *  the raw name rather than a pre-split first name so the split stays in one
+   *  shared place (`lib/client-name.ts`). */
+  clientName: string;
 };
 
-export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
+export function BlocksSubtab({ clientId, weightMetric, clientName }: BlocksSubtabProps) {
+  const firstName = getFirstName(clientName);
   const { blocks, clientToday, isLoading, isError } = useClientBlocks(clientId);
   const {
     facts,
@@ -379,6 +385,7 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
                 pace={pace}
                 targetDisplay={targetDisplay}
                 weightUnit={weightUnit}
+                firstName={firstName}
                 defaultOpen={block.state === "current"}
                 rowAction={
                   <>

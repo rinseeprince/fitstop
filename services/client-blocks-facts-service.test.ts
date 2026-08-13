@@ -46,15 +46,21 @@ function createMockQuery(result: MockResult) {
 }
 
 // Table-routed from(): one result for nutrition_plans, a QUEUE of page
-// results for nutrition_events (fetchAllPages issues one from() per page).
+// results for nutrition_events and for nutrition_plan_notes (fetchAllPages
+// issues one from() per page for each).
 let versionsResult: MockResult;
 let eventPages: MockResult[];
+let notePages: MockResult[];
 
 function installFromMock() {
   vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
     if (table === "nutrition_plans") return createMockQuery(versionsResult);
     if (table === "nutrition_events") {
       const page = eventPages.shift() ?? { data: [], error: null };
+      return createMockQuery(page);
+    }
+    if (table === "nutrition_plan_notes") {
+      const page = notePages.shift() ?? { data: [], error: null };
       return createMockQuery(page);
     }
     throw new Error(`Unexpected table: ${table}`);
@@ -104,6 +110,7 @@ describe("getBlockFacts", () => {
     vi.clearAllMocks();
     versionsResult = { data: [], error: null };
     eventPages = [{ data: [], error: null }];
+    notePages = [{ data: [], error: null }];
     installFromMock();
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([]);
   });
@@ -466,6 +473,82 @@ describe("getBlockFacts", () => {
     expect(fact.nutrition?.calories).toBe(1800);
     expect(fact.nutrition?.changeCount).toBe(2);
     expect(fact.nutrition?.lastChangedOn).toBe("2026-06-15");
+  });
+
+  // The notes read is the fourth parallel read, partitioned per block in
+  // memory — one read for the whole journey span, never one per block.
+  describe("coach notes (migration 147)", () => {
+    const noteRow = (id: string, effective_on: string, body: string) => ({
+      id,
+      effective_on,
+      body,
+    });
+
+    it("partitions notes to the block whose window contains their effective date", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([
+        block("a", "2026-06-01", "2026-06-28"),
+        block("b", "2026-06-29", "2026-07-26"),
+      ]);
+      notePages = [
+        {
+          data: [
+            noteRow("n1", "2026-06-05", "Starting your cut."),
+            noteRow("n2", "2026-06-28", "Last day of the cut."),
+            noteRow("n3", "2026-06-29", "Into maintenance."),
+          ],
+          error: null,
+        },
+      ];
+
+      const facts = await getBlockFacts(CLIENT_ID, TODAY);
+
+      // Inclusive on BOTH ends — a note dated on the final day belongs to the
+      // block that ends that day, not the one starting the next.
+      expect(facts[0].notes.map((n) => n.id)).toEqual(["n1", "n2"]);
+      expect(facts[1].notes.map((n) => n.id)).toEqual(["n3"]);
+      expect(facts[0].notes[0]).toEqual({
+        id: "n1",
+        effectiveOn: "2026-06-05",
+        body: "Starting your cut.",
+      });
+    });
+
+    it("reads the span ONCE, not once per block", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([
+        block("a", "2026-06-01", "2026-06-28"),
+        block("b", "2026-06-29", "2026-07-26"),
+        block("c", "2026-07-27", "2026-08-23"),
+      ]);
+
+      await getBlockFacts(CLIENT_ID, TODAY);
+
+      // String() rather than a cast: `from`'s parameter type narrows to the
+      // first table in the generated union, so a direct === comparison is a
+      // TS2367 "no overlap" error even though the call is real at runtime.
+      const noteReads = vi
+        .mocked(supabaseAdmin.from)
+        .mock.calls.map((c) => String(c[0]))
+        .filter((table) => table === "nutrition_plan_notes");
+      expect(noteReads).toHaveLength(1);
+    });
+
+    it("keeps a FUTURE block's notes — a queued plan the coach already explained", async () => {
+      // Unlike the nutrition eras, notes are not clamped to today. Hiding the
+      // coach's own reasoning from them until the date arrives would be wrong.
+      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-09-01", "2026-09-28")]);
+      notePages = [
+        { data: [noteRow("n9", "2026-09-01", "Next block's plan.")], error: null },
+      ];
+
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+      expect(fact.notes.map((n) => n.id)).toEqual(["n9"]);
+    });
+
+    it("gives every block an empty array when the client has no notes", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-28")]);
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+      expect(fact.notes).toEqual([]);
+    });
   });
 });
 
