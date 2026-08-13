@@ -10,7 +10,10 @@ vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: units.preference, isLoading: false, error: null }),
 }));
 
-const autoPlan = (weeklyWeightChangeKg: number): NutritionPlan => ({
+const autoPlan = (
+  weeklyWeightChangeKg: number,
+  requiredDailyDeficit = 400,
+): NutritionPlan => ({
   baselineCalories: 2200,
   tdee: 2600,
   calorieTarget: 2200,
@@ -19,15 +22,18 @@ const autoPlan = (weeklyWeightChangeKg: number): NutritionPlan => ({
   fatTargetG: 70,
   adjustedTdee: 2600,
   weeklyWeightChangeKg,
-  requiredDailyDeficit: 400,
+  requiredDailyDeficit,
   warnings: [],
 });
 
-function renderBlock(weeklyWeightChangeKg: number) {
+function renderBlock(
+  weeklyWeightChangeKg: number,
+  opts: { requiredDailyDeficit?: number; hasGoalTarget?: boolean } = {},
+) {
   return render(
     <NutritionTargetsBlock
       draft={{ calories: 2200, proteinG: 180, carbG: 200, fatG: 70 }}
-      autoPlan={autoPlan(weeklyWeightChangeKg)}
+      autoPlan={autoPlan(weeklyWeightChangeKg, opts.requiredDailyDeficit)}
       autoTargets={{ calories: 2200, proteinG: 180, carbG: 200, fatG: 70 }}
       manualEnabled={false}
       onEnableManual={vi.fn()}
@@ -37,6 +43,7 @@ function renderBlock(weeklyWeightChangeKg: number) {
       caloriesMismatch={false}
       onMatchMacros={vi.fn()}
       missing={[]}
+      hasGoalTarget={opts.hasGoalTarget ?? true}
     />,
   );
 }
@@ -71,5 +78,38 @@ describe("NutritionTargetsBlock — weekly rate unit", () => {
   it("omits the rate entirely when the plan is maintenance", () => {
     renderBlock(0);
     expect(screen.queryByText(/\/week/)).toBeNull();
+  });
+});
+
+// Task 0b.5. Both explanatory spans are suppressed at exactly zero, so a client
+// with no goal used to leave a bare "TDEE 2,600" and nothing saying why — and
+// the only thing on this surface that mentioned a missing goal was the goal
+// editor, which moved to the Overview in this same session.
+describe("NutritionTargetsBlock — the maintenance state is explained, not silent", () => {
+  beforeEach(() => {
+    cleanup();
+    units.preference = "metric";
+  });
+
+  it("names the missing goal when there is no target to solve against", () => {
+    renderBlock(0, { requiredDailyDeficit: 0, hasGoalTarget: false });
+
+    expect(screen.getByText(/no goal weight and deadline are set/i)).toBeInTheDocument();
+    expect(screen.getByText(/client's Overview/i)).toBeInTheDocument();
+  });
+
+  // A goal IS set and the client is already on it. Telling this coach to go set
+  // a goal would be wrong, so the two cases get different sentences.
+  it("says the client is already on their goal when one is set", () => {
+    renderBlock(0, { requiredDailyDeficit: 0, hasGoalTarget: true });
+
+    expect(screen.getByText(/matches the client's current weight/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no goal weight and deadline/i)).toBeNull();
+  });
+
+  it("stays quiet when the plan is actually working to a deficit", () => {
+    renderBlock(-0.5, { requiredDailyDeficit: 400 });
+
+    expect(screen.queryByText(/maintenance/i)).toBeNull();
   });
 });

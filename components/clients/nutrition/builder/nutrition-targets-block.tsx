@@ -31,6 +31,10 @@ type NutritionTargetsBlockProps = {
   /** `validateClientForNutrition` messages when the client lacks the data the
    *  calculator needs. Non-empty means nothing can be previewed at all. */
   missing: string[];
+  /** Whether the client has BOTH a goal weight and a deadline — the pair the
+   *  calculator needs before it can solve for anything but maintenance. Drives
+   *  which maintenance explanation is shown, not whether one is. */
+  hasGoalTarget: boolean;
 };
 
 const FIELD_CLASS =
@@ -67,6 +71,7 @@ export function NutritionTargetsBlock({
   caloriesMismatch,
   onMatchMacros,
   missing,
+  hasGoalTarget,
 }: NutritionTargetsBlockProps) {
   // The coach's own unit. This block is "use client" and already inside the
   // builder tree, so no prop thread is needed — the doc's "missing prop at
@@ -104,6 +109,11 @@ export function NutritionTargetsBlock({
   }
 
   const readOnly = !manualEnabled;
+  // Exactly the condition that suppresses both explanatory spans below.
+  const isMaintenance =
+    autoPlan != null &&
+    autoPlan.requiredDailyDeficit === 0 &&
+    autoPlan.weeklyWeightChangeKg === 0;
 
   return (
     <div className="space-y-2.5">
@@ -164,6 +174,21 @@ export function NutritionTargetsBlock({
               {` ${weeklyChange.unit}/week`}
             </>
           )}
+        </p>
+      )}
+
+      {/* Both spans above are suppressed at exactly zero, so a client with no
+          goal used to leave a bare "TDEE 2,400" with nothing explaining it —
+          and the ONLY thing on this surface that said a goal was missing was
+          the goal editor, which moved to the Overview (0b.5). The numbers were
+          always correct; they were just silent about why.
+
+          A full sentence, so 100% sans (prose rule) — including the numerals. */}
+      {autoPlan && !manualEnabled && isMaintenance && (
+        <p className="text-[11px] leading-[1.4] text-[#93b0b4]">
+          {hasGoalTarget
+            ? "The goal weight matches the client's current weight, so these targets hold at maintenance."
+            : "No goal weight and deadline are set, so these targets hold at maintenance. Set them on the client's Overview to work to a deficit."}
         </p>
       )}
 

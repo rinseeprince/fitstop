@@ -4375,3 +4375,74 @@ intermittent failure appeared in a single full run and did not reproduce on two 
 documented flaky-full-run pattern; it is recorded rather than silently re-run away.
 
 **UI unverified.** Smoke ships with 0b.5.
+
+---
+
+### Task 0b.5 — The drawer editor retired, and the silence fixed ✅ SHIPPED 2026-08-13
+
+**Shipped immediately after 0b.4, as a hard requirement rather than a preference.**
+`client-goal-editor.tsx:175` was the app's ONLY writer of `goalStartDate`, and after this deletion
+the Overview editor is the sole writer of both the deadline and the start date. Between the two
+tasks there would be no way to set either date at all — which is why they are one session and were
+committed back to back with nothing in between.
+
+**What shipped.** `ClientGoalEditor` in the nutrition drawer is replaced by a read-only
+`GoalSummary` — `82.0 kg by 1 Dec`, **formatted** (the old summary printed the raw ISO string) —
+reading through the same `useClientGoals` hook the Overview uses, so both surfaces render one goal
+from one SWR cache entry rather than two fetches that can disagree.
+`components/clients/client-goal-editor.tsx` is **DELETED**, grep-verified at execution rather than
+trusted from the plan's file list; the one stale reference left behind was a comment in
+`lib/validations/client-goals.ts` naming it as the converter, rewritten to name the new one.
+
+**No link to the Overview, deliberately — and the plan asked for one.** The client page seeds its
+active tab from `?tab=` as React state at MOUNT, so an in-app `<Link>` would change the URL without
+switching tabs (the bug `page.tsx` documents), and a plain `<a>` would full-reload — **discarding
+whatever unsaved plan the coach has open in that very drawer**. Threading a tab callback down four
+components to avoid that is the prop-drilling §4 warns about. A sentence naming the destination
+costs one click and risks nothing.
+
+**`refetchNutrition` was dropped with the editor**, not re-wired: it existed because editing the
+goal here invalidated the drawer's own calorie preview. Nothing in the drawer writes the goal any
+more.
+
+#### The silence
+
+`nutrition-targets-block.tsx` suppresses the deficit span at `requiredDailyDeficit !== 0` and the
+rate span at `weeklyWeightChangeKg !== 0`. With no goal the calculator returns exactly 0 for both,
+so a coach saw a bare `TDEE 2,600` with nothing explaining it — and the only thing on the whole
+surface that said a goal was missing was the editor this task removes. The numbers were always
+correct; they were silent about why.
+
+**Two sentences, not one, because the two causes need different actions.** A client with no target
+gets *"No goal weight and deadline are set, so these targets hold at maintenance. Set them on the
+client's Overview to work to a deficit."* A client already ON their goal gets *"The goal weight
+matches the client's current weight…"* — telling that coach to go set a goal would be wrong. The
+block takes a `hasGoalTarget` prop (goal weight AND deadline, the pair the calculator needs) to
+tell them apart. Full sentences, so 100% sans including the numerals (prose rule).
+
+#### Tests
+
+**275 files / 2915 (2912 + 3; arithmetic closes).** The missing-goal sentence, the already-on-goal
+sentence, and silence when the plan is genuinely working to a deficit. Mutation-proven: gating the
+block off kills both maintenance pins and leaves the deficit case passing.
+
+`check:labels` scanned **661** files, down one — the deleted editor.
+
+#### Gates
+
+`tsc --noEmit` clean · `eslint .` **0 errors, 209 warnings** (unchanged) · `vitest run` **275 files
+/ 2915 tests, all passing** · `check:labels` OK 661 · no `as any` · no markers · no migration.
+
+#### Owner smoke — 0b.4 + 0b.5 together (UI unverified)
+
+1. Overview → pencil on the CLIENT rail → goal weight, goal body fat, **Goal start** and
+   **Deadline** are all editable in place; Save; the card shows the new values.
+2. Edit ONLY the phone number and save → the goal must NOT gain a new version (check
+   `client_goals` row count is unchanged — this is the invariant-7 pin).
+3. Set a start date AFTER the deadline → the save is refused inline and **nothing** is written.
+4. Switch the coach to imperial, reopen the editor, save with no edit → stored kilograms
+   **byte-identical**.
+5. Open the nutrition drawer → the Goal line shows the same value, read-only, with the deadline
+   formatted (not an ISO string).
+6. Open the drawer for a client with **no** goal → it says targets hold at maintenance and where to
+   set one, instead of a bare TDEE.

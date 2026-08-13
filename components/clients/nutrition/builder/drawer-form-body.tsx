@@ -6,6 +6,7 @@ import { ChevronDown, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   FOCUS_RING,
+  MONO,
   MONO_LABEL_CLASS,
   SECTION_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
@@ -13,11 +14,56 @@ import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context
 import { NutritionSettingsForm } from "./nutrition-settings-form";
 import { NutritionTargetsBlock } from "./nutrition-targets-block";
 import { NutritionSurplusSettings } from "./nutrition-surplus-settings";
-import { ClientGoalEditor } from "../../client-goal-editor";
 import { NutritionGoalChangedBanner } from "../nutrition-goal-changed-banner";
+import { useClientGoals } from "@/hooks/use-client-goals";
+import { formatDateOnlyShort } from "@/components/clients/overview/overview-format";
+import { useUnits } from "@/contexts/units-context";
+import { formatWeight } from "@/utils/unit-conversions";
+import type { ClientGoal } from "@/types/client-goals";
 
 function Divider() {
   return <div className="h-px bg-[rgba(13,148,136,0.08)]" />;
+}
+
+/**
+ * READ-ONLY. The editor that used to sit here was the only goal editor in the
+ * product, which meant setting a client's goal required opening a nutrition
+ * plan; it now lives on the Overview status card, where the goal is displayed
+ * (Task 0b.4). One writer, per invariant 16.
+ *
+ * **No link, deliberately.** The client page seeds its active tab from `?tab=`
+ * as React state at mount, so an in-app `<Link>` would change the URL without
+ * switching tabs, and a plain `<a>` would full-reload — discarding whatever
+ * unsaved plan the coach has open in this very drawer. Threading a tab callback
+ * down four components to avoid that is the prop-drilling §4 warns about. A
+ * sentence naming the destination costs the coach one click and risks nothing.
+ */
+function GoalSummary({ goal }: { goal: ClientGoal | null }) {
+  const { preference } = useUnits();
+
+  const shown = goal?.goalWeight != null ? formatWeight(goal.goalWeight, preference) : null;
+  const summary = shown
+    ? `${shown.value.toFixed(1)} ${shown.unit}${
+        goal?.goalDeadline ? ` by ${formatDateOnlyShort(goal.goalDeadline)}` : ""
+      }`
+    : null;
+
+  return (
+    <div className="space-y-1.5">
+      <label className={SECTION_LABEL_CLASS}>Goal</label>
+      {summary ? (
+        // Standalone data, not a sentence — the numerals ARE the information.
+        // The old summary printed the deadline as a raw ISO string.
+        <p className={cn(MONO, "text-[13px] font-medium text-[#0c1a1e]")}>{summary}</p>
+      ) : (
+        <p className="text-[13px] font-medium text-[#0c1a1e]">No goal set</p>
+      )}
+      <p className="text-[11px] leading-[1.4] text-[#93b0b4]">
+        The long-term goal &amp; deadline drive nutrition pace. Set them on the
+        client&apos;s Overview.
+      </p>
+    </div>
+  );
 }
 
 /**
@@ -31,6 +77,12 @@ function Divider() {
  */
 export function DrawerFormBody() {
   const builder = useNutritionBuilderContext();
+  // The same shared read the Overview uses, so both surfaces render one goal
+  // from one cache entry rather than two fetches that can disagree.
+  const { goal } = useClientGoals(builder.client.id);
+  // Both are required for the calculator to solve anything: without a deadline
+  // it returns maintenance no matter what the target weight says.
+  const hasGoalTarget = goal?.goalWeight != null && goal?.goalDeadline != null;
 
   return (
     <div className="flex-1 overflow-y-auto px-6 pt-6" style={{ paddingBottom: 120 }}>
@@ -45,13 +97,7 @@ export function DrawerFormBody() {
           <NutritionGoalChangedBanner
             drift={builder.nutritionData?.goalChanged}
           />
-          {/* Editing the goal here invalidates the calorie preview and the
-              drift banner above it, and this editor only revalidates its own
-              SWR key — so it has to tell the drawer to re-resolve. */}
-          <ClientGoalEditor
-            clientId={builder.client.id}
-            onSaved={builder.refetchNutrition}
-          />
+          <GoalSummary goal={goal} />
         </div>
 
         <Divider />
@@ -70,6 +116,7 @@ export function DrawerFormBody() {
           missing={
             builder.calcInputs?.status === "incomplete" ? builder.calcInputs.missing : []
           }
+          hasGoalTarget={hasGoalTarget}
         />
 
         <Divider />

@@ -19,9 +19,10 @@ const dateMessage = "Date must be in YYYY-MM-DD format";
  * (`getCoachTodayString`) — a server-clock bound in the schema would reject an
  * east-of-UTC coach's own today as past (same rule as `dailyHabitLogSchema`).
  *
- * `goalWeight` is canonical KILOGRAMS (migration 141) — client-goal-editor.tsx
- * converts from the viewer's unit before sending. Its bound was `.max(700)`, a
- * pounds ceiling left over from display-unit storage.
+ * `goalWeight` is canonical KILOGRAMS (migration 141) — the Overview's inline
+ * editor converts from the coach's unit before sending, through
+ * `useCanonicalInput`. Its bound was `.max(700)`, a pounds ceiling left over
+ * from display-unit storage.
  */
 export const updateGoalsSchema = z
   .object({
