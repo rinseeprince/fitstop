@@ -151,13 +151,22 @@ describe('Nutrition Plan Service', () => {
       )
     })
 
-    // The RPC argument object is cast `as never`, so TypeScript checks nothing
-    // about it: a key that no longer exists on the function makes PostgREST
-    // unable to resolve the overload (PGRST202) and every plan save fails,
-    // with tsc/eslint/vitest all green. This asserts the payload keys match
-    // migration 144's 24-arg signature exactly (identical to 139's — the
-    // close-and-insert rewrite deliberately kept the arity; Session 5 changes
-    // it and re-pins this count).
+    // Two belts, deliberately comparing against different things.
+    // COMPILE time: `satisfies CreateNutritionPlanRpcPayload` in
+    // nutrition-plan-service.ts checks the payload against types/database.ts,
+    // so a key the payload adds, drops or renames no longer builds. That
+    // replaced the `as never` casts, which checked nothing at all (Session 5).
+    // RUNTIME, here: this list is an independent, hand-transcribed record of
+    // migration 144's 24 arguments. The compile check trusts types/database.ts
+    // to be a faithful mirror of the live function; this one does not, so it
+    // still fires when the SIGNATURE is what moved — regenerating the mirror
+    // against a changed database drags the payload along with it, and an arity
+    // change then has to be re-pinned here deliberately instead of riding in
+    // unnoticed. It stays at 24 (identical to 139's — the close-and-insert
+    // rewrite kept the arity, and Session 5 removed the casts without moving
+    // it). A mismatch either belt misses is a PGRST202: PostgREST cannot
+    // resolve the overload, createNutritionPlan returns null, and every plan
+    // save fails while tsc, eslint and vitest all stay green.
     it('sends no arguments the RPC does not declare', async () => {
       vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
       const updateQuery = {

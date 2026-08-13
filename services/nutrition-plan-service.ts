@@ -9,6 +9,42 @@ import { getClientTodayString } from "@/services/today-service";
 
 type NutritionPlanRow = Database["public"]["Tables"]["nutrition_plans"]["Row"];
 
+type CreatePlanRpcArgs = Database["public"]["Functions"]["create_nutrition_plan_atomic"]["Args"];
+
+/**
+ * The nine parameters that legitimately carry SQL NULL. `supabase gen types`
+ * derives an argument's type from its SQL type alone and never emits `| null`,
+ * so the generated Args rejects the nulls this function is written to accept —
+ * a client with no goal weight, no deadline, no custom macros, no BMR.
+ *
+ * `CreatePlanRpcArgs[K]` stops compiling if one of these keys leaves the
+ * signature, but the list otherwise tracks the migration BY HAND: a migration
+ * that makes a tenth parameter nullable, or makes one of these nine NOT NULL,
+ * must update this union — widening a key is invisible to the `satisfies`
+ * check below.
+ */
+type NullableRpcArgKeys =
+  | "p_goal_weight_kg"
+  | "p_goal_deadline"
+  | "p_bmr"
+  | "p_tdee"
+  | "p_custom_calories"
+  | "p_custom_protein_g"
+  | "p_custom_carb_g"
+  | "p_custom_fat_g"
+  | "p_effective_from";
+
+/**
+ * The payload this service must send: all 24 of migration 144's parameters,
+ * present, with NULL admitted on the nine above. `Required<>` makes the two the
+ * SQL gives defaults (`p_effective_from`, `p_today`) mandatory here — the RPC's
+ * past-date belt reads `p_today`, so dropping it is a bug on this side even
+ * though the function itself would accept the call.
+ */
+type CreateNutritionPlanRpcPayload = Required<Omit<CreatePlanRpcArgs, NullableRpcArgKeys>> & {
+  [K in NullableRpcArgKeys]: CreatePlanRpcArgs[K] | null;
+};
+
 export type CreateNutritionPlanParams = {
   clientId: string;
   coachId: string;
@@ -96,7 +132,7 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
   // Single transactional RPC: close/absorb the open version + insert/update
   // the new version + replace its daily-target grid (migration 144).
   const { data: newPlanId, error: rpcError } = await supabaseAdmin
-    .rpc("create_nutrition_plan_atomic" as never, {
+    .rpc("create_nutrition_plan_atomic", {
       p_client_id: params.clientId,
       p_coach_id: params.coachId,
       p_work_activity_level: params.workActivityLevel,
@@ -121,13 +157,16 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_daily_targets: dailyTargets,
       p_effective_from: params.effectiveFrom || null,
       p_today: params.clientToday,
-      // NOTE: this object is cast `as never`, so TypeScript checks NOTHING
-      // about it. A key that no longer exists on the function makes PostgREST
-      // unable to resolve the overload (PGRST202), rpcError is set below, this
-      // returns null, and EVERY plan save fails with "Failed to create
-      // nutrition plan" — while tsc, eslint and vitest all stay green. Keep
-      // these keys in exact sync with the RPC signature (migration 144).
-    } as never) as unknown as { data: string | null; error: { message: string } | null };
+      // `satisfies` checks this payload against migration 144's 24-parameter
+      // signature: an added, dropped or renamed key is a compile error HERE,
+      // rather than a PGRST202 at runtime where PostgREST cannot resolve the
+      // overload, rpcError is set below, this returns null, and EVERY plan save
+      // fails with "Failed to create nutrition plan" while tsc, eslint and
+      // vitest all stay green. The assertion after it launders only the nulls
+      // the generated Args cannot express (see NullableRpcArgKeys); it runs
+      // second and cannot hide a key mismatch, because `satisfies` has already
+      // rejected one.
+    } satisfies CreateNutritionPlanRpcPayload as CreatePlanRpcArgs);
 
   if (rpcError || !newPlanId) {
     console.error("Error creating nutrition plan:", rpcError?.message);

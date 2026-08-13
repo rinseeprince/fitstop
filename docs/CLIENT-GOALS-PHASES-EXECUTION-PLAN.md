@@ -1,6 +1,6 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · Session 0b ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-13 (8 commits, ZERO migrations; invariant 16 satisfied: one writer, one read path, one editor; two smoke follow-ups folded in — the deadline's native date bounds and the block timeline's nutrition eras) · two sessions remain (5, 6) · **Owner decision date:** 2026-08-10
+**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · Session 0b ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-13 (8 commits, ZERO migrations; invariant 16 satisfied: one writer, one read path, one editor; two smoke follow-ups folded in — the deadline's native date bounds and the block timeline's nutrition eras) · Session 5 ✅ Task 5.1 SHIPPED 2026-08-13 (descoped to one typing commit; browser smoke owed) · one session remains (6) · **Owner decision date:** 2026-08-10
 **Eight sessions.** Three largely independent features share this document. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
@@ -149,7 +149,7 @@ Listed in execution order.
 | **4** ✅ | Client-facing block + the "Waiting on you" row — **SHIPPED + owner-smoked all clear 2026-08-12** (3 commits; no migration) | none | Yes — the client block feature |
 | **4B** ✅ | TDEE ownership: profile owns BMR/TDEE, builder consumes — **SHIPPED 2026-08-12** (17 commits; the calculator now CONSUMES the profile's TDEE rather than re-deriving it) | none | Yes — activity + custom TDEE move to the client profile; the drawer loses its dropdown |
 | **0b** ✅ | Goals: one read path, one writer, one editor, history — **SHIPPED + owner-smoked 2026-08-13** (8 commits; no migration) | none | Yes — the goal editor |
-| **5** | Type the plan-save RPC payload (`as never` removal) — **DESCOPED 2026-08-13**; the deficit input, its two columns and the arity change are parked, see SESSION 5 | none | No — one typing commit |
+| **5** ✅ | Type the plan-save RPC payload (`as never` removal) — **DESCOPED 2026-08-13**, then **SHIPPED 2026-08-13** (1 commit; browser smoke owed); the deficit input, its two columns and the arity change are parked, see SESSION 5 | none | No — one typing commit |
 | **6** | The save note + the Journey timeline | **1** (`nutrition_plan_notes`) | Yes |
 
 ### What actually depends on what
@@ -1428,7 +1428,7 @@ Start by reading the documents and the STATUS blocks, then show me your plan for
 
 ---
 
-# SESSION 5 — Type the plan-save RPC payload
+# SESSION 5 — Type the plan-save RPC payload ✅ Task 5.1 SHIPPED 2026-08-13 (browser smoke owed)
 
 **Zero migrations. ONE task, one commit.** Descoped by owner decision 2026-08-13 —
 Tasks 5.2–5.4 are parked, see "What was parked" below. **Depends on nothing** and can
@@ -4601,3 +4601,96 @@ commit time, superseded here.
 shipped tree: `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing warnings, unchanged
 across every commit) · `vitest run` 276 files / 2935 tests · `check:labels` OK 664 ·
 `check:rls` 41/41.
+
+---
+
+## SESSION 5 — Task 5.1 SHIPPED 2026-08-13
+
+One task, one code commit, **zero migrations**. The descope itself committed separately and
+first (`c1615bc`), so this commit carries only the fix and this block.
+
+**Verification 1 — the generated `Args` PINS all 24 keys; no hand-written interface was
+needed.** `types/database.ts` → `Functions.create_nutrition_plan_atomic.Args` lists 24 named
+keys with no index signature and no widening: 22 required plus `p_effective_from?` and
+`p_today?`, which are exactly migration 144's two `DEFAULT NULL` parameters (`144:147-171`).
+Proven by probe rather than by reading — an excess key errors `TS2353`, a missing key errors
+`TS2740` naming *"…and 17 more"* (21 + 1 supplied = 22 required, + 2 optional = 24).
+
+**Verification 2 — line numbers at execution.** The casts were at `:99` (the RPC **name**),
+`:130` (the arg object), and a **third** the plan never counted: `as unknown as { data … }` on
+the same line, which existed only because `.rpc(name as never, …)` returns something useless.
+All three are gone. The key-list belt is `services/nutrition-plan-service.test.ts:161-187`
+(`toHaveLength(24)` at `:184`). The doc's old `:85`/`:117` were stale by 14 and 13 lines.
+
+**What the plan did not anticipate: annotating with the bare `Args` DOES NOT COMPILE.**
+`supabase gen types` derives an argument's type from its SQL type alone and **never emits
+`| null`**, so the generated `Args` types `p_bmr: number` where the function accepts NULL.
+The current payload produces **9 `TS2322` errors** under a bare `Args` annotation — one for
+each key that carries null (`p_goal_weight_kg`, `p_goal_deadline`, `p_bmr`, `p_tdee`, the four
+`p_custom_*`, and `p_effective_from`). `p_daily_targets` → `Json` assigns cleanly.
+
+**The shape shipped**, in `services/nutrition-plan-service.ts`:
+
+```ts
+type CreateNutritionPlanRpcPayload =
+  Required<Omit<CreatePlanRpcArgs, NullableRpcArgKeys>> &
+  { [K in NullableRpcArgKeys]: CreatePlanRpcArgs[K] | null };
+…
+} satisfies CreateNutritionPlanRpcPayload as CreatePlanRpcArgs);
+```
+
+- `satisfies` runs **first and completely**, so the trailing assertion can only launder
+  nullability — it cannot hide a key mismatch. It is `as <a generated type>`, not `as any`.
+- `Required<>` is load-bearing, not tidiness: `p_effective_from` and `p_today` are SQL-defaulted
+  and therefore **optional** in the generated `Args`, so without it a dropped `p_today` — the
+  parameter the RPC's own past-date belt reads — still compiles.
+- **`NullableRpcArgKeys` is hand-maintained and nothing checks it.** `CreatePlanRpcArgs[K]`
+  fails if a key leaves the signature, but a migration that makes a tenth parameter nullable, or
+  one of these nine NOT NULL, is invisible to `satisfies` — the union only widens. Said in one
+  sentence in the comment beside the list, per owner direction.
+
+**Mutation-proven, two ways, each in isolation** (an excess-property error masks a
+missing-property one, so they cannot be tested together):
+
+| Mutation | Result |
+|---|---|
+| add `p_mutation_probe_bogus_key: 1` | `TS2353 … does not exist in type 'CreateNutritionPlanRpcPayload'` |
+| drop `p_today` | `TS1360 … Property 'p_today' is missing … but required in Required<Omit<…>>` |
+
+The file was copied to the scratchpad before mutating and `diff`-ed byte-identical after
+reverting (never `git stash`, never `git checkout --`).
+
+**The key-list test stays at 24, assertions byte-identical** — the diff on that file is
+comments only (16 insertions / 7 deletions, zero non-comment lines). Its comment was rewritten
+because it asserted the payload "is cast `as never`, so TypeScript checks nothing", which this
+commit makes false. It now states what each belt compares against: `satisfies` checks the
+payload against `types/database.ts`; the hand-transcribed 24-key list does **not** trust that
+mirror, so it still fires when the SIGNATURE is what moved and an arity change would otherwise
+ride in unnoticed on a regenerated types file.
+
+**The training twin is recorded in `TECHNICAL-DEBT.md`, not only here** (owner direction — this
+plan doc is deleted when the workstream lands, so a defect recorded only in a STATUS block is
+recorded in a file scheduled for deletion). `services/training-service.ts:354`/`:377` carry the
+identical `as never` pair on `create_training_plan_atomic` and are **strictly less protected**:
+`training-service.test.ts` asserts three keys via `expect.objectContaining`, so there is no
+key-list belt either. The entry carries the full recipe including the `| null` trap (15 of its
+22 keys pass `?? null`) and the four SQL-defaulted keys `Required<>` must pin, so the next
+executor inherits the verification rather than re-deriving it. Findable via
+`git log -S CreateNutritionPlanRpcPayload` — a literal hash was not used because a commit cannot
+contain its own. The stale clause in that file's "Type Safety Gaps" table (which still claimed
+every `create_*_atomic` cast remained) was corrected in the same commit.
+
+**Gates:** `tsc --noEmit` clean · `eslint .` 0 errors (209 warnings, unchanged) · `vitest run`
+276 files / 2935 tests · `check:labels` OK 664 · no `as any` in the service (the 16 in the test
+file are pre-existing `vi.mocked` stubs, untouched) · no introduced markers. No migration, so no
+`db push`, no `gen types`, no `check:rls`. **§2 security/perf review: not applicable** — no
+route, no auth, no write path, no query, no migration. All three casts were compile-time only,
+so the emitted JavaScript is unchanged and this commit has **zero runtime delta**.
+
+`services/nutrition-plan-service.ts` is now 372 lines, over §4's 300-line service guideline and
+under its 400 split threshold. Not split: the added lines are three type aliases belonging to
+the function directly beneath them, and the file is cohesive (one table's data access).
+
+**Owner smoke OWED — the one thing not verified here:** save a nutrition plan and confirm it
+still saves. One pass is enough. The argument that it cannot have broken is strong (identical
+emitted JS) but it is an argument, not a browser.
