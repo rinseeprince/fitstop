@@ -67,7 +67,8 @@ Versioned goals using the `effective_from` / `superseded_at` pattern:
 - New goals are created as new rows (never update existing records)
 - The previous active goal gets `superseded_at = NOW()` when a new goal is set
 - Unique index ensures one active (non-superseded) goal per client
-- Fields: `goal_weight`, `goal_body_fat_percentage`, `goal_deadline`, `primary_goal`, `set_by`, `notes`
+- Fields: `goal_weight`, `goal_body_fat_percentage`, `goal_deadline`, `goal_start_date`, `primary_goal`, `set_by`, `notes`
+- **`primary_goal` is inert but not safely droppable.** Nothing branches on it — it is mapped, typed and validated and read by no logic — yet it is an **unconditional key** in `updateGoals`' merged INSERT, so a bare `DROP COLUMN` PGRST204s **every** goal write. Remove the code first. (Not to be confused with `client_intake.primary_goal`, a live discriminator with three real branches.) See `TECHNICAL-DEBT.md`.
 
 **One writer, one read path, one editor** (Session 0b, invariant 16):
 

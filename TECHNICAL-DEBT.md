@@ -20,6 +20,90 @@ Recorded here rather than only in the workstream's STATUS block because that pla
 
 ---
 
+## Deficit as a first-class nutrition input — PARKED, with a named un-park trigger
+
+Logged: 2026-08-13 (parked by owner decision during the goals/blocks workstream; migrated out of that plan doc before its deletion, because it is a design decision with a live trigger and not a record of shipped work).
+
+`calculateBaselineCalories` (`services/nutrition-service.ts`) is **deadline-driven**: `requiredDailyChange = totalCalorieChange / daysToGoal` is the *average* deficit across the remaining span, and without a deadline it returns maintenance. A coach running a gentle four-week intro then a harder cut gets the same averaged number both times and overrides both times. The parked design made deadline and deficit **both first-class inputs, neither primary** — enter a deadline, see the implied deficit; enter a deficit, see the projected date — with the deficit **stored** so intent survives a recalculation when TDEE moves.
+
+**Why it was parked, so it is not re-derived:** the capability already exists in a rougher form (a coach who wants −500 types 1,900 into custom calories against a TDEE of 2,400), and no coach has asked for it. Most of the surrounding UI work arrived anyway from other sessions — the builder shows TDEE, the warnings component renders, and the bare-TDEE silence when no goal is set was fixed.
+
+**The un-park trigger, which got STRONGER not weaker.** Session 4B made TDEE recompute on every weight change, so a frozen custom-calorie number now drifts away from the coach's intended deficit more often, silently. That is soft only because plans never auto-regenerate, so the coach re-enters the number at their next regenerate. **Un-park if a coach reports that a plan's deficit "moved on its own", or asks to express a deficit as a percentage.**
+
+Two design constraints that survive with it: the stored deficit is **intent, not a result** (it records what the coach chose; the suggestion, caps and floor are recomputed from it and never overwrite it), and **caps and the floor gate the SUGGESTION, never the coach's typed number** — a coach may type lower, and the app must *say* it capped rather than silently doing it. The full design is in the git history of `docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md`; only the arity discipline needs re-reading against whatever `create_nutrition_plan_atomic`'s signature is by then.
+
+---
+
+## `updateGoals` is not atomic — two silent failure modes the unique index cannot catch
+
+Logged: 2026-08-13 (migrated out of the goals/blocks plan doc before its deletion; re-verified against `main` on migration).
+
+`updateGoals` (`services/client-goals-service.ts`) is three autocommitted PostgREST round trips with no transaction, no RPC, no advisory lock and no version check: a SELECT of the live goal (`:41`), a **set-based** UPDATE stamping `superseded_at` (`:76-78`) **with no `.select()`** — so a 0-row supersede is indistinguishable from a 1-row supersede — and an INSERT of the merged row (`:129`).
+
+Two live failure modes:
+
+- **Silent lost update.** If T2's supersede lands after T1's insert, it supersedes *T1's brand-new row*, then inserts values merged from its own stale read. Every field T1 changed that T2's payload omits is reverted. **Both callers get HTTP 200.** No error anywhere.
+- **Zero active rows.** Supersede succeeds, insert fails → the client has no active goal and every surface renders "No goal set yet".
+
+**The real fix already existed and was reverted.** Commit `dc9898c` shipped `update_client_goals_atomic`, a single RPC doing supersede + insert + mirror in one transaction; it was reverted and its migration slot reused by `139_nutrition_event_coach_note.sql`. Re-landing it needs a migration. Session 0's ordering belt is insurance against a *different* failure (a dropped index), not against these two.
+
+---
+
+## The two goal targets contradict each other on two live coach surfaces
+
+Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it).
+
+`goal_weight` and `goal_body_fat_percentage` are solved independently and reconciled by nobody:
+
+- **Coach Overview status card** renders teal "Goal reached" on the goal-weight cell beside amber "4.0% to go" on the goal-body-fat cell — two chips from the same helper (`lib/goals/goal-state.ts` via `client-status-card.tsx`), computed side by side, never compared.
+- **Check-in review page** prints "Body Fat: 4.0% to go" (`goal-progress-view.tsx`) directly above teal "On track to meet the goal by the deadline", because `progressNote` derives from `goalProgress.weight` alone.
+
+Compounding it: **`isOnTrack` defaults to `true`** when `avgChange` is falsy (`utils/comparison-utils.ts:70`, guarded by `if (avgChange && avgChange !== 0)`), so a client with fewer than two body-fat check-ins reads "On track" no matter how far off they are.
+
+Fixing this means choosing which target is the headline, or making the summary sentence read both. **That is a check-in-review decision, not a goals-plumbing one** — there is no lean-mass model in the repo, so the two targets cannot be reconciled arithmetically.
+
+---
+
+## Removing the `clients.*` goal mirror — costed, and its one real landmine
+
+Logged: 2026-08-13 (migrated out of the goals/blocks plan doc, which costed it so the next attempt does not re-derive it).
+
+`updateGoals` is already the sole writer of the mirror columns. **Full removal is a separate workstream:** ~21 production files, 12 test files, 3 scripts, 4 docs, 1 migration + `gen types` ≈ **42 files**. Three surfaces need a brand-new goal fetch — the coach Overview (`GET /api/clients/[id]`), the client portal Goals card, and `/api/client/me` (the RN contract). A "Tier B" that deletes the fallback reads and leaves the columns as dead data is **not separately shippable**: the moment writes stop, the mirror goes stale, so those three surfaces must convert in the same shipment. The `DROP` itself is trivially safe (`pg_depend = 0` on all three columns — measured on **DEV**; re-probe prod first).
+
+**The riskiest single change is not the migration.** It is `CLIENT_SELF_COLUMNS` (`services/client-portal-service.ts:50-60`): a `+`-concatenated string, so TypeScript widens it to `string` and `tsc` cannot see a stale column name. It still lists `goal_weight` and `goal_body_fat_percentage`. Drop a column without editing that string and PostgREST 400s the whole query, `if (error || !data) return null` (`:75`) swallows it, and `/api/client/me` silently returns nothing.
+
+---
+
+## `client_goals.primary_goal` is dead weight, and a bare `DROP` breaks every goal write
+
+Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; line numbers re-derived on migration — the doc's were stale by ~29 lines).
+
+Zero branches, zero production writers of a meaningful value, free `TEXT` with no CHECK. It is mapped (`services/client-goals-service.ts:15`), typed (`types/client-goals.ts:10`) and validated (`lib/validations/client-goals.ts:33`), but nothing branches on it.
+
+**The landmine:** it is an **unconditional key** in the merged INSERT object (`client-goals-service.ts:122-124`, spread into the insert at `:129`), so a bare `DROP COLUMN` without the code change PGRST204s **every** goal write. Removal is ~3 lines plus a migration plus `gen types`.
+
+Do not confuse it with `client_intake.primary_goal`, which is a live discriminator with three real branches.
+
+---
+
+## Nutrition write-path gaps: the `is_modified` race and the unshared 8-week horizon
+
+Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; **both counts re-derived** — the doc's "eight occurrences across five files" was stale).
+
+- **The `is_modified` protection is a read-then-filter across a two-round-trip gap.** `regenerateFutureNutritionEvents` reads the protected days (`services/nutrition-event-service.ts:200`) and writes the upsert (`:226`) in separate round trips. A coach edit landing in that gap is clobbered. Only a transaction or an RPC closes it.
+- **The 8-week nutrition horizon is duplicated with no shared constant.** **Two** occurrences today, not the eight the plan doc claimed: `services/nutrition-event-service.ts:376` and `services/training-event-service.ts:143`. Both use **server-local `Date` arithmetic** despite `addDaysToDateString` being UTC-safe, which is the part that actually bites. A smaller finding than recorded, but a real one.
+- **Two columns on `nutrition_plans` are inert.** `name` is never written at all (no `p_name` in the migration-144 RPC, and no service writes it). `regeneration_reason` **is** written (`nutrition-plan-service.ts:156` via `p_regeneration_reason`) but never read — so it is write-only rather than dead, a different thing.
+
+---
+
+## `check:labels` cannot see the client surface
+
+Logged: 2026-08-13 (migrated out of the goals/blocks plan doc).
+
+`scripts/check-labels.ts` sets `SCAN_ROOTS = ["app", "components"]` (`:38`) and whitelists all of `components/client-portal/` and `app/client/`. **Nothing built on the client surface proves typography compliance**, so a green `check:labels` says nothing about the portal or the RN-contract screens. Worth knowing before citing that gate as coverage for a client-facing change.
+
+---
+
 ## `create_training_plan_atomic`'s payload is still cast `as never` — nothing checks its 22 keys
 
 Logged: 2026-08-13 (found while executing Session 5 Task 5.1 of the goals/blocks plan, which removed the identical casts from the nutrition twin; deliberately left out of scope — that session was one task, one commit).

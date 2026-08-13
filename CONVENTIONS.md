@@ -478,6 +478,18 @@
   4. Skim the `types/database.ts` diff — the changes should exactly correspond to your migration. Unexpected additions/removals are a red flag.
   5. Commit the migration file and regenerated types in the **same commit** so git history stays coherent.
 
+  **A destructive change re-probes PROD first.** Before a `DROP COLUMN`, a backfill, a
+  de-duplication, or anything else that cannot be undone by a follow-up migration, run the
+  probe that justifies it **against prod**, not only against dev. A successful `db push`
+  proves the migration applied; it proves nothing about whether the two databases agree, and
+  prod has drifted from the migration tree before (see "Live catalog is SOT"). Dev is
+  `aeaphsslctwcmebldrzx`, prod is `etezzztgafcotyahgijk`; `npx supabase db query --linked`
+  gives password-free read access to whichever is linked. Row counts, "no client has X",
+  "zero duplicates exist" and `pg_depend = 0` are **per-database facts** and do not travel.
+  Schema-shape claims (an index exists, a column has no CHECK) usually do, but the cost of
+  being wrong is asymmetric — an additive change that was unnecessary is noise, a destructive
+  one that was unsafe is data loss.
+
   **Rules that keep this healthy:**
   - One file per change. Don't edit an existing migration to "add one more thing" — write a new file.
   - Never edit a migration file after `db push` has applied it. Once it's history, changes go in the next number.
