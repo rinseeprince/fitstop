@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 import type { DayOfWeek } from "@/types/check-in"
 import { getTodayDateString } from "@/lib/date-helpers"
+import { getFirstName } from "@/lib/client-name"
 
 interface ClientActivationDialogProps {
   client: {
@@ -51,8 +52,10 @@ type Readiness = {
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
 
 function getDefaultMessage(name: string): string {
-  const firstName = name.split(" ")[0]
-  return `Hey ${firstName}! I've reviewed your intake and put together a personalised plan for you. Let me know if you have any questions. Let's get after it!`
+  // "Hey there" rather than the "Hey !" the old inline split produced for a
+  // client invited by email whose name was never filled in.
+  const greeting = getFirstName(name) ?? "there"
+  return `Hey ${greeting}! I've reviewed your intake and put together a personalised plan for you. Let me know if you have any questions. Let's get after it!`
 }
 
 export function ClientActivationDialog({

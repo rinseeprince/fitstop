@@ -15,6 +15,7 @@ import {
   deleteFutureNutritionEventsForClient,
   regenerateFutureNutritionEvents,
 } from "@/services/nutrition-event-service";
+import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
 import { addDaysToDateString } from "@/lib/date-helpers";
@@ -61,37 +62,44 @@ export interface NutritionPlanResult {
 }
 
 /**
- * Land the coach's note on the day the change takes effect.
- *
- * ONE date, not the whole regenerated window: the note describes the CHANGE,
- * and 57 identical markers would be noise. Successive regenerates leave one
- * marker each, which is the history a coach scrolling the calendar wants.
+ * Record the coach's note about this change, in both of its homes.
  *
  * Called from BOTH plan handlers. They each own their own
  * createNutritionPlan -> regenerate -> return sequence and return directly out
  * of the dispatch, so there is no seam after them to hook — inlining it twice
  * is how one branch silently ends up without it.
  *
- * Never fails the request: the plan and its events have already committed by
- * this point, so a failed annotation must not present as a failed save. It
- * goes to Sentry instead.
+ * This USED to be `stampCoachNote`, which wrote one mutable column and sent any
+ * failure to Sentry behind a 200. That silence is no longer acceptable: since
+ * migration 147 the note is client-visible, and losing coach-authored content
+ * the client was meant to read is not a background error (CONVENTIONS §2 item
+ * 12). The write ordering that makes this retryable lives in the service.
+ *
+ * WHY A RETRY IS SAFE, and it is not obvious: this throws AFTER the plan row
+ * has committed, so the coach re-saves and the whole save re-runs, RPC
+ * included. That does not mint a second plan version because of migration 144's
+ * branch (c) — an open version starting on/after the incoming date is ABSORBED,
+ * updated in place, rather than closed-and-inserted, so a same-effective-date
+ * re-save collapses into the existing row (144:60-63, body at :237-267). The
+ * guarantee is scoped to the same effective date; a save on a LATER day takes
+ * branch (b) and mints a version, which is correct behaviour rather than a
+ * retry hazard.
  */
-async function stampCoachNote(
+async function recordCoachNoteOrThrow(
   clientId: string,
-  date: string,
+  coachId: string,
+  planId: string,
+  effectiveOn: string,
   note: string | undefined
 ): Promise<void> {
-  const trimmed = note?.trim();
-  if (!trimmed) return;
-
-  const { error } = await supabaseAdmin
-    .from("nutrition_events")
-    .update({ coach_note: trimmed })
-    .eq("client_id", clientId)
-    .eq("date", date);
-
-  if (error) {
-    captureApiError(error, { action: "stamp-coach-note", clientId, date });
+  try {
+    await recordPlanSaveNote({ clientId, coachId, planId, effectiveOn, body: note });
+  } catch (err) {
+    captureApiError(err, { action: "record-plan-save-note", clientId, planId });
+    throw new NutritionPlanError(
+      "Plan targets and calendar were saved, but your note was not. Save again to add it.",
+      500
+    );
   }
 }
 
@@ -320,7 +328,13 @@ async function handleCustomMacros(
   // belong to earlier versions and are untouched.
   const effectiveDate = body.effectiveFrom ?? clientToday;
   await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
-  await stampCoachNote(clientId, effectiveDate, validatedData.coachNotes);
+  await recordCoachNoteOrThrow(
+    clientId,
+    coachId,
+    newPlanId,
+    effectiveDate,
+    validatedData.coachNotes
+  );
 
   return {
     success: true,
@@ -417,7 +431,13 @@ async function handleCalculatedPlan(
   // belong to earlier versions and are untouched.
   const effectiveDate = body.effectiveFrom ?? clientToday;
   await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
-  await stampCoachNote(clientId, effectiveDate, validatedData.coachNotes);
+  await recordCoachNoteOrThrow(
+    clientId,
+    coachId,
+    newPlanId,
+    effectiveDate,
+    validatedData.coachNotes
+  );
 
   return {
     success: true,

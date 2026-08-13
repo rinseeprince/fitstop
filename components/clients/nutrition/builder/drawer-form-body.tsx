@@ -19,6 +19,7 @@ import { useClientGoals } from "@/hooks/use-client-goals";
 import { formatDateOnlyShort } from "@/components/clients/overview/overview-format";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
+import { getFirstName } from "@/lib/client-name";
 import type { ClientGoal } from "@/types/client-goals";
 
 function Divider() {
@@ -137,6 +138,7 @@ export function DrawerFormBody() {
         <CollapsibleNotes
           value={builder.coachNotes}
           onChange={(v) => builder.setCoachNotes(v.slice(0, 500))}
+          clientName={builder.client.name}
         />
 
         {/* Regeneration note — versioned model (migration 144): each save
@@ -166,15 +168,28 @@ export function DrawerFormBody() {
  * Hand-rolled rather than components/ui/collapsible: all three usages of that
  * primitive are client-facing, and the established coach pattern is an
  * `expanded &&` body behind a chevron button (program-builder/exercise-card).
+ *
+ * THE HINT NAMES THE CONDITION, IT DOES NOT ASSERT THE OUTCOME. Since migration
+ * 147 this note is client-visible, but it reaches the client's screen only
+ * inside their CURRENT journey block — so it is invisible to a client with no
+ * blocks, to one sitting between blocks, and again once the block it falls in
+ * ends. "Shown to Sam" would therefore be false in three states, and a coach
+ * who believes it writes an explanation that goes nowhere: precisely the
+ * invisible, write-only note migration 139 dropped a column for. What IS
+ * unconditionally true is that the client can see it, so that clause leads,
+ * where the eye lands, and the location clause is qualified.
  */
 function CollapsibleNotes({
   value,
   onChange,
+  clientName,
 }: {
   value: string;
   onChange: (value: string) => void;
+  clientName: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const firstName = getFirstName(clientName);
 
   return (
     <div className="space-y-2">
@@ -205,6 +220,10 @@ function CollapsibleNotes({
 
       {expanded && (
         <div className="space-y-2 border-t border-[rgba(13,148,136,0.08)] pt-2.5">
+          <p className="text-[11px] leading-[1.4] text-[#93b0b4]">
+            {firstName ?? "Your client"} can see this &mdash; it shows on their
+            Program tab with the block it falls in.
+          </p>
           <Textarea
             autoFocus
             placeholder="Why are you adjusting this plan?"

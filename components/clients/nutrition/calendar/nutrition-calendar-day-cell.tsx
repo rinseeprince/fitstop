@@ -164,11 +164,18 @@ function NoteButton({
 }) {
   const [open, setOpen] = useState(false);
 
+  // The two notes are NOT flattened into one visibility claim, because their
+  // visibility genuinely differs. `note` (mig 118) renders on the client's
+  // nutrition day card unconditionally — "shown". `coach_note` is the plan-save
+  // note, whose text is mirrored into nutrition_plan_notes (mig 147) and
+  // reaches the client only while the journey block containing it is current —
+  // "shared". It is no longer private either way, which is the part a coach
+  // must not misread; the old "Your note" said the opposite.
   const label = coachNote
     ? clientNote
-      ? "Your note and a note shown to the client"
-      : "Your note"
-    : "Note shown to the client";
+      ? "A plan change note shared with the client, and a day note shown to them"
+      : "A plan change note shared with the client"
+    : "A day note shown to the client";
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -200,7 +207,7 @@ function NoteButton({
         <div className="max-h-[260px] space-y-3 overflow-y-auto px-3.5 pb-3">
           {coachNote && (
             <div className="space-y-1">
-              <p className={LABEL_CLASS}>Your note</p>
+              <p className={LABEL_CLASS}>Plan change &middot; shared with the client</p>
               <p className="whitespace-pre-wrap text-[12.5px] leading-[1.45] text-[#0c1a1e]">
                 {coachNote}
               </p>
@@ -208,7 +215,7 @@ function NoteButton({
           )}
           {clientNote && (
             <div className="space-y-1">
-              <p className={LABEL_CLASS}>Shown to client</p>
+              <p className={LABEL_CLASS}>Day note &middot; shown to the client</p>
               <p className="whitespace-pre-wrap text-[12.5px] leading-[1.45] text-[#0c1a1e]">
                 {clientNote}
               </p>
