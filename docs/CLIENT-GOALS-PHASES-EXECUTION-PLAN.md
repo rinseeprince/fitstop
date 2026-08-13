@@ -1,6 +1,6 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · Session 0b ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-13 (8 commits, ZERO migrations; invariant 16 satisfied: one writer, one read path, one editor; two smoke follow-ups folded in — the deadline's native date bounds and the block timeline's nutrition eras) · Session 5 ✅ Task 5.1 SHIPPED 2026-08-13 (descoped to one typing commit; browser smoke owed) · one session remains (6) · **Owner decision date:** 2026-08-10
+**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · Session 0b ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-13 (8 commits, ZERO migrations; invariant 16 satisfied: one writer, one read path, one editor; two smoke follow-ups folded in — the deadline's native date bounds and the block timeline's nutrition eras) · Session 5 ✅ COMPLETE — descoped to one typing commit, shipped + owner-smoked all clear 2026-08-13 (2 commits, ZERO migrations; the deficit input is PARKED, not rejected) · one session remains (6) · **Owner decision date:** 2026-08-10
 **Eight sessions.** Three largely independent features share this document. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
@@ -149,7 +149,7 @@ Listed in execution order.
 | **4** ✅ | Client-facing block + the "Waiting on you" row — **SHIPPED + owner-smoked all clear 2026-08-12** (3 commits; no migration) | none | Yes — the client block feature |
 | **4B** ✅ | TDEE ownership: profile owns BMR/TDEE, builder consumes — **SHIPPED 2026-08-12** (17 commits; the calculator now CONSUMES the profile's TDEE rather than re-deriving it) | none | Yes — activity + custom TDEE move to the client profile; the drawer loses its dropdown |
 | **0b** ✅ | Goals: one read path, one writer, one editor, history — **SHIPPED + owner-smoked 2026-08-13** (8 commits; no migration) | none | Yes — the goal editor |
-| **5** ✅ | Type the plan-save RPC payload (`as never` removal) — **DESCOPED 2026-08-13**, then **SHIPPED 2026-08-13** (1 commit; browser smoke owed); the deficit input, its two columns and the arity change are parked, see SESSION 5 | none | No — one typing commit |
+| **5** ✅ | Type the plan-save RPC payload (`as never` removal) — **DESCOPED 2026-08-13**, then **COMPLETE — shipped + owner-smoked all clear 2026-08-13** (2 commits); the deficit input, its two columns and the arity change are parked, see SESSION 5 | none | No — one typing commit |
 | **6** | The save note + the Journey timeline | **1** (`nutrition_plan_notes`) | Yes |
 
 ### What actually depends on what
@@ -1428,7 +1428,7 @@ Start by reading the documents and the STATUS blocks, then show me your plan for
 
 ---
 
-# SESSION 5 — Type the plan-save RPC payload ✅ Task 5.1 SHIPPED 2026-08-13 (browser smoke owed)
+# SESSION 5 — Type the plan-save RPC payload ✅ COMPLETE
 
 **Zero migrations. ONE task, one commit.** Descoped by owner decision 2026-08-13 —
 Tasks 5.2–5.4 are parked, see "What was parked" below. **Depends on nothing** and can
@@ -4691,6 +4691,27 @@ so the emitted JavaScript is unchanged and this commit has **zero runtime delta*
 under its 400 split threshold. Not split: the added lines are three type aliases belonging to
 the function directly beneath them, and the file is cohesive (one table's data access).
 
-**Owner smoke OWED — the one thing not verified here:** save a nutrition plan and confirm it
-still saves. One pass is enough. The argument that it cannot have broken is strong (identical
-emitted JS) but it is an argument, not a browser.
+---
+
+### Session 5 — owner sign-off ✅ 2026-08-13
+
+The owner regenerated a test client's nutrition plan and reported **works** — it saved, no
+"Failed to create nutrition plan". **Session 5 is COMPLETE by owner decision.** That closes the
+one residual the STATUS block above recorded: every gate in this session was static or mocked
+(`nutrition-plan-service.test.ts:3-8` mocks `supabaseAdmin.rpc` outright, so no test in the suite
+has ever called the real function), which left "PostgREST resolves the overload" provable only by
+a real save. It is now observed rather than argued.
+
+**Zero follow-ups.** Unlike 0b and 4B, the smoke found nothing to fold in — expected, since all
+three casts were compile-time only and the emitted JavaScript is byte-identical to the tree
+before the commit.
+
+**Session totals: 2 commits (`c1615bc` descope, `a22c2fe` fix), ZERO migrations, tests unchanged
+at 276 files / 2935** (the only test-file edit was comments). Final gates on the shipped tree:
+`tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing warnings, unchanged) ·
+`vitest run` 276 files / 2935 tests · `check:labels` OK 664. No migration, so no `check:rls`.
+
+**What outlives this document** (it is deleted when the workstream lands, so nothing load-bearing
+may live only here): the `create_training_plan_atomic` twin and its full recipe are in
+`TECHNICAL-DEBT.md`, and the parked-deficit design plus its un-park trigger are in the "What was
+parked" section above, which travels into git history with this file.
