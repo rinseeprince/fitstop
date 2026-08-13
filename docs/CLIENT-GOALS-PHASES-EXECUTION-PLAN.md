@@ -148,7 +148,7 @@ Listed in execution order.
 | **3** ✅ | Journey tab: rename, Blocks list, chart shading — **SHIPPED 2026-08-11**, plus owner-directed follow-ups 3.6 (editing + end-date granularity), 3.7 (archive, migration 146) and the nutrition-column resemantic, 2026-08-12 | **1** (146, from 3.7) | Yes — the coach block feature |
 | **4** ✅ | Client-facing block + the "Waiting on you" row — **SHIPPED + owner-smoked all clear 2026-08-12** (3 commits; no migration) | none | Yes — the client block feature |
 | **4B** ✅ | TDEE ownership: profile owns BMR/TDEE, builder consumes — **SHIPPED 2026-08-12** (17 commits; the calculator now CONSUMES the profile's TDEE rather than re-deriving it) | none | Yes — activity + custom TDEE move to the client profile; the drawer loses its dropdown |
-| **0b** ✅ | Goals: one read path, one writer, one editor, history — **SHIPPED 2026-08-13** (6 commits; no migration) | none | Yes — the goal editor |
+| **0b** ✅ | Goals: one read path, one writer, one editor, history — **SHIPPED + owner-smoked 2026-08-13** (8 commits; no migration) | none | Yes — the goal editor |
 | **5** | Nutrition builder: deficit as a first-class input | **1** (`nutrition_plans` + RPC arity) | Yes |
 | **6** | The save note + the Journey timeline | **1** (`nutrition_plan_notes`) | Yes |
 
@@ -1266,7 +1266,17 @@ Start by reading the documents, then show me your plan for 4b.1 and 4b.2.
 
 ---
 
-# SESSION 0b — Goals: one read path, one writer, one editor
+# SESSION 0b — Goals: one read path, one writer, one editor ✅ COMPLETE (SHIPPED + owner-smoked all clear 2026-08-13)
+
+> **SHIPPED 2026-08-13** — 8 commits (`af71e09` → `027a9c0`), ZERO migrations, plus the sign-off
+> (`afb0dd6`). The session brief below is kept as-authored for provenance; **the STATUS blocks in
+> §8 are authoritative** for what actually shipped, the decisions they closed, and what they
+> deliberately left open. Read those, not this, before touching the goal layer.
+>
+> **Two of this brief's instructions were overtaken by later sessions and are recorded as
+> corrected in §8, not here:** Task 0b.4's "match `client-settings-dialog.tsx`" names a file
+> Session 4B deleted (the editor is INLINE), and Task 0b.1's map-or-delete question was settled by
+> Session 4 before this session ran.
 
 **Zero migrations. Six tasks. Runs after Session 4.**
 
