@@ -1866,6 +1866,58 @@ export type Database = {
           },
         ]
       }
+      nutrition_plan_notes: {
+        Row: {
+          body: string
+          client_id: string
+          coach_id: string | null
+          created_at: string
+          effective_on: string
+          id: string
+          nutrition_plan_id: string | null
+        }
+        Insert: {
+          body: string
+          client_id: string
+          coach_id?: string | null
+          created_at?: string
+          effective_on: string
+          id?: string
+          nutrition_plan_id?: string | null
+        }
+        Update: {
+          body?: string
+          client_id?: string
+          coach_id?: string | null
+          created_at?: string
+          effective_on?: string
+          id?: string
+          nutrition_plan_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nutrition_plan_notes_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nutrition_plan_notes_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nutrition_plan_notes_nutrition_plan_id_fkey"
+            columns: ["nutrition_plan_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       nutrition_plans: {
         Row: {
           base_weight_kg: number
