@@ -4715,3 +4715,52 @@ at 276 files / 2935** (the only test-file edit was comments). Final gates on the
 may live only here): the `create_training_plan_atomic` twin and its full recipe are in
 `TECHNICAL-DEBT.md`, and the parked-deficit design plus its un-park trigger are in the "What was
 parked" section above, which travels into git history with this file.
+
+---
+
+## SESSION 6 — SHIPPED 2026-08-13 (5 commits, migration 147)
+
+`5a567a7` migration+types · `8eee533` write path · `32a29e5` coach read ·
+`967865a` client read+docs · `c157698` the pre-deletion sweep.
+
+### Three corrections to this document, found at execution
+
+1. **`deleteFutureNutritionEventsForPlan` does not exist.** Session 1b.2 replaced it with
+   `deleteFutureNutritionEventsForClient` (`nutrition-event-service.ts:465-483`), which is
+   *more* aggressive — its own comment reads "No `is_modified` / `coach_note` sparing".
+   The schema conclusion (client-scoped, SET NULL plan FK) is more justified, not less.
+2. **Task 6.2's "the per-day range-edit writer of `coach_note` is untouched" is FALSE — there
+   is no such writer.** The range-edit path writes `note`, the client-visible column.
+   `stampCoachNote` was the **only** writer of `coach_note` anywhere, migrations and scripts
+   included. Moot under the owner's write-both decision, but it is why "just repoint it" was
+   never a two-line change, and it is what turned the 6.2 gate into a different question.
+3. `stampCoachNote`'s call sites were at `:323`/`:420`, not `:261`/`:347`.
+
+### Owner decisions closed at the 6.2 gate
+
+- **Write BOTH** — a fourth shape, not one of the three offered. The calendar marker survives.
+- **Relabel toward visible** — over-stating visibility on pre-147 rows is the safe error.
+- **Client notes are block-attached only**, and the consequence was accepted explicitly: a
+  note leaves the client's view when its block ends.
+- **Notes nest under the nutrition entry**, no new bullets.
+- **`currentBlockNotes` carries `blockId`**, so RN asserts rather than infers and `null` stays
+  distinguishable from "current block, no notes".
+
+### What outlives this document
+
+Everything load-bearing is now in `ARCHITECTURE.md`, `TECHNICAL-DEBT.md`, `CONVENTIONS.md §8`
+or on `types/client-journey.ts`. Task 6.4 swept this file and migrated 11 findings, dropped 1
+as stale (the second inline BMR implementation — closed by Session 4B), corrected 1 (the
+8-week horizon is **2** occurrences, not eight), and split the DEV-vs-PROD item so its rule
+landed in CONVENTIONS §8 while its measurements die here. All twelve were grepped back out of
+the surviving docs afterwards: the sweep proves they moved, the grep proves they are findable.
+
+**This document is now safe to delete.** Deletion is the owner's call after sign-off.
+
+### Gates
+
+`tsc` clean · `eslint` 0 errors (209 pre-existing warnings, unchanged) · `vitest`
+**278 files / 2972 tests** (from 276/2935: +2 files, +37) · `check:labels` OK 664 ·
+`check:rls` OK **42/42** public tables · no `as any`, no introduced markers.
+
+**Browser smoke is OWED — the owner runs it.** Checklist in the session report.
