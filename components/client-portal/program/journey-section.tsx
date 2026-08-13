@@ -62,6 +62,38 @@ function TargetLine({ label, phrase }: { label: string; phrase: string }) {
   );
 }
 
+/**
+ * The coach's notes about the plan changes inside this block.
+ *
+ * Attribution framing, NOT the coach side's "Visible to X" — that copy tells a
+ * coach who else reads the note, which is meaningless on the reader's own
+ * screen.
+ *
+ * Nothing filters here: the wire already decided what the client may see (see
+ * `ClientJourneyCurrentBlockNotes`). Rendering `journey.currentBlockNotes`
+ * verbatim is the point — a filter here would be the policy leaking back into a
+ * renderer, where RN cannot inherit it.
+ */
+function CoachNotes({ notes }: { notes: ClientJourney["currentBlockNotes"] }) {
+  if (!notes || notes.notes.length === 0) return null;
+
+  return (
+    <div className="mt-3 space-y-2 border-t border-border pt-3">
+      <p className="text-xs font-medium text-foreground">From your coach</p>
+      {notes.notes.map((note) => (
+        <div key={note.id} className="space-y-0.5">
+          <p className="font-mono-display text-xs text-muted-foreground">
+            {formatBlockDate(note.effectiveOn)}
+          </p>
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+            {note.body}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CurrentBlockCard({
   block,
   journey,
@@ -123,6 +155,7 @@ function CurrentBlockCard({
           />
         )}
       </div>
+      <CoachNotes notes={journey.currentBlockNotes} />
     </div>
   );
 }

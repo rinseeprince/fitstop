@@ -53,6 +53,12 @@ const JOURNEY: ClientJourney = {
   ],
   goal: { weightKg: 85, deadline: "2026-12-01" },
   currentWeightKg: 88.6,
+  currentBlockNotes: {
+    blockId: "block-1",
+    notes: [
+      { id: "note-1", effectiveOn: "2026-08-05", body: "Dropping calories 200." },
+    ],
+  },
 };
 
 function request(): NextRequest {

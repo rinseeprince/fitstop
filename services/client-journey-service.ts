@@ -2,6 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { listBlocks } from "./client-blocks-service";
 import { getCurrentGoals } from "./client-goals-service";
 import { listMetricEntries } from "./metric-entries-service";
+import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
 import { fetchAllPages } from "@/lib/paged-fetch";
 import { decorateBlocks } from "@/lib/blocks/block-derivations";
 import { deriveBlockWeightFacts } from "@/lib/blocks/block-weight";
@@ -126,14 +127,35 @@ export const getClientJourney = async (
 
   const blocks = allBlocks.filter((block) => block.archivedAt === null);
   if (blocks.length === 0) {
-    return { clientToday, blocks: [], goal, currentWeightKg: null };
+    return {
+      clientToday,
+      blocks: [],
+      goal,
+      currentWeightKg: null,
+      currentBlockNotes: null,
+    };
   }
 
-  const points = await fetchWeightSeries(clientId);
-  const journeyBlocks: ClientJourneyBlock[] = decorateBlocks(
-    blocks,
-    clientToday
-  ).map((block) => {
+  const decorated = decorateBlocks(blocks, clientToday);
+
+  // THE POLICY IS ENFORCED HERE, not in the renderer (see
+  // ClientJourneyCurrentBlockNotes): a client reads the coach's plan notes only
+  // while the block containing them is current. This endpoint is the RN
+  // contract, so shipping elapsed-block notes and trusting each client app to
+  // drop them is how the two apps come to disagree about what a client may see.
+  // Only the current block's window is read at all — the notes for other blocks
+  // never leave the database.
+  const current = decorated.find((block) => block.state === "current") ?? null;
+  const [points, currentBlockNotes] = await Promise.all([
+    fetchWeightSeries(clientId),
+    current
+      ? listNutritionPlanNotesInRange(clientId, current.startsOn, current.endsOn).then(
+          (notes) => ({ blockId: current.id, notes })
+        )
+      : Promise.resolve(null),
+  ]);
+
+  const journeyBlocks: ClientJourneyBlock[] = decorated.map((block) => {
     const facts = deriveBlockWeightFacts(points, block);
     return {
       id: block.id,
@@ -156,5 +178,6 @@ export const getClientJourney = async (
     goal,
     currentWeightKg:
       points.length > 0 ? points[points.length - 1].value : null,
+    currentBlockNotes,
   };
 };

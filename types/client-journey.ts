@@ -1,5 +1,6 @@
 import type { BlockWeekOfTotal } from "@/lib/blocks/block-derivations";
 import type { BlockState } from "@/types/client-blocks";
+import type { NutritionPlanNote } from "@/types/nutrition-plan-notes";
 
 // Wire types for GET /api/client/journey — the client-facing journey read
 // (Session 4). Weights are canonical kilograms with no unit tags and no
@@ -44,6 +45,34 @@ export interface ClientJourneyGoal {
   deadline: string | null;
 }
 
+/**
+ * The coach's plan-save notes the client may CURRENTLY see, and the block they
+ * belong to.
+ *
+ * THE SHAPE IS THE POLICY. There is deliberately no per-block `notes` field on
+ * `ClientJourneyBlock`: a client sees these notes only while the block
+ * containing them is current, and that rule is enforced HERE, on the wire, not
+ * in a renderer. This endpoint is the RN contract — a rule expressed in one web
+ * component would ship elapsed-block notes to RN and leave it to re-derive the
+ * same drop, or the two client apps would disagree about what a client is
+ * allowed to read. Same reason archived blocks are filtered server-side.
+ *
+ * So widening visibility to finished blocks is a deliberate CONTRACT change,
+ * not a filter removal. If that day comes, move notes onto the block objects on
+ * purpose rather than loosening a `.filter()`.
+ *
+ * `blockId` is carried so a client can ASSERT the notes belong to the block it
+ * is rendering rather than infer it, and so the empty cases stay distinct:
+ * `null` means no current block, while `{ blockId, notes: [] }` means there is
+ * one and the coach has written nothing. A bare array could not tell those
+ * apart.
+ */
+export interface ClientJourneyCurrentBlockNotes {
+  blockId: string;
+  /** Oldest first — the order the coach wrote them. */
+  notes: NutritionPlanNote[];
+}
+
 export interface ClientJourney {
   /** The client's calendar day — the anchor every block was decorated with;
    *  the renderer's progress math must use this, never the device day. */
@@ -53,4 +82,6 @@ export interface ClientJourney {
   goal: ClientJourneyGoal;
   /** Latest merged-series weight (kg) overall; the "to go" lines' left side. */
   currentWeightKg: number | null;
+  /** See the type doc: the shape is the policy. `null` = no current block. */
+  currentBlockNotes: ClientJourneyCurrentBlockNotes | null;
 }

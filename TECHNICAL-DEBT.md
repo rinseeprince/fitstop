@@ -1,5 +1,25 @@
 # Technical Debt Tracker
 
+## The plan-save note exists in two copies that cannot be reconciled
+
+Logged: 2026-08-13 (created deliberately by Session 6 of the goals/blocks plan — owner decision to keep the calendar marker AND add the durable client-visible note, rather than repoint one to the other).
+
+The coach's "why am I adjusting this plan?" sentence is written to **two stores with incompatible mutability and no link between them** (`recordPlanSaveNote`, `services/nutrition-plan-notes-service.ts`):
+
+| | `nutrition_events.coach_note` | `nutrition_plan_notes` |
+|---|---|---|
+| cardinality | one row per date, overwritten by the next stamp | one row per save, append-only |
+| mutability | mutable | no `UPDATE` and no `DELETE` path, by design |
+| identity | none — a column on a regenerable event | its own `id` |
+
+There is **no FK and no shared id**, so the two copies cannot be paired after the fact. A date+client join does not rescue it either: a same-effective-date re-save leaves *one* stamp beside *two* note rows, so the join is ambiguous exactly where it matters.
+
+**Latent, not broken.** Nothing edits or deletes a note today, so the copies cannot drift yet. It becomes real the moment someone builds note editing or deletion: they will meet a copy that can be changed and a copy that structurally cannot, with no way to tell which pairs with which. **Whoever builds that feature has to pick a canonical copy first, and the answer is not obvious** — the append-only table is the durable record and the one the client reads, but the event column is the one the coach sees on the calendar and the one a per-day edit UI would naturally target.
+
+Recorded here rather than only in the workstream's STATUS block because that plan doc is deleted when the workstream lands (the Session 5 precedent for the `create_training_plan_atomic` twin below).
+
+---
+
 ## `create_training_plan_atomic`'s payload is still cast `as never` — nothing checks its 22 keys
 
 Logged: 2026-08-13 (found while executing Session 5 Task 5.1 of the goals/blocks plan, which removed the identical casts from the nutrition twin; deliberately left out of scope — that session was one task, one commit).

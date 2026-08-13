@@ -4,11 +4,15 @@ vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./client-blocks-service", () => ({ listBlocks: vi.fn() }));
 vi.mock("./client-goals-service", () => ({ getCurrentGoals: vi.fn() }));
 vi.mock("./metric-entries-service", () => ({ listMetricEntries: vi.fn() }));
+vi.mock("./nutrition-plan-notes-service", () => ({
+  listNutritionPlanNotesInRange: vi.fn(),
+}));
 
 import { supabaseAdmin } from "./supabase-admin";
 import { listBlocks } from "./client-blocks-service";
 import { getCurrentGoals } from "./client-goals-service";
 import { listMetricEntries } from "./metric-entries-service";
+import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
 import { getClientJourney } from "./client-journey-service";
 import type { ClientBlock } from "@/types/client-blocks";
 import type { MetricEntry } from "@/types/metric-entries";
@@ -90,6 +94,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getCurrentGoals).mockResolvedValue(null);
   vi.mocked(listMetricEntries).mockResolvedValue([]);
+  vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([]);
 });
 
 describe("getClientJourney", () => {
@@ -213,9 +218,11 @@ describe("getClientJourney", () => {
       blocks: [],
       goal: { weightKg: null, deadline: null },
       currentWeightKg: null,
+      currentBlockNotes: null,
     });
     expect(supabaseAdmin.from).not.toHaveBeenCalled();
     expect(listMetricEntries).not.toHaveBeenCalled();
+    expect(listNutritionPlanNotesInRange).not.toHaveBeenCalled();
   });
 
   it("resolves the goal through client_goals: weight and deadline in kg, untouched", async () => {
@@ -262,5 +269,99 @@ describe("getClientJourney", () => {
     expect(query.range).toHaveBeenNthCalledWith(1, 0, 999);
     expect(query.range).toHaveBeenNthCalledWith(2, 1000, 1999);
     expect(journey.currentWeightKg).toBe(78.4);
+  });
+
+  // These pin the POLICY on the wire rather than in a renderer. GET
+  // /api/client/journey is the RN contract: if elapsed-block notes crossed it
+  // and the web component simply didn't render them, RN would have to
+  // re-derive the same drop or the two client apps would disagree about what a
+  // client is allowed to read. This is the suite that would have caught that.
+  describe("currentBlockNotes — the visibility policy lives on the wire", () => {
+    const NOTE = {
+      id: "n1",
+      effectiveOn: "2026-08-05",
+      body: "Dropping calories 200.",
+    };
+
+    it("reads ONLY the current block's window — elapsed notes never leave the DB", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([
+        block({ id: "past", startsOn: "2026-06-01", endsOn: "2026-07-31" }),
+        block({ id: "current", startsOn: "2026-08-01", endsOn: "2026-08-31" }),
+      ]);
+      mockCheckInsQuery([[]]);
+      vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([NOTE]);
+
+      const journey = await getClientJourney(CLIENT_ID, TODAY);
+
+      // Not "fetched everything and filtered" — the elapsed block's window is
+      // never queried at all.
+      expect(listNutritionPlanNotesInRange).toHaveBeenCalledTimes(1);
+      expect(listNutritionPlanNotesInRange).toHaveBeenCalledWith(
+        CLIENT_ID,
+        "2026-08-01",
+        "2026-08-31"
+      );
+      expect(journey.currentBlockNotes).toEqual({
+        blockId: "current",
+        notes: [NOTE],
+      });
+    });
+
+    it("carries blockId so a client can ASSERT rather than infer the owner", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([
+        block({ id: "current", startsOn: "2026-08-01", endsOn: "2026-08-31" }),
+      ]);
+      mockCheckInsQuery([[]]);
+      vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([NOTE]);
+
+      const journey = await getClientJourney(CLIENT_ID, TODAY);
+      const current = journey.blocks.find((b) => b.state === "current");
+      expect(journey.currentBlockNotes?.blockId).toBe(current?.id);
+    });
+
+    it("null when no block is current — distinct from a current block with none", async () => {
+      // The distinction the nullable object buys, and the reason this is not a
+      // bare array: `null` = policy has nothing to show; `{blockId, notes: []}`
+      // = there is a current block and the coach wrote nothing. A bare `[]`
+      // could not tell those apart.
+      vi.mocked(listBlocks).mockResolvedValue([
+        block({ id: "past", startsOn: "2026-06-01", endsOn: "2026-07-31" }),
+      ]);
+      mockCheckInsQuery([[]]);
+
+      const journey = await getClientJourney(CLIENT_ID, TODAY);
+
+      expect(journey.currentBlockNotes).toBeNull();
+      expect(listNutritionPlanNotesInRange).not.toHaveBeenCalled();
+    });
+
+    it("empty notes array when the current block has none", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([
+        block({ id: "current", startsOn: "2026-08-01", endsOn: "2026-08-31" }),
+      ]);
+      mockCheckInsQuery([[]]);
+      vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([]);
+
+      const journey = await getClientJourney(CLIENT_ID, TODAY);
+      expect(journey.currentBlockNotes).toEqual({ blockId: "current", notes: [] });
+    });
+
+    it("no block carries its own notes field — the shape IS the policy", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([
+        block({ id: "past", startsOn: "2026-06-01", endsOn: "2026-07-31" }),
+        block({ id: "current", startsOn: "2026-08-01", endsOn: "2026-08-31" }),
+      ]);
+      mockCheckInsQuery([[]]);
+      vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([NOTE]);
+
+      const journey = await getClientJourney(CLIENT_ID, TODAY);
+
+      // Widening visibility to finished blocks must be a deliberate contract
+      // change, not a loosened filter — so there is nowhere on a block to put
+      // notes by accident.
+      for (const b of journey.blocks) {
+        expect(b).not.toHaveProperty("notes");
+      }
+    });
   });
 });

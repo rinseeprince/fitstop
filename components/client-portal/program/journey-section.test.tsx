@@ -34,6 +34,7 @@ const journey = (overrides: Partial<ClientJourney> = {}): ClientJourney => ({
   blocks: [block()],
   goal: { weightKg: 85, deadline: "2026-12-01" },
   currentWeightKg: 89.9,
+  currentBlockNotes: null,
   ...overrides,
 });
 
@@ -178,5 +179,64 @@ describe("JourneySection", () => {
     );
 
     expect(container).toBeEmptyDOMElement();
+  });
+
+  describe("coach notes", () => {
+    const notes = {
+      blockId: "block-1",
+      notes: [
+        { id: "n1", effectiveOn: "2026-08-05", body: "Dropping calories 200." },
+        { id: "n2", effectiveOn: "2026-08-12", body: "Holding here this week." },
+      ],
+    };
+
+    it("renders the wire's notes verbatim, oldest first, with their dates", () => {
+      render(<JourneySection journey={journey({ currentBlockNotes: notes })} />);
+
+      expect(screen.getByText("From your coach")).toBeInTheDocument();
+      expect(screen.getByText("Dropping calories 200.")).toBeInTheDocument();
+      expect(screen.getByText("Holding here this week.")).toBeInTheDocument();
+      expect(screen.getByText("5 Aug")).toBeInTheDocument();
+      expect(screen.getByText("12 Aug")).toBeInTheDocument();
+    });
+
+    it("says 'From your coach', never the coach-side 'Visible to X'", () => {
+      // That copy tells a COACH who else reads the note. On the reader's own
+      // screen it is meaningless.
+      render(<JourneySection journey={journey({ currentBlockNotes: notes })} />);
+      expect(screen.queryByText(/Visible to/)).not.toBeInTheDocument();
+    });
+
+    it("renders no notes section when the wire sends null or an empty list", () => {
+      const { rerender } = render(
+        <JourneySection journey={journey({ currentBlockNotes: null })} />
+      );
+      expect(screen.queryByText("From your coach")).not.toBeInTheDocument();
+
+      rerender(
+        <JourneySection
+          journey={journey({ currentBlockNotes: { blockId: "block-1", notes: [] } })}
+        />
+      );
+      expect(screen.queryByText("From your coach")).not.toBeInTheDocument();
+    });
+
+    it("does NOT filter — it renders whatever the wire allowed", () => {
+      // The policy lives on the wire (see ClientJourneyCurrentBlockNotes). A
+      // filter here would be that rule leaking back into a renderer, where the
+      // RN client cannot inherit it. So a note dated outside the rendered
+      // block's own range still renders: deciding was the server's job.
+      render(
+        <JourneySection
+          journey={journey({
+            currentBlockNotes: {
+              blockId: "block-1",
+              notes: [{ id: "n3", effectiveOn: "2026-07-01", body: "Earlier note." }],
+            },
+          })}
+        />
+      );
+      expect(screen.getByText("Earlier note.")).toBeInTheDocument();
+    });
   });
 });
