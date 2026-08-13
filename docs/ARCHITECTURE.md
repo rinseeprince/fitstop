@@ -69,6 +69,33 @@ Versioned goals using the `effective_from` / `superseded_at` pattern:
 - Unique index ensures one active (non-superseded) goal per client
 - Fields: `goal_weight`, `goal_body_fat_percentage`, `goal_deadline`, `primary_goal`, `set_by`, `notes`
 
+**One writer, one read path, one editor** (Session 0b, invariant 16):
+
+- **`updateGoals` (`services/client-goals-service.ts`) is the ONLY writer of the goal columns on
+  BOTH stores.** The four callers that used to write `clients.goal_*` themselves — `createClient`,
+  `updateClient`, the metrics PUT and the intake sync — no longer do, and none of them swallows a
+  goal failure any more: a goal edit lands in `client_goals` or errors visibly. **It is still not
+  atomic** (three autocommitted round trips; the inner mirror UPDATE is logged-and-swallowed), so
+  divergence is single-sourced and loud rather than impossible. The fix is an RPC and needs a
+  migration.
+- **`updateGoals` supersedes-and-inserts on EVERY call with no change detection of its own.** Any
+  caller must compare against what it seeded and skip the write when nothing changed, or it mints a
+  goal version and an audit event per save.
+- **`goalWeight` can be changed but never cleared** — `.optional()` and NOT `.nullable()` in
+  `updateGoalsSchema`. The other four fields accept explicit `null`.
+- **`goalStartDate <= goalDeadline`** is refined in `updateGoalsSchema` (and mirrored in the
+  Overview form for the inline message). A refine sees only the payload, so a **partial** update
+  carrying one date can still land an invalid pair against the stored other one — the complete
+  check belongs inside `updateGoals` after its merge and is not built.
+- **The editor is the Overview status card, inline** (`use-client-profile-edit.ts` +
+  `client-status-card.tsx`) — goal weight, goal body fat, goal start and deadline. The nutrition
+  drawer shows a read-only line; its editor was deleted. Setting a goal no longer requires opening
+  a nutrition plan.
+- **Routes:** `GET`+`PUT /api/clients/[id]/goals` (`data` is always `ClientGoal | null` — the old
+  shape-switching `?history=true` branch is gone) and `GET …/goals/history`, which returns
+  **superseded versions only**, newest first, bounded by `GOAL_HISTORY_LIMIT`. The past-deadline
+  bound is route-side against the **coach's** local today, deliberately not in the schema.
+
 ### Effective goal resolution
 
 A single pure resolver, `resolveEffectiveGoal()` (`lib/goals/resolve-effective-goal.ts`), turns the live `client_goals` record into the goal that drives nutrition + pace. It normalizes **nothing** — `client_goals.goal_weight` is canonical kilograms (migration 141), so the resolver reads it straight through and its old `weightUnit` parameter is gone rather than ignored. A NULL weight means **maintenance** (`goalWeightKg: null`). `startDate` falls back to `today` when `client_goals.goal_start_date` (migration 104) is unset.
@@ -81,7 +108,7 @@ A single pure resolver, `resolveEffectiveGoal()` (`lib/goals/resolve-effective-g
 - `components/clients/client-overview-tab.tsx` — the coach Overview's status card, fed by one SWR read of `GET /api/clients/[id]/goals` (`hooks/use-client-goals.ts`) and passed down as a prop. Client-local `today`, resolved from the in-scope client record: the goal's start date is on the **client's** calendar, the same anchor and reasoning as `comparison-service`. The card previously read `clients.goal_weight` / `goal_body_fat_percentage` directly and was the last coach surface rendering an unresolved goal.
 - `components/clients/metrics/hooks/use-merged-metrics.ts` — the coach Metrics page. It still hardcodes `deadline: null`/`startDate: null` instead of composing the input, so it is deliberately **not** on the shared composer below; Session 0b Task 0b.3 owns that fix.
 
-**The resolver's input is composed by one shared helper, `toClientGoalInput(currentGoals, client)`** (same module), used by the first four callers above. Weight and body fat carry a `?? client.*` mirror leg — the documented read switch for a client whose goal predates `client_goals`. **The deadline does not, and must never regain one:** `mapClientRow` has never mapped `clients.goal_deadline`, so `Client.goalDeadline` was permanently `undefined` and the three `?? client.goalDeadline` fallbacks were unreachable code. Both the field and the fallbacks were **deleted** in Session 0b Task 0b.1 (owner decision 2026-08-12) rather than the column being mapped: mapping would have made a mirror deadline that can silently diverge — `updateGoals`' mirror write is logged-and-swallowed — reachable in three calculator/pace paths for the first time. Pinned by test in `lib/goals/resolve-effective-goal.test.ts` and `services/nutrition-calc-inputs.test.ts`.
+**The resolver's input is composed by one shared helper, `toClientGoalInput(currentGoals, client)`** (same module), used by ALL FIVE callers above — `use-merged-metrics` joined them in Session 0b Task 0b.3, replacing a private literal that hardcoded `deadline: null, startDate: null` after fetching the full goal. Weight and body fat carry a `?? client.*` mirror leg — the documented read switch for a client whose goal predates `client_goals`. **The deadline does not, and must never regain one:** `mapClientRow` has never mapped `clients.goal_deadline`, so `Client.goalDeadline` was permanently `undefined` and the three `?? client.goalDeadline` fallbacks were unreachable code. Both the field and the fallbacks were **deleted** in Session 0b Task 0b.1 (owner decision 2026-08-12) rather than the column being mapped: mapping would have made a mirror deadline that can silently diverge — `updateGoals`' mirror write is logged-and-swallowed — reachable in three calculator/pace paths for the first time. Pinned by test in `lib/goals/resolve-effective-goal.test.ts` and `services/nutrition-calc-inputs.test.ts`.
 
 ### body_metrics table
 
@@ -563,12 +590,13 @@ Each context is a thin wrapper: it provides the hook's return value, and consume
 
 `components/clients/client-overview-tab.tsx` + `components/clients/overview/**`. Six sections reading top to bottom as *what needs my attention → what happened → what I said last time → who this client is → what they are on → how consistent they are → how they feel*. Every summarising card links to the tab that owns its data; every unset state names what is missing and offers the action that fixes it.
 
-Five SWR reads back it, all coach-scoped under `/api/clients/[id]/`:
+Five SWR reads back it (six with the lazy goal history), all coach-scoped under `/api/clients/[id]/`:
 
 | Endpoint | Serves | Notes |
 |---|---|---|
 | `GET …/overview-brief` | Waiting on you, the activity feed, the check-in timing strip | **Read-only** — it does not touch the `last_viewed_at` anchor |
-| `GET …/goals` | The status card's goal-weight and goal-body-fat targets | Via `hooks/use-client-goals.ts`, which owns the key builder and the matching area invalidator. The tab resolves the record through `resolveEffectiveGoal` and passes the result down; the card never touches the `clients` mirror. Shared with the goal editor |
+| `GET …/goals` | The status card's goal targets and dates, and the inline goal editor's seeds | Via `hooks/use-client-goals.ts`, which owns the key builder and the matching area invalidator. The tab resolves the record through `resolveEffectiveGoal` and passes the result down; the card never touches the `clients` mirror. The hook returns the RAW goal — `EffectiveGoal.startDate` coalesces to today, so seeding a form from it would write today into a field the coach never set |
+| `GET …/goals/history` | The footer's Goal-history popover | **Lazy** — the SWR key stays `null` until the popover opens, so the Overview does not pay for it on every load. Superseded versions only, bounded |
 | `POST …/overview-brief/seen` | "Mark seen" | The ONLY writer of `coach_client_views.last_viewed_at`; returns `{ lastViewedAt }` nested under `data` |
 | `GET …/overview-plan-summary` | Current-plan cards + the status card's training-block chips | `training`, `upcomingTraining` and `nutrition` are independently nullable |
 | `GET …/adherence?days=` | The three-rail adherence card | `days` clamped to [7, 28]; rails are index-aligned with `dates` |
