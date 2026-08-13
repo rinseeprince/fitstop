@@ -116,7 +116,7 @@ Rule of thumb: a rule about **safety** (RLS, GRANT, auth chain ordering, rate li
 | `CONVENTIONS.md §2` | *"One fix per change"* | **(a)** | Comply *within* a session: each numbered task is its own commit. Sessions bundle tasks; commits do not. |
 | `CONVENTIONS.md §3` | *"Forms use React Hook Form with `zodResolver(schema)` and `defaultValues`"* (`:164`) | **(a)** | The existing `client-goal-editor.tsx` uses six raw `useState` calls and predates the rule. The Session 0b editor complies; do not copy the old one. |
 | `CONVENTIONS.md §4` | File size limits | **(a), soft** | Explicitly guidelines. Split only at a natural boundary (block row / block form / pace readout), never by prop-drilling one flow across files. |
-| `CONVENTIONS.md §5` | *"No `as any` type casts"* | **(a)** | `services/nutrition-plan-service.ts:85` and `:117` cast the RPC arg object `as never` **twice**, so tsc verifies nothing about the 24 keys. Session 5 changes the arity and **must** remove those casts — see Task 5.1. |
+| `CONVENTIONS.md §5` | *"No `as any` type casts"* | **(a)** | `services/nutrition-plan-service.ts` casts the RPC arg object `as never` **twice**, so tsc verifies nothing about the 24 keys. Session 5 is now the single task that removes them — see Task 5.1. No arity change is involved any more; the signature stays at 24. |
 | `CONVENTIONS.md §8` | New table → `ENABLE ROW LEVEL SECURITY`, **no policies**, `GRANT ALL … TO service_role` | **(a)** | Comply exactly (`CONVENTIONS.md:360-366`). `npm run check:rls` reads the live catalog and derives the table set at runtime (`scripts/assert-rls.ts:57`), so no allowlist needs updating. |
 | `CONVENTIONS.md §8` | Timestamps: `created_at`, `updated_at` on all tables | **(b), narrow** | `nutrition_plan_notes` is an immutable event table and deliberately skips `updated_at` — the documented exception (`CONVENTIONS.md:384`, precedent `body_metrics`). Add the explaining comment. |
 | `docs/newdesignsystem.md` → Typography | Mono = numbers only; `npm run check:labels` fails the build on raw `font-mono-display` | **(a)** | Block **names** are sans even with digits ("Cut 2") — the digits belong to the name. Dates, week counts and weights are mono via `MONO_LABEL_CLASS`. |
@@ -149,7 +149,7 @@ Listed in execution order.
 | **4** ✅ | Client-facing block + the "Waiting on you" row — **SHIPPED + owner-smoked all clear 2026-08-12** (3 commits; no migration) | none | Yes — the client block feature |
 | **4B** ✅ | TDEE ownership: profile owns BMR/TDEE, builder consumes — **SHIPPED 2026-08-12** (17 commits; the calculator now CONSUMES the profile's TDEE rather than re-deriving it) | none | Yes — activity + custom TDEE move to the client profile; the drawer loses its dropdown |
 | **0b** ✅ | Goals: one read path, one writer, one editor, history — **SHIPPED + owner-smoked 2026-08-13** (8 commits; no migration) | none | Yes — the goal editor |
-| **5** | Nutrition builder: deficit as a first-class input | **1** (`nutrition_plans` + RPC arity) | Yes |
+| **5** | Type the plan-save RPC payload (`as never` removal) — **DESCOPED 2026-08-13**; the deficit input, its two columns and the arity change are parked, see SESSION 5 | none | No — one typing commit |
 | **6** | The save note + the Journey timeline | **1** (`nutrition_plan_notes`) | Yes |
 
 ### What actually depends on what
@@ -157,11 +157,7 @@ Listed in execution order.
 Read this before assuming the order above is forced. It mostly is not.
 
 - **2 → 3 → 4.** A real chain: each needs the previous one's API. This is the only hard chain in the document.
-- **5 → 6.** The note lives beside the deficit in the same drawer.
-- **1.2 → 5.** Session 1's shared energy helper is the deficit input's prerequisite, and Session 5 assumes the two dead calculator exports are already gone.
-- **1B → 5, HARD.** Session 5's two new columns must be born on versioned rows — landing a stored deficit on the in-place singleton and versioning afterwards would version a column nothing backfills. Run 1B first.
-- **4B → 5, HARD — SATISFIED (4B shipped 2026-08-12).** Session 5's stored deficit is solved against TDEE, and 4B is what made TDEE trustworthy: one helper owns the pair atomically, activity is a client fact, and `generateNutritionPlan` now **consumes** `input.tdee` rather than re-deriving it from bmr × activity (so a coach's custom TDEE reaches the calculator). Session 5 can rely on that.
-  **Shared-file note, now one-directional:** 4B has already rewritten `app/api/clients/[id]/metrics/route.ts` (the energy writes go through `recalculateClientEnergy`; the handler writes no bmr/tdee itself). **0b.2 is the one running second** and must re-verify 4B's change rather than the reverse — in particular, the `updateGoals` dual-write it owns is pinned by a test in that route's new suite, which 0b.2 should keep green rather than replace.
+- **Session 5 now depends on NOTHING** (descoped 2026-08-13). Every dependency it had — `1.2 → 5`, `1B → 5`, `4B → 5`, `5 → 6` — existed because of the stored deficit, its two columns and the arity change they forced. All three are parked, so the remaining task is a typing change with no data, no migration and no shared surface. It can run whenever, including after Session 6.
 - **1B → 3.2, correctness not code.** Task 3.2's nutrition column resolves the version covering the block's window (see the note in its table row); without 1B an elapsed block would read the CURRENT plan's `tdee` against an old era's event baseline and print a wrong deficit.
 - **0b.1's DECISION → 4.2 — a decision dependency, NOT a code dependency.** Task 4.2 needs one authoritative answer to: *is `clients.goal_deadline` mapped, or are the three dead `?? client.goalDeadline` fallbacks deleted?* It does **not** need 0b.1's Overview code to have shipped. The question can be settled in isolation, in a sentence, without touching a file. **If 0b has not run, Session 4 settles it and records the answer in its STATUS block; 0b then inherits that decision rather than re-litigating it.** An executor who reads this as "Session 4 is blocked on a UI change" has misread it — Session 4 is blocked on nothing.
 - **0 → 0b, softly.** 0b inherits Session 0's `notes` decision from its STATUS block, and consolidating readers onto a write path that still nulls sibling fields would be premature. Not a hard block.
@@ -893,7 +889,7 @@ A list of cards, **not a metric picker**. Do not copy `metric-switcher.tsx` (`:3
 | Column | Source |
 |---|---|
 | **Training** — program name, when placed | `training_plans` rows overlapping `[starts_on, ends_on]`. `getNextFutureTrainingPlan` (`services/training-service.ts`) is the ONE owner of the "starts later" predicate — do not write a fourth copy. Empty: "No program placed". |
-| **Nutrition** — calories, what the deficit was | The **events**, not the plan row (events are SOT). Deficit = `plan.tdee − event baseline` until Session 5 stores it — **where `plan` is the VERSION covering the block's window** (`getNutritionPlanForDate`, Session 1B), never the current row: an elapsed block read against today's `tdee` mixes eras and prints a wrong deficit. Empty: "Not set". |
+| **Nutrition** — calories, what the deficit was | The **events**, not the plan row (events are SOT). Deficit = `plan.tdee − event baseline`, derived rather than stored (Session 5's stored deficit is parked — see SESSION 5) — **where `plan` is the VERSION covering the block's window** (`getNutritionPlanForDate`, Session 1B), never the current row: an elapsed block read against today's `tdee` mixes eras and prints a wrong deficit. Empty: "Not set". |
 | **Weight** — start → end, plus the pace readout when the block has a target | The merged coach series (`components/clients/metrics/hooks/use-merged-metrics.ts` + `utils/metric-points.ts`) — no new API. |
 
 **Vertical timeline, "What happened":** block start · mid-block changes · block end. v1 sources: block boundaries (derived), training placements in range (`training_plans.effective_from`), and nutrition save notes once Session 6 ships. Entries may carry a coach note rendered as a **quote block** labelled "visible to \<client first name\>" — which needs a new shared first-name util (none exists; see §4). Empty timeline reads **"Nothing yet."**
@@ -1432,118 +1428,136 @@ Start by reading the documents and the STATUS blocks, then show me your plan for
 
 ---
 
-# SESSION 5 — Deficit as a first-class nutrition input
+# SESSION 5 — Type the plan-save RPC payload
 
-**One migration, and it changes the RPC arity. This is the highest-risk session in the document.**
+**Zero migrations. ONE task, one commit.** Descoped by owner decision 2026-08-13 —
+Tasks 5.2–5.4 are parked, see "What was parked" below. **Depends on nothing** and can
+run at any time.
 
-Depends on Session 1 Task 1.2 (the shared energy helper) **and on SESSION 1B (hard —
-see §5)**: the two new columns are born on VERSIONED rows, so a stored deficit is
-date-scoped per era for free. Independent of Sessions 2–4, 0 and 0b.
+### Task 5.1 — Remove the `as never` casts on `create_nutrition_plan_atomic`
 
-> **1B reconciliation notes for this session:** (a) Task 5.2's "always-update bucket
-> of the `DO UPDATE SET`" language predates 1B — there is no ON CONFLICT any more;
-> the two columns join the INSERT column list and branch (c)'s absorb-UPDATE in the
-> close-and-insert RPC. (b) The arity-change discipline below (DROP by exact type
-> list, re-apply the 106 lockdown at the new arity, re-pin the key-count test) is
-> UNCHANGED and now applies to the 1B RPC body. (c) The drawer work inherits the
-> single-button apply dialog and its null-means-client-today contract (Session 1
-> smoke STATUS), plus 1B's absorb-warning line.
+`services/nutrition-plan-service.ts` casts the RPC arg object **`as never`, twice**, so
+TypeScript verifies nothing about the payload. A key that does not match the live
+signature makes PostgREST unable to resolve the overload; `createNutritionPlan` returns
+null; **every plan save fails** with "Failed to create nutrition plan" while `tsc`,
+`eslint` and `vitest` all stay green. The file's own comment says exactly that.
 
-### Task 5.1 — The arity change, and the landmine that hides it
+**The fix.** Type the args object as
+`Database["public"]["Functions"]["create_nutrition_plan_atomic"]["Args"]` so a mismatch
+between the payload and the regenerated types becomes a **compile error**.
+`CONVENTIONS.md §5` already forbids the escape; this is the one place it survives.
 
-`services/nutrition-plan-service.ts:85` and `:117` cast the RPC arg object **`as never`, twice**, so TypeScript verifies nothing about the 24 keys. A payload key that does not match the live signature makes PostgREST unable to resolve the overload; `createNutritionPlan` returns null; **every plan save fails** with "Failed to create nutrition plan" while `tsc`, `eslint` and `vitest` all stay green. The file's own comment at `:110-116` says so.
+**No migration, and no arity change.** The casts only had to wait because the original
+Task 5.1 bundled them with the arity change Task 5.2's two new columns required. With
+5.2 parked there is no new parameter, no `DROP FUNCTION`, no migration-106 lockdown to
+re-apply, and no key count to move. Session 1B kept the signature at 24 args
+deliberately and recorded these casts as Session 5's to remove.
 
-**Remove the casts as part of this task.** Type the args object as `Database["public"]["Functions"]["create_nutrition_plan_atomic"]["Args"]` so a mismatch between the payload and the regenerated types becomes a **compile error** instead of a silent production outage. That is the belt that makes the rest of this session safe, and `CONVENTIONS.md §5` already forbids the escape.
+**Belts already in place — keep them green, do not rewrite them.**
+`services/nutrition-plan-service.test.ts` pins the exact sorted key list and the key
+count. Grep for it at execution; every line reference in this document has drifted at
+least once. It stays at 24.
 
-**Migration discipline for the new arity** (the history is clean and must stay clean — every arity change so far explicitly DROPped the prior signature by type list before creating the new one; see 048→110→115→133→139):
-
-1. `DROP FUNCTION … (<the exact 24 types>)` first. A bare `CREATE OR REPLACE` with a new parameter **mints a second overload**; PostgREST then 300s/`PGRST203`s or silently binds the wrong one.
-2. Re-apply the migration-106 lockdown at the **new** arity (`139:200-201`). A `REVOKE`/`GRANT` written at the wrong arity is a **silent no-op** that leaves `PUBLIC EXECUTE` on a `SECURITY DEFINER` function taking a caller-supplied `client_id`.
-3. Update `services/nutrition-plan-service.test.ts:140-152` — it asserts the exact sorted key list and `toHaveLength(24)`. It is your loudest belt; keep it pinned to the new number.
-
-### Task 5.2 — Two columns on `nutrition_plans`
-
-`deficit_value NUMERIC NULL` + `deficit_type TEXT NULL CHECK (deficit_type IN ('tdee_percent','absolute_kcal'))`. Nothing stores a deficit, rate or percent anywhere today — verified column by column against the live 28-column table. Both go in the always-update bucket of the `DO UPDATE SET`.
-
-Storing the *intent* rather than the result is the whole point (invariant 12): when TDEE moves, a 20%-of-TDEE deficit re-solves to a new kcal number; a stored kcal number stays put. Both must survive a recalculation.
-
-**Do not confuse this with `calorie_surplus_percentage`**, which is a per-date **training** surplus denormalized onto `training_events` (migration 085) and read by the cascade. Different axis, different table, different meaning.
-
-### Task 5.3 — Both directions in the calculator
-
-Extend `calculateBaselineCalories` (or add a sibling entry point) so the same equation runs either way, sharing the caps and floor rather than duplicating them:
-
-- **deadline → deficit** (today's path, unchanged in behaviour).
-- **deficit → projected date**: `daysToGoal = totalCalorieChange / dailyDeficit`, then the projected date.
-
-`calculateBaselineCalories` has **two** in-file call sites, not one: `:320` (`generateNutritionPlan`, live) and `:213` (`calculateTargetCalories`, dead and a trap — it drops `calcStartDate`/`today`). Plus eight call sites in `services/nutrition-service.test.ts`. Session 1 Task 1.2 should already have deleted the dead pair; confirm.
-
-### Task 5.4 — The builder surface
-
-- Deficit becomes an input alongside goal-and-deadline. **Neither is primary.** Enter a deadline, see the implied deficit; enter a deficit, see the projected date.
-- **Show BMR and TDEE next to the suggested target.** TDEE is rendered once today (`components/clients/nutrition/builder/nutrition-targets-block.tsx:146`) and BMR is **never** shown as a number — the only BMR reference in the builder tree is an absence warning (`drawer-footer.tsx:72-84`).
-- **The AUTO save path posts no calorie number at all** (`hooks/use-nutrition-builder.ts:201-210`) — the server re-resolves everything and re-runs the calculator (`nutrition-plan-orchestrator.ts:178`). So the deficit **cannot** be a browser-only preview knob: it must travel in the POST body, be accepted by `nutritionPlanSchema` (`lib/validations/nutrition.ts:37-67`), and be threaded into `generateNutritionPlan`, or the save silently recomputes the deadline-driven number and discards the coach's choice.
-- **Surface the caps and the floor.** `autoPlan.warnings` is computed in the browser (`use-nutrition-builder.ts:87`) and **nothing reads it**; the `warnings` state (`:176`) is set only from the POST response (`:236`) and rendered outside the drawer by `NutritionBuilderRightPanel` (`:31-33`). A coach setting an impossible deadline sees a silently-capped number in the live preview. With a deficit input this becomes indefensible — render them inline, at the input.
-- **The caps and floor gate the suggestion only** (invariant 13). A coach may type lower; `handleCustomMacros` (`nutrition-plan-orchestrator.ts:198-275`) already bypasses both entirely. Do not turn either into a hard block.
-
-**While you are here, two silent-discard bugs to fix or record:** `nutritionPlanSchema` still accepts `goalDeadline` (`:45`) and `trainingVolumeHours` (`:39`); nothing reads `body.goalDeadline`, and `trainingVolumeHours` reaches the RPC but is ignored by the calculator. A caller passing either gets a 200 and silence.
+**Verify the generated type before writing against it.** Confirm the `Args` shape
+genuinely pins all 24 keys rather than widening to a loose record. If it widens, typing
+against it buys nothing — say so and propose a hand-written interface pinned by the
+existing key-count test instead. Record which it was in the STATUS block.
 
 ### Session 5 verification
 
-Full `§13` + `check:rls` + the §8 migration workflow. **The test that matters most:** a save round-trip proving the payload key list matches the live signature. Then: a 20%-of-TDEE deficit re-solving to a different kcal after a TDEE change; a coach-typed sub-floor number surviving the save with a visible warning; deadline→deficit and deficit→date agreeing on the same pair.
+`npx tsc --noEmit` · `npx eslint .` · `npx vitest run` · `npm run check:labels` · no
+`as any`, no introduced markers. **No migration**, so no `check:rls`, no `db push`, no
+`gen types`.
+
+**Mutation-prove the belt:** add a bogus key to the args object and confirm `tsc` now
+fails. A cast removal that changes no failure mode is not a fix, and this is the only
+evidence that it did anything.
+
+**Browser smoke (owner runs it):** save a nutrition plan and confirm it still saves.
+One pass is enough — this is a typing change with no runtime delta.
+
+### What was parked, and what would un-park it
+
+Tasks 5.2–5.4 — the stored deficit, its two columns, the both-directions calculator and
+the deficit input in the drawer — were **parked by owner decision 2026-08-13**. Not
+rejected. The reasoning, recorded so it is not re-derived:
+
+- **The capability already exists in a rougher form.** A coach who wants a specific
+  deficit types the resulting number into custom calories: TDEE 2,400, want −500, type
+  1,900. Session 5's delta was typing `−500` or `−20%` instead and having it re-solve
+  when TDEE moves — ergonomics and drift protection, not a new capability. No coach has
+  asked for it.
+- **Most of Task 5.4 arrived anyway, from other sessions.** The builder now shows TDEE
+  (`nutrition-settings-form.tsx`, `nutrition-targets-block.tsx`), the warnings component
+  renders (`nutrition-warnings.tsx`), and Session 0b.5 fixed the bare-TDEE silence when
+  no goal is set.
+- **The one argument that got STRONGER — and it is the trigger to un-park.** 4B made
+  TDEE recompute on every weight change, so a frozen custom-calorie number now drifts
+  away from the coach's intended deficit more often than it used to, silently. That is
+  soft today because plans never auto-regenerate, so the coach re-enters the number at
+  their next regenerate. **If a coach reports that a plan's deficit "moved on its own",
+  or asks to express a deficit as a percentage, un-park 5.2–5.4.** The design in this
+  file's git history is still correct; only the arity discipline needs re-reading
+  against whatever the RPC's signature is by then.
+
+Invariants 12 and 13 stay in §2 as design constraints for the un-parked version.
+Nothing in the shipped product violates them, because nothing stores a deficit.
+
+**Two silent-discard bugs found while scoping 5.4, recorded and not fixed:**
+`nutritionPlanSchema` still accepts `goalDeadline` and `trainingVolumeHours`; nothing
+reads `body.goalDeadline`, and `trainingVolumeHours` reaches the RPC but is ignored by
+the calculator. A caller passing either gets a 200 and silence. Belongs to whoever
+next touches that schema.
 
 ---
 
 ### 📋 SESSION 5 PROMPT
 
 ```
-Read in full: CONVENTIONS.md, docs/ARCHITECTURE.md, docs/newdesignsystem.md, and
-docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md §1-§5 plus the Session 1 STATUS blocks
-and all of SESSION 5. You are executing SESSION 5 only.
+Read in full: CONVENTIONS.md, docs/ARCHITECTURE.md, and
+docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md §1-§5 plus all of SESSION 5. You are
+executing SESSION 5 only.
 
-This session depends only on Session 1's shared energy helper (Task 1.2). It is
-INDEPENDENT of the blocks feature (Sessions 2-4) and of Sessions 0 and 0b. Do not
-couple them and do not read client_phases anywhere in it.
+Session 5 is ONE task and ONE commit, descoped by owner decision 2026-08-13. Tasks
+5.2-5.4 are PARKED: do not build a deficit input, do not add columns, do not touch the
+RPC signature. If you believe a migration is needed, STOP AND ASK.
 
-THE LANDMINE, READ THIS FIRST: services/nutrition-plan-service.ts:85 and :117 cast the
-create_nutrition_plan_atomic arg object `as never`, TWICE. TypeScript checks nothing
-about the 24 keys. A payload/signature mismatch makes PostgREST unable to resolve the
-overload, createNutritionPlan returns null, and EVERY plan save fails while tsc, eslint
-and vitest all pass. Your first commit removes those casts and types the object against
-types/database.ts so a mismatch is a COMPILE error. Everything else in this session
-depends on that belt existing.
+The task: services/nutrition-plan-service.ts casts the create_nutrition_plan_atomic arg
+object `as never`, TWICE. TypeScript checks nothing about the payload. A
+payload/signature mismatch makes PostgREST unable to resolve the overload,
+createNutritionPlan returns null, and EVERY plan save fails while tsc, eslint and vitest
+all pass. The file's own comment says so. Type the args object against types/database.ts
+so a mismatch becomes a COMPILE error.
 
-Migration discipline for the arity change:
-  - DROP FUNCTION with the exact 24-type list BEFORE creating the new signature. A bare
-    CREATE OR REPLACE with a new parameter mints a SECOND overload.
-  - Re-apply the migration-106 EXECUTE lockdown at the NEW arity. A REVOKE/GRANT written
-    at the wrong arity is a SILENT no-op on a SECURITY DEFINER function that takes a
-    caller-supplied client_id.
-  - services/nutrition-plan-service.test.ts:140-152 pins the exact sorted key list and
-    toHaveLength(24). Keep it pinned to the new number — it is your loudest belt.
+Before writing anything, verify two things and report both:
+  - That the generated Args type genuinely pins all 24 keys rather than widening to a
+    loose record. If it widens, typing against it buys nothing — say so and propose a
+    hand-written interface instead.
+  - The current line numbers and the key-count test's location, by grep. Every line
+    reference in this document has drifted at least once.
 
-The design: deficit and deadline are BOTH first-class, neither primary. Deficit stores
-INTENT (a % of TDEE or absolute kcal) so it survives a TDEE change. Caps and the floor
-gate what the app SUGGESTS — a coach may type lower. Today those warnings are computed
-in the browser and read by nothing; surface them at the input.
+Mutation-prove it: add a bogus key and confirm tsc fails. A cast removal that changes no
+failure mode is not a fix.
 
-The AUTO save path posts no calorie number at all — the server re-resolves and re-runs
-the calculator. A deficit that lives only in the browser will be silently discarded.
+Rules for this session:
+- Follow CONVENTIONS.md §2: show me a plan and get approval before writing any code.
+- ONE commit. No migration, so no db push, no gen types, no check:rls.
+- Keep the existing key-list test green rather than rewriting it — it is the belt that
+  has guarded this since migration 139, and it stays at 24.
+- Commit-ready means all of CONVENTIONS.md §13.
+- Append a STATUS block to the plan doc when it lands.
 
-Rules: CONVENTIONS.md §2 (plan first, wait for approval), one commit per task except
-migration + regenerated types (same commit), next free migration number taken at
-execution time, `npx supabase db push` is classifier-blocked here so tell me and I run
-it, commit-ready = §13 + check:rls. Do not drive a browser — hand me a checklist.
-If a doc rule blocks you, follow §3. Append a STATUS block as each task lands.
-
-Start with the `as never` removal and show me that plan before anything else.
+Start by reading the documents and the current state of nutrition-plan-service.ts, then
+show me your plan.
 ```
 
 ---
 
 # SESSION 6 — The save note and the Journey timeline
 
-**One migration. Depends on Session 5 (same drawer) and, for the timeline half, on Session 3.**
+**One migration. Depends on Session 3 for the timeline half, and on nothing else** —
+the old `5 → 6` coupling was "the note lives beside the deficit in the same drawer", and
+Session 5's drawer work is parked (see SESSION 5). Session 6 can run first.
 
 ### Task 6.1 — Migration: `nutrition_plan_notes`
 
@@ -1574,7 +1588,7 @@ Three properties earn the table, and each one is a lesson from a column that fai
 
 **Answer migration 139's header directly in your plan** (`139:5-10` is a pre-written rejection of plan-level note columns: *zero read sites, invisible AND self-destructing*). This table is the opposite on all three counts — it is read by the Journey timeline and the client, it never self-destructs, and it is client-visible. Say so in the migration header.
 
-**Do not put this in `create_nutrition_plan_atomic`.** Keep the arity at whatever Session 5 left it.
+**Do not put this in `create_nutrition_plan_atomic`.** The signature stays at 24 args — Session 5's arity change was parked with the stored deficit, so nothing in this workstream moves it. Verify against the live catalog rather than this sentence.
 
 ### Task 6.2 — Write path
 
@@ -1600,8 +1614,9 @@ Full `§13` + `check:rls` + the §8 migration workflow. Tests: two saves on the 
 
 ```
 Read in full: CONVENTIONS.md, docs/ARCHITECTURE.md, and
-docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md §1-§5 plus the Session 5 STATUS blocks and
-all of SESSION 6. You are executing SESSION 6 only.
+docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md §1-§5 and all of SESSION 6 (plus the
+Session 5 STATUS block if that session has run — it is one typing commit and is not a
+prerequisite). You are executing SESSION 6 only.
 
 One new table (nutrition_plan_notes), one write path, two read paths.
 
