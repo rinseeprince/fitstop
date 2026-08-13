@@ -137,15 +137,18 @@ export function InlineDarkInput({
   value,
   onChange,
   ariaLabel,
+  type = "number",
 }: {
   value: string;
   onChange: (next: string) => void;
   ariaLabel: string;
+  /** `date` for the goal-window cells; numeric everywhere else. */
+  type?: "number" | "date";
 }) {
   return (
     <input
-      type="number"
-      inputMode="numeric"
+      type={type}
+      inputMode={type === "number" ? "numeric" : undefined}
       aria-label={ariaLabel}
       value={value}
       onChange={(e) => onChange(e.target.value)}

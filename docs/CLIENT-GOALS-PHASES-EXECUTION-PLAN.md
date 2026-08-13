@@ -4288,3 +4288,90 @@ caller that did not is this one).
 
 **UI unverified — owner smoke:** open a client's Journey → Metrics and confirm the weight and body-fat
 cards still show their goal and "to go" figures unchanged.
+
+---
+
+### Task 0b.4 — A goal editor with its own home ✅ SHIPPED 2026-08-13
+
+**The plan doc's precedent for this task does not exist** (§3 class **b**, stale).
+`components/clients/overview/client-settings-dialog.tsx` — the "established Overview overlay
+precedent" 0b.4 was told to match — was DELETED by Session 4B, which replaced modal editing with
+inline editing. Owner decision 2026-08-13: **inline (i)**. A pencil-opens-a-dialog beside a
+pencil-edits-in-place on the same card would be incoherent. The grammar matched instead is
+`use-client-profile-edit.ts` + `inline-edit-fields.tsx`.
+
+**Owner decision, same date: both dates are REQUIRED fields, not optional extras.** The deadline is
+what turns a goal weight into a daily deficit at all (with none the calculator returns
+maintenance), and the start date decides whether that deficit is spread from today or a future
+date. `goalStartDate`'s only writer in the entire app was `client-goal-editor.tsx:175`, which 0b.5
+deletes — omitting it here would have left the calculator reading a field nothing could write, the
+exact `work_activity_level` state 4B spent a session unpicking.
+
+**Where they went: a FOURTH band on the status card**, in the same 3-column shape as the three
+above it (`Goal start` · `Deadline` · empty). The third column is deliberately blank — a derived
+"time left" readout would be a new invented stat. The two existing goal cells (weight, body fat)
+become inputs in edit mode using the same hand-rolled cell the TDEE column already uses.
+`InlineDarkInput` gained an optional `type` prop (default `"number"`), mirroring the one
+`InlineTextInput` already carries.
+
+#### Three things found at execution that the plan did not have
+
+1. **`updateGoals` supersedes on EVERY call, so the save needs change detection** (invariant 7).
+   Calling it unconditionally would mint a new `client_goals` version *and an audit event* every
+   time a coach edited a phone number. Each goal field is compared against the value it was SEEDED
+   from and only changed keys are sent; if none changed the PUT is not issued at all. This is the
+   most load-bearing line in the task and it is mutation-proven.
+2. **`EffectiveGoal.startDate` cannot render.** It coalesces to today, so displaying it would label
+   every client with no start date as starting today. The card takes the STORED value as its own
+   `goalStartDate` prop, documented at the prop. `MetricCell` gained an `emptyLabel` so a date the
+   coach never set reads **"Not set"** rather than "Not recorded" (right for a measurement, wrong
+   for a target).
+3. **0b.1's `onClientUpdated` prop is DELETED, not consumed.** It was added as the editor's
+   revalidation slot — but under inline editing the card never writes anything; the rail's Save
+   does, through the hook's `onSaved`. Leaving a zero-consumer prop behind would be the exact shape
+   this session keeps removing. The tab wires `handleSaved` (goals-area invalidate + client
+   revalidate) into the hook instead.
+
+#### The two riders
+
+**Cross-field refinement shipped in BOTH schemas.** `updateGoalsSchema` is the load-bearing copy —
+it binds every writer including React Native; the form schema mirrors it so the coach is told
+inline rather than by a 400. **Its hole is real and is pinned by a test rather than described:** a
+zod refine only sees the payload, so a partial PUT carrying just `goalStartDate` against a stored
+earlier `goalDeadline` passes and lands an invalid pair. **The right reason it is unbuilt: the
+complete check belongs inside `updateGoals` after its merge — the one place both final values are
+known — and this session has no other reason to touch that merge.** NOT "the browser form always
+sends both", which says nothing about RN, whose contract this schema is.
+
+**The fourth sequential write is named** (§2 item 13). `useClientProfileEdit` now issues profile
+PATCH → metrics PUT → check-in-config PATCH → **goals PUT**, none of them transactional. A failure
+after the first can leave client details committed and the goal not, and since 0b.2 that failure is
+loud rather than swallowed — so the toast reads **"Partly saved · The client details were saved,
+but the rest was not: …"** instead of a bare "Save failed" that tells the coach to redo an edit
+already stored. This widens an existing three-write window rather than creating one.
+
+**A goal weight can be changed but never removed** — `updateGoalsSchema` has it `.optional()` and
+NOT `.nullable()`, so no payload clears it. Emptying the box is refused with a plain sentence
+rather than silently doing nothing.
+
+#### Tests
+
+**275 files / 2912 (2903 + 9; arithmetic closes).** Editor 6, against the REAL hook driving the
+REAL cards: nothing-changed issues no goals PUT · only the changed field is sent · an emptied
+deadline sends explicit null · a start date after the deadline blocks the submit so **nothing at
+all** is written, not even the profile PATCH · an imperial coach's untouched goal weight is not
+rewritten · an edited one converts back to kg. Schema 3, including the partial-update hole.
+
+- **Mutation 1** (unconditional goals PUT) killed the invariant-7 pin and the imperial no-op.
+- **Mutation 2** (`canonical` instead of `commit`) killed four pins.
+- **Mutation 3** (drop the form refine) killed the refusal pin.
+- Backed up with `cp`, restored, `shasum`-verified. Never `git stash` / `git checkout --`.
+
+#### Gates
+
+`tsc --noEmit` clean · `eslint .` **0 errors, 209 warnings** (unchanged) · `vitest run` **275 files
+/ 2912 tests** · `check:labels` OK 662 · no `as any` · no markers · no migration. **One
+intermittent failure appeared in a single full run and did not reproduce on two re-runs** — the
+documented flaky-full-run pattern; it is recorded rather than silently re-run away.
+
+**UI unverified.** Smoke ships with 0b.5.

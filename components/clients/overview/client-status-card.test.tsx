@@ -87,6 +87,7 @@ const PROPS = {
   upcomingTraining: null,
   onOpenMetrics: vi.fn(),
   goal: NO_GOAL,
+  goalStartDate: null,
   edit: editStub,
 };
 
@@ -299,6 +300,7 @@ describe("ClientStatusCard — actions", () => {
       <ClientStatusCard
         client={BASE}
         goal={NO_GOAL}
+        goalStartDate={null}
         training={null}
         upcomingTraining={null}
         onOpenMetrics={onOpenMetrics}

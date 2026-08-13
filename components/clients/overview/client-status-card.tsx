@@ -30,17 +30,42 @@ type ClientStatusCardProps = {
    * this card reading the mirror directly was the last coach-side one that did.
    */
   goal: EffectiveGoal;
+  /**
+   * The STORED `client_goals.goal_start_date`, not the resolved one.
+   * `EffectiveGoal.startDate` coalesces to today, which is right for a
+   * calculator asking "spread the deficit from when?" and wrong for a display
+   * asking "what did the coach set?" — rendering it would label every client
+   * with no start date as starting today.
+   */
+  goalStartDate: string | null;
   training: OverviewPlanSummary["training"];
   upcomingTraining: OverviewPlanSummary["upcomingTraining"];
   onOpenMetrics: () => void;
-  /**
-   * Revalidation slot: fires after a write made from this card, refreshing both
-   * the goals read and the client record. Consumed by the goal editor (0b.4).
-   */
-  onClientUpdated?: () => void;
   /** Inline edit state, owned by the section rail above both cards. */
   edit: ClientProfileEdit;
 };
+
+/**
+ * A stat cell whose value becomes an input while editing. Mirrors MetricCell's
+ * rhythm exactly — label, `mt-1.5` control — so swapping a number for a field
+ * does not shift the row.
+ */
+function EditableCell({
+  label,
+  children,
+  showLeftBorder = true,
+}: {
+  label: string;
+  children: ReactNode;
+  showLeftBorder?: boolean;
+}) {
+  return (
+    <div className={showLeftBorder ? cn("border-l pl-3", DIVIDER) : undefined}>
+      <p className={STAT_LABEL_DARK_CLASS}>{label}</p>
+      <div className="mt-1.5">{children}</div>
+    </div>
+  );
+}
 
 // Translucent on-dark chip — same recipe as the training-summary and metric
 // heroes (training-summary-hero.tsx:67-79); digit-bearing chips go mono.
@@ -115,6 +140,7 @@ function MetricCell({
   subTone,
   chip,
   showLeftBorder,
+  emptyLabel = "Not recorded",
 }: {
   label: string;
   value?: string;
@@ -124,6 +150,8 @@ function MetricCell({
   subTone?: string;
   chip?: { text: string; tone: ChipTone } | null;
   showLeftBorder?: boolean;
+  /** "Not recorded" fits a measurement; a date the coach never set is "Not set". */
+  emptyLabel?: string;
 }) {
   return (
     <div className={showLeftBorder ? cn("border-l pl-3", DIVIDER) : undefined}>
@@ -143,7 +171,7 @@ function MetricCell({
             <span className="ml-1 text-[10px] text-[rgba(255,255,255,0.30)]">{unit}</span>
           </>
         ) : (
-          <span className="text-[13px] text-[rgba(255,255,255,0.3)]">Not recorded</span>
+          <span className="text-[13px] text-[rgba(255,255,255,0.3)]">{emptyLabel}</span>
         )}
       </div>
       {sub && (
@@ -211,6 +239,7 @@ function deltaTone(delta: string | null): string | undefined {
 export function ClientStatusCard({
   client,
   goal,
+  goalStartDate,
   training,
   upcomingTraining,
   onOpenMetrics,
@@ -290,14 +319,24 @@ export function ClientStatusCard({
             subTone={deltaTone(weightDelta)}
             showLeftBorder
           />
-          <MetricCell
-            label="Goal weight"
-            value={goalWeight?.toFixed(1)}
-            unit={weightUnit}
-            size="lg"
-            chip={weightChip}
-            showLeftBorder
-          />
+          {edit.isEditing ? (
+            <EditableCell label={`Goal weight (${weightUnit})`}>
+              <InlineDarkInput
+                ariaLabel="Goal weight"
+                value={edit.goalWeight.value}
+                onChange={edit.goalWeight.setValue}
+              />
+            </EditableCell>
+          ) : (
+            <MetricCell
+              label="Goal weight"
+              value={goalWeight?.toFixed(1)}
+              unit={weightUnit}
+              size="lg"
+              chip={weightChip}
+              showLeftBorder
+            />
+          )}
         </div>
 
         <div className={cn("mx-5 border-t", DIVIDER)} />
@@ -316,13 +355,23 @@ export function ClientStatusCard({
             subTone={deltaTone(bfDelta)}
             showLeftBorder
           />
-          <MetricCell
-            label="Goal body fat"
-            value={goalBodyFat?.toFixed(1)}
-            unit="%"
-            chip={bfChip}
-            showLeftBorder
-          />
+          {edit.isEditing ? (
+            <EditableCell label="Goal body fat (%)">
+              <InlineDarkInput
+                ariaLabel="Goal body fat percentage"
+                value={edit.form.watch("goalBodyFatPercentage")}
+                onChange={(v) => edit.form.setValue("goalBodyFatPercentage", v)}
+              />
+            </EditableCell>
+          ) : (
+            <MetricCell
+              label="Goal body fat"
+              value={goalBodyFat?.toFixed(1)}
+              unit="%"
+              chip={bfChip}
+              showLeftBorder
+            />
+          )}
         </div>
 
         <div className={cn("mx-5 border-t", DIVIDER)} />
@@ -399,6 +448,56 @@ export function ClientStatusCard({
               </p>
             )}
           </div>
+        </div>
+
+        {/* The goal window. A fourth band in the same 3-column shape as the three
+            above, rather than a sub-line, because both dates are real inputs: the
+            deadline is what turns a goal weight into a daily deficit at all (with
+            none, the calculator returns maintenance) and the start date decides
+            whether that deficit is spread from today or from a future date. The
+            third column is deliberately empty — a derived "time left" readout
+            would be a new invented stat, not a field this editor owes. */}
+        <div className={cn("mx-5 border-t", DIVIDER)} />
+
+        <div className="grid flex-1 grid-cols-3 items-start gap-3 px-5 pt-3">
+          {edit.isEditing ? (
+            <>
+              <EditableCell label="Goal start" showLeftBorder={false}>
+                <InlineDarkInput
+                  type="date"
+                  ariaLabel="Goal start date"
+                  value={edit.form.watch("goalStartDate")}
+                  onChange={(v) => edit.form.setValue("goalStartDate", v)}
+                />
+              </EditableCell>
+              <EditableCell label="Deadline">
+                <InlineDarkInput
+                  type="date"
+                  ariaLabel="Goal deadline"
+                  value={edit.form.watch("goalDeadline")}
+                  onChange={(v) => edit.form.setValue("goalDeadline", v)}
+                />
+              </EditableCell>
+            </>
+          ) : (
+            <>
+              <MetricCell
+                label="Goal start"
+                value={goalStartDate ? formatDateOnlyShort(goalStartDate) : undefined}
+                unit=""
+                size="md"
+                emptyLabel="Not set"
+              />
+              <MetricCell
+                label="Deadline"
+                value={goal.deadline ? formatDateOnlyShort(goal.deadline) : undefined}
+                unit=""
+                size="md"
+                showLeftBorder
+                emptyLabel="Not set"
+              />
+            </>
+          )}
         </div>
       </div>
 

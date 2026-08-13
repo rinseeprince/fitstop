@@ -6,9 +6,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useUnits } from "@/contexts/units-context";
-import { useHeightInput } from "@/hooks/use-unit-inputs";
+import { useCanonicalInput, useHeightInput } from "@/hooks/use-unit-inputs";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import type { ActivityLevel, Client } from "@/types/check-in";
+import type { ClientGoal } from "@/types/client-goals";
 
 /**
  * Inline profile editing for the Overview's two client cards.
@@ -26,28 +27,51 @@ import type { ActivityLevel, Client } from "@/types/check-in";
 
 export const UNSET = "unset";
 
-const profileFormSchema = z.object({
-  gender: z.enum([UNSET, "male", "female", "other"]),
-  dateOfBirth: z
-    .string()
-    .refine((v) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v), { message: "Use a valid date" }),
-  startDate: z
-    .string()
-    .refine((v) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v), { message: "Use a valid date" }),
-  phone: z.string().trim().max(30, "Phone must be less than 30 characters"),
-  expectedCheckInDay: z.string(),
-  workActivityLevel: z.enum([
-    "sedentary",
-    "lightly_active",
-    "moderately_active",
-    "very_active",
-    "extremely_active",
-  ]),
-});
+const isoDate = (v: string) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+const profileFormSchema = z
+  .object({
+    gender: z.enum([UNSET, "male", "female", "other"]),
+    dateOfBirth: z.string().refine(isoDate, { message: "Use a valid date" }),
+    startDate: z.string().refine(isoDate, { message: "Use a valid date" }),
+    phone: z.string().trim().max(30, "Phone must be less than 30 characters"),
+    expectedCheckInDay: z.string(),
+    workActivityLevel: z.enum([
+      "sedentary",
+      "lightly_active",
+      "moderately_active",
+      "very_active",
+      "extremely_active",
+    ]),
+    // Goal fields. Goal WEIGHT is not here — it is unit-bearing, so
+    // `useCanonicalInput` owns it and its untouched-field guard, exactly as
+    // height is kept out for the same reason.
+    goalBodyFatPercentage: z
+      .string()
+      .refine((v) => v === "" || (Number(v) >= 3 && Number(v) <= 60), {
+        message: "Body fat must be between 3% and 60%",
+      }),
+    goalDeadline: z.string().refine(isoDate, { message: "Use a valid date" }),
+    goalStartDate: z.string().refine(isoDate, { message: "Use a valid date" }),
+  })
+  // Mirrors the same rule on `updateGoalsSchema`, so the coach is told before
+  // submitting rather than by a 400. The API-side copy is the load-bearing one.
+  .refine(
+    (v) => !(v.goalStartDate && v.goalDeadline) || v.goalStartDate <= v.goalDeadline,
+    { message: "Start date must be on or before the deadline", path: ["goalStartDate"] }
+  );
 
 export type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
-function toDefaults(client: Client): ProfileFormValues {
+/**
+ * Seeds come from TWO records, deliberately. The profile fields are on `clients`;
+ * the goal fields are on the live `client_goals` row, which is the only store
+ * that can be trusted for them — and `goalStartDate` in particular must come
+ * from the raw goal, never from a resolved `EffectiveGoal`, whose `startDate`
+ * is coalesced to today. Seeding a form from that coalesced value would write
+ * today's date into a field the coach never set.
+ */
+function toDefaults(client: Client, goal: ClientGoal | null): ProfileFormValues {
   return {
     gender: client.gender ?? UNSET,
     dateOfBirth: client.dateOfBirth ?? "",
@@ -57,6 +81,10 @@ function toDefaults(client: Client): ProfileFormValues {
     // Sedentary is the default everywhere — the column default and the
     // calculator's fallback for NULL both agree, so there is no "not set".
     workActivityLevel: client.workActivityLevel ?? "sedentary",
+    goalBodyFatPercentage:
+      goal?.goalBodyFatPercentage != null ? String(goal.goalBodyFatPercentage) : "",
+    goalDeadline: goal?.goalDeadline ?? "",
+    goalStartDate: goal?.goalStartDate ?? "",
   };
 }
 
@@ -74,7 +102,11 @@ async function sendJson(method: "PATCH" | "PUT", url: string, body: unknown): Pr
 
 export type ClientProfileEdit = ReturnType<typeof useClientProfileEdit>;
 
-export function useClientProfileEdit(client: Client, onSaved: () => void) {
+export function useClientProfileEdit(
+  client: Client,
+  onSaved: () => void,
+  goal: ClientGoal | null
+) {
   const { toast } = useToast();
   const { preference } = useUnits();
   const [isEditing, setIsEditing] = useState(false);
@@ -84,23 +116,31 @@ export function useClientProfileEdit(client: Client, onSaved: () => void) {
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
-    defaultValues: toDefaults(client),
+    defaultValues: toDefaults(client, goal),
   });
 
   const height = useHeightInput(preference, client.height);
+  // Collected in the coach's unit, converted on submit. `commit` is
+  // `isPristine ? seed : canonical` compared on the SEEDED STRING, which is what
+  // makes a focus-through an exact no-op: 100 kg seeds an imperial coach as
+  // "220.5" and re-parses to 100.017, so a form that re-parsed whatever sat in
+  // the box would drift the stored goal on every save (CONVENTIONS §20).
+  const goalWeight = useCanonicalInput(preference, goal?.goalWeight, "weight");
 
   // Re-seed whenever editing opens, so a cancelled edit never leaks into the
   // next one and a background revalidation cannot overwrite a live edit.
   const { reset } = form;
   const resetHeight = height.reset;
+  const resetGoalWeight = goalWeight.reset;
   useEffect(() => {
     if (isEditing) {
-      reset(toDefaults(client));
+      reset(toDefaults(client, goal));
       resetHeight(client.height);
+      resetGoalWeight(goal?.goalWeight);
       setIsCustomTdee(client.tdeeManualOverride === true);
       setCustomTdee(client.tdee != null ? String(Math.round(client.tdee)) : "");
     }
-  }, [isEditing, client, reset, resetHeight]);
+  }, [isEditing, client, goal, reset, resetHeight, resetGoalWeight]);
 
   // The live preview runs the SAME pure calculator the server writes with, so
   // what the coach is shown while typing cannot disagree with what is stored.
@@ -145,8 +185,25 @@ export function useClientProfileEdit(client: Client, onSaved: () => void) {
       });
       return;
     }
+    // A goal weight can be changed but never removed: `updateGoalsSchema` has it
+    // `.optional()` and NOT `.nullable()`, so there is no payload that clears it.
+    // Emptying the box silently doing nothing would be the worse answer.
+    if (!goalWeight.isPristine && goalWeight.commit == null) {
+      toast({
+        title: "Save failed",
+        description: goalWeight.hasParseError
+          ? "Enter a goal weight above 0, or put the previous value back."
+          : "A goal weight can't be removed — change it instead.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsSaving(true);
+    // Which writes have already committed when something later throws. These
+    // four calls are NOT a transaction, so the error has to say what survived
+    // rather than implying nothing did.
+    let committed = false;
     try {
       const profile: Record<string, unknown> = {
         phone: values.phone,
@@ -164,6 +221,7 @@ export function useClientProfileEdit(client: Client, onSaved: () => void) {
       // override below is applied after, so a coach setting both in one save
       // ends with their typed number rather than the recompute.
       await sendJson("PATCH", `/api/clients/${client.id}`, profile);
+      committed = true;
 
       const storedOverride = client.tdeeManualOverride === true;
       if (isCustomTdee && Number.isFinite(parsedCustomTdee) && parsedCustomTdee > 0) {
@@ -190,13 +248,47 @@ export function useClientProfileEdit(client: Client, onSaved: () => void) {
         });
       }
 
+      // The goal, LAST and only when it actually changed.
+      //
+      // **The change detection is load-bearing, not an optimisation.**
+      // `updateGoals` supersedes-and-inserts on EVERY call with no change
+      // detection of its own, so calling it unconditionally would mint a new
+      // `client_goals` version and an audit event every time a coach edited a
+      // phone number (invariant 7). Each field is compared against the value it
+      // was SEEDED from; the weight compares through `commit`'s seeded-string
+      // guard rather than an epsilon.
+      const seeded = toDefaults(client, goal);
+      const goalPayload: Record<string, number | string | null> = {};
+      if (!goalWeight.isPristine) {
+        goalPayload.goalWeight = goalWeight.commit;
+      }
+      if (values.goalBodyFatPercentage !== seeded.goalBodyFatPercentage) {
+        goalPayload.goalBodyFatPercentage =
+          values.goalBodyFatPercentage === "" ? null : Number(values.goalBodyFatPercentage);
+      }
+      if (values.goalDeadline !== seeded.goalDeadline) {
+        goalPayload.goalDeadline = values.goalDeadline || null;
+      }
+      if (values.goalStartDate !== seeded.goalStartDate) {
+        goalPayload.goalStartDate = values.goalStartDate || null;
+      }
+      if (Object.keys(goalPayload).length > 0) {
+        await sendJson("PUT", `/api/clients/${client.id}/goals`, goalPayload);
+      }
+
       onSaved();
       setIsEditing(false);
       toast({ title: "Client updated" });
     } catch (error) {
+      const reason = error instanceof Error ? error.message : "Something went wrong";
       toast({
-        title: "Save failed",
-        description: error instanceof Error ? error.message : "Something went wrong",
+        // Four sequential writes, no transaction. Reporting a bare "Save failed"
+        // after the client details already committed tells the coach to redo an
+        // edit that is already stored.
+        title: committed ? "Partly saved" : "Save failed",
+        description: committed
+          ? `The client details were saved, but the rest was not: ${reason}`
+          : reason,
         variant: "destructive",
       });
     } finally {
@@ -212,6 +304,7 @@ export function useClientProfileEdit(client: Client, onSaved: () => void) {
     save,
     form,
     height,
+    goalWeight,
     autoEnergy: autoEnergyReady,
     customTdee,
     setCustomTdee,

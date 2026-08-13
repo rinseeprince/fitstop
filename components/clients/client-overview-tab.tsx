@@ -113,16 +113,16 @@ export function ClientOverviewTab({
     void mutateBrief();
   }, [onClientUpdated, mutateBrief]);
 
-  const edit = useClientProfileEdit(client, handleClientUpdated);
-
-  // The status card's revalidation slot. A goal write lands in `client_goals`
-  // AND dual-writes the `clients` mirror, so both reads have to refresh — the
-  // goals area for this card, the client record for everything else on the page
-  // still derived from the mirror. Consumed by the goal editor (Task 0b.4).
-  const handleGoalSaved = useCallback(() => {
+  // The inline editor writes the goal as well as the profile, so a save has to
+  // revalidate BOTH areas: the goals read behind the status card, and the client
+  // record everything else is still derived from (a goal write dual-writes the
+  // `clients` mirror).
+  const handleSaved = useCallback(() => {
     void invalidateGoals(client.id);
     handleClientUpdated();
   }, [invalidateGoals, client.id, handleClientUpdated]);
+
+  const edit = useClientProfileEdit(client, handleSaved, currentGoals);
 
   const handleMarkSeen = useCallback(() => {
     void markSeen();
@@ -231,10 +231,10 @@ export function ClientOverviewTab({
         <ClientStatusCard
           client={client}
           goal={effectiveGoal}
+          goalStartDate={currentGoals?.goalStartDate ?? null}
           training={summary?.training ?? null}
           upcomingTraining={summary?.upcomingTraining ?? null}
           onOpenMetrics={() => goToTab("metrics")}
-          onClientUpdated={handleGoalSaved}
           edit={edit}
         />
         </div>

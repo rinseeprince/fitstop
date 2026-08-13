@@ -25,6 +25,37 @@ describe("updateGoalsSchema", () => {
     }
   });
 
+  // The API-side half of the rule (the form mirrors it for the inline message).
+  // This is the copy that binds React Native, whose contract this schema is.
+  describe("a goal cannot start after it ends", () => {
+    it("rejects a start date after the deadline", () => {
+      const result = updateGoalsSchema.safeParse({
+        goalStartDate: "2027-01-01",
+        goalDeadline: "2026-12-01",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("accepts equal dates and the normal order", () => {
+      expect(
+        updateGoalsSchema.safeParse({ goalStartDate: "2026-12-01", goalDeadline: "2026-12-01" })
+          .success
+      ).toBe(true);
+      expect(
+        updateGoalsSchema.safeParse({ goalStartDate: "2026-01-01", goalDeadline: "2026-12-01" })
+          .success
+      ).toBe(true);
+    });
+
+    // The documented hole, pinned so nobody reads the refine as complete: a
+    // refine sees only the payload, so a partial update carrying one date can
+    // still land an invalid pair against the stored other one. Closing it means
+    // checking inside updateGoals after its merge.
+    it("cannot catch a partial update against a stored value", () => {
+      expect(updateGoalsSchema.safeParse({ goalStartDate: "2099-01-01" }).success).toBe(true);
+    });
+  });
+
   it("accepts an explicit null goalDeadline (clearing)", () => {
     const result = updateGoalsSchema.safeParse({ goalDeadline: null });
     expect(result.success).toBe(true);

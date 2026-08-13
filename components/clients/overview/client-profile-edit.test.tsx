@@ -3,8 +3,11 @@ import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ClientScheduleCard } from "./client-schedule-card";
+import { ClientStatusCard } from "./client-status-card";
 import { EditRailActions } from "./inline-edit-fields";
 import { useClientProfileEdit } from "./use-client-profile-edit";
+import { resolveEffectiveGoal, toClientGoalInput } from "@/lib/goals/resolve-effective-goal";
+import type { ClientGoal } from "@/types/client-goals";
 import type { Client } from "@/types/check-in";
 import type { UnitSystem } from "@/utils/unit-conversions";
 
@@ -49,8 +52,8 @@ function makeClient(overrides: Partial<Client> = {}): Client {
  * The real hook driving the real card — editing is inline now, so the harness
  * is the surface a coach actually uses rather than a dialog in isolation.
  */
-function Harness({ client }: { client: Client }) {
-  const edit = useClientProfileEdit(client, vi.fn());
+function Harness({ client, goal }: { client: Client; goal: ClientGoal | null }) {
+  const edit = useClientProfileEdit(client, vi.fn(), goal);
   return (
     <>
       <EditRailActions edit={edit} />
@@ -60,15 +63,47 @@ function Harness({ client }: { client: Client }) {
         isTimingLoading={false}
         edit={edit}
       />
+      <ClientStatusCard
+        client={client}
+        goal={resolveEffectiveGoal({
+          clientGoal: toClientGoalInput(goal, client),
+          today: "2026-08-13",
+        })}
+        goalStartDate={goal?.goalStartDate ?? null}
+        training={null}
+        upcomingTraining={null}
+        onOpenMetrics={vi.fn()}
+        edit={edit}
+      />
     </>
   );
 }
 
-async function openEditor(client = makeClient()) {
-  render(<Harness client={client} />);
+function makeGoal(overrides: Partial<ClientGoal> = {}): ClientGoal {
+  return {
+    id: "goal-1",
+    clientId: "client-1",
+    goalWeight: 82,
+    goalDeadline: "2026-12-01",
+    setBy: "coach-1",
+    effectiveFrom: "2026-01-01T00:00:00Z",
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+async function openEditor(client = makeClient(), goal: ClientGoal | null = makeGoal()) {
+  render(<Harness client={client} goal={goal} />);
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: /edit client details/i }));
   return user;
+}
+
+/** The PUT to /goals, if the save issued one. */
+function goalPut(spy: ReturnType<typeof mockFetchOk>) {
+  const call = spy.mock.calls.find(([url]) => String(url).endsWith("/goals"));
+  return call ? (JSON.parse(call[1]?.body as string) as Record<string, unknown>) : null;
 }
 
 function mockFetchOk() {
@@ -97,7 +132,7 @@ describe("inline client profile editing", () => {
   });
 
   it("shows the value when idle and an input once editing starts", async () => {
-    render(<Harness client={makeClient()} />);
+    render(<Harness client={makeClient()} goal={makeGoal()} />);
     expect(screen.queryByLabelText("Phone")).not.toBeInTheDocument();
 
     const user = userEvent.setup();
@@ -170,6 +205,97 @@ describe("inline client profile editing", () => {
 
       // 6'10" = 208.28 cm. The point is that it converted at all.
       expect(body.height).toBeCloseTo(208.28, 2);
+    });
+  });
+
+  // Task 0b.4 — the goal is edited here now, not in the nutrition drawer.
+  describe("the goal", () => {
+    // THE load-bearing one. `updateGoals` supersedes-and-inserts on EVERY call
+    // with no change detection of its own, so calling it unconditionally would
+    // mint a new client_goals version and an audit event every time a coach
+    // edited a phone number (invariant 7).
+    it("is not written at all when nothing about it changed", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor();
+
+      await user.type(screen.getByLabelText("Phone"), "123");
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      expect(goalPut(fetchSpy)).toBeNull();
+    });
+
+    it("sends only the field that changed", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor();
+
+      const deadline = screen.getByLabelText("Goal deadline");
+      await user.clear(deadline);
+      await user.type(deadline, "2027-03-01");
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      await waitFor(() => expect(goalPut(fetchSpy)).not.toBeNull());
+      expect(goalPut(fetchSpy)).toEqual({ goalDeadline: "2027-03-01" });
+    });
+
+    it("clears an emptied deadline with an explicit null", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor();
+
+      await user.clear(screen.getByLabelText("Goal deadline"));
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      await waitFor(() => expect(goalPut(fetchSpy)).not.toBeNull());
+      expect(goalPut(fetchSpy)).toEqual({ goalDeadline: null });
+    });
+
+    it("refuses a start date after the deadline, before sending anything", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor();
+
+      const start = screen.getByLabelText("Goal start date");
+      await user.clear(start);
+      await user.type(start, "2027-01-01"); // deadline is 2026-12-01
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      // zodResolver blocks the submit, so NOTHING is written — not even the
+      // profile PATCH that would otherwise have gone first.
+      await waitFor(() => expect(screen.getByLabelText("Goal start date")).toBeInTheDocument());
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    describe("an imperial coach", () => {
+      beforeEach(() => {
+        preference.current = "imperial";
+      });
+
+      // The §20 no-op. 82 kg seeds as "180.8" and re-parses to 82.00568, so a
+      // form that re-parsed whatever sat in the box would drift the stored goal
+      // on every unrelated save. `commit` compares the SEEDED STRING instead.
+      it("does not rewrite an untouched goal weight", async () => {
+        const fetchSpy = mockFetchOk();
+        const user = await openEditor();
+
+        await user.type(screen.getByLabelText("Phone"), "123");
+        await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+        await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+        expect(goalPut(fetchSpy)).toBeNull();
+      });
+
+      it("converts an edited goal weight back to kilograms", async () => {
+        const fetchSpy = mockFetchOk();
+        const user = await openEditor();
+
+        const weight = screen.getByLabelText("Goal weight");
+        await user.clear(weight);
+        await user.type(weight, "176.4");
+        await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+        await waitFor(() => expect(goalPut(fetchSpy)).not.toBeNull());
+        // 176.4 lb = 80.0 kg. The point is that it converted at all.
+        expect(goalPut(fetchSpy)?.goalWeight as number).toBeCloseTo(80, 1);
+      });
     });
   });
 });
