@@ -1,6 +1,6 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · Session 0b ✅ COMPLETE — shipped 2026-08-13 (6 commits, ZERO migrations; invariant 16 satisfied: one writer, one read path, one editor) · two sessions remain (5, 6) · **Owner decision date:** 2026-08-10
+**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · Session 0b ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-13 (8 commits, ZERO migrations; invariant 16 satisfied: one writer, one read path, one editor; two smoke follow-ups folded in — the deadline's native date bounds and the block timeline's nutrition eras) · two sessions remain (5, 6) · **Owner decision date:** 2026-08-10
 **Eight sessions.** Three largely independent features share this document. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
@@ -4542,3 +4542,37 @@ it:**
   costed in §7 — and `CLIENT_SELF_COLUMNS` is still the riskiest line in it.
 - **`primary_goal` and `notes` are still dead weight** on `client_goals` (§7, and the Session 0
   STATUS block's banked ordering note for whoever drops them).
+
+---
+
+### Session 0b — owner sign-off ✅ 2026-08-13
+
+The owner ran the 0b smoke checklists (the goal editor's four cases, the drawer's
+read-only line and maintenance state, and the goal-history popover) and reported **all clear**.
+**Session 0b is COMPLETE by owner decision.** This closes the browser-verification residuals
+recorded in the 0b.1–0b.6 STATUS blocks above; those lines stand as history of what was true at
+commit time, superseded here.
+
+**Two defects the smoke caught, fixed and folded in before sign-off:**
+
+1. **`a41acb3` — the goal deadline offered days the app refuses.** A regression introduced by 0b.4:
+   the deleted drawer editor carried `min={getTodayDateString()}` and the inline rewrite dropped
+   it. Both bounds (route: not in the past against the coach's day; schema: not before the goal's
+   own start) now compose into ONE native `min`, so the impossible days are greyed out rather than
+   picked and rejected. The goal START stays deliberately unbounded. **A rule for the whole
+   platform came out of it** — `docs/newdesignsystem.md` → "Date inputs express their bounds
+   natively", with the four shipped references.
+2. **`027a9c0` — "What happened" never recorded the nutrition prescription.** The first proposal
+   was wrong and is worth recording so it is not retried: sourcing the timeline from the block
+   headline's `calories`/`deficitPerDay` would have pinned the REFERENCE-date version's numbers to
+   a historical date, so every later plan save silently rewrites the past and every era but the
+   last disappears. The fix reads the version rows, which already ARE the era log —
+   `[effective_from, effective_until]` tiles the timeline by construction, so it is an
+   intersection with the block window, needs no resolution rule (unlike training), and costs zero
+   new queries. **A closed window is immutable (the RPC refuses `effective_from < p_today`), which
+   is exactly where the accuracy comes from.** Eras stop at today and a no-op re-save emits nothing.
+
+**Session totals: 8 commits, ZERO migrations, tests 2883 → 2935 (+52).** Final gates on the
+shipped tree: `tsc --noEmit` clean · `eslint .` 0 errors (209 pre-existing warnings, unchanged
+across every commit) · `vitest run` 276 files / 2935 tests · `check:labels` OK 664 ·
+`check:rls` 41/41.
