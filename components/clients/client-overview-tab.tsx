@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner";
 import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -124,6 +124,15 @@ export function ClientOverviewTab({
 
   const edit = useClientProfileEdit(client, handleSaved, currentGoals);
 
+  // The activation card's Client-profile row edits the section below it, which
+  // sits far enough down the page to be off-screen — opening the editor without
+  // bringing it into view would read as nothing having happened.
+  const clientSectionRef = useRef<HTMLDivElement>(null);
+  const openProfileEditor = useCallback(() => {
+    edit.start();
+    clientSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [edit]);
+
   const handleMarkSeen = useCallback(() => {
     void markSeen();
   }, [markSeen]);
@@ -174,6 +183,7 @@ export function ClientOverviewTab({
           planSummaryLoading={summaryLoading}
           onActivated={onClientUpdated}
           onTabChange={onTabChange}
+          onOpenProfile={openProfileEditor}
         />
       )}
 
@@ -218,7 +228,7 @@ export function ClientOverviewTab({
       {/* The edit action rides the section rail on the far right, the platform's
           divider grammar (left = identity, right = meta/actions) — not a pencil
           floating inside one of the two cards. */}
-      <div>
+      <div ref={clientSectionRef}>
         <SectionLabel
           label="Client"
           actions={<EditRailActions edit={edit} />}

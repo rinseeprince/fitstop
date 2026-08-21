@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react"
 import useSWR from "swr"
-import { ArrowRight, ChevronRight, CircleCheckBig, Dumbbell, ListChecks, Rocket, Utensils } from "lucide-react"
+import { ArrowRight, ChevronRight, CircleCheckBig, Dumbbell, ListChecks, Rocket, UserRound, Utensils } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -15,15 +15,28 @@ import {
   THUMB_CLASS,
   TRAINING_CARD_BORDER,
 } from "@/components/clients/training/program-builder/builder-tokens"
-import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
+import {
+  REQUIRED_ITEMS,
+  SETUP_ITEMS,
+  type Readiness,
+  type SetupItemKey,
+} from "@/lib/activation-readiness-items"
+import {
+  findProfileGaps,
+  gapsNeedMeasurement,
+  type ProfileGap,
+} from "@/lib/client-profile-completeness"
 import { swrFetcher } from "@/lib/swr-fetcher"
 import { cn } from "@/lib/utils"
 import type { ClientTab } from "@/lib/client-tabs"
+import type { Client } from "@/types/check-in"
 import type { OnboardingStatus } from "@/types/client-intake"
 import type { OverviewPlanSummary } from "@/types/coach-overview"
 
 interface ClientActivationBannerProps {
-  client: {
+  /** The full record: the Client-profile row reads the energy inputs off it
+   *  rather than costing a query (see lib/client-profile-completeness.ts). */
+  client: Client & {
     id: string
     name: string
     email: string
@@ -39,10 +52,15 @@ interface ClientActivationBannerProps {
   /** True while `planSummary` is still in flight — see PENDING. */
   planSummaryLoading?: boolean
   onActivated?: () => void
-  onTabChange?: (tab: ClientTab) => void
+  onTabChange?: (tab: ClientTab, extraParams?: Record<string, string>) => void
+  /** Opens the Overview's own profile editor — where height, gender, birth
+   *  date and activity level live. Without it the Client-profile row falls
+   *  back to its tab. */
+  onOpenProfile?: () => void
 }
 
-const ROW_ICON: Record<keyof Readiness, ReactNode> = {
+const ROW_ICON: Record<SetupItemKey, ReactNode> = {
+  hasProfile: <UserRound className="h-[15px] w-[15px]" strokeWidth={1.5} />,
   hasTrainingPlan: <Dumbbell className="h-[15px] w-[15px]" strokeWidth={1.5} />,
   hasNutritionPlan: <Utensils className="h-[15px] w-[15px]" strokeWidth={1.5} />,
   hasHabits: <ListChecks className="h-[15px] w-[15px]" strokeWidth={1.5} />,
@@ -110,12 +128,32 @@ function nutritionLine(summary: OverviewPlanSummary | null | undefined): RowLine
   }
 }
 
+/**
+ * The client's own details. Unready names the GAPS rather than saying "not set
+ * up", because the fix is specific and the coach cannot see from here which of
+ * five inputs is missing. Ready shows the TDEE — the one number everything
+ * below this row is priced off.
+ */
+function profileLine(gaps: ProfileGap[], tdee: number | null | undefined): RowLine {
+  if (gaps.length > 0) {
+    const list = joinWords([...gaps])
+    return { kind: "text", text: `Add ${list}`, isNumeric: false }
+  }
+  return tdee != null
+    ? { kind: "text", text: `TDEE ${Math.round(tdee).toLocaleString("en-GB")} cal/day`, isNumeric: true }
+    : READY
+}
+
 function rowLine(
-  key: keyof Readiness,
+  key: SetupItemKey,
   ready: boolean,
   summary: OverviewPlanSummary | null | undefined,
-  summaryLoading: boolean
+  summaryLoading: boolean,
+  profile: { gaps: ProfileGap[]; tdee: number | null | undefined }
 ): RowLine {
+  // The profile row states its own gaps, so it never falls through to the
+  // generic "Not set up".
+  if (key === "hasProfile") return profileLine(profile.gaps, profile.tdee)
   if (!ready) return NOT_STARTED
   switch (key) {
     case "hasTrainingPlan":
@@ -243,6 +281,7 @@ export function ClientActivationBanner({
   planSummaryLoading = false,
   onActivated,
   onTabChange,
+  onOpenProfile,
 }: ClientActivationBannerProps) {
   const { data, isLoading } = useSWR<{ success: boolean; data: Readiness }>(
     client.onboardingStatus === "setup_in_progress"
@@ -255,7 +294,16 @@ export function ClientActivationBanner({
   if (isLoading || !data?.data || client.onboardingStatus !== "setup_in_progress") return null
 
   const readiness = data.data
+  // The counter and the footer sentence stay about the three PLANS. The client
+  // profile is a prerequisite — activation does not send it anywhere, so
+  // counting it would make this line say "4 of 4 plans ready".
   const readyCount = REQUIRED_ITEMS.filter((item) => readiness[item.key]).length
+
+  // Derived here rather than fetched: computeEnergyPair is pure and the client
+  // record is already in hand, so the row costs no query. "Does a TDEE exist?"
+  // would NOT do — the calculator silently substitutes a default age and a
+  // default activity multiplier, so a client missing both still has one.
+  const profileGaps = findProfileGaps(client)
 
   return (
     <OverviewCard className="px-5 py-4" animationDelay="0.02s">
@@ -293,16 +341,37 @@ export function ClientActivationBanner({
       </div>
 
       <div className="mt-3.5 flex flex-col gap-2">
-        {REQUIRED_ITEMS.map((item) => {
-          const ready = readiness[item.key]
+        {SETUP_ITEMS.map((item) => {
+          const isProfile = item.key === "hasProfile"
+          const ready = isProfile
+            ? profileGaps.length === 0
+            : readiness[item.key as keyof Readiness]
           return (
             <PlanRow
               key={item.key}
               label={item.label}
               icon={ROW_ICON[item.key]}
               ready={ready}
-              line={rowLine(item.key, ready, planSummary, planSummaryLoading)}
-              onOpen={() => onTabChange?.(item.tab)}
+              line={rowLine(item.key, ready, planSummary, planSummaryLoading, {
+                gaps: profileGaps,
+                tdee: client.tdee,
+              })}
+              onOpen={() => {
+                // Two homes, so two destinations. Weight is a logged
+                // MEASUREMENT and the profile editor does not hold it; height,
+                // gender, birth date and activity level are profile facts and
+                // the metrics surface does not hold those. Sending a coach to
+                // the wrong one is a dead end, not a detour.
+                if (isProfile && !gapsNeedMeasurement(profileGaps) && onOpenProfile) {
+                  onOpenProfile()
+                  return
+                }
+                if (isProfile) {
+                  onTabChange?.(item.tab, { journey: "body" })
+                  return
+                }
+                onTabChange?.(item.tab)
+              }}
             />
           )
         })}
