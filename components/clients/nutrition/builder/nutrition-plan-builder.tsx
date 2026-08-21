@@ -11,6 +11,7 @@ import { DeleteNutritionPlanDialog } from "../calendar/delete-nutrition-plan-dia
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { paneParamSearch, resolvePaneParam } from "@/lib/client-tabs";
 import { cn } from "@/lib/utils";
 import type { Client } from "@/types/check-in";
 
@@ -24,18 +25,17 @@ export function NutritionPlanBuilder({ client, onUpdate }: NutritionPlanBuilderP
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Honor `subtab` only when the URL's `tab` is actually ours: on a tab switch
-  // the visible tab flips (local state on the client page) before
-  // router.replace lands, so a stale `subtab=plans` written by the TRAINING
-  // tab would otherwise flash the Plans calendar here before Data renders.
+  // ?nutrition= is OURS alone (Session 7.2) — read unconditionally, so a deep
+  // link into a pane resolves on the first render. The legacy shared ?subtab=
+  // is the fallback and keeps its tab-match guard: Training wrote it too.
+  // resolvePaneParam owns both halves; see its doc for why they differ.
   const subtab =
-    searchParams.get("tab") === "nutrition" && searchParams.get("subtab") === "plans"
-      ? "plans"
-      : "data";
+    resolvePaneParam(searchParams, "nutrition") === "plans" ? "plans" : "data";
   const setSubtab = (tab: "data" | "plans") => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("subtab", tab);
-    router.replace(`?${params.toString()}`, { scroll: false });
+    router.replace(
+      `?${paneParamSearch(searchParams.toString(), "nutrition", tab)}`,
+      { scroll: false }
+    );
   };
 
   return (

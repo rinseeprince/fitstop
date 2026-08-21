@@ -5081,3 +5081,59 @@ no `db push` / `gen types` / `check:rls`.
 
 **UI is unverified — the owner runs the browser smoke.**
 
+---
+
+### Task 7.2 — Training and Nutrition get their own pane params ✅ SHIPPED 2026-08-21
+
+`?training=` and `?nutrition=`, the shape Journey already had. Shipped **alone**, as briefed,
+so a pane regression is attributable to this commit and nothing else.
+
+#### The guard split — settled, not to be re-litigated
+
+The tab-match check (`searchParams.get("tab") === "training"`) is **dropped for the new param
+and kept for the legacy one**. Owner-confirmed 2026-08-21; recorded here in full so nobody
+reopens it.
+
+- **It defends nothing on a single-owner param.** The race it was written for (Session 3.1) is:
+  `activeTab` flips before `router.replace` lands, so for one render the new tab reads the old
+  tab's URL. With a *shared* `subtab` that means reading someone else's value. With
+  `?training=` the same window returns **training's own last value** — the right answer.
+- **Keeping it would actively break 7.3.** A round trip from Journey does `setActiveTab`
+  then `router.replace`, so the builder mounts while the URL still says `tab=metrics`. A
+  guarded read returns null, renders Data, then swaps to Plans when the replace lands — a
+  visible flash on every deep link into a pane.
+- **The legacy `?subtab=` keeps the guard** for the reason it was right in Session 3: that
+  param genuinely *is* shared until the last old link is gone.
+
+Both halves are pinned by test, in one place (`resolvePaneParam`), so the asymmetry is
+executable rather than a comment someone tidies away.
+
+#### Nothing writes `subtab` any more
+
+`paneParamSearch` sets the tab's own param **and deletes `subtab`**, so a bookmark that
+arrives carrying one cleans itself up on the coach's first pane click rather than riding on to
+satisfy the other tab's guard later. `buildClientTabUrl` still deletes it on every tab change —
+belt and braces, since only an external link can now introduce one.
+
+#### The `"journey"` sed hazard, avoided deliberately
+
+`blocks-subtab.tsx` uses the string `"journey"` **nine times for a local
+`useState<"journey" | "archive">` view toggle** (`:70 :74 :195 :233 :248 :266 :432`) and not
+once for the URL param. Every edit in this session is an exact anchored string, never a
+pattern — and 7.3 adds no `"journey"` literal to that file at all, because the URL value is
+built by `journeyReturnParams()` in `lib/client-tabs.ts`. Flagged by the owner before
+execution; recorded so the next person greps knowing which is which.
+
+#### Files
+
+`lib/client-tabs.ts` (+ test: 9 new cases) · `training-plan-builder.tsx` ·
+`nutrition-plan-builder.tsx` · `metrics-tab-content.tsx` (its comment claimed Training and
+Nutrition still share `subtab` — no longer true) · `ARCHITECTURE.md` tab-param contract.
+
+#### Gates
+
+`tsc` clean · `eslint` 0 errors on every changed file · `vitest` **278 files / 2985 tests**
+(from 278/2976: +9) · `check:labels` OK 664 · no `as any`, no introduced markers.
+
+**UI is unverified — the owner runs the browser smoke.**
+

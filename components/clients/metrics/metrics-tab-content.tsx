@@ -38,9 +38,8 @@ export const MetricsTabContent = ({
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Journey owns its pane param outright (?journey=), unlike Training and
-  // Nutrition, which SHARE ?subtab= and therefore need tab-match guards
-  // against each other's writes. Nothing else writes ?journey=, so it is read
+  // Journey owns its pane param outright (?journey=) — the shape Training and
+  // Nutrition adopted in Session 7.2. Nothing else writes it, so it is read
   // unconditionally: the value deliberately persists across top-level tab
   // switches (handleTabChange preserves it) and restores this pane on return.
   const rawPane = searchParams.get("journey");
