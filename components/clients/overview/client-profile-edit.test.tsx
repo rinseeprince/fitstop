@@ -318,7 +318,7 @@ describe("inline client profile editing", () => {
 
       // The dialog names the new value, so the coach confirms the number they
       // are about to bake into every progress figure.
-      await screen.findByText(/start weight to 92.0 kg/i);
+      await screen.findByText(/start weight becomes 92.0 kg/i);
       expect(fetchSpy).not.toHaveBeenCalled();
 
       await user.click(screen.getByRole("button", { name: /^cancel$/i }));
@@ -357,7 +357,37 @@ describe("inline client profile editing", () => {
       expect(profilePatch(fetchSpy)?.startingWeight).toBeCloseTo(90.72, 2);
     });
 
-    it("refuses to empty a stored measurement rather than silently keeping it", async () => {
+    it("CLEARS a body fat rather than forcing another guess", async () => {
+      // A wrong body fat is not merely a wrong number: computeEnergyPair
+      // switches from Mifflin-St Jeor to Katch-McArdle whenever one is
+      // present, so a bad estimate changes which formula produces the BMR.
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(MEASURED);
+
+      await user.clear(screen.getByLabelText("Current body fat percentage"));
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      // NULL, not Number("") — which is 0, and would record the client at zero
+      // percent body fat instead of removing the figure.
+      expect(profilePatch(fetchSpy)?.currentBodyFatPercentage).toBeNull();
+    });
+
+    it("confirms REMOVING a start body fat, and says so", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(MEASURED);
+
+      await user.clear(screen.getByLabelText("Start body fat percentage"));
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      await screen.findByText(/start body fat is removed/i);
+      await user.click(screen.getByRole("button", { name: /update start/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      expect(profilePatch(fetchSpy)?.startingBodyFatPercentage).toBeNull();
+    });
+
+    it("still refuses to empty a WEIGHT — the pair cannot compute without one", async () => {
       // None of the four columns is nullable through updateClientSchema, so
       // there is no payload that clears one. A cleared box that quietly kept
       // its old value is worse than an error.
@@ -382,7 +412,7 @@ describe("inline client profile editing", () => {
       await user.type(field, "26");
       await user.click(screen.getByRole("button", { name: /save client details/i }));
 
-      await screen.findByText(/start body fat to 26%/i);
+      await screen.findByText(/start body fat becomes 26%/i);
       await user.click(screen.getByRole("button", { name: /update start/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());

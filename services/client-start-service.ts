@@ -39,8 +39,11 @@ export type ClientStartInput = {
   startsOn?: string;
   /** KILOGRAMS. Omitted = keep the stored start weight. */
   weightKg?: number;
-  /** Omitted = keep the stored start body fat. */
-  bodyFatPercentage?: number;
+  /** Omitted = keep the stored start body fat; NULL = remove it. Body fat is
+   *  an estimate, and a wrong one switches which formula produces the client's
+   *  BMR — so "we no longer believe that figure" has to be expressible, and
+   *  removes the entry rather than replacing it with another guess. */
+  bodyFatPercentage?: number | null;
   /** Caller-verified; written to the entries' nullable `created_by`. */
   coachId?: string;
 };
@@ -90,9 +93,14 @@ export async function recordClientStart(
 ): Promise<void> {
   const stored = await readStoredStart(clientId);
 
+  // `undefined` means "leave it alone" and `null` means "remove it", so these
+  // read the key's PRESENCE rather than `??`, which would treat a deliberate
+  // removal as an omission and quietly restore the stored value.
   const nextDate = input.startsOn ?? stored.startDate;
-  const nextWeight = input.weightKg ?? stored.weight;
-  const nextBodyFat = input.bodyFatPercentage ?? stored.bodyFat;
+  const nextWeight =
+    input.weightKg !== undefined ? input.weightKg : stored.weight;
+  const nextBodyFat =
+    input.bodyFatPercentage !== undefined ? input.bodyFatPercentage : stored.bodyFat;
 
   const cache: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.startsOn !== undefined) cache.start_date = input.startsOn;
@@ -130,14 +138,34 @@ export async function recordClientStart(
     }
   }
 
-  const values: Partial<Record<(typeof START_METRIC_KEYS)[number], number | null>> = {
-    weight: nextWeight,
-    bodyFat: nextBodyFat,
+  const resolved: Record<
+    (typeof START_METRIC_KEYS)[number],
+    { next: number | null; stored: number | null }
+  > = {
+    weight: { next: nextWeight, stored: stored.weight },
+    bodyFat: { next: nextBodyFat, stored: stored.bodyFat },
   };
 
   for (const metricKey of START_METRIC_KEYS) {
-    const value = values[metricKey];
-    if (value == null) continue;
+    const { next: value, stored: previous } = resolved[metricKey];
+    if (value == null) {
+      // Nothing was recorded and nothing is now — no entry to remove, and no
+      // round trip worth spending to find that out.
+      if (previous == null) continue;
+      // Otherwise the coach has WITHDRAWN a figure. Take the entry off the
+      // chart rather than leave one plotted that they no longer stand behind.
+      const { error } = await supabaseAdmin
+        .from("client_metric_entries")
+        .delete()
+        .eq("client_id", clientId)
+        .eq("entry_date", nextDate)
+        .eq("metric_key", metricKey);
+      if (error) {
+        console.error("Failed to remove start measurement:", error);
+        throw new Error(`Failed to remove start measurement: ${error.message}`);
+      }
+      continue;
+    }
     // Sequential, not parallel: each upsert dual-writes a body_metrics event
     // and reads the latest one to decide whether it may touch the denormalized
     // current values. Two of those racing would read the same "latest".

@@ -97,7 +97,19 @@ export const updateClientSchema = z.object({
 
   // Current metrics (typically updated automatically, but can be manually set)
   currentWeight: z.number().positive("Current weight must be positive").optional(),
-  currentBodyFatPercentage: z.number().min(0).max(100, "Body fat must be between 0 and 100").optional(),
+  // NULLABLE, unlike every weight beside it. A body fat is an estimate — a
+  // caliper reading, a smart scale, a client's guess — and a wrong one is not
+  // merely a wrong number: `computeEnergyPair` switches from Mifflin-St Jeor
+  // to Katch-McArdle whenever a body fat is present, so a bad figure silently
+  // changes which formula produces the client's BMR and TDEE. Clearing it is
+  // the honest correction, and it must not be expressible only as another
+  // guess. A weight has no such power and stays non-clearable.
+  currentBodyFatPercentage: z
+    .number()
+    .min(0)
+    .max(100, "Body fat must be between 0 and 100")
+    .nullable()
+    .optional(),
 
   // The recorded START of this client's journey. Editable because it is the one
   // measurement nobody can re-take: a coach who left it blank at setup, or
@@ -107,7 +119,13 @@ export const updateClientSchema = z.object({
   // Deliberately NOT nullable — the sibling metrics are not either, and a start
   // value that can be blanked is a delta that can silently disappear.
   startingWeight: z.number().positive("Start weight must be positive").optional(),
-  startingBodyFatPercentage: z.number().min(0).max(100, "Body fat must be between 0 and 100").optional(),
+  /** Nullable for the same reason as the current one above. */
+  startingBodyFatPercentage: z
+    .number()
+    .min(0)
+    .max(100, "Body fat must be between 0 and 100")
+    .nullable()
+    .optional(),
 });
 
 // Schema for updating client check-in configuration

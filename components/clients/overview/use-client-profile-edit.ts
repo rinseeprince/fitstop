@@ -212,21 +212,21 @@ export function useClientProfileEdit(
     watched.dateOfBirth === "" && autoEnergyReady?.ageSource === "assumed_default";
 
   /**
-   * Emptying a stored measurement is refused, never silently ignored. None of
-   * the four columns is nullable through `updateClientSchema` (same as goal
-   * weight), so there is no payload that clears one — and a box the coach
-   * cleared that quietly kept its old value is worse than an error.
+   * Emptying a WEIGHT is refused, never silently ignored: neither weight column
+   * is nullable through `updateClientSchema`, so there is no payload that
+   * clears one, and a box the coach cleared that quietly kept its old value is
+   * worse than an error.
+   *
+   * BODY FAT is clearable and deliberately absent from this guard. It is an
+   * estimate, and a wrong one does not merely read wrong — `computeEnergyPair`
+   * switches from Mifflin-St Jeor to Katch-McArdle whenever a body fat is
+   * present, so a bad figure changes which formula produces the client's BMR.
+   * Withdrawing it has to be expressible, not only replaceable with another
+   * guess.
    */
   const clearedMeasurement = ((): string | null => {
     if (!startWeight.isPristine && startWeight.commit == null) return "start weight";
     if (!currentWeight.isPristine && currentWeight.commit == null) return "current weight";
-    const seeded = toDefaults(client, goal);
-    if (seeded.startingBodyFatPercentage !== "" && watched.startingBodyFatPercentage === "") {
-      return "start body fat";
-    }
-    if (seeded.currentBodyFatPercentage !== "" && watched.currentBodyFatPercentage === "") {
-      return "current body fat";
-    }
     return null;
   })();
 
@@ -250,14 +250,20 @@ export function useClientProfileEdit(
     startWeight.commit != null
   ) {
     const shown = formatWeight(startWeight.commit, preference);
-    startEdits.push(`start weight to ${shown.value.toFixed(1)} ${shown.unit}`);
+    startEdits.push(`start weight becomes ${shown.value.toFixed(1)} ${shown.unit}`);
   }
   if (
     client.startingBodyFatPercentage != null &&
-    watched.startingBodyFatPercentage !== "" &&
     watched.startingBodyFatPercentage !== toDefaults(client, goal).startingBodyFatPercentage
   ) {
-    startEdits.push(`start body fat to ${watched.startingBodyFatPercentage}%`);
+    // Withdrawing a recorded start body fat is a replacement like any other —
+    // more consequential, if anything, since it changes which formula the
+    // client's BMR comes from.
+    startEdits.push(
+      watched.startingBodyFatPercentage === ""
+        ? "start body fat is removed"
+        : `start body fat becomes ${watched.startingBodyFatPercentage}%`
+    );
   }
 
   const submit = async (values: ProfileFormValues) => {
@@ -324,11 +330,20 @@ export function useClientProfileEdit(
       const seededNow = toDefaults(client, goal);
       if (!startWeight.isPristine) profile.startingWeight = startWeight.commit;
       if (!currentWeight.isPristine) profile.currentWeight = currentWeight.commit;
+      // An emptied box is NULL, not `Number("")` — which is 0, and would have
+      // recorded a client at zero percent body fat instead of removing the
+      // figure.
       if (values.startingBodyFatPercentage !== seededNow.startingBodyFatPercentage) {
-        profile.startingBodyFatPercentage = Number(values.startingBodyFatPercentage);
+        profile.startingBodyFatPercentage =
+          values.startingBodyFatPercentage === ""
+            ? null
+            : Number(values.startingBodyFatPercentage);
       }
       if (values.currentBodyFatPercentage !== seededNow.currentBodyFatPercentage) {
-        profile.currentBodyFatPercentage = Number(values.currentBodyFatPercentage);
+        profile.currentBodyFatPercentage =
+          values.currentBodyFatPercentage === ""
+            ? null
+            : Number(values.currentBodyFatPercentage);
       }
 
       // Recomputes BMR/TDEE server-side because it carries energy inputs. The

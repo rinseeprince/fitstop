@@ -5,7 +5,7 @@ const { upsertMetricEntry, state } = vi.hoisted(() => ({
   state: {
     row: {} as Record<string, unknown>,
     updates: [] as Record<string, unknown>[],
-    deletes: [] as { date?: string; keys?: string[] }[],
+    deletes: [] as { date?: string; key?: string; keys?: string[] }[],
   },
 }));
 
@@ -25,19 +25,25 @@ vi.mock("./supabase-admin", () => ({
           },
         };
       }
-      // client_metric_entries
-      const captured: { date?: string; keys?: string[] } = {};
+      // client_metric_entries. Two delete shapes reach here: the MOVE, which
+      // takes both start keys at once (`.in`), and a single WITHDRAWAL
+      // (`.eq("metric_key", …)`), whose terminal call is awaited directly —
+      // hence the thenable.
+      const captured: { date?: string } = {};
       const chain = {
         delete: () => chain,
         eq: (col: string, value: string) => {
           if (col === "entry_date") captured.date = value;
+          if (col === "metric_key") {
+            state.deletes.push({ date: captured.date, key: value });
+          }
           return chain;
         },
         in: (_col: string, keys: string[]) => {
-          captured.keys = keys;
-          state.deletes.push(captured);
+          state.deletes.push({ date: captured.date, keys });
           return Promise.resolve({ error: null });
         },
+        then: (resolve: (v: { error: null }) => void) => resolve({ error: null }),
       };
       return chain;
     },
@@ -106,6 +112,23 @@ describe("recordClientStart", () => {
     // The upsert replaces the entry on that date — same (client, metric, date).
     expect(entries()).toEqual([
       { metricKey: "weight", value: 92, entryDate: "2026-08-21", coachId: "coach-1" },
+    ]);
+  });
+
+  it("REMOVES the entry when a start body fat is withdrawn", async () => {
+    // null means "we no longer believe that figure", not "leave it alone" —
+    // so the entry comes off the chart rather than staying plotted.
+    state.row = { start_date: "2026-08-21", starting_weight: 90, starting_body_fat_percentage: 24 };
+
+    await recordClientStart("c1", { bodyFatPercentage: null, coachId: "coach-1" });
+
+    expect(state.updates[0].starting_body_fat_percentage).toBeNull();
+    expect(state.deletes).toEqual([
+      { date: "2026-08-21", key: "bodyFat" },
+    ]);
+    // The weight is untouched and still re-stated on its own entry.
+    expect(entries()).toEqual([
+      { metricKey: "weight", value: 90, entryDate: "2026-08-21", coachId: "coach-1" },
     ]);
   });
 

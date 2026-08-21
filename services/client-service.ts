@@ -365,15 +365,22 @@ export const updateClient = async (
     });
   }
 
-  // Dual-write body metrics (non-blocking)
-  if (clientData.currentWeight !== undefined || clientData.currentBodyFatPercentage !== undefined) {
+  // Dual-write body metrics (non-blocking).
+  //
+  // CLEARING a body fat writes no event: `body_metrics` records measurements
+  // TAKEN, and "we no longer believe that figure" is not one. The column is
+  // still nulled by the update above and the energy pair still recomputes
+  // (which is the point — BMR reverts from Katch-McArdle to Mifflin-St Jeor),
+  // so the only thing skipped is an empty row in an event log.
+  const measuredBodyFat = clientData.currentBodyFatPercentage ?? undefined;
+  if (currentWeightKg !== undefined || measuredBodyFat !== undefined) {
     try {
       await recordBodyMetrics({
         clientId,
         bmr: energyBmr,
         tdee: energyTdee,
         weight: currentWeightKg,
-        bodyFatPercentage: clientData.currentBodyFatPercentage,
+        bodyFatPercentage: measuredBodyFat,
         source: "metrics_api",
       });
     } catch (dualWriteError) {

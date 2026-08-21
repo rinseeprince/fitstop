@@ -21,7 +21,9 @@ import { Button } from "@/components/ui/button";
 const DANGER_CTA =
   "border border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]";
 
-/** "a and b" — British list; there are at most two start values. */
+/** "a and b" — British list; there are at most two start values. Each phrase
+ *  carries its own verb ("becomes 92.0 kg", "is removed") so a change and a
+ *  withdrawal read correctly in the same sentence. */
 function joinEdits(edits: string[]): string {
   return edits.length <= 1 ? (edits[0] ?? "") : `${edits[0]} and ${edits[1]}`;
 }
@@ -56,9 +58,9 @@ export function ConfirmStartEditDialog({
           </div>
         </DialogHeader>
         <p className="text-sm text-[#5a7d82]">
-          Sets <span className="font-semibold text-[#0c1a1e]">{clientName}</span>&apos;s{" "}
-          {joinEdits(edits)}. Every progress figure is measured from it, so their
-          totals and pace change to match.
+          <span className="font-semibold text-[#0c1a1e]">{clientName}</span>&apos;s{" "}
+          {joinEdits(edits)}. Every progress figure is measured from this, so
+          their totals and pace change to match.
         </p>
         <DialogFooter>
           <Button variant="ghost" onClick={onCancel} disabled={isSaving}>
