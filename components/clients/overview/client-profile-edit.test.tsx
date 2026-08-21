@@ -245,6 +245,24 @@ describe("inline client profile editing", () => {
       expect(body).not.toHaveProperty("currentBodyFatPercentage");
     });
 
+    it("FILLS a blank start weight with no confirm — nothing is overwritten", async () => {
+      // The "forgot to add one" case. The dialog guards a REPLACEMENT; there is
+      // no recorded start to change, so interrupting would warn about an
+      // outcome that cannot happen.
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(makeClient({ currentWeight: 86 }));
+
+      const field = screen.getByLabelText("Start weight");
+      await user.type(field, "90");
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      expect(profilePatch(fetchSpy)?.startingWeight).toBe(90);
+      expect(
+        screen.queryByRole("button", { name: /update start/i })
+      ).not.toBeInTheDocument();
+    });
+
     it("saves a CURRENT weight with no confirm", async () => {
       const fetchSpy = mockFetchOk();
       const user = await openEditor(MEASURED);

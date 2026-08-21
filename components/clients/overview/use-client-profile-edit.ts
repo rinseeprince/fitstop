@@ -231,16 +231,29 @@ export function useClientProfileEdit(
   })();
 
   /**
-   * Which START values this save would change, as phrases for the confirm.
-   * Empty means no confirm is needed — a coach editing a phone number never
-   * sees the dialog.
+   * Which START values this save would REPLACE, as phrases for the confirm.
+   * Empty means no confirm is needed.
+   *
+   * Filling a blank start value is deliberately NOT one of them. The dialog
+   * exists because overwriting a recorded start destroys a fact nothing can
+   * recover and re-bases every figure derived from it — setting the first one
+   * destroys nothing, and a confirm headed "Change the recorded start?" over a
+   * record that does not exist is a warning about an outcome that cannot
+   * happen. The two cases this feature was asked for split exactly here: a
+   * coach who FORGOT a start weight is not interrupted; a coach fixing one they
+   * typed wrong is.
    */
   const startEdits: string[] = [];
-  if (!startWeight.isPristine && startWeight.commit != null) {
+  if (
+    client.startingWeight != null &&
+    !startWeight.isPristine &&
+    startWeight.commit != null
+  ) {
     const shown = formatWeight(startWeight.commit, preference);
     startEdits.push(`start weight to ${shown.value.toFixed(1)} ${shown.unit}`);
   }
   if (
+    client.startingBodyFatPercentage != null &&
     watched.startingBodyFatPercentage !== "" &&
     watched.startingBodyFatPercentage !== toDefaults(client, goal).startingBodyFatPercentage
   ) {
