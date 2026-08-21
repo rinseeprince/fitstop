@@ -405,6 +405,15 @@ export function BlocksSubtab({
                         })
                     : undefined
                 }
+                onSetNutrition={
+                  onTabChange
+                    ? () =>
+                        onTabChange("nutrition", {
+                          nutrition: "plans",
+                          ...journeyTripParams("edit", block.id),
+                        })
+                    : undefined
+                }
                 rowAction={
                   <>
                     <button

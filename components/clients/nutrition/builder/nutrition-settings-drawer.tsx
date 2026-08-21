@@ -15,11 +15,15 @@ import { DrawerFooter } from "./drawer-footer";
 type NutritionSettingsDrawerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Fires on a plan that actually saved — NOT on the auto-close below, which
+   *  also fires when a regenerate fails on a client who already had a plan. */
+  onSaved?: () => void;
 };
 
 export function NutritionSettingsDrawer({
   open,
   onOpenChange,
+  onSaved,
 }: NutritionSettingsDrawerProps) {
   const builder = useNutritionBuilderContext();
   const wasGenerating = useRef(false);
@@ -59,7 +63,7 @@ export function NutritionSettingsDrawer({
 
         <DrawerFormBody />
 
-        <DrawerFooter />
+        <DrawerFooter onSaved={onSaved} />
       </SheetContent>
     </Sheet>
   );

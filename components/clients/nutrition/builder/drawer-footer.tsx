@@ -5,7 +5,12 @@ import { Sparkles, AlertCircle } from "lucide-react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
 import { ApplyDateDialog } from "@/components/ui/apply-date-dialog";
 
-export function DrawerFooter() {
+type DrawerFooterProps = {
+  /** Fires only on a plan that actually SAVED (Session 7.4's return trip). */
+  onSaved?: () => void;
+};
+
+export function DrawerFooter({ onSaved }: DrawerFooterProps) {
   const builder = useNutritionBuilderContext();
   const [showApplyDialog, setShowApplyDialog] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -40,7 +45,14 @@ export function DrawerFooter() {
   };
 
   const handleApply = (effectiveFrom: string | null) => {
-    void builder.generatePlan(isManual, effectiveFrom);
+    void builder.generatePlan(isManual, effectiveFrom).then((saved) => {
+      // The BOOLEAN is the success signal, never the drawer closing. A coach
+      // can close the drawer without saving, and since Session 6 a save can
+      // return false AFTER the plan committed (a failed note insert) — leaving
+      // them here with their note intact, which is correct. Bouncing on either
+      // would be a lie about what happened.
+      if (saved) onSaved?.();
+    });
   };
 
   return (

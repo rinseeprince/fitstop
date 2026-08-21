@@ -43,9 +43,11 @@ type BlockCardProps = {
   /** 3.4's delete affordance mounts here, inside the row but outside the
    *  expand toggle (buttons cannot nest). */
   rowAction?: React.ReactNode;
-  /** The Journey round trip (7.3): the Training empty state becomes the way
-   *  into the apply flow. Undefined leaves it as plain text. */
+  /** The Journey round trip (7.3/7.4): the unset Training / Nutrition facts
+   *  become the way into the apply and plan flows. Undefined, or a block that
+   *  fails blockAcceptsSetup, leaves the empty state as plain text. */
   onPlaceProgram?: () => void;
+  onSetNutrition?: () => void;
 };
 
 const signed = (n: number) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
@@ -136,10 +138,15 @@ function TrainingColumn({
 }
 
 function NutritionColumn({
+  block,
   facts,
   factsLoading,
   factsError,
-}: Pick<BlockCardProps, "facts" | "factsLoading" | "factsError">) {
+  onSetNutrition,
+}: Pick<
+  BlockCardProps,
+  "block" | "facts" | "factsLoading" | "factsError" | "onSetNutrition"
+>) {
   if (factsError) {
     return <p className="text-xs text-[#93b0b4]">Unavailable</p>;
   }
@@ -148,7 +155,15 @@ function NutritionColumn({
   }
   const fact = facts.nutrition;
   if (!fact) {
-    return <p className="text-xs text-[#93b0b4]">Not set</p>;
+    return onSetNutrition && blockAcceptsSetup(block) ? (
+      <SetupPrompt
+        missing="Not set"
+        action="set targets"
+        onClick={onSetNutrition}
+      />
+    ) : (
+      <p className="text-xs text-[#93b0b4]">Not set</p>
+    );
   }
   const deficit = fact.deficitPerDay;
   return (

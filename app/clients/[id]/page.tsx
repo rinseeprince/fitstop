@@ -107,6 +107,7 @@ export default function ClientProfilePage() {
             <NutritionCalculatorCardEnhanced
               client={client}
               onUpdate={() => mutateClient()}
+              onTabChange={handleTabChange}
             />
           </TabsContent>
 

@@ -36,6 +36,7 @@ const EMPTY_FACTS: BlockFacts = {
 
 function renderCard(block: ClientBlockView, handlers: {
   onPlaceProgram?: () => void;
+  onSetNutrition?: () => void;
 } = {}) {
   return render(
     <BlockCard
@@ -101,5 +102,30 @@ describe("BlockCard — the round-trip empty states", () => {
     renderCard(makeBlock({ state: "current" }), { onPlaceProgram });
     screen.getByRole("button", { name: /No program placed/ }).click();
     expect(onPlaceProgram).toHaveBeenCalledTimes(1);
+  });
+
+  // The Nutrition fact's empty state (7.4) is gated identically — one rule,
+  // blockAcceptsSetup, not two that can drift apart.
+  it("offers the nutrition way in on a CURRENT block", () => {
+    const onSetNutrition = vi.fn();
+    renderCard(makeBlock({ state: "current" }), { onSetNutrition });
+    const button = screen.getByRole("button", { name: /Not set/ });
+    button.click();
+    expect(onSetNutrition).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the nutrition empty state plain on ELAPSED blocks", () => {
+    renderCard(makeBlock({ state: "past" }), { onSetNutrition: vi.fn() });
+    expect(screen.getByText("Not set")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Not set/ })).toBeNull();
+  });
+
+  it("keeps the nutrition empty state plain on ARCHIVED blocks", () => {
+    renderCard(
+      makeBlock({ state: "future", archivedAt: "2026-08-20T00:00:00Z" }),
+      { onSetNutrition: vi.fn() }
+    );
+    expect(screen.getByText("Not set")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Not set/ })).toBeNull();
   });
 });

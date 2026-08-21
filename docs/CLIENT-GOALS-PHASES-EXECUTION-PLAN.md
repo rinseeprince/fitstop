@@ -5213,3 +5213,58 @@ re-run green.
 
 **UI is unverified — the owner runs the browser smoke.**
 
+---
+
+### Task 7.4 — The same round trip for nutrition ✅ SHIPPED 2026-08-21
+
+`Not set — set targets` on a current or future block → the Nutrition tab's Plans pane with the
+plan drawer already open → the normal generate flow → back to the block, expanded. Same hook,
+same gate, same one-shot params, different surface.
+
+#### The return trip hangs off the BOOLEAN, and a test now proves it
+
+`generatePlan` returns `true`/`false`; the drawer's auto-close does not distinguish. Both
+half-failures matter:
+
+- A coach can close the drawer **without saving**. Bouncing them to Journey as if they had is
+  worse than not bouncing at all.
+- Since Session 6 a save can return **`false` after the plan committed** — a failed
+  `nutrition_plan_notes` insert — deliberately leaving the coach in the drawer with their note
+  intact. That behaviour is correct and must not be "fixed" into a bounce.
+
+The drawer's existing auto-close effect (`!isGenerating && hasPlan`) is exactly the wrong
+signal: on a client who **already had a plan**, `hasPlan` stays true, so the drawer closes even
+when a regenerate failed. Hooking the trip there would bounce on a failure.
+
+**Coverage gap found at execution, and closed.** Mutating `if (saved) onSaved?.()` to fire
+unconditionally passed the entire 3000-test suite — nothing covered the rule. Added
+`drawer-footer.test.tsx`, which drives a real save through the apply dialog with `generatePlan`
+resolving true and false. Re-mutated: **1 failure**, the false case, as it should be. Restored
+from a scratchpad copy and re-verified green.
+
+#### The gate is one rule, not two
+
+`blockAcceptsSetup` is shared by both columns, so the Training and Nutrition affordances cannot
+drift into disagreeing about which blocks are set-up-able. Three more `block-card.test.tsx`
+cases cover the nutrition side of it (current offers, elapsed and archived do not).
+
+#### The nutrition prop chain is SEPARATE from training's
+
+`page → NutritionCalculatorCardEnhanced → NutritionPlanBuilder` is two levels with one
+passenger. It does not touch the `page → TrainingPlanCard → TrainingPlanBuilder →
+TrainingHistoryTable` chain, which stays at three levels and one passenger — so the "a second
+passenger makes it a context" line recorded in 7.1 is still unspent.
+
+#### Files
+
+`block-card.tsx` (+ test) · `blocks-subtab.tsx` · `nutrition-plan-builder.tsx` ·
+`nutrition-settings-drawer.tsx` · `drawer-footer.tsx` (+ test) ·
+`nutrition-calculator-card-enhanced.tsx` · `app/clients/[id]/page.tsx`.
+
+#### Gates
+
+`tsc` clean · `eslint` 0 errors on every changed file · `vitest` **281 files / 3002 tests**
+(from 280/2997: +1 file, +5) · `check:labels` OK 666 · no `as any`, no introduced markers.
+
+**UI is unverified — the owner runs the browser smoke.**
+
