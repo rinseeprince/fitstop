@@ -48,6 +48,20 @@ describe("buildClientTabUrl", () => {
     expect(url).not.toContain("journey=wellness");
   });
 
+  it("a null extraParam DELETES a carried key rather than leaving it to win", () => {
+    // The exercise drill-down: the destination prefers exerciseId over
+    // exerciseName, so a freehand log (no id) must clear the previous trip's.
+    const url = buildClientTabUrl(
+      "c1",
+      "metrics",
+      "tab=training&exerciseId=ex-1&exerciseName=Bench",
+      { journey: "training", exerciseId: null, exerciseName: "Zercher squat" }
+    );
+    expect(url).not.toContain("exerciseId");
+    expect(url).toContain("exerciseName=Zercher+squat");
+    expect(url).toContain("journey=training");
+  });
+
   it("omitted extraParams leave the URL byte-identical to the three-arg call", () => {
     expect(buildClientTabUrl("c1", "nutrition", "tab=training&subtab=plans")).toBe(
       buildClientTabUrl("c1", "nutrition", "tab=training&subtab=plans", undefined)

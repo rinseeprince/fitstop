@@ -12,9 +12,15 @@ import { useMergedMetrics } from "./hooks/use-merged-metrics";
 import { useClientBlocks } from "./hooks/use-client-blocks";
 import { BlocksSubtab } from "./blocks/blocks-subtab";
 import { shapeBlockBandIdentity } from "./blocks/block-chart-bands";
+// The Training pane's analytics live under clients/training/ and are MOUNTED
+// here (Session 7.1): analytics belong to Journey, prescription stays on the
+// Training tab. Same coach-facing audience, and the dependency runs one way —
+// Journey imports the view; the view knows nothing of Journey.
+import { ExerciseDataView } from "@/components/clients/training/exercise-data/exercise-data-view";
 import {
   DEFAULT_FOCUS,
   isJourneySubtab,
+  toMetricTab,
   type JourneySubtab,
   type MetricTab,
 } from "./metrics-view-types";
@@ -44,9 +50,10 @@ export const MetricsTabContent = ({
     params.set("journey", t);
     router.replace(`?${params.toString()}`, { scroll: false });
   };
-  // The metric-keyed derivations below want a MetricTab; on the Blocks pane
-  // they idle on "body" (nothing metric-keyed renders there).
-  const tab: MetricTab = pane === "blocks" ? "body" : pane;
+  // The metric-keyed derivations below want a MetricTab; the panes that key
+  // nothing (Training, Blocks) idle on "body". The mapping is a whitelist in
+  // metrics-view-types.ts so the next pane is safe without touching this line.
+  const tab: MetricTab = toMetricTab(pane);
 
   // Focused metric resets on tab switch by derivation (no effects): a stored
   // focus applies only while its own tab is active.
@@ -85,6 +92,8 @@ export const MetricsTabContent = ({
             metricsByTab.body.find((metric) => metric.id === "weight") ?? null
           }
         />
+      ) : pane === "training" ? (
+        <ExerciseDataView clientId={client.id} />
       ) : isError ? (
         <p className="py-12 text-center text-[13px] text-[#93b0b4]">
           Failed to load metrics.

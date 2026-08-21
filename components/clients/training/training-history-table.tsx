@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
 import { HistoryChartDialog } from "@/components/clients/history-table/history-chart-dialog";
 import { useHistoryData, HISTORY_PAGE_SIZE } from "@/hooks/use-history-data";
@@ -15,6 +14,7 @@ import {
   LABEL_CLASS,
   MONO,
 } from "@/components/clients/training/program-builder/builder-tokens";
+import type { ClientTab } from "@/lib/client-tabs";
 import type { TrainingHistoryRow } from "@/types/history";
 
 function formatDate(dateStr: string) {
@@ -82,29 +82,34 @@ const QUALITY_VALUES: Record<string, number> = {
 
 type Props = {
   clientId: string;
+  // Exercise Data moved to the Journey tab (Session 7.1), so the drill-down is
+  // now a TAB change, not a pane change — and cross-tab navigation has to run
+  // through the client page's handler, because activeTab is state seeded from
+  // ?tab= at mount only. Without it the URL would change and the tab would not.
+  onTabChange?: (
+    tab: ClientTab,
+    extraParams?: Record<string, string | null>
+  ) => void;
 };
 
-export function TrainingHistoryTable({ clientId }: Props) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
   const [page, setPage] = useState(0);
   const [chartColumn, setChartColumn] = useState<string | null>(null);
   const [selectedSessionLogId, setSelectedSessionLogId] = useState<string | null>(null);
 
   const handleExerciseDrillDown = useCallback(
     (exerciseId: string | null, exerciseName: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("subtab", "exercise-data");
-      if (exerciseId) {
-        params.set("exerciseId", exerciseId);
-      } else {
-        params.delete("exerciseId");
-      }
-      params.set("exerciseName", exerciseName);
       setSelectedSessionLogId(null);
-      router.replace(`?${params.toString()}`, { scroll: false });
+      // exerciseId is null for a freehand or unmatched log, and the destination
+      // prefers the id over the name — so a previous drill-down's id has to be
+      // CLEARED, not merely left unset, or it wins and shows the wrong exercise.
+      onTabChange?.("metrics", {
+        journey: "training",
+        exerciseId: exerciseId ?? null,
+        exerciseName,
+      });
     },
-    [searchParams, router],
+    [onTabChange],
   );
 
   const { rows, total, isLoading } = useHistoryData<TrainingHistoryRow>(

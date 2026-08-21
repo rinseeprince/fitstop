@@ -8,12 +8,22 @@ export type { Tone };
 // page components. Built from the pure derivations in utils/metric-points.ts
 // and utils/metric-derived-stats.ts.
 
-export type MetricTab = "body" | "wellness";
+// The metric-keyed panes — the ONLY values allowed to index metricsByTab,
+// logRowsByTab and DEFAULT_FOCUS below.
+export const METRIC_TABS = ["body", "wellness"] as const;
 
-// The Journey tab's pane switcher: the two metric panes plus Blocks. Kept
-// separate from MetricTab so "blocks" can never leak into the metric-keyed
-// data shapes below (metricsByTab, logRowsByTab, DEFAULT_FOCUS).
-export const JOURNEY_SUBTABS = ["body", "wellness", "blocks"] as const;
+export type MetricTab = (typeof METRIC_TABS)[number];
+
+// The Journey tab's pane switcher: the two metric panes plus the two that key
+// nothing — Training (exercise analytics, moved here from the Training tab in
+// Session 7.1) and Blocks. Kept separate from MetricTab so a non-metric pane
+// can never leak into the metric-keyed data shapes below.
+export const JOURNEY_SUBTABS = [
+  "body",
+  "training",
+  "wellness",
+  "blocks",
+] as const;
 
 export type JourneySubtab = (typeof JOURNEY_SUBTABS)[number];
 
@@ -22,6 +32,23 @@ export type JourneySubtab = (typeof JOURNEY_SUBTABS)[number];
 // sent every unknown value to "body" with no type error.
 export function isJourneySubtab(value: string | null): value is JourneySubtab {
   return (JOURNEY_SUBTABS as readonly string[]).includes(value ?? "");
+}
+
+/**
+ * The metric derivations want a MetricTab, but a Journey pane may be one that
+ * keys nothing (Training, Blocks). Those idle on "body" — nothing metric-keyed
+ * renders on them.
+ *
+ * It WHITELISTS the metric panes rather than naming the non-metric ones. The
+ * blacklist this replaced (`pane === "blocks" ? "body" : pane`) put the burden
+ * on whoever adds the next pane to remember this line exists; adding "training"
+ * to JOURNEY_SUBTABS without touching it would have indexed the physique
+ * metrics under a pane that renders none of them.
+ */
+export function toMetricTab(pane: JourneySubtab): MetricTab {
+  return (METRIC_TABS as readonly string[]).includes(pane)
+    ? (pane as MetricTab)
+    : "body";
 }
 
 export const DEFAULT_FOCUS: Record<MetricTab, string> = {

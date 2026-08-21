@@ -33,7 +33,7 @@ export default function ClientProfilePage() {
   const { client, isLoading: clientLoading, isError: clientError, mutate: mutateClient } = useClient(clientId)
   const [activeTab, setActiveTab] = useState<ClientTab>(initialTab)
 
-  const handleTabChange = useCallback((tab: ClientTab, extraParams?: Record<string, string>) => {
+  const handleTabChange = useCallback((tab: ClientTab, extraParams?: Record<string, string | null>) => {
     setActiveTab(tab)
     // Single-owner params (Journey's ?journey=) survive the switch so that
     // pane restores on the return trip; the SHARED ?subtab= (written by both
@@ -94,7 +94,11 @@ export default function ClientProfilePage() {
 
           {/* Training Plan Tab */}
           <TabsContent value="training" className="space-y-6 mt-0">
-            <TrainingPlanCard client={client} onUpdate={() => mutateClient()} />
+            <TrainingPlanCard
+              client={client}
+              onUpdate={() => mutateClient()}
+              onTabChange={handleTabChange}
+            />
           </TabsContent>
 
           {/* Nutrition Tab */}

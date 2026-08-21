@@ -4972,3 +4972,112 @@ verify rather than assume.
 `check:rls` OK **42/42** public tables · no `as any`, no introduced markers.
 
 **Browser smoke is OWED — the owner runs it.** Checklist in the session report.
+
+---
+
+## SESSION 7 — IN PROGRESS 2026-08-21
+
+Zero migrations, as briefed. §2's security / load / performance review is **not applicable**
+and that is a checked answer, not a skipped step: across all four tasks there is no migration,
+no route, no auth change, no write path and no query — every edit is a client component, a
+pure URL helper, or a doc. Stated once here rather than repeated per task.
+
+### Verification against `main`, before any edit
+
+The brief said every line reference has drifted at least once. Result: **four of the five
+named claims were exact**, one drifted by two lines, and the document carries two errors of
+its own.
+
+| Claim | Result |
+|---|---|
+| `JOURNEY_SUBTABS = ["body","wellness","blocks"]` at `metrics-view-types.ts:17`; labels Physique / Wellness / Blocks at `metrics-top-bar.tsx:22-24` | exact |
+| Training's panes `"data" \| "plans" \| "exercise-data"` at `training-plan-builder.tsx:33` | values exact; `ExerciseDataView` mounts at **`:54`**, not `:52` |
+| `buildClientTabUrl` deletes `subtab`; `extraParams` set after the tab, single-owner only | exact (`lib/client-tabs.ts:39`) |
+| `page.tsx` seeds `activeTab` from `?tab=` at MOUNT ONLY | exact (`:34`) — and Radix `TabsContent` genuinely unmounts inactive children (`children: present && children`), so every tab visit is a fresh mount. Load-bearing for 7.3/7.4's one-shot params |
+| `metrics-tab-content.tsx:49` guard `pane === "blocks" ? "body" : pane` | exact |
+
+**Two errors in this document, corrected in execution:**
+
+1. **Task 7.5's premise is false.** `ARCHITECTURE.md`'s tab table does **not** list Journey's
+   panes — the Metrics row named neither "Journey" nor any pane. Only the Training row listed
+   "Data / Plans / Exercise Data". Both rows were rewritten.
+2. **A THIRD writer of `?subtab=` exists and Session 7 does not mention it.**
+   `training-history-table.tsx:97` wrote `subtab=exercise-data` for the session-log → exercise
+   drill-down. Moving the pane to Journey would have left that a dead click, so 7.1 repoints
+   it — and because it becomes a cross-tab navigation, `onTabChange` had to be threaded to the
+   history table. See Task 7.1.
+
+---
+
+### Task 7.1 — Exercise Data moves to the Journey tab ✅ SHIPPED 2026-08-21
+
+Journey is **Physique · Training · Wellness · Blocks**; Training is **Data · Plans**, the same
+two-pane shape Nutrition already has. Analytics live in Journey, prescription lives on its own
+tab.
+
+#### The landmine, and why the fix is a whitelist rather than one more branch
+
+`JourneySubtab` is deliberately not `MetricTab` — `MetricTab` keys `metricsByTab`,
+`logRowsByTab` and `DEFAULT_FOCUS`, and a pane that keys none of them must never index them.
+The existing guard was a **blacklist** (`pane === "blocks" ? "body" : pane`), which put the
+burden on whoever adds the next pane to remember the line exists.
+
+It is now `toMetricTab(pane)` in `metrics-view-types.ts` — a whitelist over a new
+`METRIC_TABS` const, from which `MetricTab` is itself derived. Adding a pane to
+`JOURNEY_SUBTABS` is now safe **by default**: an unknown pane idles on `"body"` because it is
+not a metric pane, not because someone listed it. Pinned by a test that walks every
+`JOURNEY_SUBTABS` member and asserts the result is a key the metric shapes actually hold, so
+the test fails on a future pane that leaks rather than on this one.
+
+#### The unmentioned third `?subtab=` writer
+
+`TrainingHistoryTable`'s drill-down (session-log dialog → an exercise's progression) set
+`subtab=exercise-data` and `router.replace`d. With the pane gone from Training that is a dead
+click, so it now calls `onTabChange("metrics", { journey: "training", … })`. Two consequences:
+
+- **It must go through the page's handler.** `activeTab` is state seeded from `?tab=` at mount
+  only, so a bare `router.replace` would change the URL and leave the tab where it was. That
+  forced `onTabChange` down `page → TrainingPlanCard → TrainingPlanBuilder →
+  TrainingHistoryTable` — three prop levels, the §4 boundary. **One passenger today. A second
+  one on this chain makes it a context, not a fourth level** — recorded on
+  `TrainingPlanCardProps` so the next person reads it before adding one.
+- **`buildClientTabUrl`'s `extraParams` widened to `Record<string, string | null>`,
+  `null` = delete.** The whole query is carried across a tab change, and the destination
+  prefers `exerciseId` over `exerciseName`; a freehand or unmatched log has no id
+  (`exercise_logs.exercise_id` is nullable), so the previous trip's id has to be **cleared**,
+  not merely left unset, or it wins and renders the wrong exercise. Tested.
+
+#### Decisions taken at execution
+
+- **The file did not move.** `exercise-data-view.tsx` stays under
+  `components/clients/training/exercise-data/`; Journey mounts it. Moving it would drag two
+  siblings and its test, and break the `components/training/exercise-data/*` cross-references,
+  for no benefit — it is still training data. The pane moved; the code did not.
+- **First `metrics/ → clients/training/` import.** Same coach-facing audience (CONVENTIONS §6
+  is about coach-vs-client, not feature folders), and no cycle: the dependency runs one way —
+  Journey imports the view, the view knows nothing of Journey (the reverse direction is a
+  prop). Said here so it is an explained edge rather than an unexplained first.
+- **The top bar's "Log measurement" button still renders on the Training pane**, exactly as it
+  already did on Blocks. Changing that is a separate UX call nobody asked for; consistency with
+  the existing non-metric pane is the conservative answer.
+- **Old `?tab=training&subtab=exercise-data` bookmarks now land on Training → Data.** A link to
+  a pane that no longer exists on that tab cannot resolve to it, and a mount-time cross-tab
+  redirect is unrequested cleverness. The pane's address is
+  `?tab=metrics&journey=training`. In-app navigation to it is repointed, so only an external
+  bookmark is affected.
+
+#### Files
+
+`metrics-view-types.ts` (+ test) · `metrics-top-bar.tsx` · `metrics-tab-content.tsx` ·
+`training-plan-builder.tsx` · `training-history-table.tsx` · `training-plan-card.tsx` ·
+`app/clients/[id]/page.tsx` · `lib/client-tabs.ts` (+ test) · `ARCHITECTURE.md` tab table.
+
+#### Gates
+
+`tsc` clean · `eslint` 0 errors on every changed file (210 pre-existing warnings repo-wide,
+unchanged from the session-start baseline) · `vitest` **278 files / 2976 tests** (from
+278/2972: +4) · `check:labels` OK 664 · no `as any`, no introduced markers. No migration, so
+no `db push` / `gen types` / `check:rls`.
+
+**UI is unverified — the owner runs the browser smoke.**
+

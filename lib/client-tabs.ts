@@ -27,19 +27,23 @@ export type ClientTab = (typeof CLIENT_TABS)[number]["value"]
  * sends `{ journey: "blocks" }`): each entry is set after the tab, overriding
  * any carried value. Only single-owner params belong here — setting `subtab`
  * through it would reintroduce the cross-tab guard bug this function exists
- * to prevent.
+ * to prevent. A `null` value DELETES the key: the whole query is carried, so
+ * a caller addressing a param sometimes needs to clear the last trip's value
+ * rather than leave a stale one to win (the exercise drill-down's optional
+ * `exerciseId`, which the destination prefers over `exerciseName`).
  */
 export function buildClientTabUrl(
   clientId: string,
   tab: ClientTab,
   currentSearch: string,
-  extraParams?: Record<string, string>
+  extraParams?: Record<string, string | null>
 ): string {
   const params = new URLSearchParams(currentSearch)
   params.delete("subtab")
   params.set("tab", tab)
   for (const [key, value] of Object.entries(extraParams ?? {})) {
-    params.set(key, value)
+    if (value === null) params.delete(key)
+    else params.set(key, value)
   }
   return `/clients/${clientId}?${params.toString()}`
 }
