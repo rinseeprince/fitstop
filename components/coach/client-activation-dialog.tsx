@@ -85,7 +85,12 @@ export function ClientActivationDialog({
   const [submitting, setSubmitting] = useState(false)
   const [welcomeMessage, setWelcomeMessage] = useState("")
   const [firstCheckInDay, setFirstCheckInDay] = useState<DayOfWeek>("monday")
-  const [startDate, setStartDate] = useState<string>("")
+  // Prefilled with today: activation IS the client's start date, so leaving it
+  // blank was how almost every client ended up with none — and a null start
+  // date silently disables their no-engagement alert and gives their first
+  // check-in a full-week denominator it never earned. The field stays editable
+  // for the coach who actually started them last Monday.
+  const [startDate, setStartDate] = useState<string>(getTodayDateString)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -169,7 +174,7 @@ export function ClientActivationDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="start-date" className={FIELD_LABEL}>
-              Program start date
+              Start date
             </Label>
             <Input
               id="start-date"
@@ -178,6 +183,10 @@ export function ClientActivationDialog({
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
+            <p className="text-[11px] text-[#93b0b4]">
+              Everything is measured from here. Their weight today is logged as
+              their starting point.
+            </p>
           </div>
 
           <div className="space-y-1.5">

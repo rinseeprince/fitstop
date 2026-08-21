@@ -8,6 +8,8 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { sendActivationEmail } from "@/services/email-service";
 import { sendInvitation } from "@/services/invitation-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
+import { recordClientStart } from "@/services/client-start-service";
+import { getClientTodayString } from "@/services/today-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import type { OnboardingStatus } from "@/types/client-intake";
 import type { DayOfWeek } from "@/types/check-in";
@@ -53,7 +55,6 @@ export async function POST(
       updated_at: string;
       expected_check_in_day?: DayOfWeek;
       welcome_message?: string;
-      start_date?: string;
     } = {
       onboarding_status: "active",
       updated_at: new Date().toISOString(),
@@ -67,9 +68,19 @@ export async function POST(
       updateData.welcome_message = validation.data.welcomeMessage;
     }
 
-    if (validation.data.startDate) {
-      updateData.start_date = validation.data.startDate;
-    }
+    // Activation IS the origin, and three denominators are measured from it:
+    // the check-in period clamp, the weekly-nutrition partial first week, and
+    // the no-engagement grace (which returns null — silently OFF — without it).
+    //
+    // The coach's picked date wins: the dialog prefills their today and they
+    // may backdate it ("we actually started last Monday"). A stored date is
+    // kept rather than overwritten, so nothing can null an origin that already
+    // exists. The client-timezone fallback is for a caller that sends no date
+    // at all — a start date sits on the client's calendar, not their coach's.
+    const startsOn =
+      validation.data.startDate ??
+      client.startDate ??
+      (await getClientTodayString(clientId));
 
     const { error } = await supabase
       .from("clients")
@@ -80,6 +91,12 @@ export async function POST(
       console.error("Supabase update error:", error.message);
       throw new Error("Failed to activate client");
     }
+
+    // The origin, and the measurements taken on it. Written AFTER the status
+    // flip so a failure here leaves an activated client rather than a
+    // half-activated one — and surfaced rather than swallowed, because a
+    // client whose journey has no start is the state this exists to prevent.
+    await recordClientStart(clientId, { startsOn, coachId });
 
     void recordAuditEvent({
       actorId: coachId,
