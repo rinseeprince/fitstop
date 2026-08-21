@@ -246,7 +246,8 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
               )
             )}
             <p className="text-xs text-muted-foreground">
-              Also recorded as their starting weight.
+              Becomes their starting weight, logged on their start date when you
+              activate them.
             </p>
           </FormItem>
 

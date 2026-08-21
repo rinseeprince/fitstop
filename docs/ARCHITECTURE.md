@@ -762,8 +762,10 @@ Coach reviews intake
   -> clients.onboarding_status = 'setup_in_progress'
 
 Coach activates client
-  -> Sets welcome message + first check-in day
+  -> Sets welcome message + first check-in day + START DATE (prefilled: today)
   -> clients.onboarding_status = 'active'
+  -> recordClientStart: start_date, and the start weight/body fat logged as
+     client_metric_entries dated on it (see "The client's origin")
   -> Activation email sent
   -> walkthrough_completed_at remains NULL until first login
 
