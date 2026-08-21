@@ -1,7 +1,7 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · Session 0b ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-13 (8 commits, ZERO migrations; invariant 16 satisfied: one writer, one read path, one editor; two smoke follow-ups folded in — the deadline's native date bounds and the block timeline's nutrition eras) · Session 5 ✅ COMPLETE — descoped to one typing commit, shipped + owner-smoked all clear 2026-08-13 (2 commits, ZERO migrations; the deficit input is PARKED, not rejected) · one session remains (6) · **Owner decision date:** 2026-08-10
-**Eight sessions.** Three largely independent features share this document. Each session is designed for a fresh Claude Code session with a full context window.
+**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · Session 0b ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-13 (8 commits, ZERO migrations; invariant 16 satisfied: one writer, one read path, one editor; two smoke follow-ups folded in — the deadline's native date bounds and the block timeline's nutrition eras) · Session 5 ✅ COMPLETE — descoped to one typing commit, shipped + owner-smoked all clear 2026-08-13 (2 commits, ZERO migrations; the deficit input is PARKED, not rejected) · Session 6 ✅ COMPLETE — shipped 2026-08-13 (7 commits, migration 147 `nutrition_plan_notes`; the plan-save note now has TWO homes, and the client-visibility policy is enforced on the wire) · **Session 7 ADDED 2026-08-21** (owner-directed UX session: Exercise Data moves into Journey, and the block empty states become round trips into the apply/builder flows) — one session remains (7) · **Owner decision date:** 2026-08-10
+**Nine sessions.** Three largely independent features share this document, plus a UX session (7) added after they shipped. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
 
@@ -150,7 +150,8 @@ Listed in execution order.
 | **4B** ✅ | TDEE ownership: profile owns BMR/TDEE, builder consumes — **SHIPPED 2026-08-12** (17 commits; the calculator now CONSUMES the profile's TDEE rather than re-deriving it) | none | Yes — activity + custom TDEE move to the client profile; the drawer loses its dropdown |
 | **0b** ✅ | Goals: one read path, one writer, one editor, history — **SHIPPED + owner-smoked 2026-08-13** (8 commits; no migration) | none | Yes — the goal editor |
 | **5** ✅ | Type the plan-save RPC payload (`as never` removal) — **DESCOPED 2026-08-13**, then **COMPLETE — shipped + owner-smoked all clear 2026-08-13** (2 commits); the deficit input, its two columns and the arity change are parked, see SESSION 5 | none | No — one typing commit |
-| **6** | The save note + the Journey timeline | **1** (`nutrition_plan_notes`) | Yes |
+| **6** ✅ | The save note + the Journey timeline — **SHIPPED 2026-08-13** (7 commits; migration 147) | **1** (`nutrition_plan_notes`) | Yes |
+| **7** | The journey is the place you set things up — Exercise Data moves to Journey; the block empty states become round trips into apply/builder | none | Yes |
 
 ### What actually depends on what
 
@@ -4755,7 +4756,10 @@ as stale (the second inline BMR implementation — closed by Session 4B), correc
 landed in CONVENTIONS §8 while its measurements die here. All twelve were grepped back out of
 the surviving docs afterwards: the sweep proves they moved, the grep proves they are findable.
 
-**This document is now safe to delete.** Deletion is the owner's call after sign-off.
+**Session 6 left this document safe to delete** — everything durable had been swept out.
+**SESSION 7 (added 2026-08-21) reopened it.** Delete only after 7 signs off, and re-run 6.4's
+grep gate first: 7 is a UX session and should add nothing durable, but that is a claim to
+verify rather than assume.
 
 ### Gates
 
@@ -4764,3 +4768,205 @@ the surviving docs afterwards: the sweep proves they moved, the grep proves they
 `check:rls` OK **42/42** public tables · no `as any`, no introduced markers.
 
 **Browser smoke is OWED — the owner runs it.** Checklist in the session report.
+
+---
+
+# SESSION 7 — The journey is the place you set things up
+
+**Zero migrations. Four tasks.** Added 2026-08-21 by owner direction, after Sessions 0-6
+shipped. **Depends on Session 3 (the Blocks pane) and Session 6 only for context** — it
+touches no note code.
+
+## The problem, in the owner's words
+
+> "The UX of setting up a journey/phases is good. However it feels a bit off from a UX
+> perspective when you have to leave the journey page to set up training and nutrition."
+
+A coach builds a client's journey on one screen, then has to go somewhere else to make it
+real, and find their way back. The Journey tab knows a block has no program — it renders
+"No program placed" — and then makes the coach do the navigation themselves.
+
+## What this is NOT
+
+Not a merge of the Training and Nutrition tabs into Journey. Those tabs keep their calendars,
+heroes and builders. This session moves ONE analytics pane, and makes two empty states into
+doorways that lead back where they came from.
+
+---
+
+### Task 7.1 — Exercise Data moves to the Journey tab
+
+**Journey's pane switcher gains "Training", between Physique and Wellness.** It renders
+`ExerciseDataView` (`components/clients/training/exercise-data/exercise-data-view.tsx`),
+moved from the Training tab. Training is then **Data | Plans**, the same two-pane shape
+Nutrition already has (`nutrition-plan-builder.tsx`) — which is the point: analytics live in
+Journey, prescription lives in its own tab.
+
+Verified against `main` at authoring:
+
+- `JOURNEY_SUBTABS = ["body", "wellness", "blocks"]` (`metrics-view-types.ts:17`), labelled
+  Physique / Wellness / Blocks (`metrics-top-bar.tsx:22-24`). New order: **Physique, Training,
+  Wellness, Blocks.**
+- Training's three panes are `"data" | "plans" | "exercise-data"`
+  (`training-plan-builder.tsx:33`), with `ExerciseDataView` mounted at `:52`.
+
+**The landmine — `JourneySubtab` is deliberately NOT `MetricTab`.** `metrics-view-types.ts:13-17`
+records why: `MetricTab` keys the metric data shapes (`metricsByTab`, `logRowsByTab`,
+`DEFAULT_FOCUS` are all `Record<MetricTab, ...>`), and `"blocks"` is kept out of it so a
+non-metric pane can never index them. `metrics-tab-content.tsx:49` handles that with
+`const tab: MetricTab = pane === "blocks" ? "body" : pane` — it *idles* on "body" while the
+Blocks pane renders. **"training" is the same kind of non-metric pane and must join that
+guard.** Miss it and the pane either type-errors or silently indexes the physique metrics.
+
+---
+
+### Task 7.2 — Give Training and Nutrition their own pane params
+
+**This is the enabler for 7.3 and 7.4, and it ships ALONE so a regression is attributable.**
+
+`?subtab=` is written by BOTH the Training and Nutrition tabs. `buildClientTabUrl`
+(`lib/client-tabs.ts`) therefore **deletes it** on every tab change, and its doc comment says
+routing `subtab` through `extraParams` "would reintroduce the cross-tab guard bug this
+function exists to prevent". Both tabs additionally guard it at read time
+(`training-plan-builder.tsx:31`, `nutrition-plan-builder.tsx:32`) against a render-order race.
+
+A deep link into Training's **Plans** pane is addressed by exactly the param that gets
+dropped. **Owner decision 2026-08-21: give each tab a single-owner param** — `?training=` and
+`?nutrition=`, the way Journey already has `?journey=`. `buildClientTabUrl` carries
+single-owner params through by design, so the deep link lands on the right pane with no
+flash, and the whole shared-param class of bug goes away.
+
+- Both guards read their own param and can drop the `tab === "..."` race check, because a
+  single-owner param cannot be stale from another tab. **Keep the checks anyway unless a test
+  proves them unnecessary** — they are cheap and they encode a race that really happened.
+- **Old `?subtab=` links must still resolve.** Read the legacy param as a fallback when the
+  new one is absent. Do not silently break a bookmarked link.
+- `buildClientTabUrl` keeps deleting `subtab`; nothing should write it after this task.
+
+---
+
+### Task 7.3 — "No program placed" becomes the way in, and the way back
+
+**Clickable on current and future blocks only** (owner decision 2026-08-21). Elapsed and
+archived blocks keep plain text: placement writes from a chosen start date, not the block's
+window, so a click on a finished block leads somewhere confusing — and it matches the posture
+elapsed blocks already have everywhere else (read-only, no delete offered, dates pinned).
+
+The round trip:
+
+1. Click → `handleTabChange("training", { training: "plans", apply: "1", returnTo: "journey", returnBlock: <id> })`.
+2. Training's Plans pane mounts with the apply tray **already open**.
+3. The coach completes the normal apply flow, unchanged.
+4. On success → back to `?tab=metrics&journey=blocks&block=<id>`, with that block **expanded**.
+
+Things that will bite, all verified:
+
+- **Cross-tab navigation MUST go through `handleTabChange`** (`app/clients/[id]/page.tsx:36`).
+  `activeTab` is React state seeded from `?tab=` **at mount only** (`:34`), so a `<Link>` or a
+  bare `router.replace` changes the URL without switching the tab. The page already documents
+  this at `:44-45`, and the nutrition drawer's `GoalSummary` chose a sentence over a link
+  rather than fight it.
+- **`onTabChange` is not currently passed to `MetricsTabContent`.** The page already passes it
+  to two siblings, so this is an established seam, then `BlocksSubtab` → `BlockCard`. Three
+  levels of prop is the §4 boundary — if it wants a fourth, use a context instead.
+- **The apply tray is local state** (`training-plan-builder.tsx:22`), not URL-driven. Arriving
+  with it open means seeding that state from the param once, on mount.
+- **The completion hook exists:** `onSuccess?.(clientId)` at
+  `components/training-library/apply-to-client-dialog.tsx:173`.
+- **`BlockCard.defaultOpen`** is currently `block.state === "current"`; the return trip needs
+  `?block=<id>` to win over it.
+- **`returnTo` MUST be cleared, and this is the landmine.** If the coach abandons the flow —
+  closes the tray without applying — a lingering `returnTo` will bounce them to Journey after
+  some *later*, unrelated apply. Either clear it when the tray closes without success, or
+  honour it only for a tray opened by the deep link in that same mount. Do not leave it
+  riding in the URL.
+
+---
+
+### Task 7.4 — The same round trip for nutrition
+
+Identical shape, different surfaces. The Nutrition fact's empty state is **"Not set"**
+(`block-card.tsx`, `NutritionColumn`), gated to current/future blocks the same way.
+
+- Target: `handleTabChange("nutrition", { nutrition: "plans", edit: "1", returnTo: "journey", returnBlock: <id> })`.
+- The nutrition builder drawer is **local state** (`nutrition-plan-builder.tsx:23`, opened via
+  `onOpenSettings`) — same param-seeds-state treatment as the tray.
+- Completion is the existing `generatePlan` success path in `hooks/use-nutrition-builder.ts`,
+  which already returns `true` and refreshes caches. Hook the return trip to that boolean, not
+  to the drawer closing: **a coach can close the drawer without saving**, and bouncing them
+  back to Journey as if they had is worse than not bouncing at all.
+- Session 6 note: a plan save can now throw *after* the plan commits (a failed note insert).
+  `generatePlan` returns `false` on that path, so the coach stays put with their note intact —
+  which is the correct behaviour here and needs no special casing, but do not "fix" it into a
+  bounce.
+
+---
+
+### Task 7.5 — Documentation
+
+`ARCHITECTURE.md`'s client-page tab table lists Journey's panes and Training's subtabs; both
+change. Record the single-owner pane params beside the existing `buildClientTabUrl` note, and
+say plainly that Exercise Data moved so nobody hunts for it under Training.
+
+---
+
+### Session 7 verification
+
+Full `§13`. **No migration**, so no `db push`, no `gen types`, no `check:rls`. §2's
+security/perf review is **not applicable** on the face of it — no route, no auth, no write
+path, no query — but say so explicitly rather than skipping it silently.
+
+Tests worth having, in priority order:
+
+1. **The abandoned-flow case**: open the apply tray via the deep link, close it without
+   applying, then apply normally later — the coach must NOT be bounced to Journey.
+2. Elapsed and archived blocks render plain text, not a button.
+3. `buildClientTabUrl` carries the new single-owner params and still drops `subtab`.
+4. A legacy `?subtab=plans` link still opens the Plans pane.
+5. The Journey "training" pane does not leak into the metric-keyed shapes (the
+   `MetricTab` guard).
+
+**Browser smoke (owner runs it):** the two round trips end to end, plus one abandoned trip.
+UI is unverified until then — this is a session whose entire value is how it *feels*, so the
+smoke matters more here than in any session before it.
+
+---
+
+### 📋 SESSION 7 PROMPT — paste this into a fresh session
+
+```
+Read in full: CONVENTIONS.md, docs/ARCHITECTURE.md, and
+docs/CLIENT-GOALS-PHASES-EXECUTION-PLAN.md §1-§5 and all of SESSION 7. You are
+executing SESSION 7 only. Zero migrations — if you think you need one, STOP AND ASK.
+
+This is a UX session: no schema, no new API routes, no write paths. Four tasks, one
+commit each, in order — 7.2 is the enabler for 7.3/7.4 and ships ALONE so a regression
+is attributable.
+
+Two owner decisions are CLOSED, do not re-litigate:
+  - The clickable empty state is on CURRENT and FUTURE blocks only. Elapsed and
+    archived keep plain text.
+  - Training and Nutrition get single-owner pane params (?training=, ?nutrition=),
+    the way Journey has ?journey=. NOT ?subtab= through extraParams.
+
+Verify these against main before you write anything — every line reference in this
+document has drifted at least once, and Session 6 found three claims that were flatly
+false:
+  - JOURNEY_SUBTABS and the Journey pane labels
+  - Training's three subtab values and where ExerciseDataView mounts
+  - buildClientTabUrl's extraParams contract and that it deletes subtab
+  - that app/clients/[id]/page.tsx seeds activeTab from ?tab= at MOUNT ONLY
+
+The landmine that will cost you a session if you miss it: JourneySubtab is
+deliberately NOT MetricTab. MetricTab keys metricsByTab / logRowsByTab /
+DEFAULT_FOCUS, and "blocks" is kept out of it on purpose. A new "training" pane is
+the same kind of non-metric pane and must join the same guard in
+metrics-tab-content.tsx.
+
+The landmine that will ship a bug: a lingering returnTo param. If a coach opens the
+apply tray from Journey and then abandons it, a later unrelated apply must NOT bounce
+them back to Journey.
+
+Rules: §2 plan-first, one commit per task, commit-ready = §13, do not drive a browser,
+append a STATUS block per task.
+```
