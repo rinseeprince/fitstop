@@ -15,8 +15,9 @@ export type UpsertMetricEntryInput = {
   /** YYYY-MM-DD; route-validated and bounded to the coach's today */
   entryDate: string;
   note?: string;
-  /** caller-verified; written to created_by */
-  coachId: string;
+  /** Caller-verified; written to the nullable `created_by`. Optional because
+   *  not every writer has a coach in hand — a data backfill has none. */
+  coachId?: string;
 };
 
 function mapMetricEntryRow(row: MetricEntryRow): MetricEntry {
@@ -80,7 +81,7 @@ export const upsertMetricEntry = async (
         value: canonicalValue,
         entry_date: input.entryDate,
         note: input.note ?? null,
-        created_by: input.coachId,
+        created_by: input.coachId ?? null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "client_id,metric_key,entry_date" }

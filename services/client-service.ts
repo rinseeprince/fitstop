@@ -12,6 +12,7 @@ import { createIntake } from "@/services/client-intake-service";
 import { sendInvitation } from "@/services/invitation-service";
 import { invalidateClientAuthCache } from "@/lib/auth-cache";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
+import { recordClientStart } from "@/services/client-start-service";
 import { updateGoals } from "@/services/client-goals-service";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
 import { computeEnergyPair } from "@/services/client-energy-calc";
@@ -283,24 +284,15 @@ export const updateClient = async (
   if (clientData.dateOfBirth !== undefined) updateData.date_of_birth = clientData.dateOfBirth ?? null;
   if (clientData.workActivityLevel !== undefined) updateData.work_activity_level = clientData.workActivityLevel;
   if (clientData.phone !== undefined) updateData.phone = clientData.phone || null;
-  if (clientData.startDate !== undefined) updateData.start_date = clientData.startDate ?? null;
+  // start_date and the two starting_* columns are NOT written here. They
+  // describe the client's ORIGIN, which has one writer — recordClientStart
+  // below — because the columns are a cache of the metric entries dated on the
+  // start date, and a write that touched only the columns would leave the
+  // Physique chart's first point describing a start that no longer exists.
   // goal_weight / goal_body_fat_percentage are deliberately NOT in updateData —
   // `updateGoals` below owns both stores. See its comment.
   if (clientData.currentWeight !== undefined) updateData.current_weight = currentWeightKg ?? null;
   if (clientData.currentBodyFatPercentage !== undefined) updateData.current_body_fat_percentage = clientData.currentBodyFatPercentage ?? null;
-  // The START values are a CORRECTION to a recorded baseline, not a new
-  // measurement, and the difference decides everything below:
-  //   - they are not in `energyInputChanged` — BMR/TDEE are computed from the
-  //     CURRENT weight, so correcting a start value must not move them;
-  //   - they are not dual-written to `body_metrics` — that log records
-  //     measurements TAKEN, and stamping a correction at `now` would file this
-  //     client's starting weight at the END of their timeline.
-  // Neither column moves the other: a coach who also has the current value
-  // wrong edits that field too (they sit side by side on the status card).
-  if (clientData.startingWeight !== undefined) updateData.starting_weight = clientData.startingWeight;
-  if (clientData.startingBodyFatPercentage !== undefined) {
-    updateData.starting_body_fat_percentage = clientData.startingBodyFatPercentage;
-  }
 
   const { data, error } = await supabaseAdmin
     .from("clients")
@@ -351,6 +343,26 @@ export const updateClient = async (
       client.bmr = energyBmr;
       client.tdee = energyTdee;
     }
+  }
+
+  // The client's ORIGIN, through its single writer. It owns start_date and the
+  // two starting_* cache columns, and it moves the metric entries dated on the
+  // start date so the Physique chart's first point keeps describing the start.
+  //
+  // This THROWS. A silent failure would leave the columns and the entries
+  // describing different origins, which is the divergence the single writer
+  // exists to make impossible.
+  if (
+    clientData.startDate !== undefined ||
+    clientData.startingWeight !== undefined ||
+    clientData.startingBodyFatPercentage !== undefined
+  ) {
+    await recordClientStart(clientId, {
+      startsOn: clientData.startDate ?? undefined,
+      weightKg: clientData.startingWeight,
+      bodyFatPercentage: clientData.startingBodyFatPercentage,
+      coachId,
+    });
   }
 
   // Dual-write body metrics (non-blocking)

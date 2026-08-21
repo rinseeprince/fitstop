@@ -11,6 +11,10 @@ vi.mock('./body-metrics-service', () => ({
   recordBodyMetrics: vi.fn().mockResolvedValue({}),
 }))
 
+vi.mock('./client-start-service', () => ({
+  recordClientStart: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('./client-energy-service', () => ({
   recalculateClientEnergy: vi
     .fn()
@@ -32,6 +36,7 @@ vi.mock('./invitation-service', () => ({
 import { supabaseAdmin } from './supabase-admin'
 import { recalculateClientEnergy } from './client-energy-service'
 import { recordBodyMetrics } from './body-metrics-service'
+import { recordClientStart } from './client-start-service'
 import { updateGoals } from './client-goals-service'
 import {
   createClient,
@@ -567,37 +572,53 @@ describe('Client Service', () => {
       expect(recalculateClientEnergy).not.toHaveBeenCalled()
     })
 
-    it('writes the START columns without touching the current ones', async () => {
+    it('delegates the START fields to their single writer, untouched here', async () => {
+      // The columns are a CACHE of the metric entries dated on the start date,
+      // so a write that touched only them would leave the Physique chart's
+      // first point describing a start that no longer exists.
       const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
 
       await updateClient('client-123', {
+        startDate: '2026-08-14',
         startingWeight: 84,
         startingBodyFatPercentage: 21,
-      })
+      }, 'coach-1')
 
       const updateCall = mockQuery.update.mock.calls[0][0]
-      expect(updateCall.starting_weight).toBe(84)
-      expect(updateCall.starting_body_fat_percentage).toBe(21)
+      expect(updateCall.starting_weight).toBeUndefined()
+      expect(updateCall.start_date).toBeUndefined()
       // Correcting a recorded baseline is not a new measurement: the current
       // values are a separate field the coach edits on its own.
       expect(updateCall.current_weight).toBeUndefined()
-      expect(updateCall.current_body_fat_percentage).toBeUndefined()
+
+      expect(recordClientStart).toHaveBeenCalledWith('client-123', {
+        startsOn: '2026-08-14',
+        weightKg: 84,
+        bodyFatPercentage: 21,
+        coachId: 'coach-1',
+      })
     })
 
-    it('does NOT recompute energy or log an event for a start-only correction', async () => {
+    it('does NOT recompute energy for a start-only correction', async () => {
       const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
 
       await updateClient('client-123', { startingWeight: 84 })
 
-      // BMR/TDEE are computed from the CURRENT weight, so a corrected start
-      // must not move them...
+      // BMR/TDEE are computed from the CURRENT weight. The start entry does
+      // write a body_metrics event, but its backdating guard leaves the
+      // profile alone — see metric-entries-service.
       expect(recalculateClientEnergy).not.toHaveBeenCalled()
-      // ...and body_metrics records measurements TAKEN, so stamping a
-      // correction at `now` would file the start weight at the END of the
-      // client's timeline.
-      expect(recordBodyMetrics).not.toHaveBeenCalled()
+    })
+
+    it('leaves the start writer alone when no start field is present', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', { name: 'New Name' })
+
+      expect(recordClientStart).not.toHaveBeenCalled()
     })
 
     it('persists dateOfBirth, which updateClientSchema accepts', async () => {

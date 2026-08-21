@@ -41,8 +41,8 @@ export type ClientStartInput = {
   weightKg?: number;
   /** Omitted = keep the stored start body fat. */
   bodyFatPercentage?: number;
-  /** Caller-verified; written to the entries' `created_by`. */
-  coachId: string;
+  /** Caller-verified; written to the entries' nullable `created_by`. */
+  coachId?: string;
 };
 
 type StoredStart = {
