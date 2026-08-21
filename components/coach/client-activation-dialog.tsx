@@ -1,6 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
+import { Loader2 } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -21,17 +23,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { toast } from "sonner"
 import {
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Rocket,
-} from "lucide-react"
-import type { DayOfWeek } from "@/types/check-in"
+  FOCUS_RING,
+  MONO_INPUT_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens"
+import { useToast } from "@/hooks/use-toast"
+import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
 import { getTodayDateString } from "@/lib/date-helpers"
 import { getFirstName } from "@/lib/client-name"
+import { cn } from "@/lib/utils"
+import type { DayOfWeek } from "@/types/check-in"
 
 interface ClientActivationDialogProps {
   client: {
@@ -39,17 +40,23 @@ interface ClientActivationDialogProps {
     name: string
     email: string
   }
+  /**
+   * Passed in by the activation card, which has already read it. The dialog
+   * used to fetch the same three booleans again on every open and repeat the
+   * card's checklist back at the coach one click later.
+   */
+  readiness: Readiness
   trigger: React.ReactNode
   onActivated?: () => void
 }
 
-type Readiness = {
-  hasTrainingPlan: boolean
-  hasNutritionPlan: boolean
-  hasHabits: boolean
-}
-
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
+
+const FIELD_LABEL = "text-[11px] text-[#5a7d82]"
+const FIELD_INPUT = cn(
+  "rounded-[6px] border-[rgba(13,148,136,0.08)] bg-white text-[13px]",
+  FOCUS_RING
+)
 
 function getDefaultMessage(name: string): string {
   // "Hey there" rather than the "Hey !" the old inline split produced for a
@@ -58,42 +65,37 @@ function getDefaultMessage(name: string): string {
   return `Hey ${greeting}! I've reviewed your intake and put together a personalised plan for you. Let me know if you have any questions. Let's get after it!`
 }
 
+/** "nutrition plan and daily habits" — British list, no Oxford comma. */
+function listMissing(readiness: Readiness): string | null {
+  const missing = REQUIRED_ITEMS.filter((item) => !readiness[item.key]).map((item) =>
+    item.label.toLowerCase()
+  )
+  if (missing.length === 0) return null
+  if (missing.length === 1) return missing[0]
+  return `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}`
+}
+
 export function ClientActivationDialog({
   client,
+  readiness,
   trigger,
   onActivated,
 }: ClientActivationDialogProps) {
   const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [readiness, setReadiness] = useState<Readiness | null>(null)
   const [welcomeMessage, setWelcomeMessage] = useState("")
   const [firstCheckInDay, setFirstCheckInDay] = useState<DayOfWeek>("monday")
   const [startDate, setStartDate] = useState<string>("")
+  const { toast } = useToast()
 
   useEffect(() => {
     if (open) {
       setWelcomeMessage(getDefaultMessage(client.name))
       setStartDate(getTodayDateString())
-      setReadiness(null)
-      fetchReadiness()
     }
-  }, [open])
+  }, [open, client.name])
 
-  const fetchReadiness = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch(`/api/clients/${client.id}/activation-readiness`)
-      const data = await response.json()
-      if (data.success) {
-        setReadiness(data.data)
-      }
-    } catch (error) {
-      console.error("Error fetching activation readiness:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const missing = listMissing(readiness)
 
   const handleActivate = async () => {
     setSubmitting(true)
@@ -106,21 +108,30 @@ export function ClientActivationDialog({
       const data = await response.json()
 
       if (data.success) {
-        toast.success(`${client.name} is now active`)
+        toast({
+          title: `${client.name} is now active`,
+          description: "They have been emailed and can see their plans.",
+        })
         onActivated?.()
         setOpen(false)
       } else {
-        toast.error(data.error || "Failed to activate client")
+        toast({
+          title: "Activation failed",
+          description: data.error || "Something went wrong",
+          variant: "destructive",
+        })
       }
     } catch (error) {
       console.error("Error activating client:", error)
-      toast.error("Failed to activate client")
+      toast({
+        title: "Activation failed",
+        description: error instanceof Error ? error.message : "Something went wrong",
+        variant: "destructive",
+      })
     } finally {
       setSubmitting(false)
     }
   }
-
-  const hasMissingPlans = readiness && (!readiness.hasTrainingPlan || !readiness.hasNutritionPlan || !readiness.hasHabits)
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -129,114 +140,82 @@ export function ClientActivationDialog({
         <DialogHeader>
           <DialogTitle>Activate {client.name}</DialogTitle>
           <DialogDescription>
-            Review the setup checklist and activate this client.
+            Set the start date and first check-in day, then send the welcome email.
           </DialogDescription>
         </DialogHeader>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <div className="space-y-4 py-1">
+          {/* The card behind this dialog is the checklist; one sentence is all
+              the decision needs here. */}
+          {missing && (
+            <p className="text-[11px] text-[#93b0b4]">
+              No {missing} yet. Activating now is fine, and the client sees each one as
+              soon as you add it.
+            </p>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="welcome-message" className={FIELD_LABEL}>
+              Welcome message
+            </Label>
+            <Textarea
+              id="welcome-message"
+              rows={4}
+              className={cn(FIELD_INPUT, "min-h-[92px] resize-none")}
+              value={welcomeMessage}
+              onChange={(e) => setWelcomeMessage(e.target.value)}
+            />
           </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Plan checklist */}
-            {readiness && (
-              <div className="rounded-lg border p-4 space-y-2">
-                <ChecklistItem label="Nutrition plan" checked={readiness.hasNutritionPlan} />
-                <ChecklistItem label="Training plan" checked={readiness.hasTrainingPlan} />
-                <ChecklistItem label="Habits" checked={readiness.hasHabits} />
-              </div>
-            )}
 
-            {hasMissingPlans && (
-              <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
-                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <p>
-                  Some plans haven&apos;t been set up yet. You can still activate, but
-                  the client won&apos;t see a complete program.
-                </p>
-              </div>
-            )}
-
-            {/* Welcome message */}
-            <div className="space-y-2">
-              <Label htmlFor="welcome-message">Welcome message</Label>
-              <Textarea
-                id="welcome-message"
-                className="rounded-xs"
-                rows={4}
-                value={welcomeMessage}
-                onChange={(e) => setWelcomeMessage(e.target.value)}
-              />
-            </div>
-
-            {/* Program start date */}
-            <div className="space-y-2">
-              <Label htmlFor="start-date">Program start date</Label>
-              <Input
-                id="start-date"
-                type="date"
-                className="rounded-xs"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-
-            {/* First check-in day */}
-            <div className="space-y-2">
-              <Label htmlFor="checkin-day">First check-in day</Label>
-              <Select value={firstCheckInDay} onValueChange={(v) => setFirstCheckInDay(v as DayOfWeek)}>
-                <SelectTrigger id="checkin-day" className="rounded-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DAYS.map((day) => (
-                    <SelectItem key={day} value={day}>
-                      {day.charAt(0).toUpperCase() + day.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="start-date" className={FIELD_LABEL}>
+              Program start date
+            </Label>
+            <Input
+              id="start-date"
+              type="date"
+              className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-[170px]")}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
           </div>
-        )}
 
-        <DialogFooter className="gap-3">
-          <Button variant="outline" onClick={() => setOpen(false)}>
+          <div className="space-y-1.5">
+            <Label htmlFor="checkin-day" className={FIELD_LABEL}>
+              First check-in day
+            </Label>
+            <Select value={firstCheckInDay} onValueChange={(v) => setFirstCheckInDay(v as DayOfWeek)}>
+              <SelectTrigger id="checkin-day" className={cn(FIELD_INPUT, "h-9")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white p-1 shadow-lg">
+                {DAYS.map((day) => (
+                  <SelectItem key={day} value={day}>
+                    {day.charAt(0).toUpperCase() + day.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setOpen(false)}>
             Cancel
           </Button>
           <Button
             onClick={handleActivate}
-            disabled={submitting || loading}
-            className="bg-green-600 hover:bg-green-700 text-white"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Activating...
-              </>
-            ) : (
-              <>
-                <Rocket className="mr-2 h-4 w-4" />
-                Activate Client
-              </>
+            disabled={submitting}
+            className={cn(
+              "rounded-[6px] bg-[#0d9488] text-white hover:bg-[#0b7f75]",
+              FOCUS_RING
             )}
+          >
+            {submitting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+            {submitting ? "Activating" : "Activate client"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function ChecklistItem({ label, checked }: { label: string; checked: boolean }) {
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      {checked ? (
-        <CheckCircle2 className="h-4 w-4 text-green-600" />
-      ) : (
-        <XCircle className="h-4 w-4 text-amber-500" />
-      )}
-      <span>{label}</span>
-    </div>
   )
 }

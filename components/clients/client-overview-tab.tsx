@@ -170,6 +170,8 @@ export function ClientOverviewTab({
       {client.onboardingStatus === "setup_in_progress" && (
         <ClientActivationBanner
           client={client}
+          planSummary={summary}
+          planSummaryLoading={summaryLoading}
           onActivated={onClientUpdated}
           onTabChange={onTabChange}
         />
