@@ -602,7 +602,7 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
   - `exercise-search-select.tsx` - search/select dropdown for exercise selection (SWR fetch of exercise list from `metric=list` endpoint).
   - `exercise-trend-chart.tsx` - the chart renderer (switches between Line and Bar based on metric).
   - `exercise-pr-view.tsx` - the PR card grid (rendered when "PRs" metric is selected).
-- How the subtab URL param extends: `subtab=data|plans|exercise-data`. When navigating from the drill-down dialog, the URL includes `subtab=exercise-data&exerciseId=<uuid>` (or `&exerciseName=<name>` as fallback).
+- How the subtab URL param extends: `subtab=data|plans|exercise-data`. When navigating from the drill-down dialog, the URL includes `subtab=exercise-data&exerciseId=<uuid>` (or `&exerciseName=<name>` as fallback). **SUPERSEDED by Session 7.1/7.2 (2026-08-21):** Exercise Data is a **Journey** pane now, addressed `?tab=metrics&journey=training`, and each tab owns a pane param of its own name — the shared `?subtab=` is written by nothing. See `ARCHITECTURE.md → Client page tab structure`.
 - SWR key structure for the exercise history fetch.
 
 **Implement**:
@@ -633,7 +633,7 @@ Session 0.1 confirmed no `timezone` column exists on `clients` and all date help
    - Cards ordered by rep count ascending (1RM first if it exists, then 3RM, 5RM, etc.).
    - Empty state: "No personal records yet. Log sets with weight to start tracking PRs."
 
-5. **Wire drill-down dialog**: Update `session-log-detail-dialog.tsx` from Session 1.6. Replace the no-op click handlers on exercise names (from the 1.6 addendum) with actual navigation: `router.replace(\`/clients/${clientId}?tab=training&subtab=exercise-data&exerciseId=${exerciseId}\`)` (or `&exerciseName=...` when exerciseId is null). The dialog should close on navigation.
+5. **Wire drill-down dialog**: Update `session-log-detail-dialog.tsx` from Session 1.6. Replace the no-op click handlers on exercise names (from the 1.6 addendum) with actual navigation: `router.replace(\`/clients/${clientId}?tab=training&subtab=exercise-data&exerciseId=${exerciseId}\`)` (or `&exerciseName=...` when exerciseId is null). The dialog should close on navigation. **SUPERSEDED by Session 7.1 (2026-08-21):** the drill-down now CROSSES TABS to Journey, so it must go through the client page's `onTabChange` — a bare `router.replace` changes the URL and leaves the tab where it was, because `activeTab` is state seeded from `?tab=` at mount only. Live shape in `training-history-table.tsx`.
 
 **Do NOT**: Show all charts stacked vertically - one chart at a time via the segmented control. Add a day-based date picker (exercise data is sparse; session-count picker is the right model). Build client-facing UI (Session 3.4). Introduce a new charting library - use Recharts. Create a separate top-level tab in `lib/client-tabs.ts` - Exercise Data is a subtab within Training.
 

@@ -1,6 +1,6 @@
 # Client Journey — Goals, Blocks + Nutrition Builder — Execution Plan
 
-**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · Session 0b ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-13 (8 commits, ZERO migrations; invariant 16 satisfied: one writer, one read path, one editor; two smoke follow-ups folded in — the deadline's native date bounds and the block timeline's nutrition eras) · Session 5 ✅ COMPLETE — descoped to one typing commit, shipped + owner-smoked all clear 2026-08-13 (2 commits, ZERO migrations; the deficit input is PARKED, not rejected) · Session 6 ✅ COMPLETE — shipped 2026-08-13 (7 commits, migration 147 `nutrition_plan_notes`; the plan-save note now has TWO homes, and the client-visibility policy is enforced on the wire) · **Session 7 ADDED 2026-08-21** (owner-directed UX session: Exercise Data moves into Journey, and the block empty states become round trips into the apply/builder flows) — one session remains (7) · **Owner decision date:** 2026-08-10
+**Status:** Sessions 0 · 1 · 1B ✅ shipped + smoked · Session 2 ✅ shipped 2026-08-11 · Session 3 ✅ COMPLETE — shipped 2026-08-11 + owner-directed follow-ups 3.6 (block editing, end-date granularity) · 3.7 (archive) · nutrition-column resemantic, all 2026-08-12; owner sign-off 2026-08-12 · Session 4 ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-12 (its STATUS blocks carry the 0b.1 map-or-delete answer and the merged-series parity decision) · Session 4B ✅ COMPLETE — shipped 2026-08-12 (17 commits, ZERO migrations; six owner-smoke follow-ups folded in, incl. the discarded custom TDEE, the impossible-pair guard, inline client editing and the design-system pass) · Session 0b ✅ COMPLETE — shipped + owner-smoked all clear 2026-08-13 (8 commits, ZERO migrations; invariant 16 satisfied: one writer, one read path, one editor; two smoke follow-ups folded in — the deadline's native date bounds and the block timeline's nutrition eras) · Session 5 ✅ COMPLETE — descoped to one typing commit, shipped + owner-smoked all clear 2026-08-13 (2 commits, ZERO migrations; the deficit input is PARKED, not rejected) · Session 6 ✅ COMPLETE — shipped 2026-08-13 (7 commits, migration 147 `nutrition_plan_notes`; the plan-save note now has TWO homes, and the client-visibility policy is enforced on the wire) · **Session 7 ✅ COMPLETE — shipped 2026-08-21** (5 commits, ZERO migrations; Exercise Data moved into Journey, both tabs got single-owner pane params, and the block empty states became round trips into the apply and plan flows) — **all nine sessions shipped; browser smoke is the only thing outstanding** · **Owner decision date:** 2026-08-10
 **Nine sessions.** Three largely independent features share this document, plus a UX session (7) added after they shipped. Each session is designed for a fresh Claude Code session with a full context window.
 
 > **Canonical sources.** `CONVENTIONS.md` (stable coding rules) and `docs/ARCHITECTURE.md` (schema + data flow) win over this document on anything they cover. This document owns the *design decisions* for this workstream and the *sequence*. When this workstream lands, `ARCHITECTURE.md` must be updated and this file deleted (the precedent set by the training-builder, wellness-soreness and units-canonicalization plans).
@@ -151,7 +151,7 @@ Listed in execution order.
 | **0b** ✅ | Goals: one read path, one writer, one editor, history — **SHIPPED + owner-smoked 2026-08-13** (8 commits; no migration) | none | Yes — the goal editor |
 | **5** ✅ | Type the plan-save RPC payload (`as never` removal) — **DESCOPED 2026-08-13**, then **COMPLETE — shipped + owner-smoked all clear 2026-08-13** (2 commits); the deficit input, its two columns and the arity change are parked, see SESSION 5 | none | No — one typing commit |
 | **6** ✅ | The save note + the Journey timeline — **SHIPPED 2026-08-13** (7 commits; migration 147) | **1** (`nutrition_plan_notes`) | Yes |
-| **7** | The journey is the place you set things up — Exercise Data moves to Journey; the block empty states become round trips into apply/builder | none | Yes |
+| **7** ✅ | The journey is the place you set things up — Exercise Data moved to Journey; single-owner pane params; the block empty states became round trips into apply/builder — **SHIPPED 2026-08-21** (5 commits; no migration) | none | Yes |
 
 ### What actually depends on what
 
@@ -4965,6 +4965,15 @@ the surviving docs afterwards: the sweep proves they moved, the grep proves they
 grep gate first: 7 is a UX session and should add nothing durable, but that is a claim to
 verify rather than assume.
 
+> **Verified 2026-08-21, and the claim was WRONG in one place.** Session 7 produced twelve
+> durable facts; the grep gate found eleven already in `ARCHITECTURE.md` and **one missing** —
+> that every cross-tab navigation must go through `handleTabChange`, because `activeTab` is
+> state seeded from `?tab=` at mount only. That is the most re-discoverable landmine in the
+> session (a `<Link>` or bare `router.replace` silently changes the URL without switching the
+> tab), so it now lives in `ARCHITECTURE.md → Client page tab structure` along with its
+> corollary: `activeTab` flips *before* the replace lands, so a freshly-mounted tab reads the
+> previous tab's query for one render. Gate re-run: **12/12 findable outside this file.**
+
 ### Gates
 
 `tsc` clean · `eslint` 0 errors (209 pre-existing warnings, unchanged) · `vitest`
@@ -5267,4 +5276,128 @@ passenger makes it a context" line recorded in 7.1 is still unspent.
 (from 280/2997: +1 file, +5) · `check:labels` OK 666 · no `as any`, no introduced markers.
 
 **UI is unverified — the owner runs the browser smoke.**
+
+---
+
+### Task 7.5 — Documentation ✅ SHIPPED 2026-08-21 · SESSION 7 CODE COMPLETE
+
+Task 7.5's own premise was false and is corrected above: `ARCHITECTURE.md`'s tab table did not
+list Journey's panes — the Metrics row named neither "Journey" nor any pane. It does now.
+
+#### What landed where
+
+- **`ARCHITECTURE.md` → Client page tab structure.** The Metrics row is relabelled Journey and
+  names all four panes plus the `JourneySubtab` ⊃ `MetricTab` rule; the Training row says
+  plainly that Exercise Data moved, so nobody hunts for it. The `router.replace` one-liner
+  became the full URL contract: single-owner pane params, the retired-but-still-read `?subtab=`,
+  `extraParams` with `null` = delete, and the one-shot round-trip params with the reason they
+  are stripped on arrival.
+- **`ARCHITECTURE.md` → Builder flows → Nutrition.** The save-boolean rule, with both reasons
+  the drawer closing is the wrong signal (auto-close keys on `hasPlan`, which survives a failed
+  regenerate; and Session 6's committed-plan-but-failed-note path returns false deliberately).
+- **`docs/CLIENT-PORTAL-EXECUTION-PLAN.md:605` and `:636`** carried the original Exercise Data
+  spec, including a literal instruction to navigate with
+  `router.replace(...?tab=training&subtab=exercise-data...)`. Both now carry a SUPERSEDED note
+  rather than a rewrite — the spec is history, but left unmarked it is a recipe for
+  re-introducing navigation that changes the URL without switching the tab.
+
+#### 6.4's grep gate, re-run — and the claim it was told to check was wrong
+
+Session 6 left this file "safe to delete" with the note that Session 7 *should* add nothing
+durable, "but that is a claim to verify rather than assume". Verified: **twelve durable facts,
+eleven already findable in `ARCHITECTURE.md`, one missing** — that every cross-tab navigation
+must go through `handleTabChange`, because `activeTab` is state seeded from `?tab=` at mount
+only. It is now recorded there, with the corollary that `activeTab` flips before the replace
+lands (which is why single-owner pane params are read unguarded and the trip params are
+consumed from an effect rather than a `useState` initializer). **Gate re-run: 12/12.**
+
+---
+
+## SESSION 7 — COMPLETE 2026-08-21 (5 commits, ZERO migrations)
+
+| Commit | Task |
+|---|---|
+| `0a1af9b` | 7.1 — Exercise Data moves to Journey; the pane guard becomes a whitelist |
+| `6c8bf46` | 7.2 — Training and Nutrition get single-owner pane params |
+| `487eab3` | 7.3 — the Training empty state is the way in, and the way back |
+| `5cbc0a7` | 7.4 — the same round trip for nutrition, hung off the save boolean |
+| *(this)* | 7.5 — documentation + the 6.4 grep gate re-run |
+
+### §2 security / load / performance review — NOT APPLICABLE, checked rather than skipped
+
+No migration, no new or changed route, no auth change, no write path, no query, no service. The
+whole session is client components, one pure URL-helper module, one hook, and documentation. The
+only behavioural reach beyond render is `router.replace`, which rewrites the coach's own address
+bar. **No trigger in §2 fires.**
+
+### What Session 7 did NOT do
+
+Deliberately, and each was considered:
+
+- **Did not move `exercise-data-view.tsx`.** The pane moved; the code did not.
+- **Did not redirect old `?tab=training&subtab=exercise-data` bookmarks.** They land on
+  Training → Data. In-app navigation is repointed, so only an external bookmark is affected, and
+  a mount-time cross-tab redirect is unrequested cleverness.
+- **Did not strip `?block=`.** It persists like `?journey=` does and only sets the initial
+  expanded block on a fresh mount — re-expanding what the coach was last setting up is right.
+- **Did not touch the Journey top bar's "Log measurement" button** on the new Training pane. It
+  behaves exactly as it already did on Blocks; changing it is a separate UX call.
+- **Did not merge the Training or Nutrition tabs into Journey.** Explicitly out of scope per the
+  session brief.
+
+### Final gates
+
+`tsc` clean · `eslint` **0 errors** (210 pre-existing warnings, unchanged from the session-start
+baseline) · `vitest` **281 files / 3002 tests** (from 278/2972 at session start: **+3 files,
++30 tests**) · `check:labels` OK 666 · no `as any`, no introduced markers. No migration, so no
+`db push`, no `gen types`, no `check:rls`.
+
+Three suites were **mutation-proven** rather than merely written: `blockAcceptsSetup` forced to
+`true` (3 failures), the abandon-clear removed (1 failure), and the nutrition save-boolean
+removed (1 failure — a gap that had passed the entire 3000-test suite before the test existed).
+Every mutation was restored from a scratchpad copy, re-grepped, and re-run green.
+
+### 📋 BROWSER SMOKE — OWED, the owner runs it
+
+**UI is unverified.** This is the session whose entire value is how it feels, so the smoke
+matters more here than in any session before it.
+
+**The two round trips**
+
+1. Journey → Blocks → expand a **current** block with no program → click
+   `No program placed — place one`. Expect: the **Training** tab, **Plans** pane, apply tray
+   **already open**, no flash of the Data table on the way in. Apply a program. Expect: back on
+   **Journey → Blocks** with **that block expanded**, and its Training column now naming the
+   program.
+2. Same from a **future** block's `Not set — set targets`. Expect: **Nutrition** tab, **Plans**
+   pane, plan drawer **already open**. Generate a plan. Expect: back on that block, expanded,
+   Nutrition column showing calories.
+
+**The abandoned trip — the one that would ship a bug**
+
+3. Open the apply tray from a Journey block, then **close it without applying**. Stay on
+   Training. Now open the tray by hand (hero → Apply program) and apply a *different* program.
+   Expect: you stay on **Training**. Any bounce to Journey is the landmine.
+4. While still on Training, switch to another tab and back. Expect: the apply tray does **not**
+   re-open, and the URL carries no `apply` / `returnTo` / `returnBlock`.
+
+**The moved pane**
+
+5. Journey's switcher reads **Physique · Training · Wellness · Blocks**; the Training pane shows
+   the exercise picker and progression chart. Training's own bar reads **Data · Plans** only.
+6. Training → Data → open a session log → click an exercise name. Expect: the **Journey** tab,
+   **Training** pane, that exercise selected. Repeat on a freehand/unmatched exercise (one with
+   no catalog id) — expect **that** exercise, not the previous one.
+
+**The pane params**
+
+7. Training → Plans, switch to Nutrition, switch back. Expect Training on **Plans** and
+   Nutrition on **Data** — never the other tab's pane.
+8. Paste a legacy `…?tab=training&subtab=plans`. Expect the Plans pane. Click a pane; expect
+   `subtab` to disappear from the URL and `training=` to replace it.
+
+**Elapsed / archived**
+
+9. An elapsed block and an archived block both show `No program placed` / `Not set` as **plain
+   text** — not clickable, no teal action word.
 
