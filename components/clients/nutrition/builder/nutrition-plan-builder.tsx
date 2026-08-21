@@ -9,6 +9,7 @@ import { NutritionHistoryTable } from "../nutrition-history-table";
 import { NutritionCalendarView } from "../calendar/nutrition-calendar-view";
 import { DeleteNutritionPlanDialog } from "../calendar/delete-nutrition-plan-dialog";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import {
@@ -18,7 +19,6 @@ import {
   type ClientTab,
 } from "@/lib/client-tabs";
 import { useJourneyRoundTrip } from "@/hooks/use-journey-round-trip";
-import { cn } from "@/lib/utils";
 import type { Client } from "@/types/check-in";
 
 type NutritionPlanBuilderProps = {
@@ -107,24 +107,15 @@ function TopContentBar({
   setSubtab: (tab: "data" | "plans") => void;
 }) {
   return (
-    <div className="flex items-center gap-4 mb-5">
-      {/* Segmented control */}
-      <div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex">
-        {(["data", "plans"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setSubtab(tab)}
-            className={cn(
-              "px-4 py-1.5 text-[12.5px] font-medium rounded-[4px] transition-all",
-              subtab === tab
-                ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                : "text-[#5a7d82] hover:text-[#0c1a1e]"
-            )}
-          >
-            {tab === "data" ? "Data" : "Plans"}
-          </button>
-        ))}
-      </div>
+    <div className="mb-5 flex flex-wrap items-center gap-4">
+      <SegmentedControl
+        options={[
+          { value: "data", label: "Data" },
+          { value: "plans", label: "Plans" },
+        ]}
+        value={subtab}
+        onChange={(value) => setSubtab(value as "data" | "plans")}
+      />
     </div>
   );
 }

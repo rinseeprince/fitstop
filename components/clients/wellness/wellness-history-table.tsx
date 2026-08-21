@@ -9,6 +9,7 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { DividerPager } from "@/components/programs/shared/divider-pager";
+import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import {
   MONO,
   STAT_LABEL_DARK_CLASS,
@@ -40,6 +41,7 @@ const METRICS: {
 ];
 
 const PERIOD_OPTIONS = [7, 14, 28] as const;
+type PeriodOption = (typeof PERIOD_OPTIONS)[number];
 
 // Teal Summit wellness colors: teal (good), white (neutral), amber (concerning)
 function getWellnessColor(metric: WellnessMetric, value: number | null): string {
@@ -96,7 +98,7 @@ type Props = { clientId: string };
 
 export function WellnessHistoryTable({ clientId }: Props) {
   const [page, setPage] = useState(0);
-  const [days, setDays] = useState<7 | 14 | 28>(7);
+  const [days, setDays] = useState<PeriodOption>(7);
 
   const { rows, total, isLoading } = useHistoryData<WellnessHistoryRow>(
     `/api/clients/${clientId}/history/wellness`,
@@ -130,22 +132,14 @@ export function WellnessHistoryTable({ clientId }: Props) {
       {/* Period selector — top-left, mirroring the training/nutrition
           segmented bars (their mb-5 rhythm) */}
       <div className="mb-5 flex">
-        <div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex">
-          {PERIOD_OPTIONS.map((d) => (
-            <button
-              key={d}
-              onClick={() => setDays(d)}
-              className={cn(
-                "px-4 py-1.5 text-[12.5px] font-medium rounded-[4px] transition-all",
-                days === d
-                  ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                  : "text-[#5a7d82] hover:text-[#0c1a1e]"
-              )}
-            >
-              {d} days
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          options={PERIOD_OPTIONS.map((d) => ({
+            value: String(d),
+            label: `${d} days`,
+          }))}
+          value={String(days)}
+          onChange={(value) => setDays(Number(value) as PeriodOption)}
+        />
       </div>
 
       {/* Dark summary strip */}

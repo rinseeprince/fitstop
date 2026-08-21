@@ -97,11 +97,15 @@ describe("SettingsUnitsCard", () => {
     authState.coach = makeCoach("imperial");
     renderCard();
 
-    // The active segment is the one carrying the shipped active recipe.
+    // The active segment is the one carrying the shipped active recipe — the
+    // WHITE PILL. Weight is deliberately constant across states since
+    // 2026-08-21 (docs/newdesignsystem.md → Segmented control), so
+    // `font-semibold` is no longer the marker and asserting it pinned a spec
+    // rather than the behaviour this test is about.
     const imperial = screen.getByRole("button", { name: /imperial/i });
-    expect(imperial.className).toContain("font-semibold");
+    expect(imperial.className).toContain("bg-white");
     const metric = screen.getByRole("button", { name: /^metric/i });
-    expect(metric.className).not.toContain("font-semibold");
+    expect(metric.className).not.toContain("bg-white");
   });
 
   it("disables Save until a different unit is picked", async () => {

@@ -2,7 +2,7 @@
 
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 
 type NutritionSurplusSettingsProps = {
   /** Only ever tested for truthiness, so the tab asks the nutrition endpoint
@@ -89,29 +89,15 @@ export function NutritionSurplusSettings({
               Keep split honors your carb:fat ratio; carbs only fuels with carbs
             </p>
           </div>
-          <div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex flex-shrink-0">
-            {([
-              ["split", "Keep split"],
-              ["carbs", "Carbs only"],
-            ] as const).map(([key, label]) => {
-              const active = (key === "carbs") === surplusAsCarbs;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={isSavingSurplus}
-                  onClick={() => onToggleSurplusAsCarbs(key === "carbs")}
-                  className={cn(
-                    "px-2.5 py-1 text-[11.5px] font-medium rounded-[4px] transition-all",
-                    active
-                      ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                      : "text-[#5a7d82] hover:text-[#0c1a1e]"
-                  )}
-                >
-                  {label}
-                </button>
-              );
-            })}
+          <div className="flex-shrink-0">
+            <SegmentedControl
+              options={[
+                { value: "split", label: "Keep split", disabled: isSavingSurplus },
+                { value: "carbs", label: "Carbs only", disabled: isSavingSurplus },
+              ]}
+              value={surplusAsCarbs ? "carbs" : "split"}
+              onChange={(value) => onToggleSurplusAsCarbs(value === "carbs")}
+            />
           </div>
         </div>
       )}

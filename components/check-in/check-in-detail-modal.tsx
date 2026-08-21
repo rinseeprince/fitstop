@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,
@@ -8,7 +9,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import { CheckInReviewRail } from "./check-in-review-rail";
 import { CheckInComparisonView } from "./check-in-comparison-view";
 import { GoalProgressView } from "./goal-progress-view";
@@ -48,6 +50,7 @@ export const CheckInDetailModal = ({
   canNavigateNext = false,
   onResponseSent,
 }: CheckInDetailModalProps) => {
+  const [tab, setTab] = useState("current");
   const {
     data,
     comparisonData,
@@ -83,7 +86,14 @@ export const CheckInDetailModal = ({
   return (
     <Dialog open={!!checkInId} onOpenChange={onClose}>
       <DialogContent showCloseButton={false} className="bg-[#f4f7f6] rounded-[6px] shadow-[0_10px_40px_rgba(13,148,136,0.10)] p-0 max-w-[90vw] sm:max-w-[90vw] md:max-w-[85vw] lg:max-w-[80vw] w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <Tabs defaultValue="current" className="flex flex-col flex-1 overflow-hidden">
+        {/* Controlled so the shared SegmentedControl can drive it: this bar was
+            a TabsList hand-styled into the same silhouette, and it had drifted
+            to its own size. TabsContent still owns the panels. */}
+        <Tabs
+          value={tab}
+          onValueChange={setTab}
+          className="flex flex-col flex-1 overflow-hidden"
+        >
         <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
@@ -127,26 +137,15 @@ export const CheckInDetailModal = ({
               )}
             </div>
             <div className="flex items-center gap-3 shrink-0">
-              <TabsList className="bg-[rgba(13,148,136,0.05)] p-0.5 rounded-[6px] inline-flex">
-                <TabsTrigger
-                  value="current"
-                  className="px-3 py-1.5 text-xs font-medium rounded-[4px] transition-all data-[state=active]:bg-white data-[state=active]:text-[#0c1a1e] data-[state=active]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=inactive]:text-[#5a7d82] data-[state=inactive]:hover:text-[#0c1a1e]"
-                >
-                  Current Check-In
-                </TabsTrigger>
-                <TabsTrigger
-                  value="comparison"
-                  className="px-3 py-1.5 text-xs font-medium rounded-[4px] transition-all data-[state=active]:bg-white data-[state=active]:text-[#0c1a1e] data-[state=active]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=inactive]:text-[#5a7d82] data-[state=inactive]:hover:text-[#0c1a1e]"
-                >
-                  Comparison & Trends
-                </TabsTrigger>
-                <TabsTrigger
-                  value="goals"
-                  className="px-3 py-1.5 text-xs font-medium rounded-[4px] transition-all data-[state=active]:bg-white data-[state=active]:text-[#0c1a1e] data-[state=active]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=inactive]:text-[#5a7d82] data-[state=inactive]:hover:text-[#0c1a1e]"
-                >
-                  Goal Progress
-                </TabsTrigger>
-              </TabsList>
+              <SegmentedControl
+                options={[
+                  { value: "current", label: "Current Check-In" },
+                  { value: "comparison", label: "Comparison & Trends" },
+                  { value: "goals", label: "Goal Progress" },
+                ]}
+                value={tab}
+                onChange={setTab}
+              />
               <Button
                 variant="ghost"
                 size="icon"

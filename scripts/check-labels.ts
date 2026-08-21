@@ -1,6 +1,7 @@
 /**
- * Typography-label gate. Asserts the mono=numbers-only token discipline
- * (docs/newdesignsystem.md, "Typography") and exits non-zero on any violation.
+ * Shared-token gate. Asserts that the treatments with a single owner are
+ * IMPORTED rather than retyped (docs/newdesignsystem.md), and exits non-zero on
+ * any violation.
  *
  *   npx tsx scripts/check-labels.ts          (or: npm run check:labels)
  *
@@ -11,6 +12,13 @@
  *      `uppercase` and a `tracking-` value must come from a token
  *      (LABEL_CLASS / MONO_LABEL_CLASS / SECTION_LABEL_CLASS /
  *      STAT_LABEL_DARK_CLASS / HEADER_EYEBROW_CLASS).
+ *   3. No hand-rolled segmented control — the pill-track markup (the brand
+ *      `0.05` tint plus the 2px inset that makes the track) belongs only to
+ *      `<SegmentedControl>`. Added 2026-08-21 after FIVE copies were found in
+ *      the tree at five different sizes and two different active weights,
+ *      despite the recipe being documented since the design system landed. A
+ *      recipe nobody's tooling enforces decays; this clause is why the next one
+ *      cannot.
  *
  * WHY THIS EXISTS
  * The 2026-07-23 typography sweep classified 361 sites: 67 violated the
@@ -33,6 +41,10 @@ export const TOKEN_MODULES: readonly string[] = [
   "components/clients/training/program-builder/builder-tokens.ts",
   "components/clients/training/calendar/calendar-tokens.ts",
 ];
+
+/** The one module allowed to spell the segmented-control track (clause 3). */
+export const SEGMENTED_CONTROL_MODULE =
+  "components/programs/shared/segmented-control.tsx";
 
 /** Directories the gate scans (repo-relative). */
 export const SCAN_ROOTS: readonly string[] = ["app", "components"];
@@ -64,6 +76,28 @@ export function findLabelViolations(
 
   const violations: LabelViolation[] = [];
   const lines = content.split("\n");
+
+  // Clause 3 is per-file, not per-line: the track is one element, and matching
+  // both halves of it on ONE line is what keeps this precise. The brand 0.05
+  // tint alone appears ~60 times legitimately (hover washes, count badges, rest
+  // badges); it is only a segmented-control track when it also carries the 2px
+  // inset that makes the pill sit inside it.
+  if (file !== SEGMENTED_CONTROL_MODULE) {
+    lines.forEach((text, i) => {
+      if (
+        text.includes("bg-[rgba(13,148,136,0.05)]") &&
+        /\bp-\[2px\]|\bp-0\.5\b/.test(text)
+      ) {
+        violations.push({
+          file,
+          line: i + 1,
+          clause: "3 (hand-rolled segmented control)",
+          detail:
+            "segmented-control track outside the component — import <SegmentedControl> from components/programs/shared/segmented-control",
+        });
+      }
+    });
+  }
 
   lines.forEach((text, i) => {
     // The CSS-variable form `var(--font-mono-display)` is legitimate outside
@@ -123,19 +157,20 @@ function main(): void {
   }
 
   if (failures.length > 0) {
-    console.error(`\nFAILED — ${failures.length} typography-label violation(s):\n`);
+    console.error(`\nFAILED — ${failures.length} shared-token violation(s):\n`);
     for (const f of failures) {
       console.error(`  [clause ${f.clause}] ${f.file}:${f.line} — ${f.detail}`);
     }
     console.error(
-      "\nFix by importing a token from builder-tokens.ts (mono = numbers only —" +
-        "\nsee docs/newdesignsystem.md, Typography). Only genuinely out-of-scope" +
-        "\ntrees belong in scripts/check-labels-whitelist.ts.",
+      "\nFix by importing the shared thing rather than retyping it: a token from" +
+        "\nbuilder-tokens.ts for clauses 1-2 (mono = numbers only), or" +
+        "\n<SegmentedControl> for clause 3. See docs/newdesignsystem.md. Only" +
+        "\ngenuinely out-of-scope trees belong in check-labels-whitelist.ts.",
     );
     process.exit(1);
   }
 
-  console.info(`OK — ${scanned} files scanned, typography tokens hold.`);
+  console.info(`OK — ${scanned} files scanned, shared tokens hold.`);
 }
 
 // Only run when invoked directly, so the scanner above can be unit-tested

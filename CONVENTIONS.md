@@ -636,7 +636,7 @@
   1. `npx tsc --noEmit` - no TypeScript errors
   2. `npx eslint .` - no lint errors (catches floating promises, console.log, type issues)
   3. `npx vitest run` - all tests pass
-  4. `npm run check:labels` - typography tokens hold (mono = numbers only; no raw `font-mono-display` or hand-rolled `uppercase tracking-` outside the token modules — see `docs/newdesignsystem.md` → Typography)
+  4. `npm run check:labels` - shared tokens hold: mono = numbers only (no raw `font-mono-display` or hand-rolled `uppercase tracking-` outside the token modules), and no hand-rolled segmented control (clause 3 — every pane/period/filter switcher imports `<SegmentedControl>`). See `docs/newdesignsystem.md` → Typography and → Segmented control
   5. `grep -rn "as any" [changed files]` - no type escapes
   6. `grep -rn "TODO\|FIXME\|HACK\|DEBUG" [changed files]` - no leftover markers. This covers markers **introduced by the change**. A pre-existing marker in a region you did not touch is *reported in the session's STATUS block* and left alone — deleting a comment to make a grep pass is the band-aid §1 forbids, and it destroys a note someone left deliberately.
   7. **§2 "Security, load & performance review"** - if any of its triggers fired (new migration, new

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   findLabelViolations,
   isWhitelisted,
+  SEGMENTED_CONTROL_MODULE,
   TOKEN_MODULES,
 } from "./check-labels";
 
@@ -60,6 +61,45 @@ describe("findLabelViolations", () => {
       findLabelViolations("components/client-portal/day/card.tsx", content, WL),
     ).toEqual([]);
     expect(findLabelViolations("app/layout.tsx", content, WL)).toEqual([]);
+  });
+});
+
+// Clause 3 — the segmented control. Five hand-rolled copies existed at five
+// sizes before this clause; the tint alone appears ~60 times legitimately, so
+// the test that matters most is the one proving it does NOT fire on those.
+describe("findLabelViolations — segmented control", () => {
+  it("flags a hand-rolled track (tint + the 2px inset, same line)", () => {
+    const content = `<div className="bg-[rgba(13,148,136,0.05)] rounded-[6px] p-[2px] inline-flex">`;
+    const hits = findLabelViolations("components/foo.tsx", content, WL);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      line: 1,
+      clause: "3 (hand-rolled segmented control)",
+    });
+  });
+
+  it("flags the Radix-TabsList spelling of the same track (p-0.5)", () => {
+    const content = `<TabsList className="bg-[rgba(13,148,136,0.05)] p-0.5 rounded-[6px] inline-flex">`;
+    expect(findLabelViolations("components/foo.tsx", content, WL)).toHaveLength(1);
+  });
+
+  it("does NOT flag the brand tint on its own — hover washes, chips, badges", () => {
+    const content = [
+      `<div className="rounded-[6px] bg-[rgba(13,148,136,0.05)] p-6" />`,
+      `<span className="rounded-[4px] bg-[rgba(13,148,136,0.05)] px-2 py-0.5" />`,
+      `"hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0d9488]"`,
+    ].join("\n");
+    expect(findLabelViolations("components/foo.tsx", content, WL)).toEqual([]);
+  });
+
+  it("does not flag a 2px inset that carries no brand tint", () => {
+    const content = `<div className="rounded-[6px] bg-white p-[2px] inline-flex" />`;
+    expect(findLabelViolations("components/foo.tsx", content, WL)).toEqual([]);
+  });
+
+  it("exempts the component itself", () => {
+    const content = `<div className="rounded-[6px] bg-[rgba(13,148,136,0.05)] p-[2px]">`;
+    expect(findLabelViolations(SEGMENTED_CONTROL_MODULE, content, WL)).toEqual([]);
   });
 });
 

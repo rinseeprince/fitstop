@@ -17,6 +17,9 @@ import { useOverdueClients } from "@/hooks/use-check-in-data";
 
 type ClientStatus = "invited" | "awaiting_review" | "awaiting_activation" | "active" | "inactive";
 
+// The filter rail's values: a client status, plus the two cross-cutting ones.
+type StatusFilter = "all" | "onboarding" | ClientStatus;
+
 const statusBadgeClass: Record<ClientStatus, string> = {
   invited: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
   awaiting_review: "bg-[rgba(13,148,136,0.05)] text-[#5a7d82]",
@@ -34,6 +37,7 @@ const statusLabel: Record<ClientStatus, string> = {
 };
 
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 
 export default function ClientsPage() {
   const { data, error, isLoading, mutate } = useSWR<{ clients: ClientWithCheckInInfo[] }>(
@@ -45,7 +49,7 @@ export default function ClientsPage() {
   const clients = data?.clients ?? [];
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"all" | "onboarding" | ClientStatus>("all");
+  const [activeFilter, setActiveFilter] = useState<StatusFilter>("all");
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
   const { clients: overdueClients } = useOverdueClients();
 
@@ -174,29 +178,16 @@ export default function ClientsPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <div className="bg-[rgba(13,148,136,0.05)] p-[2px] rounded-[6px] inline-flex">
-              {[
-                { key: "all" as const, label: `All (${statusCounts.all})` },
-                { key: "active" as const, label: `Active (${statusCounts.active})` },
-                { key: "onboarding" as const, label: `Onboarding (${statusCounts.onboarding})` },
-                { key: "inactive" as const, label: `Inactive (${statusCounts.inactive})` },
-              ].map((tab) => {
-                const isActive = activeFilter === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    onClick={() => setActiveFilter(tab.key)}
-                    className={`px-4 py-1.5 text-sm rounded-[4px] transition-all ${
-                      isActive
-                        ? "bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)] font-semibold"
-                        : "text-[#5a7d82] font-medium hover:text-[#0c1a1e]"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
+            <SegmentedControl
+              options={[
+                { value: "all", label: `All (${statusCounts.all})` },
+                { value: "active", label: `Active (${statusCounts.active})` },
+                { value: "onboarding", label: `Onboarding (${statusCounts.onboarding})` },
+                { value: "inactive", label: `Inactive (${statusCounts.inactive})` },
+              ]}
+              value={activeFilter}
+              onChange={(value) => setActiveFilter(value as StatusFilter)}
+            />
           </div>
         </div>
 

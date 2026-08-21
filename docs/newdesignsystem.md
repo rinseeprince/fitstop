@@ -36,6 +36,7 @@ Apply these by default on every surface — they are the difference between "rig
 - [ ] **Spacing does separation, not borders.** White cards on `#f4f7f6` need no border where spacing already separates them.
 - [ ] **Uppercase micro-labels** get letter-spacing (`tracking-[0.06em]`–`0.14em`) and a muted colour.
 - [ ] **Page background is `#f4f7f6`** (cool-green tint), dark surfaces are `#0f2027` (deep teal-black) — never neutral slate.
+- [ ] **Every pane/period/filter switcher is `<SegmentedControl>`.** One component, one size, one weight — `12.5px` `font-medium` in BOTH states, the active segment carried by the white pill + shadow + darker ink and never by a heavier font. **Never hand-roll the track**; `npm run check:labels` (clause 3) fails on the markup. See "Segmented control".
 - [ ] **Reuse the shared components/tokens** (see index) before writing new class strings.
 - [ ] **Primary CTA colour pair everywhere:** `bg-[#0d9488] text-white hover:bg-[#0b7f75]`; Cancel/dismiss = `variant="ghost"`.
 
@@ -184,8 +185,8 @@ Author with explicit arbitrary sizes (`text-[13px]`) to match shipped pixels —
 | `10.5px` | Section-label divider (`0.07em`), week "W#" chip |
 | `11px` | Mono stat rows, set-row & drop-set inputs, ordinal circle, pager text, table-footer count |
 | `12px` (`text-xs`) | Body-small, card/session titles in dense contexts, panel search inputs |
-| `12.5px` | Table mono cells, filter chips |
-| `13px` | Session/exercise names, segmented control, primary-button text, default table body |
+| `12.5px` | Table mono cells, filter chips, **segmented control (all segments, both states)** |
+| `13px` | Session/exercise names, primary-button text, default table body |
 | `13.5px` | Table program name, client name, **sidebar back-row label** ("All programs", the client's name) |
 | `15px` | Section topbar title, sheet title |
 | `17px` | Program builder title (dark header) |
@@ -600,9 +601,26 @@ Follow the **Overlays** recipes: session editor & create-session are 780px right
 
 ## Component Patterns (legacy reference)
 
-### Segmented control
+### Segmented control — HARD RULE
 
-Track `rounded-[6px] bg-[rgba(13,148,136,0.05)] p-[2px] gap-[2px]`; active `bg-white rounded-[4px] font-semibold text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]`; inactive `font-medium text-[#5a7d82] hover:text-[#0c1a1e]`; buttons `px-3.5 py-1.5 text-[13px] transition-all duration-150`.
+**There is exactly one segmented control in this codebase and you must import it:**
+`@/components/programs/shared/segmented-control` → `<SegmentedControl options value onChange />` (`fullWidth` optional). Every pane switcher (Journey, Training, Nutrition), every period selector, every status filter and every in-card two-way toggle is this component. **Do not hand-roll the track**, do not re-style a Radix `TabsList` into the same silhouette — make the `Tabs` controlled and let `<SegmentedControl>` drive it (`check-in-detail-modal.tsx` is the reference).
+
+`npm run check:labels` **clause 3 fails the build** on the track markup (the brand `0.05` tint together with the `p-[2px]`/`p-0.5` inset) anywhere but the component itself.
+
+The spec, for reading — not for retyping:
+
+| Part | Class |
+|---|---|
+| Track | `rounded-[6px] bg-[rgba(13,148,136,0.05)] p-[2px] gap-[2px]` (`inline-flex`, or `flex` when `fullWidth`) |
+| Segment | `px-4 py-1.5 rounded-[4px] text-[12.5px] font-medium transition-all duration-150` |
+| Active | `bg-white text-[#0c1a1e] shadow-[0_1px_3px_rgba(0,0,0,0.05)]` |
+| Inactive | `text-[#5a7d82] hover:text-[#0c1a1e]` |
+| Disabled | `cursor-not-allowed opacity-50` (the segment stays visible; `title` says why) |
+
+**`font-medium` is unconditional, and that is the rule, not an oversight** (owner decision, 2026-08-21). The white pill, the shadow and the darker ink already carry the selection; adding weight on top made the control reflow as the selection moved and made a pane switcher out-shout the content beneath it. The earlier `13px` / `font-semibold` spec is superseded — if you find it quoted anywhere, that text is stale.
+
+**Why this is a hard rule and not a recipe.** This section documented the recipe from the day the design system landed, and five surfaces hand-rolled it anyway — at `11.5px`, `12px`, `12.5px`, `13px` and `14px`, with two different active weights. A recipe that only lives in prose decays; clause 3 is what stops the sixth.
 
 ### Dark summary cards
 
@@ -684,6 +702,8 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 - ❌ Invent a primary-button hover colour. ✅ `hover:bg-[#0b7f75]`.
 - ❌ Ship an input without a focus ring. ✅ Add `FOCUS_RING`.
 - ❌ Rebuild StatBand / SegmentedControl / LibraryTableShell / SectionLabel / RowActions from scratch. ✅ Import them.
+- ❌ Hand-roll a segmented-control track, or restyle a `TabsList` into one. ✅ `<SegmentedControl>` — `npm run check:labels` clause 3 fails otherwise.
+- ❌ Bold the active segment of a switcher. ✅ `font-medium` in both states; the white pill carries the selection.
 - ❌ Style a Teal-Summit surface off the OKLCH tokens (`bg-background`, `bg-primary`, `rounded-lg`). ✅ Author with the hex values here.
 - ❌ Resurrect token values from the deleted `atletafit-*.html` mockups (git history). ✅ Match the shipped Programs/Builder code.
 - ❌ Set a date, name, or number in `font-mono-display` inside a running sentence (dialog/toast/empty-state prose). ✅ Mono is for standalone data only — see "Prose vs data".
