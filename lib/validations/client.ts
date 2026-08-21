@@ -39,6 +39,25 @@ export const createClientSchema = z.object({
 
   // Onboarding mode
   setupMode: z.enum(["intake", "manual"]).optional(),
+}).superRefine((data, ctx) => {
+  // A MANUAL setup is the only path that can mint a client with no starting
+  // measurement at all. The intake questionnaire requires a weight of its own
+  // (`intakeStep1Schema.currentWeight`), and `createClient` copies whatever it
+  // is handed into BOTH the current and the starting columns — so a manual add
+  // with the box left blank produced a client who could be fully set up and
+  // activated having never had a start weight, with no BMR, no TDEE and no
+  // baseline for any progress figure.
+  //
+  // `setupMode` is optional on the wire and `createClient` treats anything but
+  // "intake" as manual (`isIntakeMode`), so the predicate matches that exactly
+  // rather than testing for "manual".
+  if (data.setupMode !== "intake" && data.currentWeight === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["currentWeight"],
+      message: "A current weight is required — it is this client's starting point",
+    });
+  }
 });
 
 // Schema for updating an existing client

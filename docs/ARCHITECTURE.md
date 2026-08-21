@@ -179,6 +179,8 @@ When a check-in submits body metrics (`services/client-check-in-service.ts`):
 
 `clients.starting_weight` / `starting_body_fat_percentage` are the client's **recorded** starting point. Two paths establish them, both by writing the single typed measurement into the current AND the starting column at once — `createClient` (at row birth) and the intake sync (`intake-review-service.ts`, only where the column is still null). At creation "where they started" and "where they are" are the same fact, so this is an assignment, not a rule.
 
+**Both add-client paths now require a weight**, so a client can no longer be set up with no baseline at all: the intake questionnaire enforces it in `intakeStep1Schema`, and `createClientSchema` refuses a manual add without one (`setupMode !== "intake"` — the same predicate `createClient`'s `isIntakeMode` uses, since the field is optional on the wire and anything but `"intake"` is manual). Body fat stays optional on both.
+
 **They are editable after that, through `PATCH /api/clients/[id]` only** — a coach who left the start blank at setup, or typed it wrong, has no other way to correct it, and no later measurement can recover it. The correction is deliberately inert: it is **not** an energy input (BMR/TDEE are computed from the CURRENT weight, so a corrected start must not move them) and it is **not** dual-written to `body_metrics` (that log records measurements *taken*; stamping a correction at `now` would file the starting weight at the end of the client's timeline). Correcting a start value never moves the current one — a coach whose current value is also wrong edits that field too, on the same card.
 
 ### Read switch fallback

@@ -221,8 +221,12 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
 
         {/* Current Metrics */}
         <div className="grid gap-4 sm:grid-cols-2">
+          {/* Required on this path: it becomes the client's STARTING weight as
+              well as their current one, so leaving it blank produced a client
+              with no baseline for any progress figure and no BMR. The intake
+              path enforces the same thing in its own questionnaire. */}
           <FormItem>
-            <FormLabel>Current Weight ({weightUnit})</FormLabel>
+            <FormLabel>Current Weight ({weightUnit}) *</FormLabel>
             <FormControl>
               <Input
                 inputMode="decimal"
@@ -232,9 +236,18 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
                 className="rounded-xs"
               />
             </FormControl>
-            {currentWeight.hasParseError && (
+            {currentWeight.hasParseError ? (
               <p className="text-sm text-destructive">Enter a weight above 0</p>
+            ) : (
+              form.formState.errors.currentWeight && (
+                <p className="text-sm text-destructive">
+                  {form.formState.errors.currentWeight.message}
+                </p>
+              )
             )}
+            <p className="text-xs text-muted-foreground">
+              Also recorded as their starting weight.
+            </p>
           </FormItem>
 
           <FormField
