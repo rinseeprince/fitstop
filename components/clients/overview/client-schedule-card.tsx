@@ -84,11 +84,15 @@ function Field({
   onAdd,
   editor,
   hint,
+  emptyLabel = "Not set",
 }: {
   label: string;
   value: string | null;
   isNumeric?: boolean;
   onAdd?: () => void;
+  /** What an unset value reads as. Defaults to "Not set"; a field the coach
+   *  cannot set by hand says where it comes from instead. */
+  emptyLabel?: string;
   /** Replaces the value while the section is in edit mode. The value's own
    *  typography below is untouched: MONO is the DISPLAY token, whereas
    *  MONO_INPUT_CLASS centres its text and belongs only inside an input —
@@ -111,7 +115,7 @@ function Field({
       <p className={LABEL_CLASS}>{label}</p>
       {value === null ? (
         <p className="mt-0.5 flex items-baseline gap-2 text-[13px]">
-          <span className="text-[#93b0b4]">Not set</span>
+          <span className="text-[#93b0b4]">{emptyLabel}</span>
           {onAdd && (
             <button
               type="button"
@@ -242,6 +246,11 @@ export function ClientScheduleCard({
   const openSettings = edit.start;
   const editing = edit.isEditing;
   const form = edit.form;
+  // Activation owns the start date; a client still being set up has none to
+  // correct. `paused` counts as started — they were activated once, and their
+  // origin does not stop being real because they are on hold.
+  const hasStarted =
+    client.onboardingStatus === "active" || client.onboardingStatus === "paused";
 
   return (
     <>
@@ -341,12 +350,19 @@ export function ClientScheduleCard({
               ) : undefined
             }
           />
+          {/* ACTIVATION sets this, and only then does it become editable.
+              Before that there is nothing to correct — and an editable field
+              here was worse than useless: the activation dialog prefills its
+              own date box with today and always sends it, so a start date a
+              coach set in advance was silently replaced the moment they
+              activated. One setter, then one editor. */}
           <Field
             label="Started"
             value={client.startDate ? formatDateOnlyWeekday(client.startDate) : null}
+            emptyLabel="Set on activation"
             isNumeric
             editor={
-              editing ? (
+              editing && hasStarted ? (
                 <InlineTextInput
                   ariaLabel="Start date"
                   type="date"

@@ -149,6 +149,34 @@ describe("inline client profile editing", () => {
     expect(screen.getByLabelText("Phone")).toBeInTheDocument();
   });
 
+  // ACTIVATION sets the start date; only then is there anything to correct.
+  // An editable field before that was worse than useless — the activation
+  // dialog prefills its own box with today and always sends it, so a date set
+  // in advance was silently replaced the moment the coach activated.
+  describe("the start date", () => {
+    it("is not editable while the client is still being set up", async () => {
+      await openEditor(
+        makeClient({ onboardingStatus: "setup_in_progress", startDate: undefined })
+      );
+      expect(screen.queryByLabelText("Start date")).not.toBeInTheDocument();
+      expect(screen.getByText("Set on activation")).toBeInTheDocument();
+    });
+
+    it("becomes editable once they are active", async () => {
+      await openEditor(
+        makeClient({ onboardingStatus: "active", startDate: "2026-08-21" })
+      );
+      expect(screen.getByLabelText("Start date")).toBeInTheDocument();
+    });
+
+    it("stays editable while they are paused — they were activated once", async () => {
+      await openEditor(
+        makeClient({ onboardingStatus: "paused", startDate: "2026-08-21" })
+      );
+      expect(screen.getByLabelText("Start date")).toBeInTheDocument();
+    });
+  });
+
   it("cancel leaves editing without saving", async () => {
     const fetchSpy = mockFetchOk();
     const user = await openEditor();
