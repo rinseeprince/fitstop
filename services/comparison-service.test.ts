@@ -146,7 +146,7 @@ describe('Comparison Service - read-switch behavior', () => {
     )
   })
 
-  it('reads starting weight from earliest body_metrics row', async () => {
+  it("the coach's RECORDED start wins over the derived one", async () => {
     vi.mocked(getBodyMetricsHistory).mockResolvedValue([
       {
         id: 'bm-earliest',
@@ -171,18 +171,52 @@ describe('Comparison Service - read-switch behavior', () => {
 
     await getCheckInComparison('ci-1')
 
-    // Should use earliest body_metrics weight (195) as starting weight
     expect(getBodyMetricsHistory).toHaveBeenCalledWith('client-1', {
       limit: 1,
       ascending: true,
     })
 
-    // calculateGoalProgress should be called with startingWeight = 195 (from earliest body_metrics)
+    // The preference used to run the other way, and had to invert when
+    // `clients.starting_weight` became editable: `body_metrics` is immutable,
+    // so a coach's correction would otherwise show on the Overview card and be
+    // ignored by every check-in figure.
     expect(calculateGoalProgress).toHaveBeenCalledWith(
       178, // currentCheckIn.weight
       165, // goalWeight from service
-      195, // starting weight from earliest body_metrics
+      190, // client.startingWeight — the recorded start, NOT the 195 event
       undefined // avgWeeklyWeightChange (only 1 check-in)
+    )
+  })
+
+  it('derives the start from earliest body_metrics when none was recorded', async () => {
+    // The legacy client: no start weight was ever written, so the first event
+    // is the only thing that knows where they began. This is the leg that keeps
+    // the inversion behaviour-identical for everyone who has not been corrected.
+    vi.mocked(getClientById).mockResolvedValue({
+      ...mockClient,
+      startingWeight: undefined,
+      startingBodyFatPercentage: undefined,
+    } as never)
+    vi.mocked(getBodyMetricsHistory).mockResolvedValue([
+      {
+        id: 'bm-earliest',
+        clientId: 'client-1',
+        weight: 195,
+        bodyFatPercentage: 24,
+        source: 'intake_sync' as const,
+        recordedAt: '2023-06-01T00:00:00Z',
+        createdAt: '2023-06-01T00:00:00Z',
+      },
+    ])
+    vi.mocked(getCurrentGoals).mockResolvedValue(null)
+
+    await getCheckInComparison('ci-1')
+
+    expect(calculateGoalProgress).toHaveBeenCalledWith(
+      178, // currentCheckIn.weight
+      170, // client.goalWeight fallback
+      195, // derived from the earliest event
+      undefined
     )
   })
 

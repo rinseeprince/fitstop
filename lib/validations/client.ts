@@ -79,6 +79,16 @@ export const updateClientSchema = z.object({
   // Current metrics (typically updated automatically, but can be manually set)
   currentWeight: z.number().positive("Current weight must be positive").optional(),
   currentBodyFatPercentage: z.number().min(0).max(100, "Body fat must be between 0 and 100").optional(),
+
+  // The recorded START of this client's journey. Editable because it is the one
+  // measurement nobody can re-take: a coach who left it blank at setup, or
+  // typed it wrong, has no other way to correct it. Written ONCE at creation
+  // (createClient copies the single typed measurement into both the current and
+  // the starting columns) and by the intake sync; after that only this PATCH.
+  // Deliberately NOT nullable — the sibling metrics are not either, and a start
+  // value that can be blanked is a delta that can silently disappear.
+  startingWeight: z.number().positive("Start weight must be positive").optional(),
+  startingBodyFatPercentage: z.number().min(0).max(100, "Body fat must be between 0 and 100").optional(),
 });
 
 // Schema for updating client check-in configuration

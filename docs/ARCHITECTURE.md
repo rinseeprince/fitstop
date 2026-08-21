@@ -175,13 +175,20 @@ When a check-in submits body metrics (`services/client-check-in-service.ts`):
 1. Calls `updateClient()` with the new current metrics — which updates the denormalized cache **and** recomputes the energy pair through `recalculateClientEnergy`, honouring the client's activity level and any override flag. (This service issues no `clients` write of its own; it previously computed BMR here and hardcoded `tdee = bmr * 1.2`, costing every client as sedentary and clobbering a coach's custom TDEE on every check-in.)
 2. Calls `recordBodyMetrics()` to write an immutable event to `body_metrics` (non-blocking), stamped with the pair `updateClient` returned rather than a second recomputation, so the event log and the profile cannot disagree.
 
+### Start weight / start body fat — the recorded baseline
+
+`clients.starting_weight` / `starting_body_fat_percentage` are the client's **recorded** starting point. Two paths establish them, both by writing the single typed measurement into the current AND the starting column at once — `createClient` (at row birth) and the intake sync (`intake-review-service.ts`, only where the column is still null). At creation "where they started" and "where they are" are the same fact, so this is an assignment, not a rule.
+
+**They are editable after that, through `PATCH /api/clients/[id]` only** — a coach who left the start blank at setup, or typed it wrong, has no other way to correct it, and no later measurement can recover it. The correction is deliberately inert: it is **not** an energy input (BMR/TDEE are computed from the CURRENT weight, so a corrected start must not move them) and it is **not** dual-written to `body_metrics` (that log records measurements *taken*; stamping a correction at `now` would file the starting weight at the end of the client's timeline). Correcting a start value never moves the current one — a coach whose current value is also wrong edits that field too, on the same card.
+
 ### Read switch fallback
 
 Services that read goals/metrics prefer the new tables but fall back to legacy `client.*` fields for pre-migration clients (`services/comparison-service.ts`):
 ```
 goalWeight = currentGoals?.goalWeight ?? client.goalWeight
-earliestWeight = earliestMetrics[0]?.weight ?? client.startingWeight
+earliestWeight = client.startingWeight ?? earliestMetrics[0]?.weight
 ```
+**The start-weight leg runs column-first, and that direction is load-bearing.** It used to prefer the earliest `body_metrics` event — correct while `starting_weight` was write-once, since a real event beats a denormalized copy — but that became "ignore the coach" once the column turned editable, because `body_metrics` is immutable by design: a corrected start weight would have shown on the Overview card and been ignored by the check-in comparison, the weight-goal card and the KPI ribbon. The inversion is behaviour-identical for every uncorrected client (both stores are written from one number at creation), and the event leg still covers clients whose column was never set.
 The **goal** half of that switch is no longer written by hand at each call site — `toClientGoalInput()` owns it (see "Effective goal resolution"), because four callers held byte-identical copies and one of them only had to be edited alone for them to diverge. The switch covers goal weight and goal body fat **only**; the deadline has no mirror leg by decision.
 
 ---

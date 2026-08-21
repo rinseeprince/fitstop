@@ -77,8 +77,19 @@ export const getCheckInComparison = async (
       ? Math.round(effectiveGoal.goalWeightKg * 10) / 10
       : undefined;
   const goalBodyFatPercentage = effectiveGoal.goalBodyFatPercentage ?? undefined;
-  const earliestWeight = earliestMetrics[0]?.weight ?? client.startingWeight;
-  const earliestBodyFat = earliestMetrics[0]?.bodyFatPercentage ?? client.startingBodyFatPercentage;
+  // The COACH'S recorded start wins over the derived one. This preference used
+  // to run the other way — earliest `body_metrics` first, column as fallback —
+  // which was right while `starting_weight` was write-once: preferring a real
+  // event over a denormalized copy. It became "ignore the coach" the moment the
+  // column turned editable, because `body_metrics` is immutable by design, so a
+  // corrected start weight would show on the Overview card and nowhere else.
+  //
+  // Behaviour-identical for every client who has not been corrected: creation
+  // writes ONE typed measurement into both the column and the first event, and
+  // the intake sync does the same, so the two agree by construction.
+  const earliestWeight = client.startingWeight ?? earliestMetrics[0]?.weight;
+  const earliestBodyFat =
+    client.startingBodyFatPercentage ?? earliestMetrics[0]?.bodyFatPercentage;
 
   // Goal deadline, used by both the weight pace check and the deadline card —
   // from the SAME scope as goalWeight above (no cross-scope mismatch).

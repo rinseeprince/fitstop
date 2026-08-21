@@ -567,6 +567,39 @@ describe('Client Service', () => {
       expect(recalculateClientEnergy).not.toHaveBeenCalled()
     })
 
+    it('writes the START columns without touching the current ones', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', {
+        startingWeight: 84,
+        startingBodyFatPercentage: 21,
+      })
+
+      const updateCall = mockQuery.update.mock.calls[0][0]
+      expect(updateCall.starting_weight).toBe(84)
+      expect(updateCall.starting_body_fat_percentage).toBe(21)
+      // Correcting a recorded baseline is not a new measurement: the current
+      // values are a separate field the coach edits on its own.
+      expect(updateCall.current_weight).toBeUndefined()
+      expect(updateCall.current_body_fat_percentage).toBeUndefined()
+    })
+
+    it('does NOT recompute energy or log an event for a start-only correction', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await updateClient('client-123', { startingWeight: 84 })
+
+      // BMR/TDEE are computed from the CURRENT weight, so a corrected start
+      // must not move them...
+      expect(recalculateClientEnergy).not.toHaveBeenCalled()
+      // ...and body_metrics records measurements TAKEN, so stamping a
+      // correction at `now` would file the start weight at the END of the
+      // client's timeline.
+      expect(recordBodyMetrics).not.toHaveBeenCalled()
+    })
+
     it('persists dateOfBirth, which updateClientSchema accepts', async () => {
       // Regression: the schema accepted dateOfBirth and this mapper dropped it,
       // so a PATCH carrying a birth date returned 200 and changed nothing.

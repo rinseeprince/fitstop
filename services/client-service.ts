@@ -288,6 +288,19 @@ export const updateClient = async (
   // `updateGoals` below owns both stores. See its comment.
   if (clientData.currentWeight !== undefined) updateData.current_weight = currentWeightKg ?? null;
   if (clientData.currentBodyFatPercentage !== undefined) updateData.current_body_fat_percentage = clientData.currentBodyFatPercentage ?? null;
+  // The START values are a CORRECTION to a recorded baseline, not a new
+  // measurement, and the difference decides everything below:
+  //   - they are not in `energyInputChanged` — BMR/TDEE are computed from the
+  //     CURRENT weight, so correcting a start value must not move them;
+  //   - they are not dual-written to `body_metrics` — that log records
+  //     measurements TAKEN, and stamping a correction at `now` would file this
+  //     client's starting weight at the END of their timeline.
+  // Neither column moves the other: a coach who also has the current value
+  // wrong edits that field too (they sit side by side on the status card).
+  if (clientData.startingWeight !== undefined) updateData.starting_weight = clientData.startingWeight;
+  if (clientData.startingBodyFatPercentage !== undefined) {
+    updateData.starting_body_fat_percentage = clientData.startingBodyFatPercentage;
+  }
 
   const { data, error } = await supabaseAdmin
     .from("clients")
