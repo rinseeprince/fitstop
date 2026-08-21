@@ -24,16 +24,21 @@ import {
   type JourneySubtab,
   type MetricTab,
 } from "./metrics-view-types";
+import type { ClientTab } from "@/lib/client-tabs";
 import type { Client } from "@/types/check-in";
 
 type MetricsTabContentProps = {
   client: Client;
   onClientUpdated?: () => void;
+  /** The Blocks pane's round trip out of an unset Training/Nutrition fact
+   *  (7.3/7.4) — the same seam the Overview already uses. */
+  onTabChange?: (tab: ClientTab, extraParams?: Record<string, string>) => void;
 };
 
 export const MetricsTabContent = ({
   client,
   onClientUpdated,
+  onTabChange,
 }: MetricsTabContentProps) => {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -90,6 +95,7 @@ export const MetricsTabContent = ({
           weightMetric={
             metricsByTab.body.find((metric) => metric.id === "weight") ?? null
           }
+          onTabChange={onTabChange}
         />
       ) : pane === "training" ? (
         <ExerciseDataView clientId={client.id} />

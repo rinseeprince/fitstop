@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
@@ -10,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { journeyTripParams, type ClientTab } from "@/lib/client-tabs";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
@@ -54,10 +56,22 @@ type BlocksSubtabProps = {
   /** The weight MetricSummary from useMergedMetrics (viewer units), or null
    *  while metrics load / when nothing is logged. */
   weightMetric: MetricSummary | null;
+  /** The round trip out of an unset fact (7.3/7.4). Cross-tab navigation must
+   *  run through the client page's handler — activeTab is state seeded from
+   *  ?tab= at mount only. Absent = the empty states stay plain text. */
+  onTabChange?: (tab: ClientTab, extraParams?: Record<string, string>) => void;
 };
 
-export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
+export function BlocksSubtab({
+  clientId,
+  weightMetric,
+  onTabChange,
+}: BlocksSubtabProps) {
   const { blocks, clientToday, isLoading, isError } = useClientBlocks(clientId);
+  const searchParams = useSearchParams();
+  // The return trip lands on ?block=<id> and it WINS over the default (the
+  // current block): the coach came back to the one they were setting up.
+  const focusBlockId = searchParams.get("block");
   const {
     facts,
     isLoading: factsLoading,
@@ -379,7 +393,18 @@ export function BlocksSubtab({ clientId, weightMetric }: BlocksSubtabProps) {
                 pace={pace}
                 targetDisplay={targetDisplay}
                 weightUnit={weightUnit}
-                defaultOpen={block.state === "current"}
+                defaultOpen={
+                  focusBlockId ? block.id === focusBlockId : block.state === "current"
+                }
+                onPlaceProgram={
+                  onTabChange
+                    ? () =>
+                        onTabChange("training", {
+                          training: "plans",
+                          ...journeyTripParams("apply", block.id),
+                        })
+                    : undefined
+                }
                 rowAction={
                   <>
                     <button

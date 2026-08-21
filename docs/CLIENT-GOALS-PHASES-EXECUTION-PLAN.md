@@ -5137,3 +5137,79 @@ Nutrition still share `subtab` — no longer true) · `ARCHITECTURE.md` tab-para
 
 **UI is unverified — the owner runs the browser smoke.**
 
+---
+
+### Task 7.3 — "No program placed" becomes the way in, and the way back ✅ SHIPPED 2026-08-21
+
+Click the Training empty state on a current or future block → the Training tab's Plans pane
+with the apply tray already open → the normal apply flow, unchanged → back to Journey with
+that block expanded.
+
+#### The lingering-`returnTo` landmine, and the two properties that close it
+
+Both are in `hooks/use-journey-round-trip.ts`, shared with 7.4, and both are bugs if dropped:
+
+1. **Consume on ARRIVAL, not at mount.** A `useState` initializer would read the URL too
+   early: `handleTabChange` flips `activeTab` **before** `router.replace` lands, so the surface
+   renders once against the *previous* tab's query and the trip params arrive a render later.
+   An effect consumes them when they appear, guarded by a ref against the window between
+   consuming and the stripped URL committing.
+2. **Strip on arrival, and clear the target on any close without a save.** These fix two
+   different bugs. Stripping kills the *lingering open-param*: Radix unmounts inactive
+   `TabsContent`, so every return to the Training tab is a fresh mount and an `apply=1` left in
+   the URL would re-open the tray each time. Clearing kills the *lingering return target*: a
+   coach who opens the tray from Journey, closes it without applying, and applies normally an
+   hour later must NOT be bounced to Journey. That is the case the brief named, and it is the
+   first test in `use-journey-round-trip.test.ts`.
+
+`returnBlockId` is read from the render closure at apply time, so the overlay's own close —
+which clears it — cannot race the trip.
+
+#### Where each rule lives, and why
+
+- **`blockAcceptsSetup(block)` lives in `block-card.tsx`, beside the render.** Current and
+  future only; elapsed and archived keep plain text. It is a *presentation* rule, so putting it
+  where the branch is makes it directly testable — the test renders a past block and an
+  archived-but-current block and asserts there is no button, which is verification item 2 end
+  to end rather than two half-tests either side of a prop.
+- **The URL contract lives in `lib/client-tabs.ts`** (`journeyTripParams`,
+  `journeyReturnParams`, `readJourneyTrip`, `stripJourneyTrip`) so the writer and the reader
+  cannot drift, and so **no `"journey"` literal enters `blocks-subtab.tsx`** — that file uses
+  the same string nine times for its local `view` toggle, and the two must never be confused.
+
+#### The empty state's shape
+
+`No program placed — place one`: muted problem, teal action, one target, **always visible**
+rather than hover-revealed. A door a coach has to hover to find is the problem this session
+exists to fix. Primary-fill buttons stay where the design system puts them (footers, heroes);
+this is an inline text action inside a dense fact column.
+
+#### `?block=<id>` is not stripped, deliberately
+
+It sets which block is default-expanded, winning over the current-block default, and it
+persists like `?journey=` does. Persisting it means a later return to Journey re-expands the
+block the coach was last setting up — which is right, not stale. It only affects the *initial*
+open state of a fresh mount.
+
+#### Tests — mutation-proven, both directions
+
+`use-journey-round-trip.test.ts` (6) + `block-card.test.tsx` (6). Both suites were mutated to
+confirm they are not vacuous: forcing `blockAcceptsSetup` to `return true` failed the elapsed
+and archived cases; removing the `if (!next) setReturnBlockId(null)` clear failed the
+abandoned-flow case. **3 failures under mutation, 0 after restoring from a scratchpad copy**
+(never `git stash` / `git checkout --`), and the restored lines were re-grepped and the suites
+re-run green.
+
+#### Files
+
+`lib/client-tabs.ts` · `hooks/use-journey-round-trip.ts` (+ test) · `block-card.tsx` (+ test) ·
+`blocks-subtab.tsx` · `metrics-tab-content.tsx` · `app/clients/[id]/page.tsx` ·
+`training-plan-builder.tsx` · `training-plan-builder-overlay.tsx` · `ARCHITECTURE.md`.
+
+#### Gates
+
+`tsc` clean · `eslint` 0 errors on every changed file · `vitest` **280 files / 2997 tests**
+(from 278/2985: +2 files, +12) · `check:labels` OK 665 · no `as any`, no introduced markers.
+
+**UI is unverified — the owner runs the browser smoke.**
+

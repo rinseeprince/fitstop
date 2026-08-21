@@ -43,15 +43,67 @@ type BlockCardProps = {
   /** 3.4's delete affordance mounts here, inside the row but outside the
    *  expand toggle (buttons cannot nest). */
   rowAction?: React.ReactNode;
+  /** The Journey round trip (7.3): the Training empty state becomes the way
+   *  into the apply flow. Undefined leaves it as plain text. */
+  onPlaceProgram?: () => void;
 };
 
 const signed = (n: number) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
 
+/**
+ * Which blocks get a round-trip affordance on an unset fact: CURRENT and
+ * FUTURE only (owner decision 2026-08-21). Elapsed and archived keep plain
+ * text — placement writes from a chosen start date, not the block's window, so
+ * a click on a finished block leads somewhere confusing, and it matches the
+ * read-only posture elapsed blocks already have everywhere else (no delete
+ * offered, dates pinned from storage).
+ */
+export function blockAcceptsSetup(block: ClientBlockView): boolean {
+  return block.state !== "past" && block.archivedAt == null;
+}
+
+/**
+ * The empty state IS the way in (Session 7.3/7.4): one target that names what
+ * is unset and offers the gesture that fixes it. The action word stays visible
+ * rather than hover-revealed — a coach who has to hover to discover the door
+ * is exactly the problem this session exists to fix.
+ */
+function SetupPrompt({
+  missing,
+  action,
+  onClick,
+}: {
+  missing: string;
+  action: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group rounded text-left text-xs text-[#93b0b4] transition-colors",
+        FOCUS_RING
+      )}
+    >
+      {missing} &mdash;{" "}
+      <span className="font-medium text-[#0d9488] group-hover:text-[#0b7f75]">
+        {action}
+      </span>
+    </button>
+  );
+}
+
 function TrainingColumn({
+  block,
   facts,
   factsLoading,
   factsError,
-}: Pick<BlockCardProps, "facts" | "factsLoading" | "factsError">) {
+  onPlaceProgram,
+}: Pick<
+  BlockCardProps,
+  "block" | "facts" | "factsLoading" | "factsError" | "onPlaceProgram"
+>) {
   if (factsError) {
     return <p className="text-xs text-[#93b0b4]">Unavailable</p>;
   }
@@ -59,7 +111,15 @@ function TrainingColumn({
     return factsLoading ? <p className="text-xs text-[#93b0b4]">Loading…</p> : null;
   }
   if (facts.training.length === 0) {
-    return <p className="text-xs text-[#93b0b4]">No program placed</p>;
+    return onPlaceProgram && blockAcceptsSetup(block) ? (
+      <SetupPrompt
+        missing="No program placed"
+        action="place one"
+        onClick={onPlaceProgram}
+      />
+    ) : (
+      <p className="text-xs text-[#93b0b4]">No program placed</p>
+    );
   }
   return (
     <ul className="space-y-1">

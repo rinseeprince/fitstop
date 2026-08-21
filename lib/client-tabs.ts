@@ -97,3 +97,69 @@ export function paneParamSearch(
   return params.toString()
 }
 
+// ---------------------------------------------------------------------------
+// The Journey ⇄ setup-surface round trip (Session 7.3 / 7.4)
+//
+// A Journey block whose Training or Nutrition fact is unset IS the way in: one
+// click lands on the owning tab with its setup surface already open, and a
+// successful save lands back on the block it came from, expanded.
+//
+// The three trip params are ONE-SHOT. The surface consumes them on arrival and
+// strips them (`useJourneyRoundTrip`), because the whole query is carried
+// across every tab change: a `returnTo` left riding would bounce a LATER,
+// unrelated save back to Journey, and a lingering open-param would re-open the
+// surface on every hand-return to the tab — Radix unmounts inactive
+// TabsContent, so each visit is a fresh mount that would re-fire it.
+// ---------------------------------------------------------------------------
+
+/** Which surface the trip opens. The value IS the URL param name. */
+export type JourneyTripSurface = "apply" | "edit"
+
+const RETURN_TO = "returnTo"
+const RETURN_BLOCK = "returnBlock"
+const RETURN_TO_JOURNEY = "journey"
+
+/** Journey → a setup surface, already open, knowing the way back. Spread it
+ *  beside the destination pane: `{ training: "plans", ...journeyTripParams(…) }`. */
+export function journeyTripParams(
+  surface: JourneyTripSurface,
+  blockId: string
+): Record<string, string> {
+  return {
+    [surface]: "1",
+    [RETURN_TO]: RETURN_TO_JOURNEY,
+    [RETURN_BLOCK]: blockId,
+  }
+}
+
+/** A setup surface → back to the block it came from, expanded. */
+export function journeyReturnParams(blockId: string): Record<string, string> {
+  return { journey: "blocks", block: blockId }
+}
+
+/** What a surface should do with the URL it just received. `returnBlockId` is
+ *  null for a surface opened any other way, so an ordinary save never bounces. */
+export function readJourneyTrip(
+  search: URLSearchParams,
+  surface: JourneyTripSurface
+): { open: boolean; returnBlockId: string | null } {
+  if (search.get(surface) !== "1") return { open: false, returnBlockId: null }
+  return {
+    open: true,
+    returnBlockId:
+      search.get(RETURN_TO) === RETURN_TO_JOURNEY ? search.get(RETURN_BLOCK) : null,
+  }
+}
+
+/** The same query with the one-shot trip params removed. */
+export function stripJourneyTrip(
+  currentSearch: string,
+  surface: JourneyTripSurface
+): string {
+  const params = new URLSearchParams(currentSearch)
+  params.delete(surface)
+  params.delete(RETURN_TO)
+  params.delete(RETURN_BLOCK)
+  return params.toString()
+}
+

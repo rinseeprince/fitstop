@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { TrainingBuilderProvider } from "@/contexts/training-builder-context";
 import { TrainingBuilderRightPanel } from "./training-builder-right-panel";
@@ -8,7 +7,13 @@ import { TrainingPlanBuilderOverlay } from "./training-plan-builder-overlay";
 import { TrainingHistoryTable } from "../training-history-table";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
-import { paneParamSearch, resolvePaneParam, type ClientTab } from "@/lib/client-tabs";
+import {
+  journeyReturnParams,
+  paneParamSearch,
+  resolvePaneParam,
+  type ClientTab,
+} from "@/lib/client-tabs";
+import { useJourneyRoundTrip } from "@/hooks/use-journey-round-trip";
 import type { Client } from "@/types/check-in";
 
 type TrainingPlanBuilderProps = {
@@ -29,7 +34,15 @@ export function TrainingPlanBuilder({
   onUpdate,
   onTabChange,
 }: TrainingPlanBuilderProps) {
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // The apply tray, plus the Journey round trip that can open it (7.3). The
+  // hook consumes ?apply=1 & the return target ON ARRIVAL and strips them, and
+  // drops the target on any close without an apply — so an abandoned trip
+  // cannot bounce a later, unrelated apply back to Journey.
+  const {
+    open: drawerOpen,
+    setOpen: setDrawerOpen,
+    returnBlockId,
+  } = useJourneyRoundTrip("apply");
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -74,6 +87,13 @@ export function TrainingPlanBuilder({
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
           clientName={client.name}
+          onApplied={() => {
+            // returnBlockId is read from THIS render's closure, so the
+            // overlay's own close (which clears it) cannot race the trip.
+            if (returnBlockId) {
+              onTabChange?.("metrics", journeyReturnParams(returnBlockId));
+            }
+          }}
         />
       </TrainingBuilderProvider>
     </ErrorBoundary>

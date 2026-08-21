@@ -89,6 +89,7 @@ export default function ClientProfilePage() {
             <MetricsTabContent
               client={client}
               onClientUpdated={() => void mutateClient()}
+              onTabChange={handleTabChange}
             />
           </TabsContent>
 

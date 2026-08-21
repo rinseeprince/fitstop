@@ -30,12 +30,17 @@ type TrainingPlanBuilderOverlayProps = {
   // Titles the client editor's library panel ("Editing for {name}") so it reads
   // as the client editor, not the generic /dashboard/programs builder.
   clientName?: string;
+  // Fires once the plan has landed on the client's calendar. This component
+  // reports the fact; the PARENT decides what happens next (Session 7.3's
+  // return trip to the Journey block the coach came from).
+  onApplied?: () => void;
 };
 
 export function TrainingPlanBuilderOverlay({
   open,
   onOpenChange,
   clientName,
+  onApplied,
 }: TrainingPlanBuilderOverlayProps) {
   const builder = useTrainingBuilderContext();
   const hasDraft = !!builder.savedPlanId;
@@ -130,6 +135,7 @@ export function TrainingPlanBuilderOverlay({
                 // it on the next open.
                 void builder.fetchPlan();
                 onOpenChange(false);
+                onApplied?.();
               }}
             >
               <ClientDraftLeaveGuard />
