@@ -100,6 +100,14 @@ async function openEditor(client = makeClient(), goal: ClientGoal | null = makeG
   return user;
 }
 
+/** The PATCH to /api/clients/[id] — the client-details write. */
+function profilePatch(spy: ReturnType<typeof mockFetchOk>) {
+  const call = spy.mock.calls.find(
+    ([url, init]) => init?.method === "PATCH" && /\/api\/clients\/[^/]+$/.test(String(url))
+  );
+  return call ? (JSON.parse(call[1]?.body as string) as Record<string, unknown>) : null;
+}
+
 /** The PUT to /goals, if the save issued one. */
 function goalPut(spy: ReturnType<typeof mockFetchOk>) {
   const call = spy.mock.calls.find(([url]) => String(url).endsWith("/goals"));
@@ -205,6 +213,134 @@ describe("inline client profile editing", () => {
 
       // 6'10" = 208.28 cm. The point is that it converted at all.
       expect(body.height).toBeCloseTo(208.28, 2);
+    });
+  });
+
+  // The four measurement cells. START is the recorded baseline — a correction
+  // to a fact nothing can re-take — so it is confirmed before it is written.
+  // CURRENT is an ordinary measurement and is not.
+  describe("start and current measurements", () => {
+    const MEASURED = makeClient({
+      startingWeight: 90,
+      currentWeight: 86,
+      startingBodyFatPercentage: 24,
+      currentBodyFatPercentage: 21,
+    });
+
+    it("does not rewrite an untouched measurement", async () => {
+      // Display rounding is lossy, so re-sending a pre-populated box would
+      // drift the stored value on EVERY save — the §20 rule that made the
+      // seeded-string guard load-bearing for height and goal weight.
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(MEASURED);
+
+      await user.type(screen.getByLabelText("Phone"), "123");
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      const body = profilePatch(fetchSpy);
+      expect(body).not.toHaveProperty("startingWeight");
+      expect(body).not.toHaveProperty("currentWeight");
+      expect(body).not.toHaveProperty("startingBodyFatPercentage");
+      expect(body).not.toHaveProperty("currentBodyFatPercentage");
+    });
+
+    it("saves a CURRENT weight with no confirm", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(MEASURED);
+
+      const field = screen.getByLabelText("Current weight");
+      await user.clear(field);
+      await user.type(field, "85");
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      expect(profilePatch(fetchSpy)?.currentWeight).toBe(85);
+      expect(
+        screen.queryByRole("button", { name: /update start/i })
+      ).not.toBeInTheDocument();
+    });
+
+    it("CONFIRMS a start weight before writing it, and writes nothing if cancelled", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(MEASURED);
+
+      const field = screen.getByLabelText("Start weight");
+      await user.clear(field);
+      await user.type(field, "92");
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      // The dialog names the new value, so the coach confirms the number they
+      // are about to bake into every progress figure.
+      await screen.findByText(/start weight to 92.0 kg/i);
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: /^cancel$/i }));
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("writes the start weight once confirmed", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(MEASURED);
+
+      const field = screen.getByLabelText("Start weight");
+      await user.clear(field);
+      await user.type(field, "92");
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(await screen.findByRole("button", { name: /update start/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      const body = profilePatch(fetchSpy);
+      expect(body?.startingWeight).toBe(92);
+      // Correcting the baseline does not move the current measurement.
+      expect(body).not.toHaveProperty("currentWeight");
+    });
+
+    it("converts an edited start weight back to kilograms", async () => {
+      preference.current = "imperial";
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(MEASURED);
+
+      const field = screen.getByLabelText("Start weight");
+      await user.clear(field);
+      await user.type(field, "200");
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(await screen.findByRole("button", { name: /update start/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      expect(profilePatch(fetchSpy)?.startingWeight).toBeCloseTo(90.72, 2);
+    });
+
+    it("refuses to empty a stored measurement rather than silently keeping it", async () => {
+      // None of the four columns is nullable through updateClientSchema, so
+      // there is no payload that clears one. A cleared box that quietly kept
+      // its old value is worse than an error.
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(MEASURED);
+
+      await user.clear(screen.getByLabelText("Current weight"));
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Current weight")).toBeInTheDocument()
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("confirms a start BODY FAT the same way", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor(MEASURED);
+
+      const field = screen.getByLabelText("Start body fat percentage");
+      await user.clear(field);
+      await user.type(field, "26");
+      await user.click(screen.getByRole("button", { name: /save client details/i }));
+
+      await screen.findByText(/start body fat to 26%/i);
+      await user.click(screen.getByRole("button", { name: /update start/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      expect(profilePatch(fetchSpy)?.startingBodyFatPercentage).toBe(26);
     });
   });
 

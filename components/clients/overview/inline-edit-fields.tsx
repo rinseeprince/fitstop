@@ -14,6 +14,7 @@ import {
   FOCUS_RING,
   MONO_INPUT_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
+import { ConfirmStartEditDialog } from "./confirm-start-edit-dialog";
 import type { ClientProfileEdit } from "./use-client-profile-edit";
 
 /**
@@ -32,6 +33,17 @@ export const ITEM_CLASS =
 
 /** Rail actions: pencil when idle, save + cancel while editing. */
 export function EditRailActions({ edit }: { edit: ClientProfileEdit }) {
+  const confirm = (
+    <ConfirmStartEditDialog
+      open={edit.confirmStartOpen}
+      edits={edit.startEdits}
+      clientName={edit.clientName}
+      isSaving={edit.isSaving}
+      onCancel={() => edit.setConfirmStartOpen(false)}
+      onConfirm={edit.confirmStartEdit}
+    />
+  );
+
   if (!edit.isEditing) {
     return (
       <button
@@ -50,9 +62,10 @@ export function EditRailActions({ edit }: { edit: ClientProfileEdit }) {
     // Rail icon-action order is fixed system-wide: commit leftmost,
     // destructive ALWAYS rightmost (newdesignsystem.md, SectionLabel actions).
     <div className="flex shrink-0 items-center gap-1">
+      {confirm}
       <button
         type="button"
-        onClick={() => void edit.save()}
+        onClick={() => void edit.requestSave()}
         disabled={edit.isSaving}
         aria-label="Save client details"
         title="Save"

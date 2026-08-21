@@ -7,6 +7,7 @@ import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useUnits } from "@/contexts/units-context";
 import { useCanonicalInput, useHeightInput } from "@/hooks/use-unit-inputs";
+import { formatWeight } from "@/utils/unit-conversions";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import type { ActivityLevel, Client } from "@/types/check-in";
 import type { ClientGoal } from "@/types/client-goals";
@@ -43,6 +44,19 @@ const profileFormSchema = z
       "very_active",
       "extremely_active",
     ]),
+    // Body-fat MEASUREMENTS. Unitless, so unlike the weights beside them they
+    // are plain form fields. Start is the recorded baseline (a correction);
+    // current is an ordinary measurement.
+    startingBodyFatPercentage: z
+      .string()
+      .refine((v) => v === "" || (Number(v) >= 3 && Number(v) <= 60), {
+        message: "Body fat must be between 3% and 60%",
+      }),
+    currentBodyFatPercentage: z
+      .string()
+      .refine((v) => v === "" || (Number(v) >= 3 && Number(v) <= 60), {
+        message: "Body fat must be between 3% and 60%",
+      }),
     // Goal fields. Goal WEIGHT is not here — it is unit-bearing, so
     // `useCanonicalInput` owns it and its untouched-field guard, exactly as
     // height is kept out for the same reason.
@@ -81,6 +95,14 @@ function toDefaults(client: Client, goal: ClientGoal | null): ProfileFormValues 
     // Sedentary is the default everywhere — the column default and the
     // calculator's fallback for NULL both agree, so there is no "not set".
     workActivityLevel: client.workActivityLevel ?? "sedentary",
+    startingBodyFatPercentage:
+      client.startingBodyFatPercentage != null
+        ? String(client.startingBodyFatPercentage)
+        : "",
+    currentBodyFatPercentage:
+      client.currentBodyFatPercentage != null
+        ? String(client.currentBodyFatPercentage)
+        : "",
     goalBodyFatPercentage:
       goal?.goalBodyFatPercentage != null ? String(goal.goalBodyFatPercentage) : "",
     goalDeadline: goal?.goalDeadline ?? "",
@@ -113,6 +135,9 @@ export function useClientProfileEdit(
   const [isSaving, setIsSaving] = useState(false);
   const [customTdee, setCustomTdee] = useState("");
   const [isCustomTdee, setIsCustomTdee] = useState(false);
+  // A START value re-bases every progress figure and overwrites a recorded
+  // fact nothing else can recover, so it is confirmed before it is written.
+  const [confirmStartOpen, setConfirmStartOpen] = useState(false);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
@@ -126,21 +151,39 @@ export function useClientProfileEdit(
   // "220.5" and re-parses to 100.017, so a form that re-parsed whatever sat in
   // the box would drift the stored goal on every save (CONVENTIONS §20).
   const goalWeight = useCanonicalInput(preference, goal?.goalWeight, "weight");
+  // The two weight MEASUREMENTS, same treatment as the goal weight: collected
+  // in the coach's unit, guarded on the seeded string so a focus-through is an
+  // exact no-op (CONVENTIONS §20).
+  const startWeight = useCanonicalInput(preference, client.startingWeight, "weight");
+  const currentWeight = useCanonicalInput(preference, client.currentWeight, "weight");
 
   // Re-seed whenever editing opens, so a cancelled edit never leaks into the
   // next one and a background revalidation cannot overwrite a live edit.
   const { reset } = form;
   const resetHeight = height.reset;
   const resetGoalWeight = goalWeight.reset;
+  const resetStartWeight = startWeight.reset;
+  const resetCurrentWeight = currentWeight.reset;
   useEffect(() => {
     if (isEditing) {
       reset(toDefaults(client, goal));
       resetHeight(client.height);
       resetGoalWeight(goal?.goalWeight);
+      resetStartWeight(client.startingWeight);
+      resetCurrentWeight(client.currentWeight);
       setIsCustomTdee(client.tdeeManualOverride === true);
       setCustomTdee(client.tdee != null ? String(Math.round(client.tdee)) : "");
     }
-  }, [isEditing, client, goal, reset, resetHeight, resetGoalWeight]);
+  }, [
+    isEditing,
+    client,
+    goal,
+    reset,
+    resetHeight,
+    resetGoalWeight,
+    resetStartWeight,
+    resetCurrentWeight,
+  ]);
 
   // The live preview runs the SAME pure calculator the server writes with, so
   // what the coach is shown while typing cannot disagree with what is stored.
@@ -168,7 +211,43 @@ export function useClientProfileEdit(
   const showBirthDateNudge =
     watched.dateOfBirth === "" && autoEnergyReady?.ageSource === "assumed_default";
 
-  const save = form.handleSubmit(async (values) => {
+  /**
+   * Emptying a stored measurement is refused, never silently ignored. None of
+   * the four columns is nullable through `updateClientSchema` (same as goal
+   * weight), so there is no payload that clears one — and a box the coach
+   * cleared that quietly kept its old value is worse than an error.
+   */
+  const clearedMeasurement = ((): string | null => {
+    if (!startWeight.isPristine && startWeight.commit == null) return "start weight";
+    if (!currentWeight.isPristine && currentWeight.commit == null) return "current weight";
+    const seeded = toDefaults(client, goal);
+    if (seeded.startingBodyFatPercentage !== "" && watched.startingBodyFatPercentage === "") {
+      return "start body fat";
+    }
+    if (seeded.currentBodyFatPercentage !== "" && watched.currentBodyFatPercentage === "") {
+      return "current body fat";
+    }
+    return null;
+  })();
+
+  /**
+   * Which START values this save would change, as phrases for the confirm.
+   * Empty means no confirm is needed — a coach editing a phone number never
+   * sees the dialog.
+   */
+  const startEdits: string[] = [];
+  if (!startWeight.isPristine && startWeight.commit != null) {
+    const shown = formatWeight(startWeight.commit, preference);
+    startEdits.push(`start weight to ${shown.value.toFixed(1)} ${shown.unit}`);
+  }
+  if (
+    watched.startingBodyFatPercentage !== "" &&
+    watched.startingBodyFatPercentage !== toDefaults(client, goal).startingBodyFatPercentage
+  ) {
+    startEdits.push(`start body fat to ${watched.startingBodyFatPercentage}%`);
+  }
+
+  const submit = async (values: ProfileFormValues) => {
     if (height.hasParseError) {
       toast({
         title: "Save failed",
@@ -198,6 +277,14 @@ export function useClientProfileEdit(
       });
       return;
     }
+    if (clearedMeasurement) {
+      toast({
+        title: "Save failed",
+        description: `A ${clearedMeasurement} can't be removed — change it instead.`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsSaving(true);
     // Which writes have already committed when something later throws. These
@@ -216,6 +303,20 @@ export function useClientProfileEdit(
       if (height.commitCm != null) profile.height = height.commitCm;
       if (values.startDate !== "") profile.startDate = values.startDate;
       if (values.dateOfBirth !== "") profile.dateOfBirth = values.dateOfBirth;
+
+      // The four measurements, each sent only when it actually changed — the
+      // same seeded-string guard as height and goal weight, for the same
+      // reason: display rounding is lossy, so re-sending an untouched box
+      // would drift the stored value on every save.
+      const seededNow = toDefaults(client, goal);
+      if (!startWeight.isPristine) profile.startingWeight = startWeight.commit;
+      if (!currentWeight.isPristine) profile.currentWeight = currentWeight.commit;
+      if (values.startingBodyFatPercentage !== seededNow.startingBodyFatPercentage) {
+        profile.startingBodyFatPercentage = Number(values.startingBodyFatPercentage);
+      }
+      if (values.currentBodyFatPercentage !== seededNow.currentBodyFatPercentage) {
+        profile.currentBodyFatPercentage = Number(values.currentBodyFatPercentage);
+      }
 
       // Recomputes BMR/TDEE server-side because it carries energy inputs. The
       // override below is applied after, so a coach setting both in one save
@@ -294,17 +395,50 @@ export function useClientProfileEdit(
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const save = form.handleSubmit(submit);
+
+  /**
+   * The rail's commit. Validates first, so a coach with an invalid field gets
+   * the field error rather than a confirm followed by one; only then does a
+   * START edit raise the dialog. `confirmStartEdit` re-enters through `save`
+   * because the dialog is modal — nothing can have changed in between.
+   */
+  const requestSave = form.handleSubmit(async (values) => {
+    if (startEdits.length > 0) {
+      setConfirmStartOpen(true);
+      return;
+    }
+    await submit(values);
   });
 
   return {
+    // The confirm's sentence names the client, and the dialog mounts beside the
+    // commit action rather than in a host — so no future host can mount the
+    // editor and forget the guard on its most consequential field.
+    clientName: client.name,
     isEditing,
     isSaving,
     start: () => setIsEditing(true),
-    cancel: () => setIsEditing(false),
+    cancel: () => {
+      setIsEditing(false);
+      setConfirmStartOpen(false);
+    },
     save,
+    requestSave,
+    startEdits,
+    confirmStartOpen,
+    setConfirmStartOpen,
+    confirmStartEdit: () => {
+      setConfirmStartOpen(false);
+      void save();
+    },
     form,
     height,
     goalWeight,
+    startWeight,
+    currentWeight,
     autoEnergy: autoEnergyReady,
     customTdee,
     setCustomTdee,

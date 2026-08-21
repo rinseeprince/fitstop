@@ -440,6 +440,8 @@ Reference: `components/clients/training/calendar/delete-event-dialog.tsx`. Use t
 
 - Header row: danger thumb `grid h-9 w-9 shrink-0 place-items-center rounded-[6px] bg-[rgba(192,96,96,0.08)]` + `Trash2 h-4 w-4 text-[#c06060]` (strokeWidth 1.5) beside the `DialogTitle`.
 - Body: ONE plain-sans sentence (`text-sm text-[#5a7d82]`) naming exactly what happens ("Removes the upcoming scheduled sessions from the week of Jul 14."). Scope the verb precisely ("upcoming") rather than appending obvious reassurances — "Completed and past sessions are kept" is retired as filler (owner call, 2026-07-24); spell out what survives only when it is genuinely surprising (e.g. the delete-ALL-plans confirm). No mono. The subject may be `font-semibold text-[#0c1a1e]`.
+**Non-delete variant.** The same recipe covers a confirm that is not a deletion but is still unrecoverable and consequential — the reference is `overview/confirm-start-edit-dialog.tsx`, correcting a client's recorded START weight, which overwrites a fact no later measurement can recover and re-bases every progress figure derived from it. **Change the glyph, nothing else:** `AlertTriangle` in the same danger thumb, since nothing is being removed. Danger palette, danger-outline CTA and the one-sentence body all stay — the register is "you cannot undo this", not "this deletes a row".
+
 - Footer: Cancel (`variant="ghost"`) + danger-outline CTA: `variant="outline"` + `border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]`, `Loader2` spinner while pending. **There is no filled destructive button in this system — never invent one.** CTA label repeats the verb ("Remove session", "Clear week"), never "OK"/"Confirm".
 
 ### Scope / choice dialog (pick-one actions)

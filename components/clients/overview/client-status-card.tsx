@@ -319,21 +319,41 @@ export function ClientStatusCard({
 
       <div className="flex flex-1 flex-col pb-4">
         <div className="grid flex-1 grid-cols-3 items-start gap-3 px-5 pb-3">
-          <MetricCell
-            label="Start weight"
-            value={startWeight?.toFixed(1)}
-            unit={weightUnit}
-            size="lg"
-          />
-          <MetricCell
-            label="Current weight"
-            value={currentWeight?.toFixed(1)}
-            unit={weightUnit}
-            size="lg"
-            sub={weightDelta ? `${weightDelta}${weightUnit}` : undefined}
-            subTone={deltaTone(weightDelta)}
-            showLeftBorder
-          />
+          {edit.isEditing ? (
+            <EditableCell label={`Start weight (${weightUnit})`} showLeftBorder={false}>
+              <InlineDarkInput
+                ariaLabel="Start weight"
+                value={edit.startWeight.value}
+                onChange={edit.startWeight.setValue}
+              />
+            </EditableCell>
+          ) : (
+            <MetricCell
+              label="Start weight"
+              value={startWeight?.toFixed(1)}
+              unit={weightUnit}
+              size="lg"
+            />
+          )}
+          {edit.isEditing ? (
+            <EditableCell label={`Current weight (${weightUnit})`}>
+              <InlineDarkInput
+                ariaLabel="Current weight"
+                value={edit.currentWeight.value}
+                onChange={edit.currentWeight.setValue}
+              />
+            </EditableCell>
+          ) : (
+            <MetricCell
+              label="Current weight"
+              value={currentWeight?.toFixed(1)}
+              unit={weightUnit}
+              size="lg"
+              sub={weightDelta ? `${weightDelta}${weightUnit}` : undefined}
+              subTone={deltaTone(weightDelta)}
+              showLeftBorder
+            />
+          )}
           {edit.isEditing ? (
             <EditableCell label={`Goal weight (${weightUnit})`}>
               <InlineDarkInput
@@ -357,19 +377,39 @@ export function ClientStatusCard({
         <div className={cn("mx-5 border-t", DIVIDER)} />
 
         <div className="grid flex-1 grid-cols-3 items-start gap-3 px-5 py-3">
-          <MetricCell
-            label="Start body fat"
-            value={client.startingBodyFatPercentage?.toFixed(1)}
-            unit="%"
-          />
-          <MetricCell
-            label="Current body fat"
-            value={client.currentBodyFatPercentage?.toFixed(1)}
-            unit="%"
-            sub={bfDelta ? `${bfDelta}%` : undefined}
-            subTone={deltaTone(bfDelta)}
-            showLeftBorder
-          />
+          {edit.isEditing ? (
+            <EditableCell label="Start body fat (%)" showLeftBorder={false}>
+              <InlineDarkInput
+                ariaLabel="Start body fat percentage"
+                value={edit.form.watch("startingBodyFatPercentage")}
+                onChange={(v) => edit.form.setValue("startingBodyFatPercentage", v)}
+              />
+            </EditableCell>
+          ) : (
+            <MetricCell
+              label="Start body fat"
+              value={client.startingBodyFatPercentage?.toFixed(1)}
+              unit="%"
+            />
+          )}
+          {edit.isEditing ? (
+            <EditableCell label="Current body fat (%)">
+              <InlineDarkInput
+                ariaLabel="Current body fat percentage"
+                value={edit.form.watch("currentBodyFatPercentage")}
+                onChange={(v) => edit.form.setValue("currentBodyFatPercentage", v)}
+              />
+            </EditableCell>
+          ) : (
+            <MetricCell
+              label="Current body fat"
+              value={client.currentBodyFatPercentage?.toFixed(1)}
+              unit="%"
+              sub={bfDelta ? `${bfDelta}%` : undefined}
+              subTone={deltaTone(bfDelta)}
+              showLeftBorder
+            />
+          )}
           {edit.isEditing ? (
             <EditableCell label="Goal body fat (%)">
               <InlineDarkInput
