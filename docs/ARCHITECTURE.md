@@ -118,7 +118,7 @@ Immutable event log with source provenance:
 - `source` field tracks origin: `check_in` / `metrics_api` / `intake_sync` / `nutrition_plan` / `coach_entry`
 - `source_id` (nullable UUID) references the originating record
 - Indexed on `(client_id, recorded_at DESC)` for efficient latest-first queries (with a `created_at` tiebreak for same-timestamp coach entries)
-- Fields: `weight`, `weight_unit`, `body_fat_percentage`, `bmr`, `tdee`
+- Fields: `weight` (canonical kg), `body_fat_percentage`, `bmr`, `tdee`
 
 ### client_metric_entries table (migration 132)
 
@@ -146,7 +146,7 @@ Nullable free-text phone (no shape constraint — formats vary too much). Expose
 
 ### Journey blocks (`client_phases`, migration 145)
 
-A **block** is a named, contiguous stretch of a client's calendar carrying a coach's intent — a *label on time*, not a computation. The entire entity: `name`, `[starts_on, ends_on]` (DATE), optional `focus` sentence, optional `target_weight` (canonical kg). **The table keeps the `client_phases` name; routes, types and UI say "block"** — deliberate divergence recorded on the table comment; do not consistency-rename either half. Not the migration-133 roadmaps/phases feature returning: no `phase_id`/`block_id` on any other table (ever), no status column, no rate, no daily-targets grid.
+A **block** is a named, contiguous stretch of a client's calendar carrying a coach's intent — a *label on time*, not a computation. The entire entity: `name`, `[starts_on, ends_on]` (DATE), optional `focus` sentence, optional `target_weight` (canonical kg), and `archived_at` (migration 146). Archiving is a **curation control for both audiences**, not a coach-private view preference: only an ELAPSED block can be archived, an archived block leaves the coach's Journey list (reachable behind "View archive", restorable through `PATCH …/blocks/[blockId]`) and is filtered out of the client's payload server-side. It is a nullable timestamp rather than a status — no date derivation consults it. **The table keeps the `client_phases` name; routes, types and UI say "block"** — deliberate divergence recorded on the table comment; do not consistency-rename either half. Not the migration-133 roadmaps/phases feature returning: no `phase_id`/`block_id` on any other table (ever), no status column, no rate, no daily-targets grid.
 
 - **Everything date-derived at read time, in the CLIENT's timezone.** current/past/future, "week X of Y" and the pace readout are pure derivations (`lib/blocks/block-derivations.ts`) from today vs the range — crossing a boundary is a no-op (no scheduler exists). `weeks` on the wire = `weeksSpanned` (ceil), the same single derivation as `weekOfTotal.total`.
 - **Ends in, starts out** (day-granular since Session 3.6-B — an owner-directed change of the duration unit, not of the mechanism). The PUT sends `{ startsOn, blocks: [{ id?, name, endsOn?, focus?, targetWeightKg? }] }`; `lib/blocks/block-chain.ts` derives every start (the previous end + 1, or the chain anchor), so date pairs never cross the wire and overlaps and gaps stay unexpressible. The service rejects an end before its derived start and caps a block at 52 weeks of days. **Elapsed blocks (`ends_on <` client-today) keep their DATES pinned from storage** (they omit `endsOn` — elapsed history is not an input; a differing one 422s) **while their name/focus/target stay editable** (Session 3.6-C — the pin protects lived-day attribution, not typos in a finished label), and the **symmetric window floor** rejects any edit that would re-label lived days: a stored current block must still contain today; a stored future block may become current but never wholly past; new id-less rows land anywhere (history backfill). Removal is not expressible through the PUT.
@@ -167,7 +167,7 @@ A **block** is a named, contiguous stretch of a client's calendar carrying a coa
 - **A weight change never touches a plan row.** Plans snapshot bmr/tdee at generation; only a regeneration inherits the then-current profile numbers. `createNutritionPlan` touches the `clients` table zero times — it used to write `clients.tdee` from the *plan's* activity level, so the plan and the profile disagreed and the plan won.
 - **`createClient`'s INSERT is the one sanctioned exception**, setting the pair once at row birth through the same pure calculator. The invariant is one writer for *updates*; `services/client-energy-ownership.test.ts` scans for violations and documents that carve-out beside the scan.
 
-Callers that must recompute: `updateClient` (covering both the coach PATCH and the check-in metrics sync), the metrics PUT, `calculate-bmr`, the intake metrics sync, and current-dated coach metric entries.
+Callers that must recompute: `updateClient` (covering both the coach PATCH and the check-in metrics sync), the metrics PUT, the intake metrics sync, and current-dated coach metric entries.
 
 ### Dual-write pattern
 
