@@ -12,9 +12,9 @@ import {
   MONO_META_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens"
 import { isOnboarding, type RosterRow as RosterRowData } from "@/lib/roster-views"
+import { calculateNextExpectedCheckIn } from "@/lib/check-in-schedule"
 import {
   CHIP_BASE_CLASS,
-  LATE_CHIP_CLASS,
   ROSTER_STATUS_CHIP,
   ROSTER_STATUS_LABEL,
 } from "./roster-status"
@@ -22,6 +22,8 @@ import {
 /** A row's ONE action — Review, Reactivate. Both stay visible in every view:
  *  absorbing the old onboarding hero must not bury the button that was its
  *  whole point. `0.08` is the secondary-border rung. */
+const DAY_MS = 24 * 60 * 60 * 1000
+
 const ROW_BUTTON_CLASS =
   "inline-flex items-center gap-1 rounded-[6px] border border-[rgba(13,148,136,0.08)] px-2.5 py-1 text-xs font-medium text-[#0d9488] transition-colors hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0a5c55] disabled:opacity-50"
 
@@ -33,6 +35,38 @@ function getInitials(name: string): string {
     .join("")
     .toUpperCase()
     .slice(0, 2)
+}
+
+/** "24 Aug", or "24 Aug 2025" once the year stops being obvious. */
+function formatShortDate(date: Date): string {
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(date.getFullYear() === new Date().getFullYear()
+      ? {}
+      : { year: "numeric" }),
+  })
+}
+
+/**
+ * How long ago the last check-in was. Words where it is a word ("Today",
+ * "Never") and mono where the numeral IS the information — the split the
+ * mono=numbers rule asks for when the branches are already distinguishable.
+ */
+function formatLastCheckIn(iso: string | undefined): {
+  text: string
+  isNumeric: boolean
+} {
+  if (!iso) return { text: "Never", isNumeric: false }
+  const then = new Date(iso)
+  if (Number.isNaN(then.getTime())) return { text: "Never", isNumeric: false }
+
+  const days = Math.floor((Date.now() - then.getTime()) / DAY_MS)
+  if (days <= 0) return { text: "Today", isNumeric: false }
+  if (days === 1) return { text: "Yesterday", isNumeric: false }
+  if (days < 30) return { text: `${days} days ago`, isNumeric: true }
+  const months = Math.floor(days / 30)
+  return { text: `${months} ${months === 1 ? "month" : "months"} ago`, isNumeric: true }
 }
 
 /** "7 Aug", or "7 Aug 2025" once the year stops being obvious. */
@@ -65,6 +99,11 @@ export function RosterTableRow({
   const isInactive = status === "inactive"
   const onboarding = isOnboarding(status)
   const href = `/clients/${client.id}`
+
+  const lastCheckIn = formatLastCheckIn(client.lastCheckInDate)
+  // The same pure function /api/clients/overdue runs server-side, so the "due"
+  // date here and the "Nd late" it sends back can never disagree.
+  const dueOn = onboarding ? null : calculateNextExpectedCheckIn(client)
 
   return (
     <TableRow
@@ -128,18 +167,42 @@ export function RosterTableRow({
       </TableCell>
 
       <TableCell>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className={cn(CHIP_BASE_CLASS, ROSTER_STATUS_CHIP[status])}>
-            {ROSTER_STATUS_LABEL[status]}
-          </span>
-          {/* A row in the overdue set always shows why it is there, onboarding
-              or not — the queue's count and its contents have to agree. */}
-          {daysOverdue > 0 && (
-            <span className={cn(CHIP_BASE_CLASS, LATE_CHIP_CLASS, MONO)}>
-              {daysOverdue}d late
+        <span className={cn(CHIP_BASE_CLASS, ROSTER_STATUS_CHIP[status])}>
+          {ROSTER_STATUS_LABEL[status]}
+        </span>
+      </TableCell>
+
+      <TableCell>
+        {onboarding ? (
+          // Nothing is expected of a client who has not started yet.
+          <span className="text-[#c2d0cc]">—</span>
+        ) : (
+          <>
+            <span
+              className={cn(
+                "block text-[12.5px]",
+                lastCheckIn.isNumeric ? MONO : undefined,
+                lastCheckIn.isNumeric ? "text-[#5a7d82]" : "text-[#93b0b4]",
+              )}
+            >
+              {lastCheckIn.text}
             </span>
-          )}
-        </div>
+            {/* A row in the overdue set always shows why it is there — the
+                queue's count and its contents have to agree. Everyone else
+                gets the forward-looking half instead. */}
+            {daysOverdue > 0 ? (
+              <span className={cn(MONO, "mt-0.5 block text-[10px] text-[#d97706]")}>
+                {daysOverdue}d late
+              </span>
+            ) : (
+              dueOn && (
+                <span className={cn("mt-0.5 block text-[10px]", MONO_META_CLASS)}>
+                  due {formatShortDate(dueOn)}
+                </span>
+              )
+            )}
+          </>
+        )}
       </TableCell>
 
       <TableCell>

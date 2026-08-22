@@ -193,13 +193,14 @@ export function RosterTable({
           <TableRow className="hover:bg-transparent">
             <TableHead className="pl-5">Client</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Last check-in</TableHead>
             <TableHead className="w-[150px]" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {pageRows.length === 0 ? (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={3} className="py-12 text-center">
+              <TableCell colSpan={4} className="py-12 text-center">
                 <Users
                   className="mx-auto mb-2 h-8 w-8 text-[#93b0b4] opacity-50"
                   strokeWidth={1.5}
