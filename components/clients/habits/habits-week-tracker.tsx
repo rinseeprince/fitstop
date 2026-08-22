@@ -75,7 +75,10 @@ export function HabitsWeekTracker({
                 <TableHead
                   key={date}
                   className={cn(
-                    "text-center min-w-[48px] h-10 px-1",
+                    // normal-case/tracking-normal: TableHead now carries
+                    // LABEL_CLASS, and these headers hold a mixed-case day
+                    // abbreviation ("Mon"), not a label.
+                    "text-center min-w-[48px] h-10 px-1 normal-case tracking-normal",
                     isToday && "bg-[rgba(13,148,136,0.05)] rounded-t-[4px]"
                   )}
                 >

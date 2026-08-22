@@ -14,7 +14,6 @@
 export const LABEL_WHITELIST: readonly string[] = [
   // -- Infrastructure ---------------------------------------------------------
   "app/layout.tsx", // wires JetBrains_Mono to the --font-mono-display variable
-  "components/ui/table.tsx", // un-migrated shadcn TableHead (sans-compliant); migrate, then remove
 
   // -- Client-facing web harness (throwaway; React Native is the real client) --
   "components/client/",

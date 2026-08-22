@@ -48,7 +48,7 @@ export function HistoryTable<TRow extends Record<string, unknown>>({
               {col.chartType && onColumnClick ? (
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                  className="inline-flex cursor-pointer items-center gap-1 transition-colors hover:text-[#0d9488]"
                   onClick={() => onColumnClick(col.key)}
                 >
                   {col.label}
@@ -76,7 +76,7 @@ export function HistoryTable<TRow extends Record<string, unknown>>({
           <TableRow>
             <TableCell
               colSpan={columns.length}
-              className="h-24 text-center text-muted-foreground"
+              className="h-24 text-center text-[13px] text-[#93b0b4]"
             >
               {emptyMessage}
             </TableCell>
@@ -87,7 +87,7 @@ export function HistoryTable<TRow extends Record<string, unknown>>({
             return (
               <TableRow
                 key={rowIdx}
-                className={clickable ? "cursor-pointer hover:bg-muted/50" : undefined}
+                className={clickable ? "cursor-pointer" : undefined}
                 onClick={clickable ? () => onRowClick(row) : undefined}
               >
                 {columns.map((col) => (

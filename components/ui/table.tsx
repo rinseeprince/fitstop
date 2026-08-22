@@ -3,6 +3,14 @@
 import * as React from 'react'
 
 import { cn } from '@/lib/utils'
+import { LABEL_CLASS } from '@/components/clients/training/program-builder/builder-tokens'
+
+// Teal-Summit table primitives. Rows and headings used to inherit the shadcn
+// defaults — a `border-border` divider heavy enough to read as a rule, and a
+// 12px `tracking-wider` heading in neutral `muted-foreground` — while the
+// habits tracker overrode both by hand. Every table in the app now gets the
+// habits treatment from here: a teal hairline between rows, and the shared
+// uppercase label token for column headings.
 
 function Table({ className, ...props }: React.ComponentProps<'table'>) {
   return (
@@ -23,7 +31,10 @@ function TableHeader({ className, ...props }: React.ComponentProps<'thead'>) {
   return (
     <thead
       data-slot="table-header"
-      className={cn('[&_tr]:border-b', className)}
+      className={cn(
+        '[&_tr]:border-b [&_tr]:border-[rgba(13,148,136,0.08)]',
+        className,
+      )}
       {...props}
     />
   )
@@ -44,7 +55,7 @@ function TableFooter({ className, ...props }: React.ComponentProps<'tfoot'>) {
     <tfoot
       data-slot="table-footer"
       className={cn(
-        'bg-muted/30 border-t font-medium [&>tr]:last:border-b-0',
+        'border-t border-[rgba(13,148,136,0.06)] font-medium [&>tr]:last:border-b-0',
         className,
       )}
       {...props}
@@ -57,7 +68,9 @@ function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
     <tr
       data-slot="table-row"
       className={cn(
-        'hover:bg-muted/30 data-[state=selected]:bg-muted border-b transition-colors',
+        // 0.06 is the inner-hairline rung: separation without a rule.
+        'border-b border-[rgba(13,148,136,0.06)] transition-colors',
+        'hover:bg-[rgba(13,148,136,0.03)] data-[state=selected]:bg-[rgba(13,148,136,0.08)]',
         className,
       )}
       {...props}
@@ -70,7 +83,8 @@ function TableHead({ className, ...props }: React.ComponentProps<'th'>) {
     <th
       data-slot="table-head"
       className={cn(
-        'text-muted-foreground h-10 px-2 text-left align-middle text-xs uppercase tracking-wider font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
+        LABEL_CLASS,
+        'h-10 px-2 text-left align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
         className,
       )}
       {...props}
@@ -98,7 +112,7 @@ function TableCaption({
   return (
     <caption
       data-slot="table-caption"
-      className={cn('text-muted-foreground mt-4 text-sm', className)}
+      className={cn('mt-4 text-sm text-[#93b0b4]', className)}
       {...props}
     />
   )
