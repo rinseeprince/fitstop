@@ -6,6 +6,11 @@
 // Type-only: erased at compile, so this file stays a runtime leaf.
 import type { ActivityLevel } from "@/types/check-in";
 
+// Days past the expected check-in date at which "overdue" becomes
+// "critically overdue". Read by getOverdueSeverity and by the Clients roster's
+// stat band, which used to restate the boundary as its own literal.
+export const CRITICALLY_OVERDUE_DAYS = 4;
+
 // Timing constants
 export const RATE_LIMIT_RETRY_DELAY_MS = 1500;
 export const DEBOUNCE_DELAY_MS = 300;

@@ -42,6 +42,7 @@ export function useRoster() {
   const {
     clients: overdueClients,
     isLoading: overdueLoading,
+    isError: overdueError,
     mutate: mutateOverdue,
   } = useOverdueClients()
 
@@ -77,7 +78,10 @@ export function useRoster() {
     rows,
     counts,
     isLoading: isLoading || overdueLoading,
-    isError: Boolean(error),
+    // BOTH fetches, for the same reason isLoading folds both in: a failed
+    // overdue fetch alone leaves every row at daysOverdue 0, and ?view=overdue
+    // would render "Every client is up to date" as a settled all-clear.
+    isError: Boolean(error) || Boolean(overdueError),
     refresh,
   }
 }

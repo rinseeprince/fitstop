@@ -16,6 +16,7 @@ import {
   calculateCheckInPeriod,
   getTodayInTimezone,
 } from "@/lib/date-helpers";
+import { CRITICALLY_OVERDUE_DAYS } from "@/lib/constants";
 import type {
   Client,
   CheckInFrequency,
@@ -147,7 +148,7 @@ export function getDaysUntilOrPastDue(client: Client): number {
 export function getOverdueSeverity(daysOverdue: number): OverdueSeverity {
   if (daysOverdue < -3) return "upcoming";
   if (daysOverdue <= 0) return "due_soon";
-  if (daysOverdue <= 3) return "overdue";
+  if (daysOverdue < CRITICALLY_OVERDUE_DAYS) return "overdue";
   return "critically_overdue";
 }
 

@@ -8,6 +8,9 @@ export type RowAction = {
   icon: ComponentType<{ className?: string; strokeWidth?: number }>
   onClick: () => void
   danger?: boolean
+  /** In-flight guard for an action that fires a request — without it, N clicks
+   *  send N requests. */
+  disabled?: boolean
 }
 
 // Hover-revealed action cluster for table rows. Rows must carry the
@@ -27,9 +30,10 @@ export function RowActions({ actions }: { actions: RowAction[] }) {
           type="button"
           title={action.label}
           aria-label={action.label}
+          disabled={action.disabled}
           onClick={(e) => handle(e, action)}
           className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-[6px] text-[#93b0b4] transition-colors duration-150",
+            "flex h-7 w-7 items-center justify-center rounded-[6px] text-[#93b0b4] transition-colors duration-150 disabled:opacity-50",
             action.danger
               ? "hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]"
               : "hover:bg-[#f0f5f4] hover:text-[#5a7d82]",

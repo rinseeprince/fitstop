@@ -116,6 +116,24 @@ export function isOnboarding(status: RosterStatus): boolean {
   )
 }
 
+/**
+ * Whether a client is on a weekly check-in rhythm, and so belongs in the
+ * denominator of a "this week" measure.
+ *
+ * Deliberately NOT the filter `getOverdueClients` applies (`active` plus any
+ * cadence but "none"). A monthly client is genuinely expected once a month, so
+ * counting them every week reports a client who is perfectly on schedule as a
+ * shortfall three weeks in four — inventing the very gap the measure exists to
+ * find. `status !== "inactive"` IS `client.active`, so onboarding clients stay
+ * counted: they can be overdue, and the roster shows them as such.
+ */
+export function isWeeklyCheckInClient(row: RosterRow): boolean {
+  const { checkInFrequency, checkInFrequencyDays } = row.client
+  if (row.status === "inactive") return false
+  if (checkInFrequency === "weekly") return true
+  return checkInFrequency === "custom" && checkInFrequencyDays === 7
+}
+
 /** Whether a row belongs in a view. No `default` branch on purpose: adding a
  *  view without handling it here fails the build (TS2366 under `strict`). */
 export function matchesRosterView(row: RosterRow, view: RosterView): boolean {
