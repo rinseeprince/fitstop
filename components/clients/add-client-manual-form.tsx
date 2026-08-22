@@ -166,7 +166,7 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
           </FormItem>
         )}
         {height.hasParseError && (
-          <p className="text-sm text-destructive">Enter a height above 0</p>
+          <p className="text-xs text-[#c06060]">Enter a height above 0</p>
         )}
 
         <FormField
@@ -220,7 +220,7 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
               with no baseline for any progress figure and no BMR. The intake
               path enforces the same thing in its own questionnaire. */}
           <FormItem>
-            <FormLabel>Current weight ({weightUnit}) *</FormLabel>
+            <FormLabel>Current weight ({weightUnit})</FormLabel>
             <FormControl>
               <Input
                 inputMode="decimal"
@@ -230,18 +230,14 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
               />
             </FormControl>
             {currentWeight.hasParseError ? (
-              <p className="text-sm text-destructive">Enter a weight above 0</p>
+              <p className="text-xs text-[#c06060]">Enter a weight above 0</p>
             ) : (
               form.formState.errors.currentWeight && (
-                <p className="text-sm text-destructive">
+                <p className="text-xs text-[#c06060]">
                   {form.formState.errors.currentWeight.message}
                 </p>
               )
             )}
-            <p className="text-xs text-muted-foreground">
-              Becomes their starting weight, logged on their start date when you
-              activate them.
-            </p>
           </FormItem>
 
           <FormField
@@ -282,7 +278,7 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
               />
             </FormControl>
             {goalWeight.hasParseError && (
-              <p className="text-sm text-destructive">Enter a weight above 0</p>
+              <p className="text-xs text-[#c06060]">Enter a weight above 0</p>
             )}
           </FormItem>
 
