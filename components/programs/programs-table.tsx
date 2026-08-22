@@ -11,13 +11,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useToast } from "@/hooks/use-toast"
@@ -26,6 +19,7 @@ import { MONO_CELL_CLASS } from "@/components/clients/training/program-builder/b
 import { useSavedPlansPage } from "@/hooks/use-saved-plans-page"
 import type { SavedPlanListItem } from "@/types/training"
 import { LibrarySearchInput } from "./shared/library-search-input"
+import { LibrarySortSelect } from "./shared/library-sort-select"
 import { SegmentedControl } from "./shared/segmented-control"
 import { SectionLabel } from "./shared/section-label"
 import { LibraryTableShell, LIBRARY_PAGE_SIZE } from "./shared/library-table-shell"
@@ -175,22 +169,19 @@ export function ProgramsTable() {
           }}
         />
         <div className="flex-1" />
-        <Select
+        <LibrarySortSelect
+          options={[
+            { value: "updated", label: "Recently updated" },
+            { value: "name", label: "Name A–Z" },
+            { value: "longest", label: "Longest first" },
+          ]}
           value={sort}
-          onValueChange={(v) => {
+          ariaLabel="Sort programs"
+          onChange={(v) => {
             setSort(v as SortKey)
             setPage(0)
           }}
-        >
-          <SelectTrigger className="h-9 w-[180px] text-[13px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="updated">Recently updated</SelectItem>
-            <SelectItem value="name">Name A–Z</SelectItem>
-            <SelectItem value="longest">Longest first</SelectItem>
-          </SelectContent>
-        </Select>
+        />
       </div>
 
       <SectionLabel

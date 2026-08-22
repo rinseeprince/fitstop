@@ -4,13 +4,6 @@ import { useEffect, useMemo, useState } from "react"
 import { UserPlus, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   TableBody,
   TableCell,
   TableHead,
@@ -20,6 +13,7 @@ import {
 import { useRosterActions } from "@/hooks/use-roster-actions"
 import { AddClientDialog } from "@/components/add-client-dialog"
 import { LibrarySearchInput } from "@/components/programs/shared/library-search-input"
+import { LibrarySortSelect } from "@/components/programs/shared/library-sort-select"
 import { SectionLabel } from "@/components/programs/shared/section-label"
 import {
   LIBRARY_PAGE_SIZE,
@@ -156,24 +150,15 @@ export function RosterTable({
           placeholder="Search clients"
         />
         <div className="flex-1" />
-        <Select
+        <LibrarySortSelect
+          options={[...ROSTER_SORTS]}
           value={effectiveSort}
-          onValueChange={(value) => {
+          ariaLabel="Sort clients"
+          onChange={(value) => {
             setSort({ view, sort: resolveSort(value, effectiveSort) })
             setPage(0)
           }}
-        >
-          <SelectTrigger className="h-9 w-[180px] text-[13px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ROSTER_SORTS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
 
       {/* "N clients", not "N shown": the shell's footer 25 rows below already
