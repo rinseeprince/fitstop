@@ -82,7 +82,6 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
                 <Input
                   placeholder="John Doe"
                   {...field}
-                  className="rounded-xs"
                 />
               </FormControl>
               <FormMessage />
@@ -101,7 +100,6 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
                   type="email"
                   placeholder="john@example.com"
                   {...field}
-                  className="rounded-xs"
                 />
               </FormControl>
               <FormMessage />
@@ -120,7 +118,7 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
                   placeholder="Add any notes about this client..."
                   rows={3}
                   {...field}
-                  className="rounded-xs resize-none"
+                  className="resize-none"
                 />
               </FormControl>
               <FormMessage />
@@ -139,7 +137,6 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
                   placeholder="5"
                   value={height.fields.feet}
                   onChange={(e) => height.setFeet(e.target.value)}
-                  className="rounded-xs"
                 />
               </FormControl>
             </FormItem>
@@ -151,7 +148,6 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
                   placeholder="11"
                   value={height.fields.inches}
                   onChange={(e) => height.setInches(e.target.value)}
-                  className="rounded-xs"
                 />
               </FormControl>
             </FormItem>
@@ -165,7 +161,6 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
                 placeholder="180"
                 value={height.fields.cm}
                 onChange={(e) => height.setCm(e.target.value)}
-                className="rounded-xs"
               />
             </FormControl>
           </FormItem>
@@ -185,7 +180,7 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
                 defaultValue={field.value}
               >
                 <FormControl>
-                  <SelectTrigger className="rounded-xs">
+                  <SelectTrigger>
                     <SelectValue placeholder="Select gender" />
                   </SelectTrigger>
                 </FormControl>
@@ -205,13 +200,12 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
           name="dateOfBirth"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Date of Birth</FormLabel>
+              <FormLabel>Date of birth</FormLabel>
               <FormControl>
                 <Input
                   type="date"
                   {...field}
                   value={field.value ?? ""}
-                  className="rounded-xs"
                 />
               </FormControl>
               <FormMessage />
@@ -226,14 +220,13 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
               with no baseline for any progress figure and no BMR. The intake
               path enforces the same thing in its own questionnaire. */}
           <FormItem>
-            <FormLabel>Current Weight ({weightUnit}) *</FormLabel>
+            <FormLabel>Current weight ({weightUnit}) *</FormLabel>
             <FormControl>
               <Input
                 inputMode="decimal"
                 placeholder={preference === "imperial" ? "180" : "82"}
                 value={currentWeight.value}
                 onChange={(e) => currentWeight.setValue(e.target.value)}
-                className="rounded-xs"
               />
             </FormControl>
             {currentWeight.hasParseError ? (
@@ -256,7 +249,7 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
             name="currentBodyFatPercentage"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Current Body Fat %</FormLabel>
+                <FormLabel>Current body fat %</FormLabel>
                 <FormControl>
                   <Input
                     type="number"
@@ -268,7 +261,6 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
                       const value = e.target.value;
                       field.onChange(value === "" ? undefined : parseFloat(value));
                     }}
-                    className="rounded-xs"
                   />
                 </FormControl>
                 <FormMessage />
@@ -280,14 +272,13 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
         {/* Goal Metrics */}
         <div className="grid gap-4 sm:grid-cols-2">
           <FormItem>
-            <FormLabel>Goal Weight ({weightUnit})</FormLabel>
+            <FormLabel>Goal weight ({weightUnit})</FormLabel>
             <FormControl>
               <Input
                 inputMode="decimal"
                 placeholder={preference === "imperial" ? "150" : "68"}
                 value={goalWeight.value}
                 onChange={(e) => goalWeight.setValue(e.target.value)}
-                className="rounded-xs"
               />
             </FormControl>
             {goalWeight.hasParseError && (
@@ -300,7 +291,7 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
             name="goalBodyFatPercentage"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Goal Body Fat %</FormLabel>
+                <FormLabel>Goal body fat %</FormLabel>
                 <FormControl>
                   <Input
                     type="number"
@@ -312,7 +303,6 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
                       const value = e.target.value;
                       field.onChange(value === "" ? undefined : parseFloat(value));
                     }}
-                    className="rounded-xs"
                   />
                 </FormControl>
                 <FormMessage />

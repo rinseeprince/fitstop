@@ -15,6 +15,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { createClientSchema, type CreateClientInput } from "@/lib/validations/client";
+import { cn } from "@/lib/utils";
+import {
+  FOCUS_RING,
+  THUMB_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { AddClientIntakeForm } from "@/components/clients/add-client-intake-form";
 import { AddClientManualForm } from "@/components/clients/add-client-manual-form";
 
@@ -24,6 +29,21 @@ type AddClientDialogProps = {
 };
 
 type SetupMode = "intake" | "manual" | null;
+
+const SETUP_MODES = [
+  {
+    value: "intake" as const,
+    icon: ClipboardList,
+    title: "Send intake questionnaire",
+    description: "The client fills in their goals, training, nutrition and medical history",
+  },
+  {
+    value: "manual" as const,
+    icon: PenLine,
+    title: "Set up manually",
+    description: "You enter every client detail yourself",
+  },
+];
 
 export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps) => {
   const [open, setOpen] = useState(false);
@@ -101,13 +121,13 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
             className="h-9 w-9 rounded-lg transition-all hover:scale-110"
           >
             <UserPlus className="h-4 w-4" />
-            <span className="sr-only">Add New Client</span>
+            <span className="sr-only">Add new client</span>
           </Button>
         )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add New Client</DialogTitle>
+          <DialogTitle>Add new client</DialogTitle>
           <DialogDescription>
             {setupMode === null
               ? "Choose how you want to set up this client."
@@ -119,37 +139,32 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
 
         {/* Setup mode selection */}
         {setupMode === null && (
-          <div className="grid gap-3">
-            <button
-              type="button"
-              onClick={() => setSetupMode("intake")}
-              className="flex items-start gap-3 p-4 rounded-lg border border-border hover:border-primary/30 transition-colors text-left"
-            >
-              <div className="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <ClipboardList className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">Send intake questionnaire</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Client fills out goals, training, nutrition, and medical history
-                </p>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSetupMode("manual")}
-              className="flex items-start gap-3 p-4 rounded-lg border border-border hover:border-primary/30 transition-colors text-left"
-            >
-              <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
-                <PenLine className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">Set up manually</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Enter all client details yourself
-                </p>
-              </div>
-            </button>
+          // The choice-dialog recipe (docs/newdesignsystem.md → Overlays):
+          // picking an option IS the confirm, so there is no footer CTA.
+          <div className="grid gap-2">
+            {SETUP_MODES.map((mode) => (
+              <button
+                key={mode.value}
+                type="button"
+                onClick={() => setSetupMode(mode.value)}
+                className={cn(
+                  "flex w-full items-start gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3 text-left transition-colors hover:bg-[rgba(13,148,136,0.03)]",
+                  FOCUS_RING,
+                )}
+              >
+                <span className={cn(THUMB_CLASS, "mt-0.5 h-8 w-8")}>
+                  <mode.icon className="h-4 w-4" strokeWidth={1.5} />
+                </span>
+                <span>
+                  <span className="block text-sm font-medium text-[#0c1a1e]">
+                    {mode.title}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] text-[#93b0b4]">
+                    {mode.description}
+                  </span>
+                </span>
+              </button>
+            ))}
           </div>
         )}
 

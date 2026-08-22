@@ -31,7 +31,7 @@ export function AddClientIntakeForm({ form, onSubmit, onBack }: AddClientIntakeF
             <FormItem>
               <FormLabel>Name *</FormLabel>
               <FormControl>
-                <Input placeholder="John Doe" {...field} className="rounded-xs" />
+                <Input placeholder="John Doe" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -45,7 +45,7 @@ export function AddClientIntakeForm({ form, onSubmit, onBack }: AddClientIntakeF
             <FormItem>
               <FormLabel>Email *</FormLabel>
               <FormControl>
-                <Input type="email" placeholder="john@example.com" {...field} className="rounded-xs" />
+                <Input type="email" placeholder="john@example.com" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
