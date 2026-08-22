@@ -53,10 +53,7 @@ interface ClientActivationDialogProps {
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
 
 const FIELD_LABEL = "text-[11px] text-[#5a7d82]"
-const FIELD_INPUT = cn(
-  "rounded-[6px] border-[rgba(13,148,136,0.08)] bg-white text-[13px]",
-  FOCUS_RING
-)
+const FIELD_INPUT = "bg-white"
 
 function getDefaultMessage(name: string): string {
   // "Hey there" rather than the "Hey !" the old inline split produced for a

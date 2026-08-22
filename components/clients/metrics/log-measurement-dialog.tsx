@@ -56,10 +56,7 @@ type LogMeasurementDialogProps = {
 // same trigger/item conventions, minus its toolbar-scoped w-[220px] (dialog
 // fields run full width via the base SelectTrigger).
 const TRIGGER_CLASS =
-  "bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 transition-all hover:border-[rgba(13,148,136,0.25)] [&>svg]:text-[#93b0b4] [&>svg]:hover:text-[#0d9488] [&>svg]:transition-colors";
-
-const ITEM_CLASS =
-  "rounded-[6px] cursor-pointer text-[13px] text-[#0c1a1e] focus:bg-[rgba(13,148,136,0.05)]";
+  "font-medium [&>svg]:hover:text-[#0d9488]";
 
 /** "7/10" and "18%" attach; word units ("kg", "in") get a space. */
 function proseValue(value: number, unit: string): string {
@@ -193,7 +190,7 @@ export function LogMeasurementDialog({
                     Physique
                   </SelectLabel>
                   {bodyMetrics.map((m) => (
-                    <SelectItem key={m.id} value={m.id} className={ITEM_CLASS}>
+                    <SelectItem key={m.id} value={m.id}>
                       {m.name}
                     </SelectItem>
                   ))}
@@ -203,7 +200,7 @@ export function LogMeasurementDialog({
                     Wellness
                   </SelectLabel>
                   {wellnessMetrics.map((m) => (
-                    <SelectItem key={m.id} value={m.id} className={ITEM_CLASS}>
+                    <SelectItem key={m.id} value={m.id}>
                       {m.name}
                     </SelectItem>
                   ))}

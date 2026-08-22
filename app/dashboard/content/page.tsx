@@ -14,28 +14,11 @@ import {
 import { ContentUploadDialog } from "@/components/content/content-upload-dialog";
 import { FolderDialog } from "@/components/content/folder-dialog";
 import { AssignmentDialog } from "@/components/content/assignment-dialog";
-import {
-  Plus,
-  FolderPlus,
-  Grid,
-  List,
-  Search,
-  Filter,
-  FileText,
-  Image,
-  Video,
-  ExternalLink,
-  MoreHorizontal,
-  Folder,
-  FolderOpen,
-  Edit,
-  Trash2,
-  Users,
-  Download,
-} from "lucide-react";
+import { Plus, FolderPlus, Grid, List, Filter, FileText, Image, Video, ExternalLink, MoreHorizontal, Folder, FolderOpen, Edit, Trash2, Users, Download } from "lucide-react";
 import type { ContentLibraryResponse, ContentItem, ContentFolder } from "@/types/content";
 import { cn } from "@/lib/utils";
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
+import { LibrarySearchInput } from "@/components/programs/shared/library-search-input";
 
 export default function ContentLibraryPage() {
   const [library, setLibrary] = useState<ContentLibraryResponse | null>(null);
@@ -296,16 +279,12 @@ export default function ContentLibraryPage() {
 
         {/* Search and Filters */}
         <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#93b0b4]" strokeWidth={1.5} />
-            <input
-              type="text"
-              placeholder="Search content..."
-              className="w-full pl-9 pr-4 py-2 border border-[rgba(13,148,136,0.08)] rounded-[6px] bg-white text-[#0c1a1e] placeholder:text-[#93b0b4] outline-none focus:border-[#0d9488] focus:ring-1 focus:ring-[#0d9488]/20 transition-colors"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
+          <LibrarySearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search content"
+            className="flex-1 max-w-md"
+          />
           <Button
             variant="outline"
             className="bg-white border-[rgba(13,148,136,0.08)] text-[#5a7d82] hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0c1a1e] rounded-[6px]"

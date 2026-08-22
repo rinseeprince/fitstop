@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,9 +13,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AlertCircle, Search, Users, UserCheck } from "lucide-react";
+import { AlertCircle, Users, UserCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { ContentItem } from "@/types/content";
+import { LibrarySearchInput } from "@/components/programs/shared/library-search-input";
 
 interface Client {
   id: string;
@@ -239,15 +239,13 @@ export function AssignmentDialog({
 
         <div className="space-y-4">
           {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search clients..."
-              className="pl-9"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
+          <LibrarySearchInput
+            size="panel"
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search clients"
+            className="w-full"
+          />
 
           {/* Bulk Actions */}
           {!loading && filteredClients.length > 0 && (

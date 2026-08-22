@@ -8,12 +8,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import {
   CHIP_NEUTRAL_CLASS,
-  FOCUS_RING,
   LABEL_CLASS,
   MONO_LABEL_CLASS,
   THUMB_CLASS,
@@ -21,8 +19,9 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
 import { useStandaloneSessions } from "@/hooks/use-standalone-sessions";
-import { LayoutGrid, Dumbbell, Loader2, GripVertical, Search } from "lucide-react";
+import { LayoutGrid, Dumbbell, Loader2, GripVertical } from "lucide-react";
 import type { SavedPlan, SavedSession } from "@/types/training";
+import { LibrarySearchInput } from "@/components/programs/shared/library-search-input";
 
 type LibraryPanelProps = {
   open: boolean;
@@ -80,15 +79,12 @@ export function LibraryPanel({ open, onOpenChange }: LibraryPanelProps) {
             value={tab}
             onChange={(value) => setTab(value as "plans" | "sessions")}
           />
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#93b0b4]" />
-            <Input
-              placeholder="Search…"
-              className={cn("h-8 pl-8 text-xs", FOCUS_RING)}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
+          <LibrarySearchInput
+            size="panel"
+            value={search}
+            onChange={setSearch}
+            placeholder="Search"
+          />
         </SheetHeader>
 
         <p className={cn(LABEL_CLASS, "px-[14px] pb-1.5")}>

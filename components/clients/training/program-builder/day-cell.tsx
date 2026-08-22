@@ -8,6 +8,7 @@ import type { SessionDragData, SlotDropData } from "./use-program-dnd";
 import { MOVED_PAST_LOCKED, PAST_LOCKED } from "./program-builder-lock-model";
 import { setsRepsShort } from "./exercise-summary";
 import {
+  FOCUS_RING,
   LABEL_CLASS,
   MONO,
   MONO_META_CLASS,
@@ -123,7 +124,7 @@ export function DayCell({
             heightClass,
             locked && "opacity-60",
             isOver && "border-[#0d9488] bg-[rgba(13,148,136,0.05)]",
-            editable && "cursor-pointer hover:border-[rgba(13,148,136,0.25)] hover:bg-[rgba(13,148,136,0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35",
+            editable && cn("cursor-pointer hover:border-[rgba(13,148,136,0.25)] hover:bg-[rgba(13,148,136,0.03)]", FOCUS_RING),
           )}
           aria-label={editable ? `Add session to day ${slot.orderIndex + 1}` : undefined}
           onClick={
@@ -163,7 +164,8 @@ export function DayCell({
           setDragRef(node);
         }}
         className={cn(
-          "group/cell relative flex h-full cursor-pointer flex-col rounded-[6px] bg-white px-[11px] py-2.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35",
+          "group/cell relative flex h-full cursor-pointer flex-col rounded-[6px] bg-white px-[11px] py-2.5 transition-all",
+          FOCUS_RING,
           TRAINING_CARD_BORDER,
           heightClass,
           locked && "opacity-60",

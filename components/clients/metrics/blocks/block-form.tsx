@@ -11,7 +11,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
-  FOCUS_RING,
   MONO_INPUT_CLASS,
   MONO_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
@@ -173,10 +172,7 @@ type BlockFormProps = {
 };
 
 const FIELD_LABEL = "text-[11px] text-[#5a7d82]";
-const FIELD_INPUT = cn(
-  "bg-white border-[rgba(13,148,136,0.08)] text-[13px]",
-  FOCUS_RING
-);
+const FIELD_INPUT = "bg-white";
 
 export function BlockForm({
   mode,

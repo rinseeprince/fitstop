@@ -5,6 +5,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { XIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { FOCUS_RING } from '@/components/clients/training/program-builder/builder-tokens'
 
 function Dialog({
   ...props
@@ -69,7 +70,10 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="text-[#93b0b4] hover:text-[#5a7d82] focus:ring-[#0d9488] absolute top-4 right-4 rounded-[4px] opacity-80 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className={cn(
+              "text-[#93b0b4] hover:text-[#5a7d82] absolute top-4 right-4 rounded-[4px] opacity-80 transition-opacity hover:opacity-100 disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+              FOCUS_RING,
+            )}
           >
             <XIcon strokeWidth={1.5} />
             <span className="sr-only">Close</span>

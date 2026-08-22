@@ -41,7 +41,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        'flex w-full items-center justify-between gap-2 bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] px-3.5 py-2.5 text-[13px] text-[#0c1a1e] transition-colors duration-150 outline-none',
+        'flex w-full items-center justify-between gap-2 bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] px-3.5 py-2.5 text-[13px] text-[#0c1a1e] transition-colors duration-150 outline-none hover:border-[rgba(13,148,136,0.25)]',
         'placeholder:text-[#93b0b4] data-[placeholder]:text-[#93b0b4]',
         FOCUS_RING,
         'disabled:cursor-not-allowed disabled:opacity-50',
@@ -53,7 +53,7 @@ function SelectTrigger({
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-3.5 text-[#93b0b4]" />
+        <ChevronDownIcon className="size-3.5 text-[#93b0b4] transition-colors" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )

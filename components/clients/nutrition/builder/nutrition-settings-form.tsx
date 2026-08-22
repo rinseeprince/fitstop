@@ -34,10 +34,7 @@ type NutritionSettingsFormProps = {
 };
 
 const selectTriggerClass =
-  "bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 transition-all hover:border-[rgba(13,148,136,0.25)] [&>svg]:text-[#93b0b4] [&>svg]:hover:text-[#0d9488] [&>svg]:transition-colors";
-
-const selectContentClass =
-  "bg-white rounded-[6px] shadow-lg border border-[rgba(13,148,136,0.08)] p-1";
+  "font-medium [&>svg]:hover:text-[#0d9488]";
 
 const selectItemClass =
   "rounded-[6px] cursor-pointer text-[13px] text-[#0c1a1e] focus:bg-[rgba(13,148,136,0.05)]";
@@ -103,7 +100,7 @@ export function NutritionSettingsForm({
           <SelectTrigger id="protein-target" className={selectTriggerClass}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className={selectContentClass}>
+          <SelectContent>
             <SelectItem value={PROTEIN_TARGETS.minimum.gPerKg.toString()} className={selectItemClass}>
               {`${gPer(PROTEIN_TARGETS.minimum.gPerKg)}g per ${perUnit} - Minimum`}
             </SelectItem>
@@ -135,7 +132,7 @@ export function NutritionSettingsForm({
           <SelectTrigger id="diet-type" className={selectTriggerClass}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className={selectContentClass}>
+          <SelectContent>
             <SelectItem value="balanced" className={selectItemClass}>Balanced (50/50 carbs/fat)</SelectItem>
             <SelectItem value="high_carb" className={selectItemClass}>
               High Carb (65/35 carbs/fat)

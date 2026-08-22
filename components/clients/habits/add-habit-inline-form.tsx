@@ -58,7 +58,7 @@ export function AddHabitInlineForm({
           placeholder="e.g., Drink 3 litres of water"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="bg-white border-[rgba(13,148,136,0.08)] focus-visible:ring-[#0d9488] text-[13px]"
+          className="bg-white"
         />
       </div>
 
@@ -70,7 +70,7 @@ export function AddHabitInlineForm({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
-          className="bg-white border-[rgba(13,148,136,0.08)] focus-visible:ring-[#0d9488] text-[13px] resize-none"
+          className="resize-none bg-white"
         />
       </div>
 
@@ -89,7 +89,7 @@ export function AddHabitInlineForm({
               placeholder="e.g., 3"
               value={targetValue}
               onChange={(e) => setTargetValue(e.target.value)}
-              className="bg-white border-[rgba(13,148,136,0.08)] focus-visible:ring-[#0d9488] text-[13px]"
+              className="bg-white"
             />
           </div>
           <div className="flex-1 space-y-1.5">
@@ -99,7 +99,7 @@ export function AddHabitInlineForm({
               placeholder="e.g., litres"
               value={targetUnit}
               onChange={(e) => setTargetUnit(e.target.value)}
-              className="bg-white border-[rgba(13,148,136,0.08)] focus-visible:ring-[#0d9488] text-[13px]"
+              className="bg-white"
             />
           </div>
         </div>

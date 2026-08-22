@@ -11,7 +11,11 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { getTodayDateString } from "@/lib/date-helpers";
-import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import { cn } from "@/lib/utils";
+import {
+  FOCUS_RING,
+  LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { formatDateOnlyShort } from "@/components/clients/overview/overview-format";
 
 type ApplyDateDialogProps = {
@@ -77,7 +81,7 @@ export function ApplyDateDialog({
               min={today}
               max={maxDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="flex-1 border border-[rgba(13,148,136,0.15)] rounded-[6px] px-3 py-2 text-[13px] text-[#0c1a1e] focus:outline-none focus:ring-1 focus:ring-[#0d9488]"
+              className={cn("flex-1 rounded-[6px] border border-[rgba(13,148,136,0.08)] px-3 py-2 text-[13px] text-[#0c1a1e]", FOCUS_RING)}
             />
             <button
               onClick={handleApply}

@@ -8,13 +8,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Plus, ListChecks, X } from "lucide-react";
+import { Plus, ListChecks, X } from "lucide-react";
 import { HabitListItem } from "./habit-list-item";
 import { AddHabitInlineForm } from "./add-habit-inline-form";
 import type { DailyHabit, DailyHabitInput } from "@/types/daily-habit";
 import type { HabitStats } from "@/services/daily-habits-stats";
+import { LibrarySearchInput } from "@/components/programs/shared/library-search-input";
 
 interface HabitWithStats extends DailyHabit {
   stats?: HabitStats;
@@ -103,15 +103,12 @@ export function HabitsManageDrawer({
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 pt-5 pb-20 space-y-3">
           {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#93b0b4]" />
-            <Input
-              placeholder="Search habits..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-[#f4f7f6] border-[rgba(13,148,136,0.08)] focus-visible:ring-[#0d9488] text-[13px]"
-            />
-          </div>
+          <LibrarySearchInput
+            size="panel"
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search habits"
+          />
 
           {/* Add button / inline form */}
           {showAddForm ? (

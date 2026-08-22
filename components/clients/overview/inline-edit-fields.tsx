@@ -26,10 +26,7 @@ import type { ClientProfileEdit } from "./use-client-profile-edit";
  */
 
 const TRIGGER_CLASS =
-  "bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 transition-all hover:border-[rgba(13,148,136,0.25)] [&>svg]:text-[#93b0b4] [&>svg]:hover:text-[#0d9488] [&>svg]:transition-colors";
-
-export const ITEM_CLASS =
-  "rounded-[6px] cursor-pointer text-[13px] text-[#0c1a1e] focus:bg-[rgba(13,148,136,0.05)]";
+  "font-medium [&>svg]:hover:text-[#0d9488]";
 
 /** Rail actions: pencil when idle, save + cancel while editing. */
 export function EditRailActions({ edit }: { edit: ClientProfileEdit }) {
@@ -136,7 +133,7 @@ export function InlineSelect({
       </SelectTrigger>
       <SelectContent className="rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white p-1 shadow-lg">
         {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} className={ITEM_CLASS}>
+          <SelectItem key={option.value} value={option.value}>
             {option.label}
           </SelectItem>
         ))}
@@ -206,7 +203,7 @@ export function InlineDarkSelect({
       </SelectTrigger>
       <SelectContent className="rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white p-1 shadow-lg">
         {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} className={ITEM_CLASS}>
+          <SelectItem key={option.value} value={option.value}>
             {option.label}
           </SelectItem>
         ))}

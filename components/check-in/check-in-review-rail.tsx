@@ -117,7 +117,7 @@ export const CheckInReviewRail = ({
             value={displayedSummary}
             onChange={(e) => setEditedSummary(e.target.value)}
             rows={4}
-            className="resize-none bg-white border-[rgba(13,148,136,0.15)] rounded-[6px] text-sm text-[#0c1a1e] focus:border-[#0d9488]"
+            className="resize-none bg-white"
           />
         ) : (
           <p className="text-sm text-[#0c1a1e] leading-relaxed">

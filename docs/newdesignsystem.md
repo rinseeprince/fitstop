@@ -37,6 +37,8 @@ Apply these by default on every surface — they are the difference between "rig
 - [ ] **Uppercase micro-labels** get letter-spacing (`tracking-[0.06em]`–`0.14em`) and a muted colour.
 - [ ] **Page background is `#f4f7f6`** (cool-green tint), dark surfaces are `#0f2027` (deep teal-black) — never neutral slate.
 - [ ] **Every pane/period/filter switcher is `<SegmentedControl>`.** One component, one size, one weight — `12.5px` `font-medium` in BOTH states, the active segment carried by the white pill + shadow + darker ink and never by a heavier font. **Never hand-roll the track**; `npm run check:labels` (clause 3) fails on the markup. See "Segmented control".
+- [ ] **Never correct a `ui/` primitive at the call site** — `Input`/`Textarea`/`Label`/`Select`/`Dialog`/`Table` are Teal-Summit; a radius, border, ink or focus ring pasted onto one is a bug report about the primitive. `check:labels` clause 4 enforces the focus half.
+- [ ] **Search = `<LibrarySearchInput>`, toolbar sort = `<LibrarySortSelect>`.** Never hand-roll either.
 - [ ] **Reuse the shared components/tokens** (see index) before writing new class strings.
 - [ ] **Primary CTA colour pair everywhere:** `bg-[#0d9488] text-white hover:bg-[#0b7f75]`; Cancel/dismiss = `variant="ghost"`.
 
@@ -239,6 +241,37 @@ focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35 
 
 Import it as `FOCUS_RING` (see system tokens) rather than retyping.
 
+### The `ui/` primitives are Teal-Summit — HARD RULE
+
+**Never correct a shared primitive at the call site.** `Input`, `Textarea`, `Label`, `Select` (trigger *and* panel), `Dialog` and `Table` already carry the radius, the teal border, the ink, the placeholder tone and the focus ring. A `rounded-xs`, a `border-[rgba(13,148,136,0.08)]`, a `text-[13px]` or a `focus:` ring pasted onto one of them is not a style — it is a bug report about that primitive, and the fix belongs in `components/ui/**`.
+
+A call site may only add what is genuinely local: a **size tier** (`h-8`/`h-9`), a **width**, `bg-white` where the field sits on a tint, `resize-none`, or `font-medium`.
+
+**Why this is a hard rule.** These primitives shipped un-migrated for a long time while the doc asserted they were done. The result, found in one sweep on 2026-08-22:
+
+- `rounded-xs` hand-written at the call site in **five files**, each correcting the same wrong 8px default one input at a time.
+- **Eight** local constants (`inputClass`, `TRIGGER_CLASS`, `FIELD_INPUT`, `selectTriggerClass`, `ITEM_CLASS`, …) re-implementing the primitive — three exact copies of one string, three of another.
+- **Four different focus treatments** for the same control: `focus:ring-1 ring-[#0d9488]/20`, `focus-visible:ring-[#0d9488]` with neither width nor opacity, `focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)]` paired with `focus:ring-0` to *disable* the shared ring, and the correct literal simply retyped rather than imported.
+
+`npm run check:labels` **clause 4 fails the build** on any `focus:`/`focus-visible:` ring or border naming `#0d9488` outside the token modules. (Selection and "today" indicators are `ring-1 ring-[#0d9488]` with no `focus:` prefix, so they do not match.)
+
+### Search fields — HARD RULE
+
+**Every search field is `<LibrarySearchInput>`** (`@/components/programs/shared/library-search-input`). Two tiers, one component; never hand-roll a magnifier beside an input.
+
+| `size` | Field | Icon | Where |
+|---|---|---|---|
+| `toolbar` (default) | `h-9 w-[260px] bg-white pl-9 pr-2.5 text-[13px]` | `left-3 h-4 w-4` | A section toolbar, paired with `<LibrarySortSelect>` |
+| `panel` | `h-8 pl-8 pr-2.5 text-xs` | `left-2.5 h-3.5 w-3.5` | A side panel, drawer or popover list filter |
+
+Pass `className` for **width only** (`flex-1 max-w-md`); the treatment belongs to the tier.
+
+### Sort / filter selects — HARD RULE
+
+**A toolbar's sort control is `<LibrarySortSelect>`** (`@/components/programs/shared/library-sort-select`) — `h-9 w-[180px]`, secondary ink, options as data. Everywhere else use `<Select>` directly and let it style itself.
+
+The trigger and the panel are ONE control and must not be styled apart: `Select`'s panel now matches `DropdownMenu` exactly (6px radius, `rgba(13,148,136,0.08)` border, `shadow-[0_10px_40px_rgba(13,148,136,0.10)]`, `rounded-[4px]` `px-2.5 py-1.5` 13px items, `0.05` focus wash, `#0a5c55` ink, a teal `Check`). Migrating one half without the other is not a smaller change — it is a grey 8px trigger opening a teal 6px panel.
+
 ### Input heights by context
 
 | Height | Class | Where |
@@ -316,7 +349,8 @@ To turn a mono label to normal case (e.g. a meta line), append `normal-case trac
 | "Showing X of Y" pager on a divider rail | `@/components/programs/shared/divider-pager` → `<DividerPager page total pageSize noun onPageChange />` — pass it as `SectionLabel`'s `actions`. Renders the mono count meta (`text-[11px]` + `MONO_META_CLASS`) + `p-1` rail chevrons (`h-3.5 w-3.5`, disabled `#d5e0dd`); returns null at `total === 0` (the table body owns the empty message) and renders disabled-not-hidden on a single page (no pop-in). The four history tables (training/nutrition/wellness/body-metrics) are the reference. Rail pager for history tables; `LibraryTableShell`'s card-footer pager stays for library tables |
 | White table card + "Showing X of Y" pager | `@/components/programs/shared/library-table-shell` → `<LibraryTableShell />` (`LIBRARY_PAGE_SIZE = 25`) |
 | Hover-revealed row action cluster | `@/components/programs/shared/row-actions` → `<RowActions actions={…} />` (row needs `group/row`) |
-| Search input (icon + field) | `@/components/programs/shared/library-search-input` → `<LibrarySearchInput />` |
+| Search input (icon + field) | `@/components/programs/shared/library-search-input` → `<LibrarySearchInput size="toolbar" \| "panel" />` — the ONLY search field |
+| Toolbar sort select | `@/components/programs/shared/library-sort-select` → `<LibrarySortSelect options value onChange />` |
 | Relative "updated" formatting | `@/components/programs/shared/format-relative` → `formatRelativeUpdated()` |
 | Dialog / Sheet / Popover / Button / Badge / Input / Select / Table | `@/components/ui/*` (already Teal-Summit-styled — see Overlays) |
 
@@ -426,7 +460,7 @@ Overlay is `bg-black/50`. Slide-over footer uses `justify-end` (Cancel ghost + S
 
 ### Dropdown menu (kebab / row actions)
 
-The base `DropdownMenuContent`/`Item` primitives (`components/ui/dropdown-menu.tsx`) are already Teal-Summit: content `bg-white rounded-[6px] border border-[rgba(13,148,136,0.08)] p-1 shadow-[0_10px_40px_rgba(13,148,136,0.10)]`; items `rounded-[4px] px-2.5 py-1.5 text-[13px]` with hover/focus `bg-[rgba(13,148,136,0.05)] text-[#0a5c55]` and muted `#93b0b4` icons (`h-3.5 w-3.5 strokeWidth={1.5}`); separator = the `0.06` hairline. Destructive rows use `variant="destructive"` (`#c06060` text + `rgba(192,96,96,0.08)` wash — never a filled red) and sit LAST, grouped behind a separator. Typical width `w-52`.
+The base `DropdownMenuContent`/`Item` primitives (`components/ui/dropdown-menu.tsx`) are Teal-Summit — and since 2026-08-22 so is `components/ui/select.tsx`, which had been the un-migrated twin of this exact pattern: content `bg-white rounded-[6px] border border-[rgba(13,148,136,0.08)] p-1 shadow-[0_10px_40px_rgba(13,148,136,0.10)]`; items `rounded-[4px] px-2.5 py-1.5 text-[13px]` with hover/focus `bg-[rgba(13,148,136,0.05)] text-[#0a5c55]` and muted `#93b0b4` icons (`h-3.5 w-3.5 strokeWidth={1.5}`); separator = the `0.06` hairline. Destructive rows use `variant="destructive"` (`#c06060` text + `rgba(192,96,96,0.08)` wash — never a filled red) and sit LAST, grouped behind a separator. Typical width `w-52`.
 
 **No single menu currently demonstrates the whole pattern.** The training calendar's week-actions menu (`calendar-week-rail.tsx`) was the reference until its three non-destructive items were removed on 2026-07-27; with one item left it stopped being a menu at all and is now a bare destructive rail icon (see Buttons → "Icon action (in a rail)"). **A kebab holding one action is the wrong affordance** — two clicks to reach one thing; drop to a bare icon and let the confirm dialog carry the safety. For the multi-item shape see `nutrition-calendar-week-rail.tsx`; for a menu mixing a normal and a destructive row see the calendar event card (`calendar-event-card.tsx`), which currently hand-rolls `className="text-[#c06060] focus:text-[#c06060]"` instead of `variant="destructive"` and carries no separator — a deviation to fix when that file is next touched, not a pattern to copy.
 
@@ -489,7 +523,17 @@ Rows (`group/row cursor-pointer`, first cell `pl-5`):
 - Numeric cells: `font-mono-display text-[12.5px]` — primary `text-[#5a7d82]`, meta `text-[#93b0b4]`.
 - Actions: `<RowActions>` (hover-revealed, `h-7 w-7` buttons, `h-[15px] w-[15px]` icons; danger hover `bg-[rgba(192,96,96,0.08)] text-[#c06060]`).
 
-`TableHead` (base): `h-10 px-2 text-xs uppercase tracking-wider font-medium text-muted-foreground`. `TableCell` base `p-2`.
+**Table rows and headings are inherited, never restyled — HARD RULE.** `components/ui/table.tsx` owns them, and the habits tracker is the shape they were taken from:
+
+| Part | Treatment |
+|---|---|
+| Row divider | `border-b border-[rgba(13,148,136,0.06)]` — the inner-hairline rung: separation without a rule |
+| Header row | `border-b border-[rgba(13,148,136,0.08)]` |
+| Column heading | `LABEL_CLASS` + `h-10 px-2` (10px / 0.06em / `#93b0b4`) |
+| Row hover | `bg-[rgba(13,148,136,0.03)]` |
+| `TableCell` | `p-2` |
+
+A heading holding something that is not a label — the habits day columns hold a mixed-case `Mon` — appends `normal-case tracking-normal`. Nothing else overrides these at a call site.
 
 ### Empty state
 
@@ -704,6 +748,9 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 - ❌ Invent a primary-button hover colour. ✅ `hover:bg-[#0b7f75]`.
 - ❌ Ship an input without a focus ring. ✅ Add `FOCUS_RING`.
 - ❌ Rebuild StatBand / SegmentedControl / LibraryTableShell / SectionLabel / RowActions from scratch. ✅ Import them.
+- ❌ Paste a radius, border, ink or focus ring onto `Input`/`Textarea`/`Label`/`Select`/`Table` to correct it. ✅ Fix the primitive; call sites add only size, width, `bg-white` on a tint, `resize-none`.
+- ❌ Hand-roll a magnifier beside an input, or a local `inputClass`/`TRIGGER_CLASS` constant. ✅ `<LibrarySearchInput>` / `<LibrarySortSelect>`.
+- ❌ Spell a focus ring by hand — even correctly. ✅ Import `FOCUS_RING`; `check:labels` clause 4 fails otherwise.
 - ❌ Hand-roll a segmented-control track, or restyle a `TabsList` into one. ✅ `<SegmentedControl>` — `npm run check:labels` clause 3 fails otherwise.
 - ❌ Bold the active segment of a switcher. ✅ `font-medium` in both states; the white pill carries the selection.
 - ❌ Style a Teal-Summit surface off the OKLCH tokens (`bg-background`, `bg-primary`, `rounded-lg`). ✅ Author with the hex values here.

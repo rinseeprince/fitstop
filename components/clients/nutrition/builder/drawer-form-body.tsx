@@ -229,7 +229,7 @@ function CollapsibleNotes({
             placeholder="Why are you adjusting this plan?"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="resize-none bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] text-[13px] font-medium text-[#0c1a1e] placeholder:text-[#93b0b4] placeholder:font-normal focus:border-[rgba(13,148,136,0.25)] focus:shadow-[0_0_0_3px_rgba(13,148,136,0.06)] focus:ring-0 transition-all"
+            className="resize-none bg-white font-medium placeholder:font-normal"
             rows={3}
           />
           <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-right")}>
