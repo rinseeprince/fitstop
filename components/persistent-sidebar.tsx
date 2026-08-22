@@ -62,12 +62,13 @@ export function PersistentSidebar() {
     return null
   }
 
-  // On sectioned surfaces (client detail, Programs) render the collapsed 52px
-  // icon strip instead of the full sidebar — the section's own white
-  // sub-sidebar sits beside it.
+  // On sectioned surfaces (the Clients roster, client detail, Programs) render
+  // the collapsed 52px icon strip instead of the full sidebar — the section's
+  // own white sub-sidebar sits beside it.
   // NOTE: The client-detail pattern assumes tab routing uses query params
   // (?tab=nutrition), not nested routes like /clients/[id]/nutrition.
   const COLLAPSED_SHELL_PATTERNS = [
+    /^\/clients$/,
     /^\/clients\/[^/]+$/,
     /^\/dashboard\/programs(\/|$)/,
   ]

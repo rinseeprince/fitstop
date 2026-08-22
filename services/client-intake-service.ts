@@ -274,13 +274,20 @@ export async function getCoachPendingIntakes(
         id,
         name,
         email,
-        coach_id
+        coach_id,
+        active
       )
     `
     )
     .in("status", ["pending", "in_progress", "completed"])
     .is("reviewed_at", null)
     .eq("client.coach_id", coachId)
+    // Deactivated clients are excluded. Their intake cannot be reviewed —
+    // `getClientById` is active-filtered, so the banner's Review link 404s —
+    // and counting them made the Clients nav badge (which reads this endpoint)
+    // disagree with the roster's own "Ready for review" queue, which drops
+    // them into Inactive.
+    .eq("client.active", true)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -294,7 +301,13 @@ export async function getCoachPendingIntakes(
     status: IntakeStatus;
     created_at: string;
     completed_at: string | null;
-    client: { id: string; name: string; email: string; coach_id: string } | null;
+    client: {
+      id: string;
+      name: string;
+      email: string;
+      coach_id: string;
+      active: boolean;
+    } | null;
   };
 
   return ((data || []) as IntakeWithClient[]).map((row) => ({

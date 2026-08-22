@@ -4,10 +4,11 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { User, LogOut, ChevronDown } from "lucide-react"
-import { motion } from "framer-motion"
+import { User, LogOut } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
+import { useClientAttentionCount } from "@/hooks/use-client-attention"
+import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
 import { navigation } from "@/lib/navigation"
 import {
   DropdownMenu,
@@ -21,39 +22,16 @@ import {
 export function CollapsedIconStrip() {
   const pathname = usePathname()
   const router = useRouter()
-  const { coach, logout, loading, isTrainer } = useAuth()
+  const { coach, logout, loading } = useAuth()
   const { toast } = useToast()
-  const [unreviewedCount, setUnreviewedCount] = useState(0)
   const [optimisticHref, setOptimisticHref] = useState<string | null>(null)
+  const attentionCount = useClientAttentionCount()
 
   useEffect(() => {
     if (optimisticHref && pathname === optimisticHref) {
       setOptimisticHref(null)
     }
   }, [pathname, optimisticHref])
-
-  useEffect(() => {
-    if (!isTrainer) return
-
-    const fetchUnreviewedCount = async () => {
-      try {
-        const response = await fetch("/api/check-ins/recent")
-        if (response.ok) {
-          const data = await response.json()
-          const unreviewed = (data.checkIns || []).filter(
-            (ci: { status: string }) => ci.status === "ai_processed"
-          ).length
-          setUnreviewedCount(unreviewed)
-        }
-      } catch (error) {
-        console.error("Error fetching unreviewed count:", error)
-      }
-    }
-
-    fetchUnreviewedCount()
-    const interval = setInterval(() => void fetchUnreviewedCount(), 60000)
-    return () => clearInterval(interval)
-  }, [isTrainer])
 
   const handleLogout = async () => {
     try {
@@ -113,9 +91,9 @@ export function CollapsedIconStrip() {
                     : "text-[rgba(255,255,255,0.35)]"
                 )}
               />
-              {item.showBadge && unreviewedCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#0d9488] text-white text-[8px] font-medium">
-                  {unreviewedCount > 9 ? "9+" : unreviewedCount}
+              {item.showBadge && attentionCount > 0 && (
+                <span className={cn(MONO, "absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#0d9488] text-white text-[8px] font-medium")}>
+                  {attentionCount > 9 ? "9+" : attentionCount}
                 </span>
               )}
             </Link>

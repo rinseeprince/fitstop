@@ -1,57 +1,35 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import useSWR from "swr";
-import { AppLayout } from "@/components/app-layout";
-import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { AddClientDialog } from "@/components/add-client-dialog";
-import { OverdueBanner } from "@/components/clients/check-in/overdue-banner";
-import { PendingIntakeBanner } from "@/components/coach/pending-intake-banner";
-import { Search, AlertCircle, Clock, ChevronRight, Users } from "lucide-react";
-import { toast } from "sonner";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { ClientWithCheckInInfo } from "@/services/client-service";
-import { useOverdueClients } from "@/hooks/use-check-in-data";
+import { AlertCircle, ChevronRight, Users } from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { AddClientDialog } from "@/components/add-client-dialog";
+import { LibrarySearchInput } from "@/components/programs/shared/library-search-input";
+import { RosterShell } from "@/components/clients/roster/roster-shell";
+import {
+  CHIP_BASE_CLASS,
+  LATE_CHIP_CLASS,
+  ROSTER_STATUS_CHIP,
+  ROSTER_STATUS_LABEL,
+} from "@/components/clients/roster/roster-status";
+import {
+  FOCUS_RING,
+  MONO,
+} from "@/components/clients/training/program-builder/builder-tokens";
+import { useRoster } from "@/hooks/use-roster";
+import { matchesRosterView, resolveRosterView } from "@/lib/roster-views";
 
-type ClientStatus = "invited" | "awaiting_review" | "awaiting_activation" | "active" | "inactive";
+function ClientsRoster() {
+  const searchParams = useSearchParams();
+  const view = resolveRosterView(searchParams.get("view"));
 
-// The filter rail's values: a client status, plus the two cross-cutting ones.
-type StatusFilter = "all" | "onboarding" | ClientStatus;
-
-const statusBadgeClass: Record<ClientStatus, string> = {
-  invited: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
-  awaiting_review: "bg-[rgba(13,148,136,0.05)] text-[#5a7d82]",
-  awaiting_activation: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
-  active: "bg-[rgba(13,148,136,0.08)] text-[#0d9488]",
-  inactive: "bg-[rgba(0,0,0,0.03)] text-[#93b0b4]",
-};
-
-const statusLabel: Record<ClientStatus, string> = {
-  invited: "Invited",
-  awaiting_review: "Intake Review",
-  awaiting_activation: "Awaiting Activation",
-  active: "Active",
-  inactive: "Inactive",
-};
-
-import { swrFetcher } from "@/lib/swr-fetcher";
-import { SegmentedControl } from "@/components/programs/shared/segmented-control";
-
-export default function ClientsPage() {
-  const { data, error, isLoading, mutate } = useSWR<{ clients: ClientWithCheckInInfo[] }>(
-    // Roster only: include deactivated clients so the "Inactive" tab + reactivation work.
-    "/api/clients?includeInactive=true",
-    swrFetcher,
-    { revalidateOnFocus: false }
-  );
-  const clients = data?.clients ?? [];
-
+  const { rows, counts, isLoading, isError, refresh } = useRoster();
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<StatusFilter>("all");
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
-  const { clients: overdueClients } = useOverdueClients();
 
   const handleReactivate = async (clientId: string) => {
     setReactivatingId(clientId);
@@ -65,187 +43,93 @@ export default function ClientsPage() {
         return;
       }
       toast.success("Client reactivated.");
-      await mutate();
     } catch {
       toast.error("Couldn't reactivate this client. Please try again.");
+      return;
     } finally {
       setReactivatingId(null);
     }
+    // Outside the try on purpose: a failed revalidation is not a failed
+    // reactivation, and reporting it as one contradicted the toast above it.
+    void refresh();
   };
 
-  const isClientOverdue = (clientId: string) => {
-    return overdueClients.some((c) => c.id === clientId);
-  };
-
-  const getClientDaysOverdue = (clientId: string) => {
-    const overdueClient = overdueClients.find((c) => c.id === clientId);
-    return overdueClient?.daysOverdue || 0;
-  };
-
-  const formatLastCheckIn = (date?: string): string => {
-    if (!date) return "Never";
-
-    const now = new Date();
-    const checkInDate = new Date(date);
-    const diffInMs = now.getTime() - checkInDate.getTime();
-    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-
-    if (diffInDays === 0) return "Today";
-    if (diffInDays === 1) return "1 day ago";
-    if (diffInDays < 7) return `${diffInDays} days ago`;
-    if (diffInDays < 30) {
-      const weeks = Math.floor(diffInDays / 7);
-      return weeks === 1 ? "1 week ago" : `${weeks} weeks ago`;
-    }
-    const months = Math.floor(diffInDays / 30);
-    return months === 1 ? "1 month ago" : `${months} months ago`;
-  };
-
-  const getClientStatus = (client: ClientWithCheckInInfo): ClientStatus => {
-    if (!client.active) return "inactive";
-    switch (client.onboardingStatus) {
-      case "pending_intake": return "invited";
-      case "intake_completed": return "awaiting_review";
-      case "setup_in_progress": return "awaiting_activation";
-      default: return "active";
-    }
-  };
-
-  const filteredClients = useMemo(() => {
-    let result = [...clients];
-
-    if (activeFilter === "onboarding") {
-      result = result.filter((client) => {
-        const status = getClientStatus(client);
-        return status === "invited" || status === "awaiting_review" || status === "awaiting_activation";
-      });
-    } else if (activeFilter !== "all") {
-      result = result.filter((client) => {
-        const status = getClientStatus(client);
-        return status === activeFilter;
-      });
-    }
-
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        (client) =>
-          client.name.toLowerCase().includes(query) ||
-          client.email.toLowerCase().includes(query)
+  const visibleRows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (!matchesRosterView(row, view)) return false;
+      if (!query) return true;
+      return (
+        row.client.name.toLowerCase().includes(query) ||
+        row.client.email.toLowerCase().includes(query)
       );
-    }
-
-    return result;
-  }, [clients, activeFilter, searchQuery]);
-
-  const statusCounts = useMemo(() => {
-    return {
-      all: clients.length,
-      active: clients.filter((c) => getClientStatus(c) === "active").length,
-      onboarding: clients.filter((c) => {
-        const s = getClientStatus(c);
-        return s === "invited" || s === "awaiting_review" || s === "awaiting_activation";
-      }).length,
-      inactive: clients.filter((c) => !c.active).length,
-    };
-  }, [clients]);
-
-  const pageHeader = (
-    <PageHeader
-      title="Clients"
-      description="Manage and track your client relationships"
-    />
-  );
+    });
+  }, [rows, view, searchQuery]);
 
   return (
-    <AppLayout pageHeader={pageHeader} headerActions={<AddClientDialog onClientAdded={() => mutate()} />}>
-      <div className="space-y-6">
-        {/* Pending Onboarding Banner */}
-        <PendingIntakeBanner />
-
-        {/* Overdue Banner */}
-        <OverdueBanner />
-
-        {/* Search and Filters */}
-        <div className="bg-white rounded-[6px] p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#93b0b4]" strokeWidth={1.5} />
-              <Input
-                placeholder="Search clients..."
-                className="pl-10 border-[rgba(13,148,136,0.08)] rounded-[6px] text-[#0c1a1e] placeholder:text-[#93b0b4] focus:border-[#0d9488] focus:ring-[#0d9488]/20"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <SegmentedControl
-              options={[
-                { value: "all", label: `All (${statusCounts.all})` },
-                { value: "active", label: `Active (${statusCounts.active})` },
-                { value: "onboarding", label: `Onboarding (${statusCounts.onboarding})` },
-                { value: "inactive", label: `Inactive (${statusCounts.inactive})` },
-              ]}
-              value={activeFilter}
-              onChange={(value) => setActiveFilter(value as StatusFilter)}
-            />
-          </div>
+    <RosterShell
+      activeView={view}
+      counts={counts}
+      onClientAdded={() => void refresh()}
+    >
+      <div className="space-y-5">
+        <div className="rounded-[6px] bg-white p-4">
+          <LibrarySearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search clients"
+          />
         </div>
 
-        {/* Loading State */}
         {isLoading && (
-          <div className="bg-white rounded-[6px] p-6">
-            <div className="flex flex-col items-center justify-center py-12 space-y-3">
-              <div className="w-5 h-5 border-2 border-[rgba(13,148,136,0.08)] border-t-[#0d9488] rounded-full animate-spin" />
-              <p className="text-sm text-[#5a7d82]">Loading clients...</p>
+          <div className="rounded-[6px] bg-white p-6">
+            <div className="flex flex-col items-center justify-center space-y-3 py-12">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-[rgba(13,148,136,0.08)] border-t-[#0d9488]" />
+              <p className="text-sm text-[#5a7d82]">Loading clients</p>
             </div>
           </div>
         )}
 
-        {/* Error State */}
-        {error && !isLoading && (
-          <div className="bg-white rounded-[6px] p-6">
-            <div className="flex flex-col items-center justify-center py-12 space-y-3">
-              <div className="w-16 h-16 bg-[rgba(185,28,28,0.08)] rounded-full flex items-center justify-center">
-                <AlertCircle className="w-8 h-8 text-[#b91c1c]" strokeWidth={1.5} />
-              </div>
-              <div className="text-center space-y-1">
-                <p className="text-lg font-semibold text-[#0c1a1e]">Failed to load clients</p>
-                <p className="text-sm text-[#5a7d82]">Please try again</p>
-              </div>
+        {isError && !isLoading && (
+          <div className="rounded-[6px] bg-white p-6">
+            <div className="flex flex-col items-center justify-center space-y-3 py-12 text-center">
+              <AlertCircle className="h-8 w-8 text-[#93b0b4] opacity-50" strokeWidth={1.5} />
+              <p className="text-sm text-[#5a7d82]">Could not load your clients</p>
               <Button
-                onClick={() => mutate()}
-                className="bg-[#0d9488] hover:bg-[#0d9488]/90 text-white"
+                onClick={() => void refresh()}
+                className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
               >
-                Try Again
+                Try again
               </Button>
             </div>
           </div>
         )}
 
-        {/* Empty State */}
-        {!isLoading && !error && filteredClients.length === 0 && (
-          <div className="bg-white rounded-[6px] p-6">
-            <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
-              <div className="w-16 h-16 bg-[rgba(13,148,136,0.05)] rounded-full flex items-center justify-center mb-4">
-                <Users className="w-8 h-8 text-[#93b0b4]" strokeWidth={1.5} />
-              </div>
-              <h3 className="text-lg font-semibold text-[#0c1a1e] mb-2">
-                {searchQuery || activeFilter !== "all"
-                  ? "No clients found"
-                  : "No clients yet"}
-              </h3>
-              <p className="text-sm text-[#5a7d82] mb-6 max-w-sm">
-                {searchQuery || activeFilter !== "all"
-                  ? "Try adjusting your search or filters"
-                  : "Get started by adding your first client to manage their training and nutrition."}
+        {!isLoading && !isError && visibleRows.length === 0 && (
+          <div className="rounded-[6px] bg-white p-6">
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Users className="mb-2 h-8 w-8 text-[#93b0b4] opacity-50" strokeWidth={1.5} />
+              <p className="text-sm text-[#5a7d82]">
+                {counts.all === 0 ? "No clients yet" : "No clients in this view"}
               </p>
-              {!searchQuery && activeFilter === "all" && (
+              <p className="mt-1 text-xs text-[#93b0b4]">
+                {counts.all === 0
+                  ? "Invite your first client to start coaching them"
+                  : "Try another view, or a shorter search"}
+              </p>
+              {counts.all === 0 && (
                 <AddClientDialog
-                  onClientAdded={() => mutate()}
+                  onClientAdded={() => void refresh()}
                   trigger={
-                    <Button className="bg-[#0d9488] hover:bg-[#0d9488]/90 text-white">
-                      Add Your First Client
-                    </Button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "mt-4 inline-flex items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#0b7f75]",
+                        FOCUS_RING,
+                      )}
+                    >
+                      Invite client
+                    </button>
                   }
                 />
               )}
@@ -253,47 +137,30 @@ export default function ClientsPage() {
           </div>
         )}
 
-        {/* Client List */}
-        {!isLoading && !error && filteredClients.length > 0 && (
+        {!isLoading && !isError && visibleRows.length > 0 && (
           <div className="space-y-3">
-            {filteredClients.map((client) => {
+            {visibleRows.map(({ client, status, daysOverdue }) => {
               const initials = client.name
                 .split(" ")
                 .map((n) => n[0])
                 .join("")
                 .toUpperCase();
-              const isOverdue = isClientOverdue(client.id);
-              const daysOverdue = getClientDaysOverdue(client.id);
-              const status = getClientStatus(client);
-
               const isInactive = status === "inactive";
+
               const rowInner = (
                 <>
-                  {/* Avatar */}
                   <div
-                    className="w-12 h-12 rounded-[6px] flex items-center justify-center flex-shrink-0 text-white text-sm font-bold"
+                    className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-[6px] text-sm font-bold text-white"
                     style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
                   >
                     {initials}
                   </div>
 
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-semibold text-[#0c1a1e]">{client.name}</h4>
-                      {isOverdue && (
-                        <span className="inline-flex items-center gap-1 rounded-[4px] bg-[rgba(245,158,11,0.07)] px-2 py-0.5 text-[11px] font-medium text-[#d97706]">
-                          <Clock className="w-3 h-3" strokeWidth={1.5} />
-                          {daysOverdue}d overdue
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-[#5a7d82] truncate">
-                      Last check-in: {formatLastCheckIn(client.lastCheckInDate)}
-                    </p>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-sm font-semibold text-[#0c1a1e]">{client.name}</h4>
+                    <p className="truncate text-xs text-[#93b0b4]">{client.email}</p>
                   </div>
 
-                  {/* Reactivate (undo Remove) — only for deactivated clients */}
                   {isInactive && (
                     <button
                       type="button"
@@ -303,31 +170,41 @@ export default function ClientsPage() {
                         e.stopPropagation();
                         void handleReactivate(client.id);
                       }}
-                      className="inline-flex items-center rounded-[4px] border border-[#0d9488] px-2 py-0.5 text-[11px] font-medium text-[#0d9488] hover:bg-[rgba(13,148,136,0.08)] disabled:opacity-50"
+                      className={cn(
+                        "inline-flex items-center rounded-[6px] border border-[rgba(13,148,136,0.08)] px-2.5 py-1 text-xs font-medium text-[#0d9488] transition-colors hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0a5c55] disabled:opacity-50",
+                        FOCUS_RING,
+                      )}
                     >
-                      {reactivatingId === client.id ? "Reactivating…" : "Reactivate"}
+                      {reactivatingId === client.id ? "Reactivating" : "Reactivate"}
                     </button>
                   )}
 
-                  {/* Status Badge */}
-                  <span className={`inline-flex items-center rounded-[4px] px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass[status]}`}>
-                    {statusLabel[status]}
+                  {daysOverdue > 0 && (
+                    <span className={cn(CHIP_BASE_CLASS, LATE_CHIP_CLASS, MONO)}>
+                      {daysOverdue}d late
+                    </span>
+                  )}
+
+                  <span className={cn(CHIP_BASE_CLASS, ROSTER_STATUS_CHIP[status])}>
+                    {ROSTER_STATUS_LABEL[status]}
                   </span>
 
-                  {/* Arrow — only when the row navigates (active clients) */}
                   {!isInactive && (
-                    <ChevronRight className="w-4 h-4 text-[#93b0b4] group-hover:text-[#5a7d82] transition-colors" strokeWidth={1.5} />
+                    <ChevronRight
+                      className="h-4 w-4 text-[#93b0b4] transition-colors group-hover:text-[#5a7d82]"
+                      strokeWidth={1.5}
+                    />
                   )}
                 </>
               );
 
               // An inactive client's detail page 404s (getClientById is
-              // active-filtered), so its row does NOT navigate — the only action
-              // is Reactivate. Active rows link to the detail page as before.
+              // active-filtered), so its row does NOT navigate — the only
+              // action is Reactivate.
               return isInactive ? (
                 <div
                   key={client.id}
-                  className="flex items-center gap-4 p-4 bg-white rounded-[6px]"
+                  className="flex items-center gap-4 rounded-[6px] bg-white p-4"
                 >
                   {rowInner}
                 </div>
@@ -335,7 +212,7 @@ export default function ClientsPage() {
                 <Link
                   key={client.id}
                   href={`/clients/${client.id}`}
-                  className="flex items-center gap-4 p-4 bg-white rounded-[6px] transition-all duration-150 cursor-pointer group hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]"
+                  className="group flex cursor-pointer items-center gap-4 rounded-[6px] bg-white p-4 transition-all duration-150 hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]"
                 >
                   {rowInner}
                 </Link>
@@ -344,6 +221,16 @@ export default function ClientsPage() {
           </div>
         )}
       </div>
-    </AppLayout>
+    </RosterShell>
+  );
+}
+
+export default function ClientsPage() {
+  // `useSearchParams` in a statically-rendered route needs a boundary; the
+  // roster's view lives in `?view=`, so the whole body sits behind one.
+  return (
+    <Suspense fallback={null}>
+      <ClientsRoster />
+    </Suspense>
   );
 }

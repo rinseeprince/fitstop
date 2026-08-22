@@ -6,6 +6,7 @@ import type {
   CheckInStatus,
   GetCheckInsResponse,
   Client,
+  OverdueClient,
   GetOverdueClientsResponse,
   GetClientsDueSoonResponse,
   GetClientRemindersResponse,
@@ -182,6 +183,11 @@ export const useUnreviewedCount = (clientId?: string) => {
 };
 
 // Hook to fetch overdue clients
+// Stable empty array. `data?.clients || []` minted a fresh [] on every render
+// while the fetch was unresolved, so every consumer memo keyed on `clients`
+// recomputed each render — and stayed dead for good if the fetch kept failing.
+const NO_OVERDUE_CLIENTS: OverdueClient[] = [];
+
 export const useOverdueClients = () => {
   const { data, error, isLoading, mutate } = useSWR<GetOverdueClientsResponse>(
     "/api/clients/overdue",
@@ -203,7 +209,7 @@ export const useOverdueClients = () => {
   );
 
   return {
-    clients: data?.clients || [],
+    clients: data?.clients ?? NO_OVERDUE_CLIENTS,
     total: data?.total || 0,
     isLoading,
     isError: error,

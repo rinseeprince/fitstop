@@ -214,7 +214,7 @@ export function NotificationsDropdown({ compact = false }: { compact?: boolean }
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <Link
-                href={unreviewedTotal > 0 ? "/check-ins/review" : "/clients/overdue"}
+                href={unreviewedTotal > 0 ? "/check-ins/review" : "/clients?view=overdue"}
                 className="w-full text-center text-sm font-medium cursor-pointer"
                 onClick={() => setOpen(false)}
               >

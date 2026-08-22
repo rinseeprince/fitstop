@@ -6,14 +6,13 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { LABEL_CLASS, MONO } from "@/components/clients/training/program-builder/builder-tokens"
 import { motion } from "framer-motion"
-import { useAuth } from "@/contexts/auth-context"
+import { useClientAttentionCount } from "@/hooks/use-client-attention"
 import { navigation } from "@/lib/navigation"
 
 export function SidebarNav() {
   const pathname = usePathname()
-  const { isTrainer } = useAuth()
-  const [unreviewedCount, setUnreviewedCount] = useState(0)
   const [optimisticHref, setOptimisticHref] = useState<string | null>(null)
+  const attentionCount = useClientAttentionCount()
 
   // Reset optimistic state when pathname catches up
   useEffect(() => {
@@ -21,31 +20,6 @@ export function SidebarNav() {
       setOptimisticHref(null)
     }
   }, [pathname, optimisticHref])
-
-  useEffect(() => {
-    // Only fetch unreviewed count for trainers
-    if (!isTrainer) return
-
-    const fetchUnreviewedCount = async () => {
-      try {
-        const response = await fetch("/api/check-ins/recent")
-        if (response.ok) {
-          const data = await response.json()
-          const unreviewed = (data.checkIns || []).filter(
-            (ci: { status: string }) => ci.status === "ai_processed"
-          ).length
-          setUnreviewedCount(unreviewed)
-        }
-      } catch (error) {
-        console.error("Error fetching unreviewed count:", error)
-      }
-    }
-
-    fetchUnreviewedCount()
-    // Refresh every minute
-    const interval = setInterval(() => void fetchUnreviewedCount(), 60000)
-    return () => clearInterval(interval)
-  }, [isTrainer])
 
   return (
     <nav className="flex flex-col gap-1">
@@ -88,13 +62,13 @@ export function SidebarNav() {
                     isActive && "scale-105",
                   )}
                 />
-                {item.showBadge && unreviewedCount > 0 && (
+                {item.showBadge && attentionCount > 0 && (
                   <motion.span
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     className={cn(MONO, "absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#0d9488] text-white text-[10px] font-medium")}
                   >
-                    {unreviewedCount > 9 ? "9+" : unreviewedCount}
+                    {attentionCount > 9 ? "9+" : attentionCount}
                   </motion.span>
                 )}
               </div>
