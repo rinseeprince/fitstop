@@ -2,6 +2,7 @@ import type { LogTrainingEventInput } from "@/lib/validations/training";
 import type { ExerciseLog, SessionLog } from "@/types/training";
 import type { PrescribedExerciseView } from "./exercise-tracker-block";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
+import { buildPrescribedRows } from "@/utils/set-spec-rows";
 import { parseWeightToKg, type UnitSystem } from "@/utils/unit-conversions";
 import { displayLoad } from "@/components/clients/training/program-builder/commit-input";
 
@@ -140,11 +141,15 @@ function isSkippedLog(log: ExerciseLog): boolean {
   return log.completed === false && log.sets.length === 0;
 }
 
-// Seed the log form's set rows from the prescription's per-set specs so the row
-// COUNT (warm-ups + working) matches what the coach prescribed; the values stay
-// client-entered (set_type is applied server-side, never chosen here).
+// Seed the log form's set rows from the prescription so the row COUNT matches
+// what the coach prescribed; the values stay client-entered (set_type is applied
+// server-side, never chosen here).
+//
+// Flattened, so a drop set contributes its top set PLUS one row per drop — the
+// same expansion training-log-service uses when it stamps set_type. The two must
+// agree or every row after a drop set is typed from the wrong spec.
 function seededSetRows(v: PrescribedExerciseView): SetRowValues[] {
-  const specs = expandSetSpecs({
+  const rows = buildPrescribedRows(expandSetSpecs({
     setSpecs: v.setSpecs ?? null,
     sets: v.sets,
     repsMin: v.repsMin ?? null,
@@ -152,8 +157,8 @@ function seededSetRows(v: PrescribedExerciseView): SetRowValues[] {
     repsTarget: v.repsTarget ?? null,
     rpeTarget: v.rpeTarget ?? null,
     restSeconds: v.restSeconds ?? null,
-  });
-  return Array.from({ length: Math.max(1, specs.length) }, () => emptySet());
+  }));
+  return Array.from({ length: Math.max(1, rows.length) }, () => emptySet());
 }
 
 export function seedDefaultValues(args: {

@@ -62,6 +62,10 @@ import { toCanonicalWeightKg } from "@/utils/unit-conversions";
 // payload look complete. CONVENTIONS §8: "A reader that ignores set_specs sees a
 // truthful but lossy summary."
 import { mapExerciseRow } from "@/services/training-mappers";
+// The one flattening. The client's log form seeds its rows from this same
+// function, so a drop set's expansion cannot differ between what the client
+// filled in and what set_type each row is stamped with here.
+import { buildPrescribedRows } from "@/utils/set-spec-rows";
 
 // =============================================================================
 // Event-keyed training log service.
@@ -582,13 +586,13 @@ async function writeSessionLog(params: {
           existingSnapshotMap.get(ex.trainingExerciseId) ??
           null
         : null;
-      const prescribedSpecs = snapshotToSpecs(snapshot);
+      const prescribedRows = buildPrescribedRows(snapshotToSpecs(snapshot));
       ex.sets.forEach((s, setIdx) => {
         if (!setRowHasAnyValue(s)) return;
         setLogInserts.push({
           exercise_log_id: exerciseLogId,
           set_number: setIdx + 1,
-          set_type: prescribedSpecs[setIdx]?.set_type ?? "working",
+          set_type: prescribedRows[setIdx]?.setType ?? "working",
           reps: s.reps ?? null,
           // set_logs.weight is canonical kilograms (migration 141) and no longer
           // carries a tag, so the payload's unit is applied HERE and then

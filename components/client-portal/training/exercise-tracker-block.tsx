@@ -16,12 +16,11 @@ import type { SetSpec } from "@/utils/exercise-set-specs";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { SetRow } from "./set-row";
+import { PrescribedSetGrid } from "./prescribed-set-grid";
 import { ExerciseSearchInput } from "./exercise-search-input";
 import { emptySet, type LogFormValues } from "./log-form-types";
-import { useUnits } from "@/contexts/units-context";
-import { formatLoad } from "@/utils/unit-conversions";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
+import { buildPrescribedRows, type PrescribedRow } from "@/utils/set-spec-rows";
 
 export type PrescribedExerciseView = {
   id: string;
@@ -75,10 +74,27 @@ export function ExerciseTrackerBlock({
   index,
   formContext,
 }: ExerciseTrackerBlockProps) {
-  const repsHint = formatRepsHint(exercise);
-  const rpeHint =
-    exercise.rpeTarget != null ? String(exercise.rpeTarget) : undefined;
-  const summary = formatSummary(exercise, repsHint);
+  // The prescription, per set. This used to collapse to ONE exercise-level reps
+  // hint reused on every row, which is why a session prescribed 15-20 / 10-12 /
+  // 8-10 rendered as "8-12" three times.
+  const prescribedRows = useMemo(() => {
+    // expandSetSpecs clamps to a floor of ONE spec, so it cannot represent
+    // "nothing prescribed" — that state has to be caught before calling it or a
+    // zero-set exercise grows a phantom row.
+    if ((exercise.setSpecs?.length ?? 0) === 0 && exercise.sets <= 0) return [];
+    return buildPrescribedRows(
+      expandSetSpecs({
+        setSpecs: exercise.setSpecs ?? null,
+        sets: exercise.sets,
+        repsMin: exercise.repsMin ?? null,
+        repsMax: exercise.repsMax ?? null,
+        repsTarget: exercise.repsTarget ?? null,
+        rpeTarget: exercise.rpeTarget ?? null,
+        restSeconds: exercise.restSeconds ?? null,
+      }),
+    );
+  }, [exercise]);
+  const summary = formatSummary(exercise, formatRepsHint(exercise));
 
   if (!formContext) {
     return (
@@ -105,26 +121,11 @@ export function ExerciseTrackerBlock({
           <p className="mt-3 text-[12px] text-[#5a7d82]">{exercise.notes}</p>
         )}
 
-        {exercise.sets <= 0 ? (
+        {prescribedRows.length === 0 ? (
           <p className="mt-3 text-[12px] text-[#93b0b4]">No sets prescribed</p>
         ) : (
           <div className="mt-3">
-            <div className="grid grid-cols-12 gap-2 px-3 pb-1 text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
-              <div className="col-span-2 text-center">Set</div>
-              <div className="col-span-4 text-center">Weight</div>
-              <div className="col-span-3 text-center">Reps</div>
-              <div className="col-span-3 text-center">RPE</div>
-            </div>
-            <div className="space-y-1">
-              {Array.from({ length: exercise.sets }, (_, i) => (
-                <SetRow
-                  key={i}
-                  setNumber={i + 1}
-                  repsPlaceholder={repsHint}
-                  rpePlaceholder={rpeHint}
-                />
-              ))}
-            </div>
+            <PrescribedSetGrid rows={prescribedRows} fieldIds={null} />
           </div>
         )}
       </div>
@@ -136,8 +137,7 @@ export function ExerciseTrackerBlock({
       exercise={exercise}
       index={index}
       formContext={formContext}
-      repsHint={repsHint}
-      rpeHint={rpeHint}
+      prescribedRows={prescribedRows}
       summary={summary}
     />
   );
@@ -147,15 +147,13 @@ function FormModeBlock({
   exercise,
   index,
   formContext,
-  repsHint,
-  rpeHint,
+  prescribedRows,
   summary,
 }: {
   exercise: PrescribedExerciseView;
   index: number;
   formContext: ExerciseFormContext;
-  repsHint: string | undefined;
-  rpeHint: string | undefined;
+  prescribedRows: PrescribedRow[];
   summary: string;
 }) {
   const {
@@ -171,35 +169,6 @@ function FormModeBlock({
     control,
     name: `exercises.${index}.sets`,
   });
-
-  const { preference } = useUnits();
-
-  // The coach's prescribed load, shown as the input's placeholder. This form
-  // never displayed it, which is how the coach-authors-kg / client-logs-lbs
-  // mismatch stayed invisible for so long. It is a placeholder and is never
-  // committed, so formatLoad is correct here — it snaps to a number the client
-  // can actually put on the bar.
-  const prescribedSpecs = useMemo(
-    () =>
-      expandSetSpecs({
-        setSpecs: exercise.setSpecs ?? null,
-        sets: exercise.sets,
-        repsMin: exercise.repsMin ?? null,
-        repsMax: exercise.repsMax ?? null,
-        repsTarget: exercise.repsTarget ?? null,
-        rpeTarget: exercise.rpeTarget ?? null,
-        restSeconds: exercise.restSeconds ?? null,
-      }),
-    [exercise],
-  );
-  const prescribedLoadHint = (setIndex: number): string | undefined => {
-    const spec = prescribedSpecs[setIndex];
-    if (!spec || spec.load_value == null || spec.load_type !== "absolute") {
-      return undefined;
-    }
-    const { value, unit } = formatLoad(spec.load_value, preference);
-    return `${value}${unit}`;
-  };
 
   const initialNotes = getValues(`exercises.${index}.notes`) ?? "";
   const [notesOpen, setNotesOpen] = useState(initialNotes.trim().length > 0);
@@ -384,37 +353,16 @@ function FormModeBlock({
       )}
 
       <div className="mt-3">
-        {fields.length > 0 && (
-          <>
-            <div className="grid grid-cols-12 gap-2 px-3 pb-1 text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
-              <div className="col-span-1 text-center">Set</div>
-              <div className="col-span-3 text-center">Weight</div>
-              <div className="col-span-3 text-center">Reps</div>
-              <div className="col-span-3 text-center">RPE</div>
-              <div className="col-span-2"></div>
-            </div>
-            <div className="space-y-1">
-              {fields.map((field, i) => (
-                <SetRow
-                  key={field.id}
-                  setNumber={i + 1}
-                  register={register}
-                  exerciseIndex={index}
-                  setIndex={i}
-                  disabled={skipped}
-                  weightPlaceholder={prescribedLoadHint(i)}
-                  onCopyPrevious={
-                    i > 0 ? () => handleCopyPrevious(i) : undefined
-                  }
-                  canCopyPrevious={i > 0 ? canCopyAt(i) : undefined}
-                  onRemove={() => remove(i)}
-                  repsPlaceholder={repsHint}
-                  rpePlaceholder={rpeHint}
-                />
-              ))}
-            </div>
-          </>
-        )}
+        <PrescribedSetGrid
+          rows={prescribedRows}
+          fieldIds={fields.map((f) => f.id)}
+          register={register}
+          exerciseIndex={index}
+          disabled={skipped}
+          onRemove={remove}
+          onCopyPrevious={handleCopyPrevious}
+          canCopyPrevious={canCopyAt}
+        />
         <button
           type="button"
           onClick={() => append(emptySet())}

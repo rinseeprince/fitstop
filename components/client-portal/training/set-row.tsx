@@ -4,12 +4,47 @@ import { Input } from "@/components/ui/input";
 import type { LogFormValues } from "./log-form-types";
 import { useUnits } from "@/contexts/units-context";
 import { formatLoad } from "@/utils/unit-conversions";
+import { formatRepsRange } from "@/utils/reps-range";
+import { formatPrescribedLoad, type PrescribedRow } from "@/utils/set-spec-rows";
+
+// One template shared by the header row and every set row — they are a grid and
+// must not drift. Set · Load · Weight · Reps · RPE · actions.
+export const SET_GRID =
+  "grid grid-cols-[44px_minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.7fr)_56px] items-center gap-2";
+
+// Every non-working set carries its type, the way Hevy and Strong tag them: a
+// single letter beside the set number. Working sets are untagged because they
+// are the default and a tag on every row is noise.
+const TYPE_TAG = {
+  warmup: { letter: "W", label: "Warm-up", className: "bg-[rgba(245,158,11,0.10)] text-[#b07520]" },
+  drop: { letter: "D", label: "Drop set", className: "bg-[rgba(13,148,136,0.10)] text-[#0d9488]" },
+  amrap: { letter: "A", label: "AMRAP", className: "bg-[rgba(13,148,136,0.10)] text-[#0d9488]" },
+  failure: { letter: "F", label: "To failure", className: "bg-[rgba(192,96,96,0.10)] text-[#c06060]" },
+  working: null,
+} as const;
+
+export function SetTypeTag({ row }: { row?: PrescribedRow }) {
+  const tag = row ? TYPE_TAG[row.setType] : null;
+  if (!tag) return null;
+  return (
+    <span
+      title={tag.label}
+      aria-label={tag.label}
+      className={`rounded-[4px] px-1 text-[10px] font-semibold leading-[16px] ${tag.className}`}
+    >
+      {tag.letter}
+    </span>
+  );
+}
 
 type SetRowProps = {
   setNumber: number;
-  weightPlaceholder?: string;
-  repsPlaceholder?: string;
-  rpePlaceholder?: string;
+  /**
+   * This row's own prescription. Undefined for a set the CLIENT added beyond
+   * what was prescribed (the log form lets them append rows), which renders
+   * with empty hints rather than borrowing the previous row's.
+   */
+  prescribed?: PrescribedRow;
   register?: UseFormRegister<LogFormValues>;
   exerciseIndex?: number;
   setIndex?: number;
@@ -21,9 +56,7 @@ type SetRowProps = {
 
 export function SetRow({
   setNumber,
-  weightPlaceholder,
-  repsPlaceholder,
-  rpePlaceholder,
+  prescribed,
   register,
   exerciseIndex,
   setIndex,
@@ -39,18 +72,47 @@ export function SetRow({
   const editable =
     register !== undefined && exerciseIndex != null && setIndex != null;
 
+  // Load is the coach's INSTRUCTION and is never fillable — it may be a
+  // percentage, which cannot share a box with the kilograms the client logs.
+  // Absolute loads snap here (formatLoad, not displayLoad) because this is a
+  // read-only readout, not an editable field that could round-trip the snap.
+  const loadText = prescribed
+    ? formatPrescribedLoad(
+        prescribed,
+        prescribed.loadValue != null
+          ? String(formatLoad(prescribed.loadValue, preference).value)
+          : "",
+        loadUnit,
+      )
+    : null;
+
+  const repsPlaceholder = prescribed
+    ? prescribed.repsTarget ??
+      formatRepsRange({ min: prescribed.repsMin, max: prescribed.repsMax })
+    : "";
+  const rpePlaceholder =
+    prescribed?.rpeTarget != null ? String(prescribed.rpeTarget) : "";
+
+  const setCell = (
+    <div className="flex items-center justify-center gap-1">
+      {/* A drop shares its top set's number, so repeating it would read as a
+          duplicate — the tag alone identifies the row. */}
+      <span className="text-[13px] font-mono-display text-[#5a7d82]">
+        {prescribed?.dropIndex != null ? "" : setNumber}
+      </span>
+      <SetTypeTag row={prescribed} />
+    </div>
+  );
+
   if (!editable) {
     return (
-      <div
-        data-testid="set-row"
-        className="grid grid-cols-12 items-center gap-2 px-3 py-2"
-      >
-        <div className="col-span-2 text-center text-[13px] font-mono-display text-[#5a7d82]">
-          {setNumber}
-        </div>
-        <PlaceholderCell colSpan={4} hint={weightPlaceholder} />
-        <PlaceholderCell colSpan={3} hint={repsPlaceholder} />
-        <PlaceholderCell colSpan={3} hint={rpePlaceholder} />
+      <div data-testid="set-row" className={`${SET_GRID} px-3 py-2`}>
+        {setCell}
+        <ReadOnlyCell text={loadText} />
+        <ReadOnlyCell text={null} />
+        <ReadOnlyCell text={repsPlaceholder || null} />
+        <ReadOnlyCell text={rpePlaceholder || null} />
+        <span />
       </div>
     );
   }
@@ -59,52 +121,51 @@ export function SetRow({
   const showCopy = setIndex > 0 && onCopyPrevious !== undefined;
 
   return (
-    <div
-      data-testid="set-row"
-      className="grid grid-cols-12 items-center gap-2 px-3 py-2"
-    >
-      <div className="col-span-1 text-center text-[13px] font-mono-display text-[#5a7d82]">
-        {setNumber}
+    <div data-testid="set-row" className={`${SET_GRID} px-3 py-2`}>
+      {setCell}
+
+      <div
+        className="truncate text-center text-[12px] font-mono-display text-[#5a7d82]"
+        data-testid={`prescribed-load-${exerciseIndex}-${setIndex}`}
+      >
+        {loadText ?? "—"}
       </div>
-      <div className="col-span-3">
-        <div className="relative">
-          <Input
-            {...register(`${namePrefix}.weight`)}
-            inputMode="decimal"
-            type="text"
-            disabled={disabled}
-            placeholder={weightPlaceholder ?? ""}
-            aria-label={`Set ${setNumber} weight`}
-            className="h-9 pr-9 text-center text-[13px] font-mono-display"
-          />
-          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
-            {loadUnit}
-          </span>
-        </div>
-      </div>
-      <div className="col-span-3">
+
+      <div className="relative">
         <Input
-          {...register(`${namePrefix}.reps`)}
-          inputMode="numeric"
-          type="text"
-          disabled={disabled}
-          placeholder={repsPlaceholder ?? ""}
-          aria-label={`Set ${setNumber} reps`}
-          className="h-9 text-center text-[13px] font-mono-display"
-        />
-      </div>
-      <div className="col-span-3">
-        <Input
-          {...register(`${namePrefix}.rpe`)}
+          {...register(`${namePrefix}.weight`)}
           inputMode="decimal"
           type="text"
           disabled={disabled}
-          placeholder={rpePlaceholder ?? ""}
-          aria-label={`Set ${setNumber} RPE`}
-          className="h-9 text-center text-[13px] font-mono-display"
+          aria-label={`Set ${setNumber} weight`}
+          className="h-9 pr-9 text-center text-[13px] font-mono-display"
         />
+        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
+          {loadUnit}
+        </span>
       </div>
-      <div className="col-span-2 flex items-center justify-end gap-1">
+
+      <Input
+        {...register(`${namePrefix}.reps`)}
+        inputMode="numeric"
+        type="text"
+        disabled={disabled}
+        placeholder={repsPlaceholder}
+        aria-label={`Set ${setNumber} reps`}
+        className="h-9 text-center text-[13px] font-mono-display"
+      />
+
+      <Input
+        {...register(`${namePrefix}.rpe`)}
+        inputMode="decimal"
+        type="text"
+        disabled={disabled}
+        placeholder={rpePlaceholder}
+        aria-label={`Set ${setNumber} RPE`}
+        className="h-9 text-center text-[13px] font-mono-display"
+      />
+
+      <div className="flex items-center justify-end gap-1">
         {onRemove ? (
           <button
             type="button"
@@ -134,19 +195,10 @@ export function SetRow({
   );
 }
 
-function PlaceholderCell({
-  colSpan,
-  hint,
-}: {
-  colSpan: 3 | 4;
-  hint: string | undefined;
-}) {
-  const span = colSpan === 4 ? "col-span-4" : "col-span-3";
+function ReadOnlyCell({ text }: { text: string | null }) {
   return (
-    <div className={span}>
-      <div className="flex h-9 items-center justify-center rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[rgba(13,148,136,0.02)] text-[12px] font-mono-display text-[#93b0b4]">
-        {hint ?? "—"}
-      </div>
+    <div className="flex h-9 items-center justify-center rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[rgba(13,148,136,0.02)] text-[12px] font-mono-display text-[#93b0b4]">
+      {text ?? "—"}
     </div>
   );
 }

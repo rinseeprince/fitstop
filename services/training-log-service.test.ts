@@ -930,6 +930,91 @@ describe("logTrainingEvent", () => {
   });
 
   // -------------------------------------------------------------------------
+  // set_type is stamped POSITIONALLY from the prescription, and a drop set
+  // occupies MORE log rows than it does spec entries (its top set plus one row
+  // per drop, the Hevy/Strong shape the client renders). Before both sides
+  // shared buildPrescribedRows, every row after a drop set took the type of the
+  // wrong spec — silently, into set_logs, where analytics read it to exclude
+  // warm-ups.
+  // -------------------------------------------------------------------------
+  it("stamps set_type correctly across a drop set's expanded rows", async () => {
+    const setSpecs = [
+      { set_number: 1, set_type: "warmup" },
+      {
+        set_number: 2,
+        set_type: "drop",
+        drops: [
+          { weight: 60, reps: 8 },
+          { weight: 40, reps: 8 },
+        ],
+      },
+      { set_number: 3, set_type: "failure" },
+    ];
+    const eventQ = createMockQuery({ data: eventRow(), error: null });
+    const clientQ = createMockQuery({
+      data: { expected_check_in_day: null },
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    const exerciseSnapQ = createMockQuery({
+      data: [{ ...EXERCISE_A_PRESCRIPTION, set_specs: setSpecs }],
+      error: null,
+    });
+    const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const existingExLogsQ = createMockQuery({ data: [], error: null });
+    const deleteExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-drop"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
+    const linkQ = createMockQuery({ data: null, error: null });
+
+    installRouter({
+      training_events: [eventQ, linkQ],
+      clients: clientQ,
+      training_sessions: sessionSnapQ,
+      training_exercises: exerciseSnapQ,
+      session_logs: upsertQ,
+      exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
+    });
+
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "full",
+        exercises: [
+          {
+            trainingExerciseId: EXERCISE_A,
+            exerciseName: "Bench",
+            // Five rows: warm-up, the drop set's top set, its two drops, failure.
+            sets: [
+              { reps: 15, weight: 40 },
+              { reps: 8, weight: 80 },
+              { reps: 8, weight: 60 },
+              { reps: 8, weight: 40 },
+              { reps: 5, weight: 80 },
+            ],
+            weightUnit: "kg",
+          },
+        ],
+      },
+    });
+
+    const inserted = setLogsInsertQ.insert.mock.calls[0][0] as {
+      set_number: number;
+      set_type: string;
+    }[];
+    expect(inserted.map((r) => r.set_type)).toEqual([
+      "warmup",
+      "drop",
+      "drop",
+      "drop",
+      "failure",
+    ]);
+    expect(inserted.map((r) => r.set_number)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  // -------------------------------------------------------------------------
   // 11. Re-run idempotency on normal (non-orphan) path
   // -------------------------------------------------------------------------
   it("[11] event-keyed insert replaces exercise_logs (delete-then-insert)", async () => {
