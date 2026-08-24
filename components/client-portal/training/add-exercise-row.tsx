@@ -37,7 +37,6 @@ export function AddExerciseRow({ onAdd }: AddExerciseRowProps) {
       exerciseName: trimmed,
       prescribedName: undefined,
       isSwapped: false,
-      skipped: false,
       notes: "",
       sets: Array.from({ length: setsCount }, () => emptySet()),
       isUnplanned: true,

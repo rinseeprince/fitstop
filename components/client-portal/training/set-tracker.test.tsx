@@ -210,27 +210,31 @@ describe("SetTracker", () => {
     expect(screen.getByText(/failed to load workout/i)).toBeInTheDocument();
   });
 
-  it("renders header and quick-log controls on happy path", () => {
+  it("renders the header, the outcome line and the set list on happy path", () => {
     setEventReady();
     render(<SetTracker eventId="evt-1" date="2026-05-06" />);
     expect(screen.getByText("Push Day A")).toBeInTheDocument();
     expect(screen.getByText("Chest + triceps")).toBeInTheDocument();
-    expect(screen.getByTestId("quick-log-full")).toBeInTheDocument();
-    expect(screen.getByTestId("detailed-toggle")).toBeInTheDocument();
+    expect(screen.getByTestId("completion-outcome")).toBeInTheDocument();
+    // The list is open on arrival. Collapsed, the one primary button would
+    // record `skipped` for a client who did the whole workout.
+    expect(screen.getAllByTestId("exercise-tracker-block")).toHaveLength(2);
   });
 
-  // ---- 1. Quick log full ---------------------------------------------------
+  // ---- 1. Nothing ticked ---------------------------------------------------
 
-  it("[quick-full] submits { completionQuality: 'full' } with no exercises", async () => {
+  it("[nothing-ticked] submits { completionQuality: 'skipped' } with no exercises", async () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("quick-log-full"));
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "0 of 7 working sets logged. Will be recorded as skipped.",
+    );
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(getLastFetchPayload()).toEqual({ completionQuality: "full" });
-    // The event detail cache is dropped so re-entering refetches the logged status
-    // (a quick-log's only signal is sessionLog.completionQuality).
+    expect(getLastFetchPayload()).toEqual({ completionQuality: "skipped" });
+    // The event detail cache is dropped so re-entering refetches the logged
+    // status and the logged sets (the form seeds defaultValues once per mount).
     await waitFor(() =>
       expect(mockGlobalMutate).toHaveBeenCalledWith(
         "/api/client/training/events/evt-1",
@@ -240,58 +244,110 @@ describe("SetTracker", () => {
     );
   });
 
-  // ---- 2. Quick log partial ------------------------------------------------
+  // ---- 2. Session-level bank ------------------------------------------------
 
-  it("[quick-partial] submits { completionQuality: 'partial' }", async () => {
+  it("[mark-all] Mark all complete banks every set of every exercise", async () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("quick-log-partial"));
+    await user.click(screen.getByTestId("mark-all-complete"));
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "7 of 7 working sets logged. Will be recorded as complete.",
+    );
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(getLastFetchPayload()).toEqual({ completionQuality: "partial" });
+    const payload = getLastFetchPayload() as {
+      completionQuality: string;
+      exercises?: Array<{ sets: Array<{ setNumber: number }> }>;
+    };
+    expect(payload.completionQuality).toBe("full");
+    expect(payload.exercises).toHaveLength(2);
+    // Banked with no values at all — doing the work is the claim (decision 3).
+    expect(payload.exercises![0].sets).toEqual([
+      { setNumber: 1 },
+      { setNumber: 2 },
+      { setNumber: 3 },
+    ]);
+    expect(payload.exercises![1].sets.map((s) => s.setNumber)).toEqual([
+      1, 2, 3, 4,
+    ]);
   });
 
-  // ---- 3. Quick log skipped ------------------------------------------------
+  // ---- 3. Exercise-level bank ----------------------------------------------
 
-  it("[quick-skipped] submits { completionQuality: 'skipped' }", async () => {
+  it("[exercise-tick] the exercise tick banks that exercise alone", async () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("quick-log-skipped"));
+    await user.click(screen.getByTestId("complete-exercise-0"));
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "3 of 7 working sets logged. Will be recorded as partial.",
+    );
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(getLastFetchPayload()).toEqual({ completionQuality: "skipped" });
+    const payload = getLastFetchPayload() as {
+      completionQuality: string;
+      exercises?: Array<{ trainingExerciseId?: string }>;
+    };
+    expect(payload.completionQuality).toBe("partial");
+    expect(payload.exercises).toHaveLength(1);
+    expect(payload.exercises![0].trainingExerciseId).toBe(REAL_UUID_A);
   });
 
-  // ---- 4. Quick log with notes --------------------------------------------
+  // ---- 4. Untick -----------------------------------------------------------
 
-  it("[quick-notes] notes are included in payload", async () => {
+  it("[untick] unticking a banked row drops it from the payload", async () => {
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("complete-exercise-0"));
+    await user.click(screen.getByTestId("set-complete-0-1"));
+    const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
+    const rows = within(ex0).getAllByTestId("set-row");
+    expect(rows[0]).toHaveAttribute("data-completed", "true");
+    expect(rows[1]).toHaveAttribute("data-completed", "false");
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const payload = getLastFetchPayload() as {
+      exercises?: Array<{ sets: Array<{ setNumber: number }> }>;
+    };
+    // 1 and 3, not 1 and 2 — the surviving rows keep their own numbers.
+    expect(payload.exercises![0].sets.map((s) => s.setNumber)).toEqual([1, 3]);
+  });
+
+  // ---- 5. Notes ------------------------------------------------------------
+
+  it("[notes] session notes are included in the payload", async () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
     await user.click(screen.getByTestId("session-notes-toggle"));
     await user.type(screen.getByTestId("session-notes"), "Felt strong today");
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(getLastFetchPayload()).toEqual({
-      completionQuality: "full",
+      completionQuality: "skipped",
       notes: "Felt strong today",
     });
   });
 
-  // ---- 5. Detailed path ---------------------------------------------------
+  // ---- 6. Auto-tick --------------------------------------------------------
 
-  it("[detailed] expanding + filling sets submits exercises[] matching schema", async () => {
+  // Locked decision 2: entering a value and moving on banks that set, so a
+  // client recording numbers never touches a tick.
+  it("[auto-tick] typing a value and blurring the row banks it", async () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
     await user.type(within(ex0).getByLabelText("Set 1 reps"), "10");
     await user.type(within(ex0).getByLabelText("Set 1 weight"), "100");
-    await user.click(screen.getByTestId("quick-log-full"));
+    // Move focus out of the row — the same thing tapping the next set does.
+    await user.tab();
+    expect(within(ex0).getAllByTestId("set-row")[0]).toHaveAttribute(
+      "data-completed",
+      "true",
+    );
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as {
@@ -299,51 +355,64 @@ describe("SetTracker", () => {
       exercises?: Array<{
         trainingExerciseId?: string;
         exerciseName: string;
-        sets: Array<{ reps?: number; weight?: number; rpe?: number }>;
+        sets: Array<{ setNumber: number; reps?: number; weight?: number }>;
         weightUnit: string;
       }>;
     };
-    expect(payload.completionQuality).toBe("full");
+    expect(payload.completionQuality).toBe("partial");
     expect(payload.exercises).toHaveLength(1);
     expect(payload.exercises![0]).toMatchObject({
       trainingExerciseId: REAL_UUID_A,
       exerciseName: "Bench Press",
       // Was "lbs" — the client's display unit, sent for the server to apply. The
       // form converts before sending now, so the wire is always canonical.
-      sets: [{ reps: 10, weight: 100 }],
+      sets: [{ setNumber: 1, reps: 10, weight: 100 }],
     });
   });
 
-  // ---- 6. Detailed skip exercise ------------------------------------------
+  // ---- 7. Warm-ups are logged but never scored -----------------------------
 
-  it("[detailed-skip] skip toggle produces { skipped: true, sets: [] }", async () => {
-    setEventReady();
+  it("[warmup-unscored] a warm-up is tickable and sent, but out of the count", async () => {
+    const detail = baseFixture();
+    // One warm-up plus two working sets, in place of the plain 3.
+    detail.exercises = [detail.exercises[0]];
+    (detail.exercises[0] as { exercise: { setSpecs?: unknown } }).exercise.setSpecs = [
+      { set_number: 1, set_type: "warmup", reps_min: 15, reps_max: 20 },
+      { set_number: 2, set_type: "working", reps_min: 8, reps_max: 12 },
+      { set_number: 3, set_type: "working", reps_min: 8, reps_max: 12 },
+    ];
+    setEventReady(detail);
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
-    await user.click(screen.getByTestId("skip-toggle-0"));
-    await user.click(screen.getByTestId("quick-log-partial"));
+
+    // Denominator is 2, not 3.
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "0 of 2 working sets logged. Will be recorded as skipped.",
+    );
+
+    await user.click(screen.getByTestId("set-complete-0-0"));
+    // Ticking only the warm-up moves neither half of the ratio.
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "0 of 2 working sets logged. Will be recorded as skipped.",
+    );
+
+    await user.click(screen.getByTestId("set-complete-0-1"));
+    await user.click(screen.getByTestId("set-complete-0-2"));
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "2 of 2 working sets logged. Will be recorded as complete.",
+    );
+
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as {
       completionQuality: string;
-      exercises?: Array<{ skipped?: boolean; sets: unknown[] }>;
+      exercises?: Array<{ sets: Array<{ setNumber: number }> }>;
     };
-    expect(payload.completionQuality).toBe("partial");
-    expect(payload.exercises).toHaveLength(1);
-    expect(payload.exercises![0].skipped).toBe(true);
-    expect(payload.exercises![0].sets).toEqual([]);
-  });
-
-  // ---- 7. Save disabled until status selected -----------------------------
-
-  it("[disabled-no-status] save button disabled until status selected", async () => {
-    setEventReady();
-    const user = userEvent.setup();
-    render(<SetTracker eventId="evt-1" />);
-    expect(screen.getByTestId("save-button")).toBeDisabled();
-    await user.click(screen.getByTestId("quick-log-full"));
-    expect(screen.getByTestId("save-button")).not.toBeDisabled();
+    expect(payload.completionQuality).toBe("full");
+    // Recorded all the same — a coach investigating a niggle needs to see it.
+    expect(payload.exercises![0].sets.map((s) => s.setNumber)).toEqual([
+      1, 2, 3,
+    ]);
   });
 
   // ---- 8. Save disabled during flight + Loader2 ---------------------------
@@ -359,7 +428,6 @@ describe("SetTracker", () => {
     ) as unknown as typeof fetch;
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() =>
       expect(screen.getByTestId("save-button")).toBeDisabled(),
@@ -383,7 +451,6 @@ describe("SetTracker", () => {
     }) as unknown as typeof fetch;
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(mockToast).toHaveBeenCalled());
     const lastCall = mockToast.mock.calls[mockToast.mock.calls.length - 1][0];
@@ -397,7 +464,6 @@ describe("SetTracker", () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
     await user.type(within(ex0).getByLabelText("Set 1 reps"), "10");
     await user.type(within(ex0).getByLabelText("Set 1 weight"), "100");
@@ -408,12 +474,14 @@ describe("SetTracker", () => {
     expect(
       within(ex0).getByLabelText<HTMLInputElement>("Set 2 weight").value,
     ).toBe("100");
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as {
       exercises?: Array<{ sets: Array<{ reps?: number; weight?: number }> }>;
     };
+    // Both rows reach the wire, which is only true because copying banks the row
+    // it fills — it enters values without ever firing a blur, so the auto-tick
+    // alone would leave the copied row full of numbers and unticked.
     expect(payload.exercises![0].sets).toHaveLength(2);
     expect(payload.exercises![0].sets[0]).toMatchObject({ reps: 10, weight: 100 });
     expect(payload.exercises![0].sets[1]).toMatchObject({ reps: 10, weight: 100 });
@@ -421,12 +489,10 @@ describe("SetTracker", () => {
 
   // ---- 11. Weight unit label ----------------------------------------------
 
-  it("[weight-unit] label reflects client preference", async () => {
+  it("[weight-unit] label reflects client preference", () => {
     setEventReady();
     setMe("kg");
-    const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     const blocks = screen.getAllByTestId("exercise-tracker-block");
     expect(within(blocks[0]).getAllByText(/kg/i).length).toBeGreaterThan(0);
   });
@@ -437,12 +503,10 @@ describe("SetTracker", () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
     await user.type(within(ex0).getByLabelText("Set 1 reps"), "8");
     await user.type(within(ex0).getByLabelText("Set 1 weight"), "135");
     await user.click(screen.getByTestId("detailed-toggle")); // collapse
-    await user.click(screen.getByTestId("quick-log-partial"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as {
@@ -463,11 +527,9 @@ describe("SetTracker", () => {
     render(<SetTracker eventId="evt-1" />);
     await user.click(screen.getByTestId("session-notes-toggle"));
     await user.type(screen.getByTestId("session-notes"), "Tough session");
-    await user.click(screen.getByTestId("detailed-toggle"));
     const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
     await user.type(within(ex0).getByLabelText("Set 1 reps"), "8");
     await user.type(within(ex0).getByLabelText("Set 1 weight"), "100");
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as {
@@ -496,10 +558,8 @@ describe("SetTracker", () => {
     setEventReady(detail);
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     await user.type(screen.getByLabelText("Set 1 reps"), "10");
     await user.type(screen.getByLabelText("Set 1 weight"), "100");
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as {
@@ -519,17 +579,15 @@ describe("SetTracker", () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     await user.click(screen.getByTestId("exercise-notes-toggle-0"));
     await user.type(
       screen.getByTestId("exercise-notes-0"),
       "Felt easy, no soreness",
     );
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as { exercises?: unknown };
-    expect(payload).toEqual({ completionQuality: "full" });
+    expect(payload).toEqual({ completionQuality: "skipped" });
     expect(payload.exercises).toBeUndefined();
   });
 
@@ -539,7 +597,6 @@ describe("SetTracker", () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
     // Bench Press is prescribed with sets: 3 → starts with 3 rows.
     expect(within(ex0).getAllByTestId("set-row")).toHaveLength(3);
@@ -548,7 +605,6 @@ describe("SetTracker", () => {
     // The new row is editable and submittable.
     await user.type(within(ex0).getByLabelText("Set 4 reps"), "12");
     await user.type(within(ex0).getByLabelText("Set 4 weight"), "95");
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as {
@@ -564,38 +620,43 @@ describe("SetTracker", () => {
     ]);
   });
 
-  // ---- 17b. Delete set ----------------------------------------------------
+  // ---- 17b. Delete set is restricted to appended rows ----------------------
 
-  it("[delete-set] delete-set button removes a row and excludes its data from payload", async () => {
+  // Deleting a PRESCRIBED row shifts every later row down onto the wrong spec —
+  // delete the warm-up and a working set is stored as `warmup`, excluded from
+  // volume, PRs and compliance. An unticked row already says "not done", so
+  // there is nothing left for deletion to express.
+  it("[delete-set] a prescribed row has no delete button; an appended one does", async () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
+    // Bench Press prescribes 3 rows.
     expect(within(ex0).getAllByTestId("set-row")).toHaveLength(3);
-    await user.type(within(ex0).getByLabelText("Set 1 reps"), "10");
-    await user.type(within(ex0).getByLabelText("Set 1 weight"), "100");
-    await user.type(within(ex0).getByLabelText("Set 2 reps"), "9");
-    await user.type(within(ex0).getByLabelText("Set 2 weight"), "100");
-    // Delete row 2 (the second filled row).
-    await user.click(within(ex0).getByTestId("delete-set-0-1"));
-    expect(within(ex0).getAllByTestId("set-row")).toHaveLength(2);
-    await user.click(screen.getByTestId("quick-log-full"));
-    await user.click(screen.getByTestId("save-button"));
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    const payload = getLastFetchPayload() as {
-      exercises?: Array<{
-        sets: Array<{ setNumber: number; reps?: number; weight?: number }>;
-      }>;
-    };
-    expect(payload.exercises).toHaveLength(1);
-    // The surviving row keeps number 1 only because the deleted row sat AFTER
-    // it. Deleting a row BEFORE a filled one still shifts it onto the wrong
-    // prescribed spec — Phase 2 closes that by refusing to delete a prescribed
-    // row at all (see the plan's Phase 2 item 8).
-    expect(payload.exercises![0].sets).toEqual([
-      { setNumber: 1, reps: 10, weight: 100 },
-    ]);
+    expect(within(ex0).queryByTestId("delete-set-0-0")).toBeNull();
+    expect(within(ex0).queryByTestId("delete-set-0-1")).toBeNull();
+    expect(within(ex0).queryByTestId("delete-set-0-2")).toBeNull();
+
+    // Row 4 is the client's own, and theirs to remove.
+    await user.click(within(ex0).getByTestId("add-set-0"));
+    expect(within(ex0).getAllByTestId("set-row")).toHaveLength(4);
+    expect(within(ex0).getByTestId("delete-set-0-3")).toBeInTheDocument();
+    await user.click(within(ex0).getByTestId("delete-set-0-3"));
+    expect(within(ex0).getAllByTestId("set-row")).toHaveLength(3);
+  });
+
+  it("[delete-set-unplanned] every row of an unplanned exercise is deletable", async () => {
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.type(screen.getByTestId("add-exercise-name"), "Calf Raises");
+    await user.click(screen.getByTestId("add-exercise-submit"));
+    const ex2 = screen.getAllByTestId("exercise-tracker-block")[2];
+    // Nothing was prescribed, so the whole row list is the client's own.
+    expect(within(ex2).getAllByTestId("set-row")).toHaveLength(3);
+    expect(within(ex2).getByTestId("delete-set-2-0")).toBeInTheDocument();
+    await user.click(within(ex2).getByTestId("delete-set-2-0"));
+    expect(within(ex2).getAllByTestId("set-row")).toHaveLength(2);
   });
 
   // ---- 17c. Delete unplanned exercise -------------------------------------
@@ -604,7 +665,6 @@ describe("SetTracker", () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     // Prescribed blocks (indices 0 and 1) must NOT have a delete-exercise button.
     expect(screen.queryByTestId("delete-exercise-0")).toBeNull();
     expect(screen.queryByTestId("delete-exercise-1")).toBeNull();
@@ -624,11 +684,10 @@ describe("SetTracker", () => {
     await user.click(screen.getByTestId("delete-exercise-2"));
     expect(screen.getAllByTestId("exercise-tracker-block")).toHaveLength(2);
     // Save → no exercises in payload (the only filled exercise was just deleted).
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as { exercises?: unknown };
-    expect(payload).toEqual({ completionQuality: "full" });
+    expect(payload).toEqual({ completionQuality: "skipped" });
     expect(payload.exercises).toBeUndefined();
   });
 
@@ -657,11 +716,10 @@ describe("SetTracker", () => {
     expect(
       screen.getByTestId<HTMLTextAreaElement>("session-notes").value,
     ).toBe("Persisted text");
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(getLastFetchPayload()).toEqual({
-      completionQuality: "full",
+      completionQuality: "skipped",
       notes: "Persisted text",
     });
   });
@@ -722,7 +780,6 @@ describe("SetTracker", () => {
 
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     await user.type(
       screen.getByTestId("add-exercise-name"),
       "bulgarian",
@@ -738,7 +795,6 @@ describe("SetTracker", () => {
     const newBlock = blocks[blocks.length - 1];
     await user.type(within(newBlock).getByLabelText("Set 1 reps"), "10");
     await user.type(within(newBlock).getByLabelText("Set 1 weight"), "30");
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() =>
       expect(global.fetch).toHaveBeenCalledWith(
@@ -784,7 +840,6 @@ describe("SetTracker", () => {
 
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     await user.type(
       screen.getByTestId("add-exercise-name"),
       "Made-up Movement",
@@ -794,7 +849,6 @@ describe("SetTracker", () => {
     const newBlock = blocks[blocks.length - 1];
     await user.type(within(newBlock).getByLabelText("Set 1 reps"), "10");
     await user.type(within(newBlock).getByLabelText("Set 1 weight"), "20");
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() =>
       expect(global.fetch).toHaveBeenCalledWith(
@@ -817,26 +871,28 @@ describe("SetTracker", () => {
     expect(made!.exerciseId).toBeUndefined();
   });
 
-  // ---- 17e. Log workout button location ----------------------------------
+  // ---- 17e. One primary action, with the outcome stated above it ----------
 
-  it("[log-button-location] Log workout button sits above the quick-log card and submits the form", async () => {
+  it("[primary-button] one Complete workout button, with the outcome line above it", async () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
     const saveBtn = screen.getByTestId("save-button");
-    expect(saveBtn).toHaveTextContent(/log workout/i);
-    // The button is OUTSIDE the QuickLogControls section (no longer inside).
-    // The QuickLogControls section is identifiable by quick-log-full living
-    // inside it; assert the save button is not a descendant.
-    const quickFull = screen.getByTestId("quick-log-full");
-    const quickSection = quickFull.closest("section");
-    expect(quickSection).not.toBeNull();
-    expect(quickSection!.contains(saveBtn)).toBe(false);
-    // Submit still works.
-    await user.click(screen.getByTestId("quick-log-full"));
+    expect(saveBtn).toHaveTextContent(/complete workout/i);
+    // The complete/partial/skipped selector is gone — the ticks answer it.
+    expect(screen.queryByTestId("quick-log-full")).toBeNull();
+    expect(screen.queryByTestId("quick-log-partial")).toBeNull();
+    expect(screen.queryByTestId("quick-log-skipped")).toBeNull();
+    // The derivation is visible BEFORE commit: a coach's adherence number
+    // depends on it, so the client must be told what they are agreeing to.
+    const outcome = screen.getByTestId("completion-outcome");
+    expect(
+      outcome.compareDocumentPosition(saveBtn) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     await user.click(saveBtn);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(getLastFetchPayload()).toEqual({ completionQuality: "full" });
+    expect(getLastFetchPayload()).toEqual({ completionQuality: "skipped" });
   });
 
   // ---- 17f. Swap UI for prescribed exercises -----------------------------
@@ -871,7 +927,6 @@ describe("SetTracker", () => {
 
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     await user.click(screen.getByTestId("swap-0"));
     await user.type(screen.getByTestId("swap-picker-0"), "dumbbell");
     await waitFor(() =>
@@ -885,7 +940,6 @@ describe("SetTracker", () => {
     // Fill a set + save.
     await user.type(within(ex0).getByLabelText("Set 1 reps"), "10");
     await user.type(within(ex0).getByLabelText("Set 1 weight"), "60");
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() =>
       expect(global.fetch).toHaveBeenCalledWith(
@@ -938,7 +992,6 @@ describe("SetTracker", () => {
 
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     await user.click(screen.getByTestId("swap-0"));
     await user.type(screen.getByTestId("swap-picker-0"), "smith");
     await waitFor(() =>
@@ -953,7 +1006,6 @@ describe("SetTracker", () => {
     // Save → payload has prescribed name, no exerciseId.
     await user.type(within(ex0).getByLabelText("Set 1 reps"), "10");
     await user.type(within(ex0).getByLabelText("Set 1 weight"), "100");
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() =>
       expect(global.fetch).toHaveBeenCalledWith(
@@ -977,7 +1029,6 @@ describe("SetTracker", () => {
     setEventReady();
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    await user.click(screen.getByTestId("detailed-toggle"));
     await user.type(
       screen.getByTestId("add-exercise-name"),
       "Mystery Move",
@@ -1062,10 +1113,9 @@ describe("SetTracker", () => {
     setEventReady(detail);
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
-    // Status pre-selected
-    expect(screen.getByTestId("quick-log-partial")).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    // Bench Press is fully logged, Overhead Press untouched — 3 of 7.
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "3 of 7 working sets logged. Will be recorded as partial.",
     );
     // Notes pre-filled
     expect(
@@ -1073,7 +1123,6 @@ describe("SetTracker", () => {
     ).toBe("Felt good");
     // Set rows pre-populated with EXACT per-set values (no more lossy
     // top-set broadcast — weights and RPEs differ per row).
-    await user.click(screen.getByTestId("detailed-toggle"));
     const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
     expect(
       within(ex0).getByLabelText<HTMLInputElement>("Set 1 reps").value,
@@ -1117,10 +1166,8 @@ describe("SetTracker", () => {
     expect(payload.completionQuality).toBe("partial");
     expect(payload.notes).toBe("Felt good");
     expect(payload.exercises).toHaveLength(1);
-    // A COMPLETE prior log restores to numbers 1-3 unchanged. A partial one
-    // does not yet — restoreSetsFromLog rebuilds only the logged rows, so sets
-    // 3-5 would come back as 1-3. Phase 2 item 8 rebuilds the full prescribed
-    // list; until then the plan records it as a known gap.
+    // The restored rows come back ticked and keep their own numbers. Overhead
+    // Press restores as four unticked rows and is absent from the payload.
     expect(payload.exercises![0].sets).toEqual([
       { setNumber: 1, reps: 10, weight: 100, rpe: 8 },
       { setNumber: 2, reps: 10, weight: 105, rpe: 8 },
@@ -1187,7 +1234,6 @@ describe("SetTracker", () => {
     // Header shows the PERFORMED session (Back Day), not the prescribed one.
     expect(await screen.findByText("Back Day")).toBeInTheDocument();
 
-    await user.click(screen.getByTestId("quick-log-full"));
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const body = getLastFetchPayload() as { performedSessionId?: string };

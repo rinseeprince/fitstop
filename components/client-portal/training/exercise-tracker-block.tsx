@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import {
-  Controller,
   useFieldArray,
   useWatch,
   type Control,
@@ -14,13 +13,16 @@ import Link from "next/link";
 import { LineChart, Plus, Repeat, Trash2, Video, X } from "lucide-react";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { PrescribedSetGrid } from "./prescribed-set-grid";
 import { ExerciseSearchInput } from "./exercise-search-input";
-import { emptySet, type LogFormValues } from "./log-form-types";
-import { expandSetSpecs } from "@/utils/exercise-set-specs";
-import { buildPrescribedRows, type PrescribedRow } from "@/utils/set-spec-rows";
+import {
+  emptySet,
+  prescribedRowsForView,
+  type LogFormValues,
+} from "./log-form-types";
+import type { PrescribedRow } from "@/utils/set-spec-rows";
 import {
   resolvePrescribedFields,
   type PrescribedField,
@@ -84,23 +86,10 @@ export function ExerciseTrackerBlock({
   // The prescription, per set. This used to collapse to ONE exercise-level reps
   // hint reused on every row, which is why a session prescribed 15-20 / 10-12 /
   // 8-10 rendered as "8-12" three times.
-  const prescribedRows = useMemo(() => {
-    // expandSetSpecs clamps to a floor of ONE spec, so it cannot represent
-    // "nothing prescribed" — that state has to be caught before calling it or a
-    // zero-set exercise grows a phantom row.
-    if ((exercise.setSpecs?.length ?? 0) === 0 && exercise.sets <= 0) return [];
-    return buildPrescribedRows(
-      expandSetSpecs({
-        setSpecs: exercise.setSpecs ?? null,
-        sets: exercise.sets,
-        repsMin: exercise.repsMin ?? null,
-        repsMax: exercise.repsMax ?? null,
-        repsTarget: exercise.repsTarget ?? null,
-        rpeTarget: exercise.rpeTarget ?? null,
-        restSeconds: exercise.restSeconds ?? null,
-      }),
-    );
-  }, [exercise]);
+  const prescribedRows = useMemo(
+    () => prescribedRowsForView(exercise),
+    [exercise],
+  );
   const fields = resolvePrescribedFields(exercise.prescribedFields);
   const summary = formatSummary(exercise, formatRepsHint(exercise));
 
@@ -193,8 +182,6 @@ function FormModeBlock({
   const [notesOpen, setNotesOpen] = useState(initialNotes.trim().length > 0);
   const [swapping, setSwapping] = useState(false);
 
-  const skipped =
-    useWatch({ control, name: `exercises.${index}.skipped` }) ?? false;
   const liveName =
     useWatch({ control, name: `exercises.${index}.exerciseName` }) ??
     exercise.name;
@@ -230,6 +217,15 @@ function FormModeBlock({
   const watchedSets =
     useWatch({ control, name: `exercises.${index}.sets` }) ?? [];
 
+  const setCompleted = (row: number, next: boolean) => {
+    setValue(`exercises.${index}.sets.${row}.completed`, next, {
+      shouldDirty: true,
+    });
+  };
+
+  const isCompleted = (row: number): boolean =>
+    watchedSets[row]?.completed === true;
+
   const handleCopyPrevious = (rowIndex: number) => {
     const sets = getValues(`exercises.${index}.sets`);
     for (let m = rowIndex - 1; m >= 0; m--) {
@@ -245,9 +241,33 @@ function FormModeBlock({
         setValue(`exercises.${index}.sets.${rowIndex}.rpe`, s.rpe, {
           shouldDirty: true,
         });
+        // Copying IS entering a value — it fills the row without ever firing a
+        // blur, so without this the commonest gesture in the form leaves rows
+        // full of numbers and unticked, which is precisely what the auto-tick
+        // exists to prevent.
+        setCompleted(rowIndex, true);
         return;
       }
     }
+  };
+
+  // Auto-tick (locked decision 2): entering a value and moving on banks that
+  // set, so a client recording numbers never touches a tick. Only ever ticks —
+  // clearing a field does NOT untick, because a banked set with empty fields is
+  // a legitimate record (decision 3).
+  const handleRowBlur = (row: number) => {
+    const s = getValues(`exercises.${index}.sets.${row}`);
+    if (!s || s.completed) return;
+    if (s.reps.trim() || s.weight.trim() || s.rpe.trim()) {
+      setCompleted(row, true);
+    }
+  };
+
+  const completedCount = watchedSets.filter((s) => s?.completed === true).length;
+  const allCompleted = setFields.length > 0 && completedCount === setFields.length;
+
+  const bankEveryRow = (next: boolean) => {
+    for (let row = 0; row < setFields.length; row++) setCompleted(row, next);
   };
 
   function isSetFilled(row: number): boolean {
@@ -297,7 +317,6 @@ function FormModeBlock({
             <button
               type="button"
               onClick={() => setSwapping(true)}
-              disabled={skipped}
               data-testid={`swap-${index}`}
               className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-[#5a7d82] transition-colors hover:text-[#0d9488] disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -338,19 +357,23 @@ function FormModeBlock({
           </Link>
         </div>
         <div className="flex shrink-0 items-center gap-3">
+          {/* Banks every set of this exercise in one tap. Indeterminate while
+              only some are ticked, so it reports the exercise's state as well as
+              acting on it. */}
           <label className="flex items-center gap-2 whitespace-nowrap text-[12px] text-[#5a7d82]">
-            <span>Skip</span>
-            <Controller
-              control={control}
-              name={`exercises.${index}.skipped`}
-              render={({ field }) => (
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                  aria-label={`Skip ${exercise.name}`}
-                  data-testid={`skip-toggle-${index}`}
-                />
-              )}
+            <span>Done</span>
+            <Checkbox
+              checked={
+                allCompleted
+                  ? true
+                  : completedCount > 0
+                    ? "indeterminate"
+                    : false
+              }
+              onCheckedChange={() => bankEveryRow(!allCompleted)}
+              aria-label={`Mark every set of ${exercise.name} complete`}
+              data-testid={`complete-exercise-${index}`}
+              className="size-5 border-[#93b0b4] data-[state=checked]:border-[#0d9488] data-[state=checked]:bg-[#0d9488] data-[state=indeterminate]:border-[#0d9488] data-[state=indeterminate]:bg-[rgba(13,148,136,0.25)]"
             />
           </label>
           {onRemove ? (
@@ -378,15 +401,23 @@ function FormModeBlock({
           fieldIds={setFields.map((f) => f.id)}
           register={register}
           exerciseIndex={index}
-          disabled={skipped}
+          isCompleted={isCompleted}
+          onToggleComplete={(row) => setCompleted(row, !isCompleted(row))}
+          onRowBlur={handleRowBlur}
           onRemove={remove}
+          // Only rows the client appended PAST the prescription. Removing a
+          // prescribed row shifts every later row down and stamps it from the
+          // wrong spec — delete the warm-up and a working set is stored as
+          // `warmup`, excluded from volume, PRs and compliance. An unticked row
+          // already says "not done", so there is nothing left for deletion to
+          // express (locked decision 7's reasoning, applied to rows).
+          canRemove={(row) => row >= prescribedRows.length}
           onCopyPrevious={handleCopyPrevious}
           canCopyPrevious={canCopyAt}
         />
         <button
           type="button"
           onClick={() => append(emptySet())}
-          disabled={skipped}
           data-testid={`add-set-${index}`}
           className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-[#0d9488] transition-colors hover:text-[#0a766b] disabled:cursor-not-allowed disabled:opacity-40"
         >

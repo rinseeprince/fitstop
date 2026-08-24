@@ -1,5 +1,6 @@
-import type { UseFormRegister } from "react-hook-form";
+import type { UseFormRegister, UseFormRegisterReturn } from "react-hook-form";
 import { Copy, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { LogFormValues } from "./log-form-types";
 import { useUnits } from "@/contexts/units-context";
@@ -16,12 +17,17 @@ import type { PrescribedField } from "@/utils/prescribed-fields";
 // hiding it would stop collecting the data every strength metric is built from.
 // Of the five prescribed fields only reps, load and rpe are columns; set_type
 // gates the row tag and rest gates the timer between rows.
+//
+// The tick is not a prescribed field either — it is the CLIENT's claim that the
+// set was done, and it exists only in the log form. `withTick` is decided once,
+// by the grid, and handed to both the header and every row for that reason.
 export const SET_GRID_BASE = "grid items-center gap-2";
 
 export function setGridTemplate(
   fields: ReadonlySet<PrescribedField>,
+  withTick: boolean,
 ): string {
-  const columns = ["44px"];
+  const columns = withTick ? ["32px", "44px"] : ["44px"];
   if (fields.has("load")) columns.push("minmax(0,0.9fr)");
   columns.push("minmax(0,1.1fr)");
   if (fields.has("reps")) columns.push("minmax(0,1fr)");
@@ -68,11 +74,36 @@ type SetRowProps = {
   register?: UseFormRegister<LogFormValues>;
   exerciseIndex?: number;
   setIndex?: number;
-  disabled?: boolean;
+  /** Form mode only: draw the tick column. Decided by the grid, not here. */
+  withTick?: boolean;
+  /** Banked — "I did this set". Greys the row without disabling it. */
+  completed?: boolean;
+  onToggleComplete?: () => void;
+  /**
+   * Fired after a value field loses focus, so the row can auto-tick itself
+   * (locked decision 2). A client recording numbers never touches a tick.
+   */
+  onBlurRow?: () => void;
   onCopyPrevious?: () => void;
   canCopyPrevious?: boolean;
   onRemove?: () => void;
 };
+
+// Compose the auto-tick onto react-hook-form's own blur handler rather than
+// replacing it — RHF's runs the field's validation and touched-state bookkeeping.
+function withAutoTick(
+  field: UseFormRegisterReturn,
+  onBlurRow: (() => void) | undefined,
+): UseFormRegisterReturn {
+  if (!onBlurRow) return field;
+  return {
+    ...field,
+    onBlur: async (event) => {
+      await field.onBlur(event);
+      onBlurRow();
+    },
+  };
+}
 
 export function SetRow({
   setNumber,
@@ -81,7 +112,10 @@ export function SetRow({
   register,
   exerciseIndex,
   setIndex,
-  disabled,
+  withTick,
+  completed,
+  onToggleComplete,
+  onBlurRow,
   onCopyPrevious,
   canCopyPrevious,
   onRemove,
@@ -114,11 +148,18 @@ export function SetRow({
   const rpePlaceholder =
     prescribed?.rpeTarget != null ? String(prescribed.rpeTarget) : "";
 
+  // Banked rows read as done: muted, but never disabled. A client who ticks a
+  // set and then remembers the weight has to be able to type it in.
+  const banked = completed === true;
+  const valueClass = banked ? "text-[#93b0b4]" : "";
+
   const setCell = (
     <div className="flex items-center justify-center gap-1">
       {/* A drop shares its top set's number, so repeating it would read as a
           duplicate — the tag alone identifies the row. */}
-      <span className="text-[13px] font-mono-display text-[#5a7d82]">
+      <span
+        className={`text-[13px] font-mono-display ${banked ? "text-[#93b0b4]" : "text-[#5a7d82]"}`}
+      >
         {prescribed?.dropIndex != null ? "" : setNumber}
       </span>
       {fields.has("set_type") && <SetTypeTag row={prescribed} />}
@@ -130,7 +171,7 @@ export function SetRow({
       <div
         data-testid="set-row"
         className={`${SET_GRID_BASE} px-3 py-2`}
-        style={{ gridTemplateColumns: setGridTemplate(fields) }}
+        style={{ gridTemplateColumns: setGridTemplate(fields, false) }}
       >
         {setCell}
         {fields.has("load") && <ReadOnlyCell text={loadText} />}
@@ -148,14 +189,31 @@ export function SetRow({
   return (
     <div
       data-testid="set-row"
-      className={`${SET_GRID_BASE} px-3 py-2`}
-      style={{ gridTemplateColumns: setGridTemplate(fields) }}
+      data-completed={banked ? "true" : "false"}
+      className={`${SET_GRID_BASE} px-3 py-2 ${
+        banked ? "rounded-[6px] bg-[rgba(13,148,136,0.04)]" : ""
+      }`}
+      style={{ gridTemplateColumns: setGridTemplate(fields, withTick === true) }}
     >
+      {withTick === true && (
+        <div className="flex items-center justify-center">
+          <Checkbox
+            checked={banked}
+            onCheckedChange={() => onToggleComplete?.()}
+            aria-label={`Set ${setNumber} complete`}
+            data-testid={`set-complete-${exerciseIndex}-${setIndex}`}
+            className="size-5 border-[#93b0b4] data-[state=checked]:border-[#0d9488] data-[state=checked]:bg-[#0d9488]"
+          />
+        </div>
+      )}
+
       {setCell}
 
       {fields.has("load") && (
         <div
-          className="truncate text-center text-[12px] font-mono-display text-[#5a7d82]"
+          className={`truncate text-center text-[12px] font-mono-display ${
+            banked ? "text-[#93b0b4]" : "text-[#5a7d82]"
+          }`}
           data-testid={`prescribed-load-${exerciseIndex}-${setIndex}`}
         >
           {loadText ?? "—"}
@@ -164,12 +222,11 @@ export function SetRow({
 
       <div className="relative">
         <Input
-          {...register(`${namePrefix}.weight`)}
+          {...withAutoTick(register(`${namePrefix}.weight`), onBlurRow)}
           inputMode="decimal"
           type="text"
-          disabled={disabled}
           aria-label={`Set ${setNumber} weight`}
-          className="h-9 pr-9 text-center text-[13px] font-mono-display"
+          className={`h-9 pr-9 text-center text-[13px] font-mono-display ${valueClass}`}
         />
         <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
           {loadUnit}
@@ -178,25 +235,23 @@ export function SetRow({
 
       {fields.has("reps") && (
         <Input
-          {...register(`${namePrefix}.reps`)}
+          {...withAutoTick(register(`${namePrefix}.reps`), onBlurRow)}
           inputMode="numeric"
           type="text"
-          disabled={disabled}
           placeholder={repsPlaceholder}
           aria-label={`Set ${setNumber} reps`}
-          className="h-9 text-center text-[13px] font-mono-display"
+          className={`h-9 text-center text-[13px] font-mono-display ${valueClass}`}
         />
       )}
 
       {fields.has("rpe") && (
         <Input
-          {...register(`${namePrefix}.rpe`)}
+          {...withAutoTick(register(`${namePrefix}.rpe`), onBlurRow)}
           inputMode="decimal"
           type="text"
-          disabled={disabled}
           placeholder={rpePlaceholder}
           aria-label={`Set ${setNumber} RPE`}
-          className="h-9 text-center text-[13px] font-mono-display"
+          className={`h-9 text-center text-[13px] font-mono-display ${valueClass}`}
         />
       )}
 
@@ -205,7 +260,6 @@ export function SetRow({
           <button
             type="button"
             onClick={onRemove}
-            disabled={disabled}
             aria-label={`Delete set ${setNumber}`}
             data-testid={`delete-set-${exerciseIndex}-${setIndex}`}
             className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#5a7d82] transition-colors hover:bg-[rgba(220,38,38,0.06)] hover:text-[#dc2626] disabled:cursor-not-allowed disabled:opacity-40"
@@ -217,7 +271,7 @@ export function SetRow({
           <button
             type="button"
             onClick={onCopyPrevious}
-            disabled={disabled || canCopyPrevious === false}
+            disabled={canCopyPrevious === false}
             aria-label={`Copy previous set into set ${setNumber}`}
             data-testid={`copy-previous-${exerciseIndex}-${setIndex}`}
             className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#5a7d82] transition-colors hover:bg-[rgba(13,148,136,0.06)] hover:text-[#0d9488] disabled:cursor-not-allowed disabled:opacity-40"

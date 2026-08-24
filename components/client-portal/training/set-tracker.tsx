@@ -3,9 +3,8 @@
 import { useMemo, useState } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { useRouter } from "next/navigation";
-import { useFieldArray, useForm, useWatch } from "react-hook-form";
-import { ChevronDown, Loader2, Repeat } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useFieldArray, useForm } from "react-hook-form";
+import { ChevronDown, Repeat } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -32,12 +31,13 @@ import {
   type ExerciseFormContext,
   type PrescribedExerciseView,
 } from "./exercise-tracker-block";
-import { QuickLogControls } from "./quick-log-controls";
+import { CompleteWorkoutFooter } from "./complete-workout-footer";
 import { AddExerciseRow } from "./add-exercise-row";
 import { SessionPicker } from "./session-picker";
 import { useUnits } from "@/contexts/units-context";
 import {
   buildLogPayload,
+  prescribedRowsForView,
   seedDefaultValues,
   type ExerciseFormValues,
   type LogFormValues,
@@ -279,7 +279,10 @@ function TrainingLogForm({
   const { toast } = useToast();
   const { preference } = useUnits();
   const router = useRouter();
-  const [detailOpen, setDetailOpen] = useState(false);
+  // Open by default: the ticks ARE the log now. A collapsed list plus one
+  // primary button would let a client who did the whole workout tap Complete
+  // and record `skipped`. Still foldable for anyone who only wants to bank it.
+  const [detailOpen, setDetailOpen] = useState(true);
 
   const header = normalizeSessionHeader(detail.session, detail.event);
   const formattedDate = formatTrainingDate(date ?? detail.event.date);
@@ -287,6 +290,14 @@ function TrainingLogForm({
   const prescribedViews = useMemo(
     () => detail.exercises.map((e, i) => normalizeExercise(e, i)),
     [detail.exercises],
+  );
+
+  // The flattened prescription per form position. Only the prescribed prefix has
+  // one — an orphan log or an appended unplanned exercise sits past the end and
+  // reads as undefined, which scores neither half of the outcome.
+  const prescribedRowsByIndex = useMemo(
+    () => prescribedViews.map((v) => prescribedRowsForView(v)),
+    [prescribedViews],
   );
 
   const defaultValues = useMemo<LogFormValues>(
@@ -322,8 +333,12 @@ function TrainingLogForm({
     if (!editable) return; // locked day — server also rejects with 403
     // Per WEIGHT FIELD, not per row: editing a set's reps must not cause its
     // untouched weight to round-trip through the rounded display string.
-    const base = buildLogPayload(values, preference, (exIndex, setIndex) =>
-      Boolean(dirtyFields.exercises?.[exIndex]?.sets?.[setIndex]?.weight),
+    const base = buildLogPayload(
+      values,
+      preference,
+      (exIndex, setIndex) =>
+        Boolean(dirtyFields.exercises?.[exIndex]?.sets?.[setIndex]?.weight),
+      prescribedRowsByIndex,
     );
     const parsed = logTrainingEventSchema.safeParse(base);
     if (!parsed.success) {
@@ -453,17 +468,14 @@ function TrainingLogForm({
         )}
       </header>
 
-      <LogWorkoutButton
-        control={control}
-        isSubmitting={isSubmitting}
-        editable={editable}
-      />
-
-      <QuickLogControls
+      <CompleteWorkoutFooter
         control={control}
         register={register}
         setValue={setValue}
         getValues={getValues}
+        prescribedRows={prescribedRowsByIndex}
+        editable={editable}
+        isSubmitting={isSubmitting}
       />
 
       {exerciseFields.length === 0 ? (
@@ -489,10 +501,15 @@ function TrainingLogForm({
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-3 space-y-3">
             {exerciseFields.map((field, i) => {
-              const view: PrescribedExerciseView = {
+              // Nothing prescribed. `sets: 0` is this tree's spelling of that
+              // (exercise-tracker-block's zero-guard), which is what makes every
+              // row of an unplanned exercise deletable: the row list is entirely
+              // the client's own, so there is no prescription for a delete to
+              // shift out of alignment.
+              const unplannedView: PrescribedExerciseView = {
                 id: field.trainingExerciseId || field.id,
                 name: field.exerciseName,
-                sets: field.sets.length,
+                sets: 0,
                 isWarmup: false,
               };
               const formContext: ExerciseFormContext = {
@@ -505,14 +522,19 @@ function TrainingLogForm({
                   ? () => removeExercise(i)
                   : undefined,
               };
-              const prescribedView = prescribedViews[i] ?? view;
+              const prescribedView = prescribedViews[i];
               return (
                 <ExerciseTrackerBlock
                   key={field.id}
+                  // The PRESCRIPTION, unmodified. It used to carry
+                  // `sets: field.sets.length`, which fed the form's own row count
+                  // back into expandSetSpecs — so prescribedRows tracked the form
+                  // rather than the coach, and "is this row past the
+                  // prescription?" could never be true.
                   exercise={
-                    field.isUnplanned
-                      ? view
-                      : { ...prescribedView, sets: field.sets.length }
+                    field.isUnplanned || !prescribedView
+                      ? unplannedView
+                      : prescribedView
                   }
                   index={i}
                   formContext={formContext}
@@ -674,32 +696,4 @@ function formatTrainingDate(value: string | undefined): string | null {
     month: "short",
     day: "numeric",
   });
-}
-
-// Compact, right-aligned submit button. Sits above the QuickLogControls card
-// so the primary action is reachable without scrolling past the status buttons.
-function LogWorkoutButton({
-  control,
-  isSubmitting,
-  editable,
-}: {
-  control: import("react-hook-form").Control<LogFormValues>;
-  isSubmitting: boolean;
-  editable: boolean;
-}) {
-  const completionQuality = useWatch({ control, name: "completionQuality" });
-  const canSave = editable && completionQuality !== "" && !isSubmitting;
-  return (
-    <div className="flex justify-end">
-      <Button
-        type="submit"
-        size="default"
-        disabled={!canSave}
-        data-testid="save-button"
-      >
-        {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-        Log workout
-      </Button>
-    </div>
-  );
 }

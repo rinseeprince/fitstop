@@ -27,28 +27,50 @@ export type ScoredExercise = {
   completedSetNumbers: number[];
 };
 
+export type CompletionSummary = {
+  /** Non-warmup sets the client says it completed, across the whole session. */
+  completedWorkingSets: number;
+  /** Non-warmup sets prescribed, across the whole session. */
+  prescribedWorkingSets: number;
+  /**
+   * The verdict. Null when nothing prescribed is scorable, so the caller can
+   * fall back to the client's own claim rather than report `skipped` for a
+   * session that prescribed nothing measurable.
+   */
+  quality: SessionCompletionQuality | null;
+};
+
 /**
- * Resolve a session's completion quality from its prescription and the sets the
- * client sent.
+ * Score a session in one pass: the counts the client is shown before committing
+ * ("9 of 12 working sets logged") and the verdict that reaches the coach.
  *
- * Every prescribed working set, on EVERY exercise, is what `full` means (locked
- * decision 4). That is why each exercise is judged against its own prescription
- * and the verdicts combined, rather than one session-wide ratio: no exercise is
- * ever measured against another's total, so a surplus on one cannot mask a
- * deficit on another. (The dedupe and the existence check below separately keep
- * `completed` at most `prescribed` per exercise, but nothing here depends on
- * that — `completed < prescribed` is a statement about one exercise alone.)
+ * One traversal because the two must not be able to disagree — the sentence
+ * above the client's button is a promise about the number the coach will see.
  *
- * Returns null when nothing prescribed is scorable, so the caller can fall back
- * to the client's own claim rather than report `skipped` for a session that
- * prescribed nothing measurable.
+ * **The two halves are computed differently, deliberately.** The VERDICT is
+ * per-exercise: every prescribed working set, on EVERY exercise, is what `full`
+ * means (locked decision 4), so each exercise is judged against its own
+ * prescription and the verdicts combined. No exercise is ever measured against
+ * another's total, so a surplus on one cannot mask a deficit on another. The
+ * COUNTS are a session-wide display sum, because "9 of 12" is the only shape
+ * that sentence can take.
+ *
+ * They cannot contradict each other today, and the reason is worth naming: the
+ * dedupe and the existence check below cap `completed` at `prescribed` PER
+ * EXERCISE, so the sums can only meet when every exercise is individually
+ * complete. Lift that cap — count a set twice, or score a set number with no
+ * prescribed row behind it — and the outcome line starts reading "12 of 12
+ * working sets logged. Will be recorded as partial." The verdict would still be
+ * right; the sentence explaining it would not.
  */
-export function deriveCompletionQuality(
+export function summariseCompletion(
   exercises: ScoredExercise[],
-): SessionCompletionQuality | null {
+): CompletionSummary {
   let scorable = 0;
   let anyCompleted = false;
   let allComplete = true;
+  let completedWorkingSets = 0;
+  let prescribedWorkingSets = 0;
 
   for (const exercise of exercises) {
     const prescribed = exercise.prescribedRows.filter(
@@ -56,6 +78,7 @@ export function deriveCompletionQuality(
     ).length;
     if (prescribed === 0) continue;
     scorable += 1;
+    prescribedWorkingSets += prescribed;
 
     // Distinct set numbers landing on a non-warmup row of THIS exercise. A set
     // number with no row behind it (the coach shrank the prescription after the
@@ -65,12 +88,31 @@ export function deriveCompletionQuality(
       const row = exercise.prescribedRows[setNumber - 1];
       if (row && row.setType !== "warmup") completed += 1;
     }
+    completedWorkingSets += completed;
 
     if (completed > 0) anyCompleted = true;
     if (completed < prescribed) allComplete = false;
   }
 
-  if (scorable === 0) return null;
-  if (!anyCompleted) return "skipped";
-  return allComplete ? "full" : "partial";
+  const quality =
+    scorable === 0
+      ? null
+      : !anyCompleted
+        ? "skipped"
+        : allComplete
+          ? "full"
+          : "partial";
+
+  return { completedWorkingSets, prescribedWorkingSets, quality };
+}
+
+/**
+ * The verdict alone — the server write path's entry point, which has no use for
+ * the counts. A thin wrapper rather than a second implementation so the client's
+ * outcome line and the coach's adherence number cannot drift apart.
+ */
+export function deriveCompletionQuality(
+  exercises: ScoredExercise[],
+): SessionCompletionQuality | null {
+  return summariseCompletion(exercises).quality;
 }

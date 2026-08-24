@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { deriveCompletionQuality, type ScoredExercise } from "./completion-quality";
+import {
+  deriveCompletionQuality,
+  summariseCompletion,
+  type ScoredExercise,
+} from "./completion-quality";
 import { buildPrescribedRows } from "./set-spec-rows";
 import type { SetSpec } from "./exercise-set-specs";
 
@@ -145,5 +149,75 @@ describe("deriveCompletionQuality", () => {
         { prescribedRows: dropRows, completedSetNumbers: [1, 2, 3] },
       ]),
     ).toBe("full");
+  });
+});
+
+// The counts the CLIENT is shown before committing. They and the verdict are
+// computed differently — a session-wide sum against a per-exercise rule — so
+// these pin the property that keeps them consistent: `completed` can never
+// exceed `prescribed` within an exercise, so the sums meet only when every
+// exercise is individually complete.
+describe("summariseCompletion", () => {
+  it("counts the working sets on both sides of the ratio", () => {
+    expect(
+      summariseCompletion([
+        { prescribedRows: WORKING_3, completedSetNumbers: [1, 2] },
+        { prescribedRows: WORKING_3, completedSetNumbers: [1] },
+      ]),
+    ).toEqual({
+      completedWorkingSets: 3,
+      prescribedWorkingSets: 6,
+      quality: "partial",
+    });
+  });
+
+  // Locked decision 5. The warm-up is neither a set they owed nor one they
+  // banked, on either side of "9 of 12".
+  it("excludes warm-ups from both halves of the count", () => {
+    expect(
+      summariseCompletion([
+        { prescribedRows: WARMUP_THEN_2, completedSetNumbers: [1, 2, 3] },
+      ]),
+    ).toEqual({
+      completedWorkingSets: 2,
+      prescribedWorkingSets: 2,
+      quality: "full",
+    });
+  });
+
+  // The case a payload-derived denominator cannot see: an exercise the client
+  // never touched still counts against them.
+  it("counts an untouched exercise into the denominator", () => {
+    expect(
+      summariseCompletion([
+        { prescribedRows: WORKING_3, completedSetNumbers: [1, 2, 3] },
+        { prescribedRows: WORKING_3, completedSetNumbers: [] },
+      ]),
+    ).toMatchObject({ completedWorkingSets: 3, prescribedWorkingSets: 6 });
+  });
+
+  // The two caps that keep the sentence and the verdict agreeing. Without them
+  // the outcome line could read "3 of 3 working sets logged. Will be recorded as
+  // partial."
+  it("never counts more than an exercise prescribes", () => {
+    expect(
+      summariseCompletion([
+        { prescribedRows: WORKING_3, completedSetNumbers: [1, 1, 2, 3, 9] },
+      ]),
+    ).toEqual({
+      completedWorkingSets: 3,
+      prescribedWorkingSets: 3,
+      quality: "full",
+    });
+  });
+
+  it("counts nothing for an exercise with no prescription", () => {
+    expect(
+      summariseCompletion([{ prescribedRows: [], completedSetNumbers: [1, 2] }]),
+    ).toEqual({
+      completedWorkingSets: 0,
+      prescribedWorkingSets: 0,
+      quality: null,
+    });
   });
 });

@@ -26,7 +26,6 @@ import type { SetSpec, SetType } from "@/utils/exercise-set-specs";
 import type {
   LogSessionForDateInput,
   LogTrainingEventInput,
-  SetPerformanceInput,
 } from "@/lib/validations/training";
 
 /**
@@ -76,12 +75,6 @@ import {
 // Single authoritative entry point for "client logged a training event".
 // Owns session_logs, exercise_logs, and training_events.status writes.
 // =============================================================================
-
-// --- Detailed-mode helpers ---
-
-function setHasData(set: SetPerformanceInput): boolean {
-  return set.reps != null || set.weight != null;
-}
 
 // --- Snapshot shapes (JSONB-bound) ---
 
@@ -656,7 +649,13 @@ async function writeSessionLog(params: {
         !fresh && !preserved && !ex.trainingExerciseId
           ? { name: ex.exerciseName }
           : null;
-      const completed = ex.skipped !== true && ex.sets.some(setHasData);
+      // Vestigial, and kept truthful rather than clever: an exercise reaches
+      // this payload only because the client banked at least one of its sets, so
+      // it was done. It used to require a set with NUMBERS in it, which recorded
+      // "I did all four sets, logged no weights" as incomplete. The `skipped`
+      // leg survives for the wire's other callers (React Native), which may
+      // still send an explicit skip.
+      const completed = ex.skipped !== true && ex.sets.length > 0;
       return {
         session_log_id: sessionLogId,
         training_exercise_id: ex.trainingExerciseId ?? null,

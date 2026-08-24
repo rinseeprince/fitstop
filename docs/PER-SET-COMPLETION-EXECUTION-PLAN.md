@@ -118,7 +118,7 @@ Show me your implementation plan first and wait for my approval before writing a
 - **Auto-tick on value entry** — typing anything and blurring the row banks that set (locked decision 2).
 - **Exercise-level tick** banks every set of that exercise in one tap.
 - **Session-level "Mark all complete"** banks the whole workout in one tap.
-- **Outcome line above the primary button**, stating what will be recorded: *"9 of 12 working sets logged — will be recorded as partial."* The derivation must be visible before commit, because a coach's adherence number depends on it.
+- **Outcome line above the primary button**, stating what will be recorded: *"9 of 12 working sets logged. Will be recorded as partial."* The derivation must be visible before commit, because a coach's adherence number depends on it.
 - **One primary button: "Complete workout."**
 - **DELETE** `components/client-portal/training/quick-log-controls.tsx` and the `completionQuality` selector from the form. **`buildLogPayload` must then populate `completionQuality` itself**, from the same derivation the outcome line renders, sending `"skipped"` when nothing is ticked. `seedDefaultValues` seeds `""` for a never-logged session and `buildLogPayload` casts it unchecked, so leaving the field unset makes `set-tracker.tsx:328`'s client-side `safeParse` reject **every** save with "Some inputs are invalid" — a toast pointing at a control that no longer exists. The wire is already expressive enough (an all-unticked session has a true thing to say), so this is a client obligation, not a schema change.
 - **DELETE** the per-exercise Skip toggle and the `skipped` field in `ExerciseFormValues`. `isSkippedLog` in `log-form-types.ts` goes with it; `exercise_logs.completed` becomes vestigial and is written `true` for any exercise with ticks.
@@ -144,10 +144,11 @@ Implement PHASE 2 (per-set completion) exactly as specified there:
 2. Ticked rows grey out to read as banked; unticking restores them.
 3. Add an exercise-level tick that banks all that exercise's sets, and a session-level "Mark all complete" that banks the whole workout.
 4. buildLogPayload sends exactly the ticked sets, each with its setNumber (Phase 1's contract). Unticked sets are absent.
-5. Replace the save affordance with one primary button, "Complete workout", and an outcome line above it stating what will be recorded (e.g. "9 of 12 working sets logged — will be recorded as partial"). Warm-ups are excluded from that count.
+5. Replace the save affordance with one primary button, "Complete workout", and an outcome line above it stating what will be recorded (e.g. "9 of 12 working sets logged. Will be recorded as partial."). Warm-ups are excluded from that count.
 6. DELETE components/client-portal/training/quick-log-controls.tsx and the completionQuality selector. The wire still carries completionQuality and the server still honours it when a payload has no `exercises` — do not remove it from the schema, only from the web UI.
 7. DELETE the per-exercise Skip toggle, the `skipped` field on ExerciseFormValues, and isSkippedLog.
-8. seedDefaultValues / restoreSetsFromLog must rebuild the FULL prescribed row list with ticks restored from the logged sets, so reopening a logged session shows every prescribed set rather than only the logged ones.
+8. seedDefaultValues / restoreSetsFromLog must rebuild the FULL prescribed row list with ticks restored from the logged sets, so reopening a logged session shows every prescribed set rather than only the logged ones. Size the rebuild to max(prescribed row count, highest logged setNumber): a logged set past the prescription is reachable (the client appended rows, or the coach shrank the prescription afterwards) and the write path full-replaces, so a row missing from the rebuilt form is DELETED on the next save.
+9. Restrict set-delete to rows the client appended past the prescription. Three parts, all specified in this section's component-work list above: add a `canRemove?: (index: number) => boolean` beside `onRemove` in prescribed-set-grid.tsx and gate the affordance on it (hide-by-absence, not a disabled state); drop the `sets: field.sets.length` override at set-tracker.tsx so `prescribedRows` describes the PRESCRIPTION rather than the form, and set `sets: 0` on the unplanned view so its rows stay deletable; the predicate is then `i >= prescribedRows.length`. Without this, deleting a prescribed row shifts every later row onto the wrong spec and item 8's rebuild does not close it.
 
 Hard constraints: components/client-portal/** is a test harness for the React Native contract — do not put logic there that belongs in services/, lib/ or utils/; completion_quality derivation stays server-side (Phase 1); do not touch the analytics SQL; do not change training_events.status handling; warm-ups are tickable and logged but excluded from `full` and from every metric.
 
@@ -232,3 +233,57 @@ Show me your implementation plan first and wait for my approval before writing a
 - `npm run check:labels` — OK
 
 **Mutation test.** Reverting `training-log-service.ts` to the old positional mapping (`set_number: setIdx + 1`, `prescribedRows[setIdx]`) fails the new subset test with `expected [ 1, 2, 3 ] to deeply equal [ 2, 5, 6 ]`. Restored from a scratchpad copy and `diff`-verified byte-identical, with the suite re-run green afterwards.
+
+---
+
+### PHASE 2 — SHIPPED (2026-08-24)
+
+**Commit:** `feat(training): per-set completion — the tick is the claim` — the single commit this block ships in. (No hash, for the reason Phase 1 records: a commit cannot name itself, and amending one in only orphans the commit it named. `git log --oneline --grep "the tick is the claim"` resolves it.)
+
+**Shipped**
+
+1. **Per-set completion state.** `SetRowValues.completed` — the only thing that decides what is sent. A tick column leads the grid in form mode (`setGridTemplate(fields, withTick)`, decided once by the grid so the header and rows cannot drift). Typing a value and blurring the row auto-ticks it (`withAutoTick` composes onto RHF's own `onBlur` rather than replacing it, so validation and touched-state bookkeeping still run). It only ever ticks — clearing a field never unticks, because a banked set with empty fields is a legitimate record.
+2. **Ticked rows grey out** (muted background, muted values, `data-completed` for the tests) and are never disabled: a client who banks a set and then remembers the weight has to be able to type it.
+3. **Exercise-level tick** (checked / indeterminate / unchecked, so it reports as well as acts) and a session-level **Mark all complete**.
+4. **`buildLogPayload` sends exactly the ticked sets**, each carrying its row's own `setNumber` read off the ORIGINAL array. No `skipped` branch.
+5. **One primary button, "Complete workout"**, with the outcome line above it (`components/client-portal/training/complete-workout-footer.tsx`, which also rehomes the session-notes field unchanged).
+6. **`quick-log-controls.tsx` deleted**, `completionQuality` off `LogFormValues`, `LogWorkoutButton` deleted.
+7. **Skip toggle, `ExerciseFormValues.skipped` and `isSkippedLog` deleted.**
+8. **`seedDefaultValues` / `restoreSetsFromLog` rebuild the FULL prescribed row list** with ticks restored from the logged sets.
+9. **Set-delete restricted to appended rows** (`canRemove`, the `sets:` override dropped, `sets: 0` on the unplanned view) — all three parts of the plan body's spec.
+
+**Decisions taken inside the spec**
+
+- **`summariseCompletion` is the one traversal.** The outcome line needs counts, the wire needs a verdict, and the sentence above the client's button is a promise about the coach's adherence number. `deriveCompletionQuality` is now a wrapper over it, so the server call site is untouched and the two cannot drift. Its doc names the property that keeps the two halves consistent: the counts are a session-wide **display sum** while the verdict is **per-exercise**, and they can only agree because the dedupe and existence check cap `completed` at `prescribed` per exercise. Lift that cap and the line reads "12 of 12 working sets logged. Will be recorded as partial."
+- **`resolveLogOutcome` is the single fallback.** When nothing scorable is prescribed (no exercises, or only warm-ups) `summariseCompletion` returns null and the server defers to the client's value, so it is decided in one place: ticked anything → `full`, ticked nothing → `skipped`.
+- **`prescribedRowsForView` is the one view→rows flatten**, replacing the copy in `exercise-tracker-block.tsx` and the inline one in `seededSetRows`. The renderer, the seed and the outcome line were about to be three answers to one question.
+- **The kernel stays in `utils/`.** `components/client-portal/**` holds the tick STATE and the copy; every derivation is in `utils/completion-quality.ts` + `utils/set-spec-rows.ts`.
+
+**Deviations from the plan as written**
+
+- **`restoreSetsFromLog` is sized `max(prescribed count, highest logged setNumber)`, not the prescription alone.** A logged set past the prescription is reachable two ways after this phase — the client appended rows (and with the `sets:` override dropped those rows now genuinely sit past `prescribedRows.length`), or the coach shrank the prescription afterwards. Sizing to the prescription would not merely hide it: `writeSessionLog` full-replaces (every `exercise_log` deleted, `set_logs` cascaded, re-inserted from the payload), so a row missing from the rebuilt form is **deleted from the database on the next save**. Reopen, save, gone. Capped at `MAX_PRESCRIBED_ROWS` — the wire's own bound on `setNumber`, so it can never truncate anything the form could send back, but a corrupt stored `set_number` cannot ask the browser for a billion-row array. Owner-directed, 2026-08-24.
+- **The detail list opens by default.** With the quality selector gone, a collapsed list plus one primary button meant a client who did the whole workout tapped Complete and recorded `skipped`. Still foldable. Owner-approved.
+- **Copying a previous set banks the row it fills.** Copy enters values without ever firing a blur, so the auto-tick alone would leave the commonest gesture in the form producing rows full of numbers and unticked. Owner-approved.
+- **No em dash in the outcome line** — "9 of 12 working sets logged. Will be recorded as partial." The plan's own example broke its "no em dashes" rule; that bullet and the pasteable prompt's copy are corrected in this commit.
+- **`exercise_logs.completed` is now `ex.skipped !== true && ex.sets.length > 0`** (`services/training-log-service.ts`). It required a set with NUMBERS in it, which recorded "I did all four sets, logged no weights" as incomplete. The `skipped` leg survives for the wire's other callers. `setHasData` had exactly one reader and went with it.
+- **The pasteable prompt was widened**, not just the plan body. It carried the original 8 items and mentioned none of the set-delete work, so a re-run of this phase from the prompt alone would have rebuilt the hole. Item 8 now states the sizing rule and a new item 9 carries all three parts of the delete restriction.
+
+**Docs**
+
+- `docs/ARCHITECTURE.md` → "Workout logging (progressive disclosure)" is rewritten as "Workout logging (per-set completion)": the two-mode model, the quick-log selector and "Skip exercise" are gone.
+- `docs/ARCHITECTURE.md:372` → **a Phase 1 follow-up, not a Phase 2 change.** "`training_events.status` maps directly from `payload.completionQuality` … Per-exercise data does NOT override the client's tap" became false when Phase 1 made the quality server-derived, and should have moved then. Rewritten to state where the quality comes from, what `full` means, why the denominator needs its own read, and that a payload with no `exercises` is the only case where the client's value is honoured. This matters more than it looks: completed execution plans are deleted after shipping, so once Phase 3 lands, ARCHITECTURE and CONVENTIONS are the only surviving record of this model.
+
+**Wire and server untouched.** `setPerformanceSchema` keeps `skipped` and `setType` (accepted-but-ignored) for React Native; `completionQuality` stays required and is still honoured for an exercise-less payload; no migration; no analytics SQL; no adherence or `training_events.status` change.
+
+**Not addressed, deliberately.** `exercisePerformanceSchema` caps `sets` at 50 while `MAX_PRESCRIBED_ROWS` is 630, so a client ticking more than 50 sets on one exercise would fail client-side validation with "Some inputs are invalid". Pre-existing, unreachable through any real prescription (it needs 50+ flattened rows on a single exercise), and out of this phase's scope.
+
+**Test results** — all four gates green.
+
+- `npx tsc --noEmit` — clean
+- `npx eslint .` — 0 errors (204 pre-existing warnings; the baseline was 204 after Phase 1 removed two)
+- `npx vitest run` — 287 files, 3130 tests, all passing (baseline was 287 / 3111)
+- `npm run check:labels` — OK, 678 files scanned
+
+**New coverage.** `log-form-types.test.ts` (23): a ticked-but-empty set is sent, a filled-but-unticked set is not, set numbers survive a sparse tick set, the derived quality, warm-ups excluded while still being sent, and the four reopen cases. `utils/completion-quality.test.ts` (+5): the counts, warm-ups out of both halves, an untouched exercise in the denominator, and the per-exercise cap. `set-tracker.test.tsx`: auto-tick on type-and-blur, mark-all, the exercise tick, untick, the warm-up outcome count, one primary button with the outcome above it, and the delete restriction. The ~25 tests that clicked the deleted quick-log buttons were rewritten.
+
+**Mutation-tested.** Three separately, each restored from a scratchpad copy and `diff`-verified byte-identical afterwards, with the suite re-run green: sizing `restoreSetsFromLog` to the prescription alone fails "keeps a logged set past the prescription" (`expected length 4, got 3`); dropping the `onBlurRow()` call from `withAutoTick` fails `[auto-tick]` and 9 others; `canRemove={() => true}` fails `[delete-set]` on the prescribed rows' delete buttons reappearing.

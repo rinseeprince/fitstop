@@ -35,8 +35,20 @@ type PrescribedSetGridProps = {
   fieldIds: string[] | null;
   register?: UseFormRegister<LogFormValues>;
   exerciseIndex?: number;
-  disabled?: boolean;
+  /** Is this row banked? Form mode only. */
+  isCompleted?: (index: number) => boolean;
+  onToggleComplete?: (index: number) => void;
+  /** Fired after one of the row's value fields blurs, for the auto-tick. */
+  onRowBlur?: (index: number) => void;
   onRemove?: (index: number) => void;
+  /**
+   * Whether a row may be removed at all. Gates the affordance itself, because
+   * the truthiness of `onRemove` alone drew a delete button on every row —
+   * including prescribed ones, whose removal shifts every later row onto the
+   * wrong spec and mistypes it. Absent means "all rows", for a caller with no
+   * prescription to protect.
+   */
+  canRemove?: (index: number) => boolean;
   onCopyPrevious?: (index: number) => void;
   canCopyPrevious?: (index: number) => boolean;
 };
@@ -50,13 +62,21 @@ export function PrescribedSetGrid({
   fieldIds,
   register,
   exerciseIndex,
-  disabled,
+  isCompleted,
+  onToggleComplete,
+  onRowBlur,
   onRemove,
+  canRemove,
   onCopyPrevious,
   canCopyPrevious,
 }: PrescribedSetGridProps) {
   const rowCount = fieldIds ? fieldIds.length : rows.length;
   if (rowCount === 0) return null;
+
+  // The tick belongs to the log form, never to the read-only prescription view.
+  // Decided once here so the header and every row cannot disagree about how many
+  // columns the grid has.
+  const withTick = fieldIds !== null;
 
   // Drop children repeat their top set's number, and a set the client appended
   // past the prescription has none of its own — so the displayed number is a
@@ -77,8 +97,9 @@ export function PrescribedSetGrid({
     <div>
       <div
         className={`${SET_GRID_BASE} px-3 pb-1`}
-        style={{ gridTemplateColumns: setGridTemplate(fields) }}
+        style={{ gridTemplateColumns: setGridTemplate(fields, withTick) }}
       >
+        {withTick && <div />}
         <div className={HEADER_CLASS}>Set</div>
         {fields.has("load") && <div className={HEADER_CLASS}>Load</div>}
         <div className={HEADER_CLASS}>Weight</div>
@@ -110,8 +131,17 @@ export function PrescribedSetGrid({
                 register={register}
                 exerciseIndex={exerciseIndex}
                 setIndex={fieldIds ? i : undefined}
-                disabled={disabled}
-                onRemove={onRemove ? () => onRemove(i) : undefined}
+                withTick={withTick}
+                completed={isCompleted?.(i)}
+                onToggleComplete={
+                  onToggleComplete ? () => onToggleComplete(i) : undefined
+                }
+                onBlurRow={onRowBlur ? () => onRowBlur(i) : undefined}
+                onRemove={
+                  onRemove && (canRemove ? canRemove(i) : true)
+                    ? () => onRemove(i)
+                    : undefined
+                }
                 onCopyPrevious={
                   i > 0 && onCopyPrevious ? () => onCopyPrevious(i) : undefined
                 }
