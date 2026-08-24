@@ -4,6 +4,8 @@ Rebuild of how a client records a workout and how that record reaches the coach.
 
 **Split into 3 phases.** Phase 1 = the wire contract and the server write path. Phase 2 = the per-set completion model and the client UI that proves it. Phase 3 = the coach-facing logged-workout detail. Each phase's pasteable prompt is at the bottom of its section. Do not start a phase before the previous phase's STATUS block reports shipped.
 
+> **STATE (2026-08-24): PHASES 1 AND 2 ARE COMPLETE. Phase 3 is the only one outstanding.** Phase 1 carried no UI change; Phase 2 was browser-smoked by the owner and confirmed working. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, and every logged set carries its true `set_number` and coach-prescribed `set_type`. What remains is the COACH's view of that record.
+
 **Completion protocol (every phase):** at commit time, append a STATUS block to the end of this file — what shipped, commit hash, deviations from this plan, test results. The next session reads it before starting.
 
 ---
@@ -77,7 +79,9 @@ This flows to BOTH write paths through `exercisePerformanceSchema`:
 
 ---
 
-## PHASE 1 — Set identity on the wire
+## PHASE 1 — Set identity on the wire · COMPLETE
+
+> Shipped 2026-08-24 (`a5fe0e3`). See the Phase 1 STATUS block below.
 
 **Scope:** the schema change, the server write path, the derivation, the migration, and one regression fix. **No UI changes.** The existing client form keeps working; it just starts sending set numbers.
 
@@ -108,7 +112,9 @@ Show me your implementation plan first and wait for my approval before writing a
 
 ---
 
-## PHASE 2 — Per-set completion
+## PHASE 2 — Per-set completion · COMPLETE
+
+> Shipped 2026-08-24 (`ed4fe29`). See the Phase 2 STATUS block below.
 
 **Scope:** the tick model in the client log form, the UI that expresses it, and the deletion of the two now-redundant controls. Server-side derivation already landed in Phase 1; this phase makes the client send truthful input to it.
 
@@ -157,7 +163,9 @@ Show me your implementation plan first and wait for my approval before writing a
 
 ---
 
-## PHASE 3 — Coach-side logged-workout detail
+## PHASE 3 — Coach-side logged-workout detail · OUTSTANDING
+
+> The only phase left. Its prerequisites are met: `set_logs.set_number` is real identity and `set_type` is stamped from the prescription, which is what lets this phase align each logged set to the set it was prescribed as.
 
 **Scope:** `components/clients/training/session-log-detail-dialog.tsx`, which is coach-facing and therefore permanent product.
 
@@ -218,10 +226,10 @@ Show me your implementation plan first and wait for my approval before writing a
 - **The derivation is per-exercise, not one session-wide ratio.** `deriveCompletionQuality` (`utils/completion-quality.ts`) judges each exercise against its own prescription and requires all, so no exercise's surplus can mask another's deficit. Behaviourally identical to a summed ratio under the current guards — **no test can distinguish the two forms** — but it makes decision 4 structural rather than a consequence of an unstated injectivity property. `null` is returned when nothing is scorable, and the caller then keeps the client's own claim.
 - **`prescribed_fields` was added to the log's `ExerciseSnapshot`** (owner-approved scope addition). The client tracker's snapshot fallback read `prescribed_fields` from a snapshot that never captured it, so a soft-deleted session widened the grid back to all five columns — the same bug class as the `mapExerciseRow` regression.
 
-**Known gaps left open, both Phase 2's**
+**Known gaps left open, both Phase 2's — BOTH CLOSED by Phase 2 (2026-08-24)**
 
-- **Reopen renumbers.** `restoreSetsFromLog` rebuilds only the LOGGED rows, so a session logged as sets 3-5 reopens as a 3-row form and re-saves as 1-3. Pre-existing; Phase 1 neither fixes nor worsens it. Phase 2 item 8's full rebuild closes it.
-- **Delete renumbers, independently.** `exercise-tracker-block.tsx:382` lets a client remove any prescribed row, which shifts every later row onto the wrong spec. This needs no reopen and item 8's rebuild alone does **not** close it — the new set-delete restriction in item 8 does. Both causes must be closed for positional `setNumber` to be sound end-to-end.
+- **Reopen renumbers. CLOSED.** `restoreSetsFromLog` rebuilt only the LOGGED rows, so a session logged as sets 3-5 reopened as a 3-row form and re-saved as 1-3. Pre-existing; Phase 1 neither fixed nor worsened it. Phase 2's item 8 rebuilds the full prescribed row list with the logged rows ticked, and sizes it to hold a logged set PAST the prescription too.
+- **Delete renumbers, independently. CLOSED.** `exercise-tracker-block.tsx:382` let a client remove any prescribed row, which shifted every later row onto the wrong spec. This needed no reopen and item 8's rebuild alone did **not** close it — the set-delete restriction did (`canRemove`, plus dropping the `sets:` override so `prescribedRows` describes the prescription rather than the form). Both causes are now closed, so positional `setNumber` is sound end-to-end.
 
 **Not extended:** `services/set-specs-survival.test.ts` — Phase 1 adds no exercise write path.
 
@@ -287,3 +295,5 @@ Show me your implementation plan first and wait for my approval before writing a
 **New coverage.** `log-form-types.test.ts` (23): a ticked-but-empty set is sent, a filled-but-unticked set is not, set numbers survive a sparse tick set, the derived quality, warm-ups excluded while still being sent, and the four reopen cases. `utils/completion-quality.test.ts` (+5): the counts, warm-ups out of both halves, an untouched exercise in the denominator, and the per-exercise cap. `set-tracker.test.tsx`: auto-tick on type-and-blur, mark-all, the exercise tick, untick, the warm-up outcome count, one primary button with the outcome above it, and the delete restriction. The ~25 tests that clicked the deleted quick-log buttons were rewritten.
 
 **Mutation-tested.** Three separately, each restored from a scratchpad copy and `diff`-verified byte-identical afterwards, with the suite re-run green: sizing `restoreSetsFromLog` to the prescription alone fails "keeps a logged set past the prescription" (`expected length 4, got 3`); dropping the `onBlurRow()` call from `withAutoTick` fails `[auto-tick]` and 9 others; `canRemove={() => true}` fails `[delete-set]` on the prescribed rows' delete buttons reappearing.
+
+**Browser-smoked by the owner, 2026-08-24 — confirmed working.** The gates above prove the contract through jsdom only; this is the pixel-level confirmation they cannot give. Phase 2 is CLOSED.
