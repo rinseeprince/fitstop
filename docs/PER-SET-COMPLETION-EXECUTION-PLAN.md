@@ -120,9 +120,14 @@ Show me your implementation plan first and wait for my approval before writing a
 - **Session-level "Mark all complete"** banks the whole workout in one tap.
 - **Outcome line above the primary button**, stating what will be recorded: *"9 of 12 working sets logged — will be recorded as partial."* The derivation must be visible before commit, because a coach's adherence number depends on it.
 - **One primary button: "Complete workout."**
-- **DELETE** `components/client-portal/training/quick-log-controls.tsx` and the `completionQuality` selector from the form.
+- **DELETE** `components/client-portal/training/quick-log-controls.tsx` and the `completionQuality` selector from the form. **`buildLogPayload` must then populate `completionQuality` itself**, from the same derivation the outcome line renders, sending `"skipped"` when nothing is ticked. `seedDefaultValues` seeds `""` for a never-logged session and `buildLogPayload` casts it unchecked, so leaving the field unset makes `set-tracker.tsx:328`'s client-side `safeParse` reject **every** save with "Some inputs are invalid" — a toast pointing at a control that no longer exists. The wire is already expressive enough (an all-unticked session has a true thing to say), so this is a client obligation, not a schema change.
 - **DELETE** the per-exercise Skip toggle and the `skipped` field in `ExerciseFormValues`. `isSkippedLog` in `log-form-types.ts` goes with it; `exercise_logs.completed` becomes vestigial and is written `true` for any exercise with ticks.
 - **`seedDefaultValues` / `restoreSetsFromLog` must rebuild the FULL prescribed row list** with ticks restored from the logged sets — not just the logged rows. This fixes the current behaviour where reopening a session shows one row instead of six.
+- **Set-delete is restricted to rows the client appended past the prescription.** `exercise-tracker-block.tsx:382` passes `onRemove={remove}` unconditionally, so any prescribed row can be removed — which shifts every later row down and stamps a working set from the wrong spec (delete the warm-up row and one working set is stored as `warmup`, excluded from volume, PRs and compliance). Three parts:
+  - **The affordance.** `prescribed-set-grid.tsx:114` gates on the truthiness of the `onRemove` **prop**, not on a per-row result, so a predicate returning `undefined` still draws a delete button that does nothing. Add `canRemove?: (index: number) => boolean` beside the action — the shape `canCopyPrevious` already uses at `:118-119` — and gate line 114 on it. Keep remove's hide-by-absence rendering rather than copy's disabled state (`set-row.tsx:204` vs `:220`): copy is contextually unavailable and clears as rows fill in, an undeletable prescribed row is structurally so, and a permanently dead trash icon on every prescribed row is worse than none.
+  - **The source.** The predicate is `i >= prescribedRows.length`, and that is only meaningful if `prescribedRows` is the PRESCRIPTION. Today `set-tracker.tsx:515` passes `{ ...prescribedView, sets: field.sets.length }` and `exercise-tracker-block.tsx:87-102` feeds that into `expandSetSpecs`, which synthesises N working specs from `sets` whenever there are no authored `set_specs` — so for every compact-columns exercise `prescribedRows.length` tracks the FORM and the predicate can never fire. Drop the `sets:` override and pass `prescribedView` unmodified: the grid takes its row count from `fieldIds.length` (`prescribed-set-grid.tsx:57`) and already renders an appended row with no prescribed hints, so the override is not what keeps the count right. **Also set `sets: 0` on the unplanned `view` at `set-tracker.tsx:495`** — it carries `field.sets.length` too, so dropping the override alone would leave an unplanned exercise's rows *undeletable*, which is backwards. `sets: 0` is this file's own spelling of "nothing prescribed" (`exercise-tracker-block.tsx:88-91`), giving `prescribedRows = []` and every row deletable. No `isUnplanned` clause is then needed anywhere.
+  - **Two visible knock-ons, both to confirm at Phase 2.** `formatSummary` (`:105`/`:467`) is the only other reader of `exercise.sets`: a prescribed exercise's summary line stops tracking appended rows and states the prescription, and an unplanned exercise's "3 sets" line disappears entirely (there is no prescription to summarise). Separately, the memo's zero-guard at `:91` is currently dead in form mode — `seededSetRows` floors the row count at 1 — and becomes reachable.
+- Together these make the form's row list always mirror the flattened prescription, which is what makes positional `setNumber` sound end-to-end. Under the tick model an unticked row already says "not done", so deleting a prescribed row is the same redundancy as the Skip toggle (locked decision 7).
 
 **Expect the coach's numbers to move.** `workouts_completed` will fall for clients who half-log today, and `partial` will start appearing where it never did. That is the number becoming true, not a regression.
 
@@ -190,3 +195,40 @@ Show me your implementation plan first and wait for my approval before writing a
 ## STATUS blocks
 
 *(Each phase appends its own here at commit time.)*
+
+---
+
+### PHASE 1 — SHIPPED (2026-08-24)
+
+**Commit:** `feat(training): set identity on the wire — per-set completion Phase 1` — the single commit this block ships in. (No hash is written here: a hash cannot name the commit that contains it, and stamping one by amending only orphans the commit it named. `git log --oneline --grep "set identity on the wire"` resolves it.)
+
+**Shipped**
+
+1. `setPerformanceSchema.setNumber` — required, 1-based, bounded by `MAX_PRESCRIBED_ROWS`. Reaches both write paths through `exercisePerformanceSchema`; neither route file changed.
+2. `buildLogPayload` mints `setNumber` in the `.map()`, before the `.filter()`. Behaviour otherwise unchanged.
+3. `set_logs.set_number` comes from the payload; `set_type` from `prescribedRows[setNumber - 1]`. The `setRowHasAnyValue` guard is gone — a sent set is always written.
+4. `completion_quality` is server-derived whenever the payload carries `exercises`.
+5. Regression fix: `mapExerciseRow` carries `prescribed_fields`; `TrainingExercise.prescribedFields` is required.
+
+**Deviations from the plan as written**
+
+- **Migration 150 was NOT written.** `UNIQUE (exercise_log_id, set_number)` already exists — created by `090_normalize_set_logs.sql:30` and verified against the live dev catalogue as `set_logs_exercise_log_id_set_number_key`. A plain `ADD CONSTRAINT` would have failed with `42710`. **Prod is unverified** (`supabase db query` has no `--project-ref`, and checking would mean re-linking); if prod ever proves to lack it, that is a new migration. Nothing was pushed and `types/database.ts` is untouched. Owner decision, 2026-08-24.
+- **The completion-quality denominator required a new read.** Locked decision 4 is "every prescribed working set, on EVERY exercise", and an exercise the client never touched is absent from the payload entirely — so the denominator cannot come from the payload. `loadSessionPrescription` reads the performed session's active exercises. It is `Promise.all`-ed with the existing by-id snapshot read (extracted as `loadExerciseSnapshots`), so it costs no extra round trip, and it fires only in detailed mode. Owner-approved.
+- **The derivation is per-exercise, not one session-wide ratio.** `deriveCompletionQuality` (`utils/completion-quality.ts`) judges each exercise against its own prescription and requires all, so no exercise's surplus can mask another's deficit. Behaviourally identical to a summed ratio under the current guards — **no test can distinguish the two forms** — but it makes decision 4 structural rather than a consequence of an unstated injectivity property. `null` is returned when nothing is scorable, and the caller then keeps the client's own claim.
+- **`prescribed_fields` was added to the log's `ExerciseSnapshot`** (owner-approved scope addition). The client tracker's snapshot fallback read `prescribed_fields` from a snapshot that never captured it, so a soft-deleted session widened the grid back to all five columns — the same bug class as the `mapExerciseRow` regression.
+
+**Known gaps left open, both Phase 2's**
+
+- **Reopen renumbers.** `restoreSetsFromLog` rebuilds only the LOGGED rows, so a session logged as sets 3-5 reopens as a 3-row form and re-saves as 1-3. Pre-existing; Phase 1 neither fixes nor worsens it. Phase 2 item 8's full rebuild closes it.
+- **Delete renumbers, independently.** `exercise-tracker-block.tsx:382` lets a client remove any prescribed row, which shifts every later row onto the wrong spec. This needs no reopen and item 8's rebuild alone does **not** close it — the new set-delete restriction in item 8 does. Both causes must be closed for positional `setNumber` to be sound end-to-end.
+
+**Not extended:** `services/set-specs-survival.test.ts` — Phase 1 adds no exercise write path.
+
+**Test results** — all four gates green.
+
+- `npx tsc --noEmit` — clean
+- `npx eslint .` — 0 errors (204 pre-existing warnings, unchanged from baseline)
+- `npx vitest run` — 287 files, 3111 tests, all passing (baseline was 286 / 3088)
+- `npm run check:labels` — OK
+
+**Mutation test.** Reverting `training-log-service.ts` to the old positional mapping (`set_number: setIdx + 1`, `prescribedRows[setIdx]`) fails the new subset test with `expected [ 1, 2, 3 ] to deeply equal [ 2, 5, 6 ]`. Restored from a scratchpad copy and `diff`-verified byte-identical, with the suite re-run green afterwards.

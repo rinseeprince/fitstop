@@ -1,4 +1,6 @@
+import { MAX_SET_SPECS } from "./exercise-set-specs";
 import type { SetSpec, SetType } from "./exercise-set-specs";
+import { MAX_DROPS } from "./set-spec-edits";
 
 // The prescription, flattened to the rows a CLIENT logs against.
 //
@@ -13,6 +15,18 @@ import type { SetSpec, SetType } from "./exercise-set-specs";
 // that flattens differently from the seeder misattributes the type of every row
 // after the first drop set — and `set_type` is what analytics use to exclude
 // warm-ups, so the damage lands in the numbers rather than on screen.
+
+/**
+ * The most rows `buildPrescribedRows` can emit for one exercise: every spec a
+ * drop set carrying the maximum number of drops.
+ *
+ * It bounds `setNumber` on the wire (`lib/validations/training.ts`). A set
+ * number is real identity — the server writes it straight into
+ * `set_logs.set_number` — so an out-of-range value has to be a 400 rather than
+ * an integer error surfacing from Postgres. Derived from the two caps it
+ * depends on so it cannot drift from them.
+ */
+export const MAX_PRESCRIBED_ROWS = MAX_SET_SPECS * (1 + MAX_DROPS);
 
 export type PrescribedRow = {
   /** The coach's set number. Drop children repeat their parent's. */

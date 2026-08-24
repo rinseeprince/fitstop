@@ -7,6 +7,7 @@ import {
   updateTrainingPlanSchema,
   parseGetPlanResponse,
   logTrainingEventSchema,
+  logSessionForDateSchema,
   bulkExerciseInputSchema,
   overwriteSavedPlanSchema,
   inlinePlanBodySchema,
@@ -15,6 +16,7 @@ import {
   updateExerciseSchema,
   replaceSessionSchema,
 } from './training'
+import { MAX_PRESCRIBED_ROWS } from '@/utils/set-spec-rows'
 
 describe('Training Validation Schemas', () => {
   describe('planStatusSchema', () => {
@@ -333,7 +335,7 @@ describe('Training Validation Schemas', () => {
           {
             trainingExerciseId: '00000000-0000-0000-0000-000000000001',
             exerciseName: 'Back Squat',
-            sets: [{ reps: 5, weight: 140, rpe: 8 }],
+            sets: [{ setNumber: 1, reps: 5, weight: 140, rpe: 8 }],
             weightUnit: 'kg',
           },
         ],
@@ -362,7 +364,7 @@ describe('Training Validation Schemas', () => {
         exercises: [
           {
             exerciseName: 'Walking Lunges',
-            sets: [{ reps: 10, weight: 50 }],
+            sets: [{ setNumber: 1, reps: 10, weight: 50 }],
             weightUnit: 'lbs',
           },
         ],
@@ -386,7 +388,7 @@ describe('Training Validation Schemas', () => {
         exercises: [
           {
             trainingExerciseId: '00000000-0000-0000-0000-000000000001',
-            sets: [{ reps: 5, weight: 100 }],
+            sets: [{ setNumber: 1, reps: 5, weight: 100 }],
             weightUnit: 'lbs',
           },
         ],
@@ -414,7 +416,7 @@ describe('Training Validation Schemas', () => {
         exercises: [
           {
             exerciseName: 'Bench Press',
-            sets: [{ reps: 5, weight: 100, rpe: 11 }],
+            sets: [{ setNumber: 1, reps: 5, weight: 100, rpe: 11 }],
             weightUnit: 'lbs',
           },
         ],
@@ -428,12 +430,98 @@ describe('Training Validation Schemas', () => {
         exercises: [
           {
             exerciseName: 'Bench Press',
-            sets: [{ reps: 5, weight: 100 }],
+            sets: [{ setNumber: 1, reps: 5, weight: 100 }],
             weightUnit: 'stone',
           },
         ],
       })
       expect(result.success).toBe(false)
+    })
+
+    // setNumber is the set's IDENTITY — the server writes it straight into
+    // set_logs.set_number and reads prescribedRows[setNumber - 1] to stamp the
+    // coach-prescribed set_type. It is required precisely so a client cannot
+    // send an anonymous set and have its position guessed.
+    const oneSet = (set: unknown) => ({
+      completionQuality: 'full' as const,
+      exercises: [
+        { exerciseName: 'Bench Press', sets: [set], weightUnit: 'kg' as const },
+      ],
+    })
+
+    it('rejects a set with no setNumber', () => {
+      expect(logTrainingEventSchema.safeParse(oneSet({ reps: 5 })).success).toBe(false)
+    })
+
+    it('rejects a setNumber below 1, fractional, or past the flattening ceiling', () => {
+      expect(logTrainingEventSchema.safeParse(oneSet({ setNumber: 0 })).success).toBe(false)
+      expect(logTrainingEventSchema.safeParse(oneSet({ setNumber: -1 })).success).toBe(false)
+      expect(logTrainingEventSchema.safeParse(oneSet({ setNumber: 1.5 })).success).toBe(false)
+      expect(
+        logTrainingEventSchema.safeParse(oneSet({ setNumber: MAX_PRESCRIBED_ROWS + 1 })).success,
+      ).toBe(false)
+    })
+
+    it('accepts a setNumber at the flattening ceiling', () => {
+      expect(
+        logTrainingEventSchema.safeParse(oneSet({ setNumber: MAX_PRESCRIBED_ROWS })).success,
+      ).toBe(true)
+    })
+
+    // set_logs carries UNIQUE (exercise_log_id, set_number) (migration 090), so
+    // a duplicate would surface to the client as a raw 23505 rendered as a 500.
+    it('rejects duplicate setNumbers within one exercise', () => {
+      const result = logTrainingEventSchema.safeParse({
+        completionQuality: 'full',
+        exercises: [
+          {
+            exerciseName: 'Bench Press',
+            sets: [
+              { setNumber: 2, reps: 5 },
+              { setNumber: 2, reps: 6 },
+            ],
+            weightUnit: 'kg',
+          },
+        ],
+      })
+      expect(result.success).toBe(false)
+    })
+
+    // The constraint is per exercise_log, so two exercises may each have a set 1.
+    it('accepts the same setNumber on two different exercises', () => {
+      const result = logTrainingEventSchema.safeParse({
+        completionQuality: 'full',
+        exercises: [
+          { exerciseName: 'Bench Press', sets: [{ setNumber: 1, reps: 5 }], weightUnit: 'kg' },
+          { exerciseName: 'Row', sets: [{ setNumber: 1, reps: 8 }], weightUnit: 'kg' },
+        ],
+      })
+      expect(result.success).toBe(true)
+    })
+
+    // The same shape reaches the event-less endpoint via exercisePerformanceSchema.
+    it('applies the same set rules to logSessionForDateSchema', () => {
+      const base = {
+        date: '2026-08-24',
+        performedSessionId: '00000000-0000-0000-0000-000000000009',
+        completionQuality: 'full' as const,
+      }
+      expect(
+        logSessionForDateSchema.safeParse({
+          ...base,
+          exercises: [
+            { exerciseName: 'Bench Press', sets: [{ reps: 5 }], weightUnit: 'kg' },
+          ],
+        }).success,
+      ).toBe(false)
+      expect(
+        logSessionForDateSchema.safeParse({
+          ...base,
+          exercises: [
+            { exerciseName: 'Bench Press', sets: [{ setNumber: 1, reps: 5 }], weightUnit: 'kg' },
+          ],
+        }).success,
+      ).toBe(true)
     })
   })
 

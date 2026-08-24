@@ -73,6 +73,7 @@ function makePlacedSession(): TrainingSession {
         isWarmup: false,
         setSpecs: SPECS,
         videoUrl: "https://example.com/bench.mp4",
+        prescribedFields: null,
         createdAt: "2026-07-01T00:00:00Z",
         updatedAt: "2026-07-01T00:00:00Z",
       },

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LOAD_KG_MAX } from "@/lib/constants";
+import { MAX_PRESCRIBED_ROWS } from "@/utils/set-spec-rows";
 import type { TrainingPlan } from "@/types/training";
 
 export const planStatusSchema = z.enum(["active", "archived", "draft", "planned"]);
@@ -349,6 +350,16 @@ export const updateSavedSessionSchema = z.object({
 export const completionQualitySchema = z.enum(["full", "partial", "skipped"]);
 
 export const setPerformanceSchema = z.object({
+  // 1-based index into the FLATTENED prescription (buildPrescribedRows output),
+  // never the position in this array and never the spec's own set_number: a drop
+  // set's three rows are 3, 4, 5, not three rows all claiming 3. It is the set's
+  // identity — the server writes it to set_logs.set_number and reads
+  // prescribedRows[setNumber - 1] to stamp the coach-prescribed set_type.
+  //
+  // There is NO `completed` flag. The client sends exactly the sets it
+  // completed; presence in this array IS completion. A set with no reps, weight
+  // or RPE is still a set that was done.
+  setNumber: z.number().int().min(1).max(MAX_PRESCRIBED_ROWS),
   reps: z.number().int().min(1).max(100).optional(),
   // Canonical kilograms (migration 141). Unlike setSpecSchema.load_value above,
   // this field is never a percentage, so it can carry the named kg bound.
@@ -373,6 +384,16 @@ export const exercisePerformanceSchema = z
   .refine(
     (val) => val.skipped === true || val.sets.length > 0,
     { message: "sets must be non-empty unless skipped is true", path: ["sets"] }
+  )
+  .refine(
+    (val) => new Set(val.sets.map((s) => s.setNumber)).size === val.sets.length,
+    {
+      // set_logs carries UNIQUE (exercise_log_id, set_number) (migration 090),
+      // so a duplicate reaches the client as a raw 23505 rendered as a 500.
+      // Validation owns this, not the error handler (CONVENTIONS §10).
+      message: "setNumber must be unique within an exercise",
+      path: ["sets"],
+    }
   );
 
 export const logTrainingEventSchema = z.object({

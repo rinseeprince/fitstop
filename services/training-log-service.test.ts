@@ -297,9 +297,9 @@ describe("logTrainingEvent", () => {
             trainingExerciseId: EXERCISE_A,
             exerciseName: "Bench Press",
             sets: [
-              { reps: 10, weight: 100 },
-              { reps: 10, weight: 105 },
-              { reps: 8, weight: 105 },
+              { setNumber: 1, reps: 10, weight: 100 },
+              { setNumber: 2, reps: 10, weight: 105 },
+              { setNumber: 3, reps: 8, weight: 105 },
             ],
             // kg so this test stays about set fidelity; the lbs→kg conversion
             // has its own test below.
@@ -375,7 +375,7 @@ describe("logTrainingEvent", () => {
           {
             trainingExerciseId: EXERCISE_A,
             exerciseName: "Bench Press",
-            sets: [{ reps: 5, weight: 225 }],
+            sets: [{ setNumber: 1, reps: 5, weight: 225 }],
             weightUnit: "lbs",
           },
         ],
@@ -394,7 +394,11 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 4. Detailed mixed-log: payload completionQuality is authoritative.
   // -------------------------------------------------------------------------
-  it("[4] detailed mixed-log payload-authoritative: payload completionQuality='full' wins → completion_quality='full', status='completed'", async () => {
+  // Free-form exercises against an empty session prescription: there is nothing
+  // to score, so deriveCompletionQuality returns null and the client's own claim
+  // stands. This is the ONLY route by which a detailed payload keeps its stated
+  // quality — see the derivation tests below for the general rule.
+  it("[4] detailed log with nothing scorable: the client's completionQuality stands", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -430,12 +434,12 @@ describe("logTrainingEvent", () => {
         exercises: [
           {
             exerciseName: "A",
-            sets: [{ reps: 10, weight: 100 }],
+            sets: [{ setNumber: 1, reps: 10, weight: 100 }],
             weightUnit: "lbs",
           },
           {
             exerciseName: "B",
-            sets: [{}], // no data
+            sets: [{ setNumber: 1 }], // no data
             weightUnit: "lbs",
           },
         ],
@@ -483,8 +487,8 @@ describe("logTrainingEvent", () => {
       payload: {
         completionQuality: "skipped",
         exercises: [
-          { exerciseName: "A", sets: [{}], weightUnit: "lbs", skipped: true },
-          { exerciseName: "B", sets: [{}], weightUnit: "lbs", skipped: true },
+          { exerciseName: "A", sets: [{ setNumber: 1 }], weightUnit: "lbs", skipped: true },
+          { exerciseName: "B", sets: [{ setNumber: 1 }], weightUnit: "lbs", skipped: true },
         ],
       },
     });
@@ -496,10 +500,10 @@ describe("logTrainingEvent", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 5b. Detailed all-skipped + payload 'full': payload is authoritative.
-  //     Contract test for "completionQuality is the single source of truth."
+  // 5b. All-skipped free-form exercises, payload 'full'. Nothing is scorable
+  //     (no prescription behind them), so the fallback keeps the client's claim.
   // -------------------------------------------------------------------------
-  it("[5b] detailed all-skipped + payload 'full' → completion_quality='full' and status='completed' (payload is authoritative)", async () => {
+  it("[5b] all-skipped free-form + payload 'full' → 'full' via the nothing-scorable fallback", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -533,8 +537,8 @@ describe("logTrainingEvent", () => {
       payload: {
         completionQuality: "full",
         exercises: [
-          { exerciseName: "A", sets: [{}], weightUnit: "lbs", skipped: true },
-          { exerciseName: "B", sets: [{}], weightUnit: "lbs", skipped: true },
+          { exerciseName: "A", sets: [{ setNumber: 1 }], weightUnit: "lbs", skipped: true },
+          { exerciseName: "B", sets: [{ setNumber: 1 }], weightUnit: "lbs", skipped: true },
         ],
       },
     });
@@ -583,9 +587,9 @@ describe("logTrainingEvent", () => {
           {
             exerciseName: "Bench",
             sets: [
-              { reps: 10, weight: 100, rpe: 7 },
-              { reps: 10, weight: 105, rpe: 8 },
-              { reps: 8, weight: 105, rpe: 9 },
+              { setNumber: 1, reps: 10, weight: 100, rpe: 7 },
+              { setNumber: 2, reps: 10, weight: 105, rpe: 8 },
+              { setNumber: 3, reps: 8, weight: 105, rpe: 9 },
             ],
             weightUnit: "kg",
           },
@@ -647,7 +651,7 @@ describe("logTrainingEvent", () => {
         exercises: [
           {
             exerciseName: "Some custom move",
-            sets: [{ reps: 12, weight: 50 }],
+            sets: [{ setNumber: 1, reps: 12, weight: 50 }],
             weightUnit: "lbs",
           },
         ],
@@ -706,7 +710,7 @@ describe("logTrainingEvent", () => {
           {
             exerciseId: PICKED_EXERCISE_ID,
             exerciseName: "Bench Press",
-            sets: [{ reps: 10, weight: 100 }],
+            sets: [{ setNumber: 1, reps: 10, weight: 100 }],
             weightUnit: "lbs",
           },
         ],
@@ -761,7 +765,7 @@ describe("logTrainingEvent", () => {
           {
             trainingExerciseId: EXERCISE_A,
             exerciseName: "Bench",
-            sets: [{}],
+            sets: [{ setNumber: 1 }],
             weightUnit: "lbs",
             skipped: true,
           },
@@ -793,7 +797,7 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 10. Snapshot field shapes — exact
   // -------------------------------------------------------------------------
-  it("[10] snapshot shape: session has exact 5 keys, exercise has exact 12 keys including percentage_1rm and is_warmup", async () => {
+  it("[10] snapshot shape: session has exact 5 keys, exercise has exact 14 keys including set_specs and prescribed_fields", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null },
@@ -833,7 +837,7 @@ describe("logTrainingEvent", () => {
           {
             trainingExerciseId: EXERCISE_A,
             exerciseName: "Bench",
-            sets: [{ reps: 10, weight: 100 }],
+            sets: [{ setNumber: 1, reps: 10, weight: 100 }],
             weightUnit: "lbs",
           },
         ],
@@ -859,6 +863,7 @@ describe("logTrainingEvent", () => {
         "name",
         "notes",
         "percentage_1rm",
+        "prescribed_fields",
         "reps_max",
         "reps_min",
         "reps_target",
@@ -917,7 +922,7 @@ describe("logTrainingEvent", () => {
           {
             trainingExerciseId: EXERCISE_A,
             exerciseName: "Bench",
-            sets: [{ reps: 10, weight: 100 }],
+            sets: [{ setNumber: 1, reps: 10, weight: 100 }],
             weightUnit: "lbs",
           },
         ],
@@ -988,11 +993,11 @@ describe("logTrainingEvent", () => {
             exerciseName: "Bench",
             // Five rows: warm-up, the drop set's top set, its two drops, failure.
             sets: [
-              { reps: 15, weight: 40 },
-              { reps: 8, weight: 80 },
-              { reps: 8, weight: 60 },
-              { reps: 8, weight: 40 },
-              { reps: 5, weight: 80 },
+              { setNumber: 1, reps: 15, weight: 40 },
+              { setNumber: 2, reps: 8, weight: 80 },
+              { setNumber: 3, reps: 8, weight: 60 },
+              { setNumber: 4, reps: 8, weight: 40 },
+              { setNumber: 5, reps: 5, weight: 80 },
             ],
             weightUnit: "kg",
           },
@@ -1012,6 +1017,240 @@ describe("logTrainingEvent", () => {
       "failure",
     ]);
     expect(inserted.map((r) => r.set_number)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  // -------------------------------------------------------------------------
+  // THE regression. A client who logs a SUBSET of the prescribed sets used to
+  // have them stored at array positions 1..n and typed from the first n specs,
+  // because the payload carried no set identity at all. A lone working set
+  // landed as set 1 with set_type 'warmup', which the analytics RPCs exclude —
+  // so a logged Bench set read as "0 sets against prescribed 4" on the Journey
+  // compliance chart.
+  //
+  // Prescription flattens to six rows:
+  //   1 warmup · 2 working · 3 drop(top) · 4 drop · 5 drop · 6 failure
+  // The client sends three of them: 2, 5 and 6 — a working set, the SECOND drop
+  // child (a row after the drop set began, where positional mapping goes wrong
+  // even when nothing is missing), and the failure set.
+  // -------------------------------------------------------------------------
+  it("writes a logged SUBSET at its own set numbers and types, not at array positions", async () => {
+    const setSpecs = [
+      { set_number: 1, set_type: "warmup" },
+      {
+        set_number: 2,
+        set_type: "working",
+        reps_min: 8,
+        reps_max: 10,
+      },
+      {
+        set_number: 3,
+        set_type: "drop",
+        drops: [
+          { weight: 60, reps: 8 },
+          { weight: 40, reps: 8 },
+        ],
+      },
+      { set_number: 4, set_type: "failure" },
+    ];
+    const eventQ = createMockQuery({ data: eventRow(), error: null });
+    const clientQ = createMockQuery({
+      data: { expected_check_in_day: null },
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    const exerciseSnapQ = createMockQuery({
+      data: [{ ...EXERCISE_A_PRESCRIPTION, set_specs: setSpecs }],
+      error: null,
+    });
+    const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const existingExLogsQ = createMockQuery({ data: [], error: null });
+    const deleteExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-subset"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
+    const linkQ = createMockQuery({ data: null, error: null });
+
+    installRouter({
+      training_events: [eventQ, linkQ],
+      clients: clientQ,
+      training_sessions: sessionSnapQ,
+      training_exercises: exerciseSnapQ,
+      session_logs: upsertQ,
+      exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
+    });
+
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        // Ignored: the payload carries exercises, so the server derives.
+        completionQuality: "full",
+        exercises: [
+          {
+            trainingExerciseId: EXERCISE_A,
+            exerciseName: "Bench",
+            sets: [
+              { setNumber: 2, reps: 9, weight: 80 },
+              { setNumber: 5, reps: 8, weight: 40 },
+              { setNumber: 6, reps: 3, weight: 80 },
+            ],
+            weightUnit: "kg",
+          },
+        ],
+      },
+    });
+
+    const inserted = setLogsInsertQ.insert.mock.calls[0][0] as {
+      set_number: number;
+      set_type: string;
+    }[];
+
+    expect(inserted.map((r) => r.set_number)).toEqual([2, 5, 6]);
+    expect(inserted.map((r) => r.set_type)).toEqual([
+      "working",
+      "drop",
+      "failure",
+    ]);
+
+    // What the old positional mapping produced, spelled out so a regression
+    // reads as this line rather than as an opaque array mismatch.
+    expect(inserted.map((r) => r.set_number)).not.toEqual([1, 2, 3]);
+    expect(inserted.map((r) => r.set_type)).not.toEqual([
+      "warmup",
+      "working",
+      "drop",
+    ]);
+
+    // Five non-warmup rows prescribed, three sent → partial, overriding the
+    // payload's 'full'.
+    expect(upsertQ.insert.mock.calls[0][0].completion_quality).toBe("partial");
+    expect(linkQ.update.mock.calls[0][0].status).toBe("partial");
+  });
+
+  // -------------------------------------------------------------------------
+  // A sent set is WRITTEN even with no values: the client sends exactly the sets
+  // it completed, so presence in the array is the claim and the numbers are
+  // optional detail. The old setRowHasAnyValue guard dropped these rows.
+  // -------------------------------------------------------------------------
+  it("writes a sent set that carries no reps, weight or RPE", async () => {
+    const eventQ = createMockQuery({ data: eventRow(), error: null });
+    const clientQ = createMockQuery({
+      data: { expected_check_in_day: null },
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    const exerciseSnapQ = createMockQuery({
+      data: [EXERCISE_A_PRESCRIPTION],
+      error: null,
+    });
+    const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const existingExLogsQ = createMockQuery({ data: [], error: null });
+    const deleteExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-empty"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
+    const linkQ = createMockQuery({ data: null, error: null });
+
+    installRouter({
+      training_events: [eventQ, linkQ],
+      clients: clientQ,
+      training_sessions: sessionSnapQ,
+      training_exercises: exerciseSnapQ,
+      session_logs: upsertQ,
+      exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
+    });
+
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "full",
+        exercises: [
+          {
+            trainingExerciseId: EXERCISE_A,
+            exerciseName: "Bench Press",
+            sets: [
+              { setNumber: 1, reps: 10, weight: 100 },
+              { setNumber: 2 },
+              { setNumber: 3, reps: 8, weight: 100 },
+            ],
+            weightUnit: "kg",
+          },
+        ],
+      },
+    });
+
+    expect(setLogsInsertQ.insert.mock.calls[0][0]).toEqual([
+      { exercise_log_id: "el-empty", set_number: 1, set_type: "working", reps: 10, weight: 100, rpe: null },
+      { exercise_log_id: "el-empty", set_number: 2, set_type: "working", reps: null, weight: null, rpe: null },
+      { exercise_log_id: "el-empty", set_number: 3, set_type: "working", reps: 8, weight: 100, rpe: null },
+    ]);
+    // All three prescribed working sets were sent, values or not.
+    expect(upsertQ.insert.mock.calls[0][0].completion_quality).toBe("full");
+  });
+
+  // -------------------------------------------------------------------------
+  // The denominator is the SESSION's prescription, not the payload's. An
+  // exercise the client never touched is absent from the payload entirely, so a
+  // payload-derived denominator would score this session 'full' (locked
+  // decision 4: every prescribed working set, on EVERY exercise).
+  // -------------------------------------------------------------------------
+  it("counts a prescribed exercise the payload never mentions", async () => {
+    const eventQ = createMockQuery({ data: eventRow(), error: null });
+    const clientQ = createMockQuery({
+      data: { expected_check_in_day: null },
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    // Two exercises prescribed; the by-id snapshot read and the session read
+    // share this mock, so both see the pair.
+    const exerciseSnapQ = createMockQuery({
+      data: [
+        EXERCISE_A_PRESCRIPTION,
+        { ...EXERCISE_A_PRESCRIPTION, id: EXERCISE_B, name: "Row" },
+      ],
+      error: null,
+    });
+    const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const existingExLogsQ = createMockQuery({ data: [], error: null });
+    const deleteExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-a"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
+    const linkQ = createMockQuery({ data: null, error: null });
+
+    installRouter({
+      training_events: [eventQ, linkQ],
+      clients: clientQ,
+      training_sessions: sessionSnapQ,
+      training_exercises: exerciseSnapQ,
+      session_logs: upsertQ,
+      exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
+    });
+
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "full",
+        exercises: [
+          {
+            trainingExerciseId: EXERCISE_A,
+            exerciseName: "Bench Press",
+            sets: [
+              { setNumber: 1, reps: 10, weight: 100 },
+              { setNumber: 2, reps: 10, weight: 100 },
+              { setNumber: 3, reps: 10, weight: 100 },
+            ],
+            weightUnit: "kg",
+          },
+        ],
+      },
+    });
+
+    // Exercise A complete, exercise B untouched → partial, not full.
+    expect(upsertQ.insert.mock.calls[0][0].completion_quality).toBe("partial");
+    expect(linkQ.update.mock.calls[0][0].status).toBe("partial");
   });
 
   // -------------------------------------------------------------------------
@@ -1057,7 +1296,7 @@ describe("logTrainingEvent", () => {
           {
             trainingExerciseId: EXERCISE_A,
             exerciseName: "Bench",
-            sets: [{ reps: 10, weight: 100 }],
+            sets: [{ setNumber: 1, reps: 10, weight: 100 }],
             weightUnit: "lbs",
           },
         ],
@@ -1287,13 +1526,13 @@ describe("logTrainingEvent", () => {
           {
             trainingExerciseId: EXERCISE_A,
             exerciseName: "Bench",
-            sets: [{ reps: 10, weight: 100 }],
+            sets: [{ setNumber: 1, reps: 10, weight: 100 }],
             weightUnit: "lbs",
           },
           {
             // free-form (no trainingExerciseId)
             exerciseName: "Mystery Lift",
-            sets: [{ reps: 8, weight: 50 }],
+            sets: [{ setNumber: 1, reps: 8, weight: 50 }],
             weightUnit: "lbs",
           },
         ],
@@ -1361,7 +1600,7 @@ describe("logTrainingEvent", () => {
           exercises: [
             {
               exerciseName: "A",
-              sets: [{ reps: 10, weight: 100 }],
+              sets: [{ setNumber: 1, reps: 10, weight: 100 }],
               weightUnit: "lbs",
             },
           ],

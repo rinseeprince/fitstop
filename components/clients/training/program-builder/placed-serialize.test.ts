@@ -33,6 +33,7 @@ function makeExercise(overrides: Partial<TrainingExercise> = {}): TrainingExerci
       { set_number: 2, set_type: "working", reps_min: 6, reps_max: 8 },
     ],
     videoUrl: "https://example.com/bench",
+    prescribedFields: null,
     createdAt: "2026-07-15T00:00:00Z",
     updatedAt: "2026-07-15T00:00:00Z",
     ...overrides,

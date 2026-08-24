@@ -114,4 +114,39 @@ describe("buildLogPayload", () => {
     const payload = buildLogPayload(values([emptySet()]), "metric", ALL_DIRTY);
     expect(payload.exercises).toBeUndefined();
   });
+
+  // THE identity case. The form's rows mirror the flattened prescription, so a
+  // row's position IS its set number — but only if it is minted before the
+  // empty rows are filtered out. Selecting first and numbering after collapsed
+  // a logged subset down to 1..n, and the server then typed each row from the
+  // wrong spec (a lone working set stored as set 1, typed `warmup`, and
+  // excluded from every performance metric).
+  it("sends each set's own prescribed row number, not its position among the filled rows", () => {
+    const payload = buildLogPayload(
+      values([
+        emptySet(),
+        { reps: "10", weight: "100", rpe: "", weightKg: null },
+        emptySet(),
+        { reps: "8", weight: "100", rpe: "", weightKg: null },
+      ]),
+      "metric",
+      ALL_DIRTY,
+    );
+
+    expect(setsOf(payload).map((s) => s.setNumber)).toEqual([2, 4]);
+    expect(setsOf(payload).map((s) => s.setNumber)).not.toEqual([1, 2]);
+  });
+
+  it("numbers a fully filled exercise 1..n", () => {
+    const payload = buildLogPayload(
+      values([
+        { reps: "10", weight: "100", rpe: "", weightKg: null },
+        { reps: "10", weight: "100", rpe: "", weightKg: null },
+        { reps: "8", weight: "100", rpe: "", weightKg: null },
+      ]),
+      "metric",
+      ALL_DIRTY,
+    );
+    expect(setsOf(payload).map((s) => s.setNumber)).toEqual([1, 2, 3]);
+  });
 });

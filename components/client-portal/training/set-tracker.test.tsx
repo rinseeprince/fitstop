@@ -114,6 +114,7 @@ function baseFixture(): TrainingEventDetail {
           repsTarget: "8-12",
           rpeTarget: 8,
           isWarmup: false,
+          prescribedFields: null,
           createdAt: ISO,
           updatedAt: ISO,
         },
@@ -129,6 +130,7 @@ function baseFixture(): TrainingEventDetail {
           sets: 4,
           repsTarget: "6-10",
           isWarmup: false,
+          prescribedFields: null,
           createdAt: ISO,
           updatedAt: ISO,
         },
@@ -550,10 +552,15 @@ describe("SetTracker", () => {
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as {
-      exercises?: Array<{ sets: Array<{ reps?: number; weight?: number }> }>;
+      exercises?: Array<{
+        sets: Array<{ setNumber: number; reps?: number; weight?: number }>;
+      }>;
     };
+    // Bench Press prescribes 3 rows, so the appended row is number 4 — past the
+    // prescription, where the server finds no prescribed row and falls back to
+    // set_type 'working'.
     expect(payload.exercises![0].sets).toEqual([
-      { reps: 12, weight: 95 },
+      { setNumber: 4, reps: 12, weight: 95 },
     ]);
   });
 
@@ -577,10 +584,18 @@ describe("SetTracker", () => {
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const payload = getLastFetchPayload() as {
-      exercises?: Array<{ sets: Array<{ reps?: number; weight?: number }> }>;
+      exercises?: Array<{
+        sets: Array<{ setNumber: number; reps?: number; weight?: number }>;
+      }>;
     };
     expect(payload.exercises).toHaveLength(1);
-    expect(payload.exercises![0].sets).toEqual([{ reps: 10, weight: 100 }]);
+    // The surviving row keeps number 1 only because the deleted row sat AFTER
+    // it. Deleting a row BEFORE a filled one still shifts it onto the wrong
+    // prescribed spec — Phase 2 closes that by refusing to delete a prescribed
+    // row at all (see the plan's Phase 2 item 8).
+    expect(payload.exercises![0].sets).toEqual([
+      { setNumber: 1, reps: 10, weight: 100 },
+    ]);
   });
 
   // ---- 17c. Delete unplanned exercise -------------------------------------
@@ -1091,16 +1106,25 @@ describe("SetTracker", () => {
       completionQuality: string;
       notes?: string;
       exercises?: Array<{
-        sets: Array<{ reps?: number; weight?: number; rpe?: number }>;
+        sets: Array<{
+          setNumber: number;
+          reps?: number;
+          weight?: number;
+          rpe?: number;
+        }>;
       }>;
     };
     expect(payload.completionQuality).toBe("partial");
     expect(payload.notes).toBe("Felt good");
     expect(payload.exercises).toHaveLength(1);
+    // A COMPLETE prior log restores to numbers 1-3 unchanged. A partial one
+    // does not yet — restoreSetsFromLog rebuilds only the logged rows, so sets
+    // 3-5 would come back as 1-3. Phase 2 item 8 rebuilds the full prescribed
+    // list; until then the plan records it as a known gap.
     expect(payload.exercises![0].sets).toEqual([
-      { reps: 10, weight: 100, rpe: 8 },
-      { reps: 10, weight: 105, rpe: 8 },
-      { reps: 8, weight: 105, rpe: 9 },
+      { setNumber: 1, reps: 10, weight: 100, rpe: 8 },
+      { setNumber: 2, reps: 10, weight: 105, rpe: 8 },
+      { setNumber: 3, reps: 8, weight: 105, rpe: 9 },
     ]);
   });
 

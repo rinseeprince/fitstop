@@ -71,6 +71,21 @@ export function buildLogPayload(
     .map((ex, exIndex) => {
       const filledSets = ex.sets
         .map((s, setIndex) => ({
+          // The row's position in THIS form's row list. The server reads it as
+          // an index into the flattened prescription (prescribedRows[n - 1]),
+          // so the two agree only while the form's rows mirror that list.
+          //
+          // They do when the form is seeded fresh (seededSetRows builds it from
+          // buildPrescribedRows). They do NOT yet on two paths, both Phase 2's
+          // to close: reopening a logged session re-seeds from the LOGGED rows
+          // only (restoreSetsFromLog), and the grid lets a client delete or
+          // append rows. Either shifts later rows onto the wrong spec.
+          //
+          // Minting it here, before the filter below, closes a third cause:
+          // selecting first and numbering after renumbered a logged subset down
+          // to 1..n, so a lone working set was stored as set 1 and typed from
+          // the warm-up spec.
+          setNumber: setIndex + 1,
           reps: s.reps.trim() ? Number(s.reps) : undefined,
           weight: isWeightDirty(exIndex, setIndex)
             ? s.weight.trim()

@@ -33,8 +33,11 @@ export type TrainingExercise = {
   isWarmup: boolean;
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
-  // Prescription columns the coach uses (migration 149). null/absent = all five.
-  prescribedFields?: string[] | null;
+  // Prescription columns the coach uses (migration 149). null = all five.
+  // REQUIRED, not optional: while it was optional, services/training-mappers.ts
+  // simply never mapped the column and every client saw all five columns. A
+  // mapper that forgets it is now a compile error.
+  prescribedFields: string[] | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -65,7 +65,11 @@ import { mapExerciseRow } from "@/services/training-mappers";
 // The one flattening. The client's log form seeds its rows from this same
 // function, so a drop set's expansion cannot differ between what the client
 // filled in and what set_type each row is stamped with here.
-import { buildPrescribedRows } from "@/utils/set-spec-rows";
+import { buildPrescribedRows, type PrescribedRow } from "@/utils/set-spec-rows";
+import {
+  deriveCompletionQuality,
+  type ScoredExercise,
+} from "@/utils/completion-quality";
 
 // =============================================================================
 // Event-keyed training log service.
@@ -77,10 +81,6 @@ import { buildPrescribedRows } from "@/utils/set-spec-rows";
 
 function setHasData(set: SetPerformanceInput): boolean {
   return set.reps != null || set.weight != null;
-}
-
-function setRowHasAnyValue(set: SetPerformanceInput): boolean {
-  return set.reps != null || set.weight != null || set.rpe != null;
 }
 
 // --- Snapshot shapes (JSONB-bound) ---
@@ -110,6 +110,11 @@ type ExerciseSnapshot = {
   // correct for historical logs once the Phase 2 builder authors it; null until
   // then. Analytics reads it via countWorkingSets, falling back to `sets`.
   set_specs: Json | null;
+  // Which prescription columns the coach uses (mig 149). Captured for the same
+  // reason as set_specs: the client tracker falls back to this snapshot when the
+  // live session is gone, and without the column it silently widens the grid
+  // back to all five and collects data the coach chose not to prescribe.
+  prescribed_fields: string[] | null;
 };
 
 // --- Row → camelCase mappers ---
@@ -163,6 +168,122 @@ function mapSetLogRow(row: SetLogRow): SetLog {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+// --- Prescription reads (detailed mode) ---
+
+// One row of training_exercises, as both prescription reads below select it.
+type PrescriptionRow = {
+  id: string;
+  name: string;
+  sets: number;
+  reps_min: number | null;
+  reps_max: number | null;
+  reps_target: string | null;
+  rpe_target: number | null;
+  percentage_1rm: number | null;
+  tempo: string | null;
+  rest_seconds: number | null;
+  notes: string | null;
+  superset_group: string | null;
+  is_warmup: boolean | null;
+  set_specs: Json | null;
+  prescribed_fields: string[] | null;
+};
+
+const PRESCRIPTION_COLUMNS =
+  "id, name, sets, reps_min, reps_max, reps_target, rpe_target, percentage_1rm, " +
+  "tempo, rest_seconds, notes, superset_group, is_warmup, set_specs, prescribed_fields";
+
+// The tenant scope for both reads: exercise -> session -> plan -> client_id.
+// `!inner` filters out anything this client does not own, so a body-supplied
+// foreign exercise id simply does not come back.
+const PRESCRIPTION_SCOPE = ", training_sessions!inner(training_plans!inner(client_id))";
+
+function toExerciseSnapshot(row: PrescriptionRow): ExerciseSnapshot {
+  return {
+    name: row.name,
+    sets: row.sets,
+    reps_min: row.reps_min,
+    reps_max: row.reps_max,
+    reps_target: row.reps_target,
+    rpe_target: row.rpe_target,
+    percentage_1rm: row.percentage_1rm,
+    tempo: row.tempo,
+    rest_seconds: row.rest_seconds,
+    notes: row.notes,
+    superset_group: row.superset_group,
+    is_warmup: row.is_warmup ?? false,
+    set_specs: row.set_specs ?? null,
+    prescribed_fields: row.prescribed_fields ?? null,
+  };
+}
+
+/**
+ * The payload's own exercises, by id, for the prescription snapshot.
+ *
+ * No is_active filter, deliberately: a coach soft-deleting an exercise must not
+ * cause a client's log write to capture a null snapshot (and, on the update
+ * branch, clobber an existing one). Chunked so a large owned set is never
+ * silently truncated at the PostgREST cap.
+ *
+ * An id that does not come back is either foreign (scoped out) or legitimately
+ * gone (hard-deleted between prescription and log). Both fall back to the
+ * preserved snapshot rather than 404 — no cross-tenant data either way.
+ */
+async function loadExerciseSnapshots(
+  clientId: string,
+  exerciseIds: string[],
+): Promise<PrescriptionRow[]> {
+  const rows: PrescriptionRow[] = [];
+  for (let i = 0; i < exerciseIds.length; i += 100) {
+    const chunk = exerciseIds.slice(i, i + 100);
+    const { data, error } = await supabaseAdmin
+      .from("training_exercises")
+      .select(PRESCRIPTION_COLUMNS + PRESCRIPTION_SCOPE)
+      .in("id", chunk)
+      .eq("training_sessions.training_plans.client_id", clientId);
+    if (error) {
+      throw new Error(
+        `Failed to load training exercises for snapshot: ${error.message}`,
+      );
+    }
+    for (const row of data ?? []) {
+      rows.push(row as unknown as PrescriptionRow);
+    }
+  }
+  return rows;
+}
+
+/**
+ * Every ACTIVE exercise of the session the client PERFORMED — the denominator
+ * for completion_quality.
+ *
+ * It has to be read rather than inferred from the payload: an exercise the
+ * client never touched is absent from the payload entirely, so asking the
+ * payload how much was prescribed would let a half-done workout record as
+ * `full`. Locked decision 4 is "every prescribed working set, on EVERY
+ * exercise".
+ *
+ * is_active IS filtered here, unlike the snapshot read above: this is what the
+ * tracker rendered, so it is what the client can fairly be scored against.
+ */
+async function loadSessionPrescription(
+  clientId: string,
+  sessionId: string,
+): Promise<PrescriptionRow[]> {
+  const { data, error } = await supabaseAdmin
+    .from("training_exercises")
+    .select(PRESCRIPTION_COLUMNS + PRESCRIPTION_SCOPE)
+    .eq("session_id", sessionId)
+    .eq("is_active", true)
+    .eq("training_sessions.training_plans.client_id", clientId);
+  if (error) {
+    throw new Error(
+      `Failed to load session prescription: ${error.message}`,
+    );
+  }
+  return (data ?? []).map((row) => row as unknown as PrescriptionRow);
 }
 
 // Expand a prescribed exercise snapshot (fresh ExerciseSnapshot or a preserved
@@ -322,13 +443,12 @@ async function writeSessionLog(params: {
     }
   }
 
-  // 4. Mode dispatch + fresh exercise-prescription map (detailed mode only).
-  // No is_active filter here either — same rationale as step 3. Soft-deleted
-  // exercises must not silently strip the snapshot on first-call detailed logs.
+  // 4. Mode dispatch + the two prescription reads (detailed mode only).
   const isDetailedMode =
     Array.isArray(payload.exercises) && payload.exercises.length > 0;
 
   const freshExerciseSnapshotMap = new Map<string, ExerciseSnapshot>();
+  const sessionPrescribedRows = new Map<string, PrescribedRow[]>();
   if (isDetailedMode) {
     const distinctExerciseIds = [
       ...new Set(
@@ -337,78 +457,70 @@ async function writeSessionLog(params: {
           .filter((id): id is string => typeof id === "string"),
       ),
     ];
-    if (distinctExerciseIds.length > 0) {
-      // Scope the read to THIS client via exercise -> session -> plan ->
-      // client_id (!inner filters out anything not owned), so a body-supplied
-      // foreign exercise id can't leak another client's prescription. Chunk the
-      // .in() so a large owned set is never silently truncated at the PostgREST
-      // cap. Any id that doesn't come back is foreign -> reject.
-      const exerciseRows: Array<{
-        id: string;
-        name: string;
-        sets: number;
-        reps_min: number | null;
-        reps_max: number | null;
-        reps_target: string | null;
-        rpe_target: number | null;
-        percentage_1rm: number | null;
-        tempo: string | null;
-        rest_seconds: number | null;
-        notes: string | null;
-        superset_group: string | null;
-        is_warmup: boolean | null;
-        set_specs: Json | null;
-      }> = [];
-      for (let i = 0; i < distinctExerciseIds.length; i += 100) {
-        const chunk = distinctExerciseIds.slice(i, i + 100);
-        const { data, error: exerciseErr } = await supabaseAdmin
-          .from("training_exercises")
-          .select(
-            "id, name, sets, reps_min, reps_max, reps_target, rpe_target, percentage_1rm, tempo, rest_seconds, notes, superset_group, is_warmup, set_specs, training_sessions!inner(training_plans!inner(client_id))",
-          )
-          .in("id", chunk)
-          .eq("training_sessions.training_plans.client_id", clientId);
-        if (exerciseErr) {
-          throw new Error(
-            `Failed to load training exercises for snapshot: ${exerciseErr.message}`,
-          );
-        }
-        for (const row of data ?? []) {
-          exerciseRows.push(row as unknown as (typeof exerciseRows)[number]);
-        }
-      }
-      // Scoping the read is the whole fix: a foreign exercise id simply doesn't
-      // come back, so its prescription is never captured into this client's
-      // snapshot (the leak). We deliberately do NOT reject on a missing id — an
-      // id can also be legitimately gone (the coach hard-deleted/replaced the
-      // exercise between prescription and log), which must still fall back to the
-      // preserved snapshot, not 404. Unmatched ids get a name-only snapshot from
-      // the caller's own payload — no cross-tenant data either way.
-      for (const row of exerciseRows) {
-        freshExerciseSnapshotMap.set(row.id, {
-          name: row.name,
-          sets: row.sets,
-          reps_min: row.reps_min,
-          reps_max: row.reps_max,
-          reps_target: row.reps_target,
-          rpe_target: row.rpe_target,
-          percentage_1rm: row.percentage_1rm,
-          tempo: row.tempo,
-          rest_seconds: row.rest_seconds,
-          notes: row.notes,
-          superset_group: row.superset_group,
-          is_warmup: row.is_warmup ?? false,
-          set_specs: row.set_specs ?? null,
-        });
-      }
+    // Independent reads — issued together so the added denominator read costs
+    // no round trip of its own (CONVENTIONS §2, performance 11).
+    const [snapshotRows, sessionRows] = await Promise.all([
+      distinctExerciseIds.length > 0
+        ? loadExerciseSnapshots(clientId, distinctExerciseIds)
+        : Promise.resolve<PrescriptionRow[]>([]),
+      performedSessionId !== null
+        ? loadSessionPrescription(clientId, performedSessionId)
+        : Promise.resolve<PrescriptionRow[]>([]),
+    ]);
+    for (const row of snapshotRows) {
+      freshExerciseSnapshotMap.set(row.id, toExerciseSnapshot(row));
+    }
+    for (const row of sessionRows) {
+      sessionPrescribedRows.set(
+        row.id,
+        buildPrescribedRows(snapshotToSpecs(toExerciseSnapshot(row))),
+      );
     }
   }
 
-  // 4b. The client's explicit completionQuality is authoritative in both
-  // quick and detailed modes. Clients have legitimate reasons to mark a
-  // session "complete" with partial set data (only tracking compounds, lost
-  // signal mid-workout, etc.), so per-exercise data does not override the tap.
-  const derivedQuality: SessionCompletionQuality = payload.completionQuality;
+  // 4b. completion_quality is SERVER-DERIVED whenever the payload carries
+  // exercises: the sets the client sent are the claim, and any client-supplied
+  // value is ignored. A payload with NO exercises — the quick log, and any
+  // future RN quick path — still uses the client's explicit value, because
+  // there is nothing to derive from.
+  //
+  // This reverses the previous rule ("the tap is authoritative"), which let a
+  // client who logged one set of six record the session as complete.
+  let derivedQuality: SessionCompletionQuality = payload.completionQuality;
+  if (isDetailedMode) {
+    const completedByExerciseId = new Map<string, number[]>();
+    for (const ex of payload.exercises ?? []) {
+      // An unplanned exercise has no prescription, so it scores neither half.
+      if (!ex.trainingExerciseId) continue;
+      const seen = completedByExerciseId.get(ex.trainingExerciseId) ?? [];
+      seen.push(...ex.sets.map((set) => set.setNumber));
+      completedByExerciseId.set(ex.trainingExerciseId, seen);
+    }
+
+    const scored: ScoredExercise[] = [...sessionPrescribedRows].map(
+      ([exerciseId, prescribedRows]) => ({
+        prescribedRows,
+        completedSetNumbers: completedByExerciseId.get(exerciseId) ?? [],
+      }),
+    );
+
+    // A prescribed exercise the coach has since removed from the session is
+    // absent from the read above, but the client still SAW it — getTrainingEvent
+    // Detail appends a snapshot block for exactly this case — and logged against
+    // it, so it scores. One with no snapshot left at all (hard-deleted) is
+    // dropped from BOTH halves, so it can never skew the ratio either way.
+    for (const [exerciseId, setNumbers] of completedByExerciseId) {
+      if (sessionPrescribedRows.has(exerciseId)) continue;
+      const snapshot = freshExerciseSnapshotMap.get(exerciseId);
+      if (!snapshot) continue;
+      scored.push({
+        prescribedRows: buildPrescribedRows(snapshotToSpecs(snapshot)),
+        completedSetNumbers: setNumbers,
+      });
+    }
+
+    derivedQuality = deriveCompletionQuality(scored) ?? payload.completionQuality;
+  }
 
   // 5. Write session_logs (event-keyed, Session 5.2). training_session_id holds
   // the PERFORMED session. completed_at is the attribution date.
@@ -587,12 +699,17 @@ async function writeSessionLog(params: {
           null
         : null;
       const prescribedRows = buildPrescribedRows(snapshotToSpecs(snapshot));
-      ex.sets.forEach((s, setIdx) => {
-        if (!setRowHasAnyValue(s)) return;
+      // Every sent set is written, values or not: the client sends exactly the
+      // sets it completed, so a row with nothing in it is a truthful record of
+      // "did the set, logged no numbers".
+      ex.sets.forEach((s) => {
         setLogInserts.push({
           exercise_log_id: exerciseLogId,
-          set_number: setIdx + 1,
-          set_type: prescribedRows[setIdx]?.setType ?? "working",
+          // The set's own identity, never its position in this array — a client
+          // logging sets 3-5 of six must not have them stored as 1-3 and typed
+          // from the first three specs.
+          set_number: s.setNumber,
+          set_type: prescribedRows[s.setNumber - 1]?.setType ?? "working",
           reps: s.reps ?? null,
           // set_logs.weight is canonical kilograms (migration 141) and no longer
           // carries a tag, so the payload's unit is applied HERE and then
