@@ -6,11 +6,29 @@ import { useUnits } from "@/contexts/units-context";
 import { formatLoad } from "@/utils/unit-conversions";
 import { formatRepsRange } from "@/utils/reps-range";
 import { formatPrescribedLoad, type PrescribedRow } from "@/utils/set-spec-rows";
+import type { PrescribedField } from "@/utils/prescribed-fields";
 
-// One template shared by the header row and every set row — they are a grid and
-// must not drift. Set · Load · Weight · Reps · RPE · actions.
-export const SET_GRID =
-  "grid grid-cols-[44px_minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.7fr)_56px] items-center gap-2";
+// The header row and every set row share this grid and must not drift, so the
+// template is derived once from the same field set both are given.
+//
+// Set and Weight have no toggle. Set is the row's identity, and Weight is the
+// CLIENT's entry rather than a prescription column — it is what they lifted, and
+// hiding it would stop collecting the data every strength metric is built from.
+// Of the five prescribed fields only reps, load and rpe are columns; set_type
+// gates the row tag and rest gates the timer between rows.
+export const SET_GRID_BASE = "grid items-center gap-2";
+
+export function setGridTemplate(
+  fields: ReadonlySet<PrescribedField>,
+): string {
+  const columns = ["44px"];
+  if (fields.has("load")) columns.push("minmax(0,0.9fr)");
+  columns.push("minmax(0,1.1fr)");
+  if (fields.has("reps")) columns.push("minmax(0,1fr)");
+  if (fields.has("rpe")) columns.push("minmax(0,0.7fr)");
+  columns.push("56px");
+  return columns.join(" ");
+}
 
 // Every non-working set carries its type, the way Hevy and Strong tag them: a
 // single letter beside the set number. Working sets are untagged because they
@@ -39,6 +57,8 @@ export function SetTypeTag({ row }: { row?: PrescribedRow }) {
 
 type SetRowProps = {
   setNumber: number;
+  /** Which prescription columns this exercise uses. */
+  fields: ReadonlySet<PrescribedField>;
   /**
    * This row's own prescription. Undefined for a set the CLIENT added beyond
    * what was prescribed (the log form lets them append rows), which renders
@@ -56,6 +76,7 @@ type SetRowProps = {
 
 export function SetRow({
   setNumber,
+  fields,
   prescribed,
   register,
   exerciseIndex,
@@ -100,18 +121,22 @@ export function SetRow({
       <span className="text-[13px] font-mono-display text-[#5a7d82]">
         {prescribed?.dropIndex != null ? "" : setNumber}
       </span>
-      <SetTypeTag row={prescribed} />
+      {fields.has("set_type") && <SetTypeTag row={prescribed} />}
     </div>
   );
 
   if (!editable) {
     return (
-      <div data-testid="set-row" className={`${SET_GRID} px-3 py-2`}>
+      <div
+        data-testid="set-row"
+        className={`${SET_GRID_BASE} px-3 py-2`}
+        style={{ gridTemplateColumns: setGridTemplate(fields) }}
+      >
         {setCell}
-        <ReadOnlyCell text={loadText} />
+        {fields.has("load") && <ReadOnlyCell text={loadText} />}
         <ReadOnlyCell text={null} />
-        <ReadOnlyCell text={repsPlaceholder || null} />
-        <ReadOnlyCell text={rpePlaceholder || null} />
+        {fields.has("reps") && <ReadOnlyCell text={repsPlaceholder || null} />}
+        {fields.has("rpe") && <ReadOnlyCell text={rpePlaceholder || null} />}
         <span />
       </div>
     );
@@ -121,15 +146,21 @@ export function SetRow({
   const showCopy = setIndex > 0 && onCopyPrevious !== undefined;
 
   return (
-    <div data-testid="set-row" className={`${SET_GRID} px-3 py-2`}>
+    <div
+      data-testid="set-row"
+      className={`${SET_GRID_BASE} px-3 py-2`}
+      style={{ gridTemplateColumns: setGridTemplate(fields) }}
+    >
       {setCell}
 
-      <div
-        className="truncate text-center text-[12px] font-mono-display text-[#5a7d82]"
-        data-testid={`prescribed-load-${exerciseIndex}-${setIndex}`}
-      >
-        {loadText ?? "—"}
-      </div>
+      {fields.has("load") && (
+        <div
+          className="truncate text-center text-[12px] font-mono-display text-[#5a7d82]"
+          data-testid={`prescribed-load-${exerciseIndex}-${setIndex}`}
+        >
+          {loadText ?? "—"}
+        </div>
+      )}
 
       <div className="relative">
         <Input
@@ -145,25 +176,29 @@ export function SetRow({
         </span>
       </div>
 
-      <Input
-        {...register(`${namePrefix}.reps`)}
-        inputMode="numeric"
-        type="text"
-        disabled={disabled}
-        placeholder={repsPlaceholder}
-        aria-label={`Set ${setNumber} reps`}
-        className="h-9 text-center text-[13px] font-mono-display"
-      />
+      {fields.has("reps") && (
+        <Input
+          {...register(`${namePrefix}.reps`)}
+          inputMode="numeric"
+          type="text"
+          disabled={disabled}
+          placeholder={repsPlaceholder}
+          aria-label={`Set ${setNumber} reps`}
+          className="h-9 text-center text-[13px] font-mono-display"
+        />
+      )}
 
-      <Input
-        {...register(`${namePrefix}.rpe`)}
-        inputMode="decimal"
-        type="text"
-        disabled={disabled}
-        placeholder={rpePlaceholder}
-        aria-label={`Set ${setNumber} RPE`}
-        className="h-9 text-center text-[13px] font-mono-display"
-      />
+      {fields.has("rpe") && (
+        <Input
+          {...register(`${namePrefix}.rpe`)}
+          inputMode="decimal"
+          type="text"
+          disabled={disabled}
+          placeholder={rpePlaceholder}
+          aria-label={`Set ${setNumber} RPE`}
+          className="h-9 text-center text-[13px] font-mono-display"
+        />
+      )}
 
       <div className="flex items-center justify-end gap-1">
         {onRemove ? (

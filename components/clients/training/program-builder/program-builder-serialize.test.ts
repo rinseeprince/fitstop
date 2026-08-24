@@ -79,6 +79,7 @@ function makeExercise(overrides: Partial<SavedExercise> = {}): SavedExercise {
     notes: "Pause on chest",
     setSpecs: null,
     videoUrl: "https://example.com/bench",
+    prescribedFields: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -168,6 +169,7 @@ function makeWeekShapedPlan(weekCount: number): SavedPlan {
                       supersetGroup: null,
                       notes: null,
                       videoUrl: null,
+                      prescribedFields: null,
                     }),
                   ]
                 : [],
@@ -240,6 +242,7 @@ describe("savedPlanToDraft / draftToOverwriteBody parity (week-shaped)", () => {
           isWarmup: false,
           setSpecs: SPECS,
           videoUrl: "https://example.com/bench",
+          prescribedFields: null,
         },
         {
           name: "Cable Fly",
@@ -258,6 +261,7 @@ describe("savedPlanToDraft / draftToOverwriteBody parity (week-shaped)", () => {
           isWarmup: false,
           setSpecs: null,
           videoUrl: null,
+          prescribedFields: null,
         },
       ],
     });
@@ -439,6 +443,7 @@ describe("sessionDraftToStandalonePayload (create-blank save)", () => {
           exerciseId: "cat-9",
           setSpecs: SPECS,
           videoUrl: "  https://example.com/squat.mp4  ",
+          prescribedFields: null,
         }),
       ],
     });
@@ -457,7 +462,8 @@ describe("sessionDraftToStandalonePayload (create-blank save)", () => {
       exerciseId: "cat-9",
       orderIndex: 0,
       setSpecs: SPECS,
-      videoUrl: "https://example.com/squat.mp4", // trimmed
+      videoUrl: "https://example.com/squat.mp4",
+      prescribedFields: null, // trimmed
     });
   });
 

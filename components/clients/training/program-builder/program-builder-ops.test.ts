@@ -40,6 +40,7 @@ function makeExercise(overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
     isWarmup: false,
     notes: null,
     videoUrl: null,
+    prescribedFields: null,
     ...overrides,
   };
 }
@@ -321,6 +322,7 @@ describe("wire-schema round trip (drift belt)", () => {
                 isWarmup: false,
                 notes: "cue: elbows in",
                 videoUrl: "https://example.com/v",
+                prescribedFields: null,
               }),
             ],
           }),

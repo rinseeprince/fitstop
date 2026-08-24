@@ -97,6 +97,7 @@ export const addExercise = async (
       is_warmup: exercise.isWarmup || false,
       set_specs: w.set_specs,
       video_url: w.video_url,
+      prescribed_fields: w.prescribed_fields,
     })
     .select()
     .single();

@@ -620,6 +620,7 @@ function normalizeExercise(
       isWarmup: e.isWarmup ?? false,
       setSpecs: e.setSpecs ?? undefined,
       videoUrl: e.videoUrl ?? undefined,
+      prescribedFields: e.prescribedFields ?? null,
     };
   }
   const s = resolved.snapshot;
@@ -638,6 +639,7 @@ function normalizeExercise(
     // Snapshot uses snake_case keys (matches the snapshot writer).
     setSpecs: pick<SetSpec[]>("set_specs"),
     videoUrl: pick<string>("video_url"),
+    prescribedFields: pick<string[]>("prescribed_fields") ?? null,
   };
 }
 

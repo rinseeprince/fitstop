@@ -71,6 +71,7 @@ export async function saveSessionFromCalendar(
         notes: e.notes ?? null,
         set_specs: e.set_specs ?? null,
         video_url: e.video_url ?? null,
+        prescribed_fields: e.prescribed_fields ?? null,
       })
     );
     await supabaseAdmin.from("coach_saved_exercises").insert(exerciseRows);

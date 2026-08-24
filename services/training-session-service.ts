@@ -192,6 +192,7 @@ function buildExerciseInserts(
       is_warmup: ex.isWarmup ?? false,
       set_specs: w.set_specs,
       video_url: w.video_url,
+      prescribed_fields: w.prescribed_fields,
       is_active: true,
     };
   });
@@ -293,6 +294,7 @@ export async function cloneSessionForEvent(
         is_warmup: ex.is_warmup as boolean,
         set_specs: ex.set_specs ?? null,
         video_url: ex.video_url ?? null,
+        prescribed_fields: ex.prescribed_fields ?? null,
         is_active: true,
       }));
       const { error: exError } = await supabaseAdmin.from("training_exercises").insert(exerciseInserts);

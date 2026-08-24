@@ -16,6 +16,7 @@ import {
   computeLockedSlotUids,
   computeMovedPastSlotUids,
 } from "./program-builder-lock-model";
+import { toPrescribedFields } from "@/utils/prescribed-fields";
 import {
   DAYS_PER_WEEK,
   makeRestSlot,
@@ -80,6 +81,7 @@ export function trainingSessionToDraft(s: PlacedSessionSource): {
       isWarmup: e.isWarmup,
       notes: e.notes ?? null,
       videoUrl: e.videoUrl ?? null,
+      prescribedFields: toPrescribedFields(e.prescribedFields),
     };
   });
 

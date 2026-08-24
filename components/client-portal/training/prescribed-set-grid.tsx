@@ -2,8 +2,12 @@
 
 import type { UseFormRegister } from "react-hook-form";
 import type { LogFormValues } from "./log-form-types";
-import { isContinuationOfDropSet, type PrescribedRow } from "@/utils/set-spec-rows";
-import { SET_GRID, SetRow } from "./set-row";
+import {
+  isContinuationOfDropSet,
+  type PrescribedRow,
+} from "@/utils/set-spec-rows";
+import type { PrescribedField } from "@/utils/prescribed-fields";
+import { SET_GRID_BASE, SetRow, setGridTemplate } from "./set-row";
 import { RestTimer } from "./rest-timer";
 
 // The set grid, shared by the read-only prescription view and the log form.
@@ -17,6 +21,12 @@ import { RestTimer } from "./rest-timer";
 type PrescribedSetGridProps = {
   /** The prescription, already flattened (drop sets expanded to sibling rows). */
   rows: PrescribedRow[];
+  /**
+   * Which prescription columns the coach uses for this exercise (migration
+   * 149). Hidden columns are not rendered and therefore not collected — the
+   * filter is a data-collection switch, not a display preference.
+   */
+  fields: ReadonlySet<PrescribedField>;
   /**
    * react-hook-form field ids. Present in form mode, and the source of the row
    * COUNT there — the client can append or delete sets, so the form can be
@@ -36,6 +46,7 @@ const HEADER_CLASS =
 
 export function PrescribedSetGrid({
   rows,
+  fields,
   fieldIds,
   register,
   exerciseIndex,
@@ -64,12 +75,15 @@ export function PrescribedSetGrid({
 
   return (
     <div>
-      <div className={`${SET_GRID} px-3 pb-1`}>
+      <div
+        className={`${SET_GRID_BASE} px-3 pb-1`}
+        style={{ gridTemplateColumns: setGridTemplate(fields) }}
+      >
         <div className={HEADER_CLASS}>Set</div>
-        <div className={HEADER_CLASS}>Load</div>
+        {fields.has("load") && <div className={HEADER_CLASS}>Load</div>}
         <div className={HEADER_CLASS}>Weight</div>
-        <div className={HEADER_CLASS}>Reps</div>
-        <div className={HEADER_CLASS}>RPE</div>
+        {fields.has("reps") && <div className={HEADER_CLASS}>Reps</div>}
+        {fields.has("rpe") && <div className={HEADER_CLASS}>RPE</div>}
         <div />
       </div>
 
@@ -79,6 +93,7 @@ export function PrescribedSetGrid({
           // Rest belongs AFTER the set it follows, and never between the drops
           // of one set — the whole point of a drop set is no rest.
           const restSeconds =
+            fields.has("rest") &&
             prescribed?.restSeconds != null &&
             prescribed.restSeconds > 0 &&
             i < rowCount - 1 &&
@@ -90,6 +105,7 @@ export function PrescribedSetGrid({
             <div key={fieldIds ? fieldIds[i] : i}>
               <SetRow
                 setNumber={displayNumbers[i]}
+                fields={fields}
                 prescribed={prescribed}
                 register={register}
                 exerciseIndex={exerciseIndex}

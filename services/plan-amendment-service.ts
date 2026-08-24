@@ -21,6 +21,7 @@ import type {
   TrainingEventInsert,
 } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
+import { toPrescribedFields } from "@/utils/prescribed-fields";
 
 // =============================================================================
 // Plan amendment — rewrite a placed plan's FUTURE while the past stays frozen.
@@ -630,6 +631,7 @@ export async function amendPlacedPlanFuture(params: {
             is_warmup: ex.isWarmup ?? false,
             set_specs: (ex.setSpecs ?? null) as unknown as Json,
             video_url: ex.videoUrl ?? null,
+            prescribed_fields: toPrescribedFields(ex.prescribedFields),
             is_active: true,
           }));
         const { error: exError } = await supabaseAdmin

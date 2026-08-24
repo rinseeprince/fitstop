@@ -89,6 +89,7 @@ function exercise(
     isWarmup: false,
     notes: null,
     videoUrl: null,
+    prescribedFields: null,
   };
 }
 

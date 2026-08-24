@@ -424,6 +424,7 @@ describe("ProgramBuilder save flow", () => {
         notes: null,
         setSpecs: benchSpecs.map((s) => ({ ...s })),
         videoUrl: null,
+        prescribedFields: null,
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
       },

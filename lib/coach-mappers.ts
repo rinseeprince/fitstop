@@ -43,6 +43,7 @@ export function mapSavedExerciseRow(
     notes: row.notes ?? null,
     setSpecs: (row.set_specs as SetSpec[] | null) ?? null,
     videoUrl: row.video_url ?? null,
+    prescribedFields: row.prescribed_fields ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

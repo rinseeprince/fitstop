@@ -5,6 +5,7 @@ import {
   formatPrescribedLoad,
   isContinuationOfDropSet,
 } from "./set-spec-rows";
+import { PRESCRIBED_FIELDS, resolvePrescribedFields } from "./prescribed-fields";
 
 function spec(overrides: Partial<SetSpec> & { set_number: number }): SetSpec {
   return {
@@ -170,5 +171,36 @@ describe("formatPrescribedLoad", () => {
   it("returns null when nothing is prescribed", () => {
     expect(formatPrescribedLoad({ loadType: null, loadValue: null }, "", "kg")).toBeNull();
     expect(formatPrescribedLoad({ loadType: "absolute", loadValue: null }, "", "kg")).toBeNull();
+  });
+});
+
+describe("resolvePrescribedFields", () => {
+  it("treats NULL as every column — the default every pre-149 row carries", () => {
+    expect([...resolvePrescribedFields(null)].sort()).toEqual(
+      [...PRESCRIBED_FIELDS].sort(),
+    );
+    expect([...resolvePrescribedFields(undefined)]).toHaveLength(5);
+  });
+
+  it("honours an explicit subset", () => {
+    const fields = resolvePrescribedFields(["reps", "rest"]);
+    expect(fields.has("reps")).toBe(true);
+    expect(fields.has("rest")).toBe(true);
+    expect(fields.has("load")).toBe(false);
+    expect(fields.has("rpe")).toBe(false);
+    expect(fields.has("set_type")).toBe(false);
+  });
+
+  it("drops unknown values rather than trusting a TEXT[] column", () => {
+    expect([...resolvePrescribedFields(["reps", "tempo", "nonsense"])]).toEqual([
+      "reps",
+    ]);
+  });
+
+  it("falls back to everything when the list is empty or all unknown", () => {
+    // Unauthorable and CHECK-refused, so reaching it means something upstream
+    // broke — show the whole prescription rather than an empty grid.
+    expect(resolvePrescribedFields([]).size).toBe(5);
+    expect(resolvePrescribedFields(["bogus"]).size).toBe(5);
   });
 });

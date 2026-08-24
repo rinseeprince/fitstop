@@ -33,6 +33,8 @@ export type TrainingExercise = {
   isWarmup: boolean;
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
+  // Prescription columns the coach uses (migration 149). null/absent = all five.
+  prescribedFields?: string[] | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -172,6 +174,8 @@ export type UpdateExerciseRequest = {
   isWarmup?: boolean;
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
+  // Prescription columns the coach uses (migration 149). null/absent = all five.
+  prescribedFields?: string[] | null;
 };
 
 export type AddExerciseRequest = {
@@ -189,6 +193,8 @@ export type AddExerciseRequest = {
   isWarmup?: boolean;
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
+  // Prescription columns the coach uses (migration 149). null/absent = all five.
+  prescribedFields?: string[] | null;
 };
 
 // Manual session being built (before saving)
@@ -307,6 +313,8 @@ export type SavedExercise = {
   notes: string | null;
   setSpecs: SetSpec[] | null;
   videoUrl: string | null;
+  // Prescription columns the coach uses (migration 149). null/absent = all five.
+  prescribedFields: string[] | null;
   createdAt: string;
   updatedAt: string;
 };

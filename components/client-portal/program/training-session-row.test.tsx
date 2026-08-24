@@ -30,6 +30,7 @@ function makeSession(
         supersetGroup: null,
         setSpecs: null,
         videoUrl: null,
+        prescribedFields: null,
       },
     ],
     ...overrides,

@@ -151,6 +151,7 @@ describe("useProgramBuilderState — weeks", () => {
               isWarmup: false,
               notes: null,
               videoUrl: null,
+              prescribedFields: null,
             },
           ],
         },
@@ -308,6 +309,7 @@ describe("useProgramBuilderState — exercises + normalize", () => {
     isWarmup: false,
     notes: null,
     videoUrl: null,
+    prescribedFields: null,
   };
 
   it("add/update/remove exercise via session uid", () => {

@@ -38,6 +38,7 @@ type TrainingExerciseRow = {
   superset_group: string | null;
   set_specs: SetSpec[] | null;
   video_url: string | null;
+  prescribed_fields: string[] | null;
 };
 
 function mapExercise(row: TrainingExerciseRow): ClientTrainingExercise {
@@ -56,6 +57,7 @@ function mapExercise(row: TrainingExerciseRow): ClientTrainingExercise {
     supersetGroup: row.superset_group,
     setSpecs: row.set_specs ?? null,
     videoUrl: row.video_url ?? null,
+    prescribedFields: row.prescribed_fields ?? null,
   };
 }
 
@@ -236,7 +238,7 @@ async function fetchPlanEntries(planId: string): Promise<ClientTrainingSessionEn
       supabaseAdmin
         .from("training_exercises")
         .select(
-          "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, superset_group, set_specs, video_url"
+          "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, superset_group, set_specs, video_url, prescribed_fields"
         )
         .in("session_id", chunk)
         .eq("is_active", true)

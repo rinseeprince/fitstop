@@ -1,3 +1,4 @@
+import { toPrescribedFields } from "@/utils/prescribed-fields";
 import type { z } from "zod";
 import type {
   createStandaloneSessionSchema,
@@ -45,6 +46,7 @@ function exerciseToDraft(e: SavedExercise): ExerciseDraft {
     isWarmup: e.isWarmup,
     notes: e.notes,
     videoUrl: e.videoUrl,
+    prescribedFields: toPrescribedFields(e.prescribedFields),
   };
 }
 
@@ -174,6 +176,9 @@ export function exerciseDraftToInput(e: ExerciseDraft, i: number) {
     // this is the last-line belt.
     setSpecs: e.setSpecs && e.setSpecs.length > 0 ? e.setSpecs : null,
     videoUrl: e.videoUrl?.trim() ? e.videoUrl.trim() : null,
+    // null, never [] — an empty list is refused by the 149 CHECK and would
+    // render the client an empty grid.
+    prescribedFields: e.prescribedFields?.length ? e.prescribedFields : null,
   };
 }
 

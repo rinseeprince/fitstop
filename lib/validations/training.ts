@@ -100,6 +100,14 @@ export const setSpecsArraySchema = z
     message: "At least one working set is required",
   });
 
+// Which prescription columns the coach uses (migration 149). Absent/null means
+// all five — never an empty list: an exercise prescribing nothing renders the
+// client an empty grid, which is why the DB CHECK refuses it too.
+export const prescribedFieldsSchema = z
+  .array(z.enum(["set_type", "reps", "load", "rpe", "rest"]))
+  .min(1)
+  .nullish();
+
 // Reject non-http(s) schemes: z.string().url() accepts javascript:/data: URLs,
 // and video_url is rendered as a raw href in the client portal (L3). This is the
 // only videoUrl schema, so every write path (create/overwrite/inline/bulk) is
@@ -118,6 +126,7 @@ export const videoUrlSchema = z
 export const updateExerciseSchema = exerciseSchema.partial().extend({
   setSpecs: setSpecsArraySchema.nullish(),
   videoUrl: videoUrlSchema,
+  prescribedFields: prescribedFieldsSchema,
 });
 
 export const savedExerciseInputSchema = z.object({
@@ -137,6 +146,7 @@ export const savedExerciseInputSchema = z.object({
   isWarmup: z.boolean().optional(),
   setSpecs: setSpecsArraySchema.nullish(),
   videoUrl: videoUrlSchema,
+  prescribedFields: prescribedFieldsSchema,
 });
 
 // Per-exercise item for the "replace exercises" (PUT) and "clone-with-overrides"
@@ -152,6 +162,7 @@ export const bulkExerciseInputSchema = exerciseSchema.extend({
   exerciseId: z.string().uuid().nullish(),
   setSpecs: setSpecsArraySchema.nullish(),
   videoUrl: videoUrlSchema,
+  prescribedFields: prescribedFieldsSchema,
 });
 
 // Full replace of a PLACED session (meta + exercises) — the calendar tray's

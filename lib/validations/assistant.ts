@@ -37,6 +37,13 @@ export const exerciseDraftSnapshotSchema = z.object({
   isWarmup: z.boolean(),
   notes: z.string().max(500).nullable(),
   videoUrl: z.string().max(500).nullable(),
+  // Migration 149. The assistant never narrows a prescription itself, but the
+  // snapshot round-trips the whole draft, so omitting this would let an AI edit
+  // silently widen an exercise back to all five columns.
+  prescribedFields: z
+    .array(z.enum(["set_type", "reps", "load", "rpe", "rest"]))
+    .min(1)
+    .nullable(),
 });
 
 export const sessionDraftSnapshotSchema = z.object({
@@ -117,6 +124,11 @@ const exercisePatchSchema = z
     isWarmup: z.boolean().optional(),
     notes: z.string().max(500).nullable().optional(),
     videoUrl: z.string().max(500).nullable().optional(),
+    prescribedFields: z
+      .array(z.enum(["set_type", "reps", "load", "rpe", "rest"]))
+      .min(1)
+      .nullable()
+      .optional(),
   })
   .strict();
 

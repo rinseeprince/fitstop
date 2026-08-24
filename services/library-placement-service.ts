@@ -9,6 +9,7 @@ import type { Json } from "@/types/database";
 import type { SavedSession, SavedExercise } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import type { InlinePlanBody } from "@/lib/validations/training";
+import { toPrescribedFields } from "@/utils/prescribed-fields";
 
 // --- Shape used by both DB-backed and inline (in-memory) placements ---
 
@@ -192,6 +193,7 @@ function inlineExerciseToSaved(
     notes: e.notes ?? null,
     setSpecs: (e.setSpecs ?? null) as SetSpec[] | null,
     videoUrl: e.videoUrl ?? null,
+    prescribedFields: toPrescribedFields(e.prescribedFields),
     createdAt: "",
     updatedAt: "",
   };
@@ -410,6 +412,7 @@ async function placePlaceablePlanOnCalendar(params: {
           is_warmup: ex.isWarmup ?? false,
           set_specs: (ex.setSpecs ?? null) as unknown as Json,
           video_url: ex.videoUrl ?? null,
+          prescribed_fields: toPrescribedFields(ex.prescribedFields),
           is_active: true,
         }));
 
@@ -553,6 +556,7 @@ export async function placeSessionOnCalendar(params: {
       is_warmup: ex.is_warmup ?? false,
       set_specs: ex.set_specs ?? null,
       video_url: ex.video_url ?? null,
+      prescribed_fields: ex.prescribed_fields ?? null,
       is_active: true,
     }));
 

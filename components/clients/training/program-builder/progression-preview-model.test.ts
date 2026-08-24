@@ -44,6 +44,7 @@ function exercise(over: Partial<ExerciseDraft> = {}): ExerciseDraft {
     isWarmup: false,
     notes: null,
     videoUrl: null,
+    prescribedFields: null,
     ...over,
   };
 }

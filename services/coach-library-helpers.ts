@@ -79,6 +79,7 @@ export async function insertSavedExercises(
     isWarmup?: boolean;
     setSpecs?: SetSpec[] | null;
     videoUrl?: string | null;
+    prescribedFields?: readonly string[] | null;
   }>,
   exerciseIdMap: Map<string, string>,
 ): Promise<void> {
@@ -104,6 +105,7 @@ export async function insertSavedExercises(
       is_warmup: e.isWarmup ?? false,
       set_specs: w.set_specs,
       video_url: w.video_url,
+      prescribed_fields: w.prescribed_fields,
     };
   });
 
@@ -142,6 +144,7 @@ export function copySavedExerciseRows(
     notes: e.notes,
     set_specs: e.set_specs ?? null,
     video_url: e.video_url ?? null,
+    prescribed_fields: e.prescribed_fields ?? null,
   }));
 }
 

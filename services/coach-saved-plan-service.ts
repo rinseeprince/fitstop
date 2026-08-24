@@ -309,6 +309,7 @@ export type OverwriteSavedPlanInput = {
       isWarmup?: boolean;
       setSpecs?: SetSpec[] | null;
       videoUrl?: string | null;
+      prescribedFields?: readonly string[] | null;
     }>;
   }>;
 };
@@ -427,6 +428,7 @@ export async function overwriteSavedPlan(
           notes: e.notes ?? null,
           set_specs: w.set_specs,
           video_url: w.video_url,
+          prescribed_fields: w.prescribed_fields,
         };
       });
 

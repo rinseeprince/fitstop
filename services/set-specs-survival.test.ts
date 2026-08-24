@@ -37,6 +37,10 @@ const SPECS = [
   { set_number: 4, set_type: "drop", drops: [{ weight: 100, reps: 8 }] },
 ];
 const VIDEO = "https://demo/bench";
+// Migration 149. Carried by the same sites as set_specs, and dropped just as
+// silently — a clone that forgets it widens the client's grid back to all five
+// columns and starts collecting data the coach chose not to prescribe.
+const FIELDS = ["reps", "rest"] as const;
 
 /** Chainable supabase query mock that records insert/update payloads. */
 function tableMock(config: { single?: unknown; maybeSingle?: unknown } = {}) {
@@ -67,6 +71,7 @@ function tableMock(config: { single?: unknown; maybeSingle?: unknown } = {}) {
 function expectInputProjection(row: Record<string, unknown>) {
   expect(row.set_specs).toEqual(SPECS);
   expect(row.video_url).toBe(VIDEO);
+  expect(row.prescribed_fields).toEqual([...FIELDS]);
   expect(row.sets).toBe(3);
   expect(row.reps_min).toBe(6);
   expect(row.reps_max).toBe(8);
@@ -81,12 +86,12 @@ describe("set_specs / video_url survival matrix", () => {
 
     await insertSavedExercises(
       "sess-1",
-      [{ name: "Bench", sets: 99, setSpecs: SPECS as never, videoUrl: VIDEO }],
+      [{ name: "Bench", sets: 99, setSpecs: SPECS as never, videoUrl: VIDEO, prescribedFields: [...FIELDS] }],
       new Map([["bench", "cat-1"]]),
     );
 
     expect((ex.inserts[0] as Record<string, unknown>[])[0]).toMatchObject({
-      set_specs: SPECS, video_url: VIDEO, sets: 3, reps_min: 6, reps_max: 8,
+      set_specs: SPECS, video_url: VIDEO, prescribed_fields: [...FIELDS], sets: 3, reps_min: 6, reps_max: 8,
     });
   });
 
@@ -94,7 +99,7 @@ describe("set_specs / video_url survival matrix", () => {
     const ex = tableMock({ single: { data: { id: "new" }, error: null } });
     mockFrom.mockImplementation(() => ex.base as never);
 
-    await addExercise("sess-1", { name: "Bench", sets: 99, setSpecs: SPECS as never, videoUrl: VIDEO }, "coach-1");
+    await addExercise("sess-1", { name: "Bench", sets: 99, setSpecs: SPECS as never, videoUrl: VIDEO, prescribedFields: [...FIELDS] }, "coach-1");
 
     expectInputProjection(ex.inserts[0] as Record<string, unknown>);
   });
@@ -103,7 +108,7 @@ describe("set_specs / video_url survival matrix", () => {
     const ex = tableMock({ single: { data: { id: "x" }, error: null } });
     mockFrom.mockImplementation(() => ex.base as never);
 
-    await updateExercise("ex-1", { setSpecs: SPECS as never, videoUrl: VIDEO });
+    await updateExercise("ex-1", { setSpecs: SPECS as never, videoUrl: VIDEO, prescribedFields: [...FIELDS] });
 
     const patch = ex.updates[0] as Record<string, unknown>;
     expect(patch.set_specs).toEqual(SPECS);
@@ -119,7 +124,8 @@ describe("set_specs / video_url survival matrix", () => {
       training_exercises: [
         { is_active: true, exercise_id: "cat-1", name: "Bench", order_index: 0, sets: 3, reps_min: 6, reps_max: 8,
           reps_target: null, rpe_target: null, percentage_1rm: null, tempo: null, rest_seconds: null,
-          superset_group: null, is_warmup: false, notes: null, set_specs: SPECS, video_url: VIDEO },
+          superset_group: null, is_warmup: false, notes: null, set_specs: SPECS, video_url: VIDEO,
+          prescribed_fields: [...FIELDS] },
       ],
     };
     const src = tableMock({ maybeSingle: { data: source, error: null } });
@@ -154,7 +160,7 @@ describe("set_specs / video_url survival matrix", () => {
         {
           name: "Day1", focus: null, orderIndex: 0, weekIndex: 0, isRest: false,
           estimatedDurationMinutes: null, calorieSurplusPercentage: null, notes: null, sessionType: "training",
-          exercises: [{ name: "Bench", exerciseId: "cat-1", orderIndex: 0, sets: 99, setSpecs: SPECS as never, videoUrl: VIDEO }],
+          exercises: [{ name: "Bench", exerciseId: "cat-1", orderIndex: 0, sets: 99, setSpecs: SPECS as never, videoUrl: VIDEO, prescribedFields: [...FIELDS] }],
         },
       ],
     });

@@ -215,5 +215,8 @@ export function defaultExerciseDraftFromCatalog({
     isWarmup: false,
     notes: null,
     videoUrl: null,
+    // null, never [] — a fresh exercise prescribes everything until the coach
+    // narrows it.
+    prescribedFields: null,
   };
 }

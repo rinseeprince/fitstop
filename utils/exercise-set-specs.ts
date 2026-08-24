@@ -1,4 +1,5 @@
 import type { Json } from "@/types/database";
+import { toPrescribedFields } from "./prescribed-fields";
 
 // Per-set prescription model (Training Builder S1, migration 119).
 //
@@ -147,6 +148,7 @@ export function expandSetSpecs(ex: {
 export function projectExerciseCompact(input: {
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
+  prescribedFields?: readonly string[] | null;
   sets: number;
   repsMin?: number | null;
   repsMax?: number | null;
@@ -156,6 +158,7 @@ export function projectExerciseCompact(input: {
   reps_max: number | null;
   set_specs: Json | null;
   video_url: string | null;
+  prescribed_fields: string[] | null;
 } {
   const specs =
     input.setSpecs && input.setSpecs.length > 0 ? input.setSpecs : null;
@@ -166,5 +169,10 @@ export function projectExerciseCompact(input: {
     reps_max: compact ? compact.repsMax : input.repsMax ?? null,
     set_specs: (specs ?? null) as unknown as Json | null,
     video_url: input.videoUrl ?? null,
+    // Migration 149. Null, never [] — null is how "all five columns" is spelled
+    // and the CHECK refuses an empty list. Every INPUT site routes through here
+    // so none of them can drop the column (Landmine #2, same reason set_specs
+    // does).
+    prescribed_fields: toPrescribedFields(input.prescribedFields),
   };
 }

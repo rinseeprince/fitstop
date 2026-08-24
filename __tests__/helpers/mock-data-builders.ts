@@ -303,6 +303,7 @@ export function createMockTrainingExerciseRow(options: MockTrainingExerciseOptio
     video_url: null,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
+    prescribed_fields: null,
   }
 }
 

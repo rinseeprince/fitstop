@@ -106,6 +106,7 @@ function makeExercise(overrides?: Partial<SavedExercise>): SavedExercise {
     notes: null,
     setSpecs: null,
     videoUrl: null,
+    prescribedFields: null,
     createdAt: "2026-04-01T00:00:00Z",
     updatedAt: "2026-04-01T00:00:00Z",
     ...overrides,

@@ -17,6 +17,10 @@ export type ClientTrainingExercise = {
   // threaded to the client for log-form seeding and display.
   setSpecs: SetSpec[] | null;
   videoUrl: string | null;
+  // Which prescription columns the coach uses (migration 149). null = all five;
+  // the client renders only what is listed, so this is what a coach's column
+  // picker actually controls.
+  prescribedFields: string[] | null;
 };
 
 export type ClientTrainingSessionEntry = {

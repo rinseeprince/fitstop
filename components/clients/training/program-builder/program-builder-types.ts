@@ -1,4 +1,5 @@
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import type { PrescribedField } from "@/utils/prescribed-fields";
 import type { SavedPlanStatus } from "@/types/training";
 
 // In-memory draft tree for the full-page Program builder (builder S2.5). The
@@ -42,6 +43,10 @@ export type ExerciseDraft = {
   isWarmup: boolean;
   notes: string | null;
   videoUrl: string | null;
+  // Which prescription columns the coach uses for this exercise (migration
+  // 149). null = all five. Decides what the CLIENT app renders, so it must
+  // round-trip every serialize/clone/placement path like set_specs does.
+  prescribedFields: PrescribedField[] | null;
 };
 
 export type SessionDraft = {

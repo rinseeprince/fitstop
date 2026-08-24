@@ -21,6 +21,10 @@ import { ExerciseSearchInput } from "./exercise-search-input";
 import { emptySet, type LogFormValues } from "./log-form-types";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
 import { buildPrescribedRows, type PrescribedRow } from "@/utils/set-spec-rows";
+import {
+  resolvePrescribedFields,
+  type PrescribedField,
+} from "@/utils/prescribed-fields";
 
 export type PrescribedExerciseView = {
   id: string;
@@ -36,6 +40,9 @@ export type PrescribedExerciseView = {
   // Per-set prescription (seeds the log form's set rows) + optional demo video.
   setSpecs?: SetSpec[];
   videoUrl?: string;
+  // Which prescription columns the coach uses (migration 149). Absent/null =
+  // all of them, which is every exercise authored before the picker existed.
+  prescribedFields?: string[] | null;
 };
 
 // Small coach-demo video link, shown wherever a prescription is surfaced.
@@ -94,6 +101,7 @@ export function ExerciseTrackerBlock({
       }),
     );
   }, [exercise]);
+  const fields = resolvePrescribedFields(exercise.prescribedFields);
   const summary = formatSummary(exercise, formatRepsHint(exercise));
 
   if (!formContext) {
@@ -125,7 +133,11 @@ export function ExerciseTrackerBlock({
           <p className="mt-3 text-[12px] text-[#93b0b4]">No sets prescribed</p>
         ) : (
           <div className="mt-3">
-            <PrescribedSetGrid rows={prescribedRows} fieldIds={null} />
+            <PrescribedSetGrid
+              rows={prescribedRows}
+              fields={fields}
+              fieldIds={null}
+            />
           </div>
         )}
       </div>
@@ -138,6 +150,7 @@ export function ExerciseTrackerBlock({
       index={index}
       formContext={formContext}
       prescribedRows={prescribedRows}
+      fields={fields}
       summary={summary}
     />
   );
@@ -148,12 +161,14 @@ function FormModeBlock({
   index,
   formContext,
   prescribedRows,
+  fields,
   summary,
 }: {
   exercise: PrescribedExerciseView;
   index: number;
   formContext: ExerciseFormContext;
   prescribedRows: PrescribedRow[];
+  fields: ReadonlySet<PrescribedField>;
   summary: string;
 }) {
   const {
@@ -165,7 +180,11 @@ function FormModeBlock({
     onRemove,
   } = formContext;
 
-  const { fields, append, remove } = useFieldArray({
+  const {
+    fields: setFields,
+    append,
+    remove,
+  } = useFieldArray({
     control,
     name: `exercises.${index}.sets`,
   });
@@ -355,7 +374,8 @@ function FormModeBlock({
       <div className="mt-3">
         <PrescribedSetGrid
           rows={prescribedRows}
-          fieldIds={fields.map((f) => f.id)}
+          fields={fields}
+          fieldIds={setFields.map((f) => f.id)}
           register={register}
           exerciseIndex={index}
           disabled={skipped}
