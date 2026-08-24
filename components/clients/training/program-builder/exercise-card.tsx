@@ -11,7 +11,9 @@ import { expandSetSpecs } from "@/utils/exercise-set-specs";
 import type { ExerciseDraft } from "./program-builder-types";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
 import { exerciseCompactSummary } from "./exercise-summary";
-import { SET_GRID, SetRowEditor } from "./set-row-editor";
+import { SET_GRID_BASE, SetRowEditor, setGridTemplate } from "./set-row-editor";
+import { SetColumnsMenu } from "./set-columns-menu";
+import { resolvePrescribedFields } from "@/utils/prescribed-fields";
 import {
   CHIP_NEUTRAL_CLASS,
   FOCUS_RING,
@@ -57,6 +59,9 @@ export function ExerciseCard({
   const [videoInvalid, setVideoInvalid] = useState(false);
   const editable = mode === "edit";
   const specs = expandSetSpecs(exercise);
+  // Which prescription columns this exercise uses. Not a display preference:
+  // it decides what the client app renders and can enter (migration 149).
+  const fields = resolvePrescribedFields(exercise.prescribedFields);
 
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } =
     useSortable({ id: exercise.uid, disabled: !editable });
@@ -150,14 +155,27 @@ export function ExerciseCard({
       {expanded && (
         <div className="space-y-1 border-t border-[rgba(13,148,136,0.08)] p-2">
           {/* Column header for the set rows */}
-          <div className={cn(SET_GRID, LABEL_CLASS)}>
+          <div
+            className={cn(SET_GRID_BASE, LABEL_CLASS)}
+            style={{ gridTemplateColumns: setGridTemplate(fields) }}
+          >
             <span className="text-center">#</span>
-            <span>Type</span>
-            <span>Reps</span>
-            <span>Load</span>
-            <span>RPE</span>
-            <span>Rest s</span>
-            <span />
+            {fields.has("set_type") && <span>Type</span>}
+            {fields.has("reps") && <span>Reps</span>}
+            {fields.has("load") && <span>Load</span>}
+            {fields.has("rpe") && <span>RPE</span>}
+            {fields.has("rest") && <span>Rest s</span>}
+            {/* The picker sits at the end of the row it governs, in the cell
+                the duplicate/remove icons occupy below. */}
+            <span className="flex justify-end">
+              {editable && (
+                <SetColumnsMenu
+                  fields={fields}
+                  exerciseName={exercise.name}
+                  onChange={(prescribedFields) => onEdit({ prescribedFields })}
+                />
+              )}
+            </span>
           </div>
           {specs.map((spec, i) => (
             <SetRowEditor
@@ -165,6 +183,7 @@ export function ExerciseCard({
               // uncontrolled inputs re-read defaultValue.
               key={`${exercise.uid}-${i}-${specs.length}`}
               spec={spec}
+              fields={fields}
               index={i}
               disabled={!editable}
               onEdit={onSpecEdit}

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useState } from "react";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { ExerciseCard } from "./exercise-card";
@@ -165,5 +166,100 @@ describe("ExerciseCard", () => {
     expect(screen.getByLabelText("Set 3 min reps")).toHaveValue(8);
     // Compact summary re-projected across the 3 working sets.
     expect(screen.getByText("3 × 5–10")).toBeInTheDocument();
+  });
+});
+
+describe("ExerciseCard — prescription columns (migration 149)", () => {
+  beforeEach(() => cleanup());
+
+  const openMenu = async (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(screen.getByLabelText(/^Columns for /));
+
+  it("shows every column by default, because null means all five", () => {
+    render(<Wrapper exercise={makeExercise({ prescribedFields: null })} defaultExpanded />);
+    for (const label of ["Type", "Reps", "Load", "RPE", "Rest s"]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it("renders only the prescribed columns", () => {
+    render(
+      <Wrapper
+        exercise={makeExercise({ prescribedFields: ["reps", "rest"] })}
+        defaultExpanded
+      />,
+    );
+    expect(screen.getByText("Reps")).toBeInTheDocument();
+    expect(screen.getByText("Rest s")).toBeInTheDocument();
+    expect(screen.queryByText("Load")).toBeNull();
+    expect(screen.queryByText("RPE")).toBeNull();
+    // The set-type select goes with its column.
+    expect(screen.queryByLabelText("Set 1 type")).toBeNull();
+    // …and the load inputs with theirs.
+    expect(screen.queryByLabelText("Set 1 load")).toBeNull();
+  });
+
+  it("unticking a column removes it without touching the values behind it", async () => {
+    const user = userEvent.setup();
+    // The spec keeps its RPE; only the prescription's SHAPE changes, so
+    // re-ticking brings the number back rather than a blank.
+    const exercise = makeExercise({
+      setSpecs: [
+        { set_number: 1, set_type: "working", reps_min: 8, reps_max: 10, rpe_target: 9 },
+      ],
+      sets: 1,
+      prescribedFields: null,
+    });
+    render(<Wrapper exercise={exercise} defaultExpanded />);
+    expect(screen.getByLabelText("Set 1 RPE")).toHaveValue(9);
+
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "RPE" }));
+    expect(screen.queryByLabelText("Set 1 RPE")).toBeNull();
+
+    // Re-tick: the 9 is still there.
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "RPE" }));
+    expect(screen.getByLabelText("Set 1 RPE")).toHaveValue(9);
+  });
+
+  it("refuses to untick the last remaining column", async () => {
+    const user = userEvent.setup();
+    render(
+      <Wrapper exercise={makeExercise({ prescribedFields: ["reps"] })} defaultExpanded />,
+    );
+    await openMenu(user);
+    expect(screen.getByRole("menuitemcheckbox", { name: "Reps" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Reps" }));
+    // Assert on the inputs, not the header text — the menu is still open and
+    // carries a "Reps" label of its own.
+    expect(screen.getByLabelText("Set 1 min reps")).toBeInTheDocument();
+  });
+
+  it("'Show all columns' restores every column", async () => {
+    const user = userEvent.setup();
+    render(
+      <Wrapper exercise={makeExercise({ prescribedFields: ["reps"] })} defaultExpanded />,
+    );
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Show all columns" }));
+    for (const label of [
+      "Set 1 type",
+      "Set 1 min reps",
+      "Set 1 load type",
+      "Set 1 RPE",
+      "Set 1 rest seconds",
+    ]) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    }
+  });
+
+  it("hides the picker in view mode — a locked session prescribes nothing new", () => {
+    render(
+      <Wrapper exercise={makeExercise()} mode="view" defaultExpanded />,
+    );
+    expect(screen.queryByLabelText(/^Columns for /)).toBeNull();
   });
 });
