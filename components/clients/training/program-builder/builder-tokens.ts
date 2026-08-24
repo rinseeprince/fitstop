@@ -96,3 +96,18 @@ export const SECTION_LABEL_CLASS =
 // Teal count chip ("3", "2/5") — counts are mono per the rule.
 export const COUNT_CHIP_CLASS =
   "font-mono-display text-[10px] font-semibold rounded-[6px] bg-[rgba(13,148,136,0.05)] px-1.5 py-0.5 text-[#0d9488]";
+
+// Inline-editable text on a dark hero band — no boxy ring, a faint white wash
+// on focus so it reads as an editable field without looking like a form input.
+// The negative left margin pulls the input's text back into line with the
+// eyebrow above it, which sits outside the input's own padding.
+//
+// Shared by the program hero (program-top-bar) and the session-editor hero
+// (session-hero) so the two cannot drift; it was a private const in the former
+// until the latter needed the same grammar.
+export const INLINE_EDIT_DARK_CLASS =
+  "-ml-1.5 h-auto w-full rounded-[4px] border-0 bg-transparent px-1.5 py-0.5 text-white shadow-none outline-none transition-colors placeholder:text-[rgba(255,255,255,0.35)] focus:bg-[rgba(255,255,255,0.08)]";
+
+// Dot separator between segments of an on-dark hero meta row.
+export const HERO_DOT_CLASS =
+  "h-[3px] w-[3px] shrink-0 rounded-full bg-[rgba(255,255,255,0.2)]";

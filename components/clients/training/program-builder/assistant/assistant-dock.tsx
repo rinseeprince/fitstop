@@ -19,10 +19,22 @@ import { AssistantMessages } from "./assistant-messages";
 // client-draft overlay it exists only in editor state, where the Dialog is
 // non-modal (modal={false}) and body-portaled content stays interactive.
 
-export function AssistantDock() {
+// `open` is lifted so the session-editor sheet's footer button can open the
+// panel, and `hideLauncher` suppresses the fixed corner chip while that sheet
+// is up — it sat directly on top of the sheet's own footer actions.
+type AssistantDockProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  hideLauncher?: boolean;
+};
+
+export function AssistantDock({
+  open,
+  onOpenChange,
+  hideLauncher = false,
+}: AssistantDockProps) {
   const { mode, setMode, isSaving } = useProgramDraft();
   const chat = useAssistantChat();
-  const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -68,7 +80,7 @@ export function AssistantDock() {
                 type="button"
                 aria-label="Collapse assistant"
                 className="rounded p-1 text-[#93b0b4] transition-colors hover:text-white"
-                onClick={() => setOpen(false)}
+                onClick={() => onOpenChange(false)}
               >
                 <ChevronDown className="h-4 w-4" strokeWidth={1.5} />
               </button>
@@ -125,7 +137,7 @@ export function AssistantDock() {
                   if (e.key === "Escape") {
                     e.preventDefault();
                     e.stopPropagation();
-                    setOpen(false);
+                    onOpenChange(false);
                     return;
                   }
                   // nativeEvent.isComposing: Enter during IME composition
@@ -152,12 +164,12 @@ export function AssistantDock() {
             </div>
           )}
         </div>
-      ) : (
+      ) : hideLauncher ? null : (
         <button
           type="button"
           aria-label="Open the program assistant"
           className="flex items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 py-2 text-[12px] font-semibold text-white shadow-[0_6px_20px_rgba(13,148,136,0.25)] transition-colors hover:bg-[#0b7f75]"
-          onClick={() => setOpen(true)}
+          onClick={() => onOpenChange(true)}
         >
           <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} />
           Assistant

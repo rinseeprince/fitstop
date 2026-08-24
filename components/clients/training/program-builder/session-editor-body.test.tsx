@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { useState } from "react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { SessionEditorBody } from "./session-editor-body";
+import { applySetSpecEdit } from "./use-set-spec-mutations";
 import type { ExerciseDraft, SessionDraft } from "./program-builder-types";
 
 // The picker fetches the catalog on mount — irrelevant to these tests.
@@ -128,5 +130,71 @@ describe("SessionEditorBody — identity editability", () => {
     expect(screen.getByLabelText("Focus")).toBeDisabled();
     // The training itself stays editable — the surplus field is not disabled.
     expect(screen.getByLabelText(/Calorie surplus/)).not.toBeDisabled();
+  });
+});
+
+describe("SessionEditorBody — accordion", () => {
+  beforeEach(() => cleanup());
+
+  // Stateful host: edits write through to the draft exactly as the builder's
+  // provider does, which is what makes collapsing non-destructive.
+  function Host({ chrome }: { chrome?: "hero" | "inline" }) {
+    const [session, setSession] = useState(
+      makeSession("s-1", [makeExercise("ex-1", 2), makeExercise("ex-2", 2)]),
+    );
+    return (
+      <SessionEditorBody
+        {...bodyProps}
+        chrome={chrome}
+        session={session}
+        onSpecEdit={(_uid, exercise, edit) => {
+          const result = applySetSpecEdit(exercise, edit);
+          if (!result.ok) return;
+          setSession((s) => ({
+            ...s,
+            exercises: s.exercises.map((e) =>
+              e.uid === exercise.uid ? result.exercise : e,
+            ),
+          }));
+        }}
+      />
+    );
+  }
+
+  it("opens one exercise at a time — opening the second collapses the first", () => {
+    render(<Host />);
+    // Both start collapsed; open the first.
+    fireEvent.click(screen.getAllByLabelText("Expand sets")[0]);
+    expect(screen.getByLabelText("Set 1 reps")).toBeInTheDocument();
+
+    // Now open the second — the only remaining "Expand sets" chevron.
+    fireEvent.click(screen.getByLabelText("Expand sets"));
+    // Still exactly one grid on screen, not two.
+    expect(screen.getAllByLabelText("Set 1 reps")).toHaveLength(1);
+  });
+
+  it("collapsing keeps the edit — the draft is the source of truth, not the inputs", () => {
+    render(<Host />);
+    const chevrons = screen.getAllByLabelText("Expand sets");
+    fireEvent.click(chevrons[0]);
+
+    const reps = screen.getByLabelText("Set 1 reps");
+    fireEvent.change(reps, { target: { value: "6-9" } });
+    fireEvent.blur(reps);
+
+    // Collapse, then reopen the same exercise.
+    fireEvent.click(screen.getByLabelText("Collapse sets"));
+    expect(screen.queryByLabelText("Set 1 reps")).toBeNull();
+    fireEvent.click(screen.getAllByLabelText("Expand sets")[0]);
+
+    expect(screen.getByLabelText("Set 1 reps")).toHaveValue("6-9");
+  });
+
+  it("hero chrome leaves the session name and surplus to the hero", () => {
+    render(<Host chrome="hero" />);
+    expect(screen.queryByLabelText("Session name")).toBeNull();
+    expect(screen.queryByLabelText(/Calorie surplus/)).toBeNull();
+    // Focus and duration stay in the body.
+    expect(screen.getByLabelText("Focus")).toBeInTheDocument();
   });
 });

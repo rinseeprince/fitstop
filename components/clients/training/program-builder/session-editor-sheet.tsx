@@ -1,31 +1,36 @@
 "use client";
 
-import { BookmarkPlus, Dumbbell, Loader2 } from "lucide-react";
+import { BookmarkPlus, Loader2, Sparkles } from "lucide-react";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
-  SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import type { SessionDraft } from "./program-builder-types";
 import { SessionEditorBody, type SessionEditorBodyProps } from "./session-editor-body";
-import { MONO_LABEL_CLASS, THUMB_CLASS } from "./builder-tokens";
+import { SessionHero } from "./session-hero";
 
-// Click-to-edit chrome for one day cell's session: the editor body in a
-// right slide-over (replaces the old centered Dialog — one editor surface,
-// same treatment as the routed create-blank slide-over). Write-through: the
-// footer actions are Done + Save as workout; "Save program" on the page is
-// the commit point. "Save as workout" copies the day into the standalone
-// session library without touching the draft, so it renders in view mode too.
-// (A day is made rest by clearing its session from the grid, not from here.)
-type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session"> & {
+// Click-to-edit chrome for one day cell's session: the editor body in a right
+// slide-over. Write-through — "Save program" on the page is the commit point,
+// so the footer's Done just closes. "Save as workout" copies the day into the
+// standalone session library without touching the draft, so it renders in view
+// mode too. (A day is made rest by clearing its session from the grid.)
+//
+// The band at the top is the builder's own hero grammar at sheet scale: it
+// carries the session NAME and the calorie SURPLUS, which is why the body is
+// mounted with chrome="hero" and renders neither. The body sits on #f4f7f6 with
+// borderless cards — a deliberate deviation from the white-bodied sheet recipe,
+// because spacing-not-borders outranks it here.
+type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session" | "chrome"> & {
   session: SessionDraft | null; // null = closed
   onClose: () => void;
   onSaveAsWorkout: (sessionUid: string) => void;
   isSavingWorkout: boolean;
+  // Opens the program assistant. Optional because only the builder mounts one;
+  // without it the footer's left slot is simply empty.
+  onOpenAssistant?: () => void;
 };
 
 export function SessionEditorSheet({
@@ -35,8 +40,11 @@ export function SessionEditorSheet({
   // Destructured out here — these must never reach the {...bodyProps} spread.
   onSaveAsWorkout,
   isSavingWorkout,
+  onOpenAssistant,
   ...bodyProps
 }: SessionEditorSheetProps) {
+  const editable = mode === "edit";
+
   return (
     <Sheet
       open={session != null}
@@ -46,51 +54,75 @@ export function SessionEditorSheet({
     >
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 bg-white p-0 sm:w-[780px] sm:max-w-full"
+        hideClose
+        className="flex w-full flex-col gap-0 bg-[#f4f7f6] p-0 sm:w-[780px] sm:max-w-full"
       >
         {session && (
           <>
-            <SheetHeader className="flex-row items-center gap-3 space-y-0 border-b border-[rgba(13,148,136,0.08)] px-5 py-3.5">
-              <span className={cn(THUMB_CLASS, "h-8 w-8")}>
-                <Dumbbell className="h-4 w-4" strokeWidth={1.5} />
-              </span>
-              <div className="min-w-0 pr-8">
-                <SheetTitle className="truncate text-[15px] font-semibold text-[#0c1a1e]">
-                  {session.name}
-                </SheetTitle>
-                <SheetDescription className={cn("mt-0.5", MONO_LABEL_CLASS)}>
-                  {session.exercises.length}{" "}
-                  {session.exercises.length === 1 ? "exercise" : "exercises"}
-                </SheetDescription>
-              </div>
-            </SheetHeader>
+            {/* The visible title is the hero's inline-edit input, which has no
+                accessible name of its own for the dialog. */}
+            <SheetTitle className="sr-only">{session.name}</SheetTitle>
+            <SheetDescription className="sr-only">
+              Edit this session&apos;s focus, duration and exercises.
+            </SheetDescription>
+
+            <SessionHero
+              sessionUid={session.uid}
+              name={session.name}
+              focus={session.focus}
+              exerciseCount={session.exercises.length}
+              durationMinutes={session.estimatedDurationMinutes}
+              calorieSurplusPercentage={session.calorieSurplusPercentage}
+              defaultSurplusPercentage={bodyProps.defaultSurplusPercentage}
+              editable={editable}
+              identityEditable={bodyProps.identityEditable ?? true}
+              onRename={(name) =>
+                bodyProps.onUpdateSession(session.uid, { name })
+              }
+              onSurplusChange={(calorieSurplusPercentage) =>
+                bodyProps.onUpdateSession(session.uid, { calorieSurplusPercentage })
+              }
+              onClose={onClose}
+            />
 
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-4">
-              <SessionEditorBody session={session} mode={mode} {...bodyProps} />
+              <SessionEditorBody
+                session={session}
+                mode={mode}
+                chrome="hero"
+                {...bodyProps}
+              />
             </div>
 
-            <div className="flex items-center justify-between gap-2 border-t border-[rgba(13,148,136,0.08)] px-5 py-3">
-              <span />
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  disabled={isSavingWorkout}
-                  onClick={() => onSaveAsWorkout(session.uid)}
-                >
-                  {isSavingWorkout ? (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <BookmarkPlus className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
-                  )}
-                  Save as workout
+            {/* White footer on the grey body. The Assistant used to float over
+                this corner as a fixed launcher; it lives here now so there is
+                one row of actions rather than two overlapping sets. */}
+            <div className="flex items-center gap-2 border-t border-[rgba(13,148,136,0.08)] bg-white px-5 py-3">
+              {onOpenAssistant && (
+                <Button variant="outline" onClick={onOpenAssistant}>
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
+                  Assistant
                 </Button>
-                <Button
-                  className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
-                  onClick={onClose}
-                >
-                  Done
-                </Button>
-              </div>
+              )}
+              <div className="flex-1" />
+              <Button
+                variant="outline"
+                disabled={isSavingWorkout}
+                onClick={() => onSaveAsWorkout(session.uid)}
+              >
+                {isSavingWorkout ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <BookmarkPlus className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
+                )}
+                Save as workout
+              </Button>
+              <Button
+                className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
+                onClick={onClose}
+              >
+                Done
+              </Button>
             </div>
           </>
         )}

@@ -53,6 +53,9 @@ function Wrapper({
   // Stateful harness standing in for the draft: applies spec edits through
   // the real kernel so the test exercises the re-projection round-trip.
   const [current, setCurrent] = useState(exercise);
+  // Expansion is controlled by the parent now (one open at a time), so the
+  // harness owns it.
+  const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const handleSpecEdit = (edit: SetSpecEdit) => {
     const result = applySetSpecEdit(current, edit);
     if (result.ok) setCurrent(result.exercise);
@@ -64,7 +67,8 @@ function Wrapper({
           exercise={current}
           ordinal={1}
           mode={mode}
-          defaultExpanded={defaultExpanded}
+          expanded={expanded}
+          onToggleExpanded={() => setExpanded((v) => !v)}
           onEdit={(patch) => setCurrent((e) => ({ ...e, ...patch }))}
           onSpecEdit={handleSpecEdit}
           onRemove={onRemove}
@@ -82,7 +86,7 @@ describe("ExerciseCard", () => {
     // builder UI (warm-ups are a per-set type; supersets never functional).
     render(<Wrapper exercise={makeExercise({ isWarmup: true, videoUrl: "https://x.io/v" })} />);
     expect(screen.getByText("Bench Press")).toBeInTheDocument();
-    expect(screen.getByText("4 × 8–12 @ RPE 8")).toBeInTheDocument();
+    expect(screen.getByText("4×8-12")).toBeInTheDocument();
     expect(screen.queryByText("SS A")).toBeNull();
     expect(screen.queryByText("Warm-up")).toBeNull();
     // Sets are hidden until expanded.
@@ -94,6 +98,9 @@ describe("ExerciseCard", () => {
     expect(screen.queryByText("Superset group")).toBeNull();
     expect(screen.queryByText("Counts as warm-up work")).toBeNull();
     // The remaining exercise-level fields survive.
+    // Both live behind the "Video & note" text action now.
+    expect(screen.queryByText("Video URL")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Video & note/ }));
     expect(screen.getByText("Video URL")).toBeInTheDocument();
     expect(screen.getByText("Coach note")).toBeInTheDocument();
   });
@@ -112,14 +119,14 @@ describe("ExerciseCard", () => {
     fireEvent.click(screen.getByLabelText("Expand sets"));
     fireEvent.click(screen.getByText("Add set"));
     expect(screen.getByLabelText("Set 5 type")).toBeInTheDocument();
-    expect(screen.getByText("5 × 8–12 @ RPE 8")).toBeInTheDocument();
+    expect(screen.getByText("5×8-12")).toBeInTheDocument();
   });
 
   it("removing a set re-projects the compact summary down", () => {
     render(<Wrapper exercise={makeExercise()} />);
     fireEvent.click(screen.getByLabelText("Expand sets"));
     fireEvent.click(screen.getByLabelText("Remove set 4"));
-    expect(screen.getByText("3 × 8–12 @ RPE 8")).toBeInTheDocument();
+    expect(screen.getByText("3×8-12")).toBeInTheDocument();
   });
 
   it("wires remove; view mode hides all editing affordances", () => {
@@ -162,10 +169,12 @@ describe("ExerciseCard", () => {
     );
     fireEvent.click(screen.getByLabelText("Duplicate set 1"));
     // Row 2 is the clone of row 1; the old row 2 renumbered to 3.
-    expect(screen.getByLabelText("Set 2 min reps")).toHaveValue(5);
-    expect(screen.getByLabelText("Set 3 min reps")).toHaveValue(8);
+    // Set 1 is 5..5, which the single input collapses to "5"; its clone shows
+    // the same. The old row 2 keeps its real range.
+    expect(screen.getByLabelText("Set 2 reps")).toHaveValue("5");
+    expect(screen.getByLabelText("Set 3 reps")).toHaveValue("8-10");
     // Compact summary re-projected across the 3 working sets.
-    expect(screen.getByText("3 × 5–10")).toBeInTheDocument();
+    expect(screen.getByText("3×5-10")).toBeInTheDocument();
   });
 });
 
@@ -196,7 +205,7 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
     // The set-type select goes with its column.
     expect(screen.queryByLabelText("Set 1 type")).toBeNull();
     // …and the load inputs with theirs.
-    expect(screen.queryByLabelText("Set 1 load")).toBeNull();
+    expect(screen.queryByLabelText("Set 1 load type")).toBeNull();
   });
 
   it("unticking a column removes it without touching the values behind it", async () => {
@@ -235,7 +244,7 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
     await user.click(screen.getByRole("menuitemcheckbox", { name: "Reps" }));
     // Assert on the inputs, not the header text — the menu is still open and
     // carries a "Reps" label of its own.
-    expect(screen.getByLabelText("Set 1 min reps")).toBeInTheDocument();
+    expect(screen.getByLabelText("Set 1 reps")).toBeInTheDocument();
   });
 
   it("'Show all columns' restores every column", async () => {
@@ -247,7 +256,7 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
     await user.click(screen.getByRole("menuitem", { name: "Show all columns" }));
     for (const label of [
       "Set 1 type",
-      "Set 1 min reps",
+      "Set 1 reps",
       "Set 1 load type",
       "Set 1 RPE",
       "Set 1 rest seconds",

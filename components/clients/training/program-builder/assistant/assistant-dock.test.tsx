@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
@@ -33,6 +34,13 @@ vi.mock("./use-assistant-chat", () => ({
 import { AssistantDock } from "./assistant-dock";
 import { AssistantMessages } from "./assistant-messages";
 
+// The dock's open state is owned by ProgramBuilder now (so the session-editor
+// footer can open it); this host stands in for that owner.
+function DockHost() {
+  const [open, setOpen] = useState(false);
+  return <AssistantDock open={open} onOpenChange={setOpen} />;
+}
+
 describe("AssistantDock", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -42,7 +50,7 @@ describe("AssistantDock", () => {
   });
 
   it("renders a collapsed launcher and expands into the panel", () => {
-    render(<AssistantDock />);
+    render(<DockHost />);
     const launcher = screen.getByRole("button", { name: /open the program assistant/i });
     fireEvent.click(launcher);
     expect(screen.getByText("Program assistant")).toBeInTheDocument();
@@ -51,7 +59,7 @@ describe("AssistantDock", () => {
 
   it("gates input behind edit mode with a switch affordance", () => {
     mockContext.mode = "view";
-    render(<AssistantDock />);
+    render(<DockHost />);
     fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
     expect(screen.queryByPlaceholderText(/describe the change/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /switch to edit/i }));
@@ -59,7 +67,7 @@ describe("AssistantDock", () => {
   });
 
   it("sends on Enter and clears the input; Escape collapses without sending", () => {
-    render(<AssistantDock />);
+    render(<DockHost />);
     fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
     const input = screen.getByPlaceholderText(/describe the change/i);
 
@@ -131,7 +139,7 @@ describe("suggestion chips", () => {
   });
 
   it("sends immediately when a starter is picked", () => {
-    render(<AssistantDock />);
+    render(<DockHost />);
     fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
 
     fireEvent.click(screen.getByRole("button", { name: "Add 2 more weeks" }));
@@ -148,7 +156,7 @@ describe("suggestion chips", () => {
       mockContext.mode = state.mode;
       mockContext.isSaving = state.isSaving;
       mockChat.busy = state.busy;
-      const { unmount } = render(<AssistantDock />);
+      const { unmount } = render(<DockHost />);
       fireEvent.click(
         screen.getByRole("button", { name: /open the program assistant/i }),
       );
@@ -164,7 +172,7 @@ describe("suggestion chips", () => {
   it("hides the starters once a conversation exists", () => {
     mockContext.mode = "edit";
     mockChat.messages = [{ id: "1", role: "user", text: "hi" }];
-    render(<AssistantDock />);
+    render(<DockHost />);
     fireEvent.click(screen.getByRole("button", { name: /open the program assistant/i }));
     expect(
       screen.queryByRole("button", { name: "Add 2 more weeks" }),

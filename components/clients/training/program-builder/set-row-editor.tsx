@@ -17,6 +17,7 @@ import { DropSetEditor } from "./drop-set-editor";
 import { useUnits } from "@/contexts/units-context";
 import { formatLoad } from "@/utils/unit-conversions";
 import { commitLoad, commitNum, displayLoad } from "./commit-input";
+import { formatRepsRange, parseRepsRange } from "@/utils/reps-range";
 import {
   FOCUS_RING,
   MONO,
@@ -43,7 +44,7 @@ export function setGridTemplate(
 ): string {
   const columns = ["20px"];
   if (fields.has("set_type")) columns.push("minmax(0,1.1fr)");
-  if (fields.has("reps")) columns.push("minmax(0,1.3fr)");
+  if (fields.has("reps")) columns.push("minmax(0,0.9fr)");
   if (fields.has("load")) columns.push("minmax(0,1.7fr)");
   if (fields.has("rpe")) columns.push("minmax(0,0.7fr)");
   if (fields.has("rest")) columns.push("minmax(0,0.8fr)");
@@ -134,55 +135,45 @@ export function SetRowEditor({ spec, fields, index, disabled, onEdit }: SetRowEd
               onBlur={(e) => update({ reps_target: e.target.value.trim() || null })}
             />
           ) : (
-            <div className="flex items-center gap-1">
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                disabled={disabled}
-                defaultValue={spec.reps_min ?? ""}
-                placeholder="min"
-                aria-label={`Set ${spec.set_number} min reps`}
-                className={cn(MONO_INPUT_CLASS, "h-7 min-w-0 flex-1 px-1 text-[11px]", FOCUS_RING)}
-                onFocus={(e) => {
-                  // Select-all on focus so a prefilled value is typed over, not
-                  // deleted (programmatic focus just highlights, never wipes).
-                  e.target.select();
-                }}
-                onBlur={(e) => {
-                  const v = commitNum(e, { min: 0, max: 100, int: true });
-                  if (v === null) {
-                    // Blank reverts to the current value (the prefill on a new
-                    // exercise) instead of clearing — reps always keep a value.
-                    e.target.value = spec.reps_min == null ? "" : String(spec.reps_min);
-                    return;
-                  }
-                  update({ reps_min: v });
-                }}
-              />
-              <span className={cn("text-[10px]", TEXT_MUTED)}>–</span>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                disabled={disabled}
-                defaultValue={spec.reps_max ?? ""}
-                placeholder="max"
-                aria-label={`Set ${spec.set_number} max reps`}
-                className={cn(MONO_INPUT_CLASS, "h-7 min-w-0 flex-1 px-1 text-[11px]", FOCUS_RING)}
-                onFocus={(e) => {
-                  e.target.select();
-                }}
-                onBlur={(e) => {
-                  const v = commitNum(e, { min: 0, max: 100, int: true });
-                  if (v === null) {
-                    e.target.value = spec.reps_max == null ? "" : String(spec.reps_max);
-                    return;
-                  }
-                  update({ reps_max: v });
-                }}
-              />
-            </div>
+            // ONE input for the whole scheme ("8-12", or "12" when the range
+            // collapses), matching how reps are written everywhere else in the
+            // app. The stored model is unchanged — utils/reps-range parses on
+            // input and formats on display, and a half-open legacy range still
+            // round-trips.
+            <Input
+              disabled={disabled}
+              maxLength={9}
+              defaultValue={formatRepsRange({
+                min: spec.reps_min ?? null,
+                max: spec.reps_max ?? null,
+              })}
+              placeholder="reps"
+              aria-label={`Set ${spec.set_number} reps`}
+              className={cn(MONO_INPUT_CLASS, "h-7 px-1.5 text-[11px]", FOCUS_RING)}
+              onFocus={(e) => {
+                // Select-all so a prefilled scheme is typed over, not deleted.
+                e.target.select();
+              }}
+              onBlur={(e) => {
+                const seeded = formatRepsRange({
+                  min: spec.reps_min ?? null,
+                  max: spec.reps_max ?? null,
+                });
+                const typed = e.target.value.trim();
+                // A blur that changed nothing must write nothing, or tabbing
+                // through the row dirties the draft.
+                if (typed === seeded) return;
+                const parsed = parseRepsRange(typed);
+                if (parsed === null) {
+                  // Not a rep scheme — revert rather than blanking a
+                  // prescription on a typo.
+                  e.target.value = seeded;
+                  return;
+                }
+                e.target.value = formatRepsRange(parsed);
+                update({ reps_min: parsed.min, reps_max: parsed.max });
+              }}
+            />
           )
         )}
 

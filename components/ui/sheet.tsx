@@ -49,10 +49,21 @@ function SheetContent({
   children,
   side = 'right',
   overlayClassName,
+  hideClose = false,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left'
   overlayClassName?: string
+  /**
+   * Suppress the built-in top-right close button so the sheet can carry its
+   * own. Only for a sheet whose header is a DARK band: this Close inherits the
+   * page ink and would render near-invisible on `#0f2027`, and it is absolutely
+   * positioned at `top-4 right-4` so it cannot be moved onto the band from the
+   * call site. A sheet that hides it MUST render its own labelled close
+   * control — Escape and the overlay still dismiss, but a pointer user needs a
+   * visible target.
+   */
+  hideClose?: boolean
 }) {
   return (
     <SheetPortal>
@@ -74,10 +85,12 @@ function SheetContent({
         {...props}
       >
         {children}
-        <SheetPrimitive.Close data-slot="sheet-close" className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
-          <XIcon className="size-4" />
-          <span className="sr-only">Close</span>
-        </SheetPrimitive.Close>
+        {!hideClose && (
+          <SheetPrimitive.Close data-slot="sheet-close" className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
+            <XIcon className="size-4" />
+            <span className="sr-only">Close</span>
+          </SheetPrimitive.Close>
+        )}
       </SheetPrimitive.Content>
     </SheetPortal>
   )

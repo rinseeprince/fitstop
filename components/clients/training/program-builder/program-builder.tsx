@@ -115,6 +115,9 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
 
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(new Set());
   const [editingSessionUid, setEditingSessionUid] = useState<string | null>(null);
+  // Owned here, not in the dock: the session-editor sheet's footer button opens
+  // the same panel, and the dock's fixed launcher hides while that sheet is up.
+  const [assistantOpen, setAssistantOpen] = useState(false);
   // The uid only — the week resolves live at render, so a vanished uid or a
   // mode flip closes the progression dialog by unmounting it.
   const [progressionWeekUid, setProgressionWeekUid] = useState<string | null>(null);
@@ -528,6 +531,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onSpecEdit={editSetSpec}
         onSaveAsWorkout={(uid) => void saveDayAsWorkout(uid)}
         isSavingWorkout={isSavingWorkout}
+        onOpenAssistant={() => setAssistantOpen(true)}
       />
 
       {/* Conditional mount: an always-mounted dialog would fetch the exercise
@@ -638,7 +642,13 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           materializes the edited copy onto the client's calendar. The confirm
           precedes the dialog (start date/repeat are chosen inside it), so its
           copy stays date-agnostic. */}
-      <AssistantDock />
+      <AssistantDock
+        open={assistantOpen}
+        onOpenChange={setAssistantOpen}
+        // The fixed corner chip lands on top of the session sheet's own footer;
+        // while that sheet is up, its Assistant button is the way in.
+        hideLauncher={editingSession != null}
+      />
 
       {/* Placed-plan save flow (Job 2): confirm (with the moved-events
           warning) → PUT; a 409 opens the drift dialog with the draft intact. */}

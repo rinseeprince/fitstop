@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Dumbbell, GripVertical, Plus, Trash2, Video } from "lucide-react";
+import { ChevronDown, Dumbbell, GripVertical, Plus, Trash2 } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
 import type { ExerciseDraft } from "./program-builder-types";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
-import { exerciseCompactSummary } from "./exercise-summary";
+import { setsRepsShort } from "./exercise-summary";
 import { SET_GRID_BASE, SetRowEditor, setGridTemplate } from "./set-row-editor";
 import { SetColumnsMenu } from "./set-columns-menu";
 import { resolvePrescribedFields } from "@/utils/prescribed-fields";
@@ -38,9 +38,17 @@ type ExerciseCardProps = {
   // 1-based position in the session — rendered as the block's ord circle.
   ordinal: number;
   mode: "view" | "edit";
-  // Exercises added during the current editing session open straight into
-  // per-set authoring (the body computes newness); existing ones stay compact.
-  defaultExpanded?: boolean;
+  // Controlled by the parent: only ONE exercise is open at a time, so the
+  // session editor is not four stacked grids of inputs. Collapsing keeps the
+  // draft (every edit commits on blur), it does not discard.
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  /**
+   * Cards are borderless on the session editor's grey body (spacing separates)
+   * and bordered on the three white-bodied surfaces that share this component,
+   * where white-on-white would vanish.
+   */
+  bordered?: boolean;
   onEdit: (patch: Partial<ExerciseDraft>) => void;
   onSpecEdit: (edit: SetSpecEdit) => void;
   onRemove: () => void;
@@ -50,13 +58,17 @@ export function ExerciseCard({
   exercise,
   ordinal,
   mode,
-  defaultExpanded = false,
+  expanded,
+  onToggleExpanded,
+  bordered = true,
   onEdit,
   onSpecEdit,
   onRemove,
 }: ExerciseCardProps) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
   const [videoInvalid, setVideoInvalid] = useState(false);
+  // Video URL + coach note are tucked behind a text action: two fields most
+  // exercises never use should not push the set grid down the sheet.
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const editable = mode === "edit";
   const specs = expandSetSpecs(exercise);
   // Which prescription columns this exercise uses. Not a display preference:
@@ -90,8 +102,11 @@ export function ExerciseCard({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        "rounded-[6px] bg-white",
-        TRAINING_CARD_BORDER,
+        "group/ex rounded-[6px] bg-white transition-shadow",
+        // Borderless only where the body behind it is #f4f7f6 and spacing can
+        // do the separating (design system, "Spacing Principles").
+        bordered && TRAINING_CARD_BORDER,
+        !expanded && "hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]",
         isDragging && "opacity-40",
       )}
     >
@@ -101,7 +116,10 @@ export function ExerciseCard({
           <button
             type="button"
             aria-label={`Drag ${exercise.name}`}
-            className={cn("-mr-0.5 cursor-grab rounded p-0.5 hover:bg-[rgba(13,148,136,0.08)] active:cursor-grabbing", TEXT_MUTED)}
+            className={cn(
+              "-mr-0.5 cursor-grab rounded p-0.5 opacity-0 transition-opacity hover:bg-[rgba(13,148,136,0.08)] active:cursor-grabbing group-hover/ex:opacity-100 group-focus-within/ex:opacity-100",
+              TEXT_MUTED,
+            )}
             {...attributes}
             {...listeners}
           >
@@ -122,17 +140,14 @@ export function ExerciseCard({
             Notes
           </span>
         )}
-        {exercise.videoUrl && (
-          <Video className={cn("h-3 w-3 shrink-0", TEXT_SECONDARY)} strokeWidth={1.5} />
-        )}
         <span className={cn(MONO, "shrink-0 text-[11px]", TEXT_SECONDARY)}>
-          {exerciseCompactSummary(exercise)}
+          {setsRepsShort(exercise)}
         </span>
         {editable && (
           <button
             type="button"
             aria-label={`Remove ${exercise.name}`}
-            className="rounded p-1 text-destructive hover:bg-red-50"
+            className="rounded p-1 text-destructive opacity-0 transition-opacity hover:bg-red-50 group-hover/ex:opacity-100 group-focus-within/ex:opacity-100"
             onClick={onRemove}
           >
             <Trash2 className="h-3 w-3" strokeWidth={1.5} />
@@ -142,8 +157,12 @@ export function ExerciseCard({
           type="button"
           aria-label={expanded ? "Collapse sets" : "Expand sets"}
           aria-expanded={expanded}
-          className={cn("rounded p-1 hover:bg-[rgba(13,148,136,0.08)]", TEXT_SECONDARY)}
-          onClick={() => setExpanded((v) => !v)}
+          className={cn(
+            "rounded p-1 opacity-0 transition-opacity hover:bg-[rgba(13,148,136,0.08)] group-hover/ex:opacity-100 group-focus-within/ex:opacity-100",
+            expanded && "opacity-100",
+            TEXT_SECONDARY,
+          )}
+          onClick={onToggleExpanded}
         >
           <ChevronDown
             className={cn("h-3.5 w-3.5 transition-transform duration-200", !expanded && "-rotate-90")}
@@ -199,40 +218,65 @@ export function ExerciseCard({
             </button>
           )}
 
-          {/* Exercise-level fields */}
-          <div className="space-y-2 border-t border-[rgba(13,148,136,0.08)] pt-2">
-            <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
-              Video URL
-              <Input
-                disabled={!editable}
-                maxLength={500}
-                defaultValue={exercise.videoUrl ?? ""}
-                placeholder="https://…"
-                aria-invalid={videoInvalid}
-                className={cn(
-                  "h-7 px-2 text-xs",
-                  FOCUS_RING,
-                  videoInvalid && "border-destructive",
-                )}
-                onBlur={(e) => commitVideoUrl(e.target.value)}
-              />
-              {videoInvalid && (
-                <span className="text-[10px] normal-case tracking-normal text-destructive">
-                  Not a valid link — it won&apos;t be saved
-                </span>
+          {/* Video URL + coach note — collapsed by default, two columns when
+              opened, above a hairline. */}
+          <div className="pt-1">
+            <button
+              type="button"
+              aria-expanded={detailsOpen}
+              className={cn(
+                "flex items-center gap-1.5 py-1",
+                LABEL_CLASS,
+                "hover:text-[#0d9488]",
               )}
-            </label>
-            <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
-              Coach note
-              <Textarea
-                disabled={!editable}
-                maxLength={500}
-                defaultValue={exercise.notes ?? ""}
-                placeholder="Cues the client sees with this exercise"
-                className={cn("min-h-14 px-2 py-1.5 text-xs", FOCUS_RING)}
-                onBlur={(e) => onEdit({ notes: e.target.value.trim() || null })}
+              onClick={() => setDetailsOpen((v) => !v)}
+            >
+              Video &amp; note
+              <ChevronDown
+                className={cn(
+                  "h-3 w-3 transition-transform duration-200",
+                  !detailsOpen && "-rotate-90",
+                )}
+                strokeWidth={1.5}
               />
-            </label>
+            </button>
+
+            {detailsOpen && (
+              <div className="mt-2 grid grid-cols-1 gap-3 border-t border-[rgba(13,148,136,0.06)] pt-2.5 sm:grid-cols-2">
+                <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
+                  Video URL
+                  <Input
+                    disabled={!editable}
+                    maxLength={500}
+                    defaultValue={exercise.videoUrl ?? ""}
+                    placeholder="https://…"
+                    aria-invalid={videoInvalid}
+                    className={cn(
+                      "h-7 bg-white px-2 text-xs",
+                      FOCUS_RING,
+                      videoInvalid && "border-destructive",
+                    )}
+                    onBlur={(e) => commitVideoUrl(e.target.value)}
+                  />
+                  {videoInvalid && (
+                    <span className="text-[10px] normal-case tracking-normal text-destructive">
+                      Not a valid link — it won&apos;t be saved
+                    </span>
+                  )}
+                </label>
+                <label className={cn("flex flex-col gap-1", LABEL_CLASS)}>
+                  Coach note
+                  <Textarea
+                    disabled={!editable}
+                    maxLength={500}
+                    defaultValue={exercise.notes ?? ""}
+                    placeholder="Cues the client sees with this exercise"
+                    className={cn("min-h-14 bg-white px-2 py-1.5 text-xs", FOCUS_RING)}
+                    onBlur={(e) => onEdit({ notes: e.target.value.trim() || null })}
+                  />
+                </label>
+              </div>
+            )}
           </div>
         </div>
       )}

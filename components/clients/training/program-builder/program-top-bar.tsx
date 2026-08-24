@@ -6,11 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ProgramDraft } from "./program-builder-types";
 import {
-  FOCUS_RING,
   HEADER_EYEBROW_CLASS,
-  MONO_INPUT_CLASS,
-  STAT_LABEL_DARK_CLASS,
+  INLINE_EDIT_DARK_CLASS,
 } from "./builder-tokens";
+import { DarkSurplusPill } from "./dark-surplus-pill";
 
 // Builder hero — the slim dark program header. Eyebrow + the program NAME and
 // FOCUS (both inline-editable in edit mode) · the default-surplus pill on the
@@ -38,14 +37,6 @@ type ProgramTopBarProps = {
   onDescriptionChange: (description: string | null) => void;
   onDefaultSurplusChange: (pct: number | null) => void;
 };
-
-// rgba-white mute on the dark band (design-system dark-surface text scale).
-const STAT_MUTE = "text-[rgba(255,255,255,0.4)]";
-
-// Inline-editable text on the dark band — no boxy ring, a faint white wash on
-// focus so it reads as an editable field without looking like a form input.
-const INLINE_EDIT_CLASS =
-  "-ml-1.5 h-auto w-full rounded-[4px] border-0 bg-transparent px-1.5 py-0.5 text-white shadow-none outline-none transition-colors placeholder:text-[rgba(255,255,255,0.35)] focus:bg-[rgba(255,255,255,0.08)]";
 
 // Multiline description on the dark band — same inline-edit language as name/
 // focus, but muted and small so it reads as secondary. Overrides the shared
@@ -90,7 +81,7 @@ export function ProgramTopBar({
               aria-label="Program name"
               className={cn(
                 "text-[17px] font-semibold leading-tight tracking-[-0.01em]",
-                INLINE_EDIT_CLASS,
+                INLINE_EDIT_DARK_CLASS,
               )}
               onBlur={(e) => {
                 const value = e.target.value.trim() || "Untitled program";
@@ -107,7 +98,7 @@ export function ProgramTopBar({
               maxLength={100}
               aria-label="Program focus"
               placeholder="Add a focus (e.g. Push/Pull)"
-              className={cn("text-[12.5px] leading-tight", INLINE_EDIT_CLASS)}
+              className={cn("text-[12.5px] leading-tight", INLINE_EDIT_DARK_CLASS)}
               onBlur={(e) => {
                 const value = e.target.value.trim();
                 onFocusChange(value === "" ? null : value);
@@ -149,42 +140,17 @@ export function ProgramTopBar({
 
       {/* Default-surplus pill (editable — the header's only control) */}
       {showSurplus && (
-      <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-[6px] border border-[rgba(255,255,255,0.14)] px-2.5 py-1">
-        <span className={STAT_LABEL_DARK_CLASS}>
-          Surplus
-        </span>
-        <Input
-          key={`surplus-${draft.id}-${mode}`}
-          type="number"
-          min={0}
-          max={100}
-          step={0.5}
-          disabled={mode !== "edit"}
-          // Blank means "no default" (null) — never coerce to a number.
-          defaultValue={draft.defaultSurplusPercentage ?? ""}
-          placeholder="—"
-          aria-label="Default calorie surplus percent"
-          className={cn(
-            MONO_INPUT_CLASS,
-            "h-6 w-10 border-0 bg-transparent px-0 text-xs text-white shadow-none placeholder:text-[rgba(255,255,255,0.35)]",
-            FOCUS_RING,
-          )}
-          onBlur={(e) => {
-            const raw = e.target.value.trim();
-            if (raw === "") {
-              onDefaultSurplusChange(null);
-              return;
-            }
-            const parsed = Number(raw);
-            const clamped = Number.isFinite(parsed)
-              ? Math.min(100, Math.max(0, parsed))
-              : null;
-            onDefaultSurplusChange(clamped);
-            e.target.value = clamped == null ? "" : String(clamped);
-          }}
-        />
-        <span className={cn("text-[10px]", STAT_MUTE)}>%</span>
-      </div>
+        <div className="ml-auto">
+          <DarkSurplusPill
+            inputKey={`surplus-${draft.id}-${mode}`}
+            value={draft.defaultSurplusPercentage}
+            disabled={mode !== "edit"}
+            // Blank means "no default" (null) — never coerce to a number.
+            placeholder="—"
+            ariaLabel="Default calorie surplus percent"
+            onChange={onDefaultSurplusChange}
+          />
+        </div>
       )}
     </div>
   );
