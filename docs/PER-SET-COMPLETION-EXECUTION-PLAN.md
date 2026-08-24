@@ -2,9 +2,11 @@
 
 Rebuild of how a client records a workout and how that record reaches the coach. Today the client's log form sends a **compacted array** of filled sets with no identity, so a client who logs one working set out of six has it stored as set 1 and typed from the **warm-up** spec. That silently poisons every exercise metric — a logged Bench set currently reads as `0 sets against prescribed 4` on the Journey compliance chart.
 
-**Split into 3 phases.** Phase 1 = the wire contract and the server write path. Phase 2 = the per-set completion model and the client UI that proves it. Phase 3 = the coach-facing logged-workout detail. Each phase's pasteable prompt is at the bottom of its section. Do not start a phase before the previous phase's STATUS block reports shipped.
+**Split into 4 phases.** Phase 1 = the wire contract and the server write path. Phase 2 = the per-set completion model and the client UI that proves it. Phase 3 = the coach-facing logged-workout detail. Phase 4 = locking a logged day's prescription against coach edits. Each phase's pasteable prompt is at the bottom of its section. Do not start a phase before the previous phase's STATUS block reports shipped.
 
-> **STATE (2026-08-24): PHASES 1 AND 2 ARE COMPLETE. Phase 3 is the only one outstanding.** Phase 1 carried no UI change; Phase 2 was browser-smoked by the owner and confirmed working. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, and every logged set carries its true `set_number` and coach-prescribed `set_type`. What remains is the COACH's view of that record.
+> Phase 4 was added on 2026-08-25, out of the Phase 2 review rather than the original brief. It closes a write path that lets a coach change the prescription under a day the client already logged — reachable, and data-corrupting since Phase 1 made `completion_quality` server-derived. (That review also turned up repo-wide refactor residue, which is its own workstream: `docs/DEAD-CODE-SWEEP.md`. It is deliberately NOT a phase here — this file gets deleted once the workstream ships, and a sweep's record of what was kept and why has to outlive it.)
+
+> **STATE (2026-08-25): PHASES 1 AND 2 ARE COMPLETE. Phases 3 and 4 are outstanding.** Phase 1 carried no UI change; Phase 2 was browser-smoked by the owner and confirmed working. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, and every logged set carries its true `set_number` and coach-prescribed `set_type`. What remains is the COACH's view of that record (Phase 3), and the lock that keeps a logged day's prescription from changing underneath it (Phase 4).
 
 **Completion protocol (every phase):** at commit time, append a STATUS block to the end of this file — what shipped, commit hash, deviations from this plan, test results. The next session reads it before starting.
 
@@ -197,6 +199,53 @@ Implement PHASE 3 (coach-side logged-workout detail) exactly as specified there.
 Hard constraints: this is a coach surface, so docs/newdesignsystem.md applies in full — import tokens from components/clients/training/program-builder/builder-tokens.ts, mono is numbers only, and npm run check:labels enforces it. Loads are canonical kg on the wire and render in the VIEWER's unit via utils/unit-conversions.ts (formatLoad, since this is a read-only readout). Do not change the analytics SQL, any adherence calculation, or anything under components/client-portal/**.
 
 Show me your implementation plan first and wait for my approval before writing any code. When done: npx tsc --noEmit, npx eslint ., npx vitest run, npm run check:labels must ALL pass before you commit. One commit to main, then append a STATUS block to docs/PER-SET-COMPLETION-EXECUTION-PLAN.md (commit hash, deviations, test results) in that same commit.
+```
+
+---
+
+## PHASE 4 — Lock a logged day's prescription · OUTSTANDING
+
+**Scope:** one assertion in the service layer, its two call sites, the route translation, and the tray's entry state. **No client-portal change, no schema change, no read-path change.**
+
+**The bug.** A coach can open a day the client has already logged in the placed-session tray and edit it. Both save paths then mutate the session behind that logged event:
+
+- **"Just this day"** → `POST …/sessions/[sessionId]/clone` → `cloneSessionForEvent` (`services/training-session-service.ts:203`) inserts a new `training_sessions` row, inserts **new `training_exercises` rows with new ids**, and repoints `training_events.training_session_id` at the clone.
+- **The save itself** → `PUT …/sessions/[sessionId]` → `replaceSessionFull` → `bulkReplaceExercises`, which soft-deletes the exercise rows and inserts replacements. Its status filters (`.eq("status","scheduled").gte("date", fromDate)`) guard only the *event snapshot* writes — the name, focus and surplus. **The exercise rewrite is not guarded at all.**
+
+Either way the client's `exercise_logs.training_exercise_id` values stop matching anything live. `getTrainingEventDetail` then appends a snapshot block per unmatched log (`services/training-log-service.ts:1036`), but `prescribed_exercise_snapshot` carries no `id`, so `normalizeExercise` mints `snapshot-N` and `seedDefaultValues` files the same log a second time as an orphan. Each exercise renders up to three times: the clone's version (blank), a snapshot version (blank), and the orphan holding the real sets.
+
+**Why it now corrupts data rather than just rendering badly.** Before Phase 1 the client's own tap decided `completion_quality`, so the grade survived. Now the blank blocks count in the denominator and the orphan (flagged unplanned) scores neither half, so the client is shown *"0 of 6 working sets logged. Will be recorded as skipped"* after a full workout, and the server records `partial`.
+
+**Why locking is the fix and not a patch.** The state is incoherent, not merely mis-rendered: the client completed prescription A and the coach has replaced it with B. There is no correct answer to "what fraction of B did they complete", so tidying the render would only display an incoherent state more neatly. The real defect is that a logged day's prescription can change at all — and **the product already says it cannot**: `program-builder-lock-model.ts:13,63` locks any slot whose linked event has left `scheduled`. The plan builder honours that rule; the calendar tray never consults it. This closes a gap in an existing invariant.
+
+**The work:**
+
+- **One assertion**, beside `assertDateFree` in `services/training-event-occupancy.ts` — that module is already this codebase's home for "a rule every event-write path must honour". It reads the session's linked events (`getSessionEventLinks` already does exactly this, client-scoped) and throws when any has `status !== "scheduled"`.
+- **Called INSIDE `cloneSessionForEvent` and `replaceSessionFull`**, not in the route handlers. Inside the service means a future caller inherits the rule instead of having to remember it.
+- **A typed error the routes translate to 409** with plain-language copy, following the `DayLockedError` / `TrainingLogOwnershipError` precedent. A raw service error must never reach a coach (CONVENTIONS §10).
+- **The tray's edit entry disabled for those days**, so a coach sees a locked state rather than clicking into an editor that fails on save. Without this the lock reads as a bug.
+
+**Predicate: `status !== "scheduled"`.** Equivalent to "the event has a `session_log_id`", since `linkSessionLogToEvent` writes both together — use status, because that is the wording the lock model already uses and the two surfaces should say the same thing.
+
+**Explicitly out of scope.** Do not add an `id` to `prescribed_exercise_snapshot` — with the lock in place nothing reaches the duplication, and fixing a state that can no longer occur is dead weight. Do not backfill (locked decision 10; any test client already in this state stays broken). Do not widen the predicate to past-but-unlogged days: the plan builder locks those for a different reason (the date walk) and nothing here needs it.
+
+**Definition of done:** a logged day cannot be edited from the calendar through either save path; the tray shows it as locked rather than erroring; CONVENTIONS §2's security/perf review has been run and reported (a route's validation changed); all four gates pass; STATUS block appended.
+
+### Pasteable prompt — Phase 4
+
+```
+Read CONVENTIONS.md (repo root) and docs/ARCHITECTURE.md in full before doing anything else. Then read docs/PER-SET-COMPLETION-EXECUTION-PLAN.md in full — it is the spec for this session, and the Phase 1, 2 and 3 STATUS blocks at the bottom tell you what already shipped.
+
+Implement PHASE 4 (lock a logged day's prescription) exactly as specified there.
+
+1. Add one assertion to services/training-event-occupancy.ts, beside assertDateFree: given a sessionId and clientId, throw a typed error when any event linked to that session has status !== "scheduled". getSessionEventLinks (services/training-session-replace-service.ts) already reads those events client-scoped — use it rather than writing a second read.
+2. Call it INSIDE cloneSessionForEvent (services/training-session-service.ts) and replaceSessionFull (services/training-session-replace-service.ts), not in the route handlers, so any future caller inherits the rule.
+3. Translate the error to 409 with plain-language copy in both routes, following the DayLockedError / TrainingLogOwnershipError precedent. No raw service error reaches a coach.
+4. Disable the placed-session tray's edit entry for a day whose event is not `scheduled`, so the coach sees a locked state instead of a save that fails.
+
+Hard constraints: the predicate is `status !== "scheduled"` — the same rule program-builder-lock-model.ts:63 already applies in the plan builder; do NOT invent a second one. Do not add an id to prescribed_exercise_snapshot, do not backfill existing corrupted logs, do not widen the lock to past-but-unlogged days, and change nothing under components/client-portal/**, no analytics SQL, no adherence maths, no schema.
+
+Show me your implementation plan first and wait for my approval before writing any code. Prove it with a test that a clone and a full replace against a logged event both refuse, and that both still succeed against a scheduled one. Run CONVENTIONS §2's security/perf review and report it unprompted — a route's validation changed. When done: npx tsc --noEmit, npx eslint ., npx vitest run, npm run check:labels must ALL pass before you commit. One commit to main, then append a STATUS block to docs/PER-SET-COMPLETION-EXECUTION-PLAN.md in that same commit.
 ```
 
 ---
