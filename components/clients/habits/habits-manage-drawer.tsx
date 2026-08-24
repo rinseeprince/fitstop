@@ -105,6 +105,7 @@ export function HabitsManageDrawer({
           {/* Search */}
           <LibrarySearchInput
             size="panel"
+            fill="page"
             value={searchQuery}
             onChange={setSearchQuery}
             placeholder="Search habits"

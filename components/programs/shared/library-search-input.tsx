@@ -15,16 +15,30 @@ import { Input } from "@/components/ui/input"
  * placeholder; this only sets the tier's geometry and the icon that goes with
  * it. Never hand-roll a magnifier beside an input — that is what produced four
  * different focus treatments across the app.
+ *
+ * `fill` is the one visual thing a call site may choose, because it depends on
+ * what the field is sitting ON rather than on what the field is: a toolbar
+ * search reads white against the page, a drawer search reads recessed against
+ * white. It is an enum, not a class, so "set the fill" cannot quietly become
+ * "restyle the field".
  */
 const TIER = {
   toolbar: {
-    field: "h-9 w-[260px] bg-white py-0 pl-9 pr-2.5 text-[13px]",
+    field: "h-9 w-[260px] py-0 pl-9 pr-2.5 text-[13px]",
     icon: "left-3 h-4 w-4",
+    fill: "white",
   },
   panel: {
     field: "h-8 py-0 pl-8 pr-2.5 text-xs",
     icon: "left-2.5 h-3.5 w-3.5",
+    fill: "transparent",
   },
+} as const
+
+const FILL = {
+  transparent: "",
+  white: "bg-white",
+  page: "bg-[#f4f7f6]",
 } as const
 
 export function LibrarySearchInput({
@@ -32,6 +46,7 @@ export function LibrarySearchInput({
   onChange,
   placeholder,
   size = "toolbar",
+  fill,
   className,
   "aria-label": ariaLabel,
 }: {
@@ -39,6 +54,8 @@ export function LibrarySearchInput({
   onChange: (value: string) => void
   placeholder: string
   size?: keyof typeof TIER
+  /** Defaults to the tier's own fill. */
+  fill?: keyof typeof FILL
   /** Width overrides only — the treatment belongs to the tier. */
   className?: string
   "aria-label"?: string
@@ -59,7 +76,7 @@ export function LibrarySearchInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={ariaLabel}
-        className={cn(tier.field, className && "w-full")}
+        className={cn(tier.field, FILL[fill ?? tier.fill], className && "w-full")}
       />
     </div>
   )

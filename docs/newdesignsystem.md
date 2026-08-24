@@ -259,12 +259,14 @@ A call site may only add what is genuinely local: a **size tier** (`h-8`/`h-9`),
 
 **Every search field is `<LibrarySearchInput>`** (`@/components/programs/shared/library-search-input`). Two tiers, one component; never hand-roll a magnifier beside an input.
 
-| `size` | Field | Icon | Where |
-|---|---|---|---|
-| `toolbar` (default) | `h-9 w-[260px] bg-white pl-9 pr-2.5 text-[13px]` | `left-3 h-4 w-4` | A section toolbar, paired with `<LibrarySortSelect>` |
-| `panel` | `h-8 pl-8 pr-2.5 text-xs` | `left-2.5 h-3.5 w-3.5` | A side panel, drawer or popover list filter |
+| `size` | Field | Icon | Default `fill` | Where |
+|---|---|---|---|---|
+| `toolbar` (default) | `h-9 w-[260px] pl-9 pr-2.5 text-[13px]` | `left-3 h-4 w-4` | `white` | A section toolbar, paired with `<LibrarySortSelect>` |
+| `panel` | `h-8 pl-8 pr-2.5 text-xs` | `left-2.5 h-3.5 w-3.5` | `transparent` | A side panel, drawer or popover list filter |
 
 Pass `className` for **width only** (`flex-1 max-w-md`); the treatment belongs to the tier.
+
+`fill` (`transparent` | `white` | `page`) is the one visual choice a call site makes, because it depends on what the field sits ON, not on what the field is: a toolbar search reads white against the page, a drawer search reads recessed (`page`) against white. It is an enum rather than a class so that "set the fill" cannot quietly become "restyle the field".
 
 ### Sort / filter selects — HARD RULE
 
