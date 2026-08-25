@@ -6,7 +6,7 @@ Rebuild of how a client records a workout and how that record reaches the coach.
 
 > Phase 4 was added on 2026-08-25, out of the Phase 2 review rather than the original brief. It closes a write path that lets a coach change the prescription under a day the client already logged — reachable, and data-corrupting since Phase 1 made `completion_quality` server-derived. (That review also turned up repo-wide refactor residue, which is its own workstream: `docs/DEAD-CODE-SWEEP.md`. It is deliberately NOT a phase here — this file gets deleted once the workstream ships, and a sweep's record of what was kept and why has to outlive it.)
 
-> **STATE (2026-08-25): PHASES 1, 2 AND 3 ARE COMPLETE. Phase 4 is the only one outstanding.** Phase 1 carried no UI change; Phase 2 was browser-smoked by the owner and confirmed working; Phase 3 owes a browser smoke. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, every logged set carries its true `set_number` and coach-prescribed `set_type`, and the coach's readout shows the whole prescription against what was performed. What remains is the lock that keeps a logged day's prescription from changing underneath it (Phase 4).
+> **STATE (2026-08-25): PHASES 1, 2 AND 3 ARE COMPLETE. Phase 4 is the only one outstanding.** Phase 1 carried no UI change; Phases 2 and 3 were both browser-smoked by the owner and confirmed working. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, every logged set carries its true `set_number` and coach-prescribed `set_type`, and the coach's readout shows the whole prescription against what was performed. What remains is the lock that keeps a logged day's prescription from changing underneath it (Phase 4).
 
 **Completion protocol (every phase):** at commit time, append a STATUS block to the end of this file — what shipped, commit hash, deviations from this plan, test results. The next session reads it before starting.
 
@@ -504,8 +504,9 @@ afterwards, with the full suite re-run green:
    the point: it proves the client grid genuinely consumes the shared function rather than a surviving
    local copy.
 
-**Browser smoke OWED.** The gates above prove the contract through jsdom only. The owner runs browser
-smokes; this one has not been run.
+**Browser-smoked by the owner, 2026-08-25 — confirmed working.** The gates above prove the contract
+through jsdom only; this is the pixel-level confirmation they cannot give. The smoke also surfaced
+seven findings, four of which shipped as the follow-up commits below. **Phase 3 is CLOSED.**
 
 
 #### Phase 3 follow-ups — SHIPPED (2026-08-25)
@@ -561,4 +562,4 @@ the drop load-type inheritance and the percentage commit branch — each restore
 copy and `diff`-verified byte-identical. `set-tracker.test.tsx` flaked once in a full run
 (`[delete-exercise]`); 3 isolated and 2 further full runs green.
 
-**Browser smoke OWED** on all four.
+**Browser-smoked by the owner, 2026-08-25 — all four confirmed working.** These follow-ups are CLOSED.
