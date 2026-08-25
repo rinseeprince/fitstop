@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
 import { getTrainingPlanById, updateSession, deleteSession, updateSurplusForFutureEvents } from "@/services/training-service";
+import { replaceSessionFull } from "@/services/training-session-replace-service";
 import {
-  replaceSessionFull,
   getSessionEventLinks,
-} from "@/services/training-session-replace-service";
+  SessionLoggedError,
+} from "@/services/training-event-occupancy";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -163,6 +164,11 @@ export async function PUT(
     }
     if (error instanceof Error && error.message === "Rest days cannot be edited") {
       return NextResponse.json({ error: "Rest days cannot be edited" }, { status: 400 });
+    }
+    // The client has logged a day this session prescribes — its exercises are
+    // frozen. The service's message names the day; it IS the coach-facing copy.
+    if (error instanceof SessionLoggedError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
     }
     // Don't echo raw error.message — it leaks Postgres CHECK-violation text.
     console.error("Error replacing session:", error);

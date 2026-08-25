@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { format } from "date-fns";
-import { Dumbbell, Layers, Loader2, MoreVertical, Save } from "lucide-react";
+import { Dumbbell, Layers, Loader2, Lock, MoreVertical, Save } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -56,6 +56,20 @@ type PlacedSessionEditorProps = {
 const DANGER_OUTLINE_BUTTON =
   "border border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]";
 
+// The sentence the server sends back on a 409 (`assertSessionUnlogged`), down
+// to the date format, so the standing state and the race toast cannot render
+// one day two ways. **Both spell `EEE, MMM d` because that is the app-wide
+// convention** — this panel's own header does too — not because either is
+// matching the other; if the convention moves, both move
+// (`training-event-occupancy.ts` -> formatDay).
+//
+// Naming the day matters: the lock is on the SESSION, so a coach can open a day
+// whose own event is still scheduled and find it locked by an occurrence they
+// logged. Plain sans, dates included (docs/newdesignsystem.md: mono never
+// inside a sentence).
+const loggedLockMessage = (date: string) =>
+  `The client logged this session on ${format(new Date(date + "T00:00:00"), "EEE, MMM d")}, so it can no longer be edited.`;
+
 export function PlacedSessionEditor({
   state,
   onClose,
@@ -71,6 +85,7 @@ export function PlacedSessionEditor({
     loadError,
     isDirty,
     futureScheduledCount,
+    loggedEvent,
     savingScope,
     isSaving,
     handleSave,
@@ -126,6 +141,7 @@ export function PlacedSessionEditor({
   };
 
   const showBody = isSeeded && session != null;
+  const isLocked = loggedEvent != null;
   const dateLabel = displayDate
     ? format(new Date(displayDate + "T00:00:00"), "EEE, MMM d")
     : "";
@@ -194,7 +210,10 @@ export function PlacedSessionEditor({
             {showBody ? (
               <SessionEditorBody
                 session={session}
-                mode="edit"
+                // A logged day opens READ-ONLY, the same way the plan builder
+                // opens a locked slot (program-builder.tsx:514-522). Every
+                // input disables, the exercise picker goes, drag is off.
+                mode={isLocked ? "view" : "edit"}
                 identityEditable
                 defaultSurplusPercentage={null}
                 surplusHelpText="Leave blank for no surplus"
@@ -217,17 +236,34 @@ export function PlacedSessionEditor({
           </div>
 
           <div className="flex items-center justify-end gap-2 border-t border-[rgba(13,148,136,0.08)] px-5 py-3">
-            <Button variant="ghost" disabled={isSaving} onClick={requestClose}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
-              disabled={isSaving || !showBody}
-              onClick={requestSave}
-            >
-              {isSaving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              Save
-            </Button>
+            {isLocked ? (
+              <>
+                {/* Save is HIDDEN, not disabled: this is structural, and a
+                    permanently dead button is worse than none (the call Phase 2
+                    made for the prescribed-row delete). */}
+                <span className="mr-auto flex items-center gap-1.5 text-[12px] text-[#5a7d82]">
+                  <Lock className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+                  {loggedLockMessage(loggedEvent.date)}
+                </span>
+                <Button variant="ghost" onClick={onClose}>
+                  Close
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="ghost" disabled={isSaving} onClick={requestClose}>
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
+                  disabled={isSaving || !showBody}
+                  onClick={requestSave}
+                >
+                  {isSaving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                  Save
+                </Button>
+              </>
+            )}
           </div>
         </SheetContent>
       </Sheet>

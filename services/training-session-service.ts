@@ -8,6 +8,7 @@ import { mapExerciseRow, mapSessionRow } from "./training-mappers";
 import { resolveExercises } from "./exercise-catalog-service";
 import { projectExerciseCompact } from "@/utils/exercise-set-specs";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import { assertSessionUnlogged } from "./training-event-occupancy";
 
 // Update session
 export const updateSession = async (
@@ -234,7 +235,13 @@ export async function cloneSessionForEvent(
     throw new Error("Session not found");
   }
 
-  // 2. Clone session
+  // 2. Refuse a logged day. Step 4 repoints the event at a session whose
+  //    exercises are freshly inserted rows, so the client's exercise_logs would
+  //    stop matching anything live. Ownership is proven above, so a foreign
+  //    sessionId still reads as not found rather than as locked.
+  await assertSessionUnlogged(sessionId, clientId);
+
+  // 3. Clone session
   const { data: clonedSession, error: cloneError } = await supabaseAdmin
     .from("training_sessions")
     .insert({
@@ -259,7 +266,7 @@ export async function cloneSessionForEvent(
     throw new Error(`Failed to clone session: ${cloneError?.message}`);
   }
 
-  // 3. Insert exercises (overrides or cloned from original)
+  // 4. Insert exercises (overrides or cloned from original)
   if (exerciseOverrides) {
     if (exerciseOverrides.length > 0) {
       const exerciseIdMap = await resolveMissingExerciseIds(exerciseOverrides, coachId);
@@ -302,7 +309,7 @@ export async function cloneSessionForEvent(
     }
   }
 
-  // 4. Update event to point to cloned session — scoped to this client (defense
+  // 5. Update event to point to cloned session — scoped to this client (defense
   //    in depth on top of the step-0 ownership check).
   const { error: eventError } = await supabaseAdmin
     .from("training_events")

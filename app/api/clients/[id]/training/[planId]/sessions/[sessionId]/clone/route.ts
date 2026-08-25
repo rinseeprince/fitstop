@@ -5,6 +5,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { cloneSessionForEvent } from "@/services/training-session-service";
+import { SessionLoggedError } from "@/services/training-event-occupancy";
 import { bulkExerciseInputSchema } from "@/lib/validations/training";
 import { z } from "zod";
 
@@ -87,6 +88,12 @@ export async function POST(
 
     return NextResponse.json({ success: true, newSessionId }, { status: 200 });
   } catch (error) {
+    // The client has logged a day this session prescribes — repointing its event
+    // at a clone would orphan their exercise_logs. The service's message names
+    // the day; it IS the coach-facing copy.
+    if (error instanceof SessionLoggedError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     // Don't echo raw error.message — it leaks Postgres CHECK-violation text.
     console.error("Error cloning session:", error);
     return NextResponse.json({ error: "Failed to clone session" }, { status: 500 });

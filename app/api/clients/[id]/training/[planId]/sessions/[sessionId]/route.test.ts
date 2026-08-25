@@ -26,7 +26,18 @@ vi.mock("@/services/training-service", () => ({
 
 vi.mock("@/services/training-session-replace-service", () => ({
   replaceSessionFull: vi.fn(),
+}));
+
+// The route imports the reader and the error class from here; the real module
+// pulls in supabase-admin at load, which has no env in tests. Hoisted so the
+// class exists before the mock factory runs, and so the route's `instanceof`
+// sees the same class the service mock rejects with.
+const { SessionLoggedError } = vi.hoisted(() => ({
+  SessionLoggedError: class SessionLoggedError extends Error {},
+}));
+vi.mock("@/services/training-event-occupancy", () => ({
   getSessionEventLinks: vi.fn(),
+  SessionLoggedError,
 }));
 
 vi.mock("@/services/nutrition-event-service", () => ({
@@ -41,10 +52,8 @@ import { GET, PUT } from "./route";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { getTrainingPlanById } from "@/services/training-service";
-import {
-  replaceSessionFull,
-  getSessionEventLinks,
-} from "@/services/training-session-replace-service";
+import { replaceSessionFull } from "@/services/training-session-replace-service";
+import { getSessionEventLinks } from "@/services/training-event-occupancy";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { getClientTodayString } from "@/services/today-service";
 
@@ -249,6 +258,24 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
 
     expect(response.status).toBe(404);
     expect(replaceSessionFull).not.toHaveBeenCalled();
+  });
+
+  it("maps the service's logged-day lock to a 409 carrying its coach-facing message", async () => {
+    vi.mocked(replaceSessionFull).mockRejectedValue(
+      new SessionLoggedError(
+        "The client logged this session on Fri, Aug 14, so it can no longer be edited",
+      ),
+    );
+
+    const response = await PUT(makePutRequest(validBody), makeParams());
+    const data = await response.json();
+
+    expect(response.status).toBe(409);
+    // No raw service error, and the day is named (CONVENTIONS §10).
+    expect(data.error).toBe(
+      "The client logged this session on Fri, Aug 14, so it can no longer be edited",
+    );
+    expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
   });
 
   it("maps the service's rest-day rejection to a 400", async () => {

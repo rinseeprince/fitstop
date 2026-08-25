@@ -26,10 +26,8 @@ import {
   updateSurplusForFutureEvents,
 } from "./training-session-service";
 import type { ExerciseInput } from "./training-session-service";
-import {
-  replaceSessionFull,
-  getSessionEventLinks,
-} from "./training-session-replace-service";
+import { replaceSessionFull } from "./training-session-replace-service";
+import { SessionLoggedError } from "./training-event-occupancy";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockBulkReplace = vi.mocked(bulkReplaceExercises);
@@ -118,6 +116,25 @@ function makeInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * The lock read `replaceSessionFull` now issues before touching anything
+ * (`assertSessionUnlogged` -> `getSessionEventLinks`). It is the SECOND from()
+ * call, right after the ownership read.
+ */
+function linksChain(events: Array<{ date: string; status: string }>) {
+  return makeChain({
+    data: events.map((e, i) => ({
+      id: `ev-${i}`,
+      date: e.date,
+      status: e.status,
+      is_modified: false,
+    })),
+    error: null,
+  });
+}
+
+const SCHEDULED_LINK = [{ date: "2026-07-27", status: "scheduled" }];
+
 function baseParams(input = makeInput()) {
   return {
     sessionId: SESSION_ID,
@@ -156,10 +173,12 @@ describe("replaceSessionFull", () => {
 
   it("passes exercises to bulkReplaceExercises verbatim (setSpecs/videoUrl survive) and writes no events when nothing propagates", async () => {
     const read = makeChain({ data: currentRow, error: null });
+    const links = linksChain(SCHEDULED_LINK);
     const update = makeChain({ data: updatedRow, error: null });
     const exercisesRead = makeChain({ data: [{ id: "ex-1" }], error: null });
     mockFrom
       .mockReturnValueOnce(read.chain)
+      .mockReturnValueOnce(links.chain)
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(exercisesRead.chain);
 
@@ -174,8 +193,13 @@ describe("replaceSessionFull", () => {
     );
     expect(mockBulkReplace.mock.calls[0][1]).toBe(exercisesWithSpecs);
 
-    // No-change input: no training_events touch, no surplus propagation.
-    expect(mockFrom).not.toHaveBeenCalledWith("training_events");
+    // No-change input: the ONLY training_events call is the lock read, and it
+    // writes nothing. (It used to be "no training_events touch at all"; the
+    // lock added one read, so the assertion narrows to the write.)
+    expect(
+      mockFrom.mock.calls.filter(([table]) => String(table) === "training_events"),
+    ).toHaveLength(1);
+    expect(links.fns.update).not.toHaveBeenCalled();
     expect(mockSurplusUpdate).not.toHaveBeenCalled();
     expect(result.surplusChanged).toBe(false);
     expect(result.identityChanged).toBe(false);
@@ -205,6 +229,7 @@ describe("replaceSessionFull", () => {
     const exercisesRead = makeChain({ data: [], error: null });
     mockFrom
       .mockReturnValueOnce(read.chain)
+      .mockReturnValueOnce(linksChain(SCHEDULED_LINK).chain)
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(rename.chain)
       .mockReturnValueOnce(exercisesRead.chain);
@@ -237,8 +262,10 @@ describe("replaceSessionFull", () => {
       error: null,
     });
     const exercisesRead = makeChain({ data: [], error: null });
+    const links = linksChain(SCHEDULED_LINK);
     mockFrom
       .mockReturnValueOnce(read.chain)
+      .mockReturnValueOnce(links.chain)
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(exercisesRead.chain);
     mockSurplusUpdate.mockResolvedValue(["2026-04-23", "2026-04-25", "2026-04-28"]);
@@ -248,12 +275,53 @@ describe("replaceSessionFull", () => {
     );
 
     expect(mockSurplusUpdate).toHaveBeenCalledWith(SESSION_ID, 20, FROM_DATE);
-    expect(mockFrom).not.toHaveBeenCalledWith("training_events");
+    // The surplus write goes through the mocked helper, so the only direct
+    // training_events call is the lock read.
+    expect(
+      mockFrom.mock.calls.filter(([table]) => String(table) === "training_events"),
+    ).toHaveLength(1);
+    expect(links.fns.update).not.toHaveBeenCalled();
     expect(result.surplusChanged).toBe(true);
     expect(result.identityChanged).toBe(false);
     expect(result.futureEventsUpdated).toBe(3);
     // The route cascades nutrition over exactly these days.
     expect(result.surplusAffectedDates).toEqual(["2026-04-23", "2026-04-25", "2026-04-28"]);
+  });
+
+  it("REFUSES a session the client has logged, before any write", async () => {
+    // Two rounds of chains: the assertion is made twice (class, then message).
+    for (let i = 0; i < 2; i++) {
+      mockFrom
+        .mockReturnValueOnce(makeChain({ data: currentRow, error: null }).chain)
+        .mockReturnValueOnce(linksChain([{ date: "2026-08-14", status: "completed" }]).chain);
+    }
+
+    await expect(replaceSessionFull(baseParams())).rejects.toThrow(SessionLoggedError);
+    await expect(replaceSessionFull(baseParams())).rejects.toThrow(/Fri, Aug 14/);
+
+    // The whole point: bulkReplaceExercises soft-deletes the rows the client's
+    // exercise_logs reference. It must not have run.
+    expect(mockBulkReplace).not.toHaveBeenCalled();
+    expect(mockSurplusUpdate).not.toHaveBeenCalled();
+  });
+
+  it("still replaces a session whose events are all scheduled", async () => {
+    const read = makeChain({ data: currentRow, error: null });
+    const update = makeChain({ data: updatedRow, error: null });
+    const exercisesRead = makeChain({ data: [], error: null });
+    mockFrom
+      .mockReturnValueOnce(read.chain)
+      .mockReturnValueOnce(
+        linksChain([
+          { date: "2026-07-27", status: "scheduled" },
+          { date: "2026-08-03", status: "scheduled" },
+        ]).chain,
+      )
+      .mockReturnValueOnce(update.chain)
+      .mockReturnValueOnce(exercisesRead.chain);
+
+    await expect(replaceSessionFull(baseParams())).resolves.toBeDefined();
+    expect(mockBulkReplace).toHaveBeenCalledTimes(1);
   });
 
   it("treats clearing the surplus (value -> null) as a change", async () => {
@@ -263,8 +331,10 @@ describe("replaceSessionFull", () => {
       error: null,
     });
     const exercisesRead = makeChain({ data: [], error: null });
+    const links = linksChain(SCHEDULED_LINK);
     mockFrom
       .mockReturnValueOnce(read.chain)
+      .mockReturnValueOnce(links.chain)
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(exercisesRead.chain);
     mockSurplusUpdate.mockResolvedValue(["2026-04-23"]);
@@ -275,41 +345,5 @@ describe("replaceSessionFull", () => {
 
     expect(mockSurplusUpdate).toHaveBeenCalledWith(SESSION_ID, null, FROM_DATE);
     expect(result.surplusChanged).toBe(true);
-  });
-});
-
-describe("getSessionEventLinks", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("returns client-scoped event links with is_modified coerced to boolean", async () => {
-    const read = makeChain({
-      data: [
-        { id: "ev-1", date: "2026-07-20", status: "completed", is_modified: null },
-        { id: "ev-2", date: "2026-07-27", status: "scheduled", is_modified: true },
-      ],
-      error: null,
-    });
-    mockFrom.mockReturnValueOnce(read.chain);
-
-    const links = await getSessionEventLinks(SESSION_ID, CLIENT_ID);
-
-    expect(mockFrom).toHaveBeenCalledWith("training_events");
-    expect(read.fns.eq).toHaveBeenCalledWith("training_session_id", SESSION_ID);
-    expect(read.fns.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
-    expect(links).toEqual([
-      { id: "ev-1", date: "2026-07-20", status: "completed", isModified: false },
-      { id: "ev-2", date: "2026-07-27", status: "scheduled", isModified: true },
-    ]);
-  });
-
-  it("throws on db error with a descriptive message", async () => {
-    const read = makeChain({ data: null, error: { message: "permission denied" } });
-    mockFrom.mockReturnValueOnce(read.chain);
-
-    await expect(getSessionEventLinks(SESSION_ID, CLIENT_ID)).rejects.toThrow(
-      /permission denied/,
-    );
   });
 });

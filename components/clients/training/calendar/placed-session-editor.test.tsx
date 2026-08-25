@@ -87,8 +87,22 @@ const SINGLE_EVENT: SessionEventLink[] = [
   { id: "ev1", date: "2026-07-24", status: "scheduled", isModified: false },
 ];
 
+const LOGGED_EVENT: SessionEventLink[] = [
+  { id: "ev1", date: "2026-07-24", status: "completed", isModified: false },
+];
+
+// The clicked day is still scheduled; a SIBLING occurrence is logged. The lock
+// is on the session, so the tray must still show it locked.
+const LOGGED_SIBLING: SessionEventLink[] = [
+  { id: "ev0", date: "2026-07-20", status: "partial", isModified: false },
+  { id: "ev1", date: "2026-07-24", status: "scheduled", isModified: false },
+];
+
+// All scheduled, deliberately: a logged occurrence anywhere locks the session,
+// so a fixture with one could never reach the scope dialog these tests drive.
+// ev0 is in the past, so futureScheduledCount is 2 and the dialog opens.
 const SHARED_EVENTS: SessionEventLink[] = [
-  { id: "ev0", date: "2026-07-20", status: "completed", isModified: false },
+  { id: "ev0", date: "2026-07-20", status: "scheduled", isModified: false },
   { id: "ev1", date: "2026-07-24", status: "scheduled", isModified: false },
   { id: "ev2", date: "2026-07-31", status: "scheduled", isModified: false },
 ];
@@ -142,6 +156,16 @@ function renderTray(state: PlacedSessionState | null = STATE): TrayHandlers {
 
 function callsBy(method: string): FetchCall[] {
   return fetchCalls.filter((c) => c.method === method);
+}
+
+/**
+ * The FOOTER's Close. The Sheet renders its own icon-only close with the same
+ * accessible name (`sheet.tsx:91`), so the role query alone is ambiguous.
+ */
+function footerCloseButtons(): HTMLElement[] {
+  return screen
+    .getAllByRole("button", { name: "Close" })
+    .filter((b) => b.getAttribute("data-slot") !== "sheet-close");
 }
 
 describe("PlacedSessionEditor", () => {
@@ -257,6 +281,53 @@ describe("PlacedSessionEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.click(await screen.findByRole("button", { name: "Discard changes" }));
     expect(handlers.onClose).toHaveBeenCalledTimes(1);
+    expect(callsBy("PUT")).toHaveLength(0);
+    expect(callsBy("POST")).toHaveLength(0);
+  });
+
+  it("opens a logged day READ-ONLY: no Save, a lock line naming the day, inputs disabled", async () => {
+    stubFetch(LOGGED_EVENT);
+    renderTray();
+
+    const nameInput = await screen.findByDisplayValue("Push Day A");
+    // mode="view" — every field of the shared editor body disables.
+    expect(nameInput).toBeDisabled();
+
+    // Save is HIDDEN, not disabled: the day is structurally uneditable.
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(footerCloseButtons()).toHaveLength(1);
+    expect(
+      screen.getByText(
+        "The client logged this session on Fri, Jul 24, so it can no longer be edited.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("locks a scheduled day whose SIBLING occurrence is logged, naming the logged day", async () => {
+    stubFetch(LOGGED_SIBLING);
+    renderTray();
+
+    await screen.findByDisplayValue("Push Day A");
+
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    // The earliest logged occurrence, not the day the coach clicked — without
+    // it the lock reads as a bug on a future day.
+    expect(
+      screen.getByText(
+        "The client logged this session on Mon, Jul 20, so it can no longer be edited.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("closes a locked tray with no write and no discard prompt", async () => {
+    stubFetch(LOGGED_EVENT);
+    const handlers = renderTray();
+    await screen.findByDisplayValue("Push Day A");
+
+    fireEvent.click(footerCloseButtons()[0]);
+
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Discard changes?")).toBeNull();
     expect(callsBy("PUT")).toHaveLength(0);
     expect(callsBy("POST")).toHaveLength(0);
   });

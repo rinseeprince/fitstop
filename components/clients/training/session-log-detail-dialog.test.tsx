@@ -476,9 +476,18 @@ describe("SessionLogDetailDialog", () => {
       // 1 working + drop top + 2 drops.
       expect(rows()).toHaveLength(4);
       expect(screen.getAllByText("Drop")).toHaveLength(3);
-      const [, , , lastDrop] = rows();
+      const [, dropTop, firstDrop, lastDrop] = rows();
       expect(within(lastDrop).getByText("Logged")).toBeInTheDocument();
       expect(within(lastDrop).getByText("6 @ 40kg")).toBeInTheDocument();
+
+      // buildSetDisplayNumbers returns the PARENT's number for a drop
+      // continuation and leaves blanking to each renderer, so the extraction
+      // does NOT guarantee this: the top set keeps its number, the two
+      // continuation rows show none, or they read as duplicate set 2s.
+      const setCell = (row: HTMLElement) => within(row).getAllByRole("cell")[1];
+      expect(setCell(dropTop)).toHaveTextContent("2");
+      expect(setCell(firstDrop).textContent).toBe("Drop");
+      expect(setCell(lastDrop).textContent).toBe("Drop");
     });
 
     it("shows a warm-up but does not count it as a working set", () => {

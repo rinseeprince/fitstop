@@ -112,6 +112,20 @@ export function usePlacedSessionEditor(
     ).length;
   }, [data]);
 
+  // The lock: a session whose calendar has left `scheduled` anywhere can no
+  // longer be edited, because both save paths rewrite the exercise rows the
+  // client's logs point at. Server-enforced in `assertSessionUnlogged`
+  // (services/training-event-occupancy.ts); this is the same predicate so the
+  // coach sees a locked panel instead of a save that 409s. Three places spell
+  // it — that assertion, `program-builder-lock-model.ts:63`, and here — and it
+  // cannot be shared with the first two: that module reaches supabaseAdmin, and
+  // the lock model may not format dates (training-event-calendar-service.ts:27).
+  // Links arrive date-ascending, so this is the EARLIEST logged occurrence.
+  const loggedEvent = useMemo(
+    () => data?.events.find((e) => e.status !== "scheduled") ?? null,
+    [data],
+  );
+
   const [savingScope, setSavingScope] = useState<SaveScope | null>(null);
   const isSaving = savingScope !== null;
   // setState is async — the ref is the authoritative double-fire gate.
@@ -250,6 +264,7 @@ export function usePlacedSessionEditor(
     loadError,
     isDirty: builder.isDirty,
     futureScheduledCount,
+    loggedEvent,
     savingScope,
     isSaving,
     handleSave,

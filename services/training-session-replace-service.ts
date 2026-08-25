@@ -6,6 +6,7 @@ import {
   updateSurplusForFutureEvents,
 } from "./training-session-service";
 import type { ExerciseInput } from "./training-session-service";
+import { assertSessionUnlogged } from "./training-event-occupancy";
 
 export type ReplaceSessionInput = {
   name: string;
@@ -28,39 +29,6 @@ export type ReplaceSessionResult = {
    */
   surplusAffectedDates: string[];
 };
-
-export type SessionEventLink = {
-  id: string;
-  date: string;
-  status: string;
-  isModified: boolean;
-};
-
-/**
- * The calendar events linked to one placed session, client-scoped. The tray
- * derives its shared-occurrence count (scope dialog) from these plus
- * clientToday, so the read must include past/non-scheduled events.
- */
-export async function getSessionEventLinks(
-  sessionId: string,
-  clientId: string,
-): Promise<SessionEventLink[]> {
-  const { data, error } = await supabaseAdmin
-    .from("training_events")
-    .select("id, date, status, is_modified")
-    .eq("training_session_id", sessionId)
-    .eq("client_id", clientId)
-    .order("date", { ascending: true });
-
-  if (error) throw new Error(`Failed to fetch session events: ${error.message}`);
-
-  return (data ?? []).map((e) => ({
-    id: e.id,
-    date: e.date,
-    status: e.status,
-    isModified: e.is_modified ?? false,
-  }));
-}
 
 /**
  * Builder-grade full edit of a placed session: meta + the whole exercise list
@@ -98,6 +66,12 @@ export async function replaceSessionFull(params: {
   if (readError) throw new Error(`Failed to read session: ${readError.message}`);
   if (!current) throw new Error("Session not found");
   if (current.is_rest) throw new Error("Rest days cannot be edited");
+
+  // The exercise rewrite below is what a logged day has to be protected from:
+  // bulkReplaceExercises soft-deletes the rows the client's exercise_logs point
+  // at and inserts replacements with new ids. Ownership is proven above, so a
+  // foreign sessionId still reads as not found rather than as locked.
+  await assertSessionUnlogged(sessionId, clientId);
 
   const nextFocus = input.focus ?? null;
   const nextSurplus = input.calorieSurplusPercentage ?? null;

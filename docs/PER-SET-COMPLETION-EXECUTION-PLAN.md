@@ -6,7 +6,7 @@ Rebuild of how a client records a workout and how that record reaches the coach.
 
 > Phase 4 was added on 2026-08-25, out of the Phase 2 review rather than the original brief. It closes a write path that lets a coach change the prescription under a day the client already logged — reachable, and data-corrupting since Phase 1 made `completion_quality` server-derived. (That review also turned up repo-wide refactor residue, which is its own workstream: `docs/DEAD-CODE-SWEEP.md`. It is deliberately NOT a phase here — this file gets deleted once the workstream ships, and a sweep's record of what was kept and why has to outlive it.)
 
-> **STATE (2026-08-25): PHASES 1, 2 AND 3 ARE COMPLETE. Phase 4 is the only one outstanding.** Phase 1 carried no UI change; Phases 2 and 3 were both browser-smoked by the owner and confirmed working. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, every logged set carries its true `set_number` and coach-prescribed `set_type`, and the coach's readout shows the whole prescription against what was performed. What remains is the lock that keeps a logged day's prescription from changing underneath it (Phase 4).
+> **STATE (2026-08-25): ALL FOUR PHASES ARE COMPLETE. A browser smoke of Phase 4 is OWED before this file can be deleted.** Phase 1 carried no UI change; Phases 2 and 3 were both browser-smoked by the owner and confirmed working. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, every logged set carries its true `set_number` and coach-prescribed `set_type`, and the coach's readout shows the whole prescription against what was performed. Phase 4 then closed the gap that let a coach change a logged day's prescription from the calendar tray.
 
 **Completion protocol (every phase):** at commit time, append a STATUS block to the end of this file — what shipped, commit hash, deviations from this plan, test results. The next session reads it before starting.
 
@@ -203,7 +203,9 @@ Show me your implementation plan first and wait for my approval before writing a
 
 ---
 
-## PHASE 4 — Lock a logged day's prescription · OUTSTANDING
+## PHASE 4 — Lock a logged day's prescription · COMPLETE
+
+> Shipped 2026-08-25. See the Phase 4 STATUS block below.
 
 **Scope:** one assertion in the service layer, its two call sites, the route translation, and the tray's entry state. **No client-portal change, no schema change, no read-path change.**
 
@@ -563,3 +565,189 @@ copy and `diff`-verified byte-identical. `set-tracker.test.tsx` flaked once in a
 (`[delete-exercise]`); 3 isolated and 2 further full runs green.
 
 **Browser-smoked by the owner, 2026-08-25 — all four confirmed working.** These follow-ups are CLOSED.
+
+
+---
+
+### PHASE 4 — SHIPPED (2026-08-25)
+
+**Commit:** `fix(training): a logged day's prescription is locked` — the single commit this block
+ships in. (No hash, for the reason Phases 1-3 record: a commit cannot name itself, and amending one
+in only orphans the commit it named. `git log --oneline --grep "logged day's prescription is
+locked"` resolves it.)
+
+**Shipped**
+
+1. **`assertSessionUnlogged(sessionId, clientId)`** in `services/training-event-occupancy.ts`,
+   throwing `SessionLoggedError` when any linked event has left `scheduled`. The message names the
+   EARLIEST logged occurrence (the read is date-ascending) through the module's existing `formatDay`,
+   so a coach is told which day — the same principle `assertDateFree` already applies.
+2. **Called INSIDE `cloneSessionForEvent` and `replaceSessionFull`**, in both cases AFTER the
+   ownership read, so a foreign `sessionId` still reads as "Session not found" (404) rather than as
+   locked. No route handler carries the rule.
+3. **Both routes translate it to 409** carrying the service's own message, following the
+   `DateOccupiedError` precedent. The tray already surfaces `resData.error` in its "Save failed"
+   toast, so the race case reads the same sentence as the panel.
+4. **The tray opens a locked day read-only**: `SessionEditorBody mode="view"` (the treatment
+   `program-builder.tsx:514-522` gives a locked slot), Save HIDDEN rather than disabled, a lock line
+   naming the logged day, and Close. "Save to library" and "Edit whole plan" stay enabled — the
+   first is a read, the second lands on the amendment surface, which locks the same slot through its
+   own model.
+
+**Decisions taken inside the spec**
+
+- **`getSessionEventLinks` MOVED** from `training-session-replace-service.ts` into
+  `training-event-occupancy.ts` (owner decision, 2026-08-25). Importing it the other way would have
+  made a three-hop cycle — occupancy → replace → session-service → occupancy — through
+  `training-session-service.ts`, which is large and widely imported. It also reads `training_events`
+  for a session, so the training-event module is where it belongs on the merits. Four mechanical
+  edits: the route's import, the route test's mock, and its own suite moving to
+  `training-event-occupancy.test.ts`. `SessionEventLink` (the server type) moved with it; the tray's
+  same-named local type is unrelated and untouched.
+- **The predicate is spelled THREE times, deliberately**: `program-builder-lock-model.ts:63` (the
+  pre-existing copy), the assertion, and the tray's own gate. The tray cannot import the service
+  module (it reaches `supabaseAdmin`; `check:service-key` would fail), and the lock model may not
+  format dates (`training-event-calendar-service.ts:27` records that the only date formatting in
+  `program-builder/` is the amend dialog). Every one of the three carries a comment naming the other
+  two, so whoever changes the rule knows how many places to look.
+- **The lock line names the logged day, and `formatDay` MOVED to the app's date convention to
+  match it.** The panel's line and the 409 toast are one sentence and must render one day one way.
+  The divergence was real, but it was the SERVER that was the outlier: `formatDay` was the only
+  day-first spelling in the product, against `EEE, MMM d` everywhere else (the tray's own header,
+  the amend and delete dialogs, the metric and exercise charts, the check-in surfaces). So
+  the resolution moved `formatDay` month-first rather than moving the client to it, which also
+  brings `assertDateFree`'s "already has a session" message into the convention instead of leaving
+  a second outlier. Both now spell the same date-fns pattern, and both comments point at the
+  convention rather than at each other, so the next person to move it knows what they are matching.
+  `toLocaleDateString` went with it: no `Intl` call now lives outside `lib/date-helpers.ts`
+  (CONVENTIONS §6). **The tray header needed no change** and was not touched.
+- **`getSessionEventLinks`' docblock credits `assertSessionUnlogged`, not the scope dialog, for
+  needing non-scheduled rows.** The comment travelled verbatim in the move and still named the
+  dialog — a consumer migration 121 made unreachable — as the reason the read is status-agnostic. A
+  sweeper deleting that dialog would have read it as licence to narrow the read to `scheduled` and
+  silently disabled the lock. The docblock now states the load-bearing reason first and marks the
+  dialog consumer vestigial; `DEAD-CODE-SWEEP.md` seed item 2 carries the matching warning; and a
+  test now fails if a `status` filter appears in that query, mirroring the status-agnostic guard
+  `assertDateFree` already has in the same file. A comment alone would not have stopped it.
+- **`SHARED_EVENTS` in `placed-session-editor.test.tsx` lost its `completed` occurrence.** That
+  fixture existed to reach the save-scope dialog, and a logged occurrence now locks the session
+  outright — the fixture described a state the product forbids. All three of its events are
+  `scheduled` now (one past, two future), so `futureScheduledCount` is still 2 and both scope-dialog
+  tests keep testing what they were written for.
+
+**Deviations from the plan as written**
+
+- **None in behaviour.** The four numbered items shipped exactly as specified, including the
+  session-level predicate.
+
+**Explicitly NOT done** (all four hard constraints held): no `id` on `prescribed_exercise_snapshot`,
+no backfill, the lock does not widen to past-but-unlogged days, and nothing under
+`components/client-portal/**`, no analytics SQL, no adherence maths, no schema.
+
+**A residual write path, reported not widened.** `POST`/`PUT
+…/sessions/[sessionId]/exercises/route.ts` reach `addExercise` / `bulkReplaceExercises` directly,
+bypassing `replaceSessionFull` and therefore the lock. They have **no caller** in `app/`,
+`components/` or `hooks/` — orphaned with the legacy drawer, same folder and same provenance as the
+sweep's seed item 1. Recorded as **`docs/DEAD-CODE-SWEEP.md` seed item 5** rather than here, because
+this file is deleted when the workstream ships and the sweep is where it gets removed. That entry
+says the gap is deliberate and that keeping either handler means giving it the lock in the same
+change.
+
+**Docs**
+
+- `docs/ARCHITECTURE.md` → a paragraph beside the `assertDateFree` note: the rule, both call sites,
+  the 409, why either save path corrupts a logged day, and the uncovered exercises routes.
+- `CONVENTIONS.md` §8 (training prescription model) → one bullet under the occupancy rule.
+- `docs/DEAD-CODE-SWEEP.md` → seed item 5, plus seed item 2 repointed at `getSessionEventLinks`'
+  new home.
+
+**Security, load & performance review** (CONVENTIONS §2 — triggered by a changed route validation
+and ~14 files touching data flow)
+
+- **No new route, no new write path, no migration.** Two existing coach routes gained a rejection
+  branch; neither gained a write.
+- **Auth chain intact on both.** PUT `…/sessions/[sessionId]` (`route.ts:75-102`):
+  `coachApiRateLimit` → `requireCSRFProtection` → `getAuthenticatedCoachId(request)` →
+  `client.coachId !== coachId` ⇒ 403 → `plan.clientId !== clientId` ⇒ 404 → session-in-plan ⇒ 404 →
+  zod. POST `…/clone` (`clone/route.ts:26-65`): the same chain in the same order. Neither was
+  reordered. `clone/route.ts` still calls `getAuthenticatedCoachId()` **without `request`** — a
+  pre-existing deviation from the auth-helper convention in a region this change did not touch;
+  reported, not fixed.
+- **The new failure mode cannot leak.** `SessionLoggedError`'s message is composed from a date this
+  client's own event carries; nothing from the request body or another tenant reaches it. Every
+  other error still collapses to the generic 500, pinned by a test that rejects with raw
+  `duplicate key value violates unique constraint` text and asserts the coach sees "Failed to clone
+  session".
+- **No existence oracle added.** Both call sites run the assertion AFTER their ownership read, so a
+  guessed `sessionId` gets 404, never a 409 confirming the session exists. Pinned by
+  `training-session-service.test.ts` → "reports a foreign session as not found rather than as
+  locked".
+- **The new read is tenant-scoped and cannot widen exposure.** `getSessionEventLinks` filters
+  `.eq("client_id", clientId)` with the id the route already proved, and its result is reduced to a
+  boolean plus one date — no row crosses the boundary.
+- **Round trips: +1 per save, constant.** One `training_events` read per `cloneSessionForEvent` /
+  `replaceSessionFull` call, not per row. The tray's "just this day" path calls both, so a
+  day-scoped save costs 2 extra reads. It is a sequential `await` by necessity (it gates the write),
+  so it adds one round trip of latency to a save that already issues 4-7.
+- **The new `WHERE` is index-covered, exactly** — checked against the live catalogue (dev,
+  `aeaphsslctwcmebldrzx`), not the migration tree. `uq_training_events_session_date ON
+  training_events (client_id, training_session_id, date)` equality-matches both filter columns on
+  its leading edge and carries `date` third, so the `ORDER BY date ASC` is free rather than a sort.
+  Worst-case rows: one session's events, and since migration 121 gave every placed day its own
+  session row that is 1.
+- **`npm run check:rls`** — 42 public tables, 42 with RLS, all schema-security invariants hold. No
+  policy, grant or table changed.
+- **No consistency risk.** The assertion adds no write and no swallowed `.catch()`. It runs before
+  either function's first mutation, so a rejection leaves nothing half-written — which is the
+  property `cloneSessionForEvent`'s test asserts directly (no `training_sessions` INSERT, no
+  `training_exercises` touch).
+- **A race remains, and it is the 409's job.** A client logging between the assertion and the write
+  is not excluded by anything in the database — there is no constraint behind this rule, only the
+  pre-check. The window is milliseconds and the outcome is the pre-Phase-4 behaviour for that one
+  save. Closing it needs a DB-level guard and a migration; out of scope here.
+- **Measured vs read**: this is a code review, not a measurement. No load was run against the added
+  read. The scale seed and `PERF_COACH_ID` fixture (`docs/perf-baseline.md`) are available if you
+  want it exercised under concurrency.
+
+**Test results** — all four gates green.
+
+- `npx tsc --noEmit` — clean
+- `npx eslint .` — 0 errors (204 pre-existing warnings, unchanged from the Phase 3 baseline)
+- `npx vitest run` — 290 files, 3207 tests, all passing (baseline was 289 / 3182)
+- `npm run check:labels` — OK, 682 files scanned
+- `npm run check:rls` — 42/42 tables with RLS, invariants hold
+- `grep` on the 14 changed code files — no `as any`, no TODO/FIXME/HACK/DEBUG, no `console.log`
+
+**New coverage (+25).** `training-event-occupancy.test.ts` (+14): the assertion naming the day, the
+earliest occurrence winning, all four non-scheduled statuses refusing, the read staying
+status-agnostic, all-scheduled and no-events passing, a read failure throwing loudly and NOT as a
+`SessionLoggedError` — plus `getSessionEventLinks`' two relocated tests. `training-session-service.test.ts` (+3): the clone
+refusing with nothing inserted, still cloning against a scheduled event, and a foreign session
+reading as not found. `training-session-replace-service.test.ts` (+2, 4 reworked): the replace
+refusing with `bulkReplaceExercises` never called, and still replacing against scheduled events.
+`…/sessions/[sessionId]/route.test.ts` (+1): the PUT's 409. `…/clone/route.test.ts` (NEW, 6): the
+clone route's first coverage — 409, happy path, generic-500 non-leak, 403, 404, 400.
+`placed-session-editor.test.tsx` (+3): a logged day read-only with Save gone, a scheduled day locked
+by a logged sibling naming the sibling's date, and a locked close writing nothing.
+
+**Mutation-tested.** Six, each restored from a scratchpad copy and `diff`-verified byte-identical
+afterwards, with the full suite re-run green:
+
+1. Flipping the predicate to `=== "scheduled"` → **16 failures** across all three service suites.
+2. Dropping the call from `cloneSessionForEvent` → 3 failures.
+3. Dropping the call from `replaceSessionFull` → 6 failures.
+4. Forcing the tray's `isLocked` to false → 3 failures, and only the three lock tests.
+5. Narrowing `getSessionEventLinks` to `status = 'scheduled'` → 1 failure, the status-agnostic
+   guard. This is the mutation a sweeper deleting the vestigial scope dialog would plausibly make.
+6. (Phase 3 leftover, below) removing the drop-continuation blanking → 1 failure.
+
+**Phase 3 leftover, folded in.** `session-log-detail-dialog.test.tsx`'s "flattens a drop set into its
+sibling rows" now asserts the **Set column is empty on the two drop-continuation rows** and carries
+the parent's number on the top set. `buildSetDisplayNumbers` returns the PARENT's number for a
+continuation and leaves blanking to each renderer, so the Phase 3 extraction does not guarantee it —
+mutation 5 proves the assertion bites.
+
+**Browser smoke OWED.** The gates above prove the contract through jsdom only. Not yet
+pixel-confirmed: the locked tray's read-only body, the lock line's wording and date, Save being
+absent rather than dead, and that "Save to library" and "Edit whole plan" still work from a locked
+panel.
