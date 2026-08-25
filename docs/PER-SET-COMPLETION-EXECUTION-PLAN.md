@@ -506,3 +506,59 @@ afterwards, with the full suite re-run green:
 
 **Browser smoke OWED.** The gates above prove the contract through jsdom only. The owner runs browser
 smokes; this one has not been run.
+
+
+#### Phase 3 follow-ups — SHIPPED (2026-08-25)
+
+The owner's browser smoke found seven things. Two were confirmed correct and left alone; four shipped
+as separate commits; one was recorded as a deliberate non-change.
+
+**Confirmed correct, no change.** AMRAP sets and drop sub-sets already count as working sets on both
+the client's outcome line and the server's `completion_quality` (`summariseCompletion` excludes
+`warmup` and nothing else) — the expectation and the code already agreed. And the reported "drop
+sub-set reps missing from the coach readout" was **not a readout bug**: a live probe showed
+`set_logs.reps` genuinely NULL on those rows while weight and RPE were recorded. The readout was
+telling the truth; the cause was the placeholder collision below.
+
+**`fbc0e2a` — rest fires after a drop set.** `rest_seconds` lives on the parent spec and drop
+children carry null, so reading `rows[i].restSeconds` lost the interval after every drop set in the
+app. `restAfterRow` owns the boundary question. The value is NOT relocated onto the last child:
+`restSeconds` stays a faithful projection because a coach readout asks what a SET prescribes while a
+client asks what follows a ROW.
+
+**`160b423` — AMRAP and to-failure prescribe no rep count.** Switching a set's type left
+`reps_min`/`reps_max` behind, so the coach saw an empty "AMRAP" box while the client saw "7-11".
+11,011 specs were in that state. Fixed as a READ rule in `buildPrescribedRows`, not a write-side
+clear — clearing destroys a coach's rep scheme on a mis-click and could never cover the assistant,
+which authors these fields too. The read rule fixes all 11k rows with no backfill and no migration.
+
+**`ec13010` — a drop set's load is expressed in its parent's type.** A "% 1RM" set's drops still
+asked for kilograms, because the model had no per-drop load type at all. The type belongs to the SET
+(mixing units inside one drop set is not a performable prescription, so a per-drop type would have
+made an invalid state representable). Both editors now share one `LoadValueInput`, which is what
+makes it structural — it also closed a latent unit bug where a percentage would have been converted
+as pounds, and gave drop values the parent's disabled-until-a-type-is-chosen rule.
+
+**`6a34962` — entered values stop looking like placeholders; full-word set tags.** A banked row
+rendered its values in the Input primitive's own placeholder colour, so a typed number and an empty
+box were pixel-identical in both directions. That is what made a client believe they had logged reps
+they had not. Rule recorded: placeholder tone and value tone must never resolve to the same token.
+
+**Deliberate non-changes.**
+- **Per-exercise collapse on the client, collapsed by default** — not done. It is the harness, RN
+  owns that interaction, and it would reverse Phase 2's decision (a collapsed list plus one button
+  meant a client who did the whole workout tapped Complete and recorded `skipped`). The owner's
+  reasoning is captured as design input for RN: collapse per exercise AND keep the outcome line
+  prominent.
+- **`prescribed_fields` excluding reps on an exercise containing an AMRAP set** leaves the client
+  unable to record the one number an AMRAP exists to capture. Owner decision, 2026-08-25: coach
+  error, correct behaviour stands, no guard.
+- **`SetSpec.reps_target` retirement** → `docs/DEAD-CODE-SWEEP.md` seed item 4, with the
+  name-collision trap written down.
+
+**Gates:** all four green on every commit. Mutation-tested: the rest walk-back, the AMRAP type check,
+the drop load-type inheritance and the percentage commit branch — each restored from a scratchpad
+copy and `diff`-verified byte-identical. `set-tracker.test.tsx` flaked once in a full run
+(`[delete-exercise]`); 3 isolated and 2 further full runs green.
+
+**Browser smoke OWED** on all four.
