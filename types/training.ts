@@ -383,6 +383,34 @@ export type ExerciseLog = {
   updatedAt: string;
 };
 
+// One exercise of the PERFORMED session's live prescription, returned alongside
+// a session log so the coach's readout can show an exercise the client never
+// touched. Such an exercise is absent from exercise_logs entirely (the log
+// payload omits it), so without this the coach had no way to see it was asked
+// for. `snapshot` is the same snake_case shape ExerciseLog.prescribedExerciseSnapshot
+// carries, so both go through one expansion.
+export type SessionLogPrescribedExercise = {
+  trainingExerciseId: string;
+  orderIndex: number;
+  name: string;
+  snapshot: Record<string, unknown>;
+};
+
+// The coach's logged-workout detail payload (GET
+// /api/clients/[id]/training/session-logs/[sessionLogId]).
+export type SessionLogDetail = {
+  sessionLog: SessionLog;
+  exerciseLogs: ExerciseLog[];
+  /** Live name of the session PERFORMED; null if it was hard-deleted. */
+  performedSessionName: string | null;
+  /**
+   * The performed session's active exercises, in authored order. Empty when the
+   * log has no training_session_id (legacy, or the session was deleted), and the
+   * readout then falls back to the logs alone.
+   */
+  prescribedExercises: SessionLogPrescribedExercise[];
+};
+
 // Resolved session/exercise carries a discriminator so consumers know whether
 // the row came from a live FK reference or the snapshot fallback. After plan
 // edits or session deletions, the live ref may be null while the snapshot

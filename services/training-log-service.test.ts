@@ -43,6 +43,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import {
   logTrainingEvent,
   getTrainingEventDetail,
+  getSessionLogDetail,
   logTrainingSessionForDate,
 } from "./training-log-service";
 
@@ -2456,5 +2457,220 @@ describe("mapExerciseRow is the shared mapper, not a lossy local copy", () => {
     expect(mapped.setSpecs?.[0].load_value).toBe(100);
     expect(mapped.setSpecs?.[0].load_type).toBe("absolute");
     expect(mapped.videoUrl).toBe("https://example.test/squat");
+  });
+});
+
+
+// ===========================================================================
+// getSessionLogDetail — the coach's logged-workout readout
+// ===========================================================================
+
+describe("getSessionLogDetail", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const SESSION_LOG_ROW = {
+    id: SESSION_LOG_ID,
+    client_id: CLIENT_ID,
+    training_session_id: SESSION_ID,
+    training_event_id: EVENT_ID,
+    completed_at: "2026-08-24",
+    completion_quality: "partial",
+    notes: null,
+    week_start_date: "2026-08-24",
+    prescribed_session_snapshot: { name: "Push Day" },
+    created_at: "2026-08-24T09:00:00Z",
+    updated_at: "2026-08-24T09:00:00Z",
+  };
+
+  function prescriptionRow(over: { id: string; name: string; order_index: number }) {
+    return {
+      sets: 3,
+      reps_min: 8,
+      reps_max: 12,
+      reps_target: null,
+      rpe_target: 8,
+      percentage_1rm: null,
+      tempo: null,
+      rest_seconds: 90,
+      notes: null,
+      superset_group: null,
+      is_warmup: false,
+      set_specs: null,
+      prescribed_fields: null,
+      ...over,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // The merge: an exercise the client never touched still reaches the coach.
+  // -------------------------------------------------------------------------
+  it("[SLD-1] returns the performed session's prescription in authored order", async () => {
+    installRouter({
+      session_logs: createMockQuery({ data: SESSION_LOG_ROW, error: null }),
+      exercise_logs: createMockQuery({
+        data: [
+          {
+            id: "el-1",
+            session_log_id: SESSION_LOG_ID,
+            training_exercise_id: "ex-a",
+            exercise_id: null,
+            completed: true,
+            notes: null,
+            performed_name: "Bench Press",
+            prescribed_exercise_snapshot: { name: "Bench Press", sets: 3 },
+            created_at: "2026-08-24T09:00:00Z",
+            updated_at: "2026-08-24T09:00:00Z",
+          },
+        ],
+        error: null,
+      }),
+      set_logs: createMockQuery({
+        data: [
+          {
+            id: "sl-1",
+            exercise_log_id: "el-1",
+            set_number: 1,
+            set_type: "working",
+            reps: 10,
+            weight: 60,
+            rpe: null,
+            created_at: "2026-08-24T09:00:00Z",
+            updated_at: "2026-08-24T09:00:00Z",
+          },
+        ],
+        error: null,
+      }),
+      training_sessions: createMockQuery({ data: { name: "Push Day" }, error: null }),
+      training_exercises: createMockQuery({
+        data: [
+          prescriptionRow({ id: "ex-a", name: "Bench Press", order_index: 0 }),
+          prescriptionRow({ id: "ex-b", name: "Overhead Press", order_index: 1 }),
+        ],
+        error: null,
+      }),
+    });
+
+    const result = await getSessionLogDetail(SESSION_LOG_ID);
+
+    expect(result).not.toBeNull();
+    // ex-b was prescribed and never logged — it is absent from exercise_logs
+    // entirely, so without this read the coach could not see it was asked for.
+    expect(result?.prescribedExercises.map((p) => p.trainingExerciseId)).toEqual([
+      "ex-a",
+      "ex-b",
+    ]);
+    expect(result?.prescribedExercises[1].name).toBe("Overhead Press");
+    expect(result?.prescribedExercises[1].orderIndex).toBe(1);
+    // The snapshot is the same snake_case shape a log carries, so both expand
+    // through one function.
+    expect(result?.prescribedExercises[1].snapshot).toMatchObject({
+      name: "Overhead Press",
+      sets: 3,
+      reps_min: 8,
+      reps_max: 12,
+    });
+    expect(result?.exerciseLogs).toHaveLength(1);
+    expect(result?.exerciseLogs[0].sets).toHaveLength(1);
+    expect(result?.performedSessionName).toBe("Push Day");
+  });
+
+  // -------------------------------------------------------------------------
+  // No performed session → no prescription read at all.
+  // -------------------------------------------------------------------------
+  it("[SLD-2] skips the prescription read when the log has no session", async () => {
+    const trainingExercisesQ = createMockQuery({ data: [], error: null });
+    const trainingSessionsQ = createMockQuery({ data: null, error: null });
+    installRouter({
+      session_logs: createMockQuery({
+        data: { ...SESSION_LOG_ROW, training_session_id: null },
+        error: null,
+      }),
+      exercise_logs: createMockQuery({ data: [], error: null }),
+      training_sessions: trainingSessionsQ,
+      training_exercises: trainingExercisesQ,
+    });
+
+    const result = await getSessionLogDetail(SESSION_LOG_ID);
+
+    expect(result?.prescribedExercises).toEqual([]);
+    expect(result?.performedSessionName).toBeNull();
+    expect(trainingExercisesQ.select).not.toHaveBeenCalled();
+    expect(trainingSessionsQ.select).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // A log whose exercise the coach has since soft-deleted is still returned:
+  // the live prescription read filters is_active, the log does not.
+  // -------------------------------------------------------------------------
+  it("[SLD-3] keeps a log whose exercise is no longer in the prescription", async () => {
+    installRouter({
+      session_logs: createMockQuery({ data: SESSION_LOG_ROW, error: null }),
+      exercise_logs: createMockQuery({
+        data: [
+          {
+            id: "el-9",
+            session_log_id: SESSION_LOG_ID,
+            training_exercise_id: "ex-gone",
+            exercise_id: null,
+            completed: true,
+            notes: null,
+            performed_name: "Retired Lift",
+            prescribed_exercise_snapshot: { name: "Retired Lift", sets: 2 },
+            created_at: "2026-08-24T09:00:00Z",
+            updated_at: "2026-08-24T09:00:00Z",
+          },
+        ],
+        error: null,
+      }),
+      set_logs: createMockQuery({ data: [], error: null }),
+      training_sessions: createMockQuery({ data: { name: "Push Day" }, error: null }),
+      training_exercises: createMockQuery({
+        data: [prescriptionRow({ id: "ex-a", name: "Bench Press", order_index: 0 })],
+        error: null,
+      }),
+    });
+
+    const result = await getSessionLogDetail(SESSION_LOG_ID);
+
+    expect(result?.prescribedExercises.map((p) => p.trainingExerciseId)).toEqual([
+      "ex-a",
+    ]);
+    expect(result?.exerciseLogs.map((l) => l.trainingExerciseId)).toEqual(["ex-gone"]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Tenant scope: the prescription read is keyed on the LOG's own client_id.
+  // The route proves that client against the URL before returning anything.
+  // -------------------------------------------------------------------------
+  it("[SLD-4] scopes the prescription read to the log's own client", async () => {
+    const trainingExercisesQ = createMockQuery({ data: [], error: null });
+    installRouter({
+      session_logs: createMockQuery({ data: SESSION_LOG_ROW, error: null }),
+      exercise_logs: createMockQuery({ data: [], error: null }),
+      training_sessions: createMockQuery({ data: { name: "Push Day" }, error: null }),
+      training_exercises: trainingExercisesQ,
+    });
+
+    await getSessionLogDetail(SESSION_LOG_ID);
+
+    expect(trainingExercisesQ.eq).toHaveBeenCalledWith("session_id", SESSION_ID);
+    expect(trainingExercisesQ.eq).toHaveBeenCalledWith("is_active", true);
+    expect(trainingExercisesQ.eq).toHaveBeenCalledWith(
+      "training_sessions.training_plans.client_id",
+      CLIENT_ID,
+    );
+    expect(trainingExercisesQ.order).toHaveBeenCalledWith("order_index", {
+      ascending: true,
+    });
+  });
+
+  it("[SLD-5] returns null for a session log that does not exist", async () => {
+    installRouter({
+      session_logs: createMockQuery({ data: null, error: null }),
+    });
+
+    expect(await getSessionLogDetail(SESSION_LOG_ID)).toBeNull();
   });
 });

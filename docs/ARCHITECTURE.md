@@ -359,6 +359,44 @@ training_logs            -- did the client train today? (1:1 per day, child of d
 - `completed_at` is the **attribution date** — `event.date` for event-keyed logs (NOT the entry day), the logged date for event-less. A late backfill therefore attributes to the prescribed day.
 - `session_logs.training_session_id` holds the **performed** session. `prescribed_session_snapshot` captures the **prescribed** session (the event's session for matched logs; the chosen session for unmatched extras). Both SET NULL on delete; history preserved via the snapshot JSONB.
 
+### The coach's logged-workout readout
+
+`GET /api/clients/[id]/training/session-logs/[sessionLogId]` → `getSessionLogDetail` →
+`components/clients/training/session-log-detail-dialog.tsx` + `session-log-exercise-card.tsx`. The
+coach-side twin of the client's log form, and it obeys one inversion: **the PRESCRIPTION drives the
+row list, not the log.**
+
+- **Rows come from `buildPrescribedRows(snapshotToSpecs(snapshot))`** — the same flattening kernel
+  the client grid and the `set_logs.set_type` stamping use, reached through the shared
+  `snapshotToSpecs` (`utils/exercise-set-specs.ts`). A readout that flattened differently would show
+  a coach a row beside a spec it was not typed against. The pairing itself is
+  `buildLoggedSetRows` (`utils/logged-set-rows.ts`), and set display numbers come from
+  `buildSetDisplayNumbers` (`utils/set-spec-rows.ts`), shared with the client grid for the same
+  reason.
+- **Alignment is by `set_logs.set_number`, a 1-BASED INDEX into the flattened list** — not the
+  coach's set number, which drop children repeat. A prescribed set with no logged row renders **not
+  done**; a logged set past the prescription is kept (the client appended rows, or the coach shrank
+  the prescription afterwards), sized `max(prescribed, highest logged)` and capped at
+  `MAX_PRESCRIBED_ROWS` — the same rule the client's reopen path uses.
+- **A tick and a blank are different states.** A logged row with all three values null is
+  "did the set, recorded no numbers" and renders as logged-with-dashes; only a *missing* row reads
+  as not done. Collapsing the two would erase per-set completion's locked decision 3.
+- **`prescribedExercises` is on the wire for a reason.** An exercise the client never touched is
+  absent from `exercise_logs` entirely, so the readout would silently omit it. `getSessionLogDetail`
+  reads the PERFORMED session's active exercises — the same `loadSessionPrescription` the
+  `completion_quality` denominator uses, so the readout and the recorded verdict describe one
+  prescription — in `order_index` order, issued in a `Promise.all` with the performed-session-name
+  read so it costs no extra round trip. Empty when the log has no `training_session_id`.
+- **Warm-ups are shown and never scored**: tagged `W`, values muted, tick muted. Set types render as
+  single-letter tags (`W`/`D`/`A`/`F`, working untagged) and drop sets as their flattened sibling
+  rows, matching what the client logged against.
+- **Columns follow the DATA, not `prescribed_fields`.** A historical readout must never hide
+  something actually recorded, and every snapshot written before migration 149 carries no field list.
+- Two things were deliberately **removed** when this shipped: a "Prescribed 3x8-12" chip built from
+  the compact snapshot columns (which cannot express warm-ups, per-set loads, drop sets or AMRAP —
+  the exact lossiness `set_specs` exists to fix), and an "Incomplete" badge off the vestigial
+  `exercise_logs.completed`. Do not reintroduce either; the per-set rows state both precisely.
+
 ### Alternative-session logging (Session 5.3/5.4)
 - A client can log a **different** session than prescribed (planned-day swap) or train on a **rest day** (event-less). Event-less writes go through `POST /api/client/training/session-logs` → `logTrainingSessionForDate`, which is idempotent on `(client, performed session, completed_at::date)` (range-matched) **before** running the matcher, killing retry/double-tap and matched-then-retried phantom dupes.
 - **Matcher** (`findMatchingEvent`): links an event-less log to a prescribed event among unlinked events (`session_log_id IS NULL AND status IN scheduled/missed/skipped`) in the log's week — priority (1) same `training_session_id`, earliest date; (2) same date as the log, any session; (3) none. Deterministic tie-break: earliest date, then `created_at`.

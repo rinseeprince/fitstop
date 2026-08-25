@@ -21,8 +21,7 @@ import type {
   TrainingExerciseRow,
 } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
-import { expandSetSpecs } from "@/utils/exercise-set-specs";
-import type { SetSpec, SetType } from "@/utils/exercise-set-specs";
+import type { SetType } from "@/utils/exercise-set-specs";
 import type {
   LogSessionForDateInput,
   LogTrainingEventInput,
@@ -46,6 +45,8 @@ import type {
   ResolvedExercise,
   ResolvedSession,
   SessionLog,
+  SessionLogDetail,
+  SessionLogPrescribedExercise,
   SetLog,
   TrainingEvent,
   TrainingEventDetail,
@@ -65,6 +66,10 @@ import { mapExerciseRow } from "@/services/training-mappers";
 // function, so a drop set's expansion cannot differ between what the client
 // filled in and what set_type each row is stamped with here.
 import { buildPrescribedRows, type PrescribedRow } from "@/utils/set-spec-rows";
+// The snapshot -> specs adapter, shared with the coach's session-log dialog so
+// the readout of a log can never describe a different prescription from the one
+// its set types were stamped against.
+import { snapshotToSpecs } from "@/utils/exercise-set-specs";
 import {
   deriveCompletionQuality,
   type ScoredExercise,
@@ -169,6 +174,11 @@ function mapSetLogRow(row: SetLogRow): SetLog {
 type PrescriptionRow = {
   id: string;
   name: string;
+  // Read for the coach's session-log readout, which lists a session's exercises
+  // in the order they were authored. Deliberately NOT carried into
+  // toExerciseSnapshot: that shape is written to prescribed_exercise_snapshot,
+  // and adding a key there would change stored data.
+  order_index: number;
   sets: number;
   reps_min: number | null;
   reps_max: number | null;
@@ -185,8 +195,9 @@ type PrescriptionRow = {
 };
 
 const PRESCRIPTION_COLUMNS =
-  "id, name, sets, reps_min, reps_max, reps_target, rpe_target, percentage_1rm, " +
-  "tempo, rest_seconds, notes, superset_group, is_warmup, set_specs, prescribed_fields";
+  "id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, " +
+  "percentage_1rm, tempo, rest_seconds, notes, superset_group, is_warmup, " +
+  "set_specs, prescribed_fields";
 
 // The tenant scope for both reads: exercise -> session -> plan -> client_id.
 // `!inner` filters out anything this client does not own, so a body-supplied
@@ -270,31 +281,16 @@ async function loadSessionPrescription(
     .select(PRESCRIPTION_COLUMNS + PRESCRIPTION_SCOPE)
     .eq("session_id", sessionId)
     .eq("is_active", true)
-    .eq("training_sessions.training_plans.client_id", clientId);
+    .eq("training_sessions.training_plans.client_id", clientId)
+    // Authored order, for the coach readout. The completion-quality derivation
+    // below reads this through a Map and does not care about order.
+    .order("order_index", { ascending: true });
   if (error) {
     throw new Error(
       `Failed to load session prescription: ${error.message}`,
     );
   }
   return (data ?? []).map((row) => row as unknown as PrescriptionRow);
-}
-
-// Expand a prescribed exercise snapshot (fresh ExerciseSnapshot or a preserved
-// JSON record — both snake_case) into per-set specs, so each logged set can be
-// stamped with the coach-prescribed set_type (never chosen by the client).
-function snapshotToSpecs(snap: Record<string, unknown> | null): SetSpec[] {
-  if (!snap) return [];
-  return expandSetSpecs({
-    setSpecs: (snap.set_specs as SetSpec[] | null) ?? null,
-    sets: typeof snap.sets === "number" ? snap.sets : 1,
-    repsMin: (snap.reps_min as number | null) ?? null,
-    repsMax: (snap.reps_max as number | null) ?? null,
-    repsTarget: (snap.reps_target as string | null) ?? null,
-    rpeTarget: (snap.rpe_target as number | null) ?? null,
-    percentage1rm: (snap.percentage_1rm as number | null) ?? null,
-    tempo: (snap.tempo as string | null) ?? null,
-    restSeconds: (snap.rest_seconds as number | null) ?? null,
-  });
 }
 
 // Fetches set_logs for the given exercise_logs in one query and attaches them
@@ -1066,11 +1062,7 @@ export async function getTrainingEventDetail(
 
 export async function getSessionLogDetail(
   sessionLogId: string,
-): Promise<{
-  sessionLog: SessionLog;
-  exerciseLogs: ExerciseLog[];
-  performedSessionName: string | null;
-} | null> {
+): Promise<SessionLogDetail | null> {
   const { data: row, error: logErr } = await supabaseAdmin
     .from("session_logs")
     .select("*")
@@ -1094,28 +1086,53 @@ export async function getSessionLogDetail(
     (exerciseRows ?? []).map((r) => mapExerciseLogRow(r as ExerciseLogRow)),
   );
 
-  // The live name of the session the client actually PERFORMED (the log's
-  // training_session_id). The coach dialog renders a session-level
-  // "Prescribed X · Performed Y" line when this differs from the prescribed
-  // snapshot name. Null if the performed session was hard-deleted.
-  let performedSessionName: string | null = null;
-  if (row.training_session_id) {
-    const { data: sessionRow, error: sessionErr } = await supabaseAdmin
-      .from("training_sessions")
-      .select("name")
-      .eq("id", row.training_session_id)
-      .maybeSingle();
-    if (sessionErr) {
-      throw new Error(
-        `Failed to load performed session name: ${sessionErr.message}`,
-      );
-    }
-    performedSessionName = sessionRow?.name ?? null;
+  // Two reads of the PERFORMED session (the log's training_session_id), issued
+  // together because neither depends on the other:
+  //
+  //  - its live name, for the session-level "Prescribed X · Performed Y" line.
+  //    Null if the session was hard-deleted.
+  //  - its full active prescription, so an exercise the client never touched
+  //    still reaches the coach. Such an exercise is absent from exercise_logs
+  //    entirely — the payload omits it — so a readout built from the logs alone
+  //    cannot show that it was ever asked for.
+  //
+  // The prescription read is the same one the completion_quality denominator
+  // uses (loadSessionPrescription), keyed on the same session, so the coach's
+  // readout and the client's recorded verdict describe one prescription.
+  //
+  // Scope comes from the log row's own client_id. The route proves the caller
+  // owns that client by matching it against the URL before returning anything.
+  const [sessionRowResult, prescriptionRows] = await Promise.all([
+    row.training_session_id
+      ? supabaseAdmin
+          .from("training_sessions")
+          .select("name")
+          .eq("id", row.training_session_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    row.training_session_id
+      ? loadSessionPrescription(row.client_id, row.training_session_id)
+      : Promise.resolve<PrescriptionRow[]>([]),
+  ]);
+  if (sessionRowResult.error) {
+    throw new Error(
+      `Failed to load performed session name: ${sessionRowResult.error.message}`,
+    );
   }
+  const performedSessionName: string | null = sessionRowResult.data?.name ?? null;
+
+  const prescribedExercises: SessionLogPrescribedExercise[] =
+    prescriptionRows.map((prescriptionRow) => ({
+      trainingExerciseId: prescriptionRow.id,
+      orderIndex: prescriptionRow.order_index,
+      name: prescriptionRow.name,
+      snapshot: toExerciseSnapshot(prescriptionRow),
+    }));
 
   return {
     sessionLog: mapSessionLogRow(row as SessionLogRow),
     exerciseLogs,
     performedSessionName,
+    prescribedExercises,
   };
 }

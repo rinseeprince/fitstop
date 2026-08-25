@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import useSWR from "swr";
 import {
   Dialog,
@@ -13,12 +14,18 @@ import { cn } from "@/lib/utils";
 import {
   LABEL_CLASS,
   MONO,
-  MONO_LABEL_CLASS,
+  TEXT_MUTED,
+  TEXT_PRIMARY,
+  TEXT_SECONDARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import type { SessionLog, ExerciseLog } from "@/types/training";
-import { useUnits } from "@/contexts/units-context";
-import { formatLoad } from "@/utils/unit-conversions";
+import type {
+  ExerciseLog,
+  SessionLog,
+  SessionLogDetail,
+  SessionLogPrescribedExercise,
+} from "@/types/training";
+import { SessionLogExerciseCard } from "./session-log-exercise-card";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,11 +41,14 @@ type SessionLogDetailDialogProps = {
 
 type SessionLogDetailResponse = {
   success: boolean;
-  data: {
-    sessionLog: SessionLog;
-    exerciseLogs: ExerciseLog[];
-    performedSessionName: string | null;
-  };
+  data: SessionLogDetail;
+};
+
+/** One row of the body: a prescribed exercise, its log, or both. */
+type ExerciseEntry = {
+  key: string;
+  prescribed: SessionLogPrescribedExercise | null;
+  log: ExerciseLog | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -60,12 +70,12 @@ function qualityLabel(quality: SessionLog["completionQuality"]) {
     case "full":
       return (
         <span className="text-[#0d9488]">
-          <Check className="inline h-3 w-3 -mt-px mr-0.5" />
+          <Check className="-mt-px mr-0.5 inline h-3 w-3" />
           Completed
         </span>
       );
     case "partial":
-      return <span className="text-amber-600">Partial</span>;
+      return <span className="text-[#d97706]">Partial</span>;
     case "skipped":
       return <span className="text-[#c06060]">Missed</span>;
     default:
@@ -85,169 +95,49 @@ function snapshotNumber(snapshot: Record<string, unknown> | null, key: string): 
   return typeof val === "number" ? val : null;
 }
 
-/** RPE colour based on deviation from prescribed target. */
-function rpeColor(actual: number, prescribedRpe: number | null): string {
-  if (prescribedRpe == null) return "text-[#0c1a1e]";
-  const diff = actual - prescribedRpe;
-  if (diff >= 2) return "text-[#c06060] font-semibold";
-  if (diff >= 1) return "text-amber-600";
-  return "text-[#0c1a1e]";
-}
-
-// ---------------------------------------------------------------------------
-// ExerciseLogCard
-// ---------------------------------------------------------------------------
-
-function ExerciseLogCard({
-  log,
-  onExerciseDrillDown,
-}: {
-  log: ExerciseLog;
-  onExerciseDrillDown?: (exerciseId: string | null, exerciseName: string) => void;
-}) {
-  const { preference } = useUnits();
-  const snapshot = log.prescribedExerciseSnapshot;
-  const prescribedName = snapshotString(snapshot, "name");
-  const displayName = log.performedName ?? prescribedName ?? "Unknown exercise";
-
-  const wasSwapped =
-    log.performedName != null &&
-    prescribedName != null &&
-    log.performedName !== prescribedName;
-
-  // Prescribed reference from snapshot
-  const prescribedSets = snapshotNumber(snapshot, "sets");
-  const prescribedRepsMin = snapshotNumber(snapshot, "reps_min");
-  const prescribedRepsMax = snapshotNumber(snapshot, "reps_max");
-  const prescribedRepsTarget = snapshotString(snapshot, "reps_target");
-  const prescribedRpe = snapshotNumber(snapshot, "rpe_target");
-
-  let prescribedRepsLabel: string | null = null;
-  if (prescribedRepsTarget) {
-    prescribedRepsLabel = prescribedRepsTarget;
-  } else if (prescribedRepsMin != null && prescribedRepsMax != null) {
-    prescribedRepsLabel =
-      prescribedRepsMin === prescribedRepsMax
-        ? `${prescribedRepsMin}`
-        : `${prescribedRepsMin} to ${prescribedRepsMax}`;
-  } else if (prescribedRepsMin != null) {
-    prescribedRepsLabel = `${prescribedRepsMin}`;
+/**
+ * The body's exercise list: the session's prescription in authored order, each
+ * with its log if the client touched it, then anything logged that the
+ * prescription no longer contains.
+ *
+ * The order mirrors the client's own log form (`seedDefaultValues`), so the
+ * coach reads the session in the order the client worked through it. A
+ * prescribed exercise with no log renders fully not-done rather than vanishing,
+ * which is the whole reason the route returns the prescription at all.
+ *
+ * The trailing group covers three real cases: an unplanned exercise the client
+ * added, a free-form entry with no `training_exercise_id`, and a prescribed one
+ * the coach has since soft-deleted (absent from the live read, but its log and
+ * snapshot survive).
+ */
+function buildExerciseEntries(
+  prescribedExercises: SessionLogPrescribedExercise[],
+  exerciseLogs: ExerciseLog[],
+): ExerciseEntry[] {
+  const logsByExerciseId = new Map<string, ExerciseLog>();
+  for (const log of exerciseLogs) {
+    if (log.trainingExerciseId !== null) {
+      logsByExerciseId.set(log.trainingExerciseId, log);
+    }
   }
 
-  const prescribedParts = [
-    prescribedSets != null && prescribedRepsLabel
-      ? `${prescribedSets}x${prescribedRepsLabel}`
-      : prescribedSets != null
-        ? `${prescribedSets} sets`
-        : null,
-    prescribedRpe != null ? `RPE ${prescribedRpe}` : null,
-  ].filter(Boolean);
+  const entries: ExerciseEntry[] = prescribedExercises.map((prescribed) => ({
+    key: prescribed.trainingExerciseId,
+    prescribed,
+    log: logsByExerciseId.get(prescribed.trainingExerciseId) ?? null,
+  }));
 
-  // log.weightUnit is a mapper constant ("kg" from training-log-service.ts), not
-  // the viewer's preference — Batch F deletes it. Logged loads are read-only, so
-  // formatLoad is correct here (it snaps an imperial conversion to a loadable
-  // 5 lb increment).
-  const weightHeader = `Weight (${formatLoad(0, preference).unit})`;
-
-  return (
-    <div className="border border-[rgba(13,148,136,0.08)] rounded-[6px] overflow-hidden">
-      {/* Card header: name left, prescribed right */}
-      <div className="flex items-baseline justify-between px-4 pt-3 pb-2">
-        <div>
-          <button
-            type="button"
-            onClick={() => onExerciseDrillDown?.(log.exerciseId ?? null, displayName)}
-            className={cn(
-              "text-[14px] font-semibold text-[#0c1a1e] text-left",
-              onExerciseDrillDown && "hover:text-[#0d9488] cursor-pointer transition-colors",
-            )}
-          >
-            {displayName}
-          </button>
-          {wasSwapped && (
-            <p className="text-[11px] text-[#93b0b4] mt-0.5">
-              Prescribed {prescribedName} · Performed {log.performedName}
-            </p>
-          )}
-        </div>
-        {prescribedParts.length > 0 && (
-          <p className="text-[11px] text-[#93b0b4] ml-4 whitespace-nowrap shrink-0">
-            <span className="text-[#b8cfd3]">Prescribed</span>{" "}
-            <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[11px]")}>
-              {prescribedParts.join(" @ ")}
-            </span>
-          </p>
-        )}
-      </div>
-
-      {/* Per-set table */}
-      {log.sets.length > 0 && (
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className={cn(LABEL_CLASS, "border-t border-[rgba(13,148,136,0.08)]")}>
-              <th className="text-left font-medium pl-4 pr-2 py-[9px]">Set</th>
-              <th className="text-left font-medium px-2 py-[9px]">Reps</th>
-              <th className="text-left font-medium px-2 py-[9px]">{weightHeader}</th>
-              <th className="text-right font-medium pl-2 pr-4 py-[9px]">RPE</th>
-            </tr>
-          </thead>
-          <tbody>
-            {log.sets
-              .sort((a, b) => a.setNumber - b.setNumber)
-              .map((set) => (
-                <tr
-                  key={set.id}
-                  className="border-t border-[rgba(13,148,136,0.06)]"
-                >
-                  <td className={cn(MONO, "pl-4 pr-2 py-[9px] tabular-nums text-[#93b0b4]")}>
-                    {set.setNumber}
-                  </td>
-                  <td className={cn(MONO, "px-2 py-[9px] tabular-nums text-[#0c1a1e]")}>
-                    {set.reps ?? <span className="text-[#b8cfd3]">—</span>}
-                  </td>
-                  <td className={cn(MONO, "px-2 py-[9px] tabular-nums text-[#0c1a1e]")}>
-                    {set.weight != null ? (
-                      formatLoad(set.weight, preference).value
-                    ) : (
-                      <span className="text-[#b8cfd3]">—</span>
-                    )}
-                  </td>
-                  <td
-                    className={cn(
-                      MONO,
-                      "pl-2 pr-4 py-[9px] tabular-nums text-right",
-                      set.rpe != null ? rpeColor(set.rpe, prescribedRpe) : ""
-                    )}
-                  >
-                    {set.rpe != null ? (
-                      set.rpe
-                    ) : (
-                      <span className="text-[#b8cfd3]">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* Exercise-level notes */}
-      {log.notes && (
-        <div className="px-4 pb-3 pt-1">
-          <p className="text-[11px] text-[#93b0b4] italic">{log.notes}</p>
-        </div>
-      )}
-
-      {/* Incomplete indicator */}
-      {!log.completed && (
-        <div className="px-4 pb-3">
-          <span className="text-[11px] font-medium text-amber-600">
-            Incomplete
-          </span>
-        </div>
-      )}
-    </div>
+  const prescribedIds = new Set(
+    prescribedExercises.map((p) => p.trainingExerciseId),
   );
+  for (const log of exerciseLogs) {
+    if (log.trainingExerciseId !== null && prescribedIds.has(log.trainingExerciseId)) {
+      continue;
+    }
+    entries.push({ key: log.id, prescribed: null, log });
+  }
+
+  return entries;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,30 +167,41 @@ export function SessionLogDetailDialog({
   );
 
   const sessionLog = data?.data?.sessionLog;
-  const exerciseLogs = data?.data?.exerciseLogs ?? [];
+  const exerciseLogs = useMemo(() => data?.data?.exerciseLogs ?? [], [data]);
+  const prescribedExercises = useMemo(
+    () => data?.data?.prescribedExercises ?? [],
+    [data],
+  );
   const performedSessionName: string | null = data?.data?.performedSessionName ?? null;
 
-  const sessionSnapshot = sessionLog?.prescribedSessionSnapshot as Record<string, unknown> | null;
-  const sessionName =
-    snapshotString(sessionSnapshot, "name") ?? "Training Session";
+  const entries = useMemo(
+    () => buildExerciseEntries(prescribedExercises, exerciseLogs),
+    [prescribedExercises, exerciseLogs],
+  );
+
+  const sessionSnapshot = sessionLog?.prescribedSessionSnapshot ?? null;
+  const sessionName = snapshotString(sessionSnapshot, "name") ?? "Training Session";
   const sessionFocus = snapshotString(sessionSnapshot, "focus");
   const estimatedDuration = snapshotNumber(sessionSnapshot, "estimated_duration_minutes");
+  const quality = sessionLog ? qualityLabel(sessionLog.completionQuality) : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto p-0">
+      <DialogContent className="max-h-[85vh] overflow-y-auto p-0 sm:max-w-2xl">
         {/* Header zone */}
-        <DialogHeader className="px-6 pt-6 pb-0 gap-0">
-          <DialogTitle className="text-[20px] font-bold text-[#0c1a1e] leading-tight">
+        <DialogHeader className="gap-0 px-6 pb-0 pt-6">
+          <DialogTitle className={cn("text-[20px] font-bold leading-tight", TEXT_PRIMARY)}>
             {isLoading ? "Loading..." : sessionName}
           </DialogTitle>
           {!isLoading && sessionLog && (
-            <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[13px] mt-2 pb-1")}>
-              {formatDate(sessionLog.completedAt)}
-              {qualityLabel(sessionLog.completionQuality) && (
+            // A sans line: it mixes words ("Completed", the focus) with data, and
+            // mono is numbers only — so only the date and the duration take it.
+            <p className={cn("mt-2 pb-1 text-[13px]", TEXT_SECONDARY)}>
+              <span className={MONO}>{formatDate(sessionLog.completedAt)}</span>
+              {quality && (
                 <>
                   <span className="mx-1.5">·</span>
-                  {qualityLabel(sessionLog.completionQuality)}
+                  {quality}
                 </>
               )}
               {sessionFocus && (
@@ -312,7 +213,7 @@ export function SessionLogDetailDialog({
               {estimatedDuration != null && (
                 <>
                   <span className="mx-1.5">·</span>
-                  ~{estimatedDuration} min
+                  <span className={MONO}>~{estimatedDuration} min</span>
                 </>
               )}
             </p>
@@ -323,11 +224,11 @@ export function SessionLogDetailDialog({
             sessionLog &&
             performedSessionName &&
             performedSessionName !== sessionName && (
-              <p className="text-[13px] mt-1.5">
-                <span className="text-[#93b0b4]">Prescribed </span>
-                <span className="font-medium text-[#0c1a1e]">{sessionName}</span>
-                <span className="text-[#93b0b4]"> · Performed </span>
-                <span className="font-medium text-[#0c1a1e]">
+              <p className="mt-1.5 text-[13px]">
+                <span className={TEXT_MUTED}>Prescribed </span>
+                <span className={cn("font-medium", TEXT_PRIMARY)}>{sessionName}</span>
+                <span className={TEXT_MUTED}> · Performed </span>
+                <span className={cn("font-medium", TEXT_PRIMARY)}>
                   {performedSessionName}
                 </span>
               </p>
@@ -341,7 +242,7 @@ export function SessionLogDetailDialog({
 
         {/* Loading */}
         {isLoading && (
-          <div className="px-6 pb-6 space-y-5 pt-2">
+          <div className="space-y-5 px-6 pb-6 pt-2">
             <Skeleton className="h-4 w-48" />
             <Skeleton className="h-16 w-full" />
             <Skeleton className="h-32 w-full" />
@@ -351,10 +252,8 @@ export function SessionLogDetailDialog({
 
         {/* Error */}
         {!isLoading && (error || (data && !data.success)) && (
-          <div className="flex items-center justify-center py-12 px-6">
-            <p className="text-sm text-[#c06060]">
-              Failed to load session details.
-            </p>
+          <div className="flex items-center justify-center px-6 py-12">
+            <p className="text-sm text-[#c06060]">Failed to load session details.</p>
           </div>
         )}
 
@@ -364,35 +263,36 @@ export function SessionLogDetailDialog({
             {/* Client notes — quoted block */}
             {sessionLog.notes && (
               <div className="mt-3">
-                <p className={cn(LABEL_CLASS, "font-semibold mb-2")}>
-                  Client Notes
-                </p>
-                <div className="bg-[rgba(13,148,136,0.03)] border-l-2 border-[#0d9488] rounded-r-[4px] px-4 py-3">
-                  <p className="text-[13px] text-[#0c1a1e] italic leading-relaxed">
+                <p className={cn(LABEL_CLASS, "mb-2 font-semibold")}>Client Notes</p>
+                <div className="rounded-r-[4px] border-l-2 border-[#0d9488] bg-[rgba(13,148,136,0.03)] px-4 py-3">
+                  <p className={cn("text-[13px] italic leading-relaxed", TEXT_PRIMARY)}>
                     {sessionLog.notes}
                   </p>
                 </div>
               </div>
             )}
 
-            {/* Quick-logged state */}
-            {exerciseLogs.length === 0 && (
-              <div className="mt-[22px] rounded-[6px] bg-[rgba(13,148,136,0.03)] border border-[rgba(13,148,136,0.08)] p-4 text-center">
-                <p className="text-[13px] text-[#93b0b4]">
+            {/* Quick-logged state: nothing prescribed to show, and nothing logged
+                against it. */}
+            {entries.length === 0 && (
+              <div className="mt-[22px] rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[rgba(13,148,136,0.03)] p-4 text-center">
+                <p className={cn("text-[13px]", TEXT_MUTED)}>
                   Client logged this session as complete without per-set detail.
                 </p>
               </div>
             )}
 
-            {/* Detailed / Orphaned state */}
-            {exerciseLogs.length > 0 && (
+            {entries.length > 0 && (
               <div className="mt-[28px]">
-                <p className={cn(LABEL_CLASS, "font-semibold mb-3")}>
-                  Exercises
-                </p>
+                <p className={cn(LABEL_CLASS, "mb-3 font-semibold")}>Exercises</p>
                 <div className="flex flex-col gap-[10px]">
-                  {exerciseLogs.map((log) => (
-                    <ExerciseLogCard key={log.id} log={log} onExerciseDrillDown={onExerciseDrillDown} />
+                  {entries.map((entry) => (
+                    <SessionLogExerciseCard
+                      key={entry.key}
+                      log={entry.log}
+                      prescribed={entry.prescribed}
+                      onExerciseDrillDown={onExerciseDrillDown}
+                    />
                   ))}
                 </div>
               </div>

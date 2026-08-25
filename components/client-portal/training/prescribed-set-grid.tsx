@@ -3,6 +3,7 @@
 import type { UseFormRegister } from "react-hook-form";
 import type { LogFormValues } from "./log-form-types";
 import {
+  buildSetDisplayNumbers,
   isContinuationOfDropSet,
   type PrescribedRow,
 } from "@/utils/set-spec-rows";
@@ -80,18 +81,9 @@ export function PrescribedSetGrid({
 
   // Drop children repeat their top set's number, and a set the client appended
   // past the prescription has none of its own — so the displayed number is a
-  // running count rather than the array index.
-  const displayNumbers: number[] = [];
-  let lastNumber = 0;
-  for (let i = 0; i < rowCount; i++) {
-    const prescribed = rows[i];
-    if (prescribed?.dropIndex != null) {
-      displayNumbers.push(lastNumber);
-      continue;
-    }
-    lastNumber = prescribed?.setNumber ?? lastNumber + 1;
-    displayNumbers.push(lastNumber);
-  }
+  // running count rather than the array index. Shared with the coach's readout
+  // of this log, which has to agree about which row is "set 3".
+  const displayNumbers = buildSetDisplayNumbers(rows, rowCount);
 
   return (
     <div>

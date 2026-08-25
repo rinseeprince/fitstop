@@ -136,6 +136,34 @@ export function expandSetSpecs(ex: {
 }
 
 /**
+ * The snake_case sibling of `expandSetSpecs`: expand a prescribed exercise
+ * SNAPSHOT (a fresh one, or a preserved `prescribed_exercise_snapshot` JSONB
+ * record) into per-set specs. It sits here rather than in its own module because
+ * it asks no new question — a snapshot is a prescription written down at log
+ * time, so this is that function with a key adapter in front of it.
+ *
+ * Every reader of a logged set's prescription goes through it, so the coach's
+ * readout cannot describe a different prescription from the one
+ * `set_logs.set_type` was stamped against.
+ */
+export function snapshotToSpecs(
+  snap: Record<string, unknown> | null,
+): SetSpec[] {
+  if (!snap) return [];
+  return expandSetSpecs({
+    setSpecs: (snap.set_specs as SetSpec[] | null) ?? null,
+    sets: typeof snap.sets === "number" ? snap.sets : 1,
+    repsMin: (snap.reps_min as number | null) ?? null,
+    repsMax: (snap.reps_max as number | null) ?? null,
+    repsTarget: (snap.reps_target as string | null) ?? null,
+    rpeTarget: (snap.rpe_target as number | null) ?? null,
+    percentage1rm: (snap.percentage_1rm as number | null) ?? null,
+    tempo: (snap.tempo as string | null) ?? null,
+    restSeconds: (snap.rest_seconds as number | null) ?? null,
+  });
+}
+
+/**
  * Insert-side projection for an INPUT (authoring) write. Returns the DB column
  * values for the five fields the set model touches: `set_specs` / `video_url` are
  * written verbatim, and the compact `sets` / `reps_min` / `reps_max` are re-derived

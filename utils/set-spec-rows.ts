@@ -105,6 +105,41 @@ export function buildPrescribedRows(specs: SetSpec[]): PrescribedRow[] {
 }
 
 /**
+ * The number shown in each row's Set column.
+ *
+ * Not the array index: a drop child repeats its top set's number, and a set
+ * appended past the prescription has no number of its own, so the column is a
+ * running count. Returns the PARENT's number for a drop continuation — the
+ * blanking is a render decision each grid makes from `dropIndex`, not something
+ * baked in here, so a caller that wants to show `2b` still can.
+ *
+ * `rowCount` is passed separately because the client's log form can be LONGER
+ * than the prescription (the client appends rows, or the coach shrank it after
+ * the fact); rows past `rows.length` keep counting up.
+ *
+ * Shared, for the same reason `buildPrescribedRows` is: the client's log grid
+ * and the coach's readout of that log must agree about which row is "set 3", or
+ * a coach reads a number against the wrong prescription.
+ */
+export function buildSetDisplayNumbers(
+  rows: PrescribedRow[],
+  rowCount: number,
+): number[] {
+  const displayNumbers: number[] = [];
+  let lastNumber = 0;
+  for (let i = 0; i < rowCount; i++) {
+    const prescribed = rows[i];
+    if (prescribed?.dropIndex != null) {
+      displayNumbers.push(lastNumber);
+      continue;
+    }
+    lastNumber = prescribed?.setNumber ?? lastNumber + 1;
+    displayNumbers.push(lastNumber);
+  }
+  return displayNumbers;
+}
+
+/**
  * True when this row and the one before it are drops of the same set, i.e. the
  * rest timer between them must not appear. Named rather than inlined because
  * both the grid and its tests ask the question.

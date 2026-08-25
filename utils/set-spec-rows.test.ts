@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { SetSpec } from "./exercise-set-specs";
 import {
   buildPrescribedRows,
+  buildSetDisplayNumbers,
   formatPrescribedLoad,
   isContinuationOfDropSet,
 } from "./set-spec-rows";
@@ -126,6 +127,42 @@ describe("buildPrescribedRows", () => {
       "drop",
       "failure",
     ]);
+  });
+});
+
+describe("buildSetDisplayNumbers", () => {
+  it("counts primary rows and repeats a drop's parent number", () => {
+    const rows = buildPrescribedRows([
+      spec({ set_number: 1, set_type: "warmup" }),
+      spec({
+        set_number: 2,
+        set_type: "drop",
+        drops: [{ weight: 60, reps: 8 }, { weight: 40, reps: 8 }],
+      }),
+      spec({ set_number: 3 }),
+    ]);
+
+    // Flattened: warmup(1), drop top(2), drop(2), drop(2), working(3).
+    expect(buildSetDisplayNumbers(rows, rows.length)).toEqual([1, 2, 2, 2, 3]);
+  });
+
+  it("keeps counting past the prescription for appended rows", () => {
+    const rows = buildPrescribedRows([spec({ set_number: 1 }), spec({ set_number: 2 })]);
+
+    expect(buildSetDisplayNumbers(rows, 4)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("honours an authored set_number that does not match position", () => {
+    const rows = buildPrescribedRows([
+      spec({ set_number: 5 }),
+      spec({ set_number: 6 }),
+    ]);
+
+    expect(buildSetDisplayNumbers(rows, 2)).toEqual([5, 6]);
+  });
+
+  it("returns nothing for a zero row count", () => {
+    expect(buildSetDisplayNumbers([], 0)).toEqual([]);
   });
 });
 

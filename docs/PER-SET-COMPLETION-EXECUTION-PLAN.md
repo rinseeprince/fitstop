@@ -6,7 +6,7 @@ Rebuild of how a client records a workout and how that record reaches the coach.
 
 > Phase 4 was added on 2026-08-25, out of the Phase 2 review rather than the original brief. It closes a write path that lets a coach change the prescription under a day the client already logged — reachable, and data-corrupting since Phase 1 made `completion_quality` server-derived. (That review also turned up repo-wide refactor residue, which is its own workstream: `docs/DEAD-CODE-SWEEP.md`. It is deliberately NOT a phase here — this file gets deleted once the workstream ships, and a sweep's record of what was kept and why has to outlive it.)
 
-> **STATE (2026-08-25): PHASES 1 AND 2 ARE COMPLETE. Phases 3 and 4 are outstanding.** Phase 1 carried no UI change; Phase 2 was browser-smoked by the owner and confirmed working. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, and every logged set carries its true `set_number` and coach-prescribed `set_type`. What remains is the COACH's view of that record (Phase 3), and the lock that keeps a logged day's prescription from changing underneath it (Phase 4).
+> **STATE (2026-08-25): PHASES 1, 2 AND 3 ARE COMPLETE. Phase 4 is the only one outstanding.** Phase 1 carried no UI change; Phase 2 was browser-smoked by the owner and confirmed working; Phase 3 owes a browser smoke. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, every logged set carries its true `set_number` and coach-prescribed `set_type`, and the coach's readout shows the whole prescription against what was performed. What remains is the lock that keeps a logged day's prescription from changing underneath it (Phase 4).
 
 **Completion protocol (every phase):** at commit time, append a STATUS block to the end of this file — what shipped, commit hash, deviations from this plan, test results. The next session reads it before starting.
 
@@ -165,9 +165,9 @@ Show me your implementation plan first and wait for my approval before writing a
 
 ---
 
-## PHASE 3 — Coach-side logged-workout detail · OUTSTANDING
+## PHASE 3 — Coach-side logged-workout detail · COMPLETE
 
-> The only phase left. Its prerequisites are met: `set_logs.set_number` is real identity and `set_type` is stamped from the prescription, which is what lets this phase align each logged set to the set it was prescribed as.
+> Shipped 2026-08-25. See the Phase 3 STATUS block below.
 
 **Scope:** `components/clients/training/session-log-detail-dialog.tsx`, which is coach-facing and therefore permanent product.
 
@@ -346,3 +346,163 @@ Show me your implementation plan first and wait for my approval before writing a
 **Mutation-tested.** Three separately, each restored from a scratchpad copy and `diff`-verified byte-identical afterwards, with the suite re-run green: sizing `restoreSetsFromLog` to the prescription alone fails "keeps a logged set past the prescription" (`expected length 4, got 3`); dropping the `onBlurRow()` call from `withAutoTick` fails `[auto-tick]` and 9 others; `canRemove={() => true}` fails `[delete-set]` on the prescribed rows' delete buttons reappearing.
 
 **Browser-smoked by the owner, 2026-08-24 — confirmed working.** The gates above prove the contract through jsdom only; this is the pixel-level confirmation they cannot give. Phase 2 is CLOSED.
+
+
+---
+
+### PHASE 3 — SHIPPED (2026-08-25)
+
+**Commit:** `feat(training): coach-side logged-workout detail — per-set completion Phase 3` — the
+single commit this block ships in. (No hash, for the reason Phases 1 and 2 record: a commit cannot
+name itself, and amending one in only orphans the commit it named.
+`git log --oneline --grep "coach-side logged-workout detail"` resolves it.)
+
+**Shipped**
+
+1. **The prescription drives the row list, not the log.** `buildLoggedSetRows`
+   (`utils/logged-set-rows.ts`) pairs the flattened prescription with the sets logged against it.
+   A prescribed set with no logged row renders NOT DONE; a logged set past the prescription is kept,
+   sized `max(prescribed, highest logged)` and capped at `MAX_PRESCRIBED_ROWS` — the same rule and
+   the same reason as Phase 2's `restoreSetsFromLog`.
+2. **One flattening, reached the same way on both sides.** The dialog reads
+   `buildPrescribedRows(snapshotToSpecs(snapshot))` — byte-identical to the service's three call
+   sites.
+3. **Set-type tags** (`W`/`D`/`A`/`F`, working untagged) and the **prescribed Load** cell via the
+   existing `formatPrescribedLoad`: absolute in the VIEWER's unit (`formatLoad`, snapped — this is a
+   read-only readout), `% 1RM` and `% top set` unconverted.
+4. **Drop sets render as flattened sibling rows**, matching what the client logged against.
+5. **Warm-ups shown but unscored** — `W` tag, muted values, muted tick.
+6. **A tick and a blank stay different states.** A logged row with all three values null renders
+   logged-with-dashes; only a missing row reads as not done.
+
+**Deviations from the plan as written** (all four owner-approved before code)
+
+- **An exercise the client never touched is now surfaced, which widened scope past the component.**
+  Such an exercise is absent from `exercise_logs` entirely, so a readout built from the logs alone
+  could not show it was ever asked for — and the phase's definition of done is "the FULL prescription
+  against what was performed". `getSessionLogDetail` now also returns `prescribedExercises`: the
+  PERFORMED session's active exercises in `order_index` order, via the existing private
+  `loadSessionPrescription` — the same reader the `completion_quality` denominator uses, so the
+  readout and the recorded verdict describe one prescription. Issued in a `Promise.all` with the
+  performed-session-name read, so round trips stay at 4. **The route file is untouched**; scope comes
+  from the log row's own `client_id`, which the route already proves against the URL.
+- **The compact-column "Prescribed 3x8-12" chip was DELETED, not replaced.** It read `sets` /
+  `reps_min` / `reps_max` — a projection `compactFromSpecs` derives by counting non-warmup specs and
+  spanning their rep ranges, so a prescription of `warm-up 10 @ 40kg · 5 @ 100kg · 5 @ 100kg · AMRAP
+  12+` rendered as `3x5 to 12`: no warm-up, no load, no AMRAP, and a rep range no set was given. The
+  per-set rows below it now state all of it. Owner chose deletion over a replacement count line, so
+  the card carries no header meta at all and an untouched exercise is signalled purely by its rows.
+- **The "Incomplete" badge was DELETED.** It rendered off `exercise_logs.completed`, which Phase 2
+  redefined to `ex.skipped !== true && ex.sets.length > 0` — and since the web client no longer sends
+  `skipped` and omits a zero-tick exercise entirely, no web-logged session can produce a `false`. It
+  survived only for an RN payload sending `skipped: true`, which now renders as a full prescription
+  with every row not done.
+- **`buildSetDisplayNumbers` was extracted to `utils/set-spec-rows.ts` and the CLIENT grid now
+  imports it** (`prescribed-set-grid.tsx`: a 14-line loop deleted, one call added). This touches
+  `components/client-portal/**`, which the phase prompt forbids — **the owner waived the constraint
+  explicitly** rather than accept a second copy, on the grounds that a second display-number
+  derivation is the same hazard as a second flattening on the feature whose point is that set
+  identity is real. The extracted function returns the PARENT's number for a drop continuation,
+  exactly as the loop did, so the client change is behaviour-identical rather than merely intended to
+  be — mutation-tested below.
+
+**Decisions taken inside the spec**
+
+- **`snapshotToSpecs` moved from `services/training-log-service.ts` (private) into
+  `utils/exercise-set-specs.ts`, beside the `expandSetSpecs` it wraps.** A coach component cannot
+  import the service (it pulls `supabaseAdmin`), and a second copy would let the readout describe a
+  different prescription from the one `set_logs.set_type` was stamped against. It went beside
+  `expandSetSpecs` rather than into a new module because it asks no new question — a snapshot is a
+  prescription written down at log time. The service's three call sites are unchanged.
+- **Column visibility follows the DATA, not `prescribed_fields`.** A historical readout must never
+  hide something actually recorded, and every snapshot written before migration 149 carries no field
+  list, so a fields-gated renderer would fall back to "all five" for exactly the rows it was meant to
+  narrow.
+- **The log's own snapshot beats the live prescription** when both exist: it is what was prescribed
+  AT LOG TIME, which is what a coach reading history wants. The live row is the fallback for an
+  exercise with no log.
+- **Exercise order mirrors `seedDefaultValues`** — prescription first in authored order, then
+  anything logged outside it (unplanned adds, free-form entries, prescriptions the coach has since
+  soft-deleted) — so the coach reads the session in the order the client worked through it.
+
+**Known gaps left open**
+
+- **`utils/exercise-set-specs.ts` is now 206 lines**, past CONVENTIONS §4's 200-line split threshold
+  for utils. Not split here: there is no natural boundary between a function and its adapter. Whoever
+  adds the next thing to that file should split deliberately rather than drift further.
+- **Prescribed rest and tempo are still not rendered.** Neither is in this phase's five items, and
+  rest is not logged, so there is nothing to show it against.
+- **A session log with no `training_session_id`** (legacy, or the session was hard-deleted) gets no
+  prescription read and falls back to the logs alone — the pre-Phase-3 behaviour, which is the best
+  available: nothing records what was prescribed.
+
+**Security, load & performance review** (CONVENTIONS §2 — triggered by a changed read path and ~7
+files touching data flow)
+
+- **No new route, no new write path, no migration.** The only endpoint touched is the existing
+  `GET /api/clients/[id]/training/session-logs/[sessionLogId]`, and its handler file is unchanged.
+- **Auth chain intact** (`route.ts:12-45`): `coachApiRateLimit` → `getAuthenticatedCoachId(request)`
+  (request passed) → `client.coachId !== coachId` ⇒ 403 → `result.sessionLog.clientId !== clientId`
+  ⇒ 404. CSRF is not applicable to a GET.
+- **The new read cannot widen exposure.** `loadSessionPrescription` is scoped by an `!inner` join on
+  `training_sessions.training_plans.client_id`, and the client id it is given is the **log row's
+  own**, never user input. For a foreign `sessionLogId` the service now performs one extra read
+  before the route 404s and discards the response — no data crosses the boundary. That is the same
+  property the pre-existing `performedSessionName` read already had.
+- **`npm run check:rls`** — 42 public tables, 42 with RLS, all schema-security invariants hold. No
+  policy or grant changed.
+- **Round trips are unchanged at 4.** The prescription read is `Promise.all`-ed with the
+  performed-session-name read; both depend only on `training_session_id`. Constant per request, not
+  per row.
+- **The new `ORDER BY` is index-covered, exactly.** `idx_training_exercises_active ON
+  training_exercises(session_id, order_index) WHERE is_active = true`
+  (`055_rename_and_protect_training_history.sql:221`) matches the query's predicate and sort key, so
+  the ordering is an index scan rather than a sort.
+- **Worst-case rows returned**: one session's active exercises — bounded by what a coach authors,
+  realistically well under 30. Not client-scalable data.
+- **No consistency risk**: no write, no swallowed `.catch()`, no multi-write sequence.
+- **Measured vs read**: this is a code review, not a measurement. No load was run against the added
+  read. The scale seed and `PERF_COACH_ID` fixture (`docs/perf-baseline.md`) are available if you
+  want it exercised under concurrency.
+
+**Test results** — all four gates green.
+
+- `npx tsc --noEmit` — clean
+- `npx eslint .` — 0 errors (204 pre-existing warnings, unchanged from the Phase 2 baseline)
+- `npx vitest run` — 288 files, 3158 tests, all passing (baseline was 287 / 3130)
+- `npm run check:labels` — OK, 679 files scanned
+- `npm run check:rls` — 42/42 tables with RLS, invariants hold
+
+**One flaky full run, chased rather than assumed.** An early full run reported `1 failed | 3157
+passed` and the failing test's name was not captured. Because this phase edits
+`prescribed-set-grid.tsx`, which `set-tracker.test.tsx` exercises, that was not taken as the
+documented full-run flake on faith: `set-tracker.test.tsx` was then run five times in isolation (34
+passing each) and the full suite three more times (3158 passing each). Consistent with the known
+flake this file's global rules already record; no evidence of a real defect, and none of the three
+mutation tests depended on it.
+
+**New coverage.** `utils/logged-set-rows.test.ts` (11): the prescription driving the rows, pairing by
+the wire's index rather than the coach's set number, a logged set past the prescription, the
+ticked-but-empty vs not-done distinction, out-of-range and corrupt set numbers, the
+`MAX_PRESCRIBED_ROWS` cap, and a log with no prescription at all.
+`utils/set-spec-rows.test.ts` (+4): `buildSetDisplayNumbers`.
+`services/training-log-service.test.ts` (+5): **the first coverage `getSessionLogDetail` has ever
+had** — the merge and its authored order, the no-session path issuing neither read, a log whose
+exercise is no longer in the prescription, the tenant scoping and ordering of the prescription read,
+and the not-found null. `session-log-detail-dialog.test.tsx` (20, rewritten): the three load forms,
+set-type tags, drop-set flattening, untouched exercises, exercise ordering, warm-up muting, and the
+identity/drill-down cases carried over.
+
+**Mutation-tested.** Three, each restored from a scratchpad copy and `diff`-verified byte-identical
+afterwards, with the full suite re-run green:
+
+1. Sizing `buildLoggedSetRows` to the prescription alone → 4 failures, incl. "keeps a logged set PAST
+   the prescription".
+2. Pairing logs by array position instead of `set_number` → 8 failures, incl. the drop-set alignment
+   in both the util and the dialog.
+3. Offsetting the extracted `buildSetDisplayNumbers` by 100 → **12 client-portal failures**, which is
+   the point: it proves the client grid genuinely consumes the shared function rather than a surviving
+   local copy.
+
+**Browser smoke OWED.** The gates above prove the contract through jsdom only. The owner runs browser
+smokes; this one has not been run.
