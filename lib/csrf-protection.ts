@@ -5,7 +5,7 @@ import { headers } from "next/headers";
  * Simple CSRF protection for API routes
  * Verifies that requests come from the same origin
  */
-export async function validateCSRFToken(request: NextRequest): Promise<boolean> {
+async function validateCSRFToken(request: NextRequest): Promise<boolean> {
   // Allow GET requests (they should be idempotent)
   if (request.method === "GET") {
     return true;

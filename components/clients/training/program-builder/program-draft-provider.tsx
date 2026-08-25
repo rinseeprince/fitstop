@@ -38,7 +38,7 @@ import { useAmendPlan, type AmendPlanApi } from "./use-amend-plan";
 // program — past slots locked, saves go through the amend PUT). For the placed
 // target the context's mutators are the LOCKED wrappers, so every UI path
 // refuses history at one choke point.
-export type ProgramDraftContextValue = ProgramBuilderState & {
+type ProgramDraftContextValue = ProgramBuilderState & {
   savedPlanId: string | null;
   placedPlanId: string | null;
   target: BuilderTarget;

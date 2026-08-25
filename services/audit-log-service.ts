@@ -15,9 +15,9 @@ import { captureApiError } from "@/lib/error-handler";
  *   disambiguated by actor_role (no FK — avoids an auth.users lookup per write).
  */
 
-export type AuditActorRole = "trainer" | "client" | "system";
+type AuditActorRole = "trainer" | "client" | "system";
 
-export interface AuditEventInput {
+interface AuditEventInput {
   /** coaches.id for trainer actions, clients.id for client actions, null for system */
   actorId?: string | null;
   actorRole?: AuditActorRole;

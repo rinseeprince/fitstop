@@ -18,6 +18,8 @@ import {
   calculateCompletionRate,
   calculateCurrentStreak,
   mapArrayIndexToSortOrder,
+} from './daily-habits-logic'
+import {
   getClientHabits,
   createHabit,
   getTodayHabitLogs,

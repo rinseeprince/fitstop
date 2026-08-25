@@ -26,7 +26,7 @@ import {
 // This builder is the only editor for a client's draft, so weekIndex/setSpecs/
 // videoUrl must survive every path through here.
 
-export type ProgramOverwriteBody = z.infer<typeof overwriteSavedPlanSchema>;
+type ProgramOverwriteBody = z.infer<typeof overwriteSavedPlanSchema>;
 
 function exerciseToDraft(e: SavedExercise): ExerciseDraft {
   return {
@@ -182,7 +182,7 @@ export function exerciseDraftToInput(e: ExerciseDraft, i: number) {
   };
 }
 
-export type StandaloneSessionPayload = z.infer<typeof createStandaloneSessionSchema>;
+type StandaloneSessionPayload = z.infer<typeof createStandaloneSessionSchema>;
 
 /**
  * Serialize one SessionDraft into the standalone-session create body (the

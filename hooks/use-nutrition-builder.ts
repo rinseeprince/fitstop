@@ -6,7 +6,6 @@ import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import type {
   Client,
-  ActivityLevel,
   DietType,
   NutritionWarning,
 } from "@/types/check-in";
@@ -22,7 +21,7 @@ type UseNutritionBuilderProps = {
   onUpdate?: () => void;
 };
 
-export type NutritionSettings = {
+type NutritionSettings = {
   proteinTargetGPerKg: number;
   dietType: DietType;
 };

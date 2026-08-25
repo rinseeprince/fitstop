@@ -27,7 +27,7 @@ export type ScoredExercise = {
   completedSetNumbers: number[];
 };
 
-export type CompletionSummary = {
+type CompletionSummary = {
   /** Non-warmup sets the client says it completed, across the whole session. */
   completedWorkingSets: number;
   /** Non-warmup sets prescribed, across the whole session. */

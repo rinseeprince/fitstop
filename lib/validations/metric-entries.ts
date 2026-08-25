@@ -35,4 +35,3 @@ export const createMetricEntrySchema = z
     }
   });
 
-export type CreateMetricEntryInput = z.infer<typeof createMetricEntrySchema>;

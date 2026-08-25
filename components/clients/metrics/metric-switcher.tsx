@@ -12,7 +12,7 @@ import { MONO } from "@/components/clients/training/program-builder/builder-toke
 import type { ReactNode } from "react";
 import type { MetricSummary } from "./metrics-view-types";
 
-export type MetricSwitcherProps = {
+type MetricSwitcherProps = {
   metrics: MetricSummary[];
   activeId: string;
   onSelect: (id: string) => void;

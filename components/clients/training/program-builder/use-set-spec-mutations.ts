@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { MAX_SET_SPECS, type SetType } from "@/utils/exercise-set-specs";
+import type { SetType } from "@/utils/exercise-set-specs";
 import {
   applySetSpecEdit,
   type SetSpecEdit,
@@ -12,9 +12,8 @@ import type { ExerciseDraft } from "./program-builder-types";
 // Per-exercise set-spec editing: a thin hook adapter over the pure kernel in
 // utils/set-spec-edits.ts (extracted in builder S6a so the AI assistant's
 // server-side tool executors share the exact same edit semantics — the two
-// sides must never drift). Re-exports keep existing importers working.
+// sides must never drift). `SetSpecEdit` is re-exported for the editor components.
 
-export { MAX_SET_SPECS, applySetSpecEdit };
 export type { SetSpecEdit };
 
 /** Set types in authoring order for the set-type select. */

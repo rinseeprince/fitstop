@@ -4,9 +4,9 @@
  * `reason` prop switches the copy. The wrapper/markup mirror the original inline notice on
  * the nutrition page so swapping it in is DOM-neutral.
  */
-export type LockedDayReason = "past-logged" | "today-no-plan";
+type LockedDayReason = "past-logged" | "today-no-plan";
 
-export interface LockedDayNoticeProps {
+interface LockedDayNoticeProps {
   /**
    * Which situation the notice explains. `today-no-plan` is reserved for plan-gated
    * surfaces (nutrition/training; wellness is not plan-gated — Session 3.1C); current

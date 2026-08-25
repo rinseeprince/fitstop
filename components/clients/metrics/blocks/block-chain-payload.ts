@@ -14,7 +14,7 @@ import type {
 // verbatim, reproducing their windows exactly. Name, focus and target echo
 // verbatim (nulls included) because the service echo-checks them.
 
-export interface NewBlockEntry {
+interface NewBlockEntry {
   name: string;
   endsOn: string;
   focus: string | null;
@@ -59,7 +59,7 @@ export function buildAppendPayload(
  *  elapsed edits are fields-only (their dates are pinned). `startsOn` moves
  *  the chain ANCHOR and is legal only when the edited block is the chain's
  *  first with nothing lived (the service's floor enforces). */
-export interface BlockEdit {
+interface BlockEdit {
   name: string;
   focus: string | null;
   targetWeightKg: number | null;

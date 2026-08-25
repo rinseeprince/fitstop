@@ -4,7 +4,7 @@ import { z } from "zod";
 // Enum schemas
 // -------------------------------------------------------
 
-export const primaryGoalSchema = z.enum([
+const primaryGoalSchema = z.enum([
   "lose_weight",
   "build_muscle",
   "recomposition",
@@ -13,7 +13,7 @@ export const primaryGoalSchema = z.enum([
   "maintain",
 ]);
 
-export const workActivityLevelSchema = z.enum([
+const workActivityLevelSchema = z.enum([
   "sedentary",
   "lightly_active",
   "moderately_active",
@@ -21,7 +21,7 @@ export const workActivityLevelSchema = z.enum([
   "extremely_active",
 ]);
 
-export const trainingLocationSchema = z.enum([
+const trainingLocationSchema = z.enum([
   "commercial_gym",
   "home_gym",
   "home_no_equipment",
@@ -29,21 +29,21 @@ export const trainingLocationSchema = z.enum([
   "mixed",
 ]);
 
-export const trainingTimePreferenceSchema = z.enum([
+const trainingTimePreferenceSchema = z.enum([
   "morning",
   "midday",
   "evening",
   "flexible",
 ]);
 
-export const cookingFrequencySchema = z.enum([
+const cookingFrequencySchema = z.enum([
   "mostly_cook",
   "mix_of_both",
   "mostly_eat_out",
   "meal_prep",
 ]);
 
-export const trainingExperienceSchema = z.enum([
+const trainingExperienceSchema = z.enum([
   "complete_beginner",
   "some_experience",
   "intermediate",
@@ -95,7 +95,7 @@ const optionalBoolean = z.preprocess(
 // Step 1: Body & Lifestyle
 // -------------------------------------------------------
 
-export const intakeStep1Schema = z.object({
+const intakeStep1Schema = z.object({
   dateOfBirth: z
     .string()
     .min(1, "Date of birth is required")
@@ -132,7 +132,7 @@ export const intakeStep1Schema = z.object({
 // Step 2: Goals
 // -------------------------------------------------------
 
-export const intakeStep2Schema = z
+const intakeStep2Schema = z
   .object({
     primaryGoal: primaryGoalSchema,
     targetWeight: optionalNumber(z.number().positive().min(30).max(300)),
@@ -173,7 +173,7 @@ export const intakeStep2Schema = z
 // Step 3: Training
 // -------------------------------------------------------
 
-export const intakeStep3Schema = z.object({
+const intakeStep3Schema = z.object({
   workActivityLevel: workActivityLevelSchema,
   daysPerWeek: z
     .number()
@@ -196,7 +196,7 @@ export const intakeStep3Schema = z.object({
 // Step 4: Nutrition
 // -------------------------------------------------------
 
-export const intakeStep4Schema = z.object({
+const intakeStep4Schema = z.object({
   dietaryRequirements: z.array(z.string().min(1).max(100)).max(20).optional(),
   foodAllergies: optionalString(300),
   dietDescription: optionalString(500),
@@ -216,7 +216,7 @@ export const intakeStep4Schema = z.object({
 // Step 5: Medical & Background
 // -------------------------------------------------------
 
-export const intakeStep5Schema = z.object({
+const intakeStep5Schema = z.object({
   injuriesOrLimitations: optionalString(500),
   trainingExperienceLevel: trainingExperienceSchema,
   previousCoachingExperience: optionalBoolean,
@@ -275,9 +275,3 @@ export const intakeStepSchemas = [
 // Inferred types
 // -------------------------------------------------------
 
-export type IntakeStep1Input = z.infer<typeof intakeStep1Schema>;
-export type IntakeStep2Input = z.infer<typeof intakeStep2Schema>;
-export type IntakeStep3Input = z.infer<typeof intakeStep3Schema>;
-export type IntakeStep4Input = z.infer<typeof intakeStep4Schema>;
-export type IntakeStep5Input = z.infer<typeof intakeStep5Schema>;
-export type IntakeFullInput = z.infer<typeof intakeFullSchema>;

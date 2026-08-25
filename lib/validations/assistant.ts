@@ -20,7 +20,7 @@ const uidSchema = z.string().min(1).max(64);
 
 const setSpecsSnapshotSchema = z.array(setSpecSchema).min(1).max(30);
 
-export const exerciseDraftSnapshotSchema = z.object({
+const exerciseDraftSnapshotSchema = z.object({
   uid: uidSchema,
   exerciseId: z.string().uuid().nullable(),
   name: z.string().min(1).max(200),
@@ -46,7 +46,7 @@ export const exerciseDraftSnapshotSchema = z.object({
     .nullable(),
 });
 
-export const sessionDraftSnapshotSchema = z.object({
+const sessionDraftSnapshotSchema = z.object({
   uid: uidSchema,
   name: z.string().min(1).max(200),
   focus: z.string().max(200).nullable(),
@@ -64,7 +64,7 @@ const daySlotSnapshotSchema = z.object({
   session: sessionDraftSnapshotSchema.nullable(),
 });
 
-export const weekDraftSnapshotSchema = z.object({
+const weekDraftSnapshotSchema = z.object({
   uid: uidSchema,
   weekIndex: z.number().int().min(0).max(51),
   // Exactly 7 — a short week would make normalizeDraft pad-mint slot uids,
@@ -214,7 +214,7 @@ void _schemaOpIsDraftOp;
 
 // --- Request / response ---
 
-export const assistantTranscriptEntrySchema = z.object({
+const assistantTranscriptEntrySchema = z.object({
   role: z.enum(["user", "assistant"]),
   text: z.string().max(4000),
 });
@@ -255,7 +255,6 @@ export const assistantChatRequestSchema = z
     },
   );
 
-export type AssistantChatRequest = z.infer<typeof assistantChatRequestSchema>;
 
 export type AssistantChatResponseData = {
   assistantText: string;

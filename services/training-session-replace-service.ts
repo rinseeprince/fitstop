@@ -21,7 +21,7 @@ export type ReplaceSessionResult = {
   session: TrainingSession;
   surplusChanged: boolean;
   identityChanged: boolean;
-  futureEventsUpdated: number;
+
   /**
    * The dates whose surplus actually changed — the nutrition-relevant set. Empty
    * when the surplus was unchanged (a rename alone does not move calories). The
@@ -99,9 +99,8 @@ export async function replaceSessionFull(params: {
     throw new Error(`Failed to update session: ${updateError?.message ?? "no row returned"}`);
   }
 
-  let renamedCount = 0;
   if (identityChanged) {
-    const { data: renamed, error: renameError } = await supabaseAdmin
+    const { error: renameError } = await supabaseAdmin
       .from("training_events")
       .update({
         session_name: input.name,
@@ -110,13 +109,11 @@ export async function replaceSessionFull(params: {
       })
       .eq("training_session_id", sessionId)
       .eq("status", "scheduled")
-      .gte("date", fromDate)
-      .select("id");
+      .gte("date", fromDate);
 
     if (renameError) {
       throw new Error(`Failed to update future event snapshots: ${renameError.message}`);
     }
-    renamedCount = renamed?.length ?? 0;
   }
 
   let surplusAffectedDates: string[] = [];
@@ -139,9 +136,6 @@ export async function replaceSessionFull(params: {
     session: mapSessionRow(updatedRow, (exerciseRows ?? []).map(mapExerciseRow)),
     surplusChanged,
     identityChanged,
-    // The rename and surplus predicates target the same future-scheduled set,
-    // so when both ran the counts agree; max() covers the single-write cases.
-    futureEventsUpdated: Math.max(renamedCount, surplusAffectedDates.length),
     surplusAffectedDates,
   };
 }

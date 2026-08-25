@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parsePaginationParams,
-  parseNumericParam,
   isValidUUID,
-  sanitizeString,
 } from './api-utils'
 
 describe('API Utilities', () => {
@@ -111,36 +109,6 @@ describe('API Utilities', () => {
     })
   })
 
-  describe('parseNumericParam', () => {
-    it('returns null for null input', () => {
-      expect(parseNumericParam(null)).toBeNull()
-    })
-
-    it('parses valid integer', () => {
-      expect(parseNumericParam('42')).toBe(42)
-    })
-
-    it('parses negative integer', () => {
-      expect(parseNumericParam('-10')).toBe(-10)
-    })
-
-    it('returns null for non-numeric string', () => {
-      expect(parseNumericParam('abc')).toBeNull()
-    })
-
-    it('returns null for empty string', () => {
-      expect(parseNumericParam('')).toBeNull()
-    })
-
-    it('parses zero', () => {
-      expect(parseNumericParam('0')).toBe(0)
-    })
-
-    it('truncates decimal to integer', () => {
-      expect(parseNumericParam('3.14')).toBe(3)
-    })
-  })
-
   describe('isValidUUID', () => {
     it('validates correct UUID v4', () => {
       expect(isValidUUID('550e8400-e29b-41d4-a716-446655440000')).toBe(true)
@@ -172,38 +140,6 @@ describe('API Utilities', () => {
 
     it('validates uppercase UUID', () => {
       expect(isValidUUID('550E8400-E29B-41D4-A716-446655440000')).toBe(true)
-    })
-  })
-
-  describe('sanitizeString', () => {
-    it('returns clean string unchanged', () => {
-      expect(sanitizeString('Hello World')).toBe('Hello World')
-    })
-
-    it('removes null characters', () => {
-      expect(sanitizeString('Hello\x00World')).toBe('HelloWorld')
-    })
-
-    it('removes control characters', () => {
-      expect(sanitizeString('Hello\x1FWorld')).toBe('HelloWorld')
-    })
-
-    it('removes DEL character', () => {
-      expect(sanitizeString('Hello\x7FWorld')).toBe('HelloWorld')
-    })
-
-    it('preserves newlines and tabs by default', () => {
-      // Note: \n (0x0A) and \t (0x09) are in the control char range
-      // The current implementation removes them
-      expect(sanitizeString('Hello\nWorld')).toBe('HelloWorld')
-    })
-
-    it('handles empty string', () => {
-      expect(sanitizeString('')).toBe('')
-    })
-
-    it('preserves unicode characters', () => {
-      expect(sanitizeString('Hello 世界 🌍')).toBe('Hello 世界 🌍')
     })
   })
 })

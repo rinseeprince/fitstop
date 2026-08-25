@@ -6,9 +6,6 @@ import { getPlanTargetForDate } from "@/services/daily-context-service";
 import { calculateWeeklySummaryFromLogs, type FullWeekTargets } from "@/utils/weekly-nutrition-helpers";
 import { mapNutritionRowToDailyLog, mapRowToSummary, type NutritionRow } from "@/utils/weekly-nutrition-mappers";
 
-// Re-export pure helpers so existing consumers don't break
-export { calculateWeeklySummaryFromLogs, calculateWeeklyAdherence, type FullWeekTargets } from "@/utils/weekly-nutrition-helpers";
-
 const NUTRITION_LOG_SELECT =
   "id, client_id, date, calories_consumed, protein_g, carbs_g, fat_g, target_calories, target_protein_g, target_carbs_g, target_fat_g, created_at, updated_at";
 

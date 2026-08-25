@@ -3,7 +3,7 @@
 import type { ComponentType, MouseEvent } from "react"
 import { cn } from "@/lib/utils"
 
-export type RowAction = {
+type RowAction = {
   label: string
   icon: ComponentType<{ className?: string; strokeWidth?: number }>
   onClick: () => void

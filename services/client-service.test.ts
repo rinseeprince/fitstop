@@ -44,7 +44,6 @@ import {
   getClientById,
   updateClient,
   deleteClient,
-  permanentlyDeleteClient,
   updateClientCheckInConfig,
   updateClientSettings,
 } from './client-service'
@@ -785,35 +784,6 @@ describe('Client Service', () => {
 
       await expect(deleteClient('client-123')).rejects.toThrow(
         'Failed to delete client'
-      )
-    })
-  })
-
-  describe('permanentlyDeleteClient', () => {
-    it('permanently deletes client', async () => {
-      const mockQuery = {
-        delete: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ data: {}, error: null }),
-      }
-
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-
-      await permanentlyDeleteClient('client-123')
-
-      expect(mockQuery.delete).toHaveBeenCalled()
-      expect(mockQuery.eq).toHaveBeenCalledWith('id', 'client-123')
-    })
-
-    it('throws error on failure', async () => {
-      const mockQuery = {
-        delete: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ data: null, error: { message: 'Delete failed' } }),
-      }
-
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-
-      await expect(permanentlyDeleteClient('client-123')).rejects.toThrow(
-        'Failed to permanently delete client'
       )
     })
   })

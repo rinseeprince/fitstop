@@ -26,7 +26,6 @@ vi.mock("@/services/client-goals-service", () => ({
 
 vi.mock("@/services/nutrition-service", () => ({
   generateNutritionPlan: vi.fn(),
-  calculateTDEE: vi.fn().mockReturnValue(2200),
 }));
 
 vi.mock("@/services/nutrition-plan-service", () => ({

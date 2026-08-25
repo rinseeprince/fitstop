@@ -141,8 +141,8 @@ function isKnownGender(value: string): value is "male" | "female" | "other" {
  *
  * TDEE is derived from the ROUNDED BMR, not the raw one. Three reasons: the
  * stored pair stays reproducible from the stored BMR (a UI preview cannot differ
- * by ±1 from the column); it agrees exactly with `calculateTDEE`, which receives
- * an already-rounded `client.bmr`; and `clients.bmr`/`clients.tdee` are
+ * by ±1 from the column); it agrees exactly with the nutrition calculator's TDEE
+ * step (formerly `calculateTDEE`), which receives an already-rounded `client.bmr`; and `clients.bmr`/`clients.tdee` are
  * NUMERIC(6,1) rather than integers, so an unrounded value would be silently
  * re-rounded by Postgres and the stored number would stop matching the computed
  * one.

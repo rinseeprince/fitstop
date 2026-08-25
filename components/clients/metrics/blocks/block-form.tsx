@@ -147,7 +147,7 @@ export interface BlockFormValues {
   startsOn?: string;
 }
 
-export type BlockFormMode =
+type BlockFormMode =
   | { kind: "add"; appendAfterEndsOn: string | null }
   | {
       kind: "edit";

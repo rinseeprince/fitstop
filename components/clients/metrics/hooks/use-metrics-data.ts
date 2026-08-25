@@ -4,7 +4,7 @@ import type { UnitSystem } from "@/utils/unit-conversions";
 // Retained for the shared MetricChartCard (also consumed by the client portal's
 // metrics-hub).
 export type DateRangeFilter = "7d" | "30d" | "90d" | "all";
-export type MetricCategory = "body" | "wellness";
+type MetricCategory = "body" | "wellness";
 
 export type MetricDefinition = {
   id: string;

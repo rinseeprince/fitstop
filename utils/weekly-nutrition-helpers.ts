@@ -125,7 +125,7 @@ export function calculateWeeklySummaryFromLogs(
  * Applies scaled weekly adherence thresholds.
  * Thresholds scale with days_in_week for partial weeks.
  */
-export function calculateWeeklyAdherence(
+function calculateWeeklyAdherence(
   calorieDifference: number | null,
   daysInWeek: number
 ): WeeklyAdherenceStatus | null {

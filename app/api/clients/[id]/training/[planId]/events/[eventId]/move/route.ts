@@ -78,9 +78,6 @@ export async function POST(
 
     const message = error instanceof Error ? error.message : "Failed to move event";
 
-    if (message.includes("already scheduled") || message.includes("outside the current phase")) {
-      return NextResponse.json({ error: message }, { status: 409 });
-    }
     if (message.includes("past date") || message.includes("Only scheduled")) {
       return NextResponse.json({ error: message }, { status: 400 });
     }

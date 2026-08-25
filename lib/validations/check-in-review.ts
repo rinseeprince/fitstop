@@ -16,7 +16,7 @@ const coachActionSchema = z.object({
   text: z.string().min(1),
 });
 
-export const checkInReviewSchema = z.object({
+const checkInReviewSchema = z.object({
   summary: z.string(),
   watchItems: z.array(watchItemSchema).max(6).default([]),
   themes: z.array(z.string().min(1)).max(6).default([]),

@@ -467,19 +467,6 @@ export const reactivateClient = async (clientId: string): Promise<void> => {
   }
 };
 
-// Permanently delete a client (use with caution)
-export const permanentlyDeleteClient = async (clientId: string): Promise<void> => {
-  const { error } = await supabaseAdmin
-    .from("clients")
-    .delete()
-    .eq("id", clientId);
-
-  if (error) {
-    console.error("Failed to permanently delete client:", error);
-    throw new Error("Failed to permanently delete client");
-  }
-};
-
 // Update client-controlled settings (PATCH /api/client/settings)
 // Writes only the fields supplied.
 //

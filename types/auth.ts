@@ -50,30 +50,15 @@ export type ClientInvitationRow = {
   updated_at: string
 }
 
-// API request/response types
-export type SendInvitationRequest = {
-  clientId: string
-}
-
 export type SendInvitationResponse = {
   success: boolean
   invitation?: ClientInvitation
   error?: string
 }
 
-export type AcceptInvitationRequest = {
-  token: string
-  userId: string
-}
-
 export type AcceptInvitationResponse = {
   success: boolean
   error?: string
-}
-
-// New types for token-based invitation flow
-export type InvitationDetailsRequest = {
-  token: string
 }
 
 export type InvitationDetailsResponse = {
@@ -86,17 +71,6 @@ export type InvitationDetailsResponse = {
     expiresAt: string | null
     status: string
   }
-  error?: string
-}
-
-export type SignupRequest = {
-  email: string
-  password: string
-  inviteToken: string
-}
-
-export type SignupResponse = {
-  success: boolean
   error?: string
 }
 

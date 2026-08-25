@@ -16,9 +16,6 @@ export type BodyMetricsEvent = {
   createdAt: string;
 };
 
-// Input type for creating body metrics events (excludes server-managed fields)
-export type BodyMetricsEventInput = Omit<BodyMetricsEvent, "id" | "createdAt">;
-
 // Database row shape (until types/database.ts is regenerated)
 export type BodyMetricsEventRow = {
   id: string;

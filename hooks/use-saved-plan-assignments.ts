@@ -3,7 +3,7 @@
 import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 
-export type SavedPlanAssignments = {
+type SavedPlanAssignments = {
   perPlan: Array<{ savedPlanId: string; count: number }>;
   totalAssignments: number;
   distinctClients: number;

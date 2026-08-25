@@ -195,26 +195,3 @@ export async function getClientReminders(
     createdAt: row.created_at ?? new Date().toISOString(),
   }));
 }
-
-/**
- * Get reminder response rate for a client
- * @param clientId - Client ID
- * @returns Response rate as percentage (0-100)
- */
-export async function getClientReminderResponseRate(
-  clientId: string
-): Promise<number> {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_reminders")
-    .select("responded")
-    .eq("client_id", clientId);
-
-  if (error || !data || data.length === 0) {
-    return 0;
-  }
-
-  const totalReminders = data.length;
-  const respondedReminders = data.filter((r: any) => r.responded).length;
-
-  return Math.round((respondedReminders / totalReminders) * 100);
-}

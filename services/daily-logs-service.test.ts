@@ -3,7 +3,6 @@ import {
   calculateNutritionAdherence,
   calculateCalorieSurplusDeficit,
   calculateStreakFromLogs,
-  getDayOfWeekLowercase,
   getDailyLogs,
   getTodayLog,
   calculateStreaks,
@@ -188,14 +187,6 @@ describe('Daily Logs Service - Pure Functions', () => {
     });
   });
 
-
-  describe('getDayOfWeekLowercase', () => {
-    it('returns correct lowercase day names', () => {
-      expect(getDayOfWeekLowercase(new Date('2024-01-15'))).toBe('monday'); // Monday
-      expect(getDayOfWeekLowercase(new Date('2024-01-16'))).toBe('tuesday'); // Tuesday
-      expect(getDayOfWeekLowercase(new Date('2024-01-21'))).toBe('sunday'); // Sunday
-    });
-  });
 });
 
 describe('Daily Logs Service - Database Functions', () => {
@@ -348,17 +339,5 @@ describe('Daily Logs Service - Database Functions', () => {
 
       await expect(calculateStreaks('client-123')).rejects.toThrow('Failed to calculate streaks: boom');
     });
-  });
-});
-
-describe('getDayOfWeekLowercase', () => {
-  it('returns correct lowercase day names for each day', () => {
-    expect(getDayOfWeekLowercase(new Date('2024-01-14'))).toBe('sunday');
-    expect(getDayOfWeekLowercase(new Date('2024-01-15'))).toBe('monday');
-    expect(getDayOfWeekLowercase(new Date('2024-01-16'))).toBe('tuesday');
-    expect(getDayOfWeekLowercase(new Date('2024-01-17'))).toBe('wednesday');
-    expect(getDayOfWeekLowercase(new Date('2024-01-18'))).toBe('thursday');
-    expect(getDayOfWeekLowercase(new Date('2024-01-19'))).toBe('friday');
-    expect(getDayOfWeekLowercase(new Date('2024-01-20'))).toBe('saturday');
   });
 });

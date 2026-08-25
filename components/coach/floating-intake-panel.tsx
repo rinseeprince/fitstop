@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useCallback, useState } from "react"
-import { useRouter } from "next/navigation"
+
 import { useIntakePanel } from "@/contexts/intake-panel-context"
 import { useAuth } from "@/contexts/auth-context"
 import { IntakeContentSections } from "./intake-content-sections"
@@ -26,7 +26,6 @@ export function FloatingIntakePanel() {
   const [marking, setMarking] = useState(false)
   const { toast } = useToast()
   const { mutate } = useSWRConfig()
-  const router = useRouter()
 
   // Always fetch activation readiness when panel is open
   const { data: readinessData, mutate: refetchReadiness } = useSWR<{ success: boolean; data: Readiness }>(

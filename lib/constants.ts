@@ -11,10 +11,6 @@ import type { ActivityLevel } from "@/types/check-in";
 // stat band, which used to restate the boundary as its own literal.
 export const CRITICALLY_OVERDUE_DAYS = 4;
 
-// Timing constants
-export const RATE_LIMIT_RETRY_DELAY_MS = 1500;
-export const DEBOUNCE_DELAY_MS = 300;
-
 // Custom macros validation
 export const CUSTOM_MACRO_CALORIE_TOLERANCE = 50; // Max allowed difference between stated calories and macro totals
 
@@ -83,9 +79,6 @@ export const BLOCKS_PER_CLIENT_MAX = 20;
 export const BLOCK_NAME_MAX = 80;
 export const BLOCK_FOCUS_MAX = 500;
 
-// Date limits
-export const MAX_DATE_LOOKBACK_DAYS = 30;
-
 // Pagination
 export const CLIENT_CHECKINS_PAGE_SIZE = 20; // "Load older" page size for the coach per-client check-ins tab
 
@@ -137,8 +130,6 @@ export const AUDIT_ACTIONS = {
   BLOCK_DELETE: "block.delete",
   BLOCK_ARCHIVE: "block.archive",
 } as const;
-
-export type AuditActionKey = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
 
 // Client energy (BMR/TDEE) — see services/client-energy-calc.ts.
 // The activity fallback mirrors the column DEFAULT (migration 046) so a NULL

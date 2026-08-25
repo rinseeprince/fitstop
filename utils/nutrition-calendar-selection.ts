@@ -50,17 +50,6 @@ export function monthDatesWhere(
   return out;
 }
 
-/** Eligible IN-month days of the viewed month (outside-month grid cells excluded). */
-export function thisMonthDates(
-  weeks: string[][],
-  viewMonth: number,
-  viewYear: number,
-  eventsByDate: Map<string, NutritionEvent>,
-  clientToday: string
-): string[] {
-  return monthDatesWhere(weeks, viewMonth, viewYear, eventsByDate, clientToday, () => true);
-}
-
 /** The week (of `weeks`) that contains clientToday, or null if it isn't shown. */
 export function weekContaining(
   weeks: string[][],

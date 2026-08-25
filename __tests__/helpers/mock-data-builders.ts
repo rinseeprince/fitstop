@@ -4,8 +4,7 @@
  */
 
 import { generateUUID, generateISODate } from './test-utils'
-import type { Client } from '@/types/check-in'
-import type { CheckInRow, ClientRow, TrainingPlanRow, TrainingSessionRow, TrainingExerciseRow, TrainingEventRow } from '@/lib/database-helpers'
+import type { TrainingEventRow } from '@/lib/database-helpers'
 import type { ClientGoalRow } from '@/types/client-goals'
 import type { BodyMetricsEventRow } from '@/types/body-metrics'
 import type { TrainingEvent, TrainingEventStatus } from '@/types/training'
@@ -14,160 +13,9 @@ import type { TrainingEvent, TrainingEventStatus } from '@/types/training'
 // Client Builders
 // =============================================================================
 
-export interface MockClientOptions {
-  id?: string
-  coachId?: string
-  name?: string
-  email?: string
-  active?: boolean
-  currentWeight?: number
-  goalWeight?: number
-  weightUnit?: 'lbs' | 'kg'
-  createdAt?: string
-  updatedAt?: string
-}
-
-export function createMockClient(options: MockClientOptions = {}): Client {
-  const id = options.id ?? generateUUID()
-  const now = generateISODate()
-
-  return {
-    id,
-    coachId: options.coachId ?? generateUUID(),
-    name: options.name ?? 'Test Client',
-    email: options.email ?? `test-${id.slice(0, 8)}@example.com`,
-    active: options.active ?? true,
-    currentWeight: options.currentWeight ?? 180,
-    goalWeight: options.goalWeight ?? 170,
-    includeActivityBurn: true,
-    surplusAsCarbs: false,
-    timezone: 'UTC',
-    createdAt: options.createdAt ?? now,
-    updatedAt: options.updatedAt ?? now,
-  }
-}
-
-export function createMockClientDatabaseRow(options: MockClientOptions = {}): ClientRow {
-  const client = createMockClient(options)
-
-  return {
-    id: client.id,
-    coach_id: client.coachId,
-    name: client.name,
-    email: client.email,
-    avatar_url: null,
-    notes: null,
-    active: client.active,
-    height: null,
-    gender: null,
-    date_of_birth: null,
-    phone: null,
-    goal_weight: client.goalWeight ?? null,
-    goal_body_fat_percentage: null,
-    current_weight: client.currentWeight ?? null,
-    current_body_fat_percentage: null,
-    bmr: null,
-    tdee: null,
-    check_in_frequency: 'weekly',
-    check_in_frequency_days: 7,
-    expected_check_in_day: 'monday',
-    last_reminder_sent_at: null,
-    reminder_preferences: null,
-    total_check_ins_expected: 0,
-    total_check_ins_completed: 0,
-    check_in_adherence_rate: null,
-    current_streak: 0,
-    longest_streak: 0,
-    unit_preference: 'imperial',
-    goal_deadline: null,
-    starting_weight: client.currentWeight ?? null,
-    starting_body_fat_percentage: null,
-    include_activity_burn: true,
-    surplus_as_carbs: false,
-    bmr_manual_override: null,
-    tdee_manual_override: null,
-    user_id: null,
-    welcome_message: null,
-    onboarding_status: null,
-    walkthrough_completed_at: null,
-    start_date: null,
-    work_activity_level: null,
-    timezone: 'UTC',
-    created_at: client.createdAt,
-    updated_at: client.updatedAt,
-  }
-}
-
 // =============================================================================
 // Check-In Builders
 // =============================================================================
-
-export interface MockCheckInOptions {
-  id?: string
-  clientId?: string
-  status?: 'pending' | 'ai_processed' | 'reviewed'
-  mood?: number
-  energy?: number
-  sleep?: number
-  stress?: number
-  soreness?: number
-  weight?: number
-  weightUnit?: 'lbs' | 'kg'
-  createdAt?: string
-  updatedAt?: string
-}
-
-export function createMockCheckInRow(options: MockCheckInOptions = {}): CheckInRow {
-  const id = options.id ?? generateUUID()
-  const now = generateISODate()
-
-  return {
-    id,
-    client_id: options.clientId ?? generateUUID(),
-    status: options.status ?? 'pending',
-    mood: options.mood ?? 4,
-    energy: options.energy ?? 7,
-    sleep: options.sleep ?? 7,
-    stress: options.stress ?? 5,
-    // Neutral default: below the Session-2 high_soreness trigger threshold (>= 8)
-    soreness: options.soreness ?? 3,
-    notes: null,
-    weight: options.weight ?? 180,
-    body_fat_percentage: null,
-    waist: null,
-    hips: null,
-    chest: null,
-    arms: null,
-    thighs: null,
-    photo_front: null,
-    photo_side: null,
-    photo_back: null,
-    workouts_completed: null,
-    adherence_percentage: null,
-    prs: null,
-    challenges: null,
-    nutrition_days_on_target: null,
-    nutrition_notes: null,
-    ai_summary: null,
-    ai_insights: null,
-    ai_recommendations: null,
-    ai_response_draft: null,
-    ai_processed_at: null,
-    coach_response: null,
-    coach_reviewed_at: null,
-    response_sent_at: null,
-    period_start: null,
-    period_end: null,
-    period_snapshot: null,
-    // Remote-only drift columns (no migration defines them; no code reads
-    // them) — present in the generated Row type, so the builder must fill them.
-    daily_logs_start_date: null,
-    daily_logs_end_date: null,
-    uses_daily_logs: false,
-    created_at: options.createdAt ?? now,
-    updated_at: options.updatedAt ?? now,
-  }
-}
 
 // =============================================================================
 // Check-In Token Builders
@@ -177,205 +25,25 @@ export function createMockCheckInRow(options: MockCheckInOptions = {}): CheckInR
 // Training Plan Builders
 // =============================================================================
 
-export interface MockTrainingPlanOptions {
-  id?: string
-  clientId?: string
-  coachId?: string
-  name?: string
-  status?: 'active' | 'archived' | 'draft'
-  splitType?: string
-  frequencyPerWeek?: number
-  createdAt?: string
-  updatedAt?: string
-}
-
-export function createMockTrainingPlanRow(options: MockTrainingPlanOptions = {}): TrainingPlanRow {
-  const id = options.id ?? generateUUID()
-  const now = generateISODate()
-
-  return {
-    id,
-    client_id: options.clientId ?? generateUUID(),
-    coach_id: options.coachId ?? generateUUID(),
-    name: options.name ?? 'Test Training Plan',
-    description: null,
-    status: options.status ?? 'active',
-    coach_prompt: 'Test prompt for training plan generation',
-    ai_response_raw: null,
-    split_type: options.splitType ?? 'push_pull_legs',
-    frequency_per_week: options.frequencyPerWeek ?? 4,
-    program_duration_weeks: 12,
-    client_weight_kg: null,
-    client_body_fat_percentage: null,
-    client_goal_weight_kg: null,
-    client_tdee: null,
-    avg_mood: null,
-    avg_energy: null,
-    avg_sleep: null,
-    avg_stress: null,
-    recent_adherence_percentage: null,
-    effective_from: (options.createdAt ?? now).split('T')[0],
-    effective_until: null,
-    created_at: options.createdAt ?? now,
-    updated_at: options.updatedAt ?? now,
-    deleted_at: null,
-    saved_plan_id: null,
-  }
-}
-
 // =============================================================================
 // Training Session Builders
 // =============================================================================
-
-export interface MockTrainingSessionOptions {
-  id?: string
-  planId?: string
-  name?: string
-  dayOfWeek?: string | null
-  orderIndex?: number
-  weekIndex?: number
-  isRest?: boolean
-  createdAt?: string
-  updatedAt?: string
-}
-
-export function createMockTrainingSessionRow(options: MockTrainingSessionOptions = {}): TrainingSessionRow {
-  const now = generateISODate()
-
-  return {
-    id: options.id ?? generateUUID(),
-    plan_id: options.planId ?? generateUUID(),
-    name: options.name ?? 'Push Day',
-    day_of_week: options.dayOfWeek ?? 'monday',
-    order_index: options.orderIndex ?? 0,
-    week_index: options.weekIndex ?? 0,
-    is_rest: options.isRest ?? false,
-    focus: 'Chest, Shoulders, Triceps',
-    notes: null,
-    estimated_duration_minutes: 60,
-    estimated_calories: null,
-    calories_calculated_at: null,
-    calorie_surplus_percentage: null,
-    is_active: true,
-    created_at: options.createdAt ?? now,
-    updated_at: options.updatedAt ?? now,
-  }
-}
 
 // =============================================================================
 // Training Exercise Builders
 // =============================================================================
 
-export interface MockTrainingExerciseOptions {
-  id?: string
-  sessionId?: string
-  name?: string
-  orderIndex?: number
-  sets?: number
-  repsMin?: number | null
-  repsMax?: number | null
-  createdAt?: string
-  updatedAt?: string
-}
-
-export function createMockTrainingExerciseRow(options: MockTrainingExerciseOptions = {}): TrainingExerciseRow {
-  const now = generateISODate()
-
-  return {
-    id: options.id ?? generateUUID(),
-    session_id: options.sessionId ?? generateUUID(),
-    name: options.name ?? 'Bench Press',
-    order_index: options.orderIndex ?? 0,
-    sets: options.sets ?? 4,
-    reps_min: options.repsMin ?? 8,
-    reps_max: options.repsMax ?? 12,
-    reps_target: null,
-    rpe_target: 8,
-    percentage_1rm: null,
-    tempo: null,
-    rest_seconds: 90,
-    notes: null,
-    superset_group: null,
-    is_warmup: false,
-    is_active: true,
-    exercise_id: null,
-    set_specs: null,
-    video_url: null,
-    created_at: options.createdAt ?? now,
-    updated_at: options.updatedAt ?? now,
-    prescribed_fields: null,
-  }
-}
-
 // =============================================================================
 // Check-In Form Data Builders
 // =============================================================================
-
-export interface MockCheckInFormDataOptions {
-  token?: string
-  mood?: number
-  energy?: number
-  sleep?: number
-  stress?: number
-  weight?: number
-  weightUnit?: 'lbs' | 'kg'
-  notes?: string
-}
-
-export function createMockCheckInFormData(options: MockCheckInFormDataOptions = {}) {
-  return {
-    token: options.token ?? `tok_${generateUUID().replace(/-/g, '')}`,
-    mood: options.mood ?? 4,
-    energy: options.energy ?? 7,
-    sleep: options.sleep ?? 7,
-    stress: options.stress ?? 5,
-    weight: options.weight ?? 180,
-    weightUnit: options.weightUnit ?? 'lbs',
-    notes: options.notes,
-  }
-}
 
 // =============================================================================
 // Session Completion Builders
 // =============================================================================
 
-export function createMockSessionCompletion(options: {
-  trainingSessionId?: string
-  sessionName?: string
-  completed?: boolean
-  completionQuality?: 'full' | 'partial' | 'skipped'
-} = {}) {
-  return {
-    trainingSessionId: options.trainingSessionId ?? generateUUID(),
-    sessionName: options.sessionName ?? 'Push Day',
-    completed: options.completed ?? true,
-    completionQuality: options.completionQuality ?? 'full',
-  }
-}
-
 // =============================================================================
 // Exercise Highlight Builders
 // =============================================================================
-
-export function createMockExerciseHighlight(options: {
-  exerciseId?: string
-  exerciseName?: string
-  highlightType?: 'pr' | 'struggle' | 'note'
-  details?: string
-  weightValue?: number
-  weightUnit?: 'lbs' | 'kg'
-  reps?: number
-} = {}) {
-  return {
-    exerciseId: options.exerciseId ?? generateUUID(),
-    exerciseName: options.exerciseName ?? 'Bench Press',
-    highlightType: options.highlightType ?? 'pr',
-    details: options.details ?? 'New personal record!',
-    weightValue: options.weightValue ?? 225,
-    weightUnit: options.weightUnit ?? 'lbs',
-    reps: options.reps ?? 5,
-  }
-}
 
 // =============================================================================
 // Client Goals Builders

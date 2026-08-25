@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { ExerciseCard } from "./exercise-card";
-import { applySetSpecEdit, type SetSpecEdit } from "./use-set-spec-mutations";
+import { applySetSpecEdit, type SetSpecEdit } from "@/utils/set-spec-edits";
 import type { ExerciseDraft } from "./program-builder-types";
 
 // Required, not optional: units-context imports auth-context, which constructs

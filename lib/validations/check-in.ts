@@ -180,11 +180,6 @@ export const clientSubmitCheckInSchema = submitCheckInSchema.refine(
     { message: "Check-in must include at least one data field" }
   );
 
-export type ClientSubmitCheckInInput = z.infer<typeof clientSubmitCheckInSchema>;
-export type SessionCompletionInput = z.infer<typeof sessionCompletionSchema>;
-export type ExerciseHighlightInput = z.infer<typeof exerciseHighlightSchema>;
-export type NutritionAdherenceInput = z.infer<typeof nutritionAdherenceSchema>;
-
 // AI summary request validation
 export const aiSummaryRequestSchema = z.object({
   focus: z.enum(["positive", "detailed", "concise"]).optional(),

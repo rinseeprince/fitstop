@@ -13,7 +13,7 @@ import { MetricSwitcher } from "./metric-switcher";
 import { containsDigit, formatShortDate, formatSigned } from "./metrics-format";
 import type { MetricSummary } from "./metrics-view-types";
 
-export type MetricHeroProps = {
+type MetricHeroProps = {
   metric: MetricSummary;
   metrics: MetricSummary[];
   onSelectMetric: (id: string) => void;

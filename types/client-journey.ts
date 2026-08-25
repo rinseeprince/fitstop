@@ -40,7 +40,7 @@ export interface ClientJourneyBlock {
  *  client_goals (owner decision 2026-08-12: the deadline is client-visible
  *  here, scoped to this endpoint only). A null weightKg means maintenance —
  *  render no goal line. */
-export interface ClientJourneyGoal {
+interface ClientJourneyGoal {
   weightKg: number | null;
   deadline: string | null;
 }

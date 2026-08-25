@@ -16,7 +16,7 @@ import { formatLoad, type UnitSystem } from "@/utils/unit-conversions";
 // touches as a before → after diff line. React-free so the formatting is
 // unit-testable without a render.
 
-export type ProgressionPreviewRow = {
+type ProgressionPreviewRow = {
   uid: string; // the progressed clone's uid (matches changedExerciseUids)
   scopeKey: string;
   name: string;
@@ -118,7 +118,7 @@ export function formatSetCount(ex: ExerciseDraft): string {
   return `${n} ${n === 1 ? "set" : "sets"}`;
 }
 
-export function formatForRule(
+function formatForRule(
   rule: ProgressionRule,
   ex: ExerciseDraft,
   viewer: UnitSystem,

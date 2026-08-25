@@ -1,11 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { SetSpec } from "./exercise-set-specs";
 import { buildPrescribedRows, MAX_PRESCRIBED_ROWS } from "./set-spec-rows";
-import {
-  buildLoggedSetRows,
-  hasAnyLoggedSet,
-  type LoggedSetInput,
-} from "./logged-set-rows";
+import { buildLoggedSetRows, type LoggedSetInput } from "./logged-set-rows";
 
 function spec(overrides: Partial<SetSpec> & { set_number: number }): SetSpec {
   return {
@@ -146,17 +142,5 @@ describe("buildLoggedSetRows", () => {
     ]);
 
     expect(rows[1].actual?.reps).toBe(11);
-  });
-});
-
-describe("hasAnyLoggedSet", () => {
-  it("is false for a prescription the client never touched", () => {
-    expect(hasAnyLoggedSet(buildLoggedSetRows(SIX_ROWS, []))).toBe(false);
-  });
-
-  it("is true for a single ticked-but-empty set", () => {
-    expect(hasAnyLoggedSet(buildLoggedSetRows(SIX_ROWS, [log({ setNumber: 2 })]))).toBe(
-      true,
-    );
   });
 });

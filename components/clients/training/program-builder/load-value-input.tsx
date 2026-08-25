@@ -28,8 +28,6 @@ import { FOCUS_RING, MONO_INPUT_CLASS } from "./builder-tokens";
 // while a drop could not hold a percentage; the moment it can, an imperial coach
 // typing 60 for "60% 1RM" would have it read as 60 lb and stored as 27.2.
 
-export type LoadType = NonNullable<SetSpec["load_type"]>;
-
 /**
  * The absolute option's label and suffix are the VIEWER's unit; the percentage
  * options are unitless. Built per render rather than as a module constant
@@ -43,8 +41,8 @@ export const loadOptions = (loadUnit: string) =>
   ] as const;
 
 /** Bounds describe STORAGE, so they are applied after conversion (§20). */
-export const LOAD_VALUE_MIN = 0;
-export const LOAD_VALUE_MAX = 2000;
+const LOAD_VALUE_MIN = 0;
+const LOAD_VALUE_MAX = 2000;
 
 type LoadValueInputProps = {
   /** The load type this value is expressed in. Null disables the field. */

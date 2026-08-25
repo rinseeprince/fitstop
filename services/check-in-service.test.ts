@@ -576,22 +576,6 @@ describe('Check-in Service', () => {
     })
   })
 
-  describe('updateCheckInStatus', () => {
-    it('updates status successfully', async () => {
-      const mockQuery = {
-        update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ data: {}, error: null }),
-      }
-
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-
-      const { updateCheckInStatus } = await import('./check-in-service')
-
-      await expect(updateCheckInStatus('check-in-123', 'reviewed')).resolves.not.toThrow()
-      expect(mockQuery.update).toHaveBeenCalledWith({ status: 'reviewed' })
-    })
-  })
-
   describe('updateCheckInAISummary', () => {
     it('updates AI fields and sets status', async () => {
       const mockQuery = {

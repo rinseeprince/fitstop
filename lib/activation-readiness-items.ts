@@ -46,7 +46,7 @@ export const REQUIRED_ITEMS: PlanItem[] = [
  * routes a missing WEIGHT to the metrics surface and everything else to the
  * profile editor, because those are two different homes.
  */
-export const PROFILE_ITEM: SetupItem = {
+const PROFILE_ITEM: SetupItem = {
   key: "hasProfile",
   label: "Client profile",
   tab: "metrics",

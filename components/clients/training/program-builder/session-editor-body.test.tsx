@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useState } from "react";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { SessionEditorBody } from "./session-editor-body";
-import { applySetSpecEdit } from "./use-set-spec-mutations";
+import { applySetSpecEdit } from "@/utils/set-spec-edits";
 import type { ExerciseDraft, SessionDraft } from "./program-builder-types";
 
 // The picker fetches the catalog on mount — irrelevant to these tests.

@@ -9,7 +9,7 @@ import { useUnits } from "@/contexts/units-context";
 import { useCanonicalInput, useHeightInput } from "@/hooks/use-unit-inputs";
 import { formatWeight } from "@/utils/unit-conversions";
 import { computeEnergyPair } from "@/services/client-energy-calc";
-import type { ActivityLevel, Client } from "@/types/check-in";
+import type { Client } from "@/types/check-in";
 import type { ClientGoal } from "@/types/client-goals";
 
 /**
@@ -75,7 +75,7 @@ const profileFormSchema = z
     { message: "Start date must be on or before the deadline", path: ["goalStartDate"] }
   );
 
-export type ProfileFormValues = z.infer<typeof profileFormSchema>;
+type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 /**
  * Seeds come from TWO records, deliberately. The profile fields are on `clients`;

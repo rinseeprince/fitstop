@@ -1,32 +1,6 @@
 import { z } from "zod";
 import { optionalString } from "@/lib/validations/intake-steps";
 
-// Re-export step schemas so existing consumers don't break
-export {
-  intakeStepSchemas,
-  intakeFullSchema,
-  intakeStep1Schema,
-  intakeStep2Schema,
-  intakeStep3Schema,
-  intakeStep4Schema,
-  intakeStep5Schema,
-  primaryGoalSchema,
-  workActivityLevelSchema,
-  trainingLocationSchema,
-  trainingTimePreferenceSchema,
-  cookingFrequencySchema,
-  trainingExperienceSchema,
-} from "@/lib/validations/intake-steps";
-
-export type {
-  IntakeStep1Input,
-  IntakeStep2Input,
-  IntakeStep3Input,
-  IntakeStep4Input,
-  IntakeStep5Input,
-  IntakeFullInput,
-} from "@/lib/validations/intake-steps";
-
 // -------------------------------------------------------
 // API route validation schemas
 // -------------------------------------------------------

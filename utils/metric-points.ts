@@ -6,7 +6,7 @@ import type { MetricEntry } from "@/types/metric-entries";
 // No date-fns here (same rule as utils/metric-shaping.ts): dates are
 // YYYY-MM-DD strings and all math is UTC day arithmetic.
 
-export type MetricPointSource = "check_in" | "coach_entry";
+type MetricPointSource = "check_in" | "coach_entry";
 
 export type MetricPoint = {
   metricId: string;

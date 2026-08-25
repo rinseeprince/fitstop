@@ -109,13 +109,6 @@ export function computeMovedPastSlotUids(
   return movedPast;
 }
 
-export function isSlotLocked(
-  lockedSlotUids: ReadonlySet<string>,
-  slotUid: string,
-): boolean {
-  return lockedSlotUids.has(slotUid);
-}
-
 /** A session is locked iff the slot holding it is locked. Vanished → false. */
 export function isSessionLocked(
   draft: ProgramDraft,

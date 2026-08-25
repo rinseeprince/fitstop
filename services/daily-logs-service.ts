@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { DailyLog, NutritionAdherenceStatus } from "@/types/daily-log";
-import type { DayOfWeek } from "@/types/check-in";
+
 import { getDateString, getDateDaysFrom, dateStringToDayNumber } from "@/lib/date-helpers";
 import { getClientTodayString } from "./today-service";
 import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
@@ -103,12 +103,6 @@ export const calculateStreakFromLogs = (
   }
 
   return { currentStreak, longestStreak };
-};
-
-
-export const getDayOfWeekLowercase = (date: Date): DayOfWeek => {
-  const days: DayOfWeek[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  return days[date.getDay()];
 };
 
 export const mapRowToDailyLog = (row: DailyLogFullRow): DailyLog => ({

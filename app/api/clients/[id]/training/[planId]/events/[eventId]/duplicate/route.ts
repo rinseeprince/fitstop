@@ -68,9 +68,6 @@ export async function POST(
 
     const message = error instanceof Error ? error.message : "Failed to duplicate event";
 
-    if (message.includes("already scheduled") || message.includes("outside the current phase")) {
-      return NextResponse.json({ error: message }, { status: 409 });
-    }
     if (message.includes("past date")) {
       return NextResponse.json({ error: message }, { status: 400 });
     }

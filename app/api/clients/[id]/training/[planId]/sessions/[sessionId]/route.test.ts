@@ -101,7 +101,6 @@ const replaceResult = {
   session: { id: SESSION_ID, name: "Push Day A", exercises: [] },
   surplusChanged: false,
   identityChanged: true,
-  futureEventsUpdated: 2,
   surplusAffectedDates: [],
 } as unknown as Awaited<ReturnType<typeof replaceSessionFull>>;
 
@@ -184,7 +183,6 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
       session: replaceResult.session,
       surplusChanged: false,
       identityChanged: true,
-      futureEventsUpdated: 2,
     });
 
     expect(replaceSessionFull).toHaveBeenCalledWith(

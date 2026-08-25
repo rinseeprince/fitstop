@@ -49,7 +49,7 @@ export class AmendmentEmptyFutureError extends AmendmentValidationError {} // â†
 const RETIRED_PLAN_MESSAGE =
   "This program has been retired and can no longer be edited â€” apply a new program instead";
 
-export type PlacedSlotEventLink = {
+type PlacedSlotEventLink = {
   id: string;
   date: string;
   status: string;
@@ -95,7 +95,7 @@ export type PlacedPlanForBuilder = {
   futureModifiedEvents: Array<{ id: string; date: string; sessionName: string }>;
 };
 
-export type AmendPlacedPlanResult = {
+type AmendPlacedPlanResult = {
   planId: string;
   floor: string;
   offset: number;

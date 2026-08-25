@@ -98,8 +98,7 @@ export type ClientIntake = {
   anythingElse?: string;
 
   // Coach review
-  reviewedAt?: string;
-  reviewedBy?: string;
+
   coachReviewNotes?: string;
 
   // Metadata
@@ -115,8 +114,7 @@ export type ClientIntakeInput = Omit<
   | "id"
   | "clientId"
   | "status"
-  | "reviewedAt"
-  | "reviewedBy"
+
   | "coachReviewNotes"
   | "startedAt"
   | "completedAt"

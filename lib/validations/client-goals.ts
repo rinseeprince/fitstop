@@ -58,4 +58,3 @@ export const updateGoalsSchema = z
     }
   );
 
-export type UpdateGoalsInput = z.infer<typeof updateGoalsSchema>;

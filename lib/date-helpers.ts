@@ -86,17 +86,6 @@ export const getDeviceTimeZone = (): string | undefined => {
 };
 
 /**
- * Returns tomorrow's date as a YYYY-MM-DD string in local timezone.
- * Uses midnight-anchored Date to avoid DST edge cases.
- */
-export const getTomorrowDateString = (): string => {
-  const now = new Date();
-  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  todayMidnight.setDate(todayMidnight.getDate() + 1);
-  return getDateString(todayMidnight);
-};
-
-/**
  * Returns a date string in YYYY-MM-DD format from a Date object in local timezone
  * @param {Date} date - The date to format
  * @returns {string} The date in YYYY-MM-DD format
@@ -335,48 +324,6 @@ export function differenceInHours(date1: Date, date2: Date): number {
 }
 
 /**
- * Get the day of week from a date (0 = Sunday, 6 = Saturday)
- */
-export function getDayOfWeek(date: Date): number {
-  return date.getDay();
-}
-
-/**
- * Get the next occurrence of a specific day of week from a given date
- */
-export function getNextDayOfWeek(fromDate: Date, targetDay: DayOfWeek): Date {
-  const targetDayNum = DAY_NUM[targetDay];
-  const currentDayNum = getDayOfWeek(fromDate);
-
-  let daysUntilTarget = targetDayNum - currentDayNum;
-  if (daysUntilTarget <= 0) {
-    daysUntilTarget += 7;
-  }
-
-  return addDays(fromDate, daysUntilTarget);
-}
-
-/**
- * Check if a date is today
- */
-export function isToday(date: Date): boolean {
-  const today = new Date();
-  return (
-    date.getDate() === today.getDate() &&
-    date.getMonth() === today.getMonth() &&
-    date.getFullYear() === today.getFullYear()
-  );
-}
-
-/**
- * Check if a date is in the past
- */
-export function isPast(date: Date): boolean {
-  const now = new Date();
-  return date < now && !isToday(date);
-}
-
-/**
  * Format date as ISO string (YYYY-MM-DD)
  */
 export function formatDateISO(date: Date): string {
@@ -388,24 +335,6 @@ export function formatDateISO(date: Date): string {
  */
 export function parseISODate(dateString: string): Date {
   return new Date(dateString);
-}
-
-/**
- * Get start of day (midnight)
- */
-export function startOfDay(date: Date): Date {
-  const result = new Date(date);
-  result.setHours(0, 0, 0, 0);
-  return result;
-}
-
-/**
- * Get end of day (23:59:59.999)
- */
-export function endOfDay(date: Date): Date {
-  const result = new Date(date);
-  result.setHours(23, 59, 59, 999);
-  return result;
 }
 
 /**

@@ -3,7 +3,6 @@ import {
   PAST_LOCKED,
   computeLockedSlotUids,
   computeMovedPastSlotUids,
-  isSlotLocked,
   isSessionLocked,
   weekLockState,
   lockBoundaryWeekIndex,
@@ -129,11 +128,6 @@ describe("computeLockedSlotUids", () => {
 describe("lock queries", () => {
   const weeks = makeWeeks(3);
   const locked = new Set(["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s8"]); // wk0 full, wk1 partial
-
-  it("isSlotLocked reads the set", () => {
-    expect(isSlotLocked(locked, "s0")).toBe(true);
-    expect(isSlotLocked(locked, "s9")).toBe(false);
-  });
 
   it("isSessionLocked resolves through the slot holding the session", () => {
     const withSessions = makeWeeks(2);

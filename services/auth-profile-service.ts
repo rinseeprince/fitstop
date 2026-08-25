@@ -10,7 +10,7 @@ import { mapCoachRow } from "@/lib/mappers";
  * through. Role is NEVER read from `user_metadata`: it is derived from server
  * state, mirroring the `handle_new_user` trigger (migration 107).
  */
-export type AuthUserIdentity = {
+type AuthUserIdentity = {
   id: string;
   email?: string;
   user_metadata?: Record<string, unknown>;

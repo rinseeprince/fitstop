@@ -16,7 +16,7 @@ import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helper
  * Resolves from the date's nutrition_event; returns null when there is no event (no template fallback exists yet).
  * Optional includeActivityBurn / surplusAsCarbs avoid repeated clients table queries when called in a loop.
  */
-export type PlanDayTarget = {
+type PlanDayTarget = {
   calories: number;
   proteinG: number;
   carbsG: number;
@@ -63,7 +63,7 @@ export const getPlanTargetForDate = async (
 // Per-card write context + nutrition GET resolver (Session 3.1)
 // ---------------------------------------------------------------------------
 
-export type PlanContextForDate = {
+type PlanContextForDate = {
   nutritionPlanId: string | null;
   trainingPlanId: string | null;
 };
@@ -111,7 +111,7 @@ export const resolvePlanContextForDate = async (
  * Per-card resource whose plan-id presence we assert before writing a log. Wellness is
  * deliberately NOT gated (Session 3.1C): it has no plan and no adherence concept.
  */
-export type PlanGatedResource = "nutrition" | "training";
+type PlanGatedResource = "nutrition" | "training";
 
 /**
  * Thrown by `assertHasActivePlan` when the client is not set up for the resource.

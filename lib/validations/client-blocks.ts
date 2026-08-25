@@ -57,7 +57,6 @@ export const replaceBlockChainSchema = z.object({
   blocks: z.array(blockEntrySchema).min(1).max(BLOCKS_PER_CLIENT_MAX),
 });
 
-export type ReplaceBlockChainPayload = z.infer<typeof replaceBlockChainSchema>;
 
 /** PATCH /blocks/[blockId]: archive (true) or restore (false) an elapsed
  *  block — a coach view preference, not lifecycle. */

@@ -1,74 +1,9 @@
 import { format, formatDistanceToNow } from "date-fns";
-import type { CheckIn, ProgressComparison, ProgressChartData } from "@/types/check-in";
-
-// Format check-in date
-export const formatCheckInDate = (dateString: string): string => {
-  return format(new Date(dateString), "MMM d, yyyy");
-};
-
-// Format check-in time
-export const formatCheckInTime = (dateString: string): string => {
-  return format(new Date(dateString), "h:mm a");
-};
+import type { CheckIn, ProgressChartData } from "@/types/check-in";
 
 // Format relative time (e.g., "2 hours ago")
 export const formatRelativeTime = (dateString: string): string => {
   return formatDistanceToNow(new Date(dateString), { addSuffix: true });
-};
-
-// Calculate progress comparison between two check-ins
-export const calculateProgressComparison = (
-  current: CheckIn,
-  previous?: CheckIn
-): ProgressComparison => {
-  const changes: ProgressComparison["changes"] = {};
-
-  if (previous) {
-    // Weight change
-    if (current.weight && previous.weight) {
-      changes.weight = Number((current.weight - previous.weight).toFixed(1));
-    }
-
-    // Body fat change
-    if (current.bodyFatPercentage && previous.bodyFatPercentage) {
-      changes.bodyFatPercentage = Number(
-        (current.bodyFatPercentage - previous.bodyFatPercentage).toFixed(1)
-      );
-    }
-
-    // Measurements changes
-    const measurements: Record<string, number> = {};
-    if (current.waist && previous.waist) {
-      measurements.waist = Number((current.waist - previous.waist).toFixed(1));
-    }
-    if (current.hips && previous.hips) {
-      measurements.hips = Number((current.hips - previous.hips).toFixed(1));
-    }
-    if (current.chest && previous.chest) {
-      measurements.chest = Number((current.chest - previous.chest).toFixed(1));
-    }
-    if (current.arms && previous.arms) {
-      measurements.arms = Number((current.arms - previous.arms).toFixed(1));
-    }
-    if (current.thighs && previous.thighs) {
-      measurements.thighs = Number((current.thighs - previous.thighs).toFixed(1));
-    }
-
-    if (Object.keys(measurements).length > 0) {
-      changes.measurements = measurements;
-    }
-
-    // Adherence change
-    if (current.adherencePercentage && previous.adherencePercentage) {
-      changes.adherence = current.adherencePercentage - previous.adherencePercentage;
-    }
-  }
-
-  return {
-    current,
-    previous,
-    changes,
-  };
 };
 
 // Prepare chart data from check-ins
@@ -151,22 +86,6 @@ export const prepareChartData = (checkIns: CheckIn[]): ProgressChartData => {
   return chartData;
 };
 
-// Get status badge color
-export const getStatusColor = (
-  status: "pending" | "ai_processed" | "reviewed"
-): string => {
-  switch (status) {
-    case "pending":
-      return "bg-warning/10 text-warning";
-    case "ai_processed":
-      return "bg-primary/10 text-primary";
-    case "reviewed":
-      return "bg-success/10 text-success";
-    default:
-      return "bg-muted text-foreground dark:bg-muted dark:text-muted-foreground";
-  }
-};
-
 // Get status label
 export const getStatusLabel = (
   status: "pending" | "ai_processed" | "reviewed"
@@ -181,22 +100,4 @@ export const getStatusLabel = (
     default:
       return "Unknown";
   }
-};
-
-// Calculate average of a metric
-export const calculateAverage = (values: (number | undefined)[]): number => {
-  const validValues = values.filter((v): v is number => v !== undefined);
-  if (validValues.length === 0) return 0;
-  return validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
-};
-
-// Get trend direction (up, down, stable)
-export const getTrendDirection = (
-  current: number,
-  previous: number,
-  threshold: number = 0.5
-): "up" | "down" | "stable" => {
-  const diff = current - previous;
-  if (Math.abs(diff) < threshold) return "stable";
-  return diff > 0 ? "up" : "down";
 };

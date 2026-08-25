@@ -89,7 +89,7 @@ export type DraftOpContext = {
   lockedSlotUids?: ReadonlySet<string>;
 };
 
-export type DraftOpOutcome = { draft: ProgramDraft; skipped?: string };
+type DraftOpOutcome = { draft: ProgramDraft; skipped?: string };
 
 // Destructive ops never auto-apply on the client — they render as preview
 // chips (Apply all / Dismiss). remove_exercise stays auto-apply: it is small,

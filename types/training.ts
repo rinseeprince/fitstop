@@ -204,14 +204,14 @@ export type AddExerciseRequest = {
 export type ManualSessionDraft = {
   tempId: string;
   name: string;
-  dayOfWeek?: string;
+
   focus?: string;
   isRest?: boolean;
   exercises: ManualExerciseDraft[];
 };
 
 // Manual exercise being built (before saving)
-export type ManualExerciseDraft = {
+type ManualExerciseDraft = {
   tempId: string;
   name: string;
   sets: number;

@@ -13,12 +13,12 @@ import type { TrendDirection } from "@/types/check-in";
 
 export type Tone = "good" | "bad" | "neutral";
 
-export function toneFor(trend: TrendDirection, downIsGood: boolean): Tone {
+function toneFor(trend: TrendDirection, downIsGood: boolean): Tone {
   if (trend === "stable") return "neutral";
   return (trend === "down") === downIsGood ? "good" : "bad";
 }
 
-export type HeroStats = {
+type HeroStats = {
   current: { value: number; date: string; daysAgo: number };
   totalChange: { delta: number; sinceDate: string } | null;
   avgRate: { perWeek: number; weeks: number } | null;
@@ -80,7 +80,7 @@ export function deriveFrequencyLabel(points: MetricPoint[]): string | null {
   return "occasional";
 }
 
-export type WindowChange = {
+type WindowChange = {
   kind: "30day" | "sinceFirst";
   delta: number;
   sinceDate?: string;
@@ -128,7 +128,7 @@ export function deriveWindowChange(
   };
 }
 
-export type WeekComparison =
+type WeekComparison =
   | { kind: "weekAvg"; currentAvg: number; prevAvg: number }
   | { kind: "latest"; value: number; date: string };
 
@@ -167,7 +167,7 @@ export function deriveBest(
   return { value: best.value, date: best.date };
 }
 
-export type DerivedLogRow = {
+type DerivedLogRow = {
   id: string;
   date: string;
   metricId: string;

@@ -175,5 +175,3 @@ export type CreateClientInput = z.infer<typeof createClientSchema>;
 export type UpdateClientInput = z.infer<typeof updateClientSchema>;
 export type UpdateCheckInConfigInput = z.infer<typeof updateCheckInConfigSchema>;
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
-export type CreateClientNoteInput = z.infer<typeof createClientNoteSchema>;
-export type UpdateClientNoteInput = z.infer<typeof updateClientNoteSchema>;

@@ -7,7 +7,7 @@ import type {
   BodyMetricsSource,
 } from "@/types/body-metrics";
 
-export interface BodyMetricsQueryOpts {
+interface BodyMetricsQueryOpts {
   requireFields?: (
     | "weight"
     | "body_fat_percentage"

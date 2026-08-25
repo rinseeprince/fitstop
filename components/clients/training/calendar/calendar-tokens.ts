@@ -13,7 +13,7 @@ export const CAL_GRID_COLS =
   "grid grid-cols-[42px_repeat(7,minmax(0,1fr))] gap-2";
 
 
-export type StatusThumbSpec = {
+type StatusThumbSpec = {
   bg: string;
   icon: LucideIcon;
   iconClass: string;

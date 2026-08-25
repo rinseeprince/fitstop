@@ -14,7 +14,7 @@ import type { MetricSummary } from "./metrics-view-types";
 // The range filters the CHART's points only — every derived stat on the cards
 // is computed upstream from the full series.
 
-export type ProgressionRange = 30 | 60 | 90 | "all";
+type ProgressionRange = 30 | 60 | 90 | "all";
 
 type MetricProgressionSectionProps = {
   metric: MetricSummary;

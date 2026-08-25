@@ -10,7 +10,6 @@ vi.mock('./supabase-admin', () => ({
 vi.mock('@/utils/nutrition-helpers', () => ({
   calculateDailyMacros: vi.fn().mockReturnValue({ proteinG: 180, carbsG: 220, fatG: 70 }),
   DAYS_OF_WEEK: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-  getTrainingDays: vi.fn().mockReturnValue(new Set()),
 }))
 
 vi.mock('./body-metrics-service', () => ({

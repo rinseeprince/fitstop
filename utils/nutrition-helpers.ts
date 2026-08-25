@@ -1,5 +1,4 @@
-import type { ActivityLevel, TrainingVolume, DietType } from "@/types/check-in";
-import type { TrainingPlan } from "@/types/training";
+import type { ActivityLevel, DietType } from "@/types/check-in";
 
 /**
  * Days of the week constant
@@ -42,39 +41,6 @@ export type DailyNutritionTargets = {
   // the client on the program card + day-view. Null/undefined on template days.
   note?: string | null;
 };
-
-/**
- * Get training days from a training plan (excluding external activities)
- * Returns a Set of lowercase day names
- */
-export function getTrainingDays(plan: TrainingPlan | null): Set<string> {
-  if (!plan) return new Set();
-
-  const days = new Set<string>();
-  plan.sessions.forEach((session) => {
-    if (session.dayOfWeek) {
-      days.add(session.dayOfWeek.toLowerCase());
-    }
-  });
-
-  // If no days assigned, distribute based on frequency
-  if (days.size === 0 && plan.frequencyPerWeek) {
-    // Default distribution: spread evenly through week
-    const defaultDistribution: Record<number, DayOfWeek[]> = {
-      1: ["monday"],
-      2: ["monday", "thursday"],
-      3: ["monday", "wednesday", "friday"],
-      4: ["monday", "tuesday", "thursday", "friday"],
-      5: ["monday", "tuesday", "wednesday", "thursday", "friday"],
-      6: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
-      7: DAYS_OF_WEEK as unknown as DayOfWeek[],
-    };
-    const defaultDays = defaultDistribution[plan.frequencyPerWeek] || [];
-    defaultDays.forEach((day) => days.add(day));
-  }
-
-  return days;
-}
 
 /**
  * Get base carb/fat split ratios for a diet type
@@ -158,29 +124,6 @@ export function applySurplusSplit(
   return { carbsG, fatG };
 }
 
-/**
- * Calculate suggested training volume based on training plan
- */
-export function getSuggestedTrainingVolume(
-  trainingPlan: TrainingPlan | null
-): TrainingVolume | null {
-  if (!trainingPlan) return null;
-
-  // Calculate total weekly training hours from session durations
-  const totalMinutes = trainingPlan.sessions.reduce(
-    (sum, session) => sum + (session.estimatedDurationMinutes || 60),
-    0
-  );
-  const totalHours = totalMinutes / 60;
-
-  // Map to TrainingVolume categories
-  if (totalHours <= 1) return "0-1";
-  if (totalHours <= 3) return "2-3";
-  if (totalHours <= 5) return "4-5";
-  if (totalHours <= 7) return "6-7";
-  return "8+";
-}
-
 // The unit-conversion helpers that used to live here are gone: lbsToKg,
 // inchesToCm, cmToInches, weightToKg and weightFromKg were all dead once storage
 // became canonical (migration 141), and their 2.205 was one of the four
@@ -218,41 +161,6 @@ export function getActivityMultiplier(activityLevel: ActivityLevel): number {
     extremely_active: 1.9,
   };
   return multipliers[activityLevel];
-}
-
-/**
- * Get training volume calories to add to TDEE
- */
-export function getTrainingCalories(trainingVolume: TrainingVolume): number {
-  const calories: Record<TrainingVolume, number> = {
-    "0-1": 0,
-    "2-3": 250,
-    "4-5": 400,
-    "6-7": 550,
-    "8+": 700,
-  };
-  return calories[trainingVolume];
-}
-
-/**
- * Get activity level display name
- */
-export function getActivityLevelLabel(activityLevel: ActivityLevel): string {
-  const labels: Record<ActivityLevel, string> = {
-    sedentary: "Sedentary (desk job)",
-    lightly_active: "Lightly Active (light movement)",
-    moderately_active: "Moderately Active (on feet most of day)",
-    very_active: "Very Active (physical job)",
-    extremely_active: "Extremely Active (athlete/heavy labor)",
-  };
-  return labels[activityLevel];
-}
-
-/**
- * Get training volume display label
- */
-export function getTrainingVolumeLabel(trainingVolume: TrainingVolume): string {
-  return `${trainingVolume} hours/week`;
 }
 
 /**

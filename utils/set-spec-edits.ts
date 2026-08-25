@@ -21,7 +21,7 @@ import {
 
 export const MAX_DROPS = 20;
 
-export type SpecEditableExercise = {
+type SpecEditableExercise = {
   setSpecs: SetSpec[] | null;
   sets: number;
   repsMin: number | null;
@@ -53,7 +53,7 @@ export type SetSpecEdit =
       };
     };
 
-export type SetSpecEditResult<T extends SpecEditableExercise> =
+type SetSpecEditResult<T extends SpecEditableExercise> =
   | { ok: true; exercise: T }
   | { ok: false; reason: string };
 

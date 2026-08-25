@@ -251,7 +251,7 @@ function governingPlanAt(
   return best;
 }
 
-export interface GoverningPlanSegment {
+interface GoverningPlanSegment {
   plan: TrainingPlanWindowSummary;
   from: string;
   to: string;

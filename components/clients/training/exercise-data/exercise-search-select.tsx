@@ -32,7 +32,7 @@ export type ExerciseMetric =
   | "prs";
 
 // Sentence case preserves the e1RM/PRs casing (control options are sans).
-export const METRIC_OPTIONS: { value: ExerciseMetric; label: string }[] = [
+const METRIC_OPTIONS: { value: ExerciseMetric; label: string }[] = [
   { value: "weight", label: "Weight" },
   { value: "e1rm", label: "e1RM" },
   { value: "volume", label: "Volume" },

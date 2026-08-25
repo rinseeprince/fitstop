@@ -60,23 +60,3 @@ export function sanitizeForAIPrompt(input: string, maxLength = 500): string {
 
   return sanitized.trim();
 }
-
-/**
- * Wraps user content with structural delimiters for safe inclusion in AI prompts.
- * This is the primary defense — the content is clearly marked as user data,
- * making it harder for injected instructions to be treated as system-level.
- *
- * @param content - The user-generated content to wrap
- * @param label - The XML tag label (default "client_response")
- * @returns Sanitized content wrapped in structural delimiters
- */
-export function wrapUserContent(
-  content: string,
-  label = "client_response"
-): string {
-  let sanitized = sanitizeForAIPrompt(content);
-  // Strip closing delimiter tags to prevent delimiter escape attacks
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  sanitized = sanitized.replace(new RegExp(`</${escaped}>`, "gi"), "");
-  return `<${label}>\n${sanitized}\n</${label}>`;
-}

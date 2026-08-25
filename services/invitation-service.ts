@@ -15,29 +15,6 @@ const clientsTable = "clients"
 const _coachesTable = "coaches"
 
 /**
- * Get invitation status for a client
- */
-export async function getInvitationForClient(
-  clientId: string
-): Promise<ClientInvitation | null> {
-  const { data, error } = await supabaseAdmin
-    .from(invitationsTable)
-    .select("*")
-    .eq("client_id", clientId)
-    .single()
-
-  if (error) {
-    if (error.code === "PGRST116") {
-      return null
-    }
-    console.error("Error fetching invitation:", error)
-    throw error
-  }
-
-  return toClientInvitation(data as ClientInvitationRow)
-}
-
-/**
  * Get invitation by token (public - no auth required)
  */
 export async function getInvitationByToken(
@@ -386,21 +363,4 @@ export async function acceptInvitation(
     .from(clientsTable)
     .update({ user_id: userId })
     .eq("id", clientId)
-}
-
-/**
- * Get client ID from user ID
- */
-export async function getClientIdForUser(userId: string): Promise<string | null> {
-  const { data: client } = await supabaseAdmin
-    .from(clientsTable)
-    .select("id")
-    .eq("user_id", userId)
-    .single()
-
-  if (client) {
-    return client.id
-  }
-
-  return null
 }

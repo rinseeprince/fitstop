@@ -19,14 +19,14 @@ import {
 import { getPlanTargetForDate } from "./daily-context-service";
 import type { DailyLog } from "@/types/daily-log";
 
-export type NutritionLogInput = {
+type NutritionLogInput = {
   caloriesConsumed?: number;
   proteinG?: number;
   carbsG?: number;
   fatG?: number;
 };
 
-export type WellnessLogInput = {
+type WellnessLogInput = {
   mood?: number;
   energy?: number;
   sleep?: number;

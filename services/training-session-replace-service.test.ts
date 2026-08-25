@@ -203,7 +203,7 @@ describe("replaceSessionFull", () => {
     expect(mockSurplusUpdate).not.toHaveBeenCalled();
     expect(result.surplusChanged).toBe(false);
     expect(result.identityChanged).toBe(false);
-    expect(result.futureEventsUpdated).toBe(0);
+
     expect(result.session).toEqual(
       expect.objectContaining({ id: SESSION_ID, exercises: [{ id: "ex-1" }] }),
     );
@@ -252,7 +252,6 @@ describe("replaceSessionFull", () => {
     expect(mockSurplusUpdate).not.toHaveBeenCalled();
     expect(result.identityChanged).toBe(true);
     expect(result.surplusChanged).toBe(false);
-    expect(result.futureEventsUpdated).toBe(2);
   });
 
   it("propagates a surplus change through updateSurplusForFutureEvents with the fromDate floor", async () => {
@@ -283,7 +282,7 @@ describe("replaceSessionFull", () => {
     expect(links.fns.update).not.toHaveBeenCalled();
     expect(result.surplusChanged).toBe(true);
     expect(result.identityChanged).toBe(false);
-    expect(result.futureEventsUpdated).toBe(3);
+
     // The route cascades nutrition over exactly these days.
     expect(result.surplusAffectedDates).toEqual(["2026-04-23", "2026-04-25", "2026-04-28"]);
   });

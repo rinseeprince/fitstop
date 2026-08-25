@@ -44,30 +44,9 @@ export function parsePaginationParams(searchParams: URLSearchParams): {
 }
 
 /**
- * Safely parse a numeric ID parameter.
- * Returns the number if valid, null otherwise.
- */
-export function parseNumericParam(value: string | null): number | null {
-  if (value === null) return null;
-
-  const num = parseInt(value, 10);
-  if (isNaN(num)) return null;
-
-  return num;
-}
-
-/**
  * Validate UUID format
  */
 export function isValidUUID(value: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return uuidRegex.test(value);
-}
-
-/**
- * Sanitize a string for safe use in responses (strip control characters)
- */
-export function sanitizeString(value: string): string {
-  // eslint-disable-next-line no-control-regex
-  return value.replace(/[\x00-\x1F\x7F]/g, '');
 }

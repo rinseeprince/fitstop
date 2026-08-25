@@ -3,7 +3,6 @@ import type { NutritionEvent } from "@/types/check-in";
 import {
   isDateEligible,
   eligibleDatesIn,
-  thisMonthDates,
   monthDatesWhere,
   weekContaining,
 } from "../nutrition-calendar-selection";
@@ -64,31 +63,6 @@ describe("nutrition-calendar-selection", () => {
       expect(
         eligibleDatesIn(["2026-06-14", "2026-06-16", "2026-06-18", "2026-06-20"], map, clientToday)
       ).toEqual(["2026-06-16", "2026-06-20"]);
-    });
-  });
-
-  describe("thisMonthDates", () => {
-    it("includes only in-month eligible days, excluding outside-month grid cells", () => {
-      // Two-week grid straddling the month boundary; May 31 is outside June.
-      const weeks = [
-        ["2026-05-31", "2026-06-01", "2026-06-02"],
-        ["2026-06-29", "2026-06-30", "2026-07-01"],
-      ];
-      const map = mapOf([
-        ev("2026-05-31"), // outside month -> excluded
-        ev("2026-06-01"), // future in-month -> included
-        ev("2026-06-02"),
-        ev("2026-06-29"),
-        ev("2026-06-30"),
-        ev("2026-07-01"), // outside month -> excluded
-      ]);
-      // viewMonth = 5 (June, 0-indexed), clientToday well before -> all in-month eligible
-      expect(thisMonthDates(weeks, 5, 2026, map, "2026-06-01")).toEqual([
-        "2026-06-01",
-        "2026-06-02",
-        "2026-06-29",
-        "2026-06-30",
-      ]);
     });
   });
 

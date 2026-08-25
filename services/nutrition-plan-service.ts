@@ -45,7 +45,7 @@ type CreateNutritionPlanRpcPayload = Required<Omit<CreatePlanRpcArgs, NullableRp
   [K in NullableRpcArgKeys]: CreatePlanRpcArgs[K] | null;
 };
 
-export type CreateNutritionPlanParams = {
+type CreateNutritionPlanParams = {
   clientId: string;
   coachId: string;
   /**
@@ -273,7 +273,7 @@ export async function getNutritionPlanIdForDate(
   return data?.id ?? null;
 }
 
-export type NutritionPlanVersionWindow = {
+type NutritionPlanVersionWindow = {
   id: string;
   effectiveFrom: string;
   effectiveUntil: string | null;
@@ -338,7 +338,7 @@ export async function getOpenNutritionPlan(clientId: string): Promise<NutritionP
   return data;
 }
 
-export type NextFutureNutritionPlan = {
+type NextFutureNutritionPlan = {
   id: string;
   effectiveFrom: string;
 };

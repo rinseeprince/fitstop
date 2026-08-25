@@ -9,7 +9,6 @@ import {
 } from "./daily-habits-mappers";
 
 export type { HabitLogWithDetails } from "@/types/daily-habit";
-export { calculateCompletionRate, calculateCurrentStreak, mapArrayIndexToSortOrder } from "./daily-habits-logic";
 
 /** Thrown when a body-supplied habit id does not belong to the scoped client. */
 export class HabitOwnershipError extends Error {

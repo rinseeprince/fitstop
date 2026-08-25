@@ -2,14 +2,13 @@
  * Check-In Tracking Service
  * Handles calculations for check-in schedules, overdue detection, and client adherence
  *
- * supabaseAdmin required throughout: this service is called from unauthenticated
- * token-based check-in routes (no session for RLS) and coach routes querying
- * across multiple clients
+ * Pure schedule maths over `getClientsForCoach` — no direct table access. (The
+ * one direct query here, the single-client missed-period lookup, had no caller
+ * and was removed in the 2026-08-25 dead-code sweep.)
  */
 
-import { supabaseAdmin } from "./supabase-admin";
 import { getClientsForCoach } from "./client-service";
-import { calculateCheckInPeriod, getTodayInTimezone } from "@/lib/date-helpers";
+
 import {
   calculateNextExpectedCheckIn,
   getDaysUntilOrPastDue,
@@ -27,7 +26,6 @@ export {
   getOverdueSeverity,
 } from "@/lib/check-in-schedule";
 import type {
-  DayOfWeek,
   OverdueClient,
   ClientDueSoon,
 } from "@/types/check-in";
@@ -84,75 +82,3 @@ export async function getClientsDueSoon(coachId: string): Promise<ClientDueSoon[
   return clientsDueSoon;
 }
 
-export type MissedCheckInPeriod = {
-  periodStart: string;
-  periodEnd: string;
-};
-
-/**
- * Get list of missed check-in periods for a client.
- * A period is "missed" if no check-in exists for it and the grace window has passed
- * (i.e., the next period's end date has arrived).
- *
- * Computed at query time — no cron job needed.
- */
-export async function getMissedCheckInPeriods(
-  clientId: string,
-  expectedCheckInDay: DayOfWeek,
-  since: Date,
-  clientTimezone: string
-): Promise<MissedCheckInPeriod[]> {
-  // Get all check-in dates for this client since the given date
-  const { data: checkIns, error } = await supabaseAdmin
-    .from("check_ins")
-    .select("created_at, period_start")
-    .eq("client_id", clientId)
-    .gte("created_at", since.toISOString())
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    throw new Error(`Failed to fetch check-ins: ${error.message}`);
-  }
-
-  // Build a set of covered period_start dates from existing check-ins
-  const coveredPeriods = new Set<string>();
-  for (const ci of checkIns || []) {
-    if (ci.period_start) {
-      coveredPeriods.add(ci.period_start);
-    } else {
-      // For legacy check-ins without stored period, compute it
-      const { periodStart } = calculateCheckInPeriod(
-        new Date(ci.created_at!),
-        expectedCheckInDay
-      );
-      coveredPeriods.add(periodStart);
-    }
-  }
-
-  // Walk through every expected period from `since` until the client's today
-  const today = getTodayInTimezone(clientTimezone);
-  const missed: MissedCheckInPeriod[] = [];
-
-  // Start from the first period that includes `since`
-  let { periodStart, periodEnd } = calculateCheckInPeriod(since, expectedCheckInDay);
-  let cursor = new Date(periodEnd + "T00:00:00");
-
-  while (cursor <= today) {
-    // Grace window: the period is only "missed" once the next period's end has arrived
-    const nextPeriodEnd = new Date(cursor);
-    nextPeriodEnd.setDate(nextPeriodEnd.getDate() + 7);
-
-    if (nextPeriodEnd <= today && !coveredPeriods.has(periodStart)) {
-      missed.push({ periodStart, periodEnd });
-    }
-
-    // Advance to next period
-    cursor.setDate(cursor.getDate() + 7);
-    const nextPeriod = calculateCheckInPeriod(cursor, expectedCheckInDay);
-    periodStart = nextPeriod.periodStart;
-    periodEnd = nextPeriod.periodEnd;
-    cursor = new Date(periodEnd + "T00:00:00");
-  }
-
-  return missed;
-}

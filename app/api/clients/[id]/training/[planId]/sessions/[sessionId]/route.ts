@@ -154,7 +154,6 @@ export async function PUT(
         session: result.session,
         surplusChanged: result.surplusChanged,
         identityChanged: result.identityChanged,
-        futureEventsUpdated: result.futureEventsUpdated,
       },
       { status: 200 }
     );

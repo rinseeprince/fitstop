@@ -17,7 +17,7 @@ const MOODS: ReadonlyArray<{
   { value: 5, icon: Heart, label: "Excellent", color: "text-success" },
 ];
 
-export interface MoodPickerProps {
+interface MoodPickerProps {
   /** Selected mood 1–5, or null when nothing is chosen yet. */
   value: number | null;
   disabled?: boolean;

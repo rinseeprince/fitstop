@@ -123,7 +123,7 @@ export const getCheckInNutritionContext = async (
   };
 };
 
-export type CheckInTrainingPeriodStats = {
+type CheckInTrainingPeriodStats = {
   sessionsCompleted: number;
   sessionsPlanned: number;
 };

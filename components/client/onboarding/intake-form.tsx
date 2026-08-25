@@ -9,7 +9,7 @@ import { IntakeStep2 } from "./intake-step-2"
 import { IntakeStep3 } from "./intake-step-3"
 import { IntakeStep4 } from "./intake-step-4"
 import { IntakeStep5 } from "./intake-step-5"
-import { intakeStepSchemas } from "@/lib/validations/client-intake"
+import { intakeStepSchemas } from "@/lib/validations/intake-steps"
 import { toast } from "sonner"
 import type { ClientIntake } from "@/types/client-intake"
 

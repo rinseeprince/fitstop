@@ -11,7 +11,7 @@ import type { ProgramBuilderState } from "./use-program-builder-state";
 // keys the provider by planId, so cross-plan cleanup is a remount), and owns
 // everything the seed produced: the lock set, the row-id map, the drift token.
 
-export type PlacedPlanSeedInfo = {
+type PlacedPlanSeedInfo = {
   lockedSlotUids: ReadonlySet<string>;
   /** Presentation-only subset — see PlacedPlanDraftSeed. */
   movedPastSlotUids: ReadonlySet<string>;

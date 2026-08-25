@@ -24,7 +24,7 @@ const cardVariants = cva(
   }
 )
 
-export interface CardProps extends React.ComponentProps<'div'>, VariantProps<typeof cardVariants> {}
+interface CardProps extends React.ComponentProps<'div'>, VariantProps<typeof cardVariants> {}
 
 function Card({ className, variant, ...props }: CardProps) {
   return (

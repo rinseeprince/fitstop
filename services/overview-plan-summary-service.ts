@@ -50,7 +50,7 @@ export function modalSurplus(
   return best;
 }
 
-export type ExerciseE1RMSeries = {
+type ExerciseE1RMSeries = {
   points: { date: string; estimatedOneRepMax: number | null }[];
 };
 

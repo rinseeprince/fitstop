@@ -209,7 +209,7 @@ export function sessionDetail(session: SessionDraft, week: number, day: number):
   return [header, ...lines, ...notes].join("\n") || header;
 }
 
-export function weekOneLiner(week: WeekDraft): string {
+function weekOneLiner(week: WeekDraft): string {
   const days = week.days
     .map((slot, i) =>
       slot.session

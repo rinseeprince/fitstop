@@ -56,7 +56,7 @@ const opFallbackLabel: Record<DraftOp["type"], string> = {
   reorder_exercise: "Reorder an exercise",
 };
 
-export const opLabelText = (op: DraftOp): string =>
+const opLabelText = (op: DraftOp): string =>
   op.label ?? opFallbackLabel[op.type];
 
 export function useAssistantChat() {

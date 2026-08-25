@@ -68,9 +68,9 @@ const IMPERIAL_LOAD_INCREMENT_LB = 2.5;
 /** Composite-unit arithmetic for imperial height, not a conversion factor. */
 const INCHES_PER_FOOT = 12;
 
-export type WeightDisplay = { value: number; unit: "kg" | "lbs" };
-export type LengthDisplay = { value: number; unit: "cm" | "in" };
-export type HeightDisplay =
+type WeightDisplay = { value: number; unit: "kg" | "lbs" };
+type LengthDisplay = { value: number; unit: "cm" | "in" };
+type HeightDisplay =
   | { system: "metric"; value: number; unit: "cm" }
   | { system: "imperial"; feet: number; inches: number };
 

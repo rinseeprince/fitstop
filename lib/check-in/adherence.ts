@@ -26,7 +26,7 @@ export type SessionSummary = AdherenceResult & {
  * per the product rule below); `prescribed` is every prescribed session in the
  * window.
  */
-export function computeAdherence(prescribed: number, completed: number): AdherenceResult {
+function computeAdherence(prescribed: number, completed: number): AdherenceResult {
   const pct = prescribed > 0 ? Math.round((completed / prescribed) * 100) : null;
   return { completed, prescribed, pct };
 }

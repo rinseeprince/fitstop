@@ -52,7 +52,7 @@ export const displayLoad = (
     ? ""
     : String(round1(viewer === "imperial" ? kgToLbs(valueKg) : valueKg));
 
-export type LoadCommit =
+type LoadCommit =
   | { changed: false }
   | { changed: true; valueKg: number | null };
 

@@ -48,7 +48,7 @@ import {
 // This component owns only view state: collapse, the open editor, the
 // add-session popover, and the confirm dialogs. NO assign-to-client lives on
 // this surface (Phase 5: assignment happens in the client's planner).
-export type ProgramBuilderProps = {
+type ProgramBuilderProps = {
   // Phase 5 seam — the client-draft remount overrides where "back" goes.
   onExit?: () => void;
 };

@@ -29,7 +29,7 @@ import {
  * it exactly like "no principal", which is what `auth-helpers` itself does when
  * the profile row is missing.
  */
-export async function readCoachPreference(coachId: string): Promise<UnitSystem | null> {
+async function readCoachPreference(coachId: string): Promise<UnitSystem | null> {
   const { data, error } = await supabaseAdmin
     .from("coaches")
     .select("unit_preference")

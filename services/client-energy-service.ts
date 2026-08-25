@@ -37,7 +37,7 @@ export type {
  * invariant is one writer for UPDATES; row birth is deliberately not in scope.
  */
 
-export type EnergyOverrideInstruction =
+type EnergyOverrideInstruction =
   | { action: "set"; value: number }
   | { action: "clear" };
 
@@ -46,7 +46,7 @@ export type ClientEnergyOverrides = {
   tdee?: EnergyOverrideInstruction;
 };
 
-export type RecalculateClientEnergyOptions = {
+type RecalculateClientEnergyOptions = {
   /** Tenant scoping as defence in depth (CONVENTIONS §2): when supplied the
    *  UPDATE also filters `coach_id`, so a forged id matches zero rows — and a
    *  zero-row match is detected rather than silently succeeding. */
@@ -57,7 +57,7 @@ export type RecalculateClientEnergyOptions = {
   now?: Date;
 };
 
-export type EnergyHalfDisposition =
+type EnergyHalfDisposition =
   /** recomputed from the client's measurements */
   | "computed"
   /** override flag set: the stored value was written back unchanged */
@@ -67,7 +67,7 @@ export type EnergyHalfDisposition =
   /** not frozen, inputs insufficient — stored value written back */
   | "carried";
 
-export type ClientEnergyStatus =
+type ClientEnergyStatus =
   | "written"
   | "noop_all_frozen"
   | "skipped_insufficient_data"
@@ -77,7 +77,7 @@ export type ClientEnergyStatus =
   | "rejected_invalid_override"
   | "failed";
 
-export type ClientEnergyResult = {
+type ClientEnergyResult = {
   status: ClientEnergyStatus;
   /** The pair as it stands in `clients` after this call: what was written on
    *  "written", the stored value otherwise, null when the row was unreadable.

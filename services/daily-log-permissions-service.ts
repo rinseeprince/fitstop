@@ -34,7 +34,7 @@ const RESOURCE_TABLE = {
   habit: "daily_habit_logs",
 } as const satisfies Record<DailyLogResourceType, string>;
 
-export type DayEditState = {
+type DayEditState = {
   editable: boolean;
   loggedStatus: DayLogStatus;
   clientTimezone: string;

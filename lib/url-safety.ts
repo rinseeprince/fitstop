@@ -2,7 +2,7 @@
  * Checks if a hostname resolves to a private/internal IP range.
  * Used to prevent SSRF attacks when fetching user-supplied URLs.
  */
-export function isPrivateHostname(hostname: string): boolean {
+function isPrivateHostname(hostname: string): boolean {
   // Strip IPv6 brackets (new URL('http://[::1]/').hostname returns '[::1]')
   const lower = hostname.toLowerCase().replace(/^\[|\]$/g, "");
 

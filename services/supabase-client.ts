@@ -64,7 +64,3 @@ export const supabase = createBrowserClient<Database>(
     },
   }
 );
-
-// Export createServerClient from @supabase/ssr for middleware and server components
-// This properly handles cookies for authentication while respecting RLS
-export { createServerClient } from "@supabase/ssr";

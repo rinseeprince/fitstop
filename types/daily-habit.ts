@@ -39,15 +39,6 @@ export type DailyHabitLog = {
   updatedAt: string;
 };
 
-// Input type for client logging habit completion
-export type DailyHabitLogInput = {
-  dailyHabitId: string;
-  date: string; // ISO date string (YYYY-MM-DD)
-  completed: boolean;
-  value?: number;
-  notes?: string;
-};
-
 // Extended habit log with habit details for analytics
 export type HabitLogWithDetails = DailyHabitLog & {
   habitName: string;

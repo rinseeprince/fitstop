@@ -16,7 +16,7 @@ import { toPrescribedFields } from "@/utils/prescribed-fields";
 // NOTE: no derived length metadata here. Placement derives its own ordered
 // `programSlots` from the session rows (see placePlaceablePlanOnCalendar) —
 // the session rows are the only truth about program shape.
-export type PlaceablePlan = {
+type PlaceablePlan = {
   name: string;
   splitType: string | null;
   frequencyPerWeek: number | null;

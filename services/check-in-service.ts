@@ -397,21 +397,6 @@ export const getFirstCheckIn = async (
   return mapCheckInRow(data);
 };
 
-// Update check-in status
-export const updateCheckInStatus = async (
-  checkInId: string,
-  status: CheckInStatus
-): Promise<void> => {
-  const { error } = await supabaseAdmin
-    .from("check_ins")
-    .update({ status })
-    .eq("id", checkInId);
-
-  if (error) {
-    throw new Error(`Failed to update check-in status: ${error.message}`);
-  }
-};
-
 // Update check-in with the AI review (v3 format). summary and clientMessage are
 // stored in their own columns; watchItems/themes/coachActions go in ai_insights.
 export const updateCheckInAISummary = async (

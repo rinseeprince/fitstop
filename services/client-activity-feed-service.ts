@@ -15,7 +15,7 @@ import type { ActivityItem } from "@/types/coach-brief";
 export const ACTIVITY_FEED_CAP = 20;
 // Past this many new sessions PR detection is skipped entirely (locked decision
 // 5) — the per-exercise RPC fan-out isn't worth it on a backlog that large.
-export const PR_NEW_SESSION_GUARD = 20;
+const PR_NEW_SESSION_GUARD = 20;
 
 export type MetricEntryFeedRow = {
   metric_key: string;
@@ -24,7 +24,7 @@ export type MetricEntryFeedRow = {
   created_at: string;
 };
 
-export type NewExerciseBest = {
+type NewExerciseBest = {
   exerciseId: string | null;
   exerciseName: string;
   newMax: number;

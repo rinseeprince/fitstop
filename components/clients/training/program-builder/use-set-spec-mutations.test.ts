@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import type { ExerciseDraft } from "./program-builder-types";
-import { applySetSpecEdit, MAX_SET_SPECS } from "./use-set-spec-mutations";
+import { applySetSpecEdit } from "@/utils/set-spec-edits";
+import { MAX_SET_SPECS } from "@/utils/exercise-set-specs";
 
 function makeExercise(overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
   return {

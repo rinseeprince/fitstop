@@ -31,10 +31,10 @@ import type { MetricEntryKey } from "@/lib/metrics/metric-entry-definitions";
 
 /** The physique metrics an activation can seed. Nothing captures girths at
  *  intake or manual add, so there is nothing to record for the other five. */
-export const START_METRIC_KEYS = ["weight", "bodyFat"] as const satisfies
+const START_METRIC_KEYS = ["weight", "bodyFat"] as const satisfies
   readonly MetricEntryKey[];
 
-export type ClientStartInput = {
+type ClientStartInput = {
   /** YYYY-MM-DD. Omitted = keep the stored start date. */
   startsOn?: string;
   /** KILOGRAMS. Omitted = keep the stored start weight. */

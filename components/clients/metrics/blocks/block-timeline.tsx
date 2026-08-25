@@ -15,7 +15,7 @@ import type { NutritionPlanNote } from "@/types/nutrition-plan-notes";
 // prescription era by era, and the coach's plan-save notes — all from the facts
 // read. Plan amendments are invisible by design (audit_logs has no readers).
 
-export interface BlockTimelineEntry {
+interface BlockTimelineEntry {
   key: string;
   date: string;
   label: string;

@@ -65,7 +65,7 @@ export type ProgressPhotos = {
 };
 
 // Training and nutrition metrics (legacy fields for backward compatibility)
-export type TrainingMetrics = {
+type TrainingMetrics = {
   workoutsCompleted?: number;
   adherencePercentage?: number; // 0-100
   prs?: string; // Personal records/wins
@@ -79,7 +79,7 @@ export type SessionCompletionQuality = "full" | "partial" | "skipped";
 // Whether a training_event has an associated session_log (Session 6.2).
 // Single-source per-event detail keyed on training_events (the SOT for
 // completion counting), left-joined to its session_log for notes/quality.
-export type TrainingEventLogStatus = "logged" | "not_logged";
+type TrainingEventLogStatus = "logged" | "not_logged";
 
 export type CheckInTrainingEventDetail = {
   eventId: string;
@@ -123,7 +123,7 @@ export type CheckInExerciseHighlight = {
 };
 
 
-export type NutritionAdherence = {
+type NutritionAdherence = {
   daysOnTarget?: number; // 0-7
   notes?: string;
 };
@@ -187,32 +187,32 @@ export type AIRecommendation = {
 };
 
 // Enhanced AI insight sections
-export type AINutritionInsight = {
+type AINutritionInsight = {
   weeklyAdherence: string;
   caloriePattern: string;
   keyObservation: string;
 };
 
-export type AINotesIntelligence = {
+type AINotesIntelligence = {
   themes: string[];
   concerns: string[];
   positives: string[];
   rawNotes: { date: string; note: string }[];
 };
 
-export type AITrainingInsight = {
+type AITrainingInsight = {
   completionSummary: string;
   keyObservation: string;
   progressNote: string;
 };
 
-export type AIWellnessInsight = {
+type AIWellnessInsight = {
   pattern: string;
   averages: string;
   concern?: string;
 };
 
-export type AICoachAction = {
+type AICoachAction = {
   action: string;
   urgency: "now" | "next_check_in" | "monitor";
   context: string;
@@ -498,7 +498,8 @@ export type CheckInClientInfo = {
   checkInFrequencyDays?: number; // 7 for weekly, 14 for bi-weekly, etc.
   lastCheckInDate?: string; // ISO date string (YYYY-MM-DD) of last check-in
   // Client's IANA timezone — used by the check-in form to compute "today" for
-  // canEditDay (Session 6.4). Optional for back-compat with the legacy token flow.
+  // canEditDay (Session 6.4). Optional: the magic-link flow that first made it
+  // optional is gone (mig 142); left optional pending a check of every producer.
   timezone?: string;
 };
 
@@ -519,28 +520,16 @@ export type CheckInContextResponse = {
   errorMessage?: string;
 };
 
-export type SubmitCheckInRequest = CheckInFormData & {
-  token: string;
-};
-
 export type SubmitCheckInResponse = {
   success: boolean;
   checkInId?: string;
   errorMessage?: string;
 };
 
-export type GenerateAISummaryRequest = {
-  checkInId: string;
-};
-
 export type GenerateAISummaryResponse = {
   success: boolean;
   summary?: CheckInReview;
   errorMessage?: string;
-};
-
-export type ReviewCheckInRequest = {
-  coachResponse: string;
 };
 
 export type ReviewCheckInResponse = {
@@ -553,30 +542,12 @@ export type GetCheckInsResponse = {
   total: number;
 };
 
-// Progress comparison data
-export type ProgressComparison = {
-  current: CheckIn;
-  previous?: CheckIn;
-  changes: {
-    weight?: number;
-    bodyFatPercentage?: number;
-    measurements?: {
-      waist?: number;
-      hips?: number;
-      chest?: number;
-      arms?: number;
-      thighs?: number;
-    };
-    adherence?: number;
-  };
-};
-
 // Chart data for visualizations
 // No `label` field: it was built for all eight metrics and read by nothing but
 // its own test. The weight one baked a unit into the string inside a pure module
 // (lib/check-in-utils.ts), which is unfixable at the render boundary — and did
 // not need fixing, because it never reached a screen.
-export type ChartDataPoint = {
+type ChartDataPoint = {
   date: string;
   value: number;
 };
@@ -627,21 +598,6 @@ export type ClientDueSoon = Client & {
   lastCheckInDate?: string;
 };
 
-export type ClientCheckInConfig = {
-  checkInFrequency: CheckInFrequency;
-  checkInFrequencyDays?: number;
-  expectedCheckInDay?: DayOfWeek | null;
-  reminderPreferences: ReminderPreferences;
-};
-
-export type ClientAdherenceStats = {
-  totalCheckInsExpected: number;
-  totalCheckInsCompleted: number;
-  checkInAdherenceRate: number;
-  currentStreak: number;
-  longestStreak: number;
-};
-
 // API Request/Response types for tracking features
 
 export type GetOverdueClientsResponse = {
@@ -654,17 +610,11 @@ export type GetClientsDueSoonResponse = {
   total: number;
 };
 
-export type SendReminderRequest = {
-  reminderType?: ReminderType;
-};
-
 export type SendReminderResponse = {
   success: boolean;
   reminderId?: string;
   errorMessage?: string;
 };
-
-export type UpdateCheckInConfigRequest = ClientCheckInConfig;
 
 export type UpdateCheckInConfigResponse = {
   success: boolean;
@@ -717,22 +667,6 @@ export type NutritionWarning =
   | { code: "protein_above_necessary" }
   | { code: "protein_exceeds_calories" }
   | { code: "fat_increased_for_minimum"; gender: "male" | "female" | "other" };
-
-export type GenerateNutritionPlanResponse = {
-  success: boolean;
-  plan?: {
-    calorieTarget: number;
-    proteinTargetG: number;
-    carbTargetG: number;
-    fatTargetG: number;
-    adjustedTdee: number;
-    weeklyWeightChangeKg: number;
-    // Structured codes, not sentences — the calculator is pure and cannot
-    // resolve the viewer's unit. See NutritionWarning in services/nutrition-service.ts.
-    warnings?: NutritionWarning[];
-  };
-  errorMessage?: string;
-};
 
 // Trend direction for metrics
 export type TrendDirection = "up" | "down" | "stable";
@@ -825,21 +759,6 @@ export type GetCheckInComparisonResponse = {
   comparison: CheckInComparison;
   goalProgress: GoalProgress;
   chartData: ProgressChartData;
-};
-
-// Metric update types
-export type MetricSaveOption = "check-in" | "update-only";
-
-export type UpdateClientMetricsRequest = {
-  currentWeight?: number;
-  currentBodyFatPercentage?: number;
-  goalWeight?: number;
-  goalBodyFatPercentage?: number;
-  bmr?: number;
-  tdee?: number;
-  bmrManualOverride?: boolean;
-  tdeeManualOverride?: boolean;
-  saveOption?: MetricSaveOption;
 };
 
 // Check-in enriched with daily log counts for timeline display

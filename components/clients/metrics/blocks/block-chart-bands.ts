@@ -35,7 +35,7 @@ export function shapeBlockBandIdentity(
   }));
 }
 
-export interface BlockBand {
+interface BlockBand {
   id: string;
   name: string;
   color: string;
@@ -44,7 +44,7 @@ export interface BlockBand {
   x2: number;
 }
 
-export interface BlockBandLayout {
+interface BlockBandLayout {
   bands: BlockBand[];
   /** Interior contact edges between adjacent clamped bands — the white
    *  divider positions. Domain edges never get one. */

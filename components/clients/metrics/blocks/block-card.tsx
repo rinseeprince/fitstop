@@ -60,7 +60,7 @@ const signed = (n: number) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
  * read-only posture elapsed blocks already have everywhere else (no delete
  * offered, dates pinned from storage).
  */
-export function blockAcceptsSetup(block: ClientBlockView): boolean {
+function blockAcceptsSetup(block: ClientBlockView): boolean {
   return block.state !== "past" && block.archivedAt == null;
 }
 

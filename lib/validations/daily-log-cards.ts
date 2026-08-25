@@ -36,8 +36,6 @@ export const wellnessCardSchema = z
   })
   .strict();
 
-export type NutritionCardInput = z.infer<typeof nutritionCardSchema>;
-export type WellnessCardInput = z.infer<typeof wellnessCardSchema>;
 
 /**
  * Format-only validation for the `[date]` route param: a real YYYY-MM-DD.

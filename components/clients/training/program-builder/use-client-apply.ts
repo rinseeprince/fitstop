@@ -20,7 +20,7 @@ type UseClientApplyParams = {
   plan: SavedPlan | null;
 };
 
-export type UseClientApply = {
+type UseClientApply = {
   canApply: boolean;
   confirmOpen: boolean;
   setConfirmOpen: (open: boolean) => void;

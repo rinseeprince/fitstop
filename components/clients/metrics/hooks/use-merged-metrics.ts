@@ -50,7 +50,7 @@ const convertPoint = (value: number, kind: MetricDefinition["convert"], viewer: 
 // plain string ids are looked up.
 const DOWN_SET: ReadonlySet<string> = DOWN_IS_GOOD;
 
-export type UseMergedMetricsResult = {
+type UseMergedMetricsResult = {
   metricsByTab: Record<MetricTab, MetricSummary[]>;
   logRowsByTab: Record<MetricTab, LogRow[]>;
   isLoading: boolean;

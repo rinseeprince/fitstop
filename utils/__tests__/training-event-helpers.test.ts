@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mapEventsToScheduleDays, getEventCaloriesByDay } from "@/utils/training-event-helpers";
+import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
 import { createMockTrainingEvent } from "@/__tests__/helpers/mock-data-builders";
 
 describe("mapEventsToScheduleDays", () => {
@@ -347,63 +347,5 @@ describe("mapEventsToScheduleDays", () => {
 
     expect(result[0].status).toBe("partial");
     expect(result[0].plannedSessionName).toBe("Legs");
-  });
-});
-
-describe("getEventCaloriesByDay", () => {
-  it("returns correct per-day calorie totals", () => {
-    const events = [
-      // Monday April 6
-      createMockTrainingEvent({ date: "2026-04-06", estimatedCalories: 400 }),
-      // Wednesday April 8
-      createMockTrainingEvent({ date: "2026-04-08", estimatedCalories: 350 }),
-      // Friday April 10
-      createMockTrainingEvent({ date: "2026-04-10", estimatedCalories: 500 }),
-    ];
-
-    const result = getEventCaloriesByDay(events);
-
-    expect(result.monday).toBe(400);
-    expect(result.wednesday).toBe(350);
-    expect(result.friday).toBe(500);
-    expect(result.tuesday).toBe(0);
-    expect(result.thursday).toBe(0);
-    expect(result.saturday).toBe(0);
-    expect(result.sunday).toBe(0);
-  });
-
-  it("sums calories for multiple events on the same day", () => {
-    const events = [
-      createMockTrainingEvent({ date: "2026-04-06", estimatedCalories: 300 }), // Monday
-      createMockTrainingEvent({ date: "2026-04-06", estimatedCalories: 200 }), // Monday
-    ];
-
-    const result = getEventCaloriesByDay(events);
-
-    expect(result.monday).toBe(500);
-  });
-
-  it("treats null estimatedCalories as 0", () => {
-    const events = [
-      createMockTrainingEvent({ date: "2026-04-06", estimatedCalories: null, sessionName: "Rest Test" }),
-    ];
-
-    const result = getEventCaloriesByDay(events);
-
-    expect(result.monday).toBe(0);
-  });
-
-  it("returns all zeros for empty events array", () => {
-    const result = getEventCaloriesByDay([]);
-
-    expect(result).toEqual({
-      monday: 0,
-      tuesday: 0,
-      wednesday: 0,
-      thursday: 0,
-      friday: 0,
-      saturday: 0,
-      sunday: 0,
-    });
   });
 });

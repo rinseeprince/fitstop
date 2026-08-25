@@ -195,7 +195,7 @@ export function calculateBaselineCalories(
 /**
  * Calculate macros using protein-first approach
  */
-export function calculateMacros(
+function calculateMacros(
   calorieTarget: number,
   currentWeightKg: number,
   proteinTargetGPerKg: number,

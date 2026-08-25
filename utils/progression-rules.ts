@@ -59,7 +59,7 @@ export type ProgressionExercise = {
 
 // Merged-fields result: the caller spreads { ...exercise, ...result } so the
 // compact-projection invariant (landmine #2) is enforced HERE, not delegated.
-export type ProgressionResult = {
+type ProgressionResult = {
   setSpecs: SetSpec[];
   sets: number;
   repsMin: number | null;

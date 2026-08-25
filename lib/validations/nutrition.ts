@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 
-export const activityLevelSchema = z.enum([
+const activityLevelSchema = z.enum([
   "sedentary",
   "lightly_active",
   "moderately_active",
@@ -9,9 +9,9 @@ export const activityLevelSchema = z.enum([
   "extremely_active",
 ]);
 
-export const trainingVolumeSchema = z.enum(["0-1", "2-3", "4-5", "6-7", "8+"]);
+const trainingVolumeSchema = z.enum(["0-1", "2-3", "4-5", "6-7", "8+"]);
 
-export const dietTypeSchema = z.enum([
+const dietTypeSchema = z.enum([
   "balanced",
   "high_carb",
   "low_carb",

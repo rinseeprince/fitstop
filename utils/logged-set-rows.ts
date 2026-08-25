@@ -20,7 +20,7 @@ import {
 // typed against.
 
 /** What the client recorded for one set. Every field is optional detail. */
-export type LoggedSetActuals = {
+type LoggedSetActuals = {
   reps: number | null;
   weight: number | null;
   rpe: number | null;
@@ -98,9 +98,4 @@ export function buildLoggedSetRows(
     prescribed: prescribedRows[i] ?? null,
     actual: byIndex.get(i) ?? null,
   }));
-}
-
-/** Did the client log anything at all against this exercise? */
-export function hasAnyLoggedSet(rows: LoggedSetRow[]): boolean {
-  return rows.some((row) => row.actual !== null);
 }

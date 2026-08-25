@@ -45,12 +45,6 @@ export interface ContentAssignment {
   assignedAt: string;
 }
 
-// Extended content item with assignment info
-export interface ContentItemWithAssignment extends ContentItem {
-  assignments?: ContentAssignment[];
-  isAssigned?: boolean; // For specific client context
-}
-
 // Content folder with items and subfolders
 export interface ContentFolderWithContents extends ContentFolder {
   subfolders?: ContentFolder[];
@@ -134,61 +128,6 @@ export interface ContentLibraryResponse {
 export interface ClientResourcesResponse {
   assignedContent: ContentItem[];
   libraryContent: ContentLibraryResponse;
-}
-
-// Search and filter types
-export interface ContentFilters {
-  type?: ContentType;
-  folderId?: string;
-  query?: string;
-  isAssigned?: boolean; // For client view
-}
-
-export interface ContentSearchResult {
-  items: ContentItem[];
-  totalCount: number;
-  hasMore: boolean;
-}
-
-// Form types
-export interface ContentUploadFormData {
-  title: string;
-  description?: string;
-  type: ContentType;
-  url?: string;
-  file?: File;
-  folderId?: string;
-  isLibrary: boolean;
-}
-
-export interface FolderFormData {
-  name: string;
-  parentFolderId?: string;
-}
-
-export interface AssignmentFormData {
-  contentId: string;
-  clientIds: string[];
-}
-
-// Component prop types
-export interface ContentCardProps {
-  content: ContentItem;
-  onEdit?: (content: ContentItem) => void;
-  onDelete?: (contentId: string) => void;
-  onAssign?: (content: ContentItem) => void;
-  onPreview?: (content: ContentItem) => void;
-  showAssignmentStatus?: boolean;
-  isSelected?: boolean;
-  onSelect?: (selected: boolean) => void;
-}
-
-export interface FolderCardProps {
-  folder: ContentFolder;
-  onRename?: (folder: ContentFolder) => void;
-  onDelete?: (folderId: string) => void;
-  onClick?: () => void;
-  itemCount?: number;
 }
 
 // Database table types for migration compatibility

@@ -20,7 +20,7 @@ type UnitPreferenceResponse = {
   data: { preference: UnitSystem }
 }
 
-export const unitPreferenceKey = (userId: string) =>
+const unitPreferenceKey = (userId: string) =>
   [UNIT_PREFERENCE_URL, userId] as const
 
 const isUnitPreferenceKey = (key: unknown): boolean =>

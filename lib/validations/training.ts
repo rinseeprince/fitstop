@@ -63,7 +63,7 @@ export const updateSessionSchema = sessionSchema.partial();
 // Per-set prescription model (Training Builder S1/S2). Mirrors the SetSpec type
 // in utils/exercise-set-specs.ts; stored verbatim in the set_specs JSONB column
 // (snake_case keys match the stored shape).
-export const setTypeSchema = z.enum([
+const setTypeSchema = z.enum([
   "warmup",
   "working",
   "amrap",
@@ -115,7 +115,7 @@ export const setSpecsArraySchema = z
 // Which prescription columns the coach uses (migration 149). Absent/null means
 // all five — never an empty list: an exercise prescribing nothing renders the
 // client an empty grid, which is why the DB CHECK refuses it too.
-export const prescribedFieldsSchema = z
+const prescribedFieldsSchema = z
   .array(z.enum(["set_type", "reps", "load", "rpe", "rest"]))
   .min(1)
   .nullish();
@@ -253,7 +253,6 @@ export const createSavedPlanSchema = z.object({
   sessions: z.array(z.object({
     tempId: z.string().optional(),
     name: z.string().min(1).max(100),
-    dayOfWeek: z.string().optional(),
     focus: z.string().max(200).optional(),
     isRest: z.boolean().optional(),
     exercises: z.array(z.object({
@@ -358,9 +357,9 @@ export const updateSavedSessionSchema = z.object({
 // the storage path.
 // =============================================================================
 
-export const completionQualitySchema = z.enum(["full", "partial", "skipped"]);
+const completionQualitySchema = z.enum(["full", "partial", "skipped"]);
 
-export const setPerformanceSchema = z.object({
+const setPerformanceSchema = z.object({
   // 1-based index into the FLATTENED prescription (buildPrescribedRows output),
   // never the position in this array and never the spec's own set_number: a drop
   // set's three rows are 3, 4, 5, not three rows all claiming 3. It is the set's
@@ -430,8 +429,6 @@ export const logSessionForDateSchema = z.object({
   exercises: z.array(exercisePerformanceSchema).max(50).optional(),
 });
 
-export type SetPerformanceInput = z.infer<typeof setPerformanceSchema>;
-export type ExercisePerformanceInput = z.infer<typeof exercisePerformanceSchema>;
 export type LogTrainingEventInput = z.infer<typeof logTrainingEventSchema>;
 export type LogSessionForDateInput = z.infer<typeof logSessionForDateSchema>;
 
@@ -485,7 +482,7 @@ const getTrainingPlanApiResponseSchema = z.object({
 });
 
 // Response types for API calls
-export type UpcomingTrainingPlan = {
+type UpcomingTrainingPlan = {
   id: string;
   effectiveFrom: string;
   name: string;

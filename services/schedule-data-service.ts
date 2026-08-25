@@ -31,7 +31,7 @@ export type SessionLogRow = {
   notes: string | null;
 };
 
-export type TrainingLogRow = {
+type TrainingLogRow = {
   date: string;                   // YYYY-MM-DD
   trainingSessionId: string | null;
   trainingData: {

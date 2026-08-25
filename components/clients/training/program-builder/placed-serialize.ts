@@ -34,11 +34,11 @@ import {
 // amendment surface reads the whole plan via placedPlanToDraft and writes it
 // back through draftToAmendBody.
 
-export type PlacedSessionPayload = z.infer<typeof replaceSessionSchema>;
+type PlacedSessionPayload = z.infer<typeof replaceSessionSchema>;
 
 // Structural source both the tray's TrainingSession and the amendment reader's
 // PlacedSlotRead satisfy — one conversion serves both surfaces.
-export type PlacedSessionSource = {
+type PlacedSessionSource = {
   name: string;
   focus?: string | null;
   estimatedDurationMinutes?: number | null;

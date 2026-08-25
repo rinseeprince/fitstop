@@ -16,12 +16,11 @@ import {
   getTodayInTimezone,
 } from "@/lib/date-helpers";
 import { getFrequencyInDays } from "./check-in-tracking-service";
-import type { ClientAdherenceStats } from "@/types/check-in";
 
 /**
  * Get count of check-ins for a client
  */
-export async function getCheckInCount(clientId: string): Promise<number> {
+async function getCheckInCount(clientId: string): Promise<number> {
   const { count, error } = await supabaseAdmin
     .from("check_ins")
     .select("*", { count: "exact", head: true })
@@ -38,7 +37,7 @@ export async function getCheckInCount(clientId: string): Promise<number> {
  * Calculate check-in adherence rate for a client
  * Returns percentage (0-100) of expected check-ins that were completed
  */
-export async function calculateCheckInAdherence(clientId: string): Promise<number> {
+async function calculateCheckInAdherence(clientId: string): Promise<number> {
   const client = await getClientById(clientId);
 
   if (!client) {
@@ -80,7 +79,7 @@ export async function calculateCheckInAdherence(clientId: string): Promise<numbe
 /**
  * Calculate current streak (consecutive on-time check-ins)
  */
-export async function calculateCurrentStreak(clientId: string): Promise<number> {
+async function calculateCurrentStreak(clientId: string): Promise<number> {
   const client = await getClientById(clientId);
 
   if (!client) {
@@ -130,7 +129,7 @@ export async function calculateCurrentStreak(clientId: string): Promise<number> 
 /**
  * Calculate longest streak ever achieved
  */
-export async function calculateLongestStreak(clientId: string): Promise<number> {
+async function calculateLongestStreak(clientId: string): Promise<number> {
   const client = await getClientById(clientId);
 
   if (!client) {
@@ -218,25 +217,4 @@ export async function updateClientAdherenceStats(clientId: string): Promise<void
   if (error) {
     throw new Error(`Failed to update adherence stats: ${error.message}`);
   }
-}
-
-/**
- * Get adherence stats for a client
- */
-export async function getClientAdherenceStats(
-  clientId: string
-): Promise<ClientAdherenceStats> {
-  const client = await getClientById(clientId);
-
-  if (!client) {
-    throw new Error(`Client not found: ${clientId}`);
-  }
-
-  return {
-    totalCheckInsExpected: client.totalCheckInsExpected ?? 0,
-    totalCheckInsCompleted: client.totalCheckInsCompleted ?? 0,
-    checkInAdherenceRate: client.checkInAdherenceRate ?? 0,
-    currentStreak: client.currentStreak ?? 0,
-    longestStreak: client.longestStreak ?? 0,
-  };
 }

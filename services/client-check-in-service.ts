@@ -19,7 +19,7 @@ import {
   getTrainingEventDetailsForPeriod,
 } from "@/services/check-in-context-service";
 import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
-import type { SubmitCheckInRequest, CheckInFormData, Client } from "@/types/check-in";
+import type { CheckInFormData, Client } from "@/types/check-in";
 import type { PeriodSnapshot } from "@/types/schedule";
 import { getCoachUnitPreference } from "@/lib/viewer-preferences";
 
@@ -155,7 +155,7 @@ export async function triggerAISummaryGeneration(
  */
 export async function updateClientMetricsFromCheckIn(
   client: Client,
-  checkInData: SubmitCheckInRequest | CheckInFormData,
+  checkInData: CheckInFormData,
   checkInId?: string
 ): Promise<void> {
   try {

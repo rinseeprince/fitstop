@@ -18,7 +18,7 @@ export type ClientMetricSeries = {
 };
 
 // Progress data for charts
-export type ProgressDataPoint = {
+type ProgressDataPoint = {
   date: string;
   weight?: number;
   bodyFatPercentage?: number;
@@ -61,8 +61,6 @@ export type ProgressData = {
     startingBodyFatPercentage?: number;
     currentWeight?: number;
     currentBodyFatPercentage?: number;
-    weightUnit?: "lbs" | "kg";
-    measurementUnit?: "in" | "cm";
   };
 };
 

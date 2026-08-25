@@ -56,7 +56,7 @@ async function regenerateEventsOrThrow(
   }
 }
 
-export interface NutritionPlanResult {
+interface NutritionPlanResult {
   success: true;
   plan: Record<string, unknown>;
 }

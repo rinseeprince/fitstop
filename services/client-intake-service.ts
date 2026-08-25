@@ -1,10 +1,11 @@
 import { supabaseAdmin } from "@/services/supabase-admin";
 import type { ClientIntake, ClientIntakeRow, ClientIntakeInput, IntakeStatus, PendingIntakeSummary } from "@/types/client-intake";
 import { mapClientIntakeRow } from "@/lib/mappers";
-import { intakeStepSchemas, intakeFullSchema } from "@/lib/validations/client-intake";
+import { intakeStepSchemas, intakeFullSchema } from "@/lib/validations/intake-steps";
 
-// supabaseAdmin required: client_intake operations are system-level writes
-// from unauthenticated contexts (intake form via token). Auth enforced at API layer.
+// supabaseAdmin required: client_intake operations are system-level writes.
+// Auth is enforced at the API layer (the client intake routes resolve the
+// caller via requireClientAuth; the coach routes via getAuthenticatedCoachId).
 const db = supabaseAdmin;
 
 // Explicit allowlist of camelCase → snake_case field mappings.
@@ -90,23 +91,6 @@ export async function getIntake(
   }
 
   return mapClientIntakeRow(data as ClientIntakeRow);
-}
-
-/**
- * Get intake by invitation token (for the invite link flow)
- */
-export async function getIntakeByToken(
-  token: string
-): Promise<ClientIntake | null> {
-  const { data: invitation, error: invError } = await db
-    .from("client_invitations")
-    .select("client_id")
-    .eq("token", token)
-    .single();
-
-  if (invError || !invitation) return null;
-
-  return getIntake(invitation.client_id);
 }
 
 /**

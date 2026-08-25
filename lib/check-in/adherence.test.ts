@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeAdherence, classifySession, summariseSessions } from "./adherence";
+import { classifySession, summariseSessions } from "./adherence";
 import type { CheckInSessionCompletion } from "@/types/check-in";
 
 const session = (
@@ -9,16 +9,6 @@ const session = (
   sessionName: "Session",
   completed: false,
   ...overrides,
-});
-
-describe("computeAdherence", () => {
-  it("computes completed / prescribed as a rounded percentage", () => {
-    expect(computeAdherence(6, 4)).toEqual({ completed: 4, prescribed: 6, pct: 67 });
-  });
-
-  it("returns null pct when nothing was prescribed", () => {
-    expect(computeAdherence(0, 0)).toEqual({ completed: 0, prescribed: 0, pct: null });
-  });
 });
 
 describe("classifySession (logged quality wins)", () => {

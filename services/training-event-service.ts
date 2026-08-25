@@ -138,12 +138,6 @@ export async function cancelFutureEventsForPlan(
 
 // --- Regenerate future events ---
 
-function fallbackEndDate(today: string): string {
-  const d = new Date(today + "T00:00:00");
-  d.setDate(d.getDate() + 8 * 7); // 8 weeks
-  return getDateString(d);
-}
-
 // --- Next-plan window cap (additive placement) ---
 
 /**
@@ -181,28 +175,6 @@ export async function getNextPlanStartCap(
 }
 
 // --- Delete future events ---
-
-/**
- * Delete all future scheduled events for a plan.
- * Used when a plan is being replaced or deactivated.
- */
-export async function deleteFutureEventsForPlan(
-  planId: string,
-  fromDate?: string
-): Promise<void> {
-  // UTC fallback only: no clientId in scope to resolve a client-local today.
-  // Callers that know the client should pass an explicit date.
-  const deleteFrom = fromDate ?? getTodayDateString();
-
-  const { error } = await supabaseAdmin
-    .from("training_events")
-    .delete()
-    .eq("training_plan_id", planId)
-    .gte("date", deleteFrom)
-    .eq("status", "scheduled");
-
-  if (error) throw error;
-}
 
 // --- Query functions ---
 

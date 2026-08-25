@@ -9,7 +9,7 @@ import type { MetricEntry, MetricEntryRow } from "@/types/metric-entries";
 import type { MetricEntryKey } from "@/lib/metrics/metric-entry-definitions";
 import { inToCm } from "@/utils/unit-conversions";
 
-export type UpsertMetricEntryInput = {
+type UpsertMetricEntryInput = {
   metricKey: MetricEntryKey;
   value: number;
   /** YYYY-MM-DD; route-validated and bounded to the coach's today */

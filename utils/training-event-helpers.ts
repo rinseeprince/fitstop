@@ -3,7 +3,7 @@ import type { ScheduleDay, TrainingDayStatus } from "@/types/schedule";
 import { DAY_NAMES, getTodayDateString } from "@/lib/date-helpers";
 
 /** Session log shape used for unlinked log merging and swap detection. */
-export type UnlinkedSessionLog = {
+type UnlinkedSessionLog = {
   id: string;
   training_session_id: string | null;
   completed_at: string;
@@ -214,33 +214,4 @@ function resolveEventStatus(
         loggedSessionName: null,
       };
   }
-}
-
-/**
- * Aggregate estimated calories from events by day of week.
- * Returns { monday: 0, ..., sunday: 0 } with event calories summed per day.
- * Pure function — no DB calls.
- */
-export function getEventCaloriesByDay(
-  events: TrainingEvent[]
-): Record<string, number> {
-  const result: Record<string, number> = {
-    monday: 0,
-    tuesday: 0,
-    wednesday: 0,
-    thursday: 0,
-    friday: 0,
-    saturday: 0,
-    sunday: 0,
-  };
-
-  for (const event of events) {
-    const dayNum = new Date(event.date + "T00:00:00").getDay();
-    const dayName = DAY_NAMES[dayNum];
-    if (dayName && event.estimatedCalories) {
-      result[dayName] += event.estimatedCalories;
-    }
-  }
-
-  return result;
 }

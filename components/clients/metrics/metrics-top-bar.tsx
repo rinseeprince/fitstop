@@ -3,7 +3,7 @@
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import type { JourneySubtab } from "./metrics-view-types";
 
-export type MetricsTopBarProps = {
+type MetricsTopBarProps = {
   tab: JourneySubtab;
   onTabChange: (t: JourneySubtab) => void;
   onLogClick: () => void;

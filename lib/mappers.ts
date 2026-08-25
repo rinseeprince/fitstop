@@ -159,7 +159,7 @@ const CLIENT_INTAKE_KEYS = [
   "cookingFrequency", "nutritionNotes", "foodAllergies", "dietDescription",
   "hasTrackedMacrosBefore", "mealsPerDay", "biggestNutritionChallenge",
   "injuriesOrLimitations", "medicalNotes", "previousCoachingExperience",
-  "previousCoachingDetails", "anythingElse", "reviewedAt", "reviewedBy", "startedAt",
+  "previousCoachingDetails", "anythingElse", "startedAt",
   "completedAt", "createdAt", "updatedAt",
 ] as const satisfies readonly (keyof ClientIntake)[];
 
@@ -247,8 +247,6 @@ export function mapClientIntakeRow(row: ClientIntakeRow): ClientIntake {
     previousCoachingExperience: row.previous_coaching_experience ?? undefined,
     previousCoachingDetails: row.previous_coaching_details ?? undefined,
     anythingElse: row.anything_else ?? undefined,
-    reviewedAt: row.reviewed_at ?? undefined,
-    reviewedBy: row.reviewed_by ?? undefined,
     coachReviewNotes: row.coach_review_notes ?? undefined,
     startedAt: row.started_at ?? undefined,
     completedAt: row.completed_at ?? undefined,

@@ -21,7 +21,7 @@ import type {
 // (which keeps the plan-attached session/exercise CRUD) along the existing
 // "--- Standalone session ---" seam.
 
-export type StandaloneSessionInput = {
+type StandaloneSessionInput = {
   name: string;
   focus?: string | null;
   estimatedDurationMinutes?: number | null;

@@ -39,10 +39,6 @@ vi.mock('@/services/client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))
 
-vi.mock('@/lib/require-phase-selection', () => ({
-  requirePhaseSelection: vi.fn().mockResolvedValue({ ok: true }),
-}))
-
 vi.mock('@/services/supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn().mockReturnValue({

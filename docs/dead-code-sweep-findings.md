@@ -378,3 +378,24 @@ Owner-decision items land in whichever class they belong to once decided. This f
 **Gates:** `tsc` exit 0 · `eslint` 0 errors / 204 warnings (identical to baseline) · `vitest` 290 files, 3207 tests passed · `check:labels` OK (682 files).
 
 **Deviations:** none. **Dropped:** none.
+
+### Commit 2 — unreferenced exports, private functions, stale mocks, type members (landed 2026-08-25)
+
+**Shipped** (152 files, +199 / −2093):
+- §7 DROP_EXPORT — every listed function/constant/schema/props-member type (136 mechanical ops incl. the four `check-in-adherence-service` helpers, `calculateWeeklyAdherence` + the `weekly-nutrition-service.ts:10` re-export line, `computeAdherence` + its single describe, the intake-steps schemas, the ~35 services/utils result types, the component Props/member types). Kept exported as judged: the signature types (`PaneOwnerTab`, `CoachAuthResult`, …), `clientGoalsKeyPrefix`, and `hooks/use-toast` `reducer`/`toast` under the vendored-shadcn policy.
+- §8 / L1–L8 — the `client-intake.ts` re-export barrel deleted and its two real importers (`intake-form.tsx`, `client-intake-service.ts`) repointed at `intake-steps`; the six `IntakeStep*Input` aliases; 16 `database-helpers` aliases; five `types/auth.ts` request shapes; `acceptInvitationSchema` + both invitation Input aliases; the 14 `z.infer` Input aliases; the six `types/check-in.ts` request/response shapes plus `ClientCheckInConfig`, `MetricSaveOption`; the eight `types/content.ts` interfaces; `DailyHabitLogInput`, `DailyLogInput`, `BodyMetricsEventInput`; nine `mock-data-builders` builders + six option interfaces (file 633 → 182 lines); `test-utils.ts` `createPartial` and the `@testing-library` re-exports (`generateUUID`/`generateISODate` kept, as the skeptic required).
+- H5, H7, H8 (+ its now-unused `supabaseAdmin`/date-helper/`DayOfWeek` imports and a truthful header), H9 (seven storage helpers), H10, H11 (seven date helpers), H12, H13, H14 (+ header reworded), H15 (+ orphaned `TrainingVolume`/`TrainingPlan` imports), H16, H17, H18, H19 (+ header), H20, H21, **H22** (`components/ui/use-mobile.tsx` + its test — approved DELETE in §5 but omitted from every commit list in §20; included here as the natural home).
+- T1–T9 with the named test blocks (`permanentlyDeleteClient`, `updateCheckInStatus`, `getDayOfWeekLowercase` ×2, the six `check-in-utils` helpers incl. `getStatusColor`, `parseNumericParam`/`sanitizeString`, `getEventCaloriesByDay`, `thisMonthDates`, `hasAnyLoggedSet`, `isSlotLocked`) and T4's `ProgressComparison` type cascade.
+- B1 (both unreachable `if`s), B2, B3, B6 (+ inert mock key), B8, B12 (+ `types/check-in.ts:501` comment reworded to state the mig-142 fact rather than claim a live token flow), B13.
+- X8, X10 (+ `client-energy-calc.ts:144` comment), X11, X17 (mapper fields + `ClientIntake` members).
+- D1 (assistant `repsTarget` tool input), D4 (`use-set-spec-mutations.ts` value re-exports gone; `MAX_SET_SPECS` import dropped; three tests repointed at `utils/`), M5 (`futureEventsUpdated` + `renamedCount` + `.select("id")` + the PUT response key; six assertion lines trimmed, no test file deleted).
+- TECHNICAL-DEBT.md rows tied to these removals: :417 (D4), :487 → Resolved and :846 annotated (H13), :553 (H8 grace window), :607 → Resolved-by-deletion and :901 recount (L8), :857 (`updateCheckInStatus` dropped from the §8 list), :915 (`deleteFutureEventsForPlan`).
+
+**Deviations:**
+- **H23 (`getEventForSessionAndDate`) moved to commit 3.** Its only importers are `scripts/backfill-training-events.ts` / `scripts/relink-session-logs.ts` (S1/S5, commit 3); `tsconfig` includes `scripts/`, so deleting it first fails `tsc`.
+- **X9 correction.** The critic's "no file imports any of the three via `daily-habits-service`" missed `services/daily-habits-service.test.ts`, which imported `calculateCompletionRate`/`calculateCurrentStreak`/`mapArrayIndexToSortOrder` through that barrel (`tsc` caught it: 3 errors, 14 red tests). The barrel line stays deleted; the test now imports from the source module `./daily-habits-logic` — nothing deleted to make the removal possible.
+- Blank-line hygiene: my block-deletion helper initially ate the blank on both sides of a removed block; a git-diff-driven pass re-inserted 40 separators and a scan found one more (`check-in-utils.ts`). Two files (`csrf-protection.ts`, `types/daily-log.ts`) show no trailing newline — pre-existing at HEAD, left alone.
+
+**Dropped:** none.
+
+**Gates:** `tsc` exit 0 · `eslint` 0 errors / 200 warnings (four fewer than baseline — the X11 unused imports) · `vitest` 289 files, 3148 tests passed (one test file and 59 cases removed WITH their dead code, all named above; none deleted to make a removal possible) · `check:labels` OK (680 files).

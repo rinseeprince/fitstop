@@ -1,7 +1,7 @@
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 
-export interface WellnessScaleProps {
+interface WellnessScaleProps {
   /** Stable id wiring the label to the slider; also keys the field. */
   id: string;
   /** Visible label, e.g. "Energy level". Also the slider's accessible name. */

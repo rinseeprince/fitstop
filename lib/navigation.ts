@@ -1,7 +1,7 @@
 import { Home, Users, Dumbbell, Library, KanbanSquare, Zap, Settings } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
-export interface NavItem {
+interface NavItem {
   name: string
   href: string
   icon: LucideIcon
