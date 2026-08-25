@@ -29,8 +29,32 @@ export type SetSpec = {
   rpe_target?: number | null;
   tempo?: string | null;
   rest_seconds?: number | null;
-  drops?: { weight: number | null; reps: number | null }[] | null;
+  // A drop carries a VALUE and reps; the load TYPE belongs to the parent spec,
+  // so every drop of one set is expressed in the same unit. Mixing units inside
+  // one drop set ("80kg, drop to 60%") is not a performable prescription, and
+  // giving each drop its own type would make that state representable.
+  //
+  // `weight` is the pre-load_value spelling — canonical kilograms, from when a
+  // drop could only be absolute. Reads go through `dropLoadValue` below; writes
+  // emit `load_value` only. The key stays on the type because removing it is a
+  // destructive change that needs a prod probe, not a dev one (CONVENTIONS §8).
+  drops?:
+    | { load_value?: number | null; weight?: number | null; reps: number | null }[]
+    | null;
 };
+
+/**
+ * A drop's prescribed load value, honouring the legacy `weight` spelling.
+ *
+ * One accessor so no reader has to remember the fallback — the same reason
+ * `snapshotToSpecs` exists rather than each caller expanding a snapshot itself.
+ */
+export function dropLoadValue(drop: {
+  load_value?: number | null;
+  weight?: number | null;
+}): number | null {
+  return drop.load_value ?? drop.weight ?? null;
+}
 
 /**
  * Count the sets that count toward volume/compliance — every set type except

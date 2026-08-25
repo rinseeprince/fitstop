@@ -16,7 +16,8 @@ import { SET_TYPE_OPTIONS, type SetSpecEdit } from "./use-set-spec-mutations";
 import { DropSetEditor } from "./drop-set-editor";
 import { useUnits } from "@/contexts/units-context";
 import { formatLoad } from "@/utils/unit-conversions";
-import { commitLoad, commitNum, displayLoad } from "./commit-input";
+import { commitNum } from "./commit-input";
+import { LoadValueInput, loadOptions } from "./load-value-input";
 import { formatRepsRange, parseRepsRange } from "@/utils/reps-range";
 import {
   FOCUS_RING,
@@ -61,28 +62,13 @@ type SetRowEditorProps = {
   onEdit: (edit: SetSpecEdit) => void;
 };
 
-// The absolute option's label and suffix are the VIEWER's unit; the percentage
-// options are unitless. Built per render rather than as a module constant
-// because it depends on who is looking.
-const loadOptions = (loadUnit: string) =>
-  [
-    { value: "absolute", label: loadUnit, suffix: loadUnit },
-    { value: "pct_1rm", label: "% 1RM", suffix: "%" },
-    { value: "pct_top", label: "% top set", suffix: "%" },
-  ] as const;
-
 export function SetRowEditor({ spec, fields, index, disabled, onEdit }: SetRowEditorProps) {
   const { preference } = useUnits();
   const loadUnit = formatLoad(0, preference).unit;
   const LOAD_OPTIONS = loadOptions(loadUnit);
-  // load_value carries kilograms for "absolute" and a PERCENTAGE for pct_1rm /
-  // pct_top. Only the former converts.
-  const isAbsoluteLoad = spec.load_type === "absolute";
   const openReps = spec.set_type === "amrap" || spec.set_type === "failure";
   // Working sets get the teal-wash pill (mockup `.type-pill.work`).
   const isWorking = spec.set_type === "working";
-  const loadSuffix =
-    LOAD_OPTIONS.find((o) => o.value === spec.load_type)?.suffix ?? "";
   const update = (patch: Partial<SetSpec>) =>
     onEdit({ kind: "update-set", index, patch });
 
@@ -212,33 +198,13 @@ export function SetRowEditor({ spec, fields, index, disabled, onEdit }: SetRowEd
                 ))}
               </SelectContent>
             </Select>
-            <Input
-              type="number"
-              min={0}
-              max={2000}
-              disabled={disabled || !spec.load_type}
-              defaultValue={
-                isAbsoluteLoad
-                  ? displayLoad(spec.load_value, preference)
-                  : (spec.load_value ?? "")
-              }
-              placeholder={loadSuffix}
-              aria-label={`Set ${spec.set_number} load`}
-              className={cn(MONO_INPUT_CLASS, "h-7 w-16 shrink-0 px-1 text-[11px]", FOCUS_RING)}
-              onBlur={(e) => {
-                if (!isAbsoluteLoad) {
-                  update({ load_value: commitNum(e, { min: 0, max: 2000 }) });
-                  return;
-                }
-                // Guarded: a focus-through must not write. Display rounding is
-                // lossy in both directions, so re-committing an untouched field
-                // would drift the coach's prescription with nobody editing it.
-                const commit = commitLoad(e, spec.load_value, preference, {
-                  min: 0,
-                  max: 2000,
-                });
-                if (commit.changed) update({ load_value: commit.valueKg });
-              }}
+            <LoadValueInput
+              loadType={spec.load_type}
+              value={spec.load_value ?? null}
+              disabled={disabled}
+              ariaLabel={`Set ${spec.set_number} load`}
+              className="w-16 shrink-0"
+              onCommit={(load_value) => update({ load_value })}
             />
           </div>
         )}
@@ -302,6 +268,7 @@ export function SetRowEditor({ spec, fields, index, disabled, onEdit }: SetRowEd
         <div className={cn("text-[11px]", TEXT_SECONDARY)}>
           <DropSetEditor
             drops={spec.drops ?? []}
+            loadType={spec.load_type}
             setIndex={index}
             disabled={disabled}
             onEdit={onEdit}

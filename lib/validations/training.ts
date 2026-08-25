@@ -83,9 +83,20 @@ export const setSpecSchema = z.object({
   rpe_target: z.number().min(0).max(10).nullish(),
   tempo: z.string().max(20).nullish(),
   rest_seconds: z.number().int().min(0).max(3600).nullish(),
+  // A drop carries a VALUE expressed in the PARENT spec's load_type, plus reps.
+  // There is deliberately no per-drop load type: every drop of one set shares
+  // the set's unit, so "80kg, drop to 60%" is not expressible.
+  //
+  // `weight` is the pre-load_value spelling (canonical kilograms, from when a
+  // drop could only be absolute). Still accepted so historical set_specs
+  // validate; nothing writes it any more. Read both through `dropLoadValue`.
   drops: z
     .array(
-      z.object({ weight: z.number().nullable(), reps: z.number().nullable() }),
+      z.object({
+        load_value: z.number().min(0).max(2000).nullish(),
+        weight: z.number().nullish(),
+        reps: z.number().nullable(),
+      }),
     )
     .max(20)
     .nullish(),

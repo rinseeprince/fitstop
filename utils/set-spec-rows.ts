@@ -1,4 +1,4 @@
-import { MAX_SET_SPECS } from "./exercise-set-specs";
+import { dropLoadValue, MAX_SET_SPECS } from "./exercise-set-specs";
 import type { SetSpec, SetType } from "./exercise-set-specs";
 import { MAX_DROPS } from "./set-spec-edits";
 
@@ -53,10 +53,10 @@ export type PrescribedRow = {
  * other type yields exactly one row, so an exercise with no drop sets flattens
  * to a list identical to the specs it came from.
  *
- * Drop children inherit the parent's set number and carry the drop's own weight
- * and reps. Their load is `absolute` because `drops[].weight` is a stored
- * kilogram value, never a percentage — the drop model has no load type of its
- * own.
+ * Drop children inherit the parent's set number AND its load type, carrying
+ * their own load value and reps. The type belongs to the set rather than to
+ * each drop, so a drop set cannot mix units; the flattening is what hands each
+ * row a self-describing copy.
  */
 export function buildPrescribedRows(specs: SetSpec[]): PrescribedRow[] {
   const rows: PrescribedRow[] = [];
@@ -96,6 +96,7 @@ export function buildPrescribedRows(specs: SetSpec[]): PrescribedRow[] {
     if (spec.set_type !== "drop" || !spec.drops) return;
 
     spec.drops.forEach((drop, i) => {
+      const loadValue = dropLoadValue(drop);
       rows.push({
         setNumber,
         setType: "drop",
@@ -104,8 +105,14 @@ export function buildPrescribedRows(specs: SetSpec[]): PrescribedRow[] {
         repsMin: drop.reps ?? null,
         repsMax: drop.reps ?? null,
         repsTarget: null,
-        loadType: drop.weight == null ? null : "absolute",
-        loadValue: drop.weight ?? null,
+        // The PARENT's load type. A drop is performed in the same unit as the
+        // set it drops from, so the type lives once on the spec and the
+        // flattening distributes it — the same division of labour as
+        // `setNumber`, which drop children also inherit. It used to be
+        // hardcoded to "absolute", which is why a "% 1RM" set's drops still
+        // asked a coach for kilograms.
+        loadType: loadValue == null ? null : (spec.load_type ?? "absolute"),
+        loadValue,
         rpeTarget: null,
         restSeconds: null,
       });

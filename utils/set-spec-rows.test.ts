@@ -258,6 +258,81 @@ describe("isContinuationOfDropSet", () => {
   });
 });
 
+describe("a drop's load is expressed in its PARENT's type", () => {
+  it("gives each drop the parent's load type and its own value", () => {
+    const rows = buildPrescribedRows([
+      spec({
+        set_number: 1,
+        set_type: "drop",
+        load_type: "pct_1rm",
+        load_value: 80,
+        drops: [{ load_value: 60, reps: 8 }, { load_value: 40, reps: 6 }],
+      }),
+    ]);
+
+    // The regression: this used to be hardcoded to "absolute", so a % 1RM set's
+    // drops rendered — and asked the coach for — kilograms.
+    expect(rows.map((r) => r.loadType)).toEqual(["pct_1rm", "pct_1rm", "pct_1rm"]);
+    expect(rows.map((r) => r.loadValue)).toEqual([80, 60, 40]);
+  });
+
+  it("reads the legacy `weight` spelling", () => {
+    const rows = buildPrescribedRows([
+      spec({
+        set_number: 1,
+        set_type: "drop",
+        load_type: "absolute",
+        load_value: 100,
+        drops: [{ weight: 60, reps: 8 }],
+      }),
+    ]);
+
+    expect(rows[1].loadType).toBe("absolute");
+    expect(rows[1].loadValue).toBe(60);
+  });
+
+  it("prefers load_value when both spellings are present", () => {
+    const rows = buildPrescribedRows([
+      spec({
+        set_number: 1,
+        set_type: "drop",
+        load_type: "absolute",
+        drops: [{ load_value: 55, weight: 60, reps: 8 }],
+      }),
+    ]);
+
+    expect(rows[1].loadValue).toBe(55);
+  });
+
+  it("defaults to absolute when the parent names no type", () => {
+    // Pre-load_type drops were always kilograms, so a value with no parent type
+    // still reads as one rather than becoming unlabelled.
+    const rows = buildPrescribedRows([
+      spec({
+        set_number: 1,
+        set_type: "drop",
+        drops: [{ weight: 60, reps: 8 }],
+      }),
+    ]);
+
+    expect(rows[1].loadType).toBe("absolute");
+  });
+
+  it("leaves a valueless drop with no load type at all", () => {
+    const rows = buildPrescribedRows([
+      spec({
+        set_number: 1,
+        set_type: "drop",
+        load_type: "pct_1rm",
+        drops: [{ reps: 8 }],
+      }),
+    ]);
+
+    expect(rows[1].loadType).toBeNull();
+    expect(rows[1].loadValue).toBeNull();
+  });
+});
+
 describe("restAfterRow", () => {
   // set 1 (rest 90) · set 2 = drop with 2 drops (rest 120) · set 3 (rest 60)
   // Flattened: [1, 2-top, 2-drop1, 2-drop2, 3]

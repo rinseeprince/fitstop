@@ -43,7 +43,14 @@ export type SetSpecEdit =
       kind: "update-drop";
       setIndex: number;
       dropIndex: number;
-      patch: { weight?: number | null; reps?: number | null };
+      // `load_value` is expressed in the PARENT spec's load_type. `weight` is
+      // the pre-load_value spelling, still accepted so a legacy caller keeps
+      // working; nothing writes it any more.
+      patch: {
+        load_value?: number | null;
+        weight?: number | null;
+        reps?: number | null;
+      };
     };
 
 export type SetSpecEditResult<T extends SpecEditableExercise> =
@@ -130,7 +137,14 @@ function editSpecs(specs: SetSpec[], edit: SetSpecEdit): SetSpec[] | { reason: s
           ? {
               ...s,
               drops: target.drops!.map((d, j) =>
-                j === edit.dropIndex ? { ...d, ...edit.patch } : d,
+                j === edit.dropIndex
+                  ? // A drop carries ONE load value. Writing `load_value` drops
+                    // the legacy `weight` off the row rather than leaving two
+                    // keys that can disagree about the same number.
+                    edit.patch.load_value !== undefined
+                    ? { ...d, weight: undefined, ...edit.patch }
+                    : { ...d, ...edit.patch }
+                  : d,
               ),
             }
           : s,
