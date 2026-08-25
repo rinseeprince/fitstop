@@ -35,9 +35,13 @@ import type { ExerciseLog, SessionLogPrescribedExercise } from "@/types/training
 // disappear.
 
 /**
- * Every non-working set carries its type as a single letter, the way Hevy and
- * Strong tag them. Working sets are untagged: they are the default, and a tag on
- * every row is noise.
+ * Every non-working set names its type in full. Working sets are untagged: they
+ * are the default, and a tag on every row is noise.
+ *
+ * The word, not an initial. `W` / `D` / `A` read as a code a coach has to learn,
+ * and this dialog is where an unfamiliar set type most needs explaining. It fits
+ * here because a 672px dialog has the room; the client's grid is 44px of Set
+ * column on a phone and keeps its letters, which is also RN's call to remake.
  *
  * Colours are the design system's own (docs/newdesignsystem.md): warning for a
  * warm-up, the teal chip for drop/AMRAP, destructive-soft for failure. The
@@ -45,25 +49,25 @@ import type { ExerciseLog, SessionLogPrescribedExercise } from "@/types/training
  * opposite sides of the coach/client audience split (CONVENTIONS §6) and the
  * client's copy is web-harness code on the RN-replacement path.
  */
-const TYPE_TAG: Record<SetType, { letter: string; label: string; className: string } | null> = {
+const TYPE_TAG: Record<SetType, { word: string; title: string; className: string } | null> = {
   warmup: {
-    letter: "W",
-    label: "Warm-up, not scored",
+    word: "Warm-up",
+    title: "Warm-up — recorded but never scored",
     className: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
   },
   drop: {
-    letter: "D",
-    label: "Drop set",
+    word: "Drop",
+    title: "Drop set",
     className: "bg-[rgba(13,148,136,0.08)] text-[#0a5c55]",
   },
   amrap: {
-    letter: "A",
-    label: "As many reps as possible",
+    word: "AMRAP",
+    title: "As many reps as possible",
     className: "bg-[rgba(13,148,136,0.08)] text-[#0a5c55]",
   },
   failure: {
-    letter: "F",
-    label: "To failure",
+    word: "Failure",
+    title: "Taken to failure",
     className: "bg-[rgba(192,96,96,0.08)] text-[#c06060]",
   },
   working: null,
@@ -74,14 +78,13 @@ function SetTypeTag({ setType }: { setType: SetType }) {
   if (!tag) return null;
   return (
     <span
-      title={tag.label}
-      aria-label={tag.label}
+      title={tag.title}
       className={cn(
-        "rounded-[4px] px-1 text-[10px] font-semibold leading-[16px]",
+        "whitespace-nowrap rounded-[4px] px-1.5 text-[10px] font-semibold leading-[16px]",
         tag.className,
       )}
     >
-      {tag.letter}
+      {tag.word}
     </span>
   );
 }
@@ -192,7 +195,7 @@ export function SessionLogExerciseCard({
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className="w-8 pl-4" />
-              <TableHead className="w-16">Set</TableHead>
+              <TableHead className="w-[132px]">Set</TableHead>
               {showPrescribed && <TableHead>Prescribed</TableHead>}
               <TableHead>Weight ({unitLabel})</TableHead>
               <TableHead>Reps</TableHead>
@@ -227,7 +230,7 @@ export function SessionLogExerciseCard({
                       <span className="sr-only">Not done</span>
                     )}
                   </TableCell>
-                  <TableCell className="w-16">
+                  <TableCell className="w-[132px]">
                     <span className="flex items-center gap-1">
                       <span className={cn(MONO_CELL_CLASS, TEXT_SECONDARY)}>
                         {/* A drop shares its top set's number, so repeating it

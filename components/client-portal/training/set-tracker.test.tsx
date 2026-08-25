@@ -335,6 +335,30 @@ describe("SetTracker", () => {
 
   // Locked decision 2: entering a value and moving on banks that set, so a
   // client recording numbers never touches a tick.
+  it("[banked-tone] a banked row's entered values never wear the placeholder colour", async () => {
+    // #93b0b4 is the Input primitive's placeholder tone. A banked row used to
+    // render its entered values in exactly that colour, so a typed 10 and an
+    // empty box hinting the prescribed 10 were pixel-identical — which is how a
+    // client came to believe they had logged reps they had not.
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    const ex0 = screen.getAllByTestId("exercise-tracker-block")[0];
+    const reps = within(ex0).getByLabelText("Set 1 reps");
+
+    await user.type(reps, "10");
+    await user.tab();
+
+    expect(within(ex0).getAllByTestId("set-row")[0]).toHaveAttribute(
+      "data-completed",
+      "true",
+    );
+    // The lookbehind matters: the Input primitive legitimately carries
+    // `placeholder:text-[#93b0b4]`, and the rule is about the VALUE tone.
+    expect(reps.className).toContain("text-[#5a7d82]");
+    expect(reps.className).not.toMatch(/(?<!placeholder:)text-\[#93b0b4\]/);
+  });
+
   it("[auto-tick] typing a value and blurring the row banks it", async () => {
     setEventReady();
     const user = userEvent.setup();

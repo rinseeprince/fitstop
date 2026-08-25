@@ -436,12 +436,12 @@ describe("SessionLogDetailDialog", () => {
 
       render(<SessionLogDetailDialog {...defaultProps} />);
 
-      expect(screen.getByLabelText("Warm-up, not scored")).toHaveTextContent("W");
-      expect(screen.getByLabelText("As many reps as possible")).toHaveTextContent("A");
-      expect(screen.getByLabelText("To failure")).toHaveTextContent("F");
+      expect(screen.getByText("Warm-up")).toBeInTheDocument();
+      expect(screen.getByText("AMRAP")).toBeInTheDocument();
+      expect(screen.getByText("Failure")).toBeInTheDocument();
       // The working set carries no tag — it is the default.
       const [, working] = rows();
-      expect(within(working).queryByLabelText(/warm-up|failure|drop|as many/i)).toBeNull();
+      expect(within(working).queryByText(/warm-up|failure|drop|amrap/i)).toBeNull();
     });
 
     it("flattens a drop set into its sibling rows", () => {
@@ -475,7 +475,7 @@ describe("SessionLogDetailDialog", () => {
 
       // 1 working + drop top + 2 drops.
       expect(rows()).toHaveLength(4);
-      expect(screen.getAllByLabelText("Drop set")).toHaveLength(3);
+      expect(screen.getAllByText("Drop")).toHaveLength(3);
       const [, , , lastDrop] = rows();
       expect(within(lastDrop).getByText("Logged")).toBeInTheDocument();
       expect(within(lastDrop).getByText("6 @ 40kg")).toBeInTheDocument();
@@ -501,7 +501,7 @@ describe("SessionLogDetailDialog", () => {
       render(<SessionLogDetailDialog {...defaultProps} />);
 
       const [warmupRow] = rows();
-      expect(within(warmupRow).getByLabelText("Warm-up, not scored")).toBeInTheDocument();
+      expect(within(warmupRow).getByText("Warm-up")).toBeInTheDocument();
       expect(within(warmupRow).getByText("Logged")).toBeInTheDocument();
       // Recorded but never scored: its values are muted rather than primary ink.
       expect(within(warmupRow).getByText("20")).toHaveClass("text-[#93b0b4]");

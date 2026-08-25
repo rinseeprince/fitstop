@@ -150,8 +150,16 @@ export function SetRow({
 
   // Banked rows read as done: muted, but never disabled. A client who ticks a
   // set and then remembers the weight has to be able to type it in.
+  //
+  // The muted tone is deliberately NOT #93b0b4, which is the Input primitive's
+  // placeholder colour. A banked row used to render its entered values in
+  // exactly that colour, so a typed 10 and an unfilled box hinting the
+  // prescribed 10 were pixel-identical — a client believed they had recorded
+  // reps they had not, and a coach reading the log saw real data that looked
+  // like an empty field. Placeholder tone and value tone must never resolve to
+  // the same token, in either direction.
   const banked = completed === true;
-  const valueClass = banked ? "text-[#93b0b4]" : "";
+  const valueClass = banked ? "text-[#5a7d82]" : "";
 
   const setCell = (
     <div className="flex items-center justify-center gap-1">
