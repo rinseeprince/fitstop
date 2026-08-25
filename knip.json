@@ -21,7 +21,6 @@
     "sentry.server.config.ts",
     "sentry.edge.config.ts",
     "next.config.mjs",
-    "tailwind.config.ts",
     "postcss.config.mjs",
     "emails/**/*.{ts,tsx}",
     "scripts/**/*.ts",
@@ -45,7 +44,6 @@
     "instrumentation-client.ts",
     "sentry.*.config.ts",
     "next.config.mjs",
-    "tailwind.config.ts",
     "postcss.config.mjs"
   ],
   "ignore": [

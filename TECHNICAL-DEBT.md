@@ -875,13 +875,13 @@ Reviewed: 2026-05-12
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | No color tokens in Tailwind config; 501 hardcoded hex values across 95 files | `tailwind.config.ts`, 95 component/page files | The Tailwind config defines zero custom colors. The brand teal (`#0d9488`) is actually Tailwind's built-in `teal-600`, but the codebase universally uses arbitrary-value syntax (`text-[#0d9488]`, `bg-[rgba(13,148,136,0.15)]`) instead of utility classes. Secondary colors like `#93b0b4` (muted inactive) have no Tailwind equivalent and genuinely need config entries. `lib/design-tokens.ts` is referenced in CONVENTIONS.md but was never created. If the brand color changes, it requires find-and-replace across 95 files. | Open |
+| 1 | No color tokens in the Tailwind theme; 501 hardcoded hex values across 95 files | `app/globals.css` (`@theme inline`), 95 component/page files | The theme defines zero custom colors. The brand teal (`#0d9488`) is actually Tailwind's built-in `teal-600`, but the codebase universally uses arbitrary-value syntax (`text-[#0d9488]`, `bg-[rgba(13,148,136,0.15)]`) instead of utility classes. Secondary colors like `#93b0b4` (muted inactive) have no Tailwind equivalent and genuinely need config entries. `lib/design-tokens.ts` is referenced in CONVENTIONS.md but was never created. If the brand color changes, it requires find-and-replace across 95 files. | Open |
 
 **Suggested fix:**
 
-1. Add custom color tokens to `tailwind.config.ts` under `theme.extend.colors`: `brand` (teal-600 / `#0d9488`), `brand-muted` (`#93b0b4`), and the common rgba variants as opacity modifiers.
+1. Add custom color tokens to `app/globals.css` under `@theme inline` (Tailwind v4 is CSS-first here — `postcss.config.mjs` loads only `@tailwindcss/postcss` and `globals.css` has no `@config`, so there is no JS config; the inert `tailwind.config.ts` was deleted in the 2026-08-25 dead-code sweep): `--color-brand` (teal-600 / `#0d9488`), `--color-brand-muted` (`#93b0b4`), and the common rgba variants as opacity modifiers.
 2. Bulk-replace `text-[#0d9488]` with `text-brand`, `bg-[#0d9488]` with `bg-brand`, etc. across all 95 files. Mechanical change, safe to do in a single sweep PR.
-3. Either create `lib/design-tokens.ts` as referenced in CONVENTIONS, or remove the CONVENTIONS reference if Tailwind config is the canonical token source. Pick one, not both.
+3. Either create `lib/design-tokens.ts` as referenced in CONVENTIONS, or remove the CONVENTIONS reference if the `@theme` block is the canonical token source. Pick one, not both.
 
 ---
 

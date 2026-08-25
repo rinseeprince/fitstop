@@ -34,26 +34,9 @@
   --input: oklch(0.915 0.004 260);
   --ring: oklch(0.585 0.1 180);
 
-  /* Chart Colors */
-  --chart-1: oklch(0.585 0.1 180);
-  --chart-2: oklch(0.55 0.15 155);
-  --chart-3: oklch(0.7 0.15 75);
-  --chart-4: oklch(0.55 0.12 180);
-  --chart-5: oklch(0.6 0.14 55);
-
   /* Border Radius — tighter */
   --radius: 0.625rem;    /* 10px - cards */
   --radius-xs: 0.375rem; /* 6px - buttons, inputs */
-
-  /* Sidebar */
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.145 0.004 260);
-  --sidebar-primary: oklch(0.585 0.1 180);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.965 0.002 260);
-  --sidebar-accent-foreground: oklch(0.145 0.004 260);
-  --sidebar-border: oklch(0.915 0.004 260);
-  --sidebar-ring: oklch(0.585 0.1 180);
 
   /* Shadows — barely-there */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -63,7 +46,6 @@
   /* Domain Colors */
   --training: oklch(0.55 0.12 180);
   --nutrition: oklch(0.6 0.14 55);
-  --error: oklch(0.55 0.2 25);
 
   /* Macro Nutrient Colors — Teal Summit muted palette */
   --protein: oklch(0.611 0.105 228.5);  /* #2d8fb5 cyan-blue */
@@ -102,27 +84,9 @@
   --input: oklch(0.22 0.005 260);
   --ring: oklch(0.6 0.18 255);
 
-  /* Chart Colors */
-  --chart-1: oklch(0.6 0.18 255);
-  --chart-2: oklch(0.55 0.13 155);
-  --chart-3: oklch(0.7 0.13 75);
-  --chart-4: oklch(0.6 0.12 180);
-  --chart-5: oklch(0.65 0.14 55);
-
-  /* Sidebar */
-  --sidebar: oklch(0.12 0.005 260);
-  --sidebar-foreground: oklch(0.98 0 0);
-  --sidebar-primary: oklch(0.6 0.18 255);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.18 0.005 260);
-  --sidebar-accent-foreground: oklch(0.98 0 0);
-  --sidebar-border: oklch(0.22 0.005 260);
-  --sidebar-ring: oklch(0.6 0.18 255);
-
   /* Domain Colors */
   --training: oklch(0.6 0.12 180);
   --nutrition: oklch(0.65 0.14 55);
-  --error: oklch(0.55 0.18 25);
 
   /* Macro Nutrient Colors — Teal Summit muted palette (dark mode) */
   --protein: oklch(0.67 0.1 228.5);
@@ -155,33 +119,17 @@
   --color-ring: var(--ring);
   --color-success: var(--success);
   --color-warning: var(--warning);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
   --color-training: var(--training);
   --color-nutrition: var(--nutrition);
-  --color-error: var(--error);
   --color-protein: var(--protein);
   --color-carbs: var(--carbs);
   --color-fat: var(--fat);
   --color-surplus: var(--surplus);
-  --color-surface-muted: var(--muted);
-  --color-surface-subtle: var(--background);
   --radius-xs: var(--radius-xs);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 8px);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
 }
 
 @layer base {
@@ -212,22 +160,6 @@
 }
 
 @layer utilities {
-  /* Pulse ring animation for habit card highlight */
-  @keyframes pulse-ring {
-    0% {
-      box-shadow: 0 0 0 0 rgba(var(--primary), 0.4);
-    }
-    70% {
-      box-shadow: 0 0 0 10px rgba(var(--primary), 0);
-    }
-    100% {
-      box-shadow: 0 0 0 0 rgba(var(--primary), 0);
-    }
-  }
-
-  .animate-pulse-ring {
-    animation: pulse-ring 1s ease-out;
-  }
 
   .font-mono-display {
     font-family: var(--font-mono-display), ui-monospace, monospace;
@@ -268,23 +200,8 @@
     }
   }
 
-  @keyframes drawerFadeUp {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
   .animate-drawer-slide-in {
     animation: drawerSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-
-  .animate-drawer-fade-up {
-    animation: drawerFadeUp 0.35s ease both;
   }
 }
 

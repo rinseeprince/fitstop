@@ -10,6 +10,9 @@ node_modules/
 /.next/
 /out/
 
+# vitest coverage output (was accidentally committed once; see docs/DEAD-CODE-SWEEP.md)
+/coverage/
+
 # production
 /build
 
