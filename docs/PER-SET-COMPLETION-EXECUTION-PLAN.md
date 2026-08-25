@@ -6,7 +6,7 @@ Rebuild of how a client records a workout and how that record reaches the coach.
 
 > Phase 4 was added on 2026-08-25, out of the Phase 2 review rather than the original brief. It closes a write path that lets a coach change the prescription under a day the client already logged — reachable, and data-corrupting since Phase 1 made `completion_quality` server-derived. (That review also turned up repo-wide refactor residue, which is its own workstream: `docs/DEAD-CODE-SWEEP.md`. It is deliberately NOT a phase here — this file gets deleted once the workstream ships, and a sweep's record of what was kept and why has to outlive it.)
 
-> **STATE (2026-08-25): ALL FOUR PHASES ARE COMPLETE. A browser smoke of Phase 4 is OWED before this file can be deleted.** Phase 1 carried no UI change; Phases 2 and 3 were both browser-smoked by the owner and confirmed working. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, every logged set carries its true `set_number` and coach-prescribed `set_type`, and the coach's readout shows the whole prescription against what was performed. Phase 4 then closed the gap that let a coach change a logged day's prescription from the calendar tray.
+> **STATE (2026-08-25): ALL FOUR PHASES ARE COMPLETE AND BROWSER-SMOKED. This file is safe to delete — CONVENTIONS.md and docs/ARCHITECTURE.md carry everything it built.** Phase 1 carried no UI change; Phases 2, 3 and 4 were each browser-smoked by the owner and confirmed working. Their STATUS blocks at the bottom of this file carry the deviations, the test results and the mutation tests. A client now ticks the sets they did, the server derives `completion_quality` from the prescription, every logged set carries its true `set_number` and coach-prescribed `set_type`, and the coach's readout shows the whole prescription against what was performed. Phase 4 then closed the gap that let a coach change a logged day's prescription from the calendar tray.
 
 **Completion protocol (every phase):** at commit time, append a STATUS block to the end of this file — what shipped, commit hash, deviations from this plan, test results. The next session reads it before starting.
 
@@ -590,9 +590,8 @@ locked"` resolves it.)
    toast, so the race case reads the same sentence as the panel.
 4. **The tray opens a locked day read-only**: `SessionEditorBody mode="view"` (the treatment
    `program-builder.tsx:514-522` gives a locked slot), Save HIDDEN rather than disabled, a lock line
-   naming the logged day, and Close. "Save to library" and "Edit whole plan" stay enabled — the
-   first is a read, the second lands on the amendment surface, which locks the same slot through its
-   own model.
+   naming the logged day, and Close. The kebab is untouched: nothing there mutates the session, so
+   nothing there needed gating.
 
 **Decisions taken inside the spec**
 
@@ -747,7 +746,24 @@ the parent's number on the top set. `buildSetDisplayNumbers` returns the PARENT'
 continuation and leaves blanking to each renderer, so the Phase 3 extraction does not guarantee it —
 mutation 5 proves the assertion bites.
 
-**Browser smoke OWED.** The gates above prove the contract through jsdom only. Not yet
-pixel-confirmed: the locked tray's read-only body, the lock line's wording and date, Save being
-absent rather than dead, and that "Save to library" and "Edit whole plan" still work from a locked
-panel.
+**Browser-smoked by the owner, 2026-08-25 — confirmed working.** The gates above prove the contract
+through jsdom only; this is the pixel-level confirmation they cannot give. Verified in the browser:
+the locked tray's read-only body, Save absent rather than dead, the lock line's wording, the lock
+line and the header rendering one date one way, the stale-panel 409 with the draft surviving, a
+normal save and its surplus cascade still working, and the reworded "already has a session" message
+on a move collision. **Phase 4 is CLOSED.**
+
+**Two corrections the smoke produced, both to this document rather than to the code.**
+
+- **A tray rename is SINGLE-DAY, and that is correct behaviour.** An earlier draft of this block
+  described `replaceSessionFull`'s `identityChanged` branch as propagating a rename to future
+  occurrences, which is what the code reads like — `.eq("status","scheduled").gte("date", fromDate)`
+  against this session's events. Since migration 121 gave every placed day its own session row that
+  predicate matches exactly ONE event: the day itself. Renaming forward is the plan builder's job.
+  Owner-confirmed, 2026-08-25. This is the same error as reasoning about logged "siblings": a
+  filter's shape is not evidence the rows it filters can exist.
+- **The tray kebab's "Edit whole plan" was asserted from props, not observed.** The prop chain is
+  live in source (`training-builder-right-panel.tsx:139` -> `training-calendar-view.tsx:489` -> the
+  tray), but the owner reports the item is not on the calendar tray, and that the hero's "Edit plan"
+  is the right and only home for a plan-level gesture. Claim removed rather than restated; the prop
+  chain is now a sweep candidate (`docs/DEAD-CODE-SWEEP.md` seed item 2).
