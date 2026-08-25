@@ -125,14 +125,19 @@ export function SetRowEditor({ spec, fields, index, disabled, onEdit }: SetRowEd
 
         {fields.has("reps") && (
           openReps ? (
+            // An AMRAP or to-failure set prescribes no rep count — that is what
+            // the type means, so the field states the instruction rather than
+            // accepting one. Disabled rather than removed, so the column stays
+            // aligned with every other row (the same shape the load value uses
+            // when no load type is chosen). The client still records the reps
+            // they achieved; only the PRESCRIPTION is closed here.
             <Input
-              disabled={disabled}
-              maxLength={20}
-              defaultValue={spec.reps_target ?? ""}
+              disabled
+              readOnly
+              value=""
               placeholder={spec.set_type === "amrap" ? "AMRAP" : "To failure"}
-              aria-label={`Set ${spec.set_number} rep target`}
+              aria-label={`Set ${spec.set_number} reps (not prescribed)`}
               className={cn(MONO_INPUT_CLASS, "h-7 px-1.5 text-[11px]", FOCUS_RING)}
-              onBlur={(e) => update({ reps_target: e.target.value.trim() || null })}
             />
           ) : (
             // ONE input for the whole scheme ("8-12", or "12" when the range

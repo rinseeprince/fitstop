@@ -379,6 +379,42 @@ describe("SessionLogDetailDialog", () => {
       expect(screen.getByText("10-12 @ 80% top set")).toBeInTheDocument();
     });
 
+    it("shows no prescribed reps for an AMRAP row, only its load and RPE", () => {
+      setupSWR({
+        exerciseLogs: [
+          makeExerciseLog({
+            prescribedExerciseSnapshot: {
+              name: "Bench Press",
+              sets: 2,
+              set_specs: [
+                spec({ set_number: 1, reps_min: 8, reps_max: 12 }),
+                // A stale range the editor left behind when the coach switched
+                // this set to AMRAP. It must not reach the coach as though it
+                // were prescribed.
+                spec({
+                  set_number: 2,
+                  set_type: "amrap",
+                  reps_min: 7,
+                  reps_max: 11,
+                  load_type: "pct_1rm",
+                  load_value: 60,
+                  rpe_target: 9,
+                }),
+              ],
+            },
+            sets: [],
+          }),
+        ],
+      });
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      expect(screen.getByText("60% 1RM · RPE 9")).toBeInTheDocument();
+      expect(screen.queryByText(/7-11/)).not.toBeInTheDocument();
+      // The working set above it still states its range.
+      expect(screen.getByText("8-12")).toBeInTheDocument();
+    });
+
     it("tags non-working set types and leaves working sets untagged", () => {
       setupSWR({
         exerciseLogs: [

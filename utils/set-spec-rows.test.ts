@@ -94,12 +94,18 @@ describe("buildPrescribedRows", () => {
     expect(rows).toHaveLength(2);
   });
 
-  it("keeps AMRAP and failure rep targets on their own row", () => {
+  it("emits no rep prescription for AMRAP and failure rows", () => {
+    // REVERSES an earlier assertion that these rows KEPT their reps_target.
+    // "As many reps as possible" is the prescription; a rep count alongside it
+    // contradicts the type, and the stale ranges the editor left behind were
+    // reaching the client as though a coach had prescribed them. See the
+    // "open-ended sets prescribe no reps" block below.
     const rows = buildPrescribedRows([
       spec({ set_number: 1, set_type: "amrap", reps_target: "AMRAP" }),
       spec({ set_number: 2, set_type: "failure", reps_target: "To failure" }),
     ]);
-    expect(rows.map((r) => r.repsTarget)).toEqual(["AMRAP", "To failure"]);
+    expect(rows.map((r) => r.repsTarget)).toEqual([null, null]);
+    expect(rows.map((r) => r.setType)).toEqual(["amrap", "failure"]);
   });
 
   it("falls back to position when a legacy row has no usable set_number", () => {
@@ -128,6 +134,68 @@ describe("buildPrescribedRows", () => {
       "drop",
       "failure",
     ]);
+  });
+});
+
+describe("open-ended sets prescribe no reps", () => {
+  it("drops a stale rep range from an AMRAP set", () => {
+    // Reachable two ways: the editor leaves reps_min/reps_max behind when a
+    // coach switches a working set to AMRAP, and the assistant can author both.
+    const rows = buildPrescribedRows([
+      spec({ set_number: 1, set_type: "amrap", reps_min: 7, reps_max: 11 }),
+    ]);
+
+    expect(rows[0].repsMin).toBeNull();
+    expect(rows[0].repsMax).toBeNull();
+    expect(rows[0].repsTarget).toBeNull();
+    expect(rows[0].setType).toBe("amrap");
+  });
+
+  it("does the same for a to-failure set", () => {
+    const rows = buildPrescribedRows([
+      spec({
+        set_number: 1,
+        set_type: "failure",
+        reps_min: 8,
+        reps_max: 8,
+        reps_target: "8+",
+      }),
+    ]);
+
+    expect(rows[0].repsMin).toBeNull();
+    expect(rows[0].repsMax).toBeNull();
+    expect(rows[0].repsTarget).toBeNull();
+  });
+
+  it("keeps everything else about the set", () => {
+    const rows = buildPrescribedRows([
+      spec({
+        set_number: 1,
+        set_type: "amrap",
+        reps_min: 7,
+        reps_max: 11,
+        load_type: "pct_1rm",
+        load_value: 60,
+        rpe_target: 9,
+        rest_seconds: 120,
+      }),
+    ]);
+
+    expect(rows[0].loadType).toBe("pct_1rm");
+    expect(rows[0].loadValue).toBe(60);
+    expect(rows[0].rpeTarget).toBe(9);
+    expect(rows[0].restSeconds).toBe(120);
+  });
+
+  it("leaves working and warm-up sets untouched", () => {
+    const rows = buildPrescribedRows([
+      spec({ set_number: 1, set_type: "warmup", reps_min: 15, reps_max: 15 }),
+      spec({ set_number: 2, reps_min: 8, reps_max: 12, reps_target: "8-12/side" }),
+    ]);
+
+    expect(rows[0].repsMin).toBe(15);
+    expect(rows[1].repsMax).toBe(12);
+    expect(rows[1].repsTarget).toBe("8-12/side");
   });
 });
 
