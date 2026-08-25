@@ -399,3 +399,15 @@ Owner-decision items land in whichever class they belong to once decided. This f
 **Dropped:** none.
 
 **Gates:** `tsc` exit 0 · `eslint` 0 errors / 200 warnings (four fewer than baseline — the X11 unused imports) · `vitest` 289 files, 3148 tests passed (one test file and 59 cases removed WITH their dead code, all named above; none deleted to make a removal possible) · `check:labels` OK (680 files).
+
+### Commit 8 — dependency (landed 2026-08-25, out of order by design: it moves package.json + the lockfile)
+
+**Shipped:** X13 — `npm uninstall tailwindcss-animate` (the Tailwind v3 plugin; the live animation package is `tw-animate-css`, imported at `app/globals.css:2`) and its `knip.json` `ignoreDependencies` entry removed. `package-lock.json` updated by npm.
+
+**Gates:** `tsc` exit 0 · `eslint` 0 errors / 200 warnings · `vitest` 289 files, 3148 tests passed · `check:labels` OK.
+
+**Deviations / dropped:** none.
+
+### Session handoff (2026-08-25)
+
+Landed this session: commits 1, 2, 8. **Remaining, in order: 3 (orphan routes + service cascades + one-off scripts S1–S5, now also carrying H23), 4 (HTTP handlers on live routes), 5 (prop chains X5/X6/X7 — commit message must list all four `onUpdate` chains, §15), 6 (B4/B5 branch refactors with test rewrites), 7 (markers + comment reframing + §12 doc corrections + STATUS block; deletes this file; must be LAST).** Owner decisions still open are listed in §20. Excluded from the sweep by owner decision: B16, X16, R7's audit move (own fix commit), M6's removal (own commit after the browser check).

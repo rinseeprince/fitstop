@@ -59,7 +59,6 @@
   ],
   "ignoreDependencies": [
     "autoprefixer",
-    "tailwindcss-animate",
     "postcss-load-config"
   ]
 }
