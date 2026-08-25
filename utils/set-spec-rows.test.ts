@@ -5,6 +5,7 @@ import {
   buildSetDisplayNumbers,
   formatPrescribedLoad,
   isContinuationOfDropSet,
+  restAfterRow,
 } from "./set-spec-rows";
 import { PRESCRIBED_FIELDS, resolvePrescribedFields } from "./prescribed-fields";
 
@@ -186,6 +187,63 @@ describe("isContinuationOfDropSet", () => {
   it("is true for each drop that follows its own top set", () => {
     expect(isContinuationOfDropSet(rows, 2)).toBe(true);
     expect(isContinuationOfDropSet(rows, 3)).toBe(true);
+  });
+});
+
+describe("restAfterRow", () => {
+  // set 1 (rest 90) · set 2 = drop with 2 drops (rest 120) · set 3 (rest 60)
+  // Flattened: [1, 2-top, 2-drop1, 2-drop2, 3]
+  const rows = buildPrescribedRows([
+    spec({ set_number: 1, rest_seconds: 90 }),
+    spec({
+      set_number: 2,
+      set_type: "drop",
+      rest_seconds: 120,
+      drops: [{ weight: 60, reps: 8 }, { weight: 40, reps: 6 }],
+    }),
+    spec({ set_number: 3, rest_seconds: 60 }),
+  ]);
+
+  it("returns a plain set's own rest", () => {
+    expect(restAfterRow(rows, 0)).toBe(90);
+  });
+
+  it("suppresses rest between the drops of one set", () => {
+    expect(restAfterRow(rows, 1)).toBeNull(); // top set → first drop
+    expect(restAfterRow(rows, 2)).toBeNull(); // first drop → second drop
+  });
+
+  it("fires the drop set's rest after its LAST drop", () => {
+    // The regression this exists for: rest_seconds lives on the parent spec and
+    // the children carry null, so reading the row's own field lost it entirely.
+    expect(restAfterRow(rows, 3)).toBe(120);
+  });
+
+  it("returns null when nothing follows", () => {
+    expect(restAfterRow(rows, 4)).toBeNull();
+  });
+
+  it("still fires when an APPENDED row follows the prescription", () => {
+    // The client can add sets past the prescription; the last prescribed set
+    // still has a rest interval after it.
+    expect(restAfterRow(rows, 4, 6)).toBe(60);
+  });
+
+  it("returns null for a set that prescribes no rest", () => {
+    const none = buildPrescribedRows([
+      spec({ set_number: 1 }),
+      spec({ set_number: 2 }),
+    ]);
+    expect(restAfterRow(none, 0)).toBeNull();
+  });
+
+  it("returns null for a zero rest and for an out-of-range index", () => {
+    const zero = buildPrescribedRows([
+      spec({ set_number: 1, rest_seconds: 0 }),
+      spec({ set_number: 2 }),
+    ]);
+    expect(restAfterRow(zero, 0)).toBeNull();
+    expect(restAfterRow(rows, 99)).toBeNull();
   });
 });
 

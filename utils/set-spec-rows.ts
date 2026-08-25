@@ -155,6 +155,50 @@ export function isContinuationOfDropSet(
 }
 
 /**
+ * The rest interval that follows this row, or null when there isn't one.
+ *
+ * Rest is a property of the BOUNDARY between rows, not of a row — which is why
+ * asking `rows[i].restSeconds` was wrong. A drop set is ONE set performed as
+ * several rows, so its rest belongs after the last of them, and the children
+ * carry `restSeconds: null` (a drop set is performed with no rest between
+ * drops). Reading the field directly therefore dropped the rest a coach
+ * prescribed on every drop set in the app.
+ *
+ * The value is NOT relocated onto the last child to fix that, deliberately. The
+ * two surfaces ask different questions — a client tracker asks "is there a rest
+ * interval here?", a coach readout asks "what rest does this set prescribe?" —
+ * and moving it would serve the first by destroying the second. So
+ * `restSeconds` stays a faithful projection of the spec, and this function owns
+ * the boundary question, including the mid-drop-set suppression the grid used
+ * to hand-roll.
+ *
+ * `rowCount` defaults to the prescription's own length; the client's log form
+ * passes its own, because a client can append rows past the prescription and a
+ * prescribed set followed by an appended one still has a rest interval after it.
+ */
+export function restAfterRow(
+  rows: PrescribedRow[],
+  index: number,
+  rowCount: number = rows.length,
+): number | null {
+  const row = rows[index];
+  if (!row) return null;
+  // Nothing follows, so there is no interval to fill.
+  if (index >= rowCount - 1) return null;
+  // Mid drop set: the whole point of a drop is no rest before the next drop.
+  if (isContinuationOfDropSet(rows, index + 1)) return null;
+
+  const seconds =
+    row.dropIndex == null
+      ? row.restSeconds
+      : (rows.find(
+          (r) => r.specIndex === row.specIndex && r.dropIndex == null,
+        )?.restSeconds ?? null);
+
+  return seconds != null && seconds > 0 ? seconds : null;
+}
+
+/**
  * The read-only Load cell's text.
  *
  * `unitLabel` is passed in rather than resolved here so this stays pure: the

@@ -4,7 +4,7 @@ import type { UseFormRegister } from "react-hook-form";
 import type { LogFormValues } from "./log-form-types";
 import {
   buildSetDisplayNumbers,
-  isContinuationOfDropSet,
+  restAfterRow,
   type PrescribedRow,
 } from "@/utils/set-spec-rows";
 import type { PrescribedField } from "@/utils/prescribed-fields";
@@ -104,15 +104,12 @@ export function PrescribedSetGrid({
         {Array.from({ length: rowCount }, (_, i) => {
           const prescribed = rows[i];
           // Rest belongs AFTER the set it follows, and never between the drops
-          // of one set — the whole point of a drop set is no rest.
-          const restSeconds =
-            fields.has("rest") &&
-            prescribed?.restSeconds != null &&
-            prescribed.restSeconds > 0 &&
-            i < rowCount - 1 &&
-            !isContinuationOfDropSet(rows, i + 1)
-              ? prescribed.restSeconds
-              : null;
+          // of one set — the whole point of a drop set is no rest. The kernel
+          // owns that boundary question, because a drop set's rest sits on the
+          // parent spec while the interval falls after its LAST row.
+          const restSeconds = fields.has("rest")
+            ? restAfterRow(rows, i, rowCount)
+            : null;
 
           return (
             <div key={fieldIds ? fieldIds[i] : i}>
