@@ -6,10 +6,7 @@
  */
 
 import { supabaseAdmin } from "./supabase-admin";
-import {
-  fetchTrainingDataForPeriod,
-  fetchNutritionDataForPeriod,
-} from "./schedule-data-service";
+import { fetchNutritionDataForPeriod } from "./schedule-data-service";
 import { getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
@@ -44,9 +41,8 @@ export async function generateAndSaveCheckInSnapshot(
   const dates = generateDateRange(periodStart, periodEnd);
 
   // Fetch all data in parallel
-  const [events, trainingData, nutritionData, nutritionEvents] = await Promise.all([
+  const [events, nutritionData, nutritionEvents] = await Promise.all([
     getEventsForDateRange(clientId, periodStart, periodEnd),
-    fetchTrainingDataForPeriod(clientId, periodStart, periodEnd),
     fetchNutritionDataForPeriod(clientId, periodStart, periodEnd),
     getNutritionEventsForDateRange(clientId, periodStart, periodEnd),
   ]);
@@ -58,7 +54,6 @@ export async function generateAndSaveCheckInSnapshot(
     dates,
     nutritionData.plans,
     nutritionData.nutritionLogs,
-    trainingData.plans,
     nutritionEvents
   );
 

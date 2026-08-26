@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parsePaginationParams } from "@/lib/api-utils";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import { fetchNutritionDataForPeriod, fetchTrainingDataForPeriod } from "@/services/schedule-data-service";
+import { fetchNutritionDataForPeriod } from "@/services/schedule-data-service";
 import { buildNutritionSummary } from "@/utils/nutrition-period-summary";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getCoachTodayString } from "@/services/today-service";
@@ -116,12 +116,11 @@ export async function GET(
     const dates = generateDateRange(rangeStart, today);
     const total = dates.length;
 
-    const [nutritionData, trainingData, nutritionEvents] = await Promise.all([
+    const [nutritionData, nutritionEvents] = await Promise.all([
       fetchNutritionDataForPeriod(clientId, rangeStart, today),
-      fetchTrainingDataForPeriod(clientId, rangeStart, today),
       getNutritionEventsForDateRange(clientId, rangeStart, today),
     ]);
-    const summary = buildNutritionSummary(dates, nutritionData.plans, nutritionData.nutritionLogs, trainingData.plans, nutritionEvents);
+    const summary = buildNutritionSummary(dates, nutritionData.plans, nutritionData.nutritionLogs, nutritionEvents);
 
     // Reverse for newest-first, then paginate
     const reversed = summary.reverse();

@@ -12,10 +12,6 @@ vi.mock("./today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
 
-vi.mock("./training-service", () => ({
-  getActiveTrainingPlan: vi.fn().mockResolvedValue(null),
-}));
-
 vi.mock("./training-event-service", () => ({
   getEventsForDateRange: vi.fn().mockResolvedValue([]),
 }));
@@ -159,17 +155,14 @@ describe("getClientNutritionTargets", () => {
 
     await getClientNutritionTargets("client-1");
 
-    // Args: (plan, dailyTargetRows, trainingPlan, includeActivityBurn,
-    //        dietType, surplusAsCarbs, trainingEvents, nutritionEvents,
-    //        weekWindow)
-    const args = vi.mocked(buildDailyTargetsFromPlan).mock.calls[0];
-    expect(args[5]).toBe(true); // surplusAsCarbs threaded
-    expect(args[7]).toBe(weekEvents); // the week's nutrition events
+    const [input] = vi.mocked(buildDailyTargetsFromPlan).mock.calls[0];
+    expect(input.surplusAsCarbs).toBe(true); // threaded through
+    expect(input.nutritionEvents).toBe(weekEvents); // the week's nutrition events
     // The template gate's inputs. This mock never runs the real util, so this
     // assertion is the ONLY thing standing between "gate exists" and "gate is
     // actually wired" — a caller that forgets the window leaves the gate dead
     // with every gate unit test green.
-    expect(args[8]).toEqual({
+    expect(input.weekWindow).toEqual({
       weekStart: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       effectiveFrom: "2026-05-01",
       effectiveUntil: "2026-09-30",

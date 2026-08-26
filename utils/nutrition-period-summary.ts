@@ -9,7 +9,6 @@ import type { NutritionDay, NutritionDayStatus } from "@/types/schedule";
 import type {
   NutritionPlanWithTargets,
   NutritionLogRow,
-  TrainingPlanWithSessions,
 } from "@/services/schedule-data-service";
 import {
   NUTRITION_ADHERENCE_HIT_THRESHOLD,
@@ -35,16 +34,6 @@ function findActiveNutritionPlan(
   ) ?? null;
 }
 
-function findActiveTrainingPlan(
-  plans: TrainingPlanWithSessions[],
-  date: string
-): TrainingPlanWithSessions | null {
-  return plans.find((p) =>
-    p.effectiveFrom <= date &&
-    (p.effectiveUntil === null || p.effectiveUntil >= date)
-  ) ?? null;
-}
-
 function classifyAdherence(
   actual: number | null,
   target: number | null
@@ -57,33 +46,10 @@ function classifyAdherence(
   return "missed";
 }
 
-/**
- * For unlogged days, estimate the target by adding the planned training
- * session's estimated calories to the plan baseline.
- * External activity burn is excluded (only known at log time).
- */
-function estimateTargetForUnloggedDay(
-  baseCalories: number | null,
-  dayOfWeek: string,
-  trainingPlans: TrainingPlanWithSessions[],
-  date: string
-): number | null {
-  if (baseCalories === null) return null;
-  const plan = findActiveTrainingPlan(trainingPlans, date);
-  if (!plan) return baseCalories;
-
-  const session = plan.sessions.find(
-    (s) => s.dayOfWeek?.toLowerCase() === dayOfWeek
-  );
-  const burn = session?.estimatedCalories;
-  return burn ? baseCalories + burn : baseCalories;
-}
-
 export function buildNutritionSummary(
   dates: string[],
   plans: NutritionPlanWithTargets[],
   nutritionLogs: NutritionLogRow[],
-  trainingPlans?: TrainingPlanWithSessions[],
   nutritionEvents?: NutritionEvent[]
 ): NutritionDay[] {
   // Build lookup maps for O(1) access per date
@@ -113,7 +79,7 @@ export function buildNutritionSummary(
     const actualCalories = log?.caloriesConsumed ?? null;
 
     // For logged days: use stored target (includes activity burn computed at log time)
-    // For unlogged days: use plan baseline + planned session burn estimate
+    // For unlogged days: the nutrition event, else the plan's weekday template
     let targetCalories: number | null;
     let targetProteinG: number | null;
     let targetCarbsG: number | null;
@@ -136,10 +102,11 @@ export function buildNutritionSummary(
         targetCarbsG = event.carbG;
         targetFatG = event.fatG;
       } else {
-        // Fallback: no event for this date (pre-backfill data), estimate from template
-        targetCalories = trainingPlans
-          ? estimateTargetForUnloggedDay(planTarget?.calories ?? null, dayOfWeek, trainingPlans, date)
-          : planTarget?.calories ?? null;
+        // Fallback: no event for this date (pre-backfill data) — the plan's
+        // weekday template. (A planned-session burn estimate used to be added
+        // here off `training_sessions.day_of_week`; post-migration-121 rows
+        // carry null there, so it always resolved to the template — removed.)
+        targetCalories = planTarget?.calories ?? null;
         targetProteinG = planTarget?.proteinG ?? null;
         targetCarbsG = planTarget?.carbG ?? null;
         targetFatG = planTarget?.fatG ?? null;

@@ -193,7 +193,6 @@ describe("buildNutritionSummary", () => {
       ["2026-03-30"],
       [makePlan()],
       [], // no logs — unlogged day
-      undefined,
       [event]
     );
 
@@ -232,7 +231,6 @@ describe("buildNutritionSummary", () => {
       ["2026-03-30"],
       [makePlan()],
       [makeLog({ targetCalories: 2200, caloriesConsumed: 2180 })],
-      undefined,
       [event]
     );
 

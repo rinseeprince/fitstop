@@ -1,9 +1,8 @@
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { DAYS_OF_WEEK, calculateDailyMacros, applySurplusSplit } from "@/utils/nutrition-helpers";
-import { getTrainingSessionsSummary } from "@/utils/training-calorie-helpers";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import { addDaysToDateString, expandDateRange } from "@/lib/date-helpers";
-import type { TrainingPlan, TrainingEvent } from "@/types/training";
+import type { TrainingEvent } from "@/types/training";
 import type { DietType, NutritionEvent } from "@/types/check-in";
 
 const DAY_NAMES: Record<number, string> = {
@@ -56,13 +55,11 @@ type PlanBaseline = {
  * `nutritionEvents`, so it got a weekday template) to feed the Plans-tab stat
  * band; that band is gone and the route no longer builds targets at all.
  *
- * A consequence worth stating plainly, because two comments used to claim the
- * opposite: the `trainingPlan` parameter is dead weight. Every read of it sits
- * in the `else` of a `trainingEvents ? … : …` guard, and the sole caller passes
- * `trainingEvents` from `getEventsForDateRange`, which always returns an array
- * — and `[]` is truthy. Only `build-daily-targets.test.ts` still exercises that
- * branch. Removing the parameter is a separate change; do not "fix" it by
- * asserting the branch is live.
+ * There is deliberately no `trainingPlan` input (removed in the 2026-08 dead-code
+ * sweep, B4): the sole caller always passes `trainingEvents` (an array — `[]` is
+ * truthy), so a plan-derived weekday session list could never be reached, and
+ * post-migration-121 rows carry `day_of_week: null` anyway. Session names and
+ * calories come from the events; a call without events gets an empty list.
  *
  * The surplus-split policy is unified with the coach calendar:
  *   - event-present days reuse `mapNutritionEventToDisplayTarget` (parity by
@@ -84,20 +81,33 @@ type PlanBaseline = {
  * numbers. Such days return no entry at all ("no target yet" — the page's
  * empty state, and for the RN contract simply a shorter array). Event-present
  * days are never gated: events are the dated SOT and carry their own era's
- * numbers. An optional param would let a caller silently skip the gate;
- * required means tsc enumerates every call site.
+ * numbers. It is a required key so tsc enumerates every call site.
+ *
+ * Inputs are a named object rather than positionals: nine same-shaped arguments
+ * (three booleans, three optional arrays) are exactly where a call lands a value
+ * in the wrong slot with every test still green.
  */
-export function buildDailyTargetsFromPlan(
-  plan: PlanBaseline,
-  dailyTargetRows: StoredDailyTarget[] | null,
-  trainingPlan: TrainingPlan | null,
-  includeActivityBurn: boolean,
-  dietType: DietType,
-  surplusAsCarbs: boolean,
-  trainingEvents: TrainingEvent[] | undefined,
-  nutritionEvents: NutritionEvent[] | undefined,
-  weekWindow: { weekStart: string; effectiveFrom: string | null; effectiveUntil: string | null }
-): DailyNutritionTargets[] {
+export type BuildDailyTargetsInput = {
+  plan: PlanBaseline;
+  dailyTargetRows: StoredDailyTarget[] | null;
+  includeActivityBurn: boolean;
+  dietType: DietType;
+  surplusAsCarbs: boolean;
+  trainingEvents: TrainingEvent[] | undefined;
+  nutritionEvents: NutritionEvent[] | undefined;
+  weekWindow: { weekStart: string; effectiveFrom: string | null; effectiveUntil: string | null };
+};
+
+export function buildDailyTargetsFromPlan({
+  plan,
+  dailyTargetRows,
+  includeActivityBurn,
+  dietType,
+  surplusAsCarbs,
+  trainingEvents,
+  nutritionEvents,
+  weekWindow,
+}: BuildDailyTargetsInput): DailyNutritionTargets[] {
   const surplusByDay = trainingEvents ? getEventSurplusByDay(trainingEvents) : {};
 
   // Weekday -> calendar date for the rendered week. The week can start on any
@@ -123,9 +133,7 @@ export function buildDailyTargetsFromPlan(
   }
 
   const trainingSessionsFor = (day: string) =>
-    trainingEvents
-      ? getEventSessionsSummary(trainingEvents, day)
-      : getTrainingSessionsSummary(trainingPlan, day);
+    trainingEvents ? getEventSessionsSummary(trainingEvents, day) : [];
 
   return DAYS_OF_WEEK.flatMap((day): DailyNutritionTargets[] => {
     const dayLabel = day.charAt(0).toUpperCase() + day.slice(1);

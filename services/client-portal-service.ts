@@ -6,7 +6,6 @@ import type { Database } from "@/types/database";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { mapClientRow } from "@/lib/mappers";
-import { getActiveTrainingPlan } from "./training-service";
 import { getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
@@ -130,23 +129,21 @@ export async function getClientNutritionTargets(
 
   if (dtError) return null;
 
-  // Fetch training plan + current week's training events for live calorie
-  // enrichment, plus the week's dense nutrition events so per-day coach edits
-  // (is_modified) surface on the program card. Anchored to client-local today.
+  // Fetch the current week's training events for live calorie enrichment,
+  // plus the week's dense nutrition events so per-day coach edits (is_modified)
+  // surface on the program card. Anchored to client-local today.
   const weekStart = getTrainingWeekStart(today);
   const weekEnd = getTrainingWeekEnd(today);
 
-  const [trainingPlan, trainingEvents, nutritionEvents] = await Promise.all([
-    getActiveTrainingPlan(clientId),
+  const [trainingEvents, nutritionEvents] = await Promise.all([
     getEventsForDateRange(clientId, weekStart, weekEnd),
     getNutritionEventsForDateRange(clientId, weekStart, weekEnd),
   ]);
   const dietType = (plan.diet_type as DietType) || "balanced";
 
-  const dailyTargets = buildDailyTargetsFromPlan(
+  const dailyTargets = buildDailyTargetsFromPlan({
     plan,
     dailyTargetRows,
-    trainingPlan,
     includeActivityBurn,
     dietType,
     surplusAsCarbs,
@@ -157,12 +154,12 @@ export async function getClientNutritionTargets(
     // before effective_from belongs to an earlier era, one after
     // effective_until to the next, and neither may render this version's
     // template as its target.
-    {
+    weekWindow: {
       weekStart,
       effectiveFrom: plan.effective_from ?? null,
       effectiveUntil: plan.effective_until ?? null,
-    }
-  );
+    },
+  });
 
   return {
     planId: plan.id,
