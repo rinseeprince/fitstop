@@ -19,6 +19,12 @@ type Props = {
 
 export function TrainingCardSummary({ events, date, trainedFor = [] }: Props) {
   const isFuture = date > getTodayDateString();
+  // A receipt is a session prescribed here but done on another day. A day with
+  // nothing but receipts has nothing left to DO here, so it offers the same
+  // "log a session" picker a rest day does (the log becomes an alternative
+  // session via the same-day path). Without this the day is a dead end.
+  const receiptsOnly =
+    events.length > 0 && events.every((e) => e.loggedOn != null && e.loggedOn !== date);
 
   return (
     <DsCardSummary title="Training">
@@ -69,6 +75,16 @@ export function TrainingCardSummary({ events, date, trainedFor = [] }: Props) {
             />
           )
         )
+      )}
+
+      {receiptsOnly && !isFuture && (
+        <DsCardSummaryRow
+          leadingText="Log a session"
+          trailingText="Nothing else scheduled today"
+          href={`/client/training?date=${date}`}
+          hint="Tap to log a session"
+          ariaLabel="Log a session — nothing else scheduled today"
+        />
       )}
 
       {/* "Trained for {weekday} {session}" — a session logged today that the

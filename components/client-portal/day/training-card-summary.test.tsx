@@ -75,9 +75,42 @@ describe("TrainingCardSummary", () => {
 
     expect(screen.getByText("Push Day A")).toBeInTheDocument();
     expect(screen.getByText("Done Tuesday")).toBeInTheDocument();
-    expect(screen.getByRole("link")).toHaveAttribute("href", `/client/training?eventId=e1&date=${DATE}`);
+    // The receipt row itself: view-only link, never "Tap to log". (The day also
+    // offers the separate "Log a session" picker — covered below.)
+    expect(screen.getByRole("link", { name: /Push Day A/ })).toHaveAttribute(
+      "href",
+      `/client/training?eventId=e1&date=${DATE}`,
+    );
     expect(screen.getByText("Tap to view")).toBeInTheDocument();
-    expect(screen.queryByText("Tap to log")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Tap to log$/)).not.toBeInTheDocument();
+  });
+
+  it("offers 'Log a session' on a day whose only session is a receipt (done on another day)", () => {
+    render(
+      <TrainingCardSummary
+        events={[event({ completionQuality: "full", loggedOn: "2026-05-05" })]}
+        date={DATE}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /Log a session/ })).toHaveAttribute(
+      "href",
+      `/client/training?date=${DATE}`,
+    );
+  });
+
+  it("does not offer 'Log a session' when a real session is still on the day", () => {
+    render(
+      <TrainingCardSummary
+        events={[
+          event({ completionQuality: "full", loggedOn: "2026-05-05" }),
+          event({ eventId: "e2", sessionName: "Pull Day" }),
+        ]}
+        date={DATE}
+      />,
+    );
+
+    expect(screen.queryByText("Log a session")).not.toBeInTheDocument();
   });
 
   it("renders an unlogged event with Tap to log and link to detail", () => {
