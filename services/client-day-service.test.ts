@@ -86,6 +86,7 @@ describe("client-day-service", () => {
         isAlternative: false,
         loggedExerciseCount: 0,
         prescribedExerciseCount: 4,
+        loggedOn: null,
       },
     ]);
 
@@ -109,6 +110,7 @@ describe("client-day-service", () => {
         isAlternative: false,
         loggedExerciseCount: 0,
         prescribedExerciseCount: 4,
+        loggedOn: null,
       },
     ]);
 
@@ -130,6 +132,7 @@ describe("client-day-service", () => {
         isAlternative: false,
         loggedExerciseCount: 3,
         prescribedExerciseCount: 5,
+        loggedOn: null,
       },
     ]);
 
@@ -151,6 +154,7 @@ describe("client-day-service", () => {
         isAlternative: false,
         loggedExerciseCount: 4,
         prescribedExerciseCount: 4,
+        loggedOn: null,
       },
       {
         eventId: "e2",
@@ -160,6 +164,7 @@ describe("client-day-service", () => {
         isAlternative: false,
         loggedExerciseCount: 0,
         prescribedExerciseCount: 2,
+        loggedOn: null,
       },
     ]);
 

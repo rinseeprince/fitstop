@@ -1077,7 +1077,9 @@ describe("SetTracker", () => {
       clientId: "c-1",
       trainingSessionId: "s-1",
       trainingEventId: null,
-      completedAt: "2026-05-06",
+      // An event-keyed log is attributed to its event's date. A different date
+      // here means "done on another day", which is read-only on this event.
+      completedAt: detail.event.date,
       completionQuality: "partial",
       notes: "Felt good",
       weekStartDate: "2026-05-04",

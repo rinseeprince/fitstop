@@ -4,11 +4,12 @@ import {
   linkSessionLogToEvent,
   mapCompletionQualityToEventStatus,
 } from "./training-event-service";
-import {
+import { dateOfTimestamp,
   getTrainingWeekStart,
   getTrainingWeekEnd,
 } from "@/lib/date-helpers";
 import { assertCanEditTrainingDay } from "./daily-log-permissions-service";
+import { DayLockedError } from "@/lib/daily-log-permissions";
 import type {
   ExerciseLogInsert,
   ExerciseLogRow,
@@ -772,7 +773,9 @@ export async function logTrainingEvent(params: {
   // Fetch the event, scoped on clientId (collapses missing + wrong-client).
   const { data: eventRow, error: eventErr } = await supabaseAdmin
     .from("training_events")
-    .select("id, training_session_id, date, session_log_id")
+    .select(
+      "id, training_session_id, date, session_log_id, session_logs!training_events_session_log_id_fkey(completed_at)",
+    )
     .eq("id", eventId)
     .eq("client_id", clientId)
     .maybeSingle();
@@ -781,6 +784,19 @@ export async function logTrainingEvent(params: {
   }
   if (!eventRow) {
     throw new Error(`Training event not found: ${eventId}`);
+  }
+
+  // Logged on another day: the linked log was performed on a different date
+  // (an alternative session the matcher attributed to this prescribed event).
+  // It is read-only HERE even on "today" — an update through this event would
+  // overwrite the sets and re-stamp completed_at to this date, erasing where
+  // it actually happened. Edits belong on the day it was logged, under that
+  // day's rules. The embed is absent on a row with no log (and on older test
+  // fixtures), which reads as "no lock".
+  const linkedLog = eventRow.session_logs as { completed_at: string | null } | null | undefined;
+  const loggedOn = linkedLog?.completed_at ? dateOfTimestamp(linkedLog.completed_at) : null;
+  if (loggedOn && loggedOn !== eventRow.date) {
+    throw new DayLockedError(eventRow.date, "training");
   }
 
   // Date-edit lock: today is editable; a past day that already has a log is

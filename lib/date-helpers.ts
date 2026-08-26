@@ -151,6 +151,15 @@ export const getDateDaysFrom = (fromDate: Date, days: number): string => {
 };
 
 /**
+ * The calendar day of a stored timestamp, as YYYY-MM-DD. `session_logs.completed_at`
+ * is written from a date string (the attribution day), so its first ten characters
+ * ARE that day — the same convention `getTrainedForLinks` relies on when it
+ * range-matches the column against `${date}T00:00:00`. Not for arbitrary
+ * timestamps that need timezone math.
+ */
+export const dateOfTimestamp = (timestamp: string): string => timestamp.slice(0, 10);
+
+/**
  * Returns the Sunday of the week containing the given date
  * @param {string} dateString - Date in YYYY-MM-DD format
  * @returns {string} Sunday's date in YYYY-MM-DD format

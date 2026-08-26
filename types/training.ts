@@ -125,6 +125,11 @@ export type TrainingEvent = {
   estimatedCalories: number | null;
   status: TrainingEventStatus;
   sessionLogId: string | null;
+  // The day the linked log was actually DONE, when that differs from `date` —
+  // an alternative session the matcher attributed to this prescribed event.
+  // Populated only by `withLoggedOn` (the coach calendar read); absent
+  // elsewhere. Render as a receipt ("Done Tue"), never as a status.
+  loggedOn?: string | null;
   isModified: boolean;
   calorieSurplusPercentage: number | null;
   createdAt: string;
@@ -142,6 +147,11 @@ export type TrainingEventSummary = {
   isAlternative: boolean;
   loggedExerciseCount: number;
   prescribedExerciseCount: number;
+  // RN contract (additive): the day this session was actually logged when it
+  // differs from the day it was prescribed on — null otherwise. On its
+  // prescribed day such an event is a RECEIPT, not a workout: render it as
+  // "done {weekday}", not tappable; the server refuses a re-log there.
+  loggedOn: string | null;
 };
 
 export type UpdateTrainingPlanRequest = {

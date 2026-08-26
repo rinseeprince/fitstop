@@ -20,6 +20,7 @@ function event(overrides: Partial<TrainingEventSummary> = {}): TrainingEventSumm
     isAlternative: false,
     loggedExerciseCount: 0,
     prescribedExerciseCount: 6,
+    loggedOn: null,
     ...overrides,
   };
 }
@@ -56,6 +57,21 @@ describe("TrainingCardSummary", () => {
 
     expect(screen.getByText(/Trained for/)).toBeInTheDocument();
     expect(screen.getByText("Pull Day")).toBeInTheDocument();
+  });
+
+  it("renders a session logged on another day as a receipt: no link, no hint, 'Done {weekday}'", () => {
+    // Prescribed on DATE (a Friday), performed the Tuesday before.
+    render(
+      <TrainingCardSummary
+        events={[event({ completionQuality: "full", loggedOn: "2026-05-05" })]}
+        date={DATE}
+      />,
+    );
+
+    expect(screen.getByText("Push Day A")).toBeInTheDocument();
+    expect(screen.getByText("Done Tuesday")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Tap to/)).not.toBeInTheDocument();
   });
 
   it("renders an unlogged event with Tap to log and link to detail", () => {

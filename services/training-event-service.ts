@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import { dateOfTimestamp } from "@/lib/date-helpers";
 import type { TrainingEvent, TrainingEventStatus, TrainingEventSummary } from "@/types/training";
 import type { SessionCompletionQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
@@ -205,6 +206,35 @@ export async function getEventsForDateRange(
 }
 
 /**
+ * Coach-calendar enrichment: stamp `loggedOn` on events whose linked log was
+ * done on a DIFFERENT day (an alternative session attributed here). One query
+ * over the linked log ids; events with no log, or logged on their own day, get
+ * `null`. Kept out of `getEventsForDateRange` so its many other readers
+ * (cascades, snapshots, the program card) don't pay for it.
+ */
+export async function withLoggedOn(events: TrainingEvent[]): Promise<TrainingEvent[]> {
+  const logIds = events
+    .map((e) => e.sessionLogId)
+    .filter((id): id is string => id !== null);
+  if (logIds.length === 0) return events.map((e) => ({ ...e, loggedOn: null }));
+
+  const { data, error } = await supabaseAdmin
+    .from("session_logs")
+    .select("id, completed_at")
+    .in("id", logIds);
+  if (error) throw error;
+
+  const doneOnByLogId = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row.completed_at) doneOnByLogId.set(row.id, dateOfTimestamp(row.completed_at));
+  }
+  return events.map((e) => {
+    const doneOn = e.sessionLogId ? doneOnByLogId.get(e.sessionLogId) : undefined;
+    return { ...e, loggedOn: doneOn && doneOn !== e.date ? doneOn : null };
+  });
+}
+
+/**
  * Get a single event for a client on a specific date.
  * Returns null if no event exists.
  */
@@ -380,6 +410,8 @@ export async function getEventSummariesForDate(
   // linked log (its training_session_id) — for planned-day swaps.
   const loggedCountMap = new Map<string, number>();
   const performedByLogId = new Map<string, string | null>();
+  // The day each linked log was actually done (see TrainingEventSummary.loggedOn).
+  const doneOnByLogId = new Map<string, string>();
   if (sessionLogIds.length > 0) {
     const [logCountsRes, logRowsRes] = await Promise.all([
       supabaseAdmin
@@ -388,7 +420,7 @@ export async function getEventSummariesForDate(
         .in("session_log_id", sessionLogIds),
       supabaseAdmin
         .from("session_logs")
-        .select("id, training_session_id")
+        .select("id, training_session_id, completed_at")
         .in("id", sessionLogIds),
     ]);
     if (logCountsRes.error) throw logCountsRes.error;
@@ -401,6 +433,7 @@ export async function getEventSummariesForDate(
     }
     for (const row of logRowsRes.data ?? []) {
       performedByLogId.set(row.id, row.training_session_id);
+      if (row.completed_at) doneOnByLogId.set(row.id, dateOfTimestamp(row.completed_at));
     }
   }
 
@@ -482,6 +515,10 @@ export async function getEventSummariesForDate(
       prescribedExerciseCount: displayId
         ? (prescribedCountMap.get(displayId) ?? 0)
         : 0,
+      loggedOn: (() => {
+        const doneOn = e.sessionLogId ? doneOnByLogId.get(e.sessionLogId) : undefined;
+        return doneOn && doneOn !== e.date ? doneOn : null;
+      })(),
     };
   });
 }

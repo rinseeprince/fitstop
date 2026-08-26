@@ -58,6 +58,7 @@ import {
   linkSessionLogToEvent,
   findMatchingEvent,
   getEventSummariesForDate,
+  withLoggedOn,
 } from "./training-event-service";
 import type { SessionInput } from "./training-event-service";
 
@@ -359,7 +360,8 @@ describe("training-event-service", () => {
           error: null,
         }),
         session_logs: createMockQuery({
-          data: [{ id: "log-1", training_session_id: "back" }],
+          // Logged three days before the event's date (an alternative session).
+          data: [{ id: "log-1", training_session_id: "back", completed_at: "2026-05-05T00:00:00+00:00" }],
           error: null,
         }),
         training_exercises: createMockQuery({
@@ -379,6 +381,7 @@ describe("training-event-service", () => {
         sessionName: "Back Day", // performed, not the prescribed "Chest Day"
         isAlternative: true,
         loggedExerciseCount: 2,
+        loggedOn: "2026-05-05",
         prescribedExerciseCount: 2, // against Back's prescription, not Chest's
       });
     });
@@ -411,5 +414,38 @@ describe("training-event-service", () => {
       expect(result[0].isAlternative).toBe(false);
       expect(result[0].sessionName).toBe("Chest Day");
     });
+  });
+});
+
+describe("withLoggedOn (coach-calendar receipt)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("stamps loggedOn only when the linked log was done on a different day", async () => {
+    const base = {
+      clientId: "c1", trainingPlanId: "p1", sessionFocus: null, estimatedCalories: null,
+      status: "completed" as const, isModified: false, calorieSurplusPercentage: null,
+      createdAt: "", updatedAt: "",
+    };
+    const events = [
+      { ...base, id: "ev-same", trainingSessionId: "s1", date: "2026-05-08", sessionName: "Push", sessionLogId: "log-same" },
+      { ...base, id: "ev-other", trainingSessionId: "s2", date: "2026-05-08", sessionName: "Legs", sessionLogId: "log-other" },
+      { ...base, id: "ev-none", trainingSessionId: "s3", date: "2026-05-09", sessionName: "Pull", sessionLogId: null },
+    ];
+    const logsQ = createMockQuery({
+      data: [
+        { id: "log-same", completed_at: "2026-05-08T00:00:00+00:00" },
+        { id: "log-other", completed_at: "2026-05-05T00:00:00+00:00" },
+      ],
+      error: null,
+    });
+    mockFrom.mockImplementation(((table: string) => (table === "session_logs" ? logsQ : undefined)) as never);
+
+    const out = await withLoggedOn(events);
+
+    expect(out.map((e) => [e.id, e.loggedOn])).toEqual([
+      ["ev-same", null],
+      ["ev-other", "2026-05-05"],
+      ["ev-none", null],
+    ]);
   });
 });

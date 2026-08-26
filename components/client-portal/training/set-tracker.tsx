@@ -16,6 +16,7 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { canEditDay } from "@/lib/daily-log-permissions";
+import { dateOfTimestamp } from "@/lib/date-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { logTrainingEventSchema } from "@/lib/validations/training";
 import type { Client } from "@/types/check-in";
@@ -161,12 +162,21 @@ function EventModeTracker({
   }
   if (eventError || !eventData) return <LoadFailed />;
 
+  // Logged on another day (an alternative session the matcher attributed to
+  // this prescribed event): read-only HERE, whatever day it is — re-logging
+  // would overwrite the sets and re-date the log. Edits belong on the day it
+  // was done. The server lock in logTrainingEvent mirrors this.
+  const doneElsewhere =
+    eventData.data.sessionLog != null &&
+    dateOfTimestamp(eventData.data.sessionLog.completedAt) !== eventData.data.event.date;
   // Date-edit lock (client mirror of the server rule): past + logged → read-only.
-  const editable = canEditDay(
-    eventData.data.event.date,
-    eventData.data.sessionLog ? "logged" : "never-logged",
-    meData?.data?.timezone ?? "UTC",
-  );
+  const editable =
+    !doneElsewhere &&
+    canEditDay(
+      eventData.data.event.date,
+      eventData.data.sessionLog ? "logged" : "never-logged",
+      meData?.data?.timezone ?? "UTC",
+    );
 
   // Bind to the prescribed session, or to the swapped/edited session.
   let detail = eventData.data;
@@ -196,6 +206,11 @@ function EventModeTracker({
       date={date}
       save={save}
       editable={editable}
+      lockedMessage={
+        doneElsewhere
+          ? "This workout was logged on another day — open it from that day to edit it."
+          : undefined
+      }
       onChangeSession={() => setShowPicker(true)}
       onResetSwap={
         boundSessionId ? () => setUserSwapSessionId(null) : undefined
@@ -266,6 +281,7 @@ function TrainingLogForm({
   date,
   save,
   editable = true,
+  lockedMessage,
   onChangeSession,
   onResetSwap,
 }: {
@@ -273,6 +289,8 @@ function TrainingLogForm({
   date: string | undefined;
   save: SaveStrategy;
   editable?: boolean;
+  /** Overrides the default locked-day sentence (e.g. logged on another day). */
+  lockedMessage?: string;
   onChangeSession?: () => void;
   onResetSwap?: () => void;
 }) {
@@ -441,7 +459,7 @@ function TrainingLogForm({
             data-testid="locked-banner"
             className="rounded-[6px] bg-[rgba(13,148,136,0.06)] px-3 py-2 text-[12px] text-[#5a7d82]"
           >
-            This day is locked — past workouts can&apos;t be edited once logged.
+            {lockedMessage ?? "This day is locked — past workouts can\u2019t be edited once logged."}
           </p>
         )}
         {onChangeSession && editable && (

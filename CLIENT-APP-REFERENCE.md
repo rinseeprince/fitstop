@@ -163,7 +163,7 @@ All client API endpoints require authentication except where noted.
 
 > Reads are one call; writes are per-domain. There is no combined daily-log write.
 
-- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The day read (`DaySummary`, `types/client-day.ts`)
+- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The day read (`DaySummary`, `types/client-day.ts`) Each `training[]` entry carries `loggedOn: string | null` — the day the session was actually logged when that differs from the day it was prescribed (an alternative session). On its prescribed day such an entry is a RECEIPT: render "Done {weekday}", not tappable; `POST …/events/{eventId}/log` refuses it (403) — the log is edited from the day it was done.
 - `GET` + `PATCH /api/client/daily-logs/{date}/wellness` - Mood / energy / sleep / stress / soreness
 - `GET` + `PATCH /api/client/daily-logs/{date}/nutrition` - Calories + macros for that date
 - Training is **not** part of a daily log — see the Training section

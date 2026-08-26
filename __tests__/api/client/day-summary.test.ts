@@ -47,6 +47,7 @@ describe("GET /api/client/day-summary", () => {
           isAlternative: false,
           loggedExerciseCount: 4,
           prescribedExerciseCount: 4,
+          loggedOn: null,
         },
       ],
       trainedFor: [],

@@ -2373,6 +2373,32 @@ describe("logTrainingSessionForDate", () => {
     expect(matcherSpy.select).not.toHaveBeenCalled(); // existing found → matcher skipped
   });
 
+  it("[s4b] lock: a log DONE ON ANOTHER DAY is read-only on its prescribed day, even today", async () => {
+    // Prescribed today (2026-05-08), performed on the 6th and attributed here
+    // by the matcher. Re-logging through this event would overwrite the sets
+    // and re-stamp completed_at to today — refused before any write.
+    const eventQ = createMockQuery({
+      data: eventRow({
+        date: "2026-05-08",
+        session_log_id: SESSION_LOG_ID,
+        session_logs: { completed_at: "2026-05-06T00:00:00+00:00" },
+      }),
+      error: null,
+    });
+    const writeSpy = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    installRouter({ training_events: eventQ, session_logs: writeSpy });
+
+    await expect(
+      logTrainingEvent({
+        eventId: EVENT_ID,
+        clientId: CLIENT_ID,
+        payload: { completionQuality: "full" },
+      }),
+    ).rejects.toThrow(/locked/i);
+    expect(writeSpy.update).not.toHaveBeenCalled();
+    expect(writeSpy.insert).not.toHaveBeenCalled();
+  });
+
   it("[s5] lock: a PAST day that already has a log throws DayLockedError before writing", async () => {
     const clientQ = createMockQuery({
       data: { expected_check_in_day: null, timezone: "UTC" },
