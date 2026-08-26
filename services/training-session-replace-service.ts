@@ -33,7 +33,9 @@ export type ReplaceSessionResult = {
 /**
  * Builder-grade full edit of a placed session: meta + the whole exercise list
  * (per-set specs and video included) in one call, with rename/surplus changes
- * propagated to FUTURE SCHEDULED events only — past events keep their
+ * written to this session's FUTURE SCHEDULED events — under placement that is
+ * normally just the edited day (one session row per placed day, migration 121)
+ * and more than one only after a per-event duplicate; past events keep their
  * snapshotted name/focus/surplus, which is correct history.
  *
  * Every step is idempotent, so a retried save repairs any partial write; no

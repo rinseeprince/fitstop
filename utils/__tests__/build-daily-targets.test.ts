@@ -259,7 +259,6 @@ describe("buildDailyTargetsFromPlan — the effective_from template gate (migrat
           date: "2026-06-14",
           baselineCalories: 1700,
           trainingBurnCalories: 0,
-          externalBurnCalories: 0,
           proteinG: 150,
           carbG: 150,
           fatG: 55,

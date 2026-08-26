@@ -46,6 +46,10 @@ export const nutritionPlanSchema = z.object({
     .min(1.0, "Protein target must be at least 1.0g/kg")
     .max(3.0, "Protein target cannot exceed 3.0g/kg"),
   dietType: dietTypeSchema,
+  // Accepted-but-IGNORED, like workActivityLevel above: the orchestrator reads
+  // the deadline from `resolveNutritionCalcInputs` (the client's goal), never from
+  // the body, and the web builder deliberately stopped sending it. Kept so an
+  // older client build still validates.
   goalDeadline: z.string().optional(),
   customMacrosEnabled: z.boolean().optional(),
   customProteinG: z.number().positive().optional(),

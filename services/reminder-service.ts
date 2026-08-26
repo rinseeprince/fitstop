@@ -92,7 +92,9 @@ export async function sendCheckInReminder(
 
 /**
  * Send automated reminders for all clients of a coach
- * Called by cron job daily
+ * Intended for a daily cron that is NOT wired — no invoker exists
+ * (TECHNICAL-DEBT.md → "Reminder email cron is unwired"). Kept deliberately;
+ * wire + verify before enabling.
  * @param coachId - Coach ID
  * @returns Number of reminders sent
  */

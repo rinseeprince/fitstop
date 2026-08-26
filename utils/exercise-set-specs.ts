@@ -23,6 +23,12 @@ export type SetSpec = {
   set_type: SetType;
   reps_min?: number | null;
   reps_max?: number | null;
+  // No longer authored per set (the builder's writer went with the disabled
+  // amrap/failure reps input; the assistant's went in the 2026-08 sweep). It is
+  // populated only by `expandSetSpecs` / `snapshotToSpecs` from the LIVE
+  // exercise-level `training_exercises.reps_target` column for compact-only
+  // exercises, and rendered by set-row / the coach readout — retire it WITH that
+  // column, not before.
   reps_target?: string | null;
   load_type?: "absolute" | "pct_1rm" | "pct_top" | null;
   load_value?: number | null;

@@ -118,7 +118,7 @@ function getDayStatus(
   log: LogRecord | undefined,
   today: string
 ): WeeklyHabitDayStatus {
-  // Habit starts tracking on its effective date (aligned to phase start)
+  // Habit starts tracking on its effective date
   if (habitEffectiveDate > date) return "not-tracked";
   // Future date
   if (date > today) return "future";

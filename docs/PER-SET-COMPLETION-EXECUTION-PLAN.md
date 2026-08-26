@@ -622,10 +622,11 @@ locked"` resolves it.)
   (CONVENTIONS §6). **The tray header needed no change** and was not touched.
 - **`getSessionEventLinks`' docblock credits `assertSessionUnlogged`, not the scope dialog, for
   needing non-scheduled rows.** The comment travelled verbatim in the move and still named the
-  dialog — a consumer migration 121 made unreachable — as the reason the read is status-agnostic. A
+  dialog — a consumer this plan believed migration 121 made unreachable (wrong: a per-event
+  duplicate still reaches it; corrected by the dead-code sweep, 2026-08) — as the reason the read is status-agnostic. A
   sweeper deleting that dialog would have read it as licence to narrow the read to `scheduled` and
   silently disabled the lock. The docblock now states the load-bearing reason first and marks the
-  dialog consumer vestigial; `DEAD-CODE-SWEEP.md` seed item 2 carries the matching warning; and a
+  dialog consumer vestigial (also corrected since — it is live); `DEAD-CODE-SWEEP.md` seed item 2 carries the matching warning; and a
   test now fails if a `status` filter appears in that query, mirroring the status-agnostic guard
   `assertDateFree` already has in the same file. A comment alone would not have stopped it.
 - **`SHARED_EVENTS` in `placed-session-editor.test.tsx` lost its `completed` occurrence.** That

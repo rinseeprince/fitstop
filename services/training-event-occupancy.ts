@@ -148,10 +148,12 @@ export type SessionEventLink = {
  * to `status = 'scheduled'` would leave that assertion nothing to find and
  * silently disable the logged-day lock.
  *
- * The tray's shared-occurrence count (the save-scope dialog) also reads the
- * list, and that consumer is VESTIGIAL: since migration 121 every placed day
- * owns its own session row, so the count is always 1 and the dialog cannot open
- * (`docs/DEAD-CODE-SWEEP.md` seed item 2). Removing it licenses nothing here.
+ * The list shape is earned three ways: `assertSessionUnlogged`'s `find` over the
+ * date-ascending list (it names the EARLIEST logged day), the tray's
+ * `loggedEvent` / `futureScheduledCount`, and genuine multi-event sessions — a
+ * per-event duplicate (`duplicateEvent`) copies `training_session_id`, so one
+ * session CAN own two future scheduled events and the tray's save-scope dialog
+ * does open then. Narrowing this read licenses nothing.
  */
 export async function getSessionEventLinks(
   sessionId: string,

@@ -23,7 +23,7 @@ type NutritionPlanHeroProps = {
 // The title is the client's TRAINING program, not the nutrition plan:
 // `nutrition_plans.name` is never written, so the program is the only name
 // available, and it answers the same "which block is this client in" question a
-// phase name will answer once phases ship. Owns the empty branch too, so the
+// Journey block name answers (client_phases, migration 145). Owns the empty branch too, so the
 // right panel has a single hero mount.
 export function NutritionPlanHero({ onOpenSettings }: NutritionPlanHeroProps) {
   const { hasPlan, trainingPlanName, nutritionData } = useNutritionBuilderContext();

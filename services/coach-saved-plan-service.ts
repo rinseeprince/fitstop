@@ -616,10 +616,13 @@ export async function duplicateSavedPlan(
 
 /**
  * Count live client assignments per saved plan (training_plans provenance).
- * "Live" = not soft-deleted and status active|planned — a scheduled future
- * placement is still an assignment (matches getClientTrainingPlan + the
- * mig-114 planned status). Aggregated in TS; pages through PostgREST's row
- * cap defensively.
+ * "Live" = not soft-deleted and status active|planned. Additive placement
+ * (migration 114) writes every placement as `active` with a date window — an
+ * upcoming program is an active row with a future `effective_from`, so it counts
+ * as an assignment by construction. No writer of 'planned' exists any more; the
+ * value survives only in the migration-081 CHECK and is kept in the filter so a
+ * legacy row still counts (retiring it is a schema change — see the sweep's B14).
+ * Aggregated in TS; pages through PostgREST's row cap defensively.
  */
 export async function getSavedPlanAssignments(coachId: string): Promise<{
   perPlan: Array<{ savedPlanId: string; count: number }>;

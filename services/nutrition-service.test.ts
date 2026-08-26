@@ -24,7 +24,7 @@ describe('calculateBaselineCalories', () => {
     expect(result.warnings).toEqual([])
   })
 
-  it('uses phase start date when it is in the future', () => {
+  it('uses the goal start date when it is in the future', () => {
     // Phase starts 30 days from now, deadline 120 days from now
     const now = new Date()
     const futureStart = new Date(now)
@@ -52,7 +52,7 @@ describe('calculateBaselineCalories', () => {
     )
   })
 
-  it('uses today when phase start date is in the past', () => {
+  it('uses today when the goal start date is in the past', () => {
     const now = new Date()
     const pastStart = new Date(now)
     pastStart.setDate(now.getDate() - 30)

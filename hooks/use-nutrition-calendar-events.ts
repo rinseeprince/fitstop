@@ -27,7 +27,7 @@ function buildNutritionEventsKey(
 /**
  * Invalidates every cached month window of a client's nutrition calendar.
  * MUST be called from any success handler whose server route rewrites
- * nutrition_events (plan regenerate, training cascades, phase transition) —
+ * nutrition_events (plan regenerate, training cascades) —
  * the calendar has no other way to learn its cache is stale.
  *
  * Plain no-data mutate: mounted windows revalidate in place (no loading

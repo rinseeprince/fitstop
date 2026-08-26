@@ -43,8 +43,8 @@ export type SubjectiveMetrics = {
 // shims like the ones removed from CheckIn and Client — they are the check-in
 // FORM's wire tags, written by components/check-in/step-metrics.tsx's toggles
 // and consumed by utils/check-in-canonical-metrics.ts, which converts the
-// submission to canonical kg/cm. That form moves to the viewer preference in
-// Phase 4; these go with it.
+// submission to canonical kg/cm. They are REQUIRED wire tags (CONVENTIONS §20 —
+// the RN client logs in its own unit) and stay for as long as that form does.
 export type BodyMetrics = {
   weight?: number;
   weightUnit?: "lbs" | "kg";

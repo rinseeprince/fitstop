@@ -7,7 +7,8 @@ import { getEventsForDateRange } from "@/services/training-event-service";
 /**
  * GET - Fetch training events for a client within a date range.
  * Unlike the per-plan endpoint, this returns events across ALL plans
- * (active, planned, archived) so the calendar can show historical months.
+ * coexisting provenance plans (current, upcoming, ended and archived) so the
+ * calendar can show historical months.
  */
 export async function GET(
   request: NextRequest,

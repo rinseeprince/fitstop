@@ -14,14 +14,16 @@ import { assertSessionUnlogged } from "./training-event-occupancy";
  * safe where the calendar's deleted move-all-future was not, because it fans
  * out from the session row to the events that already reference it rather than
  * guessing which events are siblings — and it changes a value on those events
- * rather than their dates.
+ * rather than their dates. Under placement a session owns one placed day
+ * (migration 121), so "every future occurrence" is normally ONE event; a
+ * per-event duplicate is the only way it becomes more.
  *
  * Also sets is_modified=true so the regeneration pathway doesn't overwrite
  * the coach's deliberate edit.
  *
  * Returns the DATES of the event rows updated. The caller needs the dates, not a
- * count: these events are scattered across the calendar (one per placed day), so
- * the nutrition cascade can rewrite exactly them instead of anchoring at today
+ * count: the affected days (normally one; scattered only after duplicates) let
+ * the nutrition cascade rewrite exactly them instead of anchoring at today
  * and rewriting every day to the horizon. `.length` is still the count.
  */
 export async function updateSurplusForFutureEvents(

@@ -66,8 +66,9 @@ export async function GET(
 
 // PUT - Builder-grade full replace of a placed session (meta + whole exercise
 // list incl. setSpecs/videoUrl), the tray's "All occurrences" save. Renames
-// propagate to FUTURE SCHEDULED events only (past keeps snapshots); a surplus
-// change additionally triggers the nutrition cascade.
+// land on this session's future scheduled events — normally just this day (one
+// session row per placed day), more only after a duplicate; past keeps its
+// snapshots. A surplus change additionally triggers the nutrition cascade.
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; planId: string; sessionId: string }> }

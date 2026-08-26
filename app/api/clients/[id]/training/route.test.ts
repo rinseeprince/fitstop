@@ -87,11 +87,11 @@ const activePlan = {
   sessions: [],
 }
 
-const plannedFullPlan = {
-  id: 'plan-planned',
+const upcomingFullPlan = {
+  id: 'plan-upcoming',
   clientId: 'client-1',
   name: 'Scheduled Plan',
-  status: 'planned',
+  status: 'active',
   splitType: 'full_body',
   frequencyPerWeek: 3,
   sessions: [],
@@ -102,8 +102,8 @@ const plannedFullPlan = {
 // getNextFutureTrainingPlan (which owns the deleted/archived exclusions), so the
 // route test stubs the service rather than a hand-rolled query chain — the
 // archived predicate is covered where it lives, in the service.
-const plannedRow = {
-  id: 'plan-planned',
+const upcomingRow = {
+  id: 'plan-upcoming',
   effectiveFrom: '2026-01-19',
   name: 'Scheduled Plan',
   splitType: 'full_body',
@@ -111,7 +111,7 @@ const plannedRow = {
   programDurationWeeks: 4,
 }
 
-function mockPlannedPlanRow(row: typeof plannedRow | null): void {
+function mockUpcomingPlanRow(row: typeof upcomingRow | null): void {
   vi.mocked(getNextFutureTrainingPlan).mockResolvedValue(row)
 }
 
@@ -128,10 +128,10 @@ describe('Training Route GET - scheduled plan semantics', () => {
     } as never)
   })
 
-  it('planned-only: returns the planned plan as plan with scheduledFor set', async () => {
+  it('upcoming-only: returns the future-dated plan as plan with scheduledFor set', async () => {
     vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
-    vi.mocked(getTrainingPlanById).mockResolvedValue(plannedFullPlan as never)
-    mockPlannedPlanRow(plannedRow)
+    vi.mocked(getTrainingPlanById).mockResolvedValue(upcomingFullPlan as never)
+    mockUpcomingPlanRow(upcomingRow)
 
     const response = await GET(makeGetRequest(), {
       params: Promise.resolve({ id: 'client-1' }),
@@ -140,16 +140,16 @@ describe('Training Route GET - scheduled plan semantics', () => {
 
     expect(response.status).toBe(200)
     expect(data.success).toBe(true)
-    expect(data.plan.id).toBe('plan-planned')
+    expect(data.plan.id).toBe('plan-upcoming')
     expect(data.scheduledFor).toBe('2026-01-19')
     expect(data.upcomingPlan).toBeNull()
     expect(data.clientTimezone).toBe('Europe/London')
   })
 
-  it('active + planned: returns the active plan with upcomingPlan set and no scheduledFor', async () => {
+  it('active + upcoming: returns the active plan with upcomingPlan set and no scheduledFor', async () => {
     vi.mocked(getTrainingPlanForDate).mockResolvedValue(activePlan as never)
-    vi.mocked(getTrainingPlanById).mockResolvedValue(plannedFullPlan as never)
-    mockPlannedPlanRow(plannedRow)
+    vi.mocked(getTrainingPlanById).mockResolvedValue(upcomingFullPlan as never)
+    mockUpcomingPlanRow(upcomingRow)
 
     const response = await GET(makeGetRequest(), {
       params: Promise.resolve({ id: 'client-1' }),
@@ -159,7 +159,7 @@ describe('Training Route GET - scheduled plan semantics', () => {
     expect(response.status).toBe(200)
     expect(data.plan.id).toBe('plan-active')
     expect(data.upcomingPlan).toMatchObject({
-      id: 'plan-planned',
+      id: 'plan-upcoming',
       effectiveFrom: '2026-01-19',
       name: 'Scheduled Plan',
     })
@@ -169,7 +169,7 @@ describe('Training Route GET - scheduled plan semantics', () => {
   it('no plans at all: plan, upcomingPlan and scheduledFor are all null', async () => {
     vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
     vi.mocked(getTrainingPlanById).mockResolvedValue(null)
-    mockPlannedPlanRow(null)
+    mockUpcomingPlanRow(null)
 
     const response = await GET(makeGetRequest(), {
       params: Promise.resolve({ id: 'client-1' }),
@@ -183,10 +183,10 @@ describe('Training Route GET - scheduled plan semantics', () => {
     expect(data.clientTimezone).toBe('Europe/London')
   })
 
-  it('planned row exists but full fetch fails: no phantom scheduledFor', async () => {
+  it('upcoming row exists but full fetch fails: no phantom scheduledFor', async () => {
     vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
     vi.mocked(getTrainingPlanById).mockResolvedValue(null)
-    mockPlannedPlanRow(plannedRow)
+    mockUpcomingPlanRow(upcomingRow)
 
     const response = await GET(makeGetRequest(), {
       params: Promise.resolve({ id: 'client-1' }),

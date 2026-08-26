@@ -1,5 +1,10 @@
 "use client";
 
+// KEPT UNMOUNTED (dead-code sweep 2026-08): nothing in the web shell renders
+// this — re-mounting the day-centric walkthrough is a separate concern, expected
+// to land in the RN client (ARCHITECTURE → Client Onboarding Flow, note). Its
+// `POST /api/client/walkthrough-seen` route stays for the same reason.
+
 import { useState, useCallback } from "react";
 import {
   Carousel,

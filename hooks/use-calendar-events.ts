@@ -60,7 +60,8 @@ export function useInvalidateTrainingData() {
 /**
  * Fetches and memoizes calendar events for a client across a date range.
  * Returns events grouped by date for O(1) cell lookup. Includes events from
- * all plans (active, planned, archived) so historical months render correctly.
+ * all coexisting provenance plans (current, upcoming, ended and archived) so
+ * historical months render correctly.
  */
 export function useCalendarEvents(
   clientId: string | null,

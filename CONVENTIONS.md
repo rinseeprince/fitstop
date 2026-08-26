@@ -199,7 +199,7 @@
       /daily-pulse - Legacy coach-side pulse (wellness strip, day-detail card; being retired)
     /client        - Client-facing: pre-activation flows (onboarding, walkthrough, waiting state)
     /client-portal - Client-facing: post-activation portal (home, detail pages, nav, settings)
-    /ui            - Shadcn/Radix base components
+    /ui            - Shadcn/Radix base components (vendored generator output; its unused sub-exports are not refactor residue and are not swept)
   /services      - Business logic and data operations
   /utils         - Helper functions (AI, nutrition, training calculations)
   /hooks         - Custom React hooks

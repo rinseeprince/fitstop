@@ -43,6 +43,12 @@ export type SessionInput = {
  * Generate training events for a plan within a date range.
  * Creates one event row per training session per matching date.
  * Uses upsert with ignoreDuplicates to safely handle re-runs.
+ *
+ * WEEKDAY generator — it filters sessions on `dayOfWeek`, so it is inert on
+ * product data (placement writes `day_of_week: null`, migration 121; the
+ * product path is `generateProgramEvents`). Kept deliberately for the
+ * documented seed script (`scripts/seed-scale-client.ts`, ARCHITECTURE →
+ * weekday authoring) and its tests.
  */
 export async function generateTrainingEvents(
   clientId: string,

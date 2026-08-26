@@ -346,7 +346,7 @@ export const createTrainingPlanAtomic = async (params: {
   windowEnd?: string;
 }): Promise<string> => {
   // Client-local today (coach-tz fallback) — computed here, not threaded from
-  // callers, so every placement path judges active-vs-planned correctly.
+  // callers, so every placement path computes the RPC's `p_today` floor the same way.
   const pToday = await getClientTodayString(params.clientId);
 
   const { data: newPlanId, error: rpcError } = await supabaseAdmin

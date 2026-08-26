@@ -450,7 +450,7 @@ export type GetPlanApiResponse = {
   success: boolean;
   plan?: TrainingPlan | null;
   upcomingPlan?: UpcomingTrainingPlan | null;
-  /** Set only when there is no active plan and the returned `plan` is a scheduled (planned) one. */
+  /** Set only when there is no active plan and the returned `plan` is an upcoming (future-dated) one. */
   scheduledFor?: string | null;
   clientTimezone?: string;
   errorMessage?: string;

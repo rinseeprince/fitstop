@@ -75,7 +75,7 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 - Integration with Daily Pulse for logging
 
 ### 4. Progress Tracking
-**Location**: `/client/progress`
+**Location**: `/client/metrics` (the Metrics hub; `/client/progress` is a redirect stub kept so old links resolve)
 
 - Upload progress photos (front, side, back views)
 - Log body measurements (weight, body fat %, circumferences)
@@ -179,6 +179,7 @@ All client API endpoints require authentication except where noted.
 - `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `403` day locked · `404` not found / not this client
 - `POST /api/client/training/session-logs` - Event-less log: the client trained on a date with no prescribed event (rest-day training). One log per date — a second submission for the same date EDITS the existing log
 - `GET /api/client/training/sessions/{sessionId}` - Session + exercises; 404 unless the session belongs to the client's ACTIVE plan. Powers the rest-day picker
+- `GET /api/client/exercises/catalog?since={ISO}` - Exercise-catalog delta sync: a sparse fieldset of rows with `updated_at` after `since` (omit `since` for a full resync). Complete past the ~1000-row PostgREST cap (paged internally on `(updated_at, id)`); deletes are invisible to the delta, so resync periodically
 - `GET /api/client/training/exercise-history?metric=list|progression|prs` - `progression`/`prs` also take `exerciseId` or `exerciseName`. **Warm-up sets are excluded from every metric**
 
 ### Nutrition
@@ -230,6 +231,9 @@ All client API endpoints require authentication except where noted.
 
 ### Notifications
 - `GET /api/client/notifications` - Get notifications
+
+### Onboarding
+- `POST /api/client/walkthrough-seen` - Marks the first-login walkthrough as completed (`clients.walkthrough_completed_at`). The web shell does not mount the walkthrough; the RN client owns that flow
 - `/api/client/notifications` is **GET-only**: `read` is computed server-side and is not client-mutable.
 
 ### Habits
@@ -349,7 +353,7 @@ type SetSpec = {
   rpe_target?: number | null
   tempo?: string | null
   rest_seconds?: number | null
-  drops?: unknown[]
+  drops?: { load_value?: number | null; weight?: number | null; reps: number | null }[]  // weight = the pre-load_value spelling; read both, write load_value
 }
 ```
 
@@ -702,7 +706,8 @@ Coaches receive alerts when:
     ├── dashboard/page.tsx     # Main dashboard with Daily Pulse
     ├── training/page.tsx      # Training plans view
     ├── nutrition/page.tsx     # Nutrition targets
-    ├── progress/page.tsx      # Progress tracking
+    ├── metrics/page.tsx       # Metrics hub (progress tracking)
+    ├── progress/page.tsx      # redirect → /client/metrics (kept so old links resolve)
     ├── check-in/page.tsx      # Weekly check-in form
     ├── resources/page.tsx     # Educational content
     └── layout.tsx             # Client portal layout wrapper
@@ -720,7 +725,7 @@ Coaches receive alerts when:
 │   └── utils/               # Helper functions
 ├── client/                   # Client-specific components
 │   ├── notifications-dropdown.tsx
-│   └── progress/            # Progress tracking components
+│   └── walkthrough/         # Guided walkthrough (not mounted on web; the RN client re-mounts it)
 └── client-portal/           # Shared portal components
     ├── client-navigation.tsx # Mobile/desktop nav
     ├── training/            # Training components

@@ -224,7 +224,8 @@ export async function orchestrateNutritionPlanCreation(
   }
 
   // Client-local today (coach-tz fallback): both the past-date validation and
-  // the goal resolver must agree with the RPC's active-vs-planned decision, or
+  // the goal resolver must agree with the RPC's past-date belt and its
+  // close-and-insert decision (migration 144), or
   // a coach near local midnight gets a spurious "past date" rejection.
   const clientToday = await getClientTodayString(clientId);
 

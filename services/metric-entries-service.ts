@@ -54,8 +54,9 @@ const GIRTH_KEYS: ReadonlySet<MetricEntryKey> = new Set<MetricEntryKey>([
  * entries) with the centimetres migration 141 converted the history to, and
  * nothing distinguishes them.
  *
- * Weight needs no conversion: its label resolves from `client.weightUnit`, which
- * is now the canonical "kg" constant, so the coach sees kg and types kg.
+ * Weight is stored canonical kg (migration 141 dropped the per-client unit
+ * columns); the coach's OWN preference converts at the presentation boundary
+ * (CONVENTIONS §20), never here.
  *
  * Phase 3 fixes the stale "in" label; until then this matches the check-in girth
  * path, which converts on write for the same reason.
@@ -107,7 +108,7 @@ export const upsertMetricEntry = async (
 };
 
 // Weight/bodyFat entries also land in the immutable body_metrics event log so
-// clients.current_weight (the phase-chip source) and phase comparisons stay
+// clients.current_weight (the status-card source) and goal comparisons stay
 // coherent. Non-blocking: a dual-write failure never loses the entry itself.
 async function dualWriteBodyMetrics(
   clientId: string,

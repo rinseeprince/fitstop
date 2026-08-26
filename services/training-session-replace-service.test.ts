@@ -219,7 +219,7 @@ describe("replaceSessionFull", () => {
     );
   });
 
-  it("propagates a rename to FUTURE SCHEDULED events only", async () => {
+  it("writes a rename to the session's future scheduled events only (normally the edited day)", async () => {
     const read = makeChain({ data: currentRow, error: null });
     const update = makeChain({
       data: { ...updatedRow, name: "Push Day A", focus: "Chest + Tris" },

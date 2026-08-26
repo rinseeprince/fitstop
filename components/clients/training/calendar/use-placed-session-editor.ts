@@ -105,6 +105,10 @@ export function usePlacedSessionEditor(
 
   // Scope dialog trigger: >1 FUTURE SCHEDULED occurrence means an "all" save
   // touches other days. Past/logged events keep their snapshots either way.
+  // Under placement every placed day owns its own session row (migration 121),
+  // so this is normally 1 — it exceeds 1 only after a per-event DUPLICATE
+  // (`duplicateEvent` copies `training_session_id`), and that is when the
+  // dialog opens. Live, not vestigial: placed-session-editor.test.tsx covers it.
   const futureScheduledCount = useMemo(() => {
     if (!data) return 0;
     return data.events.filter(

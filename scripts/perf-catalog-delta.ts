@@ -4,6 +4,10 @@
  *
  *   npx tsx scripts/perf-catalog-delta.ts
  *
+ * KEPT deliberately (dead-code sweep 2026-08) although no doc or npm script names
+ * it: it is the repeatable proof of the internal 1000-row paging on the RN delta
+ * endpoint. Run by hand.
+ *
  * Read-only. Two jobs:
  *  1. CORRECTNESS — page the full catalog through getExerciseCatalogDelta and
  *     assert it matches COUNT(*) exactly, with no duplicate ids and a strictly

@@ -114,7 +114,7 @@ export async function GET(
 
     // `nutrition_plans.name` is never written, so the Plans-tab hero titles
     // itself with the program the client is on — the same "which block is this"
-    // question a phase name will answer once phases ship. Same predicate as
+    // question a Journey block name answers (client_phases, migration 145). Same predicate as
     // hasTrainingPlan: the running program, else the queued one.
     const trainingPlanName = activePlan?.name ?? nextPlan?.name ?? null;
 

@@ -169,6 +169,10 @@ export const getTodayLog = async (clientId: string, date?: string): Promise<Dail
   return mapRowToDailyLog(data);
 };
 
+// No product caller: `get_client_streaks` (migration 095) is read only by the perf
+// harness (`scripts/perf-baseline.ts`), and this is the sole TS reader of that RPC.
+// Kept for the harness (dead-code sweep 2026-08); `calculateStreakFromLogs` above is
+// the unit-test oracle the RPC must match.
 export const calculateStreaks = async (clientId: string): Promise<StreakResult> => {
   // "today" (client-local) and the 365-day window anchored to it are computed
   // here and passed to the RPC — never CURRENT_DATE / a SQL DEFAULT

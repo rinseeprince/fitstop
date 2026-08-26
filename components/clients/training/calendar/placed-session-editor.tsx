@@ -40,7 +40,8 @@ import {
 
 // Builder-grade tray for one PLACED session, opened from the calendar. Hosts
 // the shared session-editor-body (per-set specs, drop sets, video, identity —
-// placed identity is editable, renames land on future scheduled events only)
+// placed identity is editable; a rename lands on the session's future scheduled
+// events, normally just this day)
 // against a local draft with explicit Save/Cancel. Replaces the legacy
 // session-detail-drawer.
 type PlacedSessionEditorProps = {
