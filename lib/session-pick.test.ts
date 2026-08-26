@@ -4,7 +4,6 @@ import type { ClientTrainingWeekSession } from "@/types/client-training-week";
 
 const WED = "2026-08-26";
 const THU = "2026-08-27";
-const FRI = "2026-08-28";
 
 function pick(over: Partial<ClientTrainingWeekSession> = {}): ClientTrainingWeekSession {
   return {
@@ -31,20 +30,8 @@ describe("resolveSessionPick — rest day", () => {
   });
 
   it("moves a missed-but-still-scheduled session forward (the make-up case)", () => {
-    const res = resolveSessionPick(pick({ date: "2026-08-24", state: "missed" }), ctx);
-    expect(res.action).toBe("move");
-  });
-
-  it("logs an already-done session as an extra rather than moving it", () => {
-    expect(resolveSessionPick(pick({ state: "done", isScheduled: false }), ctx)).toEqual({
-      action: "extra",
-      sessionId: "s-thu",
-    });
-  });
-
-  it("a skipped day reads 'missed' but cannot move — it is an extra", () => {
-    expect(resolveSessionPick(pick({ state: "missed", isScheduled: false }), ctx).action).toBe(
-      "extra",
+    expect(resolveSessionPick(pick({ date: "2026-08-24", state: "missed" }), ctx).action).toBe(
+      "move",
     );
   });
 
@@ -55,9 +42,13 @@ describe("resolveSessionPick — rest day", () => {
     });
   });
 
-  it("is unavailable when the session row behind an extra is gone", () => {
-    const res = resolveSessionPick(pick({ state: "done", isScheduled: false, sessionId: null }), ctx);
-    expect(res.action).toBe("unavailable");
+  it("a session that has been done or skipped is not something to do again", () => {
+    expect(resolveSessionPick(pick({ state: "done", isScheduled: false }), ctx).action).toBe(
+      "unavailable",
+    );
+    expect(resolveSessionPick(pick({ state: "missed", isScheduled: false }), ctx).action).toBe(
+      "unavailable",
+    );
   });
 });
 
@@ -88,21 +79,21 @@ describe("resolveSessionPick — prescribed day", () => {
     });
   });
 
-  it("an already-done session picked today is an alt, not a swap", () => {
-    expect(resolveSessionPick(pick({ date: FRI, state: "done", isScheduled: false }), ctx).action).toBe(
-      "alt",
-    );
-  });
-
   it("picking the session you are already on just opens it", () => {
     expect(resolveSessionPick(pick({ eventId: "ev-wed", date: WED, state: "today" }), ctx)).toEqual(
       { action: "open", eventId: "ev-wed" },
     );
   });
 
+  it("a done session is unavailable here too", () => {
+    expect(resolveSessionPick(pick({ state: "done", isScheduled: false }), ctx).action).toBe(
+      "unavailable",
+    );
+  });
+
   it("is unavailable when an alt's session row is gone", () => {
     expect(
-      resolveSessionPick(pick({ state: "done", isScheduled: false, sessionId: null }), ctx).action,
+      resolveSessionPick(pick({ sessionId: null }), { ...ctx, logged: true }).action,
     ).toBe("unavailable");
   });
 });

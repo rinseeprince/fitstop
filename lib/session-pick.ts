@@ -10,15 +10,17 @@ import type {
 // session" picker and "Do a different session" on a prescribed day — so the
 // two screens cannot drift on the rule (CONVENTIONS §2, no duplicate logic).
 // The rules are the owner's (2026-08-26):
-//   * a still-scheduled session picked on a rest day MOVES to that day and
-//     opens there — one date per workout;
-//   * a still-scheduled other-day session picked on a prescribed, unlogged day
-//     SWAPS days with it — the cleanest calendar for "I'll do Push today and
-//     Pull on Thursday";
-//   * anything else — an already-done session, or any pick once today is
-//     logged — is logged in place: an EXTRA on a rest day, an ALT (today's
-//     slot done as another session) on a prescribed day. Logged days never
-//     move.
+//   * only a session that can still be done is pickable — the picker offers
+//     Today / Upcoming / Missed-but-still-scheduled and nothing else, because
+//     a done session has nothing left to do and offering it again only invites
+//     a duplicate log;
+//   * picked on a rest day, it MOVES to that day and opens there — one date
+//     per workout;
+//   * picked on a prescribed, unlogged day, it SWAPS days with that day's
+//     session — the cleanest calendar for "I'll do Push today and Pull on
+//     Thursday";
+//   * picked once today is already logged, it is an ALT: today's log is
+//     rewritten as that session. Logged days never move.
 // =============================================================================
 
 export type SessionPickContext =
@@ -35,28 +37,20 @@ export type SessionPickContext =
 export type SessionPickResolution =
   | { action: "move"; moves: ClientLayoutMove[]; openEventId: string }
   | { action: "swap"; moves: ClientLayoutMove[]; openEventId: string }
-  | { action: "extra"; sessionId: string }
   | { action: "alt"; sessionId: string }
   | { action: "open"; eventId: string }
   | { action: "unavailable"; reason: string };
 
+const ALREADY_DONE = "That session has already been done";
 const NO_SESSION_ROW = "That session can no longer be logged — ask your coach to re-add it";
-
-function inPlace(
-  pick: ClientTrainingWeekSession,
-  action: "extra" | "alt",
-): SessionPickResolution {
-  if (pick.sessionId === null) return { action: "unavailable", reason: NO_SESSION_ROW };
-  return { action, sessionId: pick.sessionId };
-}
 
 export function resolveSessionPick(
   pick: ClientTrainingWeekSession,
   ctx: SessionPickContext,
 ): SessionPickResolution {
   if (ctx.kind === "rest-day") {
+    if (!pick.isScheduled) return { action: "unavailable", reason: ALREADY_DONE };
     if (pick.date === ctx.date) return { action: "open", eventId: pick.eventId };
-    if (!pick.isScheduled) return inPlace(pick, "extra");
     return {
       action: "move",
       moves: [{ eventId: pick.eventId, fromDate: pick.date, toDate: ctx.date }],
@@ -65,8 +59,10 @@ export function resolveSessionPick(
   }
 
   if (pick.eventId === ctx.eventId) return { action: "open", eventId: pick.eventId };
-  if (ctx.logged || !pick.isScheduled || pick.date === ctx.eventDate) {
-    return inPlace(pick, "alt");
+  if (!pick.isScheduled) return { action: "unavailable", reason: ALREADY_DONE };
+  if (ctx.logged || pick.date === ctx.eventDate) {
+    if (pick.sessionId === null) return { action: "unavailable", reason: NO_SESSION_ROW };
+    return { action: "alt", sessionId: pick.sessionId };
   }
   return {
     action: "swap",

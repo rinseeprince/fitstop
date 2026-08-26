@@ -52,25 +52,43 @@ describe("SessionPicker", () => {
     );
   });
 
-  it("lists this week's sessions with their day and state, and hands the whole entry to onPick", () => {
+  it("lists this week's still-to-do sessions with their day and state, and hands the whole entry to onPick", () => {
     const legs = session();
-    mockUseSWR.mockReturnValue(
-      weekResponse([
-        session({ eventId: "ev-mon", sessionId: "s-mon", name: "Push", date: "2026-08-24", state: "done", isScheduled: false }),
-        legs,
-      ]),
-    );
+    const missedMonday = session({
+      eventId: "ev-mon",
+      sessionId: "s-mon",
+      name: "Push",
+      date: "2026-08-24",
+      state: "missed",
+    });
+    mockUseSWR.mockReturnValue(weekResponse([missedMonday, legs]));
     const onPick = vi.fn();
     render(<SessionPicker date="2026-08-26" onPick={onPick} onCancel={vi.fn()} />);
 
+    // A missed-but-still-scheduled session is offered (the make-up case).
     expect(screen.getByText("Push")).toBeInTheDocument();
-    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(screen.getByText("Missed")).toBeInTheDocument();
     expect(screen.getByText("Legs")).toBeInTheDocument();
     expect(screen.getByText("Upcoming")).toBeInTheDocument();
     expect(screen.getByText(/Thu, Aug 27/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Legs"));
     expect(onPick).toHaveBeenCalledWith(legs);
+  });
+
+  it("never offers a session that has been done or skipped — there is nothing left to do", () => {
+    mockUseSWR.mockReturnValue(
+      weekResponse([
+        session({ eventId: "ev-mon", name: "Push", date: "2026-08-24", state: "done", isScheduled: false }),
+        session({ eventId: "ev-tue", name: "Pull", date: "2026-08-25", state: "missed", isScheduled: false }),
+        session(),
+      ]),
+    );
+    render(<SessionPicker date="2026-08-26" onPick={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.queryByText("Push")).toBeNull();
+    expect(screen.queryByText("Pull")).toBeNull();
+    expect(screen.getByText("Legs")).toBeInTheDocument();
   });
 
   it("does not offer the event the client is already on", () => {

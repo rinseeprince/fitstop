@@ -14,15 +14,14 @@ export default function ClientTrainingDetailPage() {
   const searchParams = useSearchParams();
   const eventId = searchParams.get("eventId");
   const date = searchParams.get("date") ?? undefined;
-  const [pickedSessionId, setPickedSessionId] = useState<string | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const applyLayout = useApplyClientLayout();
 
-  // A pick from the rest-day picker means one of three things (lib/session-pick):
-  // a still-scheduled session MOVES here and opens (one date per workout); an
-  // already-done one is logged again as an extra; a session already on this
-  // day just opens. The server's refusal, if any, is shown in its own words.
+  // A pick from the rest-day picker (lib/session-pick): the session MOVES here
+  // and opens — one date per workout — or, if it is already on this day, just
+  // opens. The picker only offers sessions that can still be done, so every
+  // other resolution is a refusal shown in its own words.
   const handlePick = useCallback(
     async (pick: ClientTrainingWeekSession) => {
       if (!date) return;
@@ -31,13 +30,6 @@ export default function ClientTrainingDetailPage() {
       switch (resolution.action) {
         case "open":
           router.replace(`/client/training?eventId=${resolution.eventId}&date=${date}`);
-          return;
-        case "extra":
-        case "alt":
-          setPickedSessionId(resolution.sessionId);
-          return;
-        case "unavailable":
-          setPickError(resolution.reason);
           return;
         case "move":
         case "swap": {
@@ -50,7 +42,14 @@ export default function ClientTrainingDetailPage() {
           } finally {
             setBusy(false);
           }
+          return;
         }
+        case "unavailable":
+          setPickError(resolution.reason);
+          return;
+        case "alt":
+          // Not a rest-day outcome; the kernel only returns it for a prescribed day.
+          setPickError("Pick a session that is still to be done");
       }
     },
     [applyLayout, date, router],
@@ -61,17 +60,8 @@ export default function ClientTrainingDetailPage() {
     return <SetTracker eventId={eventId} date={date} />;
   }
 
-  // Event-less (rest-day training): pick a session, then log it for `date`.
+  // Event-less (a rest day): pick a session from this week; it moves here.
   if (date) {
-    if (pickedSessionId) {
-      return (
-        <SetTracker
-          date={date}
-          sessionId={pickedSessionId}
-          onChangeSession={() => setPickedSessionId(null)}
-        />
-      );
-    }
     return (
       <SessionPicker
         title="Log a session"

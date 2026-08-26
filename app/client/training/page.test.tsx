@@ -115,14 +115,15 @@ describe("ClientTrainingDetailPage", () => {
     expect(mockReplace).toHaveBeenCalledWith("/client/training?eventId=ev-thu&date=2026-05-08");
   });
 
-  it("an already-done pick is logged in place as an extra — no move, no navigation", () => {
+  it("an already-done pick (unreachable through the real picker) is refused — no move, no navigation", () => {
     state.search = "date=2026-05-08";
     render(<ClientTrainingDetailPage />);
     fireEvent.click(screen.getByText("pick-push-done"));
 
     expect(global.fetch).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
-    expect(screen.getByTestId("set-tracker")).toHaveAttribute("data-session", "s-mon");
+    expect(screen.getByRole("alert")).toHaveTextContent(/already been done/i);
+    expect(screen.queryByTestId("set-tracker")).not.toBeInTheDocument();
   });
 
   it("shows the server's refusal in its own words and stays on the picker", async () => {

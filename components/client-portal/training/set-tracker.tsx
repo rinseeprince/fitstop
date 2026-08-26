@@ -153,10 +153,10 @@ function EventModeTracker({
     );
 
   // What a pick means is decided by lib/session-pick, shared with the rest-day
-  // picker: a still-scheduled other-day session SWAPS days with this one and
-  // the tracker reopens on it (one date per workout); anything else — a done
-  // session, or any pick once today is logged — is an ALT: today's slot logged
-  // as that session, nothing moves.
+  // picker (which only offers sessions that can still be done): an other-day
+  // session SWAPS days with this one and the tracker reopens on it (one date
+  // per workout); once today is logged the pick is an ALT instead — today's
+  // log rewritten as that session, nothing moves.
   const handlePick = async (pick: ClientTrainingWeekSession) => {
     const eventDate = eventData?.data?.event.date ?? date ?? pick.date;
     const resolution = resolveSessionPick(pick, {
@@ -172,7 +172,6 @@ function EventModeTracker({
         setShowPicker(false);
         return;
       case "alt":
-      case "extra":
         setUserSwapSessionId(resolution.sessionId);
         setShowPicker(false);
         return;

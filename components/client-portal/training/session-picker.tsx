@@ -21,11 +21,11 @@ type Props = {
 };
 
 /**
- * Lists THIS WEEK's sessions — the exact set a pick can act on — each with its
- * weekday and state, so the client sees what a pick will do before it does it:
- * a still-scheduled session moves (or swaps) onto the day they are logging; a
- * done one is logged again in place. What each pick means is decided by
- * `lib/session-pick.ts`, not here; this component only offers the list.
+ * Lists THIS WEEK's still-to-do sessions — the exact set a pick can act on —
+ * each with its weekday and state, so the client sees what a pick will do
+ * before it does it: the session moves (or swaps) onto the day they are
+ * logging. What each pick means is decided by `lib/session-pick.ts`, not
+ * here; this component only offers the list.
  *
  * It used to list every slot of the whole program (~32 rows for an 8-week
  * plan, no day, no state), so a pick from week 6 logged week 6's prescription
@@ -43,7 +43,13 @@ export function SessionPicker({
   const { data, isLoading, error: loadError } = useClientTrainingWeek(date);
 
   const week = data?.data ?? null;
-  const sessions = (week?.sessions ?? []).filter((s) => s.eventId !== excludeEventId);
+  // Only a session that can still be done is offered: Today, Upcoming, and
+  // Missed-but-still-scheduled (the make-up case). A done or skipped session
+  // has nothing left to do — offering it again only invites a duplicate log
+  // (owner decision 2026-08-26).
+  const sessions = (week?.sessions ?? []).filter(
+    (s) => s.isScheduled && s.eventId !== excludeEventId,
+  );
 
   return (
     <div className="space-y-4" data-testid="session-picker">
@@ -116,10 +122,9 @@ function formatDay(date: string): string {
   return format(new Date(date + "T00:00:00"), "EEE, MMM d");
 }
 
+// Only still-scheduled sessions reach these: today, upcoming, or missed.
 function stateLabel(state: ClientTrainingWeekSession["state"]): string {
   switch (state) {
-    case "done":
-      return "Done";
     case "today":
       return "Today";
     case "missed":
@@ -131,8 +136,6 @@ function stateLabel(state: ClientTrainingWeekSession["state"]): string {
 
 function stateClass(state: ClientTrainingWeekSession["state"]): string {
   switch (state) {
-    case "done":
-      return "bg-[rgba(13,148,136,0.08)] text-[#0d9488]";
     case "missed":
       return "bg-[rgba(192,96,96,0.08)] text-[#c06060]";
     case "today":
