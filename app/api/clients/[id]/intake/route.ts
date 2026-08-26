@@ -6,6 +6,8 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getIntake } from "@/services/client-intake-service";
 import { saveCoachNotes, reviewIntake, syncMetricsToClient } from "@/services/intake-review-service";
 import { reviewIntakeSchema, intakeActionSchema } from "@/lib/validations/client-intake";
+import { recordAuditEvent } from "@/services/audit-log-service";
+import { AUDIT_ACTIONS } from "@/lib/constants";
 
 export async function GET(
   request: NextRequest,
@@ -131,6 +133,18 @@ export async function POST(
 
     if (parsed.data.action === "sync-metrics") {
       const syncedFields = await syncMetricsToClient(clientId);
+      // CONVENTIONS §8 "when to log": intake metrics sync. Fire-and-forget,
+      // after the authorized write — it records, never gates. (This lived on a
+      // caller-less sub-route until the 2026-08 dead-code sweep removed it.)
+      void recordAuditEvent({
+        actorId: coachId,
+        actorRole: "trainer",
+        action: AUDIT_ACTIONS.INTAKE_SYNC_METRICS,
+        targetTable: "clients",
+        targetId: clientId,
+        clientId,
+        request,
+      });
       return NextResponse.json({ success: true, data: { syncedFields } });
     }
 
