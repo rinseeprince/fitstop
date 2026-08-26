@@ -35,6 +35,9 @@ import {
 import { CompleteWorkoutFooter } from "./complete-workout-footer";
 import { AddExerciseRow } from "./add-exercise-row";
 import { SessionPicker } from "./session-picker";
+import { useApplyClientLayout } from "@/hooks/use-client-training-data";
+import { resolveSessionPick } from "@/lib/session-pick";
+import type { ClientTrainingWeekSession } from "@/types/client-training-week";
 import { useUnits } from "@/contexts/units-context";
 import {
   buildLogPayload,
@@ -101,6 +104,11 @@ function EventModeTracker({
     string | null | undefined
   >(undefined);
   const [showPicker, setShowPicker] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+  const [pickBusy, setPickBusy] = useState(false);
+  const router = useRouter();
+  const { toast } = useToast();
+  const applyLayout = useApplyClientLayout();
 
   const {
     data: eventData,
@@ -144,15 +152,61 @@ function EventModeTracker({
       SWR_OPTS,
     );
 
+  // What a pick means is decided by lib/session-pick, shared with the rest-day
+  // picker: a still-scheduled other-day session SWAPS days with this one and
+  // the tracker reopens on it (one date per workout); anything else — a done
+  // session, or any pick once today is logged — is an ALT: today's slot logged
+  // as that session, nothing moves.
+  const handlePick = async (pick: ClientTrainingWeekSession) => {
+    const eventDate = eventData?.data?.event.date ?? date ?? pick.date;
+    const resolution = resolveSessionPick(pick, {
+      kind: "prescribed-day",
+      date: date ?? eventDate,
+      eventId,
+      eventDate,
+      logged: !!eventData?.data?.sessionLog,
+    });
+    setPickError(null);
+    switch (resolution.action) {
+      case "open":
+        setShowPicker(false);
+        return;
+      case "alt":
+      case "extra":
+        setUserSwapSessionId(resolution.sessionId);
+        setShowPicker(false);
+        return;
+      case "unavailable":
+        setPickError(resolution.reason);
+        return;
+      case "swap":
+      case "move": {
+        setPickBusy(true);
+        try {
+          await applyLayout(resolution.moves);
+          toast({ title: "Sessions swapped" });
+          router.replace(
+            `/client/training?eventId=${resolution.openEventId}&date=${date ?? eventDate}`,
+          );
+        } catch (error) {
+          setPickError(error instanceof Error ? error.message : "Failed to swap sessions");
+        } finally {
+          setPickBusy(false);
+        }
+      }
+    }
+  };
+
   if (showPicker) {
     return (
       <SessionPicker
         title="Do a different session"
-        onSelect={(id) => {
-          setUserSwapSessionId(id);
-          setShowPicker(false);
-        }}
+        date={date ?? eventData?.data?.event.date ?? ""}
+        excludeEventId={eventId}
+        onPick={handlePick}
         onCancel={() => setShowPicker(false)}
+        error={pickError}
+        busy={pickBusy}
       />
     );
   }

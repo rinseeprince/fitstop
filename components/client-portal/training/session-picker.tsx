@@ -1,52 +1,56 @@
 "use client";
 
-import useSWR from "swr";
-import { swrFetcher } from "@/lib/swr-fetcher";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { ClientTrainingPlan } from "@/types/client-training-plan";
-
-type PlanResponse = { success: boolean; data: ClientTrainingPlan | null };
+import { useClientTrainingWeek } from "@/hooks/use-client-training-data";
+import type { ClientTrainingWeekSession } from "@/types/client-training-week";
 
 type Props = {
-  onSelect: (sessionId: string) => void;
+  /** The day being acted on — the picker lists the training week containing it. */
+  date: string;
+  onPick: (session: ClientTrainingWeekSession) => void;
   onCancel: () => void;
   title?: string;
+  /** The event the client is already on (a prescribed day's tracker) — not offered. */
+  excludeEventId?: string | null;
+  /** A refusal from the last pick, in the server's own words. */
+  error?: string | null;
+  /** A pick is being applied — buttons are disabled until it lands. */
+  busy?: boolean;
 };
 
 /**
- * Mobile-first session picker (Session 5.4). Lists the training sessions of the
- * program running TODAY (rest entries excluded) for the rest-day-trained and
- * planned-day-swap flows. Reimplemented — does NOT reuse the deleted Daily Pulse
- * picker.
+ * Lists THIS WEEK's sessions — the exact set a pick can act on — each with its
+ * weekday and state, so the client sees what a pick will do before it does it:
+ * a still-scheduled session moves (or swaps) onto the day they are logging; a
+ * done one is logged again in place. What each pick means is decided by
+ * `lib/session-pick.ts`, not here; this component only offers the list.
  *
- * The `state === "active"` gate is load-bearing, not cosmetic. This picker reads
- * `/api/client/training-plan`, but `GET /api/client/training/sessions/[id]`
- * validates whatever the client picks against `getActiveTrainingPlanId` — a
- * separate, date-driven resolution. Offering a session from a queued or finished
- * program therefore produces a session that 404s the moment it is chosen.
+ * It used to list every slot of the whole program (~32 rows for an 8-week
+ * plan, no day, no state), so a pick from week 6 logged week 6's prescription
+ * against a week-1 rest day.
  */
 export function SessionPicker({
-  onSelect,
+  date,
+  onPick,
   onCancel,
   title = "Pick a session",
+  excludeEventId = null,
+  error = null,
+  busy = false,
 }: Props) {
-  const { data, isLoading, error } = useSWR<PlanResponse>(
-    "/api/client/training-plan",
-    swrFetcher,
-    { revalidateOnFocus: false },
-  );
+  const { data, isLoading, error: loadError } = useClientTrainingWeek(date);
 
-  const plan = data?.data ?? null;
-  const isRunning = plan?.state === "active";
-  const sessions = isRunning ? plan.sessions.filter((s) => !s.isRest) : [];
+  const week = data?.data ?? null;
+  const sessions = (week?.sessions ?? []).filter((s) => s.eventId !== excludeEventId);
 
   return (
     <div className="space-y-4" data-testid="session-picker">
       <header className="space-y-1">
         <h1 className="text-[18px] font-semibold text-[#0c1a1e]">{title}</h1>
         <p className="text-[13px] text-[#5a7d82]">
-          Choose the session you trained.
+          Choose a session from this week.
         </p>
       </header>
 
@@ -56,49 +60,84 @@ export function SessionPicker({
             <Skeleton key={i} className="h-16 w-full rounded-[6px]" />
           ))}
         </div>
-      ) : error || !plan ? (
+      ) : loadError || !week ? (
         <p className="text-[13px] text-[#5a7d82]">
-          Couldn&apos;t load your plan. Please try again.
-        </p>
-      ) : plan.state === "upcoming" ? (
-        <p className="text-[13px] text-[#5a7d82]">
-          Your program hasn&apos;t started yet, so there are no sessions to pick
-          from today.
-        </p>
-      ) : plan.state === "ended" ? (
-        <p className="text-[13px] text-[#5a7d82]">
-          Your program has ended. Your coach will set up the next one.
+          Couldn&apos;t load your week. Please try again.
         </p>
       ) : sessions.length === 0 ? (
         <p className="text-[13px] text-[#5a7d82]">
-          No sessions in your current plan.
+          No sessions in your week to pick from.
         </p>
       ) : (
         <ul className="space-y-2">
           {sessions.map((s) => (
-            <li key={s.id}>
+            <li key={s.eventId}>
               <button
                 type="button"
-                onClick={() => onSelect(s.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-[6px] bg-white px-4 py-3 text-left transition-colors hover:bg-[rgba(13,148,136,0.04)]"
+                disabled={busy}
+                onClick={() => onPick(s)}
+                className="flex w-full items-center justify-between gap-3 rounded-[6px] bg-white px-4 py-3 text-left transition-colors hover:bg-[rgba(13,148,136,0.04)] disabled:opacity-60"
               >
-                <span className="font-medium text-[#0c1a1e]">{s.name}</span>
-                {s.focus && (
-                  <span className="shrink-0 rounded-[6px] bg-[rgba(13,148,136,0.05)] px-2 py-0.5 text-[12px] text-[#0d9488]">
-                    {s.focus}
+                <span className="min-w-0">
+                  <span className="block font-medium text-[#0c1a1e]">{s.name}</span>
+                  <span className="block text-[12px] text-[#5a7d82]">
+                    {formatDay(s.date)}
+                    {s.focus ? ` · ${s.focus}` : ""}
                   </span>
-                )}
+                </span>
+                <span
+                  className={`shrink-0 rounded-[6px] px-2 py-0.5 text-[12px] ${stateClass(s.state)}`}
+                >
+                  {stateLabel(s.state)}
+                </span>
               </button>
             </li>
           ))}
         </ul>
       )}
 
+      {error && (
+        <p role="alert" className="text-[13px] text-[#c06060]">
+          {error}
+        </p>
+      )}
+
       <div className="flex justify-start">
-        <Button type="button" variant="ghost" onClick={onCancel}>
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
           Cancel
         </Button>
       </div>
     </div>
   );
+}
+
+// The app's date spelling (`EEE, MMM d`) — see training-event-occupancy.ts.
+function formatDay(date: string): string {
+  return format(new Date(date + "T00:00:00"), "EEE, MMM d");
+}
+
+function stateLabel(state: ClientTrainingWeekSession["state"]): string {
+  switch (state) {
+    case "done":
+      return "Done";
+    case "today":
+      return "Today";
+    case "missed":
+      return "Missed";
+    default:
+      return "Upcoming";
+  }
+}
+
+function stateClass(state: ClientTrainingWeekSession["state"]): string {
+  switch (state) {
+    case "done":
+      return "bg-[rgba(13,148,136,0.08)] text-[#0d9488]";
+    case "missed":
+      return "bg-[rgba(192,96,96,0.08)] text-[#c06060]";
+    case "today":
+      return "bg-[rgba(13,148,136,0.05)] text-[#0d9488]";
+    default:
+      return "bg-[#f0f4f4] text-[#5a7d82]";
+  }
 }

@@ -15,7 +15,15 @@ export type ClientTrainingWeekSession = {
   focus: string | null;
   date: string; // YYYY-MM-DD
   state: ClientTrainingWeekSessionState;
+  // Whether a layout write may move it: `status === 'scheduled'`. Not derivable
+  // from `state` — a past scheduled day and a skipped day both read "missed",
+  // and only the first can be moved.
+  isScheduled: boolean;
 };
+
+// One entry of a layout write (`POST /api/client/training/events/layout`).
+// `fromDate` is the day the client SAW the session on — the drift check.
+export type ClientLayoutMove = { eventId: string; fromDate: string; toDate: string };
 
 export type ClientTrainingWeek = {
   weekStart: string; // YYYY-MM-DD

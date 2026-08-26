@@ -43,9 +43,16 @@ vi.mock("swr", () => ({
     if (typeof key === "string" && key.startsWith("/api/client/training/sessions/"))
       return mockSession();
     if (key === "/api/client/me") return mockMe();
+    // The session picker reads the week; no test opens it, so an empty week
+    // is enough to keep the key mocked (the mock throws on unknown keys).
+    if (typeof key === "string" && key.startsWith("/api/client/training/week"))
+      return { data: undefined, error: undefined, isLoading: true };
     throw new Error(`Unmocked SWR key: ${String(key)}`);
   },
   mutate: (...args: unknown[]) => mockGlobalMutate(...args),
+  // useApplyClientLayout (hooks/use-client-training-data) invalidates through
+  // useSWRConfig; the tracker mounts that hook on every render.
+  useSWRConfig: () => ({ mutate: mockGlobalMutate }),
 }));
 
 const mockToast = vi.fn();
@@ -54,7 +61,7 @@ vi.mock("@/hooks/use-toast", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
 // Required, not optional: units-context imports auth-context, which constructs

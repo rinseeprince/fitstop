@@ -96,7 +96,17 @@ describe("getClientTrainingWeek", () => {
       name: "Session mon",
       focus: null,
       date: "2026-08-24",
+      isScheduled: false,
     });
+    // "missed" alone cannot say whether a day can still be moved: a past
+    // scheduled day can, a skipped one cannot.
+    expect(week.sessions.map((s) => [s.eventId, s.isScheduled])).toEqual([
+      ["mon", false],
+      ["tue", true],
+      ["wed", true],
+      ["thu", true],
+      ["fri", false],
+    ]);
   });
 
   it("defaults to a Monday-anchored week when the client has no check-in day", async () => {

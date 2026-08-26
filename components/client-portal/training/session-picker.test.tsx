@@ -2,35 +2,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
 const { mockUseSWR } = vi.hoisted(() => ({ mockUseSWR: vi.fn() }));
-vi.mock("swr", () => ({ default: mockUseSWR }));
+vi.mock("swr", () => ({
+  default: mockUseSWR,
+  useSWRConfig: () => ({ mutate: vi.fn() }),
+}));
 vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
 
 import { SessionPicker } from "./session-picker";
+import type { ClientTrainingWeekSession } from "@/types/client-training-week";
 
-type SessionEntry = {
-  id: string;
-  name: string;
-  focus: string | null;
-  orderIndex: number;
-  isRest: boolean;
-  estimatedDurationMinutes: number | null;
-  exercises: never[];
-};
-
-function planResponse(
-  sessions: SessionEntry[],
-  state: "active" | "upcoming" | "ended" = "active",
-) {
+function weekResponse(sessions: ClientTrainingWeekSession[]) {
   return {
     data: {
       success: true,
       data: {
-        planId: "p1",
-        planName: "Plan",
+        weekStart: "2026-08-24",
+        weekEnd: "2026-08-30",
+        today: "2026-08-26",
         sessions,
-        state,
-        startsOn: "2026-07-01",
-        endsOn: "2026-08-11",
       },
     },
     isLoading: false,
@@ -38,41 +27,90 @@ function planResponse(
   };
 }
 
-const session = (over: Partial<SessionEntry> = {}): SessionEntry => ({
-  id: "s1",
-  name: "Push",
-  focus: "Chest",
-  orderIndex: 0,
-  isRest: false,
-  estimatedDurationMinutes: null,
-  exercises: [],
+const session = (over: Partial<ClientTrainingWeekSession> = {}): ClientTrainingWeekSession => ({
+  eventId: "ev-thu",
+  sessionId: "s-thu",
+  name: "Legs",
+  focus: "Lower",
+  date: "2026-08-27",
+  state: "upcoming",
+  isScheduled: true,
   ...over,
 });
 
 describe("SessionPicker", () => {
   beforeEach(() => cleanup());
 
-  it("lists active-plan sessions (rest entries excluded) and fires onSelect", () => {
+  it("reads the week containing the day being acted on", () => {
+    mockUseSWR.mockReturnValue(weekResponse([]));
+    render(<SessionPicker date="2026-08-26" onPick={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(mockUseSWR).toHaveBeenCalledWith(
+      "/api/client/training/week?date=2026-08-26",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("lists this week's sessions with their day and state, and hands the whole entry to onPick", () => {
+    const legs = session();
     mockUseSWR.mockReturnValue(
-      planResponse([
-        session({ id: "s1", name: "Push" }),
-        session({ id: "rest", name: "Rest Day", isRest: true }),
+      weekResponse([
+        session({ eventId: "ev-mon", sessionId: "s-mon", name: "Push", date: "2026-08-24", state: "done", isScheduled: false }),
+        legs,
       ]),
     );
-    const onSelect = vi.fn();
-    render(<SessionPicker onSelect={onSelect} onCancel={vi.fn()} />);
+    const onPick = vi.fn();
+    render(<SessionPicker date="2026-08-26" onPick={onPick} onCancel={vi.fn()} />);
 
     expect(screen.getByText("Push")).toBeInTheDocument();
-    expect(screen.queryByText("Rest Day")).toBeNull();
+    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(screen.getByText("Legs")).toBeInTheDocument();
+    expect(screen.getByText("Upcoming")).toBeInTheDocument();
+    expect(screen.getByText(/Thu, Aug 27/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Push"));
-    expect(onSelect).toHaveBeenCalledWith("s1");
+    fireEvent.click(screen.getByText("Legs"));
+    expect(onPick).toHaveBeenCalledWith(legs);
+  });
+
+  it("does not offer the event the client is already on", () => {
+    mockUseSWR.mockReturnValue(
+      weekResponse([session({ eventId: "ev-wed", name: "Pull", date: "2026-08-26", state: "today" }), session()]),
+    );
+    render(
+      <SessionPicker date="2026-08-26" excludeEventId="ev-wed" onPick={vi.fn()} onCancel={vi.fn()} />,
+    );
+
+    expect(screen.queryByText("Pull")).toBeNull();
+    expect(screen.getByText("Legs")).toBeInTheDocument();
+  });
+
+  it("shows the server's refusal and disables picks while one is being applied", () => {
+    mockUseSWR.mockReturnValue(weekResponse([session()]));
+    render(
+      <SessionPicker
+        date="2026-08-26"
+        onPick={vi.fn()}
+        onCancel={vi.fn()}
+        error="Sat, Aug 29 already has a session"
+        busy
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Sat, Aug 29 already has a session");
+    expect(screen.getByText("Legs").closest("button")).toBeDisabled();
+  });
+
+  it("says so when the week has nothing to pick from", () => {
+    mockUseSWR.mockReturnValue(weekResponse([]));
+    render(<SessionPicker date="2026-08-26" onPick={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByText(/no sessions in your week/i)).toBeInTheDocument();
   });
 
   it("fires onCancel when Cancel is clicked", () => {
-    mockUseSWR.mockReturnValue(planResponse([session()]));
+    mockUseSWR.mockReturnValue(weekResponse([session()]));
     const onCancel = vi.fn();
-    render(<SessionPicker onSelect={vi.fn()} onCancel={onCancel} />);
+    render(<SessionPicker date="2026-08-26" onPick={vi.fn()} onCancel={onCancel} />);
 
     fireEvent.click(screen.getByText("Cancel"));
     expect(onCancel).toHaveBeenCalled();
@@ -80,26 +118,7 @@ describe("SessionPicker", () => {
 
   it("renders the picker container while loading", () => {
     mockUseSWR.mockReturnValue({ data: undefined, isLoading: true, error: undefined });
-    render(<SessionPicker onSelect={vi.fn()} onCancel={vi.fn()} />);
+    render(<SessionPicker date="2026-08-26" onPick={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByTestId("session-picker")).toBeInTheDocument();
-  });
-
-  // The write path resolves the plan by date on its own, so a session from a
-  // program that isn't running today 404s the moment it is picked. Offering one
-  // at all is the bug.
-  it("offers nothing from a program that has not started yet", () => {
-    mockUseSWR.mockReturnValue(planResponse([session({ name: "Push" })], "upcoming"));
-    render(<SessionPicker onSelect={vi.fn()} onCancel={vi.fn()} />);
-
-    expect(screen.queryByText("Push")).toBeNull();
-    expect(screen.getByText(/hasn't started yet/i)).toBeInTheDocument();
-  });
-
-  it("offers nothing from a program that has ended", () => {
-    mockUseSWR.mockReturnValue(planResponse([session({ name: "Push" })], "ended"));
-    render(<SessionPicker onSelect={vi.fn()} onCancel={vi.fn()} />);
-
-    expect(screen.queryByText("Push")).toBeNull();
-    expect(screen.getByText(/program has ended/i)).toBeInTheDocument();
   });
 });

@@ -205,7 +205,7 @@ The coach drill-down reads both: "Prescribed Push Day on Monday. Client performe
 
 **Day-view affordance (option B).** When `session_log.completed_at` differs from the linked `training_event.date` (e.g. rest-day-trained that caught up Tuesday's missed Pull on Wednesday), the day-view for the day the client actually trained shows a slim "Trained for {weekday} {session.name}" line. Restores the "where I physically trained" signal without confusing the calendar.
 
-**Picker scope.** Active-plan sessions only. No freehand entries, no library browsing, no externally-defined workouts. Mobile-first picker under `components/client-portal/training/session-picker.tsx`.
+**Picker scope — narrowed 2026-08-26.** THIS WEEK's sessions only (`GET /api/client/training/week`), each with its weekday and state, because that is exactly the set a pick can act on: a still-scheduled session **moves** (rest day) or **swaps** (prescribed day) onto the day being logged; a done one is logged again in place. The decision is one pure kernel, `lib/session-pick.ts`, shared by both entry points. It used to list every slot of the whole program — no day, no state — so a pick from week 6 logged week 6's prescription against a week-1 rest day. No freehand entries, no library browsing, no externally-defined workouts. `components/client-portal/training/session-picker.tsx`.
 
 **What does NOT change:**
 

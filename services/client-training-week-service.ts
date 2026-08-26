@@ -68,6 +68,7 @@ export async function getClientTrainingWeek(
     focus: row.session_focus,
     date: row.date,
     state: deriveState(row.status, row.date, today),
+    isScheduled: row.status === "scheduled",
   }));
 
   return { weekStart, weekEnd, today, sessions };
