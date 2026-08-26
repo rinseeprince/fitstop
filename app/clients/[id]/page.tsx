@@ -97,7 +97,6 @@ export default function ClientProfilePage() {
           <TabsContent value="training" className="space-y-6 mt-0">
             <TrainingPlanCard
               client={client}
-              onUpdate={() => mutateClient()}
               onTabChange={handleTabChange}
             />
           </TabsContent>
@@ -118,10 +117,7 @@ export default function ClientProfilePage() {
 
           {/* Daily Habits Tab */}
           <TabsContent value="daily-habits" className="space-y-6 mt-0">
-            <HabitsTabContent
-              client={client}
-              onUpdate={() => mutateClient()}
-            />
+            <HabitsTabContent client={client} />
           </TabsContent>
 
           {/* Check-ins Tab */}

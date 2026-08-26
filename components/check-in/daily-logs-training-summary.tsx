@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import { CheckCircle2, Activity, Utensils, Flame, TrendingUp, TrendingDown } from "lucide-react";
 import type { DailyLog } from "@/types/daily-log";
-import type { CheckInTrainingContext } from "@/types/check-in";
 import { aggregateDailyLogs } from "@/utils/daily-logs-aggregation";
 
 type TrainingPeriodStats = {
@@ -13,12 +12,11 @@ type TrainingPeriodStats = {
 
 type DailyLogsTrainingSummaryProps = {
   dailyLogs: DailyLog[];
-  trainingContext?: CheckInTrainingContext;
   trainingPeriodStats?: TrainingPeriodStats;
   periodDays?: number;
 };
 
-export const DailyLogsTrainingSummary = ({ dailyLogs, trainingContext, trainingPeriodStats, periodDays }: DailyLogsTrainingSummaryProps) => {
+export const DailyLogsTrainingSummary = ({ dailyLogs, trainingPeriodStats, periodDays }: DailyLogsTrainingSummaryProps) => {
   const aggregated = useMemo(() => aggregateDailyLogs(dailyLogs), [dailyLogs]);
 
   // Use session_logs-based stats when available (same source as coach-side hero),

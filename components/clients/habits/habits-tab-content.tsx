@@ -19,7 +19,6 @@ import type { Client } from "@/types/check-in";
 
 type HabitsTabContentProps = {
   client: Client;
-  onUpdate?: () => void;
 };
 
 export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {

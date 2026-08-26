@@ -18,7 +18,6 @@ import type { Client } from "@/types/check-in";
 
 type TrainingPlanBuilderProps = {
   client: Client;
-  onUpdate?: () => void;
   // Cross-tab navigation must run through the client page's handler: activeTab
   // is state seeded from ?tab= at mount only, so a bare router.replace changes
   // the URL without switching the tab. The history table's exercise drill-down
@@ -31,7 +30,6 @@ type TrainingPlanBuilderProps = {
 
 export function TrainingPlanBuilder({
   client,
-  onUpdate,
   onTabChange,
 }: TrainingPlanBuilderProps) {
   // The apply tray, plus the Journey round trip that can open it (7.3). The
@@ -61,7 +59,7 @@ export function TrainingPlanBuilder({
 
   return (
     <ErrorBoundary>
-      <TrainingBuilderProvider clientId={client.id} onUpdate={onUpdate}>
+      <TrainingBuilderProvider clientId={client.id}>
         <TopContentBar subtab={subtab} setSubtab={setSubtab} />
 
         {subtab === "data" ? (

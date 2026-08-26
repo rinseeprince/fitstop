@@ -6,7 +6,6 @@ import { TrainingPlanBuilder } from "./builder/training-plan-builder";
 
 type TrainingPlanCardProps = {
   client: Client;
-  onUpdate?: () => void;
   // Pass-through only. One passenger today (the history table's exercise
   // drill-down, which now crosses to the Journey tab) — a SECOND one riding
   // this page → card → builder → table chain makes it a context, not a fourth
@@ -19,13 +18,11 @@ type TrainingPlanCardProps = {
 
 export function TrainingPlanCard({
   client,
-  onUpdate,
   onTabChange,
 }: TrainingPlanCardProps) {
   return (
     <TrainingPlanBuilder
       client={client}
-      onUpdate={onUpdate}
       onTabChange={onTabChange}
     />
   );

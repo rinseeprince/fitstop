@@ -7,7 +7,6 @@ import { parseGetPlanResponse } from "@/lib/validations/training";
 
 type UseTrainingPlanProps = {
   clientId: string;
-  onUpdate?: () => void;
 };
 
 /**

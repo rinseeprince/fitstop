@@ -73,7 +73,6 @@ export const StepTraining = ({
       {/* Nutrition — read-only summary derived from daily logs. */}
       <DailyLogsTrainingSummary
         dailyLogs={dailyLogs}
-        trainingContext={trainingContext}
         trainingPeriodStats={trainingPeriodStats}
         periodDays={periodDays}
       />

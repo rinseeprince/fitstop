@@ -15,15 +15,13 @@ const TrainingBuilderContext = createContext<TrainingBuilderContextType | null>(
 type TrainingBuilderProviderProps = {
   children: ReactNode;
   clientId: string;
-  onUpdate?: () => void;
 };
 
 export function TrainingBuilderProvider({
   children,
   clientId,
-  onUpdate,
 }: TrainingBuilderProviderProps) {
-  const builder = useTrainingPlan({ clientId, onUpdate });
+  const builder = useTrainingPlan({ clientId });
   const [editMode, setEditMode] = useState(false);
 
   return (

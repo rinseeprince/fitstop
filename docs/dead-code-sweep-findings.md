@@ -448,6 +448,20 @@ Former owner-decision items land in the class named on each decision above. This
 
 **Gates:** `tsc` exit 0 · `eslint` 0 errors / 163 warnings · `vitest` 288 files, 3107 tests passed (10 cases removed WITH their dead code: `dayOfWeekSchema` ×2, `sessionSchema` ×6, `getHabitStats` ×2; no test file deleted) · `check:labels` OK (666 files).
 
+### Commit 5 — prop chains (landed 2026-08-26)
+
+**The four same-named `onUpdate` chains in this area, and what happened to each (CONVENTIONS §7 — a wrong cut here fails silently as a stale screen):**
+1. `app/clients/[id]/page.tsx` training tab → `TrainingPlanCard` → `TrainingPlanBuilder` → `TrainingBuilderProvider` → `useTrainingPlan` — **DEAD, removed (X5).** `useTrainingPlan` destructures only `{ clientId }`, so the callback never fired. Removed at all five sites: the page prop, `training-plan-card.tsx` (prop type, destructure, pass-through), `training-plan-builder.tsx` (same three), `contexts/training-builder-context.tsx` (prop type, destructure, the `useTrainingPlan` arg), `hooks/use-training-plan.ts` (the `onUpdate?` member of `UseTrainingPlanProps`).
+2. `page.tsx` nutrition tab → `NutritionCalculatorCardEnhanced` → `use-nutrition-builder` — **LIVE, untouched** (fires at `:123`, `:154`, `:267`).
+3. `page.tsx` habits tab → `HabitsTabContent` — **DEAD, removed (X6).** Declared on the props type, never referenced (the only in-file token is `onUpdateHabit`). The mount is now `<HabitsTabContent client={client} />`.
+4. `training-builder-right-panel.tsx:132` `onUpdate={builder.fetchPlan}` → `training-calendar-view.tsx` (invoked at `:510`) — **LIVE, untouched.**
+
+`mutateClient` keeps its three live callers on the page (`:82`, `:91`, the nutrition tab).
+
+**X7:** `DailyLogsTrainingSummary.trainingContext` (destructured, never read) removed with its `CheckInTrainingContext` import; `step-training.tsx` no longer passes it but still reads `trainingContext` itself (`:51`, `:84`, `:87`) — stopped there, as specified.
+
+**Deviations / dropped:** none. **Gates:** `tsc` exit 0 · `eslint` 0 errors / 162 warnings · `vitest` 288 files, 3107 tests passed · `check:labels` OK (666 files).
+
 ### Session handoff (2026-08-26, end of session 2)
 
 Landed: commits 1, 2, 8 (session 1) and **3 (`2f77714`), 4** (session 2). **Remaining, in order: 5 (prop chains X5/X6/X7 — the commit message must list all four `onUpdate` chains, §15), 6 (B4/B5 unreachable-branch refactors with test rewrites), 7 (markers + comment reframing + the §12 doc corrections + CLIENT-APP-REFERENCE additions + STATUS block appended to `docs/DEAD-CODE-SWEEP.md`; deletes this file; must be LAST).** Every §20 owner decision is recorded as decided — nothing is open; commit 7 executes the decided KEEP+marker items (R18, D2, H26, and any KEEP that wants a marker). Excluded from the sweep by owner decision: B16, X16, R7's audit move (own fix commit — the `recordAuditEvent` payload to restore is quoted in the commit-3 record, and ARCHITECTURE:782 / CONVENTIONS:378 become true through that commit, not through commit 7), M6's removal (own commit — browser-checked 2026-08-25, it IS present; scope in §20 #3). Also carried to commit 7's STATUS block: the R13 flag (`nutrition_weekly_summaries` now has no in-repo reader or writer — a table follow-up), and the commit-3 cascade extensions list, in case the owner wants any of them back.
