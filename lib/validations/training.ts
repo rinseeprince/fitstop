@@ -5,16 +5,6 @@ import type { TrainingPlan } from "@/types/training";
 
 export const planStatusSchema = z.enum(["active", "archived", "draft", "planned"]);
 
-export const dayOfWeekSchema = z.enum([
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday",
-]);
-
 export const exerciseSchema = z.object({
   name: z.string().min(1, "Exercise name is required").max(200),
   sets: z.number().int().min(1, "At least 1 set required").max(20, "Maximum 20 sets"),
@@ -33,16 +23,6 @@ export const exerciseSchema = z.object({
   isWarmup: z.boolean().optional().default(false),
 });
 
-export const sessionSchema = z.object({
-  name: z.string().min(1, "Session name is required").max(100),
-  dayOfWeek: dayOfWeekSchema.optional().nullable(),
-  orderIndex: z.number().int().min(0).optional(),
-  focus: z.string().max(200).optional().nullable(),
-  notes: z.string().max(1000).optional().nullable(),
-  estimatedDurationMinutes: z.number().int().min(10).max(180).optional().nullable(),
-  calorieSurplusPercentage: z.number().min(0).max(100).optional().nullable(),
-});
-
 export const updateTrainingPlanSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional().nullable(),
@@ -50,8 +30,6 @@ export const updateTrainingPlanSchema = z.object({
   frequencyPerWeek: z.number().int().min(1).max(7).optional(),
   programDurationWeeks: z.number().int().min(1).max(52).optional().nullable(),
 });
-
-export const updateSessionSchema = sessionSchema.partial();
 
 // =============================================================================
 // Coach library (saved-plan / saved-session) mutation schemas
@@ -167,7 +145,7 @@ export const bulkExerciseInputSchema = exerciseSchema.extend({
 // Full replace of a PLACED session (meta + exercises) — the calendar tray's
 // "All occurrences" save (PUT sessions/[sessionId]). Duration uses the authoring
 // bounds (0..480, matching what placement writes from savedSessionInputSchema),
-// NOT legacy sessionSchema's 10..180 — a placed row authored at 8 or 240 minutes
+// NOT the retired session PATCH schema's 10..180 — a placed row authored at 8 or 240 minutes
 // must round-trip through the tray without a phantom validation error.
 export const replaceSessionSchema = z.object({
   name: z.string().min(1).max(100),
@@ -325,16 +303,6 @@ export const inlinePlanBodySchema = z.object({
   sessions: z.array(savedSessionInputSchema).min(1).max(364),
 });
 export type InlinePlanBody = z.infer<typeof inlinePlanBodySchema>;
-
-export const updateSavedSessionSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  focus: z.string().max(200).nullish(),
-  isRest: z.boolean().optional(),
-  estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
-  calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
-  notes: z.string().max(1000).nullish(),
-  sessionType: z.string().max(50).optional(),
-});
 
 // =============================================================================
 // Event-keyed training log schemas (Session 1.1)

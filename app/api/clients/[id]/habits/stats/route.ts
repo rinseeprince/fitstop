@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
-import { getHabitStats, getAllHabitStats } from "@/services/daily-habits-service";
+import { getAllHabitStats } from "@/services/daily-habits-service";
 import { getClientById } from "@/services/client-service";
 import { getCoachTodayString } from "@/services/today-service";
 
@@ -40,7 +40,6 @@ export async function GET(
     }
 
     const { searchParams } = new URL(request.url);
-    const habitId = searchParams.get("habitId");
     const habitIds = searchParams.get("habitIds");
     const daysParam = searchParams.get("days");
 
@@ -56,33 +55,22 @@ export async function GET(
     // Coach-local window end: this is the coach's analytics view.
     const coachToday = await getCoachTodayString(coachId);
 
-    // Batch mode: return stats for all requested habits in one query
-    if (habitIds) {
-      const ids = habitIds.split(",").filter(Boolean);
-      if (ids.length === 0) {
-        return NextResponse.json(
-          { success: false, error: "habitIds must contain at least one ID" },
-          { status: 400 }
-        );
-      }
-      const stats = await getAllHabitStats(clientId, ids, days, coachToday);
-      return NextResponse.json({ success: true, data: stats });
-    }
-
-    // Single habit mode (backward compatible)
-    if (!habitId) {
+    // Batch read: stats for every requested habit in one query.
+    if (!habitIds) {
       return NextResponse.json(
-        { success: false, error: "habitId or habitIds parameter is required" },
+        { success: false, error: "habitIds parameter is required" },
         { status: 400 }
       );
     }
-
-    const stats = await getHabitStats(clientId, habitId, days, coachToday);
-
-    return NextResponse.json({
-      success: true,
-      data: stats,
-    });
+    const ids = habitIds.split(",").filter(Boolean);
+    if (ids.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "habitIds must contain at least one ID" },
+        { status: 400 }
+      );
+    }
+    const stats = await getAllHabitStats(clientId, ids, days, coachToday);
+    return NextResponse.json({ success: true, data: stats });
   } catch (error) {
     console.error("Error fetching habit stats:", error);
     return NextResponse.json(

@@ -19,9 +19,6 @@ vi.mock("@/services/client-service", () => ({
 
 vi.mock("@/services/training-service", () => ({
   getTrainingPlanById: vi.fn(),
-  updateSession: vi.fn(),
-  deleteSession: vi.fn(),
-  updateSurplusForFutureEvents: vi.fn(),
 }));
 
 vi.mock("@/services/training-session-replace-service", () => ({

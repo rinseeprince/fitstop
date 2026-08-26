@@ -321,4 +321,4 @@ export const getTodayHabitLogs = async (clientId: string, date?: string): Promis
   return (data || []).map((row) => mapHabitLogWithDetailsRow(row as unknown as DailyHabitLogWithHabit));
 };
 
-export { getHabitStats, getAllHabitStats } from "./daily-habits-stats";
+export { getAllHabitStats } from "./daily-habits-stats";

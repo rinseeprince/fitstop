@@ -255,8 +255,8 @@ export async function overwriteStandaloneSession(
   const { error: updateError } = await supabaseAdmin
     .from("coach_saved_sessions")
     .update({
-      // Full-replace semantics: absent optional clears (?? null), never the
-      // merge-style conditional spread of updateSavedSession.
+      // Full-replace semantics: absent optional clears (?? null) — never a
+      // merge-style conditional spread that would keep the stored value.
       name: input.name,
       focus: input.focus ?? null,
       estimated_duration_minutes: input.estimatedDurationMinutes ?? null,

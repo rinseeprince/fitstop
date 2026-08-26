@@ -1,50 +1,10 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type {
-  TrainingSession,
-  UpdateSessionRequest,
-} from "@/types/training";
-import type { TrainingSessionUpdate } from "@/lib/database-helpers";
+import type { TrainingSession } from "@/types/training";
 import { mapExerciseRow, mapSessionRow } from "./training-mappers";
 import { resolveExercises } from "./exercise-catalog-service";
 import { projectExerciseCompact } from "@/utils/exercise-set-specs";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { assertSessionUnlogged } from "./training-event-occupancy";
-
-// Update session
-export const updateSession = async (
-  sessionId: string,
-  updates: UpdateSessionRequest
-): Promise<TrainingSession> => {
-  const updateData: Partial<TrainingSessionUpdate> = { updated_at: new Date().toISOString() };
-
-  if (updates.name !== undefined) updateData.name = updates.name;
-  if (updates.dayOfWeek !== undefined) updateData.day_of_week = updates.dayOfWeek;
-  if (updates.orderIndex !== undefined) updateData.order_index = updates.orderIndex;
-  if (updates.focus !== undefined) updateData.focus = updates.focus;
-  if (updates.notes !== undefined) updateData.notes = updates.notes;
-  if (updates.estimatedDurationMinutes !== undefined)
-    updateData.estimated_duration_minutes = updates.estimatedDurationMinutes;
-  if (updates.calorieSurplusPercentage !== undefined)
-    updateData.calorie_surplus_percentage = updates.calorieSurplusPercentage;
-
-  const { data, error } = await supabaseAdmin
-    .from("training_sessions")
-    .update(updateData)
-    .eq("id", sessionId)
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to update session: ${error.message}`);
-
-  const { data: exercises } = await supabaseAdmin
-    .from("training_exercises")
-    .select("*")
-    .eq("session_id", sessionId)
-    .eq("is_active", true)
-    .order("order_index", { ascending: true });
-
-  return mapSessionRow(data, (exercises || []).map(mapExerciseRow));
-};
 
 /**
  * Propagate a session's new calorie_surplus_percentage to all of its future
@@ -85,22 +45,6 @@ export async function updateSurplusForFutureEvents(
 
   return (data ?? []).map((e) => e.date);
 }
-
-// Soft-delete session (and its exercises)
-export const deleteSession = async (sessionId: string): Promise<void> => {
-  const { error } = await supabaseAdmin
-    .from("training_sessions")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("id", sessionId);
-
-  if (error) throw new Error(`Failed to delete session: ${error.message}`);
-
-  // Also soft-delete child exercises
-  await supabaseAdmin
-    .from("training_exercises")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("session_id", sessionId);
-};
 
 // Get session with exercises by ID
 export const getSessionWithExercises = async (

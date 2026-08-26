@@ -19,52 +19,6 @@ export type HabitStats = {
 };
 
 /**
- * Get habit statistics for a specific habit.
- * Extracted from daily-habits-service.ts to reduce file size.
- */
-export const getHabitStats = async (
-  clientId: string,
-  habitId: string,
-  days: number,
-  endDateAnchor?: string
-): Promise<HabitStats> => {
-  const { startDate, endDate } = resolveWindow(days, endDateAnchor);
-
-  const { data, error } = await supabaseAdmin
-    .from("daily_habit_logs")
-    .select("*")
-    .eq("client_id", clientId)
-    .eq("daily_habit_id", habitId)
-    .gte("date", startDate)
-    .lte("date", endDate)
-    .order("date", { ascending: true });
-
-  if (error) {
-    throw new Error(`Failed to fetch habit stats: ${error.message}`);
-  }
-
-  const logs = (data || []).map((row: DailyHabitLogRow) => ({
-    id: row.id,
-    dailyHabitId: row.daily_habit_id,
-    clientId: row.client_id,
-    date: row.date,
-    completed: row.completed,
-    value: row.value ?? undefined,
-    notes: row.notes ?? undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
-
-  return {
-    completionRate: calculateCompletionRate(logs, days),
-    // Streak walks back from the same anchored end day as the fetch window —
-    // a server-clock default would make the streak invisible to a log on the
-    // viewer-local today.
-    currentStreak: calculateCurrentStreak(logs, new Date(endDate + "T00:00:00")),
-  };
-};
-
-/**
  * Get stats for all habits of a client in a single query.
  * Fetches all habit logs in the date window, groups by habit, and computes per-habit stats.
  */

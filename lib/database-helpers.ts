@@ -32,8 +32,6 @@ export type ClientUpdate = Database["public"]["Tables"]["clients"]["Update"];
 
 export type TrainingPlanUpdate = Database["public"]["Tables"]["training_plans"]["Update"];
 
-export type TrainingSessionUpdate = Database["public"]["Tables"]["training_sessions"]["Update"];
-
 export type TrainingEventRow = Database["public"]["Tables"]["training_events"]["Row"];
 export type TrainingEventInsert = Database["public"]["Tables"]["training_events"]["Insert"];
 export type NutritionEventRow = Database["public"]["Tables"]["nutrition_events"]["Row"];

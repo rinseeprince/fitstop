@@ -89,17 +89,6 @@ export interface UpdateContentFolderInput {
   sortOrder?: number;
 }
 
-export interface UpdateContentItemInput {
-  folderId?: string;
-  title?: string;
-  description?: string;
-  storagePath?: string;
-  thumbnailUrl?: string;
-  metadata?: Record<string, any>;
-  isLibrary?: boolean;
-  sortOrder?: number;
-}
-
 // URL metadata types (for oEmbed and Open Graph)
 export interface VideoMetadata {
   provider: 'youtube' | 'vimeo' | 'other';

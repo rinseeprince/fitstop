@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   planStatusSchema,
-  dayOfWeekSchema,
   exerciseSchema,
-  sessionSchema,
   updateTrainingPlanSchema,
   parseGetPlanResponse,
   logTrainingEventSchema,
@@ -30,30 +28,6 @@ describe('Training Validation Schemas', () => {
 
     it('rejects invalid status', () => {
       const result = planStatusSchema.safeParse('pending')
-      expect(result.success).toBe(false)
-    })
-  })
-
-  describe('dayOfWeekSchema', () => {
-    it('validates all days of the week', () => {
-      const days = [
-        'monday',
-        'tuesday',
-        'wednesday',
-        'thursday',
-        'friday',
-        'saturday',
-        'sunday',
-      ]
-
-      days.forEach((day) => {
-        const result = dayOfWeekSchema.safeParse(day)
-        expect(result.success).toBe(true)
-      })
-    })
-
-    it('rejects invalid day', () => {
-      const result = dayOfWeekSchema.safeParse('funday')
       expect(result.success).toBe(false)
     })
   })
@@ -156,52 +130,6 @@ describe('Training Validation Schemas', () => {
       if (result.success) {
         expect(result.data.isWarmup).toBe(false)
       }
-    })
-  })
-
-  describe('sessionSchema', () => {
-    it('validates a minimal session', () => {
-      const data = { name: 'Push Day' }
-      const result = sessionSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
-
-    it('validates a complete session', () => {
-      const data = {
-        name: 'Push Day A',
-        dayOfWeek: 'monday',
-        orderIndex: 0,
-        focus: 'Chest, Shoulders, Triceps',
-        notes: 'Start with compound movements',
-        estimatedDurationMinutes: 60,
-      }
-
-      const result = sessionSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
-
-    it('rejects session without name', () => {
-      const data = { dayOfWeek: 'monday' }
-      const result = sessionSchema.safeParse(data)
-      expect(result.success).toBe(false)
-    })
-
-    it('rejects session name over 100 characters', () => {
-      const data = { name: 'A'.repeat(101) }
-      const result = sessionSchema.safeParse(data)
-      expect(result.success).toBe(false)
-    })
-
-    it('rejects duration under 10 minutes', () => {
-      const data = { name: 'Quick Session', estimatedDurationMinutes: 5 }
-      const result = sessionSchema.safeParse(data)
-      expect(result.success).toBe(false)
-    })
-
-    it('rejects duration over 180 minutes (3 hours)', () => {
-      const data = { name: 'Marathon Session', estimatedDurationMinutes: 200 }
-      const result = sessionSchema.safeParse(data)
-      expect(result.success).toBe(false)
     })
   })
 

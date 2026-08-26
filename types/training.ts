@@ -152,16 +152,6 @@ export type UpdateTrainingPlanRequest = {
   programDurationWeeks?: number | null;
 };
 
-export type UpdateSessionRequest = {
-  name?: string;
-  dayOfWeek?: string | null;
-  orderIndex?: number;
-  focus?: string | null;
-  notes?: string | null;
-  estimatedDurationMinutes?: number | null;
-  calorieSurplusPercentage?: number | null;
-};
-
 // Manual session being built (before saving)
 export type ManualSessionDraft = {
   tempId: string;

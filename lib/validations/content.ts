@@ -36,12 +36,3 @@ export const updateFolderSchema = z.object({
 export const fetchMetadataSchema = z.object({
   url: z.string().url("Invalid URL").max(2048),
 });
-
-export const updateContentItemSchema = z.object({
-  title: z.string().min(1).max(200).trim().optional(),
-  description: z.string().max(2000).trim().optional(),
-  folderId: z.string().uuid().nullable().optional(),
-  isLibrary: z.boolean().optional(),
-  sortOrder: z.number().int().nonnegative().optional(),
-  metadata: z.record(z.unknown()).optional(),
-});

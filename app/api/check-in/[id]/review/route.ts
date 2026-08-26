@@ -103,39 +103,3 @@ export async function POST(
     );
   }
 }
-
-// PATCH - Mark check-in as reviewed without sending response
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const rateLimitResult = await apiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  const csrfError = await requireCSRFProtection(request);
-  if (csrfError) return csrfError;
-
-  try {
-    const { id: checkInId } = await params;
-
-    // Verify authorization
-    const authResult = await verifyCoachOwnership(checkInId);
-    if (!authResult.authorized) {
-      return authResult.response;
-    }
-
-    // Mark as reviewed with empty response
-    await updateCheckInResponse(checkInId, "");
-
-    return NextResponse.json({ success: true }, { status: 200 });
-  } catch (error) {
-    console.error("Error marking check-in as reviewed:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        errorMessage: "Failed to mark as reviewed",
-      },
-      { status: 500 }
-    );
-  }
-}

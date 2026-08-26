@@ -6,7 +6,6 @@ import { deleteContentFile } from "./content-storage-service";
 import type {
   ContentItem,
   CreateContentItemInput,
-  UpdateContentItemInput,
   ContentFolderWithContents,
   ContentLibraryResponse,
   ClientResourcesResponse,
@@ -40,40 +39,6 @@ export const createContentItem = async (
 
   if (error) {
     throw new Error("Failed to create content item");
-  }
-
-  return mapContentItemFromDatabase(data);
-};
-
-export const updateContentItem = async (
-  contentId: string,
-  input: UpdateContentItemInput,
-): Promise<ContentItem> => {
-  const raw: Record<string, unknown> = {
-    folder_id: input.folderId,
-    title: input.title,
-    description: input.description,
-    storage_path: input.storagePath,
-    thumbnail_url: input.thumbnailUrl,
-    metadata: input.metadata,
-    is_library: input.isLibrary,
-    sort_order: input.sortOrder,
-  };
-
-  // Remove undefined values to avoid updating with null
-  const updateData = Object.fromEntries(
-    Object.entries(raw).filter(([, v]) => v !== undefined)
-  );
-
-  const { data, error } = await supabaseAdmin
-    .from("content_items")
-    .update(updateData)
-    .eq("id", contentId)
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error("Failed to update content item");
   }
 
   return mapContentItemFromDatabase(data);

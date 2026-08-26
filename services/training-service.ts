@@ -7,7 +7,7 @@ import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { coversDate } from "./training-plan-window";
 
 // Re-export moved functions so existing imports continue to work
-export { updateSession, deleteSession, getSessionWithExercises, updateSurplusForFutureEvents } from "./training-session-service";
+export { getSessionWithExercises } from "./training-session-service";
 
 // Fetch sessions with exercises for a plan (shared helper)
 const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSession[]> => {
