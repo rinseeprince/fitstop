@@ -92,9 +92,11 @@ export function useClientCheckIn() {
       const result = await response.json();
 
       if (!response.ok || !result.success) {
+        // The route answers with SubmitCheckInResponse.errorMessage (the first
+        // validation issue); `error` is the shape of the other client routes.
         return {
           success: false,
-          error: result.error || "Failed to submit check-in",
+          error: result.errorMessage || result.error || "Failed to submit check-in",
         };
       }
 

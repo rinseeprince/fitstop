@@ -6,7 +6,7 @@ import { submitCheckIn, getClientCheckIns } from "@/services/check-in-service";
 import { toCanonicalCheckInMetrics } from "@/utils/check-in-canonical-metrics";
 import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/services/client-check-in-service";
 import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
-import { clientSubmitCheckInSchema } from "@/lib/validations/check-in";
+import { submitCheckInSchema } from "@/lib/validations/check-in";
 import { decodeCursor, encodeCursor } from "@/lib/cursor";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { toClientFacingCheckIn } from "@/lib/mappers";
@@ -154,14 +154,20 @@ export async function POST(request: NextRequest) {
     const rawBody = await request.json();
 
     // Validate input using the comprehensive schema
-    const validationResult = clientSubmitCheckInSchema.safeParse(rawBody);
+    const validationResult = submitCheckInSchema.safeParse(rawBody);
 
     if (!validationResult.success) {
+      // Log the issues and return the first one: a bare "Invalid input data"
+      // left a 400 undiagnosable from either side (the client toast read
+      // "Failed to submit check-in" and the server log said only "failed").
+      const issues = validationResult.error.issues;
+      console.error("Check-in validation failed:", validationResult.error.flatten());
+      const first = issues[0];
+      const where = first?.path.length ? `${first.path.join(".")}: ` : "";
       const response: SubmitCheckInResponse = {
         success: false,
-        errorMessage: "Invalid input data",
+        errorMessage: first ? `${where}${first.message}` : "Invalid input data",
       };
-      console.error("Check-in validation failed");
       return NextResponse.json(response, { status: 400 });
     }
 

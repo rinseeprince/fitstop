@@ -14,6 +14,28 @@ describe('Check-in Validation Schemas', () => {
       expect(result.success).toBe(true)
     })
 
+    // The form only sends the qualitative fields it owns (weight, body fat,
+    // girths, photos, the step-1 note, wins, challenges); mood…stress and the
+    // completion blocks are derived server-side. A guard that demanded one of
+    // the derived fields used to 400 a client who left weight and the note
+    // blank — there is no such guard now, and these pin that.
+    it('accepts wins and challenges only', () => {
+      const result = submitCheckInSchema.safeParse({ prs: 'Hit 10k steps', challenges: 'Travel' })
+
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts girths, body fat and photos with no weight and no note', () => {
+      const result = submitCheckInSchema.safeParse({
+        waist: 86.4,
+        measurementUnit: 'cm',
+        bodyFatPercentage: 18,
+        photoFront: 'data:image/jpeg;base64,AAAA',
+      })
+
+      expect(result.success).toBe(true)
+    })
+
     it('validates a full check-in with all fields', () => {
       const data = {
         mood: 4,

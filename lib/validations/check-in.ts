@@ -167,18 +167,13 @@ export const submitCheckInSchema = z.object({
   }
 });
 
-export const clientSubmitCheckInSchema = submitCheckInSchema.refine(
-    (data) => {
-      const meaningfulFields = [
-        data.mood, data.energy, data.sleep, data.stress,
-        data.weight, data.notes,
-        data.sessionCompletions, data.exerciseHighlights,
-        data.nutritionAdherence,
-      ];
-      return meaningfulFields.some((field) => field !== undefined);
-    },
-    { message: "Check-in must include at least one data field" }
-  );
+// There is deliberately NO "at least one field" guard on the client submit.
+// One used to exist, listing mood/energy/sleep/stress and the completion blocks
+// — fields the form stopped sending when the daily logs became the source of
+// truth (Session 6.4; the server derives them). By then the only inputs that
+// still satisfied it were a weight or the step-1 note, so a client who left
+// both blank got a 400 with no reason shown. An empty form IS a valid check-in:
+// the week's substance is derived server-side either way.
 
 // AI summary request validation
 export const aiSummaryRequestSchema = z.object({
