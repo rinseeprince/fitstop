@@ -113,34 +113,56 @@ export async function generateTrainingEvents(
 // --- Cancel future events (no regeneration) ---
 
 /**
- * Delete future events for a plan without regenerating. Used when a plan is
- * archived via "Clear plan" and the coach wants the calendar wiped of
- * upcoming sessions. Past events (date < fromDate) are preserved as history.
+ * Clear a plan's upcoming calendar without regenerating — the "Delete future
+ * sessions" paths, after the plan is archived. Past events (date < fromDate)
+ * are untouched history.
  *
- * Deletes ALL future events for the plan regardless of status. An earlier
- * version filtered on `status = 'scheduled'` to preserve completed/missed
- * history, but those statuses only make sense on past events anyway — and
- * if a future-dated event somehow ended up non-scheduled (a test fixture
- * logging into the future, a UI bug, etc.), the old filter left it behind
- * and the forward calendar showed orphan rows from the cleared plan.
+ * Two statements, and the split is the point. A future-dated event is not
+ * necessarily still `scheduled`: `fromDate` is the client's today, and a
+ * client who logged today's session in the morning has a completed event on
+ * it when the coach clears the plan in the afternoon. Deleting that row
+ * SET-NULLs `session_logs.training_event_id` (migration 097) — the workout
+ * survives on the coach's history table but vanishes from the client's app,
+ * which reaches its logs through the calendar day, and re-opening that day
+ * would overwrite the sets blind. So a logged day is DETACHED from the plan
+ * (`training_plan_id` NULL — the same posture as the SET NULL event→plan FK,
+ * migration 113) and kept; only still-`scheduled` days are deleted.
+ * `status <> 'scheduled'` is the frozen-day predicate `assertSessionUnlogged`
+ * and the builder lock already use, and `linkSessionLogToEvent` always writes
+ * status with the link, so it covers every logged row without a second rule.
  *
- * @param effectiveFrom - Date from which to delete (defaults to today).
+ * Detach runs FIRST. The two writes are not one transaction (CONVENTIONS §2,
+ * consistency 13): if the delete then fails, the logged days are already safe
+ * and the scheduled rows are still there for the retry the coach's error
+ * prompts. The reverse order risks the one outcome this exists to prevent.
+ *
+ * @param effectiveFrom - Date from which to clear (defaults to today).
  */
 export async function cancelFutureEventsForPlan(
   planId: string,
   effectiveFrom?: string
 ): Promise<void> {
   // UTC fallback only: no clientId in scope to resolve a client-local today,
-  // and the live caller passes an explicit (client-local) date.
+  // and the live callers pass an explicit (client-local) date.
   const fromDate = effectiveFrom ?? getTodayDateString();
 
-  const { error } = await supabaseAdmin
+  const { error: detachError } = await supabaseAdmin
+    .from("training_events")
+    .update({ training_plan_id: null, updated_at: new Date().toISOString() })
+    .eq("training_plan_id", planId)
+    .gte("date", fromDate)
+    .neq("status", "scheduled");
+
+  if (detachError) throw detachError;
+
+  const { error: deleteError } = await supabaseAdmin
     .from("training_events")
     .delete()
     .eq("training_plan_id", planId)
-    .gte("date", fromDate);
+    .gte("date", fromDate)
+    .eq("status", "scheduled");
 
-  if (error) throw error;
+  if (deleteError) throw deleteError;
 }
 
 // --- Regenerate future events ---

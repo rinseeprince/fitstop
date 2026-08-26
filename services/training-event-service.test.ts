@@ -59,6 +59,7 @@ import {
   findMatchingEvent,
   getEventSummariesForDate,
   withLoggedOn,
+  cancelFutureEventsForPlan,
 } from "./training-event-service";
 import type { SessionInput } from "./training-event-service";
 
@@ -281,6 +282,85 @@ describe("training-event-service", () => {
         })
       );
       expect(mockQuery.eq).toHaveBeenCalledWith("id", "event-1");
+    });
+  });
+
+  // =========================================================================
+  // cancelFutureEventsForPlan
+  // =========================================================================
+
+  describe("cancelFutureEventsForPlan", () => {
+    it("detaches logged future days from the plan before deleting the scheduled ones", async () => {
+      const detachQuery = createMockQuery({ data: null, error: null });
+      const deleteQuery = createMockQuery({ data: null, error: null });
+      mockFrom
+        .mockReturnValueOnce(detachQuery as any)
+        .mockReturnValueOnce(deleteQuery as any);
+
+      await cancelFutureEventsForPlan("plan-1", "2026-08-26");
+
+      // Statement 1 — detach: a logged day keeps its row and loses the plan link.
+      expect(detachQuery.update).toHaveBeenCalledWith(
+        expect.objectContaining({ training_plan_id: null }),
+      );
+      expect(detachQuery.eq).toHaveBeenCalledWith("training_plan_id", "plan-1");
+      expect(detachQuery.gte).toHaveBeenCalledWith("date", "2026-08-26");
+      expect(detachQuery.neq).toHaveBeenCalledWith("status", "scheduled");
+      expect(detachQuery.delete).not.toHaveBeenCalled();
+
+      // Statement 2 — delete: still-scheduled days only.
+      expect(deleteQuery.delete).toHaveBeenCalled();
+      expect(deleteQuery.eq).toHaveBeenCalledWith("training_plan_id", "plan-1");
+      expect(deleteQuery.gte).toHaveBeenCalledWith("date", "2026-08-26");
+      expect(deleteQuery.eq).toHaveBeenCalledWith("status", "scheduled");
+      expect(deleteQuery.update).not.toHaveBeenCalled();
+
+      // Order is load-bearing: detach first, so a failed delete leaves the
+      // logged days already safe rather than already gone.
+      expect(detachQuery.update.mock.invocationCallOrder[0]).toBeLessThan(
+        deleteQuery.delete.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("defaults the cutoff to today when no date is passed", async () => {
+      const detachQuery = createMockQuery({ data: null, error: null });
+      const deleteQuery = createMockQuery({ data: null, error: null });
+      mockFrom
+        .mockReturnValueOnce(detachQuery as any)
+        .mockReturnValueOnce(deleteQuery as any);
+
+      await cancelFutureEventsForPlan("plan-1");
+
+      const today = getTodayDateString();
+      expect(detachQuery.gte).toHaveBeenCalledWith("date", today);
+      expect(deleteQuery.gte).toHaveBeenCalledWith("date", today);
+    });
+
+    it("throws on a detach failure and never reaches the delete", async () => {
+      // Only the detach mock is queued: a queued-but-unconsumed
+      // mockReturnValueOnce survives clearAllMocks and leaks into the next test.
+      const detachQuery = createMockQuery({ data: null, error: { message: "boom" } });
+      mockFrom.mockReturnValueOnce(detachQuery as any);
+
+      await expect(
+        cancelFutureEventsForPlan("plan-1", "2026-08-26"),
+      ).rejects.toEqual({ message: "boom" });
+      expect(detachQuery.delete).not.toHaveBeenCalled();
+      // One from() call — the delete statement was never issued.
+      expect(mockFrom).toHaveBeenCalledTimes(1);
+    });
+
+    it("throws on a delete failure after the detach has landed", async () => {
+      const detachQuery = createMockQuery({ data: null, error: null });
+      const deleteQuery = createMockQuery({ data: null, error: { message: "boom" } });
+      mockFrom
+        .mockReturnValueOnce(detachQuery as any)
+        .mockReturnValueOnce(deleteQuery as any);
+
+      await expect(
+        cancelFutureEventsForPlan("plan-1", "2026-08-26"),
+      ).rejects.toEqual({ message: "boom" });
+      expect(detachQuery.update).toHaveBeenCalled();
     });
   });
 
