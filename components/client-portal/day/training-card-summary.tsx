@@ -14,7 +14,7 @@ type Props = {
    * different date (Session 5.4 "Trained for {day}" line). Empty in the normal
    * case. Defaulted so existing callers/tests without the field keep working.
    */
-  trainedFor?: { date: string; sessionName: string }[];
+  trainedFor?: { date: string; sessionName: string; eventId: string }[];
 };
 
 export function TrainingCardSummary({ events, date, trainedFor = [] }: Props) {
@@ -72,12 +72,15 @@ export function TrainingCardSummary({ events, date, trainedFor = [] }: Props) {
       )}
 
       {/* "Trained for {weekday} {session}" — a session logged today that the
-          matcher attributed to a prescribed event on another day. */}
+          matcher attributed to a prescribed event on another day. Opens that
+          log pre-filled; THIS day's rules decide whether it can be edited. */}
       {trainedFor.map((t, i) => (
         <DsCardSummaryRow
           key={`trained-for-${i}`}
+          href={isFuture ? undefined : `/client/training?eventId=${t.eventId}&date=${date}`}
           leadingText={`Trained for ${formatWeekday(t.date)}`}
           trailingText={t.sessionName}
+          hint={isFuture ? undefined : "Tap to view"}
           ariaLabel={`Trained for ${formatWeekday(t.date)} ${t.sessionName}`}
         />
       ))}

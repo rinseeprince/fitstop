@@ -15,11 +15,11 @@ import type { DaySummary } from "@/types/client-day";
 async function getTrainedForLinks(
   clientId: string,
   date: string
-): Promise<{ date: string; sessionName: string }[]> {
+): Promise<{ date: string; sessionName: string; eventId: string }[]> {
   const { data, error } = await supabaseAdmin
     .from("session_logs")
     .select(
-      "prescribed_session_snapshot, training_events!session_logs_training_event_id_fkey(date)"
+      "prescribed_session_snapshot, training_events!session_logs_training_event_id_fkey(id, date)"
     )
     .eq("client_id", clientId)
     .not("training_event_id", "is", null)
@@ -29,22 +29,23 @@ async function getTrainedForLinks(
     throw new Error(`Failed to load trained-for links: ${error.message}`);
   }
 
-  const out: { date: string; sessionName: string }[] = [];
+  const out: { date: string; sessionName: string; eventId: string }[] = [];
   for (const row of data ?? []) {
     // Embedded to-one event; defensively handle object-or-array shape. Cast via
     // unknown — the FK relation only resolves in generated types post-migration.
-    const ev = (
+    const evRaw = (
       row as unknown as {
-        training_events: { date: string } | { date: string }[] | null;
+        training_events: { id: string; date: string } | { id: string; date: string }[] | null;
       }
     ).training_events;
-    const eventDate = Array.isArray(ev) ? ev[0]?.date : ev?.date;
+    const ev = Array.isArray(evRaw) ? evRaw[0] : evRaw;
+    const eventDate = ev?.date;
     // Only when the log was attributed to a DIFFERENT day than it was logged on.
-    if (!eventDate || eventDate === date) continue;
+    if (!ev || !eventDate || eventDate === date) continue;
     const snapshot = row.prescribed_session_snapshot as Record<string, unknown> | null;
     const sessionName =
       typeof snapshot?.name === "string" ? snapshot.name : "Session";
-    out.push({ date: eventDate, sessionName });
+    out.push({ date: eventDate, sessionName, eventId: ev.id });
   }
   return out;
 }

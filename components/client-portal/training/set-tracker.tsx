@@ -163,24 +163,36 @@ function EventModeTracker({
   if (eventError || !eventData) return <LoadFailed />;
 
   // Logged on another day (an alternative session the matcher attributed to
-  // this prescribed event): read-only HERE, whatever day it is — re-logging
-  // would overwrite the sets and re-date the log. Edits belong on the day it
-  // was done. The server lock in logTrainingEvent mirrors this.
-  const doneElsewhere =
-    eventData.data.sessionLog != null &&
-    dateOfTimestamp(eventData.data.sessionLog.completedAt) !== eventData.data.event.date;
+  // this prescribed event). Two ways in:
+  //  - from the PRESCRIBED day (`date` ≠ the day it was done): read-only,
+  //    whatever day it is — writing through the event would overwrite the sets
+  //    and re-date the log. The server lock in logTrainingEvent mirrors this.
+  //  - from the day it was DONE (`date` === that day, via the day view's
+  //    "Trained for" row): pre-filled and editable under THAT day's rules
+  //    (today editable, past locked), saved through the same-day path, which
+  //    updates the existing log in place and keeps its link to the event.
+  const sessionLog = eventData.data.sessionLog;
+  const doneOn = sessionLog ? dateOfTimestamp(sessionLog.completedAt) : null;
+  const doneElsewhere = doneOn != null && doneOn !== eventData.data.event.date;
+  const editingFromDoneDay =
+    doneElsewhere && date === doneOn && sessionLog?.trainingSessionId != null;
+  const timezone = meData?.data?.timezone ?? "UTC";
   // Date-edit lock (client mirror of the server rule): past + logged → read-only.
-  const editable =
-    !doneElsewhere &&
-    canEditDay(
-      eventData.data.event.date,
-      eventData.data.sessionLog ? "logged" : "never-logged",
-      meData?.data?.timezone ?? "UTC",
-    );
+  const editable = editingFromDoneDay
+    ? canEditDay(doneOn, "logged", timezone)
+    : !doneElsewhere &&
+      canEditDay(
+        eventData.data.event.date,
+        sessionLog ? "logged" : "never-logged",
+        timezone,
+      );
 
   // Bind to the prescribed session, or to the swapped/edited session.
   let detail = eventData.data;
-  let save: SaveStrategy = { kind: "event", eventId };
+  let save: SaveStrategy =
+    editingFromDoneDay && sessionLog?.trainingSessionId
+      ? { kind: "session", date: doneOn, performedSessionId: sessionLog.trainingSessionId }
+      : { kind: "event", eventId };
   if (boundSessionId && swapData?.data?.session) {
     // Pre-fill from the existing log only when we're editing the very session
     // that was logged (so the logged sets match this session's exercises).
@@ -207,7 +219,7 @@ function EventModeTracker({
       save={save}
       editable={editable}
       lockedMessage={
-        doneElsewhere
+        doneElsewhere && !editingFromDoneDay
           ? "This workout was logged on another day, so it\u2019s read-only here."
           : undefined
       }

@@ -51,11 +51,16 @@ describe("TrainingCardSummary", () => {
       <TrainingCardSummary
         events={[]}
         date={DATE}
-        trainedFor={[{ date: "2026-05-05", sessionName: "Pull Day" }]}
+        trainedFor={[{ date: "2026-05-05", sessionName: "Pull Day", eventId: "e-pull" }]}
       />,
     );
 
     expect(screen.getByText(/Trained for/)).toBeInTheDocument();
+    // Opens the attributed event's log from THIS day (pre-filled; this day's rules).
+    expect(screen.getByRole("link", { name: /Trained for/ })).toHaveAttribute(
+      "href",
+      `/client/training?eventId=e-pull&date=${DATE}`,
+    );
     expect(screen.getByText("Pull Day")).toBeInTheDocument();
   });
 

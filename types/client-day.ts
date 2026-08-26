@@ -6,7 +6,10 @@ export type DaySummary = {
   // different date (Session 5.4 "Trained for {day}" line). Anchored to the
   // log's completed_at = this date; empty in the normal case. Unmatched extras
   // (training_event_id null) never appear here.
-  trainedFor: { date: string; sessionName: string }[];
+  // A session logged ON this day that the matcher attributed to a prescribed
+  // event on another day. `eventId` opens that log from here (pre-filled;
+  // editable under THIS day's rules, read-only on the prescribed day).
+  trainedFor: { date: string; sessionName: string; eventId: string }[];
   nutrition: {
     hasLog: boolean;
     caloriesConsumed: number | null;
