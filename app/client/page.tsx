@@ -13,6 +13,7 @@ import { HabitsCardSummary } from "@/components/client-portal/day/habits-card-su
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { clientDaySummaryKey } from "@/hooks/use-client-training-data";
 import {
   getDateDaysFrom,
   getTodayDateString,
@@ -35,7 +36,7 @@ function ClientHomePageInner() {
   const { data, error, isLoading, mutate } = useSWR<{
     success: boolean;
     data: DaySummary;
-  }>(`/api/client/day-summary?date=${date}`, swrFetcher, {
+  }>(clientDaySummaryKey(date), swrFetcher, {
     dedupingInterval: 2000,
     revalidateOnFocus: false,
     errorRetryCount: 3,

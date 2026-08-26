@@ -387,6 +387,27 @@ export const logSessionForDateSchema = z.object({
 export type LogTrainingEventInput = z.infer<typeof logTrainingEventSchema>;
 export type LogSessionForDateInput = z.infer<typeof logSessionForDateSchema>;
 
+// Client week layout (migration 150): N still-scheduled sessions change date in
+// one transaction. A single move is a one-entry layout, a swap two entries, a
+// week rearrangement up to seven. `fromDate` is the day the client SAW the
+// session on — the drift check that turns a concurrent coach move into a 409
+// instead of a half-applied week. Policy (week bound, past targets) lives in
+// services/training-event-layout-service.ts.
+export const clientLayoutSchema = z.object({
+  moves: z
+    .array(
+      z.object({
+        eventId: z.string().uuid(),
+        fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
+        toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
+      })
+    )
+    .min(1)
+    .max(7),
+});
+
+export type ClientLayoutInput = z.infer<typeof clientLayoutSchema>;
+
 // =============================================================================
 // API Response Validation Schemas
 // =============================================================================

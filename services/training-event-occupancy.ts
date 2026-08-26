@@ -60,7 +60,7 @@ function formatDay(date: string): string {
   return format(new Date(date + "T00:00:00"), "EEE, MMM d");
 }
 
-function occupiedMessage(date: string): string {
+export function occupiedMessage(date: string): string {
   return `${formatDay(date)} already has a session`;
 }
 

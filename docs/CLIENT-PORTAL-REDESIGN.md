@@ -209,9 +209,9 @@ The coach drill-down reads both: "Prescribed Push Day on Monday. Client performe
 
 **What does NOT change:**
 
-- **The calendar (coach-side).** Pure `training_events` reader. Coach prescriptions are not mutated by client logging — only the event `status` field changes as logs land, exactly as it does today for prescribed-as-planned completions.
+- **The calendar (coach-side) — REVERSED 2026-08-26 (owner decision).** A client may now rearrange their own week: `POST /api/client/training/events/layout` moves still-scheduled sessions between days (a swap is a two-entry layout) in one transaction (`move_training_events_atomic`, migration 150), bounded to the training week each session currently sits in. The coach calendar shows the result with the same edited badge a coach move sets. *Logging* still never mutates a prescription — only a move does, and only the client's own.
 - **Adherence math.** Counts `training_events.status='completed'` in the period. Swaps and rest-day-trained-that-matched both flip status to completed, so both count. Truly-extra rest-day logs (no match) do not count — they are surplus training, not prescribed completion.
-- **Nutrition cascade on log writes.** Still not fired, matching the existing Session 1.2 deferral. The day's prescribed nutrition target stays based on the prescribed event's surplus%. The client's actual nutrition logging captures reality independently.
+- **Nutrition cascade — REVERSED for moves 2026-08-26 (owner decision).** A client move cascades nutrition over every day it touched, so the training-day surplus follows the session to the day it is actually done; a day the client has already logged shows the refreshed target at their next food save (the snapshot is re-taken from the current event on every save). Log writes themselves still do not cascade.
 
 **Coach surfacing.** The data tab (training history table) renders an "Alternative" badge on rows where `is_alternative = true` (the column is already computed and returned by the API; just unused in the current UI). The session-log detail dialog adds a session-level "Prescribed X · Performed Y" header above the existing per-exercise prescribed-vs-performed view. Neither the calendar nor any other coach surface changes.
 
