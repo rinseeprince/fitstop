@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
 import { DateOccupiedError, hasCompletedWorkoutOn } from "@/services/training-event-occupancy";
 import { getTrainingPlanById } from "@/services/training-service";
+import { getSavedPlanFirstSlotIsRest } from "@/services/coach-saved-plan-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -103,7 +104,13 @@ export async function POST(
       // (or partial) workout would put the program's first session beside it
       // and show the client two workouts that day. 409 with a stable code; the
       // dialog offers "Start anyway" (re-sends with startAnyway) or a new date.
-      if (!data.startAnyway && (await hasCompletedWorkoutOn(clientId, data.startDate))) {
+      // A rest-first program lands nothing on the start day, so there is nothing
+      // to warn about; the slot read runs only once the day check has fired.
+      if (
+        !data.startAnyway &&
+        (await hasCompletedWorkoutOn(clientId, data.startDate)) &&
+        (await getSavedPlanFirstSlotIsRest(data.savedPlanId, coachId)) !== true
+      ) {
         return NextResponse.json(
           {
             error: "start_day_has_completed_workout",
@@ -162,7 +169,12 @@ export async function POST(
       // (or partial) workout would put the program's first session beside it
       // and show the client two workouts that day. 409 with a stable code; the
       // dialog offers "Start anyway" (re-sends with startAnyway) or a new date.
-      if (!data.startAnyway && (await hasCompletedWorkoutOn(clientId, data.startDate))) {
+      const firstSlot = [...data.plan.sessions].sort((a, b) => a.orderIndex - b.orderIndex)[0];
+      if (
+        !data.startAnyway &&
+        firstSlot?.isRest !== true &&
+        (await hasCompletedWorkoutOn(clientId, data.startDate))
+      ) {
         return NextResponse.json(
           {
             error: "start_day_has_completed_workout",

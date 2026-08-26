@@ -219,6 +219,29 @@ export async function getSavedPlans(
   });
 }
 
+/**
+ * Is the program's FIRST slot a rest day? Placement is a date-walk from the
+ * start date, so a rest-first program puts no event on that day — the place
+ * route uses this to skip its "start day already has a completed workout"
+ * warning when nothing would land there. Null when the plan has no slots.
+ */
+export async function getSavedPlanFirstSlotIsRest(
+  savedPlanId: string,
+  coachId: string,
+): Promise<boolean | null> {
+  const { data, error } = await supabaseAdmin
+    .from("coach_saved_sessions")
+    .select("is_rest, coach_saved_plans!inner(coach_id)")
+    .eq("saved_plan_id", savedPlanId)
+    .eq("coach_saved_plans.coach_id", coachId)
+    .order("week_index", { ascending: true })
+    .order("order_index", { ascending: true })
+    .limit(1);
+  if (error) throw new Error(`Failed to read the program's first slot: ${error.message}`);
+  const first = data?.[0];
+  return first ? Boolean(first.is_rest) : null;
+}
+
 export async function getSavedPlanById(
   planId: string,
   coachId: string

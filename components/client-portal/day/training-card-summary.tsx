@@ -40,12 +40,18 @@ export function TrainingCardSummary({ events, date, trainedFor = [] }: Props) {
         events.map((event) =>
           event.loggedOn && event.loggedOn !== date ? (
             // Receipt: prescribed here, performed on `loggedOn` (an alternative
-            // session). Not a workout to do and not editable from this day —
-            // the log lives on the day it was done, under that day's rules.
+            // session). Not a workout to do — it opens READ-ONLY (the tracker
+            // locks it; the server refuses a write), never "Tap to log".
             <DsCardSummaryRow
               key={event.eventId}
+              href={
+                isFuture
+                  ? undefined
+                  : `/client/training?eventId=${event.eventId}&date=${date}`
+              }
               leadingText={event.sessionName}
               trailingText={`Done ${formatWeekday(event.loggedOn)}`}
+              hint={isFuture ? undefined : "Tap to view"}
               ariaLabel={`${event.sessionName} — done ${formatWeekday(event.loggedOn)}`}
             />
           ) : (

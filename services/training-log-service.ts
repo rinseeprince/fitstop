@@ -796,7 +796,11 @@ export async function logTrainingEvent(params: {
   const linkedLog = eventRow.session_logs as { completed_at: string | null } | null | undefined;
   const loggedOn = linkedLog?.completed_at ? dateOfTimestamp(linkedLog.completed_at) : null;
   if (loggedOn && loggedOn !== eventRow.date) {
-    throw new DayLockedError(eventRow.date, "training");
+    throw new DayLockedError(
+      eventRow.date,
+      "training",
+      `This workout was logged on ${loggedOn}, so it is read-only on ${eventRow.date}.`,
+    );
   }
 
   // Date-edit lock: today is editable; a past day that already has a log is

@@ -30,8 +30,10 @@ export class DayLockedError extends Error {
   readonly date: string;
   readonly resourceType: DailyLogResourceType;
 
-  constructor(date: string, resourceType: DailyLogResourceType) {
-    super(`This ${resourceType} entry for ${date} is locked and cannot be edited.`);
+  /** `reason` replaces the generic sentence when the lock has a more specific
+   *  cause the client should be told (e.g. logged on another day). */
+  constructor(date: string, resourceType: DailyLogResourceType, reason?: string) {
+    super(reason ?? `This ${resourceType} entry for ${date} is locked and cannot be edited.`);
     this.name = "DayLockedError";
     this.date = date;
     this.resourceType = resourceType;

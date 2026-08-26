@@ -365,6 +365,14 @@ Logged: 2026-07-27, split out of the entry above once the amendment writer was f
 
 ---
 
+## An alternative-session log has no prefilled edit path on the day it was done
+
+Logged: 2026-08-26 (surfaced by the done-elsewhere receipt work).
+
+A client who logs Leg Day on Tuesday (prescribed Thursday) gets a log linked to Thursday's event. Thursday is now read-only for it (by design — a write there overwrote the sets and re-dated the log). On **Tuesday** the day view shows the "Trained for Thursday" line with no link, and the only entry is the rest-day picker → `SessionModeTracker`, which starts from an EMPTY synthetic form (`canEditDay(date, "never-logged")`) and, on save, finds the existing log by date and **replaces** it (`logTrainingSessionForDate`'s find-or-update). So the log can be viewed read-only from Thursday but never edited with its sets prefilled anywhere; once Tuesday is past it is locked outright. Fix shape: give the "Trained for" row an `href` to the tracker bound to that log (event-less mode with the log loaded), and let `SessionModeTracker` seed from an existing log for the date. Pre-existing gap; the receipt work only removed the accidental edit path (Thursday-as-today).
+
+---
+
 ## Draft assistant — untriaged review-fleet findings (builder S6a)
 
 Logged: 2026-07-21 (Phase 7 sweep). Source: the 6a pre-commit adversarial fleet — 63 findings, 28 survived verification; the 4 HIGH + 6 MEDIUM were fixed in `56464f5`. **~18 LOW/unverified were never triaged** and live only in a workflow journal, which is not a durable location. Named here so the path doesn't rot.

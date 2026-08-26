@@ -92,16 +92,6 @@ export async function assertDateFree(
 }
 
 /**
- * Re-throws a unique violation from migration 136's index as the same
- * coach-readable error the pre-check produces.
- *
- * Needed because the generated-event upserts arbitrate on
- * `(client_id, training_session_id, date)` with ignoreDuplicates — an arbiter
- * that does NOT cover the new index, so a collision there surfaces as a raw
- * Postgres error rather than being skipped (CONVENTIONS §10: never show a coach
- * "duplicate key value violates unique constraint").
- */
-/**
  * Does the client already have a COMPLETED (or partial) workout on `date`?
  * Whole-program placement starts on a day the coach picks; when that day already
  * holds a logged session the placed program's first session lands beside it and
@@ -122,6 +112,16 @@ export async function hasCompletedWorkoutOn(clientId: string, date: string): Pro
   return (data ?? []).length > 0;
 }
 
+/**
+ * Re-throws a unique violation from migration 136's index as the same
+ * coach-readable error the pre-check produces.
+ *
+ * Needed because the generated-event upserts arbitrate on
+ * `(client_id, training_session_id, date)` with ignoreDuplicates — an arbiter
+ * that does NOT cover the new index, so a collision there surfaces as a raw
+ * Postgres error rather than being skipped (CONVENTIONS §10: never show a coach
+ * "duplicate key value violates unique constraint").
+ */
 export function rethrowIfDateOccupied(error: unknown, date: string): void {
   if (isOccupancyViolation(error)) throw new DateOccupiedError(occupiedMessage(date));
 }

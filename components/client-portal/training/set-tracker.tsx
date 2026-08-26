@@ -208,7 +208,7 @@ function EventModeTracker({
       editable={editable}
       lockedMessage={
         doneElsewhere
-          ? "This workout was logged on another day — open it from that day to edit it."
+          ? "This workout was logged on another day, so it\u2019s read-only here."
           : undefined
       }
       onChangeSession={() => setShowPicker(true)}

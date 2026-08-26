@@ -34,6 +34,10 @@ vi.mock("@/services/library-placement-service", () => ({
   placeInlineEditedPlanOnCalendar: vi.fn(),
 }));
 
+vi.mock("@/services/coach-saved-plan-service", () => ({
+  getSavedPlanFirstSlotIsRest: vi.fn().mockResolvedValue(false),
+}));
+
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
@@ -53,6 +57,7 @@ import {
 } from "@/services/library-placement-service";
 import { getClientTodayString } from "@/services/today-service";
 import { hasCompletedWorkoutOn } from "@/services/training-event-occupancy";
+import { getSavedPlanFirstSlotIsRest } from "@/services/coach-saved-plan-service";
 import { POST } from "./route";
 
 const clientId = "client-1";
@@ -150,6 +155,14 @@ describe("POST /api/clients/[id]/training/place-from-library start-date guard", 
     const forced = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15", startAnyway: true });
     expect(forced.status).toBe(200);
     expect(hasCompletedWorkoutOn).toHaveBeenCalledTimes(1);
+    expect(placePlanOnCalendar).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not warn when the program's first slot is a rest day (nothing lands on the start day)", async () => {
+    vi.mocked(hasCompletedWorkoutOn).mockResolvedValueOnce(true);
+    vi.mocked(getSavedPlanFirstSlotIsRest).mockResolvedValueOnce(true);
+    const res = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15" });
+    expect(res.status).toBe(200);
     expect(placePlanOnCalendar).toHaveBeenCalledTimes(1);
   });
 

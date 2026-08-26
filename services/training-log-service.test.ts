@@ -2394,7 +2394,7 @@ describe("logTrainingSessionForDate", () => {
         clientId: CLIENT_ID,
         payload: { completionQuality: "full" },
       }),
-    ).rejects.toThrow(/locked/i);
+    ).rejects.toThrow(/logged on 2026-05-06, so it is read-only on 2026-05-08/);
     expect(writeSpy.update).not.toHaveBeenCalled();
     expect(writeSpy.insert).not.toHaveBeenCalled();
   });

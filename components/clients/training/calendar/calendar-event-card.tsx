@@ -155,7 +155,10 @@ export const CalendarEventCard = memo(function CalendarEventCard({
       {event.loggedOn && event.loggedOn !== event.date && (
         <div className="pl-[26px]">
           <span className={cn(LABEL_CLASS, "normal-case tracking-normal text-[#93b0b4]")}>
-            Done {formatDoneOn(event.loggedOn)}
+            Done{" "}
+          </span>
+          <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[#93b0b4]")}>
+            {formatDoneOn(event.loggedOn)}
           </span>
         </div>
       )}

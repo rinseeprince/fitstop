@@ -59,7 +59,7 @@ describe("TrainingCardSummary", () => {
     expect(screen.getByText("Pull Day")).toBeInTheDocument();
   });
 
-  it("renders a session logged on another day as a receipt: no link, no hint, 'Done {weekday}'", () => {
+  it("renders a session logged on another day as a receipt: 'Done {weekday}', view-only link, never Tap to log", () => {
     // Prescribed on DATE (a Friday), performed the Tuesday before.
     render(
       <TrainingCardSummary
@@ -70,8 +70,9 @@ describe("TrainingCardSummary", () => {
 
     expect(screen.getByText("Push Day A")).toBeInTheDocument();
     expect(screen.getByText("Done Tuesday")).toBeInTheDocument();
-    expect(screen.queryByRole("link")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Tap to/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link")).toHaveAttribute("href", `/client/training?eventId=e1&date=${DATE}`);
+    expect(screen.getByText("Tap to view")).toBeInTheDocument();
+    expect(screen.queryByText("Tap to log")).not.toBeInTheDocument();
   });
 
   it("renders an unlogged event with Tap to log and link to detail", () => {
