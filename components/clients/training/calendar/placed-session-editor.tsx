@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { format } from "date-fns";
-import { Dumbbell, Layers, Loader2, Lock, MoreVertical, Save } from "lucide-react";
+import { Dumbbell, Loader2, Lock, MoreVertical, Save } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -49,8 +49,6 @@ type PlacedSessionEditorProps = {
   onUpdate: () => void;
   mutateCalendar: () => Promise<unknown>;
   onSelectSession?: (sessionId: string, eventId: string) => void;
-  /** Job 2 wires this — the "Edit whole plan" item renders only when provided. */
-  onEditPlan?: () => void;
 };
 
 const DANGER_OUTLINE_BUTTON =
@@ -76,7 +74,6 @@ export function PlacedSessionEditor({
   onUpdate,
   mutateCalendar,
   onSelectSession,
-  onEditPlan,
 }: PlacedSessionEditorProps) {
   const {
     session,
@@ -196,12 +193,6 @@ export function PlacedSessionEditor({
                   <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
                   {isDirty ? "Save to library (save changes first)" : "Save to library"}
                 </DropdownMenuItem>
-                {onEditPlan && (
-                  <DropdownMenuItem onSelect={() => onEditPlan()}>
-                    <Layers className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    Edit whole plan
-                  </DropdownMenuItem>
-                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </SheetHeader>

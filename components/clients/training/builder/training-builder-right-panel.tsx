@@ -29,8 +29,15 @@ type TrainingBuilderRightPanelProps = {
 // Owns the client-level "Delete future sessions" flow (relocated from the
 // old TopContentBar) — the trigger renders in the calendar toolbar's
 // Schedule divider, the confirm dialog lives here — and the plan-amendment
-// entry points (hero "Edit plan" + the tray's "Edit whole plan" item), which
-// open the full-screen amendment overlay.
+// entry point, the hero's "Edit plan", which opens the full-screen amendment
+// overlay. It is the ONLY entry point on purpose: the overlay amends
+// `builder.plan` (the plan this panel owns), and the hero describes exactly
+// that plan. The placed-session tray used to offer "Edit whole plan" too, but
+// the tray opens from an arbitrary calendar event — with coexisting plans the
+// calendar shows events from more than one — so it opened the amendment
+// editor for the current program when the coach was looking at a session of
+// an upcoming one. Do not re-add a tray entry that does not resolve the
+// EVENT's plan.
 export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel({
   clientId,
   clientName,
@@ -134,9 +141,6 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
         onDeleteFuture={
           builder.plan ? () => setShowClearConfirm(true) : undefined
         }
-        // Hidden (not disabled) for an ended plan — the hero's disabled
-        // button carries the explanation.
-        onEditPlan={isFullyPast ? undefined : openAmend}
       />
 
       <PlanAmendmentOverlay

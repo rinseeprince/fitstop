@@ -31,8 +31,6 @@ type TrainingCalendarViewProps = {
   onEditModeChange?: (editMode: boolean) => void;
   /** Renders the Schedule divider's Delete-future trigger when provided. */
   onDeleteFuture?: () => void;
-  /** Job 2 wires this — threads through to the tray's "Edit whole plan" item. */
-  onEditPlan?: () => void;
 };
 
 /** Returns the Monday on or before the given date (local time). */
@@ -75,7 +73,6 @@ export function TrainingCalendarView({
   onUpdate,
   onEditModeChange,
   onDeleteFuture,
-  onEditPlan,
 }: TrainingCalendarViewProps) {
   const { toast } = useToast();
   const todayDate = getTodayDateString();
@@ -486,7 +483,6 @@ export function TrainingCalendarView({
             prev ? { ...prev, sessionId, eventId } : null
           )
         }
-        onEditPlan={onEditPlan}
       />
 
 

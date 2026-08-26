@@ -247,7 +247,7 @@
   Two sibling folders under `components/clients/training/` are easy to confuse:
 
   - **`program-builder/`** — the real authoring surface: the weeks × Day-1-7 grid, session editor, library panel, progression dialog, assistant dock, and `ProgramDraftProvider`. Mounted by `/dashboard/programs/[savedPlanId]`, remounted inside the client Training drawer via `target="client-draft"`, and mounted over a client's live placed plan via `target="placed-plan"` (the amendment surface — past slots locked through `program-builder-lock-model.ts`, saves via the amendment PUT). All new training authoring goes here.
-  - **`builder/`** — the client-attached drawer + the amendment overlay: `training-plan-builder.tsx` (tabs + chrome), `training-builder-right-panel.tsx` (calendar + hero + amendment entry points), and `plan-amendment-overlay.tsx` (the full-screen `placed-plan` mount). **Browse, apply, and mount only** — if you find yourself adding an editor here, you want `program-builder/`.
+  - **`builder/`** — the client-attached drawer + the amendment overlay: `training-plan-builder.tsx` (tabs + chrome), `training-builder-right-panel.tsx` (calendar + hero + the amendment entry point), and `plan-amendment-overlay.tsx` (the full-screen `placed-plan` mount). **Browse, apply, and mount only** — if you find yourself adding an editor here, you want `program-builder/`.
 
   Also live under `training/`: `calendar/` — the client's event calendar plus the placed-session tray (`placed-session-editor.tsx`, a 780px Sheet hosting the shared `session-editor-body` over a one-slot draft). The old `sessions/` folder (the legacy drawer's add-exercise dialog + exercise row) was deleted with the drawer in the placed-plan editing overhaul.
 
