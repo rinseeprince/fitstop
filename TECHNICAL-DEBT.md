@@ -235,15 +235,17 @@ there survives solely in git history.
   inside a version's window carrying another version's id (or NULL) being re-stamped to
   the covering version is now CORRECT behaviour, not corruption: the covering version
   owns its window by construction (gist-constraint-backed).
-- **A cascade flips a `logged` day back to `scheduled`.** The DELETE spares
-  non-scheduled rows (`.eq("status", "scheduled")`), then the generator's payload
-  hardcodes `status: "scheduled"` (`nutrition-event-service.ts:169`), so PostgREST's
-  conflict-UPDATE includes it: a covered date the client already logged (practically:
-  today) has its event status reverted and its targets rewritten. Display survives via
-  the `nutrition_logs` snapshot (read priority 1); the event row is corrupted.
-  Pre-existing on every path; the narrow scope only shrinks the covered set. Fix shape:
-  drop already-non-scheduled dates during row build (the protected-days read already
-  returns the rows; it just doesn't select `status`).
+- ~~**A cascade flips a `logged` day back to `scheduled`.**~~
+  **CLOSED 2026-08-26 — the premise was false and the behaviour is affirmed.** Nothing in
+  the product writes `nutrition_events.status = 'logged'` (no service, RPC or trigger; a
+  live probe of dev found every product row `scheduled` and only one seeded fixture year
+  `logged`), so there was never a status to revert. What the cascade does do — rewrite a
+  logged day's event targets — is the intended behaviour (owner decision):
+  `upsertNutritionLog` re-snapshots the target from the current event on every food save,
+  so a session moved onto or off a day changes what the client sees at their next save.
+  Freezing logged days was designed and rejected: a frozen event would re-snapshot a
+  training surplus onto a day whose session had left. ARCHITECTURE → "Training →
+  Nutrition cascade" and the `status` bullet now say so.
 - ~~**Baseline leak onto pre-`effective_from` days after a future-dated regenerate.**~~
   **CLOSED by S1B.2 (migration 144 versioning) — fixed by construction.** The premise
   ("there is no stored source for the old numbers") died with versioning: a queued save

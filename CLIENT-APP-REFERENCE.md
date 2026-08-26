@@ -70,7 +70,7 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 **Location**: `/client/nutrition`
 
 - View daily calorie and macro targets
-- Targets adjust based on training (training day vs rest day)
+- Targets adjust based on training (training day vs rest day) — including after the client moves a session: the day's target follows the session (the nutrition cascade fires on the move), and a day the client has already logged shows the refreshed target from their **next food save**, which re-snapshots it. **Onboarding copy owed (RN):** tell the client that swapping a training day changes that day's calorie target.
 - Visual macro breakdown
 - Integration with Daily Pulse for logging
 
