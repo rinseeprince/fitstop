@@ -1,15 +1,10 @@
 import { supabaseAdmin } from "./supabase-admin";
 import {
-  findMatchingEvent,
   linkSessionLogToEvent,
   mapCompletionQualityToEventStatus,
 } from "./training-event-service";
-import { dateOfTimestamp,
-  getTrainingWeekStart,
-  getTrainingWeekEnd,
-} from "@/lib/date-helpers";
+import { getTrainingWeekStart } from "@/lib/date-helpers";
 import { assertCanEditTrainingDay } from "./daily-log-permissions-service";
-import { DayLockedError } from "@/lib/daily-log-permissions";
 import type {
   ExerciseLogInsert,
   ExerciseLogRow,
@@ -23,10 +18,7 @@ import type {
 } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
 import type { SetType } from "@/utils/exercise-set-specs";
-import type {
-  LogSessionForDateInput,
-  LogTrainingEventInput,
-} from "@/lib/validations/training";
+import type { LogTrainingEventInput } from "@/lib/validations/training";
 
 /**
  * Thrown when a body-supplied performedSessionId / trainingExerciseId does not
@@ -342,22 +334,23 @@ function mapEventRow(row: TrainingEventRow): TrainingEvent {
 // =============================================================================
 
 /**
- * Core write shared by logTrainingEvent (event-keyed) and
- * logTrainingSessionForDate (event-less). Writes the session_logs row, the
- * detailed-mode exercise_logs/set_logs, and — when an event is linked — both
- * directions of the event link.
+ * The write behind logTrainingEvent. Writes the session_logs row, the
+ * detailed-mode exercise_logs/set_logs, and both directions of the event link.
  *
  * Identity (Session 5.2): session_logs is keyed by training_event_id. When
- * `existingLogId` is known (the event already has a session_log_id, or the
- * event-less find-or-update matched a row) we UPDATE by id; otherwise we
- * INSERT, stamping training_event_id = eventId. A 23505 on the partial unique
- * index means a log already claims this event (concurrent submit or a
- * half-failed prior link) — recover by updating it, never duplicate.
+ * `existingLogId` is known (the event already has a session_log_id) we UPDATE
+ * by id; otherwise we INSERT, stamping training_event_id = eventId. A 23505 on
+ * the partial unique index means a log already claims this event (concurrent
+ * submit or a half-failed prior link) — recover by updating it, never
+ * duplicate.
  *
  * session_logs.training_session_id holds the PERFORMED session
  * (performedSessionId); prescribed_session_snapshot is captured from
- * snapshotSessionId (the prescribed side). completed_at is the attribution date
- * (event.date for event-keyed, the logged date for event-less).
+ * snapshotSessionId (the prescribed side). completed_at is event.date — one
+ * date per workout, since the client moves the event to the day they train.
+ *
+ * `eventId` is typed nullable from the retired event-less path (2026-08-26);
+ * logTrainingEvent, its only caller, always passes one.
  */
 async function writeSessionLog(params: {
   clientId: string;
@@ -760,7 +753,9 @@ async function getClientCheckInDay(clientId: string): Promise<string | null> {
 }
 
 // =============================================================================
-// logTrainingEvent (event-keyed) + logTrainingSessionForDate (event-less)
+// logTrainingEvent (event-keyed) — the ONLY training writer since 2026-08-26:
+// a workout is always logged through its event, because the client moves the
+// event to the day they train first (services/training-event-layout-service).
 // =============================================================================
 
 export async function logTrainingEvent(params: {
@@ -773,9 +768,7 @@ export async function logTrainingEvent(params: {
   // Fetch the event, scoped on clientId (collapses missing + wrong-client).
   const { data: eventRow, error: eventErr } = await supabaseAdmin
     .from("training_events")
-    .select(
-      "id, training_session_id, date, session_log_id, session_logs!training_events_session_log_id_fkey(completed_at)",
-    )
+    .select("id, training_session_id, date, session_log_id")
     .eq("id", eventId)
     .eq("client_id", clientId)
     .maybeSingle();
@@ -784,23 +777,6 @@ export async function logTrainingEvent(params: {
   }
   if (!eventRow) {
     throw new Error(`Training event not found: ${eventId}`);
-  }
-
-  // Logged on another day: the linked log was performed on a different date
-  // (an alternative session the matcher attributed to this prescribed event).
-  // It is read-only HERE even on "today" — an update through this event would
-  // overwrite the sets and re-stamp completed_at to this date, erasing where
-  // it actually happened. Edits belong on the day it was logged, under that
-  // day's rules. The embed is absent on a row with no log (and on older test
-  // fixtures), which reads as "no lock".
-  const linkedLog = eventRow.session_logs as { completed_at: string | null } | null | undefined;
-  const loggedOn = linkedLog?.completed_at ? dateOfTimestamp(linkedLog.completed_at) : null;
-  if (loggedOn && loggedOn !== eventRow.date) {
-    throw new DayLockedError(
-      eventRow.date,
-      "training",
-      `This workout was logged on ${loggedOn}, so it is read-only on ${eventRow.date}.`,
-    );
   }
 
   // Date-edit lock: today is editable; a past day that already has a log is
@@ -831,90 +807,6 @@ export async function logTrainingEvent(params: {
     payload,
   });
 
-  return { sessionLogId };
-}
-
-/**
- * Event-less logging (Session 5.3): the client trained on a day with no tapped
- * event (rest-day training / the rest-day picker). The idempotent
- * find-or-update on (client, performed session, date) runs BEFORE the matcher,
- * so a retry or double-tap updates the existing row instead of inserting a
- * duplicate — and the matched-then-retried phantom is killed too (the first
- * call links the matched event; a retry finds the existing log here and never
- * re-runs the matcher).
- */
-export async function logTrainingSessionForDate(params: {
-  clientId: string;
-  date: string;
-  payload: LogSessionForDateInput;
-}): Promise<LogTrainingEventResponse> {
-  const { clientId, date, payload } = params;
-  const performedSessionId = payload.performedSessionId;
-
-  const checkInDay = await getClientCheckInDay(clientId);
-  const weekStartDate = getTrainingWeekStart(date, checkInDay);
-  const weekEndDate = getTrainingWeekEnd(date, checkInDay);
-
-  // One log per rest day: reuse the existing event-less log for this day
-  // REGARDLESS of which session was picked, so a second pick EDITS the first
-  // instead of inserting a duplicate. completed_at is TIMESTAMPTZ — match the
-  // day via the house range pattern.
-  const { data: existing, error: existingErr } = await supabaseAdmin
-    .from("session_logs")
-    .select("id, training_event_id")
-    .eq("client_id", clientId)
-    .gte("completed_at", `${date}T00:00:00`)
-    .lte("completed_at", `${date}T23:59:59`)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (existingErr) {
-    throw new Error(
-      `Failed to look up existing session log: ${existingErr.message}`,
-    );
-  }
-
-  // Date-edit lock: today is editable; a past day that already has a log is
-  // read-only (throws DayLockedError → 403).
-  await assertCanEditTrainingDay(
-    clientId,
-    date,
-    existing ? "logged" : "never-logged",
-  );
-
-  if (existing) {
-    const sessionLogId = await writeSessionLog({
-      clientId,
-      eventId: existing.training_event_id,
-      existingLogId: existing.id,
-      performedSessionId,
-      snapshotSessionId: performedSessionId,
-      completedAt: date,
-      weekStartDate,
-      payload,
-    });
-    return { sessionLogId };
-  }
-
-  // No existing log — run the matcher to link a prescribed event when possible.
-  const match = await findMatchingEvent({
-    clientId,
-    performedSessionId,
-    completedAt: date,
-    weekStart: weekStartDate,
-    weekEnd: weekEndDate,
-  });
-
-  const sessionLogId = await writeSessionLog({
-    clientId,
-    eventId: match?.id ?? null,
-    existingLogId: null,
-    performedSessionId,
-    snapshotSessionId: match?.trainingSessionId ?? performedSessionId,
-    completedAt: date,
-    weekStartDate,
-    payload,
-  });
   return { sessionLogId };
 }
 

@@ -372,20 +372,7 @@ export const logTrainingEventSchema = z.object({
   performedSessionId: z.string().uuid().optional(),
 });
 
-// Event-less log: client trained on a day with no tapped event (rest-day
-// training, or picking a session from the rest-day picker). `date` is the day
-// trained; `performedSessionId` is required (the picker always supplies one).
-// The service runs the matcher to link it to a prescribed event when possible.
-export const logSessionForDateSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
-  performedSessionId: z.string().uuid(),
-  completionQuality: completionQualitySchema,
-  notes: z.string().max(1000).optional(),
-  exercises: z.array(exercisePerformanceSchema).max(50).optional(),
-});
-
 export type LogTrainingEventInput = z.infer<typeof logTrainingEventSchema>;
-export type LogSessionForDateInput = z.infer<typeof logSessionForDateSchema>;
 
 // Client week layout (migration 150): N still-scheduled sessions change date in
 // one transaction. A single move is a one-entry layout, a swap two entries, a

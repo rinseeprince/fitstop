@@ -2,66 +2,24 @@ import { getEventSummariesForDate } from "./training-event-service";
 import { getNutritionForDate } from "./daily-context-service";
 import { getTodayLog } from "./daily-logs-service";
 import { getClientHabits, getTodayHabitLogs } from "./daily-habits-service";
-import { supabaseAdmin } from "./supabase-admin";
 import type { DaySummary } from "@/types/client-day";
-
-/**
- * Sessions logged ON `date` whose matched prescribed event falls on a DIFFERENT
- * date — powers the Session 5.4 "Trained for {weekday} {session}" line. Anchored
- * to the log's completed_at (the day trained), NOT to events of `date` (a rest
- * day has none). Unmatched extras (training_event_id null) are excluded by the
- * not-null filter. completed_at is TIMESTAMPTZ → the house date-range pattern.
- */
-async function getTrainedForLinks(
-  clientId: string,
-  date: string
-): Promise<{ date: string; sessionName: string; eventId: string }[]> {
-  const { data, error } = await supabaseAdmin
-    .from("session_logs")
-    .select(
-      "prescribed_session_snapshot, training_events!session_logs_training_event_id_fkey(id, date)"
-    )
-    .eq("client_id", clientId)
-    .not("training_event_id", "is", null)
-    .gte("completed_at", `${date}T00:00:00`)
-    .lte("completed_at", `${date}T23:59:59`);
-  if (error) {
-    throw new Error(`Failed to load trained-for links: ${error.message}`);
-  }
-
-  const out: { date: string; sessionName: string; eventId: string }[] = [];
-  for (const row of data ?? []) {
-    // Embedded to-one event; defensively handle object-or-array shape. Cast via
-    // unknown — the FK relation only resolves in generated types post-migration.
-    const evRaw = (
-      row as unknown as {
-        training_events: { id: string; date: string } | { id: string; date: string }[] | null;
-      }
-    ).training_events;
-    const ev = Array.isArray(evRaw) ? evRaw[0] : evRaw;
-    const eventDate = ev?.date;
-    // Only when the log was attributed to a DIFFERENT day than it was logged on.
-    if (!ev || !eventDate || eventDate === date) continue;
-    const snapshot = row.prescribed_session_snapshot as Record<string, unknown> | null;
-    const sessionName =
-      typeof snapshot?.name === "string" ? snapshot.name : "Session";
-    out.push({ date: eventDate, sessionName, eventId: ev.id });
-  }
-  return out;
-}
 
 /**
  * Lightweight day summary for the client home screen.
  * Composes existing domain services — does not query tables directly.
+ *
+ * Training is the day's events and nothing else: a workout has one date (the
+ * event's), because the client moves the event to the day they train. The
+ * "trained for another day" read that used to sit beside this was retired with
+ * the receipt model (2026-08-26).
  */
 export async function getDaySummary(
   clientId: string,
   date: string
 ): Promise<DaySummary> {
-  const [trainingEvents, trainedFor, nutrition, dailyLog, habits, habitLogs] =
+  const [trainingEvents, nutrition, dailyLog, habits, habitLogs] =
     await Promise.all([
       getEventSummariesForDate(clientId, date),
-      getTrainedForLinks(clientId, date),
       getNutritionForDate(clientId, date),
       getTodayLog(clientId, date),
       getClientHabits(clientId),
@@ -70,7 +28,6 @@ export async function getDaySummary(
 
   return {
     training: trainingEvents,
-    trainedFor,
     // Log-authoritative: a nutrition_logs row (source "log") means logged, even if the
     // nutrition_event status was never flipped. consumed/target drive the home card numbers.
     nutrition:

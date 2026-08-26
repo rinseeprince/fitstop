@@ -46,7 +46,7 @@ The client app is a fitness coaching platform where clients can:
 
 The Daily Pulse is the centerpiece of the client experience, allowing daily logging of:
 - **Wellness Metrics**: Mood (1-5 emoji scale), Energy (1-10), Sleep (1-10), Stress (1-10), Soreness (1-10, higher = more sore), Notes
-- **Training Completion**: Mark planned sessions complete, log alternative sessions, add unplanned activities
+- **Training Completion**: Mark planned sessions complete; on a rest day pick a session from this week (it moves to that day); on a prescribed day swap with another day's session; add unplanned exercises
 - **Nutrition Tracking**: Log calories and macros (protein, carbs, fat) with dynamic targets
 - **Habit Tracking**: Toggle daily habits on/off with auto-save
 
@@ -62,7 +62,7 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 
 - View the active program as ordered day-slots grouped by `weekIndex` — rest days appear as real "Rest" entries
 - See per-set prescription (`setSpecs`: set type, reps, load, RPE, tempo, rest) plus an optional demo `videoUrl`
-- Log a prescribed day by tapping its event; log a rest-day workout via `session-logs`
+- Log a prescribed day by tapping its event; on a rest day, pick a session from this week — it moves to that day (`events/layout`) and opens as an ordinary event
 - Per-exercise history and PRs via `exercise-history`
 - The plan is a **positional multi-week program** — render by `weekIndex` + `orderIndex`, not by weekday
 
@@ -163,7 +163,7 @@ All client API endpoints require authentication except where noted.
 
 > Reads are one call; writes are per-domain. There is no combined daily-log write.
 
-- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The day read (`DaySummary`, `types/client-day.ts`) Each `training[]` entry carries `loggedOn: string | null` — the day the session was actually logged when that differs from the day it was prescribed (an alternative session). On its prescribed day such an entry is a RECEIPT: render "Done {weekday}" and open it read-only; a day whose entries are ALL receipts has nothing left to do — offer the same "log a session" picker a rest day gets (an event-less log for that date); `POST …/events/{eventId}/log` refuses a write there with a 403 whose message names the day it was logged (distinct from the ordinary locked-day 403). `trainedFor[]` (sessions logged on the requested day but attributed elsewhere) carries `eventId`: open that log from the done day (`GET …/events/{eventId}`, pre-filled) and edit it under the done day's rules by posting to `POST …/session-logs` with `date` = the done day and `performedSessionId` = `sessionLog.trainingSessionId` — it updates the existing log in place.
+- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The day read (`DaySummary`, `types/client-day.ts`). Each `training[]` entry is a session on THIS day — done here, to be done here, or missed here. A workout has one date (the event's) because the client moves the event to the day they train, so there is no "done on another day" state: the `loggedOn` and `trainedFor` fields that carried it were retired 2026-08-26 (before any RN consumer existed).
 - `GET` + `PATCH /api/client/daily-logs/{date}/wellness` - Mood / energy / sleep / stress / soreness
 - `GET` + `PATCH /api/client/daily-logs/{date}/nutrition` - Calories + macros for that date
 - Training is **not** part of a daily log — see the Training section
@@ -174,10 +174,9 @@ All client API endpoints require authentication except where noted.
 > **Events-as-SOT.** Prescription lives in `training_events` (one row per calendar date); completion lives in `session_logs`, keyed by `training_event_id`.
 
 - `GET /api/client/training-plan` - The active plan, self-describing (`ClientTrainingPlan | null`)
-- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: `training: TrainingEventSummary[]`, `trainedFor`, nutrition, wellness, habits. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
+- `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: `training: TrainingEventSummary[]`, nutrition, wellness, habits. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
 - `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, exercises, sessionLog, exerciseLogs }`
 - `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `403` day locked · `404` not found / not this client
-- `POST /api/client/training/session-logs` - Event-less log: the client trained on a date with no prescribed event (rest-day training). One log per date — a second submission for the same date EDITS the existing log
 - `GET /api/client/training/sessions/{sessionId}` - Session + exercises; 404 unless the session belongs to the client's ACTIVE plan. Powers the rest-day picker
 - `GET /api/client/training/week?date={YYYY-MM-DD}` - The training week containing `date` (`ClientTrainingWeek`, `types/client-training-week.ts`): `{ weekStart, weekEnd, today, sessions[] }`, each session `{ eventId, sessionId, name, focus, date, state }` with `state` = `done | today | upcoming | missed` derived against the client's today. ≤7 rows, `no-store`. The session picker and the week view list THIS — it is exactly the set a layout write may touch
 - `POST /api/client/training/events/layout` - **Move / swap / rearrange the client's own week.** Body `{ moves: [{ eventId, fromDate, toDate }] }` (1–7). One transaction for the whole list (`move_training_events_atomic`, migration 150), so a swap is two entries and a rotation never half-applies. Rules: only a still-scheduled session moves (a logged day is pinned); a session moves only within the training week it currently sits in; a target before today is allowed only when that day has no logged workout; a target may not hold any non-moving session. `fromDate` is the day the client SAW the session on — if it has moved since (a coach edit), `409` "Your week changed since you opened it — reload and try again". Other answers: `409` "{Sat, Aug 29} already has a session" · `400` a rule of the client's own calendar, with the sentence · `404` not this client's. Returns `{ moved: [...] }`. Nutrition follows the moved sessions (one cascade over every touched day); a day the client has already logged shows the refreshed target at their next food save. The **rest-day "Log a session" picker** is a one-entry layout (move here, then open the event); "Do a different session" on a prescribed day with a still-scheduled other-day pick is a two-entry swap

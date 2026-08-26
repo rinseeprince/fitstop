@@ -16,7 +16,6 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { canEditDay } from "@/lib/daily-log-permissions";
-import { dateOfTimestamp } from "@/lib/date-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { logTrainingEventSchema } from "@/lib/validations/training";
 import type { Client } from "@/types/check-in";
@@ -52,9 +51,9 @@ type SessionDetailResponse = { success: boolean; data: { session: TrainingSessio
 type ClientMeResponse = { success: boolean; data: Client };
 
 // How a logged workout is saved + which session was performed.
-type SaveStrategy =
-  | { kind: "event"; eventId: string; performedSessionId?: string }
-  | { kind: "session"; date: string; performedSessionId: string };
+// A workout is always logged through its event (the client moves the event
+// to the day they train first), so there is exactly one save strategy.
+type SaveStrategy = { kind: "event"; eventId: string; performedSessionId?: string };
 
 const SWR_OPTS = {
   revalidateOnFocus: false,
@@ -64,27 +63,14 @@ const SWR_OPTS = {
 } as const;
 
 type SetTrackerProps = {
-  /** Event-keyed mode: the client tapped a scheduled event. */
+  /** The event the client tapped (or was routed to after a move/swap). */
   eventId?: string;
   date?: string;
-  /** Event-less mode: a session picked on a rest day (no event). */
-  sessionId?: string;
-  /** Event-less mode: return to the picker to choose a different session. */
-  onChangeSession?: () => void;
 };
 
 export function SetTracker(props: SetTrackerProps) {
   if (props.eventId) {
     return <EventModeTracker eventId={props.eventId} date={props.date} />;
-  }
-  if (props.sessionId && props.date) {
-    return (
-      <SessionModeTracker
-        sessionId={props.sessionId}
-        date={props.date}
-        onChangeSession={props.onChangeSession}
-      />
-    );
   }
   return <LoadFailed />;
 }
@@ -215,37 +201,18 @@ function EventModeTracker({
   }
   if (eventError || !eventData) return <LoadFailed />;
 
-  // Logged on another day (an alternative session the matcher attributed to
-  // this prescribed event). Two ways in:
-  //  - from the PRESCRIBED day (`date` ≠ the day it was done): read-only,
-  //    whatever day it is — writing through the event would overwrite the sets
-  //    and re-date the log. The server lock in logTrainingEvent mirrors this.
-  //  - from the day it was DONE (`date` === that day, via the day view's
-  //    "Trained for" row): pre-filled and editable under THAT day's rules
-  //    (today editable, past locked), saved through the same-day path, which
-  //    updates the existing log in place and keeps its link to the event.
   const sessionLog = eventData.data.sessionLog;
-  const doneOn = sessionLog ? dateOfTimestamp(sessionLog.completedAt) : null;
-  const doneElsewhere = doneOn != null && doneOn !== eventData.data.event.date;
-  const editingFromDoneDay =
-    doneElsewhere && date === doneOn && sessionLog?.trainingSessionId != null;
   const timezone = meData?.data?.timezone ?? "UTC";
   // Date-edit lock (client mirror of the server rule): past + logged → read-only.
-  const editable = editingFromDoneDay
-    ? canEditDay(doneOn, "logged", timezone)
-    : !doneElsewhere &&
-      canEditDay(
-        eventData.data.event.date,
-        sessionLog ? "logged" : "never-logged",
-        timezone,
-      );
+  const editable = canEditDay(
+    eventData.data.event.date,
+    sessionLog ? "logged" : "never-logged",
+    timezone,
+  );
 
   // Bind to the prescribed session, or to the swapped/edited session.
   let detail = eventData.data;
-  let save: SaveStrategy =
-    editingFromDoneDay && sessionLog?.trainingSessionId
-      ? { kind: "session", date: doneOn, performedSessionId: sessionLog.trainingSessionId }
-      : { kind: "event", eventId };
+  let save: SaveStrategy = { kind: "event", eventId };
   if (boundSessionId && swapData?.data?.session) {
     // Pre-fill from the existing log only when we're editing the very session
     // that was logged (so the logged sets match this session's exercises).
@@ -271,72 +238,10 @@ function EventModeTracker({
       date={date}
       save={save}
       editable={editable}
-      lockedMessage={
-        doneElsewhere && !editingFromDoneDay
-          ? "This workout was logged on another day, so it\u2019s read-only here."
-          : undefined
-      }
       onChangeSession={() => setShowPicker(true)}
       onResetSwap={
         boundSessionId ? () => setUserSwapSessionId(null) : undefined
       }
-    />
-  );
-}
-
-// --- Event-less mode (rest-day training): a picked session, no event ---
-
-function SessionModeTracker({
-  sessionId,
-  date,
-  onChangeSession,
-}: {
-  sessionId: string;
-  date: string;
-  onChangeSession?: () => void;
-}) {
-  const {
-    data: sessionData,
-    error: sessionError,
-    isLoading: sessionLoading,
-  } = useSWR<SessionDetailResponse>(
-    `/api/client/training/sessions/${sessionId}`,
-    swrFetcher,
-    {
-      ...SWR_OPTS,
-      onError: (err) =>
-        console.error("[set-tracker] session fetch failed:", err),
-    },
-  );
-
-  const { data: meData, isLoading: meLoading } = useSWR<ClientMeResponse>(
-    "/api/client/me",
-    swrFetcher,
-    { revalidateOnFocus: false },
-  );
-
-  if (sessionLoading || meLoading) return <TrackerSkeleton />;
-  if (sessionError || !sessionData?.data?.session) return <LoadFailed />;
-
-  const session = sessionData.data.session;
-  const detail = syntheticDetailFromSession(
-    session,
-    syntheticEvent(session, date),
-  );
-  // Fresh rest-day log: locked only when the date is in the future.
-  const editable = canEditDay(
-    date,
-    "never-logged",
-    meData?.data?.timezone ?? "UTC",
-  );
-
-  return (
-    <TrainingLogForm
-      detail={detail}
-      date={date}
-      save={{ kind: "session", date, performedSessionId: sessionId }}
-      editable={editable}
-      onChangeSession={onChangeSession}
     />
   );
 }
@@ -346,7 +251,6 @@ function TrainingLogForm({
   date,
   save,
   editable = true,
-  lockedMessage,
   onChangeSession,
   onResetSwap,
 }: {
@@ -355,7 +259,6 @@ function TrainingLogForm({
   save: SaveStrategy;
   editable?: boolean;
   /** Overrides the default locked-day sentence (e.g. logged on another day). */
-  lockedMessage?: string;
   onChangeSession?: () => void;
   onResetSwap?: () => void;
 }) {
@@ -433,23 +336,11 @@ function TrainingLogForm({
       return;
     }
 
-    // Branch on save strategy: event-keyed vs event-less endpoint + body.
-    const url =
-      save.kind === "event"
-        ? `/api/client/training/events/${save.eventId}/log`
-        : `/api/client/training/session-logs`;
-    const body =
-      save.kind === "event"
-        ? save.performedSessionId
-          ? { ...parsed.data, performedSessionId: save.performedSessionId }
-          : parsed.data
-        : {
-            ...parsed.data,
-            date: save.date,
-            performedSessionId: save.performedSessionId,
-          };
-    const loggedDate =
-      save.kind === "session" ? save.date : date ?? detail.event.date;
+    const url = `/api/client/training/events/${save.eventId}/log`;
+    const body = save.performedSessionId
+      ? { ...parsed.data, performedSessionId: save.performedSessionId }
+      : parsed.data;
+    const loggedDate = date ?? detail.event.date;
 
     try {
       const res = await fetch(url, {
@@ -524,7 +415,7 @@ function TrainingLogForm({
             data-testid="locked-banner"
             className="rounded-[6px] bg-[rgba(13,148,136,0.06)] px-3 py-2 text-[12px] text-[#5a7d82]"
           >
-            {lockedMessage ?? "This day is locked — past workouts can\u2019t be edited once logged."}
+            {"This day is locked — past workouts can\u2019t be edited once logged."}
           </p>
         )}
         {onChangeSession && editable && (
@@ -657,27 +548,6 @@ function syntheticDetailFromSession(
   };
 }
 
-// A minimal event carrying just the fields TrainingLogForm reads (date, name,
-// focus) for the event-less header. Never persisted — the save goes through the
-// event-less /session-logs endpoint.
-function syntheticEvent(session: TrainingSession, date: string): TrainingEvent {
-  return {
-    id: "",
-    clientId: "",
-    trainingPlanId: session.planId,
-    trainingSessionId: session.id,
-    date,
-    sessionName: session.name,
-    sessionFocus: session.focus ?? null,
-    estimatedCalories: session.estimatedCalories ?? null,
-    status: "scheduled",
-    sessionLogId: null,
-    isModified: false,
-    calorieSurplusPercentage: session.calorieSurplusPercentage,
-    createdAt: "",
-    updatedAt: "",
-  };
-}
 
 function TrackerSkeleton() {
   return (

@@ -150,19 +150,6 @@ export const CalendarEventCard = memo(function CalendarEventCard({
         )}
       </div>
 
-      {/* Receipt: the log was attributed to this (prescribed) day but performed
-          on another — an alternative session. Says where, changes nothing. */}
-      {event.loggedOn && event.loggedOn !== event.date && (
-        <div className="pl-[26px]">
-          <span className={cn(LABEL_CLASS, "normal-case tracking-normal text-[#93b0b4]")}>
-            Done{" "}
-          </span>
-          <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[#93b0b4]")}>
-            {formatDoneOn(event.loggedOn)}
-          </span>
-        </div>
-      )}
-
       {/* Mono meta row — focus left, surplus right */}
       {hasMetaRow && (
         <div className="flex items-center justify-between gap-1 pl-[26px]">
@@ -179,15 +166,3 @@ export const CalendarEventCard = memo(function CalendarEventCard({
     </div>
   );
 });
-
-const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-
-/** "Tue 25" — weekday + day-of-month of a YYYY-MM-DD. Built by hand so the
- *  order is fixed; `toLocaleDateString` puts the day first in some locales. */
-function formatDoneOn(dateStr: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
-  if (!m) return dateStr;
-  const [, y, mo, d] = m;
-  const local = new Date(Number(y), Number(mo) - 1, Number(d));
-  return `${WEEKDAY_SHORT[local.getDay()]} ${local.getDate()}`;
-}

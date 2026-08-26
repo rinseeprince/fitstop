@@ -29,7 +29,6 @@ describe("GET /api/client/day-summary", () => {
     mockAuth.mockResolvedValue({ ok: true, clientId: "client-1" });
     mockGetDaySummary.mockResolvedValue({
       training: [],
-      trainedFor: [],
       nutrition: null,
       wellness: { hasLog: false },
       habits: { totalCount: 0, loggedCount: 0 },
@@ -47,10 +46,8 @@ describe("GET /api/client/day-summary", () => {
           isAlternative: false,
           loggedExerciseCount: 4,
           prescribedExerciseCount: 4,
-          loggedOn: null,
         },
       ],
-      trainedFor: [],
       nutrition: { hasLog: true, caloriesConsumed: 1900, targetCalories: 2000, note: null },
       wellness: { hasLog: true },
       habits: { totalCount: 3, loggedCount: 2 },

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
-import { getEventsForDateRange, withLoggedOn } from "@/services/training-event-service";
+import { getEventsForDateRange } from "@/services/training-event-service";
 
 /**
  * GET - Fetch training events for a client within a date range.
@@ -48,8 +48,7 @@ export async function GET(
       );
     }
 
-    // `loggedOn` marks sessions done on another day (the calendar's "Done Tue" receipt).
-    const events = await withLoggedOn(await getEventsForDateRange(clientId, startDate, endDate));
+    const events = await getEventsForDateRange(clientId, startDate, endDate);
 
     return NextResponse.json({ success: true, events }, { status: 200 });
   } catch (error) {

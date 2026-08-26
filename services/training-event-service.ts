@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { dateOfTimestamp } from "@/lib/date-helpers";
 import type { TrainingEvent, TrainingEventStatus, TrainingEventSummary } from "@/types/training";
 import type { SessionCompletionQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
@@ -228,35 +227,6 @@ export async function getEventsForDateRange(
 }
 
 /**
- * Coach-calendar enrichment: stamp `loggedOn` on events whose linked log was
- * done on a DIFFERENT day (an alternative session attributed here). One query
- * over the linked log ids; events with no log, or logged on their own day, get
- * `null`. Kept out of `getEventsForDateRange` so its many other readers
- * (cascades, snapshots, the program card) don't pay for it.
- */
-export async function withLoggedOn(events: TrainingEvent[]): Promise<TrainingEvent[]> {
-  const logIds = events
-    .map((e) => e.sessionLogId)
-    .filter((id): id is string => id !== null);
-  if (logIds.length === 0) return events.map((e) => ({ ...e, loggedOn: null }));
-
-  const { data, error } = await supabaseAdmin
-    .from("session_logs")
-    .select("id, completed_at")
-    .in("id", logIds);
-  if (error) throw error;
-
-  const doneOnByLogId = new Map<string, string>();
-  for (const row of data ?? []) {
-    if (row.completed_at) doneOnByLogId.set(row.id, dateOfTimestamp(row.completed_at));
-  }
-  return events.map((e) => {
-    const doneOn = e.sessionLogId ? doneOnByLogId.get(e.sessionLogId) : undefined;
-    return { ...e, loggedOn: doneOn && doneOn !== e.date ? doneOn : null };
-  });
-}
-
-/**
  * Get a single event for a client on a specific date.
  * Returns null if no event exists.
  */
@@ -337,70 +307,6 @@ export async function linkSessionLogToEvent(
   if (logErr) throw logErr;
 }
 
-/**
- * Session 5.3 matcher: for an event-less log (rest-day training), find the
- * prescribed training_event it should link to, if any. "Unlinked" means the
- * event has no session_log yet and is not already completed/partial
- * (session_log_id IS NULL AND status IN scheduled/missed/skipped). Priority:
- *   1. an unlinked event with the same training_session_id as the performed
- *      session, earliest date in the week (covers "missed Tuesday's Pull, did
- *      it Wednesday" and "did Pull early before its prescribed day").
- *   2. an unlinked event on the same date as the log, any session (planned-day
- *      swap). For an event-less log this normally can't fire (a true rest day
- *      has no event), but it's kept for completeness and determinism.
- *   3. null — no candidate; the log stays unmatched (truly-extra training).
- * Tie-breaks are deterministic: earliest date, then earliest created_at.
- */
-export async function findMatchingEvent(params: {
-  clientId: string;
-  performedSessionId: string;
-  completedAt: string;
-  weekStart: string;
-  weekEnd: string;
-}): Promise<{ id: string; trainingSessionId: string | null; date: string } | null> {
-  const { clientId, performedSessionId, completedAt, weekStart, weekEnd } = params;
-
-  const { data, error } = await supabaseAdmin
-    .from("training_events")
-    .select("id, training_session_id, date, created_at")
-    .eq("client_id", clientId)
-    .is("session_log_id", null)
-    .in("status", ["scheduled", "missed", "skipped"])
-    .gte("date", weekStart)
-    .lte("date", weekEnd)
-    .order("date", { ascending: true })
-    .order("created_at", { ascending: true });
-  if (error) {
-    throw new Error(`Failed to load candidate events for matcher: ${error.message}`);
-  }
-  const candidates = data ?? [];
-
-  // 1. Same performed session, earliest date in week (ordering guarantees it).
-  const sameSession = candidates.find(
-    (e) => e.training_session_id === performedSessionId
-  );
-  if (sameSession) {
-    return {
-      id: sameSession.id,
-      trainingSessionId: sameSession.training_session_id,
-      date: sameSession.date,
-    };
-  }
-
-  // 2. Same date as the log, any session (planned-day swap).
-  const sameDate = candidates.find((e) => e.date === completedAt);
-  if (sameDate) {
-    return {
-      id: sameDate.id,
-      trainingSessionId: sameDate.training_session_id,
-      date: sameDate.date,
-    };
-  }
-
-  // 3. No candidate — log stays unmatched.
-  return null;
-}
-
 // --- Day-summary helper ---
 
 function mapStatusToCompletionQuality(
@@ -432,8 +338,6 @@ export async function getEventSummariesForDate(
   // linked log (its training_session_id) — for planned-day swaps.
   const loggedCountMap = new Map<string, number>();
   const performedByLogId = new Map<string, string | null>();
-  // The day each linked log was actually done (see TrainingEventSummary.loggedOn).
-  const doneOnByLogId = new Map<string, string>();
   if (sessionLogIds.length > 0) {
     const [logCountsRes, logRowsRes] = await Promise.all([
       supabaseAdmin
@@ -442,7 +346,7 @@ export async function getEventSummariesForDate(
         .in("session_log_id", sessionLogIds),
       supabaseAdmin
         .from("session_logs")
-        .select("id, training_session_id, completed_at")
+        .select("id, training_session_id")
         .in("id", sessionLogIds),
     ]);
     if (logCountsRes.error) throw logCountsRes.error;
@@ -455,7 +359,6 @@ export async function getEventSummariesForDate(
     }
     for (const row of logRowsRes.data ?? []) {
       performedByLogId.set(row.id, row.training_session_id);
-      if (row.completed_at) doneOnByLogId.set(row.id, dateOfTimestamp(row.completed_at));
     }
   }
 
@@ -537,10 +440,6 @@ export async function getEventSummariesForDate(
       prescribedExerciseCount: displayId
         ? (prescribedCountMap.get(displayId) ?? 0)
         : 0,
-      loggedOn: (() => {
-        const doneOn = e.sessionLogId ? doneOnByLogId.get(e.sessionLogId) : undefined;
-        return doneOn && doneOn !== e.date ? doneOn : null;
-      })(),
     };
   });
 }

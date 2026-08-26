@@ -140,7 +140,7 @@ async function getNextSession(
   clientId: string,
   clientToday: string
 ): Promise<{ name: string; date: string; isToday: boolean } | null> {
-  // Mirrors the findMatchingEvent predicate: upcoming, still scheduled, unlinked.
+  // Upcoming, still scheduled, unlinked.
   const { data, error } = await supabaseAdmin
     .from("training_events")
     .select("session_name, date")

@@ -62,24 +62,3 @@ describe("CalendarEventCard gating (Session 7.86)", () => {
     expect(menuTrigger("2026-06-17", "2026-06-17")).not.toBeNull();
   });
 });
-
-describe("done-on-another-day receipt", () => {
-  it("shows 'Done {weekday day}' when loggedOn differs from the event date, and nothing otherwise", () => {
-    const withReceipt = { ...makeEvent("2026-05-08"), status: "completed" as const, sessionLogId: "log-1", loggedOn: "2026-05-05" };
-    const { container, unmount } = render(
-      <DndContext>
-        <CalendarEventCard event={withReceipt} editMode={false} clientToday="2026-05-10" onEventClick={() => {}} />
-      </DndContext>,
-    );
-    expect(container.textContent).toMatch(/Done Tue 5/);
-    unmount();
-
-    const sameDay = { ...withReceipt, loggedOn: null };
-    const { container: c2 } = render(
-      <DndContext>
-        <CalendarEventCard event={sameDay} editMode={false} clientToday="2026-05-10" onEventClick={() => {}} />
-      </DndContext>,
-    );
-    expect(c2.textContent).not.toMatch(/Done/);
-  });
-});

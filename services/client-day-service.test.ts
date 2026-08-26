@@ -17,19 +17,6 @@ vi.mock("./daily-habits-service", () => ({
   getTodayHabitLogs: vi.fn(),
 }));
 
-// getTrainedForLinks queries supabaseAdmin directly; default it to no rows.
-vi.mock("./supabase-admin", () => {
-  const makeQuery = () => {
-    const q: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "not", "gte", "lte"]) {
-      q[m] = vi.fn(() => q);
-    }
-    q.then = (resolve: (v: { data: never[]; error: null }) => unknown) =>
-      Promise.resolve({ data: [] as never[], error: null }).then(resolve);
-    return q;
-  };
-  return { supabaseAdmin: { from: vi.fn(() => makeQuery()) } };
-});
 
 import { getDaySummary } from "./client-day-service";
 import { getEventSummariesForDate } from "./training-event-service";
@@ -67,7 +54,6 @@ describe("client-day-service", () => {
 
     expect(result).toEqual({
       training: [],
-      trainedFor: [],
       nutrition: null,
       wellness: { hasLog: false },
       habits: { totalCount: 0, loggedCount: 0 },
@@ -86,7 +72,6 @@ describe("client-day-service", () => {
         isAlternative: false,
         loggedExerciseCount: 0,
         prescribedExerciseCount: 4,
-        loggedOn: null,
       },
     ]);
 
@@ -110,7 +95,6 @@ describe("client-day-service", () => {
         isAlternative: false,
         loggedExerciseCount: 0,
         prescribedExerciseCount: 4,
-        loggedOn: null,
       },
     ]);
 
@@ -132,7 +116,6 @@ describe("client-day-service", () => {
         isAlternative: false,
         loggedExerciseCount: 3,
         prescribedExerciseCount: 5,
-        loggedOn: null,
       },
     ]);
 
@@ -154,7 +137,6 @@ describe("client-day-service", () => {
         isAlternative: false,
         loggedExerciseCount: 4,
         prescribedExerciseCount: 4,
-        loggedOn: null,
       },
       {
         eventId: "e2",
@@ -164,7 +146,6 @@ describe("client-day-service", () => {
         isAlternative: false,
         loggedExerciseCount: 0,
         prescribedExerciseCount: 2,
-        loggedOn: null,
       },
     ]);
 

@@ -187,23 +187,14 @@ Clients sometimes train differently from what the coach prescribed: doing a diff
 - **Planned-day swap.** Monday is Push Day in the plan; the client decides to do Pull Day instead. They open the training detail page (the prescribed Push event) and tap "Do a different session" → picker shows other active-plan sessions → they pick Pull. The detailed-mode tracker rebinds to Pull's prescribed exercises; the save submits `performedSessionId = Pull.id` against Monday's event.
 - **Rest-day training.** Wednesday is a rest day in the plan; the client wants to train anyway. They tap the rest-day card on home → picker shows active-plan sessions → they pick Pull. The detail page renders the tracker bound to Pull. Save submits to an event-less endpoint with `date` and `performedSessionId`.
 
-**The matcher.** Every `session_log` write attempts to link to a prescribed `training_event` in the same training week:
+**The matcher — RETIRED 2026-08-26 (owner decision).** The rest-day write used to guess which prescribed event a log fulfilled (same session earliest in the week, else same date) and leave the log dated to the day done while the event stayed on its prescribed day — two dates for one workout, which every reader then had to reconcile; the coach's history table did not, and rendered the same workout on different days depending on the query window. Replaced by **the client moving the session first**: the rest-day picker lists this week's still-to-do sessions and a pick moves the chosen one onto that day (`POST /api/client/training/events/layout`, migration 150) and opens it; on a prescribed, unlogged day a pick swaps the two days. Every log is then event-keyed and dated to its event, through the one training writer (`POST …/events/{eventId}/log`). The event-less endpoint (`POST …/session-logs`), the "done on another day" receipt and the "Trained for {weekday}" line went with it. The rest-day scenario above still holds — the client taps the rest-day card, picks Pull — only the mechanism changed: Pull's event moves to Wednesday rather than Wednesday's log pointing at Tuesday.
 
-1. Unlinked event with the same `training_session_id` as `performedSessionId`, earliest date in week. Catches "missed Tuesday's Pull, did it Wednesday" — Tuesday's event flips to `completed` via Wednesday's log.
-2. Unlinked event on the same date as `completed_at`, regardless of session_id. Catches planned-day swap — Monday's Push event flips to `completed` via Monday's Pull log.
-3. Any unlinked event of same `training_session_id` in the week. Catches "did Pull early before Tuesday."
-4. No match. The log stays with `training_event_id IS NULL` — a truly-extra session that doesn't affect prescribed-completion counts.
+**Snapshot semantics for swap.** Two snapshot fields carry different sources to preserve both stories:
 
-An event is matchable when `status IN ('scheduled','missed','skipped')` and `session_log_id IS NULL`. `completed` and `partial` events are already linked and not re-matched.
-
-**Snapshot semantics for swap (Option A).** Two snapshot fields carry different sources to preserve both stories:
-
-- `session_log.prescribed_session_snapshot`: derived from the **matched event's** `training_session_id` (the calendar prescription — Push in the swap case). For unmatched extras, derived from the chosen session.
+- `session_log.prescribed_session_snapshot`: derived from the **event's** `training_session_id` (the calendar prescription — Push in the swap case).
 - `exercise_logs[].prescribed_exercise_snapshot`: always derived from the **chosen session's** exercises (Pull's prescription for each exercise the client performed).
 
 The coach drill-down reads both: "Prescribed Push Day on Monday. Client performed Pull Day. Here's Pull's prescription per exercise vs. their actual sets."
-
-**Day-view affordance (option B).** When `session_log.completed_at` differs from the linked `training_event.date` (e.g. rest-day-trained that caught up Tuesday's missed Pull on Wednesday), the day-view for the day the client actually trained shows a slim "Trained for {weekday} {session.name}" line. Restores the "where I physically trained" signal without confusing the calendar.
 
 **Picker scope — narrowed 2026-08-26.** THIS WEEK's sessions only (`GET /api/client/training/week`), each with its weekday and state, because that is exactly the set a pick can act on: the session **moves** (rest day) or **swaps** (prescribed day) onto the day being logged. **Only sessions that can still be done are offered** — Today, Upcoming, Missed-but-still-scheduled; a done or skipped session has nothing left to do and is never listed (owner decision 2026-08-26 — offering it again only invited a duplicate log). The decision is one pure kernel, `lib/session-pick.ts`, shared by both entry points. It used to list every slot of the whole program — no day, no state — so a pick from week 6 logged week 6's prescription against a week-1 rest day. No freehand entries, no library browsing, no externally-defined workouts. `components/client-portal/training/session-picker.tsx`.
 

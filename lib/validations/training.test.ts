@@ -5,7 +5,6 @@ import {
   updateTrainingPlanSchema,
   parseGetPlanResponse,
   logTrainingEventSchema,
-  logSessionForDateSchema,
   bulkExerciseInputSchema,
   overwriteSavedPlanSchema,
   inlinePlanBodySchema,
@@ -424,31 +423,6 @@ describe('Training Validation Schemas', () => {
         ],
       })
       expect(result.success).toBe(true)
-    })
-
-    // The same shape reaches the event-less endpoint via exercisePerformanceSchema.
-    it('applies the same set rules to logSessionForDateSchema', () => {
-      const base = {
-        date: '2026-08-24',
-        performedSessionId: '00000000-0000-0000-0000-000000000009',
-        completionQuality: 'full' as const,
-      }
-      expect(
-        logSessionForDateSchema.safeParse({
-          ...base,
-          exercises: [
-            { exerciseName: 'Bench Press', sets: [{ reps: 5 }], weightUnit: 'kg' },
-          ],
-        }).success,
-      ).toBe(false)
-      expect(
-        logSessionForDateSchema.safeParse({
-          ...base,
-          exercises: [
-            { exerciseName: 'Bench Press', sets: [{ setNumber: 1, reps: 5 }], weightUnit: 'kg' },
-          ],
-        }).success,
-      ).toBe(true)
     })
   })
 

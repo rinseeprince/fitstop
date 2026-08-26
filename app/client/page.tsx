@@ -112,7 +112,6 @@ function ClientHomePageInner() {
           <TrainingCardSummary
             events={data.data.training}
             date={date}
-            trainedFor={data.data.trainedFor}
           />
           <NutritionCardSummary nutrition={data.data.nutrition} date={date} />
           <WellnessCardSummary wellness={data.data.wellness} date={date} />
