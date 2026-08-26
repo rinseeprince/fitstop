@@ -162,44 +162,6 @@ export type UpdateSessionRequest = {
   calorieSurplusPercentage?: number | null;
 };
 
-export type UpdateExerciseRequest = {
-  name?: string;
-  sets?: number;
-  repsMin?: number | null;
-  repsMax?: number | null;
-  repsTarget?: string | null;
-  rpeTarget?: number | null;
-  percentage1rm?: number | null;
-  tempo?: string | null;
-  restSeconds?: number | null;
-  notes?: string | null;
-  supersetGroup?: string | null;
-  isWarmup?: boolean;
-  setSpecs?: SetSpec[] | null;
-  videoUrl?: string | null;
-  // Prescription columns the coach uses (migration 149). null/absent = all five.
-  prescribedFields?: string[] | null;
-};
-
-export type AddExerciseRequest = {
-  name: string;
-  sets: number;
-  repsMin?: number | null;
-  repsMax?: number | null;
-  repsTarget?: string | null;
-  rpeTarget?: number | null;
-  percentage1rm?: number | null;
-  tempo?: string | null;
-  restSeconds?: number | null;
-  notes?: string | null;
-  supersetGroup?: string | null;
-  isWarmup?: boolean;
-  setSpecs?: SetSpec[] | null;
-  videoUrl?: string | null;
-  // Prescription columns the coach uses (migration 149). null/absent = all five.
-  prescribedFields?: string[] | null;
-};
-
 // Manual session being built (before saving)
 export type ManualSessionDraft = {
   tempId: string;

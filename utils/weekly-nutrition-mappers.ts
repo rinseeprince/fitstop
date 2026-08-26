@@ -1,6 +1,5 @@
 import type { DailyLog } from "@/types/daily-log";
-import type { WeeklyNutritionSummary, WeeklyAdherenceStatus } from "@/types/weekly-nutrition";
-import type { Database } from "@/types/database";
+import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
 
 /** Shape of a row from the nutrition_logs table (select subset). */
 export type NutritionRow = {
@@ -36,35 +35,5 @@ export function mapNutritionRowToDailyLog(r: NutritionRow): DailyLog {
     nutritionAdherence: undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
-  };
-}
-
-type NWSRow = Database["public"]["Tables"]["nutrition_weekly_summaries"]["Row"];
-
-/** Maps a nutrition_weekly_summaries DB row to a WeeklyNutritionSummary. */
-export function mapRowToSummary(row: NWSRow): WeeklyNutritionSummary {
-  return {
-    id: row.id,
-    clientId: row.client_id,
-    weekStartDate: row.week_start_date,
-    weekEndDate: row.week_end_date ?? row.week_start_date,
-    totalTargetCalories: row.weekly_calorie_target,
-    totalTargetProteinG: row.weekly_protein_target_g,
-    totalTargetCarbsG: row.weekly_carbs_target_g,
-    totalTargetFatG: row.weekly_fat_target_g,
-    totalCaloriesConsumed: row.total_calories_consumed,
-    totalProteinConsumedG: row.total_protein_consumed_g,
-    totalCarbsConsumedG: row.total_carbs_consumed_g,
-    totalFatConsumedG: row.total_fat_consumed_g,
-    calorieDifference: row.calorie_difference,
-    adherencePercentage: row.adherence_percentage,
-    weeklyAdherence: row.weekly_adherence as WeeklyAdherenceStatus | null,
-    daysInWeek: row.total_days ?? 7,
-    daysLogged: row.days_logged ?? 0,
-    daysOnTarget: row.days_on_target ?? 0,
-    daysOver: row.days_over ?? 0,
-    daysUnder: row.days_under ?? 0,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
   };
 }

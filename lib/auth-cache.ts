@@ -69,21 +69,6 @@ export async function getCachedCoachId(
   return getCachedAuthValue("authmap:coach:" + userId, loader);
 }
 
-export type CachedClientWithCheckInDay = {
-  clientId: string;
-  checkInDay: string | null;
-};
-
-/**
- * Read-through cache for the user -> { client-id, check-in day } mapping.
- */
-export async function getCachedClientWithCheckInDay(
-  userId: string,
-  loader: () => Promise<CachedClientWithCheckInDay | null>,
-): Promise<CachedClientWithCheckInDay | null> {
-  return getCachedAuthValue("authmap:clientcid:" + userId, loader);
-}
-
 /**
  * Invalidate a user's cached auth mappings. Call this on client deactivation:
  * the mapping is cached only while the client was active, so without a bust a

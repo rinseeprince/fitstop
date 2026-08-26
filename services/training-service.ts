@@ -8,7 +8,6 @@ import { coversDate } from "./training-plan-window";
 
 // Re-export moved functions so existing imports continue to work
 export { updateSession, deleteSession, getSessionWithExercises, updateSurplusForFutureEvents } from "./training-session-service";
-export { updateExercise, addExercise, deleteExercise } from "./training-exercise-service";
 
 // Fetch sessions with exercises for a plan (shared helper)
 const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSession[]> => {

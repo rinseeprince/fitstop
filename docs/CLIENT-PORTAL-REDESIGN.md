@@ -287,7 +287,7 @@ of `CLIENT-PORTAL-EXECUTION-PLAN.md` (Sessions 8.1-8.3) is superseded with it.
 
 ## Existing assets to reuse
 
-- `services/training-event-service.ts`: `getEventForDate`, `getEventForSessionAndDate`, `linkSessionLogToEvent`, `mapCompletionQualityToEventStatus`.
+- `services/training-event-service.ts`: `getEventForDate`, `linkSessionLogToEvent`, `mapCompletionQualityToEventStatus`.
 - `lib/date-helpers.ts`: `getTodayDateString`, `getTrainingWeekStart`, `getDateString`. Replace every `.split('T')[0]` with `getDateString`.
 - `components/client/onboarding/client-waiting-state.tsx`: the "waiting for coach" empty state exists already.
 - `components/client/walkthrough/guided-walkthrough.tsx`: update copy and steps; do not rebuild the trigger logic.

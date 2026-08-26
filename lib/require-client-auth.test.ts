@@ -16,13 +16,9 @@ vi.mock('@/lib/csrf-protection', () => ({
 
 vi.mock('@/lib/auth-helpers', () => ({
   getAuthenticatedClientId: vi.fn(),
-  getAuthenticatedClientWithCheckInDay: vi.fn(),
 }))
 
-import {
-  requireClientAuth,
-  requireClientAuthWithCheckInDay,
-} from './require-client-auth'
+import { requireClientAuth } from './require-client-auth'
 import {
   clientApiRateLimit,
   clientPerClientRateLimit,
@@ -32,10 +28,7 @@ import {
   authRateLimit,
 } from '@/lib/rate-limit'
 import { requireCSRFProtection } from '@/lib/csrf-protection'
-import {
-  getAuthenticatedClientId,
-  getAuthenticatedClientWithCheckInDay,
-} from '@/lib/auth-helpers'
+import { getAuthenticatedClientId } from '@/lib/auth-helpers'
 
 function makeRequest(method = 'POST'): NextRequest {
   return new NextRequest('http://localhost/api/client/test', { method })
@@ -180,88 +173,5 @@ describe('requireClientAuth', () => {
 
     expect(authRateLimit).toHaveBeenCalledTimes(1)
     expect(clientApiRateLimit).not.toHaveBeenCalled()
-  })
-})
-
-describe('requireClientAuthWithCheckInDay', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    vi.mocked(clientApiRateLimit).mockResolvedValue(null)
-    vi.mocked(clientPerClientRateLimit).mockResolvedValue(null)
-    vi.mocked(requireCSRFProtection).mockResolvedValue(null)
-    vi.mocked(getAuthenticatedClientWithCheckInDay).mockResolvedValue({
-      clientId: 'client-123',
-      checkInDay: 'monday',
-    })
-  })
-
-  it('returns ok with clientId and checkInDay on happy path', async () => {
-    const result = await requireClientAuthWithCheckInDay(makeRequest())
-
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.clientId).toBe('client-123')
-      expect(result.checkInDay).toBe('monday')
-    }
-  })
-
-  it('applies the per-client tier once with authed.clientId on happy path', async () => {
-    await requireClientAuthWithCheckInDay(makeRequest())
-
-    expect(clientPerClientRateLimit).toHaveBeenCalledTimes(1)
-    expect(clientPerClientRateLimit).toHaveBeenCalledWith(
-      expect.anything(),
-      'client-123',
-    )
-  })
-
-  it('returns the per-client 429 after auth resolves (post-auth ordering)', async () => {
-    const perClientResponse = NextResponse.json(
-      { error: 'Too many requests' },
-      { status: 429 },
-    )
-    vi.mocked(clientPerClientRateLimit).mockResolvedValue(perClientResponse)
-
-    const result = await requireClientAuthWithCheckInDay(makeRequest())
-
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.response).toBe(perClientResponse)
-    }
-    expect(getAuthenticatedClientWithCheckInDay).toHaveBeenCalledTimes(1)
-  })
-
-  it('does NOT run the per-client tier when the IP guard trips first', async () => {
-    vi.mocked(clientApiRateLimit).mockResolvedValue(
-      NextResponse.json({ error: 'Too many requests' }, { status: 429 }),
-    )
-
-    const result = await requireClientAuthWithCheckInDay(makeRequest())
-
-    expect(result.ok).toBe(false)
-    expect(getAuthenticatedClientWithCheckInDay).not.toHaveBeenCalled()
-    expect(clientPerClientRateLimit).not.toHaveBeenCalled()
-  })
-
-  it('returns 401 when unauthenticated', async () => {
-    vi.mocked(getAuthenticatedClientWithCheckInDay).mockResolvedValue(null)
-
-    const result = await requireClientAuthWithCheckInDay(makeRequest())
-
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.response.status).toBe(401)
-    }
-  })
-
-  it('short-circuits on rate limit before touching auth', async () => {
-    vi.mocked(clientApiRateLimit).mockResolvedValue(
-      NextResponse.json({ error: 'Too many' }, { status: 429 }),
-    )
-
-    const result = await requireClientAuthWithCheckInDay(makeRequest())
-
-    expect(result.ok).toBe(false)
-    expect(getAuthenticatedClientWithCheckInDay).not.toHaveBeenCalled()
   })
 })

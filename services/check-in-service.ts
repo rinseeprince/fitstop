@@ -3,11 +3,10 @@ import type {
   CheckIn,
   CheckInFormData,
   CheckInStatus,
-  CheckInWithDailyLogCounts,
   CheckInReview,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
-import { getDateString, dateStringToDayNumber, getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
+import { getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
 import type { CheckInCursor } from "@/lib/cursor";
 import { insertExerciseHighlights } from "./check-in-details-service";
 import { getCheckInTrainingPeriodStats } from "./check-in-context-service";
@@ -179,7 +178,6 @@ export const getClientCheckIns = async (
     limit?: number;
     offset?: number;
     status?: CheckInStatus;
-    includeDailyLogCounts?: boolean;
     // Keyset pagination (the client list's native contract). `keyset: true` selects
     // keyset mode even for the first page (no cursor); `cursor` pages to older rows
     // on (created_at, id) and is pre-validated via lib/cursor.decodeCursor, so its
@@ -189,7 +187,7 @@ export const getClientCheckIns = async (
     cursor?: CheckInCursor;
   }
 ): Promise<{
-  checkIns: (CheckIn | CheckInWithDailyLogCounts)[];
+  checkIns: CheckIn[];
   total: number;
   nextCursor: CheckInCursor | null;
 }> => {
@@ -252,131 +250,12 @@ export const getClientCheckIns = async (
 
   const checkIns = rows.map(mapCheckInRow);
 
-  // If daily log counts are requested, fetch them for the whole page in one query.
-  if (options?.includeDailyLogCounts && checkIns.length > 0) {
-    const enriched: CheckInWithDailyLogCounts[] = await enrichWithDailyLogCounts(checkIns, clientId);
-    return { checkIns: enriched, total: count || 0, nextCursor };
-  }
-
   return {
     checkIns,
     total: count || 0,
     nextCursor,
   };
 };
-
-// Enrich check-ins with daily-log counts for each check-in's period.
-//
-// Each period is contiguous with the next: period(i).start = period(i+1).end + 1
-// day (the older check-in's date), so a page's periods tile [oldest start, newest
-// end] with no gap and no overlap. That lets us replace the previous N parallel
-// COUNT round-trips (one per check-in) with a SINGLE bounded fetch of the page's
-// logged dates, then bucket them in JS — O(P + D).
-//
-// `expectedDays` is still derived from the raw timestamp delta (not the date-string
-// span) so same-day / DST cases match the previous behavior exactly. Same-day
-// check-ins produce an inverted period (start > end); those count 0 and consume no
-// dates — daily_logs UNIQUE(client_id, date) guarantees the shared day is counted
-// once, by the older period that actually spans it.
-async function enrichWithDailyLogCounts(
-  checkIns: CheckIn[],
-  clientId: string
-): Promise<CheckInWithDailyLogCounts[]> {
-  // Activation date: clamps the oldest check-in's period to a partial first week so
-  // its denominator matches the check-in form (never counts pre-activation days).
-  const { data: clientRow, error: activationError } = await supabaseAdmin
-    .from("clients")
-    .select("start_date")
-    .eq("id", clientId)
-    .maybeSingle();
-  // Loud fallback: a swallowed fetch error silently disables the clamp, so the
-  // oldest period would count pre-activation days the form never shows.
-  if (activationError) {
-    console.error(
-      "enrichWithDailyLogCounts: client start_date fetch failed, activation clamp disabled",
-      activationError
-    );
-  }
-  const activationMs = clientRow?.start_date
-    ? new Date(clientRow.start_date + "T00:00:00").getTime()
-    : null;
-
-  const periods = checkIns.map((currentCheckIn, i) => {
-    const previousCheckIn = i < checkIns.length - 1 ? checkIns[i + 1] : null;
-
-    const endDate = new Date(currentCheckIn.createdAt);
-    let startDate: Date;
-
-    if (previousCheckIn) {
-      startDate = new Date(previousCheckIn.createdAt);
-      startDate.setDate(startDate.getDate() + 1);
-    } else {
-      startDate = new Date(endDate);
-      startDate.setDate(startDate.getDate() - 6);
-    }
-    // Partial first week: never reach before the client was activated.
-    if (activationMs != null && startDate.getTime() < activationMs) {
-      startDate = new Date(activationMs);
-    }
-
-    const daysDiff = Math.floor(
-      (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-    ) + 1;
-
-    const startStr = getDateString(startDate);
-    const endStr = getDateString(endDate);
-
-    return {
-      startStr,
-      endStr,
-      startNum: dateStringToDayNumber(startStr),
-      endNum: dateStringToDayNumber(endStr),
-      expectedDays: Math.max(daysDiff, 1),
-    };
-  });
-
-  // checkIns are newest-first: periods[0] holds the newest end, and the oldest
-  // check-in (last) holds the oldest start (its fixed -6 day lookback is always the
-  // minimum). One spine-only query for the page's logged dates.
-  const rangeStart = periods[periods.length - 1].startStr;
-  const rangeEnd = periods[0].endStr;
-
-  const { data, error } = await supabaseAdmin
-    .from("daily_logs")
-    .select("date")
-    .eq("client_id", clientId)
-    .gte("date", rangeStart)
-    .lte("date", rangeEnd)
-    .order("date", { ascending: false });
-
-  if (error) {
-    throw new Error(`Failed to fetch daily log counts: ${error.message}`);
-  }
-
-  // Dates newest-first as day numbers, aligned with the newest-first periods so a
-  // single forward two-pointer pass buckets every date in O(P + D).
-  const dateNums = (data || []).map((row) => dateStringToDayNumber(row.date));
-
-  const counts = new Array(periods.length).fill(0);
-  let di = 0;
-  for (let pi = 0; pi < periods.length; pi++) {
-    const { startNum, endNum } = periods[pi];
-    // Skip dates newer than this period's end (none for pi=0 given lte(rangeEnd)).
-    while (di < dateNums.length && dateNums[di] > endNum) di++;
-    // Count dates within [startNum, endNum]. An inverted period (startNum > endNum,
-    // i.e. same-day check-ins) matches zero rows and advances the pointer nothing.
-    while (di < dateNums.length && dateNums[di] <= endNum && dateNums[di] >= startNum) {
-      counts[pi]++;
-      di++;
-    }
-  }
-
-  return checkIns.map((currentCheckIn, i) => ({
-    ...currentCheckIn,
-    dailyLogsCount: counts[i],
-    expectedDays: periods[i].expectedDays,
-  }));
-}
 
 // Get the first (oldest) check-in for a client
 export const getFirstCheckIn = async (

@@ -152,35 +152,6 @@ export async function materializeNutritionEventDays(
 }
 
 /**
- * Reset a coach-edited day back to auto. Clears `is_modified` FIRST (order
- * matters — the regenerator's protected-days filter skips `is_modified` rows,
- * so a day reset after the regen would be skipped and never re-derived), then
- * regenerates exactly that date so the now-unfrozen day is re-derived from the
- * plan. Other edited/logged days are untouched because they are not in the
- * date list at all. A `coach_note` on the day survives via the generator's
- * carry-forward; `note` is cleared here, and the upsert payload omits it.
- */
-export async function resetNutritionEvent(
-  clientId: string,
-  date: string,
-  activePlanId: string
-): Promise<void> {
-  const { error } = await supabaseAdmin
-    .from("nutrition_events")
-    .update({ is_modified: false, note: null, updated_at: new Date().toISOString() })
-    .eq("client_id", clientId)
-    .eq("date", date)
-    .eq("status", "scheduled");
-
-  if (error) throw error;
-
-  await regenerateFutureNutritionEvents(clientId, activePlanId, {
-    kind: "dates",
-    dates: [date],
-  });
-}
-
-/**
  * Reset a LIST of coach-edited days back to auto in one call: clear `is_modified`
  * on every today-forward scheduled day in `dates`, then regenerate exactly those
  * days from the plan. A scattered selection resets exactly the chosen days and

@@ -170,44 +170,6 @@ export function suggestExerciseCandidates(
 }
 
 /**
- * Resolve a single exercise name to an exercise ID.
- * Pipeline: exact match → alias match → abbreviation-normalize & retry → create new.
- */
-export async function resolveExercise(
-  name: string,
-  coachId: string
-): Promise<string> {
-  const trimmed = name.trim();
-  const lower = trimmed.toLowerCase();
-  const normalized = normalizeExerciseName(trimmed);
-
-  // Fetch all exercises for this coach + global, ordered coach-first
-  const rows = await fetchCatalogRowsForResolve(coachId);
-
-  // Step 1: Exact name match
-  const exactMatch = findMatch(rows, lower);
-  if (exactMatch) return exactMatch.id;
-
-  // Step 2: Abbreviation-normalized match (only if different from original)
-  if (normalized !== lower) {
-    const normalizedMatch = findMatch(rows, normalized);
-    if (normalizedMatch) return normalizedMatch.id;
-  }
-
-  // Step 3: No match — create new coach-specific exercise
-  const { data: newExercise, error: insertError } = await supabaseAdmin
-    .from("exercises")
-    .insert({ coach_id: coachId, name: trimmed })
-    .select()
-    .single();
-
-  if (insertError)
-    throw new Error(`Failed to create exercise: ${insertError.message}`);
-
-  return newExercise.id;
-}
-
-/**
  * Batch resolve multiple exercise names to exercise IDs.
  * Fetches all coach + global exercises in one query, matches in memory,
  * batch-inserts missing ones.

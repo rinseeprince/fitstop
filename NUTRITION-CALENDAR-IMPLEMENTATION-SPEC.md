@@ -108,7 +108,7 @@ Dead code to remove: `markNutritionEventLogged` / `markMissedNutritionEvents` (z
 |----------|---------|-------|
 | `GET /api/clients/[id]/nutrition/events?startDate&endDate` | Coach calendar ranged read | Thin wrap of existing `getNutritionEventsForDateRange` |
 | `PATCH /api/clients/[id]/nutrition/events/range` | Multi-day edit: apply absolute or delta to a date range | **Today-forward gate** server-side via `canEditDay`; materializes per §3; `is_modified=true` |
-| `PATCH /api/clients/[id]/nutrition/events/[date]/reset` | Reset day(s) back to auto | Sets `is_modified=false`, regenerates those dates from the plan |
+| `PATCH /api/clients/[id]/nutrition/events/[date]/reset` | Reset day(s) back to auto | Sets `is_modified=false`, regenerates those dates from the plan. **Single-date route removed 2026-08-26 (dead-code sweep): it never had a caller — the bulk `PATCH …/nutrition/events/reset` (`resetNutritionEventDays`) is the live reset path.** |
 | `app/api/clients/[id]/nutrition/route.ts` | Remove the planned-preview block; keep plan-create (now in-place) | |
 | `app/api/clients/[id]/nutrition/skew/route.ts` | **Repoint to the range-edit path** or delete | Must NOT touch `base_weight_kg` (D5) |
 

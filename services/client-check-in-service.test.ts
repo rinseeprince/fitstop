@@ -31,7 +31,7 @@ vi.mock('./daily-habits-service', () => ({
 }))
 
 vi.mock('./weekly-nutrition-service', () => ({
-  getWeeklySummaries: vi.fn(),
+  getNutritionSummaryForPeriod: vi.fn(),
 }))
 
 vi.mock('@/services/check-in-context-service', () => ({
@@ -62,8 +62,8 @@ import {
 } from './check-in-service'
 import { getDailyLogs } from './daily-logs-service'
 import { getHabitLogs } from './daily-habits-service'
-import { getWeeklySummaries } from './weekly-nutrition-service'
-import { getTrainingEventDetailsForPeriod } from '@/services/check-in-context-service'
+import { getNutritionSummaryForPeriod } from './weekly-nutrition-service'
+import { getTrainingEventDetailsForPeriod, getExerciseSummariesForPeriod } from '@/services/check-in-context-service'
 import { getClientById, updateClient } from './client-service'
 import { supabaseAdmin } from './supabase-admin'
 import { recordBodyMetrics } from './body-metrics-service'
@@ -114,8 +114,9 @@ describe('Client Check-in Service', () => {
       vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
-      vi.mocked(getWeeklySummaries).mockResolvedValue([])
+      vi.mocked(getNutritionSummaryForPeriod).mockResolvedValue(null)
       vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([])
+      vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map())
 
       // Act
       await triggerAISummaryGeneration(mockCheckInId, mockClientId, mockClientName)
@@ -127,16 +128,16 @@ describe('Client Check-in Service', () => {
         mockCurrentCheckIn,
         mockPreviousCheckIns,
         mockClientName,
-        undefined,
-        undefined,
-        expect.any(Date),
-        expect.any(Date),
-        null,
-        null,
-        // trainingEventDetails: the daily-tracking fetch throws (getNutritionSummaryForPeriod
-        // is unmocked), so the catch sets this to the [] default.
+        // Daily tracking resolves (all four period reads are mocked): empty logs,
+        // real period bounds, no nutrition summary, no event details.
         [],
-        // exerciseSummaries (Session 6.3): empty Map default from the same catch.
+        [],
+        expect.any(Date),
+        expect.any(Date),
+        null,
+        null,
+        [],
+        // exerciseSummaries (Session 6.3): the mocked empty Map.
         expect.any(Map),
         // The COACH's unit — this path is client-authenticated, but the coach is
         // who reads the summary.
@@ -175,7 +176,9 @@ describe('Client Check-in Service', () => {
       vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
-      vi.mocked(getWeeklySummaries).mockResolvedValue([])
+      vi.mocked(getNutritionSummaryForPeriod).mockResolvedValue(null)
+      vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([])
+      vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map())
 
       // Act
       await triggerAISummaryGeneration(mockCheckInId, mockClientId, mockClientName)
@@ -185,8 +188,8 @@ describe('Client Check-in Service', () => {
         mockCurrentCheckIn,
         mockPreviousCheckIns, // Should not include current check-in
         mockClientName,
-        undefined,
-        undefined,
+        [],
+        [],
         expect.any(Date),
         expect.any(Date),
         null,
@@ -207,7 +210,9 @@ describe('Client Check-in Service', () => {
       } as any)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
-      vi.mocked(getWeeklySummaries).mockResolvedValue([])
+      vi.mocked(getNutritionSummaryForPeriod).mockResolvedValue(null)
+      vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([])
+      vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map())
       vi.mocked(generateCheckInSummary).mockRejectedValue(mockError)
 
       // Act & Assert
@@ -244,7 +249,9 @@ describe('Client Check-in Service', () => {
       vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
-      vi.mocked(getWeeklySummaries).mockResolvedValue([])
+      vi.mocked(getNutritionSummaryForPeriod).mockResolvedValue(null)
+      vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([])
+      vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map())
 
       // Act
       await triggerAISummaryGeneration(mockCheckInId, mockClientId, mockClientName)
@@ -254,8 +261,8 @@ describe('Client Check-in Service', () => {
         mockCurrentCheckIn,
         [], // Empty array for no previous check-ins
         mockClientName,
-        undefined,
-        undefined,
+        [],
+        [],
         expect.any(Date),
         expect.any(Date),
         null,

@@ -151,19 +151,6 @@ export const getDateDaysFrom = (fromDate: Date, days: number): string => {
 };
 
 /**
- * Returns the Monday of the week containing the given date
- * @param {string} dateString - Date in YYYY-MM-DD format
- * @returns {string} Monday's date in YYYY-MM-DD format
- */
-export const getWeekStart = (dateString: string): string => {
-  const date = new Date(dateString + 'T00:00:00');
-  const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-  date.setDate(diff);
-  return getDateString(date);
-};
-
-/**
  * Returns the Sunday of the week containing the given date
  * @param {string} dateString - Date in YYYY-MM-DD format
  * @returns {string} Sunday's date in YYYY-MM-DD format
@@ -174,22 +161,6 @@ export const getWeekEnd = (dateString: string): string => {
   const diff = date.getDate() - day + 7;
   date.setDate(diff);
   return getDateString(date);
-};
-
-/**
- * Returns an array of 7 dates for the week containing the given date
- * @param {string} dateString - Date in YYYY-MM-DD format
- * @returns {string[]} Array of dates in YYYY-MM-DD format, Monday to Sunday
- */
-export const getWeekDays = (dateString: string): string[] => {
-  const monday = getWeekStart(dateString);
-  const days: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    const date = new Date(monday + 'T00:00:00');
-    date.setDate(date.getDate() + i);
-    days.push(getDateString(date));
-  }
-  return days;
 };
 
 /**

@@ -42,7 +42,6 @@ function createMockQuery<T = unknown>(result: {
 
 import { supabaseAdmin } from "./supabase-admin";
 import {
-  resolveExercise,
   resolveExercises,
   normalizeExerciseName,
   matchExerciseInRows,
@@ -90,127 +89,6 @@ describe("exercise-catalog-service", () => {
 
   // =========================================================================
   // resolveExercise
-  // =========================================================================
-
-  describe("resolveExercise", () => {
-    const coachId = "coach-1";
-
-    it("returns existing exercise ID on exact name match (case-insensitive)", async () => {
-      const mockQuery = createMockQuery({
-        data: [
-          {
-            id: "ex-1",
-            name: "Bench Press",
-            coach_id: coachId,
-            aliases: [],
-          },
-        ],
-        error: null,
-      });
-      mockFrom.mockReturnValue(mockQuery as any);
-
-      const result = await resolveExercise("bench press", coachId);
-
-      expect(result).toBe("ex-1");
-      expect(mockFrom).toHaveBeenCalledWith("exercises");
-      // Should not insert (only 1 call to from)
-      expect(mockFrom).toHaveBeenCalledTimes(1);
-    });
-
-    it("returns existing exercise ID on alias match", async () => {
-      const mockQuery = createMockQuery({
-        data: [
-          {
-            id: "ex-2",
-            name: "Barbell Back Squat",
-            coach_id: null,
-            aliases: ["back squat", "squat"],
-          },
-        ],
-        error: null,
-      });
-      mockFrom.mockReturnValue(mockQuery as any);
-
-      const result = await resolveExercise("back squat", coachId);
-
-      expect(result).toBe("ex-2");
-    });
-
-    it("normalizes abbreviations and matches", async () => {
-      const mockQuery = createMockQuery({
-        data: [
-          {
-            id: "ex-3",
-            name: "Dumbbell Bench Press",
-            coach_id: null,
-            aliases: [],
-          },
-        ],
-        error: null,
-      });
-      mockFrom.mockReturnValue(mockQuery as any);
-
-      const result = await resolveExercise("DB Bench Press", coachId);
-
-      expect(result).toBe("ex-3");
-    });
-
-    it("creates a new coach-specific exercise when no match found", async () => {
-      // First call: fetch returns empty
-      const fetchQuery = createMockQuery({
-        data: [],
-        error: null,
-      });
-      // Second call: insert returns new exercise
-      const insertQuery = createMockQuery({
-        data: { id: "new-ex-1", name: "Cable Fly", coach_id: coachId },
-        error: null,
-      });
-
-      mockFrom
-        .mockReturnValueOnce(fetchQuery as any)
-        .mockReturnValueOnce(insertQuery as any);
-
-      const result = await resolveExercise("Cable Fly", coachId);
-
-      expect(result).toBe("new-ex-1");
-      expect(mockFrom).toHaveBeenCalledTimes(2);
-      // Verify insert was called
-      expect(insertQuery.insert).toHaveBeenCalledWith({
-        coach_id: coachId,
-        name: "Cable Fly",
-      });
-    });
-
-    it("coach-specific exercises take precedence over global", async () => {
-      const mockQuery = createMockQuery({
-        data: [
-          // Coach-specific first (due to order by coach_id DESC NULLS LAST)
-          {
-            id: "ex-coach",
-            name: "Bench Press",
-            coach_id: coachId,
-            aliases: [],
-          },
-          {
-            id: "ex-global",
-            name: "Bench Press",
-            coach_id: null,
-            aliases: [],
-          },
-        ],
-        error: null,
-      });
-      mockFrom.mockReturnValue(mockQuery as any);
-
-      const result = await resolveExercise("bench press", coachId);
-
-      expect(result).toBe("ex-coach");
-    });
-  });
-
-  // =========================================================================
-  // resolveExercises (batch)
   // =========================================================================
 
   describe("resolveExercises", () => {

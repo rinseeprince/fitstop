@@ -23,25 +23,6 @@ export type WellnessHistoryRow = {
   is_logged?: boolean;
 };
 
-export type HabitMeta = {
-  id: string;
-  name: string;
-  is_boolean: boolean;
-  target_value: number | null;
-  target_unit: string | null;
-  is_active: boolean;
-  created_at: string;
-  effective_date: string;
-};
-
-export type HabitsHistoryRow = {
-  date: string;
-  habits: Record<string, { completed: boolean; value: number | null; notes: string | null }>;
-  total_completed: number;
-  total_habits: number;
-  [habitId: string]: unknown;
-};
-
 export type TrainingHistoryRow = {
   date: string;
   session_name: string;

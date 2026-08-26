@@ -7,8 +7,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getClientById, getClientsForCoach } from "./client-service";
 import { getDaysUntilOrPastDue } from "./check-in-tracking-service";
 import { differenceInHours } from "@/lib/date-helpers";
-import type { ReminderType, CheckInReminder } from "@/types/check-in";
-import type { CheckInReminderRow } from "@/lib/database-helpers";
+import type { ReminderType } from "@/types/check-in";
 
 /**
  * Send a check-in reminder to a client
@@ -154,44 +153,4 @@ export async function sendAutomatedReminders(
   }
 
   return { sent: sentCount, errors };
-}
-
-/**
- * Get all reminders for a client
- * @param clientId - Client ID
- * @param limit - Max number of reminders to return
- * @returns Array of reminders
- */
-export async function getClientReminders(
-  clientId: string,
-  limit: number = 50
-): Promise<CheckInReminder[]> {
-  const { data, error } = await supabaseAdmin
-    .from("check_in_reminders")
-    .select("*")
-    .eq("client_id", clientId)
-    .order("sent_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    throw new Error(`Failed to fetch reminders: ${error.message}`);
-  }
-
-  if (!data) {
-    return [];
-  }
-
-  return data.map((row: CheckInReminderRow) => ({
-    id: row.id,
-    clientId: row.client_id,
-    sentAt: row.sent_at ?? new Date().toISOString(),
-    reminderType: row.reminder_type as "upcoming" | "overdue" | "follow_up",
-    daysOverdue: row.days_overdue,
-    responded: row.responded ?? false,
-    respondedAt: row.responded_at ?? undefined,
-    checkInId: row.check_in_id ?? undefined,
-    sentVia: (row.sent_via ?? "system") as "manual" | "system",
-    notes: row.notes ?? undefined,
-    createdAt: row.created_at ?? new Date().toISOString(),
-  }));
 }

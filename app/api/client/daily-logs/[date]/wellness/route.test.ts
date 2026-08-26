@@ -14,7 +14,6 @@ vi.mock("@/lib/csrf-protection", () => ({
 }));
 vi.mock("@/lib/auth-helpers", () => ({
   getAuthenticatedClientId: vi.fn(),
-  getAuthenticatedClientWithCheckInDay: vi.fn(),
 }));
 vi.mock("@/services/daily-logs-service", () => ({
   getTodayLog: vi.fn(),

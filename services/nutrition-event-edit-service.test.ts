@@ -16,7 +16,6 @@ import { supabaseAdmin } from "./supabase-admin";
 import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import {
   materializeNutritionEventDays,
-  resetNutritionEvent,
   resetNutritionEventDays,
 } from "./nutrition-event-edit-service";
 
@@ -282,26 +281,6 @@ describe("nutrition-event-edit-service", () => {
       );
       const payload = updateSpy.mock.calls[0][0] as Record<string, unknown>;
       expect(payload).not.toHaveProperty("note");
-    });
-  });
-
-  describe("resetNutritionEvent (single)", () => {
-    it("clears is_modified BEFORE regenerating that date from the plan", async () => {
-      mockEvents([]);
-
-      await resetNutritionEvent(clientId, "2026-02-01", "plan-1");
-
-      expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ is_modified: false, note: null })
-      );
-      expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
-        clientId,
-        "plan-1",
-        { kind: "dates", dates: ["2026-02-01"] }
-      );
-      expect(updateSpy.mock.invocationCallOrder[0]).toBeLessThan(
-        vi.mocked(regenerateFutureNutritionEvents).mock.invocationCallOrder[0]
-      );
     });
   });
 

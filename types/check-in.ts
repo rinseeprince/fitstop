@@ -563,21 +563,6 @@ export type ProgressChartData = {
   soreness: ChartDataPoint[];
 };
 
-// Check-in reminder record
-export type CheckInReminder = {
-  id: string;
-  clientId: string;
-  sentAt: string;
-  reminderType: ReminderType;
-  daysOverdue: number | null;
-  responded: boolean;
-  respondedAt?: string;
-  checkInId?: string;
-  sentVia: "system" | "manual";
-  notes?: string;
-  createdAt: string;
-};
-
 // Extended client types for tracking
 export type ClientWithCheckInInfo = Client & {
   lastCheckInDate?: string;
@@ -621,12 +606,6 @@ export type UpdateCheckInConfigResponse = {
   client?: Client;
   errorMessage?: string;
 };
-
-export type GetClientRemindersResponse = {
-  reminders: CheckInReminder[];
-  total: number;
-};
-
 
 // Nutrition calculation request/response types
 export type GenerateNutritionPlanRequest = {
@@ -759,12 +738,6 @@ export type GetCheckInComparisonResponse = {
   comparison: CheckInComparison;
   goalProgress: GoalProgress;
   chartData: ProgressChartData;
-};
-
-// Check-in enriched with daily log counts for timeline display
-export type CheckInWithDailyLogCounts = CheckIn & {
-  dailyLogsCount: number;
-  expectedDays: number;
 };
 
 // Check-in with all related details for AI processing

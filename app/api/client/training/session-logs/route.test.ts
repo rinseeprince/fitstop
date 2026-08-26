@@ -16,7 +16,6 @@ vi.mock("@/lib/csrf-protection", () => ({
 
 vi.mock("@/lib/auth-helpers", () => ({
   getAuthenticatedClientId: vi.fn(),
-  getAuthenticatedClientWithCheckInDay: vi.fn(),
 }));
 
 const { NoActivePlanError, DayLockedError } = vi.hoisted(() => {

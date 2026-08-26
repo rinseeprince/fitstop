@@ -1,11 +1,7 @@
 import { createHash } from "crypto";
 import type { NextRequest } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import {
-  getCachedClientId,
-  getCachedClientWithCheckInDay,
-  getCachedCoachId,
-} from "@/lib/auth-cache";
+import { getCachedClientId, getCachedCoachId } from "@/lib/auth-cache";
 
 type AuthFailureReason =
   | "missing_session"
@@ -159,66 +155,6 @@ export async function getAuthenticatedClientId(
     return clientId;
   } catch (error) {
     console.error("Unexpected error in getAuthenticatedClientId:", error);
-    return null;
-  }
-}
-
-/**
- * Gets the authenticated client ID and check-in day from the current session.
- * Used by training-related routes that need the client's check-in day
- * to compute correct training week boundaries.
- * @param request Optional NextRequest used for structured auth-failure logging.
- */
-export async function getAuthenticatedClientWithCheckInDay(
-  request?: NextRequest
-): Promise<{
-  clientId: string;
-  checkInDay: string | null;
-} | null> {
-  try {
-    const supabase = await createServerSupabaseClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      logAuthFailure({ role: "client", reason: "invalid_session", request });
-      return null;
-    }
-    if (!user) {
-      logAuthFailure({ role: "client", reason: "missing_session", request });
-      return null;
-    }
-
-    return await getCachedClientWithCheckInDay(user.id, async () => {
-      // active=true excludes deactivated clients (H6) — see getAuthenticatedClientId.
-      const { data: client, error } = await supabase
-        .from("clients")
-        .select("id, expected_check_in_day")
-        .eq("user_id", user.id)
-        .eq("active", true)
-        .maybeSingle();
-
-      if (error) {
-        console.error("Error fetching client:", error.message);
-        logAuthFailure({ role: "client", reason: "db_error", request });
-        return null;
-      }
-
-      if (!client?.id) {
-        logAuthFailure({ role: "client", reason: "client_profile_not_found", request });
-        return null;
-      }
-
-      return {
-        clientId: client.id,
-        checkInDay: client.expected_check_in_day ?? null,
-      };
-    });
-  } catch (error) {
-    console.error("Unexpected error in getAuthenticatedClientWithCheckInDay:", error);
     return null;
   }
 }

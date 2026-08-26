@@ -8,7 +8,6 @@ export type TrainingExerciseRow = Database["public"]["Tables"]["training_exercis
 export type ExerciseRow = Database["public"]["Tables"]["exercises"]["Row"];
 
 export type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
-export type CheckInReminderRow = Database["public"]["Tables"]["check_in_reminders"]["Row"];
 export type ClientInvitationRow = Database["public"]["Tables"]["client_invitations"]["Row"];
 export type ContentFolderRow = Database["public"]["Tables"]["content_folders"]["Row"];
 export type ContentItemRow = Database["public"]["Tables"]["content_items"]["Row"];
@@ -35,7 +34,6 @@ export type TrainingPlanUpdate = Database["public"]["Tables"]["training_plans"][
 
 export type TrainingSessionUpdate = Database["public"]["Tables"]["training_sessions"]["Update"];
 
-export type TrainingExerciseUpdate = Database["public"]["Tables"]["training_exercises"]["Update"];
 export type TrainingEventRow = Database["public"]["Tables"]["training_events"]["Row"];
 export type TrainingEventInsert = Database["public"]["Tables"]["training_events"]["Insert"];
 export type NutritionEventRow = Database["public"]["Tables"]["nutrition_events"]["Row"];

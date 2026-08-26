@@ -8,10 +8,7 @@ import {
   clientPerClientRateLimit,
 } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import {
-  getAuthenticatedClientId,
-  getAuthenticatedClientWithCheckInDay,
-} from "@/lib/auth-helpers";
+import { getAuthenticatedClientId } from "@/lib/auth-helpers";
 
 type RateLimitTier = "client" | "api" | "checkIn" | "ai" | "auth";
 
@@ -21,15 +18,9 @@ interface Options {
 }
 
 type AuthOk = { ok: true; clientId: string };
-type AuthOkWithCheckInDay = {
-  ok: true;
-  clientId: string;
-  checkInDay: string | null;
-};
 type AuthFail = { ok: false; response: Response };
 
 export type ClientAuthResult = AuthOk | AuthFail;
-export type ClientAuthWithCheckInDayResult = AuthOkWithCheckInDay | AuthFail;
 
 /**
  * Runs the §8 auth chain for client-portal routes: rate limit → CSRF → auth.
@@ -61,33 +52,6 @@ export async function requireClientAuth(
   if (perClient) return { ok: false, response: perClient };
 
   return { ok: true, clientId };
-}
-
-/**
- * Variant that also returns the client's expected check-in day.
- * Used by training-related routes that compute week boundaries from it.
- *
- * The tight per-client tier (clientPerClientRateLimit) ALWAYS composes on top
- * of any `options.rateLimit` override — the override only swaps the pre-auth
- * (first) tier; it never replaces the post-auth per-client control.
- */
-export async function requireClientAuthWithCheckInDay(
-  request: NextRequest,
-  options: Options = {},
-): Promise<ClientAuthWithCheckInDayResult> {
-  const rateLimitResponse = await runRateLimit(request, options);
-  if (rateLimitResponse) return { ok: false, response: rateLimitResponse };
-
-  const csrfResponse = await requireCSRFProtection(request);
-  if (csrfResponse) return { ok: false, response: csrfResponse };
-
-  const authed = await getAuthenticatedClientWithCheckInDay(request);
-  if (!authed) return { ok: false, response: unauthorized() };
-
-  const perClient = await clientPerClientRateLimit(request, authed.clientId);
-  if (perClient) return { ok: false, response: perClient };
-
-  return { ok: true, clientId: authed.clientId, checkInDay: authed.checkInDay };
 }
 
 async function runRateLimit(

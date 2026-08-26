@@ -16,13 +16,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./exercise-catalog-service", () => ({
-  resolveExercise: vi.fn().mockResolvedValue("cat-1"),
   resolveExercises: vi.fn().mockResolvedValue(new Map<string, string>()),
 }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import { insertSavedExercises } from "./coach-library-helpers";
-import { addExercise, updateExercise } from "./training-exercise-service";
 import { saveSessionFromCalendar } from "./coach-library-calendar-service";
 import { overwriteSavedPlan } from "./coach-saved-plan-service";
 
@@ -93,29 +91,6 @@ describe("set_specs / video_url survival matrix", () => {
     expect((ex.inserts[0] as Record<string, unknown>[])[0]).toMatchObject({
       set_specs: SPECS, video_url: VIDEO, prescribed_fields: [...FIELDS], sets: 3, reps_min: 6, reps_max: 8,
     });
-  });
-
-  it("INPUT — addExercise (applied side)", async () => {
-    const ex = tableMock({ single: { data: { id: "new" }, error: null } });
-    mockFrom.mockImplementation(() => ex.base as never);
-
-    await addExercise("sess-1", { name: "Bench", sets: 99, setSpecs: SPECS as never, videoUrl: VIDEO, prescribedFields: [...FIELDS] }, "coach-1");
-
-    expectInputProjection(ex.inserts[0] as Record<string, unknown>);
-  });
-
-  it("INPUT — updateExercise (applied side)", async () => {
-    const ex = tableMock({ single: { data: { id: "x" }, error: null } });
-    mockFrom.mockImplementation(() => ex.base as never);
-
-    await updateExercise("ex-1", { setSpecs: SPECS as never, videoUrl: VIDEO, prescribedFields: [...FIELDS] });
-
-    const patch = ex.updates[0] as Record<string, unknown>;
-    expect(patch.set_specs).toEqual(SPECS);
-    expect(patch.video_url).toBe(VIDEO);
-    expect(patch.sets).toBe(3);
-    expect(patch.reps_min).toBe(6);
-    expect(patch.reps_max).toBe(8);
   });
 
   it("CLONE — saveSessionFromCalendar splats set_specs/video_url verbatim", async () => {

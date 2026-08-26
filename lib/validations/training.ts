@@ -53,9 +53,6 @@ export const updateTrainingPlanSchema = z.object({
 
 export const updateSessionSchema = sessionSchema.partial();
 
-// updateExerciseSchema lives below setSpecsArraySchema/videoUrlSchema — it needs
-// both at module-load time.
-
 // =============================================================================
 // Coach library (saved-plan / saved-session) mutation schemas
 // =============================================================================
@@ -130,16 +127,6 @@ export const videoUrlSchema = z
   .max(500)
   .refine((u) => /^https?:\/\//i.test(u), { message: "Video URL must be http(s)" })
   .nullish();
-
-// The single-exercise PATCH must carry setSpecs/videoUrl: the service writes
-// through projectExerciseCompact, which writes whatever it receives — a schema
-// that strips these fields silently NULLs the coach's per-set programming on
-// every save. (exerciseSchema itself predates the set model and never had them.)
-export const updateExerciseSchema = exerciseSchema.partial().extend({
-  setSpecs: setSpecsArraySchema.nullish(),
-  videoUrl: videoUrlSchema,
-  prescribedFields: prescribedFieldsSchema,
-});
 
 export const savedExerciseInputSchema = z.object({
   name: z.string().min(1).max(200),
