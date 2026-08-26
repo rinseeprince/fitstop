@@ -12,12 +12,13 @@ import {
   rethrowIfDateOccupied,
   DateOccupiedError,
   SessionLoggedError,
+  hasCompletedWorkoutOn,
 } from "./training-event-occupancy";
 
-/** Mirrors the PostgREST chain assertDateFree builds: select→eq→eq→[neq]→limit. */
+/** Mirrors the PostgREST chains built here: select→eq→eq→[neq|in]→limit. */
 function mockQuery(result: { data: unknown[] | null; error: { message: string } | null }) {
   const q: Record<string, unknown> = {};
-  for (const method of ["select", "eq", "neq"]) {
+  for (const method of ["select", "eq", "neq", "in"]) {
     q[method] = vi.fn().mockReturnValue(q);
   }
   q.limit = vi.fn().mockResolvedValue(result);
@@ -254,5 +255,24 @@ describe("assertSessionUnlogged", () => {
     const call = assertSessionUnlogged(SESSION_ID, CLIENT_ID);
     await expect(call).rejects.toThrow(/Failed to fetch session events/);
     await expect(call).rejects.not.toBeInstanceOf(SessionLoggedError);
+  });
+});
+
+describe("hasCompletedWorkoutOn", () => {
+  it("is true when a completed or partial event sits on the day, false when the day is clear", async () => {
+    vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery({ data: [{ id: "ev-1" }], error: null }) as never);
+    await expect(hasCompletedWorkoutOn("c1", "2026-05-08")).resolves.toBe(true);
+
+    vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery({ data: [], error: null }) as never);
+    await expect(hasCompletedWorkoutOn("c1", "2026-05-08")).resolves.toBe(false);
+  });
+
+  it("filters on the client, the date and the logged statuses only", async () => {
+    const q = mockQuery({ data: [], error: null });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(q as never);
+    await hasCompletedWorkoutOn("c1", "2026-05-08");
+    expect(q.eq).toHaveBeenCalledWith("client_id", "c1");
+    expect(q.eq).toHaveBeenCalledWith("date", "2026-05-08");
+    expect(q.in).toHaveBeenCalledWith("status", ["completed", "partial"]);
   });
 });

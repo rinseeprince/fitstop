@@ -5,6 +5,7 @@ vi.mock("@/services/training-event-occupancy", () => ({
   // The route imports this only for the error class; the real module pulls in
   // supabase-admin at load, which has no env in tests.
   DateOccupiedError: class DateOccupiedError extends Error {},
+  hasCompletedWorkoutOn: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("@/services/client-service", () => ({
@@ -51,6 +52,7 @@ import {
   placeInlineEditedPlanOnCalendar,
 } from "@/services/library-placement-service";
 import { getClientTodayString } from "@/services/today-service";
+import { hasCompletedWorkoutOn } from "@/services/training-event-occupancy";
 import { POST } from "./route";
 
 const clientId = "client-1";
@@ -134,6 +136,21 @@ describe("POST /api/clients/[id]/training/place-from-library start-date guard", 
         clientId,
       })
     );
+  });
+
+  it("warns (409) when the start day already has a completed workout, and places when the coach says start anyway", async () => {
+    vi.mocked(hasCompletedWorkoutOn).mockResolvedValueOnce(true);
+    const warned = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15" });
+    expect(warned.status).toBe(409);
+    expect((await warned.json()).error).toBe("start_day_has_completed_workout");
+    expect(placePlanOnCalendar).not.toHaveBeenCalled();
+
+    // startAnyway skips the check entirely (no second query), so nothing is
+    // queued here — a leftover mockResolvedValueOnce would leak into the next test.
+    const forced = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15", startAnyway: true });
+    expect(forced.status).toBe(200);
+    expect(hasCompletedWorkoutOn).toHaveBeenCalledTimes(1);
+    expect(placePlanOnCalendar).toHaveBeenCalledTimes(1);
   });
 
   it("allows a future start date", async () => {

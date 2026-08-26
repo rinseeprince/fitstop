@@ -101,6 +101,27 @@ export async function assertDateFree(
  * Postgres error rather than being skipped (CONVENTIONS §10: never show a coach
  * "duplicate key value violates unique constraint").
  */
+/**
+ * Does the client already have a COMPLETED (or partial) workout on `date`?
+ * Whole-program placement starts on a day the coach picks; when that day already
+ * holds a logged session the placed program's first session lands beside it and
+ * the client's day shows two workouts. The place route asks this and answers
+ * with a warn-first 409 ("start anyway?") rather than silently stacking them.
+ * Status-scoped, unlike `assertDateFree`: a scheduled/missed/skipped row on the
+ * day is the placement's own business (it clears future scheduled rows first).
+ */
+export async function hasCompletedWorkoutOn(clientId: string, date: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("training_events")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("date", date)
+    .in("status", ["completed", "partial"])
+    .limit(1);
+  if (error) throw new Error(`Failed to check the start day's workouts: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
 export function rethrowIfDateOccupied(error: unknown, date: string): void {
   if (isOccupancyViolation(error)) throw new DateOccupiedError(occupiedMessage(date));
 }

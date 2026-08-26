@@ -79,6 +79,9 @@ export function ApplyToClientDialog({
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
   const [startDate, setStartDate] = useState(getNextMonday());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // The route's warn-first 409: the chosen start day already holds a completed
+  // workout. Shown inline under the date; cleared when the date changes.
+  const [startDayWarning, setStartDayWarning] = useState<string | null>(null);
 
   // Fetch clients (only when no preselected client)
   const { data: clientsData } = useSWR<{ clients: ClientOption[] }>(
@@ -93,6 +96,7 @@ export function ApplyToClientDialog({
     if (open) {
       setClientId(preselectedClientId ?? "");
       setStartDate(getNextMonday());
+      setStartDayWarning(null);
     }
   }, [open, preselectedClientId]);
 
@@ -121,7 +125,7 @@ export function ApplyToClientDialog({
       : null;
   const minStartDate = clientLocalToday ?? deviceToday;
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (startAnyway = false) => {
     if (!clientId) {
       toast({ title: "Select a client", variant: "destructive" });
       return;
@@ -137,11 +141,13 @@ export function ApplyToClientDialog({
             type: "inline" as const,
             plan: inlinePlan,
             startDate,
+            ...(startAnyway ? { startAnyway: true } : {}),
           }
         : {
             type: "plan" as const,
             savedPlanId: savedPlan.id,
             startDate,
+            ...(startAnyway ? { startAnyway: true } : {}),
           };
 
       const res = await fetch(url, {
@@ -151,6 +157,13 @@ export function ApplyToClientDialog({
       });
 
       const data = await res.json();
+
+      if (res.status === 409 && data.error === "start_day_has_completed_workout") {
+        setStartDayWarning(
+          typeof data.message === "string" ? data.message : "That day already has a completed workout.",
+        );
+        return;
+      }
 
       if (!res.ok) {
         toast({
@@ -223,8 +236,29 @@ export function ApplyToClientDialog({
               type="date"
               value={startDate}
               min={minStartDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setStartDayWarning(null);
+              }}
             />
+            {startDayWarning && (
+              <div
+                role="alert"
+                className="flex items-start justify-between gap-3 rounded-[6px] bg-[rgba(192,96,96,0.08)] px-3 py-2 text-[12px] text-[#c06060]"
+              >
+                <span>{startDayWarning}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto shrink-0 px-2 py-0.5 text-[12px] text-[#c06060] hover:text-[#c06060]"
+                  disabled={isSubmitting}
+                  onClick={() => void handleSubmit(true)}
+                >
+                  Start anyway
+                </Button>
+              </div>
+            )}
             {clientLocalToday && clientLocalToday !== deviceToday && (
               <p className="text-[10px] text-muted-foreground">
                 {selectedClientName ?? "This client"}&apos;s local date is{" "}

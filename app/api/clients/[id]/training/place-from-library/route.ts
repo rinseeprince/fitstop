@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { DateOccupiedError } from "@/services/training-event-occupancy";
+import { DateOccupiedError, hasCompletedWorkoutOn } from "@/services/training-event-occupancy";
 import { getTrainingPlanById } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -28,6 +28,9 @@ const placeFromLibrarySchema = z.discriminatedUnion("type", [
     type: z.literal("plan"),
     savedPlanId: z.string().uuid(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+    // The coach has seen the "start day already has a completed workout" 409
+    // and chose to proceed. Never sent on a first attempt.
+    startAnyway: z.boolean().optional(),
   }),
   // Apply an edited working copy without overwriting the library template. No
   // savedPlanId field: the inline path structurally cannot accept/trust a
@@ -36,6 +39,7 @@ const placeFromLibrarySchema = z.discriminatedUnion("type", [
     type: z.literal("inline"),
     plan: inlinePlanBodySchema,
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+    startAnyway: z.boolean().optional(),
   }),
   z.object({
     type: z.literal("session"),
@@ -95,6 +99,20 @@ export async function POST(
         );
       }
 
+      // Warn-first, never silent: a start day that already holds a completed
+      // (or partial) workout would put the program's first session beside it
+      // and show the client two workouts that day. 409 with a stable code; the
+      // dialog offers "Start anyway" (re-sends with startAnyway) or a new date.
+      if (!data.startAnyway && (await hasCompletedWorkoutOn(clientId, data.startDate))) {
+        return NextResponse.json(
+          {
+            error: "start_day_has_completed_workout",
+            message: `${data.startDate} already has a completed workout. Start anyway, or pick another start date.`,
+          },
+          { status: 409 }
+        );
+      }
+
       const result = await placePlanOnCalendar({
         savedPlanId: data.savedPlanId,
         coachId,
@@ -137,6 +155,20 @@ export async function POST(
             error: `Start date ${data.startDate} has already passed for this client (their local date is ${clientToday}).`,
           },
           { status: 400 }
+        );
+      }
+
+      // Warn-first, never silent: a start day that already holds a completed
+      // (or partial) workout would put the program's first session beside it
+      // and show the client two workouts that day. 409 with a stable code; the
+      // dialog offers "Start anyway" (re-sends with startAnyway) or a new date.
+      if (!data.startAnyway && (await hasCompletedWorkoutOn(clientId, data.startDate))) {
+        return NextResponse.json(
+          {
+            error: "start_day_has_completed_workout",
+            message: `${data.startDate} already has a completed workout. Start anyway, or pick another start date.`,
+          },
+          { status: 409 }
         );
       }
 
