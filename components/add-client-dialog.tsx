@@ -59,16 +59,44 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
       name: "",
       email: "",
       notes: "",
+      // Present from the start, because the schema READS it during validation.
+      // See chooseSetupMode.
+      setupMode: undefined,
     },
   });
 
+  /**
+   * Picking a path writes it to BOTH the dialog state (which decides what to
+   * render) and the form (which the resolver validates against).
+   *
+   * The form half is load-bearing, and its absence broke the intake path
+   * outright between 2026-08-21 and 2026-08-27. `createClientSchema` refines
+   * "a manual add must carry a weight" as `setupMode !== "intake" &&
+   * currentWeight === undefined` — so it has to know the path AT VALIDATION
+   * TIME. `setupMode` was dialog state only, merged into the payload inside
+   * `onSubmit`; but `handleSubmit` validates BEFORE it calls `onSubmit`, so the
+   * refine always saw `undefined`, always demanded a weight, and the intake
+   * form has no weight field. The error landed on `currentWeight`, which that
+   * form does not render — no red box, no message, no request, no toast,
+   * nothing to close the dialog. It looked like a dead button.
+   *
+   * One setter for both, so the two can never drift apart again — including on
+   * Back, which must clear the form value too or a manual → Back → intake trip
+   * would submit as `manual` and reproduce the bug from the other side.
+   */
+  const chooseSetupMode = (mode: SetupMode) => {
+    setSetupMode(mode);
+    form.setValue("setupMode", mode ?? undefined);
+  };
+
   const onSubmit = async (data: CreateClientInput) => {
     try {
-      const payload = { ...data, setupMode: setupMode ?? undefined };
+      // `data` already carries setupMode — chooseSetupMode put it there, which
+      // is the only reason validation let us get this far.
       const response = await fetch("/api/clients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(data),
       });
 
       const result: { client?: unknown; inviteSent?: boolean; error?: string } = await response.json();
@@ -146,7 +174,7 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
               <button
                 key={mode.value}
                 type="button"
-                onClick={() => setSetupMode(mode.value)}
+                onClick={() => chooseSetupMode(mode.value)}
                 className={cn(
                   "flex w-full items-start gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3 text-left transition-colors hover:bg-[rgba(13,148,136,0.03)]",
                   FOCUS_RING,
@@ -172,7 +200,7 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
           <AddClientIntakeForm
             form={form}
             onSubmit={onSubmit}
-            onBack={() => setSetupMode(null)}
+            onBack={() => chooseSetupMode(null)}
           />
         )}
 
@@ -180,7 +208,7 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
           <AddClientManualForm
             form={form}
             onSubmit={onSubmit}
-            onBack={() => setSetupMode(null)}
+            onBack={() => chooseSetupMode(null)}
           />
         )}
       </DialogContent>
