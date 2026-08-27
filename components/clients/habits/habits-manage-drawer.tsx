@@ -72,7 +72,7 @@ export function HabitsManageDrawer({
       <SheetContent
         side="right"
         overlayClassName="bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]"
-        className="w-[420px] bg-[#f4f7f6] border-0 p-0 gap-0 flex flex-col inset-y-0 right-0 h-full [&>[data-slot=sheet-close]]:hidden animate-drawer-slide-in data-[state=closed]:slide-out-to-right data-[state=closed]:duration-300"
+        className="w-[420px] bg-[#f4f7f6] p-0 gap-0 flex flex-col inset-y-0 right-0 h-full [&>[data-slot=sheet-close]]:hidden animate-drawer-slide-in data-[state=closed]:slide-out-to-right data-[state=closed]:duration-300"
       >
         {/* Visually hidden title for accessibility */}
         <SheetHeader className="sr-only">

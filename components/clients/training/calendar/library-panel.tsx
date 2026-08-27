@@ -63,7 +63,10 @@ export function LibraryPanel({ open, onOpenChange }: LibraryPanelProps) {
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
         side="left"
-        className="flex w-[280px] flex-col gap-0 bg-white p-0"
+        // Keeps an edge, explicitly and in the system colour: this panel renders
+        // over a TRANSPARENT overlay, so the shadow alone leaves it floating on
+        // the page with nothing marking where it starts.
+        className="flex w-[280px] flex-col gap-0 border-r border-[rgba(13,148,136,0.08)] bg-white p-0"
         overlayClassName="bg-transparent pointer-events-none"
       >
         <SheetHeader className="space-y-2 px-[14px] pb-2 pt-[14px]">
