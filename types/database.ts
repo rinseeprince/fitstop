@@ -2791,7 +2791,6 @@ export type Database = {
       }
     }
     Functions: {
-      calculate_age: { Args: { date_of_birth: string }; Returns: number }
       calculate_client_adherence_stats: {
         Args: { client_uuid: string }
         Returns: {
@@ -2800,7 +2799,6 @@ export type Database = {
           expected_count: number
         }[]
       }
-      clean_expired_tokens: { Args: never; Returns: undefined }
       create_nutrition_plan_atomic: {
         Args: {
           p_base_weight_kg: number
