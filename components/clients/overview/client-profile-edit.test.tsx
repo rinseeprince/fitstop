@@ -59,28 +59,6 @@ function Harness({ client, goal }: { client: Client; goal: ClientGoal | null }) 
         client={client}
         checkInTiming={null}
         edit={edit}
-        onLogMeasurement={vi.fn()}
-      />
-    </>
-  );
-}
-
-function HarnessWithLog({
-  client,
-  onLogMeasurement,
-}: {
-  client: Client;
-  onLogMeasurement: () => void;
-}) {
-  const edit = useClientProfileEdit(client, vi.fn(), null);
-  return (
-    <>
-      <EditRailActions edit={edit} />
-      <ClientDetailsSheet
-        client={client}
-        checkInTiming={null}
-        edit={edit}
-        onLogMeasurement={onLogMeasurement}
       />
     </>
   );
@@ -328,16 +306,6 @@ describe("the client details sheet", () => {
       ).not.toBeInTheDocument();
       expect(screen.getByText("86.0 kg")).toBeInTheDocument();
       expect(screen.getByText("21.0 %")).toBeInTheDocument();
-    });
-
-    it("sends the coach to log a measurement instead", async () => {
-      const onLog = vi.fn();
-      render(<HarnessWithLog client={MEASURED} onLogMeasurement={onLog} />);
-      const user = userEvent.setup();
-      await user.click(screen.getByRole("button", { name: /edit client details/i }));
-      await user.click(screen.getByRole("button", { name: /log a measurement/i }));
-
-      expect(onLog).toHaveBeenCalledTimes(1);
     });
 
     it("CONFIRMS a start weight before writing it, and writes nothing if cancelled", async () => {

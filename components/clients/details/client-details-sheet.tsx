@@ -37,15 +37,11 @@ export function ClientDetailsSheet({
   client,
   checkInTiming,
   edit,
-  onLogMeasurement,
 }: {
   client: Client;
   /** The brief's timing, for the read-only Next check-in field. */
   checkInTiming: CheckInTiming | null;
   edit: ClientProfileEdit;
-  /** Opens the Metrics page's log-measurement flow — the only writer of the
-   *  current weight / body fat this sheet shows read-only. */
-  onLogMeasurement: () => void;
 }) {
   const status = rosterStatusLabel(getRosterStatus(client));
 
@@ -108,7 +104,6 @@ export function ClientDetailsSheet({
             checkInTiming={checkInTiming}
             edit={edit}
             status={status}
-            onLogMeasurement={onLogMeasurement}
           />
         </div>
 

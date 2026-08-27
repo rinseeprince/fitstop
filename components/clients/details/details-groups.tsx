@@ -133,13 +133,11 @@ export function DetailsGroups({
   checkInTiming,
   edit,
   status,
-  onLogMeasurement,
 }: {
   client: Client;
   checkInTiming: CheckInTiming | null;
   edit: ClientProfileEdit;
   status: string;
-  onLogMeasurement: () => void;
 }) {
   const { preference } = useUnits();
   const { form } = edit;
@@ -452,20 +450,6 @@ export function DetailsGroups({
               }
             />
           </Field>
-          <div className="sm:col-span-2">
-            <p className={HINT_CLASS}>
-              Start values are the recorded beginning of this client&apos;s journey — correct them
-              only if one was entered wrong. Current values come from logged measurements, so the
-              chart and this form cannot disagree.{" "}
-              <button
-                type="button"
-                onClick={onLogMeasurement}
-                className="font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]"
-              >
-                Log a measurement
-              </button>
-            </p>
-          </div>
         </Grid>
       </Card>
 

@@ -278,7 +278,6 @@ export function ClientOverviewTab({
         client={client}
         checkInTiming={brief?.checkInTiming ?? null}
         edit={edit}
-        onLogMeasurement={() => goToTab("metrics")}
       />
 
       <DeleteNoteDialog
