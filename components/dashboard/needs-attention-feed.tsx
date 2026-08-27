@@ -9,6 +9,10 @@ import type { AttentionFeedResponse, AttentionAlert } from "@/types/attention-fe
 import { cn } from "@/lib/utils"
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
 import { alertDestination } from "@/lib/attention-alert-destinations"
+import {
+  getPriorityAlertText,
+  getShortAlertText,
+} from "@/lib/attention-alert-copy"
 
 function AlertRow({ clientId, alert, onDismiss }: {
   clientId: string
@@ -90,78 +94,6 @@ export function NeedsAttentionFeed() {
       void mutate()
     } catch (err) {
       console.error("Failed to dismiss alert:", err)
-    }
-  }
-
-  // Helper functions for formatting
-  const getShortAlertText = (alert: AttentionAlert): string => {
-    const days = alert.affectedDays.length
-
-    switch (alert.type) {
-      case "mood_drop":
-        return "Mood drop"
-      case "energy_drop":
-        return "Energy drop"
-      case "high_stress":
-        return `High stress (${days} days)`
-      case "high_soreness":
-        return `High soreness (${days} days)`
-      case "nutrition_missed":
-        return `Nutrition missed (${days} days)`
-      case "training_missed": {
-        const match = alert.message.match(/(\d+)\s+.*sessions/)
-        return `${match ? match[1] : days} sessions missed`
-      }
-      case "habit_dropoff": {
-        const habitMatch = alert.message.match(/(\d+)\s+of.*?(\d+)\s+days/)
-        return habitMatch ? `Low habits (${habitMatch[1]}/${habitMatch[2]} days)` : "Low habits"
-      }
-      case "activity_cal_mismatch":
-        return "Overeating on rest days"
-      case "partial_training_pattern":
-        return `${days} sessions partial`
-      case "no_engagement":
-        return "No recent activity"
-      default:
-        return alert.message
-    }
-  }
-
-  const getPriorityAlertText = (alert: AttentionAlert): string => {
-    const days = alert.affectedDays.length
-
-    switch (alert.type) {
-      case "mood_drop": {
-        const avg = alert.metricData.length > 0
-          ? (alert.metricData.reduce((sum, d) => sum + d.value, 0) / alert.metricData.length).toFixed(1)
-          : "low"
-        return `Mood dropped to avg ${avg} for ${days} days`
-      }
-      case "energy_drop": {
-        const avg = alert.metricData.length > 0
-          ? (alert.metricData.reduce((sum, d) => sum + d.value, 0) / alert.metricData.length).toFixed(1)
-          : "low"
-        return `Energy dropped to avg ${avg} for ${days} days`
-      }
-      case "high_stress":
-        return `Stress at 8+ for ${days} days`
-      case "high_soreness":
-        return `Soreness at 8+ for ${days} days`
-      case "nutrition_missed":
-        return `Nutrition targets missed for ${days} days`
-      case "training_missed": {
-        const match = alert.message.match(/(\d+)\s+training sessions/)
-        const count = match ? match[1] : days
-        return `Missed ${count} sessions this week`
-      }
-      case "habit_dropoff":
-        return alert.message
-      case "activity_cal_mismatch":
-        return "Calorie intake matched activities despite skipping them"
-      case "partial_training_pattern":
-        return `${days} of recent sessions only partially completed`
-      default:
-        return alert.message
     }
   }
 
