@@ -851,9 +851,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
           workouts_completed: logRng.int(0, TRAIN_DAYS_PER_WEEK),
           nutrition_days_on_target: logRng.int(0, 7), // CHECK 0..7
           adherence_percentage: logRng.int(35, 100), // CHECK 0..100
-          uses_daily_logs: true,
-          daily_logs_start_date: periodStart,
-          daily_logs_end_date: iso,
           period_start: periodStart,
           period_end: iso,
           created_at: timestampAt(iso, checkInHour(logRng), logRng),

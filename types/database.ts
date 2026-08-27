@@ -291,8 +291,6 @@ export type Database = {
           coach_response: string | null
           coach_reviewed_at: string | null
           created_at: string | null
-          daily_logs_end_date: string | null
-          daily_logs_start_date: string | null
           energy: number | null
           hips: number | null
           id: string
@@ -314,7 +312,6 @@ export type Database = {
           stress: number | null
           thighs: number | null
           updated_at: string | null
-          uses_daily_logs: boolean
           waist: number | null
           weight: number | null
           workouts_completed: number | null
@@ -334,8 +331,6 @@ export type Database = {
           coach_response?: string | null
           coach_reviewed_at?: string | null
           created_at?: string | null
-          daily_logs_end_date?: string | null
-          daily_logs_start_date?: string | null
           energy?: number | null
           hips?: number | null
           id?: string
@@ -357,7 +352,6 @@ export type Database = {
           stress?: number | null
           thighs?: number | null
           updated_at?: string | null
-          uses_daily_logs?: boolean
           waist?: number | null
           weight?: number | null
           workouts_completed?: number | null
@@ -377,8 +371,6 @@ export type Database = {
           coach_response?: string | null
           coach_reviewed_at?: string | null
           created_at?: string | null
-          daily_logs_end_date?: string | null
-          daily_logs_start_date?: string | null
           energy?: number | null
           hips?: number | null
           id?: string
@@ -400,7 +392,6 @@ export type Database = {
           stress?: number | null
           thighs?: number | null
           updated_at?: string | null
-          uses_daily_logs?: boolean
           waist?: number | null
           weight?: number | null
           workouts_completed?: number | null
