@@ -20,7 +20,6 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { ActivityLevel, Client } from "@/types/check-in";
-import type { OverviewPlanSummary } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 
@@ -40,8 +39,6 @@ type ClientStatusCardProps = {
    * with no start date as starting today.
    */
   goalStartDate: string | null;
-  training: OverviewPlanSummary["training"];
-  upcomingTraining: OverviewPlanSummary["upcomingTraining"];
   onOpenMetrics: () => void;
   /** Inline edit state, owned by the section rail above both cards. */
   edit: ClientProfileEdit;
@@ -49,7 +46,7 @@ type ClientStatusCardProps = {
 
 /**
  * A stat cell whose value becomes an input while editing. Mirrors MetricCell's
- * rhythm exactly — label, `mt-1.5` control — so swapping a number for a field
+ * rhythm exactly — label, `mt-1` control — so swapping a number for a field
  * does not shift the row.
  */
 function EditableCell({
@@ -64,22 +61,10 @@ function EditableCell({
   return (
     <div className={showLeftBorder ? cn("border-l pl-3", DIVIDER) : undefined}>
       <p className={STAT_LABEL_DARK_CLASS}>{label}</p>
-      <div className="mt-1.5">{children}</div>
+      <div className="mt-1">{children}</div>
     </div>
   );
 }
-
-// Translucent on-dark chip — same recipe as the training-summary and metric
-// heroes (training-summary-hero.tsx:67-79); digit-bearing chips go mono.
-// One height, one radius (inner chips are rounded-[4px] system-wide) so the
-// header row reads as a set rather than three differently-sized labels.
-const CHIP_DARK_CLASS =
-  "inline-flex h-5 items-center rounded-[4px] bg-[rgba(255,255,255,0.12)] px-2 text-[10px] font-medium text-[rgba(255,255,255,0.4)]";
-
-// On-dark teal is reserved for the interactive/active element — the one chip
-// that reports live state earns the tint; the descriptive ones do not.
-const CHIP_DARK_ACTIVE_CLASS =
-  "inline-flex h-5 items-center rounded-[4px] bg-[rgba(13,148,136,0.15)] px-2 text-[10px] font-medium text-[#0d9488]";
 
 const DIVIDER = "border-[rgba(255,255,255,0.07)]";
 
@@ -133,11 +118,30 @@ function goalChip(
   return { text: `${amount} to go`, tone: "warning" };
 }
 
+/**
+ * The two value tiers, taken from the white cards' StatStrip
+ * (overview-primitives.tsx) so the dark card reads at the same scale as the
+ * rest of the Overview rather than a size of its own:
+ *
+ *  - "stat"  — a measurement. 18px mono, StatStrip's number tier.
+ *  - "field" — a date or a name. 13px, the tier the Client information card's
+ *              own fields use; a deadline is a field the coach typed, not a
+ *              headline, and should not out-shout the weights above it.
+ *
+ * Both are `font-semibold`: STAT_VALUE_DARK_CLASS carries `font-bold` for the
+ * 24-32px heroes it was written for, and it is overridden here (cn merges) so
+ * this strip matches the semibold every white card uses.
+ */
+const VALUE_TIER = {
+  stat: "text-[18px] font-semibold",
+  field: "text-[13px] font-semibold",
+} as const;
+
 function MetricCell({
   label,
   value,
   unit,
-  size = "md",
+  tier = "stat",
   sub,
   subTone,
   chip,
@@ -147,7 +151,7 @@ function MetricCell({
   label: string;
   value?: string;
   unit: string;
-  size?: "lg" | "md";
+  tier?: keyof typeof VALUE_TIER;
   sub?: string;
   subTone?: string;
   chip?: { text: string; tone: ChipTone } | null;
@@ -158,33 +162,32 @@ function MetricCell({
   return (
     <div className={showLeftBorder ? cn("border-l pl-3", DIVIDER) : undefined}>
       <p className={STAT_LABEL_DARK_CLASS}>{label}</p>
-      <div className="mt-1.5">
+      <div className="mt-1">
         {value ? (
           <>
-            <span
-              className={cn(
-                STAT_VALUE_DARK_CLASS,
-                size === "lg" ? "text-[22px]" : "text-[20px]",
-                "leading-tight"
-              )}
-            >
+            <span className={cn(STAT_VALUE_DARK_CLASS, VALUE_TIER[tier], "leading-tight")}>
               {value}
             </span>
-            <span className="ml-1 text-[10px] text-[rgba(255,255,255,0.30)]">{unit}</span>
+            {unit && (
+              <span className="ml-1 text-[11px] font-normal text-[rgba(255,255,255,0.30)]">
+                {unit}
+              </span>
+            )}
           </>
         ) : (
           <span className="text-[13px] text-[rgba(255,255,255,0.3)]">{emptyLabel}</span>
         )}
       </div>
       {sub && (
-        <p className={cn(MONO, "mt-1 text-[10px]", subTone ?? "text-[rgba(255,255,255,0.3)]")}>
+        <p className={cn(MONO, "mt-1 text-[11px]", subTone ?? "text-[rgba(255,255,255,0.3)]")}>
           {sub}
         </p>
       )}
       {chip && (
         <span
           className={cn(
-            "mt-1 inline-block rounded-[4px] px-1.5 py-0.5 text-[9px] font-medium",
+            // CHIP_NEUTRAL_CLASS's geometry (10px / px-1.5 / py-px), tinted.
+            "mt-1 inline-block rounded-[4px] px-1.5 py-px text-[10px] font-medium",
             GOAL_CHIP_TONE[chip.tone],
             containsDigit(chip.text) && MONO
           )}
@@ -193,32 +196,6 @@ function MetricCell({
         </span>
       )}
     </div>
-  );
-}
-
-/**
- * `mono` is explicit rather than digit-sniffed: a plan name is user-authored, so
- * any digits in it are part of the name, not the datum (design-system tie-break).
- */
-function DarkChip({
-  children,
-  mono,
-  active,
-}: {
-  children: string;
-  mono?: boolean;
-  active?: boolean;
-}) {
-  return (
-    <span
-      className={cn(
-        active ? CHIP_DARK_ACTIVE_CLASS : CHIP_DARK_CLASS,
-        "max-w-[180px] truncate",
-        mono && MONO
-      )}
-    >
-      {children}
-    </span>
   );
 }
 
@@ -242,8 +219,6 @@ export function ClientStatusCard({
   client,
   goal,
   goalStartDate,
-  training,
-  upcomingTraining,
   onOpenMetrics,
   edit,
 }: ClientStatusCardProps) {
@@ -285,36 +260,14 @@ export function ClientStatusCard({
     "%"
   );
 
-  // The active training block — this card's only programme context. There is no
-  // roadmap or phase concept on the platform. A program placed to start later
-  // reads as queued, never as "No plan".
-  const blockChips: ReactNode = training ? (
-    <>
-      <DarkChip>{training.planName}</DarkChip>
-      {training.currentWeek !== null && training.programDurationWeeks !== null && (
-        <DarkChip mono>{`Week ${training.currentWeek} of ${training.programDurationWeeks}`}</DarkChip>
-      )}
-      <DarkChip active={training.currentWeek !== null}>
-        {training.currentWeek === null ? "Ended" : "Active"}
-      </DarkChip>
-    </>
-  ) : upcomingTraining ? (
-    <>
-      <DarkChip>{upcomingTraining.planName}</DarkChip>
-      <DarkChip mono>{`Starts ${formatDateOnlyShort(upcomingTraining.startsOn)}`}</DarkChip>
-    </>
-  ) : (
-    <DarkChip>No plan</DarkChip>
-  );
-
   return (
     <div
       className="flex flex-1 flex-col rounded-[6px] bg-[#0f2027] animate-card-in"
       style={{ animationDelay: "0.1s" }}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 p-5 pb-4">
-        <h3 className="text-[15px] font-bold text-white">Client status</h3>
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">{blockChips}</div>
+      {/* CardHeader's own geometry and weight (overview-primitives.tsx), on dark. */}
+      <div className="px-5 pb-3 pt-5">
+        <h3 className="text-[15px] font-semibold text-white">Client status</h3>
       </div>
 
       <div className="flex flex-1 flex-col pb-4">
@@ -332,7 +285,6 @@ export function ClientStatusCard({
               label="Start weight"
               value={startWeight?.toFixed(1)}
               unit={weightUnit}
-              size="lg"
             />
           )}
           {edit.isEditing ? (
@@ -348,7 +300,6 @@ export function ClientStatusCard({
               label="Current weight"
               value={currentWeight?.toFixed(1)}
               unit={weightUnit}
-              size="lg"
               sub={weightDelta ? `${weightDelta}${weightUnit}` : undefined}
               subTone={deltaTone(weightDelta)}
               showLeftBorder
@@ -367,7 +318,6 @@ export function ClientStatusCard({
               label="Goal weight"
               value={goalWeight?.toFixed(1)}
               unit={weightUnit}
-              size="lg"
               chip={weightChip}
               showLeftBorder
             />
@@ -447,7 +397,7 @@ export function ClientStatusCard({
             // sub — so swapping the number for an input does not shift the row.
             <div className={cn("border-l pl-3", DIVIDER)}>
               <p className={STAT_LABEL_DARK_CLASS}>TDEE</p>
-              <div className="mt-1.5">
+              <div className="mt-1">
                 {edit.isCustomTdee ? (
                   <InlineDarkInput
                     ariaLabel="Custom TDEE"
@@ -455,18 +405,21 @@ export function ClientStatusCard({
                     onChange={edit.setCustomTdee}
                   />
                 ) : (
+                  // h-8 only in edit mode, where the siblings are h-8 controls.
                   <div className="flex h-8 items-center">
-                    <span className={cn(STAT_VALUE_DARK_CLASS, "text-[20px] leading-tight")}>
+                    <span className={cn(STAT_VALUE_DARK_CLASS, VALUE_TIER.stat, "leading-tight")}>
                       {edit.autoEnergy ? edit.autoEnergy.tdee : "—"}
                     </span>
-                    <span className="ml-1 text-[10px] text-[rgba(255,255,255,0.3)]">cal/day</span>
+                    <span className="ml-1 text-[11px] font-normal text-[rgba(255,255,255,0.3)]">
+                      cal/day
+                    </span>
                   </div>
                 )}
               </div>
               <button
                 type="button"
                 onClick={() => edit.setIsCustomTdee(!edit.isCustomTdee)}
-                className="mt-1 text-[10px] font-medium text-[#0d9488] transition-colors hover:text-white"
+                className="mt-1 text-[11px] font-medium text-[#0d9488] transition-colors hover:text-white"
               >
                 {edit.isCustomTdee ? "Back to auto" : "Custom"}
               </button>
@@ -487,7 +440,7 @@ export function ClientStatusCard({
           <div className={cn("border-l pl-3", DIVIDER)}>
             <p className={STAT_LABEL_DARK_CLASS}>Activity</p>
             {edit.isEditing ? (
-              <div className="mt-1.5">
+              <div className="mt-1">
                 <InlineDarkSelect
                   ariaLabel="Work activity level"
                   value={edit.form.watch("workActivityLevel")}
@@ -498,7 +451,7 @@ export function ClientStatusCard({
                 />
               </div>
             ) : (
-              <p className="mt-1.5 flex h-8 items-center text-[13px] font-medium text-[rgba(255,255,255,0.92)]">
+              <p className={cn("mt-1", VALUE_TIER.field, "text-[rgba(255,255,255,0.92)]")}>
                 {ACTIVITY_SHORT_LABELS[client.workActivityLevel ?? "sedentary"]}
               </p>
             )}
@@ -541,14 +494,14 @@ export function ClientStatusCard({
                 label="Goal start"
                 value={goalStartDate ? formatDateOnlyShort(goalStartDate) : undefined}
                 unit=""
-                size="md"
+                tier="field"
                 emptyLabel="Not set"
               />
               <MetricCell
                 label="Deadline"
                 value={goal.deadline ? formatDateOnlyShort(goal.deadline) : undefined}
                 unit=""
-                size="md"
+                tier="field"
                 showLeftBorder
                 emptyLabel="Not set"
               />

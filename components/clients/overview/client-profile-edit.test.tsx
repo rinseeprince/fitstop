@@ -70,8 +70,6 @@ function Harness({ client, goal }: { client: Client; goal: ClientGoal | null }) 
           today: "2026-08-13",
         })}
         goalStartDate={goal?.goalStartDate ?? null}
-        training={null}
-        upcomingTraining={null}
         onOpenMetrics={vi.fn()}
         edit={edit}
       />

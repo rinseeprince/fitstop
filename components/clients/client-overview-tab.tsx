@@ -244,8 +244,6 @@ export function ClientOverviewTab({
           client={client}
           goal={effectiveGoal}
           goalStartDate={currentGoals?.goalStartDate ?? null}
-          training={summary?.training ?? null}
-          upcomingTraining={summary?.upcomingTraining ?? null}
           onOpenMetrics={() => goToTab("metrics")}
           edit={edit}
         />
