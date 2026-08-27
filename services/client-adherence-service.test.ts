@@ -55,6 +55,25 @@ describe("classifyHabitDay", () => {
   });
 });
 
+/** One nutrition_logs row; every measured column defaults to null. */
+const log = (
+  date: string,
+  nutrition_adherence: string | null,
+  values: {
+    calories?: number;
+    targetCalories?: number;
+    protein?: number;
+    targetProtein?: number;
+  } = {}
+): AdherenceSourceRows["nutritionLogs"][number] => ({
+  date,
+  nutrition_adherence,
+  calories_consumed: values.calories ?? null,
+  protein_g: values.protein ?? null,
+  target_calories: values.targetCalories ?? null,
+  target_protein_g: values.targetProtein ?? null,
+});
+
 describe("buildAdherenceSummary", () => {
   const dates = ["2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23"];
 
@@ -67,9 +86,10 @@ describe("buildAdherenceSummary", () => {
       { date: "2026-07-23", status: "scheduled" },
     ],
     nutritionLogs: [
-      { date: "2026-07-20", nutrition_adherence: "hit" },
-      { date: "2026-07-21", nutrition_adherence: "partial" },
-      { date: "2026-07-22", nutrition_adherence: null },
+      log("2026-07-20", "hit", { calories: 2000, targetCalories: 2000, protein: 150, targetProtein: 150 }),
+      log("2026-07-21", "partial", { calories: 2200, targetCalories: 2000, protein: 130, targetProtein: 150 }),
+      // Logged before a plan existed: intake recorded, no target snapshotted.
+      log("2026-07-22", null, { calories: 3000, protein: 90 }),
       // no row on the 23rd
     ],
     habits: [
@@ -108,6 +128,45 @@ describe("buildAdherenceSummary", () => {
     expect(summary.nutrition).toMatchObject({ onTarget: 1, loggedDays: 2, pct: 25 });
   });
 
+  it("averages intake against the target that applied on the SAME days", () => {
+    const summary = buildAdherenceSummary(fixture);
+    // The 22nd has intake but no snapshotted target, so it is excluded from
+    // BOTH means — including it in the intake alone would compare an average
+    // over three days with a target averaged over two.
+    expect(summary.nutrition.calories).toEqual({ actual: 2100, target: 2000, days: 2 });
+    expect(summary.nutrition.protein).toEqual({ actual: 140, target: 150, days: 2 });
+  });
+
+  it("counts the averaged days separately from loggedDays", () => {
+    const summary = buildAdherenceSummary(fixture);
+    // Three rows carry intake, two carry a target — the panel must not label
+    // the mean with the wrong day count.
+    expect(summary.nutrition.loggedDays).toBe(2);
+    expect(summary.nutrition.calories?.days).toBe(2);
+  });
+
+  it("returns null averages when no day recorded both halves", () => {
+    const noTargets = buildAdherenceSummary({
+      ...fixture,
+      nutritionLogs: [log("2026-07-20", "hit", { calories: 2000, protein: 150 })],
+    });
+    expect(noTargets.nutrition.calories).toBeNull();
+    expect(noTargets.nutrition.protein).toBeNull();
+  });
+
+  it("averages calories and protein over independent day sets", () => {
+    // A row can snapshot a calorie target without a protein one.
+    const partial = buildAdherenceSummary({
+      ...fixture,
+      nutritionLogs: [
+        log("2026-07-20", "hit", { calories: 2000, targetCalories: 2000, protein: 150, targetProtein: 150 }),
+        log("2026-07-21", "hit", { calories: 2400, targetCalories: 2000 }),
+      ],
+    });
+    expect(partial.nutrition.calories).toEqual({ actual: 2200, target: 2000, days: 2 });
+    expect(partial.nutrition.protein).toEqual({ actual: 150, target: 150, days: 1 });
+  });
+
   it("computes habit avgPct over eligible days and daysBelow50 via the shipped threshold", () => {
     const summary = buildAdherenceSummary(fixture);
     // day pcts: 100, 0, 50, 0 → avg 38; below-50 days: the two zeros
@@ -126,6 +185,8 @@ describe("buildAdherenceSummary", () => {
     });
     expect(empty.training.pct).toBeNull();
     expect(empty.nutrition.pct).toBeNull();
+    expect(empty.nutrition.calories).toBeNull();
+    expect(empty.nutrition.protein).toBeNull();
     expect(empty.habits.avgPct).toBeNull();
     expect(empty.training.rail).toEqual(["none", "none", "none", "none"]);
   });

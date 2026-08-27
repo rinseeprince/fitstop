@@ -5,10 +5,16 @@ import { getClientAdherence } from "@/services/client-adherence-service";
 
 const DEFAULT_DAYS = 14;
 const MIN_DAYS = 7;
-const MAX_DAYS = 28;
+// 60 is the Overview's widest window (lib/overview/window.ts). The ceiling is
+// load-bearing, not arbitrary: getClientAdherence runs five UNPAGED selects,
+// and daily_habit_logs scales as habits x days — at "all time" it would
+// eventually truncate at PostgREST's row cap, and a truncated rail reads as a
+// client who stopped logging rather than as missing data. Raise this only
+// alongside paging that read.
+const MAX_DAYS = 60;
 
-// The Overview's three-rail adherence card (AdherenceSummary contract).
-// ?days= is clamped to [7, 28]; the window ends client-local today.
+// The Overview's adherence rails + window means (AdherenceSummary contract).
+// ?days= is clamped to [7, 60]; the window ends client-local today.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

@@ -32,6 +32,10 @@ const SUMMARY: AdherenceSummary = {
     onTarget: 3,
     loggedDays: 5,
     pct: 43,
+    // Present on the contract but not read by this card — the window means
+    // belong to the Signals card's nutrition detail (Overview v2, commit 5).
+    calories: { actual: 2100, target: 2000, days: 5 },
+    protein: { actual: 140, target: 150, days: 5 },
   },
   habits: {
     rail: rail("complete", "partial", "partial", "missed", "no_log", "complete", "complete"),

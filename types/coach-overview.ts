@@ -53,11 +53,39 @@ export type OverviewPlanSummary = {
 /** 'none' = no session planned (training rail only) → faint dash */
 export type DotState = "complete" | "partial" | "missed" | "no_log" | "none";
 
+/**
+ * A window's mean intake against the mean target that applied over the SAME
+ * days. Null when no day in the window recorded both.
+ *
+ * `days` is deliberately its own number rather than reusing `loggedDays`:
+ * `nutrition_logs` snapshots the target per row, but a day logged before a plan
+ * existed carries a null target, so the days behind this mean are a subset of
+ * the days the client logged. A panel that showed this average under a
+ * "9 days logged" heading would be quietly comparing different day sets.
+ */
+export type NutritionAverage = {
+  actual: number;
+  target: number;
+  days: number;
+} | null;
+
 export type AdherenceSummary = {
   /** oldest→newest, shared by all rails; window ends client-local today */
   dates: string[];
   training: { rail: DotState[]; completed: number; planned: number; pct: number | null };
-  nutrition: { rail: DotState[]; onTarget: number; loggedDays: number; pct: number | null };
+  nutrition: {
+    rail: DotState[];
+    onTarget: number;
+    loggedDays: number;
+    pct: number | null;
+    /**
+     * Window means, for the Signals card's nutrition detail. Both come from
+     * `nutrition_logs` columns the adherence read already selects, so the
+     * target is the one that applied ON that day rather than today's plan.
+     */
+    calories: NutritionAverage;
+    protein: NutritionAverage;
+  };
   habits: { rail: DotState[]; avgPct: number | null; daysBelow50: number };
 };
 
