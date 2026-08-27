@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { ClientScheduleCard } from "./client-schedule-card";
-import { ClientStatusCard } from "./client-status-card";
+import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
 import { EditRailActions } from "./inline-edit-fields";
 import { useClientProfileEdit } from "./use-client-profile-edit";
-import { resolveEffectiveGoal, toClientGoalInput } from "@/lib/goals/resolve-effective-goal";
 import type { ClientGoal } from "@/types/client-goals";
 import type { Client } from "@/types/check-in";
 import type { UnitSystem } from "@/utils/unit-conversions";
@@ -49,32 +47,55 @@ function makeClient(overrides: Partial<Client> = {}): Client {
 }
 
 /**
- * The real hook driving the real card — editing is inline now, so the harness
- * is the surface a coach actually uses rather than a dialog in isolation.
+ * The real hook driving the real sheet — the surface a coach actually uses,
+ * opened the way they open it, rather than a form in isolation.
  */
 function Harness({ client, goal }: { client: Client; goal: ClientGoal | null }) {
   const edit = useClientProfileEdit(client, vi.fn(), goal);
   return (
     <>
       <EditRailActions edit={edit} />
-      <ClientScheduleCard
+      <ClientDetailsSheet
         client={client}
         checkInTiming={null}
-        isTimingLoading={false}
         edit={edit}
-      />
-      <ClientStatusCard
-        client={client}
-        goal={resolveEffectiveGoal({
-          clientGoal: toClientGoalInput(goal, client),
-          today: "2026-08-13",
-        })}
-        goalStartDate={goal?.goalStartDate ?? null}
-        onOpenMetrics={vi.fn()}
-        edit={edit}
+        onLogMeasurement={vi.fn()}
       />
     </>
   );
+}
+
+function HarnessWithLog({
+  client,
+  onLogMeasurement,
+}: {
+  client: Client;
+  onLogMeasurement: () => void;
+}) {
+  const edit = useClientProfileEdit(client, vi.fn(), null);
+  return (
+    <>
+      <EditRailActions edit={edit} />
+      <ClientDetailsSheet
+        client={client}
+        checkInTiming={null}
+        edit={edit}
+        onLogMeasurement={onLogMeasurement}
+      />
+    </>
+  );
+}
+
+/** The sheet's Cancel, not the start-edit confirm's — both say "Cancel". */
+function sheetCancel(clientName = "Alex Doe") {
+  return within(screen.getByRole("dialog", { name: new RegExp(`Edit ${clientName}`, "i") }))
+    .getByRole("button", { name: /^cancel$/i });
+}
+
+/** The start-edit confirm's Cancel. */
+function confirmCancel() {
+  return within(screen.getByRole("dialog", { name: /change the recorded start/i }))
+    .getByRole("button", { name: /^cancel$/i });
 }
 
 function makeGoal(overrides: Partial<ClientGoal> = {}): ClientGoal {
@@ -119,7 +140,7 @@ function mockFetchOk() {
   } as Response);
 }
 
-describe("inline client profile editing", () => {
+describe("the client details sheet", () => {
   beforeEach(() => {
     preference.current = "metric";
     cleanup();
@@ -157,7 +178,8 @@ describe("inline client profile editing", () => {
         makeClient({ onboardingStatus: "setup_in_progress", startDate: undefined })
       );
       expect(screen.queryByLabelText("Start date")).not.toBeInTheDocument();
-      expect(screen.getByText("Set on activation")).toBeInTheDocument();
+      expect(screen.getByText("Not started")).toBeInTheDocument();
+      expect(screen.getByText("set on activation")).toBeInTheDocument();
     });
 
     it("becomes editable once they are active", async () => {
@@ -180,9 +202,11 @@ describe("inline client profile editing", () => {
     const user = await openEditor();
 
     await user.type(screen.getByLabelText("Phone"), "123");
-    await user.click(screen.getByRole("button", { name: /discard changes/i }));
+    await user.click(sheetCancel());
 
-    expect(screen.queryByLabelText("Phone")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Phone")).not.toBeInTheDocument()
+    );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -212,7 +236,7 @@ describe("inline client profile editing", () => {
       const user = await openEditor();
 
       await user.type(screen.getByLabelText("Phone"), "123");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
       const body = JSON.parse(
@@ -230,7 +254,7 @@ describe("inline client profile editing", () => {
       const feet = screen.getByLabelText("Height feet");
       await user.clear(feet);
       await user.type(feet, "6");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
       const body = JSON.parse(
@@ -261,13 +285,14 @@ describe("inline client profile editing", () => {
       const user = await openEditor(MEASURED);
 
       await user.type(screen.getByLabelText("Phone"), "123");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
       const body = profilePatch(fetchSpy);
       expect(body).not.toHaveProperty("startingWeight");
-      expect(body).not.toHaveProperty("currentWeight");
       expect(body).not.toHaveProperty("startingBodyFatPercentage");
+      // The current pair is read-only here now, so it can never be sent.
+      expect(body).not.toHaveProperty("currentWeight");
       expect(body).not.toHaveProperty("currentBodyFatPercentage");
     });
 
@@ -280,7 +305,7 @@ describe("inline client profile editing", () => {
 
       const field = screen.getByLabelText("Start weight");
       await user.type(field, "90");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
       expect(profilePatch(fetchSpy)?.startingWeight).toBe(90);
@@ -289,20 +314,30 @@ describe("inline client profile editing", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("saves a CURRENT weight with no confirm", async () => {
-      const fetchSpy = mockFetchOk();
-      const user = await openEditor(MEASURED);
+    // The current pair is a denormalized cache of LOGGED measurements. Editing
+    // it here moved the number the form shows without adding a point to the
+    // series the chart and the Physique page draw from, so the two could
+    // disagree permanently — and it bypassed the no-regression rule
+    // upsertMetricEntry applies to that cache.
+    it("shows the current pair read-only, with no way to type over it", async () => {
+      await openEditor(MEASURED);
 
-      const field = screen.getByLabelText("Current weight");
-      await user.clear(field);
-      await user.type(field, "85");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
-
-      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-      expect(profilePatch(fetchSpy)?.currentWeight).toBe(85);
+      expect(screen.queryByLabelText("Current weight")).not.toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: /update start/i })
+        screen.queryByLabelText("Current body fat percentage")
       ).not.toBeInTheDocument();
+      expect(screen.getByText("86.0 kg")).toBeInTheDocument();
+      expect(screen.getByText("21.0 %")).toBeInTheDocument();
+    });
+
+    it("sends the coach to log a measurement instead", async () => {
+      const onLog = vi.fn();
+      render(<HarnessWithLog client={MEASURED} onLogMeasurement={onLog} />);
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /edit client details/i }));
+      await user.click(screen.getByRole("button", { name: /log a measurement/i }));
+
+      expect(onLog).toHaveBeenCalledTimes(1);
     });
 
     it("CONFIRMS a start weight before writing it, and writes nothing if cancelled", async () => {
@@ -312,14 +347,14 @@ describe("inline client profile editing", () => {
       const field = screen.getByLabelText("Start weight");
       await user.clear(field);
       await user.type(field, "92");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       // The dialog names the new value, so the coach confirms the number they
       // are about to bake into every progress figure.
       await screen.findByText(/start weight becomes 92.0 kg/i);
       expect(fetchSpy).not.toHaveBeenCalled();
 
-      await user.click(screen.getByRole("button", { name: /^cancel$/i }));
+      await user.click(confirmCancel());
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
@@ -330,7 +365,7 @@ describe("inline client profile editing", () => {
       const field = screen.getByLabelText("Start weight");
       await user.clear(field);
       await user.type(field, "92");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
       await user.click(await screen.findByRole("button", { name: /update start/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
@@ -348,27 +383,29 @@ describe("inline client profile editing", () => {
       const field = screen.getByLabelText("Start weight");
       await user.clear(field);
       await user.type(field, "200");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
       await user.click(await screen.findByRole("button", { name: /update start/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
       expect(profilePatch(fetchSpy)?.startingWeight).toBeCloseTo(90.72, 2);
     });
 
-    it("CLEARS a body fat rather than forcing another guess", async () => {
+    it("CLEARS a start body fat rather than forcing another guess", async () => {
       // A wrong body fat is not merely a wrong number: computeEnergyPair
       // switches from Mifflin-St Jeor to Katch-McArdle whenever one is
       // present, so a bad estimate changes which formula produces the BMR.
+      // Withdrawing it has to be expressible, not only replaceable.
       const fetchSpy = mockFetchOk();
       const user = await openEditor(MEASURED);
 
-      await user.clear(screen.getByLabelText("Current body fat percentage"));
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.clear(screen.getByLabelText("Start body fat percentage"));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+      await user.click(await screen.findByRole("button", { name: /update start/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
       // NULL, not Number("") — which is 0, and would record the client at zero
       // percent body fat instead of removing the figure.
-      expect(profilePatch(fetchSpy)?.currentBodyFatPercentage).toBeNull();
+      expect(profilePatch(fetchSpy)?.startingBodyFatPercentage).toBeNull();
     });
 
     it("confirms REMOVING a start body fat, and says so", async () => {
@@ -376,7 +413,7 @@ describe("inline client profile editing", () => {
       const user = await openEditor(MEASURED);
 
       await user.clear(screen.getByLabelText("Start body fat percentage"));
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await screen.findByText(/start body fat is removed/i);
       await user.click(screen.getByRole("button", { name: /update start/i }));
@@ -385,18 +422,18 @@ describe("inline client profile editing", () => {
       expect(profilePatch(fetchSpy)?.startingBodyFatPercentage).toBeNull();
     });
 
-    it("still refuses to empty a WEIGHT — the pair cannot compute without one", async () => {
-      // None of the four columns is nullable through updateClientSchema, so
-      // there is no payload that clears one. A cleared box that quietly kept
-      // its old value is worse than an error.
+    it("still refuses to empty a WEIGHT — the column is not nullable", async () => {
+      // startingWeight is not nullable through updateClientSchema, so there is
+      // no payload that clears it. A cleared box that quietly kept its old
+      // value is worse than an error.
       const fetchSpy = mockFetchOk();
       const user = await openEditor(MEASURED);
 
-      await user.clear(screen.getByLabelText("Current weight"));
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.clear(screen.getByLabelText("Start weight"));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await waitFor(() =>
-        expect(screen.queryByLabelText("Current weight")).toBeInTheDocument()
+        expect(screen.queryByLabelText("Start weight")).toBeInTheDocument()
       );
       expect(fetchSpy).not.toHaveBeenCalled();
     });
@@ -408,13 +445,72 @@ describe("inline client profile editing", () => {
       const field = screen.getByLabelText("Start body fat percentage");
       await user.clear(field);
       await user.type(field, "26");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await screen.findByText(/start body fat becomes 26%/i);
       await user.click(screen.getByRole("button", { name: /update start/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
       expect(profilePatch(fetchSpy)?.startingBodyFatPercentage).toBe(26);
+    });
+  });
+
+  // Contact fields the inline editor never carried: they had no home on the
+  // two cards, so they were unreachable from the Overview at all.
+  describe("name, email and check-in frequency", () => {
+    it("edits the name and the email", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor();
+
+      const name = screen.getByLabelText("Full name");
+      await user.clear(name);
+      await user.type(name, "Alex Doe-Smith");
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      const body = profilePatch(fetchSpy);
+      expect(body?.name).toBe("Alex Doe-Smith");
+      expect(body?.email).toBe("alex@example.com");
+    });
+
+    it("blocks a save on an invalid email before sending anything", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor();
+
+      const email = screen.getByLabelText("Email");
+      await user.clear(email);
+      await user.type(email, "not-an-email");
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+      await waitFor(() => expect(screen.getByLabelText("Email")).toBeInTheDocument());
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("does not touch the check-in config when neither field changed", async () => {
+      const fetchSpy = mockFetchOk();
+      const user = await openEditor();
+
+      await user.type(screen.getByLabelText("Phone"), "123");
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      expect(
+        fetchSpy.mock.calls.some(([url]) => String(url).endsWith("/check-in-config"))
+      ).toBe(false);
+    });
+
+    // `custom` is an interval this sheet has no field for. Hiding it would
+    // silently rewrite a custom client to weekly on a save that never touched
+    // the field; offering it to everyone would let a coach pick a frequency
+    // with no number behind it.
+    it("offers custom only to a client already on it, naming the interval", async () => {
+      await openEditor(makeClient({ checkInFrequency: "custom", checkInFrequencyDays: 10 }));
+      expect(screen.getByLabelText("Check-in frequency")).toHaveTextContent("Every 10 days");
+    });
+
+    it("does not offer custom to a weekly client", async () => {
+      await openEditor(makeClient({ checkInFrequency: "weekly" }));
+      expect(screen.getByLabelText("Check-in frequency")).toHaveTextContent("Weekly");
     });
   });
 
@@ -429,7 +525,7 @@ describe("inline client profile editing", () => {
       const user = await openEditor();
 
       await user.type(screen.getByLabelText("Phone"), "123");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
       expect(goalPut(fetchSpy)).toBeNull();
@@ -442,7 +538,7 @@ describe("inline client profile editing", () => {
       const deadline = screen.getByLabelText("Goal deadline");
       await user.clear(deadline);
       await user.type(deadline, "2027-03-01");
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await waitFor(() => expect(goalPut(fetchSpy)).not.toBeNull());
       expect(goalPut(fetchSpy)).toEqual({ goalDeadline: "2027-03-01" });
@@ -453,7 +549,7 @@ describe("inline client profile editing", () => {
       const user = await openEditor();
 
       await user.clear(screen.getByLabelText("Goal deadline"));
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       await waitFor(() => expect(goalPut(fetchSpy)).not.toBeNull());
       expect(goalPut(fetchSpy)).toEqual({ goalDeadline: null });
@@ -494,7 +590,7 @@ describe("inline client profile editing", () => {
       const start = screen.getByLabelText("Goal start date");
       await user.clear(start);
       await user.type(start, "2027-01-01"); // deadline is 2026-12-01
-      await user.click(screen.getByRole("button", { name: /save client details/i }));
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
 
       // zodResolver blocks the submit, so NOTHING is written — not even the
       // profile PATCH that would otherwise have gone first.
@@ -515,7 +611,7 @@ describe("inline client profile editing", () => {
         const user = await openEditor();
 
         await user.type(screen.getByLabelText("Phone"), "123");
-        await user.click(screen.getByRole("button", { name: /save client details/i }));
+        await user.click(screen.getByRole("button", { name: /save changes/i }));
 
         await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
         expect(goalPut(fetchSpy)).toBeNull();
@@ -528,7 +624,7 @@ describe("inline client profile editing", () => {
         const weight = screen.getByLabelText("Goal weight");
         await user.clear(weight);
         await user.type(weight, "176.4");
-        await user.click(screen.getByRole("button", { name: /save client details/i }));
+        await user.click(screen.getByRole("button", { name: /save changes/i }));
 
         await waitFor(() => expect(goalPut(fetchSpy)).not.toBeNull());
         // 176.4 lb = 80.0 kg. The point is that it converted at all.

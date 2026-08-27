@@ -93,7 +93,17 @@ export type RosterRow = {
 
 export type RosterCounts = Record<RosterView, number>
 
-export function getRosterStatus(client: ClientWithCheckInInfo): RosterStatus {
+/**
+ * Structural, not `ClientWithCheckInInfo`: the ladder reads exactly two fields,
+ * and the client details sheet has a plain `Client` in hand. Widening the
+ * parameter is what stops that sheet minting a second status vocabulary.
+ */
+export type RosterStatusFields = Pick<
+  ClientWithCheckInInfo,
+  "active" | "onboardingStatus"
+>;
+
+export function getRosterStatus(client: RosterStatusFields): RosterStatus {
   if (!client.active) return "inactive"
   switch (client.onboardingStatus) {
     case "pending_intake":
@@ -105,6 +115,19 @@ export function getRosterStatus(client: ClientWithCheckInInfo): RosterStatus {
     default:
       return "active"
   }
+}
+
+const ROSTER_STATUS_LABELS: Record<RosterStatus, string> = {
+  invited: "Invited",
+  awaiting_review: "Awaiting review",
+  awaiting_activation: "Awaiting activation",
+  active: "Active",
+  inactive: "Inactive",
+}
+
+/** The status as a coach reads it. */
+export function rosterStatusLabel(status: RosterStatus): string {
+  return ROSTER_STATUS_LABELS[status]
 }
 
 /** The three stages that make up the Onboarding view. */

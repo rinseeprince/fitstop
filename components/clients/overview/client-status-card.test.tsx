@@ -6,25 +6,6 @@ import { ClientStatusCard } from "./client-status-card";
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { Client } from "@/types/check-in";
 
-// The cards are presentational: editing state is owned by the section rail
-// above them. A not-editing stub is all these render tests need.
-const editStub = {
-  isEditing: false,
-  isSaving: false,
-  start: vi.fn(),
-  cancel: vi.fn(),
-  save: vi.fn(),
-  form: { watch: vi.fn(), setValue: vi.fn() },
-  height: { system: "metric", fields: { cm: "", feet: "", inches: "" }, hasParseError: false },
-  autoEnergy: null,
-  customTdee: "",
-  setCustomTdee: vi.fn(),
-  isCustomTdee: false,
-  setIsCustomTdee: vi.fn(),
-  customTdeeBelowBmr: false,
-  showBirthDateNudge: false,
-} as never;
-
 
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars.
@@ -65,7 +46,6 @@ const PROPS = {
   onOpenMetrics: vi.fn(),
   goal: NO_GOAL,
   goalStartDate: null,
-  edit: editStub,
 };
 
 beforeEach(() => cleanup());
@@ -213,7 +193,6 @@ describe("ClientStatusCard — actions", () => {
         goal={NO_GOAL}
         goalStartDate={null}
         onOpenMetrics={onOpenMetrics}
-        edit={editStub}
       />
     );
 

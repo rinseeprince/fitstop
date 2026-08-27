@@ -13,17 +13,20 @@ import type { Client } from "@/types/check-in";
 import type { ClientGoal } from "@/types/client-goals";
 
 /**
- * Inline profile editing for the Overview's two client cards.
+ * The client details form, behind the details sheet.
  *
- * This replaced a "Client settings" modal. The fields live in the cards and are
- * edited in place — the platform's standard editing gesture (the Journey blocks
- * swap a row for its form the same way) — so the state has to sit ABOVE both
- * cards rather than inside either. The cards stay presentational: they receive
- * this object and render an input wherever they would have rendered a value.
+ * It has been three surfaces: a "Client settings" modal, then inline editing
+ * inside the Overview's two cards, now a 780px right sheet. The state has
+ * always sat above the fields, which is why the move cost the form nothing —
+ * the sheet mounts this the same way the cards consumed it.
  *
- * The form is react-hook-form + zodResolver per CONVENTIONS §3; height is not
- * in the schema because it is composite for an imperial viewer and
- * `useHeightInput` owns the conversion plus the untouched-field guard.
+ * The form is react-hook-form + zodResolver per CONVENTIONS §3. Two families of
+ * field are deliberately NOT in the zod schema: height, because it is composite
+ * for an imperial viewer, and every unit-bearing weight, because
+ * `useCanonicalInput`/`useHeightInput` own the conversion AND the
+ * untouched-field guard that keeps a focus-through an exact no-op.
+ *
+ * The four writes below are NOT a transaction. See `submit`.
  */
 
 export const UNSET = "unset";
@@ -32,11 +35,16 @@ const isoDate = (v: string) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 const profileFormSchema = z
   .object({
+    // Mirrors updateClientSchema's bounds so the coach is told before
+    // submitting rather than by a 400.
+    name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
+    email: z.string().trim().email("Enter a valid email address"),
     gender: z.enum([UNSET, "male", "female", "other"]),
     dateOfBirth: z.string().refine(isoDate, { message: "Use a valid date" }),
     startDate: z.string().refine(isoDate, { message: "Use a valid date" }),
     phone: z.string().trim().max(30, "Phone must be less than 30 characters"),
     expectedCheckInDay: z.string(),
+    checkInFrequency: z.enum(["weekly", "biweekly", "monthly", "custom", "none"]),
     workActivityLevel: z.enum([
       "sedentary",
       "lightly_active",
@@ -44,15 +52,12 @@ const profileFormSchema = z
       "very_active",
       "extremely_active",
     ]),
-    // Body-fat MEASUREMENTS. Unitless, so unlike the weights beside them they
-    // are plain form fields. Start is the recorded baseline (a correction);
-    // current is an ordinary measurement.
+    // The recorded BASELINE body fat. Unitless, so unlike the weight beside it
+    // this is a plain form field. The CURRENT body fat is deliberately absent:
+    // it is a denormalized cache of logged measurements (see the note on
+    // `startWeight` below), and editing it here moved the number without
+    // adding a point to any chart.
     startingBodyFatPercentage: z
-      .string()
-      .refine((v) => v === "" || (Number(v) >= 3 && Number(v) <= 60), {
-        message: "Body fat must be between 3% and 60%",
-      }),
-    currentBodyFatPercentage: z
       .string()
       .refine((v) => v === "" || (Number(v) >= 3 && Number(v) <= 60), {
         message: "Body fat must be between 3% and 60%",
@@ -87,21 +92,20 @@ type ProfileFormValues = z.infer<typeof profileFormSchema>;
  */
 function toDefaults(client: Client, goal: ClientGoal | null): ProfileFormValues {
   return {
+    name: client.name,
+    email: client.email,
     gender: client.gender ?? UNSET,
     dateOfBirth: client.dateOfBirth ?? "",
     startDate: client.startDate ?? "",
     phone: client.phone ?? "",
     expectedCheckInDay: client.expectedCheckInDay ?? UNSET,
+    checkInFrequency: client.checkInFrequency ?? "weekly",
     // Sedentary is the default everywhere — the column default and the
     // calculator's fallback for NULL both agree, so there is no "not set".
     workActivityLevel: client.workActivityLevel ?? "sedentary",
     startingBodyFatPercentage:
       client.startingBodyFatPercentage != null
         ? String(client.startingBodyFatPercentage)
-        : "",
-    currentBodyFatPercentage:
-      client.currentBodyFatPercentage != null
-        ? String(client.currentBodyFatPercentage)
         : "",
     goalBodyFatPercentage:
       goal?.goalBodyFatPercentage != null ? String(goal.goalBodyFatPercentage) : "",
@@ -151,11 +155,19 @@ export function useClientProfileEdit(
   // "220.5" and re-parses to 100.017, so a form that re-parsed whatever sat in
   // the box would drift the stored goal on every save (CONVENTIONS §20).
   const goalWeight = useCanonicalInput(preference, goal?.goalWeight, "weight");
-  // The two weight MEASUREMENTS, same treatment as the goal weight: collected
-  // in the coach's unit, guarded on the seeded string so a focus-through is an
+  // The recorded START weight, same treatment as the goal weight: collected in
+  // the coach's unit, guarded on the seeded string so a focus-through is an
   // exact no-op (CONVENTIONS §20).
+  //
+  // The CURRENT weight is not here. It is a denormalized cache of logged
+  // measurements — the merged check-in + coach-entry series the chart and the
+  // Physique page draw from — and this form's PATCH wrote the cache WITHOUT
+  // adding a point to that series, so the two could disagree permanently. It
+  // also bypassed the no-regression rule `upsertMetricEntry` applies (a
+  // backdated entry must never move the cache backwards). The sheet shows it
+  // read-only and sends the coach to Log a measurement, which writes the entry,
+  // the cache and the energy recompute — a strict superset.
   const startWeight = useCanonicalInput(preference, client.startingWeight, "weight");
-  const currentWeight = useCanonicalInput(preference, client.currentWeight, "weight");
 
   // Re-seed whenever editing opens, so a cancelled edit never leaks into the
   // next one and a background revalidation cannot overwrite a live edit.
@@ -163,14 +175,12 @@ export function useClientProfileEdit(
   const resetHeight = height.reset;
   const resetGoalWeight = goalWeight.reset;
   const resetStartWeight = startWeight.reset;
-  const resetCurrentWeight = currentWeight.reset;
   useEffect(() => {
     if (isEditing) {
       reset(toDefaults(client, goal));
       resetHeight(client.height);
       resetGoalWeight(goal?.goalWeight);
       resetStartWeight(client.startingWeight);
-      resetCurrentWeight(client.currentWeight);
       setIsCustomTdee(client.tdeeManualOverride === true);
       setCustomTdee(client.tdee != null ? String(Math.round(client.tdee)) : "");
     }
@@ -182,7 +192,6 @@ export function useClientProfileEdit(
     resetHeight,
     resetGoalWeight,
     resetStartWeight,
-    resetCurrentWeight,
   ]);
 
   // The live preview runs the SAME pure calculator the server writes with, so
@@ -226,7 +235,6 @@ export function useClientProfileEdit(
    */
   const clearedMeasurement = ((): string | null => {
     if (!startWeight.isPristine && startWeight.commit == null) return "start weight";
-    if (!currentWeight.isPristine && currentWeight.commit == null) return "current weight";
     return null;
   })();
 
@@ -312,6 +320,8 @@ export function useClientProfileEdit(
     let committed = false;
     try {
       const profile: Record<string, unknown> = {
+        name: values.name,
+        email: values.email,
         phone: values.phone,
         workActivityLevel: values.workActivityLevel,
       };
@@ -323,13 +333,14 @@ export function useClientProfileEdit(
       if (values.startDate !== "") profile.startDate = values.startDate;
       if (values.dateOfBirth !== "") profile.dateOfBirth = values.dateOfBirth;
 
-      // The four measurements, each sent only when it actually changed — the
-      // same seeded-string guard as height and goal weight, for the same
+      // The two BASELINE measurements, each sent only when it actually changed —
+      // the same seeded-string guard as height and goal weight, for the same
       // reason: display rounding is lossy, so re-sending an untouched box
-      // would drift the stored value on every save.
+      // would drift the stored value on every save. Both route server-side to
+      // `recordClientStart`, the single writer that also moves the metric
+      // entries dated on the start date.
       const seededNow = toDefaults(client, goal);
       if (!startWeight.isPristine) profile.startingWeight = startWeight.commit;
-      if (!currentWeight.isPristine) profile.currentWeight = currentWeight.commit;
       // An emptied box is NULL, not `Number("")` — which is 0, and would have
       // recorded a client at zero percent body fat instead of removing the
       // figure.
@@ -338,12 +349,6 @@ export function useClientProfileEdit(
           values.startingBodyFatPercentage === ""
             ? null
             : Number(values.startingBodyFatPercentage);
-      }
-      if (values.currentBodyFatPercentage !== seededNow.currentBodyFatPercentage) {
-        profile.currentBodyFatPercentage =
-          values.currentBodyFatPercentage === ""
-            ? null
-            : Number(values.currentBodyFatPercentage);
       }
 
       // Recomputes BMR/TDEE server-side because it carries energy inputs. The
@@ -360,12 +365,21 @@ export function useClientProfileEdit(
       }
 
       const nextDay = values.expectedCheckInDay === UNSET ? null : values.expectedCheckInDay;
-      if (nextDay !== (client.expectedCheckInDay ?? null)) {
+      const dayChanged = nextDay !== (client.expectedCheckInDay ?? null);
+      const frequencyChanged = values.checkInFrequency !== seededNow.checkInFrequency;
+      if (dayChanged || frequencyChanged) {
         // The check-in config schema requires frequency + reminder preferences
-        // on every write, so the untouched ones are echoed back verbatim.
+        // on every write, so whichever of the two was NOT edited is echoed back
+        // verbatim — as are the reminder preferences, which this form never
+        // shows. Dropping them would silently disable a client's reminders.
+        //
+        // `checkInFrequencyDays` rides along only while the frequency is still
+        // `custom`: it is the interval `custom` means, and the sheet keeps that
+        // option selectable precisely so a custom client is not rewritten to
+        // weekly by a save that never touched the field.
         await sendJson("PATCH", `/api/clients/${client.id}/check-in-config`, {
-          checkInFrequency: client.checkInFrequency ?? "weekly",
-          ...(client.checkInFrequencyDays != null
+          checkInFrequency: values.checkInFrequency,
+          ...(values.checkInFrequency === "custom" && client.checkInFrequencyDays != null
             ? { checkInFrequencyDays: client.checkInFrequencyDays }
             : {}),
           expectedCheckInDay: nextDay,
@@ -466,7 +480,6 @@ export function useClientProfileEdit(
     height,
     goalWeight,
     startWeight,
-    currentWeight,
     autoEnergy: autoEnergyReady,
     customTdee,
     setCustomTdee,

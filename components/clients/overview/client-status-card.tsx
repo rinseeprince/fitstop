@@ -1,16 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import {
-  ACTIVITY_OPTIONS,
-  InlineDarkInput,
-  InlineDarkSelect,
-} from "./inline-edit-fields";
-import type { ClientProfileEdit } from "./use-client-profile-edit";
 import { goalState } from "@/lib/goals/goal-state";
 import { containsDigit } from "@/components/clients/metrics/metrics-format";
-import { getTodayDateString } from "@/lib/date-helpers";
 import { formatDateOnlyShort } from "./overview-format";
 import { GoalHistoryPopover } from "./goal-history-popover";
 import {
@@ -40,31 +32,7 @@ type ClientStatusCardProps = {
    */
   goalStartDate: string | null;
   onOpenMetrics: () => void;
-  /** Inline edit state, owned by the section rail above both cards. */
-  edit: ClientProfileEdit;
 };
-
-/**
- * A stat cell whose value becomes an input while editing. Mirrors MetricCell's
- * rhythm exactly — label, `mt-1` control — so swapping a number for a field
- * does not shift the row.
- */
-function EditableCell({
-  label,
-  children,
-  showLeftBorder = true,
-}: {
-  label: string;
-  children: ReactNode;
-  showLeftBorder?: boolean;
-}) {
-  return (
-    <div className={showLeftBorder ? cn("border-l pl-3", DIVIDER) : undefined}>
-      <p className={STAT_LABEL_DARK_CLASS}>{label}</p>
-      <div className="mt-1">{children}</div>
-    </div>
-  );
-}
 
 const DIVIDER = "border-[rgba(255,255,255,0.07)]";
 
@@ -220,7 +188,6 @@ export function ClientStatusCard({
   goal,
   goalStartDate,
   onOpenMetrics,
-  edit,
 }: ClientStatusCardProps) {
   // client.weightUnit is a mapper constant, not the viewer's choice (Batch F
   // deletes it). Body weights convert freely — formatWeight, never formatLoad.
@@ -228,19 +195,6 @@ export function ClientStatusCard({
   const kg = (v: number | null | undefined) =>
     v == null ? undefined : formatWeight(v, preference).value;
   const weightUnit = formatWeight(0, preference).unit;
-
-  // A deadline can be neither in the past (the goals PUT rejects it against the
-  // coach's day) nor before the goal's own start (the schema's cross-field
-  // refine rejects it). Both are expressed as ONE native `min`, so the
-  // impossible days are unclickable rather than picked and then rejected —
-  // composed the same way `block-form.tsx` composes its two end-date bounds.
-  //
-  // The goal START deliberately has no bound: a goal that began three weeks ago
-  // is a real thing to record, and the route puts no bound on it either.
-  const todayString = getTodayDateString();
-  const goalStartValue = edit.form.watch("goalStartDate");
-  const deadlineMin =
-    goalStartValue && goalStartValue > todayString ? goalStartValue : todayString;
 
   const startWeight = kg(client.startingWeight);
   const currentWeight = kg(client.currentWeight);
@@ -272,111 +226,51 @@ export function ClientStatusCard({
 
       <div className="flex flex-1 flex-col pb-4">
         <div className="grid flex-1 grid-cols-3 items-start gap-3 px-5 pb-3">
-          {edit.isEditing ? (
-            <EditableCell label={`Start weight (${weightUnit})`} showLeftBorder={false}>
-              <InlineDarkInput
-                ariaLabel="Start weight"
-                value={edit.startWeight.value}
-                onChange={edit.startWeight.setValue}
-              />
-            </EditableCell>
-          ) : (
-            <MetricCell
-              label="Start weight"
-              value={startWeight?.toFixed(1)}
-              unit={weightUnit}
-            />
-          )}
-          {edit.isEditing ? (
-            <EditableCell label={`Current weight (${weightUnit})`}>
-              <InlineDarkInput
-                ariaLabel="Current weight"
-                value={edit.currentWeight.value}
-                onChange={edit.currentWeight.setValue}
-              />
-            </EditableCell>
-          ) : (
-            <MetricCell
-              label="Current weight"
-              value={currentWeight?.toFixed(1)}
-              unit={weightUnit}
-              sub={weightDelta ? `${weightDelta}${weightUnit}` : undefined}
-              subTone={deltaTone(weightDelta)}
-              showLeftBorder
-            />
-          )}
-          {edit.isEditing ? (
-            <EditableCell label={`Goal weight (${weightUnit})`}>
-              <InlineDarkInput
-                ariaLabel="Goal weight"
-                value={edit.goalWeight.value}
-                onChange={edit.goalWeight.setValue}
-              />
-            </EditableCell>
-          ) : (
-            <MetricCell
-              label="Goal weight"
-              value={goalWeight?.toFixed(1)}
-              unit={weightUnit}
-              chip={weightChip}
-              showLeftBorder
-            />
-          )}
+          <MetricCell
+            label="Start weight"
+            value={startWeight?.toFixed(1)}
+            unit={weightUnit}
+          />
+          <MetricCell
+            label="Current weight"
+            value={currentWeight?.toFixed(1)}
+            unit={weightUnit}
+            sub={weightDelta ? `${weightDelta}${weightUnit}` : undefined}
+            subTone={deltaTone(weightDelta)}
+            showLeftBorder
+          />
+          <MetricCell
+            label="Goal weight"
+            value={goalWeight?.toFixed(1)}
+            unit={weightUnit}
+            chip={weightChip}
+            showLeftBorder
+          />
         </div>
 
         <div className={cn("mx-5 border-t", DIVIDER)} />
 
         <div className="grid flex-1 grid-cols-3 items-start gap-3 px-5 py-3">
-          {edit.isEditing ? (
-            <EditableCell label="Start body fat (%)" showLeftBorder={false}>
-              <InlineDarkInput
-                ariaLabel="Start body fat percentage"
-                value={edit.form.watch("startingBodyFatPercentage")}
-                onChange={(v) => edit.form.setValue("startingBodyFatPercentage", v)}
-              />
-            </EditableCell>
-          ) : (
-            <MetricCell
-              label="Start body fat"
-              value={client.startingBodyFatPercentage?.toFixed(1)}
-              unit="%"
-            />
-          )}
-          {edit.isEditing ? (
-            <EditableCell label="Current body fat (%)">
-              <InlineDarkInput
-                ariaLabel="Current body fat percentage"
-                value={edit.form.watch("currentBodyFatPercentage")}
-                onChange={(v) => edit.form.setValue("currentBodyFatPercentage", v)}
-              />
-            </EditableCell>
-          ) : (
-            <MetricCell
-              label="Current body fat"
-              value={client.currentBodyFatPercentage?.toFixed(1)}
-              unit="%"
-              sub={bfDelta ? `${bfDelta}%` : undefined}
-              subTone={deltaTone(bfDelta)}
-              showLeftBorder
-            />
-          )}
-          {edit.isEditing ? (
-            <EditableCell label="Goal body fat (%)">
-              <InlineDarkInput
-                ariaLabel="Goal body fat percentage"
-                value={edit.form.watch("goalBodyFatPercentage")}
-                onChange={(v) => edit.form.setValue("goalBodyFatPercentage", v)}
-              />
-            </EditableCell>
-          ) : (
-            <MetricCell
-              label="Goal body fat"
-              value={goalBodyFat?.toFixed(1)}
-              unit="%"
-              chip={bfChip}
-              showLeftBorder
-            />
-          )}
+          <MetricCell
+            label="Start body fat"
+            value={client.startingBodyFatPercentage?.toFixed(1)}
+            unit="%"
+          />
+          <MetricCell
+            label="Current body fat"
+            value={client.currentBodyFatPercentage?.toFixed(1)}
+            unit="%"
+            sub={bfDelta ? `${bfDelta}%` : undefined}
+            subTone={deltaTone(bfDelta)}
+            showLeftBorder
+          />
+          <MetricCell
+            label="Goal body fat"
+            value={goalBodyFat?.toFixed(1)}
+            unit="%"
+            chip={bfChip}
+            showLeftBorder
+          />
         </div>
 
         <div className={cn("mx-5 border-t", DIVIDER)} />
@@ -392,121 +286,45 @@ export function ClientStatusCard({
             value={client.bmr ? Math.round(client.bmr).toString() : undefined}
             unit="cal/day"
           />
-          {edit.isEditing ? (
-            // Mirrors MetricCell's own rhythm — label, mt-1 value, mt-0.5
-            // sub — so swapping the number for an input does not shift the row.
-            <div className={cn("border-l pl-3", DIVIDER)}>
-              <p className={STAT_LABEL_DARK_CLASS}>TDEE</p>
-              <div className="mt-1">
-                {edit.isCustomTdee ? (
-                  <InlineDarkInput
-                    ariaLabel="Custom TDEE"
-                    value={edit.customTdee}
-                    onChange={edit.setCustomTdee}
-                  />
-                ) : (
-                  // h-8 only in edit mode, where the siblings are h-8 controls.
-                  <div className="flex h-8 items-center">
-                    <span className={cn(STAT_VALUE_DARK_CLASS, VALUE_TIER.stat, "leading-tight")}>
-                      {edit.autoEnergy ? edit.autoEnergy.tdee : "—"}
-                    </span>
-                    <span className="ml-1 text-[11px] font-normal text-[rgba(255,255,255,0.3)]">
-                      cal/day
-                    </span>
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => edit.setIsCustomTdee(!edit.isCustomTdee)}
-                className="mt-1 text-[11px] font-medium text-[#0d9488] transition-colors hover:text-white"
-              >
-                {edit.isCustomTdee ? "Back to auto" : "Custom"}
-              </button>
-              {edit.customTdeeBelowBmr && edit.autoEnergy && (
-                <p className="mt-0.5 text-[10px] leading-[1.4] text-[#f0a0a0]">
-                  Can&apos;t be below BMR ({edit.autoEnergy.bmr})
-                </p>
-              )}
-            </div>
-          ) : (
-            <MetricCell
-              label="TDEE"
-              value={client.tdee ? Math.round(client.tdee).toString() : undefined}
-              unit="cal/day"
-              showLeftBorder
-            />
-          )}
+          <MetricCell
+            label="TDEE"
+            value={client.tdee ? Math.round(client.tdee).toString() : undefined}
+            unit="cal/day"
+            showLeftBorder
+          />
           <div className={cn("border-l pl-3", DIVIDER)}>
             <p className={STAT_LABEL_DARK_CLASS}>Activity</p>
-            {edit.isEditing ? (
-              <div className="mt-1">
-                <InlineDarkSelect
-                  ariaLabel="Work activity level"
-                  value={edit.form.watch("workActivityLevel")}
-                  onChange={(v) =>
-                    edit.form.setValue("workActivityLevel", v as ActivityLevel)
-                  }
-                  options={ACTIVITY_OPTIONS}
-                />
-              </div>
-            ) : (
-              <p className={cn("mt-1", VALUE_TIER.field, "text-[rgba(255,255,255,0.92)]")}>
-                {ACTIVITY_SHORT_LABELS[client.workActivityLevel ?? "sedentary"]}
-              </p>
-            )}
+            <p className={cn("mt-1", VALUE_TIER.field, "text-[rgba(255,255,255,0.92)]")}>
+              {ACTIVITY_SHORT_LABELS[client.workActivityLevel ?? "sedentary"]}
+            </p>
           </div>
         </div>
 
-        {/* The goal window. A fourth band in the same 3-column shape as the three
-            above, rather than a sub-line, because both dates are real inputs: the
-            deadline is what turns a goal weight into a daily deficit at all (with
-            none, the calculator returns maintenance) and the start date decides
-            whether that deficit is spread from today or from a future date. The
-            third column is deliberately empty — a derived "time left" readout
-            would be a new invented stat, not a field this editor owes. */}
+        {/* The goal window. A fourth band in the same 3-column shape as the
+            three above, because both dates are real inputs: the deadline is
+            what turns a goal weight into a daily deficit at all (with none, the
+            calculator returns maintenance) and the start date decides whether
+            that deficit is spread from today or from a future date. The third
+            column is deliberately empty — a derived "time left" readout would
+            be a new invented stat, not a field this card owes. */}
         <div className={cn("mx-5 border-t", DIVIDER)} />
 
         <div className="grid flex-1 grid-cols-3 items-start gap-3 px-5 pt-3">
-          {edit.isEditing ? (
-            <>
-              <EditableCell label="Goal start" showLeftBorder={false}>
-                <InlineDarkInput
-                  type="date"
-                  ariaLabel="Goal start date"
-                  value={edit.form.watch("goalStartDate")}
-                  onChange={(v) => edit.form.setValue("goalStartDate", v)}
-                />
-              </EditableCell>
-              <EditableCell label="Deadline">
-                <InlineDarkInput
-                  type="date"
-                  ariaLabel="Goal deadline"
-                  min={deadlineMin}
-                  value={edit.form.watch("goalDeadline")}
-                  onChange={(v) => edit.form.setValue("goalDeadline", v)}
-                />
-              </EditableCell>
-            </>
-          ) : (
-            <>
-              <MetricCell
-                label="Goal start"
-                value={goalStartDate ? formatDateOnlyShort(goalStartDate) : undefined}
-                unit=""
-                tier="field"
-                emptyLabel="Not set"
-              />
-              <MetricCell
-                label="Deadline"
-                value={goal.deadline ? formatDateOnlyShort(goal.deadline) : undefined}
-                unit=""
-                tier="field"
-                showLeftBorder
-                emptyLabel="Not set"
-              />
-            </>
-          )}
+          <MetricCell
+            label="Goal start"
+            value={goalStartDate ? formatDateOnlyShort(goalStartDate) : undefined}
+            unit=""
+            tier="field"
+            emptyLabel="Not set"
+          />
+          <MetricCell
+            label="Deadline"
+            value={goal.deadline ? formatDateOnlyShort(goal.deadline) : undefined}
+            unit=""
+            tier="field"
+            showLeftBorder
+            emptyLabel="Not set"
+          />
         </div>
       </div>
 

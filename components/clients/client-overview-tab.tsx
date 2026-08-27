@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner";
 import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,6 +10,7 @@ import { ClientScheduleCard } from "@/components/clients/overview/client-schedul
 import { EditRailActions } from "@/components/clients/overview/inline-edit-fields";
 import { useClientProfileEdit } from "@/components/clients/overview/use-client-profile-edit";
 import { ClientStatusCard } from "@/components/clients/overview/client-status-card";
+import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
 import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
 import { CurrentPlanSection } from "@/components/clients/overview/current-plan-section";
 import { SinceLastVisitSection } from "@/components/clients/overview/since-last-visit-section";
@@ -124,14 +125,10 @@ export function ClientOverviewTab({
 
   const edit = useClientProfileEdit(client, handleSaved, currentGoals);
 
-  // The activation card's Client-profile row edits the section below it, which
-  // sits far enough down the page to be off-screen — opening the editor without
-  // bringing it into view would read as nothing having happened.
-  const clientSectionRef = useRef<HTMLDivElement>(null);
-  const openProfileEditor = useCallback(() => {
-    edit.start();
-    clientSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [edit]);
+  // The activation card's Client-profile row opens the same sheet as the rail's
+  // pencil. It used to also scroll the page, because the editor it opened was
+  // the section below and could be off screen — an overlay needs no such help.
+  const openProfileEditor = edit.start;
 
   const handleMarkSeen = useCallback(() => {
     void markSeen();
@@ -228,7 +225,7 @@ export function ClientOverviewTab({
       {/* The edit action rides the section rail on the far right, the platform's
           divider grammar (left = identity, right = meta/actions) — not a pencil
           floating inside one of the two cards. */}
-      <div ref={clientSectionRef}>
+      <div>
         <SectionLabel
           label="Client"
           actions={<EditRailActions edit={edit} />}
@@ -238,14 +235,13 @@ export function ClientOverviewTab({
           client={client}
           checkInTiming={brief?.checkInTiming ?? null}
           isTimingLoading={briefLoading}
-          edit={edit}
+          onOpenDetails={edit.start}
         />
         <ClientStatusCard
           client={client}
           goal={effectiveGoal}
           goalStartDate={currentGoals?.goalStartDate ?? null}
           onOpenMetrics={() => goToTab("metrics")}
-          edit={edit}
         />
         </div>
       </div>
@@ -273,6 +269,16 @@ export function ClientOverviewTab({
         attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
         isLoading={wellnessLoading}
         onOpenWellness={() => goToTab("wellness")}
+      />
+
+      {/* The details sheet. Mounted at the tab, not inside a card, because it
+          is opened from three places: the rail pencil, the schedule card's
+          "Set a schedule", and the activation banner's Client-profile row. */}
+      <ClientDetailsSheet
+        client={client}
+        checkInTiming={brief?.checkInTiming ?? null}
+        edit={edit}
+        onLogMeasurement={() => goToTab("metrics")}
       />
 
       <DeleteNoteDialog
