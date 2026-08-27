@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { JourneySection } from "@/components/client-portal/program/journey-section";
 import { NutritionPlanCard } from "@/components/client-portal/program/nutrition-plan-card";
 import { TrainingPlanCard } from "@/components/client-portal/program/training-plan-card";
+import { TrainingWeekLayout } from "@/components/client-portal/program/training-week-layout";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { ClientJourney } from "@/types/client-journey";
@@ -140,7 +141,10 @@ export default function ProgramPage() {
       ) : (
         <>
           {!trainingPlanError && trainingPlan && (
-            <TrainingPlanCard plan={trainingPlan} />
+            <>
+              <TrainingWeekLayout />
+              <TrainingPlanCard plan={trainingPlan} />
+            </>
           )}
           {!nutritionPlanError && nutritionPlan && <NutritionPlanCard />}
         </>

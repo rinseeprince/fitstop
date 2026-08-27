@@ -1,10 +1,10 @@
 "use client";
 
-import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClientTrainingWeek } from "@/hooks/use-client-training-data";
 import type { ClientTrainingWeekSession } from "@/types/client-training-week";
+import { formatDay, stateClass, stateLabel } from "./session-state";
 
 type Props = {
   /** The day being acted on — the picker lists the training week containing it. */
@@ -117,30 +117,3 @@ export function SessionPicker({
   );
 }
 
-// The app's date spelling (`EEE, MMM d`) — see training-event-occupancy.ts.
-function formatDay(date: string): string {
-  return format(new Date(date + "T00:00:00"), "EEE, MMM d");
-}
-
-// Only still-scheduled sessions reach these: today, upcoming, or missed.
-function stateLabel(state: ClientTrainingWeekSession["state"]): string {
-  switch (state) {
-    case "today":
-      return "Today";
-    case "missed":
-      return "Missed";
-    default:
-      return "Upcoming";
-  }
-}
-
-function stateClass(state: ClientTrainingWeekSession["state"]): string {
-  switch (state) {
-    case "missed":
-      return "bg-[rgba(192,96,96,0.08)] text-[#c06060]";
-    case "today":
-      return "bg-[rgba(13,148,136,0.05)] text-[#0d9488]";
-    default:
-      return "bg-[#f0f4f4] text-[#5a7d82]";
-  }
-}

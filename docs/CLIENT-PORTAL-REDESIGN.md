@@ -62,7 +62,7 @@ Saves are per-page and independent. There is no shared "Log Day" button. The bro
 
 ### Program view (`/client/program`)
 
-The client's current training plan + nutrition plan cards, reached via the Program tab in the bottom nav. Read-only.
+The client's current training plan + nutrition plan cards, reached via the Program tab in the bottom nav, plus **this week's layout** (`components/client-portal/program/training-week-layout.tsx`): the seven days of the current training week with each day's session, tap-to-move. The plan cards are read-only; the week is the client's to rearrange (owner decision 2026-08-26) — a day may hold two sessions while rearranging but never when saving, and Save is one `POST /api/client/training/events/layout` (see "Alternative-session handling" in `ARCHITECTURE.md`; the arithmetic is `lib/week-layout.ts`).
 
 ### Navigation structure (bottom tab bar)
 
@@ -70,7 +70,7 @@ The client portal gets a persistent bottom tab bar (native-app feel) with five d
 
 1. **Home** (`/client`): the day view with summary cards.
 2. **Check-in** (`/client/check-in`): the weekly check-in hub — submission form when a check-in is in window, plus a list of past check-ins with drill-down detail. The tab badge hints when a check-in is in window.
-3. **Program** (`/client/program`): the read-only plan view (training + nutrition cards).
+3. **Program** (`/client/program`): this week's rearrangeable layout + the plan cards (training + nutrition).
 4. **Content** (`/client/resources`): the existing content library already built (assigned content + coach library, `app/client/resources/page.tsx`).
 5. **Settings**: accessed via a profile avatar in the top-right corner, not as a 5th tab, to keep the bar tight.
 

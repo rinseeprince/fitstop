@@ -35,6 +35,21 @@ export function useInvalidateClientTrainingData() {
 }
 
 /**
+ * A refused layout: the server's own sentence, plus the HTTP status so a caller
+ * can tell "your week changed / that day is taken" (409 — reload the week)
+ * from a rule of the client's own calendar (400 — show it and carry on).
+ */
+export class ClientLayoutError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ClientLayoutError";
+    this.status = status;
+  }
+}
+
+/**
  * The ONE client-side writer for "a session changes date": POSTs a layout
  * (a single move, a two-day swap, a week rearrangement) and invalidates the
  * training area on success. Throws with the server's own sentence on a
@@ -54,7 +69,7 @@ export function useApplyClientLayout() {
         | { success: boolean; data?: { moved: ClientLayoutMove[] }; error?: string }
         | null;
       if (!res.ok || !json?.success || !json.data) {
-        throw new Error(json?.error ?? "Failed to move sessions");
+        throw new ClientLayoutError(json?.error ?? "Failed to move sessions", res.status);
       }
       await invalidate();
       return json.data;

@@ -22,6 +22,10 @@ vi.mock("@/components/client-portal/program/training-plan-card", () => ({
   ),
 }));
 
+vi.mock("@/components/client-portal/program/training-week-layout", () => ({
+  TrainingWeekLayout: () => <div data-testid="training-week-layout" />,
+}));
+
 vi.mock("@/components/client-portal/program/nutrition-plan-card", () => ({
   NutritionPlanCard: () => <div data-testid="nutrition-plan-card" />,
 }));
@@ -89,6 +93,7 @@ describe("ProgramPage", () => {
     expect(screen.getByTestId("training-plan-card")).toHaveTextContent(
       "Push Pull Legs",
     );
+    expect(screen.getByTestId("training-week-layout")).toBeInTheDocument();
     expect(screen.queryByTestId("nutrition-plan-card")).toBeNull();
     expect(screen.queryByText("No program yet")).toBeNull();
   });
@@ -104,6 +109,7 @@ describe("ProgramPage", () => {
 
     expect(screen.getByTestId("nutrition-plan-card")).toBeInTheDocument();
     expect(screen.queryByTestId("training-plan-card")).toBeNull();
+    expect(screen.queryByTestId("training-week-layout")).toBeNull();
   });
 
   it("shows the skeleton while either fetch is still loading", () => {
