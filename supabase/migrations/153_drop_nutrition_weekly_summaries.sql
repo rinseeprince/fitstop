@@ -1,0 +1,36 @@
+-- Drop nutrition_weekly_summaries — a table with no reader and no writer left.
+--
+-- It held per-client weekly nutrition roll-ups (created in migration 042, RLS in
+-- 043). The 2026-08-26 dead-code sweep removed both ends of it: R13 deleted the
+-- coach route `GET /api/clients/[id]/weekly-nutrition` along with
+-- getWeeklySummaries / getLatestWeeklySummary, and its last writer,
+-- upsertWeeklySummary, went with the one-off script that called it (S3). The sweep
+-- flagged the orphaned table rather than dropping it, because a table is schema
+-- work rather than a code edit. Verified again before writing this: zero
+-- references to any of those symbols, and no live code names the table — the only
+-- mentions left are types/database.ts (a mechanical `gen types` mirror) and the
+-- migrations that built it.
+--
+-- Probed BOTH databases first, because a DROP cannot be undone by a follow-up
+-- migration and row counts are per-database facts (CONVENTIONS §8):
+--
+--                        dev    prod
+--   rows                   0       0
+--   FKs pointing at it     0       0
+--   views/matviews on it   0       0
+--
+-- So nothing is destroyed and nothing breaks. Its indexes, RLS policies and its
+-- `update_nutrition_weekly_summaries_updated_at` trigger drop with it; the shared
+-- update_updated_at_column() function stays, since many other tables use it.
+--
+-- Deliberately NOT `CASCADE`. Both databases say nothing depends on this table, so
+-- a plain DROP is the assertion that this is true: if some object neither probe
+-- caught still references it, this errors and says so, where CASCADE would
+-- silently destroy that object too.
+--
+-- Not an external-consumer table. docs/ARCHITECTURE.md → External Consumers
+-- documents exactly one table written from outside this repo (waitlist_signups,
+-- by atletafit-marketing); this one is per-client coach data behind a client_id
+-- FK and has no place in a public marketing form.
+
+DROP TABLE IF EXISTS public.nutrition_weekly_summaries;
