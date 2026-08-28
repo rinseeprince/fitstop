@@ -145,6 +145,15 @@ export const submitCheckIn = async (
     .single();
 
   if (error) {
+    // 23505 is idx_check_ins_client_period_unique (migration 156): a check-in
+    // already covers this period. The write path checks the gate before getting
+    // here, so reaching this means a race — two submissions in flight at once,
+    // which is exactly the double-tap the constraint exists for. Translated
+    // rather than rethrown: a client must never be shown "duplicate key value
+    // violates unique constraint" (CONVENTIONS §10).
+    if ((error as { code?: string }).code === "23505") {
+      throw new Error("You have already checked in for this period.");
+    }
     throw new Error(`Failed to submit check-in: ${error.message}`);
   }
 

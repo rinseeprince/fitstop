@@ -1220,13 +1220,48 @@ unreachable through the app.
 resolves to `not_due` / 3 Sep on the client gate and 3 Sep on the coach path.
 A regression test built from that exact row lives in `lib/check-in-gate.test.ts`.
 
-**Owed, NOT done — duplicate submissions.** The "you cannot check in early or
-twice" rule lives only in the gate; `POST /api/client/check-ins` does not
-re-check it, so a double-tap or a background retry can file two check-ins for
-one week and advance the schedule twice, skipping a check-in. §11.3 already
-notes the other half: `idx_check_ins_period` is a plain index, not unique, so
-the database does not stop it either. Route check + unique constraint, its own
-commit.
+**Duplicate submissions — CLOSED by commit 12.** See §11.11.
+
+---
+
+### 11.11 Commit 12 — one check-in per period, enforced twice
+
+"You cannot check in early, or twice" lived only in the screen that opens the
+form. That is enough against a person and useless against a **double-tap or a
+background retry**, which is the realistic way two check-ins land for one week —
+and a duplicate is not cosmetic: each submission advances `next_check_in_due` by
+one frequency step, so two advance it twice and the client silently **skips** a
+check-in. It had already happened once, at a midnight boundary; the note above
+the snapshot write in `app/api/client/check-ins/route.ts` records it.
+
+**Two layers, because either alone is a promise rather than a guarantee.**
+
+1. **The write path re-checks the gate.** `POST /api/client/check-ins` calls
+   `getCheckInGate` and returns **409** on `not_due`. 409 rather than 403: the
+   request is authenticated and authorised, it conflicts with the state the
+   client is already in — the same reading as the training-event occupancy
+   conflicts. It runs **before the photo uploads**, so a refused submission
+   leaves no orphaned objects in storage. The client read that used to sit after
+   the submit was hoisted to feed it; no extra query.
+2. **The database refuses duplicates** — migration 156, a partial unique index
+   on `check_ins (client_id, period_end) WHERE period_end IS NOT NULL`.
+   `period_end` alone, not the pair: the period ENDS on the check-in day and
+   that is what identifies it, while `period_start` moves on its own (clamped
+   forward to the activation date for a partial first week), so including it
+   would let two check-ins share a week whenever their starts differed. Partial
+   because 56 legacy pre-038 rows carry no period; Postgres treats NULLs as
+   distinct anyway, so the predicate states intent rather than changing
+   behaviour. `idx_check_ins_period` is left alone.
+
+**And the constraint's error is translated, not rethrown.** `submitCheckIn` maps
+`23505` to "You have already checked in for this period." — a client must never
+be shown `duplicate key value violates unique constraint` (CONVENTIONS §10).
+
+**Probed before writing, since "zero duplicates exist" is a per-database fact:**
+dev 2864 check-ins with **0** duplicate `(client_id, period_end)` pairs and 56
+null periods; prod 0 check-ins. **And the constraint was proven, not assumed** —
+a real duplicate INSERT against dev was rejected with `23505` naming the index,
+and the row count was unchanged either side.
 
 ---
 

@@ -996,10 +996,15 @@ contract.** Their internals swapped onto the stored date; their response shapes 
 their three test files are the guard. "No schedule" is tested at the call site
 (`nextCheckInDue == null`), because `checkInWeekday` deliberately never returns null.
 
-**Known gap — duplicate submissions.** "You cannot check in early, or twice" is enforced by the
-gate only; `POST /api/client/check-ins` does not re-check it, and `idx_check_ins_period` is a plain
-index rather than a unique constraint. A double-tap or a background retry can therefore file two
-check-ins for one week and advance the schedule twice, skipping one. Not yet closed.
+**One check-in per period, enforced twice** (migration 156). A duplicate advances
+`next_check_in_due` twice and silently skips a cycle, and the realistic cause is a double-tap or a
+background retry rather than a person — neither of which goes back through the form screen. So
+`POST /api/client/check-ins` re-checks `getCheckInGate` and returns **409** on `not_due` (before the
+photo uploads, so a refusal leaves no orphaned storage objects), and a partial unique index on
+`check_ins (client_id, period_end) WHERE period_end IS NOT NULL` is the backstop that does not
+depend on a future caller remembering. `period_end` alone identifies the period — `period_start` is
+clamped forward for a partial first week and moves on its own. `submitCheckIn` translates the
+resulting `23505` into a readable sentence; a client never sees the constraint text.
 
 ---
 

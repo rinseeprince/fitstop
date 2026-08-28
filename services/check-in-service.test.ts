@@ -140,6 +140,35 @@ describe('Check-in Service', () => {
       expect(q.insert).toHaveBeenCalled()
     })
 
+    // The database backstop (migration 156). The write path checks the gate
+    // first, so reaching a 23505 means two submissions raced — the double-tap
+    // the constraint exists for. A client must never be shown the raw
+    // Postgres text (CONVENTIONS §10).
+    it('translates the duplicate-period constraint into a sentence a client can read', async () => {
+      mockInsert({
+        data: null,
+        error: {
+          code: '23505',
+          message:
+            'duplicate key value violates unique constraint "idx_check_ins_client_period_unique"',
+        },
+      })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await expect(
+        submitCheckIn('client-123', { weight: 180, weightUnit: 'lbs' }),
+      ).rejects.toThrow('You have already checked in for this period.')
+    })
+
+    it('still surfaces other insert failures with their cause', async () => {
+      mockInsert({ data: null, error: { code: '42501', message: 'permission denied' } })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await expect(
+        submitCheckIn('client-123', { weight: 180, weightUnit: 'lbs' }),
+      ).rejects.toThrow('permission denied')
+    })
+
     // ---- the SECOND writer of clients.next_check_in_due ----------------
     // The coach's date picker is the first. Nothing else may write it.
 

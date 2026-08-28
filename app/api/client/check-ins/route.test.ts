@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 vi.mock('@/lib/require-client-auth', () => ({
@@ -16,19 +16,24 @@ vi.mock('@/services/check-in-service', () => ({
 // The GET handler uses none of the POST-path collaborators, but importing ./route
 // loads them — and several create clients (Supabase, Resend) at module load and
 // throw without env. Stub them so the suite can import the route under test.
-vi.mock('@/services/supabase-admin', () => ({ supabaseAdmin: {} }));
+vi.mock('@/services/supabase-admin', () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock('@/services/client-service', () => ({ getClientById: vi.fn() }));
 vi.mock('@/services/storage-service', () => ({ uploadProgressPhotoFromBase64: vi.fn() }));
 vi.mock('@/services/client-check-in-service', () => ({
-  triggerAISummaryGeneration: vi.fn(),
+  // Resolved, not bare: the route fires it and chains .catch() on the result.
+  triggerAISummaryGeneration: vi.fn().mockResolvedValue(undefined),
   updateClientMetricsFromCheckIn: vi.fn(),
 }));
 vi.mock('@/services/check-in-adherence-service', () => ({ updateClientAdherenceStats: vi.fn() }));
 vi.mock('@/services/check-in-snapshot-service', () => ({ generateAndSaveCheckInSnapshot: vi.fn() }));
 
-import { GET } from './route';
+import { GET, POST } from './route';
 import { requireClientAuth } from '@/lib/require-client-auth';
-import { getClientCheckIns } from '@/services/check-in-service';
+import { getClientCheckIns, submitCheckIn } from '@/services/check-in-service';
+import { getClientById } from '@/services/client-service';
+import { triggerAISummaryGeneration } from '@/services/client-check-in-service';
+import { supabaseAdmin } from '@/services/supabase-admin';
+import { uploadProgressPhotoFromBase64 } from '@/services/storage-service';
 import { encodeCursor } from '@/lib/cursor';
 
 const req = (url: string) => new NextRequest(url);
@@ -109,5 +114,99 @@ describe('GET /api/client/check-ins', () => {
     const res = await GET(req('https://t.dev/api/client/check-ins?limit=2'));
     expect(res.status).toBe(401);
     expect(getClientCheckIns).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The write path re-checks the gate the form screen already applied. Not
+ * belt-and-braces for its own sake: a duplicate check-in advances
+ * clients.next_check_in_due TWICE, so the client silently skips one — and the
+ * realistic way two land is a double-tap or a background retry, neither of
+ * which goes back through the screen.
+ */
+describe('POST /api/client/check-ins — the write path gates too', () => {
+  const post = (body: unknown) =>
+    new NextRequest('https://t.dev/api/client/check-ins', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json' },
+    });
+
+  const PAYLOAD = { weight: 80, weightUnit: 'kg' as const };
+
+  function mockClient(nextCheckInDue: string | undefined) {
+    vi.mocked(getClientById).mockResolvedValue({
+      id: 'client-123',
+      timezone: 'UTC',
+      checkInFrequency: 'weekly',
+      nextCheckInDue,
+    } as never);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-12T12:00:00Z'));
+    vi.mocked(requireClientAuth).mockResolvedValue({ ok: true, clientId: 'client-123' } as never);
+    vi.mocked(submitCheckIn).mockResolvedValue('new-check-in-id' as never);
+    vi.mocked(triggerAISummaryGeneration).mockResolvedValue(undefined as never);
+    // The post-submit snapshot read. Its period is returned as null so the
+    // snapshot generator is skipped — this suite is about the gate.
+    vi.mocked(supabaseAdmin.from).mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: null }),
+    } as never);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('refuses a client who is not due yet with 409, and writes nothing', async () => {
+    mockClient('2026-06-14'); // two days out
+
+    const res = await POST(post(PAYLOAD));
+    const body = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(body.success).toBe(false);
+    expect(body.errorMessage).toContain('2026-06-14');
+    expect(submitCheckIn).not.toHaveBeenCalled();
+  });
+
+  it('refuses BEFORE uploading photos, so a rejected submit leaves no orphans', async () => {
+    mockClient('2026-06-14');
+
+    await POST(post({ ...PAYLOAD, photoFront: 'data:image/png;base64,AAAA' }));
+
+    expect(uploadProgressPhotoFromBase64).not.toHaveBeenCalled();
+  });
+
+  it('lets a client through on their due day', async () => {
+    mockClient('2026-06-12'); // today
+
+    const res = await POST(post(PAYLOAD));
+
+    expect(res.status).toBe(201);
+    expect(submitCheckIn).toHaveBeenCalled();
+  });
+
+  it('lets an overdue client through — late is still loggable', async () => {
+    mockClient('2026-06-10');
+
+    const res = await POST(post(PAYLOAD));
+
+    expect(res.status).toBe(201);
+    expect(submitCheckIn).toHaveBeenCalled();
+  });
+
+  it('lets an unscheduled client through', async () => {
+    mockClient(undefined);
+
+    const res = await POST(post(PAYLOAD));
+
+    expect(res.status).toBe(201);
+    expect(submitCheckIn).toHaveBeenCalled();
   });
 });

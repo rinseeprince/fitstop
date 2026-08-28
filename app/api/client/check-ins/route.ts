@@ -3,6 +3,7 @@ import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientById } from "@/services/client-service";
 import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { submitCheckIn, getClientCheckIns } from "@/services/check-in-service";
+import { getCheckInGate } from "@/lib/check-in-schedule";
 import { toCanonicalCheckInMetrics } from "@/utils/check-in-canonical-metrics";
 import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/services/client-check-in-service";
 import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
@@ -143,6 +144,7 @@ export async function GET(request: NextRequest) {
  * 
  * @throws {401} Unauthorized - Client not authenticated
  * @throws {400} Invalid input data
+ * @throws {409} Not due yet, or already checked in for this period
  * @throws {500} Server error during check-in processing
  */
 export async function POST(request: NextRequest) {
@@ -176,6 +178,36 @@ export async function POST(request: NextRequest) {
     // Client ID is determined from authentication context - no need to verify from request body
 
     const clientId = authenticatedClientId;
+
+    // The gate again, on the WRITE path.
+    //
+    // Until now "you cannot check in early, or twice" was enforced only by the
+    // screen that opens the form (GET /api/client/check-in-context). That is
+    // fine against a person and useless against a double-tap or a background
+    // retry, which is the realistic way two check-ins land for one week — and
+    // two check-ins advance the schedule twice, so the client silently SKIPS
+    // one. The comment further down records this exact class of bug happening
+    // once already, at a midnight boundary.
+    //
+    // 409, not 403: the request is authenticated and authorised, it just
+    // conflicts with the state the client is already in — the same reading as
+    // the training-event occupancy conflicts.
+    //
+    // Before the photo uploads deliberately: refusing after them would burn the
+    // work and leave orphaned objects in storage.
+    const client = await getClientById(clientId);
+    if (client) {
+      const { status, nextDueDate } = getCheckInGate(client);
+      if (status === "not_due") {
+        const response: SubmitCheckInResponse = {
+          success: false,
+          errorMessage: nextDueDate
+            ? `Your next check-in is due on ${nextDueDate}.`
+            : "You are not due for a check-in yet.",
+        };
+        return NextResponse.json(response, { status: 409 });
+      }
+    }
 
     // Handle photo uploads if provided
     const photoUrls = {
@@ -251,7 +283,6 @@ export async function POST(request: NextRequest) {
     // client-local period — which broke the "completed" gate right after
     // submitting (duplicate same-week check-ins at the midnight boundary) and
     // froze the snapshot over the wrong week.
-    const client = await getClientById(clientId);
     const { data: storedPeriod } = await supabaseAdmin
       .from("check_ins")
       .select("period_start, period_end")
