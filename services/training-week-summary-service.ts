@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { countEventsInRange } from "./training-event-service";
 import { getCoachTodayString } from "./today-service";
+import { getClientWeekAnchor } from "./check-in-week-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import type { TrainingWeekSummary } from "@/types/history";
 
@@ -23,17 +24,11 @@ export const getTrainingWeekSummary = async (
   clientId: string,
   coachId: string
 ): Promise<TrainingWeekSummaryWithWindow> => {
-  // Fetch client's check-in day for correct week boundaries
-  const { data: clientRow } = await supabaseAdmin
-    .from("clients")
-    .select("expected_check_in_day")
-    .eq("id", clientId)
-    .single();
-
-  const checkInDay = clientRow?.expected_check_in_day ?? "monday";
-
   // Coach-local "current week": this is the coach's summary view.
-  const today = await getCoachTodayString(coachId);
+  const [{ weekday: checkInDay }, today] = await Promise.all([
+    getClientWeekAnchor(clientId),
+    getCoachTodayString(coachId),
+  ]);
   const weekStart = getTrainingWeekStart(today, checkInDay);
   const weekEnd = getTrainingWeekEnd(today, checkInDay);
 

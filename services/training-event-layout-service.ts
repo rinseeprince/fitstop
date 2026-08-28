@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
+import { getClientWeekAnchor } from "./check-in-week-service";
 import { cascadeNutritionAfterTrainingChange } from "./nutrition-event-service";
 import {
   DateOccupiedError,
@@ -67,28 +68,20 @@ export async function applyClientLayout(
   if (real.length === 0) return { moved: [] };
 
   const ids = real.map((m) => m.eventId);
-  const [eventsRes, clientRes, today] = await Promise.all([
+  const [eventsRes, { weekday: checkInDay }, today] = await Promise.all([
     supabaseAdmin
       .from("training_events")
       .select("id, date, status")
       .eq("client_id", clientId)
       .in("id", ids),
-    supabaseAdmin
-      .from("clients")
-      .select("expected_check_in_day")
-      .eq("id", clientId)
-      .maybeSingle(),
+    getClientWeekAnchor(clientId),
     getClientTodayString(clientId),
   ]);
   if (eventsRes.error) {
     throw new Error(`Failed to load events for layout: ${eventsRes.error.message}`);
   }
-  if (clientRes.error) {
-    throw new Error(`Failed to load client for layout: ${clientRes.error.message}`);
-  }
 
   const byId = new Map((eventsRes.data ?? []).map((e) => [e.id, e]));
-  const checkInDay = clientRes.data?.expected_check_in_day ?? null;
 
   for (const m of real) {
     const event = byId.get(m.eventId);

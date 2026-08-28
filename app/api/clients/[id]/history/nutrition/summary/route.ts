@@ -4,6 +4,7 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { getCoachTodayString } from "@/services/today-service";
+import { getClientWeekAnchor } from "@/services/check-in-week-service";
 
 export async function GET(
   request: NextRequest,
@@ -18,19 +19,12 @@ export async function GET(
     const auth = await requireCoachOwnsClient(clientId);
     if (!auth.authorized) return auth.response;
 
-    // Fetch client's check-in day and start date for correct week boundaries
-    // Uses supabaseAdmin: coach querying client data (RLS exception 2)
-    const { data: clientRow } = await supabaseAdmin
-      .from("clients")
-      .select("expected_check_in_day, start_date")
-      .eq("id", clientId)
-      .single();
-
-    const checkInDay = clientRow?.expected_check_in_day ?? null;
-    const clientStartDate: string | null = clientRow?.start_date ?? null;
-
     // Coach-local "current week": this is the coach's summary view.
-    const today = await getCoachTodayString(auth.coachId);
+    const [{ weekday: checkInDay, startDate: clientStartDate }, today] =
+      await Promise.all([
+        getClientWeekAnchor(clientId),
+        getCoachTodayString(auth.coachId),
+      ]);
     const weekStart = getTrainingWeekStart(today, checkInDay);
     const weekEnd = getTrainingWeekEnd(today, checkInDay);
 

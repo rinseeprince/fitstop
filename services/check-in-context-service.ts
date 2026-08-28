@@ -6,6 +6,7 @@ import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { getClientTodayString } from "./today-service";
+import { getClientWeekAnchor } from "./check-in-week-service";
 import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
 import type {
   CheckInTrainingContext,
@@ -60,8 +61,15 @@ export const getCheckInNutritionContext = async (
 ): Promise<CheckInNutritionContext> => {
   // Client-local today: the check-in form's "current week" targets must agree
   // with the gate/period (also client-local) — at 00:30 local just past a UTC
-  // week rollover, server-UTC today would show last week's targets.
-  const today = await getClientTodayString(clientId);
+  // week rollover, server-UTC today would show last week's targets. The week
+  // ANCHOR is fetched alongside for the same reason: this window used to be
+  // hard-Mon-Sun for every client, so a Wednesday client's "current week"
+  // targets covered a different seven days from the period they were about to
+  // report on.
+  const [today, { weekday: checkInDay }] = await Promise.all([
+    getClientTodayString(clientId),
+    getClientWeekAnchor(clientId),
+  ]);
 
   // Versioned model (migration 144): the gate is COVERING-existence — is a
   // version governing the client's today? The row is used only as this gate
@@ -77,8 +85,8 @@ export const getCheckInNutritionContext = async (
   }
 
   // Try event-based targets for the current week
-  const weekStart = getTrainingWeekStart(today);
-  const weekEnd = getTrainingWeekEnd(today);
+  const weekStart = getTrainingWeekStart(today, checkInDay);
+  const weekEnd = getTrainingWeekEnd(today, checkInDay);
 
   const [events, { data: clientRow }] = await Promise.all([
     getNutritionEventsForDateRange(clientId, weekStart, weekEnd),

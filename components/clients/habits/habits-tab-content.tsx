@@ -15,6 +15,7 @@ import {
   getTrainingWeekEnd,
   getDateString,
 } from "@/lib/date-helpers";
+import { checkInWeekday } from "@/lib/check-in-week";
 import type { Client } from "@/types/check-in";
 
 type HabitsTabContentProps = {
@@ -26,7 +27,7 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const today = useMemo(() => getTodayDateString(), []);
-  const checkInDay = client.expectedCheckInDay ?? null;
+  const checkInDay = checkInWeekday(client);
 
   const weekStart = useMemo(() => {
     const baseStart = getTrainingWeekStart(today, checkInDay);

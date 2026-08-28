@@ -41,7 +41,7 @@ type Chain = Record<string, ReturnType<typeof vi.fn>>;
 
 function makeChain(terminal: string, result: unknown): Chain {
   const chain: Chain = {};
-  for (const m of ["select", "eq", "or", "gte", "lte", "single"]) {
+  for (const m of ["select", "eq", "or", "gte", "lte", "single", "maybeSingle"]) {
     chain[m] = vi.fn().mockReturnValue(chain);
   }
   chain[terminal] = vi.fn().mockResolvedValue(result);
@@ -95,7 +95,9 @@ describe("GET /api/clients/[id]/history/wellness/summary", () => {
   });
 
   it("7-day training-week window is also capped at coach-local today", async () => {
-    const clientsChain = makeChain("single", {
+    // The week anchor is fetched through getClientWeekAnchor, which reads the
+    // one `clients` row with .maybeSingle().
+    const clientsChain = makeChain("maybeSingle", {
       data: { expected_check_in_day: null, start_date: null },
     });
     const wellnessChain = makeChain("lte", { data: [], error: null });

@@ -4,6 +4,7 @@ import { apiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
 import { getWeeklyHabitsData } from "@/services/habits-weekly-service";
 import { getTrainingWeekStart } from "@/lib/date-helpers";
+import { checkInWeekday } from "@/lib/check-in-week";
 import { getCoachTodayString } from "@/services/today-service";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -80,12 +81,13 @@ export async function GET(
     }
 
     // Snap to coaching week start
-    const weekStart = getTrainingWeekStart(weekStartParam, client.expectedCheckInDay);
+    const checkInDay = checkInWeekday(client);
+    const weekStart = getTrainingWeekStart(weekStartParam, checkInDay);
 
     const data = await getWeeklyHabitsData(
       clientId,
       weekStart,
-      client.expectedCheckInDay,
+      checkInDay,
       // Coach-local today (this is the coach's weekly view).
       await getCoachTodayString(coachId)
     );

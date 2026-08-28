@@ -84,13 +84,20 @@ describe("getClientNutritionTargets", () => {
       },
       error: null,
     });
+    // getClientWeekAnchor's own `clients` read, issued alongside the display-
+    // prefs one inside the same Promise.all. No check-in day -> Mon-Sun.
+    const anchorQuery = createMockQuery({
+      data: { expected_check_in_day: null, start_date: null },
+      error: null,
+    });
     const targetsQuery = createMockQuery({ data: [], error: null });
 
     let call = 0;
     vi.mocked(supabaseAdmin.from).mockImplementation((() => {
       call++;
       if (call === 1) return clientQuery;
-      if (call === 2) return planQuery;
+      if (call === 2) return anchorQuery;
+      if (call === 3) return planQuery;
       return targetsQuery;
     }) as never);
 
@@ -98,7 +105,7 @@ describe("getClientNutritionTargets", () => {
 
     expect(result).not.toBeNull();
     expect(getClientTodayString).toHaveBeenCalledWith("client-1");
-    // 2026-06-10 is a Wednesday: Monday-anchored week = 06-08 .. 06-14.
+    // 2026-06-10 is a Wednesday: no check-in day -> Mon-Sun = 06-08 .. 06-14.
     expect(getEventsForDateRange).toHaveBeenCalledWith(
       "client-1",
       "2026-06-08",
@@ -110,6 +117,64 @@ describe("getClientNutritionTargets", () => {
       "client-1",
       "2026-06-08",
       "2026-06-14",
+    );
+  });
+
+  // The client's own nutrition page used to be hard Mon-Sun for everyone,
+  // while every coach surface cut the same client's week on their check-in
+  // day. This is the assertion that the two now agree.
+  it("anchors the week on the client's check-in day, not on Monday", async () => {
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-06-10");
+
+    const clientQuery = createMockQuery({
+      data: { include_activity_burn: true, unit_preference: "metric" },
+      error: null,
+    });
+    const anchorQuery = createMockQuery({
+      data: { expected_check_in_day: "wednesday", start_date: null },
+      error: null,
+    });
+    const planQuery = createMockQuery({
+      data: {
+        id: "plan-1",
+        status: "active",
+        effective_from: "2026-05-01",
+        effective_until: null,
+        diet_type: "balanced",
+        custom_macros_enabled: false,
+        baseline_calories: 2200,
+        protein_target_g: 170,
+        carb_target_g: 240,
+        fat_target_g: 70,
+      },
+      error: null,
+    });
+    const targetsQuery = createMockQuery({ data: [], error: null });
+
+    let call = 0;
+    vi.mocked(supabaseAdmin.from).mockImplementation((() => {
+      call++;
+      if (call === 1) return clientQuery;
+      if (call === 2) return anchorQuery;
+      if (call === 3) return planQuery;
+      return targetsQuery;
+    }) as never);
+
+    await getClientNutritionTargets("client-1");
+
+    // Wednesday check-in => the week ENDS on Wednesday and starts the day
+    // after. Client-local today is Wed 2026-06-10, so the window that
+    // contains it is Thu 06-04 .. Wed 06-10 — NOT the Mon 06-08 .. Sun 06-14
+    // this read returned for every client before.
+    expect(getEventsForDateRange).toHaveBeenCalledWith(
+      "client-1",
+      "2026-06-04",
+      "2026-06-10",
+    );
+    expect(getNutritionEventsForDateRange).toHaveBeenCalledWith(
+      "client-1",
+      "2026-06-04",
+      "2026-06-10",
     );
   });
 
@@ -143,13 +208,18 @@ describe("getClientNutritionTargets", () => {
       },
       error: null,
     });
+    const anchorQuery = createMockQuery({
+      data: { expected_check_in_day: null, start_date: null },
+      error: null,
+    });
     const targetsQuery = createMockQuery({ data: [], error: null });
 
     let call = 0;
     vi.mocked(supabaseAdmin.from).mockImplementation((() => {
       call++;
       if (call === 1) return clientQuery;
-      if (call === 2) return planQuery;
+      if (call === 2) return anchorQuery;
+      if (call === 3) return planQuery;
       return targetsQuery;
     }) as never);
 

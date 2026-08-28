@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
+import { getClientWeekAnchor } from "./check-in-week-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import type {
   ClientTrainingWeek,
@@ -33,19 +34,11 @@ export async function getClientTrainingWeek(
   clientId: string,
   date: string
 ): Promise<ClientTrainingWeek> {
-  const [clientRes, today] = await Promise.all([
-    supabaseAdmin
-      .from("clients")
-      .select("expected_check_in_day")
-      .eq("id", clientId)
-      .maybeSingle(),
+  const [{ weekday: checkInDay }, today] = await Promise.all([
+    getClientWeekAnchor(clientId),
     getClientTodayString(clientId),
   ]);
-  if (clientRes.error) {
-    throw new Error(`Failed to load client for training week: ${clientRes.error.message}`);
-  }
 
-  const checkInDay = clientRes.data?.expected_check_in_day ?? null;
   const weekStart = getTrainingWeekStart(date, checkInDay);
   const weekEnd = getTrainingWeekEnd(date, checkInDay);
 

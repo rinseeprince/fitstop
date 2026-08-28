@@ -4,6 +4,7 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getTrainingWeekStart, getTrainingWeekEnd, getDateDaysFrom } from "@/lib/date-helpers";
 import { getCoachTodayString } from "@/services/today-service";
+import { getClientWeekAnchor } from "@/services/check-in-week-service";
 
 export async function GET(
   request: NextRequest,
@@ -31,15 +32,8 @@ export async function GET(
 
     if (days === 7) {
       // Use training week boundaries for the default 7-day view
-      // Fetch client's check-in day and start date
-      const { data: clientRow } = await supabaseAdmin
-        .from("clients")
-        .select("expected_check_in_day, start_date")
-        .eq("id", clientId)
-        .single();
-
-      const checkInDay = clientRow?.expected_check_in_day ?? null;
-      const clientStartDate: string | null = clientRow?.start_date ?? null;
+      const { weekday: checkInDay, startDate: clientStartDate } =
+        await getClientWeekAnchor(clientId);
 
       const weekStart = getTrainingWeekStart(today, checkInDay);
       const weekEnd = getTrainingWeekEnd(today, checkInDay);

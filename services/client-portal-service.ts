@@ -9,6 +9,7 @@ import { mapClientRow } from "@/lib/mappers";
 import { getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
+import { getClientWeekAnchor } from "./check-in-week-service";
 import { getClientTodayString } from "./today-service";
 
 // Session-scoped Supabase client, for the one read that genuinely needs the
@@ -84,23 +85,30 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
 export async function getClientNutritionTargets(
   clientId: string
 ): Promise<NutritionTargets | null> {
-  // Read include_activity_burn, unit_preference + surplus_as_carbs from clients
-  // (display prefs stay on clients). surplus_as_carbs decides how a training-day
-  // surplus splits — the program card must match the coach calendar.
-  const { data: clientData, error: clientError } = await supabaseAdmin
-    .from("clients")
-    .select("include_activity_burn, unit_preference, surplus_as_carbs")
-    .eq("id", clientId)
-    .single();
+  // Three independent client-scoped reads, run together.
+  //
+  // - display prefs (surplus_as_carbs decides how a training-day surplus
+  //   splits — the program card must match the coach calendar);
+  // - client-local today, because at 00:30 local just after a UTC week
+  //   boundary server-UTC today would show last week's targets;
+  // - the weekday their week ends on. This window used to be hard Mon-Sun for
+  //   every client, so a client's own nutrition page described a different
+  //   seven days from the week their coach sees for them.
+  const [{ data: clientData, error: clientError }, today, { weekday: checkInDay }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("clients")
+        .select("include_activity_burn, unit_preference, surplus_as_carbs")
+        .eq("id", clientId)
+        .single(),
+      getClientTodayString(clientId),
+      getClientWeekAnchor(clientId),
+    ]);
 
   if (clientError || !clientData) return null;
 
   const includeActivityBurn = clientData.include_activity_burn ?? true;
   const surplusAsCarbs = clientData.surplus_as_carbs ?? false;
-
-  // Client-local today: the live-week anchor below. At 00:30 local just after
-  // a UTC week boundary, server-UTC today would show last week's targets.
-  const today = await getClientTodayString(clientId);
 
   // The version COVERING the client's today (migration 144): the portal's
   // program card shows what governs them NOW. The old newest-active read
@@ -132,8 +140,8 @@ export async function getClientNutritionTargets(
   // Fetch the current week's training events for live calorie enrichment,
   // plus the week's dense nutrition events so per-day coach edits (is_modified)
   // surface on the program card. Anchored to client-local today.
-  const weekStart = getTrainingWeekStart(today);
-  const weekEnd = getTrainingWeekEnd(today);
+  const weekStart = getTrainingWeekStart(today, checkInDay);
+  const weekEnd = getTrainingWeekEnd(today, checkInDay);
 
   const [trainingEvents, nutritionEvents] = await Promise.all([
     getEventsForDateRange(clientId, weekStart, weekEnd),

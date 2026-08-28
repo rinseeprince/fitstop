@@ -4,6 +4,7 @@ import {
   mapCompletionQualityToEventStatus,
 } from "./training-event-service";
 import { getTrainingWeekStart } from "@/lib/date-helpers";
+import { getClientWeekAnchor } from "./check-in-week-service";
 import { assertCanEditTrainingDay } from "./daily-log-permissions-service";
 import type {
   ExerciseLogInsert,
@@ -737,22 +738,6 @@ async function writeSessionLog(params: {
 }
 
 // =============================================================================
-// getClientCheckInDay (shared)
-// =============================================================================
-
-async function getClientCheckInDay(clientId: string): Promise<string | null> {
-  const { data, error } = await supabaseAdmin
-    .from("clients")
-    .select("expected_check_in_day")
-    .eq("id", clientId)
-    .maybeSingle();
-  if (error) {
-    throw new Error(`Failed to load client check-in day: ${error.message}`);
-  }
-  return data?.expected_check_in_day ?? null;
-}
-
-// =============================================================================
 // logTrainingEvent (event-keyed) — the ONLY training writer since 2026-08-26:
 // a workout is always logged through its event, because the client moves the
 // event to the day they train first (services/training-event-layout-service).
@@ -788,7 +773,7 @@ export async function logTrainingEvent(params: {
     eventRow.session_log_id ? "logged" : "never-logged",
   );
 
-  const checkInDay = await getClientCheckInDay(clientId);
+  const { weekday: checkInDay } = await getClientWeekAnchor(clientId);
   const weekStartDate = getTrainingWeekStart(eventRow.date, checkInDay);
 
   // Performed session: the swap target when provided, else the prescribed one.

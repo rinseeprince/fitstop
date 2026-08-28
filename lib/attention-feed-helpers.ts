@@ -20,6 +20,8 @@ import {
   evaluateNoEngagement,
   type TriggerResult
 } from "@/lib/attention-triggers"
+import { checkInWeekday } from "@/lib/check-in-week"
+import type { DayOfWeek } from "@/types/check-in"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
 type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
@@ -54,7 +56,8 @@ export type ClientData = {
   habitLogs: DailyHabitLog[]
   trainingEvents: TrainingEventRow[]
   plannedSessionCount: number
-  checkInDay: string | null
+  /** Resolved through `checkInWeekday`, so never null — see lib/check-in-week.ts. */
+  checkInDay: DayOfWeek
   startDate: string | null
 }
 
@@ -77,7 +80,7 @@ export function groupClientData(
       habitLogs: [],
       trainingEvents: [],
       plannedSessionCount: 0,
-      checkInDay: client.expected_check_in_day ?? null,
+      checkInDay: checkInWeekday({ expectedCheckInDay: client.expected_check_in_day }),
       startDate: client.start_date ?? null,
     })
   })
