@@ -42,23 +42,7 @@ describe("TrainingDetail — the day strip", () => {
     expect(container.querySelectorAll(".rounded-full")).toHaveLength(5);
   });
 
-  it("wraps into weeks above three weeks rather than shrinking to slivers", () => {
-    // 2026-07-06 is a Monday, so a 30-day window pads one leading blank to put
-    // Sunday in column 0 and then runs whole weeks.
-    const dates = windowDates(30);
-    const rail: DotState[] = dates.map(() => "complete");
-
-    const { container } = render(<TrainingDetail dates={dates} rail={rail} />);
-
-    const grids = container.querySelectorAll<HTMLElement>('[style*="grid-template-columns"]');
-    expect(grids[0].style.gridTemplateColumns).toBe("repeat(7, minmax(0, 1fr))");
-    // 30 days + 1 leading pad so the columns stay weekday-aligned.
-    expect(grids[0].children).toHaveLength(31);
-    // One weekday label row serves every week, not one repeat per week.
-    expect(grids[1].children).toHaveLength(7);
-  });
-
-  it("keeps a single row at 21 days or fewer", () => {
+  it("is ONE row of the window's days, each under its weekday initial", () => {
     const dates = windowDates(14);
     const { container } = render(
       <TrainingDetail dates={dates} rail={dates.map(() => "complete")} />
@@ -66,6 +50,10 @@ describe("TrainingDetail — the day strip", () => {
 
     const grid = container.querySelector<HTMLElement>('[style*="grid-template-columns"]');
     expect(grid?.style.gridTemplateColumns).toBe("repeat(14, minmax(0, 1fr))");
+    expect(grid?.children).toHaveLength(14);
+    // Every column carries its own initial — the weeks-grid this replaced
+    // shared one label row across all of them.
+    expect(screen.getAllByText("M")).toHaveLength(2);
   });
 });
 

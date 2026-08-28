@@ -20,16 +20,20 @@ import {
   WellnessDetail,
   flagDaysByType,
 } from "./signal-details";
-import { overviewWindowLabel, type OverviewWindow } from "@/lib/overview/window";
+import { signalsWindowLabel } from "@/lib/overview/window";
 import type { ClientTab } from "@/lib/client-tabs";
 import type { AttentionAlert } from "@/types/attention-feed";
 import type { AdherenceSummary, DotState } from "@/types/coach-overview";
 import type { DailyLog } from "@/types/daily-log";
 
 /**
- * How consistent this client has been, over the window the Progression rail
- * selects. One card, four rows, each opening onto the detail its percentage
- * cannot carry.
+ * How consistent this client has been over the last fortnight. One card, four
+ * rows, each opening onto the detail its percentage cannot carry.
+ *
+ * The window is FIXED (`SIGNALS_WINDOW_DAYS`) and not offered as a choice —
+ * this is a glance, and the selectable 30/60 it replaced buried the days a
+ * coach can still act on inside a quarter of history. Long ranges live on the
+ * Journey tab.
  *
  * It replaces two cards — the three-rail adherence card and the five wellness
  * cards — that asked the coach to compare four consistency signals across two
@@ -43,7 +47,6 @@ type SignalsCardProps = {
   /** The window's dates, oldest → newest — the wellness panel's day axis. */
   dates: string[];
   attentionAlerts: AttentionAlert[];
-  windowDays: OverviewWindow;
   onTabChange: (tab: ClientTab) => void;
 };
 
@@ -180,11 +183,9 @@ function SignalRow({
 }
 
 function Shell({
-  windowDays,
   children,
   withLegend = true,
 }: {
-  windowDays: OverviewWindow;
   children: ReactNode;
   withLegend?: boolean;
 }) {
@@ -199,7 +200,7 @@ function Shell({
           <div className="flex shrink-0 items-center gap-4">
             {withLegend && <Legend />}
             <span className={cn(MONO_META_CLASS, "whitespace-nowrap text-[11px]")}>
-              {overviewWindowLabel(windowDays)}
+              {signalsWindowLabel()}
             </span>
           </div>
         }
@@ -216,12 +217,11 @@ export function SignalsCard({
   isWellnessLoading,
   dates,
   attentionAlerts,
-  windowDays,
   onTabChange,
 }: SignalsCardProps) {
   if (isAdherenceLoading && !adherence) {
     return (
-      <Shell windowDays={windowDays} withLegend={false}>
+      <Shell withLegend={false}>
         <Skeleton className="h-[228px] w-full rounded-[6px]" />
       </Shell>
     );
@@ -232,7 +232,7 @@ export function SignalsCard({
     // rewrite, and losing it turns a failed fetch into a client who does
     // nothing.
     return (
-      <Shell windowDays={windowDays} withLegend={false}>
+      <Shell withLegend={false}>
         <OverviewCard>
           <p className="px-5 py-10 text-center text-[13px] text-[#93b0b4]">
             Adherence could not be loaded.
@@ -253,7 +253,7 @@ export function SignalsCard({
   ).length;
 
   return (
-    <Shell windowDays={windowDays}>
+    <Shell>
       <OverviewCard>
         <div className="divide-y divide-[rgba(13,148,136,0.06)]">
           <SignalRow

@@ -18,7 +18,7 @@ import { SignalsCard } from "@/components/clients/overview/signals-card";
 import { SinceLastVisitSection } from "@/components/clients/overview/since-last-visit-section";
 import { StatusBand } from "@/components/clients/overview/status-band";
 import { trailingDates } from "@/components/clients/overview/overview-format";
-import { DEFAULT_OVERVIEW_WINDOW } from "@/lib/overview/window";
+import { SIGNALS_WINDOW_DAYS } from "@/lib/overview/window";
 import { useClientAdherence } from "@/hooks/use-client-adherence";
 import {
   useInvalidateMeasurementSeries,
@@ -62,8 +62,6 @@ export function ClientOverviewTab({
   onClientUpdated,
   onTabChange,
 }: ClientOverviewTabProps) {
-  // Fixed for now; the next commit replaces it with the Signals window constant.
-  const signalsWindow = DEFAULT_OVERVIEW_WINDOW;
   const {
     brief,
     isLoading: briefLoading,
@@ -90,10 +88,10 @@ export function ClientOverviewTab({
   // unlike a logs-derived grid, keeps a habit with nothing logged).
   const { adherence, isLoading: adherenceLoading } = useClientAdherence(
     client.id,
-    signalsWindow
+    SIGNALS_WINDOW_DAYS
   );
   const { logs: wellnessLogs, isLoading: wellnessLoading } = useWellnessData(client.id, {
-    daysBack: signalsWindow - 1,
+    daysBack: SIGNALS_WINDOW_DAYS - 1,
     withHabitLogs: false,
   });
   // Which body metric the chart is showing. Local to the page, not a URL param:
@@ -105,7 +103,7 @@ export function ClientOverviewTab({
     client.startDate
   );
 
-  const wellnessDates = useMemo(() => trailingDates(signalsWindow), [signalsWindow]);
+  const wellnessDates = useMemo(() => trailingDates(SIGNALS_WINDOW_DAYS), []);
   const { toast } = useToast();
 
   // The goal the client is on RIGHT NOW, resolved from `client_goals` through
@@ -278,7 +276,6 @@ export function ClientOverviewTab({
         isWellnessLoading={wellnessLoading}
         dates={wellnessDates}
         attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
-        windowDays={signalsWindow}
         onTabChange={goToTab}
       />
 

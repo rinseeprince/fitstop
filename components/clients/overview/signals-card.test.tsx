@@ -77,20 +77,18 @@ const PROPS = {
   isWellnessLoading: false,
   dates: DATES,
   attentionAlerts: [] as AttentionAlert[],
-  windowDays: 30 as const,
   onTabChange: vi.fn(),
 };
 
 beforeEach(() => cleanup());
 
 describe("SignalsCard", () => {
-  it("states the selected window on the rail", () => {
+  it("states its fixed fortnight on the rail — there is no window to choose", () => {
     render(<SignalsCard {...PROPS} />);
-    expect(screen.getByText("Last 30 days")).toBeInTheDocument();
 
-    cleanup();
-    render(<SignalsCard {...PROPS} windowDays={60} />);
-    expect(screen.getByText("Last 60 days")).toBeInTheDocument();
+    expect(screen.getByText("Last 14 days")).toBeInTheDocument();
+    // The 30/60 picker this replaced turned a glance into an analysis surface.
+    expect(screen.queryByRole("button", { name: /last 30 days/i })).not.toBeInTheDocument();
   });
 
   it("shows each row's percentage and plain-language sub-line", () => {

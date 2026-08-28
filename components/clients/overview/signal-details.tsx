@@ -18,9 +18,6 @@ import type { DailyLog } from "@/types/daily-log";
 // question its row's percentage cannot: WHICH days, WHICH habit, HOW FAR off
 // the target — never a second summary of the same number.
 
-/** Above this window the day strip wraps into weeks rather than shrinking. */
-const WEEK_GRID_ABOVE_DAYS = 21;
-
 const DOT_CLASS: Record<Exclude<DotState, "none">, string> = {
   complete: "bg-[#0d9488]",
   partial: "bg-[rgba(13,148,136,0.40)]",
@@ -77,13 +74,13 @@ function DetailCell({
 }
 
 /**
- * Session-by-session, aligned by day of week.
+ * Session-by-session: one column per day, its weekday initial beneath.
  *
- * Above three weeks it becomes a weeks x weekdays grid rather than one long
- * strip: at 60 days a single row is 60 slivers under eight repeats of the
- * weekday labels, and the one thing the labels buy — seeing that a client
- * always misses Fridays — is exactly what the column alignment preserves. One
- * label row serves every week.
+ * A single row, because the window is a fixed fortnight
+ * (`SIGNALS_WINDOW_DAYS`). It briefly wrapped into a weeks x weekdays grid,
+ * which only ever earned its keep at the 30/60 this replaced — at 60 days one
+ * row is sixty slivers under eight repeats of the labels. Fourteen columns are
+ * legible as they are, and this is the shape the adherence rail always had.
  *
  * The `none` state is a DASH, not a dot: no session was planned that day.
  * Rendering it as a missed dot turns every rest day into a failure.
@@ -95,58 +92,33 @@ export function TrainingDetail({
   dates: string[];
   rail: DotState[];
 }) {
-  const asGrid = dates.length > WEEK_GRID_ABOVE_DAYS;
-
-  // Pad the head so column 0 is always the same weekday, whatever day the
-  // window happens to start on — the alignment is the whole point.
-  const leadingBlanks = asGrid
-    ? new Date(`${dates[0]}T00:00:00`).getDay()
-    : 0;
-  const cells: ({ date: string; state: DotState } | null)[] = [
-    ...Array.from({ length: leadingBlanks }, () => null),
-    ...dates.map((date, i) => ({ date, state: rail[i] ?? "no_log" })),
-  ];
-
-  const columns = asGrid ? 7 : dates.length;
-  const labelDates = asGrid ? cells.slice(0, 7) : cells;
-
   return (
     <div>
       <PanelLabel>Session by session</PanelLabel>
       <div
         className="grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+        style={{ gridTemplateColumns: `repeat(${dates.length}, minmax(0, 1fr))` }}
       >
-        {cells.map((cell, i) =>
-          cell === null ? (
-            <span key={`pad-${i}`} aria-hidden />
-          ) : (
-            <span key={cell.date} className="flex h-4 items-center justify-center">
-              {cell.state === "none" ? (
-                <span className="block h-px w-2 bg-[rgba(13,148,136,0.20)]" aria-hidden />
+        {dates.map((date, i) => {
+          const state = rail[i] ?? "no_log";
+          return (
+            <div key={date} className="flex flex-col items-center gap-1">
+              {state === "none" ? (
+                <span className="flex h-2 w-2 items-center" aria-hidden>
+                  <span className="block h-px w-2 bg-[rgba(13,148,136,0.20)]" />
+                </span>
               ) : (
                 <span
-                  className={cn("h-2 w-2 rounded-full", DOT_CLASS[cell.state])}
+                  className={cn("h-2 w-2 shrink-0 rounded-full", DOT_CLASS[state])}
                   aria-hidden
                 />
               )}
-            </span>
-          )
-        )}
-      </div>
-      {/* One weekday row for the whole grid, under the first week. */}
-      <div
-        className="mt-1 grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
-      >
-        {labelDates.map((cell, i) => (
-          <span
-            key={cell ? `label-${cell.date}` : `label-pad-${i}`}
-            className="text-center text-[9px] leading-none text-[#c2d0cc]"
-          >
-            {cell ? formatDayInitial(cell.date) : ""}
-          </span>
-        ))}
+              <span className="text-[9px] leading-none text-[#93b0b4]">
+                {formatDayInitial(date)}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

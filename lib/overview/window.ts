@@ -1,29 +1,20 @@
 /**
- * The client Overview's single global window control.
+ * The window the Overview's Signals card reads.
  *
- * One window governs the progression chart and the Signals card (including
- * their expanded detail). It deliberately does NOT govern the structural
- * facts around them — goal targets, BMR/TDEE, the deadline, plan name/week,
- * the next check-in — which describe a client rather than a period.
+ * Fourteen days, and not selectable. Signals answers "where is this client at",
+ * which is a glance — 30 and 60 turned it into an analysis surface and buried
+ * the last fortnight, the part a coach acts on, inside a quarter of history.
+ * The Journey tab keeps the long ranges, which is where a long question
+ * belongs.
  *
- * `60` is the ceiling because the adherence read is unpaged: five selects with
- * no cursor, one of them `daily_habit_logs` (habits x days). At 60 days that
- * cannot approach PostgREST's row cap; at "all time" it silently could, and a
- * truncated rail reads as a client who stopped logging. Raise this only
- * alongside paging that read.
+ * The progression chart above it is deliberately NOT on this window: it shows
+ * the client's whole journey (`services/measurement-series-service.ts`). One
+ * page, two timescales, each stated where it is rendered.
  */
 
-export const OVERVIEW_WINDOWS = [30, 60] as const;
-
-export type OverviewWindow = (typeof OVERVIEW_WINDOWS)[number];
-
-export const DEFAULT_OVERVIEW_WINDOW: OverviewWindow = 30;
+export const SIGNALS_WINDOW_DAYS = 14;
 
 /** Divider-rail meta. Number-bearing, so the call site renders it mono. */
-export function overviewWindowLabel(days: OverviewWindow): string {
+export function signalsWindowLabel(days: number = SIGNALS_WINDOW_DAYS): string {
   return `Last ${days} days`;
-}
-
-export function isOverviewWindow(value: number): value is OverviewWindow {
-  return (OVERVIEW_WINDOWS as readonly number[]).includes(value);
 }
