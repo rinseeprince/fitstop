@@ -184,15 +184,10 @@ export function CoachNotesCard({
               aria-label="Add a note about this client"
               className={cn(
                 FOCUS_RING,
-                // Capped rather than full-bleed: a one-line note does not need
-                // the whole card, and the actions read as part of the row.
-                "h-8 max-w-xl rounded-[6px] border-[rgba(13,148,136,0.08)] text-[13px] placeholder:text-[#93b0b4]"
+                "h-8 min-w-0 flex-1 rounded-[6px] border-[rgba(13,148,136,0.08)] text-[13px] placeholder:text-[#93b0b4]"
               )}
             />
-            {/* Pinned to the card's right edge, not trailing the field: the
-                field is capped, so without the auto margin the pair sits
-                stranded in the middle of the row. */}
-            <div className="ml-auto flex shrink-0 items-center gap-4">
+            <div className="flex shrink-0 items-center gap-4">
               <button
                 type="button"
                 onClick={() => void handleSave()}
