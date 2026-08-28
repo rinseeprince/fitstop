@@ -191,7 +191,9 @@ When a check-in submits body metrics (`services/client-check-in-service.ts`):
 
 **Who already measures from it:** `check-in-service.ts` clamps the oldest check-in's period so its daily-log denominator never counts pre-start days; `weekly-nutrition-service.ts` shortens the first week for a client who started mid-week; `engagement-triggers.ts` holds the no-engagement alert until `start_date + NO_ENGAGEMENT_ACTIVATION_GRACE_DAYS` — and **returns null without one**, so a client with no start date has that alert silently disabled.
 
-**Both add-client paths require a weight**, so a client cannot be set up with no baseline: the intake questionnaire enforces it in `intakeStep1Schema`, and `createClientSchema` refuses a manual add without one (`setupMode !== "intake"` — the same predicate `createClient`'s `isIntakeMode` uses, since the field is optional on the wire and anything but `"intake"` is manual). Body fat stays optional on both; the details sheet's Baseline group is how it gets filled in later. `createClient` still seeds both `starting_*` columns at row birth — that is the value activation writes the entries from.
+**Both add-client paths require a weight**, so a client cannot be set up with no baseline: the intake questionnaire enforces it in `intakeStep1Schema`, and `createClientSchema` refuses a manual add without one (`setupMode !== "intake"` — the same predicate `createClient`'s `isIntakeMode` uses, since the field is optional on the wire and anything but `"intake"` is manual). Body fat stays optional on both; the details sheet's Baseline group is how it gets filled in later. `createClient` still seeds both `starting_*` columns at row birth — that is the value activation writes the entries from, and it stores `date_of_birth` alongside them (the add-client form collects it and the energy calculator consumes it; a client whose birth date is dropped at creation carries an age-correct BMR that the next recalculation silently changes).
+
+**The intake path is the gap those two schemas cannot close**, because the client row exists as `pending_intake` before the questionnaire is answered: the weight sits on `client_intake` until "Sync metrics" moves it. So the order is enforced rather than trusted — "Mark as reviewed" is disabled until a weight lands on the profile, and `POST …/activate` returns **409** without one. `hasStartWeight` (`lib/client-profile-completeness.ts`) is the single definition all three read, so a greyed button and the rule behind it cannot disagree.
 
 ### Read switch fallback
 
@@ -343,6 +345,8 @@ The **per-date day-view path** — `getPlanTargetForDate()` / `getNutritionForDa
 3. **Unlogged days without event**: returns `null` — **the level-3 template fallback is currently unbuilt** (there is no `getPlanTargetForDateFromTemplate`). Dense event generation/backfill is expected to cover the window, so a missing event reads as "no target".
 
 The **plan-based "typical week" / client program-card path** — `buildDailyTargetsFromPlan()` (`utils/build-daily-targets.ts`) — is event-first too, but for no-event days it **does** derive the target from the **covering version's** `nutrition_plan_daily_targets` grid (applying the same surplus-split). The template fallback is gated to BOTH ends of that version's window (migration 144): a no-event day outside `[effective_from, effective_until]` belongs to another era and returns no entry rather than the wrong era's numbers.
+
+**Each day carries its `date`, and the seven are emitted in the client's own week order** — the week ends on their check-in day, so it can begin on any weekday. The date is the payload's only statement of WHEN the week starts, and without it a renderer can only guess from weekday names: two independently guessed Monday-first, and a Saturday-to-Friday client was shown their week beginning three days in with its two earliest days last. `VerticalNutritionView` sorts on the date rather than a weekday list, the same way the training page sorts on the `orderIndex` the server hands it. **Never sort these by weekday name.**
 
 ---
 
@@ -582,7 +586,7 @@ A persistent bottom tab bar (`components/client-portal/nav/client-nav.tsx`, `Cli
 - **Detail pages** (each fetches only its own data): `/client/training?date=X&eventId=Y`, `/client/nutrition?date=X`, `/client/wellness?date=X`, `/client/habits?date=X`. Back returns to home with the date preserved.
 - **Metrics** (`/client/metrics`, `components/client-portal/metrics/metrics-hub.tsx`): progress hub — body metrics, habit progress + streaks, and trends.
 - **Program** (`/client/program`): the client's current training plan + nutrition plan cards, with the **week view** above them (`components/client-portal/program/training-week-layout.tsx`): the current training week from `GET /api/client/training/week`; tap a session, then a day, to move it. Two sessions may share a day while rearranging — that is how a swap is made — but Save is disabled until every day holds at most one, the same status-agnostic occupancy rule the server enforces, applied before the round trip. Save is ONE `POST /api/client/training/events/layout` carrying every changed session with the day it was read on, so a 409 (drift, or a day taken since) shows the server's sentence with a Reload. The arithmetic — the week with unsaved moves applied, the conflicts, the write — is the pure `lib/week-layout.ts`; the component only renders and taps. Tap-to-move, no drag: the web app is the harness.
-- **Check-in** (`/client/check-in`): reached from the Home check-in card (`components/client-portal/day/check-in-card-summary.tsx`) and from notifications (`actionUrl: "/client/check-in"`), not a bottom tab. The hub shows the in-window submission form (gated by `clients.expected_check_in_day` + `calculateCheckInPeriod()`) plus a newest-first history list drilling into `/client/check-in/[id]`.
+- **Check-in** (`/client/check-in`): reached from the Home check-in card (`components/client-portal/day/check-in-card-summary.tsx`) and from notifications (`actionUrl: "/client/check-in"`), not a bottom tab. The hub shows the submission form behind `getCheckInGate` (see "Check-in System") plus a newest-first history list drilling into `/client/check-in/[id]`. `unscheduled` and `not_due` each render their own refusal screen rather than the form.
 
 ### Data model
 
@@ -825,13 +829,18 @@ Client clicks invite link
 Coach reviews intake
   -> Reads formatted intake on review page
   -> Adds private coach notes (never visible to client)
-  -> "Sync Metrics to Profile" button pushes weight/height/age/goals from
-     client_intake into the clients table
+  -> "Sync metrics" pushes weight/height/age/goals from client_intake into the
+     clients table. Available from the floating intake panel as well as the full
+     page, and REQUIRED FIRST: "Mark as reviewed" stays disabled until a weight
+     lands on the profile (hasStartWeight, lib/client-profile-completeness.ts)
   -> Builds nutrition / training / habits using existing builders
   -> clients.onboarding_status = 'setup_in_progress'
 
 Coach activates client
-  -> Sets welcome message + first check-in day + START DATE (prefilled: today)
+  -> Sets welcome message + FIRST CHECK-IN (a date, prefilled a week after the
+     start date and re-prefilled when it moves) + START DATE (prefilled: today)
+  -> REFUSED with 409 unless the client has a starting weight — activation is
+     the origin, and recordClientStart has nothing to record without one
   -> clients.onboarding_status = 'active'
   -> recordClientStart: start_date, and the start weight/body fat logged as
      client_metric_entries dated on it (see "The client's origin")
@@ -942,74 +951,93 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 
 ## Check-in System
 
-**One stored fact: `clients.next_check_in_due`** (DATE, nullable — migration 154). NULL means no
-schedule. It replaced `expected_check_in_day` (dropped in 155), which had been answering three
-unrelated questions at once and could therefore disagree with itself: setting a client to Sunday on
-a Thursday produced a due date of *last* Sunday, "4 days overdue", beside "Last submitted today".
+**One stored fact: `clients.next_check_in_due`** (DATE, nullable — migration 154). NULL means the
+client has no schedule.
 
 | Question | Answered by |
 |---|---|
-| When is the next check-in due? | the stored date, via `resolveCheckInDue` (`lib/check-in-schedule.ts`) |
-| Is this client overdue? | the live due date is in the past — `getDaysUntilOrPastDue > 0` |
+| When is the next check-in due? | the stored date, through `resolveCheckInDue` (`lib/check-in-schedule.ts`) |
+| Is this client overdue? | their live due date is in the past — `getDaysUntilOrPastDue > 0` |
 | Has one lapsed? | `today > due + CHECK_IN_GRACE_DAYS` (7) → roll forward by whole frequency steps |
-| Which seven days does a submitted check-in report on? | `calculateCheckInPeriod` / `resolveCheckInWindow` (`lib/date-helpers.ts`), unchanged maths |
+| Which seven days does a submitted check-in report on? | `calculateCheckInPeriod` / `resolveCheckInWindow` (`lib/date-helpers.ts`) |
 | Where does this client's week start and end? | `getTrainingWeekStart/End`, anchored by `checkInWeekday` |
 
+`check_in_frequency` / `check_in_frequency_days` are the advance step. `frequency = 'none'` means
+no schedule, as does a NULL date.
+
 **Two writers, and only two.** The coach's date picker (details sheet → Check-ins, and the
-activation dialog's "First check-in") sets it outright; a submitted check-in advances it by the
-frequency (`submitCheckIn`, `services/check-in-service.ts`). Nothing else writes it. A failed
-advance leaves the check-in standing and self-heals within the grace window rather than throwing
-away the client's submission.
+activation dialog's "First check-in") sets it outright; a submitted check-in advances it by one
+frequency step from the due date it satisfied (`submitCheckIn`). Nothing else writes it. A failed
+advance leaves the check-in standing and self-heals within the grace window — the check-in is the
+client's work, the schedule is bookkeeping.
 
 **A past due date is not a bug — it is how overdue is defined**, and it drives the roster's Overdue
 view, its counts, the sidebar badge and the reminder sweep. The lapse roll keeps the live date
-inside `[today − 7, today]` so a client who stopped a year ago reads as days overdue, not 365.
+inside `[today − 7, today]`, so a client who stopped a year ago reads as days overdue rather than
+365.
 
-**The week anchor is a calculation, never a second stored copy.** `checkInWeekday`
-(`lib/check-in-week.ts`) takes the WEEKDAY of the due date — the weekday, not the date, so a
-fortnightly client keeps a steady weekly rhythm instead of leaving every other week unassigned. It
-is the ONE place the anchor is derived, and all twelve `getTrainingWeekStart/End/Days` callers route
-through it: training, nutrition targets, habits, wellness, the attention feed and the client portal.
-With no schedule it returns the anchor for a **Mon–Sun** week. The module is pure so
-`habits-tab-content.tsx` can run it in the browser; `getClientWeekAnchor`
-(`services/check-in-week-service.ts`) is its DB-fetching twin, the same split as
-`lib/date-helpers.ts` / `services/today-service.ts`. `lib/check-in-week.test.ts` scans the tree and
-fails if a new caller sources the anchor itself — the original bug was not a wrong default but a
-default spelled twelve times, and it disagreed with itself in one of them.
+### The week anchor
 
-`check_in_frequency` / `check_in_frequency_days` survive as the advance step. `frequency = 'none'`
-still exists and still means no schedule, now alongside a NULL date.
+**A calculation, never a second stored copy.** `checkInWeekday` (`lib/check-in-week.ts`) takes the
+WEEKDAY of the due date — the weekday, not the date, so a fortnightly client keeps a steady weekly
+rhythm rather than leaving every other week unassigned. With no schedule it returns the anchor for a
+**Mon–Sun** week.
 
-**The client-side gate is `getCheckInGate` (`lib/check-in-schedule.ts`).** `unscheduled` first —
-NULL due date, so no cycle exists — then three states over the stored date: `not_due` (ahead:
-"Next check-in 3 Sep"), `available` (today), `overdue` (passed). It is a pure read of the stored
-date and asks nothing about the client's check-in history. **An unscheduled client is REFUSED, not
-waved through**: they have no due date to report against and no period for a submission to cover,
-so the home card reads "Not scheduled" with no link, and both `/check-in-context` (403) and
-`POST /check-ins` (409) turn them away. It previously resolved to `available`, which made a cleared
-schedule read "Due today" on the client's home while the coach's own row read "Not scheduled".
-A fourth state, `completed`, was retired: submitting advances the date, so "already checked in" and
-"not due yet" are one state, and computing the difference needed a rule that would have shown a
-late-checking-in client "completed" on their next due day — hiding a check-in they owed. It lives
-beside `resolveCheckInDue` rather than among the period helpers in `lib/date-helpers.ts`, because
-"is a check-in due?" is a SCHEDULE question; sitting among period maths is exactly why it kept
-deriving a period from a weekday long after the date was stored, and reported a client overdue for a
-deadline that had never existed.
+It is the ONE place the anchor is derived, and all twelve `getTrainingWeekStart/End/Days` callers
+route through it: training, nutrition targets, habits, wellness, the attention feed and the client
+portal. The module is pure so `habits-tab-content.tsx` can run it in the browser;
+`getClientWeekAnchor` (`services/check-in-week-service.ts`) is its DB-fetching twin — the same split
+as `lib/date-helpers.ts` / `services/today-service.ts`.
 
-**`/api/client/check-in-status`, `check-in-context` and `notifications` are the React Native
-contract.** Their internals swapped onto the stored date; their response shapes did not change, and
-their three test files are the guard. "No schedule" is tested at the call site
-(`nextCheckInDue == null`), because `checkInWeekday` deliberately never returns null.
+**`lib/check-in-week.test.ts` scans the tree and fails if a new caller sources the anchor itself,
+or spells a weekday default of its own.** That guard is the point: the bug it replaced was not a
+wrong default but a default spelled twelve times, which disagreed with itself in one of them and
+measured the same client over two different weeks depending on which surface asked.
 
-**One check-in per period, enforced twice** (migration 156). A duplicate advances
-`next_check_in_due` twice and silently skips a cycle, and the realistic cause is a double-tap or a
-background retry rather than a person — neither of which goes back through the form screen. So
-`POST /api/client/check-ins` re-checks `getCheckInGate` and returns **409** on `not_due` (before the
-photo uploads, so a refusal leaves no orphaned storage objects), and a partial unique index on
-`check_ins (client_id, period_end) WHERE period_end IS NOT NULL` is the backstop that does not
-depend on a future caller remembering. `period_end` alone identifies the period — `period_start` is
-clamped forward for a partial first week and moves on its own. `submitCheckIn` translates the
-resulting `23505` into a readable sentence; a client never sees the constraint text.
+### The client-side gate
+
+`getCheckInGate` (`lib/check-in-schedule.ts`) — a pure read of the stored date that asks nothing
+about the client's check-in history.
+
+| Status | When | The home card reads |
+|---|---|---|
+| `unscheduled` | no due date | **Not scheduled**, and the row carries no link |
+| `not_due` | the date is ahead | **Next check-in 3 Sep** |
+| `available` | the date is today | **Due today** |
+| `overdue` | the date has passed | **Overdue — submit now** |
+
+**An unscheduled client is refused, not waved through.** They have no due date to report against
+and no period for a submission to cover, so `/check-in-context` 403s and `POST /check-ins` 409s.
+
+**`not_due` covers "already checked in" as well as "not your turn yet"** — submitting advances the
+date, so those are one state. **Do not add a `completed` state back.** Distinguishing them needs a
+rule about which cycle a submission belonged to, and every such rule shows a client who checked in
+three days late "completed" on their NEXT due day, hiding a check-in they owe.
+
+**The gate lives beside `resolveCheckInDue`, not among the period helpers in `lib/date-helpers.ts`.**
+"Is a check-in due?" is a schedule question; a gate surrounded by period maths reaches for it, and
+re-derives a period from a weekday instead of reading the date.
+
+### One check-in per period
+
+Enforced twice, because a duplicate advances `next_check_in_due` twice and the client silently skips
+a cycle — and the realistic cause is a double-tap or a background retry, neither of which passes
+back through the form screen.
+
+- `POST /api/client/check-ins` re-checks the gate and returns **409**, *before* the photo uploads,
+  so a refusal leaves no orphaned storage objects.
+- A partial unique index on `check_ins (client_id, period_end) WHERE period_end IS NOT NULL`
+  (migration 156) is the backstop that does not depend on a future caller remembering. `period_end`
+  alone identifies the period — `period_start` is clamped forward for a partial first week and moves
+  on its own. `submitCheckIn` translates the resulting `23505` into a readable sentence; a client
+  never sees constraint text.
+
+### The React Native contract
+
+`/api/client/check-in-status`, `check-in-context` and `notifications` are read by the mobile client.
+**Response shapes must not change**; their three test files are the guard, and they exercise the real
+gate rather than mocking it, so the wire values themselves are covered. "No schedule" is tested at
+the call site (`nextCheckInDue == null`), because `checkInWeekday` never returns null.
 
 ---
 
