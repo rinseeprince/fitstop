@@ -14,7 +14,7 @@ import {
   MONO_LABEL_CLASS,
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { OpenTabLink, OverviewCard } from "./overview-primitives";
+import { OpenTabLink, OverviewCard, TEXT_ACTION_CLASS } from "./overview-primitives";
 import type { ClientNote } from "@/types/coach-overview";
 
 type CoachNotesCardProps = {
@@ -97,6 +97,9 @@ export function CoachNotesCard({
   const pinned = notes.find((note) => note.isPinned) ?? null;
   const latestUnpinned = notes.find((note) => !note.isPinned) ?? null;
   const visible = [pinned, latestUnpinned].filter((note): note is ClientNote => note !== null);
+  // Whether anything renders above the draft row. An empty, settled card is the
+  // rail and one row — no gap to separate it from.
+  const hasNotesAbove = (isLoading && notes.length === 0) || visible.length > 0;
 
   const handleSave = async () => {
     const body = draft.trim();
@@ -142,14 +145,7 @@ export function CoachNotesCard({
       <SectionLabel label="Coach notes" />
 
       <OverviewCard animationDelay="0.06s">
-        {/* Top right, the same corner the two plan cards put "Open Training"
-            and "Open Nutrition" in. The card has no title of its own to sit
-            beside — that moved to the rail — so the row carries only this. */}
-        <div className="flex justify-end px-5 pt-4">
-          <OpenTabLink label="Open Notes" onClick={onOpenNotes} />
-        </div>
-
-        <div className="px-5 pb-5 pt-3">
+        <div className="px-5 py-4">
           {isLoading && notes.length === 0 ? (
             // The resolved-empty card says nothing at all, so without this the
             // card would look settled and empty while the fetch was still out.
@@ -171,7 +167,12 @@ export function CoachNotesCard({
             </div>
           ) : null}
 
-          <div className="mt-3 flex items-center gap-2">
+          {/* One row: the field, then Save and the destination as matching text
+              actions. Save is a text action rather than a filled button by
+              design decision — it sits beside "Open Notes" and reading as a
+              different kind of thing was the problem. Enter still commits, and
+              is the quicker path. */}
+          <div className={cn("flex items-center gap-4", hasNotesAbove && "mt-3")}>
             <Input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
@@ -183,18 +184,24 @@ export function CoachNotesCard({
               aria-label="Add a note about this client"
               className={cn(
                 FOCUS_RING,
-                "h-8 rounded-[6px] border-[rgba(13,148,136,0.08)] text-[13px] placeholder:text-[#93b0b4]"
+                // Capped rather than full-bleed: a one-line note does not need
+                // the whole card, and the actions read as part of the row.
+                "h-8 max-w-xl rounded-[6px] border-[rgba(13,148,136,0.08)] text-[13px] placeholder:text-[#93b0b4]"
               )}
             />
             <button
               type="button"
               onClick={() => void handleSave()}
               disabled={draft.trim().length === 0 || isSaving}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 text-[13px] font-medium text-white transition-colors hover:bg-[#0b7f75] disabled:opacity-50"
+              className={cn(
+                TEXT_ACTION_CLASS,
+                "inline-flex items-center gap-1.5 disabled:opacity-50"
+              )}
             >
-              {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
               Save
             </button>
+            <OpenTabLink label="Open Notes" onClick={onOpenNotes} />
           </div>
         </div>
       </OverviewCard>

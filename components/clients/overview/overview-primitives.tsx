@@ -75,14 +75,21 @@ export function CardHeader({
   );
 }
 
+/**
+ * The quiet teal text action.
+ *
+ * Exported as a string because two different buttons wear it: a destination
+ * link (`OpenTabLink`) and the notes card's Save, which sits beside one and has
+ * to be indistinguishable from it. Copying the treatment across would be two
+ * strings that agree until one of them is edited.
+ */
+export const TEXT_ACTION_CLASS =
+  "shrink-0 text-[11px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]";
+
 /** Quiet teal text link that sends the coach to the tab that owns the data. */
 export function OpenTabLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="shrink-0 text-[11px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]"
-    >
+    <button type="button" onClick={onClick} className={TEXT_ACTION_CLASS}>
       {label}
     </button>
   );
