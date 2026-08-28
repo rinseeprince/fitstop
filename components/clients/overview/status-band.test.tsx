@@ -39,7 +39,9 @@ const goalOf = (overrides: Partial<EffectiveGoal>): EffectiveGoal => ({
   ...overrides,
 });
 
-const PROPS = { goal: NO_GOAL, onOpenMetrics: vi.fn() };
+// The band renders whatever chart it is handed; the chart's own behaviour is
+// pinned by progression-chart.test.tsx.
+const PROPS = { goal: NO_GOAL, chart: <div data-testid="chart" />, onOpenMetrics: vi.fn() };
 
 beforeEach(() => cleanup());
 
@@ -142,6 +144,18 @@ describe("StatusBand — targets come from client_goals, not the mirror", () => 
   });
 });
 
+describe("StatusBand — the chart/cells split", () => {
+  it("mounts the chart beside the cells rather than owning its read", () => {
+    render(<StatusBand client={{ ...BASE, bmr: 1786 }} {...PROPS} />);
+
+    // The band is presentational: the tab fetches the series and passes the
+    // chart in, so the band never grows a data dependency of its own.
+    expect(screen.getByTestId("chart")).toBeInTheDocument();
+    expect(screen.getByText("Goal weight")).toBeInTheDocument();
+    expect(screen.getByText("Deadline")).toBeInTheDocument();
+  });
+});
+
 describe("StatusBand — energy", () => {
   it("carries TDEE as the BMR cell's sub-line", () => {
     render(<StatusBand client={{ ...BASE, bmr: 1786.4, tdee: 2143.2 }} {...PROPS} />);
@@ -236,7 +250,7 @@ describe("StatusBand — footer", () => {
   it("links to the Journey tab", async () => {
     const user = userEvent.setup();
     const onOpenMetrics = vi.fn();
-    render(<StatusBand client={BASE} goal={NO_GOAL} onOpenMetrics={onOpenMetrics} />);
+    render(<StatusBand {...PROPS} client={BASE} onOpenMetrics={onOpenMetrics} />);
 
     await user.click(screen.getByRole("button", { name: /Open metrics/ }));
     expect(onOpenMetrics).toHaveBeenCalledTimes(1);

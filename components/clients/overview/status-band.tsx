@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { goalState } from "@/lib/goals/goal-state";
 import { containsDigit } from "@/components/clients/metrics/metrics-format";
@@ -17,16 +18,19 @@ import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 
 /**
- * Where this client stands: the four facts that describe a destination rather
- * than a period, on the dark surface, under the Progression rail.
+ * Where this client stands: the progression chart beside the four facts that
+ * describe a destination rather than a period.
  *
- * The window control on that rail governs the chart (commit 6) and the Signals
- * card — **not these cells**. Goal targets, the energy pair and the deadline
- * are structural: they describe a client, not a fortnight, and re-cutting them
- * by a window would be meaningless. The one figure here that IS a range is the
- * footer's lifetime delta, which is why its `Since start:` prefix is mandatory
- * rather than decorative — it sits inside a band a window control appears to
- * govern, and the prefix is the only thing that says otherwise.
+ * The two halves sit in one band on purpose, and the divider between them is
+ * the boundary of the Progression rail's window control. It governs the chart
+ * and the Signals card; it does **not** touch these cells. Goal targets, the
+ * energy pair and the deadline are structural — they describe a client, not a
+ * fortnight, and re-cutting them by a window would be meaningless.
+ *
+ * The one figure here that IS a range is the footer's lifetime delta, which is
+ * why its `Since start:` prefix is mandatory rather than decorative: it sits
+ * inside a band a window control appears to govern, and the prefix is the only
+ * thing that says otherwise.
  */
 type StatusBandProps = {
   client: Client;
@@ -35,6 +39,11 @@ type StatusBandProps = {
    * Both targets come from here, never from the `clients` mirror on `client`.
    */
   goal: EffectiveGoal;
+  /**
+   * The progression chart, mounted by the tab so the band stays presentational
+   * and the chart's own SWR read stays out of it.
+   */
+  chart: ReactNode;
   onOpenMetrics: () => void;
 };
 
@@ -171,7 +180,7 @@ function BandCell({
   );
 }
 
-export function StatusBand({ client, goal, onOpenMetrics }: StatusBandProps) {
+export function StatusBand({ client, goal, chart, onOpenMetrics }: StatusBandProps) {
   // Body weights convert freely — formatWeight, never formatLoad.
   const { preference } = useUnits();
   const kg = (v: number | null | undefined) =>
@@ -207,36 +216,44 @@ export function StatusBand({ client, goal, onOpenMetrics }: StatusBandProps) {
       className="flex flex-col rounded-[6px] bg-[#0f2027] animate-card-in"
       style={{ animationDelay: "0.04s" }}
     >
-      <div className="grid grid-cols-2 lg:grid-cols-4">
-        <BandCell
-          label="Goal weight"
-          value={goalWeight?.toFixed(1)}
-          unit={weightUnit}
-          chip={weightChip}
-        />
-        <BandCell
-          label="Goal body fat"
-          value={goalBodyFat?.toFixed(1)}
-          unit="%"
-          chip={bfChip}
-          borderClass="border-l"
-        />
-        <BandCell
-          label="BMR"
-          value={client.bmr ? Math.round(client.bmr).toString() : undefined}
-          unit="cal/day"
-          emptyLabel="Not recorded"
-          sub={client.tdee ? `TDEE ${Math.round(client.tdee)}` : undefined}
-          borderClass="border-t lg:border-l lg:border-t-0"
-        />
-        <BandCell
-          label="Deadline"
-          value={goal.deadline ? formatDateOnlyShort(goal.deadline) : undefined}
-          tier="field"
-          sub={remaining?.text}
-          subIsNumeric={remaining?.isNumeric ?? false}
-          borderClass="border-l border-t lg:border-t-0"
-        />
+      {/* Chart | cells. The chart is the one WINDOWED thing in the band and it
+          is deliberately walled off from the four cells beside it, which are
+          structural; the divider between them is the boundary the Progression
+          rail's control does and does not reach. */}
+      <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <div className={cn("border-b lg:border-b-0 lg:border-r", DIVIDER)}>{chart}</div>
+
+        <div className="grid grid-cols-2">
+          <BandCell
+            label="Goal weight"
+            value={goalWeight?.toFixed(1)}
+            unit={weightUnit}
+            chip={weightChip}
+          />
+          <BandCell
+            label="Goal body fat"
+            value={goalBodyFat?.toFixed(1)}
+            unit="%"
+            chip={bfChip}
+            borderClass="border-l"
+          />
+          <BandCell
+            label="BMR"
+            value={client.bmr ? Math.round(client.bmr).toString() : undefined}
+            unit="cal/day"
+            emptyLabel="Not recorded"
+            sub={client.tdee ? `TDEE ${Math.round(client.tdee)}` : undefined}
+            borderClass="border-t"
+          />
+          <BandCell
+            label="Deadline"
+            value={goal.deadline ? formatDateOnlyShort(goal.deadline) : undefined}
+            tier="field"
+            sub={remaining?.text}
+            subIsNumeric={remaining?.isNumeric ?? false}
+            borderClass="border-l border-t"
+          />
+        </div>
       </div>
 
       <div className={cn("flex items-center gap-4 border-t px-5 py-3", DIVIDER)}>

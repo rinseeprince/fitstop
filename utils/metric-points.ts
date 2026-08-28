@@ -32,6 +32,19 @@ export type MetricSeriesDefinition = {
   category: "body" | "wellness";
 };
 
+/**
+ * What this merge actually reads off a check-in: an id, a timestamp, and
+ * whichever metric columns the definitions name.
+ *
+ * Stated structurally rather than as `CheckIn` so a caller that selected four
+ * columns can pass four columns. The Overview's measurement-series route reads
+ * `id, created_at, weight, body_fat_percentage` — against a 37-column table
+ * carrying four JSON blobs — and the alternative was inventing a `status` and
+ * an `updatedAt` it never fetched, purely to satisfy a type. A full `CheckIn`
+ * is still assignable, so the Metrics page passes its rows unchanged.
+ */
+export type MetricSeriesCheckIn = Partial<CheckIn> & Pick<CheckIn, "id" | "createdAt">;
+
 /** UTC-midnight epoch ms for a YYYY-MM-DD string — the numeric form of a
  *  calendar day (the metric chart's time axis runs on these). */
 export function toUtcMs(date: string): number {
@@ -49,7 +62,7 @@ export function addDaysToDate(date: string, days: number): string {
 }
 
 export function buildMetricPoints(
-  checkIns: CheckIn[],
+  checkIns: MetricSeriesCheckIn[],
   entries: MetricEntry[],
   definitions: MetricSeriesDefinition[]
 ): Map<string, MetricPoint[]> {

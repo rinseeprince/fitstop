@@ -122,6 +122,32 @@ export type AdherenceSummary = {
   };
 };
 
+/**
+ * The Overview progression chart's series: the SAME data the Physique view
+ * charts — `check_ins` merged with `client_metric_entries` through the same
+ * `buildMetricPoints` tie-break — bounded to the selected window and moved
+ * server-side.
+ *
+ * Transport, not new business logic. The Physique page reaches this data by
+ * eagerly paging the client's ENTIRE check-in history, `select("*")` on a
+ * 37-column table with four JSON blobs, to read two numbers per row. That is
+ * the page's whole job there and fine; on the Overview it would be N sequential
+ * fat requests to draw eight dots.
+ *
+ * Values are canonical kilograms / percent (CONVENTIONS §20). The chart
+ * converts at the render boundary.
+ */
+export type MeasurementSeriesPoint = {
+  /** YYYY-MM-DD, ascending. */
+  date: string;
+  value: number;
+};
+
+export type MeasurementSeries = {
+  weight: MeasurementSeriesPoint[];
+  bodyFat: MeasurementSeriesPoint[];
+};
+
 export type ClientNote = {
   id: string;
   body: string;

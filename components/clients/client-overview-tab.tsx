@@ -11,6 +11,10 @@ import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
 import { CurrentPlanSection } from "@/components/clients/overview/current-plan-section";
 import { IdentityRow } from "@/components/clients/overview/identity-row";
 import { NeedsAttentionSection } from "@/components/clients/overview/needs-attention-section";
+import {
+  ProgressionChart,
+  type ChartMetric,
+} from "@/components/clients/overview/progression-chart";
 import { SignalsCard } from "@/components/clients/overview/signals-card";
 import { SinceLastVisitSection } from "@/components/clients/overview/since-last-visit-section";
 import { StatusBand } from "@/components/clients/overview/status-band";
@@ -21,6 +25,10 @@ import {
   type OverviewWindow,
 } from "@/lib/overview/window";
 import { useClientAdherence } from "@/hooks/use-client-adherence";
+import {
+  useInvalidateMeasurementSeries,
+  useMeasurementSeries,
+} from "@/hooks/use-measurement-series";
 import { useClientGoals, useInvalidateClientGoals } from "@/hooks/use-client-goals";
 import { useClientNotes } from "@/hooks/use-client-notes";
 import { useOverviewBrief } from "@/hooks/use-overview-brief";
@@ -70,6 +78,7 @@ export function ClientOverviewTab({
   const { summary, isLoading: summaryLoading } = useOverviewPlanSummary(client.id);
   const { goal: currentGoals } = useClientGoals(client.id);
   const invalidateGoals = useInvalidateClientGoals();
+  const invalidateSeries = useInvalidateMeasurementSeries();
   const {
     notes,
     isLoading: notesLoading,
@@ -78,10 +87,10 @@ export function ClientOverviewTab({
     deleteNote,
   } = useClientNotes(client.id);
   const [notePendingDelete, setNotePendingDelete] = useState<ClientNote | null>(null);
-  // The page's one window. It governs the period surfaces — the Signals card
-  // and (once it lands) the progression chart — and deliberately NOT the
-  // structural facts around them: goal targets, the energy pair, the deadline,
-  // the plan's week, the next check-in. Those describe a client, not a period.
+  // The page's one window. It governs the period surfaces — the progression
+  // chart and the Signals card — and deliberately NOT the structural facts
+  // around them: goal targets, the energy pair, the deadline, the plan's week,
+  // the next check-in. Those describe a client, not a period.
   const [windowDays, setWindowDays] = useState<OverviewWindow>(DEFAULT_OVERVIEW_WINDOW);
 
   // Both period reads take the selected window, so the Signals rows and their
@@ -96,6 +105,11 @@ export function ClientOverviewTab({
     daysBack: windowDays - 1,
     withHabitLogs: false,
   });
+  // Which body metric the chart is showing. Local to the page, not a URL param:
+  // it is a lens on one card, not a pane, and the client page's param contract
+  // is one param per TAB (docs/ARCHITECTURE.md → Client page tab structure).
+  const [chartMetric, setChartMetric] = useState<ChartMetric>("weight");
+  const { series, isLoading: seriesLoading } = useMeasurementSeries(client.id, windowDays);
 
   const wellnessDates = useMemo(() => trailingDates(windowDays), [windowDays]);
   const { toast } = useToast();
@@ -132,14 +146,17 @@ export function ClientOverviewTab({
     void mutateBrief();
   }, [onClientUpdated, mutateBrief]);
 
-  // The inline editor writes the goal as well as the profile, so a save has to
-  // revalidate BOTH areas: the goals read behind the status card, and the client
-  // record everything else is still derived from (a goal write dual-writes the
-  // `clients` mirror).
+  // A sheet save touches THREE areas, so it has to revalidate all three: the
+  // goals read behind the band, the client record everything else derives from
+  // (a goal write dual-writes the `clients` mirror), and the chart's series —
+  // correcting a recorded start weight routes to `recordClientStart`, which
+  // MOVES the metric entries dated on the start date, so the chart's first
+  // point changes under a save that never looked like a measurement.
   const handleSaved = useCallback(() => {
     void invalidateGoals(client.id);
+    void invalidateSeries(client.id);
     handleClientUpdated();
-  }, [invalidateGoals, client.id, handleClientUpdated]);
+  }, [invalidateGoals, invalidateSeries, client.id, handleClientUpdated]);
 
   const edit = useClientProfileEdit(client, handleSaved, currentGoals);
 
@@ -210,8 +227,9 @@ export function ClientOverviewTab({
         onOpenDetails={edit.start}
       />
 
-      {/* 2 — Where they stand. The rail carries the page's window control; the
-          band's own cells are structural and stay outside it (status-band.tsx). */}
+      {/* 2 — Where they stand. The rail's window control reaches the chart
+          inside the band; the four cells beside it are structural and stay
+          outside it (status-band.tsx). */}
       <div>
         <SectionLabel
           label="Progression"
@@ -220,6 +238,16 @@ export function ClientOverviewTab({
         <StatusBand
           client={client}
           goal={effectiveGoal}
+          chart={
+            <ProgressionChart
+              series={series}
+              isLoading={seriesLoading}
+              metric={chartMetric}
+              onMetricChange={setChartMetric}
+              goal={effectiveGoal}
+              windowDays={windowDays}
+            />
+          }
           onOpenMetrics={() => goToTab("metrics")}
         />
       </div>
