@@ -7,13 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { RowActions } from "@/components/programs/shared/row-actions";
+import { SectionLabel } from "@/components/programs/shared/section-label";
 import { formatShortDate } from "@/components/clients/metrics/metrics-format";
 import {
   FOCUS_RING,
   MONO_LABEL_CLASS,
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { CardFooter, CardHeader, OpenTabLink, OverviewCard } from "./overview-primitives";
+import { CardFooter, OpenTabLink, OverviewCard } from "./overview-primitives";
 import type { ClientNote } from "@/types/coach-overview";
 
 type CoachNotesCardProps = {
@@ -134,68 +135,73 @@ export function CoachNotesCard({
   };
 
   return (
-    <OverviewCard animationDelay="0.06s">
-      <CardHeader title="Coach notes" />
+    // The name rides a rail like every other section on the page. It was an
+    // in-card 15px heading, which read as a card TITLE among six sections whose
+    // names are all divider labels — the odd one out rather than a hierarchy.
+    <div>
+      <SectionLabel label="Coach notes" />
 
-      <div className="px-5 pb-5">
-        {isLoading && notes.length === 0 ? (
-          // Never assert "no notes" before the first fetch resolves — the truth
-          // arriving a moment later would contradict it.
-          <div className="space-y-2 py-2">
-            <Skeleton className="h-10 w-full rounded-[6px]" />
-            <Skeleton className="h-10 w-2/3 rounded-[6px]" />
-          </div>
-        ) : visible.length > 0 ? (
-          <div className="divide-y divide-[rgba(13,148,136,0.06)]">
-            {visible.map((note) => (
-              <NoteRow
-                key={note.id}
-                note={note}
-                isBusy={pendingPinId === note.id}
-                onTogglePin={() => void handleTogglePin(note)}
-                onDelete={() => onDeleteNote(note)}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="py-3">
-            <p className="text-sm text-[#5a7d82]">No notes about this client yet</p>
-          </div>
-        )}
+      <OverviewCard animationDelay="0.06s">
+        <div className="px-5 pb-5 pt-5">
+          {isLoading && notes.length === 0 ? (
+            // Never assert "no notes" before the first fetch resolves — the truth
+            // arriving a moment later would contradict it.
+            <div className="space-y-2 py-2">
+              <Skeleton className="h-10 w-full rounded-[6px]" />
+              <Skeleton className="h-10 w-2/3 rounded-[6px]" />
+            </div>
+          ) : visible.length > 0 ? (
+            <div className="divide-y divide-[rgba(13,148,136,0.06)]">
+              {visible.map((note) => (
+                <NoteRow
+                  key={note.id}
+                  note={note}
+                  isBusy={pendingPinId === note.id}
+                  onTogglePin={() => void handleTogglePin(note)}
+                  onDelete={() => onDeleteNote(note)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="py-3">
+              <p className="text-sm text-[#5a7d82]">No notes about this client yet</p>
+            </div>
+          )}
 
-        <div className="mt-3 flex items-center gap-2">
-          <Input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void handleSave();
-            }}
-            maxLength={5000}
-            placeholder="Add a note about this client"
-            aria-label="Add a note about this client"
-            className={cn(
-              FOCUS_RING,
-              "h-8 rounded-[6px] border-[rgba(13,148,136,0.08)] text-[13px] placeholder:text-[#93b0b4]"
-            )}
-          />
-          <button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={draft.trim().length === 0 || isSaving}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 text-[13px] font-medium text-white transition-colors hover:bg-[#0b7f75] disabled:opacity-50"
-          >
-            {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Save
-          </button>
+          <div className="mt-3 flex items-center gap-2">
+            <Input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void handleSave();
+              }}
+              maxLength={5000}
+              placeholder="Add a note about this client"
+              aria-label="Add a note about this client"
+              className={cn(
+                FOCUS_RING,
+                "h-8 rounded-[6px] border-[rgba(13,148,136,0.08)] text-[13px] placeholder:text-[#93b0b4]"
+              )}
+            />
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={draft.trim().length === 0 || isSaving}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[6px] bg-[#0d9488] px-3 text-[13px] font-medium text-white transition-colors hover:bg-[#0b7f75] disabled:opacity-50"
+            >
+              {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Save
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* The destination sits under the draft input, not beside the title: the
-          header's right slot describes the card, and a link parked there reads
-          as a label for the heading next to it. */}
-      <CardFooter>
-        <OpenTabLink label="Open Notes" onClick={onOpenNotes} />
-      </CardFooter>
-    </OverviewCard>
+        {/* The destination sits under the draft input rather than on the rail,
+            where a reader arriving at the section would meet "go somewhere
+            else" before the notes themselves. */}
+        <CardFooter>
+          <OpenTabLink label="Open Notes" onClick={onOpenNotes} />
+        </CardFooter>
+      </OverviewCard>
+    </div>
   );
 }
