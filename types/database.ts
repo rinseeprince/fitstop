@@ -829,6 +829,7 @@ export type Database = {
           last_reminder_sent_at: string | null
           longest_streak: number | null
           name: string
+          next_check_in_due: string | null
           notes: string | null
           onboarding_status: string | null
           phone: string | null
@@ -875,6 +876,7 @@ export type Database = {
           last_reminder_sent_at?: string | null
           longest_streak?: number | null
           name: string
+          next_check_in_due?: string | null
           notes?: string | null
           onboarding_status?: string | null
           phone?: string | null
@@ -921,6 +923,7 @@ export type Database = {
           last_reminder_sent_at?: string | null
           longest_streak?: number | null
           name?: string
+          next_check_in_due?: string | null
           notes?: string | null
           onboarding_status?: string | null
           phone?: string | null
