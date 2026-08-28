@@ -1,7 +1,9 @@
 /**
- * Data contracts for the redesigned coach client Overview (Session 1 of
- * docs/OVERVIEW-REDESIGN-EXECUTION-PLAN.md — binding; record any drift in the
- * STATUS block). The brief/activity types live in types/coach-brief.ts.
+ * Data contracts for the coach client Overview. THIS FILE is the contract now —
+ * the execution plan that used to hold it shipped and was deleted (its STATUS
+ * blocks are in git history). What the page renders and why is documented in
+ * `docs/ARCHITECTURE.md` → "Coach client Overview"; the brief/activity types
+ * live in `types/coach-brief.ts`.
  */
 
 export type OverviewPlanSummary = {
