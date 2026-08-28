@@ -41,6 +41,9 @@ const SUMMARY: AdherenceSummary = {
     rail: rail("complete", "partial", "partial", "missed", "no_log", "complete", "complete"),
     avgPct: 71,
     daysBelow50: 2,
+    // Present on the contract but not read by this card — the per-habit grid
+    // belongs to the Signals card's habits detail (Overview v2, commit 5).
+    perHabit: [],
   },
 };
 

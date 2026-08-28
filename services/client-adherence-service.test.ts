@@ -93,8 +93,8 @@ describe("buildAdherenceSummary", () => {
       // no row on the 23rd
     ],
     habits: [
-      { id: "h1", effective_date: "2026-07-01" },
-      { id: "h2", effective_date: "2026-07-22" }, // becomes eligible mid-window
+      { id: "h1", name: "Water", effective_date: "2026-07-01" },
+      { id: "h2", name: "Steps", effective_date: "2026-07-22" }, // becomes eligible mid-window
     ],
     habitLogs: [
       { date: "2026-07-20", daily_habit_id: "h1", completed: true },
@@ -165,6 +165,65 @@ describe("buildAdherenceSummary", () => {
     });
     expect(partial.nutrition.calories).toEqual({ actual: 2200, target: 2000, days: 2 });
     expect(partial.nutrition.protein).toEqual({ actual: 150, target: 150, days: 1 });
+  });
+
+  it("breaks habits down per habit, over each one's OWN eligible days", () => {
+    const summary = buildAdherenceSummary(fixture);
+
+    expect(summary.habits.perHabit).toEqual([
+      {
+        id: "h1",
+        name: "Water",
+        eligibleDays: 4,
+        completedDays: 2,
+        pct: 50,
+        rail: [true, false, true, false],
+      },
+      {
+        id: "h2",
+        name: "Steps",
+        // Eligible from the 22nd only — the two days before it existed are
+        // null, not misses, so its 0% is over two days rather than four.
+        eligibleDays: 2,
+        completedDays: 0,
+        pct: 0,
+        rail: [null, null, false, false],
+      },
+    ]);
+  });
+
+  it("keeps a habit with NO logs in the window, at 0% rather than absent", () => {
+    // The whole reason this rides on the adherence read: `logHabit` writes a
+    // row only when the client acts, so a habit they ignored for the window has
+    // no rows at all and a logs-derived grid would omit it silently — exactly
+    // the habit a coach needs to see.
+    const summary = buildAdherenceSummary({
+      ...fixture,
+      habits: [{ id: "h3", name: "Sleep 7h+", effective_date: "2026-07-01" }],
+      habitLogs: [],
+    });
+
+    expect(summary.habits.perHabit).toEqual([
+      {
+        id: "h3",
+        name: "Sleep 7h+",
+        eligibleDays: 4,
+        completedDays: 0,
+        pct: 0,
+        rail: [false, false, false, false],
+      },
+    ]);
+  });
+
+  it("reports pct as null for a habit that was never eligible in the window", () => {
+    const summary = buildAdherenceSummary({
+      ...fixture,
+      habits: [{ id: "h4", name: "Stretch", effective_date: "2026-08-01" }],
+      habitLogs: [],
+    });
+
+    expect(summary.habits.perHabit[0].pct).toBeNull();
+    expect(summary.habits.perHabit[0].rail).toEqual([null, null, null, null]);
   });
 
   it("computes habit avgPct over eligible days and daysBelow50 via the shipped threshold", () => {

@@ -96,7 +96,7 @@ export type AdherenceSourceRows = {
     target_calories: number | null;
     target_protein_g: number | null;
   }[];
-  habits: { id: string; effective_date: string }[];
+  habits: { id: string; name: string; effective_date: string }[];
   habitLogs: { date: string; daily_habit_id: string; completed: boolean }[];
   spineDates: string[];
 };
@@ -171,6 +171,31 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
     : null;
   const daysBelow50 = dayPcts.filter((pct) => pct < HABIT_DROPOFF_THRESHOLD_PERCENT).length;
 
+  // The same rows again, cut the other way: per habit rather than per day.
+  //
+  // Built from the HABIT list, not from the logs, so a habit the client never
+  // touched in the window reads 0% instead of disappearing — `logHabit` writes
+  // a row only when they act, so "no rows" and "no habit" look identical from
+  // the log side. It is also why this rides here rather than on /habits/logs.
+  const perHabit = rows.habits.map((habit) => {
+    const rail = dates.map((date) => {
+      // Before its effective date the habit did not exist: null, never false.
+      // A habit added on Wednesday has not "missed" Monday and Tuesday.
+      if (habit.effective_date > date) return null;
+      return completedByDate.get(date)?.has(habit.id) ?? false;
+    });
+    const eligibleDays = rail.filter((day) => day !== null).length;
+    const completedDays = rail.filter((day) => day === true).length;
+    return {
+      id: habit.id,
+      name: habit.name,
+      eligibleDays,
+      completedDays,
+      pct: eligibleDays > 0 ? Math.round((completedDays / eligibleDays) * 100) : null,
+      rail,
+    };
+  });
+
   return {
     dates,
     training: { rail: trainingRail, completed, planned, pct: trainingPct },
@@ -182,7 +207,7 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
       calories,
       protein,
     },
-    habits: { rail: habitsRail, avgPct, daysBelow50 },
+    habits: { rail: habitsRail, avgPct, daysBelow50, perHabit },
   };
 }
 
@@ -209,11 +234,15 @@ export const getClientAdherence = async (
       .eq("client_id", clientId)
       .gte("date", startDate)
       .lte("date", today),
+    // `name` costs nothing here — same query, one more column — and is what
+    // lets the Signals card name a habit with no logs in the window.
     supabaseAdmin
       .from("daily_habits")
-      .select("id, effective_date")
+      .select("id, name, effective_date")
       .eq("client_id", clientId)
-      .eq("is_active", true),
+      .eq("is_active", true)
+      // The coach's own habit order, matching the Habits tab (`getClientHabits`).
+      .order("sort_order", { ascending: true }),
     supabaseAdmin
       .from("daily_habit_logs")
       .select("date, daily_habit_id, completed")

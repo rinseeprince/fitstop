@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState } from "react";
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner";
 import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AdherenceCard } from "@/components/clients/overview/adherence-card";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { useClientProfileEdit } from "@/components/clients/overview/use-client-profile-edit";
 import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
@@ -12,19 +11,16 @@ import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
 import { CurrentPlanSection } from "@/components/clients/overview/current-plan-section";
 import { IdentityRow } from "@/components/clients/overview/identity-row";
 import { NeedsAttentionSection } from "@/components/clients/overview/needs-attention-section";
+import { SignalsCard } from "@/components/clients/overview/signals-card";
 import { SinceLastVisitSection } from "@/components/clients/overview/since-last-visit-section";
 import { StatusBand } from "@/components/clients/overview/status-band";
 import { WindowControl } from "@/components/clients/overview/window-control";
-import {
-  WELLNESS_WINDOW_DAYS,
-  WellnessCards,
-} from "@/components/clients/overview/wellness-cards";
 import { trailingDates } from "@/components/clients/overview/overview-format";
 import {
   DEFAULT_OVERVIEW_WINDOW,
   type OverviewWindow,
 } from "@/lib/overview/window";
-import { ADHERENCE_WINDOW_DAYS, useClientAdherence } from "@/hooks/use-client-adherence";
+import { useClientAdherence } from "@/hooks/use-client-adherence";
 import { useClientGoals, useInvalidateClientGoals } from "@/hooks/use-client-goals";
 import { useClientNotes } from "@/hooks/use-client-notes";
 import { useOverviewBrief } from "@/hooks/use-overview-brief";
@@ -52,7 +48,7 @@ interface ClientOverviewTabProps {
 /**
  * The coach's client Overview, read top to bottom as: who this client is →
  * where they stand → what needs doing → what happened since I last looked →
- * how consistent they are → how they feel → what they are on → what I said.
+ * how consistent they have been → what they are on → what I said.
  *
  * Identity leads because everything under it is a fact ABOUT that client, and
  * the page previously opened on a work queue that said nothing about whose it
@@ -72,7 +68,6 @@ export function ClientOverviewTab({
     isMarkingSeen,
   } = useOverviewBrief(client.id);
   const { summary, isLoading: summaryLoading } = useOverviewPlanSummary(client.id);
-  const { adherence, isLoading: adherenceLoading } = useClientAdherence(client.id);
   const { goal: currentGoals } = useClientGoals(client.id);
   const invalidateGoals = useInvalidateClientGoals();
   const {
@@ -88,12 +83,21 @@ export function ClientOverviewTab({
   // structural facts around them: goal targets, the energy pair, the deadline,
   // the plan's week, the next check-in. Those describe a client, not a period.
   const [windowDays, setWindowDays] = useState<OverviewWindow>(DEFAULT_OVERVIEW_WINDOW);
+
+  // Both period reads take the selected window, so the Signals rows and their
+  // expanded panels describe the same days. `withHabitLogs` stays off: the
+  // per-habit breakdown rides on the adherence read, which already holds these
+  // rows (and, unlike a logs-derived grid, keeps a habit with nothing logged).
+  const { adherence, isLoading: adherenceLoading } = useClientAdherence(
+    client.id,
+    windowDays
+  );
   const { logs: wellnessLogs, isLoading: wellnessLoading } = useWellnessData(client.id, {
-    daysBack: WELLNESS_WINDOW_DAYS - 1,
+    daysBack: windowDays - 1,
     withHabitLogs: false,
   });
 
-  const wellnessDates = useMemo(() => trailingDates(WELLNESS_WINDOW_DAYS), []);
+  const wellnessDates = useMemo(() => trailingDates(windowDays), [windowDays]);
   const { toast } = useToast();
 
   // The goal the client is on RIGHT NOW, resolved from `client_goals` through
@@ -249,33 +253,26 @@ export function ClientOverviewTab({
         )
       )}
 
-      {/* 4 — Adherence. Still its own card and still on its own fixed window;
-          the Signals card that folds it and wellness together, and puts both
-          under the control above, is the next commit. */}
-      <AdherenceCard
+      {/* 4 — How consistent they are, over the window selected above. */}
+      <SignalsCard
         adherence={adherence}
-        isLoading={adherenceLoading}
-        windowDays={ADHERENCE_WINDOW_DAYS}
+        isAdherenceLoading={adherenceLoading}
+        wellnessLogs={wellnessLogs}
+        isWellnessLoading={wellnessLoading}
+        dates={wellnessDates}
+        attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
+        windowDays={windowDays}
         onTabChange={goToTab}
       />
 
-      {/* 5 — Daily wellness */}
-      <WellnessCards
-        logs={wellnessLogs}
-        dates={wellnessDates}
-        attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
-        isLoading={wellnessLoading}
-        onOpenWellness={() => goToTab("wellness")}
-      />
-
-      {/* 6 — Current plan */}
+      {/* 5 — Current plan */}
       <CurrentPlanSection
         summary={summary}
         isLoading={summaryLoading}
         onTabChange={goToTab}
       />
 
-      {/* 7 — Coach notes */}
+      {/* 6 — Coach notes */}
       <CoachNotesCard
         notes={notes}
         isLoading={notesLoading}

@@ -69,6 +69,33 @@ export type NutritionAverage = {
   days: number;
 } | null;
 
+/**
+ * One habit's window, for the Signals card's habits detail.
+ *
+ * It rides on the adherence summary rather than on `/habits/logs` because a
+ * habit the client never touched in the window has **no log rows at all**
+ * (`logHabit` upserts only when they act), so a grid built from logs silently
+ * omits exactly the habit that most needs looking at. The adherence read
+ * already selects the active habits AND their logs for this window, so the
+ * roster is free here and complete — the same "more columns, same query" move
+ * the nutrition means made.
+ */
+export type HabitBreakdown = {
+  id: string;
+  name: string;
+  /** Days in the window the habit was eligible (`effective_date <= date`). */
+  eligibleDays: number;
+  completedDays: number;
+  /** Completed over ELIGIBLE days; null when the habit was never eligible. */
+  pct: number | null;
+  /**
+   * Index-aligned with `dates`, like every other rail:
+   * `true` completed · `false` eligible and not completed · `null` not yet
+   * eligible (the habit did not exist yet — not a miss).
+   */
+  rail: (boolean | null)[];
+};
+
 export type AdherenceSummary = {
   /** oldest→newest, shared by all rails; window ends client-local today */
   dates: string[];
@@ -86,7 +113,13 @@ export type AdherenceSummary = {
     calories: NutritionAverage;
     protein: NutritionAverage;
   };
-  habits: { rail: DotState[]; avgPct: number | null; daysBelow50: number };
+  habits: {
+    rail: DotState[];
+    avgPct: number | null;
+    daysBelow50: number;
+    /** Per-habit breakdown, in the client's habit order. */
+    perHabit: HabitBreakdown[];
+  };
 };
 
 export type ClientNote = {
