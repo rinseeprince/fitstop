@@ -32,7 +32,7 @@ describe("NeedsAttentionSection", () => {
     expect(screen.getByText(/caught up on Alex/i)).toBeInTheDocument();
   });
 
-  it("counts the check-in and the block-ending row alongside the alerts", () => {
+  it("puts no count on the rail — the rows are the count", () => {
     render(
       <NeedsAttentionSection
         {...PROPS}
@@ -42,7 +42,10 @@ describe("NeedsAttentionSection", () => {
       />
     );
 
-    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("Check-in awaiting review")).toBeInTheDocument();
+    expect(screen.getByText("3 sessions missed")).toBeInTheDocument();
+    // A "3" beside three visible rows restates what is already on screen.
+    expect(screen.queryByText("3", { selector: "span" })).not.toBeInTheDocument();
   });
 
   it("routes the check-in row to check-ins through a text action, not a button", async () => {
@@ -118,7 +121,6 @@ describe("NeedsAttentionSection", () => {
 
     expect(screen.queryByText("No logs in 5 days")).not.toBeInTheDocument();
     expect(screen.getByText("No recent activity")).toBeInTheDocument();
-    expect(screen.getByText("1")).toBeInTheDocument();
 
     rerender(<NeedsAttentionSection {...PROPS} attentionAlerts={[gap]} />);
 

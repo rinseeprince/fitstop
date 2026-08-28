@@ -175,10 +175,9 @@ export function NeedsAttentionSection({
 
   return (
     <div className="flex flex-1 flex-col">
-      <SectionLabel
-        label="Needs attention"
-        meta={pendingCount > 0 ? String(pendingCount) : undefined}
-      />
+      {/* No count on the rail. The rows ARE the count, and a "1" beside a
+          single visible row is a number restating what is already on screen. */}
+      <SectionLabel label="Needs attention" />
 
       <OverviewCard className="flex-1" animationDelay="0.06s">
         {pendingCount === 0 ? (

@@ -21,16 +21,14 @@ import { formatWeight } from "@/utils/unit-conversions";
  * Where this client stands: the progression chart beside the four facts that
  * describe a destination rather than a period.
  *
- * The two halves sit in one band on purpose, and the divider between them is
- * the boundary of the Progression rail's window control. It governs the chart
- * and the Signals card; it does **not** touch these cells. Goal targets, the
- * energy pair and the deadline are structural — they describe a client, not a
- * fortnight, and re-cutting them by a window would be meaningless.
+ * Nothing in this band is windowed. The chart runs the client's whole journey
+ * and the four cells are structural — goal targets, the energy pair and the
+ * deadline describe a client rather than a period. The Signals card below is
+ * the page's one trailing-window surface, and it names its own fortnight.
  *
- * The one figure here that IS a range is the footer's lifetime delta, which is
- * why its `Since start:` prefix is mandatory rather than decorative: it sits
- * inside a band a window control appears to govern, and the prefix is the only
- * thing that says otherwise.
+ * The footer's lifetime delta keeps its `Since start:` prefix anyway: it is a
+ * range figure sitting among four that are not, and the prefix is what tells
+ * a reader which kind they are looking at.
  */
 type StatusBandProps = {
   client: Client;
@@ -90,27 +88,24 @@ function goalChip(
 }
 
 /**
- * The two value tiers, taken from the white cards' StatStrip so the dark band
- * reads at the same scale as the rest of the Overview:
+ * One value tier for the whole band: 18px mono semibold, StatStrip's number
+ * tier (overview-primitives.tsx), so the dark band reads at the same scale as
+ * the white cards rather than a size of its own.
  *
- *  - "stat"  — a measurement. 18px mono, StatStrip's number tier.
- *  - "field" — a date. 13px; a deadline is a field the coach typed, not a
- *              headline, and should not out-shout the targets beside it.
+ * The deadline used to sit a tier below on the argument that a date the coach
+ * typed is not a headline. It reads as an afterthought beside three 18px
+ * figures, and it is one of the four facts this band exists to state — so it
+ * matches them (owner call, 2026-08-28).
  *
- * Both are `font-semibold`: STAT_VALUE_DARK_CLASS carries `font-bold` for the
- * 24-32px heroes it was written for, overridden here (cn merges) so this band
- * matches the semibold every white card uses.
+ * `font-semibold` overrides STAT_VALUE_DARK_CLASS's `font-bold` (cn merges),
+ * which was written for the 24-32px heroes.
  */
-const VALUE_TIER = {
-  stat: "text-[18px] font-semibold",
-  field: "text-[13px] font-semibold",
-} as const;
+const VALUE_CLASS = "text-[18px] font-semibold";
 
 function BandCell({
   label,
   value,
   unit,
-  tier = "stat",
   sub,
   subIsNumeric = true,
   chip,
@@ -120,7 +115,6 @@ function BandCell({
   label: string;
   value?: string;
   unit?: string;
-  tier?: keyof typeof VALUE_TIER;
   sub?: string;
   /** Word-only sub-lines stay sans, the divider grammar's rule for metas. */
   subIsNumeric?: boolean;
@@ -141,7 +135,7 @@ function BandCell({
       <div className="mt-1">
         {value ? (
           <>
-            <span className={cn(STAT_VALUE_DARK_CLASS, VALUE_TIER[tier], "leading-tight")}>
+            <span className={cn(STAT_VALUE_DARK_CLASS, VALUE_CLASS, "leading-tight")}>
               {value}
             </span>
             {unit && (
@@ -248,7 +242,6 @@ export function StatusBand({ client, goal, chart, onOpenMetrics }: StatusBandPro
           <BandCell
             label="Deadline"
             value={goal.deadline ? formatDateOnlyShort(goal.deadline) : undefined}
-            tier="field"
             sub={remaining?.text}
             subIsNumeric={remaining?.isNumeric ?? false}
             borderClass="border-l border-t"
@@ -258,9 +251,9 @@ export function StatusBand({ client, goal, chart, onOpenMetrics }: StatusBandPro
 
       <div className={cn("flex items-center gap-4 border-t px-5 py-3", DIVIDER)}>
         {sinceStart.length > 0 && (
-          // "Since start:" is load-bearing, not decoration. This is the one
-          // LIFETIME figure inside a band the Progression rail's window control
-          // appears to govern; without the prefix it reads as the window's.
+          // "Since start:" is load-bearing, not decoration: this is a range
+          // figure sitting among four that describe a destination, and the
+          // prefix is what tells a reader which kind they are looking at.
           <span className="rounded-[4px] bg-[rgba(255,255,255,0.06)] px-2 py-0.5 text-[10.5px] text-[rgba(255,255,255,0.55)]">
             {/* No space before InlineMono — it owns its own gap. */}
             Since start:<InlineMono>{sinceStart.join(" · ")}</InlineMono>
