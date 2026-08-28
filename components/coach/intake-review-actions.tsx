@@ -7,6 +7,9 @@ import { useRouter } from "next/navigation"
 import { Check, ArrowRight, RefreshCw, Pin } from "lucide-react"
 import { useSWRConfig } from "swr"
 import { useIntakePanel } from "@/contexts/intake-panel-context"
+import { useClient } from "@/hooks/use-check-in-data"
+import { hasStartWeight } from "@/lib/client-profile-completeness"
+import { postIntakeAction } from "@/lib/intake-actions"
 import type { IntakeStatus, ClientIntake } from "@/types/client-intake"
 
 type IntakeReviewActionsProps = {
@@ -25,6 +28,11 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
   const router = useRouter()
   const { mutate } = useSWRConfig()
   const { openPanel, openMinimized, updateIntake, panel } = useIntakePanel()
+  // The DURABLE answer to "have the metrics landed", off the client record.
+  // `synced` below is this session's press and only drives the button's own
+  // label — it forgets on reload, so it could never gate anything.
+  const { client } = useClient(clientId)
+  const metricsSynced = hasStartWeight(client)
 
   const isReviewed = intakeStatus === "reviewed"
 
@@ -38,13 +46,7 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
   const handleSyncMetrics = async () => {
     setSyncing(true)
     try {
-      const res = await fetch(`/api/clients/${clientId}/intake`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "sync-metrics" }),
-      })
-      if (!res.ok) throw new Error("Failed to sync metrics")
-      const result = await res.json()
+      const result = await postIntakeAction(clientId, "sync-metrics")
       const fields: string[] = result.data?.syncedFields ?? []
       setSynced(true)
       toast({
@@ -69,12 +71,7 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
   const handleMarkReviewed = async () => {
     setMarking(true)
     try {
-      const res = await fetch(`/api/clients/${clientId}/intake`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "review" }),
-      })
-      if (!res.ok) throw new Error("Failed to mark as reviewed")
+      await postIntakeAction(clientId, "review")
       toast({ title: "Intake reviewed", description: "This intake has been marked as reviewed." })
       // Keep the pinned panel in sync if this client's intake is pinned
       if (intake && panel?.clientId === clientId) {
@@ -108,7 +105,7 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
         ) : (
           <RefreshCw className="w-4 h-4" />
         )}
-        {synced ? "Metrics Synced" : "Sync Metrics to Profile"}
+        {synced || metricsSynced ? "Metrics Synced" : "Sync Metrics to Profile"}
       </Button>
 
       <Button
@@ -146,11 +143,17 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
         </Button>
       )}
 
+      {/* Sync first — see the panel footer for why the order is enforced. */}
       {!isReviewed && (
         <Button
           size="sm"
           onClick={handleMarkReviewed}
-          disabled={marking}
+          disabled={marking || !metricsSynced}
+          title={
+            metricsSynced
+              ? undefined
+              : "Sync their metrics first — it sets the starting weight everything is measured from."
+          }
         >
           <Check className="w-4 h-4" />
           {marking ? "Marking..." : "Mark as Reviewed"}

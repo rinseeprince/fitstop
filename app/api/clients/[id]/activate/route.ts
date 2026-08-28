@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
+import { hasStartWeight } from "@/lib/client-profile-completeness";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { activateClientSchema } from "@/lib/validations/client-intake";
@@ -36,6 +37,25 @@ export async function POST(
     }
     if (client.coachId !== coachId) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    }
+
+    // Activation IS the client's origin, and `recordClientStart` below writes
+    // the start measurements onto it. Without a weight there is nothing to
+    // record: the trend chart gets no first point and every "since start"
+    // figure loses its denominator, permanently — a start date cannot be
+    // re-derived later.
+    //
+    // The intake panel greys "Mark as reviewed" until the metrics land, and the
+    // activation banner names the gap. Those are affordances; this is the rule.
+    if (!hasStartWeight(client)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Add a starting weight before activating — it is what their whole journey is measured from.",
+        },
+        { status: 409 }
+      );
     }
 
     const body = await request.json();

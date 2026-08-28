@@ -6,7 +6,7 @@ import { useIntakePanel } from "@/contexts/intake-panel-context"
 import { useAuth } from "@/contexts/auth-context"
 import { IntakeContentSections } from "./intake-content-sections"
 import { Button } from "@/components/ui/button"
-import { X, Minimize2, Maximize2, ClipboardList, ExternalLink, Check, CheckCircle2, XCircle } from "lucide-react"
+import { X, Minimize2, Maximize2, ClipboardList, ExternalLink, Check, CheckCircle2, RefreshCw, XCircle } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
@@ -14,6 +14,9 @@ import { useToast } from "@/hooks/use-toast"
 import useSWR, { useSWRConfig } from "swr"
 import { swrFetcher } from "@/lib/swr-fetcher"
 import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
+import { hasStartWeight } from "@/lib/client-profile-completeness"
+import { postIntakeAction } from "@/lib/intake-actions"
+import { useClient } from "@/hooks/use-check-in-data"
 
 const NARROW_BREAKPOINT = 1024
 
@@ -24,6 +27,7 @@ export function FloatingIntakePanel() {
   const { isTrainer } = useAuth()
   const { panel, isExpanded, minimizePanel, expandPanel, closePanel, updateIntake } = useIntakePanel()
   const [marking, setMarking] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const { toast } = useToast()
   const { mutate } = useSWRConfig()
 
@@ -34,6 +38,37 @@ export function FloatingIntakePanel() {
     { revalidateOnFocus: false }
   )
   const readiness = readinessData?.data ?? null
+
+  // The client record, for one question: has a start weight landed on the
+  // profile? Reviewing before it has is what left a coach on the Journey page
+  // being asked to hand-log a weight the intake form was already holding.
+  const { client } = useClient(panel?.clientId ?? "")
+  const metricsSynced = hasStartWeight(client)
+
+  const handleSyncMetrics = async () => {
+    if (!panel) return
+    setSyncing(true)
+    try {
+      const result = await postIntakeAction(panel.clientId, "sync-metrics")
+      const fields = result.data?.syncedFields ?? []
+      toast({
+        title: "Metrics synced",
+        description:
+          fields.length > 0 ? `Synced: ${fields.join(", ")}` : "No new fields to sync",
+      })
+      void mutate(`/api/clients/${panel.clientId}`)
+      void mutate(`/api/clients/${panel.clientId}/activation-readiness`)
+    } catch (err) {
+      console.error("Failed to sync metrics:", err)
+      toast({
+        title: "Sync failed",
+        description: "Could not sync metrics to client profile.",
+        variant: "destructive",
+      })
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   // Refetch readiness data when panel is expanded
   useEffect(() => {
@@ -194,18 +229,48 @@ export function FloatingIntakePanel() {
         <IntakeContentSections intake={panel.intake} compact />
       </div>
 
-      {/* Footer - Mark as Reviewed button */}
+      {/* Footer — sync, then review. In that order, and enforced: reviewing
+          first leaves the client with no start weight, which sends the coach to
+          the Journey page to hand-log one the form in front of them already
+          holds. Disabled rather than hidden, with the reason under it: a greyed
+          button that explains itself teaches the order, a missing one is a
+          puzzle. */}
       {panel.intake.status !== "reviewed" && (
-        <div className="border-t border-[rgba(13,148,136,0.08)] px-4 py-3 shrink-0">
-          <Button
-            size="sm"
-            onClick={handleMarkReviewed}
-            disabled={marking}
-            className="w-full"
-          >
-            <Check className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-            {marking ? "Marking..." : "Mark as Reviewed"}
-          </Button>
+        <div className="space-y-2 border-t border-[rgba(13,148,136,0.08)] px-4 py-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncMetrics}
+              disabled={syncing}
+              className="flex-1"
+            >
+              {metricsSynced && !syncing ? (
+                <Check className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              ) : (
+                <RefreshCw
+                  className={cn("h-3.5 w-3.5 mr-1.5", syncing && "animate-spin")}
+                  strokeWidth={1.5}
+                />
+              )}
+              {syncing ? "Syncing..." : metricsSynced ? "Metrics synced" : "Sync metrics"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleMarkReviewed}
+              disabled={marking || !metricsSynced}
+              className="flex-1"
+            >
+              <Check className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              {marking ? "Marking..." : "Mark as reviewed"}
+            </Button>
+          </div>
+          {!metricsSynced && (
+            <p className="text-[11px] text-[#93b0b4]">
+              Sync their metrics first — it sets the starting weight everything
+              is measured from.
+            </p>
+          )}
         </div>
       )}
     </div>

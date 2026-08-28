@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   findProfileGaps,
   gapsNeedMeasurement,
+  hasStartWeight,
   type ProfileEnergyFields,
 } from "./client-profile-completeness";
 
@@ -110,5 +111,26 @@ describe("gapsNeedMeasurement", () => {
   it("routes everything else to the profile editor", () => {
     expect(gapsNeedMeasurement(["height", "gender", "age"])).toBe(false);
     expect(gapsNeedMeasurement([])).toBe(false);
+  });
+});
+
+describe("hasStartWeight", () => {
+  // The one definition of "the intake metrics have landed", shared by the
+  // panel's gate, the review actions' gate and the activation route's refusal —
+  // so a greyed button and the rule behind it cannot disagree.
+  it("is true once a weight is on the profile", () => {
+    expect(hasStartWeight({ currentWeight: 92 })).toBe(true);
+  });
+
+  it("is false while the profile has none", () => {
+    expect(hasStartWeight({ currentWeight: undefined })).toBe(false);
+    expect(hasStartWeight(null)).toBe(false);
+    expect(hasStartWeight(undefined)).toBe(false);
+  });
+
+  it("treats a logged zero as a weight, not as absence", () => {
+    // `!= null`, not falsiness. Nobody weighs 0kg, but a predicate that reads
+    // 0 as "not set" is the bug that eventually finds a real 0-valued field.
+    expect(hasStartWeight({ currentWeight: 0 })).toBe(true);
   });
 });

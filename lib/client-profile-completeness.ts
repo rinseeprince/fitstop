@@ -86,3 +86,27 @@ export function findProfileGaps(client: ProfileEnergyFields): ProfileGap[] {
 export function gapsNeedMeasurement(gaps: ProfileGap[]): boolean {
   return gaps.includes("weight");
 }
+
+/**
+ * Has a starting weight reached this client's profile?
+ *
+ * The one definition of "the intake metrics have landed", shared by the intake
+ * panel's gate, the review actions' gate and the activation route's refusal, so
+ * a button and the rule behind it cannot disagree.
+ *
+ * A weight, specifically, and not the whole energy pair: it is the only profile
+ * fact that is a MEASUREMENT, it is what activation records as the origin of
+ * the client's journey, and it is what nothing downstream can invent. Height,
+ * gender and the rest degrade into an assumption; a missing start weight leaves
+ * the trend chart with no first point and every "since start" figure with no
+ * denominator.
+ *
+ * Deliberately NOT the ephemeral "did the coach press Sync this session" flag
+ * it replaced: that was React state, so it forgot on reload and would have
+ * blocked a coach who synced yesterday.
+ */
+export function hasStartWeight(
+  client: Pick<Client, "currentWeight"> | null | undefined
+): boolean {
+  return client?.currentWeight != null;
+}
