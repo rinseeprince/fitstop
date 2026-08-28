@@ -15,7 +15,15 @@ import { pluralize } from "./overview-format";
 import type { AlertType, AttentionAlert } from "@/types/attention-feed";
 import type { DailyLog } from "@/types/daily-log";
 
-export const WELLNESS_WINDOW_DAYS = 7;
+/**
+ * The wellness cards' window, matching the adherence rails above them so both
+ * consistency surfaces describe the same fortnight.
+ *
+ * It was 7 while the rails were 14, which meant two sections stacked together
+ * answered "how has this client been" over two different periods and only the
+ * rail metas said so.
+ */
+export const WELLNESS_WINDOW_DAYS = 14;
 
 type WellnessCardsProps = {
   /** Daily logs covering (at least) the trailing window, any order. */
@@ -107,7 +115,7 @@ function MetricCard({
           {Math.max(...values)}
         </p>
       ) : (
-        <p className="mt-1.5 text-[10px] text-[#93b0b4]">Not logged this week</p>
+        <p className="mt-1.5 text-[10px] text-[#93b0b4]">Not logged in this window</p>
       )}
     </button>
   );

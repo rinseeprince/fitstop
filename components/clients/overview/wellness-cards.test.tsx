@@ -136,7 +136,7 @@ describe("WellnessCards", () => {
     render(<WellnessCards logs={[]} attentionAlerts={[]} {...PROPS} />);
 
     expect(screen.getAllByText("—")).toHaveLength(5);
-    expect(screen.getAllByText("Not logged this week")).toHaveLength(5);
+    expect(screen.getAllByText("Not logged in this window")).toHaveLength(5);
   });
 
   it("sends the coach to the wellness tab", async () => {
