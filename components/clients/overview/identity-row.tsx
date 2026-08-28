@@ -10,7 +10,7 @@ import {
   MONO,
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { InlineMono, OverviewCard } from "./overview-primitives";
+import { OverviewCard } from "./overview-primitives";
 import { formatDateOnlyWeekday, pluralize } from "./overview-format";
 import type { Client } from "@/types/check-in";
 import type { CheckInTiming } from "@/types/coach-brief";
@@ -164,17 +164,10 @@ export function IdentityRow({
               </span>
             </span>
           </div>
-          {/* A standalone meta line, not a sentence, so the date is mono —
-              InlineMono owns its own leading gap and the call site adds none. */}
-          <p className="mt-0.5 truncate text-[11.5px] text-[#93b0b4]">
-            {client.email}
-            {client.startDate && (
-              <>
-                {" · started"}
-                <InlineMono>{formatDateOnlyWeekday(client.startDate)}</InlineMono>
-              </>
-            )}
-          </p>
+          {/* The start date used to sit here too. It is the left-hand label on
+              the progression chart directly below, and a page does not need to
+              state a client's start date twice. */}
+          <p className="mt-0.5 truncate text-[11.5px] text-[#93b0b4]">{client.email}</p>
         </div>
 
         <CheckInCluster
