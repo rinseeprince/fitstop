@@ -87,8 +87,15 @@ describe('GET /api/client/check-in-context', () => {
   });
 
   it('available → 200 with the full context shape and the parallel fan-out run', async () => {
-    // No nextCheckInDue → no schedule → gating is skipped (stays "available").
-    vi.mocked(getClientById).mockResolvedValue({ ...baseClient, nextCheckInDue: undefined } as any);
+    // Due TODAY, so the gate opens. (This used to lean on an unscheduled client
+    // to get through — that route is closed now: no schedule, no check-in.)
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-14T12:00:00Z'));
+    vi.mocked(getClientById).mockResolvedValue({
+      ...baseClient,
+      nextCheckInDue: '2026-06-14',
+      checkInFrequency: 'weekly',
+    } as any);
     mockServerSupabase(null); // first check-in
 
     const res = await GET(req());
@@ -125,6 +132,24 @@ describe('GET /api/client/check-in-context', () => {
     expect(getCheckInTrainingContext).toHaveBeenCalledTimes(1);
     expect(getCheckInNutritionContext).toHaveBeenCalledTimes(1);
     expect(getDailyLogs).toHaveBeenCalledTimes(1);
+  });
+
+  it('unscheduled → 403 and no fan-out', async () => {
+    // A client whose coach has set no date has nothing to check in FOR: no due
+    // date to report against, and no period for the submission to cover.
+    vi.mocked(getClientById).mockResolvedValue({
+      ...baseClient,
+      nextCheckInDue: undefined,
+    } as any);
+    mockServerSupabase(null);
+
+    const res = await GET(req());
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error).toBe('unscheduled');
+    expect(getCheckInNutritionContext).not.toHaveBeenCalled();
+    expect(getDailyLogs).not.toHaveBeenCalled();
   });
 
   it('not_due → 403 and ZERO context/daily-log queries (no plan promotion)', async () => {

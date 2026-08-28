@@ -198,6 +198,13 @@ export async function POST(request: NextRequest) {
     const client = await getClientById(clientId);
     if (client) {
       const { status, nextDueDate } = getCheckInGate(client);
+      if (status === "unscheduled") {
+        const response: SubmitCheckInResponse = {
+          success: false,
+          errorMessage: "Your coach has not scheduled your check-ins yet.",
+        };
+        return NextResponse.json(response, { status: 409 });
+      }
       if (status === "not_due") {
         const response: SubmitCheckInResponse = {
           success: false,

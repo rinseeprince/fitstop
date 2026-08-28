@@ -54,11 +54,12 @@ export function useClientCheckIn() {
         const result = await response.json();
 
         if (!response.ok || !result.success) {
-          // Surface the gating error code so the page can show a friendly
-          // message. `not_due` is the only one: it covers both "your turn has
-          // not come round" and "you have already checked in", which became one
-          // state when the due date started advancing on submit.
-          if (result.error === "not_due") {
+          // Surface the gating error codes so the page can show a friendly
+          // message. Two: `not_due` covers both "your turn has not come round"
+          // and "you have already checked in", which became one state when the
+          // due date started advancing on submit; `unscheduled` is the client
+          // whose coach has set no date at all.
+          if (result.error === "not_due" || result.error === "unscheduled") {
             setContextError(result.error);
             if (typeof result.nextDueDate === "string") {
               setNextDueDate(result.nextDueDate);

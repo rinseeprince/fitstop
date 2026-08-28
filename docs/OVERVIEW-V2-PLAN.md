@@ -1287,6 +1287,40 @@ and the row count was unchanged either side.
 
 ---
 
+### 11.12 Two things the owner's smoke found — commits 13 and 14
+
+**1. Activating a client left its check-in date stale on screen** (`7d5c908`). The date was written
+correctly; the identity row served a cached copy until a full page reload. `handleClientUpdated`
+already exists for exactly this — the check-in date lives on the client record but is SERVED by the
+brief, so both need revalidating — and the sheet save path uses it. The activation banner was wired
+past it to the raw `onClientUpdated`. One word. (A first diagnosis blamed the hook for exporting no
+invalidator; that was a layer off — the component already had `mutateBrief` in scope. No new export
+was needed and none was added.)
+
+**2. A cleared schedule read "Due today" on the client's home** (commit 14). The gate resolved a
+NULL due date to `available` — deliberately, so an unscheduled client would not be locked out. But
+`available` was then answering two questions at once: "your date is today" and "you have no date".
+The same shape of error as the original bug, one layer up.
+
+**Owner decision: no schedule, no check-in.** `unscheduled` is a fourth gate state, and it is NOT
+the `completed` that §11.10 removed — that one restated `not_due`; this one says something nothing
+else says, that no cycle exists. A client with no due date has nothing to report against and no
+period for a submission to cover, so:
+
+- the home card reads **"Not scheduled"** and drops its link (mirrors the coach's own row);
+- `/api/client/check-in-context` 403s with `unscheduled`, and the check-in page renders a matching
+  screen;
+- `POST /api/client/check-ins` 409s.
+
+Adding a value to the status union is a **widening** of the RN contract, where §11.10's removal was
+a narrowing — a mobile `switch` gains an unhandled case rather than losing a reachable one.
+
+Two pieces of now-dead code went with it, both residue from the change itself: the `hasSchedule`
+ternary feeding `resolveCheckInWindow` (unreachable once unscheduled clients are refused above it),
+and — found the same way one commit earlier — the check-in page's "Already completed" screen.
+
+---
+
 ## 12. Where the build departed from this plan — commits 4–7
 
 Five deliberate deviations. Each is here because the plan said one thing, the code says another,

@@ -38,11 +38,17 @@ export function CheckInCardSummary() {
   }
 
   const { leading, hint } = describe(data.data.status, data.data.nextDueDate);
+  // No schedule, no route in: an unscheduled client has nothing to check in
+  // FOR — no due date, and no period for the submission to report on — so the
+  // row carries no href and renders without the chevron. Their coach sets a
+  // date; until then this states the fact rather than offering an action that
+  // the server would refuse.
+  const actionable = data.data.status !== "unscheduled";
 
   return (
     <DsCardSummary title="Weekly check-in">
       <DsCardSummaryRow
-        href="/client/check-in"
+        href={actionable ? "/client/check-in" : undefined}
         prefetch={false}
         leadingText={leading}
         hint={hint}
@@ -57,6 +63,10 @@ function describe(
   nextDueDate: string | null,
 ): { leading: string; hint?: string } {
   switch (status) {
+    // Mirrors the coach's own "Not scheduled" on the client's identity row, so
+    // the two sides of the same fact read the same way.
+    case "unscheduled":
+      return { leading: "Not scheduled" };
     case "available":
       return { leading: "Due today", hint: "Start" };
     case "overdue":

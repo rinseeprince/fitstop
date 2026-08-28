@@ -159,6 +159,16 @@ export default function ClientCheckInPage() {
             clientName={contextData?.clientInfo.name ?? ""}
             coachName={contextData?.clientInfo.coachName ?? "Your Coach"}
           />
+        ) : contextError === "unscheduled" ? (
+          <Card className="w-full max-w-md mx-auto text-center">
+            <CardContent className="py-12 space-y-4">
+              <Clock className="h-12 w-12 text-muted-foreground mx-auto" />
+              <h2 className="text-xl font-semibold">Not scheduled</h2>
+              <p className="text-muted-foreground">
+                Your coach has not scheduled your check-ins yet.
+              </p>
+            </CardContent>
+          </Card>
         ) : contextError === "not_due" ? (
           <Card className="w-full max-w-md mx-auto text-center">
             <CardContent className="py-12 space-y-4">

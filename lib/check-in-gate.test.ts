@@ -82,14 +82,18 @@ describe("getCheckInGate", () => {
     }
   });
 
-  it("never gates a client with no schedule", () => {
+  it("reports a client with no schedule as unscheduled, not available", () => {
+    // Owner decision 2026-08-28: no schedule, no check-in. There is no due date
+    // to report against and no period for a submission to cover. It used to
+    // resolve to `available`, which made a cleared schedule read "Due today" on
+    // the client's home while the coach's own row read "Not scheduled".
     at("2026-03-16", () => {
       expect(getCheckInGate(makeClient({ nextCheckInDue: undefined }))).toEqual({
-        status: "available",
+        status: "unscheduled",
         nextDueDate: null,
       });
       expect(getCheckInGate(makeClient({ checkInFrequency: "none" })).status).toBe(
-        "available"
+        "unscheduled"
       );
     });
   });

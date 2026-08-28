@@ -43,8 +43,22 @@ export async function GET(request: NextRequest) {
     // `completed` state used to say as well: submitting advances the date, so a
     // client who has already checked in and a client whose turn has not come
     // round yet are the same state — "nothing to do until <date>".
-    const hasSchedule = Boolean(client.nextCheckInDue);
     const { status: checkInGateStatus, nextDueDate } = getCheckInGate(client);
+
+    // No schedule, no check-in. There is no due date to report against and no
+    // period for the submission to cover, so the form is refused outright
+    // rather than opened over a window derived from nothing.
+    if (checkInGateStatus === "unscheduled") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "unscheduled",
+          message: "Your coach has not scheduled your check-ins yet.",
+          nextDueDate: null,
+        },
+        { status: 403 }
+      );
+    }
 
     if (checkInGateStatus === "not_due") {
       return NextResponse.json(
@@ -64,9 +78,11 @@ export async function GET(request: NextRequest) {
     // mid-week-activated client sees [start_date .. check-in day], not a full 7).
     // Shared with submitCheckIn so the displayed and stored periods agree.
     const today = getTodayInTimezone(client.timezone);
+    // Unconditional: an unscheduled client was refused above, so by here there
+    // is always a due date to take the weekday from.
     const { periodStart, periodEnd } = resolveCheckInWindow(
       today,
-      hasSchedule ? checkInWeekday(client) : null,
+      checkInWeekday(client),
       client.startDate,
     );
 

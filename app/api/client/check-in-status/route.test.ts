@@ -80,14 +80,16 @@ describe("GET /api/client/check-in-status", () => {
     },
   );
 
-  it("returns status=available with a null date when the client has no schedule", async () => {
+  it("returns status=unscheduled with a null date when the client has no schedule", async () => {
+    // Still 200 — this route always answers. The card renders "Not scheduled"
+    // and drops its link, because there is nothing to check in for.
     mockClient({ nextCheckInDue: undefined });
 
     const response = await GET(request());
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.data).toEqual({ status: "available", nextDueDate: null });
+    expect(body.data).toEqual({ status: "unscheduled", nextDueDate: null });
   });
 
   it("gates on the CLIENT's local today, not server UTC (London 23:30Z boundary)", async () => {

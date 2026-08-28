@@ -980,9 +980,14 @@ default spelled twelve times, and it disagreed with itself in one of them.
 `check_in_frequency` / `check_in_frequency_days` survive as the advance step. `frequency = 'none'`
 still exists and still means no schedule, now alongside a NULL date.
 
-**The client-side gate is `getCheckInGate` (`lib/check-in-schedule.ts`) and has THREE states** —
-`not_due` (the date is ahead: "Next check-in 3 Sep"), `available` (it is today), `overdue` (it has
-passed). It is a pure read of the stored date and asks nothing about the client's check-in history.
+**The client-side gate is `getCheckInGate` (`lib/check-in-schedule.ts`).** `unscheduled` first —
+NULL due date, so no cycle exists — then three states over the stored date: `not_due` (ahead:
+"Next check-in 3 Sep"), `available` (today), `overdue` (passed). It is a pure read of the stored
+date and asks nothing about the client's check-in history. **An unscheduled client is REFUSED, not
+waved through**: they have no due date to report against and no period for a submission to cover,
+so the home card reads "Not scheduled" with no link, and both `/check-in-context` (403) and
+`POST /check-ins` (409) turn them away. It previously resolved to `available`, which made a cleared
+schedule read "Due today" on the client's home while the coach's own row read "Not scheduled".
 A fourth state, `completed`, was retired: submitting advances the date, so "already checked in" and
 "not due yet" are one state, and computing the difference needed a rule that would have shown a
 late-checking-in client "completed" on their next due day — hiding a check-in they owed. It lives

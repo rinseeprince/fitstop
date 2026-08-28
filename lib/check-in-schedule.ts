@@ -98,18 +98,23 @@ export function resolveCheckInDue(
 /**
  * The client-side check-in gate.
  *
- * THREE states, and they are exhaustive: the due date is ahead of the client,
- * on them, or behind them. There used to be a fourth, `completed` — "you have
- * already checked in for this week" — which made sense while the due date was
- * DERIVED and therefore did not move when a client submitted. Now submitting
- * advances the date, so "the date is in the future" already means "nothing to
- * do", and a fourth state could only restate it. It was dropped rather than
- * kept: computing it needed the client's check-in history and a rule about
- * which cycle a submission belonged to, and that rule had a hole — a client who
- * checked in three days late would have been shown "completed" on their NEXT
- * due day, hiding a check-in they owed.
+ * `unscheduled` first, then three states over the stored date: it is ahead of
+ * the client, on them, or behind them.
  *
- * So this is a pure read of the stored date. It asks nothing about history.
+ * `unscheduled` is NOT the fourth state that was removed. `completed` — "you
+ * have already checked in this week" — restated `not_due` once submitting began
+ * advancing the date, and computing it needed a rule about which cycle a
+ * submission belonged to that had a hole in it (a client three days late would
+ * have been shown "completed" on their NEXT due day, hiding a check-in they
+ * owed). `unscheduled` says something no other state says: there is no cycle at
+ * all. A client whose coach has not scheduled them has nothing to check in FOR
+ * — no due date, and no period for the submission to report on — so they are
+ * refused rather than waved through (owner decision, 2026-08-28; it previously
+ * resolved to `available`, which made a cleared schedule read "Due today" on the
+ * client's home).
+ *
+ * Beyond that this is a pure read of the stored date. It asks nothing about
+ * history.
  *
  * Lives here, beside `resolveCheckInDue`, and not in `lib/date-helpers.ts`
  * where it used to: "is a check-in due?" is a SCHEDULE question. It only lived
@@ -119,16 +124,14 @@ export function resolveCheckInDue(
  * for a deadline that had never existed, on the same day and the same row where
  * the coach's own screen correctly read "due in 6 days".
  */
-export type CheckInGateStatus = "available" | "not_due" | "overdue";
+export type CheckInGateStatus = "unscheduled" | "available" | "not_due" | "overdue";
 
 export function getCheckInGate(
   client: Client | ClientWithCheckInInfo
 ): { status: CheckInGateStatus; nextDueDate: string | null } {
   const due = resolveCheckInDue(client);
 
-  // No schedule: never gated. A client their coach has not scheduled can check
-  // in whenever they like.
-  if (!due) return { status: "available", nextDueDate: null };
+  if (!due) return { status: "unscheduled", nextDueDate: null };
 
   const dueDate = formatDateISO(due);
   // The gate opens and rolls on the CLIENT's day, not the server's.

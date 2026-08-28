@@ -201,12 +201,15 @@ describe('POST /api/client/check-ins — the write path gates too', () => {
     expect(submitCheckIn).toHaveBeenCalled();
   });
 
-  it('lets an unscheduled client through', async () => {
+  it('refuses an unscheduled client, and writes nothing', async () => {
+    // No schedule, no check-in: there is no period for the submission to cover.
     mockClient(undefined);
 
     const res = await POST(post(PAYLOAD));
+    const body = await res.json();
 
-    expect(res.status).toBe(201);
-    expect(submitCheckIn).toHaveBeenCalled();
+    expect(res.status).toBe(409);
+    expect(body.errorMessage).toBe('Your coach has not scheduled your check-ins yet.');
+    expect(submitCheckIn).not.toHaveBeenCalled();
   });
 });
