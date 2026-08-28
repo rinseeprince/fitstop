@@ -1125,10 +1125,18 @@ removes with it. **Prod is still at 153: migrations 154 and 155 have NOT been pu
 
 ---
 
-### 11.9 Smoke checklist — owed
+### 11.9 Smoke checklist — SMOKED 2026-08-28, A–D pass
 
-Covers commits 8–12. **Nothing below has been run; no browser was driven.** Sections A and B are
-one linear pass on a single client and cover most of it — run those first.
+Covers commits 8–12. **The owner ran A–D on 2026-08-28 and all of it passes.** Two defects came out
+of it and are fixed in `7d5c908` and `f670908` (§11.12): activation left the check-in date stale on
+screen until a reload, and a cleared schedule read "Due today" on the client's home. Both were
+re-checked after fixing.
+
+**Section E — the client's week — is the one item still unconfirmed.** It is also the only part of
+this workstream a client can see change: commit 8 moved their nutrition page off a hard Mon–Sun
+window onto their own check-in week.
+
+Sections A and B are one linear pass on a single client and cover most of it — run those first.
 
 **A. The reported bug (30 seconds).** A client who has checked in, whose coach has since moved
 their next check-in to a future date.
