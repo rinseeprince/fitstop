@@ -5,6 +5,7 @@ import { ClipboardCheck, Dumbbell, Inbox, Loader2, Ruler, Trophy } from "lucide-
 import { cn } from "@/lib/utils";
 import { METRIC_DEFINITIONS } from "@/components/clients/metrics/hooks/use-metrics-data";
 import {
+  LABEL_CLASS,
   MONO,
   MONO_META_CLASS,
   THUMB_CLASS,
@@ -146,7 +147,19 @@ export function SinceLastVisitSection({
               type="button"
               onClick={onMarkSeen}
               disabled={isMarkingSeen}
-              className="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-[#5a7d82] transition-colors hover:text-[#0d9488] disabled:opacity-50"
+              // A word-only interactive rail action, so it takes the rail's
+              // own register: LABEL_CLASS + teal hover, the same shape as the
+              // drop-set editor's "Add drop" and the calendar's Today jump.
+              // It was sentence-case at 11px in a darker grey, which made a
+              // clickable word out-shout the divider label beside it —
+              // `docs/newdesignsystem.md`: rail uppercase is reserved for
+              // interactive options, so clickable and furniture never share a
+              // register.
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 transition-colors disabled:opacity-50",
+                LABEL_CLASS,
+                "hover:text-[#0d9488]"
+              )}
             >
               {isMarkingSeen && <Loader2 className="h-3 w-3 animate-spin" />}
               Mark seen
