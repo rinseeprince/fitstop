@@ -34,7 +34,7 @@ describe("GET /api/clients/[id]/measurement-series", () => {
   });
 
   it("returns the series in the standard envelope, uncached", async () => {
-    const response = await GET(makeRequest("?days=30"), { params });
+    const response = await GET(makeRequest("?from=2026-03-01"), { params });
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -73,30 +73,32 @@ describe("GET /api/clients/[id]/measurement-series", () => {
     expect(requireCoachOwnsClient).toHaveBeenCalledWith(CLIENT_ID, request);
   });
 
-  it("400s a non-integer days rather than silently clamping it", async () => {
-    const response = await GET(makeRequest("?days=abc"), { params });
+  it("bounds the read on the start date the browser supplies", async () => {
+    await GET(makeRequest("?from=2026-03-01"), { params });
+
+    expect(getMeasurementSeries).toHaveBeenCalledWith(CLIENT_ID, "2026-03-01");
+  });
+
+  it("reads the whole history when the client has no start date", async () => {
+    await GET(makeRequest(), { params });
+
+    expect(getMeasurementSeries).toHaveBeenCalledWith(CLIENT_ID, undefined);
+  });
+
+  it("400s a malformed `from` rather than passing it to a PostgREST filter", async () => {
+    const response = await GET(makeRequest("?from=2026-03-01,evil"), { params });
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body).toEqual({ success: false, error: "days must be an integer" });
+    expect(body.success).toBe(false);
     expect(getMeasurementSeries).not.toHaveBeenCalled();
   });
 
-  it("clamps days to the Overview's own window options", async () => {
-    await GET(makeRequest("?days=7"), { params });
-    expect(getMeasurementSeries).toHaveBeenLastCalledWith(CLIENT_ID, 30);
+  it("400s a date that passes the shape check but is not a real day", async () => {
+    const response = await GET(makeRequest("?from=2026-13-45"), { params });
 
-    await GET(makeRequest("?days=365"), { params });
-    expect(getMeasurementSeries).toHaveBeenLastCalledWith(CLIENT_ID, 60);
-
-    await GET(makeRequest("?days=60"), { params });
-    expect(getMeasurementSeries).toHaveBeenLastCalledWith(CLIENT_ID, 60);
-  });
-
-  it("defaults to the Overview's default window when days is absent", async () => {
-    await GET(makeRequest(), { params });
-
-    expect(getMeasurementSeries).toHaveBeenCalledWith(CLIENT_ID, 30);
+    expect(response.status).toBe(400);
+    expect(getMeasurementSeries).not.toHaveBeenCalled();
   });
 
   it("500s on a read failure instead of returning an empty chart", async () => {

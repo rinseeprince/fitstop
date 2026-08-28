@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState } from "react";
 import { ClientActivationBanner } from "@/components/clients/client-activation-banner";
 import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SectionLabel } from "@/components/programs/shared/section-label";
 import { useClientProfileEdit } from "@/components/clients/overview/use-client-profile-edit";
 import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
 import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
@@ -18,12 +17,8 @@ import {
 import { SignalsCard } from "@/components/clients/overview/signals-card";
 import { SinceLastVisitSection } from "@/components/clients/overview/since-last-visit-section";
 import { StatusBand } from "@/components/clients/overview/status-band";
-import { WindowControl } from "@/components/clients/overview/window-control";
 import { trailingDates } from "@/components/clients/overview/overview-format";
-import {
-  DEFAULT_OVERVIEW_WINDOW,
-  type OverviewWindow,
-} from "@/lib/overview/window";
+import { DEFAULT_OVERVIEW_WINDOW } from "@/lib/overview/window";
 import { useClientAdherence } from "@/hooks/use-client-adherence";
 import {
   useInvalidateMeasurementSeries,
@@ -60,14 +55,15 @@ interface ClientOverviewTabProps {
  *
  * Identity leads because everything under it is a fact ABOUT that client, and
  * the page previously opened on a work queue that said nothing about whose it
- * was. The window control sits on the Progression rail and governs the period
- * surfaces only — see the note on `windowDays` below.
+ * was.
  */
 export function ClientOverviewTab({
   client,
   onClientUpdated,
   onTabChange,
 }: ClientOverviewTabProps) {
+  // Fixed for now; the next commit replaces it with the Signals window constant.
+  const signalsWindow = DEFAULT_OVERVIEW_WINDOW;
   const {
     brief,
     isLoading: briefLoading,
@@ -87,31 +83,29 @@ export function ClientOverviewTab({
     deleteNote,
   } = useClientNotes(client.id);
   const [notePendingDelete, setNotePendingDelete] = useState<ClientNote | null>(null);
-  // The page's one window. It governs the period surfaces — the progression
-  // chart and the Signals card — and deliberately NOT the structural facts
-  // around them: goal targets, the energy pair, the deadline, the plan's week,
-  // the next check-in. Those describe a client, not a period.
-  const [windowDays, setWindowDays] = useState<OverviewWindow>(DEFAULT_OVERVIEW_WINDOW);
 
-  // Both period reads take the selected window, so the Signals rows and their
-  // expanded panels describe the same days. `withHabitLogs` stays off: the
-  // per-habit breakdown rides on the adherence read, which already holds these
-  // rows (and, unlike a logs-derived grid, keeps a habit with nothing logged).
+  // The consistency surfaces read a fixed trailing window; the chart above them
+  // does not read a window at all. `withHabitLogs` stays off: the per-habit
+  // breakdown rides on the adherence read, which already holds these rows (and,
+  // unlike a logs-derived grid, keeps a habit with nothing logged).
   const { adherence, isLoading: adherenceLoading } = useClientAdherence(
     client.id,
-    windowDays
+    signalsWindow
   );
   const { logs: wellnessLogs, isLoading: wellnessLoading } = useWellnessData(client.id, {
-    daysBack: windowDays - 1,
+    daysBack: signalsWindow - 1,
     withHabitLogs: false,
   });
   // Which body metric the chart is showing. Local to the page, not a URL param:
   // it is a lens on one card, not a pane, and the client page's param contract
   // is one param per TAB (docs/ARCHITECTURE.md → Client page tab structure).
   const [chartMetric, setChartMetric] = useState<ChartMetric>("weight");
-  const { series, isLoading: seriesLoading } = useMeasurementSeries(client.id, windowDays);
+  const { series, isLoading: seriesLoading } = useMeasurementSeries(
+    client.id,
+    client.startDate
+  );
 
-  const wellnessDates = useMemo(() => trailingDates(windowDays), [windowDays]);
+  const wellnessDates = useMemo(() => trailingDates(signalsWindow), [signalsWindow]);
   const { toast } = useToast();
 
   // The goal the client is on RIGHT NOW, resolved from `client_goals` through
@@ -227,30 +221,25 @@ export function ClientOverviewTab({
         onOpenDetails={edit.start}
       />
 
-      {/* 2 — Where they stand. The rail's window control reaches the chart
-          inside the band; the four cells beside it are structural and stay
-          outside it (status-band.tsx). */}
-      <div>
-        <SectionLabel
-          label="Progression"
-          actions={<WindowControl value={windowDays} onChange={setWindowDays} />}
-        />
-        <StatusBand
-          client={client}
-          goal={effectiveGoal}
-          chart={
-            <ProgressionChart
-              series={series}
-              isLoading={seriesLoading}
-              metric={chartMetric}
-              onMetricChange={setChartMetric}
-              goal={effectiveGoal}
-              windowDays={windowDays}
-            />
-          }
-          onOpenMetrics={() => goToTab("metrics")}
-        />
-      </div>
+      {/* 2 — Where they stand. Unlabelled and unwindowed: the chart is the
+          client's whole journey and the four cells beside it are structural
+          facts, so there is no period for a rail to name. */}
+      <StatusBand
+        client={client}
+        goal={effectiveGoal}
+        chart={
+          <ProgressionChart
+            series={series}
+            isLoading={seriesLoading}
+            metric={chartMetric}
+            onMetricChange={setChartMetric}
+            goal={effectiveGoal}
+            startDate={client.startDate ?? null}
+            timezone={client.timezone}
+          />
+        }
+        onOpenMetrics={() => goToTab("metrics")}
+      />
 
       {/* 3 — What needs doing + what happened. Two self-railed columns: the
           left one is a work queue, the right one is anchored to last_viewed_at
@@ -289,7 +278,7 @@ export function ClientOverviewTab({
         isWellnessLoading={wellnessLoading}
         dates={wellnessDates}
         attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
-        windowDays={windowDays}
+        windowDays={signalsWindow}
         onTabChange={goToTab}
       />
 

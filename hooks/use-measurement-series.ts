@@ -3,26 +3,27 @@
 import { useCallback } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import type { OverviewWindow } from "@/lib/overview/window";
 import type { MeasurementSeries } from "@/types/coach-overview";
 
 type MeasurementSeriesResponse = { success: boolean; data: MeasurementSeries };
 
 /** The key builder. Never construct this URL at a call site. */
-export function measurementSeriesKey(clientId: string, days: OverviewWindow): string {
-  return `/api/clients/${clientId}/measurement-series?days=${days}`;
+export function measurementSeriesKey(clientId: string, from?: string | null): string {
+  const base = `/api/clients/${clientId}/measurement-series`;
+  return from ? `${base}?from=${from}` : base;
 }
 
 /**
- * The Overview progression chart's series, bounded to the selected window.
+ * The client's whole measurement journey, for the Overview progression chart.
  *
- * Keyed on the window, so switching 30 ⇄ 60 fetches once per window and then
- * serves from cache — SWR keeps the previous series on screen while the next
- * one loads rather than blanking the chart.
+ * `from` is the client's own start date — the browser already holds it, so
+ * passing it saves the route a round trip for a fact its caller has. It is part
+ * of the key because a corrected start date genuinely changes which readings
+ * belong to the journey.
  */
-export function useMeasurementSeries(clientId: string, days: OverviewWindow) {
+export function useMeasurementSeries(clientId: string, from?: string | null) {
   const { data, error, isLoading } = useSWR<MeasurementSeriesResponse>(
-    clientId ? measurementSeriesKey(clientId, days) : null,
+    clientId ? measurementSeriesKey(clientId, from) : null,
     swrFetcher,
     { revalidateOnFocus: false, errorRetryCount: 3, errorRetryInterval: 1000 }
   );
@@ -31,11 +32,11 @@ export function useMeasurementSeries(clientId: string, days: OverviewWindow) {
 }
 
 /**
- * Invalidates every window of a client's series.
+ * Invalidates a client's series, whatever `from` it was read with.
  *
- * Matches the API AREA, not one key: the series is keyed per window, so a
- * logged measurement has to clear both 30 and 60 or the coach switches windows
- * and reads a chart that predates their own entry.
+ * Matches the API AREA, not one key. A save that corrects the start date
+ * changes the key AND the data behind the old one, so clearing only the key in
+ * hand would leave a stale series cached under the previous start date.
  */
 export function useInvalidateMeasurementSeries() {
   const { mutate } = useSWRConfig();

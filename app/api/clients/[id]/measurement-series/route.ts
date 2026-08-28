@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
+import { validateDateParameter } from "@/lib/validation-helpers";
 import { getMeasurementSeries } from "@/services/measurement-series-service";
-import { DEFAULT_OVERVIEW_WINDOW, OVERVIEW_WINDOWS } from "@/lib/overview/window";
 
-// The Overview progression chart's weight / body-fat series, bounded to the
-// selected window (MeasurementSeries contract).
+// The Overview progression chart's weight / body-fat series (MeasurementSeries
+// contract) — the client's whole journey, not a window.
 //
-// The bounds ARE the Overview's window options rather than a wider range of
-// their own: this route exists because the unbounded alternative (paging the
-// client's whole check-in history for two columns) is what it replaces, and a
-// ceiling nothing asks for is a ceiling nobody maintains.
-const MIN_DAYS = Math.min(...OVERVIEW_WINDOWS);
-const MAX_DAYS = Math.max(...OVERVIEW_WINDOWS);
-
+// `from` is the client's start date, supplied by the browser because it already
+// holds the client record; sending it saves this route a round trip it would
+// otherwise make for a fact its caller already has. It only ever NARROWS a read
+// the coach is already authorized for, so a forged value costs nothing beyond a
+// wrong-looking chart — but it still reaches a PostgREST filter, so it is
+// validated to YYYY-MM-DD rather than passed through. (`daily-logs` and
+// `habits/logs` take the same shape of param and do not validate it; that is a
+// gap to close there, not a pattern to copy.)
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -27,22 +28,11 @@ export async function GET(
     const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
-    // Param handling mirrors the adherence route exactly, so the two reads
-    // behind one window control cannot answer a malformed `days` differently.
-    const daysParam = request.nextUrl.searchParams.get("days");
-    let days: number = DEFAULT_OVERVIEW_WINDOW;
-    if (daysParam !== null) {
-      const parsed = Number(daysParam);
-      if (!Number.isInteger(parsed)) {
-        return NextResponse.json(
-          { success: false, error: "days must be an integer" },
-          { status: 400 }
-        );
-      }
-      days = Math.min(MAX_DAYS, Math.max(MIN_DAYS, parsed));
-    }
+    const from = request.nextUrl.searchParams.get("from");
+    const invalidFrom = validateDateParameter(from);
+    if (invalidFrom) return invalidFrom;
 
-    const series = await getMeasurementSeries(clientId, days);
+    const series = await getMeasurementSeries(clientId, from ?? undefined);
 
     return NextResponse.json(
       { success: true, data: series },

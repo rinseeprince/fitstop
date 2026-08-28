@@ -19,6 +19,7 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { rollingAverage, weeklyRate, type SeriesPoint } from "@/lib/overview/rolling-average";
 import { toUtcMs } from "@/utils/metric-points";
+import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 import { formatDateOnlyShort } from "./overview-format";
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { MeasurementSeries } from "@/types/coach-overview";
@@ -26,7 +27,12 @@ import { useUnits } from "@/contexts/units-context";
 import { formatWeight, type UnitSystem } from "@/utils/unit-conversions";
 
 /**
- * Weight or body fat over the selected window, on the dark band.
+ * Weight or body fat across the client's WHOLE journey, on the dark band.
+ *
+ * Not windowed, deliberately: the question this answers is "where has this
+ * client got to since they started", which is a lifetime question. The axis
+ * therefore runs from their start date to today whatever the data does, so an
+ * empty stretch reads as an empty stretch rather than being cropped away.
  *
  * recharts, not hand-rolled SVG: it is already a dependency and
  * `metric-trend-chart.tsx` is the shipped precedent for this exact chart —
@@ -50,12 +56,23 @@ type ProgressionChartProps = {
   metric: ChartMetric;
   onMetricChange: (metric: ChartMetric) => void;
   goal: EffectiveGoal;
-  windowDays: number;
+  /** The client's start date — the axis' left edge. Null before activation. */
+  startDate: string | null;
+  /** The client's zone, so "today" is their today and not the coach's device. */
+  timezone: string;
 };
 
 const SERIES_COLOR = "#0d9488";
 const RAW_DOT_COLOR = "rgba(255,255,255,0.22)";
 const GOAL_LINE_COLOR = "rgba(255,255,255,0.22)";
+
+/**
+ * Above this many readings the raw dots come off and the trend line carries it
+ * alone. Same reasoning as `WellnessSparkline`'s threshold: a journey of two
+ * years is well over a hundred readings in ~560px, and at that spacing the dots
+ * merge into a band that hides the line they are meant to sit behind.
+ */
+const MAX_RAW_DOTS = 40;
 
 const METRIC_OPTIONS: { value: ChartMetric; label: string }[] = [
   { value: "weight", label: "Weight" },
@@ -114,7 +131,8 @@ export function ProgressionChart({
   metric,
   onMetricChange,
   goal,
-  windowDays,
+  startDate,
+  timezone,
 }: ProgressionChartProps) {
   const { preference } = useUnits();
 
@@ -151,6 +169,18 @@ export function ProgressionChart({
       })),
     [points, smoothed]
   );
+
+  // The axis is the JOURNEY, not the data: [start date, today]. Anchoring it on
+  // the readings instead would crop a client who stopped logging in June back to
+  // June and quietly redraw the same trend as though it were current.
+  const today = getTodayDateStringInTimezone(timezone);
+  const domain = useMemo<[number, number]>(() => {
+    const end = toUtcMs(today);
+    // No start date (pre-activation) falls back to the first reading, and with
+    // no readings either to a single day, which recharts is happy to render.
+    const startFallback = points.length > 0 ? points[0].date : today;
+    return [toUtcMs(startDate ?? startFallback), end];
+  }, [startDate, today, points]);
 
   const gradientId = `progression-${metric}`;
   // Before the first response, `series` is null and `points` is empty — which
@@ -237,7 +267,7 @@ export function ProgressionChart({
                   <stop offset="100%" stopColor={SERIES_COLOR} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <XAxis dataKey="ts" type="number" domain={["dataMin", "dataMax"]} hide />
+              <XAxis dataKey="ts" type="number" domain={domain} hide />
               <YAxis hide domain={["auto", "auto"]} />
               {goalValue !== null && (
                 <ReferenceLine
@@ -271,24 +301,29 @@ export function ProgressionChart({
               {/* The raw readings, behind the trend — a sparse series has to
                   LOOK sparse, or a smooth line over three points in sixty days
                   reads as sixty days of daily weigh-ins. */}
-              <Scatter
-                dataKey="raw"
-                fill={RAW_DOT_COLOR}
-                shape="circle"
-                legendType="none"
-                isAnimationActive={false}
-              />
+              {points.length <= MAX_RAW_DOTS && (
+                <Scatter
+                  dataKey="raw"
+                  fill={RAW_DOT_COLOR}
+                  shape="circle"
+                  legendType="none"
+                  isAnimationActive={false}
+                />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
 
+      {/* The axis' own ends — where this client STARTED and today — rather than
+          the first and last readings. Those two are the same thing for a client
+          who logs, and the difference is the point for one who stopped. */}
       <div className="mt-1 flex items-center justify-between">
         <span className={cn(MONO, "text-[10px] text-[rgba(255,255,255,0.3)]")}>
-          {points.length > 0 ? formatDateOnlyShort(points[0].date) : `${windowDays} days`}
+          {startDate ? formatDateOnlyShort(startDate) : "Start"}
         </span>
         <span className={cn(MONO, "text-[10px] text-[rgba(255,255,255,0.3)]")}>
-          {points.length > 0 ? formatDateOnlyShort(points[points.length - 1].date) : "today"}
+          {formatDateOnlyShort(today)}
         </span>
       </div>
     </div>

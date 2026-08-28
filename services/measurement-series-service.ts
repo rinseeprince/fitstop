@@ -1,19 +1,20 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { getClientTodayString } from "./today-service";
-import { addDaysToDateString } from "@/lib/date-helpers";
 import { buildMetricPoints, type MetricSeriesCheckIn } from "@/utils/metric-points";
 import type { MetricEntry } from "@/types/metric-entries";
 import type { MeasurementSeries, MeasurementSeriesPoint } from "@/types/coach-overview";
 
 /**
- * The Overview progression chart's weight / body-fat series.
+ * The Overview progression chart's weight / body-fat series: the client's WHOLE
+ * journey, from the day they started to today.
  *
  * Same two tables, same merge and same tie-break as the coach Physique view —
- * only the transport differs. Physique gets there through `useAllClientCheckIns`,
- * which pages the client's entire check-in history in sequential requests of 20,
- * each a `select("*")` over 37 columns including four JSON blobs, to read two
- * numbers per row. Here the window is at most 60 days, so that would mean
- * pulling years of AI-annotated check-ins to draw eight dots.
+ * only the transport differs, and that is the whole point. Physique gets there
+ * through `useAllClientCheckIns`, which pages the entire check-in history in
+ * sequential requests of 20, each a `select("*")` over 37 columns including
+ * four JSON blobs, to read two numbers per row. This reads the same history in
+ * two unpaged selects of four and five columns. A weekly client of three years
+ * is ~156 skinny rows per table — an order of magnitude under PostgREST's cap,
+ * and one request instead of eight.
  */
 
 /** The two body metrics this chart offers, as `buildMetricPoints` names them. */
@@ -84,28 +85,30 @@ export function buildMeasurementSeries(
   return { weight: project("weight"), bodyFat: project("bodyFat") };
 }
 
+/**
+ * @param from - The client's start date (YYYY-MM-DD), route-validated. Bounding
+ *   on it is semantic as well as cheap: the chart draws the client's journey,
+ *   and a measurement recorded before they started is not part of it. Omitted
+ *   for a client who has no start date, where the unbounded read is the whole
+ *   of a history that has barely begun.
+ */
 export const getMeasurementSeries = async (
   clientId: string,
-  days: number
+  from?: string
 ): Promise<MeasurementSeries> => {
-  // The SAME client-local anchor `getClientAdherence` uses. The chart and the
-  // Signals card sit under one window control, so they must not disagree by a
-  // day about where that window starts.
-  const today = await getClientTodayString(clientId);
-  const windowStart = addDaysToDateString(today, -(days - 1));
+  const checkInQuery = supabaseAdmin
+    .from("check_ins")
+    .select("id, created_at, weight, body_fat_percentage")
+    .eq("client_id", clientId);
+  const entryQuery = supabaseAdmin
+    .from("client_metric_entries")
+    .select("id, entry_date, metric_key, value, note")
+    .eq("client_id", clientId)
+    .in("metric_key", ["weight", "bodyFat"]);
 
   const [checkIns, entries] = await Promise.all([
-    supabaseAdmin
-      .from("check_ins")
-      .select("id, created_at, weight, body_fat_percentage")
-      .eq("client_id", clientId)
-      .gte("created_at", `${windowStart}T00:00:00`),
-    supabaseAdmin
-      .from("client_metric_entries")
-      .select("id, entry_date, metric_key, value, note")
-      .eq("client_id", clientId)
-      .in("metric_key", ["weight", "bodyFat"])
-      .gte("entry_date", windowStart),
+    from ? checkInQuery.gte("created_at", `${from}T00:00:00`) : checkInQuery,
+    from ? entryQuery.gte("entry_date", from) : entryQuery,
   ]);
 
   for (const result of [checkIns, entries]) {

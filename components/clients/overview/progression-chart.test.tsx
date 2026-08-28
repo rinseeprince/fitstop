@@ -1,5 +1,5 @@
 import { cloneElement, isValidElement, type ReactElement } from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -60,7 +60,8 @@ const PROPS = {
   metric: "weight" as const,
   onMetricChange: vi.fn(),
   goal: NO_GOAL,
-  windowDays: 30,
+  startDate: "2026-03-01",
+  timezone: "UTC",
 };
 
 beforeEach(() => {
@@ -177,5 +178,61 @@ describe("ProgressionChart", () => {
 
     expect(container.querySelector(".recharts-surface")).toBeNull();
     expect(screen.queryByText("No measurements in this window")).not.toBeInTheDocument();
+  });
+});
+
+// The axis runs [start date, today] rather than [first reading, last reading],
+// so these need a pinned clock. userEvent and fake timers do not mix, which is
+// why the interaction cases stay above on the real one.
+describe("ProgressionChart — the journey axis", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T12:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("labels the axis with the journey's ends — the start date and today", () => {
+    render(<ProgressionChart {...PROPS} />);
+
+    // NOT the first and last readings. Those two coincide for a client who
+    // logs; the difference is the whole point for one who stopped in July.
+    expect(screen.getByText("1 Mar")).toBeInTheDocument();
+    expect(screen.getByText("28 Aug")).toBeInTheDocument();
+    expect(screen.queryByText("6 Jul")).not.toBeInTheDocument();
+  });
+
+  it("anchors 'today' on the CLIENT's day, not the device's", () => {
+    render(<ProgressionChart {...PROPS} timezone="Pacific/Auckland" />);
+
+    // 2026-08-28T12:00Z is already the 29th in Auckland.
+    expect(screen.getByText("29 Aug")).toBeInTheDocument();
+  });
+
+  it("falls back to the first reading when the client has no start date yet", () => {
+    render(<ProgressionChart {...PROPS} startDate={null} />);
+
+    expect(screen.getByText("Start")).toBeInTheDocument();
+    expect(screen.getByText("28 Aug")).toBeInTheDocument();
+  });
+
+  it("drops the raw dots once a journey is long enough for them to merge", () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      date: `2026-0${i < 26 ? "6" : "7"}-${String((i % 26) + 1).padStart(2, "0")}`,
+      value: 90 - i * 0.05,
+    }));
+
+    const { container } = render(
+      <ProgressionChart {...PROPS} series={{ weight: many, bodyFat: [] }} />
+    );
+
+    // The trend line survives; only its markers go.
+    expect(container.querySelector(".recharts-area")).not.toBeNull();
+    expect(container.querySelector(".recharts-scatter")).toBeNull();
+  });
+
+  it("keeps the raw dots on a short journey", () => {
+    const { container } = render(<ProgressionChart {...PROPS} />);
+
+    expect(container.querySelector(".recharts-scatter")).not.toBeNull();
   });
 });
