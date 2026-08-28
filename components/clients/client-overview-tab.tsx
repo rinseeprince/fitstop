@@ -54,7 +54,7 @@ interface ClientOverviewTabProps {
 /**
  * The coach's client Overview, read top to bottom as: who this client is →
  * where they stand → what needs doing → what happened since I last looked →
- * how consistent they have been → how they feel → what they are on → what I said.
+ * what they are on → how consistent they have been → how they feel → what I said.
  *
  * Identity leads because everything under it is a fact ABOUT that client, and
  * the page previously opened on a work queue that said nothing about whose it
@@ -271,7 +271,16 @@ export function ClientOverviewTab({
         )
       )}
 
-      {/* 4 — How consistent they are: one dot per day per rail. */}
+      {/* 4 — What they are on. Above the two consistency sections, because
+          adherence is adherence TO something: the prescription reads first and
+          the fortnight measuring it reads second. */}
+      <CurrentPlanSection
+        summary={summary}
+        isLoading={summaryLoading}
+        onTabChange={goToTab}
+      />
+
+      {/* 5 — How consistent they are: one dot per day per rail. */}
       <AdherenceCard
         adherence={adherence}
         isLoading={adherenceLoading}
@@ -279,20 +288,13 @@ export function ClientOverviewTab({
         onTabChange={goToTab}
       />
 
-      {/* 5 — How they feel */}
+      {/* 6 — How they feel */}
       <WellnessCards
         logs={wellnessLogs}
         dates={wellnessDates}
         attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
         isLoading={wellnessLoading}
         onOpenWellness={() => goToTab("wellness")}
-      />
-
-      {/* 6 — Current plan */}
-      <CurrentPlanSection
-        summary={summary}
-        isLoading={summaryLoading}
-        onTabChange={goToTab}
       />
 
       {/* 7 — Coach notes */}
