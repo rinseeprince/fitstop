@@ -286,6 +286,24 @@ The trigger and the panel are ONE control and must not be styled apart: `Select`
 
 Numeric fields are `font-mono-display` and `text-center`.
 
+**Every control on a row shares one height — HARD RULE.** A text input, a date input and a
+`<Select>` sitting in the same grid row all take the same `h-*`, so the row reads as one band and a
+card of them stacks evenly. A dropdown standing 8px taller than the field beside it is the tell.
+
+- **Set it at the call site, once per row.** `h-8` for a standard form row (the client details
+  sheet is the reference), `h-7` in a dense numeric grid (set-row editor). Do not leave a control
+  on its own default and hope it matches.
+- **A `<Select>` needs no special handling** — pass it the same `h-*` as its neighbours and it
+  obeys. It did NOT until 2026-08-28: `SelectTrigger` set its default height through
+  `data-[size=default]:h-10`, and a data-variant is a different group to tailwind-merge than a bare
+  `h-8`, so the two never registered as conflicting and the variant won. Six call sites were asking
+  for a shorter trigger and silently getting 40px. The base now carries a plain `h-10`, which
+  merges normally. **If you ever add a sizing class to a `components/ui` primitive, write it plain,
+  never behind a `data-[…]:` variant** — a variant cannot be overridden by the call site and fails
+  silently rather than loudly.
+- **Height only.** Horizontal padding already agrees (`px-3.5` on both `Input` and `SelectTrigger`);
+  a dense grid overrides both together (`h-7 px-2`).
+
 ### Date inputs express their bounds natively
 
 **A date field with a bound sets `min` / `max` on the input, not validation alone.** The impossible

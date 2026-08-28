@@ -45,7 +45,15 @@ function SelectTrigger({
         'placeholder:text-[#93b0b4] data-[placeholder]:text-[#93b0b4]',
         FOCUS_RING,
         'disabled:cursor-not-allowed disabled:opacity-50',
-        'data-[size=default]:h-10 data-[size=sm]:h-9 data-[size=sm]:px-3 data-[size=sm]:py-2',
+        // Plain `h-10`, NOT `data-[size=default]:h-10`. A data-variant and a
+        // bare `h-8` are different groups to tailwind-merge, so it cannot see
+        // them as conflicting and both survive — the variant then wins, and a
+        // call site asking for a shorter trigger silently gets 40px. Six did:
+        // the details sheet's three, the set-row editor's two and the check-in
+        // session checklist's. As a plain class it merges normally, so a
+        // call-site height means what it says. `sm` stays a variant because it
+        // carries padding too, and nothing at the base level competes with it.
+        'h-10 data-[size=sm]:h-9 data-[size=sm]:px-3 data-[size=sm]:py-2',
         '[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*="size-"])]:size-4',
         className,
       )}
