@@ -14,7 +14,7 @@ import {
   MONO_LABEL_CLASS,
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { CardFooter, OpenTabLink, OverviewCard } from "./overview-primitives";
+import { OpenTabLink, OverviewCard } from "./overview-primitives";
 import type { ClientNote } from "@/types/coach-overview";
 
 type CoachNotesCardProps = {
@@ -142,10 +142,17 @@ export function CoachNotesCard({
       <SectionLabel label="Coach notes" />
 
       <OverviewCard animationDelay="0.06s">
-        <div className="px-5 pb-5 pt-5">
+        {/* Top right, the same corner the two plan cards put "Open Training"
+            and "Open Nutrition" in. The card has no title of its own to sit
+            beside — that moved to the rail — so the row carries only this. */}
+        <div className="flex justify-end px-5 pt-4">
+          <OpenTabLink label="Open Notes" onClick={onOpenNotes} />
+        </div>
+
+        <div className="px-5 pb-5 pt-3">
           {isLoading && notes.length === 0 ? (
-            // Never assert "no notes" before the first fetch resolves — the truth
-            // arriving a moment later would contradict it.
+            // The resolved-empty card says nothing at all, so without this the
+            // card would look settled and empty while the fetch was still out.
             <div className="space-y-2 py-2">
               <Skeleton className="h-10 w-full rounded-[6px]" />
               <Skeleton className="h-10 w-2/3 rounded-[6px]" />
@@ -162,11 +169,7 @@ export function CoachNotesCard({
                 />
               ))}
             </div>
-          ) : (
-            <div className="py-3">
-              <p className="text-sm text-[#5a7d82]">No notes about this client yet</p>
-            </div>
-          )}
+          ) : null}
 
           <div className="mt-3 flex items-center gap-2">
             <Input
@@ -194,13 +197,6 @@ export function CoachNotesCard({
             </button>
           </div>
         </div>
-
-        {/* The destination sits under the draft input rather than on the rail,
-            where a reader arriving at the section would meet "go somewhere
-            else" before the notes themselves. */}
-        <CardFooter>
-          <OpenTabLink label="Open Notes" onClick={onOpenNotes} />
-        </CardFooter>
       </OverviewCard>
     </div>
   );

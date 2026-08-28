@@ -58,24 +58,11 @@ const NOTE_PROPS = {
 
 beforeEach(() => cleanup());
 
-describe("CoachNotesCard loading state", () => {
-  it("does not claim the client has no notes before the fetch resolves", () => {
-    render(<CoachNotesCard notes={[]} isLoading {...NOTE_PROPS} />);
-
-    expect(screen.queryByText("No notes about this client yet")).not.toBeInTheDocument();
-  });
-
-  it("states the empty case once the fetch resolves empty", () => {
-    render(<CoachNotesCard notes={[]} isLoading={false} {...NOTE_PROPS} />);
-
-    expect(screen.getByText("No notes about this client yet")).toBeInTheDocument();
-  });
-
+describe("CoachNotesCard", () => {
   it("shows notes that arrived even while a background revalidation runs", () => {
     render(<CoachNotesCard notes={[NOTE]} isLoading {...NOTE_PROPS} />);
 
     expect(screen.getByText("Knee niggle")).toBeInTheDocument();
-    expect(screen.queryByText("No notes about this client yet")).not.toBeInTheDocument();
   });
 });
 

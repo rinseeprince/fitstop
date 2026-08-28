@@ -75,22 +75,6 @@ export function CardHeader({
   );
 }
 
-/**
- * Card footer: a hairline, then the card's own actions.
- *
- * A card whose only action is "go to the tab that owns this" puts it here
- * rather than in the header — the header's right slot is for something that
- * describes the card (a count, a chip), and a destination link sitting there
- * reads as a label for the title beside it.
- */
-export function CardFooter({ children }: { children: ReactNode }) {
-  return (
-    <div className={cn("mt-auto flex items-center gap-3 border-t px-5 py-3", CARD_HAIRLINE)}>
-      {children}
-    </div>
-  );
-}
-
 /** Quiet teal text link that sends the coach to the tab that owns the data. */
 export function OpenTabLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
