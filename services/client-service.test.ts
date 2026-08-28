@@ -151,6 +151,36 @@ describe('Client Service', () => {
       expect(supabaseAdmin.from).toHaveBeenCalledWith('clients')
     })
 
+    it('stores the birth date it was given', async () => {
+      // It was accepted by the schema and consumed by computeEnergyPair, then
+      // dropped — so a manually-added client's BMR was age-correct while their
+      // profile showed no age, and the next recalculation fell back to the
+      // assumed 30 and produced a different number.
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+        dateOfBirth: '1991-06-08',
+      } as any)
+
+      const inserted = mockQuery.insert.mock.calls[0][0]
+      expect(inserted.date_of_birth).toBe('1991-06-08')
+    })
+
+    it('writes a null birth date rather than omitting the column', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+      } as any)
+
+      expect(mockQuery.insert.mock.calls[0][0]).toHaveProperty('date_of_birth', null)
+    })
+
     it('throws error for duplicate email', async () => {
       const mockQuery = createMockQuery({
         data: null,

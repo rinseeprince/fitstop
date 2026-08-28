@@ -73,6 +73,15 @@ export const createClient = async (
     notes: clientData.notes ?? null,
     height: heightCm ?? null,
     gender: clientData.gender ?? null,
+    // The add-client form collects it, the schema validates it, and
+    // computeEnergyPair above USES it — it was simply never written, so a
+    // manually-added client's birth date survived exactly long enough to set
+    // their BMR and was then discarded. Worse than merely missing: their stored
+    // BMR was age-correct while their profile showed no age, so the next
+    // recalculation fell back to the assumed 30 and silently produced a
+    // different number. (The intake path was unaffected — it syncs the field
+    // separately.)
+    date_of_birth: clientData.dateOfBirth ?? null,
     // goal_weight / goal_body_fat_percentage are deliberately ABSENT.
     // `updateGoals` below is the single writer of both stores — it inserts the
     // `client_goals` row and mirrors it onto `clients` — so writing them here
