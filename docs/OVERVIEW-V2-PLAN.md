@@ -1127,35 +1127,57 @@ removes with it. **Prod is still at 153: migrations 154 and 155 have NOT been pu
 
 ### 11.9 Smoke checklist — owed
 
-Nothing below has been run. The UI is unverified.
+Covers commits 8–12. **Nothing below has been run; no browser was driven.** Sections A and B are
+one linear pass on a single client and cover most of it — run those first.
 
-**The picker (details sheet → Check-ins).**
-1. The card is now **two** fields, Frequency and Next check-in — the "Check-in day" dropdown is
-   gone and "Next check-in" is editable rather than read-only.
-2. Set a date, save, reopen: it persists, and the identity row's "Next check-in" and its
-   due/overdue chip agree with it.
-3. Clear the date and save: the client reads "Not scheduled · Set a schedule", and leaves the
-   roster's Overdue view.
-4. A past date is refused by the route with "The next check-in cannot be in the past"; the input's
-   own `min` should stop you reaching it by accident.
+**A. The reported bug (30 seconds).** A client who has checked in, whose coach has since moved
+their next check-in to a future date.
+1. Client app → Home: the card reads **"Next check-in \<date\>"**. Before commit 11 it read
+   "Overdue — submit now".
+2. Tap it → a **"Not due yet"** screen, not the form.
 
-**Activation.** 5. Activate a pending client: "First check-in" is a date box prefilled a week after
-the start date, and changing the start date moves it. Clearing it activates them unscheduled.
+**B. The full cycle (~5 min).** Same client.
+3. Coach → details sheet → set **Next check-in to today**. Save.
+4. Client app: card reads **"Due today"**.
+5. Tap → the form opens.
+6. Submit it.
+7. Coach, reload: the date has moved **a frequency step on, by itself**. Nobody set it. On a
+   `biweekly` client it moves a fortnight, not a week — that only started working in commit 10.
+8. Client app: card reads **"Next check-in \<new date\>"**, and the coach's Overview no longer
+   shows them as due.
+9. Tap it again → **"Not due yet"**. That is commit 12's write-path guard; before it, this filed a
+   SECOND check-in and pushed the schedule out another week.
 
-**The week anchor (the part that changed for clients).**
-6. A client whose check-in day is NOT Sunday: their nutrition page in the client app
-   (Program → Nutrition) should now describe the week running from their check-in day, not Mon–Sun.
-   Visible where you have edited a specific day's targets.
-7. The coach's Overview "Logged this week" and the client's own week should now agree for that
-   same client.
-8. A client with **no** schedule: every surface should read Mon–Sun.
+**C. The picker (details sheet → Check-ins).**
+10. The card is **two** fields, Frequency and Next check-in — the "Check-in day" dropdown is gone
+    and "Next check-in" is editable rather than read-only-and-derived.
+11. Set a date, save, reopen: it persists, and the identity row's "Next check-in" and its
+    due/overdue chip agree with it.
+12. Clear the date and save: the client reads **"Not scheduled · Set a schedule"** and leaves the
+    roster's Overdue view.
+13. A past date is refused with *"The next check-in cannot be in the past"*; the input's own `min`
+    should stop you reaching it by accident.
 
-**The schedule advancing.** 9. Submit a check-in as a client: their due date should move forward by
-one frequency step, and the coach's Overview should stop showing them as due.
+**D. Activation.**
+14. Activate a pending client: **"First check-in"** is a date box prefilled a week after the start
+    date, and moves when you change the start date. Clearing it activates them unscheduled.
 
-**Nothing should have changed** on the roster's Overdue view, the sidebar badge, the check-in gate
-in the client app, or the habits/wellness/nutrition weekly summaries for any client who has a
-check-in day.
+**E. The client's week** (the part commit 8 changed for clients).
+15. A client whose check-in day is **not Sunday**: their nutrition page in the client app
+    (Program → Nutrition) now describes the week running from their check-in day, not Mon–Sun.
+    Only visible where you have edited a specific day's targets.
+16. The coach's Overview "Logged this week" and that client's own week now agree.
+17. A client with **no** schedule: every surface reads Mon–Sun.
+
+**Nothing should have changed** on the roster's Overdue view, the sidebar badge, or the
+habits / wellness / nutrition weekly summaries for any client who has a check-in day.
+
+**Not testable by hand, and why:**
+- **"Overdue"** — the picker refuses past dates, so it cannot be set. Set today's date and look
+  again tomorrow. Not a gap in production: a date reaches the past because time passes.
+- **A true double-tap race** — proven at the database instead: a duplicate INSERT against dev was
+  rejected with `23505` naming `idx_check_ins_client_period_unique`, row count unchanged either
+  side (2864 → 2864).
 
 ---
 
