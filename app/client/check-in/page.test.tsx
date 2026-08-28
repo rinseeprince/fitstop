@@ -172,15 +172,6 @@ describe("ClientCheckInPage", () => {
     expect(screen.getByText("Past check-ins")).toBeInTheDocument();
   });
 
-  it("renders 'Already completed' notice with next due date when window is completed", () => {
-    setClientCheckIn({ contextError: "completed", nextDueDate: "2026-05-22" });
-    render(<ClientCheckInPage />);
-    expect(screen.getByText("Already completed")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Next check-in opens on Friday, May 22/),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId("step-subjective")).not.toBeInTheDocument();
-  });
 
   it("renders empty-state placeholder when past check-ins list is empty", () => {
     setClientCheckIn({ contextData: baseContextData });

@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
-import { ArrowLeft, ArrowRight, Send, CalendarCheck, Clock } from "lucide-react";
+import { ArrowLeft, ArrowRight, Send, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ProgressIndicator } from "@/components/check-in/progress-indicator";
@@ -169,21 +169,6 @@ export default function ClientCheckInPage() {
                   ? `Next check-in opens on ${formatNextDueDate(nextDueDate)}.`
                   : "Your next check-in opens on your scheduled day."}
               </p>
-            </CardContent>
-          </Card>
-        ) : contextError === "completed" ? (
-          <Card className="w-full max-w-md mx-auto text-center">
-            <CardContent className="py-12 space-y-4">
-              <CalendarCheck className="h-12 w-12 text-success mx-auto" />
-              <h2 className="text-xl font-semibold">Already completed</h2>
-              <p className="text-muted-foreground">
-                You&apos;ve already submitted your check-in for this week. Great job!
-              </p>
-              {nextDueDate && (
-                <p className="text-sm text-muted-foreground">
-                  Next check-in opens on {formatNextDueDate(nextDueDate)}.
-                </p>
-              )}
             </CardContent>
           </Card>
         ) : contextError || !contextData ? (
