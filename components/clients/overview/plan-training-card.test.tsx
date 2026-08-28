@@ -43,6 +43,17 @@ describe("PlanTrainingCard — running program", () => {
     expect(screen.getByText("+4.2%")).toBeInTheDocument();
   });
 
+  it("names the source of the week's count, because Signals counts it differently", () => {
+    render(
+      <PlanTrainingCard training={RUNNING} upcomingTraining={null} onOpenTraining={vi.fn()} />
+    );
+
+    // This cell counts full session-log completions; the Signals card counts
+    // training_events.status over a trailing window. Both are shipped
+    // semantics, so the label says which one this is.
+    expect(screen.getByText("Logged this week")).toBeInTheDocument();
+  });
+
   it("wins over a queued program", () => {
     render(
       <PlanTrainingCard training={RUNNING} upcomingTraining={QUEUED} onOpenTraining={vi.fn()} />
@@ -81,7 +92,7 @@ describe("PlanTrainingCard — program placed to start later", () => {
       <PlanTrainingCard training={null} upcomingTraining={QUEUED} onOpenTraining={vi.fn()} />
     );
 
-    expect(screen.queryByText("This week")).not.toBeInTheDocument();
+    expect(screen.queryByText("Logged this week")).not.toBeInTheDocument();
     expect(screen.queryByText("Next session")).not.toBeInTheDocument();
     expect(screen.queryByText("Progression")).not.toBeInTheDocument();
   });

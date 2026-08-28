@@ -3,6 +3,7 @@ import {
   dateStringToDayNumber,
   getDateString,
   getTodayDateString,
+  getTodayDateStringInTimezone,
 } from "@/lib/date-helpers";
 
 // Render-side formatting for the coach Overview.
@@ -71,6 +72,32 @@ export function formatDateOnlyWeekday(dateStr: string): string {
     day: "numeric",
     month: "short",
   });
+}
+
+/**
+ * How long is left to hit a goal deadline, with the font decision attached.
+ *
+ * Anchored on the CLIENT's local midnight, the same anchor
+ * `comparison-service.ts:102-108` uses for its pace figures. A device-day
+ * version disagrees with the check-in chip by a day for any client in another
+ * zone — two readouts on one page describing the same calendar differently.
+ *
+ * Whole weeks are FLOORED, so "8 weeks left" means at least eight full weeks
+ * rather than a rounded-up seven and a half. Under a week the phrase drops to
+ * days, because "0 weeks left" is not what a coach means by three days.
+ */
+export function deadlineRemaining(
+  deadline: string,
+  timezone: string
+): { text: string; isNumeric: boolean } {
+  const days =
+    dateStringToDayNumber(deadline) -
+    dateStringToDayNumber(getTodayDateStringInTimezone(timezone));
+
+  if (days < 0) return { text: "Deadline passed", isNumeric: false };
+  if (days === 0) return { text: "Due today", isNumeric: false };
+  if (days < 7) return { text: `${pluralize(days, "day")} left`, isNumeric: true };
+  return { text: `${pluralize(Math.floor(days / 7), "week")} left`, isNumeric: true };
 }
 
 /** Single-letter weekday for a dot rail's column label. */

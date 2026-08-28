@@ -93,7 +93,18 @@ export function PlanTrainingCard({
 
   const cells: StatCellData[] = [
     {
-      label: "This week",
+      // "Logged", because the Signals card counts the same client's training
+      // differently and the two figures disagree on purpose: this cell counts
+      // FULL session-log completions (`session_logs.completion_quality`),
+      // Signals counts `training_events.status`. Both are shipped semantics —
+      // naming the source is so a coach reading two numbers knows why, not an
+      // attempt to reconcile them.
+      //
+      // The WINDOW is deliberately left as "this week" rather than a pair of
+      // weekdays: `getTrainingWeekStart` anchors the week on the client's own
+      // check-in day, so no fixed Mon–Sun claim is true for every client, and
+      // the plan summary does not carry its window on the wire to print.
+      label: "Logged this week",
       value: `${completed} of ${planned}`,
       sub: missed > 0 ? `${pluralize(missed, "session")} missed` : "Nothing missed",
       subIsNumeric: missed > 0,

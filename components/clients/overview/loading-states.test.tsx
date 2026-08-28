@@ -3,6 +3,7 @@ import { render, screen, cleanup } from "@testing-library/react";
 
 import { CoachNotesCard } from "./coach-notes-card";
 import { ClientScheduleCard } from "./client-schedule-card";
+import { IdentityRow } from "./identity-row";
 import type { Client } from "@/types/check-in";
 import type { CheckInTiming } from "@/types/coach-brief";
 import type { ClientNote } from "@/types/coach-overview";
@@ -124,5 +125,67 @@ describe("ClientScheduleCard check-in strip loading state", () => {
     expect(
       screen.queryByText("This client is never asked to check in.")
     ).not.toBeInTheDocument();
+  });
+});
+
+// The identity row inherits the schedule card's check-in strip, and with it the
+// same trap: `checkInTiming` is null both while the brief is in flight and when
+// the client genuinely has no schedule. It must not offer "Set a schedule" to a
+// coach whose client already has one and simply hasn't loaded.
+describe("IdentityRow check-in cluster loading state", () => {
+  it("does not offer a schedule before the brief resolves", () => {
+    render(
+      <IdentityRow
+        client={CLIENT}
+        checkInTiming={null}
+        isTimingLoading
+        onOpenDetails={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: "Set a schedule" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Not scheduled")).not.toBeInTheDocument();
+  });
+
+  it("states the no-schedule case once the brief resolves without timing", () => {
+    render(
+      <IdentityRow
+        client={CLIENT}
+        checkInTiming={null}
+        isTimingLoading={false}
+        onOpenDetails={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Not scheduled")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Set a schedule" })).toBeInTheDocument();
+  });
+
+  it("renders the due date once timing arrives", () => {
+    render(
+      <IdentityRow
+        client={CLIENT}
+        checkInTiming={TIMING}
+        isTimingLoading={false}
+        onOpenDetails={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Next check-in")).toBeInTheDocument();
+    expect(screen.getByText("Sat, 1 Aug")).toBeInTheDocument();
+    expect(screen.queryByText("Not scheduled")).not.toBeInTheDocument();
+  });
+
+  it("drops 'Last submitted' — the check-ins tab owns that history (Q4)", () => {
+    render(
+      <IdentityRow
+        client={CLIENT}
+        checkInTiming={TIMING}
+        isTimingLoading={false}
+        onOpenDetails={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByText(/Last submitted/)).not.toBeInTheDocument();
   });
 });

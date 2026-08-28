@@ -13,7 +13,7 @@ import {
   MONO_LABEL_CLASS,
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { CardHeader, OpenTabLink, OverviewCard } from "./overview-primitives";
+import { CardFooter, CardHeader, OpenTabLink, OverviewCard } from "./overview-primitives";
 import type { ClientNote } from "@/types/coach-overview";
 
 type CoachNotesCardProps = {
@@ -135,10 +135,7 @@ export function CoachNotesCard({
 
   return (
     <OverviewCard animationDelay="0.06s">
-      <CardHeader
-        title="Coach notes"
-        right={<OpenTabLink label="Open Notes" onClick={onOpenNotes} />}
-      />
+      <CardHeader title="Coach notes" />
 
       <div className="px-5 pb-5">
         {isLoading && notes.length === 0 ? (
@@ -192,6 +189,13 @@ export function CoachNotesCard({
           </button>
         </div>
       </div>
+
+      {/* The destination sits under the draft input, not beside the title: the
+          header's right slot describes the card, and a link parked there reads
+          as a label for the heading next to it. */}
+      <CardFooter>
+        <OpenTabLink label="Open Notes" onClick={onOpenNotes} />
+      </CardFooter>
     </OverviewCard>
   );
 }

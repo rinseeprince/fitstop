@@ -6,20 +6,24 @@ import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog"
 import { Skeleton } from "@/components/ui/skeleton";
 import { AdherenceCard } from "@/components/clients/overview/adherence-card";
 import { SectionLabel } from "@/components/programs/shared/section-label";
-import { ClientScheduleCard } from "@/components/clients/overview/client-schedule-card";
-import { EditRailActions } from "@/components/clients/overview/inline-edit-fields";
 import { useClientProfileEdit } from "@/components/clients/overview/use-client-profile-edit";
-import { ClientStatusCard } from "@/components/clients/overview/client-status-card";
 import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
 import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
 import { CurrentPlanSection } from "@/components/clients/overview/current-plan-section";
+import { IdentityRow } from "@/components/clients/overview/identity-row";
+import { NeedsAttentionSection } from "@/components/clients/overview/needs-attention-section";
 import { SinceLastVisitSection } from "@/components/clients/overview/since-last-visit-section";
-import { WaitingOnYouSection } from "@/components/clients/overview/waiting-on-you-section";
+import { StatusBand } from "@/components/clients/overview/status-band";
+import { WindowControl } from "@/components/clients/overview/window-control";
 import {
   WELLNESS_WINDOW_DAYS,
   WellnessCards,
 } from "@/components/clients/overview/wellness-cards";
 import { trailingDates } from "@/components/clients/overview/overview-format";
+import {
+  DEFAULT_OVERVIEW_WINDOW,
+  type OverviewWindow,
+} from "@/lib/overview/window";
 import { ADHERENCE_WINDOW_DAYS, useClientAdherence } from "@/hooks/use-client-adherence";
 import { useClientGoals, useInvalidateClientGoals } from "@/hooks/use-client-goals";
 import { useClientNotes } from "@/hooks/use-client-notes";
@@ -46,9 +50,14 @@ interface ClientOverviewTabProps {
 }
 
 /**
- * The coach's client Overview, read top to bottom as: what needs my attention →
- * what happened → what I said last time → who this client is → what they are on
- * → how consistent they are → how they feel.
+ * The coach's client Overview, read top to bottom as: who this client is →
+ * where they stand → what needs doing → what happened since I last looked →
+ * how consistent they are → how they feel → what they are on → what I said.
+ *
+ * Identity leads because everything under it is a fact ABOUT that client, and
+ * the page previously opened on a work queue that said nothing about whose it
+ * was. The window control sits on the Progression rail and governs the period
+ * surfaces only — see the note on `windowDays` below.
  */
 export function ClientOverviewTab({
   client,
@@ -74,6 +83,11 @@ export function ClientOverviewTab({
     deleteNote,
   } = useClientNotes(client.id);
   const [notePendingDelete, setNotePendingDelete] = useState<ClientNote | null>(null);
+  // The page's one window. It governs the period surfaces — the Signals card
+  // and (once it lands) the progression chart — and deliberately NOT the
+  // structural facts around them: goal targets, the energy pair, the deadline,
+  // the plan's week, the next check-in. Those describe a client, not a period.
+  const [windowDays, setWindowDays] = useState<OverviewWindow>(DEFAULT_OVERVIEW_WINDOW);
   const { logs: wellnessLogs, isLoading: wellnessLoading } = useWellnessData(client.id, {
     daysBack: WELLNESS_WINDOW_DAYS - 1,
     withHabitLogs: false,
@@ -184,16 +198,40 @@ export function ClientOverviewTab({
         />
       )}
 
-      {/* 1 — Waiting on you + Since your last visit */}
+      {/* 1 — Who this client is */}
+      <IdentityRow
+        client={client}
+        checkInTiming={brief?.checkInTiming ?? null}
+        isTimingLoading={briefLoading}
+        onOpenDetails={edit.start}
+      />
+
+      {/* 2 — Where they stand. The rail carries the page's window control; the
+          band's own cells are structural and stay outside it (status-band.tsx). */}
+      <div>
+        <SectionLabel
+          label="Progression"
+          actions={<WindowControl value={windowDays} onChange={setWindowDays} />}
+        />
+        <StatusBand
+          client={client}
+          goal={effectiveGoal}
+          onOpenMetrics={() => goToTab("metrics")}
+        />
+      </div>
+
+      {/* 3 — What needs doing + what happened. Two self-railed columns: the
+          left one is a work queue, the right one is anchored to last_viewed_at
+          rather than to the window, so each states its own scope. */}
       {briefLoading && !brief ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Skeleton className="h-[196px] rounded-[6px]" />
           <Skeleton className="h-[196px] rounded-[6px]" />
         </div>
       ) : (
         brief && (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
-            <WaitingOnYouSection
+          <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
+            <NeedsAttentionSection
               clientName={client.name}
               unreviewedCheckIn={brief.waitingOnYou.unreviewedCheckIn}
               attentionAlerts={brief.waitingOnYou.attentionAlerts}
@@ -211,50 +249,9 @@ export function ClientOverviewTab({
         )
       )}
 
-      {/* 2 — Coach notes */}
-      <CoachNotesCard
-        notes={notes}
-        isLoading={notesLoading}
-        onAddNote={addNote}
-        onTogglePin={handleTogglePin}
-        onDeleteNote={setNotePendingDelete}
-        onOpenNotes={() => goToTab("notes")}
-      />
-
-      {/* 3 — Who this client is + where they stand */}
-      {/* The edit action rides the section rail on the far right, the platform's
-          divider grammar (left = identity, right = meta/actions) — not a pencil
-          floating inside one of the two cards. */}
-      <div>
-        <SectionLabel
-          label="Client"
-          actions={<EditRailActions edit={edit} />}
-        />
-        <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[2fr_3fr]">
-        <ClientScheduleCard
-          client={client}
-          checkInTiming={brief?.checkInTiming ?? null}
-          isTimingLoading={briefLoading}
-          onOpenDetails={edit.start}
-        />
-        <ClientStatusCard
-          client={client}
-          goal={effectiveGoal}
-          goalStartDate={currentGoals?.goalStartDate ?? null}
-          onOpenMetrics={() => goToTab("metrics")}
-        />
-        </div>
-      </div>
-
-
-      {/* 4 — Current plan */}
-      <CurrentPlanSection
-        summary={summary}
-        isLoading={summaryLoading}
-        onTabChange={goToTab}
-      />
-
-      {/* 5 — Adherence */}
+      {/* 4 — Adherence. Still its own card and still on its own fixed window;
+          the Signals card that folds it and wellness together, and puts both
+          under the control above, is the next commit. */}
       <AdherenceCard
         adherence={adherence}
         isLoading={adherenceLoading}
@@ -262,13 +259,30 @@ export function ClientOverviewTab({
         onTabChange={goToTab}
       />
 
-      {/* 6 — Daily wellness */}
+      {/* 5 — Daily wellness */}
       <WellnessCards
         logs={wellnessLogs}
         dates={wellnessDates}
         attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
         isLoading={wellnessLoading}
         onOpenWellness={() => goToTab("wellness")}
+      />
+
+      {/* 6 — Current plan */}
+      <CurrentPlanSection
+        summary={summary}
+        isLoading={summaryLoading}
+        onTabChange={goToTab}
+      />
+
+      {/* 7 — Coach notes */}
+      <CoachNotesCard
+        notes={notes}
+        isLoading={notesLoading}
+        onAddNote={addNote}
+        onTogglePin={handleTogglePin}
+        onDeleteNote={setNotePendingDelete}
+        onOpenNotes={() => goToTab("notes")}
       />
 
       {/* The details sheet. Mounted at the tab, not inside a card, because it
