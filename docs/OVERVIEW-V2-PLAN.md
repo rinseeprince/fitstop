@@ -1,10 +1,15 @@
 # Client Overview v2 + Details Sheet
 
-> ## ▶ STATUS — commits 0–7 SHIPPED and SMOKED; four iterations applied. §11 is next.
+> ## ▶ STATUS — Overview v2 shipped, smoked, iterated, and the Signals card REVERTED. §11 is next.
 >
 > **Commits 4–7 landed 2026-08-28** (`72821b6`, `c7f3f8b`, `db93c7e`, `3a03b9f`), all four gates
-> green at each. The owner smoked them the same day and returned four changes, applied in
-> `0675483`, `02b55bf`, `d83c3d1` — see **§13**. Those three are themselves **unsmoked**.
+> green at each. The owner smoked them the same day and returned four changes (**§13**, applied in
+> `0675483`, `02b55bf`, `d83c3d1`) and then rejected the Signals card outright (**§14**). All of
+> that is **unsmoked**.
+>
+> **§14 is the one to read before touching this page.** Commit 5's whole surface — the Signals
+> card, its four expansion panels and the two server fields feeding them — is gone, and the two
+> cards it replaced are back. Do not rebuild it from §2/§5 below.
 >
 > **Next: §11, commits 8–10** (check-in scheduling). Approved, deliberately deferred, and
 > untouched by all of this — nothing above reads `expected_check_in_day` or anything in
@@ -14,7 +19,7 @@
 > ```
 > npx tsc --noEmit
 > npx eslint .              # 0 errors; pre-existing warnings are fine
-> npx vitest run            # 301 files / 3248 tests as of the iteration commits
+> npx vitest run            # 301 files / 3234 tests as of the Signals revert
 > npm run check:labels
 > ```
 > `set-tracker.test.tsx` is a known flake in full runs — re-run before blaming your change.
@@ -1157,3 +1162,43 @@ between the rows and the caught-up state.
 headline" was a deliberate call and it was wrong on screen: at 13px beside three 18px figures, one
 of the four facts the band exists to state looked like an afterthought. One tier for the whole
 band now, and the two-tier mechanism went with it.
+
+
+---
+
+## 14. The Signals card was rejected — 2026-08-28
+
+**Reverted the day it was smoked.** Commit 5's Signals card is deleted and the two cards it
+replaced are back: the three-rail **Adherence** card (Training / Nutrition / Habits, 14 days) and
+the five **Daily wellness** cards (7 days). §2.3, §5 and §8 row 5 describe a surface that no longer
+exists; this section overrides them.
+
+**Why, in the owner's terms:** the dot rails say a client's fortnight in one glance. Signals put
+the same information one expansion away and asked the coach to open four panels to see what three
+rails had shown at once. A design that trades a glance for a click is the wrong trade on a page
+whose whole job is the glance.
+
+**What went with it, deliberately** (owner: "strip"):
+
+| Removed | Added by | What it was |
+|---|---|---|
+| `signals-card.tsx`, `signal-details.tsx` + tests | commit 5 | the card, the four panels |
+| `lib/overview/window.ts` | commit 1 | the window constant; `ADHERENCE_WINDOW_DAYS` and `WELLNESS_WINDOW_DAYS` are back in their original homes |
+| `AdherenceSummary.nutrition.calories` / `.protein`, `NutritionAverage` | commit 2 | window means against the target that applied ON the day |
+| `AdherenceSummary.habits.perHabit`, `HabitBreakdown` | commit 5 | the per-habit breakdown |
+
+The two server fields were free (same query, more columns) and were kept unread for about an hour
+before being stripped. **The finding behind `perHabit` is worth keeping even though the field is
+not:** `logHabit` upserts a row only when the client acts, so a habit ignored for a whole window
+has **no rows at all** — anything per-habit built from `/habits/logs` silently drops exactly the
+habit a coach needs to see. If a per-habit view is ever wanted, it belongs on the adherence read,
+which already holds the active-habit roster. Both fields are recoverable from `c7f3f8b`.
+
+**What survived the revert**, because none of it was Signals: the identity row, the whole-journey
+chart and the status band, the Needs-attention rewrite (its shared alert copy and the
+`no_log_gap`-under-`no_engagement` suppression), the two-up rails, `Logged this week`, the notes
+footer, and the details sheet. `lib/overview/rolling-average.ts` stays — the chart uses it.
+
+**Also unchanged:** the adherence route's `MAX_DAYS = 60`, raised in commit 2 for a 60-day window
+that no longer exists. It is a ceiling nothing is pressing against; narrowing it back to 28 would
+be churn with no reader.

@@ -6,6 +6,7 @@ import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog"
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClientProfileEdit } from "@/components/clients/overview/use-client-profile-edit";
 import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
+import { AdherenceCard } from "@/components/clients/overview/adherence-card";
 import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
 import { CurrentPlanSection } from "@/components/clients/overview/current-plan-section";
 import { IdentityRow } from "@/components/clients/overview/identity-row";
@@ -14,12 +15,14 @@ import {
   ProgressionChart,
   type ChartMetric,
 } from "@/components/clients/overview/progression-chart";
-import { SignalsCard } from "@/components/clients/overview/signals-card";
 import { SinceLastVisitSection } from "@/components/clients/overview/since-last-visit-section";
 import { StatusBand } from "@/components/clients/overview/status-band";
+import {
+  WELLNESS_WINDOW_DAYS,
+  WellnessCards,
+} from "@/components/clients/overview/wellness-cards";
 import { trailingDates } from "@/components/clients/overview/overview-format";
-import { SIGNALS_WINDOW_DAYS } from "@/lib/overview/window";
-import { useClientAdherence } from "@/hooks/use-client-adherence";
+import { ADHERENCE_WINDOW_DAYS, useClientAdherence } from "@/hooks/use-client-adherence";
 import {
   useInvalidateMeasurementSeries,
   useMeasurementSeries,
@@ -51,7 +54,7 @@ interface ClientOverviewTabProps {
 /**
  * The coach's client Overview, read top to bottom as: who this client is →
  * where they stand → what needs doing → what happened since I last looked →
- * how consistent they have been → what they are on → what I said.
+ * how consistent they have been → how they feel → what they are on → what I said.
  *
  * Identity leads because everything under it is a fact ABOUT that client, and
  * the page previously opened on a work queue that said nothing about whose it
@@ -82,16 +85,16 @@ export function ClientOverviewTab({
   } = useClientNotes(client.id);
   const [notePendingDelete, setNotePendingDelete] = useState<ClientNote | null>(null);
 
-  // The consistency surfaces read a fixed trailing window; the chart above them
-  // does not read a window at all. `withHabitLogs` stays off: the per-habit
-  // breakdown rides on the adherence read, which already holds these rows (and,
-  // unlike a logs-derived grid, keeps a habit with nothing logged).
+  // Two consistency surfaces, each on its own window: the dot rails read a
+  // fortnight, the wellness cards a week — which is what their sparklines and
+  // their "not logged this week" copy are drawn for. The chart above them reads
+  // no window at all. `withHabitLogs` stays off; nothing here consumes them.
   const { adherence, isLoading: adherenceLoading } = useClientAdherence(
     client.id,
-    SIGNALS_WINDOW_DAYS
+    ADHERENCE_WINDOW_DAYS
   );
   const { logs: wellnessLogs, isLoading: wellnessLoading } = useWellnessData(client.id, {
-    daysBack: SIGNALS_WINDOW_DAYS - 1,
+    daysBack: WELLNESS_WINDOW_DAYS - 1,
     withHabitLogs: false,
   });
   // Which body metric the chart is showing. Local to the page, not a URL param:
@@ -103,7 +106,7 @@ export function ClientOverviewTab({
     client.startDate
   );
 
-  const wellnessDates = useMemo(() => trailingDates(SIGNALS_WINDOW_DAYS), []);
+  const wellnessDates = useMemo(() => trailingDates(WELLNESS_WINDOW_DAYS), []);
   const { toast } = useToast();
 
   // The goal the client is on RIGHT NOW, resolved from `client_goals` through
@@ -268,25 +271,31 @@ export function ClientOverviewTab({
         )
       )}
 
-      {/* 4 — How consistent they are, over the window selected above. */}
-      <SignalsCard
+      {/* 4 — How consistent they are: one dot per day per rail. */}
+      <AdherenceCard
         adherence={adherence}
-        isAdherenceLoading={adherenceLoading}
-        wellnessLogs={wellnessLogs}
-        isWellnessLoading={wellnessLoading}
-        dates={wellnessDates}
-        attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
+        isLoading={adherenceLoading}
+        windowDays={ADHERENCE_WINDOW_DAYS}
         onTabChange={goToTab}
       />
 
-      {/* 5 — Current plan */}
+      {/* 5 — How they feel */}
+      <WellnessCards
+        logs={wellnessLogs}
+        dates={wellnessDates}
+        attentionAlerts={brief?.waitingOnYou.attentionAlerts ?? []}
+        isLoading={wellnessLoading}
+        onOpenWellness={() => goToTab("wellness")}
+      />
+
+      {/* 6 — Current plan */}
       <CurrentPlanSection
         summary={summary}
         isLoading={summaryLoading}
         onTabChange={goToTab}
       />
 
-      {/* 6 — Coach notes */}
+      {/* 7 — Coach notes */}
       <CoachNotesCard
         notes={notes}
         isLoading={notesLoading}
