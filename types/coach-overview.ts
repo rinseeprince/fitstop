@@ -46,7 +46,13 @@ export type OverviewPlanSummary = {
     surplusPct: number | null;
     restDaysThisWeek: number;
     today: { targetCalories: number; loggedCalories: number | null } | null;
-    macros: { proteinG: number; carbG: number; fatG: number };
+    /**
+     * The protein target only. This was a full `macros` triple until the
+     * Overview's nutrition card dropped its macro row (2026-08-28); carbs and
+     * fat had no reader left. The activation banner still renders protein
+     * beside the rest-day calories, which is why this one survives.
+     */
+    proteinTargetG: number;
   };
 };
 

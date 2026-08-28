@@ -230,7 +230,10 @@ async function buildNutritionSummary(
     supabaseAdmin
       .from("nutrition_plans")
       .select(
-        "diet_type, baseline_calories, protein_target_g, carb_target_g, fat_target_g, protein_target_g_per_kg, custom_macros_enabled, custom_calories, custom_protein_g, custom_carb_g, custom_fat_g"
+        // Carbs and fat came off with the Overview card's macro row — four
+        // columns that fed nothing else. Protein stays: the activation banner
+        // renders it beside the rest-day calories.
+        "diet_type, baseline_calories, protein_target_g, protein_target_g_per_kg, custom_macros_enabled, custom_calories, custom_protein_g"
       )
       .eq("client_id", clientId)
       .eq("status", "active"),
@@ -252,11 +255,6 @@ async function buildNutritionSummary(
   // same precedence as the contract's macros rule, applied to calories too.
   const restDayCalories =
     customMacros && plan.custom_calories != null ? plan.custom_calories : plan.baseline_calories;
-  const macros = {
-    proteinG: (customMacros ? plan.custom_protein_g : null) ?? plan.protein_target_g,
-    carbG: (customMacros ? plan.custom_carb_g : null) ?? plan.carb_target_g,
-    fatG: (customMacros ? plan.custom_fat_g : null) ?? plan.fat_target_g,
-  };
 
   // Same check-in-anchored week as the training card, so the two cards agree.
   const { data: weekEvents, error: eventsError } = await supabaseAdmin
@@ -294,7 +292,9 @@ async function buildNutritionSummary(
     surplusPct,
     restDaysThisWeek: 7 - trainingDates.size,
     today,
-    macros,
+    // Falls back from the nullable custom override to the non-null baseline
+    // column, so the banner's line is guaranteed a number.
+    proteinTargetG: (customMacros ? plan.custom_protein_g : null) ?? plan.protein_target_g,
   };
 }
 

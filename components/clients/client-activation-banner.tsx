@@ -120,10 +120,10 @@ function nutritionLine(summary: OverviewPlanSummary | null | undefined): RowLine
   if (!plan) return null
 
   // Both are guaranteed by the contract: the service falls back from the
-  // nullable custom-macro overrides to the non-null baseline columns.
+  // nullable custom-protein override to the non-null baseline column.
   return {
     kind: "text",
-    text: `${plan.restDayCalories.toLocaleString("en-GB")} kcal · ${plan.macros.proteinG}g protein`,
+    text: `${plan.restDayCalories.toLocaleString("en-GB")} kcal · ${plan.proteinTargetG}g protein`,
     isNumeric: true,
   }
 }

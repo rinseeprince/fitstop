@@ -1,8 +1,6 @@
 "use client";
 
 import { Utensils } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import {
   CardHeader,
   EmptyInvite,
@@ -21,13 +19,6 @@ type PlanNutritionCardProps = {
   nutrition: OverviewPlanSummary["nutrition"];
   onOpenNutrition: () => void;
 };
-
-// Teal-shifted macro palette (docs/newdesignsystem.md → Macro Colours).
-const MACRO_DOTS = [
-  { key: "proteinG", label: "Protein", color: "#2d8fb5" },
-  { key: "carbG", label: "Carbs", color: "#c8923a" },
-  { key: "fatG", label: "Fat", color: "#c06060" },
-] as const;
 
 function dietLabel(dietType: string): string {
   const spaced = dietType.replace(/_/g, " ");
@@ -113,23 +104,13 @@ export function PlanNutritionCard({ nutrition, onOpenNutrition }: PlanNutritionC
         right={<OpenTabLink label="Open Nutrition" onClick={onOpenNutrition} />}
       />
 
+      {/* Header, hairline, stat strip — structurally identical to the training
+          card beside it, which is what makes the two strips line up. A macro
+          row used to sit below this one, and because the pair stretch to the
+          taller of them it pushed the training card's strip to the bottom of a
+          card its own content did not fill. */}
       <div className="mt-auto border-t border-[rgba(13,148,136,0.06)]">
         <StatStrip cells={cells} />
-        <div className="flex flex-wrap items-center gap-4 border-t border-[rgba(13,148,136,0.06)] px-5 py-3">
-          {MACRO_DOTS.map((macro) => (
-            <span key={macro.key} className="flex items-center gap-1.5">
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: macro.color }}
-                aria-hidden
-              />
-              <span className="text-[10px] text-[#5a7d82]">{macro.label}</span>
-              <span className={cn(MONO, "text-[11px] font-medium text-[#0c1a1e]")}>
-                {nutrition.macros[macro.key]}g
-              </span>
-            </span>
-          ))}
-        </div>
       </div>
     </OverviewCard>
   );
