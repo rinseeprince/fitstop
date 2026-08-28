@@ -28,6 +28,7 @@
 import {
   addDays,
   differenceInDays,
+  formatDateISO,
   getTodayInTimezone,
 } from "@/lib/date-helpers";
 import { CHECK_IN_GRACE_DAYS, CRITICALLY_OVERDUE_DAYS } from "@/lib/constants";
@@ -92,6 +93,50 @@ export function resolveCheckInDue(
     live = addDays(live, step);
   }
   return live;
+}
+
+/**
+ * The client-side check-in gate.
+ *
+ * THREE states, and they are exhaustive: the due date is ahead of the client,
+ * on them, or behind them. There used to be a fourth, `completed` — "you have
+ * already checked in for this week" — which made sense while the due date was
+ * DERIVED and therefore did not move when a client submitted. Now submitting
+ * advances the date, so "the date is in the future" already means "nothing to
+ * do", and a fourth state could only restate it. It was dropped rather than
+ * kept: computing it needed the client's check-in history and a rule about
+ * which cycle a submission belonged to, and that rule had a hole — a client who
+ * checked in three days late would have been shown "completed" on their NEXT
+ * due day, hiding a check-in they owed.
+ *
+ * So this is a pure read of the stored date. It asks nothing about history.
+ *
+ * Lives here, beside `resolveCheckInDue`, and not in `lib/date-helpers.ts`
+ * where it used to: "is a check-in due?" is a SCHEDULE question. It only lived
+ * among the period helpers because that was where the machinery was, and being
+ * surrounded by period maths is precisely why it went on deriving a period from
+ * a weekday long after the date itself was stored — reporting a client overdue
+ * for a deadline that had never existed, on the same day and the same row where
+ * the coach's own screen correctly read "due in 6 days".
+ */
+export type CheckInGateStatus = "available" | "not_due" | "overdue";
+
+export function getCheckInGate(
+  client: Client | ClientWithCheckInInfo
+): { status: CheckInGateStatus; nextDueDate: string | null } {
+  const due = resolveCheckInDue(client);
+
+  // No schedule: never gated. A client their coach has not scheduled can check
+  // in whenever they like.
+  if (!due) return { status: "available", nextDueDate: null };
+
+  const dueDate = formatDateISO(due);
+  // The gate opens and rolls on the CLIENT's day, not the server's.
+  const today = formatDateISO(getTodayInTimezone(client.timezone));
+
+  if (today < dueDate) return { status: "not_due", nextDueDate: dueDate };
+  if (today === dueDate) return { status: "available", nextDueDate: dueDate };
+  return { status: "overdue", nextDueDate: dueDate };
 }
 
 /**

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import type { CheckInGateStatus } from "@/lib/date-helpers";
+import type { CheckInGateStatus } from "@/lib/check-in-schedule";
 
 const { mockUseSWR } = vi.hoisted(() => ({ mockUseSWR: vi.fn() }));
 vi.mock("swr", () => ({ default: mockUseSWR }));
@@ -43,17 +43,16 @@ describe("CheckInCardSummary", () => {
     expect(screen.getByText("Start")).toBeInTheDocument();
   });
 
-  it("shows the completed state with a View hint", () => {
-    setStatus("completed");
-    render(<CheckInCardSummary />);
-    expect(screen.getByText("Completed this week")).toBeInTheDocument();
-    expect(screen.getByText("View")).toBeInTheDocument();
-  });
-
-  it("shows the next due date when not due", () => {
+  // "Completed this week" is retired. Submitting advances the due date, so a
+  // client who has just checked in and one whose turn has not come round yet
+  // are the same state — and the DATE is the useful half of it: they know they
+  // checked in, they do not know when the next one lands. (Its "View" hint was
+  // a fib besides: the row led to the check-in form, not to the check-in.)
+  it("shows the next due date whether they have just checked in or not", () => {
     setStatus("not_due", "2026-05-29");
     render(<CheckInCardSummary />);
     expect(screen.getByText("Next check-in May 29")).toBeInTheDocument();
+    expect(screen.queryByText("Completed this week")).not.toBeInTheDocument();
     expect(screen.getByRole("link")).toHaveAttribute("href", "/client/check-in");
   });
 });

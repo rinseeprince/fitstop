@@ -36,11 +36,6 @@ vi.mock('@/services/supabase-admin', () => ({
   },
 }));
 
-vi.mock('@/lib/date-helpers', async (orig) => {
-  const actual = await orig<typeof import('@/lib/date-helpers')>();
-  return { ...actual, getCheckInStatus: vi.fn() };
-});
-
 import { GET } from './route';
 import { requireClientAuth } from '@/lib/require-client-auth';
 import { getClientById } from '@/services/client-service';
@@ -52,7 +47,6 @@ import {
 } from '@/services/check-in-context-service';
 import { getDailyLogs } from '@/services/daily-logs-service';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
-import { getCheckInStatus } from '@/lib/date-helpers';
 
 const req = () => new NextRequest('https://t.dev/api/client/check-in-context');
 
@@ -134,9 +128,17 @@ describe('GET /api/client/check-in-context', () => {
   });
 
   it('not_due → 403 and ZERO context/daily-log queries (no plan promotion)', async () => {
-    vi.mocked(getClientById).mockResolvedValue({ ...baseClient, nextCheckInDue: '2026-06-08' } as any); // a Monday
+    // A due date in the future. The gate is real here — see the header note —
+    // so the clock is pinned: an unpinned "today" would leave the due date
+    // lapsed and the gate would correctly answer overdue instead.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-12T12:00:00Z'));
+    vi.mocked(getClientById).mockResolvedValue({
+      ...baseClient,
+      nextCheckInDue: '2026-06-14',
+      checkInFrequency: 'weekly',
+    } as any);
     mockServerSupabase({ period_end: '2024-01-10', created_at: '2024-01-10T00:00:00Z' });
-    vi.mocked(getCheckInStatus).mockReturnValue({ status: 'not_due', nextDueDate: '2024-01-17' } as any);
 
     const res = await GET(req());
     const body = await res.json();
@@ -150,20 +152,39 @@ describe('GET /api/client/check-in-context', () => {
     expect(getCheckInTrainingPeriodStats).not.toHaveBeenCalled();
     expect(getTrainingEventDetailsForPeriod).not.toHaveBeenCalled();
     expect(getDailyLogs).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
-  it('completed → 403 and no fan-out', async () => {
-    vi.mocked(getClientById).mockResolvedValue({ ...baseClient, nextCheckInDue: '2026-06-08' } as any); // a Monday
-    mockServerSupabase({ period_end: '2024-01-10', created_at: '2024-01-10T00:00:00Z' });
-    vi.mocked(getCheckInStatus).mockReturnValue({ status: 'completed', nextDueDate: '2024-01-17' } as any);
+  // Sam's row, the one this gate was rewritten for: checked in on 27 Aug for
+  // the week ending the 26th, coach then moved his next check-in to 3 Sep. The
+  // old gate let him straight back in and would have taken a SECOND check-in
+  // for the same week, advancing his schedule past the one his coach had just
+  // set. There is no separate `completed` state any more — submitting advances
+  // the date, so an already-checked-in client and a not-yet-due one are one
+  // thing, and both are refused here.
+  it('a client who has already checked in is refused, not offered a second form', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-08-28T12:00:00Z'));
+      vi.mocked(getClientById).mockResolvedValue({
+        ...baseClient,
+        nextCheckInDue: '2026-09-03',
+        checkInFrequency: 'weekly',
+        timezone: 'Europe/London',
+      } as any);
+      mockServerSupabase({ period_end: '2026-08-26', created_at: '2026-08-27T10:00:00Z' });
 
-    const res = await GET(req());
-    const body = await res.json();
+      const res = await GET(req());
+      const body = await res.json();
 
-    expect(res.status).toBe(403);
-    expect(body.error).toBe('completed');
-    expect(getCheckInNutritionContext).not.toHaveBeenCalled();
-    expect(getDailyLogs).not.toHaveBeenCalled();
+      expect(res.status).toBe(403);
+      expect(body.error).toBe('not_due');
+      expect(body.nextDueDate).toBe('2026-09-03');
+      expect(getCheckInNutritionContext).not.toHaveBeenCalled();
+      expect(getDailyLogs).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('client not found → 404', async () => {
@@ -189,22 +210,18 @@ describe('GET /api/client/check-in-context', () => {
         timezone: 'Europe/London',
       } as any);
       mockServerSupabase(null);
-      vi.mocked(getCheckInStatus).mockReturnValue({
-        status: 'available',
-        nextDueDate: '2026-06-10',
-      } as any);
 
       const res = await GET(req());
       const body = await res.json();
 
+      // The gate opened: client-local today IS the due day (Wed 10 June), even
+      // though the server clock still reads Tue 9 June. Under server-UTC
+      // anchoring this would 403 as not_due.
       expect(res.status).toBe(200);
-      // resolveCheckInWindow is REAL here (only getCheckInStatus is mocked):
-      // the stored/displayed period ends on the client-local Wednesday.
+      expect(body.data.checkInStatus).toBe('available');
+      // And the displayed period ends on the same client-local Wednesday.
       expect(body.data.periodStart).toBe('2026-06-04');
       expect(body.data.periodEnd).toBe('2026-06-10');
-      // The gate received the client-local today (June 10), not UTC June 9.
-      const gateToday = vi.mocked(getCheckInStatus).mock.calls[0][2];
-      expect(gateToday?.getDate()).toBe(10);
     } finally {
       vi.useRealTimers();
     }

@@ -1159,6 +1159,77 @@ check-in day.
 
 ---
 
+### 11.10 Commit 11 — the client gate was still deriving
+
+Found by the owner's smoke, hours after §11.8 shipped. A client checked in on
+Thu 27 Aug for the week ending Wed 26 Aug; the coach then set his next check-in
+to Thu 3 Sep. On Fri 28 Aug his phone read **"Overdue — submit now"**, while the
+coach's screen — same row, same moment — correctly read *due in 6 days*.
+
+**The stored date was right. One reader ignored it.** `getCheckInStatus` took
+THURSDAY from the new date, asked when the most recent Thursday was (27 Aug),
+found no check-in stamped for it, and called him overdue for a deadline that had
+never existed. That is §11.1's opening bug, surviving in the one reader §11.7
+told me to leave alone.
+
+**Why it survived: §11.2 files the gate under System B, and that is wrong.**
+"Is a check-in due right now?" is System A's question. It only lived among the
+period helpers because that is where the machinery was — and being surrounded by
+period maths is exactly why it went on deriving one. Deferring it in §11.8 was a
+mistake, not a judgement call: the mis-filing was the finding, and I recorded it
+as "wants its own smoke" instead of acting on it.
+
+**The gate is now three states, and a pure read of the stored date:**
+
+| the date is | status | the card says |
+|---|---|---|
+| in the future | `not_due` | Next check-in 3 Sep |
+| today | `available` | Due today |
+| past | `overdue` | Overdue — submit now |
+
+**`completed` was RETIRED, not swapped** — and the type no longer carries it, so
+nothing can refer to it. Submitting advances the due date, so "already checked
+in" and "not due yet" are the same state; a fourth could only restate the third.
+Keeping it forced a rule comparing the last submission against the current
+cycle, and that rule had a hole: **a client who checked in three days late would
+have been shown "completed" on their NEXT due day, hiding a check-in they owed.**
+Caught before shipping. The gate now takes no history at all, so it cannot
+return. Owner's call on the copy: *"Next check-in 3 Sep"* tells a client
+something they do not already know, where *"Completed this week"* does not — and
+that card's "View" hint was a fib anyway, leading to the form rather than the
+check-in.
+
+**Moved to `lib/check-in-schedule.ts`** as `getCheckInGate`, beside
+`resolveCheckInDue`. `getCheckInStatus`, `CheckInGateStatus` and the private
+`getNextPeriodEnd` are gone from `lib/date-helpers.ts`, which keeps
+`calculateCheckInPeriod` / `resolveCheckInWindow` — a period a submitted
+check-in reports on is a real and separate job.
+
+**Three deletions come with it:** the unread `periodStart` / `periodEnd`
+returns; the new-client guard and its `startDate` parameter (§11.7's "*third*
+copy" — a STORED date cannot predate a client, since the route refuses a past
+one); and **the last-check-in query in BOTH client routes**, which existed only
+to feed the gate. One fewer round trip on each.
+
+**Owner decisions:** the orphan day (moving a check-in day leaves one day in no
+period) **stays as-is** — do not re-litigate it. And early check-ins are already
+blocked by the gate, so the "submitted early" edge I worried about is
+unreachable through the app.
+
+**Verified against the live row**, not just the fixtures: Sam's record now
+resolves to `not_due` / 3 Sep on the client gate and 3 Sep on the coach path.
+A regression test built from that exact row lives in `lib/check-in-gate.test.ts`.
+
+**Owed, NOT done — duplicate submissions.** The "you cannot check in early or
+twice" rule lives only in the gate; `POST /api/client/check-ins` does not
+re-check it, so a double-tap or a background retry can file two check-ins for
+one week and advance the schedule twice, skipping a check-in. §11.3 already
+notes the other half: `idx_check_ins_period` is a plain index, not unique, so
+the database does not stop it either. Route check + unique constraint, its own
+commit.
+
+---
+
 ## 12. Where the build departed from this plan — commits 4–7
 
 Five deliberate deviations. Each is here because the plan said one thing, the code says another,

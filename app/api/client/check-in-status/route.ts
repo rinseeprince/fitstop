@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientById } from "@/services/client-service";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { getCheckInStatus, getDateString, getTodayInTimezone } from "@/lib/date-helpers";
-import { checkInWeekday } from "@/lib/check-in-week";
-import type { CheckInGateStatus } from "@/lib/date-helpers";
+import { getCheckInGate } from "@/lib/check-in-schedule";
 
 /**
  * GET /api/client/check-in-status
  *
  * Lightweight check-in gate status for the home "Weekly check-in" card. Unlike
  * /api/client/check-in-context (which does heavy parallel fetches and 403s when
- * not_due/completed), this always returns 200 with { status, nextDueDate }.
+ * not_due), this always returns 200 with { status, nextDueDate }.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireClientAuth(request);
@@ -26,36 +23,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // "No schedule" is the NULL due date, tested at the call site — the gate
-    // must stay open for a client with no schedule, and checkInWeekday
-    // deliberately never returns null.
-    if (!client.nextCheckInDue) {
-      return NextResponse.json(
-        { success: true, data: { status: "available" as CheckInGateStatus, nextDueDate: null } },
-        { status: 200, headers: { "Cache-Control": "no-store" } },
-      );
-    }
-
-    const supabase = await createServerSupabaseClient();
-    const { data: lastCheckIn } = await supabase
-      .from("check_ins")
-      .select("period_end, created_at")
-      .eq("client_id", client.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const lastCheckInPeriodEnd =
-      lastCheckIn?.period_end ??
-      (lastCheckIn?.created_at ? getDateString(new Date(lastCheckIn.created_at)) : null);
-
-    // Client-local today: the gate opens/rolls on the client's day.
-    const { status, nextDueDate } = getCheckInStatus(
-      checkInWeekday(client),
-      lastCheckInPeriodEnd,
-      getTodayInTimezone(client.timezone),
-      client.startDate,
-    );
+    // A pure read of the stored due date — the client's check-in history is no
+    // longer part of the answer, so the query that used to fetch it is gone.
+    const { status, nextDueDate } = getCheckInGate(client);
 
     return NextResponse.json(
       { success: true, data: { status, nextDueDate } },

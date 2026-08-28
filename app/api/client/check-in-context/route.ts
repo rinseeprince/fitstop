@@ -9,10 +9,9 @@ import {
 import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { checkInWeekday } from "@/lib/check-in-week";
-import { getCheckInStatus, getDateString, getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
-import type { CheckInGateStatus } from "@/lib/date-helpers";
+import { getCheckInGate } from "@/lib/check-in-schedule";
+import { getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
 import type { CheckInContextResponse, CheckInTrainingEventDetail } from "@/types/check-in";
 
 /**
@@ -27,20 +26,10 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   try {
-    // Client info + last check-in run in parallel: both key only on the
-    // authenticated client id, and gating still short-circuits below before any
-    // of the heavy context fan-out runs.
-    const supabase = await createServerSupabaseClient();
-    const [client, lastCheckInResult] = await Promise.all([
-      getClientById(auth.clientId),
-      supabase
-        .from("check_ins")
-        .select("period_end, created_at")
-        .eq("client_id", auth.clientId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
+    // The gate no longer reads the client's check-in history, so the paired
+    // query that used to run here is gone. Gating still short-circuits below
+    // before any of the heavy context fan-out runs.
+    const client = await getClientById(auth.clientId);
 
     if (!client) {
       return NextResponse.json(
@@ -50,54 +39,23 @@ export async function GET(request: NextRequest) {
     }
 
     // --- Gating + period calculation ---
-    // As in check-in-status: NULL due date is "no schedule", and gating is
-    // skipped for it. checkInWeekday never returns null, so the null case has
-    // to be tested here rather than inside it.
+    // A pure read of the stored due date. `not_due` now covers what the retired
+    // `completed` state used to say as well: submitting advances the date, so a
+    // client who has already checked in and a client whose turn has not come
+    // round yet are the same state — "nothing to do until <date>".
     const hasSchedule = Boolean(client.nextCheckInDue);
-    let checkInGateStatus: CheckInGateStatus = "available";
+    const { status: checkInGateStatus, nextDueDate } = getCheckInGate(client);
 
-    const lastCheckIn = lastCheckInResult.data;
-
-    const lastCheckInPeriodEnd = lastCheckIn?.period_end
-      ?? (lastCheckIn?.created_at
-        ? getDateString(new Date(lastCheckIn.created_at))
-        : null);
-
-    if (hasSchedule) {
-      // Client-local today: the check-in window opens/rolls on the CLIENT's
-      // day, not the server's UTC day.
-      const today = getTodayInTimezone(client.timezone);
-      const { status, nextDueDate } = getCheckInStatus(
-        checkInWeekday(client),
-        lastCheckInPeriodEnd,
-        today,
-        client.startDate
+    if (checkInGateStatus === "not_due") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "not_due",
+          message: `Your next check-in is due on ${nextDueDate}. Check back then!`,
+          nextDueDate,
+        },
+        { status: 403 }
       );
-      checkInGateStatus = status;
-
-      if (status === "not_due") {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "not_due",
-            message: `Your next check-in is due on ${nextDueDate}. Check back then!`,
-            nextDueDate,
-          },
-          { status: 403 }
-        );
-      }
-
-      if (status === "completed") {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "completed",
-            message: "You've already completed your check-in for this week. Great job!",
-            nextDueDate,
-          },
-          { status: 403 }
-        );
-      }
     }
 
     // --- Calculate period ---

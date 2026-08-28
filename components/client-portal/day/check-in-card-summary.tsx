@@ -8,7 +8,7 @@ import {
 } from "@/components/client-portal/ds-card-summary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import type { CheckInGateStatus } from "@/lib/date-helpers";
+import type { CheckInGateStatus } from "@/lib/check-in-schedule";
 
 type StatusResponse = {
   success: boolean;
@@ -61,8 +61,10 @@ function describe(
       return { leading: "Due today", hint: "Start" };
     case "overdue":
       return { leading: "Overdue — submit now", hint: "Start" };
-    case "completed":
-      return { leading: "Completed this week", hint: "View" };
+    // Covers both "you have already checked in" and "your turn has not come
+    // round yet". Submitting advances the due date, so those are one state —
+    // and the date is the more useful half of it: a client knows they just
+    // checked in, they do not know when the next one lands.
     case "not_due":
       return {
         leading: nextDueDate

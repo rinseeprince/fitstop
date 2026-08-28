@@ -3,7 +3,6 @@ import {
   getTrainingWeekStart,
   getTrainingWeekEnd,
   resolveCheckInWindow,
-  getCheckInStatus,
   getDeviceTimeZone,
   getTodayInTimezone,
   formatDateISO,
@@ -160,22 +159,3 @@ describe("resolveCheckInWindow", () => {
   });
 });
 
-describe("getCheckInStatus — activation-aware first-check-in gating", () => {
-  it("brand-new, missed first check-in whose window post-dates activation -> overdue (loggable)", () => {
-    // Wed 2024-01-17, check-in Monday -> periodEnd 2024-01-15; activated 2024-01-10 (before).
-    expect(getCheckInStatus("monday", null, at("2024-01-17"), "2024-01-10").status).toBe("overdue");
-  });
-
-  it("brand-new whose window ended before activation -> not_due (pushed to next week)", () => {
-    // periodEnd 2024-01-15 predates activation 2024-01-16 -> nothing to check in for.
-    expect(getCheckInStatus("monday", null, at("2024-01-17"), "2024-01-16").status).toBe("not_due");
-  });
-
-  it("on the check-in day -> available", () => {
-    expect(getCheckInStatus("monday", null, at("2024-01-15"), "2024-01-10").status).toBe("available");
-  });
-
-  it("established client missing a check-in stays overdue (unchanged)", () => {
-    expect(getCheckInStatus("monday", "2024-01-08", at("2024-01-17"), "2023-01-01").status).toBe("overdue");
-  });
-});

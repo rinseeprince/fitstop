@@ -59,7 +59,7 @@ export const getTodayDateStringInTimezone = (
 
 /**
  * Returns "today" in the given IANA zone as a local-midnight Date, for the
- * injectable-Date helpers (getCheckInStatus / resolveCheckInWindow /
+ * injectable-Date helpers (resolveCheckInWindow /
  * calculateCheckInPeriod) whose internal math uses local getters
  * (.getDay() / formatDateISO). Deliberately NOT parseISODate: that parses
  * bare YYYY-MM-DD as UTC midnight, which is off by one day west of UTC when
@@ -379,61 +379,4 @@ export function resolveCheckInWindow(
   const startObj = new Date(today);
   startObj.setDate(startObj.getDate() - 6);
   return { periodStart: formatDateISO(startObj), periodEnd };
-}
-
-export type CheckInGateStatus = "available" | "completed" | "not_due" | "overdue";
-
-/**
- * Determine the check-in gate status for a client.
- *
- * - 'completed'  — a check-in already exists for the current period
- * - 'not_due'    — today is before the expected check-in day for this period
- * - 'available'  — it's the due day (or within grace window) and no check-in yet
- * - 'overdue'    — past the due day, grace window still open, no check-in yet
- */
-export function getCheckInStatus(
-  checkInDay: DayOfWeek,
-  lastCheckInPeriodEnd: string | null,
-  today: Date,
-  startDate?: string | null
-): { status: CheckInGateStatus; periodStart: string; periodEnd: string; nextDueDate: string } {
-  const { periodStart, periodEnd } = calculateCheckInPeriod(today, checkInDay);
-
-  if (lastCheckInPeriodEnd && lastCheckInPeriodEnd === periodEnd) {
-    return { status: "completed", periodStart, periodEnd, nextDueDate: getNextPeriodEnd(periodEnd) };
-  }
-
-  const todayStr = formatDateISO(today);
-
-  // Brand-new client with no prior check-ins who is past their due day. Only push
-  // to next week when this period's check-in day predates activation (a pre-activation
-  // window — there was nothing to check in for). Otherwise the client simply missed
-  // their first check-in and can still log it late (overdue) until the next check-in
-  // day, like any other check-in. Default (no start date supplied) preserves the
-  // legacy "push to next week" behavior.
-  if (!lastCheckInPeriodEnd && todayStr > periodEnd) {
-    const pushToNextWeek = startDate ? periodEnd < startDate.slice(0, 10) : true;
-    if (pushToNextWeek) {
-      const nextDueDate = getNextPeriodEnd(periodEnd);
-      return { status: "not_due", periodStart, periodEnd, nextDueDate };
-    }
-    // else: missed first check-in — fall through to the available/overdue logic below
-  }
-
-  if (todayStr < periodEnd) {
-    return { status: "not_due", periodStart, periodEnd, nextDueDate: periodEnd };
-  }
-
-  if (todayStr === periodEnd) {
-    return { status: "available", periodStart, periodEnd, nextDueDate: periodEnd };
-  }
-
-  return { status: "overdue", periodStart, periodEnd, nextDueDate: periodEnd };
-}
-
-/** Advance a periodEnd date string by 7 days */
-function getNextPeriodEnd(periodEnd: string): string {
-  const d = new Date(periodEnd + "T00:00:00");
-  d.setDate(d.getDate() + 7);
-  return formatDateISO(d);
 }

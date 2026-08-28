@@ -980,10 +980,26 @@ default spelled twelve times, and it disagreed with itself in one of them.
 `check_in_frequency` / `check_in_frequency_days` survive as the advance step. `frequency = 'none'`
 still exists and still means no schedule, now alongside a NULL date.
 
+**The client-side gate is `getCheckInGate` (`lib/check-in-schedule.ts`) and has THREE states** —
+`not_due` (the date is ahead: "Next check-in 3 Sep"), `available` (it is today), `overdue` (it has
+passed). It is a pure read of the stored date and asks nothing about the client's check-in history.
+A fourth state, `completed`, was retired: submitting advances the date, so "already checked in" and
+"not due yet" are one state, and computing the difference needed a rule that would have shown a
+late-checking-in client "completed" on their next due day — hiding a check-in they owed. It lives
+beside `resolveCheckInDue` rather than among the period helpers in `lib/date-helpers.ts`, because
+"is a check-in due?" is a SCHEDULE question; sitting among period maths is exactly why it kept
+deriving a period from a weekday long after the date was stored, and reported a client overdue for a
+deadline that had never existed.
+
 **`/api/client/check-in-status`, `check-in-context` and `notifications` are the React Native
 contract.** Their internals swapped onto the stored date; their response shapes did not change, and
 their three test files are the guard. "No schedule" is tested at the call site
 (`nextCheckInDue == null`), because `checkInWeekday` deliberately never returns null.
+
+**Known gap — duplicate submissions.** "You cannot check in early, or twice" is enforced by the
+gate only; `POST /api/client/check-ins` does not re-check it, and `idx_check_ins_period` is a plain
+index rather than a unique constraint. A double-tap or a background retry can therefore file two
+check-ins for one week and advance the schedule twice, skipping one. Not yet closed.
 
 ---
 
