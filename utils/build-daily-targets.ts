@@ -1,5 +1,6 @@
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
-import { DAYS_OF_WEEK, calculateDailyMacros, applySurplusSplit } from "@/utils/nutrition-helpers";
+import { calculateDailyMacros, applySurplusSplit } from "@/utils/nutrition-helpers";
+import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import { addDaysToDateString, expandDateRange } from "@/lib/date-helpers";
 import type { TrainingEvent } from "@/types/training";
@@ -110,16 +111,24 @@ export function buildDailyTargetsFromPlan({
 }: BuildDailyTargetsInput): DailyNutritionTargets[] {
   const surplusByDay = trainingEvents ? getEventSurplusByDay(trainingEvents) : {};
 
-  // Weekday -> calendar date for the rendered week. The week can start on any
-  // weekday (getTrainingWeekStart honors the client's check-in day), so the
-  // map is derived from the actual 7 dates, not from index arithmetic.
-  const dateByWeekday = new Map<string, string>();
-  for (const date of expandDateRange(
+  // The rendered week, IN ORDER, as (date, weekday) pairs. The week can start
+  // on any weekday — it ends on the client's check-in day — so the emitted
+  // array walks these dates rather than a fixed Monday-first weekday list.
+  //
+  // That order is the payload's only statement of when the client's week
+  // begins, and it has to be, because without it a renderer has no choice but
+  // to invent one. Two independently did: the builder emitted Mon-first and the
+  // client's nutrition page re-sorted Mon-first on top, so a Saturday-to-Friday
+  // client read their week starting three days in, with its two EARLIEST days
+  // last on the page.
+  const weekDays = expandDateRange(
     weekWindow.weekStart,
     addDaysToDateString(weekWindow.weekStart, 6)
-  )) {
-    dateByWeekday.set(DAY_NAMES[new Date(date + "T00:00:00").getDay()], date);
-  }
+  ).map((date) => ({
+    date,
+    day: DAY_NAMES[new Date(date + "T00:00:00").getDay()] as DayOfWeek,
+  }));
+  const dateByWeekday = new Map(weekDays.map((d) => [d.day as string, d.date]));
 
   const targetsByDay = new Map(
     (dailyTargetRows || []).map((dt) => [dt.day_of_week, dt])
@@ -135,7 +144,7 @@ export function buildDailyTargetsFromPlan({
   const trainingSessionsFor = (day: string) =>
     trainingEvents ? getEventSessionsSummary(trainingEvents, day) : [];
 
-  return DAYS_OF_WEEK.flatMap((day): DailyNutritionTargets[] => {
+  return weekDays.flatMap(({ day, date }): DailyNutritionTargets[] => {
     const dayLabel = day.charAt(0).toUpperCase() + day.slice(1);
 
     // Event-present day -> reuse the calendar mapper for full parity, then
@@ -145,6 +154,7 @@ export function buildDailyTargetsFromPlan({
     if (event) {
       return [{
         ...mapNutritionEventToDisplayTarget(event, includeActivityBurn, surplusAsCarbs),
+        date,
         trainingSessions: trainingSessionsFor(day),
         // `note` only. `event.coachNote` is COACH-PRIVATE and must never be
         // copied here — this util feeds the client portal's program card. The
@@ -215,6 +225,7 @@ export function buildDailyTargetsFromPlan({
     const carbsPercent = totalCal > 0 ? Math.round((carbsG * 4 / totalCal) * 100) : 0;
 
     return [{
+      date,
       day,
       dayLabel,
       isTrainingDay,

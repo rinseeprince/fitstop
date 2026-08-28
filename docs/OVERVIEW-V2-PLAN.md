@@ -1132,7 +1132,10 @@ of it and are fixed in `7d5c908` and `f670908` (§11.12): activation left the ch
 screen until a reload, and a cleared schedule read "Due today" on the client's home. Both were
 re-checked after fixing.
 
-**Section E — the client's week — is the one item still unconfirmed.** It is also the only part of
+**Section E was smoked on 2026-08-28 and found the last defect** (§11.13): the window was right,
+the running order was not. Fixed; E now passes.
+
+**Original note:** It is also the only part of
 this workstream a client can see change: commit 8 moved their nutrition page off a hard Mon–Sun
 window onto their own check-in week.
 
@@ -1326,6 +1329,39 @@ a narrowing — a mobile `switch` gains an unhandled case rather than losing a r
 Two pieces of now-dead code went with it, both residue from the change itself: the `hasSchedule`
 ternary feeding `resolveCheckInWindow` (unreachable once unscheduled clients are refused above it),
 and — found the same way one commit earlier — the check-in page's "Already completed" screen.
+
+---
+
+### 11.13 Commit 15 — the client's week was rendered Monday-first
+
+Section E's smoke. The nutrition page showed a Friday-check-in client Monday
+first, so his week — Sat 22 → Fri 28 — was presented starting three days in,
+with its two EARLIEST days last on the page.
+
+**The window was never wrong.** The payload carried exactly the right seven days;
+what it did not carry was any statement of WHEN the week began. Seven entries
+labelled Monday…Sunday and nothing else, so a renderer had no choice but to
+invent an order — and two independently invented Monday-first: the builder
+emitted `DAYS_OF_WEEK.flatMap`, and the page then re-sorted on its own hardcoded
+Mon→Sun list on top of that.
+
+**`DailyNutritionTargets` now carries `date`,** the builder walks the week's dates
+in order instead of a fixed weekday list, and the view sorts on that date — the
+same shape as the training page, which sorts on the `orderIndex` the server gives
+it rather than deciding for itself. Removing the ability to invent an order is
+the fix; correcting one of the two guesses would not have been.
+
+**It also fixes the React Native client, which had not been written yet.** The
+bug was in the payload, so a second renderer would have hit it identically; the
+web page was only where it was first seen.
+
+**Styling was deliberately NOT copied across, though it was asked for.** Taken
+literally — duplicating `TrainingSessionRow`'s markup into a nutrition row — it
+would have made a THIRD hand-rolled expandable row in a portal that has no
+shared one, guaranteed to drift. The non-duplicating version is to extract one
+row both pages use; that is real work on a surface CONVENTIONS §14 documents as
+a throwaway harness (the real client is React Native), so it was put to the owner
+as its own decision rather than folded in here. Owner chose the ordering alone.
 
 ---
 

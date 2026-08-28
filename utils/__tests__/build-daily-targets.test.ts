@@ -185,6 +185,53 @@ describe("buildDailyTargetsFromPlan", () => {
   });
 });
 
+describe("the emitted week runs in the CLIENT's order, not Monday-first", () => {
+  // The week ENDS on the client's check-in day, so it can start on any weekday.
+  // The array order is the payload's only statement of when it begins — without
+  // it a renderer can only guess from weekday names, and two independently
+  // guessed Monday-first, showing a Saturday-to-Friday client their week
+  // starting three days in with its two EARLIEST days last on the page.
+  const build = (weekStart: string) =>
+    buildDailyTargetsFromPlan({
+      plan: PLAN,
+      dailyTargetRows: [],
+      includeActivityBurn: true,
+      dietType: "balanced",
+      surplusAsCarbs: false,
+      trainingEvents: undefined,
+      nutritionEvents: undefined,
+      weekWindow: { weekStart, effectiveFrom: null, effectiveUntil: null },
+    });
+
+  it("starts on the week start and dates every day", () => {
+    // 2026-08-22 is a Saturday — a Friday check-in client's week start.
+    const targets = build("2026-08-22");
+
+    expect(targets.map((t) => t.day)).toEqual([
+      "saturday", "sunday", "monday", "tuesday", "wednesday", "thursday", "friday",
+    ]);
+    expect(targets.map((t) => t.date)).toEqual([
+      "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25",
+      "2026-08-26", "2026-08-27", "2026-08-28",
+    ]);
+  });
+
+  it("still runs Monday-first when the week actually starts on a Monday", () => {
+    expect(build("2026-06-08").map((t) => t.day)).toEqual([
+      "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    ]);
+  });
+
+  it("pairs every day with the date that really is that weekday", () => {
+    for (const t of build("2026-08-22")) {
+      const weekday = new Date(t.date + "T00:00:00")
+        .toLocaleDateString("en-GB", { weekday: "long" })
+        .toLowerCase();
+      expect(weekday).toBe(t.day);
+    }
+  });
+});
+
 describe("buildDailyTargetsFromPlan — the effective_from template gate (migration 143)", () => {
   // Week Mon 2026-06-08 .. Sun 2026-06-14; the plan's current numbers take
   // effect Thu 2026-06-11. Since 143, effective_from means "when the current

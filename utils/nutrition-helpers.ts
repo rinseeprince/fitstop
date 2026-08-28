@@ -20,6 +20,14 @@ export type DayOfWeek = (typeof DAYS_OF_WEEK)[number];
  */
 export type DailyNutritionTargets = {
   planId?: string;
+  /**
+   * The calendar date this day falls on, YYYY-MM-DD. The payload's statement of
+   * WHEN — without it a renderer can only guess an order from the weekday name,
+   * and a client whose week runs Saturday-to-Friday gets shown a Monday-first
+   * week with its two earliest days last. Absent on the coach-side template
+   * projections, which describe a weekday rather than a date.
+   */
+  date?: string;
   day: DayOfWeek;
   dayLabel: string;
   isTrainingDay: boolean;
