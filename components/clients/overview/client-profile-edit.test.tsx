@@ -3,7 +3,7 @@ import { render, screen, cleanup, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 
 import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
-import { EditRailActions } from "./inline-edit-fields";
+import { IdentityRow } from "./identity-row";
 import { useClientProfileEdit } from "./use-client-profile-edit";
 import type { ClientGoal } from "@/types/client-goals";
 import type { Client } from "@/types/check-in";
@@ -48,13 +48,20 @@ function makeClient(overrides: Partial<Client> = {}): Client {
 
 /**
  * The real hook driving the real sheet — the surface a coach actually uses,
- * opened the way they open it, rather than a form in isolation.
+ * opened the way they open it, rather than a form in isolation. The way in is
+ * the identity row's pencil; the Client rail that used to carry it went with
+ * the Overview shell rebuild.
  */
 function Harness({ client, goal }: { client: Client; goal: ClientGoal | null }) {
   const edit = useClientProfileEdit(client, vi.fn(), goal);
   return (
     <>
-      <EditRailActions edit={edit} />
+      <IdentityRow
+        client={client}
+        checkInTiming={null}
+        isTimingLoading={false}
+        onOpenDetails={edit.start}
+      />
       <ClientDetailsSheet
         client={client}
         checkInTiming={null}

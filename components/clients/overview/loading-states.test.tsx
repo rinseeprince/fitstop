@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 
 import { CoachNotesCard } from "./coach-notes-card";
-import { ClientScheduleCard } from "./client-schedule-card";
 import { IdentityRow } from "./identity-row";
 import type { Client } from "@/types/check-in";
 import type { CheckInTiming } from "@/types/coach-brief";
@@ -16,10 +15,10 @@ vi.mock("@/contexts/units-context", () => ({
 }));
 
 
-// Both cards receive `null`-shaped data both while loading AND when the client
-// genuinely has none. Without an explicit loading flag they render a confident
-// empty state first and contradict it a moment later — which is what these
-// tests exist to prevent.
+// Both surfaces receive `null`-shaped data both while loading AND when the
+// client genuinely has none. Without an explicit loading flag they render a
+// confident empty state first and contradict it a moment later — which is what
+// these tests exist to prevent.
 
 const CLIENT: Client = {
   id: "client-1",
@@ -80,58 +79,10 @@ describe("CoachNotesCard loading state", () => {
   });
 });
 
-describe("ClientScheduleCard check-in strip loading state", () => {
-  it("does not claim the client is never asked to check in before the brief resolves", () => {
-    render(
-      <ClientScheduleCard
-        client={CLIENT}
-        checkInTiming={null}
-        isTimingLoading
-        onOpenDetails={vi.fn()}
-      />
-    );
-
-    expect(screen.queryByText(/never asked to check in/i)).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("This client is never asked to check in.")
-    ).not.toBeInTheDocument();
-  });
-
-  it("states the no-schedule case once the brief resolves without timing", () => {
-    render(
-      <ClientScheduleCard
-        client={CLIENT}
-        checkInTiming={null}
-        isTimingLoading={false}
-        onOpenDetails={vi.fn()}
-      />
-    );
-
-    expect(screen.getByText("This client is never asked to check in.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Set a schedule" })).toBeInTheDocument();
-  });
-
-  it("renders the real strip once timing arrives", () => {
-    render(
-      <ClientScheduleCard
-        client={CLIENT}
-        checkInTiming={TIMING}
-        isTimingLoading={false}
-        onOpenDetails={vi.fn()}
-      />
-    );
-
-    expect(screen.getByText(/Next check-in/)).toBeInTheDocument();
-    expect(
-      screen.queryByText("This client is never asked to check in.")
-    ).not.toBeInTheDocument();
-  });
-});
-
-// The identity row inherits the schedule card's check-in strip, and with it the
-// same trap: `checkInTiming` is null both while the brief is in flight and when
-// the client genuinely has no schedule. It must not offer "Set a schedule" to a
-// coach whose client already has one and simply hasn't loaded.
+// The identity row's check-in cluster carries the same trap the schedule card
+// it replaced did: `checkInTiming` is null both while the brief is in flight
+// AND when the client genuinely has no schedule. It must not offer "Set a
+// schedule" to a coach whose client already has one and simply hasn't loaded.
 describe("IdentityRow check-in cluster loading state", () => {
   it("does not offer a schedule before the brief resolves", () => {
     render(

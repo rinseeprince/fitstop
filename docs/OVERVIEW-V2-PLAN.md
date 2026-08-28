@@ -1,52 +1,33 @@
 # Client Overview v2 + Details Sheet
 
-> ## ▶ START HERE — execution brief for this session
+> ## ▶ STATUS — commits 0–7 are SHIPPED. What is left is the browser smoke, then §11.
 >
-> **Read first, before touching anything:** `CONVENTIONS.md`, then `docs/ARCHITECTURE.md`.
-> They are the build guidelines and they outrank this document wherever the two disagree —
-> this plan describes *what* to build; those describe *how* this repo builds.
+> **Commits 4–7 landed 2026-08-28** (`72821b6`, `c7f3f8b`, `db93c7e`, this one), all four gates
+> green at each. **The UI is unverified** — no browser has run this. The smoke checklist was
+> handed over in chat, per the owner's rule that they run smokes and Claude never drives a
+> browser.
 >
-> **Your scope is commits 4, 5, 6 and 7 in §8. Nothing else.**
+> **Next, and only after that smoke passes: §11, commits 8–10** (check-in scheduling). Approved,
+> deliberately deferred, and untouched by this work — nothing in commits 4–7 reads
+> `expected_check_in_day` or anything in `lib/check-in-schedule.ts`.
 >
-> - Commits 0–3 are **already shipped and browser-smoked** — see "Shipped so far" below. Do not
->   rebuild them. §1–§7 describe the whole workstream including work that is already done; read
->   them for context and constraints, build only what §8 rows 4–7 name.
-> - **STOP after commit 7.** Commits 8–10 (§11, check-in scheduling) are approved but explicitly
->   deferred until after this Overview work lands. Do not start them, do not "prepare" for them,
->   do not touch `expected_check_in_day` or anything in `lib/check-in-schedule.ts`.
-> - Work through 4 → 5 → 6 → 7 in order. Each is independently revertable and each is a separate
->   commit to `main` (no branches).
->
-> **Gates — all four must pass before every commit, no exceptions:**
+> **Gates — all four, before every commit:**
 > ```
 > npx tsc --noEmit
 > npx eslint .              # 0 errors; pre-existing warnings are fine
-> npx vitest run            # currently 297 files / 3196 tests, all passing
+> npx vitest run            # 301 files / 3243 tests as of commit 7
 > npm run check:labels
 > ```
 > `set-tracker.test.tsx` is a known flake in full runs — re-run before blaming your change.
-> If a gate fails, fix it before moving on. Do not commit red.
->
-> **The owner runs browser smokes, not you.** Never drive a browser. When you finish commit 7,
-> stop and hand over a step-by-step smoke checklist **in chat, not as a file** — and say plainly
-> that the UI is unverified.
->
-> **Plan before code.** Show the owner your implementation plan for each commit and wait for
-> approval before editing. This applies to every commit, including small ones.
 >
 > **The design SOT is `docs/newdesignsystem.md`.** Ignore `DESIGN_SYSTEM.md` and any older token
-> files — they are stale. Import the shared tokens and components it names rather than writing
-> new class strings.
+> files — they are stale.
 >
-> **Do not create new documents.** Update this one if something changes; the owner does not want
-> doc sprawl.
+> **Do not create new documents.** Update this one.
 >
-> **You need the two HTML mockups** — `client-overview-redesign.html` and
-> `client-edit-surfaces.html`. They are not in the repo; ask the owner to attach them at the start
-> of the session. Treat them as sketches of intent, not pixel targets: the goals dialog in the
-> second file is **rejected** and must be ignored entirely. Where a mockup and §6's flags
-> disagree, the flags win — they were written after checking the mockups against the code.
-
+> §1–§7 below describe the whole workstream, including the parts now built. They are kept as the
+> record of WHY each decision went the way it did; where the shipped code and this plan disagree,
+> **the code is what shipped** and §12 records the three places that happened deliberately.
 
 Redesign of two coach surfaces: the client **Overview** tab
 (`components/clients/client-overview-tab.tsx` + `components/clients/overview/**`) and the
@@ -87,12 +68,14 @@ commit 7.
 | `e6b32d0` | *(out of band)* the add-client intake path could never be submitted |
 | `92fe1de` | *(out of band)* off-system edge border removed from every Sheet — found by the smoke |
 | `17b5254` | *(out of band)* Baseline explainer + "Log a measurement" link dropped from the sheet |
+| `72821b6` | **Commit 4** — the new shell: identity row, Progression rail + window state, status band, needs-attention rewrite, two-up rails, plan scope label, notes footer |
+| `c7f3f8b` | **Commit 5** — the Signals card: four rows, four panels, window-driven; `AdherenceSummary.habits.perHabit` added server-side |
+| `db93c7e` | **Commit 6** — the `measurement-series` route + hook + progression chart; the band splits into chart ∥ cells |
+| *(this)* | **Commit 7** — the sweep: six superseded components + four dead tests deleted, docs updated |
 
-Commits 1–3 were browser-smoked on 2026-08-27 and **passed**, with three fixes folded back (the
-last three rows above).
-
-**Commits 4–7 are the current scope.** §11 (commits 8–10) is approved and deferred until after
-commit 7 — owner decision, 2026-08-28.
+Commits 1–3 were browser-smoked on 2026-08-27 and **passed**, with three fixes folded back.
+**Commits 4–7 are shipped and NOT smoked.** §11 (commits 8–10) is approved and deferred until
+after that smoke — owner decision, 2026-08-28.
 
 ### What already exists, so you do not rebuild it
 
@@ -1031,3 +1014,86 @@ independently valuable: it fixes §11.5 whether or not the rest ever ships.
   of events), whereas a check-in schedule is *unbounded recurrence*, so events would need a rolling
   materialiser for no gain over a stored date. Events earn their keep the day a single occurrence
   needs to be skipped or moved independently.
+
+---
+
+## 12. Where the build departed from this plan — commits 4–7
+
+Five deliberate deviations. Each is here because the plan said one thing, the code says another,
+and the next person to read both needs to know which is right and why.
+
+### 12.1 FLAG I's scope label — the plan's copy was false
+
+**Plan:** the training plan-card's "This week" cell gets the sub-line *"logged sessions, Mon–Sun"*.
+**Shipped:** the cell is LABELLED `Logged this week`; the sub-line is unchanged.
+
+`getTrainingWeekStart` anchors the week on the client's own check-in day
+(`training-week-summary-service.ts:32-36` reads `expected_check_in_day`, and the week starts the
+day AFTER it), so a Wednesday client's week runs Thu–Wed. **§11.5 of this very plan documents the
+same thing** from the other side — a client with *no* check-in day is measured Tue–Mon on one
+surface and Mon–Sun on eleven others. No fixed weekday pair is true for every client, and
+`OverviewPlanSummary.training.thisWeek` carries no window on the wire to print instead.
+
+So the label names the axis that IS true and IS the one that diverges from Signals: this cell
+counts full `session_logs` completions, Signals counts `training_events.status`. Putting it in the
+label rather than the sub also keeps the mono rule intact — `StatCellData.sub` takes one font, and
+"logged sessions · 1 missed" is half words, half numeral.
+
+### 12.2 The habits panel does not come from `/habits/logs` — that source is incomplete
+
+**Plan (FLAG T):** per-habit sparklines come from `GET /api/clients/[id]/habits/logs`, turning on
+the `withHabitLogs` fetch the Overview had deliberately disabled; "the habits list is needed for
+completeness".
+**Shipped:** `AdherenceSummary.habits.perHabit`, on the read that already runs. `withHabitLogs`
+stays `false`.
+
+`logHabit` (`services/daily-habits-service.ts:266`) upserts a row **only when the client acts**, so
+a habit ignored for the whole window has no rows at all — and a grid built from logs drops exactly
+the habit a coach needs to see, silently. The completeness caveat the plan noted is not a footnote;
+it is the panel's main job.
+
+`getClientAdherence` already selects this client's active `daily_habits` **and** their
+`daily_habit_logs` for this window. `perHabit` is those same rows cut per habit instead of per day:
+one more column (`name`), no new query, no new round trip — the same "more columns, same query"
+move the nutrition means made in commit 2. The extra request the plan budgeted is not spent at all,
+and each habit is scored over its OWN eligible days (before its `effective_date` the rail is
+`null`, not `false` — a habit added on Wednesday has not missed Monday).
+
+### 12.3 `buildMetricPoints` was widened rather than fed a fake row
+
+`buildMetricPoints(checkIns: CheckIn[], …)` requires `clientId`, `status` and `updatedAt` that a
+four-column projection does not have. Its first parameter is now the structural subset it actually
+reads (`MetricSeriesCheckIn = Partial<CheckIn> & Pick<CheckIn, "id" | "createdAt">`). `CheckIn[]`
+stays assignable, so the Metrics page is untouched. The alternative was inventing a `status` and an
+`updatedAt` the route never fetched, purely to satisfy a type.
+
+### 12.4 Two chart bugs the tests caught, fixed in the component
+
+- **The goal line vanished on an empty window.** recharts renders nothing at all for an empty
+  dataset — reference line included — so §6.4's *"no measurements logged → no line, goal line still
+  drawn"* silently did not hold. An empty window now draws the target as plain markup: a goal is a
+  fact about the CLIENT, not about what these 30 days contain.
+- **The readout asserted "No measurements in this window" while still loading.** Before the first
+  response `series` is null and the point list is empty, which is indistinguishable from a client
+  who has logged nothing. It now shows a skeleton and suppresses the rate line — the same class of
+  bug `loading-states.test.tsx` exists to catch on the other two surfaces.
+
+### 12.5 Smaller calls, recorded so they are not re-litigated
+
+- **The alert tab→icon map lives in `needs-attention-section.tsx`, not `lib/attention-alert-copy.ts`**
+  (§2.1 put it in the lib). Commit 1 shipped that module without it and there is exactly one
+  consumer; four Lucide icons in a pure `lib/` module for one caller is worse than four in the file
+  that draws them.
+- **`paused` renders as "Active" on the identity row**, against §6.4's row. Status comes from
+  `getRosterStatus` / `rosterStatusLabel` — the same derivation the details sheet's hero uses — and
+  those map `onboardingStatus: "paused"` to `active`. The tree has **zero writers** of `paused`
+  (FLAG M; verified again at commit 4), so this is unreachable. A local override would have been a
+  second status vocabulary, which is the mistake `lib/client-initials.ts` exists to undo. Making it
+  render "Paused" is a one-line change in `lib/roster-views.ts` that also moves the roster — a
+  separate decision, not a silent one.
+- **`WindowControl` is its own file**, not inlined in the tab, and **`useClientAdherence`'s `days`
+  became REQUIRED** in commit 7: its `ADHERENCE_WINDOW_DAYS` default stopped being reachable once
+  the Overview passed its own window, leaving a second silent spelling of a number the route
+  already owns (`DEFAULT_DAYS`).
+- **The window control appears in commit 4 and reaches nothing until commit 5.** That is the plan's
+  own sequencing, not an oversight; the intermediate state exists only in git history.
