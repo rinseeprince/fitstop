@@ -3,6 +3,7 @@ import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientById } from "@/services/client-service";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { getCheckInStatus, getDateString, getTodayInTimezone } from "@/lib/date-helpers";
+import { checkInWeekday } from "@/lib/check-in-week";
 import type { CheckInGateStatus } from "@/lib/date-helpers";
 
 /**
@@ -25,8 +26,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const expectedDay = client.expectedCheckInDay;
-    if (!expectedDay) {
+    // "No schedule" is the NULL due date, tested at the call site — the gate
+    // must stay open for a client with no schedule, and checkInWeekday
+    // deliberately never returns null.
+    if (!client.nextCheckInDue) {
       return NextResponse.json(
         { success: true, data: { status: "available" as CheckInGateStatus, nextDueDate: null } },
         { status: 200, headers: { "Cache-Control": "no-store" } },
@@ -48,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     // Client-local today: the gate opens/rolls on the client's day.
     const { status, nextDueDate } = getCheckInStatus(
-      expectedDay,
+      checkInWeekday(client),
       lastCheckInPeriodEnd,
       getTodayInTimezone(client.timezone),
       client.startDate,

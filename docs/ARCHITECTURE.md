@@ -942,6 +942,49 @@ Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 403 (f
 
 ## Check-in System
 
+**One stored fact: `clients.next_check_in_due`** (DATE, nullable — migration 154). NULL means no
+schedule. It replaced `expected_check_in_day` (dropped in 155), which had been answering three
+unrelated questions at once and could therefore disagree with itself: setting a client to Sunday on
+a Thursday produced a due date of *last* Sunday, "4 days overdue", beside "Last submitted today".
+
+| Question | Answered by |
+|---|---|
+| When is the next check-in due? | the stored date, via `resolveCheckInDue` (`lib/check-in-schedule.ts`) |
+| Is this client overdue? | the live due date is in the past — `getDaysUntilOrPastDue > 0` |
+| Has one lapsed? | `today > due + CHECK_IN_GRACE_DAYS` (7) → roll forward by whole frequency steps |
+| Which seven days does a submitted check-in report on? | `calculateCheckInPeriod` / `resolveCheckInWindow` (`lib/date-helpers.ts`), unchanged maths |
+| Where does this client's week start and end? | `getTrainingWeekStart/End`, anchored by `checkInWeekday` |
+
+**Two writers, and only two.** The coach's date picker (details sheet → Check-ins, and the
+activation dialog's "First check-in") sets it outright; a submitted check-in advances it by the
+frequency (`submitCheckIn`, `services/check-in-service.ts`). Nothing else writes it. A failed
+advance leaves the check-in standing and self-heals within the grace window rather than throwing
+away the client's submission.
+
+**A past due date is not a bug — it is how overdue is defined**, and it drives the roster's Overdue
+view, its counts, the sidebar badge and the reminder sweep. The lapse roll keeps the live date
+inside `[today − 7, today]` so a client who stopped a year ago reads as days overdue, not 365.
+
+**The week anchor is a calculation, never a second stored copy.** `checkInWeekday`
+(`lib/check-in-week.ts`) takes the WEEKDAY of the due date — the weekday, not the date, so a
+fortnightly client keeps a steady weekly rhythm instead of leaving every other week unassigned. It
+is the ONE place the anchor is derived, and all twelve `getTrainingWeekStart/End/Days` callers route
+through it: training, nutrition targets, habits, wellness, the attention feed and the client portal.
+With no schedule it returns the anchor for a **Mon–Sun** week. The module is pure so
+`habits-tab-content.tsx` can run it in the browser; `getClientWeekAnchor`
+(`services/check-in-week-service.ts`) is its DB-fetching twin, the same split as
+`lib/date-helpers.ts` / `services/today-service.ts`. `lib/check-in-week.test.ts` scans the tree and
+fails if a new caller sources the anchor itself — the original bug was not a wrong default but a
+default spelled twelve times, and it disagreed with itself in one of them.
+
+`check_in_frequency` / `check_in_frequency_days` survive as the advance step. `frequency = 'none'`
+still exists and still means no schedule, now alongside a NULL date.
+
+**`/api/client/check-in-status`, `check-in-context` and `notifications` are the React Native
+contract.** Their internals swapped onto the stored date; their response shapes did not change, and
+their three test files are the guard. "No schedule" is tested at the call site
+(`nextCheckInDue == null`), because `checkInWeekday` deliberately never returns null.
+
 ---
 
 ## External Consumers

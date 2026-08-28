@@ -132,8 +132,12 @@ export const updateClientSchema = z.object({
 export const updateCheckInConfigSchema = z.object({
   checkInFrequency: z.enum(["weekly", "biweekly", "monthly", "custom", "none"]),
   checkInFrequencyDays: z.number().int().min(1).max(365).optional(),
-  expectedCheckInDay: z
-    .enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"])
+  // Format only. The past-date bound is enforced route-side against the
+  // COACH's today (they are the one setting it) — the same split as the goal
+  // deadline. NULL clears the schedule.
+  nextCheckInDue: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date")
     .nullable()
     .optional(),
   reminderPreferences: z.object({

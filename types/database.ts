@@ -818,7 +818,6 @@ export type Database = {
           current_weight: number | null
           date_of_birth: string | null
           email: string
-          expected_check_in_day: string | null
           gender: string | null
           goal_body_fat_percentage: number | null
           goal_deadline: string | null
@@ -865,7 +864,6 @@ export type Database = {
           current_weight?: number | null
           date_of_birth?: string | null
           email: string
-          expected_check_in_day?: string | null
           gender?: string | null
           goal_body_fat_percentage?: number | null
           goal_deadline?: string | null
@@ -912,7 +910,6 @@ export type Database = {
           current_weight?: number | null
           date_of_birth?: string | null
           email?: string
-          expected_check_in_day?: string | null
           gender?: string | null
           goal_body_fat_percentage?: number | null
           goal_deadline?: string | null

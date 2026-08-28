@@ -25,7 +25,7 @@ import type { DayOfWeek } from "@/types/check-in"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
 type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
-type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'expected_check_in_day' | 'start_date'>
+type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'next_check_in_due' | 'start_date'>
 
 // View row shape - daily_logs_full joins spine + wellness + nutrition + training
 export type DailyLogRow = {
@@ -80,7 +80,7 @@ export function groupClientData(
       habitLogs: [],
       trainingEvents: [],
       plannedSessionCount: 0,
-      checkInDay: checkInWeekday({ expectedCheckInDay: client.expected_check_in_day }),
+      checkInDay: checkInWeekday({ nextCheckInDue: client.next_check_in_due }),
       startDate: client.start_date ?? null,
     })
   })

@@ -17,22 +17,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   FOCUS_RING,
   MONO_INPUT_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens"
 import { useToast } from "@/hooks/use-toast"
 import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
-import { getTodayDateString } from "@/lib/date-helpers"
+import { addDaysToDateString, getTodayDateString } from "@/lib/date-helpers"
 import { getFirstName } from "@/lib/client-name"
 import { cn } from "@/lib/utils"
-import type { DayOfWeek } from "@/types/check-in"
 
 interface ClientActivationDialogProps {
   client: {
@@ -49,8 +41,6 @@ interface ClientActivationDialogProps {
   trigger: React.ReactNode
   onActivated?: () => void
 }
-
-const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
 
 const FIELD_LABEL = "text-[11px] text-[#5a7d82]"
 const FIELD_INPUT = "bg-white"
@@ -81,7 +71,11 @@ export function ClientActivationDialog({
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [welcomeMessage, setWelcomeMessage] = useState("")
-  const [firstCheckInDay, setFirstCheckInDay] = useState<DayOfWeek>("monday")
+  // A week after the start date below, and re-prefilled whenever that moves so
+  // the pair stays coherent — the coach who backdates a start to last Monday
+  // means their first check-in a week from THEN, not a week from today. Still
+  // editable, and clearable: empty activates them with no schedule.
+  const [firstCheckInDue, setFirstCheckInDue] = useState<string>("")
   // Prefilled with today: activation IS the client's start date, so leaving it
   // blank was how almost every client ended up with none — and a null start
   // date silently disables their no-engagement alert and gives their first
@@ -92,10 +86,17 @@ export function ClientActivationDialog({
 
   useEffect(() => {
     if (open) {
+      const start = getTodayDateString()
       setWelcomeMessage(getDefaultMessage(client.name))
-      setStartDate(getTodayDateString())
+      setStartDate(start)
+      setFirstCheckInDue(addDaysToDateString(start, 7))
     }
   }, [open, client.name])
+
+  const handleStartDateChange = (next: string) => {
+    setStartDate(next)
+    if (next) setFirstCheckInDue(addDaysToDateString(next, 7))
+  }
 
   const missing = listMissing(readiness)
 
@@ -105,7 +106,11 @@ export function ClientActivationDialog({
       const response = await fetch(`/api/clients/${client.id}/activate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ welcomeMessage, firstCheckInDay, startDate: startDate || undefined }),
+        body: JSON.stringify({
+          welcomeMessage,
+          firstCheckInDue: firstCheckInDue || undefined,
+          startDate: startDate || undefined,
+        }),
       })
       const data = await response.json()
 
@@ -142,7 +147,7 @@ export function ClientActivationDialog({
         <DialogHeader>
           <DialogTitle>Activate {client.name}</DialogTitle>
           <DialogDescription>
-            Set the start date and first check-in day, then send the welcome email.
+            Set the start date and first check-in, then send the welcome email.
           </DialogDescription>
         </DialogHeader>
 
@@ -178,7 +183,7 @@ export function ClientActivationDialog({
               type="date"
               className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-[170px]")}
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => handleStartDateChange(e.target.value)}
             />
             <p className="text-[11px] text-[#93b0b4]">
               Everything is measured from here. Their weight today is logged as
@@ -187,21 +192,21 @@ export function ClientActivationDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="checkin-day" className={FIELD_LABEL}>
-              First check-in day
+            <Label htmlFor="checkin-due" className={FIELD_LABEL}>
+              First check-in
             </Label>
-            <Select value={firstCheckInDay} onValueChange={(v) => setFirstCheckInDay(v as DayOfWeek)}>
-              <SelectTrigger id="checkin-day" className={cn(FIELD_INPUT, "h-9")}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white p-1 shadow-lg">
-                {DAYS.map((day) => (
-                  <SelectItem key={day} value={day}>
-                    {day.charAt(0).toUpperCase() + day.slice(1)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Input
+              id="checkin-due"
+              type="date"
+              min={startDate || undefined}
+              className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-[170px]")}
+              value={firstCheckInDue}
+              onChange={(e) => setFirstCheckInDue(e.target.value)}
+            />
+            <p className="text-[11px] text-[#93b0b4]">
+              Their week runs to this day and repeats at the frequency you set.
+              Clear it to activate them without a schedule.
+            </p>
           </div>
         </div>
 

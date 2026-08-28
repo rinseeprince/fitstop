@@ -160,7 +160,7 @@ describe("logTrainingEvent", () => {
   it("[1] quick log: writes session_log + snapshot, clears exercise_logs (full replace), links event with mapped status", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: "sunday" },
+      data: { next_check_in_due: "2026-05-03" },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -220,7 +220,7 @@ describe("logTrainingEvent", () => {
   it("[2] empty exercises array is a quick-log: clears exercise_logs, inserts none", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: "sunday" },
+      data: { next_check_in_due: "2026-05-03" },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -259,7 +259,7 @@ describe("logTrainingEvent", () => {
   it("[3] detailed log all-logged: writes session_log, snapshot, exercise_logs; status=completed", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: "sunday" },
+      data: { next_check_in_due: "2026-05-03" },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -341,7 +341,7 @@ describe("logTrainingEvent", () => {
   it("[3b] converts an lbs-tagged payload to canonical kg in set_logs", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -401,7 +401,7 @@ describe("logTrainingEvent", () => {
   it("[4] detailed log with nothing scorable: the client's completionQuality stands", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -456,7 +456,7 @@ describe("logTrainingEvent", () => {
   it("[5] detailed all-skipped + payload 'skipped' → status='skipped'", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -506,7 +506,7 @@ describe("logTrainingEvent", () => {
   it("[5b] all-skipped free-form + payload 'full' → 'full' via the nothing-scorable fallback", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -553,7 +553,7 @@ describe("logTrainingEvent", () => {
   it("[6] per-set fidelity: writes one set_logs row per set with reps/weight/rpe; exercise_logs row carries completed", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -618,7 +618,7 @@ describe("logTrainingEvent", () => {
   it("[7] free-form exercise: training_exercise_id=null, exercise_id=null, prescribed_exercise_snapshot.name persisted from payload", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -676,7 +676,7 @@ describe("logTrainingEvent", () => {
     const PICKED_EXERCISE_ID = "11111111-1111-4111-8111-111111111111";
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -728,7 +728,7 @@ describe("logTrainingEvent", () => {
   it("[8] skipped exercise: completed=false; no set_logs rows written", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -800,7 +800,7 @@ describe("logTrainingEvent", () => {
   it("[10] snapshot shape: session has exact 5 keys, exercise has exact 14 keys including set_specs and prescribed_fields", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -888,7 +888,7 @@ describe("logTrainingEvent", () => {
     ];
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
@@ -957,7 +957,7 @@ describe("logTrainingEvent", () => {
     ];
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
@@ -1054,7 +1054,7 @@ describe("logTrainingEvent", () => {
     ];
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
@@ -1135,7 +1135,7 @@ describe("logTrainingEvent", () => {
   it("writes a sent set that carries no reps, weight or RPE", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
@@ -1198,7 +1198,7 @@ describe("logTrainingEvent", () => {
   it("counts a prescribed exercise the payload never mentions", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
@@ -1259,7 +1259,7 @@ describe("logTrainingEvent", () => {
   it("[11] event-keyed insert replaces exercise_logs (delete-then-insert)", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -1326,7 +1326,7 @@ describe("logTrainingEvent", () => {
     });
     const eventQ = createMockQuery({ data: orphanRow, error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
@@ -1362,7 +1362,7 @@ describe("logTrainingEvent", () => {
     });
     const eventQ = createMockQuery({ data: orphanRetryRow, error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const updateQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
@@ -1398,7 +1398,7 @@ describe("logTrainingEvent", () => {
     });
     const eventQ = createMockQuery({ data: orphanRetryRow, error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const updateQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
@@ -1444,7 +1444,7 @@ describe("logTrainingEvent", () => {
     });
     const eventQ = createMockQuery({ data: orphanRetryRow, error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const updateQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
@@ -1477,7 +1477,7 @@ describe("logTrainingEvent", () => {
   it("[12d] detailed retry: deleted prescription falls back to existing snapshot for resolved exercise; free-form gets null (no preservation by name/position)", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -1565,7 +1565,7 @@ describe("logTrainingEvent", () => {
   it("[13] exercise_logs insert failure: throws; session_log row already written; retry is safe by event-keyed UPDATE/delete-then-insert convergence", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const sessionSnapQ = createMockQuery({
@@ -1620,7 +1620,7 @@ describe("logTrainingEvent", () => {
       error: null,
     });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null, timezone: "UTC" },
+      data: { next_check_in_due: null, timezone: "UTC" },
       error: null,
     });
     const writeSpy = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
@@ -2205,7 +2205,7 @@ describe("getTrainingEventDetail", () => {
       error: null,
     });
     const clientQ = createMockQuery({
-      data: { expected_check_in_day: null },
+      data: { next_check_in_due: null },
       error: null,
     });
     const compositeLogQ = createMockQuery({ data: null, error: null });

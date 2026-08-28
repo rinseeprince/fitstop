@@ -6,7 +6,7 @@ import { getClientById } from "./client-service";
 import { listBlocks } from "./client-blocks-service";
 import { getClientTodayString } from "./today-service";
 import {
-  calculateNextExpectedCheckIn,
+  resolveCheckInDue,
   getDaysUntilOrPastDue,
   isClientOverdue,
 } from "./check-in-tracking-service";
@@ -76,9 +76,12 @@ async function getCheckInTiming(
   const frequency = client.checkInFrequency ?? "weekly";
   if (frequency === "none") return null;
 
+  // Only for `lastSubmittedAt`. The due date no longer has to be reconstructed
+  // from what the client last submitted — it is stored — so the last check-in
+  // is not attached to the client for the resolver any more.
   const { data: latest, error } = await supabaseAdmin
     .from("check_ins")
-    .select("created_at, period_end")
+    .select("created_at")
     .eq("client_id", clientId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -88,23 +91,14 @@ async function getCheckInTiming(
     console.error("Failed to read latest check-in for timing:", error);
   }
 
-  // Attach the last check-in the way getClientsForCoach does so the tracking
-  // service's "already checked in this period" branch can fire.
-  const clientForTiming: Client & { lastCheckInDate?: string; lastCheckInPeriodEnd?: string } = {
-    ...client,
-    lastCheckInDate: latest?.created_at ?? undefined,
-    lastCheckInPeriodEnd: latest?.period_end ?? undefined,
-  };
-
-  const nextExpected = calculateNextExpectedCheckIn(clientForTiming);
+  const nextExpected = resolveCheckInDue(client);
 
   return {
     frequency,
-    expectedCheckInDay: client.expectedCheckInDay ?? null,
     lastSubmittedAt: latest?.created_at ?? null,
     nextDueDate: nextExpected ? formatDateISO(nextExpected) : null,
-    daysUntilDue: nextExpected ? getDaysUntilOrPastDue(clientForTiming) : null,
-    isOverdue: isClientOverdue(clientForTiming),
+    daysUntilDue: nextExpected ? getDaysUntilOrPastDue(client) : null,
+    isOverdue: isClientOverdue(client),
   };
 }
 

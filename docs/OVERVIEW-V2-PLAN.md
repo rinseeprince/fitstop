@@ -11,9 +11,11 @@
 > card, its four expansion panels and the two server fields feeding them — is gone, and the two
 > cards it replaced are back. Do not rebuild it from §2/§5 below.
 >
-> **Next: §11, commits 8–10** (check-in scheduling). Approved, deliberately deferred, and
-> untouched by all of this — nothing above reads `expected_check_in_day` or anything in
-> `lib/check-in-schedule.ts`.
+> **§11 (commits 8–10) SHIPPED 2026-08-28** — `c7afd18`, `7a8d48b`, and the swap/drop commit.
+> `clients.expected_check_in_day` is GONE (migrations 154 + 155); the schedule is one stored date,
+> `clients.next_check_in_due`, and the reporting week is a calculation from it. **§11.8 records
+> what shipped and where it departed from §11.1–§11.7 — read it before trusting the sections
+> above it.** All of §11 is **unsmoked**; the checklist is in §11.9.
 >
 > **Gates — all four, before every commit:**
 > ```
@@ -792,6 +794,11 @@ labels their scope. The only new derivations are the rolling average and its win
 Approved 2026-08-27, after the commit-3 smoke surfaced it. **Commits 8–10**, to run after the
 Overview is finished so the rebuild is not standing on shifting week boundaries.
 
+> **SHIPPED 2026-08-28.** §11.1–§11.7 are the plan as approved and are kept as the record of why
+> each decision went the way it did. Two of their factual claims turned out to be wrong about the
+> code, and three decisions were taken during execution that they do not cover. **§11.8 is
+> authoritative wherever it and the sections below disagree.**
+
 ### 11.1 What went wrong, and what it revealed
 
 Setting a client's check-in day to Sunday on a Thursday produced **"Sun, 23 Aug · 4 days
@@ -1020,6 +1027,135 @@ independently valuable: it fixes §11.5 whether or not the rest ever ships.
   of events), whereas a check-in schedule is *unbounded recurrence*, so events would need a rolling
   materialiser for no gain over a stored date. Events earn their keep the day a single occurrence
   needs to be skipped or moved independently.
+
+---
+
+### 11.8 What shipped — commits 8–10, 2026-08-28
+
+Three commits, four gates green at each, dev at migration 155. **None of it is smoked** (§11.9).
+
+| # | Commit | Landed |
+|---|---|---|
+| 8 | `refactor(check-ins): one owner for the week anchor` | `c7afd18` |
+| 9 | `feat(db): store the check-in due date` | `7a8d48b` |
+| 10 | `feat(check-ins): the date picker, and delete the derivation` | the swap + migration 155 |
+
+**Two things §11.1–§11.7 got wrong about the code.**
+
+1. **§11.3's "two services already fall back to Monday" was false.**
+   `check-in-context-service.ts` and `client-portal-service.ts` passed `getTrainingWeekStart` no
+   check-in day *at all*, so they ran Mon–Sun for **every** client, not just unscheduled ones. A
+   Wednesday-check-in client's own nutrition page therefore described a different seven days from
+   the week their coach saw for them, and the check-in form's "current week" targets covered a
+   different window from the period that check-in was about to report on. **Owner decision: route
+   them through the anchor like the other ten**, so the client's week follows their check-in day.
+   That makes commit 8 a behaviour change on the client app, not the no-op §11.6 describes.
+
+2. **§11.4's twelve-caller table misattributes one row.** `utils/build-daily-targets.ts` never
+   calls `getTrainingWeekStart` — it receives `weekStart` from `client-portal-service`. The
+   twelfth real caller is `services/habits-weekly-service.ts` (`getTrainingWeekDays`). Count
+   unchanged; the row is wrong.
+
+**Three decisions §11 does not cover.**
+
+3. **Clients with a frequency but no check-in day backfill to NULL, not to a date.**
+   `calculateNextExpectedCheckIn` gave them a rolling date off their last check-in, landing on
+   whatever weekday the arithmetic reached — on dev, a Thursday, a Friday and a Wednesday. Storing
+   that would have made `checkInWeekday` read *that* weekday and undo the Mon–Sun default commit 8
+   had just established for exactly those clients. NULL is what "no schedule" means in §11.3's
+   model, and it is what the picker writes when the coach leaves the date empty. **Consequence:
+   those clients leave the coach's Overdue view and read "Not scheduled".** The client app never
+   gated them anyway.
+
+4. **The activation dialog's "First check-in day" became a date box**, prefilled a week after the
+   start date picked in the same dialog and re-prefilled whenever that start date moves. §11.6
+   named only "the picker", meaning the details sheet, but this dialog wrote the dropped column and
+   had to change either way. Owner decision; empty still activates a client with no schedule.
+
+5. **`CheckInTiming.expectedCheckInDay` was deleted, not swapped.** It existed only to carry the
+   dropped column and had no consumer — the details sheet and the identity row read `nextDueDate`,
+   `daysUntilDue` and `isOverdue` only.
+
+**Two things that came free with the swap.**
+
+- **Fortnightly clients finally have a fortnightly schedule.** `calculateCheckInPeriod` ignores
+  frequency entirely and always returns a 7-day period, so every `biweekly` client with a check-in
+  day was silently treated as weekly. The stored date advances by `getFrequencyInDays`, so it now
+  advances by 14.
+- **`/api/client/notifications` stops telling a client they are overdue after they check in.** It
+  passed a bare `Client` with no `lastCheckInPeriodEnd`, so the old derivation always took the
+  "not checked in for this period" branch. Reading the stored date removes the branch.
+
+**Where the shape differs from §11.6's description.**
+
+- **The six `select("expected_check_in_day")` reads became one *function*, not one query site.**
+  `getClientWeekAnchor` (`services/check-in-week-service.ts`) owns the read; it returns
+  `{ weekday, startDate }` because the two history summaries needed the start date from the same
+  row and splitting them would have cost each a second round trip.
+- **`checkInWeekday` lives in its own module** (`lib/check-in-week.ts`), not inside
+  `lib/check-in-schedule.ts`. The schedule module is System A; the anchor is System C, has twelve
+  callers to the schedule's eight, and would have been caught in commit 10's rewrite of the other
+  file for no reason.
+- **Two extra queries, three fewer sequential round trips.** `client-portal-service`,
+  `training-week-summary-service` and the nutrition summary route had sequential awaits that the
+  anchor fetch was folded into, so the added reads cost no latency.
+- **`getCheckInStatus` kept its maths**, per §11.7 — only its source moved to `checkInWeekday`, and
+  the "no schedule" test moved to the call site (`nextCheckInDue == null`) because `checkInWeekday`
+  deliberately never returns null. **Still deferred:** having it read the stored due date directly
+  instead of re-deriving a period from the weekday. It wants its own smoke.
+
+**The guard against a thirteenth caller.** `lib/check-in-week.test.ts` scans `app/`, `components/`,
+`hooks/`, `lib/`, `services/` and `utils/` and fails if any file calls `getTrainingWeek*` without
+resolving its day through `checkInWeekday`, or spells a `?? "<weekday>"` default of its own. Five
+files are exempt with a stated reason each. It was mutation-tested by reinstating the `?? "monday"`
+bug: both clauses failed and named the file.
+
+**Verification of the backfill** (§11.7's requirement). Not a re-implementation to compare against
+— the real production path (`getClientsForCoach` → `calculateNextExpectedCheckIn`) run under
+`TZ=UTC`, which is what the server runs: **221 clients checked, 212 scheduled clients matching the
+live TypeScript exactly, 0 unexpected mismatches**, the 9 deliberate NULLs above being the only
+divergence. And in SQL, the property commit 10 stands on: **0 of 212 stored dates fall on a weekday
+other than the client's old `expected_check_in_day`** — so deriving the week anchor from the new
+column is provably a no-op for the reporting week and the check-in period.
+
+**The drop was probed against both databases**, since a row count is a per-database fact:
+dev 221 clients / 212 backfilled, prod 0 clients / 0 check-ins, and on both 0 indexes, 0 views and
+exactly one non-automatic dependency — migration 008's CHECK constraint, which `DROP COLUMN`
+removes with it. **Prod is still at 153: migrations 154 and 155 have NOT been pushed there.**
+
+---
+
+### 11.9 Smoke checklist — owed
+
+Nothing below has been run. The UI is unverified.
+
+**The picker (details sheet → Check-ins).**
+1. The card is now **two** fields, Frequency and Next check-in — the "Check-in day" dropdown is
+   gone and "Next check-in" is editable rather than read-only.
+2. Set a date, save, reopen: it persists, and the identity row's "Next check-in" and its
+   due/overdue chip agree with it.
+3. Clear the date and save: the client reads "Not scheduled · Set a schedule", and leaves the
+   roster's Overdue view.
+4. A past date is refused by the route with "The next check-in cannot be in the past"; the input's
+   own `min` should stop you reaching it by accident.
+
+**Activation.** 5. Activate a pending client: "First check-in" is a date box prefilled a week after
+the start date, and changing the start date moves it. Clearing it activates them unscheduled.
+
+**The week anchor (the part that changed for clients).**
+6. A client whose check-in day is NOT Sunday: their nutrition page in the client app
+   (Program → Nutrition) should now describe the week running from their check-in day, not Mon–Sun.
+   Visible where you have edited a specific day's targets.
+7. The coach's Overview "Logged this week" and the client's own week should now agree for that
+   same client.
+8. A client with **no** schedule: every surface should read Mon–Sun.
+
+**The schedule advancing.** 9. Submit a check-in as a client: their due date should move forward by
+one frequency step, and the coach's Overview should stop showing them as due.
+
+**Nothing should have changed** on the roster's Overdue view, the sidebar badge, the check-in gate
+in the client app, or the habits/wellness/nutrition weekly summaries for any client who has a
+check-in day.
 
 ---
 

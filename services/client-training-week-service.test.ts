@@ -68,7 +68,7 @@ describe("getClientTrainingWeek", () => {
     mockFrom.mockImplementation((table: string) => {
       if (table === "training_events") return eventsQuery as any;
       // Check-in day Tuesday → the training week starts Wednesday.
-      return createMockQuery({ data: { expected_check_in_day: "tuesday" }, error: null }) as any;
+      return createMockQuery({ data: { next_check_in_due: "2026-06-09" }, error: null }) as any;
     });
 
     const week = await getClientTrainingWeek("client-1", "2026-08-27");
@@ -113,7 +113,7 @@ describe("getClientTrainingWeek", () => {
     const eventsQuery = createMockQuery({ data: [], error: null });
     mockFrom.mockImplementation((table: string) => {
       if (table === "training_events") return eventsQuery as any;
-      return createMockQuery({ data: { expected_check_in_day: null }, error: null }) as any;
+      return createMockQuery({ data: { next_check_in_due: null }, error: null }) as any;
     });
 
     const week = await getClientTrainingWeek("client-1", TODAY);
@@ -128,7 +128,7 @@ describe("getClientTrainingWeek", () => {
       if (table === "training_events") {
         return createMockQuery({ data: null, error: { message: "boom" } }) as any;
       }
-      return createMockQuery({ data: { expected_check_in_day: null }, error: null }) as any;
+      return createMockQuery({ data: { next_check_in_due: null }, error: null }) as any;
     });
 
     await expect(getClientTrainingWeek("client-1", TODAY)).rejects.toThrow(

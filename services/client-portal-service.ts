@@ -51,7 +51,7 @@ const CLIENT_SELF_COLUMNS =
   "id, coach_id, name, email, avatar_url, active, created_at, updated_at, " +
   "height, gender, date_of_birth, goal_weight, goal_body_fat_percentage, " +
   "current_weight, current_body_fat_percentage, bmr, tdee, " +
-  "check_in_frequency, check_in_frequency_days, expected_check_in_day, " +
+  "check_in_frequency, check_in_frequency_days, next_check_in_due, " +
   "last_reminder_sent_at, reminder_preferences, total_check_ins_expected, " +
   "total_check_ins_completed, check_in_adherence_rate, current_streak, longest_streak, " +
   "unit_preference, include_activity_burn, surplus_as_carbs, starting_weight, " +

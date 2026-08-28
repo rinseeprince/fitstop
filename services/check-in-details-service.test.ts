@@ -150,7 +150,7 @@ describe("deriveSessionCompletionsForCheckIn", () => {
   });
 
   it("legacy pre-038 rows (null stored period) fall back to the check-in's OWN createdAt date, never today", async () => {
-    getClientByIdMock.mockResolvedValue({ expectedCheckInDay: "sunday" });
+    getClientByIdMock.mockResolvedValue({ nextCheckInDue: "2026-06-14" }); // a Sunday
     calculateCheckInPeriodMock.mockReturnValue({
       periodStart: "2025-01-05",
       periodEnd: "2025-01-11",

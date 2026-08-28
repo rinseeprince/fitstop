@@ -93,8 +93,8 @@ describe('GET /api/client/check-in-context', () => {
   });
 
   it('available → 200 with the full context shape and the parallel fan-out run', async () => {
-    // No expectedCheckInDay → gating is skipped (status stays "available").
-    vi.mocked(getClientById).mockResolvedValue({ ...baseClient, expectedCheckInDay: undefined } as any);
+    // No nextCheckInDue → no schedule → gating is skipped (stays "available").
+    vi.mocked(getClientById).mockResolvedValue({ ...baseClient, nextCheckInDue: undefined } as any);
     mockServerSupabase(null); // first check-in
 
     const res = await GET(req());
@@ -134,7 +134,7 @@ describe('GET /api/client/check-in-context', () => {
   });
 
   it('not_due → 403 and ZERO context/daily-log queries (no plan promotion)', async () => {
-    vi.mocked(getClientById).mockResolvedValue({ ...baseClient, expectedCheckInDay: 'monday' } as any);
+    vi.mocked(getClientById).mockResolvedValue({ ...baseClient, nextCheckInDue: '2026-06-08' } as any); // a Monday
     mockServerSupabase({ period_end: '2024-01-10', created_at: '2024-01-10T00:00:00Z' });
     vi.mocked(getCheckInStatus).mockReturnValue({ status: 'not_due', nextDueDate: '2024-01-17' } as any);
 
@@ -153,7 +153,7 @@ describe('GET /api/client/check-in-context', () => {
   });
 
   it('completed → 403 and no fan-out', async () => {
-    vi.mocked(getClientById).mockResolvedValue({ ...baseClient, expectedCheckInDay: 'monday' } as any);
+    vi.mocked(getClientById).mockResolvedValue({ ...baseClient, nextCheckInDue: '2026-06-08' } as any); // a Monday
     mockServerSupabase({ period_end: '2024-01-10', created_at: '2024-01-10T00:00:00Z' });
     vi.mocked(getCheckInStatus).mockReturnValue({ status: 'completed', nextDueDate: '2024-01-17' } as any);
 
@@ -185,7 +185,7 @@ describe('GET /api/client/check-in-context', () => {
       vi.setSystemTime(new Date('2026-06-09T23:30:00Z'));
       vi.mocked(getClientById).mockResolvedValue({
         ...baseClient,
-        expectedCheckInDay: 'wednesday',
+        nextCheckInDue: '2026-06-10', // a Wednesday
         timezone: 'Europe/London',
       } as any);
       mockServerSupabase(null);

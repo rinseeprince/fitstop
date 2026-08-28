@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { getClientById } from "@/services/client-service";
 import {
-  calculateNextExpectedCheckIn,
+  resolveCheckInDue,
   getDaysUntilOrPastDue,
   isClientOverdue
 } from "@/services/check-in-tracking-service";
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     if (checkInFrequency !== "none") {
       const isOverdue = isClientOverdue(client);
       const daysUntilOrPast = getDaysUntilOrPastDue(client);
-      const nextExpected = calculateNextExpectedCheckIn(client);
+      const nextExpected = resolveCheckInDue(client);
 
       if (isOverdue) {
         // Overdue check-in notification
@@ -141,7 +141,7 @@ export async function GET(request: NextRequest) {
         checkInStatus: {
           isOverdue: isClientOverdue(client),
           daysUntilOrPast: getDaysUntilOrPastDue(client),
-          nextExpected: calculateNextExpectedCheckIn(client)?.toISOString(),
+          nextExpected: resolveCheckInDue(client)?.toISOString(),
           frequency: checkInFrequency,
         }
       },

@@ -5,7 +5,7 @@ const upsertLastViewedMock = vi.fn();
 const evaluateSingleClientAlertsMock = vi.fn();
 const getActivitySinceMock = vi.fn();
 const getClientByIdMock = vi.fn();
-const calculateNextExpectedCheckInMock = vi.fn();
+const resolveCheckInDueMock = vi.fn();
 const getDaysUntilOrPastDueMock = vi.fn();
 const isClientOverdueMock = vi.fn();
 const listBlocksMock = vi.fn();
@@ -25,7 +25,7 @@ vi.mock("./client-service", () => ({
   getClientById: (...a: unknown[]) => getClientByIdMock(...a),
 }));
 vi.mock("./check-in-tracking-service", () => ({
-  calculateNextExpectedCheckIn: (...a: unknown[]) => calculateNextExpectedCheckInMock(...a),
+  resolveCheckInDue: (...a: unknown[]) => resolveCheckInDueMock(...a),
   getDaysUntilOrPastDue: (...a: unknown[]) => getDaysUntilOrPastDueMock(...a),
   isClientOverdue: (...a: unknown[]) => isClientOverdueMock(...a),
 }));
@@ -64,7 +64,7 @@ const CLIENT = {
   id: "client-1",
   weightUnit: "kg",
   checkInFrequency: "weekly",
-  expectedCheckInDay: "friday",
+  nextCheckInDue: "2026-06-05",
   timezone: "UTC",
 };
 
@@ -73,7 +73,7 @@ beforeEach(() => {
   evaluateSingleClientAlertsMock.mockResolvedValue([]);
   getActivitySinceMock.mockResolvedValue([]);
   getClientByIdMock.mockResolvedValue(CLIENT);
-  calculateNextExpectedCheckInMock.mockReturnValue(new Date("2026-06-05T00:00:00"));
+  resolveCheckInDueMock.mockReturnValue(new Date("2026-06-05T00:00:00"));
   getDaysUntilOrPastDueMock.mockReturnValue(-2);
   isClientOverdueMock.mockReturnValue(false);
   listBlocksMock.mockResolvedValue([]);
@@ -141,23 +141,22 @@ describe("getOverviewBrief", () => {
     expect(brief.waitingOnYou.attentionAlerts[0].message).toBe("No logs in 5 days");
   });
 
-  it("builds checkInTiming through the tracking service with the last check-in attached", async () => {
+  it("builds checkInTiming from the stored due date, with lastSubmittedAt from the check-in read", async () => {
     getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
 
     const brief = await getOverviewBrief("coach-1", "client-1");
 
     expect(brief.checkInTiming).toEqual({
       frequency: "weekly",
-      expectedCheckInDay: "friday",
       lastSubmittedAt: "2026-06-03T10:00:00Z",
       nextDueDate: "2026-06-05",
       daysUntilDue: -2,
       isOverdue: false,
     });
-    // The tracking service must see the latest check-in's period_end so its
-    // "already checked in this period" branch can fire.
-    expect(calculateNextExpectedCheckInMock).toHaveBeenCalledWith(
-      expect.objectContaining({ lastCheckInPeriodEnd: "2026-06-05" })
+    // The due date is READ, not reconstructed from the last check-in — so the
+    // resolver is handed the client itself, with nothing bolted on.
+    expect(resolveCheckInDueMock).toHaveBeenCalledWith(
+      expect.objectContaining({ nextCheckInDue: "2026-06-05" })
     );
   });
 
@@ -168,7 +167,7 @@ describe("getOverviewBrief", () => {
     const brief = await getOverviewBrief("coach-1", "client-1");
 
     expect(brief.checkInTiming).toBeNull();
-    expect(calculateNextExpectedCheckInMock).not.toHaveBeenCalled();
+    expect(resolveCheckInDueMock).not.toHaveBeenCalled();
   });
 
   it("surfaces the block-ending row when the current block is in its final 7 days", async () => {

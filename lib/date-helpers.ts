@@ -318,16 +318,20 @@ export function parseISODate(dateString: string): Date {
 }
 
 /**
- * Calculate the fixed 7-day check-in period based on the client's expected check-in day.
+ * Calculate the fixed 7-day check-in period based on the client's check-in day.
  *
- * The period ends on the most recent occurrence of `expectedCheckInDay` on or before `checkInDate`,
+ * The period ends on the most recent occurrence of `checkInDay` on or before `checkInDate`,
  * and starts 6 days before that (7-day inclusive window).
+ *
+ * `checkInDay` comes from `checkInWeekday` (lib/check-in-week.ts) — the weekday
+ * of the client's stored due date. This function keeps its own job and its own
+ * maths; only its source moved.
  */
 export function calculateCheckInPeriod(
   checkInDate: Date,
-  expectedCheckInDay: DayOfWeek
+  checkInDay: DayOfWeek
 ): { periodStart: string; periodEnd: string } {
-  const targetDayNum = DAY_NUM[expectedCheckInDay];
+  const targetDayNum = DAY_NUM[checkInDay];
   const currentDayNum = checkInDate.getDay();
 
   let daysBack = currentDayNum - targetDayNum;
@@ -388,12 +392,12 @@ export type CheckInGateStatus = "available" | "completed" | "not_due" | "overdue
  * - 'overdue'    — past the due day, grace window still open, no check-in yet
  */
 export function getCheckInStatus(
-  expectedCheckInDay: DayOfWeek,
+  checkInDay: DayOfWeek,
   lastCheckInPeriodEnd: string | null,
   today: Date,
   startDate?: string | null
 ): { status: CheckInGateStatus; periodStart: string; periodEnd: string; nextDueDate: string } {
-  const { periodStart, periodEnd } = calculateCheckInPeriod(today, expectedCheckInDay);
+  const { periodStart, periodEnd } = calculateCheckInPeriod(today, checkInDay);
 
   if (lastCheckInPeriodEnd && lastCheckInPeriodEnd === periodEnd) {
     return { status: "completed", periodStart, periodEnd, nextDueDate: getNextPeriodEnd(periodEnd) };

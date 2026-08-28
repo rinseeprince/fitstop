@@ -5,7 +5,7 @@ vi.mock('@/services/supabase-admin', () => ({ supabaseAdmin: {} }))
 vi.mock('@/services/client-service', () => ({ getClientsForCoach: vi.fn(), getClientById: vi.fn() }))
 
 import {
-  calculateNextExpectedCheckIn,
+  resolveCheckInDue,
   isClientOverdue,
   getDaysUntilOrPastDue,
 } from '@/services/check-in-tracking-service'
@@ -25,7 +25,7 @@ function makeClient(overrides: Partial<ClientWithCheckInInfo> = {}): ClientWithC
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     checkInFrequency: 'weekly',
-    expectedCheckInDay: 'sunday',
+    nextCheckInDue: '2026-03-15', // a Sunday
     ...overrides,
   }
 }
@@ -35,7 +35,7 @@ function toISO(date: Date | null): string | null {
   return date.toISOString().split('T')[0]
 }
 
-describe('calculateNextExpectedCheckIn', () => {
+describe('resolveCheckInDue', () => {
   beforeEach(() => {
     // Fix "today" to Tuesday Mar 17, 2026
     vi.useFakeTimers()
@@ -46,59 +46,72 @@ describe('calculateNextExpectedCheckIn', () => {
     vi.useRealTimers()
   })
 
-  it('returns current period end when client has missed multiple periods', () => {
-    // Last check-in covered Feb 23–Mar 1 (period_end = Mar 1)
-    // Missed: Mar 2–8, Mar 9–15
-    // Current period: Mar 9–15 (most recent Sunday on or before Mar 17 = Mar 15)
-    const client = makeClient({
-      lastCheckInDate: '2026-02-27T00:00:00Z',
-      lastCheckInPeriodEnd: '2026-03-01',
-    })
-
-    const result = calculateNextExpectedCheckIn(client)
-    expect(toISO(result)).toBe('2026-03-15')
+  it('reads the stored date, in the past and all', () => {
+    // A past due date is not a bug: it IS how overdue is defined, and it drives
+    // the roster's Overdue view, the sidebar badge and the reminder sweep.
+    expect(toISO(resolveCheckInDue(makeClient()))).toBe('2026-03-15')
   })
 
-  it('returns next period end when client already checked in for current period', () => {
-    // Last check-in covered Mar 9–15 (period_end = Mar 15)
-    // Current period is Mar 9–15, already done → next expected is Mar 22
-    const client = makeClient({
-      lastCheckInDate: '2026-03-15T00:00:00Z',
-      lastCheckInPeriodEnd: '2026-03-15',
-    })
-
-    const result = calculateNextExpectedCheckIn(client)
-    expect(toISO(result)).toBe('2026-03-22')
+  it('reads a future date unchanged', () => {
+    const client = makeClient({ nextCheckInDue: '2026-03-22' })
+    expect(toISO(resolveCheckInDue(client))).toBe('2026-03-22')
   })
 
-  it('returns current period end when client has never checked in', () => {
-    // New client, no check-ins. Current period: Mar 9–15
-    const client = makeClient({
-      lastCheckInDate: undefined,
-      lastCheckInPeriodEnd: undefined,
-    })
+  it('holds a due date inside the grace window rather than rolling it', () => {
+    // Mar 10 is 7 days back — still satisfiable, so still the live one.
+    const client = makeClient({ nextCheckInDue: '2026-03-10' })
+    expect(toISO(resolveCheckInDue(client))).toBe('2026-03-10')
+  })
 
-    const result = calculateNextExpectedCheckIn(client)
-    expect(toISO(result)).toBe('2026-03-15')
+  it('rolls a LAPSED due date forward by whole frequency steps', () => {
+    // Mar 8 is 9 days back — past the 7-day grace, so it lapsed and the next
+    // one became live. Without this a client who stopped checking in a year ago
+    // would read as 365 days overdue instead of being measured against the
+    // check-in they can still do something about.
+    const client = makeClient({ nextCheckInDue: '2026-03-08' })
+    expect(toISO(resolveCheckInDue(client))).toBe('2026-03-15')
+  })
+
+  it('rolls by the FREQUENCY, so a fortnightly client advances a fortnight', () => {
+    // The old derivation ignored frequency entirely and handed every client a
+    // weekly period, so all fortnightly clients were silently treated as weekly.
+    const client = makeClient({
+      checkInFrequency: 'biweekly',
+      nextCheckInDue: '2026-02-15',
+    })
+    expect(toISO(resolveCheckInDue(client))).toBe('2026-03-15')
+  })
+
+  it('honours a custom interval', () => {
+    const client = makeClient({
+      checkInFrequency: 'custom',
+      checkInFrequencyDays: 10,
+      nextCheckInDue: '2026-02-25',
+    })
+    // Feb 25 + 10 = Mar 7, + 10 = Mar 17 — the first that is not lapsed.
+    expect(toISO(resolveCheckInDue(client))).toBe('2026-03-17')
   })
 
   it('returns null when frequency is none', () => {
-    const client = makeClient({ checkInFrequency: 'none' })
-    expect(calculateNextExpectedCheckIn(client)).toBeNull()
+    expect(resolveCheckInDue(makeClient({ checkInFrequency: 'none' }))).toBeNull()
   })
 
-  it('handles fallback loop for clients without expectedCheckInDay', () => {
-    // No specific day, just every 7 days from last check-in
-    // Last check-in: Feb 27. Feb 27 + 7 = Mar 6, + 7 = Mar 13, + 7 = Mar 20
-    // Mar 20 >= Mar 17 (today), so next expected = Mar 20
-    const client = makeClient({
-      expectedCheckInDay: undefined,
-      lastCheckInDate: '2026-02-27T00:00:00Z',
-      lastCheckInPeriodEnd: undefined,
-    })
+  it('returns null when the client has no schedule', () => {
+    // A NULL due date replaces the old frequency='none' special case, and it is
+    // what the picker writes when the coach leaves the date empty.
+    expect(resolveCheckInDue(makeClient({ nextCheckInDue: undefined }))).toBeNull()
+    expect(isClientOverdue(makeClient({ nextCheckInDue: undefined }))).toBe(false)
+    expect(getDaysUntilOrPastDue(makeClient({ nextCheckInDue: undefined }))).toBe(0)
+  })
 
-    const result = calculateNextExpectedCheckIn(client)
-    expect(toISO(result)).toBe('2026-03-20')
+  it('does not consult the last check-in at all', () => {
+    // The whole point of storing the date: "when is the next one due" no longer
+    // has to be reconstructed from what the client last submitted.
+    const withHistory = makeClient({
+      lastCheckInDate: '2026-03-15T00:00:00Z',
+      lastCheckInPeriodEnd: '2026-03-15',
+    })
+    expect(toISO(resolveCheckInDue(withHistory))).toBe(toISO(resolveCheckInDue(makeClient())))
   })
 })
 
@@ -109,15 +122,13 @@ describe("overdue detection uses the CLIENT's local today (Session 7.84)", () =>
 
   it('a client whose due day arrived in THEIR zone is due today, not flagged a day early or late', () => {
     // 12:00 UTC Saturday Mar 14 is already 01:00 Sunday Mar 15 in Auckland
-    // (NZDT, UTC+13). Sunday is the check-in day: the client is DUE TODAY.
-    // Under server-UTC anchoring this read as Saturday -> the current period
-    // ended Mar 8 -> the client was flagged 6 days overdue.
+    // (NZDT, UTC+13). Sunday is the due date: the client is DUE TODAY.
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-14T12:00:00Z'))
 
     const client = makeClient({ timezone: 'Pacific/Auckland' })
 
-    expect(toISO(calculateNextExpectedCheckIn(client))).toBe('2026-03-15')
+    expect(toISO(resolveCheckInDue(client))).toBe('2026-03-15')
     expect(isClientOverdue(client)).toBe(false)
     expect(getDaysUntilOrPastDue(client)).toBe(0)
   })
@@ -143,5 +154,16 @@ describe("overdue detection uses the CLIENT's local today (Session 7.84)", () =>
 
     expect(isClientOverdue(client)).toBe(true)
     expect(getDaysUntilOrPastDue(client)).toBe(1)
+  })
+
+  it('caps at the grace window instead of counting a year of silence', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2027-03-16T12:00:00Z')) // a year on
+
+    // The lapse roll keeps the live due date inside [today - 7, today], so
+    // getOverdueSeverity still reads a meaningful "critically overdue" rather
+    // than an unbounded number nobody can act on.
+    expect(getDaysUntilOrPastDue(makeClient())).toBeLessThanOrEqual(7)
+    expect(isClientOverdue(makeClient())).toBe(true)
   })
 })

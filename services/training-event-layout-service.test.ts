@@ -71,13 +71,13 @@ function wire(opts: {
   events: EventRow[];
   occupants?: { id: string; date: string }[];
   logs?: { completed_at: string }[];
-  checkInDay?: string | null;
+  checkInDue?: string | null;
 }) {
   let eventsCalls = 0;
   const eventsQuery = createMockQuery<EventRow[]>({ data: opts.events, error: null });
   const occupantsQuery = createMockQuery({ data: opts.occupants ?? [], error: null });
   const clientQuery = createMockQuery({
-    data: { expected_check_in_day: opts.checkInDay ?? null },
+    data: { next_check_in_due: opts.checkInDue ?? null },
     error: null,
   });
   const logsQuery = createMockQuery({ data: opts.logs ?? [], error: null });

@@ -514,7 +514,7 @@ export const updateClientCheckInConfig = async (
   const updateData: Record<string, unknown> = {
     check_in_frequency: config.checkInFrequency,
     check_in_frequency_days: config.checkInFrequencyDays ?? null,
-    expected_check_in_day: config.expectedCheckInDay ?? null,
+    next_check_in_due: config.nextCheckInDue ?? null,
     reminder_preferences: config.reminderPreferences,
     updated_at: new Date().toISOString(),
   };

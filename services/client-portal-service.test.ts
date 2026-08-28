@@ -87,7 +87,7 @@ describe("getClientNutritionTargets", () => {
     // getClientWeekAnchor's own `clients` read, issued alongside the display-
     // prefs one inside the same Promise.all. No check-in day -> Mon-Sun.
     const anchorQuery = createMockQuery({
-      data: { expected_check_in_day: null, start_date: null },
+      data: { next_check_in_due: null, start_date: null },
       error: null,
     });
     const targetsQuery = createMockQuery({ data: [], error: null });
@@ -131,7 +131,7 @@ describe("getClientNutritionTargets", () => {
       error: null,
     });
     const anchorQuery = createMockQuery({
-      data: { expected_check_in_day: "wednesday", start_date: null },
+      data: { next_check_in_due: "2026-06-10", start_date: null }, // a Wednesday
       error: null,
     });
     const planQuery = createMockQuery({
@@ -209,7 +209,7 @@ describe("getClientNutritionTargets", () => {
       error: null,
     });
     const anchorQuery = createMockQuery({
-      data: { expected_check_in_day: null, start_date: null },
+      data: { next_check_in_due: null, start_date: null },
       error: null,
     });
     const targetsQuery = createMockQuery({ data: [], error: null });

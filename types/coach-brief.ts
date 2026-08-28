@@ -51,7 +51,6 @@ export type ActivityItem =
  */
 export type CheckInTiming = {
   frequency: string;
-  expectedCheckInDay: string | null;
   lastSubmittedAt: string | null;
   nextDueDate: string | null;
   daysUntilDue: number | null;

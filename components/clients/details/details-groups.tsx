@@ -12,19 +12,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SectionLabel } from "@/components/programs/shared/section-label";
-import { DAY_NAMES, getTodayDateString } from "@/lib/date-helpers";
+import { getTodayDateString } from "@/lib/date-helpers";
 import {
   FOCUS_RING,
   LABEL_CLASS,
   MONO,
   MONO_INPUT_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { formatDateOnlyWeekday, pluralize } from "@/components/clients/overview/overview-format";
+import { pluralize } from "@/components/clients/overview/overview-format";
 import { UNSET } from "@/components/clients/overview/use-client-profile-edit";
 import type { ClientProfileEdit } from "@/components/clients/overview/use-client-profile-edit";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
-import type { ActivityLevel, CheckInFrequency, Client, DayOfWeek } from "@/types/check-in";
+import type { ActivityLevel, CheckInFrequency, Client } from "@/types/check-in";
 import type { CheckInTiming } from "@/types/coach-brief";
 
 // The six railed groups inside the client details sheet. Split from the sheet
@@ -37,11 +37,6 @@ const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string }[] = [
   { value: "very_active", label: "Very active" },
   { value: "extremely_active", label: "Extremely active" },
 ];
-
-// Monday-first, off the shared weekday map so the names cannot drift.
-const DAY_OPTIONS: DayOfWeek[] = [1, 2, 3, 4, 5, 6, 0].map((n) => DAY_NAMES[n]);
-
-const sentenceCase = (v: string) => v.charAt(0).toUpperCase() + v.slice(1);
 
 /** A white card holding one group's fields. */
 function Card({ children }: { children: ReactNode }) {
@@ -182,9 +177,6 @@ export function DetailsGroups({
     { value: "none", label: "No schedule" },
   ];
 
-  const nextCheckIn = checkInTiming?.nextDueDate
-    ? formatDateOnlyWeekday(checkInTiming.nextDueDate)
-    : null;
   const dueNote =
     checkInTiming?.daysUntilDue == null
       ? undefined
@@ -368,7 +360,7 @@ export function DetailsGroups({
 
       <SectionLabel label="Check-ins" />
       <Card>
-        <Grid cols={3}>
+        <Grid cols={2}>
           <Field label="Frequency">
             <Select
               value={form.watch("checkInFrequency")}
@@ -386,33 +378,25 @@ export function DetailsGroups({
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Check-in day">
-            <Select
-              value={form.watch("expectedCheckInDay")}
-              onValueChange={(v) => form.setValue("expectedCheckInDay", v)}
-            >
-              <SelectTrigger aria-label="Check-in day" className="h-8 text-[12.5px] font-medium">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={UNSET}>Any day</SelectItem>
-                {DAY_OPTIONS.map((day) => (
-                  <SelectItem key={day} value={day}>
-                    {sentenceCase(day)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          {/* Read-only because it is derived, and NOT live-previewed because
-              the derivation needs the client's last check-in period — which
-              this record does not carry, so a browser-side preview would
-              disagree with the date the server computes. */}
+          {/* The date IS the schedule now (migration 154), so this field is
+              editable and there is no separate check-in day beside it: the
+              client's reporting week is derived from this date's weekday.
+              `min` is an affordance, not a control — the route revalidates
+              against the COACH's today, since they are the one setting it. */}
           <Field
             label="Next check-in"
-            hint={<span className={HINT_CLASS}>Recalculates when you save.</span>}
+            hint={
+              dueNote ? <span className={HINT_CLASS}>{dueNote}</span> : undefined
+            }
           >
-            <ReadOnly value={nextCheckIn ?? "Not scheduled"} note={dueNote} />
+            <Input
+              aria-label="Next check-in"
+              type="date"
+              min={todayString}
+              value={form.watch("nextCheckInDue")}
+              onChange={(e) => form.setValue("nextCheckInDue", e.target.value)}
+              className={cn(MONO_INPUT_CLASS, FOCUS_RING, "h-8 text-[12.5px]")}
+            />
           </Field>
         </Grid>
       </Card>

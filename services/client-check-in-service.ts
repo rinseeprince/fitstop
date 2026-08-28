@@ -22,6 +22,7 @@ import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
 import type { CheckInFormData, Client } from "@/types/check-in";
 import type { PeriodSnapshot } from "@/types/schedule";
 import { getCoachUnitPreference } from "@/lib/viewer-preferences";
+import { checkInWeekday } from "@/lib/check-in-week";
 
 /**
  * Triggers AI summary generation for a completed check-in
@@ -49,7 +50,8 @@ export async function triggerAISummaryGeneration(
     const { checkIns } = await getClientCheckIns(clientId, { limit: 5 });
     const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
 
-    // Calculate date range using fixed 7-day period based on expectedCheckInDay
+    // Calculate date range using the fixed 7-day period ending on the weekday
+    // of the client's check-in due date
     const client = await getClientById(clientId);
     let startDate: Date;
     let endDate: Date;
@@ -58,10 +60,10 @@ export async function triggerAISummaryGeneration(
       // Use stored period from check-in record
       startDate = new Date(currentCheckIn.periodStart + "T00:00:00");
       endDate = new Date(currentCheckIn.periodEnd + "T00:00:00");
-    } else if (client?.expectedCheckInDay) {
+    } else if (client?.nextCheckInDue) {
       const { periodStart, periodEnd } = calculateCheckInPeriod(
         new Date(currentCheckIn.createdAt),
-        client.expectedCheckInDay
+        checkInWeekday(client)
       );
       startDate = new Date(periodStart + "T00:00:00");
       endDate = new Date(periodEnd + "T00:00:00");

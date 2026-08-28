@@ -12,7 +12,7 @@ import {
   MONO_META_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens"
 import { isOnboarding, type RosterRow as RosterRowData } from "@/lib/roster-views"
-import { calculateNextExpectedCheckIn } from "@/lib/check-in-schedule"
+import { resolveCheckInDue } from "@/lib/check-in-schedule"
 import {
   CHIP_BASE_CLASS,
   ROSTER_STATUS_CHIP,
@@ -103,7 +103,7 @@ export function RosterTableRow({
   const lastCheckIn = formatLastCheckIn(client.lastCheckInDate)
   // The same pure function /api/clients/overdue runs server-side, so the "due"
   // date here and the "Nd late" it sends back can never disagree.
-  const dueOn = onboarding ? null : calculateNextExpectedCheckIn(client)
+  const dueOn = onboarding ? null : resolveCheckInDue(client)
 
   return (
     <TableRow

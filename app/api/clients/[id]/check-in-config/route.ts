@@ -4,6 +4,7 @@ import { updateCheckInConfigSchema } from "@/lib/validations/client";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { getCoachTodayString } from "@/services/today-service";
 import type { UpdateCheckInConfigResponse } from "@/types/check-in";
 
 /**
@@ -53,6 +54,18 @@ export async function PATCH(
       console.error("Validation error:", validationResult.error.errors);
       return NextResponse.json(
         { error: "Invalid input" },
+        { status: 400 }
+      );
+    }
+
+    // The due date is a date on the COACH's calendar — they are the one
+    // setting it — so the past-date bound is checked here against their today,
+    // and the schema stays format-only. Same split as the goal deadline; the
+    // input's `min` is an affordance, not the control.
+    const nextDue = validationResult.data.nextCheckInDue;
+    if (nextDue && nextDue < (await getCoachTodayString(coachId))) {
+      return NextResponse.json(
+        { error: "The next check-in cannot be in the past" },
         { status: 400 }
       );
     }

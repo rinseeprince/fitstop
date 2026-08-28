@@ -318,7 +318,7 @@ export type CheckIn = {
   coachReviewedAt?: string;
   responseSentAt?: string;
 
-  // Check-in period (fixed 7-day window based on expectedCheckInDay)
+  // Check-in period (fixed 7-day window ending on the client's check-in weekday)
   periodStart?: string;
   periodEnd?: string;
 
@@ -455,7 +455,13 @@ export type Client = {
   // Check-in tracking fields
   checkInFrequency?: CheckInFrequency;
   checkInFrequencyDays?: number;
-  expectedCheckInDay?: DayOfWeek;
+  /**
+   * `clients.next_check_in_due` (YYYY-MM-DD). The ONE stored fact behind the
+   * schedule: overdue is this date in the past, and the reporting week is the
+   * seven days ending on the most recent occurrence of its weekday
+   * (`checkInWeekday`). Undefined means no schedule.
+   */
+  nextCheckInDue?: string;
   lastReminderSentAt?: string;
   reminderPreferences?: ReminderPreferences;
 

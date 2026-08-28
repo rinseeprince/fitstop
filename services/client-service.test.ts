@@ -86,7 +86,7 @@ function createMockClientRow(overrides: Record<string, unknown> = {}) {
     tdee: 2400,
     check_in_frequency: 'weekly',
     check_in_frequency_days: 7,
-    expected_check_in_day: 'monday',
+    next_check_in_due: '2026-06-08',
     last_reminder_sent_at: null,
     reminder_preferences: null,
     total_check_ins_expected: 10,
@@ -858,7 +858,7 @@ describe('Client Service', () => {
       const mockClientRow = createMockClientRow({
         check_in_frequency: 'biweekly',
         check_in_frequency_days: 14,
-        expected_check_in_day: 'friday',
+        next_check_in_due: '2026-06-12',
       })
       const mockQuery = createMockQuery({
         data: mockClientRow,
@@ -870,7 +870,7 @@ describe('Client Service', () => {
       const result = await updateClientCheckInConfig('client-123', {
         checkInFrequency: 'biweekly',
         checkInFrequencyDays: 14,
-        expectedCheckInDay: 'friday',
+        nextCheckInDue: '2026-06-12',
         reminderPreferences: { enabled: true, autoSend: false, sendBeforeHours: 24 },
       } as any)
 
@@ -879,7 +879,7 @@ describe('Client Service', () => {
       const updateCall = mockQuery.update.mock.calls[0][0]
       expect(updateCall.check_in_frequency).toBe('biweekly')
       expect(updateCall.check_in_frequency_days).toBe(14)
-      expect(updateCall.expected_check_in_day).toBe('friday')
+      expect(updateCall.next_check_in_due).toBe('2026-06-12')
       expect(updateCall.reminder_preferences).toEqual({ enabled: true, autoSend: false, sendBeforeHours: 24 })
     })
 

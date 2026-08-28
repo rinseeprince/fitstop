@@ -12,7 +12,6 @@ import { recordClientStart } from "@/services/client-start-service";
 import { getClientTodayString } from "@/services/today-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import type { OnboardingStatus } from "@/types/client-intake";
-import type { DayOfWeek } from "@/types/check-in";
 
 export async function POST(
   request: NextRequest,
@@ -53,15 +52,15 @@ export async function POST(
     const updateData: {
       onboarding_status: OnboardingStatus;
       updated_at: string;
-      expected_check_in_day?: DayOfWeek;
+      next_check_in_due?: string;
       welcome_message?: string;
     } = {
       onboarding_status: "active",
       updated_at: new Date().toISOString(),
     };
 
-    if (validation.data.firstCheckInDay) {
-      updateData.expected_check_in_day = validation.data.firstCheckInDay;
+    if (validation.data.firstCheckInDue) {
+      updateData.next_check_in_due = validation.data.firstCheckInDue;
     }
 
     if (validation.data.welcomeMessage) {

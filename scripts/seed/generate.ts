@@ -211,6 +211,14 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       "very_active",
     ] as const);
     const checkInDay = idRng.pick(["monday", "sunday", "friday", "wednesday"] as const);
+    // The schedule is the stored DATE (migration 154); checkInDay survives only
+    // as the rhythm the generated check-ins below follow. The seeded due date is
+    // the next occurrence of that weekday on or after the anchor, which is what
+    // a client who has been checking in up to today would hold.
+    let nextCheckInDue = anchorDate;
+    while (dayOfWeekName(nextCheckInDue) !== checkInDay) {
+      nextCheckInDue = addDays(nextCheckInDue, 1);
+    }
     const isPersona = ctx.personaClientIndices.has(clientIdx);
 
     // Weight drifts toward goal over the tenure; the latest value becomes the
@@ -255,7 +263,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       start_date: startIso,
       timezone: idRng.weighted([["UTC", 7], ...TIMEZONES.slice(1).map((t) => [t, 1] as const)] as const),
       check_in_frequency: idRng.weighted([["weekly", 8], ["biweekly", 2]] as const),
-      expected_check_in_day: checkInDay,
+      next_check_in_due: nextCheckInDue,
       unit_preference: idRng.weighted([["metric", 7], ["imperial", 3]] as const),
       height: heightCm,
       gender,

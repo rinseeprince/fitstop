@@ -11,6 +11,12 @@ import type { ActivityLevel } from "@/types/check-in";
 // stat band, which used to restate the boundary as its own literal.
 export const CRITICALLY_OVERDUE_DAYS = 4;
 
+// How long a due check-in stays satisfiable before it lapses and the next one
+// becomes live. Until the due date was stored this window existed only as a
+// side effect — the derived period snapped forward and the missed week was
+// silently never filled. Read by resolveCheckInDue (lib/check-in-schedule.ts).
+export const CHECK_IN_GRACE_DAYS = 7;
+
 // Custom macros validation
 export const CUSTOM_MACRO_CALORIE_TOLERANCE = 50; // Max allowed difference between stated calories and macro totals
 

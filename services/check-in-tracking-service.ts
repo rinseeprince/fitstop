@@ -10,7 +10,7 @@
 import { getClientsForCoach } from "./client-service";
 
 import {
-  calculateNextExpectedCheckIn,
+  resolveCheckInDue,
   getDaysUntilOrPastDue,
   getOverdueSeverity,
 } from "@/lib/check-in-schedule";
@@ -20,7 +20,7 @@ import {
 // existing caller already uses.
 export {
   getFrequencyInDays,
-  calculateNextExpectedCheckIn,
+  resolveCheckInDue,
   isClientOverdue,
   getDaysUntilOrPastDue,
   getOverdueSeverity,
@@ -40,7 +40,7 @@ export async function getOverdueClients(coachId: string): Promise<OverdueClient[
   const overdueClients = clients
     .filter((client) => client.active && client.checkInFrequency !== "none")
     .map((client) => {
-      const nextExpectedCheckIn = calculateNextExpectedCheckIn(client);
+      const nextExpectedCheckIn = resolveCheckInDue(client);
       const daysOverdue = getDaysUntilOrPastDue(client);
       const severity = getOverdueSeverity(daysOverdue);
 
@@ -67,7 +67,7 @@ export async function getClientsDueSoon(coachId: string): Promise<ClientDueSoon[
   const clientsDueSoon = clients
     .filter((client) => client.active && client.checkInFrequency !== "none")
     .map((client) => {
-      const nextExpectedCheckIn = calculateNextExpectedCheckIn(client);
+      const nextExpectedCheckIn = resolveCheckInDue(client);
       const daysUntilDue = getDaysUntilOrPastDue(client);
 
       return {

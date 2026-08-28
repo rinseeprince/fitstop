@@ -9,9 +9,17 @@
  * payload already carries.
  *
  * The point of the split is that the server and the browser now run the SAME
- * function: /api/clients/overdue computes nextExpectedCheckIn here, and the
- * Clients roster's "due {date}" column computes it here too. Two callers, one
+ * function: /api/clients/overdue resolves the due date here, and the Clients
+ * roster's "due {date}" column resolves it here too. Two callers, one
  * definition, nothing to drift.
+ *
+ * The due date is now STORED (`clients.next_check_in_due`, migration 154), not
+ * derived. What used to live here — computing "when is the next one due" from
+ * the check-in weekday — answered that question with the end of the CURRENT
+ * period, which is right for a client who is genuinely late and wrong the
+ * moment the schedule changes: setting a client to Sunday on a Thursday
+ * reported last Sunday, "4 days overdue", beside "Last submitted today". The
+ * only maths left is the lapse roll below.
  *
  * The service re-exports every symbol below, so its existing importers are
  * unchanged.
@@ -20,11 +28,9 @@
 import {
   addDays,
   differenceInDays,
-  parseISODate,
-  calculateCheckInPeriod,
   getTodayInTimezone,
 } from "@/lib/date-helpers";
-import { CRITICALLY_OVERDUE_DAYS } from "@/lib/constants";
+import { CHECK_IN_GRACE_DAYS, CRITICALLY_OVERDUE_DAYS } from "@/lib/constants";
 import type {
   Client,
   ClientWithCheckInInfo,
@@ -51,74 +57,48 @@ export function getFrequencyInDays(
 }
 
 /**
- * Calculate when the next check-in is expected for a client.
- * Uses period-based calculation so the expected date always reflects
- * the current period, not the first missed one.
- * Returns null if client has no check-in schedule (frequency = 'none')
+ * The date this client's next check-in is due, or null if they have no
+ * schedule.
+ *
+ * Reads the stored date and rolls it forward by whole frequency steps past any
+ * that has lapsed. The rule, stated for the first time here: a due check-in
+ * stays satisfiable for CHECK_IN_GRACE_DAYS, then it lapses and the next
+ * becomes live. Without the roll, a client who stopped checking in a year ago
+ * would read as 365 days overdue instead of being measured against the check-in
+ * they can still do something about.
+ *
+ * A PAST date is not a bug here — it is how overdue is defined
+ * (getDaysUntilOrPastDue > 0), and it drives the roster's Overdue view, the
+ * sidebar badge and the reminder sweep.
  */
-export function calculateNextExpectedCheckIn(client: Client | ClientWithCheckInInfo): Date | null {
+export function resolveCheckInDue(
+  client: Client | ClientWithCheckInInfo
+): Date | null {
   const frequency = client.checkInFrequency ?? "weekly";
-
-  if (frequency === "none") {
+  if (frequency === "none" || !client.nextCheckInDue) {
     return null;
   }
 
-  if (client.expectedCheckInDay) {
-    // The check-in lives on the CLIENT's calendar: "today" is the client's
-    // local day (zero extra fetches — the Client object carries timezone).
-    const today = getTodayInTimezone(client.timezone);
-    const { periodEnd } = calculateCheckInPeriod(today, client.expectedCheckInDay);
+  const due = new Date(client.nextCheckInDue.slice(0, 10) + "T00:00:00");
 
-    // Use period_end from the last check-in (accurate) with fallback to created_at
-    const lastPeriodEnd = ("lastCheckInPeriodEnd" in client && client.lastCheckInPeriodEnd)
-      ? client.lastCheckInPeriodEnd
-      : undefined;
+  const step = getFrequencyInDays(frequency, client.checkInFrequencyDays);
+  if (step <= 0) return due;
 
-    if (lastPeriodEnd === periodEnd) {
-      // Already checked in for current period — next expected is next week
-      const nextEnd = new Date(periodEnd + "T00:00:00");
-      nextEnd.setDate(nextEnd.getDate() + 7);
-      return nextEnd;
-    }
-
-    // New client with no prior check-ins: don't expect a check-in for a period
-    // that ended before the client was created (e.g. plan started Saturday,
-    // check-in day is Friday — the previous Friday shouldn't count).
-    if (!lastPeriodEnd) {
-      const clientCreated = parseISODate(client.createdAt);
-      const periodEndDate = new Date(periodEnd + "T00:00:00");
-      if (periodEndDate < clientCreated) {
-        // Current period predates the client — next expected is the following week
-        const nextEnd = new Date(periodEndDate);
-        nextEnd.setDate(nextEnd.getDate() + 7);
-        return nextEnd;
-      }
-    }
-
-    // Not checked in for current period — current period end is the expected date
-    return new Date(periodEnd + "T00:00:00");
-  }
-
-  // Fallback for clients without expectedCheckInDay: loop forward from last check-in
-  const lastCheckInDate = ("lastCheckInDate" in client && client.lastCheckInDate)
-    ? parseISODate(client.lastCheckInDate)
-    : parseISODate(client.createdAt);
-
-  const frequencyDays = getFrequencyInDays(frequency, client.checkInFrequencyDays);
-  let nextDate = addDays(lastCheckInDate, frequencyDays);
+  // The check-in lives on the CLIENT's calendar: "today" is the client's local
+  // day (zero extra fetches — the Client object carries timezone).
   const today = getTodayInTimezone(client.timezone);
-  while (nextDate < today) {
-    nextDate = addDays(nextDate, frequencyDays);
+  let live = due;
+  while (differenceInDays(today, live) > CHECK_IN_GRACE_DAYS) {
+    live = addDays(live, step);
   }
-
-  return nextDate;
+  return live;
 }
 
 /**
  * Check if a client is overdue for their check-in
  */
 export function isClientOverdue(client: Client): boolean {
-  const nextExpected = calculateNextExpectedCheckIn(client);
+  const nextExpected = resolveCheckInDue(client);
 
   if (!nextExpected) {
     return false; // No schedule = not overdue
@@ -138,7 +118,7 @@ export function isClientOverdue(client: Client): boolean {
  * Returns 0 if no check-in schedule
  */
 export function getDaysUntilOrPastDue(client: Client): number {
-  const nextExpected = calculateNextExpectedCheckIn(client);
+  const nextExpected = resolveCheckInDue(client);
 
   if (!nextExpected) {
     return 0;

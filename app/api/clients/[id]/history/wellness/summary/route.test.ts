@@ -98,7 +98,7 @@ describe("GET /api/clients/[id]/history/wellness/summary", () => {
     // The week anchor is fetched through getClientWeekAnchor, which reads the
     // one `clients` row with .maybeSingle().
     const clientsChain = makeChain("maybeSingle", {
-      data: { expected_check_in_day: null, start_date: null },
+      data: { next_check_in_due: null, start_date: null },
     });
     const wellnessChain = makeChain("lte", { data: [], error: null });
     dispatchTables({ clients: clientsChain, wellness_logs: wellnessChain });

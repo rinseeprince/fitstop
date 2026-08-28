@@ -12,7 +12,7 @@ vi.mock('@/services/client-service', () => ({
 }))
 
 vi.mock('@/services/check-in-tracking-service', () => ({
-  calculateNextExpectedCheckIn: vi.fn(),
+  resolveCheckInDue: vi.fn(),
   getDaysUntilOrPastDue: vi.fn(),
   isClientOverdue: vi.fn(),
 }))
@@ -26,7 +26,7 @@ vi.mock('@/lib/rate-limit', () => ({
 import { getAuthenticatedClientId } from '@/lib/auth-helpers'
 import { getClientById } from '@/services/client-service'
 import { 
-  calculateNextExpectedCheckIn,
+  resolveCheckInDue,
   getDaysUntilOrPastDue,
   isClientOverdue 
 } from '@/services/check-in-tracking-service'
@@ -62,7 +62,7 @@ describe('/api/client/notifications', () => {
     bmr: undefined,
     tdee: undefined,
     checkInFrequencyDays: undefined,
-    expectedCheckInDay: undefined,
+    nextCheckInDue: undefined,
     lastReminderSentAt: undefined,
     reminderPreferences: undefined,
     totalCheckInsExpected: undefined,
@@ -140,7 +140,7 @@ describe('/api/client/notifications', () => {
       vi.mocked(getClientById).mockResolvedValue(mockClient)
       vi.mocked(isClientOverdue).mockReturnValue(true)
       vi.mocked(getDaysUntilOrPastDue).mockReturnValue(2) // 2 days overdue
-      vi.mocked(calculateNextExpectedCheckIn).mockReturnValue(new Date('2024-01-01T00:00:00Z'))
+      vi.mocked(resolveCheckInDue).mockReturnValue(new Date('2024-01-01T00:00:00Z'))
 
       // Act
       const response = await GET(createMockRequest())
@@ -166,7 +166,7 @@ describe('/api/client/notifications', () => {
       vi.mocked(getClientById).mockResolvedValue(mockClient)
       vi.mocked(isClientOverdue).mockReturnValue(true)
       vi.mocked(getDaysUntilOrPastDue).mockReturnValue(3)
-      vi.mocked(calculateNextExpectedCheckIn).mockReturnValue(new Date('2024-01-01T00:00:00Z'))
+      vi.mocked(resolveCheckInDue).mockReturnValue(new Date('2024-01-01T00:00:00Z'))
 
       // Act
       const response = await GET(createMockRequest())
@@ -183,7 +183,7 @@ describe('/api/client/notifications', () => {
       vi.mocked(getClientById).mockResolvedValue(mockClient)
       vi.mocked(isClientOverdue).mockReturnValue(true)
       vi.mocked(getDaysUntilOrPastDue).mockReturnValue(5)
-      vi.mocked(calculateNextExpectedCheckIn).mockReturnValue(new Date('2024-01-01T00:00:00Z'))
+      vi.mocked(resolveCheckInDue).mockReturnValue(new Date('2024-01-01T00:00:00Z'))
 
       // Act
       const response = await GET(createMockRequest())
@@ -203,7 +203,7 @@ describe('/api/client/notifications', () => {
       vi.mocked(getClientById).mockResolvedValue(mockClient)
       vi.mocked(isClientOverdue).mockReturnValue(false)
       vi.mocked(getDaysUntilOrPastDue).mockReturnValue(0) // Due today
-      vi.mocked(calculateNextExpectedCheckIn).mockReturnValue(new Date('2024-01-01T00:00:00Z'))
+      vi.mocked(resolveCheckInDue).mockReturnValue(new Date('2024-01-01T00:00:00Z'))
 
       // Act
       const response = await GET(createMockRequest())
@@ -223,7 +223,7 @@ describe('/api/client/notifications', () => {
       vi.mocked(getClientById).mockResolvedValue(mockClient)
       vi.mocked(isClientOverdue).mockReturnValue(false)
       vi.mocked(getDaysUntilOrPastDue).mockReturnValue(-1) // Due tomorrow
-      vi.mocked(calculateNextExpectedCheckIn).mockReturnValue(new Date('2024-01-01T00:00:00Z'))
+      vi.mocked(resolveCheckInDue).mockReturnValue(new Date('2024-01-01T00:00:00Z'))
 
       // Act
       const response = await GET(createMockRequest())
@@ -260,7 +260,7 @@ describe('/api/client/notifications', () => {
       vi.mocked(getClientById).mockResolvedValue(clientWithNoSchedule)
       vi.mocked(isClientOverdue).mockReturnValue(false)
       vi.mocked(getDaysUntilOrPastDue).mockReturnValue(0)
-      vi.mocked(calculateNextExpectedCheckIn).mockReturnValue(new Date())
+      vi.mocked(resolveCheckInDue).mockReturnValue(new Date())
 
       // Act
       await GET(createMockRequest())
@@ -268,7 +268,7 @@ describe('/api/client/notifications', () => {
       // Assert - functions are still called to populate checkInStatus response
       expect(isClientOverdue).toHaveBeenCalled()
       expect(getDaysUntilOrPastDue).toHaveBeenCalled()
-      expect(calculateNextExpectedCheckIn).toHaveBeenCalled()
+      expect(resolveCheckInDue).toHaveBeenCalled()
     })
   })
 
@@ -279,7 +279,7 @@ describe('/api/client/notifications', () => {
       vi.mocked(getClientById).mockResolvedValue(mockClient)
       vi.mocked(isClientOverdue).mockReturnValue(false)
       vi.mocked(getDaysUntilOrPastDue).mockReturnValue(-2) // Due in 2 days
-      vi.mocked(calculateNextExpectedCheckIn).mockReturnValue(new Date('2024-01-03T00:00:00Z'))
+      vi.mocked(resolveCheckInDue).mockReturnValue(new Date('2024-01-03T00:00:00Z'))
 
       // Act
       const response = await GET(createMockRequest())

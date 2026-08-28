@@ -10,6 +10,7 @@ import type { CheckInExerciseHighlightRow } from "@/lib/database-helpers";
 import { getCheckInById } from "./check-in-service";
 import { getTrainingEventDetailsForPeriod } from "./check-in-context-service";
 import { calculateCheckInPeriod } from "@/lib/date-helpers";
+import { checkInWeekday } from "@/lib/check-in-week";
 import { getClientById } from "./client-service";
 
 const DAY_OF_WEEK_BY_INDEX: DayOfWeek[] = [
@@ -53,10 +54,10 @@ export const deriveSessionCompletionsForCheckIn = async (
   // window is derived from the check-in's OWN createdAt date, never "today".
   if (!periodStart || !periodEnd) {
     const client = await getClientById(checkIn.clientId);
-    if (client?.expectedCheckInDay) {
+    if (client?.nextCheckInDue) {
       const period = calculateCheckInPeriod(
         new Date(checkIn.createdAt),
-        client.expectedCheckInDay
+        checkInWeekday(client)
       );
       periodStart = period.periodStart;
       periodEnd = period.periodEnd;

@@ -19,6 +19,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 import { aiSummaryRequestSchema } from "@/lib/validations/check-in";
 import { getCoachUnitPreference } from "@/lib/viewer-preferences";
+import { checkInWeekday } from "@/lib/check-in-week";
 
 export async function POST(
   request: NextRequest,
@@ -59,17 +60,18 @@ export async function POST(
     });
     const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
 
-    // Calculate date range using fixed 7-day period based on expectedCheckInDay
+    // Calculate date range using the fixed 7-day period ending on the weekday
+    // of the client's check-in due date
     let startDate: Date;
     let endDate: Date;
 
     if (currentCheckIn.periodStart && currentCheckIn.periodEnd) {
       startDate = new Date(currentCheckIn.periodStart + "T00:00:00");
       endDate = new Date(currentCheckIn.periodEnd + "T00:00:00");
-    } else if (client?.expectedCheckInDay) {
+    } else if (client?.nextCheckInDue) {
       const { periodStart, periodEnd } = calculateCheckInPeriod(
         new Date(currentCheckIn.createdAt),
-        client.expectedCheckInDay
+        checkInWeekday(client)
       );
       startDate = new Date(periodStart + "T00:00:00");
       endDate = new Date(periodEnd + "T00:00:00");

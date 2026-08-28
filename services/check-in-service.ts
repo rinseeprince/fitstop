@@ -6,7 +6,14 @@ import type {
   CheckInReview,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
-import { getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
+import {
+  addDays,
+  formatDateISO,
+  getTodayInTimezone,
+  resolveCheckInWindow,
+} from "@/lib/date-helpers";
+import { checkInWeekday } from "@/lib/check-in-week";
+import { getFrequencyInDays, resolveCheckInDue } from "@/lib/check-in-schedule";
 import type { CheckInCursor } from "@/lib/cursor";
 import { insertExerciseHighlights } from "./check-in-details-service";
 import { getCheckInTrainingPeriodStats } from "./check-in-context-service";
@@ -46,7 +53,10 @@ export const submitCheckIn = async (
   // both resolve the window on the client's day.
   const { periodStart, periodEnd } = resolveCheckInWindow(
     getTodayInTimezone(client?.timezone ?? "UTC"),
-    client?.expectedCheckInDay,
+    // A NULL due date is "no schedule", which resolveCheckInWindow answers with
+    // a trailing 7 days ending today. checkInWeekday never returns null, so the
+    // no-schedule case is tested here.
+    client?.nextCheckInDue ? checkInWeekday(client) : null,
     client?.startDate
   );
 
@@ -139,6 +149,41 @@ export const submitCheckIn = async (
   }
 
   const checkInId = data.id;
+
+  // The SECOND of the two writers of clients.next_check_in_due (the other is
+  // the coach's date picker). A submitted check-in advances the schedule by one
+  // frequency step from the due date it satisfies — resolveCheckInDue, not the
+  // raw column, so a client answering a check-in whose date lapsed weeks ago
+  // advances from the live one rather than from a dead one.
+  //
+  // If this UPDATE fails the check-in still stands and the date is left behind,
+  // which is a visible, self-healing divergence rather than a silent one: the
+  // client reads as due until resolveCheckInDue's lapse roll moves them on
+  // within CHECK_IN_GRACE_DAYS, and the coach can set the date by hand. It is
+  // deliberately not allowed to fail the submission — the check-in is the
+  // client's work, the schedule is bookkeeping.
+  if (client?.nextCheckInDue) {
+    const live = resolveCheckInDue(client);
+    const step = getFrequencyInDays(
+      client.checkInFrequency ?? "weekly",
+      client.checkInFrequencyDays
+    );
+    if (live && step > 0) {
+      const { error: advanceError } = await supabaseAdmin
+        .from("clients")
+        .update({
+          next_check_in_due: formatDateISO(addDays(live, step)),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", clientId);
+      if (advanceError) {
+        console.error(
+          "Check-in submitted but the schedule did not advance:",
+          advanceError.message
+        );
+      }
+    }
+  }
 
   // Exercise highlights remain a real backing table (OUT OF SCOPE for 6.4).
   // Errors here shouldn't fail the entire check-in.

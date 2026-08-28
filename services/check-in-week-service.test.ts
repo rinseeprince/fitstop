@@ -24,7 +24,7 @@ beforeEach(() => {
 describe("getClientWeekAnchor", () => {
   it("returns the client's check-in weekday and start date from one read", async () => {
     const query = mockClientRow({
-      data: { expected_check_in_day: "wednesday", start_date: "2026-01-15" },
+      data: { next_check_in_due: "2026-06-10", start_date: "2026-01-15" }, // a Wednesday
       error: null,
     });
 
@@ -41,20 +41,20 @@ describe("getClientWeekAnchor", () => {
     // them a second round trip for one column, which is why this helper
     // returns the pair rather than the weekday alone.
     const query = mockClientRow({
-      data: { expected_check_in_day: "monday", start_date: "2026-02-01" },
+      data: { next_check_in_due: "2026-06-08", start_date: "2026-02-01" },
       error: null,
     });
 
     await getClientWeekAnchor("client-1");
 
     const selected = String(query.select.mock.calls[0][0]);
-    expect(selected).toContain("expected_check_in_day");
+    expect(selected).toContain("next_check_in_due");
     expect(selected).toContain("start_date");
   });
 
-  it("falls back to the no-schedule anchor when the client has no check-in day", async () => {
+  it("falls back to the no-schedule anchor when the client has no due date", async () => {
     mockClientRow({
-      data: { expected_check_in_day: null, start_date: null },
+      data: { next_check_in_due: null, start_date: null },
       error: null,
     });
 

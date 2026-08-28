@@ -43,7 +43,10 @@ const profileFormSchema = z
     dateOfBirth: z.string().refine(isoDate, { message: "Use a valid date" }),
     startDate: z.string().refine(isoDate, { message: "Use a valid date" }),
     phone: z.string().trim().max(30, "Phone must be less than 30 characters"),
-    expectedCheckInDay: z.string(),
+    // Format-only, like goalDeadline: the past-date bound is enforced by the
+    // route against the COACH's today, and `min` on the input is the
+    // affordance. Empty means "no schedule".
+    nextCheckInDue: z.string().refine(isoDate, { message: "Use a valid date" }),
     checkInFrequency: z.enum(["weekly", "biweekly", "monthly", "custom", "none"]),
     workActivityLevel: z.enum([
       "sedentary",
@@ -98,7 +101,7 @@ function toDefaults(client: Client, goal: ClientGoal | null): ProfileFormValues 
     dateOfBirth: client.dateOfBirth ?? "",
     startDate: client.startDate ?? "",
     phone: client.phone ?? "",
-    expectedCheckInDay: client.expectedCheckInDay ?? UNSET,
+    nextCheckInDue: client.nextCheckInDue ?? "",
     checkInFrequency: client.checkInFrequency ?? "weekly",
     // Sedentary is the default everywhere — the column default and the
     // calculator's fallback for NULL both agree, so there is no "not set".
@@ -364,10 +367,10 @@ export function useClientProfileEdit(
         await sendJson("PUT", `/api/clients/${client.id}/metrics`, { tdeeManualOverride: false });
       }
 
-      const nextDay = values.expectedCheckInDay === UNSET ? null : values.expectedCheckInDay;
-      const dayChanged = nextDay !== (client.expectedCheckInDay ?? null);
+      const nextDue = values.nextCheckInDue === "" ? null : values.nextCheckInDue;
+      const dueChanged = nextDue !== (client.nextCheckInDue ?? null);
       const frequencyChanged = values.checkInFrequency !== seededNow.checkInFrequency;
-      if (dayChanged || frequencyChanged) {
+      if (dueChanged || frequencyChanged) {
         // The check-in config schema requires frequency + reminder preferences
         // on every write, so whichever of the two was NOT edited is echoed back
         // verbatim — as are the reminder preferences, which this form never
@@ -382,7 +385,7 @@ export function useClientProfileEdit(
           ...(values.checkInFrequency === "custom" && client.checkInFrequencyDays != null
             ? { checkInFrequencyDays: client.checkInFrequencyDays }
             : {}),
-          expectedCheckInDay: nextDay,
+          nextCheckInDue: nextDue,
           reminderPreferences: client.reminderPreferences ?? {
             enabled: true,
             autoSend: false,

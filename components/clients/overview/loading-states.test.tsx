@@ -35,7 +35,6 @@ const CLIENT: Client = {
 
 const TIMING: CheckInTiming = {
   frequency: "weekly",
-  expectedCheckInDay: "monday",
   lastSubmittedAt: "2026-07-25T09:00:00Z",
   nextDueDate: "2026-08-01",
   daysUntilDue: -6,

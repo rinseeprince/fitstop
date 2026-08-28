@@ -87,13 +87,29 @@ describe('Check-in Service', () => {
   })
 
   describe('submitCheckIn (Session 6.4 spine derivation)', () => {
-    function mockInsert(result: { data: unknown; error: unknown }) {
+    // The submit writes to two tables: the check_ins INSERT, and the clients
+    // UPDATE that advances the schedule (submit is one of the two writers of
+    // next_check_in_due). `advanceQuery` is returned so tests can assert on it.
+    let advanceQuery: {
+      update: ReturnType<typeof vi.fn>
+      eq: ReturnType<typeof vi.fn>
+    }
+
+    function mockInsert(
+      result: { data: unknown; error: unknown },
+      advanceResult: { error: unknown } = { error: null },
+    ) {
       const mockInsertQuery = {
         select: vi.fn().mockReturnThis(),
         insert: vi.fn().mockReturnThis(),
         single: vi.fn().mockResolvedValue(result),
       }
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockInsertQuery as any)
+      const update = { update: vi.fn(), eq: vi.fn() }
+      update.update.mockReturnValue(update)
+      update.eq.mockReturnValue(Promise.resolve(advanceResult))
+      advanceQuery = update
+      vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
+        table === "clients" ? update : mockInsertQuery) as never)
       return mockInsertQuery
     }
 
@@ -106,7 +122,7 @@ describe('Check-in Service', () => {
       calculateCheckInPeriodMock.mockReset()
       resolveCheckInWindowMock.mockReset()
       // Default happy-path period + client.
-      getClientByIdMock.mockResolvedValue({ expectedCheckInDay: 'sunday', startDate: '2026-01-01' })
+      getClientByIdMock.mockResolvedValue({ nextCheckInDue: '2026-06-14', startDate: '2026-01-01' }) // a Sunday
       resolveCheckInWindowMock.mockReturnValue({ periodStart: '2026-05-08', periodEnd: '2026-05-14' })
       getCheckInTrainingPeriodStatsMock.mockResolvedValue({ sessionsCompleted: 0, sessionsPlanned: 0 })
       getNutritionSummaryForPeriodMock.mockResolvedValue(null)
@@ -124,6 +140,120 @@ describe('Check-in Service', () => {
       expect(q.insert).toHaveBeenCalled()
     })
 
+    // ---- the SECOND writer of clients.next_check_in_due ----------------
+    // The coach's date picker is the first. Nothing else may write it.
+
+    it('advances the schedule by one frequency step from the due date it satisfies', async () => {
+      // Time is pinned: an unpinned "today" would leave the fixture's due date
+      // lapsed and the roll below would move it before the step is applied.
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-06-14T12:00:00Z'))
+        getClientByIdMock.mockResolvedValue({
+          nextCheckInDue: '2026-06-14',
+          checkInFrequency: 'weekly',
+          startDate: '2026-01-01',
+          timezone: 'UTC',
+        })
+        mockInsert({ data: { id: 'new-check-in-id' }, error: null })
+
+        const { submitCheckIn } = await import('./check-in-service')
+        await submitCheckIn('client-123', { weight: 180, weightUnit: 'lbs' })
+
+        expect(advanceQuery.update).toHaveBeenCalledWith(
+          expect.objectContaining({ next_check_in_due: '2026-06-21' }),
+        )
+        expect(advanceQuery.eq).toHaveBeenCalledWith('id', 'client-123')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('advances a fortnightly client by a fortnight, not a week', async () => {
+      // The derivation this replaced ignored frequency entirely and handed
+      // every client a weekly period.
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-06-14T12:00:00Z'))
+        getClientByIdMock.mockResolvedValue({
+          nextCheckInDue: '2026-06-14',
+          checkInFrequency: 'biweekly',
+          startDate: '2026-01-01',
+          timezone: 'UTC',
+        })
+        mockInsert({ data: { id: 'new-check-in-id' }, error: null })
+
+        const { submitCheckIn } = await import('./check-in-service')
+        await submitCheckIn('client-123', { weight: 180, weightUnit: 'lbs' })
+
+        expect(advanceQuery.update).toHaveBeenCalledWith(
+          expect.objectContaining({ next_check_in_due: '2026-06-28' }),
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('advances from the LIVE due date when the stored one has lapsed', async () => {
+      // A client answering a check-in whose date lapsed weeks ago must advance
+      // from the one they actually satisfied, not from a dead date — otherwise
+      // the schedule stays permanently behind.
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-06-16T12:00:00Z'))
+        getClientByIdMock.mockResolvedValue({
+          nextCheckInDue: '2026-05-24', // lapsed: rolls to 06-14
+          checkInFrequency: 'weekly',
+          startDate: '2026-01-01',
+          timezone: 'UTC',
+        })
+        mockInsert({ data: { id: 'new-check-in-id' }, error: null })
+
+        const { submitCheckIn } = await import('./check-in-service')
+        await submitCheckIn('client-123', { weight: 180, weightUnit: 'lbs' })
+
+        expect(advanceQuery.update).toHaveBeenCalledWith(
+          expect.objectContaining({ next_check_in_due: '2026-06-21' }),
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('writes no schedule at all for a client who has none', async () => {
+      getClientByIdMock.mockResolvedValue({ nextCheckInDue: null, startDate: '2026-01-01' })
+      mockInsert({ data: { id: 'new-check-in-id' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await submitCheckIn('client-123', { weight: 180, weightUnit: 'lbs' })
+
+      expect(advanceQuery.update).not.toHaveBeenCalled()
+    })
+
+    it('still returns the check-in when the advance fails, and says so', async () => {
+      // The check-in is the client's work; the schedule is bookkeeping. A
+      // failed advance leaves a visible, self-healing divergence (the lapse
+      // roll moves them on within the grace window) rather than throwing away
+      // a check-in the client just filled in.
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      getClientByIdMock.mockResolvedValue({
+        nextCheckInDue: '2026-06-14',
+        checkInFrequency: 'weekly',
+        startDate: '2026-01-01',
+      })
+      mockInsert({ data: { id: 'new-check-in-id' }, error: null }, { error: { message: 'boom' } })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await expect(
+        submitCheckIn('client-123', { weight: 180, weightUnit: 'lbs' }),
+      ).resolves.toBe('new-check-in-id')
+      expect(spy).toHaveBeenCalledWith(
+        'Check-in submitted but the schedule did not advance:',
+        'boom',
+      )
+      spy.mockRestore()
+    })
+
     it("anchors the STORED period to the client's local today (London 23:30Z boundary)", async () => {
       // 23:30 UTC June 9 = 00:30 BST June 10. The persisted period_start/end
       // are read forever by coach-side derivations, so the window passed to
@@ -135,7 +265,7 @@ describe('Check-in Service', () => {
       try {
         vi.setSystemTime(new Date('2026-06-09T23:30:00Z'))
         getClientByIdMock.mockResolvedValue({
-          expectedCheckInDay: 'wednesday',
+          nextCheckInDue: '2026-06-10', // a Wednesday
           startDate: '2026-01-01',
           timezone: 'Europe/London',
         })

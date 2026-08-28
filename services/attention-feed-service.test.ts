@@ -27,7 +27,7 @@ describe("attention-feed-service", () => {
     id: "c1",
     name: "Test Client",
     avatar_url: null,
-    expected_check_in_day: null,
+    next_check_in_due: null,
     start_date: null,
   }
 
@@ -222,7 +222,7 @@ describe("attention-feed-service", () => {
       // survives exactly once, so chunking cannot silently drop a roster tail.
       const clientRows = Array.from({ length: 250 }, (_, i) => ({
         id: `client-${i}`, name: `C${i}`, avatar_url: null,
-        expected_check_in_day: null, start_date: null,
+        next_check_in_due: null, start_date: null,
       }))
 
       const inCalls: string[][] = []

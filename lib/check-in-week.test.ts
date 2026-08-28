@@ -5,30 +5,32 @@ import { checkInWeekday, NO_SCHEDULE_WEEK_ANCHOR } from "./check-in-week";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "./date-helpers";
 
 describe("checkInWeekday", () => {
-  it("returns the client's own check-in day", () => {
-    expect(checkInWeekday({ expectedCheckInDay: "wednesday" })).toBe("wednesday");
-    expect(checkInWeekday({ expectedCheckInDay: "sunday" })).toBe("sunday");
+  it("takes the weekday of the client's due date", () => {
+    // 2026-06-10 is a Wednesday, 2026-06-14 a Sunday.
+    expect(checkInWeekday({ nextCheckInDue: "2026-06-10" })).toBe("wednesday");
+    expect(checkInWeekday({ nextCheckInDue: "2026-06-14" })).toBe("sunday");
   });
 
-  it("normalises case, because the column is free TEXT behind a CHECK", () => {
-    expect(checkInWeekday({ expectedCheckInDay: "Friday" })).toBe("friday");
+  it("reads the WEEKDAY, not the date, so a fortnightly client keeps a weekly rhythm", () => {
+    // Two due dates a fortnight apart are the same anchor. "The 7 days ending
+    // on the due date" would leave every other week unassigned.
+    expect(checkInWeekday({ nextCheckInDue: "2026-06-10" })).toBe(
+      checkInWeekday({ nextCheckInDue: "2026-06-24" })
+    );
+  });
+
+  it("tolerates a full timestamp, since the column crosses the wire as a string", () => {
+    expect(checkInWeekday({ nextCheckInDue: "2026-06-10T00:00:00+00:00" })).toBe("wednesday");
   });
 
   it("falls back to the no-schedule anchor for every unset spelling", () => {
-    // Six ways a caller can arrive without a schedule. Each used to be one
+    // Five ways a caller can arrive without a schedule. Each used to be one
     // caller's chance to spell the default itself.
     expect(checkInWeekday(null)).toBe(NO_SCHEDULE_WEEK_ANCHOR);
     expect(checkInWeekday(undefined)).toBe(NO_SCHEDULE_WEEK_ANCHOR);
     expect(checkInWeekday({})).toBe(NO_SCHEDULE_WEEK_ANCHOR);
-    expect(checkInWeekday({ expectedCheckInDay: null })).toBe(NO_SCHEDULE_WEEK_ANCHOR);
-    expect(checkInWeekday({ expectedCheckInDay: undefined })).toBe(NO_SCHEDULE_WEEK_ANCHOR);
-    expect(checkInWeekday({ expectedCheckInDay: "" })).toBe(NO_SCHEDULE_WEEK_ANCHOR);
-  });
-
-  it("rejects a value that is not a weekday rather than producing a NaN week", () => {
-    // DAY_NUM["someday"] is undefined, and (undefined + 1) % 7 is NaN — which
-    // getTrainingWeekStart turns into an Invalid Date, silently.
-    expect(checkInWeekday({ expectedCheckInDay: "someday" })).toBe(NO_SCHEDULE_WEEK_ANCHOR);
+    expect(checkInWeekday({ nextCheckInDue: null })).toBe(NO_SCHEDULE_WEEK_ANCHOR);
+    expect(checkInWeekday({ nextCheckInDue: undefined })).toBe(NO_SCHEDULE_WEEK_ANCHOR);
   });
 });
 

@@ -59,7 +59,7 @@ describe("GET /api/client/check-in-status", () => {
     vi.mocked(getAuthenticatedClientId).mockResolvedValue(CLIENT_ID);
     vi.mocked(getClientById).mockResolvedValue({
       id: CLIENT_ID,
-      expectedCheckInDay: "monday",
+      nextCheckInDue: "2026-06-08", // a Monday
     } as never);
     mockLastCheckIn({ period_end: "2026-05-22", created_at: "2026-05-22T00:00:00Z" });
   });
@@ -106,7 +106,7 @@ describe("GET /api/client/check-in-status", () => {
       vi.setSystemTime(new Date("2026-06-09T23:30:00Z"));
       vi.mocked(getClientById).mockResolvedValue({
         id: CLIENT_ID,
-        expectedCheckInDay: "wednesday",
+        nextCheckInDue: "2026-06-10", // a Wednesday
         timezone: "Europe/London",
       } as never);
       vi.mocked(getCheckInStatus).mockReturnValue({

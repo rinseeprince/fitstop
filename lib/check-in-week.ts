@@ -11,8 +11,10 @@
  * same client's "this week" therefore covered two different weeks depending on
  * which surface asked.
  *
- * So the anchor is derived HERE and only here. `getTrainingWeekStart/End/Days`
- * keep their maths — they were never wrong; the sourcing was.
+ * So the anchor is derived HERE and only here, and here is the ONE body that
+ * changed when the stored weekday became a stored due date — all twelve callers
+ * followed with no edit. `getTrainingWeekStart/End/Days` keep their maths; they
+ * were never wrong, the sourcing was.
  *
  * Pure, and it stays pure: `components/clients/habits/habits-tab-content.tsx`
  * derives its week in the BROWSER off the `Client` object, so this module must
@@ -49,24 +51,35 @@ export const NO_SCHEDULE_WEEK_ANCHOR: DayOfWeek = "sunday";
 
 /**
  * The minimum a caller must hold to have its week anchored. Deliberately
- * structural rather than `Client`, so a four-column projection satisfies it
+ * structural rather than `Client`, so a two-column projection satisfies it
  * without inventing the columns it never fetched.
  */
 export type CheckInWeekSource = {
-  expectedCheckInDay?: DayOfWeek | string | null;
+  /** `clients.next_check_in_due`, as YYYY-MM-DD. */
+  nextCheckInDue?: string | null;
 };
 
 /**
  * The weekday this client's reporting week ends on.
  *
+ * Derived from the ONE stored fact — the due date — rather than from a second
+ * stored copy of the weekday. A copy has to be kept in step; a calculation
+ * cannot be out of step. Taking the weekday (rather than the date itself) is
+ * what keeps a fortnightly client on a steady weekly rhythm: "the 7 days ending
+ * on the due date" would leave every other week unassigned.
+ *
  * Never null: a client with no schedule still needs a week boundary, and
  * returning null here would hand every caller the chance to spell the default
- * again. The validation is not defensive noise — `expected_check_in_day` is a
- * free TEXT column behind a CHECK, and it arrives from PostgREST as `string`.
+ * again.
  */
 export function checkInWeekday(
   source: CheckInWeekSource | null | undefined
 ): DayOfWeek {
-  const day = source?.expectedCheckInDay?.toLowerCase();
-  return DAYS_OF_WEEK.find((d) => d === day) ?? NO_SCHEDULE_WEEK_ANCHOR;
+  const due = source?.nextCheckInDue;
+  if (!due) return NO_SCHEDULE_WEEK_ANCHOR;
+  // Local-midnight parse, matching every other date read in this codebase: a
+  // bare YYYY-MM-DD parses as UTC midnight and reads back a day early west of
+  // UTC through .getDay().
+  const day = new Date(due.slice(0, 10) + "T00:00:00").getDay();
+  return DAYS_OF_WEEK[day] ?? NO_SCHEDULE_WEEK_ANCHOR;
 }

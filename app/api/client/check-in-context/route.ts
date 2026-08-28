@@ -10,6 +10,7 @@ import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { checkInWeekday } from "@/lib/check-in-week";
 import { getCheckInStatus, getDateString, getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
 import type { CheckInGateStatus } from "@/lib/date-helpers";
 import type { CheckInContextResponse, CheckInTrainingEventDetail } from "@/types/check-in";
@@ -49,7 +50,10 @@ export async function GET(request: NextRequest) {
     }
 
     // --- Gating + period calculation ---
-    const expectedDay = client.expectedCheckInDay;
+    // As in check-in-status: NULL due date is "no schedule", and gating is
+    // skipped for it. checkInWeekday never returns null, so the null case has
+    // to be tested here rather than inside it.
+    const hasSchedule = Boolean(client.nextCheckInDue);
     let checkInGateStatus: CheckInGateStatus = "available";
 
     const lastCheckIn = lastCheckInResult.data;
@@ -59,12 +63,12 @@ export async function GET(request: NextRequest) {
         ? getDateString(new Date(lastCheckIn.created_at))
         : null);
 
-    if (expectedDay) {
+    if (hasSchedule) {
       // Client-local today: the check-in window opens/rolls on the CLIENT's
       // day, not the server's UTC day.
       const today = getTodayInTimezone(client.timezone);
       const { status, nextDueDate } = getCheckInStatus(
-        expectedDay,
+        checkInWeekday(client),
         lastCheckInPeriodEnd,
         today,
         client.startDate
@@ -102,7 +106,11 @@ export async function GET(request: NextRequest) {
     // mid-week-activated client sees [start_date .. check-in day], not a full 7).
     // Shared with submitCheckIn so the displayed and stored periods agree.
     const today = getTodayInTimezone(client.timezone);
-    const { periodStart, periodEnd } = resolveCheckInWindow(today, expectedDay, client.startDate);
+    const { periodStart, periodEnd } = resolveCheckInWindow(
+      today,
+      hasSchedule ? checkInWeekday(client) : null,
+      client.startDate,
+    );
 
     // Math.round avoids off-by-one when dates straddle a DST transition
     // (e.g. GMT→BST on Mar 29 steals 1 hour, making Math.floor short by 1 day)

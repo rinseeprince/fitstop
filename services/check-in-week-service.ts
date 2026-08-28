@@ -33,7 +33,7 @@ export async function getClientWeekAnchor(
 ): Promise<ClientWeekAnchor> {
   const { data, error } = await supabaseAdmin
     .from("clients")
-    .select("expected_check_in_day, start_date")
+    .select("next_check_in_due, start_date")
     .eq("id", clientId)
     .maybeSingle();
 
@@ -45,7 +45,7 @@ export async function getClientWeekAnchor(
   }
 
   return {
-    weekday: checkInWeekday({ expectedCheckInDay: data?.expected_check_in_day }),
+    weekday: checkInWeekday({ nextCheckInDue: data?.next_check_in_due }),
     startDate: data?.start_date ?? null,
   };
 }
