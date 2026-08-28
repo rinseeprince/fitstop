@@ -134,8 +134,11 @@ export function ClientOverviewTab({
     [onTabChange]
   );
 
-  // The check-in day lives on the client record but drives the brief's timing
-  // strip, so a settings save has to revalidate both.
+  // The check-in DATE lives on the client record but drives the brief's timing
+  // strip, so anything that writes it has to revalidate both. That is the sheet
+  // save AND activation — activation used to call `onClientUpdated` directly,
+  // refreshing the client record while the identity row went on showing the
+  // pre-activation check-in until a full page reload threw the cache away.
   const handleClientUpdated = useCallback(() => {
     onClientUpdated?.();
     void mutateBrief();
@@ -208,7 +211,7 @@ export function ClientOverviewTab({
           client={client}
           planSummary={summary}
           planSummaryLoading={summaryLoading}
-          onActivated={onClientUpdated}
+          onActivated={handleClientUpdated}
           onTabChange={onTabChange}
           onOpenProfile={openProfileEditor}
         />
