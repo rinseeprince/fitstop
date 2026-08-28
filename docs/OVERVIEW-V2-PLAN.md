@@ -1,21 +1,20 @@
 # Client Overview v2 + Details Sheet
 
-> ## ▶ STATUS — commits 0–7 are SHIPPED. What is left is the browser smoke, then §11.
+> ## ▶ STATUS — commits 0–7 SHIPPED and SMOKED; four iterations applied. §11 is next.
 >
-> **Commits 4–7 landed 2026-08-28** (`72821b6`, `c7f3f8b`, `db93c7e`, this one), all four gates
-> green at each. **The UI is unverified** — no browser has run this. The smoke checklist was
-> handed over in chat, per the owner's rule that they run smokes and Claude never drives a
-> browser.
+> **Commits 4–7 landed 2026-08-28** (`72821b6`, `c7f3f8b`, `db93c7e`, `3a03b9f`), all four gates
+> green at each. The owner smoked them the same day and returned four changes, applied in
+> `0675483`, `02b55bf`, `d83c3d1` — see **§13**. Those three are themselves **unsmoked**.
 >
-> **Next, and only after that smoke passes: §11, commits 8–10** (check-in scheduling). Approved,
-> deliberately deferred, and untouched by this work — nothing in commits 4–7 reads
-> `expected_check_in_day` or anything in `lib/check-in-schedule.ts`.
+> **Next: §11, commits 8–10** (check-in scheduling). Approved, deliberately deferred, and
+> untouched by all of this — nothing above reads `expected_check_in_day` or anything in
+> `lib/check-in-schedule.ts`.
 >
 > **Gates — all four, before every commit:**
 > ```
 > npx tsc --noEmit
 > npx eslint .              # 0 errors; pre-existing warnings are fine
-> npx vitest run            # 301 files / 3243 tests as of commit 7
+> npx vitest run            # 301 files / 3248 tests as of the iteration commits
 > npm run check:labels
 > ```
 > `set-tracker.test.tsx` is a known flake in full runs — re-run before blaming your change.
@@ -27,7 +26,9 @@
 >
 > §1–§7 below describe the whole workstream, including the parts now built. They are kept as the
 > record of WHY each decision went the way it did; where the shipped code and this plan disagree,
-> **the code is what shipped** and §12 records the three places that happened deliberately.
+> **the code is what shipped** — §12 records where the BUILD departed from the plan, and §13 where
+> the SMOKE overturned it. §1's window decision (Q1) and §3's chart spec are both superseded by
+> §13.1 and §13.2; read those first.
 
 Redesign of two coach surfaces: the client **Overview** tab
 (`components/clients/client-overview-tab.tsx` + `components/clients/overview/**`) and the
@@ -1097,3 +1098,62 @@ stays assignable, so the Metrics page is untouched. The alternative was inventin
   already owns (`DEFAULT_DAYS`).
 - **The window control appears in commit 4 and reaches nothing until commit 5.** That is the plan's
   own sequencing, not an oversight; the intermediate state exists only in git history.
+
+
+---
+
+## 13. What the smoke changed — 2026-08-28
+
+The owner ran commits 4–7 and returned four changes. All four are shipped
+(`0675483`, `02b55bf`, `d83c3d1`) and none has itself been smoked.
+
+### 13.1 The progression chart is no longer windowed — it is the whole journey
+
+**Supersedes §3 and half of Q1.** The chart's axis now runs `[start date, today]`, and the
+Progression rail that carried the 30/60 control is gone.
+
+*"Where has this client got to since they started"* is a lifetime question, and answering it over
+a trailing month was the wrong frame. The axis is anchored on the JOURNEY rather than on the data
+deliberately: anchoring on the readings cropped a client who stopped logging in July back to July
+and redrew the same old trend as though it were current.
+
+The route takes **`?from=<start date>`** instead of `?days=`, sent by the browser because it
+already holds the client record — so bounding the read costs no round trip, and bounding on the
+start date is semantic as well as cheap. `from` is validated through the shared
+`validateDateParameter`; `daily-logs` and `habits/logs` take the same shape of param and do not
+validate theirs, which is a gap to close there rather than a pattern to copy.
+
+**§3.1's cost argument is unchanged and still the reason this route exists.** What made the
+Physique path unusable was never the row count — it was `select("*")` over 37 columns with four
+JSON blobs, fetched in sequential pages of 20. Two unpaged sparse selects read the same history
+for a fraction of it: a weekly client of three years is ~156 rows per table.
+
+Consequence: raw dots now come off above 40 readings, the same rule `WellnessSparkline` already
+had. Over a two-year journey the markers merge into a band that hides the line they sit behind.
+
+### 13.2 Signals is a fixed 14 days
+
+**Supersedes Q1's `30 / 60`.** Signals answers "where is this client at" — a glance. The
+selectable window turned it into an analysis surface and buried the last fortnight, the part a
+coach can still act on, inside a quarter of history. Long ranges live on the Journey tab.
+
+`lib/overview/window.ts` is now one constant. The page holds no window state at all: the chart
+above is a lifetime and Signals is a fortnight, each stated where it renders.
+
+**FLAG MM is retired with it.** The training day strip's weeks × weekdays wrapping only ever
+earned its keep at 60 days; at fourteen columns it was solving a problem that no longer exists,
+so the strip is one row again — the shape the adherence rail always had. **FLAG NN survives**:
+`WellnessSparkline` takes any number of points and its threshold is three lines.
+
+### 13.3 No count on the Needs attention rail
+
+**Supersedes §5's "Waiting on you → count chip | Needs attention rail meta".** Beside a single
+visible row a "1" restates what is already on screen. `pendingCount` stays — it still chooses
+between the rows and the caught-up state.
+
+### 13.4 The deadline reads at the same size as the other three cells
+
+**Supersedes §6.5 item 10's reasoning as applied to this cell.** "A date the coach typed is not a
+headline" was a deliberate call and it was wrong on screen: at 13px beside three 18px figures, one
+of the four facts the band exists to state looked like an afterthought. One tier for the whole
+band now, and the two-tier mechanism went with it.
