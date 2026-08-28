@@ -189,19 +189,24 @@ export function CoachNotesCard({
                 "h-8 max-w-xl rounded-[6px] border-[rgba(13,148,136,0.08)] text-[13px] placeholder:text-[#93b0b4]"
               )}
             />
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={draft.trim().length === 0 || isSaving}
-              className={cn(
-                TEXT_ACTION_CLASS,
-                "inline-flex items-center gap-1.5 disabled:opacity-50"
-              )}
-            >
-              {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
-              Save
-            </button>
-            <OpenTabLink label="Open Notes" onClick={onOpenNotes} />
+            {/* Pinned to the card's right edge, not trailing the field: the
+                field is capped, so without the auto margin the pair sits
+                stranded in the middle of the row. */}
+            <div className="ml-auto flex shrink-0 items-center gap-4">
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={draft.trim().length === 0 || isSaving}
+                className={cn(
+                  TEXT_ACTION_CLASS,
+                  "inline-flex items-center gap-1.5 disabled:opacity-50"
+                )}
+              >
+                {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                Save
+              </button>
+              <OpenTabLink label="Open Notes" onClick={onOpenNotes} />
+            </div>
           </div>
         </div>
       </OverviewCard>
