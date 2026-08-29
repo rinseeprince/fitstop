@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   CheckCircle2,
   ClipboardCheck,
@@ -20,7 +20,11 @@ import {
   MONO_META_CLASS,
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { OverviewCard } from "./overview-primitives";
+import {
+  CardOverflowToggle,
+  OverviewCard,
+  OVERVIEW_CARD_ROWS_SHOWN,
+} from "./overview-primitives";
 import { relativeDayPhrase } from "./overview-format";
 import type { ClientTab } from "@/lib/client-tabs";
 import type { AlertSeverity, AlertType, AttentionAlert } from "@/types/attention-feed";
@@ -172,6 +176,76 @@ export function NeedsAttentionSection({
   const pendingCount =
     sortedAlerts.length + (unreviewedCheckIn ? 1 : 0) + (blockEnding ? 1 : 0);
   const submitted = unreviewedCheckIn ? relativeDayPhrase(unreviewedCheckIn.submittedAt) : null;
+  const [expanded, setExpanded] = useState(false);
+
+  // The three sources become ONE ordered list so the cap can slice it. Order is
+  // the one they were rendered in and is deliberate: the check-in is work a
+  // client is waiting on, the block boundary is a decision only the coach can
+  // make, and the alerts are patterns — severity-sorted among themselves.
+  const rows: ReactNode[] = [];
+
+  if (unreviewedCheckIn) {
+    rows.push(
+      <AttentionRow
+        key="check-in"
+        thumb={THUMB_CLASS}
+        icon={<ClipboardCheck className="h-4 w-4" strokeWidth={1.5} />}
+        title="Check-in awaiting review"
+        sub={submitted ? `Submitted ${submitted.text}` : null}
+        subIsNumeric={submitted?.isNumeric}
+        action="Review"
+        // Addresses the check-in itself — the Check-ins tab's single-owner
+        // `?checkIn=` param, the block-ending row's shape.
+        onOpen={() => onTabChange("check-ins", { checkIn: unreviewedCheckIn.id })}
+      />
+    );
+  }
+
+  if (blockEnding) {
+    // A coach-action row, not an alert: not dismissible, never on the dashboard
+    // feed, and it clears when the next block starts. The `{ journey: "blocks" }`
+    // round trip is a client-page URL contract, not a decoration.
+    rows.push(
+      <AttentionRow
+        key="block-ending"
+        thumb={THUMB_CLASS}
+        icon={<Flag className="h-4 w-4" strokeWidth={1.5} />}
+        title={`${blockEnding.blockName} ends ${endsWeekday(blockEnding.endsOn)}.`}
+        sub={
+          blockEnding.nextBlockName
+            ? `${blockEnding.nextBlockName} is next.`
+            : "Nothing scheduled after it."
+        }
+        action="Journey"
+        onOpen={() => onTabChange("metrics", { journey: "blocks" })}
+      />
+    );
+  }
+
+  for (const [i, alert] of sortedAlerts.entries()) {
+    const destination = alertDestination(alert.type);
+    // Title and sub come from the dashboard's own copy functions, so the two
+    // surfaces cannot describe one alert differently. `sub` is null when the
+    // fuller sentence would only repeat the headline — a row printing the same
+    // string twice reads as a bug.
+    const { title, sub } = alertLines(alert);
+    rows.push(
+      <AttentionRow
+        key={`${alert.type}-${i}`}
+        thumb={SEVERITY_THUMB[alert.severity] ?? SEVERITY_THUMB.low}
+        icon={DESTINATION_ICON[destination.tab]}
+        title={title}
+        sub={sub}
+        action={destination.label}
+        onOpen={() => onTabChange(destination.tab)}
+        onDismiss={() => onDismissAlert(alert.type)}
+        dismissLabel={`Dismiss: ${title}`}
+      />
+    );
+  }
+
+  const shownRows = expanded ? rows : rows.slice(0, OVERVIEW_CARD_ROWS_SHOWN);
+  const hiddenCount = rows.length - OVERVIEW_CARD_ROWS_SHOWN;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -186,62 +260,20 @@ export function NeedsAttentionSection({
             <p className="mt-2 text-sm text-[#5a7d82]">You&apos;re caught up on {clientName}</p>
           </div>
         ) : (
-          <div className="px-3 py-3">
-            {unreviewedCheckIn && (
-              <AttentionRow
-                thumb={THUMB_CLASS}
-                icon={<ClipboardCheck className="h-4 w-4" strokeWidth={1.5} />}
-                title="Check-in awaiting review"
-                sub={submitted ? `Submitted ${submitted.text}` : null}
-                subIsNumeric={submitted?.isNumeric}
-                action="Review"
-                // Addresses the check-in itself — the Check-ins tab's
-                // single-owner `?checkIn=` param, the block-ending row's shape.
-                onOpen={() => onTabChange("check-ins", { checkIn: unreviewedCheckIn.id })}
+          <>
+            <div className="px-3 py-3">{shownRows}</div>
+            {hiddenCount > 0 && (
+              // Expands IN PLACE. Unlike the feed beside it these rows each
+              // lead somewhere, but there is no page that lists them — the
+              // alerts are derived per request and the two coach-action rows
+              // are not alerts at all.
+              <CardOverflowToggle
+                count={hiddenCount}
+                expanded={expanded}
+                onToggle={() => setExpanded((open) => !open)}
               />
             )}
-
-            {blockEnding && (
-              // A coach-action row, not an alert: not dismissible, never on the
-              // dashboard feed, and it clears when the next block starts. The
-              // `{ journey: "blocks" }` round trip is a client-page URL
-              // contract, not a decoration.
-              <AttentionRow
-                thumb={THUMB_CLASS}
-                icon={<Flag className="h-4 w-4" strokeWidth={1.5} />}
-                title={`${blockEnding.blockName} ends ${endsWeekday(blockEnding.endsOn)}.`}
-                sub={
-                  blockEnding.nextBlockName
-                    ? `${blockEnding.nextBlockName} is next.`
-                    : "Nothing scheduled after it."
-                }
-                action="Journey"
-                onOpen={() => onTabChange("metrics", { journey: "blocks" })}
-              />
-            )}
-
-            {sortedAlerts.map((alert, i) => {
-              const destination = alertDestination(alert.type);
-              // Title and sub come from the dashboard's own copy functions, so
-              // the two surfaces cannot describe one alert differently. `sub`
-              // is null when the fuller sentence would only repeat the
-              // headline — a row printing the same string twice reads as a bug.
-              const { title, sub } = alertLines(alert);
-              return (
-                <AttentionRow
-                  key={`${alert.type}-${i}`}
-                  thumb={SEVERITY_THUMB[alert.severity] ?? SEVERITY_THUMB.low}
-                  icon={DESTINATION_ICON[destination.tab]}
-                  title={title}
-                  sub={sub}
-                  action={destination.label}
-                  onOpen={() => onTabChange(destination.tab)}
-                  onDismiss={() => onDismissAlert(alert.type)}
-                  dismissLabel={`Dismiss: ${title}`}
-                />
-              );
-            })}
-          </div>
+          </>
         )}
       </OverviewCard>
     </div>

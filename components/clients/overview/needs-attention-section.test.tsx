@@ -166,6 +166,63 @@ describe("NeedsAttentionSection", () => {
     expect(titles[0]).toBe("3 sessions missed");
   });
 
+  it("caps at three rows across all three sources, keeping their order", () => {
+    render(
+      <NeedsAttentionSection
+        {...PROPS}
+        unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
+        blockEnding={{ blockName: "Build", endsOn: "2026-06-07", nextBlockName: "Cut" }}
+        attentionAlerts={[
+          alert("training_missed", "high", "Missed 3 training sessions this week"),
+          alert("habit_dropoff", "low", "Habits at 2 of 7 days below 50%"),
+        ]}
+      />
+    );
+
+    // Four rows, three shown: the check-in, the block boundary, then the
+    // highest-severity alert. The three sources are one ordered list, and the
+    // cap slices it — it must not drop a source.
+    expect(screen.getByText("Check-in awaiting review")).toBeInTheDocument();
+    expect(screen.getByText(/Build ends/)).toBeInTheDocument();
+    expect(screen.getByText("3 sessions missed")).toBeInTheDocument();
+    expect(screen.queryByText(/Low habits/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument();
+  });
+
+  it("expands and collapses the overflow", async () => {
+    const user = userEvent.setup();
+    render(
+      <NeedsAttentionSection
+        {...PROPS}
+        unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
+        blockEnding={{ blockName: "Build", endsOn: "2026-06-07", nextBlockName: "Cut" }}
+        attentionAlerts={[
+          alert("training_missed", "high", "Missed 3 training sessions this week"),
+          alert("habit_dropoff", "low", "Habits at 2 of 7 days below 50%"),
+        ]}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Show 1 more" }));
+    expect(screen.getByText(/Low habits/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Show less" }));
+    expect(screen.queryByText(/Low habits/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument();
+  });
+
+  it("offers no overflow control when three rows or fewer fit", () => {
+    render(
+      <NeedsAttentionSection
+        {...PROPS}
+        unreviewedCheckIn={{ id: "ci-1", submittedAt: new Date().toISOString() }}
+        attentionAlerts={[alert("training_missed", "high", "Missed 3 sessions")]}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: /more$/ })).not.toBeInTheDocument();
+  });
+
   it("dismisses an alert by type, and offers no dismiss on the coach-action rows", async () => {
     const user = userEvent.setup();
     const onDismissAlert = vi.fn();

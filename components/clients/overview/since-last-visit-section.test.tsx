@@ -37,7 +37,8 @@ describe("SinceLastVisitSection", () => {
     expect(screen.queryByText(/first time viewing/i)).not.toBeInTheDocument();
   });
 
-  it("renders one row per activity type", () => {
+  it("renders one row per activity type", async () => {
+    const user = userEvent.setup();
     const activity: ActivityItem[] = [
       { type: "check_in", at: "2026-06-02T09:00:00Z" },
       {
@@ -65,6 +66,9 @@ describe("SinceLastVisitSection", () => {
     render(
       <SinceLastVisitSection lastViewedAt="2026-06-01T00:00:00Z" activity={activity} {...NOOP} />
     );
+    // Four types against a three-row cap — expand so this stays a test of
+    // `describe()`'s coverage rather than of the cap.
+    await user.click(screen.getByRole("button", { name: "Show 1 more" }));
 
     expect(screen.getByText("Check-in submitted")).toBeInTheDocument();
     expect(screen.getByText("Weight logged")).toBeInTheDocument();
@@ -72,7 +76,7 @@ describe("SinceLastVisitSection", () => {
     expect(screen.getByText("Session completed")).toBeInTheDocument();
   });
 
-  it("renders at most five rows and counts the rest in the footer", () => {
+  it("renders at most three rows and offers the rest in the footer", () => {
     const activity: ActivityItem[] = Array.from({ length: 9 }, (_, i) => ({
       type: "session_completed" as const,
       at: `2026-06-0${i + 1}T17:00:00Z`,
@@ -84,11 +88,11 @@ describe("SinceLastVisitSection", () => {
       <SinceLastVisitSection lastViewedAt="2026-06-01T00:00:00Z" activity={activity} {...NOOP} />
     );
 
-    expect(screen.getAllByText("Session completed")).toHaveLength(5);
-    // The five newest as the service ordered them — the cap slices, it never sorts.
+    expect(screen.getAllByText("Session completed")).toHaveLength(3);
+    // The three newest as the service ordered them — the cap slices, it never sorts.
     expect(screen.getByText(/Session 1 ·/)).toBeInTheDocument();
-    expect(screen.queryByText(/Session 6 ·/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show 4 more" })).toBeInTheDocument();
+    expect(screen.queryByText(/Session 4 ·/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show 6 more" })).toBeInTheDocument();
   });
 
   it("expands to the whole feed, because Mark seen would otherwise destroy it unread", async () => {
@@ -103,7 +107,7 @@ describe("SinceLastVisitSection", () => {
     render(
       <SinceLastVisitSection lastViewedAt="2026-06-01T00:00:00Z" activity={activity} {...NOOP} />
     );
-    await user.click(screen.getByRole("button", { name: "Show 4 more" }));
+    await user.click(screen.getByRole("button", { name: "Show 6 more" }));
 
     expect(screen.getAllByText("Session completed")).toHaveLength(9);
     expect(screen.getByText(/Session 9 ·/)).toBeInTheDocument();
@@ -121,15 +125,15 @@ describe("SinceLastVisitSection", () => {
     render(
       <SinceLastVisitSection lastViewedAt="2026-06-01T00:00:00Z" activity={activity} {...NOOP} />
     );
-    await user.click(screen.getByRole("button", { name: "Show 4 more" }));
+    await user.click(screen.getByRole("button", { name: "Show 6 more" }));
     await user.click(screen.getByRole("button", { name: "Show less" }));
 
-    expect(screen.getAllByText("Session completed")).toHaveLength(5);
-    expect(screen.getByRole("button", { name: "Show 4 more" })).toBeInTheDocument();
+    expect(screen.getAllByText("Session completed")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "Show 6 more" })).toBeInTheDocument();
   });
 
   it("shows no overflow footer when the feed fits", () => {
-    const activity: ActivityItem[] = Array.from({ length: 5 }, (_, i) => ({
+    const activity: ActivityItem[] = Array.from({ length: 3 }, (_, i) => ({
       type: "session_completed" as const,
       at: `2026-06-0${i + 1}T17:00:00Z`,
       sessionName: `Session ${i + 1}`,
@@ -140,7 +144,7 @@ describe("SinceLastVisitSection", () => {
       <SinceLastVisitSection lastViewedAt="2026-06-01T00:00:00Z" activity={activity} {...NOOP} />
     );
 
-    expect(screen.getAllByText("Session completed")).toHaveLength(5);
+    expect(screen.getAllByText("Session completed")).toHaveLength(3);
     expect(screen.queryByRole("button", { name: /more$/ })).not.toBeInTheDocument();
   });
 

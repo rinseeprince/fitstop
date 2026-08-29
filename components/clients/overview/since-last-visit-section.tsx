@@ -5,14 +5,17 @@ import { ClipboardCheck, Dumbbell, Inbox, Loader2, Ruler, Trophy } from "lucide-
 import { cn } from "@/lib/utils";
 import { METRIC_DEFINITIONS } from "@/components/clients/metrics/hooks/use-metrics-data";
 import {
-  FOCUS_RING,
   LABEL_CLASS,
   MONO,
   MONO_META_CLASS,
   THUMB_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { SectionLabel } from "@/components/programs/shared/section-label";
-import { OverviewCard } from "./overview-primitives";
+import {
+  CardOverflowToggle,
+  OverviewCard,
+  OVERVIEW_CARD_ROWS_SHOWN,
+} from "./overview-primitives";
 import { formatMetricValue, formatRelativeShort, pluralize } from "./overview-format";
 import type { ActivityItem } from "@/types/coach-brief";
 import { useUnits } from "@/contexts/units-context";
@@ -23,32 +26,20 @@ import {
   type UnitSystem,
 } from "@/utils/unit-conversions";
 
-/**
- * How many activity rows the card shows before the coach asks for the rest.
- *
- * The service caps the FETCH at 20 (`ACTIVITY_FEED_CAP`) — a different number
- * on purpose, because the footer needs something left over to offer.
- * Unbounded, a coach returning after three weeks got a card up to ~1,760px
- * tall, and since the two Overview cards share one `items-stretch` row, an
- * all-clear "Needs attention" beside it padded to match: a centred tick
- * floating in 800px of white. Five rows lands the card near the height of an
- * attention card carrying its usual two or three, so the row reads even
- * without either side being told a height.
- *
- * **The remainder must stay REACHABLE, which is why the footer is a button and
- * not a count.** This feed is anchored to `last_viewed_at`, and "Mark seen"
- * moves that anchor — so a row this card never rendered is a row the coach can
- * never read here. A line saying "+14 more" would have named fourteen things
- * and then destroyed them unread on the next click.
- *
- * **It TOGGLES.** Expanding was one-way for a day, on the reasoning that the
- * coach's next act is Mark seen — but the Overview is a page you scroll
- * through, and a coach who expands and carries on down it has restored the
- * ~1,760px card, and the padded empty card beside it, for the rest of the
- * visit. The only way out was a tab round trip (Radix remounts
- * `TabsContent`), which nobody would guess.
- */
-const ACTIVITY_ROWS_SHOWN = 5;
+// The card shows OVERVIEW_CARD_ROWS_SHOWN rows and offers the rest.
+//
+// The service caps the FETCH at 20 (`ACTIVITY_FEED_CAP`) — a different number
+// on purpose, because the footer needs something left over to offer.
+// Unbounded, a coach returning after three weeks got a card up to ~1,760px
+// tall, and since the two Overview cards share one `items-stretch` row, an
+// all-clear "Needs attention" beside it padded to match: a centred tick
+// floating in 800px of white.
+//
+// **The remainder must stay REACHABLE, which is why the footer is a button and
+// not a count.** This feed is anchored to `last_viewed_at`, and "Mark seen"
+// moves that anchor — so a row this card never rendered is a row the coach can
+// never read here. A line saying "+14 more" would have named fourteen things
+// and then destroyed them unread on the next click.
 
 type SinceLastVisitSectionProps = {
   lastViewedAt: string | null;
@@ -163,11 +154,11 @@ export function SinceLastVisitSection({
 }: SinceLastVisitSectionProps) {
   const { preference } = useUnits();
   const [expanded, setExpanded] = useState(false);
-  const shown = expanded ? activity : activity.slice(0, ACTIVITY_ROWS_SHOWN);
+  const shown = expanded ? activity : activity.slice(0, OVERVIEW_CARD_ROWS_SHOWN);
   // A FLOOR, not a total: the service stops fetching at 20, so a coach who has
   // been away long enough may have more behind it than expanding will show.
   // Exactness would cost a count query.
-  const hiddenCount = activity.length - ACTIVITY_ROWS_SHOWN;
+  const hiddenCount = activity.length - OVERVIEW_CARD_ROWS_SHOWN;
   return (
     // Its own rail, deliberately OUTSIDE the page's window control: this feed
     // is anchored to `last_viewed_at`, not to a period, so it must not read as
@@ -242,21 +233,15 @@ export function SinceLastVisitSection({
               })}
             </div>
             {hiddenCount > 0 && (
-              // The card-footer shape the design SOT names for a popover: the
-              // inner hairline plus a teal text action. It expands IN PLACE —
-              // there is nowhere to send them, because this feed's contents
-              // are spread across Journey, Training history and Check-ins and
-              // only the `last_viewed_at` anchor gathers them.
-              <button
-                type="button"
-                onClick={() => setExpanded((open) => !open)}
-                className={cn(
-                  "mt-auto w-full border-t border-[rgba(13,148,136,0.06)] px-5 py-2.5 text-[11px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]",
-                  FOCUS_RING
-                )}
-              >
-                {expanded ? "Show less" : `Show ${hiddenCount} more`}
-              </button>
+              // Expands IN PLACE — there is nowhere to send them, because this
+              // feed's contents are spread across Journey, Training history
+              // and Check-ins, and only the `last_viewed_at` anchor gathers
+              // them into one list.
+              <CardOverflowToggle
+                count={hiddenCount}
+                expanded={expanded}
+                onToggle={() => setExpanded((open) => !open)}
+              />
             )}
           </>
         )}

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { containsDigit } from "@/components/clients/metrics/metrics-format";
 import {
   CHIP_NEUTRAL_CLASS,
+  FOCUS_RING,
   LABEL_CLASS,
   MONO,
   MONO_META_CLASS,
@@ -210,5 +211,50 @@ export function EmptyInvite({
         {actionLabel}
       </button>
     </div>
+  );
+}
+
+/**
+ * How many rows the Overview's two side-by-side cards show before the coach
+ * asks for the rest.
+ *
+ * ONE number for both, because they share a single `items-stretch` grid row:
+ * capping them differently makes the taller one dictate the height again, and
+ * pads the shorter one with the white space the cap exists to remove.
+ */
+export const OVERVIEW_CARD_ROWS_SHOWN = 3;
+
+/**
+ * The overflow control on a capped card: the design SOT's popover-footer shape
+ * — inner hairline plus a teal text action.
+ *
+ * It TOGGLES, and `count` is measured against the CAP rather than against what
+ * is currently on screen, so the control survives its own expansion. Both
+ * callers are transient cards a coach dismisses ("Mark seen") or acts on, and
+ * one-way expansion left them stuck with the tall card for the rest of the
+ * visit — recoverable only by a tab round trip, since Radix remounts an
+ * inactive `TabsContent`.
+ */
+export function CardOverflowToggle({
+  count,
+  expanded,
+  onToggle,
+}: {
+  count: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(
+        "mt-auto w-full border-t px-5 py-2.5 text-[11px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]",
+        CARD_HAIRLINE,
+        FOCUS_RING
+      )}
+    >
+      {expanded ? "Show less" : `Show ${count} more`}
+    </button>
   );
 }
