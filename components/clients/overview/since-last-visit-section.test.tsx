@@ -107,8 +107,25 @@ describe("SinceLastVisitSection", () => {
 
     expect(screen.getAllByText("Session completed")).toHaveLength(9);
     expect(screen.getByText(/Session 9 ·/)).toBeInTheDocument();
-    // One-way: the coach's next act is Mark seen, so there is nothing to collapse to.
-    expect(screen.queryByRole("button", { name: /^Show \d+ more$/ })).not.toBeInTheDocument();
+  });
+
+  it("collapses back, so expanding is not a one-way door into a 1,760px card", async () => {
+    const user = userEvent.setup();
+    const activity: ActivityItem[] = Array.from({ length: 9 }, (_, i) => ({
+      type: "session_completed" as const,
+      at: `2026-06-0${i + 1}T17:00:00Z`,
+      sessionName: `Session ${i + 1}`,
+      exerciseCount: 4,
+    }));
+
+    render(
+      <SinceLastVisitSection lastViewedAt="2026-06-01T00:00:00Z" activity={activity} {...NOOP} />
+    );
+    await user.click(screen.getByRole("button", { name: "Show 4 more" }));
+    await user.click(screen.getByRole("button", { name: "Show less" }));
+
+    expect(screen.getAllByText("Session completed")).toHaveLength(5);
+    expect(screen.getByRole("button", { name: "Show 4 more" })).toBeInTheDocument();
   });
 
   it("shows no overflow footer when the feed fits", () => {

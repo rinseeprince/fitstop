@@ -763,7 +763,10 @@ Load-bearing details:
   all-clear "Needs attention" padded to match it. **The remainder expands in place rather than
   being named in a count**, because "Mark seen" moves `last_viewed_at` and clears the feed: a line
   reading "+14 more" would have named fourteen things and destroyed them unread on the next click.
-  Expanding is one-way — the coach's next act is Mark seen.
+  The button TOGGLES: expanding was one-way for a day, on the reasoning that Mark seen comes next,
+  but the Overview is a page you scroll through and a coach who expanded and carried on had
+  restored the tall card — and the padded empty card beside it — for the rest of the visit, with
+  only a tab round trip to undo it.
 - **Two density rules.** `WellnessSparkline` drops its interior dots above 20 points and keeps the last-point marker, which is the one carrying tone; the progression chart drops its raw dots above 40 readings for the same reason. At the shipped 7-day window the sparkline's rule is inert — it is there because the component takes any number of points, not because this caller needs it.
 - **Alert copy is shared with the dashboard.** `lib/attention-alert-copy.ts` owns `getShortAlertText` / `getPriorityAlertText` (title and sub), `alertLines` (which returns a null sub when the two would be identical — `no_log_gap` falls through both switches) and `visibleAlerts` (which hides `no_log_gap` while `no_engagement` is live: the second is strictly stronger, and suppression rather than a merge keeps the dismissal 1:1). The alert thumb icon names the **destination**, not the type — eleven types share four destinations.
 

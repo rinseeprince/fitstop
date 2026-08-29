@@ -39,9 +39,14 @@ import {
  * not a count.** This feed is anchored to `last_viewed_at`, and "Mark seen"
  * moves that anchor — so a row this card never rendered is a row the coach can
  * never read here. A line saying "+14 more" would have named fourteen things
- * and then destroyed them unread on the next click. Expanding is one-way: the
- * coach's next act is Mark seen, so a collapse control would be furniture on a
- * card that is about to be dismissed.
+ * and then destroyed them unread on the next click.
+ *
+ * **It TOGGLES.** Expanding was one-way for a day, on the reasoning that the
+ * coach's next act is Mark seen — but the Overview is a page you scroll
+ * through, and a coach who expands and carries on down it has restored the
+ * ~1,760px card, and the padded empty card beside it, for the rest of the
+ * visit. The only way out was a tab round trip (Radix remounts
+ * `TabsContent`), which nobody would guess.
  */
 const ACTIVITY_ROWS_SHOWN = 5;
 
@@ -162,7 +167,7 @@ export function SinceLastVisitSection({
   // A FLOOR, not a total: the service stops fetching at 20, so a coach who has
   // been away long enough may have more behind it than expanding will show.
   // Exactness would cost a count query.
-  const hiddenCount = activity.length - shown.length;
+  const hiddenCount = activity.length - ACTIVITY_ROWS_SHOWN;
   return (
     // Its own rail, deliberately OUTSIDE the page's window control: this feed
     // is anchored to `last_viewed_at`, not to a period, so it must not read as
@@ -244,13 +249,13 @@ export function SinceLastVisitSection({
               // only the `last_viewed_at` anchor gathers them.
               <button
                 type="button"
-                onClick={() => setExpanded(true)}
+                onClick={() => setExpanded((open) => !open)}
                 className={cn(
                   "mt-auto w-full border-t border-[rgba(13,148,136,0.06)] px-5 py-2.5 text-[11px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]",
                   FOCUS_RING
                 )}
               >
-                Show {hiddenCount} more
+                {expanded ? "Show less" : `Show ${hiddenCount} more`}
               </button>
             )}
           </>
