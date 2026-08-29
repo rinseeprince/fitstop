@@ -943,7 +943,7 @@ today the roster has NO canonical doc home). Smoke: `?view=review` lists exactly
 Overview shows the awaiting-review row; stat-band count = sidebar count = nav badge; row click
 and "Review check-in" land on the check-in; an inactive client's unreviewed check-in is absent.
 
-**STATUS — SHIPPED 2026-08-29 in `PLACEHOLDER_SHA`; browser smoke OWED (owner runs it).**
+**STATUS — SHIPPED 2026-08-29 in `1d2a25a`; browser smoke OWED (owner runs it).**
 
 *What shipped.*
 - `lib/roster-views.ts`: `RosterRow.unreviewedCheckIn`, typed as the Overview's own
