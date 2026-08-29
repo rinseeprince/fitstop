@@ -7,6 +7,20 @@
   - **Quality over speed**: Take the time to build clean, maintainable solutions rather than quick hacks that create technical debt.
   - **Understand before implementing**: When something doesn't work as expected, research why. Read documentation, check for known issues, and understand the intended design before writing code.
   - **If it feels wrong, it probably is**: If a solution requires fighting against the framework or library's design, step back and find the proper approach.
+  - **Model data relationally, and review normalisation on every schema change.** Before any
+    plan proposes a column, ask of the data: *does anything reference it? is it edited in
+    place? is it ordered? is it shared between owners? will anyone want its history or
+    per-item analytics?* One "yes" means a **table with its own id and foreign keys** — never
+    a `JSONB` array or `TEXT[]` on an existing row. JSONB is for value-bags and frozen snapshots
+    with no identity (`set_specs`, `period_snapshot`), and "there is already a JSONB column on
+    this table" is not a precedent. The data model is an **explicit owner decision** in every
+    plan, stated with its alternatives, never adopted silently from a draft. Sanctioned
+    denormalisations (caches like `clients.current_weight`, submit-time snapshot columns) are
+    documented as such in `docs/ARCHITECTURE.md`; an undocumented one found in passing is debt
+    to record, not a shape to copy. Full rule: §8 → "Data modelling". *(Added 2026-08-29 after a
+    plan put a coach's check-in questions on `clients` as JSONB and snapshotted the prompt onto
+    each answer to hide that nothing could reference a question — a band-aid that reached the
+    owner's desk before it was caught.)*
 
   ## 2. Claude Code Behavior
 
@@ -312,6 +326,48 @@
   - Do not use axios (not installed).
 
   ## 8. Database
+
+  ### Data modelling — normalise by default (MANDATORY)
+
+  Relational database management is the default for every piece of stored data in this
+  product, and normalisation is **reviewed and upkept** — on every new migration, and whenever
+  a plan touches a table's shape. This is a §1 rule restated where the schema work happens.
+
+  **The test, applied to every proposed column before it is written down:**
+
+  | If the data… | then it is… |
+  |---|---|
+  | is referenced by any other row (an answer points at a question, a log at a habit) | its own table with a UUID `id` and a real foreign key — never a `questionId` inside JSON that nothing enforces |
+  | is edited in place (rename, reword, reprice) | its own row, edited once — never a value copied into N parent rows that must all be rewritten |
+  | is ordered, toggled, or assigned per owner | a join table carrying `position` / `enabled` / the owner FK — never an array whose index is the order |
+  | is shared between owners (a template and a client, a coach and their clients) | one row referenced by both — copies only where `docs/ARCHITECTURE.md` says the library model is copy-based, and then the *join rows* are copied, not the entity |
+  | will ever be counted, trended, or filtered on its own ("how did answers to Q3 change") | a table with an index on the column you will filter — a JSONB path scan is not a query plan |
+  | is a fixed enum of a few keys with presence semantics | a join table `(parent_id, key)` with a `CHECK` on the key, or a `TEXT[]` **only** when the set is closed, small, and never referenced (the migration-149 `prescribed_fields` case — and that migration documents why) |
+
+  **What JSONB is for here, and only here:** value-bags and snapshots that have no identity
+  and are never addressed from outside — a set prescription (`set_specs`), a frozen
+  submit-time snapshot (`period_snapshot`, `prescribed_session_snapshot`), a preference blob
+  read whole (`reminder_preferences`), an AI payload read whole (`ai_insights`). The moment a
+  key inside the blob needs a stable identity, an edit, or a reference, it is a table.
+
+  **Denormalisation is allowed only when named and documented.** Caches
+  (`clients.current_weight`, `clients.starting_weight`), submit-time snapshot columns
+  (`check_ins.workouts_completed`), and the copy-based library placement are sanctioned because
+  `docs/ARCHITECTURE.md` says who the single writer is and what the cache is a cache *of*. A
+  new one needs the same paragraph in the same commit. An undocumented denormalisation found
+  in passing is recorded in `TECHNICAL-DEBT.md`, not used as precedent.
+
+  **Multi-table writes are atomic.** A save that touches two or more tables goes through an
+  RPC (`create_nutrition_plan_atomic`, `move_training_events_atomic` are the shape; optional
+  params `DEFAULT NULL` + `COALESCE` in the body; `GRANT EXECUTE … TO service_role`), or the
+  plan states exactly what is left inconsistent when the second write fails (§2 item 13).
+  A normalised model that is written non-transactionally has traded one class of corruption
+  for another.
+
+  **In every plan, the data model is a decision, not a detail.** State the proposed tables,
+  the alternatives considered (including the tempting column-on-the-parent one), and why the
+  relational shape wins or — rarely — why it does not. A reviewer who sees a `JSONB` or an
+  array column proposed for anything with identity should stop the plan there.
 
   ### Auth & data-access architecture (Shape B)
 
