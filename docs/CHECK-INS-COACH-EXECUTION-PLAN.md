@@ -943,7 +943,7 @@ today the roster has NO canonical doc home). Smoke: `?view=review` lists exactly
 Overview shows the awaiting-review row; stat-band count = sidebar count = nav badge; row click
 and "Review check-in" land on the check-in; an inactive client's unreviewed check-in is absent.
 
-**STATUS — SHIPPED 2026-08-29 in `1d2a25a`; browser smoke OWED (owner runs it).**
+**STATUS — SHIPPED 2026-08-29 in `1d2a25a`; browser-SMOKED by the owner the same day, all clear.**
 
 *What shipped.*
 - `lib/roster-views.ts`: `RosterRow.unreviewedCheckIn`, typed as the Overview's own
@@ -1059,12 +1059,25 @@ errors** (unchanged from C1; none in a touched file — the one grep hit,
 C1's 172 · no `as any`, no markers, no `console.log` in the touched files. No route file was
 deleted, so no `.next` wipe.
 
-*Still unverified.* Everything visual: the teal `review · <date>` sub-line beside the amber and
-muted ones, the second row button's fit in the 150px actions column, and whether a row carrying
-both "Review check-in" and the kebab still reads cleanly. The claim that the roster, the stat
-band, the sidebar and the nav badge all show the same number rests on one shared function and
-its unit tests, not on a browser. `?view=review` keeps the roster's default `"recent"` sort
-(newest client added), which is a poor order for a queue — recorded as a follow-up, not changed.
+*Smoke (owner, 2026-08-29) — all clear:* `?view=review` lists exactly the clients with an
+unreplied check-in and matches the stat-band cell, the sidebar pill and the nav badge; a client
+with several waiting counts once in all three; the teal `review · <date>` sub-line, amber
+lateness winning over it, and a plain overdue row all render correctly; "Review check-in" fits
+the actions column and sits cleanly beside the kebab on a row that is both; the row click
+addresses the check-in in the review view and the client page everywhere else, while the name
+always addresses the client; an intake-complete client is out of the queue and keeps its Review
+button on Onboarding; the bell rows land on the check-in in one hop and its footer is untouched;
+the client's own Overview agrees about who is waiting; replying removes a client with one waiting
+and keeps a client with several.
+
+*Still unverified, and why.* **The deactivated-client path (checklist steps 17–19) could not be
+exercised: nothing in the app deactivates a client.** `DELETE /api/clients/[id]` exists and has
+no caller, and `updateClientSchema.active` has no control bound to it, so the fixture cannot be
+made by clicking. What rests on unit tests alone is therefore: the row hiding "Review check-in"
+for an inactive client, the queue endpoint's new `.eq("active", true)`, and reactivation
+re-populating the view without a refresh. Worth a fixture the next time this area is opened.
+Also left alone: `?view=review` keeps the roster's default `"recent"` sort (newest client added),
+a poor order for a queue — recorded as a follow-up, not changed.
 
 ### C3 — #3 delete the legacy queue
 Per §2.3 (+ D3.1 card count, D3.2 recent rows). §2 review walked (the ≥5-files trigger fires):
