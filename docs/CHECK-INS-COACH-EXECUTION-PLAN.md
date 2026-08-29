@@ -665,7 +665,7 @@ imports), `npx vitest run` (re-run the flaky set-tracker test before blaming a c
   remove the dead `app/check-in/` whitelist entry.
 - STATUS: the new hooks have no consumer until C1 (knip line, one commit).
 
-**STATUS — SHIPPED 2026-08-29, one commit on `main`. Browser smoke OWED (owner runs it).**
+**STATUS — SHIPPED 2026-08-29 in `fc87902`; browser-SMOKED by the owner the same day, all clear.**
 
 *What shipped.*
 - `lib/constants.ts`: `CHECK_IN_STATUSES` (the full lifecycle) and
@@ -780,12 +780,21 @@ after, the only diff being `ClientGoalRow`'s line number (41 → 39, `CheckInIns
 it) · no `as any`, no markers, no `console.log` in the touched files. No route file was deleted,
 so no `.next` wipe.
 
-*Unverified.* Every UI effect — the bell/toast on a `pending` check-in, the Reviewed badge
-surviving Regenerate, the legacy queue page with `pending` rows, the metrics sheet still saving —
-until the owner's smoke. `useInvalidateClientCheckIns` has no live consumer until C1, so its
-"next mount refetches" claim rests on the swr source reading and the unit tests, not a browser run.
-Left stale on purpose (outside C0's doc list): CONVENTIONS §9 still calls `checkInRateLimit`
-"public check-in endpoints".
+*Smoke (owner, 2026-08-29) — all pass:* bell + toast fire on a `pending` check-in at submit time;
+the Overview row and the bell agree on it; Regenerate on a Reviewed check-in keeps the badge and
+does not re-queue it; Regenerate on a pending row still promotes; the legacy queue lists and opens
+`pending` rows; `?status=bogus` still 400s and `?status=reviewed` filters; the comparison panes
+render untouched; the metrics PUT 200s on both of its real gestures — a custom TDEE and "Reset to
+calculated" in the details sheet. One checklist item was mis-specified: "change the current weight
+in the details sheet" is impossible (read-only there), and a Physique log goes to
+`POST …/metric-entries`, not this route — `PUT /api/clients/[id]/metrics` has exactly ONE live
+caller, the sheet's TDEE override (`use-client-profile-edit.ts:365-367`). Smoke that route through
+TDEE, nothing else.
+
+*Still unverified.* `useInvalidateClientCheckIns` has no live consumer until C1, so its "next mount
+refetches" claim rests on the swr source reading and the unit tests, not a browser run. Left stale
+on purpose (outside C0's doc list): CONVENTIONS §9 still calls `checkInRateLimit` "public check-in
+endpoints".
 
 ### C1 — #1 the check-in page (+ SWR conversion per D1.4)
 - `lib/client-tabs.ts`: `checkInReviewUrl(clientId, checkInId)` (+ `lib/client-tabs.test.ts`);
