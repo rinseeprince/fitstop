@@ -825,7 +825,7 @@ endpoints".
   on a detail leaves you on the detail (single-owner param rides through — say so if you prefer
   it to reset).
 
-**STATUS — SHIPPED 2026-08-29, one commit on `main`. Browser smoke OWED (owner runs it).**
+**STATUS — SHIPPED 2026-08-29 in `1ad3971`; browser-SMOKED by the owner the same day, all clear.**
 
 *What shipped.*
 - `lib/client-tabs.ts`: `checkInReviewUrl(clientId, checkInId)` → `/clients/{id}?tab=check-ins&checkIn=<id>`,
@@ -920,10 +920,17 @@ lines: `FullWeekTarget` gone, one line-number shift, nothing new · no `as any`,
 `console.log` in the touched files. No route file was deleted, so no `.next` wipe (the modal is a
 component; the legacy route stays until C3).
 
-*Unverified.* Every UI effect until the owner's smoke — above all the rail offset (deviation 7) and
-the Back behaviours described in deviation 1. `useInvalidateCheckInDetail` has no consumer outside
-its own module yet (C2/C3 may want it). The `range` option's behaviour under `useWellnessData`'s
-5-second dedupe is inherited, not measured.
+*Smoke (owner, 2026-08-29) — all clear:* Overview "Review" lands on the check-in; the back row
+returns to the list; a pasted `?tab=check-ins&checkIn=<id>` opens on first render; all three panes
+render as before; Send returns to the list with the badge updated and the bell count drops at once;
+Regenerate refreshes in place; Back after a list-row open returns to the list; a sidebar round trip
+keeps the open detail; the sticky rail sits below the band at `lg:top-[52px]` (deviation 7 holds as
+rendered); the legacy queue row lands on the client's check-in page once; a foreign client id in
+the URL shows the guard's notice.
+
+*Still unverified.* `useInvalidateCheckInDetail` has no consumer outside its own module yet (C2/C3
+may want it). The `range` option's behaviour under `useWellnessData`'s 5-second dedupe is inherited,
+not measured.
 
 ### C2 — #2 roster "Ready for review" = check-ins
 `lib/roster-views.ts` (+ new `roster-views.test.ts`), `hooks/use-roster.ts` (thread, fold, refresh
