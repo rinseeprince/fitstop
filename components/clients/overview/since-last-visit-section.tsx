@@ -1,10 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ClipboardCheck, Dumbbell, Inbox, Loader2, Ruler, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { METRIC_DEFINITIONS } from "@/components/clients/metrics/hooks/use-metrics-data";
 import {
+  FOCUS_RING,
   LABEL_CLASS,
   MONO,
   MONO_META_CLASS,
@@ -21,6 +22,28 @@ import {
   formatWeight,
   type UnitSystem,
 } from "@/utils/unit-conversions";
+
+/**
+ * How many activity rows the card shows before the coach asks for the rest.
+ *
+ * The service caps the FETCH at 20 (`ACTIVITY_FEED_CAP`) — a different number
+ * on purpose, because the footer needs something left over to offer.
+ * Unbounded, a coach returning after three weeks got a card up to ~1,760px
+ * tall, and since the two Overview cards share one `items-stretch` row, an
+ * all-clear "Needs attention" beside it padded to match: a centred tick
+ * floating in 800px of white. Five rows lands the card near the height of an
+ * attention card carrying its usual two or three, so the row reads even
+ * without either side being told a height.
+ *
+ * **The remainder must stay REACHABLE, which is why the footer is a button and
+ * not a count.** This feed is anchored to `last_viewed_at`, and "Mark seen"
+ * moves that anchor — so a row this card never rendered is a row the coach can
+ * never read here. A line saying "+14 more" would have named fourteen things
+ * and then destroyed them unread on the next click. Expanding is one-way: the
+ * coach's next act is Mark seen, so a collapse control would be furniture on a
+ * card that is about to be dismissed.
+ */
+const ACTIVITY_ROWS_SHOWN = 5;
 
 type SinceLastVisitSectionProps = {
   lastViewedAt: string | null;
@@ -134,6 +157,12 @@ export function SinceLastVisitSection({
   isMarkingSeen,
 }: SinceLastVisitSectionProps) {
   const { preference } = useUnits();
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? activity : activity.slice(0, ACTIVITY_ROWS_SHOWN);
+  // A FLOOR, not a total: the service stops fetching at 20, so a coach who has
+  // been away long enough may have more behind it than expanding will show.
+  // Exactness would cost a count query.
+  const hiddenCount = activity.length - shown.length;
   return (
     // Its own rail, deliberately OUTSIDE the page's window control: this feed
     // is anchored to `last_viewed_at`, not to a period, so it must not read as
@@ -184,28 +213,47 @@ export function SinceLastVisitSection({
             )}
           </div>
         ) : (
-          <div className="px-3 py-3">
-            {activity.map((item, i) => {
-              const { icon, title, detail } = describe(item, preference);
-              return (
-                <div
-                  key={`${item.type}-${item.at}-${i}`}
-                  className="flex items-start gap-3 px-2 py-2"
-                >
-                  <span className={cn(THUMB_CLASS, "h-8 w-8")}>{icon}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-semibold text-[#0c1a1e]">{title}</p>
-                    {detail && (
-                      <p className="mt-0.5 truncate text-[11px] text-[#93b0b4]">{detail}</p>
-                    )}
+          <>
+            <div className="px-3 py-3">
+              {shown.map((item, i) => {
+                const { icon, title, detail } = describe(item, preference);
+                return (
+                  <div
+                    key={`${item.type}-${item.at}-${i}`}
+                    className="flex items-start gap-3 px-2 py-2"
+                  >
+                    <span className={cn(THUMB_CLASS, "h-8 w-8")}>{icon}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] font-semibold text-[#0c1a1e]">{title}</p>
+                      {detail && (
+                        <p className="mt-0.5 truncate text-[11px] text-[#93b0b4]">{detail}</p>
+                      )}
+                    </div>
+                    <span className={cn(MONO_META_CLASS, "shrink-0 pt-0.5 text-[10px]")}>
+                      {formatRelativeShort(item.at)}
+                    </span>
                   </div>
-                  <span className={cn(MONO_META_CLASS, "shrink-0 pt-0.5 text-[10px]")}>
-                    {formatRelativeShort(item.at)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+            {hiddenCount > 0 && (
+              // The card-footer shape the design SOT names for a popover: the
+              // inner hairline plus a teal text action. It expands IN PLACE —
+              // there is nowhere to send them, because this feed's contents
+              // are spread across Journey, Training history and Check-ins and
+              // only the `last_viewed_at` anchor gathers them.
+              <button
+                type="button"
+                onClick={() => setExpanded(true)}
+                className={cn(
+                  "mt-auto w-full border-t border-[rgba(13,148,136,0.06)] px-5 py-2.5 text-[11px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]",
+                  FOCUS_RING
+                )}
+              >
+                Show {hiddenCount} more
+              </button>
+            )}
+          </>
         )}
       </OverviewCard>
     </div>

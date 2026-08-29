@@ -756,6 +756,14 @@ Load-bearing details:
 - **Three surfaces must be told when their data is still loading.** `CoachNotesCard` (`isLoading`), the identity row's check-in cluster (`isTimingLoading`) and the progression chart (`isLoading` with a null series) all receive empty-shaped data while pending *and* when the client genuinely has none. Without the flag they render a confident "no notes" / "Not scheduled" / "No measurements in this window" and contradict it a moment later. Covered by `overview/loading-states.test.tsx` and `progression-chart.test.tsx` — keep the flag threaded through any new consumer.
 - **Five wellness cards**, Soreness included. Stress and soreness are inverted (lower is better) through `getWellnessTone()` in `utils/wellness-color-thresholds.ts` — the single source for that inversion, shared with `components/check-in/mini-bar-sparkline.tsx`. **Sleep has no trigger in `lib/wellness-triggers.ts`, so its card can never flag; do not invent one.** There is deliberately no composite wellness score anywhere — only per-metric tones — so wellness is five cards rather than a fourth rail with a percentage.
 - **The training rail's `none` state renders a dash, not a dot.** No session was planned that day; losing that turns every rest day into a miss.
+- **The activity feed shows five rows, then offers the rest as a button.** `ACTIVITY_FEED_CAP`
+  (20) is the FETCH cap; `ACTIVITY_ROWS_SHOWN` (5) is the render cap, and they are deliberately
+  different numbers so the footer has something to offer. Unbounded, a coach returning after three
+  weeks got a card up to ~1,760px tall, and because the two cards share one `items-stretch` row an
+  all-clear "Needs attention" padded to match it. **The remainder expands in place rather than
+  being named in a count**, because "Mark seen" moves `last_viewed_at` and clears the feed: a line
+  reading "+14 more" would have named fourteen things and destroyed them unread on the next click.
+  Expanding is one-way — the coach's next act is Mark seen.
 - **Two density rules.** `WellnessSparkline` drops its interior dots above 20 points and keeps the last-point marker, which is the one carrying tone; the progression chart drops its raw dots above 40 readings for the same reason. At the shipped 7-day window the sparkline's rule is inert — it is there because the component takes any number of points, not because this caller needs it.
 - **Alert copy is shared with the dashboard.** `lib/attention-alert-copy.ts` owns `getShortAlertText` / `getPriorityAlertText` (title and sub), `alertLines` (which returns a null sub when the two would be identical — `no_log_gap` falls through both switches) and `visibleAlerts` (which hides `no_log_gap` while `no_engagement` is live: the second is strictly stronger, and suppression rather than a merge keeps the dismissal 1:1). The alert thumb icon names the **destination**, not the type — eleven types share four destinations.
 
