@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: PLAN — awaiting owner review. Nothing in this document is built.**
+**Status: IN PROGRESS — C0 shipped 2026-08-29 (STATUS block under §5 → C0); C1–C6 not built.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -664,6 +664,128 @@ imports), `npx vitest run` (re-run the flaky set-tracker test before blaming a c
   `services/client-journey-service.ts`, which does not compose through `toClientGoalInput`);
   remove the dead `app/check-in/` whitelist entry.
 - STATUS: the new hooks have no consumer until C1 (knip line, one commit).
+
+**STATUS — SHIPPED 2026-08-29, one commit on `main`. Browser smoke OWED (owner runs it).**
+
+*What shipped.*
+- `lib/constants.ts`: `CHECK_IN_STATUSES` (the full lifecycle) and
+  `UNREVIEWED_CHECK_IN_STATUSES = ["pending", "ai_processed"]` (D2.2), both
+  `as const satisfies readonly CheckInStatus[]`. Readers: the Overview brief,
+  `/api/check-ins/unreviewed`, and `updateCheckInAISummary`'s promotion guard. The
+  per-client list validates `?status=` against `CHECK_IN_STATUSES` through a route-local
+  `isCheckInStatus` guard, so its inline literal AND its `as CheckInStatus` cast are gone.
+- `hooks/use-check-in-data.ts`: `checkInsQueueKey`; `useInvalidateCheckInsQueue()` (matcher
+  `/api/check-ins` — the queue plus the dashboard's `/recent`; the singular `/api/check-in/…`
+  does not match); `useInvalidateClientCheckIns()` (see deviations); `NO_UNREVIEWED_CHECK_INS`;
+  `errorRetryCount/Interval` + `onError` on `useUnreviewedCheckIns`. `buildCheckInsPageKey`
+  now derives from one `clientCheckInsKeyPrefix`, so the key and its invalidator share a string.
+- D0.2: `updateCheckInAISummary` is one conditional UPDATE (`id` + `status IN unreviewed`,
+  `.select("id")`) that falls back to an AI-columns-only UPDATE when no row matched, i.e. the
+  row is `reviewed`. Not read-then-write: a Regenerate racing a Send would have read
+  `ai_processed` and written it over the `reviewed` that landed in between.
+- D0.1: the `saveOption: "check-in"` branch, the zod field and `CheckInInsert` are deleted. The
+  schema is `.strict()`, so a body carrying `saveOption` now **400s** rather than being ignored.
+- `scripts/check-labels-whitelist.ts`: the dead `app/check-in/` entry (no such directory).
+- Tests (+1 file, +15 cases; 304 files / 3278 tests green, from 303 / 3263):
+  `use-check-in-data.test.ts` (swr mock widened to `{ default, useSWRConfig }`; stable-reference
+  pin; both invalidators' accept/reject sets; a pin that the page clear reaches exactly the keys
+  `useAllClientCheckIns` asks swr for), `check-in-service.test.ts` (three D0.2 cases: promote /
+  keep reviewed / throw), `metrics/route.test.ts` (`saveOption` → 400, no `check_ins` write),
+  `check-ins/route.test.ts` (known `?status=` passes through), NEW
+  `app/api/check-ins/unreviewed/route.test.ts` (401 / no-clients short-circuit / the D2.2
+  predicate scoped to the coach's client ids / 500), `client-overview-brief-service.test.ts`
+  (the predicate, collected across every `check_ins` chain the service opens).
+- Docs (ARCHITECTURE): "Effective goal resolution" → six direct callers, new
+  `client-journey-service` bullet, `toClientGoalInput` = five of the six; the `start_date`
+  measurers line (`resolveCheckInWindow` clamps `period_start`; `weekly-nutrition-service`
+  reads no `start_date` — it derives its denominator from the period it is handed); the missing
+  Check-ins row in the tab table; Middleware routing's public-route list (mig 142); Route
+  namespaces' `/api/check-in/*` line (coach routes behind `requireCoachOwnsCheckIn`;
+  `checkInRateLimit` has no live route). This file's `:3` status line.
+
+*Deviations from the plan, and why.*
+1. **A third behaviour change.** The C0 heading says "no behaviour change except D0.1/D0.2",
+   but item 1 + F5 ("the VALUE is D2.2") + landmine 12 put the constant's value here, so
+   `/api/check-ins/unreviewed` now returns `pending` rows: the bell and the toast listener see a
+   check-in at submit time rather than after the AI pass (§2.2 calls this acceptable), and the
+   legacy queue page lists `pending` rows until C3 deletes it.
+2. `useInvalidateClientCheckIns()` returns `(clientId) => …` — the shape of the two §7 reference
+   implementations — rather than taking `clientId` as a hook argument as the plan's text reads.
+3. It has **two legs**, not only the page-cache clear: a plain `mutate(inArea)` over
+   `/api/clients/{id}/check-ins` (§7: an area matcher, so a plain reader added later is covered —
+   none exists today) plus the clear, which is restricted to the page-key shape (`…/check-ins?`)
+   because a data-less `revalidate: false` mutate would blank a plain reader without refreshing
+   it. Verified in swr 2.3.6 source: the filter loop skips `$inf$`/`$sub$` keys
+   (`_internal/config-context-client-*.mjs:249`); `mutateByKey` with `data === undefined` and the
+   default `populateCache` sets the page's `data` to `undefined` and skips the fetch; the infinite
+   fetcher refetches any page whose cache `isUndefined` (`infinite/index.mjs:203`). A MOUNTED
+   infinite reader still needs its own bound `mutate()` — C1's `onDone` calls both.
+4. `CheckInInsert` (`lib/database-helpers.ts`) deleted: the dead writer was its only importer
+   (grep: two hits, both in that route), so it is the deletion's residue, not adjacent tidying.
+5. `CHECK_IN_STATUSES` added (the plan asked only to drop the route's inline list; this is where
+   the list went) with a route-local guard rather than a shared helper — one caller.
+6. Three tests the plan did not list (the unreviewed route file, the brief predicate pin, the
+   per-client pass-through): D2.2 is the one behaviour change here with no prior coverage.
+7. Regenerate on a **reviewed** row now costs two round trips (was one); the common path stays one.
+8. The plan's expected knip line did not materialise: test files are knip entries, and every new
+   export is imported by its test.
+9. Plan line cites that had drifted: none of C0's — `:760`, `:939`, `:192`, `:105/:111/:113`
+   were all exact today.
+
+*§2 review — the triggers fire (a route's validation changed; 9 code files on the data flow).*
+1. Write routes: the only one touched is `PUT /api/clients/[id]/metrics` —
+   `requireCSRFProtection` present; it sits on `apiRateLimit`, a pre-existing tier deviation the
+   §9 shared-counter note explains, unchanged here. `updateCheckInAISummary`'s callers are
+   unchanged: `POST /api/check-in/[id]/ai-summary` (CSRF → `requireCoachOwnsCheckIn` → coach-keyed
+   `aiRateLimit`) and the client submit's fire-and-forget pass.
+2. Auth + ownership: `/api/check-ins/unreviewed` = `getAuthenticatedCoachId()` then scopes to the
+   coach's client ids from `clients.coach_id` (`route.ts:23-35`); the per-client list =
+   `requireCoachOwnsClient`; the metrics PUT = coach auth + `.eq("coach_id")` on both the read and
+   the write. None changed. (`unreviewed/route.ts:14` does not pass `request` to the auth helper —
+   pre-existing, untouched.)
+3. zod before writes: the metrics PUT still `safeParse`s; the schema lost a field.
+4. Tenant scope on the write: `updateCheckInAISummary` updates by `id` alone, as before — its
+   routes prove ownership first; the new `.in("status")` predicate narrows, never widens.
+   (TECHNICAL-DEBT H2 #3 — by-id functions without a `clientId` scope — is out of scope, §7.)
+5. `check:rls`: not run — no table, column or policy changed.
+6. `supabaseAdmin` writes: `updateCheckInAISummary` (authorized by its routes); the deleted
+   `check_ins` INSERT was a `supabaseAdmin` write from the metrics PUT that bypassed the submit
+   path's gate, period and snapshot — removed.
+7. Round trips are constant: unreviewed GET 2 selects (unchanged); brief 1 (unchanged);
+   `updateCheckInAISummary` 1 UPDATE for an unreviewed row, 2 for a reviewed one; the metrics PUT
+   loses one conditional INSERT.
+8. Batched writes: n/a — single-row UPDATEs by primary key.
+9. Indexes: no new column in any WHERE/ORDER BY. Both widened predicates are covered by mig 001's
+   `idx_check_ins_client_status (client_id, status, created_at DESC)`; the D0.2 UPDATE is a PK
+   lookup plus a status filter. Per the migration tree — not re-probed against the live catalog.
+10. Worst-case row count: `updateCheckInAISummary` = exactly 1 row (PK). The unreviewed GET
+    keeps its 100-row cap; including `pending` grows the result only for a coach whose AI passes
+    are failing.
+11. Sequential awaits: the D0.2 fallback depends on the first statement's row count and cannot
+    be parallelised; nothing else was serialised.
+12. No `.catch()` returning success after a committed write was added. The metrics PUT's
+    pre-existing non-blocking `body_metrics` dual-write is unchanged.
+13. Two writes outside a transaction: the D0.2 fallback runs only when the first UPDATE matched
+    zero rows, so there is no half-written state — either the first statement wrote everything or
+    nothing and the second writes the AI columns. If the second fails the row is untouched, the
+    route 500s ("Failed to generate AI summary") and Regenerate is the retry. Nothing moves a
+    row out of `reviewed`, so the window between the two statements cannot change the branch.
+    Not load-tested; read paths under concurrency are untested.
+
+*Gates (real output).* `npx tsc --noEmit` exit 0 · `npx eslint .` exit 0, 162 warnings / 0 errors,
+none in a touched file (all pre-existing, e.g. `app/check-ins/review/page.tsx`,
+`hooks/use-check-in-detail-data.ts`) · `npx vitest run` 304 files / 3278 tests passed (no flaky
+trip) · `npm run check:labels` "OK — 679 files scanned" · `npm run knip` 173 lines before and
+after, the only diff being `ClientGoalRow`'s line number (41 → 39, `CheckInInsert` removed above
+it) · no `as any`, no markers, no `console.log` in the touched files. No route file was deleted,
+so no `.next` wipe.
+
+*Unverified.* Every UI effect — the bell/toast on a `pending` check-in, the Reviewed badge
+surviving Regenerate, the legacy queue page with `pending` rows, the metrics sheet still saving —
+until the owner's smoke. `useInvalidateClientCheckIns` has no live consumer until C1, so its
+"next mount refetches" claim rests on the swr source reading and the unit tests, not a browser run.
+Left stale on purpose (outside C0's doc list): CONVENTIONS §9 still calls `checkInRateLimit`
+"public check-in endpoints".
 
 ### C1 — #1 the check-in page (+ SWR conversion per D1.4)
 - `lib/client-tabs.ts`: `checkInReviewUrl(clientId, checkInId)` (+ `lib/client-tabs.test.ts`);

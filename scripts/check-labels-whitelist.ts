@@ -19,7 +19,6 @@ export const LABEL_WHITELIST: readonly string[] = [
   "components/client/",
   "components/client-portal/",
   "app/client/",
-  "app/check-in/", // public token check-in form
 
   // -- Frozen legacy (coach-side, being retired) -------------------------------
   "components/clients/daily-pulse/",

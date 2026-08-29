@@ -8,7 +8,7 @@ import { recordBodyMetrics } from "@/services/body-metrics-service";
 import { updateGoals } from "@/services/client-goals-service";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
 import type { ClientEnergyOverrides } from "@/services/client-energy-service";
-import type { CheckInInsert, ClientUpdate } from "@/lib/database-helpers";
+import type { ClientUpdate } from "@/lib/database-helpers";
 
 export async function PUT(
   request: NextRequest,
@@ -76,33 +76,6 @@ export async function PUT(
     // The bmr/tdee bounds that used to sit here were exact duplicates of the
     // schema's, so updateClientMetricsSchema has already rejected an
     // out-of-range value before this handler runs.
-
-    // If saving as check-in, create check-in record
-    if (
-      body.saveOption === "check-in" &&
-      (body.currentWeight !== undefined || body.currentBodyFatPercentage !== undefined)
-    ) {
-      // `submitted_at` was written here until typing this object surfaced that
-      // check_ins has no such column — the insert would have been rejected by
-      // PostgREST. `created_at` carries the submission time by default.
-      const checkInData: CheckInInsert = {
-        client_id: clientId,
-        weight: body.currentWeight,
-        body_fat_percentage: body.currentBodyFatPercentage,
-      };
-
-      const { error: checkInError } = await supabaseAdmin
-        .from("check_ins")
-        .insert(checkInData);
-
-      if (checkInError) {
-        console.error("Error creating check-in:", checkInError);
-        return NextResponse.json(
-          { error: "Failed to create check-in" },
-          { status: 500 }
-        );
-      }
-    }
 
     // Build update object
     const updates: ClientUpdate = {};

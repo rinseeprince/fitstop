@@ -1,7 +1,8 @@
-import { useEffect } from "react";
-import useSWR from "swr";
+import { useCallback, useEffect } from "react";
+import useSWR, { useSWRConfig } from "swr";
 import useSWRInfinite from "swr/infinite";
 import type {
+  CheckIn,
   GetCheckInsResponse,
   Client,
   OverdueClient,
@@ -13,6 +14,12 @@ import { CLIENT_CHECKINS_PAGE_SIZE } from "@/lib/constants";
 
 const fetcher = swrFetcher;
 
+// Key construction and invalidation are co-located so they can never drift
+// (CONVENTIONS §7): never build a per-client check-ins key anywhere else.
+function clientCheckInsKeyPrefix(clientId: string) {
+  return `/api/clients/${clientId}/check-ins`;
+}
+
 // Shared SWRInfinite key builder for the offset-paginated coach check-ins reads
 // (the "Load older" tab and the Metrics full-history fetch).
 const buildCheckInsPageKey =
@@ -22,8 +29,44 @@ const buildCheckInsPageKey =
     // Stop once a page comes back empty.
     if (previousPageData && previousPageData.checkIns.length === 0) return null;
     const offset = pageIndex * CLIENT_CHECKINS_PAGE_SIZE;
-    return `/api/clients/${clientId}/check-ins?limit=${CLIENT_CHECKINS_PAGE_SIZE}&offset=${offset}`;
+    return `${clientCheckInsKeyPrefix(clientId)}?limit=${CLIENT_CHECKINS_PAGE_SIZE}&offset=${offset}`;
   };
+
+/**
+ * Invalidates every cached read of a client's check-in list from outside the
+ * hook that read it — the ONE sanctioned way (CONVENTIONS §7).
+ *
+ * Two legs, because both readers are `useSWRInfinite` hooks and a
+ * filter-function mutate cannot reach one of those: swr skips its `$inf$` key
+ * outright, and the per-page keys it stores have no revalidator (verified in
+ * swr 2.3.6). So:
+ * 1. a plain revalidate over the area, for any mounted plain reader (none yet —
+ *    an area-wide matcher is what keeps the next one covered);
+ * 2. the per-page caches are CLEARED (data → undefined, no fetch), so the next
+ *    mount of either infinite reader finds every page missing and refetches the
+ *    whole list. Restricted to the page-key shape, because a data-less,
+ *    revalidate-less mutate would blank a plain reader without refreshing it.
+ *
+ * A MOUNTED infinite reader still refreshes only through its own bound
+ * `mutate()` — a success handler inside the tab calls both.
+ */
+export function useInvalidateClientCheckIns() {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    (clientId: string) => {
+      const prefix = clientCheckInsKeyPrefix(clientId);
+      const inArea = (key: unknown): key is string =>
+        typeof key === "string" && key.startsWith(prefix);
+      return Promise.all([
+        mutate(inArea),
+        mutate((key) => inArea(key) && key.startsWith(`${prefix}?`), undefined, {
+          revalidate: false,
+        }),
+      ]);
+    },
+    [mutate]
+  );
+}
 
 // Hook for the coach per-client check-ins tab: offset-paginated "Load older"
 // over the full history (no row cap). Pages accumulate into one flat list.
@@ -161,20 +204,52 @@ export const useClientsDueSoon = () => {
   };
 };
 
+// The coach-wide check-in queue. The key stays narrow; only the area matcher
+// below widens, to `/api/check-ins` — this queue plus the dashboard's
+// `/api/check-ins/recent` list. (`/api/check-in/…`, singular, is the
+// per-check-in detail area and does not match.)
+export const checkInsQueueKey = "/api/check-ins/unreviewed";
+const CHECK_INS_AREA_PREFIX = "/api/check-ins";
+
+/**
+ * Invalidates every cached read under /api/check-ins — the ONE sanctioned way
+ * to refresh the queue from a success handler that does not hold this hook's
+ * bound `mutate` (CONVENTIONS §7).
+ */
+export function useInvalidateCheckInsQueue() {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    () =>
+      mutate(
+        (key) =>
+          typeof key === "string" && key.startsWith(CHECK_INS_AREA_PREFIX)
+      ),
+    [mutate]
+  );
+}
+
+// Stable empty array — see NO_OVERDUE_CLIENTS. The toast listener's effect is
+// keyed on `checkIns`, so a fresh [] per unresolved render would re-run it.
+const NO_UNREVIEWED_CHECK_INS: CheckIn[] = [];
+
 // Hook to fetch all unreviewed check-ins across all clients
 export const useUnreviewedCheckIns = () => {
   const { data, error, isLoading, mutate } = useSWR<GetCheckInsResponse>(
-    "/api/check-ins/unreviewed",
+    checkInsQueueKey,
     fetcher,
     {
       refreshInterval: 30000, // Refresh every 30 seconds
       revalidateOnFocus: true, // see useOverdueClients
       dedupingInterval: 5000, // see useOverdueClients
+      errorRetryCount: 3,
+      errorRetryInterval: 1000,
+      onError: (err) =>
+        console.error("Failed to fetch unreviewed check-ins:", err),
     }
   );
 
   return {
-    checkIns: data?.checkIns || [],
+    checkIns: data?.checkIns ?? NO_UNREVIEWED_CHECK_INS,
     total: data?.total || 0,
     isLoading,
     isError: error,

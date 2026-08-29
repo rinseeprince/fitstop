@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { apiRateLimit } from "@/lib/rate-limit";
+import { UNREVIEWED_CHECK_IN_STATUSES } from "@/lib/constants";
 import type { GetCheckInsResponse } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
 import type { CheckInRow } from "@/lib/database-helpers";
@@ -32,7 +33,8 @@ export async function GET(request: NextRequest) {
 
     const clientIds = clients.map((c) => c.id);
 
-    // Fetch all unreviewed check-ins (status = 'ai_processed') for these clients
+    // Every unreviewed check-in for these clients — `pending` included, so a
+    // check-in whose AI pass failed still reaches the bell (D2.2).
     const { data: checkInsData, error } = await supabaseAdmin
       .from("check_ins")
       .select(
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
         )
       `
       )
-      .eq("status", "ai_processed")
+      .in("status", UNREVIEWED_CHECK_IN_STATUSES)
       .in("client_id", clientIds)
       .order("created_at", { ascending: false })
       .limit(100);

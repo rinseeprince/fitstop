@@ -11,6 +11,7 @@ import {
   isClientOverdue,
 } from "./check-in-tracking-service";
 import { formatDateISO } from "@/lib/date-helpers";
+import { UNREVIEWED_CHECK_IN_STATUSES } from "@/lib/constants";
 import { deriveBlockEnding } from "@/lib/blocks/block-derivations";
 import type { Client } from "@/types/check-in";
 import type {
@@ -25,7 +26,7 @@ async function getUnreviewedCheckIn(clientId: string): Promise<UnreviewedCheckIn
     .from("check_ins")
     .select("id, created_at")
     .eq("client_id", clientId)
-    .in("status", ["pending", "ai_processed"])
+    .in("status", UNREVIEWED_CHECK_IN_STATUSES)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

@@ -258,5 +258,16 @@ describe("PUT /api/clients/[id]/metrics", () => {
       expect(res.status).toBe(400);
       expect(recalculateClientEnergy).not.toHaveBeenCalled();
     });
+
+    it("400s a body carrying the retired saveOption key — the check-in writer is gone", async () => {
+      const res = await PUT(
+        request({ currentWeight: 82, saveOption: "check-in" }),
+        mockParams
+      );
+
+      expect(res.status).toBe(400);
+      expect(supabaseAdmin.from).not.toHaveBeenCalledWith("check_ins");
+      expect(recalculateClientEnergy).not.toHaveBeenCalled();
+    });
   });
 });

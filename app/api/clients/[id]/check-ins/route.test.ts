@@ -55,6 +55,21 @@ describe("GET /api/clients/[id]/check-ins", () => {
     );
   });
 
+  it("passes a known status filter through to the service", async () => {
+    vi.mocked(getClientCheckIns).mockResolvedValue({
+      checkIns: [],
+      total: 0,
+    } as never);
+
+    const res = await GET(createMockRequest("?status=reviewed"), mockParams);
+
+    expect(res.status).toBe(200);
+    expect(getClientCheckIns).toHaveBeenCalledWith(
+      "client-1",
+      expect.objectContaining({ status: "reviewed" })
+    );
+  });
+
   it("returns the auth response on ownership failure (403, IDOR)", async () => {
     const forbidden = NextResponse.json(
       { success: false, error: "Forbidden" },

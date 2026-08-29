@@ -620,33 +620,69 @@ describe('Check-in Service', () => {
   })
 
   describe('updateCheckInAISummary', () => {
-    it('updates AI fields and sets status', async () => {
-      const mockQuery = {
+    const review = {
+      summary: 'Great progress!',
+      watchItems: [{ type: 'win' as const, text: 'Slept well all week' }],
+      themes: ['sleep', 'consistency'],
+      coachActions: [{ priority: 'high' as const, text: 'Keep it up' }],
+      clientMessage: 'Draft message',
+    }
+
+    // The conditional promotion ends in .select('id') (the rows it matched);
+    // the reviewed-row fallback ends in .eq('id', …) and is awaited via `then`.
+    function makeChain(promoted: unknown[]) {
+      const q = {
         update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ data: {}, error: null }),
+        eq: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
+        select: vi.fn().mockResolvedValue({ data: promoted, error: null }),
+        then: (resolve: (v: unknown) => void) =>
+          Promise.resolve({ data: null, error: null }).then(resolve),
       }
+      vi.mocked(supabaseAdmin.from).mockReturnValue(q as any)
+      return q
+    }
 
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-
+    it('promotes an unreviewed check-in to ai_processed in one conditional update', async () => {
+      const q = makeChain([{ id: 'check-in-123' }])
       const { updateCheckInAISummary } = await import('./check-in-service')
 
-      await updateCheckInAISummary(
-        'check-in-123',
-        {
-          summary: 'Great progress!',
-          watchItems: [{ type: 'win', text: 'Slept well all week' }],
-          themes: ['sleep', 'consistency'],
-          coachActions: [{ priority: 'high', text: 'Keep it up' }],
-          clientMessage: 'Draft message',
-        }
-      )
+      await updateCheckInAISummary('check-in-123', review)
 
-      expect(mockQuery.update).toHaveBeenCalled()
-      const updateCall = mockQuery.update.mock.calls[0][0]
+      expect(q.update).toHaveBeenCalledTimes(1)
+      const updateCall = q.update.mock.calls[0][0]
       expect(updateCall.ai_summary).toBe('Great progress!')
       expect(updateCall.ai_response_draft).toBe('Draft message')
       expect(updateCall.ai_insights._version).toBe(3)
       expect(updateCall.status).toBe('ai_processed')
+      expect(q.eq).toHaveBeenCalledWith('id', 'check-in-123')
+      expect(q.in).toHaveBeenCalledWith('status', ['pending', 'ai_processed'])
+    })
+
+    it('refreshes the review on a reviewed check-in and leaves its status alone (D0.2)', async () => {
+      const q = makeChain([])
+      const { updateCheckInAISummary } = await import('./check-in-service')
+
+      await updateCheckInAISummary('check-in-123', review)
+
+      expect(q.update).toHaveBeenCalledTimes(2)
+      const fallback = q.update.mock.calls[1][0]
+      expect(fallback).not.toHaveProperty('status')
+      expect(fallback.ai_summary).toBe('Great progress!')
+      expect(fallback.ai_insights._version).toBe(3)
+      expect(fallback.ai_processed_at).toEqual(expect.any(String))
+      expect(q.eq).toHaveBeenLastCalledWith('id', 'check-in-123')
+    })
+
+    it('throws when the update fails, without attempting the fallback', async () => {
+      const q = makeChain([])
+      q.select.mockResolvedValue({ data: null, error: { message: 'boom' } })
+      const { updateCheckInAISummary } = await import('./check-in-service')
+
+      await expect(updateCheckInAISummary('check-in-123', review)).rejects.toThrow(
+        'Failed to update AI summary: boom'
+      )
+      expect(q.update).toHaveBeenCalledTimes(1)
     })
   })
 

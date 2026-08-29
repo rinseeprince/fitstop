@@ -13,6 +13,7 @@ import {
   resolveCheckInWindow,
 } from "@/lib/date-helpers";
 import { checkInWeekday } from "@/lib/check-in-week";
+import { UNREVIEWED_CHECK_IN_STATUSES } from "@/lib/constants";
 import { getFrequencyInDays, resolveCheckInDue } from "@/lib/check-in-schedule";
 import type { CheckInCursor } from "@/lib/cursor";
 import { insertExerciseHighlights } from "./check-in-details-service";
@@ -332,6 +333,14 @@ export const getFirstCheckIn = async (
 
 // Update check-in with the AI review (v3 format). summary and clientMessage are
 // stored in their own columns; watchItems/themes/coachActions go in ai_insights.
+//
+// Status: a `pending` row is promoted to `ai_processed`; a `reviewed` row keeps
+// its status (owner decision D0.2, 2026-08-29). Regenerate used to set
+// `ai_processed` unconditionally, which dropped a reviewed check-in back into
+// every unreviewed queue. The promotion is ONE conditional UPDATE rather than a
+// read-then-write: a Regenerate racing a Send would read `ai_processed` and
+// write it over the `reviewed` that landed in between, and the conditional
+// UPDATE cannot.
 export const updateCheckInAISummary = async (
   checkInId: string,
   review: CheckInReview
@@ -343,22 +352,37 @@ export const updateCheckInAISummary = async (
     coachActions: review.coachActions,
   };
 
-  const { error } = await supabaseAdmin
+  const aiColumns = {
+    ai_summary: review.summary,
+    ai_insights: enhancedInsights,
+    // coachActions share the { priority, text } shape with the legacy
+    // ai_recommendations column, so any pre-v3 reader still resolves.
+    ai_recommendations: review.coachActions,
+    ai_response_draft: review.clientMessage,
+    ai_processed_at: new Date().toISOString(),
+  };
+
+  const { data: promoted, error } = await supabaseAdmin
     .from("check_ins")
-    .update({
-      ai_summary: review.summary,
-      ai_insights: enhancedInsights,
-      // coachActions share the { priority, text } shape with the legacy
-      // ai_recommendations column, so any pre-v3 reader still resolves.
-      ai_recommendations: review.coachActions,
-      ai_response_draft: review.clientMessage,
-      ai_processed_at: new Date().toISOString(),
-      status: "ai_processed",
-    })
-    .eq("id", checkInId);
+    .update({ ...aiColumns, status: "ai_processed" })
+    .eq("id", checkInId)
+    .in("status", UNREVIEWED_CHECK_IN_STATUSES)
+    .select("id");
 
   if (error) {
     throw new Error(`Failed to update AI summary: ${error.message}`);
+  }
+  if (promoted && promoted.length > 0) return;
+
+  // Already reviewed: refresh the review, leave the status where the coach
+  // put it. (A missing id matches zero rows here too, as it always did.)
+  const { error: reviewedError } = await supabaseAdmin
+    .from("check_ins")
+    .update(aiColumns)
+    .eq("id", checkInId);
+
+  if (reviewedError) {
+    throw new Error(`Failed to update AI summary: ${reviewedError.message}`);
   }
 };
 

@@ -26,8 +26,6 @@ export type SetLogInsert = Database["public"]["Tables"]["set_logs"]["Insert"];
 export type CheckInExerciseHighlightRow = Database["public"]["Tables"]["check_in_exercise_highlights"]["Row"];
 
 // Additional helper types for insert/update operations
-export type CheckInInsert = Database["public"]["Tables"]["check_ins"]["Insert"];
-
 export type ClientUpdate = Database["public"]["Tables"]["clients"]["Update"];
 
 export type TrainingPlanUpdate = Database["public"]["Tables"]["training_plans"]["Update"];

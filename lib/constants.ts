@@ -4,7 +4,7 @@
  */
 
 // Type-only: erased at compile, so this file stays a runtime leaf.
-import type { ActivityLevel } from "@/types/check-in";
+import type { ActivityLevel, CheckInStatus } from "@/types/check-in";
 
 // Days past the expected check-in date at which "overdue" becomes
 // "critically overdue". Read by getOverdueSeverity and by the Clients roster's
@@ -16,6 +16,27 @@ export const CRITICALLY_OVERDUE_DAYS = 4;
 // side effect — the derived period snapped forward and the missed week was
 // silently never filled. Read by resolveCheckInDue (lib/check-in-schedule.ts).
 export const CHECK_IN_GRACE_DAYS = 7;
+
+// Every check_ins.status value, in lifecycle order (pending → ai_processed →
+// reviewed). The coach per-client list validates its ?status= filter against
+// this rather than restating the lifecycle as a literal of its own.
+export const CHECK_IN_STATUSES = [
+  "pending",
+  "ai_processed",
+  "reviewed",
+] as const satisfies readonly CheckInStatus[];
+
+// "Unreviewed" for every coach queue: the Overview's awaiting-review row,
+// /api/check-ins/unreviewed (the bell and the toast listener) and the
+// promotion guard in updateCheckInAISummary. It INCLUDES `pending` (owner
+// decision D2.2, 2026-08-29): a submitted check-in whose AI pass failed must
+// still reach a coach — the review surface offers Regenerate for a pending
+// row — and three predicates used to spell this differently, so the queues
+// disagreed about who was waiting.
+export const UNREVIEWED_CHECK_IN_STATUSES = [
+  "pending",
+  "ai_processed",
+] as const satisfies readonly CheckInStatus[];
 
 // Custom macros validation
 export const CUSTOM_MACRO_CALORIE_TOLERANCE = 50; // Max allowed difference between stated calories and macro totals

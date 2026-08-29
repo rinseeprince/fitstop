@@ -100,6 +100,25 @@ describe("getOverviewBrief", () => {
     });
   });
 
+  it("reads the awaiting-review row with the shared unreviewed predicate", async () => {
+    getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
+    // The service reads check_ins more than once; keep every chain, not the last.
+    const checkInsChains: ReturnType<typeof makeChain>[] = [];
+    fromMock.mockImplementation((table: string) => {
+      const chain = makeChain(0, table === "check_ins" ? LATEST_CHECK_IN : null);
+      if (table === "check_ins") checkInsChains.push(chain);
+      return chain;
+    });
+
+    await getOverviewBrief("coach-1", "client-1");
+
+    const inFilters = checkInsChains.flatMap(
+      (chain) => (chain.in as ReturnType<typeof vi.fn>).mock.calls
+    );
+    // `pending` included: a check-in whose AI pass failed still waits on the coach.
+    expect(inFilters).toContainEqual(["status", ["pending", "ai_processed"]]);
+  });
+
   it("does not read the retired since-last-visit delta tables", async () => {
     getLastViewedAtMock.mockResolvedValue("2026-06-01T00:00:00Z");
 

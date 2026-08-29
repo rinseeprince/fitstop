@@ -4,6 +4,10 @@ import { parsePaginationParams } from "@/lib/api-utils";
 import type { CheckInStatus, GetCheckInsResponse } from "@/types/check-in";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
+import { CHECK_IN_STATUSES } from "@/lib/constants";
+
+const isCheckInStatus = (value: string): value is CheckInStatus =>
+  (CHECK_IN_STATUSES as readonly string[]).includes(value);
 
 export async function GET(
   request: NextRequest,
@@ -33,8 +37,7 @@ export async function GET(
     const status = searchParams.get("status") || undefined;
 
     // Validate status if provided
-    const validStatuses = ["pending", "ai_processed", "reviewed"];
-    if (status && !validStatuses.includes(status)) {
+    if (status !== undefined && !isCheckInStatus(status)) {
       return NextResponse.json(
         { success: false, error: "Invalid status parameter" },
         { status: 400 }
@@ -45,7 +48,7 @@ export async function GET(
     const result = await getClientCheckIns(clientId, {
       limit,
       offset,
-      status: status as CheckInStatus | undefined,
+      status,
     });
 
     const response: GetCheckInsResponse = {

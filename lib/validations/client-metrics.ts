@@ -17,5 +17,4 @@ export const updateClientMetricsSchema = z.object({
   tdee: z.number().min(1000).max(8000).optional(),
   bmrManualOverride: z.boolean().optional(),
   tdeeManualOverride: z.boolean().optional(),
-  saveOption: z.enum(["update", "check-in"]).optional(),
 }).strict();
