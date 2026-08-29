@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildClientTabUrl,
+  checkInReviewUrl,
   paneParamSearch,
   resolvePaneParam,
 } from "./client-tabs";
@@ -157,3 +158,21 @@ describe("buildClientTabUrl + the single-owner pane params", () => {
   });
 });
 
+describe("checkInReviewUrl", () => {
+  it("builds the canonical deep link: the tab plus its single-owner checkIn param", () => {
+    expect(checkInReviewUrl("c1", "ci-9")).toBe("/clients/c1?tab=check-ins&checkIn=ci-9");
+  });
+
+  it("rides through a tab round trip like every single-owner param", () => {
+    const away = buildClientTabUrl("c1", "training", "tab=check-ins&checkIn=ci-9");
+    expect(away).toBe("/clients/c1?tab=training&checkIn=ci-9");
+    const back = buildClientTabUrl("c1", "check-ins", away.split("?")[1]);
+    expect(back).toBe("/clients/c1?tab=check-ins&checkIn=ci-9");
+  });
+
+  it("is cleared by a null extraParam — the detail's back row", () => {
+    expect(
+      buildClientTabUrl("c1", "check-ins", "tab=check-ins&checkIn=ci-9", { checkIn: null })
+    ).toBe("/clients/c1?tab=check-ins");
+  });
+});

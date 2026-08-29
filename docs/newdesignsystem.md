@@ -670,7 +670,7 @@ Follow the **Overlays** recipes: session editor & create-session are 780px right
 ### Segmented control — HARD RULE
 
 **There is exactly one segmented control in this codebase and you must import it:**
-`@/components/programs/shared/segmented-control` → `<SegmentedControl options value onChange />` (`fullWidth` optional). Every pane switcher (Journey, Training, Nutrition), every period selector, every status filter and every in-card two-way toggle is this component. **Do not hand-roll the track**, do not re-style a Radix `TabsList` into the same silhouette — make the `Tabs` controlled and let `<SegmentedControl>` drive it (`check-in-detail-modal.tsx` is the reference).
+`@/components/programs/shared/segmented-control` → `<SegmentedControl options value onChange />` (`fullWidth` optional). Every pane switcher (Journey, Training, Nutrition), every period selector, every status filter and every in-card two-way toggle is this component. **Do not hand-roll the track**, do not re-style a Radix `TabsList` into the same silhouette — make the `Tabs` controlled and let `<SegmentedControl>` drive it (`components/clients/check-ins/check-in-detail-view.tsx` is the reference).
 
 `npm run check:labels` **clause 3 fails the build** on the track markup (the brand `0.05` tint together with the `p-[2px]`/`p-0.5` inset) anywhere but the component itself.
 

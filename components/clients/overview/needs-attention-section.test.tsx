@@ -48,7 +48,7 @@ describe("NeedsAttentionSection", () => {
     expect(screen.queryByText("3", { selector: "span" })).not.toBeInTheDocument();
   });
 
-  it("routes the check-in row to check-ins through a text action, not a button", async () => {
+  it("routes the check-in row to THAT check-in through a text action, not a button", async () => {
     const user = userEvent.setup();
     const onTabChange = vi.fn();
     const threeDaysAgo = new Date();
@@ -65,7 +65,7 @@ describe("NeedsAttentionSection", () => {
     expect(screen.getByText("Submitted 3 days ago")).toBeInTheDocument();
 
     await user.click(screen.getByText("Check-in awaiting review"));
-    expect(onTabChange).toHaveBeenCalledWith("check-ins");
+    expect(onTabChange).toHaveBeenCalledWith("check-ins", { checkIn: "ci-1" });
   });
 
   it("keeps the block-ending row's journey round-trip params", async () => {

@@ -1,39 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { CheckInDetailModal } from "@/components/check-in/check-in-detail-modal";
 import { useUnreviewedCheckIns } from "@/hooks/use-check-in-data";
 import { getAiPreview } from "@/lib/check-in-helpers";
+import { checkInReviewUrl } from "@/lib/client-tabs";
 import { AlertCircle, CheckCircle } from "lucide-react";
 import Link from "next/link";
 import { format, differenceInHours } from "date-fns";
 
 export default function ReviewCheckInsPage() {
-  const { checkIns: unreviewedCheckIns, isLoading, mutate } = useUnreviewedCheckIns();
-  const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null);
-  const selectedIndex = selectedCheckInId
-    ? unreviewedCheckIns.findIndex((ci) => ci.id === selectedCheckInId)
-    : -1;
-
-  const handleNavigate = (direction: "prev" | "next") => {
-    if (!selectedCheckInId) return;
-
-    const currentIndex = unreviewedCheckIns.findIndex((ci) => ci.id === selectedCheckInId);
-    if (currentIndex === -1) return;
-
-    const newIndex = direction === "prev" ? currentIndex - 1 : currentIndex + 1;
-    if (newIndex >= 0 && newIndex < unreviewedCheckIns.length) {
-      setSelectedCheckInId(unreviewedCheckIns[newIndex].id);
-    }
-  };
-
-  const handleReviewComplete = () => {
-    mutate();
-    setSelectedCheckInId(null);
-  };
+  // Interim (deleted in C3 of the check-ins workstream): a row now opens the
+  // check-in on its client's page. The handler sits on the row ONLY — the
+  // Review button inside it has none, so a click on it bubbles to one push.
+  const router = useRouter();
+  const { checkIns: unreviewedCheckIns, isLoading } = useUnreviewedCheckIns();
 
   const getInitials = (name: string) => {
     return name
@@ -100,7 +83,7 @@ export default function ReviewCheckInsPage() {
                   <div
                     key={checkIn.id}
                     className={`flex items-center justify-between p-4 bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] transition-all duration-150 cursor-pointer hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)] ${getUrgencyBorder(checkIn.createdAt)}`}
-                    onClick={() => setSelectedCheckInId(checkIn.id)}
+                    onClick={() => router.push(checkInReviewUrl(checkIn.clientId, checkIn.id))}
                   >
                     <div className="flex items-center gap-4 min-w-0">
                       {checkIn.clientAvatarUrl ? (
@@ -142,17 +125,6 @@ export default function ReviewCheckInsPage() {
             </div>
           </div>
         )}
-
-        <CheckInDetailModal
-          checkInId={selectedCheckInId}
-          clientId={selectedCheckInId ? unreviewedCheckIns.find((ci) => ci.id === selectedCheckInId)?.clientId || "" : ""}
-          clientName={selectedCheckInId ? unreviewedCheckIns.find((ci) => ci.id === selectedCheckInId)?.clientName || "" : ""}
-          onClose={handleReviewComplete}
-          onResponseSent={handleReviewComplete}
-          onNavigate={handleNavigate}
-          canNavigatePrev={selectedIndex > 0}
-          canNavigateNext={selectedIndex < unreviewedCheckIns.length - 1 && selectedIndex !== -1}
-        />
       </div>
     </AppLayout>
   );

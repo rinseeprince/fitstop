@@ -10,12 +10,29 @@ interface UseWellnessDataReturn {
   isLoading: boolean
 }
 
+export interface DailyLogRange {
+  startDate: string
+  endDate: string
+}
+
 interface UseWellnessDataOptions {
   /** How many days back the window starts. Default 28 (the wellness strip). */
   daysBack?: number
   /** Fetch habit logs alongside the daily logs. Default true. */
   withHabitLogs?: boolean
+  /**
+   * An explicit window instead of the rolling one — the check-in review reads
+   * the period a check-in reported on. `null` fetches nothing (both keys stay
+   * null) for a caller whose window is not known yet; `undefined` keeps the
+   * rolling default.
+   */
+  range?: DailyLogRange | null
 }
+
+// Stable empties: `data?.data || []` minted a fresh [] per unresolved render,
+// so a consumer memo keyed on the array recomputed every time.
+const NO_LOGS: DailyLog[] = []
+const NO_HABIT_LOGS: HabitLogWithDetails[] = []
 
 /**
  * Rolling daily-log window for a client, plus (optionally) that window's habit
@@ -27,27 +44,31 @@ export function useWellnessData(
   clientId: string,
   options: UseWellnessDataOptions = {}
 ): UseWellnessDataReturn {
-  const { daysBack = 28, withHabitLogs = true } = options
-  const startDate = getDateDaysAgo(daysBack)
-  const endDate = getTodayDateString()
+  const { daysBack = 28, withHabitLogs = true, range } = options
+  const bounds =
+    range === undefined
+      ? { startDate: getDateDaysAgo(daysBack), endDate: getTodayDateString() }
+      : range
 
   const { data: dailyData, isLoading: dailyLoading } = useSWR<{ data: DailyLog[] }>(
-    `/api/clients/${clientId}/daily-logs?startDate=${startDate}&endDate=${endDate}`,
+    bounds
+      ? `/api/clients/${clientId}/daily-logs?startDate=${bounds.startDate}&endDate=${bounds.endDate}`
+      : null,
     swrFetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 }
   )
 
   const { data: habitData, isLoading: habitLoading } = useSWR<{ data: HabitLogWithDetails[] }>(
-    withHabitLogs
-      ? `/api/clients/${clientId}/habits/logs?startDate=${startDate}&endDate=${endDate}`
+    bounds && withHabitLogs
+      ? `/api/clients/${clientId}/habits/logs?startDate=${bounds.startDate}&endDate=${bounds.endDate}`
       : null,
     swrFetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 }
   )
 
   return {
-    logs: dailyData?.data || [],
-    habitLogs: habitData?.data || [],
+    logs: dailyData?.data ?? NO_LOGS,
+    habitLogs: habitData?.data ?? NO_HABIT_LOGS,
     isLoading: dailyLoading || habitLoading,
   }
 }

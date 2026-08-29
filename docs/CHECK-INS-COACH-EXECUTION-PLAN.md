@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0 shipped 2026-08-29 (STATUS block under §5 → C0); C1–C6 not built.**
+**Status: IN PROGRESS — C0 and C1 shipped 2026-08-29 (STATUS blocks under §5); C2–C6 not built.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -824,6 +824,106 @@ endpoints".
   list with the badge updated; the bell count drops without waiting 30s; sidebar tab click while
   on a detail leaves you on the detail (single-owner param rides through — say so if you prefer
   it to reset).
+
+**STATUS — SHIPPED 2026-08-29, one commit on `main`. Browser smoke OWED (owner runs it).**
+
+*What shipped.*
+- `lib/client-tabs.ts`: `checkInReviewUrl(clientId, checkInId)` → `/clients/{id}?tab=check-ins&checkIn=<id>`,
+  the single writer of the form; `?checkIn=` is the Check-ins tab's single-owner param (a record id,
+  like Journey's `?block=`). Three tests.
+- `components/clients/check-ins/check-in-detail-view.tsx` (234 lines): the modal body lifted with
+  its three panes and the SegmentedControl → controlled-Tabs pairing intact; the header is the
+  sidebar back-row grammar ("← Check-ins") over the mono meta line, SegmentedControl right; `Loader2`
+  replaces three hand-rolled spinner divs; hex-token error and foreign-client states in the tab's
+  own notice shape; the rail is `lg:sticky lg:top-[52px]`. The modal's title, X, prev/next chevrons
+  and window keydown listener are gone (D1.3).
+- `hooks/use-check-in-detail-data.ts` (228 lines, SWR — D1.4): `checkInDetailKey` +
+  `useInvalidateCheckInDetail` (the area is the detail and everything under it; exact-or-child
+  match so a same-prefix id cannot collide); the detail and comparison reads as module-private
+  hooks; `resolveCheckInDetailWindow` / `unloggedDates` / `buildFullWeekTarget` as pure exports; the
+  window's daily + habit logs through `useWellnessData`'s new explicit `range`; `plan-targets` as a
+  dependent read keyed on the unlogged dates; the `isForeign` guard; `refreshDetail` for the rail's
+  Regenerate. The ten `useState` slots, the raw fetches and the keydown effect are gone.
+- `hooks/use-wellness-data.ts`: additive `range?: DailyLogRange | null` (`null` fetches nothing;
+  `undefined` keeps the rolling default) and stable empty arrays. Both existing callers untouched.
+- `check-ins-tab-content.tsx`: reads `?checkIn=` unconditionally, ahead of the list's
+  loading/empty branches (a deep link opens while the list loads); rows are `<Link>`s to
+  `checkInReviewUrl`; a required `onTabChange` prop (page.tsx passes `handleTabChange`); `onDone`
+  = bound `mutate()` + `useInvalidateClientCheckIns(client.id)` + `useInvalidateCheckInsQueue()` +
+  `onTabChange("check-ins", { checkIn: null })`.
+- Overview: the awaiting-review row sends `{ checkIn: unreviewedCheckIn.id }`.
+- `app/check-ins/review/page.tsx` (interim, C3 deletes it): rows `router.push(checkInReviewUrl(…))`
+  on the row only; the modal mount, selection state, prev/next and `mutate` are gone.
+- Deleted `components/check-in/check-in-detail-modal.tsx`.
+- Tests (+2 files, +26 cases; 306 files / 3304 green, from 304 / 3278): `client-tabs.test.ts`,
+  `check-ins-tab-content.test.tsx` rewritten (`next/navigation` + `next/link` mocked; the
+  `use-check-in-data` mock grew the two invalidators; the view mocked — loading, empty, rows are
+  links, the param renders the view, a deep link opens while loading, back row, done → three
+  refreshes + the handler, Load older), NEW `check-in-detail-view.test.tsx` (loading, foreign
+  guard, failure, meta line + rail, back row, pane switching, send vs regenerate), NEW
+  `use-check-in-detail-data.test.ts` (window resolution incl. the `createdAt − 6` fallback,
+  unlogged dates, target sums, keys, the guard fetching no context, the dependent plan read and
+  its absence when every day is logged, the loading flag, the invalidator filter),
+  `needs-attention-section.test.tsx` (assertion).
+- Docs: ARCHITECTURE — the tab-structure paragraph (`?checkIn=`, `checkInReviewUrl`, the one push
+  and why a cross-tab open stays `replace`, the back row through the handler), the Check-ins tab
+  row, the Overview's "links to the tab that owns its data" clause, and a new "The coach review
+  surface" subsection under Check-in System; `CLIENT-PORTAL-EXECUTION-PLAN.md` Session 7.4 dated
+  supersession line (review on the tab; the queue goes in C3; form editing arrives in C6);
+  `newdesignsystem.md` Segmented-control reference → the view; `TECHNICAL-DEBT.md` modal row and
+  item resolved (with the successor's real line counts). This file's `:3` status line.
+
+*Deviations from the plan, and why.*
+1. **D1.2 is the same-tab open only.** List rows are real `<Link>`s (native push: Back returns to the
+   list, and the URL and the mount-seeded `activeTab` still agree). The Overview's open stays the
+   handler's `replace` — a push there would leave the URL on `?tab=overview` after Back while the
+   visible tab stayed on Check-ins. `handleTabChange` is untouched.
+2. No `onReviewCheckIn` prop on `NeedsAttentionSection`: the row calls
+   `onTabChange("check-ins", { checkIn: id })`, §2.1's own wording and the block-ending row's shape;
+   nothing threaded through `client-overview-tab.tsx`.
+3. The modal's "`{name} – Check-In Review`" title is dropped — the sidebar names the client — and
+   the back row takes its slot.
+4. The context reads reuse `useWellnessData` through a new `range` option rather than a second key
+   builder for the same two endpoints (CONVENTIONS §7: lift the fetch to the shared hook). It also
+   gained stable empty arrays while touched (`|| []` minted a fresh array per unresolved render).
+5. `useCheckInDetail` / `useCheckInComparison` are module-private: knip flagged them as unused
+   exports, and only the composed hook reads them. The key and the invalidator are the exports.
+6. The tab test mocks `next/link` to a bare `<a>` so the href assertion is deterministic.
+7. The rail's `lg:top-[52px]` is class math against the band (`py-2` + its tallest control), not
+   measured pixels — the plan's Flag 3, a named smoke item.
+8. Plan line cites re-derived today: `newdesignsystem.md:673`, `TECHNICAL-DEBT.md:518/:532` and
+   `CLIENT-PORTAL-EXECUTION-PLAN.md:2190` were exact; ARCHITECTURE `:695` had drifted to `:697`.
+
+*§2 review — the ≥5-files trigger fires; largely not applicable.*
+1–6 (security): no route, auth, ownership, validation, RLS or write path changed. The reads moved
+from raw `fetch` to SWR against the same five coach endpoints (`/api/check-in/[id]`,
+`…/comparison`, `/api/clients/[id]/daily-logs`, `…/habits/logs`, `…/nutrition/plan-targets`), each
+still behind its own route chain. The one behavioural addition is a STRICTER client-side guard
+(`isForeign`): a check-in whose `clientId` differs from the page's fetches no context and renders an
+error — the server rule (foreign coach → refused) is unchanged. `check:rls` not run — no schema change.
+7. Round trips per open are unchanged: detail ∥ comparison, then daily-logs ∥ habit-logs, then
+plan-targets (only when a window day is unlogged). Re-opening a check-in in the same session is now
+served from cache; the modal refetched every time.
+8–10. No writes were added. After Send, the bound mutate and the two invalidators are cache
+operations; the only network effect is the bell's single queue read revalidating.
+11. The three stages are inherently sequential (the window comes from the check-in, the unlogged
+dates from the logs); the plan-targets read is gated on `!logsLoading`, so it fires once with the
+final date list rather than once per partial render.
+12–13. No writes, so no partial-commit seam. Not load-tested; nothing here changes server load
+shape.
+
+*Gates (real output).* `npx tsc --noEmit` exit 0 · `npx eslint .` exit 0 — 156 warnings / 0 errors
+(from 162: six died with the modal and the old hook), none in a touched file except
+`app/check-ins/review/page.tsx:90`'s pre-existing `<img>` · `npx vitest run` 306 files / 3304 tests
+passed, no flaky trip · `npm run check:labels` "OK — 680 files scanned" · `npm run knip` 173 → 172
+lines: `FullWeekTarget` gone, one line-number shift, nothing new · no `as any`, markers or
+`console.log` in the touched files. No route file was deleted, so no `.next` wipe (the modal is a
+component; the legacy route stays until C3).
+
+*Unverified.* Every UI effect until the owner's smoke — above all the rail offset (deviation 7) and
+the Back behaviours described in deviation 1. `useInvalidateCheckInDetail` has no consumer outside
+its own module yet (C2/C3 may want it). The `range` option's behaviour under `useWellnessData`'s
+5-second dedupe is inherited, not measured.
 
 ### C2 — #2 roster "Ready for review" = check-ins
 `lib/roster-views.ts` (+ new `roster-views.test.ts`), `hooks/use-roster.ts` (thread, fold, refresh

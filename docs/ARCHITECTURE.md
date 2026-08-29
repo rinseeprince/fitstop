@@ -677,10 +677,12 @@ All coach-side data fetching uses SWR with:
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |
 | Daily Habits | `HabitsTabContent` + `HabitsHistoryTable` | Habit management, analytics |
-| Check-ins | `CheckInsTabContent` | The client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page; `hooks/use-check-in-data.ts` owns the list key and its invalidator). A row opens the review surface, `CheckInDetailModal` (`components/check-in/`): three panes — Current (KPI ribbon, wellness / nutrition / training / habits / client-notes cards, the AI review rail with Regenerate and Send), Comparison & Trends, Goal Progress. Which check-in is open is component state, not a URL param, so a check-in has no deep link |
+| Check-ins | `CheckInsTabContent` | The client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page; `hooks/use-check-in-data.ts` owns the list key and its invalidator). Each row is a `<Link>` to `checkInReviewUrl`; with `?checkIn=<id>` present the tab renders the review surface, `CheckInDetailView` (`components/clients/check-ins/`), in place of the list — three panes: Current (KPI ribbon, wellness / nutrition / training / habits / client-notes cards, the AI review rail with Regenerate and Send), Comparison & Trends, Goal Progress. See "The coach review surface" under Check-in System |
 | Notes | `NotesTabContent` | `client_notes` list — pinned first, newest-first, add + pin/unpin. Same endpoints as the Overview card |
 
 Tab changes go through `handleTabChange` → `buildClientTabUrl` (`lib/client-tabs.ts`), which `router.replace`s without scroll. **Every cross-tab navigation must go through that handler.** `activeTab` is React state seeded from `?tab=` **at mount only**, so a `<Link>` or a bare `router.replace` changes the URL and leaves the visible tab where it was — the nutrition drawer's `GoalSummary` wrote a sentence instead of a link rather than fight it, and the training history table's exercise drill-down takes the handler as a prop for exactly this reason. The same mount-only seeding means `activeTab` flips *before* the replace lands, so for one render a newly-mounted tab reads the previous tab's query: anything reading a param on arrival must tolerate that (which is why single-owner pane params are read unguarded and the one-shot trip params below are consumed from an effect, not a `useState` initializer). **Every tab owns a pane param named after itself** — `?journey=` (Physique/Training/Wellness/Blocks), `?training=` (Data/Plans), `?nutrition=` (Data/Plans). Single-owner is the whole contract: only its own tab reads it, so it rides through a tab switch and restores that pane on the return trip, and it is read *unconditionally* (a deep link resolves on the first render, before `router.replace` lands). The shared `?subtab=` that Training and Nutrition both used to write is retired (Session 7.2) — still read as a guarded fallback so old links resolve, still deleted on every tab change, written by nothing. `extraParams` ADDRESS a pane on arrival and a `null` value deletes a carried key.
+
+**The Check-ins tab's single-owner param is `?checkIn=<id>`** — a record id, like Journey's `?block=`, read unconditionally, so a pasted `/clients/{id}?tab=check-ins&checkIn=<id>` opens the check-in on the first render and an open detail survives a sidebar round trip (see "The coach review surface" under Check-in System). `checkInReviewUrl(clientId, checkInId)` (`lib/client-tabs.ts`) is the ONE writer of that form, for every cross-page deep link (the legacy queue today; the roster, the bell and the dashboard as they arrive). **The tab's list rows are real `<Link>`s to it — the one `push` in this contract**: browser Back returns to the list, and the URL and the mount-seeded `activeTab` still agree because it is the same tab. A cross-tab open (the Overview's "Review" row) goes through the handler as `{ checkIn: id }` and stays a `replace`: a push there would leave the URL on `?tab=overview` after Back while the visible tab stayed on Check-ins. The detail's back row, and the return after a reply is sent, clear the param through the handler (`{ checkIn: null }`).
 
 Three params are **one-shot**, consumed and stripped by the surface that receives them (`hooks/use-journey-round-trip.ts`): `?apply=1` / `?edit=1` opens the Training apply tray or the Nutrition plan drawer, and `?returnTo=journey&returnBlock=<id>` names the Journey block to return to on a **successful save** (`?journey=blocks&block=<id>`, which wins over the default-expanded current block). Stripping on arrival is not tidiness — the whole query is carried across every tab change, so a `returnTo` outliving its own flow would bounce a coach to Journey after a **later, unrelated** save, and a lingering open-param would re-open the surface on every hand-return to the tab (Radix unmounts inactive `TabsContent`, so each visit is a fresh mount). The hook also drops the return target on any close without a save. The affordance is offered on **current and future** blocks only; elapsed and archived keep plain text (`blockAcceptsSetup`).
 
@@ -694,7 +696,7 @@ Each context is a thin wrapper: it provides the hook's return value, and consume
 
 ### Coach client Overview
 
-`components/clients/client-overview-tab.tsx` + `components/clients/overview/**`. Seven sections reading top to bottom as *who this client is → where they stand → what needs doing → what happened since I last looked → what they are on → how consistent they have been → how they feel → what I said*. The plan sits ABOVE the two consistency sections deliberately: adherence is adherence TO something, so the prescription reads first and the fortnight measuring it reads second. Every summarising card links to the tab that owns its data; every unset state names what is missing and offers the action that fixes it.
+`components/clients/client-overview-tab.tsx` + `components/clients/overview/**`. Seven sections reading top to bottom as *who this client is → where they stand → what needs doing → what happened since I last looked → what they are on → how consistent they have been → how they feel → what I said*. The plan sits ABOVE the two consistency sections deliberately: adherence is adherence TO something, so the prescription reads first and the fortnight measuring it reads second. Every summarising card links to the tab that owns its data — the awaiting-review row deeper still, to the check-in itself (`?checkIn=`); every unset state names what is missing and offers the action that fixes it.
 
 **The page has NO window control, and two deliberately different timescales.** It briefly had a 30/60 selector governing both; the owner removed it on 2026-08-28 because the two surfaces are answering different questions and a shared control implied they were not.
 
@@ -1033,6 +1035,39 @@ back through the form screen.
   alone identifies the period — `period_start` is clamped forward for a partial first week and moves
   on its own. `submitCheckIn` translates the resulting `23505` into a readable sentence; a client
   never sees constraint text.
+
+### The coach review surface
+
+`components/clients/check-ins/check-in-detail-view.tsx`, rendered by the Check-ins tab in place of
+its list whenever `?checkIn=<id>` is present (the tab's single-owner param — see "Client page tab
+structure"). It replaced the `CheckInDetailModal` dialog on 2026-08-29 with the content carried over
+intact: three panes behind one `SegmentedControl` driving a controlled `Tabs` (the reference pairing
+in `docs/newdesignsystem.md` → Segmented control) — **Current** (the KPI ribbon, the wellness /
+nutrition / training / habits / client-notes cards, and the sticky AI review rail: Regenerate, the
+coach's reply, Send), **Comparison & Trends** and **Goal Progress** (carried as they were; their
+redesign is a separate session). The header is the sidebar back-row grammar ("← Check-ins") over a
+mono meta line; the modal's prev/next chevrons and its window keydown listener went with it.
+
+**Data: `hooks/use-check-in-detail-data.ts`, SWR throughout.** `GET /api/check-in/[id]` and
+`…/comparison` read in parallel behind `checkInDetailKey` + `useInvalidateCheckInDetail` (the area
+is the detail and everything under it). The window's daily and habit logs come through
+`useWellnessData`'s explicit `range` — the same reader the Overview's wellness cards use, so those
+two keys have one builder. `…/nutrition/plan-targets?dates=` is a dependent read for the window's
+unlogged days only, folded with the logged days' own snapshotted targets into the full-week
+nutrition target. The window is the stored `period_start`/`period_end`, else the six days up to
+`created_at` (pre-Session-6.4 rows). Three sequential stages, as the raw-fetch version had; SWR now
+dedupes re-opens.
+
+**The client-id guard.** The detail is fetched by check-in id but the context by the page's client
+id, and `GET /api/check-in/[id]` refuses only a *foreign* coach — a coach's own other-client id in
+the URL would pair one client's check-in with another's logs and targets. A check-in whose
+`clientId` differs from the page's renders the error state and fetches no context.
+
+**After Send** the rail reports done and the tab does three things before clearing `?checkIn=`: its
+own bound list `mutate()` (a filter mutate cannot reach a `useSWRInfinite` reader),
+`useInvalidateClientCheckIns` (the Journey reader's page caches) and `useInvalidateCheckInsQueue`
+(the bell and the toast listener). Regenerate revalidates the detail in place through its bound
+mutate.
 
 ### The React Native contract
 

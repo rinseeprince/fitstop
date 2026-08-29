@@ -1,22 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { CheckInDetailModal } from "@/components/check-in/check-in-detail-modal";
+import { CheckInDetailView } from "./check-in-detail-view";
 import { CheckInStatusBadge } from "./check-in-status-badge";
-import { useClientCheckInsInfinite } from "@/hooks/use-check-in-data";
+import {
+  useClientCheckInsInfinite,
+  useInvalidateCheckInsQueue,
+  useInvalidateClientCheckIns,
+} from "@/hooks/use-check-in-data";
 import { getAiPreview } from "@/lib/check-in-helpers";
+import { checkInReviewUrl, type ClientTab } from "@/lib/client-tabs";
 import { cn } from "@/lib/utils";
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import type { Client } from "@/types/check-in";
 
 type CheckInsTabContentProps = {
   client: Client;
+  /**
+   * The client page's tab handler (ARCHITECTURE → "Client page tab structure").
+   * The detail's back row and its post-Send return both clear this tab's own
+   * `?checkIn=` through it, so `activeTab` and the URL stay in step.
+   */
+  onTabChange: (tab: ClientTab, extraParams?: Record<string, string | null>) => void;
 };
 
-export const CheckInsTabContent = ({ client }: CheckInsTabContentProps) => {
+export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentProps) => {
+  const searchParams = useSearchParams();
+  // This tab's single-owner pane param — a record id, like Journey's `?block=`
+  // — read unconditionally so a deep link resolves on the first render, before
+  // the page's replace lands.
+  const checkInId = searchParams.get("checkIn");
   const {
     checkIns,
     hasMore,
@@ -27,22 +44,27 @@ export const CheckInsTabContent = ({ client }: CheckInsTabContentProps) => {
     setSize,
     mutate,
   } = useClientCheckInsInfinite(client.id);
-  const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(
-    null
-  );
+  const invalidateQueue = useInvalidateCheckInsQueue();
+  const invalidateClientCheckIns = useInvalidateClientCheckIns();
 
-  const selectedIndex = selectedCheckInId
-    ? checkIns.findIndex((ci) => ci.id === selectedCheckInId)
-    : -1;
-
-  const handleNavigate = (direction: "prev" | "next") => {
-    if (selectedIndex === -1) return;
-    const newIndex =
-      direction === "prev" ? selectedIndex - 1 : selectedIndex + 1;
-    if (newIndex >= 0 && newIndex < checkIns.length) {
-      setSelectedCheckInId(checkIns[newIndex].id);
-    }
-  };
+  if (checkInId) {
+    return (
+      <CheckInDetailView
+        checkInId={checkInId}
+        client={client}
+        onBack={() => onTabChange("check-ins", { checkIn: null })}
+        onDone={() => {
+          // The review is done (status → reviewed). This list refreshes through
+          // its own bound mutate — a filter mutate cannot reach an infinite
+          // reader — then the Journey reader's pages and the bell's queue.
+          void mutate();
+          void invalidateClientCheckIns(client.id);
+          void invalidateQueue();
+          onTabChange("check-ins", { checkIn: null });
+        }}
+      />
+    );
+  }
 
   if (isLoading) {
     return (
@@ -76,9 +98,11 @@ export const CheckInsTabContent = ({ client }: CheckInsTabContentProps) => {
       {checkIns.map((checkIn) => {
         const aiPreview = getAiPreview(checkIn.aiSummary);
         return (
-          <button
+          // A real link — the one push in the tab's URL contract, so browser
+          // Back returns to this list.
+          <Link
             key={checkIn.id}
-            onClick={() => setSelectedCheckInId(checkIn.id)}
+            href={checkInReviewUrl(client.id, checkIn.id)}
             className="w-full text-left flex items-center justify-between gap-3 p-4 bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]"
           >
             <div className="min-w-0">
@@ -99,7 +123,7 @@ export const CheckInsTabContent = ({ client }: CheckInsTabContentProps) => {
             <div className="shrink-0">
               <CheckInStatusBadge status={checkIn.status} />
             </div>
-          </button>
+          </Link>
         );
       })}
 
@@ -120,22 +144,6 @@ export const CheckInsTabContent = ({ client }: CheckInsTabContentProps) => {
           </Button>
         </div>
       )}
-
-      <CheckInDetailModal
-        checkInId={selectedCheckInId}
-        clientId={client.id}
-        clientName={client.name}
-        onClose={() => setSelectedCheckInId(null)}
-        onResponseSent={() => {
-          setSelectedCheckInId(null);
-          void mutate();
-        }}
-        onNavigate={handleNavigate}
-        canNavigatePrev={selectedIndex > 0}
-        canNavigateNext={
-          selectedIndex < checkIns.length - 1 && selectedIndex !== -1
-        }
-      />
     </div>
   );
 };

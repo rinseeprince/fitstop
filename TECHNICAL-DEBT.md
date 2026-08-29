@@ -515,7 +515,7 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 |---|------|-------|-------|---------|--------|
 | 1 | `services/check-in-tracking-service.ts` | 455 | 300 | 155 (51%) | Open |
 | 2 | `app/client/dashboard/page.tsx` | 366 | 250 | 116 (46%) | Open |
-| 3 | `components/check-in/check-in-detail-modal.tsx` | 352 | 250 | 102 (41%) | Open |
+| 3 | ~~`components/check-in/check-in-detail-modal.tsx`~~ | 352 | 250 | 102 (41%) | **Resolved 2026-08-29** — deleted; the review surface is `components/clients/check-ins/check-in-detail-view.tsx` (234 lines, render only) over the SWR hook `hooks/use-check-in-detail-data.ts` (228 lines) |
 | 4 | `app/api/client/check-ins/route.ts` | 292 | 250 | 42 (17%) | Open |
 | 5 | `app/client/check-in/page.tsx` | 290 | 250 | 40 (16%) | Open |
 | 6 | `components/daily-pulse/daily-pulse.tsx` | 277 | 250 | 27 (11%) | Open |
@@ -529,7 +529,7 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 
 2. **`dashboard/page.tsx`** - Extract a `useDashboardData()` hook to handle the 6-endpoint `Promise.all` fetch and associated state management. The page component should only own layout and rendering.
 
-3. **`check-in-detail-modal.tsx`** - Extract tab content panels (daily context summary, AI summary card, photo viewer) into sub-components. The modal currently manages multiple data fetches and complex state for unrelated tabs.
+3. ~~**`check-in-detail-modal.tsx`** - Extract tab content panels into sub-components~~ — **RESOLVED 2026-08-29**: the modal was deleted when the review moved onto the client's Check-ins tab (`components/clients/check-ins/check-in-detail-view.tsx`); its data fetches and state now live in the SWR hook `hooks/use-check-in-detail-data.ts`, and the view only renders.
 
 4. **`check-ins/route.ts`** - Extract photo upload handling and AI summary triggering into the check-in service layer. The POST handler has too many inline responsibilities.
 

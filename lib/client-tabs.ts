@@ -50,6 +50,18 @@ export function buildClientTabUrl(
   return `/clients/${clientId}?${params.toString()}`
 }
 
+/**
+ * The URL of one check-in on its client's Check-ins tab — the ONE writer of the
+ * `?checkIn=<id>` form. `checkIn` is that tab's single-owner pane param, a
+ * record id like Journey's `?block=`. Every cross-page deep link to a check-in
+ * builds it here, never in `lib/attention-alert-destinations.ts` (whose map
+ * addresses tabs, not records). A bare query on purpose: a fresh mount has
+ * nothing to carry.
+ */
+export function checkInReviewUrl(clientId: string, checkInId: string): string {
+  return buildClientTabUrl(clientId, "check-ins", "", { checkIn: checkInId })
+}
+
 /** The two tabs that own a pane param named after themselves. Journey is the
  *  same shape (`?journey=`) but resolves its own value in
  *  `metrics-tab-content.tsx`; these are the two that migrated off the shared

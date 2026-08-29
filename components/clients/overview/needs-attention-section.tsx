@@ -195,7 +195,9 @@ export function NeedsAttentionSection({
                 sub={submitted ? `Submitted ${submitted.text}` : null}
                 subIsNumeric={submitted?.isNumeric}
                 action="Review"
-                onOpen={() => onTabChange("check-ins")}
+                // Addresses the check-in itself — the Check-ins tab's
+                // single-owner `?checkIn=` param, the block-ending row's shape.
+                onOpen={() => onTabChange("check-ins", { checkIn: unreviewedCheckIn.id })}
               />
             )}
 

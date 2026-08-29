@@ -122,7 +122,7 @@ export default function ClientProfilePage() {
 
           {/* Check-ins Tab */}
           <TabsContent value="check-ins" className="space-y-6 mt-0">
-            <CheckInsTabContent client={client} />
+            <CheckInsTabContent client={client} onTabChange={handleTabChange} />
           </TabsContent>
 
           {/* Notes Tab */}

@@ -2189,6 +2189,8 @@ Commit.
 
 **Do NOT**: Add editing from this tab (global review queue owns that). Duplicate the review queue's unreviewed-filter logic. Build check-in generation or resubmission.
 
+> **Superseded 2026-08-29** (coach check-ins workstream, `docs/CHECK-INS-COACH-EXECUTION-PLAN.md`): the Check-ins tab IS the review surface — `?checkIn=<id>` renders `CheckInDetailView` with the AI review rail and Send (C1); the global queue page is deleted in C3, and the per-client check-in form editor arrives on this tab in C6. The "do not add editing here" rule above is kept as the record of the session as it shipped.
+
 **Tests to write**:
 - `check-ins-tab-content.test.tsx`: renders list from fixture; loading / error / empty states render; detail click opens detail.
 - API route test: confirm `/api/clients/[id]/check-ins` returns the expected shape and respects coach-ownership IDOR.
