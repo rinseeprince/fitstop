@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useOverdueClients, useClientsDueSoon, useUnreviewedCheckIns } from "@/hooks/use-check-in-data";
+import { checkInReviewUrl } from "@/lib/client-tabs";
 import { formatDistanceToNow } from "date-fns";
 
 export function NotificationsDropdown({ compact = false }: { compact?: boolean } = {}) {
@@ -69,7 +70,10 @@ export function NotificationsDropdown({ compact = false }: { compact?: boolean }
                 {recentUnreviewed.map((checkIn) => (
                   <DropdownMenuItem key={checkIn.id} asChild>
                     <Link
-                      href="/check-ins/review"
+                      // Straight to the check-in on its client's Check-ins tab,
+                      // through the single writer of that form. The row names
+                      // one check-in, so it should land on that one.
+                      href={checkInReviewUrl(checkIn.clientId, checkIn.id)}
                       className="flex items-start gap-3 p-3 cursor-pointer"
                       onClick={() => setOpen(false)}
                     >

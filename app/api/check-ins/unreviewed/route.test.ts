@@ -22,8 +22,11 @@ const request = () =>
     method: "GET",
   });
 
-/** `clients` resolves to the coach's ids at `.eq`; `check_ins` records its
- *  filters and resolves to `rows` at `.limit`. */
+/** `check_ins` records its filters and resolves to `rows` at `.limit`.
+ *
+ *  `clients` is THENABLE rather than resolving at a particular link: the route
+ *  chains two `.eq`s (coach, then active) and awaits the builder, exactly as
+ *  PostgREST does, so the mock must not care which `.eq` is last. */
 function wireSupabase(clientIds: string[], rows: unknown[]) {
   const checkIns: Record<string, ReturnType<typeof vi.fn>> = {};
   checkIns.select = vi.fn(() => checkIns);
@@ -31,16 +34,15 @@ function wireSupabase(clientIds: string[], rows: unknown[]) {
   checkIns.order = vi.fn(() => checkIns);
   checkIns.limit = vi.fn().mockResolvedValue({ data: rows, error: null });
 
-  const clients: Record<string, ReturnType<typeof vi.fn>> = {};
+  const clients: Record<string, unknown> = {};
   clients.select = vi.fn(() => clients);
-  clients.eq = vi.fn().mockResolvedValue({
-    data: clientIds.map((id) => ({ id })),
-    error: null,
-  });
+  clients.eq = vi.fn(() => clients);
+  clients.then = (resolve: (value: unknown) => unknown) =>
+    resolve({ data: clientIds.map((id) => ({ id })), error: null });
 
   vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
     table === "clients" ? clients : checkIns) as never);
-  return { checkIns, clients };
+  return { checkIns, clients: clients as { eq: ReturnType<typeof vi.fn> } };
 }
 
 describe("GET /api/check-ins/unreviewed", () => {
@@ -85,6 +87,9 @@ describe("GET /api/check-ins/unreviewed", () => {
 
     expect(res.status).toBe(200);
     expect(clients.eq).toHaveBeenCalledWith("coach_id", "coach-1");
+    // Deactivated clients never reach the queue: the bell links straight to the
+    // check-in, and their page 404s.
+    expect(clients.eq).toHaveBeenCalledWith("active", true);
     expect(checkIns.in).toHaveBeenCalledWith("status", ["pending", "ai_processed"]);
     expect(checkIns.in).toHaveBeenCalledWith("client_id", ["c1", "c2"]);
     expect(body.total).toBe(1);

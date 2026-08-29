@@ -665,6 +665,29 @@ All coach-side data fetching uses SWR with:
 - `swrFetcher` from `lib/swr-fetcher.ts` (throws on non-OK responses)
 - `isLoading` for initial load skeletons (not `isValidating`)
 
+### Coach client roster
+
+`/clients` (`app/clients/page.tsx` → `RosterShell` + `RosterStatBand` + `RosterTable`) is the coach's list of clients, in the same three-column frame as a client detail page. **`lib/roster-views.ts` is the single owner of its vocabulary** — the `?view=` param, the status ladder, and every pure predicate — and `hooks/use-roster.ts` is the only fetch-and-memo layer over it. "all" is the bare `/clients`, never `?view=all`; every writer of the param goes through `rosterViewUrl`.
+
+**Six views in two groups.** Four *roster shapes* above the sidebar divider — All / Active / Onboarding / Inactive — and two **Attention queues** below it:
+
+| Queue | A row is in it when | Row action |
+|---|---|---|
+| **Overdue check-ins** (`?view=overdue`) | `daysOverdue > 0`, threaded from `GET /api/clients/overdue` rather than recomputed | "Send reminder", hover-revealed |
+| **Ready for review** (`?view=review`) | the client is not deactivated AND has an unreviewed check-in | "Review check-in" → `checkInReviewUrl`, always visible |
+
+A type-level guard in the module fails the build if a seventh view is added without a sidebar group.
+
+**"Ready for review" means an unreviewed CHECK-IN, not a submitted intake** (owner decision 2026-08-29, reversing the 2026-08-22 roster decision in `a1e875a`). The intake queue was not deleted, it was rehomed: it lives on the **Onboarding** view's own rows and their `/intake-review` link, the dashboard's `PendingIntakeBanner`, and the floating intake panel. In the review view the row click and the chevron address the check-in; the client's NAME stays a link to the client, because it names the client rather than the thing waiting.
+
+**Three reads, all folded.** `useRoster` reads `/api/clients?includeInactive=true` (deactivated rows included, so Inactive and reactivation work), `/api/clients/overdue`, and `/api/check-ins/unreviewed`. The latter two are already mounted app-wide by `NotificationsDropdown`, so SWR serves them from cache and neither costs a request. All three are represented in `isLoading` / `isError` / `refresh`: a queue that failed alone would otherwise render its view's empty state as a settled all-clear, and a `refresh` missing a leg leaves a reactivated client in the wrong view until the next poll.
+
+**The Clients nav badge is these two queues added up** (`hooks/use-client-attention.ts`, mounted by `sidebar-nav.tsx` and `collapsed-icon-strip.tsx`). It counts **clients, never check-ins** — two check-ins from one client are one thing to do, so `useUnreviewedCheckIns().total` belongs on neither the badge nor the roster — and it reaches that number through the roster's own `indexUnreviewedCheckIns`, so a second spelling of the predicate cannot make the badge disagree with the page beside it. It has done exactly that twice: first counting `/api/check-ins/recent` rows behind a hand-rolled `setInterval`, then counting submitted intakes after they stopped being an attention queue.
+
+**Both halves are active-only at their endpoints**, not in the renderer: `getOverdueClients` filters `client.active`, and `GET /api/check-ins/unreviewed` scopes to the coach's *active* client ids. A deactivated client's detail page 404s (`getClientById` is active-filtered), so a queue row for one dead-ends — the same reason `getCoachPendingIntakes` filters `client.active`. `matchesRosterView`'s `status !== "inactive"` is the belt over those braces.
+
+**Freshness is bounded by the queue's own 30s poll** (`useUnreviewedCheckIns`, `revalidateOnFocus: true`). The dominant writer of both numbers is someone else's session — a client submitting — which no coach-side invalidator can reach; `useInvalidateCheckInsQueue` (`hooks/use-check-in-data.ts`) covers the coach-side writes, and the Check-ins tab calls it after a reply is sent.
+
 ### Client page tab structure
 
 `app/clients/[id]/page.tsx` renders tabs synced to the URL via `?tab=` search param:

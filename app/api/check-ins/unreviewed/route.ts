@@ -21,11 +21,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // First, get all client IDs for this coach
+    // First, get all ACTIVE client IDs for this coach. Deactivated clients are
+    // excluded for the reason `getCoachPendingIntakes` excludes them: their
+    // detail page 404s (`getClientById` is active-filtered), so every consumer
+    // of this queue — the bell rows, which link straight to the check-in; the
+    // Clients nav badge; the roster's Ready-for-review view — would carry a row
+    // that dead-ends. It also keeps the badge and the roster count equal by
+    // construction rather than by two client-side filters that can drift.
     const { data: clients } = await supabaseAdmin
       .from("clients")
       .select("id")
-      .eq("coach_id", coachId);
+      .eq("coach_id", coachId)
+      .eq("active", true);
 
     if (!clients || clients.length === 0) {
       return NextResponse.json({ checkIns: [], total: 0 }, { status: 200 });

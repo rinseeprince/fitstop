@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0 and C1 shipped 2026-08-29 (STATUS blocks under §5); C2–C6 not built.**
+**Status: IN PROGRESS — C0, C1 and C2 shipped 2026-08-29 (STATUS blocks under §5); C3–C6 not built.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -942,6 +942,129 @@ ARCHITECTURE "Coach client roster" paragraph (views, Attention queues, what the 
 today the roster has NO canonical doc home). Smoke: `?view=review` lists exactly the clients whose
 Overview shows the awaiting-review row; stat-band count = sidebar count = nav badge; row click
 and "Review check-in" land on the check-in; an inactive client's unreviewed check-in is absent.
+
+**STATUS — SHIPPED 2026-08-29 in `PLACEHOLDER_SHA`; browser smoke OWED (owner runs it).**
+
+*What shipped.*
+- `lib/roster-views.ts`: `RosterRow.unreviewedCheckIn`, typed as the Overview's own
+  `UnreviewedCheckIn` (`types/coach-brief.ts`) because it is the same fact; the pure
+  `indexUnreviewedCheckIns(checkIns)` → one entry per client, the newest (the queue route
+  orders `created_at DESC`, the same order + `LIMIT 1` the Overview brief uses, so the two
+  agree by construction); `matchesRosterView`'s `review` case is now
+  `status !== "inactive" && unreviewedCheckIn !== null`. The module header records that the
+  nav badge counts through this file rather than spelling the queue itself.
+- `hooks/use-roster.ts`: `useUnreviewedCheckIns()` as a third read — already mounted app-wide
+  by `NotificationsDropdown` inside `RosterShell`, so it costs **no request** — indexed, stamped
+  in the one row constructor, and folded into `isLoading` / `isError` / `refresh` (the third
+  `mutate` is what empties a deactivated client out of Ready for review).
+- `components/clients/roster/roster-row-format.ts` (NEW): `formatShortDate`,
+  `formatLastCheckIn`, `formatInvitedOn` lifted out — the row was 251 lines against a 250
+  guideline and is now 247 with the C2 additions in it.
+- `roster-row.tsx`: a `view` prop; an always-visible **"Review check-in"** link
+  (`checkInReviewUrl`, `ROW_BUTTON_CLASS` + `FOCUS_RING`), never on a deactivated row; the
+  Last-check-in sub-line precedence is now **late → waiting → due**, the waiting line reading
+  `review · 24 Aug` in `MONO` + teal `#0d9488` (amber stays reserved for lateness; teal is the
+  tone the sidebar's review badge already uses) and dated from `unreviewedCheckIn.submittedAt`,
+  never `lastCheckInDate`; in `view="review"` the row click and chevron address the check-in
+  while the NAME keeps pointing at the client.
+- `roster-table.tsx`: passes `view` down; empty copy → "No check-ins waiting".
+  `roster-stat-band.tsx`: `actionLabel` → "View check-ins ready for review", and the stale
+  no-sub comment (which explained an *intake* wait the roster could not measure) rewritten.
+- `hooks/use-client-attention.ts` (D2.1): the badge is `overdueTotal +
+  indexUnreviewedCheckIns(checkIns).size` — the two Attention views, counted through the
+  roster's own function. The `/api/coach/pending-intakes` poll left with it.
+- `components/navbar/notifications-dropdown.tsx`: the three "New Check-Ins" rows link to
+  `checkInReviewUrl(checkIn.clientId, checkIn.id)`. The footer link is C3's and is untouched.
+- `app/api/check-ins/unreviewed/route.ts`: **`.eq("active", true)`** on the client-id lookup
+  (the approved deviation below).
+- `services/client-intake-service.ts`: its `client.active` comment no longer claims to feed the
+  nav badge, and names the intake queue's three surviving homes.
+- Tests (+5 files, +34 cases; 311 files / 3338 tests green, from 306 / 3304): NEW
+  `lib/roster-views.test.ts` (the index's first-wins/dedupe, the four `review` cases incl. an
+  intake NOT matching, the untouched views), NEW `roster-row-format.test.ts` (the year and
+  day-distance branches on frozen time), NEW `roster-row.test.tsx` (the link's href, its two
+  absences, sub-line precedence, the row-click target per view, the name's href), NEW
+  `use-roster.test.ts` (stamping, the client-not-check-in count, an intake scoring 0, the
+  three-way loading/error/refresh fold), NEW `use-client-attention.test.ts` (distinct clients,
+  not `.total`); EDITED `app/api/check-ins/unreviewed/route.test.ts` — its `clients` mock
+  resolved at the FIRST `.eq`, so the second one broke it; it is now thenable like the real
+  builder, and asserts `("active", true)`.
+- Docs: a first `### Coach client roster` section in ARCHITECTURE (`:668`, ahead of the tab
+  structure) — the six views in two groups, the redefinition and where the intake queue went,
+  the three folded reads, what the badge counts and why it counts through the shared function,
+  active-only at both endpoints, and the 30s poll that bounds freshness; TECHNICAL-DEBT L#1
+  (`:725`) and L#4 (`:728`); the memory file `project_clients_roster_redesign.md`; this file's
+  `:3` status line.
+
+*Deviations from the plan, and why.*
+1. **★ `/api/check-ins/unreviewed` now filters `active` (approved before coding).** The plan
+   asked for a badge counting "DISTINCT ACTIVE clients" but left the mechanism unstated, and
+   `use-client-attention.ts` holds no client list — the queue row carries no `active`. Filtering
+   at the source was chosen over exposing `clientActive` and filtering twice client-side:
+   it makes stat band = sidebar = badge agree by construction, and it removes the dead-end C2
+   would otherwise have created on the bell (a deactivated client's page 404s —
+   `getClientById` is active-filtered). Precedent and identical reasoning:
+   `getCoachPendingIntakes`. **Consequence, outside C2's named file list:** the bell count and
+   the toast listener no longer report a deactivated client's check-in.
+2. `formatInvitedOn` now delegates to `formatShortDate` — the two bodies were byte-identical.
+   A de-duplication inside the extraction, not adjacent tidying.
+3. `UnreviewedCheckInSource` is module-private. Exported, knip reported it as an unused type
+   (173 lines vs 172); both callers hand over a `CheckIn[]` and match structurally. Same call
+   C1 made for `useCheckInDetail` / `useCheckInComparison`.
+4. The plan's "the sub-line reads 'check-in awaiting review'" is rendered as `review · <date>`,
+   not that sentence: the row's own always-visible button already says "Review check-in", so
+   the sub-line's job is to DATE the thing being reviewed — which is landmine 3's actual point.
+   It matches the register of the two lines it sits beside (`3d late`, `due 24 Aug`).
+5. The badge lost its `/api/coach/pending-intakes` poll entirely, so nothing polls that endpoint
+   app-wide any more (the dashboard banner reads it once, un-polled). Read as intended: the
+   plan's "the pending-intakes poll leaves the badge" beside "the endpoint stays (banner + two
+   inline mutates)".
+6. No sub was added to the stat-band cell even though the roster now knows the submit time —
+   the plan asked only for the comment and `actionLabel`, and every row carries its own date.
+7. Plan line cites re-derived today: TECHNICAL-DEBT `:724` had drifted to `:725`; `:728` was
+   exact. The insertion point for the ARCHITECTURE section is `:668`.
+
+*§2 review — the triggers fire (≥5 files on the data flow; one route's scoping changed).*
+1. Write routes: **none touched.** C2 adds no mutating handler; the only route edited is the
+   `GET` queue, which writes nothing.
+2. Auth + ownership: unchanged. `/api/check-ins/unreviewed` still resolves the coach with
+   `getAuthenticatedCoachId()` and scopes `check_ins` to that coach's client ids
+   (`route.ts:15-17`, `:25-38`); the new `.eq("active", true)` **narrows** that tenant scope and
+   can only remove rows. (The pre-existing gap that the auth helper is called without `request`
+   is untouched.)
+3. zod before writes: n/a, no write.
+4. Tenant scope on the write: n/a. On the read, the scope is unchanged in kind and tighter in
+   extent.
+5. `check:rls`: not run — no table, column, policy or grant changed.
+6. `supabaseAdmin`: the queue GET is the only site, authorized by its own coach lookup as before.
+7. Round trips are constant: the queue GET is still 2 selects; the roster page's third read is a
+   cache hit on a key `NotificationsDropdown` already mounts, so `/clients` issues the same
+   number of requests it did yesterday. `indexUnreviewedCheckIns` is one O(n) pass inside an
+   existing `useMemo`, over a result the endpoint caps at 100 rows.
+8. Batched writes: n/a.
+9. Indexes: no new `WHERE`/`ORDER BY` column. `clients.active` joins an existing
+   `coach_id` equality on a table already read whole for this coach on the same request path;
+   `check_ins` predicates are unchanged. Per the migration tree — not re-probed live.
+10. Worst-case rows: the queue keeps its 100-row `LIMIT`; the filter can only reduce it.
+11. Sequential awaits: unchanged (the client-id read must precede the `check_ins` read).
+12. No `.catch()` returning success after a committed write was added.
+13. No two-write seam introduced.
+    Not load-tested; read paths under concurrency remain untested.
+
+*Gates (real output).* `npx tsc --noEmit` exit 0 · `npx eslint .` exit 0, **156 warnings / 0
+errors** (unchanged from C1; none in a touched file — the one grep hit,
+`components/client/notifications-dropdown.tsx:66`, is the CLIENT-side twin I did not edit) ·
+`npx vitest run` **311 files / 3338 tests passed**, no flaky set-tracker trip ·
+`npm run check:labels` "OK — 683 files scanned" · `npm run knip` **172 lines, unchanged** from
+C1's 172 · no `as any`, no markers, no `console.log` in the touched files. No route file was
+deleted, so no `.next` wipe.
+
+*Still unverified.* Everything visual: the teal `review · <date>` sub-line beside the amber and
+muted ones, the second row button's fit in the 150px actions column, and whether a row carrying
+both "Review check-in" and the kebab still reads cleanly. The claim that the roster, the stat
+band, the sidebar and the nav badge all show the same number rests on one shared function and
+its unit tests, not on a browser. `?view=review` keeps the roster's default `"recent"` sort
+(newest client added), which is a poor order for a queue — recorded as a follow-up, not changed.
 
 ### C3 — #3 delete the legacy queue
 Per §2.3 (+ D3.1 card count, D3.2 recent rows). §2 review walked (the ≥5-files trigger fires):

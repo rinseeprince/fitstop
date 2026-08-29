@@ -67,8 +67,8 @@ const EMPTY_COPY: Record<RosterView, { line: string; hint: string }> = {
     hint: "Every client is up to date",
   },
   review: {
-    line: "No intakes waiting",
-    hint: "You have reviewed everything that came in",
+    line: "No check-ins waiting",
+    hint: "You have reviewed every check-in that came in",
   },
 }
 
@@ -216,6 +216,7 @@ export function RosterTable({
               <RosterTableRow
                 key={row.client.id}
                 row={row}
+                view={view}
                 isPending={pendingId === row.client.id}
                 onReactivate={(id) => void reactivate(id)}
                 onSendReminder={(id, name) => void sendReminder(id, name)}

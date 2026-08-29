@@ -266,11 +266,13 @@ export async function getCoachPendingIntakes(
     .in("status", ["pending", "in_progress", "completed"])
     .is("reviewed_at", null)
     .eq("client.coach_id", coachId)
-    // Deactivated clients are excluded. Their intake cannot be reviewed —
+    // Deactivated clients are excluded: their intake cannot be reviewed —
     // `getClientById` is active-filtered, so the banner's Review link 404s —
-    // and counting them made the Clients nav badge (which reads this endpoint)
-    // disagree with the roster's own "Ready for review" queue, which drops
-    // them into Inactive.
+    // and they appear in no roster queue, since the roster drops them into
+    // Inactive. (This endpoint no longer feeds the Clients nav badge: since
+    // 2026-08-29 that badge counts overdue check-ins plus unreviewed check-ins,
+    // and the intake queue lives on the roster's Onboarding rows, the dashboard
+    // banner and the floating intake panel.)
     .eq("client.active", true)
     .order("created_at", { ascending: false });
 

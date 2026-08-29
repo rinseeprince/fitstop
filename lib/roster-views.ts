@@ -11,10 +11,14 @@
  *
  * Everything here is pure and framework-free. `hooks/use-roster.ts` is the
  * fetch-and-memo layer on top; nothing should have to cross a "use client"
- * boundary to ask what a view means.
+ * boundary to ask what a view means — which is also why the Clients NAV BADGE
+ * counts through `indexUnreviewedCheckIns` from here rather than spelling the
+ * queue itself. The badge is the two Attention views added up, and a second
+ * spelling of either is how the two came to disagree before.
  */
 
-import type { ClientWithCheckInInfo } from "@/types/check-in"
+import type { CheckIn, ClientWithCheckInInfo } from "@/types/check-in"
+import type { UnreviewedCheckIn } from "@/types/coach-brief"
 
 export const ROSTER_VIEWS = [
   { value: "all", label: "All clients" },
@@ -22,6 +26,11 @@ export const ROSTER_VIEWS = [
   { value: "onboarding", label: "Onboarding" },
   { value: "inactive", label: "Inactive" },
   { value: "overdue", label: "Overdue check-ins" },
+  // "Ready for review" = an unreviewed CHECK-IN, not a submitted intake
+  // (owner decision 2026-08-29, reversing the 2026-08-22 roster decision in
+  // `a1e875a`). The intake queue keeps its three other entry points: the
+  // Onboarding view's own rows and their `/intake-review` link, the dashboard's
+  // PendingIntakeBanner, and the floating intake panel.
   { value: "review", label: "Ready for review" },
 ] as const
 
@@ -89,6 +98,13 @@ export type RosterRow = {
    *  0 when the client is not overdue. */
   daysOverdue: number
   status: RosterStatus
+  /** The newest check-in this client is waiting on a review for, threaded from
+   *  /api/check-ins/unreviewed; null when there is none.
+   *
+   *  Deliberately the SAME type the coach Overview's awaiting-review row
+   *  renders (`types/coach-brief.ts`), because it is the same fact: the roster
+   *  queue and that row must never describe one check-in differently. */
+  unreviewedCheckIn: UnreviewedCheckIn
 }
 
 export type RosterCounts = Record<RosterView, number>
@@ -157,6 +173,46 @@ export function isWeeklyCheckInClient(row: RosterRow): boolean {
   return checkInFrequency === "custom" && checkInFrequencyDays === 7
 }
 
+// ---------------------------------------------------------------------------
+// The review queue
+// ---------------------------------------------------------------------------
+
+/** What the queue index needs off a check-in. Structural for the same reason
+ *  `RosterStatusFields` is: it keeps the badge's fixtures small and lets any
+ *  caller holding the queue rows pass them straight in. Module-private — both
+ *  callers hand over a `CheckIn[]` and match structurally. */
+type UnreviewedCheckInSource = Pick<
+  CheckIn,
+  "id" | "clientId" | "createdAt"
+>
+
+/**
+ * The coach's unreviewed check-ins, indexed to ONE per client — the newest.
+ *
+ * `/api/check-ins/unreviewed` returns rows ordered `created_at DESC`, so the
+ * first row seen for a client is the newest and later ones are skipped. That
+ * makes this map agree by construction with the coach Overview's
+ * awaiting-review row, which reads the same predicate `LIMIT 1` in the same
+ * order (`services/client-overview-brief-service.ts`).
+ *
+ * Counting CLIENTS, not check-ins, is the point: two check-ins from one client
+ * are one thing to do. `useUnreviewedCheckIns().total` counts rows and belongs
+ * on neither the roster nor the badge.
+ */
+export function indexUnreviewedCheckIns(
+  checkIns: readonly UnreviewedCheckInSource[],
+): Map<string, NonNullable<UnreviewedCheckIn>> {
+  const byClientId = new Map<string, NonNullable<UnreviewedCheckIn>>()
+  for (const checkIn of checkIns) {
+    if (byClientId.has(checkIn.clientId)) continue
+    byClientId.set(checkIn.clientId, {
+      id: checkIn.id,
+      submittedAt: checkIn.createdAt,
+    })
+  }
+  return byClientId
+}
+
 /** Whether a row belongs in a view. No `default` branch on purpose: adding a
  *  view without handling it here fails the build (TS2366 under `strict`). */
 export function matchesRosterView(row: RosterRow, view: RosterView): boolean {
@@ -172,6 +228,10 @@ export function matchesRosterView(row: RosterRow, view: RosterView): boolean {
     case "overdue":
       return row.daysOverdue > 0
     case "review":
-      return row.status === "awaiting_review"
+      // Deactivated clients are excluded even when the queue carries one of
+      // their check-ins: their detail page 404s (`getClientById` is
+      // active-filtered), so the row's whole point would dead-end. The queue
+      // endpoint filters `active` too — this is the belt, not the braces.
+      return row.status !== "inactive" && row.unreviewedCheckIn !== null
   }
 }

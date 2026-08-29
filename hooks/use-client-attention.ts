@@ -1,56 +1,47 @@
 "use client"
 
-import useSWR from "swr"
-import { swrFetcher } from "@/lib/swr-fetcher"
-import { useOverdueClients } from "@/hooks/use-check-in-data"
-import type { PendingIntakeSummary } from "@/types/client-intake"
+import {
+  useOverdueClients,
+  useUnreviewedCheckIns,
+} from "@/hooks/use-check-in-data"
+import { indexUnreviewedCheckIns } from "@/lib/roster-views"
 
 /**
- * What the Clients nav badge counts: overdue check-ins plus clients whose
- * intake is waiting to be reviewed — the two queues the roster sidebar shows
- * under "Attention".
+ * What the Clients nav badge counts: the roster sidebar's two "Attention"
+ * queues added together — overdue check-ins, plus clients with a check-in
+ * waiting to be reviewed.
  *
- * It used to count unreviewed check-ins (`/api/check-ins/recent` filtered to
- * `ai_processed`), fetched by a hand-rolled setInterval in each nav component.
- * That is a check-ins number wearing a roster badge: it agreed with nothing on
- * the page it sat next to. Unreviewed check-ins are still carried by the
- * notification bell, which counts them alongside overdue and due-soon.
+ * **It is the two views, not two numbers that resemble them.** The overdue half
+ * is `/api/clients/overdue`, the very set the roster threads onto its rows; the
+ * review half runs the roster's own `indexUnreviewedCheckIns` over the queue the
+ * roster reads. A badge that spells either predicate itself is how this number
+ * came to disagree with the page it sits beside, twice:
+ *   - it once counted unreviewed check-ins from `/api/check-ins/recent`,
+ *     fetched by a hand-rolled setInterval in each nav component;
+ *   - it then counted submitted INTAKES, which stopped being an attention queue
+ *     when "Ready for review" was redefined as check-ins (2026-08-29).
+ * The intake queue is still reachable — the roster's Onboarding view, the
+ * dashboard's PendingIntakeBanner, the floating intake panel — it is simply not
+ * one of the two queues this badge is about, so the `/api/coach/pending-intakes`
+ * poll left with the redefinition.
  *
- * Costs nothing extra: the overdue set is already fetched on every coach page
- * by NotificationsDropdown, so SWR serves it from cache, and the pending-intake
- * poll replaces the one this hook retires.
+ * CLIENTS, never check-ins: two check-ins from one client are one thing to do,
+ * and `useUnreviewedCheckIns().total` counts rows. Both halves are active-only
+ * at their endpoints (`getOverdueClients` filters `client.active`; the queue
+ * route filters the coach's client ids the same way), so a deactivated client
+ * cannot inflate a badge that leads to a page they no longer have.
+ *
+ * Costs nothing extra: both sets are already fetched on every coach page by
+ * NotificationsDropdown, so SWR serves them from cache.
  *
  * TRAINER-ONLY. Both call sites mount below PersistentSidebar's role gate, and
- * both endpoints are coach-scoped. There is deliberately no `enabled` flag: the
- * overdue half rides an app-wide fetch that cannot be gated from here, so a
- * parameter would have advertised a guard it only half-honoured.
+ * both endpoints are coach-scoped. There is deliberately no `enabled` flag: both
+ * halves ride app-wide fetches that cannot be gated from here, so a parameter
+ * would have advertised a guard it did not honour.
  */
 export function useClientAttentionCount(): number {
   const { total: overdueTotal } = useOverdueClients()
+  const { checkIns } = useUnreviewedCheckIns()
 
-  const { data } = useSWR<{ success: boolean; data: PendingIntakeSummary[] }>(
-    "/api/coach/pending-intakes",
-    swrFetcher,
-    {
-      refreshInterval: 60000,
-      // Deliberately true, against the §7 default — the same reasoning as
-      // useOverdueClients: the dominant writer of both numbers is someone
-      // else's session (a client submitting an intake, a check-in falling
-      // due), which no coach-side invalidator can reach. SWR suspends polling
-      // while the tab is hidden, so focus revalidation is the only prompt
-      // refresh after an alt-tab.
-      revalidateOnFocus: true,
-      dedupingInterval: 5000,
-      errorRetryCount: 3,
-      errorRetryInterval: 1000,
-      onError: (err) =>
-        console.error("Failed to fetch pending intakes for nav badge:", err),
-    },
-  )
-
-  const readyForReview = (data?.data ?? []).filter(
-    (intake) => intake.status === "completed",
-  ).length
-
-  return overdueTotal + readyForReview
+  return overdueTotal + indexUnreviewedCheckIns(checkIns).size
 }

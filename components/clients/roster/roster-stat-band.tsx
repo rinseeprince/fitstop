@@ -64,13 +64,14 @@ export function RosterStatBand({
       actionLabel: "View overdue check-ins",
     },
     {
-      // No sub: the wait would have to be measured from the moment the intake
-      // was submitted, and the roster only knows when the client was invited.
-      // A number that says something it cannot know is worse than no number.
+      // Clients with an unreviewed CHECK-IN since 2026-08-29 (it counted
+      // submitted intakes before). No sub: every row in the view carries the
+      // date of its own waiting check-in, and a band-level "oldest N days"
+      // would only restate the first of them one screen higher.
       label: "Ready for review",
       value: String(counts.review),
       onClick: () => router.push(rosterViewUrl("review")),
-      actionLabel: "View clients ready for review",
+      actionLabel: "View check-ins ready for review",
     },
   ]
 
