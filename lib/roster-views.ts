@@ -11,10 +11,12 @@
  *
  * Everything here is pure and framework-free. `hooks/use-roster.ts` is the
  * fetch-and-memo layer on top; nothing should have to cross a "use client"
- * boundary to ask what a view means — which is also why the Clients NAV BADGE
- * counts through `indexUnreviewedCheckIns` from here rather than spelling the
- * queue itself. The badge is the two Attention views added up, and a second
- * spelling of either is how the two came to disagree before.
+ * boundary to ask what a view means — which is also why every COUNTER outside
+ * the roster reaches its number through `indexUnreviewedCheckIns` from here
+ * rather than spelling the queue itself. The Clients nav badge is the two
+ * Attention views added up; the dashboard's card is the review half alone; both
+ * go through `hooks/use-client-attention.ts`, which owns the single spelling. A
+ * second spelling is how these numbers came to disagree before, twice.
  */
 
 import type { CheckIn, ClientWithCheckInInfo } from "@/types/check-in"
@@ -26,12 +28,25 @@ export const ROSTER_VIEWS = [
   { value: "onboarding", label: "Onboarding" },
   { value: "inactive", label: "Inactive" },
   { value: "overdue", label: "Overdue check-ins" },
-  // "Ready for review" = an unreviewed CHECK-IN, not a submitted intake
-  // (owner decision 2026-08-29, reversing the 2026-08-22 roster decision in
-  // `a1e875a`). The intake queue keeps its three other entry points: the
-  // Onboarding view's own rows and their `/intake-review` link, the dashboard's
-  // PendingIntakeBanner, and the floating intake panel.
-  { value: "review", label: "Ready for review" },
+  // An unreviewed CHECK-IN, not a submitted intake (owner decision 2026-08-29,
+  // reversing the 2026-08-22 roster decision in `a1e875a`). The intake queue
+  // keeps its three other entry points: the Onboarding view's own rows and
+  // their `/intake-review` link, the dashboard's PendingIntakeBanner, and the
+  // floating intake panel — the banner still says "ready for review" because
+  // that queue is still about intakes.
+  //
+  // Named "Unreviewed check-ins" since 2026-08-30 (it was "Ready for review",
+  // which the owner read as ambiguous about WHAT was ready). This string is the
+  // one spelling: the sidebar tab, the roster's sticky title, the stat-band cell
+  // and the dashboard card all render `rosterViewLabel("review")`.
+  //
+  // Mind the gap it opens: the label says check-ins, the counts say CLIENTS
+  // (one row per client — see `indexUnreviewedCheckIns`). That is deliberate,
+  // because every count sits beside the list it describes and must match the
+  // rows on screen. The visible edge case is a client with two waiting: review
+  // the newer one and the number does not move. A follow-up puts "2 waiting" on
+  // the row itself; do NOT close the gap by counting check-ins instead.
+  { value: "review", label: "Unreviewed check-ins" },
 ] as const
 
 export type RosterView = (typeof ROSTER_VIEWS)[number]["value"]
@@ -196,8 +211,10 @@ type UnreviewedCheckInSource = Pick<
  * order (`services/client-overview-brief-service.ts`).
  *
  * Counting CLIENTS, not check-ins, is the point: two check-ins from one client
- * are one thing to do. `useUnreviewedCheckIns().total` counts rows and belongs
- * on neither the roster nor the badge.
+ * are one thing to do, and every counter sits beside a list with one row per
+ * client, so it has to match the rows on screen. `useUnreviewedCheckIns().total`
+ * counts rows and belongs on none of the roster, the badge or the dashboard
+ * card — not even now that the view is LABELLED "Unreviewed check-ins".
  */
 export function indexUnreviewedCheckIns(
   checkIns: readonly UnreviewedCheckInSource[],

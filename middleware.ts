@@ -156,7 +156,6 @@ export async function middleware(request: NextRequest) {
   const trainerRoutes = [
     "/dashboard",
     "/clients",
-    "/check-ins",
     "/crm",
     "/messages",
     "/automation",

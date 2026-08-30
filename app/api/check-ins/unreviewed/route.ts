@@ -25,9 +25,10 @@ export async function GET(request: NextRequest) {
     // excluded for the reason `getCoachPendingIntakes` excludes them: their
     // detail page 404s (`getClientById` is active-filtered), so every consumer
     // of this queue — the bell rows, which link straight to the check-in; the
-    // Clients nav badge; the roster's Ready-for-review view — would carry a row
-    // that dead-ends. It also keeps the badge and the roster count equal by
-    // construction rather than by two client-side filters that can drift.
+    // Clients nav badge and the dashboard card; the roster's Unreviewed
+    // check-ins view — would carry a row that dead-ends. It also keeps every
+    // one of those counts equal by construction rather than by client-side
+    // filters that can drift.
     const { data: clients } = await supabaseAdmin
       .from("clients")
       .select("id")

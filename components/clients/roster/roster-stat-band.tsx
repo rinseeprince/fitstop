@@ -5,6 +5,7 @@ import { StatBand, type StatBandCell } from "@/components/programs/shared/stat-b
 import {
   isOnboarding,
   isWeeklyCheckInClient,
+  rosterViewLabel,
   rosterViewUrl,
   type RosterCounts,
   type RosterRow,
@@ -51,7 +52,10 @@ export function RosterStatBand({
       sub: `${outstanding} outstanding`,
     },
     {
-      label: "Overdue check-ins",
+      // Both attention cells take their name from the view they jump to, so the
+      // band cannot drift from the sidebar tab and the sticky title the way the
+      // review cell did until 2026-08-30.
+      label: rosterViewLabel("overdue"),
       value: String(counts.overdue),
       sub:
         counts.overdue === 0
@@ -68,10 +72,14 @@ export function RosterStatBand({
       // submitted intakes before). No sub: every row in the view carries the
       // date of its own waiting check-in, and a band-level "oldest N days"
       // would only restate the first of them one screen higher.
-      label: "Ready for review",
+      //
+      // The VALUE is a client count under a check-in-shaped name — see
+      // ROSTER_VIEWS. It has to be: it sits above a list with one row per
+      // client.
+      label: rosterViewLabel("review"),
       value: String(counts.review),
       onClick: () => router.push(rosterViewUrl("review")),
-      actionLabel: "View check-ins ready for review",
+      actionLabel: "View unreviewed check-ins",
     },
   ]
 

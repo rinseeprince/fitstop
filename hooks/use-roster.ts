@@ -27,9 +27,11 @@ import {
  * `NotificationsDropdown` mounts inside `RosterShell`, so SWR serves it from
  * cache and the third read costs no request.
  *
- * The queue is what "Ready for review" means since 2026-08-29: a client with an
+ * The queue is what the review view has meant since 2026-08-29: a client with an
  * unreviewed CHECK-IN, not a submitted intake. The intake queue is still the
- * Onboarding view's own rows.
+ * Onboarding view's own rows. (The view is labelled "Unreviewed check-ins"
+ * since 2026-08-30; `counts.review` is still a count of CLIENTS, because it
+ * sits beside a list with one row per client.)
  *
  * All three are represented in what the hook returns. Reporting only the
  * roster's `isLoading` made a cold load of `?view=overdue` render "0" and an
@@ -91,7 +93,7 @@ export function useRoster() {
   // fire it without leaving an unhandled promise behind. A failed revalidation
   // is not a failed action — the caller has already reported the action's
   // outcome. The queue is in here because deactivating a client has to empty
-  // their row out of Ready for review as well as out of Active.
+  // their row out of Unreviewed check-ins as well as out of Active.
   const refresh = useCallback(async () => {
     await Promise.all([mutate(), mutateOverdue(), mutateUnreviewed()]).catch(
       () => {},

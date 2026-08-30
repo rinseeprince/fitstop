@@ -28,7 +28,6 @@ export const LABEL_WHITELIST: readonly string[] = [
   "components/automation-rule-card.tsx",
   "app/crm/page.tsx",
   "components/lead-card.tsx",
-  "app/check-ins/review/page.tsx",
   "app/login/page.tsx",
   "app/signup/page.tsx",
   "app/settings/page.tsx",

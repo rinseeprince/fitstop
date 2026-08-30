@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest"
+import { readFileSync, readdirSync, statSync } from "node:fs"
+import { join, relative } from "node:path"
 import {
   indexUnreviewedCheckIns,
   matchesRosterView,
@@ -108,5 +110,61 @@ describe("matchesRosterView — the other views are unchanged", () => {
     expect(matchesRosterView(late, "overdue")).toBe(true)
     expect(matchesRosterView(gone, "inactive")).toBe(true)
     expect(matchesRosterView(gone, "active")).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The scan. This module's header says every writer of `?view=` goes through
+// `rosterViewUrl`, and until C3 the notifications bell quietly disagreed:
+// `href="/clients?view=overdue"`, hand-typed. One literal is a typo away from a
+// link that 404s and a rename away from a link that lands on the wrong queue,
+// so the rule is only durable if a SECOND one cannot be typed unnoticed.
+// Modelled on lib/check-in-week.test.ts.
+// ---------------------------------------------------------------------------
+
+const REPO_ROOT = join(__dirname, "..")
+const SCANNED_DIRS = ["app", "components", "hooks", "lib", "services", "utils"]
+const VIEW_LITERAL = /\/clients\?view=/
+
+/** Source files allowed to spell the param. Each needs a reason. */
+const EXEMPT: Record<string, string> = {
+  "lib/roster-views.ts": "builds the URL — the one writer",
+}
+
+/**
+ * Tests are out of scope, not exempted one by one. The defect is a SHIPPING
+ * file carrying a hand-typed link; a test cannot ship one, and a test asserting
+ * the concrete URL a coach lands on is the thing that would CATCH a bad rename.
+ * Growing an exemption list would have penalised exactly the right habit.
+ */
+const IS_TEST = /\.test\.tsx?$/
+
+function sourceFiles(dir: string): string[] {
+  const out: string[] = []
+  const walk = (d: string) => {
+    for (const entry of readdirSync(d)) {
+      if (entry === "node_modules" || entry === ".next") continue
+      const full = join(d, entry)
+      if (statSync(full).isDirectory()) walk(full)
+      else if (/\.tsx?$/.test(entry)) out.push(full)
+    }
+  }
+  walk(join(REPO_ROOT, dir))
+  return out
+}
+
+describe("nothing writes a roster view URL by hand", () => {
+  it("every `/clients?view=` comes from rosterViewUrl", () => {
+    const offenders: string[] = []
+
+    for (const dir of SCANNED_DIRS) {
+      for (const file of sourceFiles(dir)) {
+        const rel = relative(REPO_ROOT, file)
+        if (EXEMPT[rel] || IS_TEST.test(rel)) continue
+        if (VIEW_LITERAL.test(readFileSync(file, "utf8"))) offenders.push(rel)
+      }
+    }
+
+    expect(offenders).toEqual([])
   })
 })

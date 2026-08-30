@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useOverdueClients, useClientsDueSoon, useUnreviewedCheckIns } from "@/hooks/use-check-in-data";
 import { checkInReviewUrl } from "@/lib/client-tabs";
+import { rosterViewUrl } from "@/lib/roster-views";
 import { formatDistanceToNow } from "date-fns";
 
 export function NotificationsDropdown({ compact = false }: { compact?: boolean } = {}) {
@@ -218,7 +219,16 @@ export function NotificationsDropdown({ compact = false }: { compact?: boolean }
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <Link
-                href={unreviewedTotal > 0 ? "/check-ins/review" : "/clients?view=overdue"}
+                // Both branches through the single owner of `?view=`: the
+                // review half replaces the deleted /check-ins/review queue,
+                // and the overdue half was a hand-written literal — the last
+                // one in the codebase, which a scan in lib/roster-views.test.ts
+                // now keeps out.
+                href={
+                  unreviewedTotal > 0
+                    ? rosterViewUrl("review")
+                    : rosterViewUrl("overdue")
+                }
                 className="w-full text-center text-sm font-medium cursor-pointer"
                 onClick={() => setOpen(false)}
               >

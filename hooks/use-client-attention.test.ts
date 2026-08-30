@@ -10,7 +10,10 @@ vi.mock("@/hooks/use-check-in-data", () => ({
   useUnreviewedCheckIns: mockUseUnreviewedCheckIns,
 }))
 
-import { useClientAttentionCount } from "./use-client-attention"
+import {
+  useClientAttentionCount,
+  useUnreviewedCheckInClientCount,
+} from "./use-client-attention"
 
 function wire(
   overdueTotal: number,
@@ -37,7 +40,7 @@ describe("useClientAttentionCount", () => {
     ])
 
     // NOT `total`, which is 3: two check-ins from one client are one thing to
-    // do, and the roster's Ready-for-review view would read 2.
+    // do, and the roster's Unreviewed check-ins view would read 2.
     expect(renderHook(() => useClientAttentionCount()).result.current).toBe(2)
   })
 
@@ -45,5 +48,37 @@ describe("useClientAttentionCount", () => {
     wire(4, [])
 
     expect(renderHook(() => useClientAttentionCount()).result.current).toBe(4)
+  })
+})
+
+describe("useUnreviewedCheckInClientCount", () => {
+  it("counts CLIENTS, not the check-ins they are waiting on", () => {
+    // The half the dashboard card renders under a label that says "check-ins".
+    // It still has to be people: the card links to a list with one row each.
+    wire(0, [
+      { id: "1", clientId: "a", createdAt: "2026-08-29T10:00:00Z" },
+      { id: "2", clientId: "a", createdAt: "2026-08-22T10:00:00Z" },
+      { id: "3", clientId: "b", createdAt: "2026-08-21T10:00:00Z" },
+    ])
+
+    expect(
+      renderHook(() => useUnreviewedCheckInClientCount()).result.current,
+    ).toBe(2)
+  })
+
+  it("is the review half alone — the overdue total never reaches it", () => {
+    wire(7, [{ id: "1", clientId: "a", createdAt: "2026-08-29T10:00:00Z" }])
+
+    expect(
+      renderHook(() => useUnreviewedCheckInClientCount()).result.current,
+    ).toBe(1)
+  })
+
+  it("is zero on an empty queue", () => {
+    wire(4, [])
+
+    expect(
+      renderHook(() => useUnreviewedCheckInClientCount()).result.current,
+    ).toBe(0)
   })
 })

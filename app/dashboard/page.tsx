@@ -1,6 +1,5 @@
 "use client"
 
-import { useMemo } from "react"
 import useSWR from "swr"
 import { AppLayout } from "@/components/app-layout"
 import { PageHeader } from "@/components/page-header"
@@ -11,6 +10,9 @@ import { PendingIntakeBanner } from "@/components/coach/pending-intake-banner"
 import { Users, MessageSquare, PhoneCall, Clock, TrendingUp, AlertCircle } from "lucide-react"
 import { motion } from "framer-motion"
 import { formatRelativeTime } from "@/lib/check-in-utils"
+import { useUnreviewedCheckInClientCount } from "@/hooks/use-client-attention"
+import { checkInReviewUrl } from "@/lib/client-tabs"
+import { rosterViewLabel, rosterViewUrl } from "@/lib/roster-views"
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
 import type { CheckInStatus } from "@/types/check-in"
 import Link from "next/link"
@@ -33,10 +35,14 @@ export default function DashboardPage() {
     { revalidateOnFocus: false }
   )
   const recentCheckIns = data?.checkIns ?? []
-  const unreviewedCount = useMemo(
-    () => recentCheckIns.filter((ci) => ci.status === "ai_processed").length,
-    [recentCheckIns]
-  )
+
+  // The card counts CLIENTS with a check-in waiting, through the one hook the
+  // nav badge uses, so the number and the page it opens can never disagree.
+  // It used to count `ai_processed` rows inside /recent's newest 10 — which
+  // under-reported a busy week, missed `pending` rows entirely, and pointed at
+  // a queue page that no longer exists. Costs no request: /api/check-ins/
+  // unreviewed is already mounted by AppLayout's CheckInNotificationListener.
+  const unreviewedClients = useUnreviewedCheckInClientCount()
 
   const pageHeader = (
     <PageHeader
@@ -64,16 +70,16 @@ export default function DashboardPage() {
             delay={0.05}
           />
           <MetricCard
-            title="Unreviewed Check-ins"
-            value={unreviewedCount}
+            title={rosterViewLabel("review")}
+            value={unreviewedClients}
             icon={AlertCircle}
             trend={{
-              value: unreviewedCount > 0 ? "Action required" : "All caught up!",
-              positive: unreviewedCount === 0,
+              value: unreviewedClients > 0 ? "Action required" : "All caught up!",
+              positive: unreviewedClients === 0,
             }}
-            chart={[2, 3, 1, 2, 4, unreviewedCount]}
+            chart={[2, 3, 1, 2, 4, unreviewedClients]}
             delay={0.1}
-            href="/check-ins/review"
+            href={rosterViewUrl("review")}
           />
           <MetricCard title="Unread Messages" value={7} icon={MessageSquare} chart={[12, 10, 8, 9, 8, 7]} delay={0.15} />
           <MetricCard title="Upcoming Calls" value={5} icon={PhoneCall} chart={[3, 4, 6, 5, 4, 5]} delay={0.2} />
@@ -114,7 +120,12 @@ export default function DashboardPage() {
                     .slice(0, 2)
 
                   return (
-                    <Link key={checkIn.id} href={`/clients/${checkIn.clientId}`}>
+                    // Straight to the check-in this row names, not the client
+                    // page's default tab — through the single writer of that URL.
+                    <Link
+                      key={checkIn.id}
+                      href={checkInReviewUrl(checkIn.clientId, checkIn.id)}
+                    >
                       <div className="group flex items-center justify-between rounded-[6px] p-3 transition-colors duration-150 hover:bg-[rgba(0,0,0,0.02)] cursor-pointer">
                         <div className="flex items-center gap-3">
                           <div

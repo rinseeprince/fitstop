@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0, C1 and C2 shipped 2026-08-29 (STATUS blocks under §5); C3–C6 not built.**
+**Status: IN PROGRESS — C0, C1 and C2 shipped 2026-08-29 and C3 on 2026-08-30 (STATUS blocks under §5); C4–C6 not built.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -1083,6 +1083,116 @@ a poor order for a queue — recorded as a follow-up, not changed.
 Per §2.3 (+ D3.1 card count, D3.2 recent rows). §2 review walked (the ≥5-files trigger fires):
 no route/auth/write path changed; `/api/check-ins/*` keep in-route auth. Smoke: dashboard card →
 `/clients?view=review` with matching numbers; bell footer both branches; `/check-ins/review` → 404.
+
+**STATUS — SHIPPED 2026-08-30 in `<sha>`. Browser smoke OWED (owner runs it).**
+
+*Owner decisions taken in this session, ahead of coding.*
+- **The review view is renamed "Unreviewed check-ins"** (was "Ready for review"), everywhere it
+  is written. The owner's reason: "ready for review" never says WHAT is ready, and the name
+  should explain exactly what it is. The plan's recommendation had been the opposite — retitle
+  the dashboard card TO "Ready for review" — and was overruled.
+- The count stays **clients**, not check-ins (below).
+- The card's count lives in **one shared hook**, not two spellings.
+
+*What shipped.*
+- **Deleted `app/check-ins/`** (`rm -r`; the tree held one file). With it: the `"/check-ins"`
+  entry in `middleware.ts` `trainerRoutes`, the `scripts/check-labels-whitelist.ts` exemption,
+  and **`PageHeader.backHref`** plus its now-dead `Link` / `ArrowLeft` imports — grep confirmed
+  the deleted page was its only caller of six, and knip does not report a dead prop (landmine 8).
+- **`lib/roster-views.ts`**: `ROSTER_VIEWS`' review label → `"Unreviewed check-ins"`. That single
+  string now feeds the sidebar tab, the roster's sticky title, the stat-band cell and the
+  dashboard card. The module header and `indexUnreviewedCheckIns`' docstring were rewritten to
+  say that every counter outside the roster reaches its number through this file.
+- **`hooks/use-client-attention.ts`**: new `useUnreviewedCheckInClientCount()` — the review half
+  alone, `indexUnreviewedCheckIns(checkIns).size`. `useClientAttentionCount` now composes it
+  rather than repeating it, and the dashboard card calls it. One body for a number that has
+  drifted from the page beside it twice.
+- **`app/dashboard/page.tsx`** (D3.1 + D3.2): the card's `href` → `rosterViewUrl("review")`, its
+  title → `rosterViewLabel("review")` (same words it already showed — the owner's rename made
+  the card and the view agree by accident, so it is now sourced rather than repeated), and its
+  value → the shared hook. The `/recent`-derived `useMemo` is gone, and `useMemo` with it. The
+  "Recent check-ins" rows now deep-link through `checkInReviewUrl`.
+- **`components/navbar/notifications-dropdown.tsx`**: the footer's both branches go through
+  `rosterViewUrl`. Its `"/clients?view=overdue"` was the last hand-written literal of that form
+  in the codebase.
+- **`components/clients/roster/roster-stat-band.tsx`**: the review cell's label comes from
+  `rosterViewLabel("review")` and its `actionLabel` reads "View unreviewed check-ins".
+- Comment sweep for the old name: `hooks/use-roster.ts` (×2), `app/api/check-ins/unreviewed/route.ts`,
+  `hooks/use-client-attention.test.ts`.
+- Docs: ARCHITECTURE `:677` (queue table), `:681` (the rename, why, and the label-vs-count gap),
+  `:685` (the dashboard card as the badge's co-reader), `:708` (the `checkInReviewUrl` writer
+  list — the legacy queue was its first caller), `:803` (trainer routes). Per D-docs the
+  CLIENT-PORTAL ledgers and CLIENT-PORTAL-REDESIGN `:365` were LEFT naming the deleted page.
+
+*Tests (+1 file, +8 cases; 312 files / 3353 tests green).*
+- NEW `app/dashboard/page.test.tsx` — the page had none. The card's href; a client with two
+  waiting counting once; **the count no longer coming off `/recent`** (three `ai_processed` rows
+  with an empty queue must read 0); a recent row's deep link. `use-check-in-data` is the mock
+  boundary, so `use-client-attention` and `indexUnreviewedCheckIns` run for real.
+  `AnimatedCounter` is stubbed — it springs from 0 and never settles in jsdom.
+- `lib/roster-views.test.ts` — a **scan** (modelled on `lib/check-in-week.test.ts`): no source
+  file outside `lib/roster-views.ts` may contain a `/clients?view=` literal. The module header
+  has always claimed this rule and the bell quietly broke it.
+- `hooks/use-client-attention.test.ts` — three cases on the new export.
+- **Both new assertions were mutation-tested** (backed up with `cp` to the scratchpad and
+  restored from it — never `git stash`): re-typing the bell's literal fails the scan and names
+  the file; making the hook return `checkIns.length` fails three tests across both suites.
+
+*Deviations from the plan, and why.*
+1. **★ The rename itself** — not in the plan at all; the owner's call this session (above). It
+   grew C3 by two files (`roster-views.ts`, `roster-stat-band.tsx`) and a comment sweep.
+2. **The stat band's OVERDUE cell was also moved onto `rosterViewLabel`**, though only the
+   review cell was named. Its string is byte-identical to the view label, so there is no visual
+   change; leaving one of two adjacent attention cells hardcoded would have left the file with
+   two idioms and the exact drift this commit is closing. Recorded rather than silent.
+3. **The scan skips `*.test.ts(x)` wholesale** instead of exempting them one by one. The first
+   full run flagged the new dashboard test, which asserts the literal destination on purpose — a
+   test cannot ship a bad link, and an exemption list would have penalised the habit that catches
+   a bad rename. `lib/roster-views.ts` is the one source exemption.
+4. The bell footer's COPY ("Review all check-ins" / "View all overdue clients") is unchanged —
+   only the hrefs were in scope, and both still read as actions.
+5. `unreviewedTotal > 0` is left as the footer's branch CONDITION. It counts rows, but as a
+   boolean it is identical to the client count (an empty list gives an empty map), and landmine
+   4 is about displaying `.total`, not testing it.
+
+*The label/count gap — deliberate, and the one thing to watch.*
+The view is named after check-ins; every count attached to it (stat band, sidebar pill, nav
+badge, dashboard card) counts **CLIENTS**, because each sits beside a list with one row per
+client and must match the rows on screen. The visible edge: a client with two unreviewed
+check-ins is one row, so reviewing the newer one leaves the number where it was. This was raised
+with the owner before the rename was taken and accepted. The fix, if wanted, is the ROW saying
+"2 waiting" rather than the count saying 3 — recorded as a follow-up, NOT built here, and
+`ROSTER_VIEWS` carries a comment telling the next reader not to close the gap by counting
+check-ins instead.
+
+*§2 review — the ≥5-file trigger fires; the answer is short.*
+No route handler, auth chain, write path, table, policy, grant or query changed. The only
+server-side edit is `middleware.ts` losing a role-redirect branch for a URL that no longer
+resolves for anyone — after deletion every role gets a 404 there, which is what the plan
+predicted. `/api/check-ins/unreviewed` and `/api/check-ins/recent` keep their in-route auth and
+their existing scoping untouched (the latter is already active-only through `getCoachClientIds`,
+so D3.2's deep links cannot dead-end on a deactivated client). Round trips are unchanged: the
+dashboard's new read is a cache hit on `/api/check-ins/unreviewed`, which `AppLayout` already
+mounts via `CheckInNotificationListener` on every coach page. `check:rls` / `check:service-key`
+not run — nothing they cover was touched. Not load-tested.
+
+*Gates (real output).* `rm -rf .next` (a route was deleted) · `npx tsc --noEmit` **exit 0** ·
+`npx eslint .` **0 errors, 154 warnings** (156 at C2 — the deleted page carried two); the only
+warning in a touched file is the pre-existing `<img>` at `app/dashboard/page.tsx:136`, which C3
+did not touch · `npx vitest run` **312 files / 3353 tests passed**, no flaky set-tracker trip ·
+`npm run check:labels` "OK — 683 files scanned" · `npm run knip` **168 lines, unchanged** from
+the pre-C3 baseline measured this session. **Note for later commits: 168 is the live baseline,
+not the 172 C2 recorded** — the three Overview commits between them moved it.
+
+*Unverified until the owner smokes it.* Every pixel. Specifically: **"Unreviewed check-ins" is
+~20px longer than "Ready for review" in a sidebar tab that truncates rather than wraps** — the
+arithmetic says it fits in ~144px with a little to spare, but that is class math, not rendered
+pixels. If it clips, the fallback is dropping the SIDEBAR tab alone to "Unreviewed" (the
+"Attention" group heading and the count carry the context) while the stat band, the sticky title
+and the dashboard card keep the full phrase. Also unverified: the C2 deactivated-client path is
+still unexercisable (nothing in the app deactivates a client), and the dashboard around this card
+is still largely hardcoded mock data (Active Clients, Unread Messages, Upcoming Calls, and the
+first five values of this card's own sparkline) — do not read those numbers as live.
 
 ### C4 — #7 uniform review blocks
 Per §2.7. Tests: `review-block.test.tsx`, `check-in-review-rail.test.tsx` (mock `sonner`;
