@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0-C4 shipped, smoked and CLOSED; C5 shipped 2026-08-30 with its smoke OWED (STATUS blocks under §5). Only C6 (the migration) is not built.**
+**Status: IN PROGRESS — C0-C5 ALL shipped, smoked and CLOSED (STATUS blocks under §5). Only C6 (the migration) is left.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -626,7 +626,7 @@ TECHNICAL-DEBT `:518/:532` (modal, stale 352 lines; the file is deleted by C1) �
 | D5.1 | Partial first week denominator: `dates.length` (3/3) or always 7? | `dates.length` |
 | D5.2 | Ship (d) (stored `adherence_percentage` + AI prompt on week targets) with #5? Changes the column's MEANING for new rows and the RN-visible value | Yes — otherwise the Summary says 100% under a hero saying 3/7 |
 | D5.3 | Replace the KPI "Calories" cell with a "Nutrition" days-on-target cell? | Replace (the weekly kcal total/target/avg survive in NutritionSection) |
-| D5.4 | Wellness averages: leave calendar-day means? | Leave; log a one-line follow-up (mean over logged days + "n/7 logged" meta) |
+| D5.4 | Wellness averages: leave calendar-day means? | ~~Leave~~ — **SUPERSEDED 2026-08-30 (`7d9de50`)**: it was not a design choice but an arithmetic error (logged values ÷ calendar days), and it contradicted the AI summary on screen. Now the mean of each metric's own logged days. The "n/7 logged" meta was declined — the sparkline beneath already shows which days are logged |
 | D6 | Comparison / Goal Progress | Settled: kept as is; own definition session later (§2.6) |
 | D7.1 | Wins/Challenges: unify presentation in place (client text), or should the AI emit wins/challenges lists? | In place |
 | D7.2 | Include "Share with client" and "Reflection" in the uniform treatment? | Yes, both |
@@ -1326,7 +1326,7 @@ logged days → hero "3/7 · 43%", pill "3/7 on target", weekly verdict MISSED; 
 logs → 0/7; a mid-week habit shows leading dashes; training unchanged; Regenerate → the Summary
 no longer says 100%.
 
-**STATUS — SHIPPED 2026-08-30 in `747c5f98`. Browser smoke OWED (owner runs it).**
+**STATUS — SHIPPED 2026-08-30 in `747c5f98`, browser-SMOKED by the owner the same day: the figures are right, and two PRE-EXISTING defects the corrected numbers exposed were fixed in `7d9de50`. C5 is CLOSED.**
 
 *What shipped.*
 - **`getClientAdherenceForRange(clientId, start, end)`** extracted in
@@ -1408,7 +1408,37 @@ predicate is an existing `client_id` + date range. Not load-tested.
 168 baseline**, because `FullWeekTargets` finally has a caller. `check:rls` / `check:service-key` not
 run: no table, policy, grant or service-key site changed.
 
-*Unverified until the owner smokes it.* Every pixel. **The one-off comparison artefact is expected,
+*Smoke (owner, 2026-08-30) — the figures are right; TWO defects found beside them, both fixed in
+`7d9de50`.* Neither was in C5's diff — both were pre-existing calendar-day divisions the corrected
+numbers made visible.
+1. **The wellness card's averages were not means.** They summed the logged values and divided by
+   the CALENDAR days, so two stress entries averaging 6.5 rendered as 1.9 — "relaxed" — beside an
+   AI summary correctly calling the week high-stress. `calculateMetricAverages`, which writes the
+   stored snapshot the prompt reads, had always divided by its own per-metric count; this card was
+   the only place in the system that did not. Now per metric (stress and mood can be logged on
+   different days). **This supersedes D5.4's "leave calendar-day means"** — that decision assumed a
+   design choice; it was an arithmetic error.
+2. **The nutrition macro row compared two different weeks on one bar** — an actual summed over
+   three logged days ÷ 7 against a target summed over seven ÷ 7. Three logged days at ~161g of
+   protein against a 159g target rendered as 69g against 159g. Each macro now averages over the
+   days it was logged, against the target that applied on those same days; the kcal average
+   likewise. **The totals, the bar and the MISSED · 3/7 pill are unchanged** — whole period, which
+   is the adherence question.
+   The rule, now in ARCHITECTURE: an adherence figure asks *did you do what you were supposed to*
+   (unlogged counts against, denominator = the period); an average asks *what was it typically*
+   (unlogged is UNKNOWN, not zero, denominator = the days with data).
+3. Also fixed: the pill's denominator was still C5's locally derived day span rather than
+   `periodAdherence.dates.length` — the rule C5 itself wrote into the code and the docs. Both are 7
+   on a healthy row; they diverge on a legacy one.
+   (+2 test files, +8 cases; both denominators mutation-tested. 320 files / 3408 tests.)
+
+*A per-day nutrition strip was raised and DEFERRED.* The owner suggested rendering the week's days
+in the nutrition card. It is complementary rather than an alternative — a strip answers *which
+days*, but cannot carry three macros per day, so the macro row and its denominator would remain.
+Worth doing as its own change with a design pass: the card is a two-column grid and a strip needs
+its own row. It would match the wellness card's idiom directly.
+
+*Still expected, not a bug.* **The one-off comparison artefact is expected,
 not a bug:** `comparison-service` reports the change in `adherencePercentage` between consecutive
 check-ins, so the first check-in submitted after this lands is measured the new way against a
 predecessor measured the old way and will show a large phantom drop. It self-corrects from the
