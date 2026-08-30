@@ -1222,7 +1222,7 @@ build the all-empty review directly). Smoke: a v3 check-in, a legacy v2 row, a `
 (one placeholder), a check-in whose prs/challenges contain line breaks, Regenerate (Share draft
 updates; a 429 toasts), Send.
 
-**STATUS — SHIPPED 2026-08-30 in `<sha>`. Browser smoke OWED (owner runs it).**
+**STATUS — SHIPPED 2026-08-30 in `c84f5fc3`. Browser smoke OWED (owner runs it).**
 
 *What shipped.*
 - **NEW `components/clients/check-ins/review-block.tsx`** — `ReviewBlock` (a `LABEL_CLASS` label
