@@ -882,6 +882,12 @@ Reviewed: 2026-05-12
 2. Bulk-replace `text-[#0d9488]` with `text-brand`, `bg-[#0d9488]` with `bg-brand`, etc. across all 95 files. Mechanical change, safe to do in a single sweep PR.
 3. Either create `lib/design-tokens.ts` as referenced in CONVENTIONS, or remove the CONVENTIONS reference if the `@theme` block is the canonical token source. Pick one, not both.
 
+| # | Issue | File(s) | Details | Status |
+|---|-------|---------|---------|--------|
+| 2 | The check-in review's five section cards still carry a border and a framer stagger the new card does not | `components/check-in/wellness-section.tsx`, `nutrition-section.tsx`, `training-section.tsx`, `habits-section.tsx`, `client-notes-section.tsx` | C4 (2026-08-30) made the AI review rail ONE borderless white card, per the SOT's "spacing does separation, not borders" (`docs/newdesignsystem.md:36`), and D7.3 settled that the five siblings in the left column are owed the same rather than being converted in the same commit — converting one of five would have made the column look broken instead of consistent. Until then the Current pane is deliberately asymmetric: a bordered, animated left column beside a borderless, still right rail. Each sibling also renders its own `text-sm` body against the rail's 13px. | Open |
+
+**Suggested fix:** drop `border border-[rgba(13,148,136,0.08)]` and the `motion.div` wrapper from all five in one sweep, and move their bodies onto `ReviewProse`'s 13px tier where they render prose. Mechanical; no logic. Do all five together.
+
 ---
 
 ## Training Builder & Content Library Bloat

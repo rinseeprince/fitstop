@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0-C2 shipped 2026-08-29 and C3 on 2026-08-30, all four SMOKED and CLOSED (STATUS blocks under §5); C4–C6 not built.**
+**Status: IN PROGRESS — C0-C2 shipped 2026-08-29 (smoked, closed); C3 and C4 shipped 2026-08-30, C3 smoked and closed, C4 SMOKE OWED (STATUS blocks under §5); C5–C6 not built.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -1221,6 +1221,83 @@ Per §2.7. Tests: `review-block.test.tsx`, `check-in-review-rail.test.tsx` (mock
 build the all-empty review directly). Smoke: a v3 check-in, a legacy v2 row, a `pending` row
 (one placeholder), a check-in whose prs/challenges contain line breaks, Regenerate (Share draft
 updates; a 429 toasts), Send.
+
+**STATUS — SHIPPED 2026-08-30 in `<sha>`. Browser smoke OWED (owner runs it).**
+
+*What shipped.*
+- **NEW `components/clients/check-ins/review-block.tsx`** — `ReviewBlock` (a `LABEL_CLASS` label
+  row with an optional actions slot), `ReviewProse` (13px, `whitespace-pre-wrap`), `ReviewList` +
+  `ReviewListRow` (a fixed marker slot so text left-aligns down the column whatever the marker).
+  That is the whole vocabulary; a new block composes it rather than inventing a fifth label size.
+  Placed in the coach folder and imported BY `components/check-in/`, which is NOT relocated
+  (§2.7 — it still holds client-facing wizard steps with their own importers).
+- **The rail is ONE borderless white card, "AI review"** (`Sparkles`, Regenerate as the header
+  icon action) holding Summary / What to watch / Coach actions / Share with client. Gone: the two
+  teal-wash sub-cards, the two 14px semibold `h4`s, and the `border-l-4` white card nested inside
+  Coach actions. Watch icons became list markers; themes became `NeutralChip`; the coach-action
+  priority became a coloured dot **plus an `sr-only` word** — the uppercase label it replaced was
+  the only thing carrying that meaning, and a colour alone would not have.
+- **`ClientNotesSection`**: Reflection / Wins / Challenges through the same `ReviewBlock`, so the
+  card stops carrying two label treatments of its own and Reflection's teal left border goes.
+  Its bordered, animated SHELL stays — it is one of the five siblings D7.3 owes (below).
+- The four fixes named in §2.7, each real: Send hover `#0f766e` → `#0b7f75`; the Share draft
+  **resyncs** (see deviation 2); Regenerate **reports** a non-OK response, with a distinct message
+  on the coach-keyed `aiRateLimit` 429 that was previously silent; the never-persisted Summary
+  pencil edit is **removed** (D7.4), taking `Textarea`, `Pencil` and `Check` out of the rail.
+- Docs: ARCHITECTURE "The coach review surface" rewritten around the one card, the primitive, the
+  empty-state asymmetry and the owed siblings; TECHNICAL-DEBT "Design System" #2 records the five
+  sibling cards with a mechanical suggested fix.
+
+*Tests (+3 files, +18 cases; 315 files / 3374 tests green).*
+- NEW `review-block.test.tsx`, NEW `check-in-review-rail.test.tsx` (mocks `sonner`; the all-empty
+  review is built directly — the zod fallback always yields a summary, so that state is
+  unreachable through the normal path), NEW `client-notes-section.test.tsx` (not in the plan; the
+  line-break behaviour is a named smoke item and the file had no test at all).
+- **Mutation-tested** (backed up with `cp` to the scratchpad, restored from it — never
+  `git stash`): deleting the draft resync fails the rail's draft test; deleting
+  `whitespace-pre-wrap` fails both line-break tests.
+
+*Deviations from the plan, and why.*
+1. **★ The all-empty placeholder covers the AI blocks; Share still renders.** §2.7 says "one
+   card-level placeholder when the whole review is empty", which taken literally removes the Share
+   block from a `pending` check-in — and a coach could always Edit → type → Send a manual reply
+   before the AI had produced anything. That is a behaviour regression, not a tidy-up. The
+   placeholder replaces the three AI sub-blocks, which still collapses today's TWO placeholders
+   into one. Two tests pin it.
+2. **The draft resync is an effect on the prop, not a `key` reset on the parent.** A remount would
+   also drop `isSending`, so a Regenerate landing mid-send would strand the in-flight request's
+   state. The effect resets only the message, which is what "regenerate" means.
+3. **The card shell is hand-rolled (`rounded-[6px] bg-white p-5`), not `OverviewCard`.** That
+   primitive bakes in `animate-card-in`, and D7.3 says no animation on the rail (it is a sticky
+   column). Adding an opt-out prop for one caller was worse than three utility classes.
+4. **`client-notes-section.test.tsx` is a fourth file the plan did not name** — see above.
+5. **My own first draft of the line-break tests was vacuous and the mutation pass caught it.**
+   They asserted `textContent` only, on the reasoning that the class is "class math"; but jsdom
+   does no layout, so `textContent` carries the `\n` with or without the styling. Both tests now
+   pin the class as the mechanism AND the text, with a comment saying why. Recorded because the
+   instinct that produced it — prefer behaviour over class assertions — is right in general and
+   wrong here.
+
+*§2 review — NOT APPLICABLE, and the reasons.* Render-only. No route, service, query, migration,
+policy, auth chain or write path is touched. The two fetches in these files
+(`POST /api/check-in/[id]/ai-summary`, `POST /api/check-in/[id]/review`) keep their URLs, methods,
+headers and bodies byte for byte; fix 3 only READS the status code the route already returned and
+discarded. No new request, no new round trip, no `supabaseAdmin` site, nothing for `check:rls` or
+`check:service-key` to cover.
+
+*Gates (real output).* `npx tsc --noEmit` **exit 0** · `npx eslint .` **0 errors, 154 warnings**
+(unchanged from C3; one error in a new test file — an `async` arrow with no `await` — was fixed
+before this count) · `npx vitest run` **315 files / 3374 tests passed**; the FIRST full run tripped
+one file, and three consecutive runs since are clean — the known flaky set-tracker test, per the
+memory rule to re-run before blaming the change · `npm run check:labels` "OK — 687 files scanned"
+(683 + the four new files) · `npm run knip` **168 lines, unchanged**. No route deleted, so no
+`.next` wipe.
+
+*Unverified until the owner smokes it.* Every pixel. **Expect a deliberate asymmetry**: the rail is
+borderless and still while the five left-column section cards keep their borders and framer
+stagger — that is D7.3 as settled, recorded in TECHNICAL-DEBT, not an oversight. Also unverified:
+that a legacy v2 row's mapped watch items and coach actions still read correctly in the new list
+form (the `to-review` mapper is untouched, but its output now renders through different markup).
 
 ### C5 — #5 denominators
 Per §2.5. Tests: `client-adherence-service.test.ts` (fixtures gain `name`; restore the three

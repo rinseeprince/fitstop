@@ -3,16 +3,32 @@
 import { motion } from "framer-motion";
 import { MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import {
-  LABEL_CLASS,
-  SECTION_LABEL_CLASS,
-} from "@/components/clients/training/program-builder/builder-tokens";
+  ReviewBlock,
+  ReviewProse,
+} from "@/components/clients/check-ins/review-block";
 import type { CheckIn } from "@/types/check-in";
 
 type ClientNotesSectionProps = {
   checkIn: CheckIn;
 };
 
+/**
+ * The client's own words. Three blocks through the shared review primitive
+ * since C4 — before, Reflection wore `LABEL_CLASS` and a teal left border while
+ * Wins and Challenges wore a hand-rolled 12px semibold label and none, so one
+ * card carried two label treatments and the rail beside it carried two more.
+ *
+ * `ReviewProse` also brings `whitespace-pre-wrap`, which is why a client's line
+ * breaks survive here now: this is free text they typed into a textarea, and
+ * the old `<p>` collapsed every one of them into a single run.
+ *
+ * The BORDERED, animated card shell is deliberate and temporary — it matches
+ * the four sibling section cards beside it. All five are owed the borderless
+ * treatment the AI review card took (D7.3); doing one of five here would have
+ * made the column look broken rather than consistent.
+ */
 export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
   const hasContent = checkIn.notes || checkIn.prs || checkIn.challenges;
   if (!hasContent) return null;
@@ -29,38 +45,23 @@ export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
         Client Notes
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-5">
         {checkIn.notes && (
-          <div>
-            <div className={cn(LABEL_CLASS, "mb-1")}>
-              Reflection
-            </div>
-            <div className="pl-3.5 border-l-2 border-[rgba(13,148,136,0.15)] text-sm text-[#0c1a1e] leading-relaxed">
-              {checkIn.notes}
-            </div>
-          </div>
+          <ReviewBlock label="Reflection">
+            <ReviewProse>{checkIn.notes}</ReviewProse>
+          </ReviewBlock>
         )}
 
         {checkIn.prs && (
-          <div>
-            <div className="text-xs font-semibold text-[#5a7d82] mb-1">
-              Wins
-            </div>
-            <div className="text-sm text-[#0c1a1e] leading-relaxed">
-              {checkIn.prs}
-            </div>
-          </div>
+          <ReviewBlock label="Wins">
+            <ReviewProse>{checkIn.prs}</ReviewProse>
+          </ReviewBlock>
         )}
 
         {checkIn.challenges && (
-          <div>
-            <div className="text-xs font-semibold text-[#5a7d82] mb-1">
-              Challenges
-            </div>
-            <div className="text-sm text-[#0c1a1e] leading-relaxed">
-              {checkIn.challenges}
-            </div>
-          </div>
+          <ReviewBlock label="Challenges">
+            <ReviewProse>{checkIn.challenges}</ReviewProse>
+          </ReviewBlock>
         )}
       </div>
     </motion.div>

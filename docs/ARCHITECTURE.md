@@ -1081,10 +1081,31 @@ its list whenever `?checkIn=<id>` is present (the tab's single-owner param — s
 structure"). It replaced the `CheckInDetailModal` dialog on 2026-08-29 with the content carried over
 intact: three panes behind one `SegmentedControl` driving a controlled `Tabs` (the reference pairing
 in `docs/newdesignsystem.md` → Segmented control) — **Current** (the KPI ribbon, the wellness /
-nutrition / training / habits / client-notes cards, and the sticky AI review rail: Regenerate, the
-coach's reply, Send), **Comparison & Trends** and **Goal Progress** (carried as they were; their
-redesign is a separate session). The header is the sidebar back-row grammar ("← Check-ins") over a
-mono meta line; the modal's prev/next chevrons and its window keydown listener went with it.
+nutrition / training / habits / client-notes cards, and the sticky AI review rail), **Comparison &
+Trends** and **Goal Progress** (carried as they were; their redesign is a separate session). The
+header is the sidebar back-row grammar ("← Check-ins") over a mono meta line; the modal's prev/next
+chevrons and its window keydown listener went with it.
+
+**The rail is ONE card, "AI review"** (C4, 2026-08-30) — borderless white on the `#f4f7f6` page per
+the SOT's "spacing does separation, not borders" — with Regenerate as its header action and four
+sub-blocks inside: Summary, What to watch, Coach actions, Share with client. Every one of them, and
+the Client Notes card's Reflection / Wins / Challenges, renders through
+`components/clients/check-ins/review-block.tsx` (`ReviewBlock` / `ReviewProse` / `ReviewList` +
+`ReviewListRow`). That primitive is the whole vocabulary — a labelled block, a run of prose, a
+marked list — and it exists because the rail previously carried four label treatments and the notes
+card two more. **`ReviewProse` sets `whitespace-pre-wrap`**: every string on this surface is free
+text a client or the AI wrote, and the old markup collapsed their line breaks. It lives in the coach
+folder and is imported BY the mixed `components/check-in/` tree, which is deliberately not
+relocated (it still holds client-facing wizard steps with their own importers).
+
+**Empty states, and the one asymmetry.** When the AI half is wholly empty the card shows a single
+placeholder rather than one per block — but **Share stays**, because a coach could always write and
+send a reply before the AI had run and that is the coach's message, not the AI's output. The
+`clientMessage` draft is a prop synced by effect, so a Regenerate replaces it instead of leaving a
+stale draft to be sent. Regenerate reports a non-OK response (the coach-keyed `aiRateLimit` 429 was
+silent before C4). The never-persisted Summary pencil edit is gone. **The five sibling section
+cards keep their borders and framer animation for now** and are owed the borderless treatment
+(D7.3) — the rail took it first as the new card.
 
 **Data: `hooks/use-check-in-detail-data.ts`, SWR throughout.** `GET /api/check-in/[id]` and
 `…/comparison` read in parallel behind `checkInDetailKey` + `useInvalidateCheckInDetail` (the area
