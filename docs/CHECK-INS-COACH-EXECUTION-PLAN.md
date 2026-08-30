@@ -1544,8 +1544,21 @@ D0.1 yes · D0.2 yes · D1.1 in-tab pane · D1.2 push for the detail open only �
 D1.4 convert to SWR in C1 · D2 redefine the roster view · D2.1 yes · D2.2 include pending ·
 D3.1 yes · D3.2 yes · D4.1 additive form key · D4.2 Check-ins tab · D4.3 strip ·
 D4.4 SegmentedControl per row · D4.5 yes · D4.6 audit both · D4.7 per column ·
-D5.1 dates.length · D5.2 ship (d) · D5.3 replace · D5.4 leave · D7.1 in place · D7.2 both ·
+D5.1 dates.length · D5.2 ship (d) · D5.3 replace · D5.4 SUPERSEDED (an average divides by the
+days WITH DATA; only adherence divides by the whole period) · D7.1 in place · D7.2 both ·
 D7.3 borderless, no animation · D7.4 remove · D-docs leave ledgers, amend SPEC :151 in C5.
+
+Facts from the C0-C5 sessions that you would otherwise rediscover the hard way:
+- **The plan's line cites have drifted badly.** In C5, THREE of its four doc cites were wrong —
+  two pointed at content that had moved, one at a section that does not exist. Grep for the
+  anchor text before every edit-by-line, and say so in the STATUS block when a cite is stale.
+- `npm run knip` baseline is **167**. (C2 recorded 172 and C3 measured 168; both are stale.)
+- If a full `vitest` run reports one failure, capture it with `npx vitest run > log 2>&1` FIRST —
+  piping to `tail` loses the name, which happened twice and cost an unattributable flake.
+- For mutation testing, back files up with `cp` to a scratch dir and restore from there.
+  **Never `git stash` or `git checkout --`** — both have destroyed uncommitted work here.
+- Assertions that only read `textContent` do NOT prove a CSS behaviour: jsdom does no layout, so
+  a `whitespace-pre-wrap` test passed with the class deleted. Pin the class as the mechanism too.
 
 Process, in this order:
 1. Plan first. Before writing any code, post a plan for this commit: every file to change /
