@@ -41,7 +41,7 @@ describe("the two ways a view is named", () => {
   it("shortens ONLY the sidebar, which supplies its own subject", () => {
     // The two attention tabs sit under a "Check-ins" heading in a 200px column
     // that truncates; the full names clipped.
-    expect(rosterViewNavLabel("review")).toBe("Due")
+    expect(rosterViewNavLabel("review")).toBe("Review due")
     expect(rosterViewNavLabel("overdue")).toBe("Overdue")
   })
 

@@ -96,7 +96,12 @@ export function rosterViewLabel(view: RosterView): string {
  */
 const VIEW_NAV_LABELS: Partial<Record<RosterView, string>> = {
   overdue: "Overdue",
-  review: "Due",
+  // "Review due", not "Due": this app already spends "due" on the SCHEDULE —
+  // `next_check_in_due`, the roster's `due 24 Aug` sub-line, the bell's "Due
+  // Soon" — where it means scheduled and coming up. This queue is the opposite
+  // end of the same object: submitted, and waiting on the coach. The extra word
+  // is what keeps the two apart under a shared "Check-ins" heading.
+  review: "Review due",
 }
 
 export function rosterViewNavLabel(view: RosterView): string {

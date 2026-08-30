@@ -1187,19 +1187,20 @@ not the 172 C2 recorded** — the three Overview commits between them moved it.
 *Smoke round 1 (owner, 2026-08-30) — one defect, fixed in `21d7fbc8`.* **The sidebar tab DID clip**,
 as flagged. Fixed the way the STATUS block predicted, with the owner choosing the words: the
 "Attention" group heading became **"Check-ins"**, and the two tabs under it took a short form —
-**"Due"** (review) and **"Overdue"**. The split is a second accessor, `rosterViewNavLabel`, used
+**"Review due"** and **"Overdue"**. The split is a second accessor, `rosterViewNavLabel`, used
 by the sidebar ALONE; `rosterViewLabel` stays the name for the sticky title, the stat-band cell
 and the dashboard card, which have no heading above them (a card reading "DUE" names nothing).
 A view without a short form falls back to its full name, so the four roster shapes need no entry
 and the next view added cannot go missing from the sidebar. +3 test cases pin both halves and
-the fallback. **Flagged to the owner, not changed:** "Due" collides with this app's existing
-schedule vocabulary — `next_check_in_due`, the roster's `due 24 Aug` sub-line, the bell's "Due
-Soon" section all mean *scheduled and coming up*, whereas this queue means *submitted and
-awaiting your review*. "Unreviewed" is the same length class and does not collide.
+the fallback. The review tab was briefly a bare **"Due"**; I flagged that `due` is
+already spent on the SCHEDULE across this app — `next_check_in_due`, the roster's `due 24 Aug`
+sub-line, the bell's "Due Soon" all mean *scheduled and coming up*, not *submitted and awaiting
+your review* — and the owner settled it as **"Review due"**, which keeps the two apart under the
+shared heading and still fits the column easily. Closed.
 
 *Smoke round 2 (owner, 2026-08-30) — ALL CLEAR. **C3 is CLOSED.*** The sidebar tabs fit under the
 "Check-ins" heading, and the stat band, sticky title and dashboard card all keep the full name.
-The "Due" collision was raised and the owner left it as is — do not reopen it.
+The "Due" collision was raised and settled as "Review due" (above) — do not reopen it.
 
 *The bell's asymmetric destinations: asked, answered, INTENDED — do not "fix" it.* A New Check-In
 row names a check-in and opens it; an Overdue row names a client who has not submitted one, so
@@ -1287,11 +1288,18 @@ discarded. No new request, no new round trip, no `supabaseAdmin` site, nothing f
 
 *Gates (real output).* `npx tsc --noEmit` **exit 0** · `npx eslint .` **0 errors, 154 warnings**
 (unchanged from C3; one error in a new test file — an `async` arrow with no `await` — was fixed
-before this count) · `npx vitest run` **315 files / 3374 tests passed**; the FIRST full run tripped
-one file, and three consecutive runs since are clean — the known flaky set-tracker test, per the
-memory rule to re-run before blaming the change · `npm run check:labels` "OK — 687 files scanned"
+before this count) · `npx vitest run` **315 files / 3374 tests passed** · `npm run check:labels` "OK — 687 files scanned"
 (683 + the four new files) · `npm run knip` **168 lines, unchanged**. No route deleted, so no
 `.next` wipe.
+
+*An intermittent test failure I could NOT attribute — do not assume it is benign.* Across eight
+full-suite runs during C4, two reported `1 failed | 3373 passed` and the other six were clean. The
+failing test's NAME was not captured either time (the summary scrolled past before the log was
+being written to a file), and five consecutive captured runs afterwards could not reproduce it.
+It is CONSISTENT with the documented flaky set-tracker test (`flaky_set_tracker_test` in memory,
+which fails only under full-suite load) but that is not proven, and no C4 file is anywhere near
+the set tracker. If a later commit sees the same shape, capture the run to a file first:
+`npx vitest run > log 2>&1` — a bare pipe to `tail` loses it.
 
 *Unverified until the owner smokes it.* Every pixel. **Expect a deliberate asymmetry**: the rail is
 borderless and still while the five left-column section cards keep their borders and framer
