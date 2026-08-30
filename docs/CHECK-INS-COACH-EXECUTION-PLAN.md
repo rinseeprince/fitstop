@@ -2022,7 +2022,29 @@ does not exist on Dev (see the STATUS block). A status-filtered keyset read stil
 new check-in is in the chart **without a reload**. "Load older" still reaches the end of a long
 history, and the rail count is right.
 
-#### STATUS — SHIPPED 2026-08-30
+#### STATUS — SHIPPED 2026-08-30, SMOKED 2026-08-31 (ALL CLEAR). C7 is CLOSED.
+
+**Smoke result (owner, 2026-08-31).** Items 1, 3, 4, 5 and the rail count all pass. No duplicate
+row, **no console warning**, the new row appears at the top on a tab-focus with no reload, the
+Journey chart carries the new point without a reload, and "Load older" walks a 54-row history to the
+end with no id twice.
+
+*How it was smoked, because it could not be done through the UI.* The only client with enough
+history to page (`Sam Kalepa`, `f87bee53-…`, 53 check-ins = 3 pages) could not submit a real
+check-in: `next_check_in_due` was a week out, and re-dating it to today computes `period_end =
+2026-08-31`, which the 2026-08-30 row already holds — migration 156 refuses it. Forcing it through
+the wizard would have meant changing that client's check-in WEEKDAY, which moves the week anchor for
+their training, nutrition, habits and wellness everywhere. C7 changes only the READ path, so the
+instrument was a direct head insert (`check_ins` row, `period_end` NULL so mig 156's partial index
+does not apply, `notes = 'C7 smoke'` as the delete marker), run between the two "Load older" clicks
+and deleted after — verified back to 53 rows, 0 markers left. **Keep this recipe**: it is the only
+way to smoke this list until a test client has both a login and a submittable period.
+
+*What the clear smoke does and does NOT say.* It confirms the pagination contract holds under a head
+insert in both orderings, and that no duplicate-key warning appeared. It does **not** retro-attribute
+the original report to offset paging — per the deviation below, no single head insert could have
+produced that particular row, so its cause remains unreconstructed. Nothing has been seen since.
+
 
 **What shipped.** One commit, no migration.
 
