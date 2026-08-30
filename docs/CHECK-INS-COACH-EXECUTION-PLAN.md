@@ -1184,7 +1184,7 @@ did not touch · `npx vitest run` **312 files / 3353 tests passed**, no flaky se
 the pre-C3 baseline measured this session. **Note for later commits: 168 is the live baseline,
 not the 172 C2 recorded** — the three Overview commits between them moved it.
 
-*Smoke round 1 (owner, 2026-08-30) — one defect, fixed in `<sha2>`.* **The sidebar tab DID clip**,
+*Smoke round 1 (owner, 2026-08-30) — one defect, fixed in `21d7fbc8`.* **The sidebar tab DID clip**,
 as flagged. Fixed the way the STATUS block predicted, with the owner choosing the words: the
 "Attention" group heading became **"Check-ins"**, and the two tabs under it took a short form —
 **"Due"** (review) and **"Overdue"**. The split is a second accessor, `rosterViewNavLabel`, used
