@@ -22,14 +22,31 @@ type StepMetricsProps = {
   data: Partial<BodyMetrics>;
   onChange: (data: Partial<BodyMetrics>) => void;
   previousData?: Partial<BodyMetrics>;
+  /** The coach's enabled field keys for this client (C6b). */
+  fields: readonly string[];
 };
+
+const GIRTHS = [
+  { key: "waist", label: "Waist" },
+  { key: "hips", label: "Hips" },
+  { key: "chest", label: "Chest" },
+  { key: "arms", label: "Arms" },
+  { key: "thighs", label: "Thighs" },
+] as const;
 
 export const StepMetrics = ({
   data,
   onChange,
   previousData,
+  fields,
 }: StepMetricsProps) => {
-  const [showMeasurements, setShowMeasurements] = useState(false);
+  const asks = new Set(fields);
+  const girths = GIRTHS.filter((g) => asks.has(g.key));
+  // With neither weight nor body fat asked, a collapsed measurements section
+  // would open this step on nothing but a button.
+  const [showMeasurements, setShowMeasurements] = useState(
+    !asks.has("weight") && !asks.has("body_fat") && girths.length > 0
+  );
   const { preference } = useUnits();
   const weightUnit = formatWeight(0, preference).unit;
   const measurementUnit = formatLength(0, preference).unit;
@@ -61,6 +78,7 @@ export const StepMetrics = ({
       </div>
 
       {/* Weight */}
+      {asks.has("weight") && (
       <div className="space-y-3">
         <Label htmlFor="weight">Weight ({weightUnit})</Label>
         <div className="flex gap-2">
@@ -90,8 +108,10 @@ export const StepMetrics = ({
           )}
         </div>
       </div>
+      )}
 
       {/* Body Fat % */}
+      {asks.has("body_fat") && (
       <div className="space-y-3">
         <Label htmlFor="bodyFat">Body Fat % (Optional)</Label>
         <div className="flex gap-2">
@@ -121,8 +141,10 @@ export const StepMetrics = ({
           )}
         </div>
       </div>
+      )}
 
       {/* Measurements Toggle */}
+      {girths.length > 0 && (
       <Button
         type="button"
         variant="outline"
@@ -141,18 +163,15 @@ export const StepMetrics = ({
           </>
         )}
       </Button>
+      )}
 
       {/* Measurements Grid */}
-      {showMeasurements && (
+      {girths.length > 0 && showMeasurements && (
         <div className="space-y-6 pt-4 border-t">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {[
-              { key: "waist", label: "Waist", prev: previousData?.waist },
-              { key: "hips", label: "Hips", prev: previousData?.hips },
-              { key: "chest", label: "Chest", prev: previousData?.chest },
-              { key: "arms", label: "Arms", prev: previousData?.arms },
-              { key: "thighs", label: "Thighs", prev: previousData?.thighs },
-            ].map(({ key, label, prev }) => (
+            {girths.map(({ key, label }) => {
+              const prev = previousData?.[key];
+              return (
               <div key={key} className="space-y-2">
                 <Label htmlFor={key}>
                   {label} ({measurementUnit})
@@ -181,7 +200,8 @@ export const StepMetrics = ({
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

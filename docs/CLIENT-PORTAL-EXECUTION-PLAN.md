@@ -999,6 +999,8 @@ Clicking a card navigates to a detail page which fires its own fetch (e.g. `GET 
 
 **Do NOT**: Rebuild the submission form. Rebuild the check-in detail page. Change the window-gating logic. Add AI-regen or edit flows.
 
+> **Superseded 2026-08-30** (coach check-ins workstream, `docs/CHECK-INS-COACH-EXECUTION-PLAN.md` C6b): the wizard's step list is **no longer a fixed 4**. It derives from the coach's per-client form (migration 157) through `stepsForFields` — Feeling and Training are unconditional because they are the client's own week read back to them, while Metrics and Photos appear only if some field on them is asked. `useCheckInForm` takes the step count and clamps a restored draft into it. The window-gating logic above is untouched.
+
 **Tests to write**:
 - `app/client/check-in/page.test.tsx`:
   - Window open: submission form + past list both render.

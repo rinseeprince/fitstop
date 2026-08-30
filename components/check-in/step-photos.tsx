@@ -9,12 +9,16 @@ import type { ProgressPhotos } from "@/types/check-in";
 type StepPhotosProps = {
   data: Partial<ProgressPhotos>;
   onChange: (data: Partial<ProgressPhotos>) => void;
+  /** The coach's enabled field keys for this client (C6b). */
+  fields: readonly string[];
 };
 
 type PhotoSlot = {
   type: "front" | "side" | "back";
   label: string;
   description: string;
+  /** The storage key the coach toggles (`check_in_form_fields.field_key`). */
+  fieldKey: "photo_front" | "photo_side" | "photo_back";
 };
 
 const photoSlots: PhotoSlot[] = [
@@ -22,20 +26,27 @@ const photoSlots: PhotoSlot[] = [
     type: "front",
     label: "Front",
     description: "Face camera, arms at sides",
+    fieldKey: "photo_front",
   },
   {
     type: "side",
     label: "Side",
     description: "Profile view, stand straight",
+    fieldKey: "photo_side",
   },
   {
     type: "back",
     label: "Back",
     description: "Face away, arms at sides",
+    fieldKey: "photo_back",
   },
 ];
 
-export const StepPhotos = ({ data, onChange }: StepPhotosProps) => {
+export const StepPhotos = ({ data, onChange, fields }: StepPhotosProps) => {
+  const asks = new Set(fields);
+  // The step only renders at all when at least one slot is on
+  // (`stepsForFields`), so this can never be empty here.
+  const slots = photoSlots.filter((slot) => asks.has(slot.fieldKey));
   const { uploadPhoto, isUploading: _isUploading, uploadProgress, errors } = usePhotoUpload();
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
@@ -75,7 +86,7 @@ export const StepPhotos = ({ data, onChange }: StepPhotosProps) => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {photoSlots.map(({ type, label, description }) => {
+        {slots.map(({ type, label, description }) => {
           const photoUrl = getPhotoUrl(type);
           const progress = uploadProgress[type];
           const error = errors[type];

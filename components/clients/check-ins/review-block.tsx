@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import {
   LABEL_CLASS,
+  TEXT_MUTED,
   TEXT_PRIMARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
 
@@ -51,10 +52,29 @@ export function ReviewBlock({
  * string here is either the client's own typing or an AI draft, and both carry
  * line breaks that the old `<p>`s collapsed. Same treatment the coach notes
  * card and the Notes tab already use.
+ *
+ * `tone` is the ONE axis this vocabulary varies prose on, added for the coach's
+ * custom questions: a question and its answer are both prose, and the pair is
+ * separated by COLOUR rather than by size or case. The alternative — putting a
+ * 300-character question in the label slot — would have set a sentence in 10px
+ * uppercase, which is a category treatment applied to something that is not a
+ * category. Colour is already how this system mutes things, so no fifth label
+ * size is needed.
  */
-export function ReviewProse({ children }: { children: ReactNode }) {
+export function ReviewProse({
+  children,
+  tone = "ink",
+}: {
+  children: ReactNode;
+  tone?: "ink" | "muted";
+}) {
   return (
-    <p className={cn("text-[13px] leading-relaxed whitespace-pre-wrap", TEXT_PRIMARY)}>
+    <p
+      className={cn(
+        "text-[13px] leading-relaxed whitespace-pre-wrap",
+        tone === "muted" ? TEXT_MUTED : TEXT_PRIMARY
+      )}
+    >
       {children}
     </p>
   );

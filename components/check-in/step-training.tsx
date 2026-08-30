@@ -35,6 +35,8 @@ type StepTrainingProps = {
   trainingPeriodStats?: TrainingPeriodStats;
   periodDays?: number;
   dailyLogs?: DailyLog[];
+  /** The coach's enabled field keys for this client (C6b). */
+  fields: readonly string[];
 };
 
 export const StepTraining = ({
@@ -47,7 +49,9 @@ export const StepTraining = ({
   trainingPeriodStats,
   periodDays,
   dailyLogs = [],
+  fields,
 }: StepTrainingProps) => {
+  const asks = new Set(fields);
   const hasActivePlan = trainingContext?.hasActivePlan ?? false;
 
   return (
@@ -80,7 +84,7 @@ export const StepTraining = ({
       <Separator />
 
       {/* Exercise Highlights (Collapsible) */}
-      {hasActivePlan && trainingContext && (
+      {asks.has("exercise_highlights") && hasActivePlan && trainingContext && (
         <>
           <ExerciseHighlightsSection
             exercises={trainingContext.sessions.map((s) => s.exercises)}
@@ -94,6 +98,7 @@ export const StepTraining = ({
       )}
 
       {/* Other Wins */}
+      {asks.has("prs") && (
       <div className="space-y-3">
         <Label htmlFor="prs">Other Wins & Achievements (Optional)</Label>
         <Textarea
@@ -109,8 +114,10 @@ Examples:
           className="resize-none"
         />
       </div>
+      )}
 
       {/* Challenges */}
+      {asks.has("challenges") && (
       <div className="space-y-3">
         <Label htmlFor="challenges">Challenges & Struggles (Optional)</Label>
         <Textarea
@@ -129,6 +136,7 @@ Examples:
           Being honest about challenges helps your coach adjust your plan
         </p>
       </div>
+      )}
     </div>
   );
 };

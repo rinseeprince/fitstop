@@ -4,7 +4,17 @@ import { sanitiseReps } from "@/utils/daily-logs-aggregation";
 
 const STORAGE_KEY = "check-in-form-data";
 
-export const useCheckInForm = (token: string) => {
+/**
+ * The client wizard's draft.
+ *
+ * `totalSteps` is not a constant any more (C6b): the step list derives from the
+ * coach's form (`stepsForFields`), so a client whose coach turned photos off has
+ * three steps, not four. It arrives AFTER mount — the context that carries the
+ * form is still fetching — which is why the clamp below is an effect rather
+ * than a guard inside the restore: a draft saved at step 4 must survive being
+ * restored before the real step count is known, and then be pulled into range.
+ */
+export const useCheckInForm = (token: string, totalSteps: number) => {
   const [currentStep, setCurrentStep] = useState(1);
   // No seeded unit tag. The form holds the client's own display units and
   // toCanonicalCheckInSubmission stamps the wire tags at submit; seeding one
@@ -57,8 +67,15 @@ export const useCheckInForm = (token: string) => {
     setFormData((prev) => ({ ...prev, ...data }));
   };
 
+  // Pull the restored/current step back into range whenever the form shrinks —
+  // covers both the late-arriving step count and a coach editing the form
+  // between two visits to a saved draft.
+  useEffect(() => {
+    setCurrentStep((prev) => Math.min(prev, Math.max(1, totalSteps)));
+  }, [totalSteps]);
+
   const nextStep = () => {
-    setCurrentStep((prev) => Math.min(prev + 1, 4));
+    setCurrentStep((prev) => Math.min(prev + 1, totalSteps));
   };
 
   const prevStep = () => {
@@ -66,7 +83,7 @@ export const useCheckInForm = (token: string) => {
   };
 
   const goToStep = (step: number) => {
-    setCurrentStep(Math.max(1, Math.min(step, 4)));
+    setCurrentStep(Math.max(1, Math.min(step, totalSteps)));
   };
 
   const clearSavedData = () => {

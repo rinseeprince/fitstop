@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, SlidersHorizontal } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { SectionLabel } from "@/components/programs/shared/section-label";
 import { CheckInDetailView } from "./check-in-detail-view";
+import { CheckInFormSheet } from "./check-in-form-sheet";
 import { CheckInStatusBadge } from "./check-in-status-badge";
 import {
   useClientCheckInsInfinite,
@@ -15,6 +18,7 @@ import {
 import { getAiPreview } from "@/lib/check-in-helpers";
 import { checkInReviewUrl, type ClientTab } from "@/lib/client-tabs";
 import { cn } from "@/lib/utils";
+import { pluralize } from "@/components/clients/overview/overview-format";
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import type { Client } from "@/types/check-in";
 
@@ -34,8 +38,10 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
   // — read unconditionally so a deep link resolves on the first render, before
   // the page's replace lands.
   const checkInId = searchParams.get("checkIn");
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const {
     checkIns,
+    total,
     hasMore,
     isLoading,
     isLoadingMore,
@@ -66,34 +72,25 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
     );
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-[#93b0b4]" />
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="bg-white rounded-[6px] p-6 text-center">
-        <p className="text-sm text-[#93b0b4]">Failed to load check-ins.</p>
-      </div>
-    );
-  }
-
-  if (checkIns.length === 0) {
-    return (
-      <div className="bg-white rounded-[6px] p-6 text-center">
-        <p className="font-medium text-[#0c1a1e]">No check-ins yet</p>
-        <p className="text-sm text-[#93b0b4] mt-1">
-          This client hasn&apos;t submitted any check-ins.
-        </p>
-      </div>
-    );
-  }
-
-  return (
+  // The rail sits ABOVE the body's four states, not inside the list: a coach
+  // customises a client's form before their first check-in, so the entry point
+  // has to survive the empty state.
+  const body = isLoading ? (
+    <div className="flex items-center justify-center py-12">
+      <Loader2 className="h-5 w-5 animate-spin text-[#93b0b4]" />
+    </div>
+  ) : isError ? (
+    <div className="bg-white rounded-[6px] p-6 text-center">
+      <p className="text-sm text-[#93b0b4]">Failed to load check-ins.</p>
+    </div>
+  ) : checkIns.length === 0 ? (
+    <div className="bg-white rounded-[6px] p-6 text-center">
+      <p className="font-medium text-[#0c1a1e]">No check-ins yet</p>
+      <p className="text-sm text-[#93b0b4] mt-1">
+        This client hasn&apos;t submitted any check-ins.
+      </p>
+    </div>
+  ) : (
     <div className="space-y-3">
       {checkIns.map((checkIn) => {
         const aiPreview = getAiPreview(checkIn.aiSummary);
@@ -144,6 +141,34 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
           </Button>
         </div>
       )}
+    </div>
+  );
+
+  return (
+    <div>
+      <SectionLabel
+        label="Check-in history"
+        meta={total > 0 ? pluralize(total, "check-in") : undefined}
+        actions={
+          <button
+            type="button"
+            onClick={() => setIsFormOpen(true)}
+            aria-label="Customise check-in"
+            title="Customise check-in"
+            className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#0d9488]"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
+        }
+      />
+
+      {body}
+
+      <CheckInFormSheet
+        client={client}
+        open={isFormOpen}
+        onOpenChange={setIsFormOpen}
+      />
     </div>
   );
 };

@@ -4,6 +4,8 @@ import {
   CHECK_IN_FORM_FIELD_KEYS,
   DEFAULT_CHECK_IN_FORM_FIELDS,
   applyCheckInForm,
+  CHECK_IN_FORM_STEPS,
+  CHECK_IN_STEP_LABELS,
   isCheckInFormFieldKey,
   stepsForFields,
 } from "./form-fields";
@@ -73,6 +75,19 @@ describe("stepsForFields", () => {
     // summary; the session checklist, which is a fill-gap LOGGER, and the
     // nutrition summary). No field key switches those.
     expect(stepsForFields([])).toEqual(["feeling", "training"]);
+  });
+});
+
+describe("CHECK_IN_STEP_LABELS", () => {
+  it("labels every step, because the wizard has no second source", () => {
+    // One map serves the client's progress indicator AND the coach's field
+    // groups; a missing entry would render `undefined` on both.
+    for (const step of CHECK_IN_FORM_STEPS) {
+      expect(CHECK_IN_STEP_LABELS[step]).toBeTruthy();
+    }
+    expect(Object.keys(CHECK_IN_STEP_LABELS).sort()).toEqual(
+      [...CHECK_IN_FORM_STEPS].sort()
+    );
   });
 });
 

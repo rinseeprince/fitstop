@@ -20,10 +20,14 @@ import { useCheckInForm } from "@/hooks/use-check-in-form";
 import { useClientCheckIn } from "@/hooks/use-client-check-in";
 import { useUnits } from "@/contexts/units-context";
 import { toCanonicalCheckInSubmission } from "@/utils/check-in-canonical-metrics";
+import {
+  CHECK_IN_STEP_LABELS,
+  DEFAULT_CHECK_IN_FORM_FIELDS,
+  applyCheckInForm,
+  stepsForFields,
+} from "@/lib/check-in/form-fields";
 import { toast } from "sonner";
 import type { SessionCompletionQuality } from "@/types/check-in";
-
-const stepLabels = ["Feeling", "Metrics", "Photos", "Training"];
 
 function formatNextDueDate(iso: string): string {
   return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
@@ -40,6 +44,14 @@ export default function ClientCheckInPage() {
     useClientCheckIn();
   const { preference } = useUnits();
 
+  // The coach's form decides which fields are asked and therefore which steps
+  // exist. No form on the payload — an older client app, or a client whose
+  // coach has never customised anything — resolves to all 14 keys, which is the
+  // whole backward-compatibility story for this feature.
+  const fields = contextData?.form?.fields ?? [...DEFAULT_CHECK_IN_FORM_FIELDS];
+  const questions = contextData?.form?.questions ?? [];
+  const steps = stepsForFields(fields);
+
   const {
     currentStep,
     formData,
@@ -49,7 +61,7 @@ export default function ClientCheckInPage() {
     nextStep,
     prevStep,
     clearSavedData,
-  } = useCheckInForm("client-check-in");
+  } = useCheckInForm("client-check-in", steps.length);
 
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +109,12 @@ export default function ClientCheckInPage() {
         await Promise.allSettled(Array.from(pendingTrainingPosts.current));
       }
 
+      // Shape the draft to the form the coach actually asks BEFORE converting
+      // units. A saved draft can predate a coach's change, and there is no
+      // reason to ship a base64 photo the server is only going to discard. The
+      // server runs the same strip after its own gate — that one is the
+      // authority; this one is courtesy.
+      //
       // The server DERIVES sessionCompletions / nutrition adherence / mood…stress
       // from the spine — the form only sends the qualitative fields it owns.
       //
@@ -105,8 +123,12 @@ export default function ClientCheckInPage() {
       // stamps the wire tags, which the schema now requires alongside any value
       // they describe — no default is applied server-side any more, because a
       // default silently decides the unit for a payload that never stated one.
+      const shaped = applyCheckInForm(formData, {
+        fields,
+        questionIds: questions.map((q) => q.id),
+      });
       const result = await submitCheckIn(
-        toCanonicalCheckInSubmission(formData, preference),
+        toCanonicalCheckInSubmission(shaped, preference),
       );
 
       if (!result.success) {
@@ -127,13 +149,10 @@ export default function ClientCheckInPage() {
     }
   };
 
-  const canProceed = () => {
-    if (currentStep === 1) return true;
-    if (currentStep === 2) return true;
-    if (currentStep === 3) return true;
-    if (currentStep === 4) return true;
-    return false;
-  };
+  // The step being rendered, by KIND rather than by index: a client whose coach
+  // turned photos off has Training at position 3, and an index-keyed switch
+  // would render Photos there.
+  const activeStep = steps[currentStep - 1];
 
   return (
     <div className="min-h-screen bg-background">
@@ -194,34 +213,37 @@ export default function ClientCheckInPage() {
           <div className="space-y-8">
             <ProgressIndicator
               currentStep={currentStep}
-              totalSteps={4}
-              stepLabels={stepLabels}
+              totalSteps={steps.length}
+              stepLabels={steps.map((step) => CHECK_IN_STEP_LABELS[step])}
             />
 
             <div className="bg-card border border-border p-6 md:p-8 min-h-[500px]">
-              {currentStep === 1 && (
+              {activeStep === "feeling" && (
                 <StepSubjective
                   data={formData}
                   onChange={updateFormData}
                   dailyLogs={contextData.dailyLogs}
                   periodStart={contextData.periodStart}
                   periodEnd={contextData.periodEnd}
+                  fields={fields}
+                  questions={questions}
                 />
               )}
 
-              {currentStep === 2 && (
+              {activeStep === "metrics" && (
                 <StepMetrics
                   data={formData}
                   onChange={updateFormData}
                   previousData={{}}
+                  fields={fields}
                 />
               )}
 
-              {currentStep === 3 && (
-                <StepPhotos data={formData} onChange={updateFormData} />
+              {activeStep === "photos" && (
+                <StepPhotos data={formData} onChange={updateFormData} fields={fields} />
               )}
 
-              {currentStep === 4 && (
+              {activeStep === "training" && (
                 <StepTraining
                   data={formData}
                   onChange={updateFormData}
@@ -232,6 +254,7 @@ export default function ClientCheckInPage() {
                   trainingPeriodStats={contextData.trainingPeriodStats}
                   periodDays={contextData.periodDays}
                   dailyLogs={contextData.dailyLogs}
+                  fields={fields}
                 />
               )}
             </div>
@@ -254,11 +277,11 @@ export default function ClientCheckInPage() {
                 {currentStep === 1 ? "Cancel" : "Back"}
               </Button>
 
-              {currentStep < 4 ? (
+              {currentStep < steps.length ? (
                 <Button
                   type="button"
                   onClick={nextStep}
-                  disabled={!canProceed() || isSubmitting}
+                  disabled={isSubmitting}
                   className="flex-1 sm:flex-none"
                 >
                   Next

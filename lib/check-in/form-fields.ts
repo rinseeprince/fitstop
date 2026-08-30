@@ -18,17 +18,34 @@
  * recorded in `TECHNICAL-DEBT.md`, not built.
  */
 
-// Not exported: C6a has no caller outside `stepsForFields`, and the wizard
-// (C6b) is what needs the list and its labels. Exporting it now would be an
-// unused export the knip gate exists to catch.
-const CHECK_IN_FORM_STEPS = [
+/**
+ * The wizard's steps, in order. Exported since C6b: the client wizard renders
+ * by step KIND rather than by index, and the coach's Fields card groups its 14
+ * rows by the step each field lives on.
+ */
+export const CHECK_IN_FORM_STEPS = [
   "feeling",
   "metrics",
   "photos",
   "training",
 ] as const;
 
+// Not exported: `stepsForFields` returns it and `CHECK_IN_STEP_LABELS` is keyed
+// on it, so every consumer gets it by inference and nobody names it. Exporting
+// it is an unused export the knip gate exists to catch (C6a's own precedent).
 type CheckInFormStep = (typeof CHECK_IN_FORM_STEPS)[number];
+
+/**
+ * ONE label per step, serving BOTH audiences: the client wizard's progress
+ * indicator and the coach's field-group headings. Two maps would drift, and a
+ * coach toggling "Photos" needs to be looking at the word their client sees.
+ */
+export const CHECK_IN_STEP_LABELS: Record<CheckInFormStep, string> = {
+  feeling: "Feeling",
+  metrics: "Metrics",
+  photos: "Photos",
+  training: "Training",
+};
 
 /**
  * Every built-in field, in the order the coach sees it, with the wizard step

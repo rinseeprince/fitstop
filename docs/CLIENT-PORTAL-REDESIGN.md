@@ -79,7 +79,7 @@ The old header-only layout (`app/client/layout.tsx`) is replaced with a layout t
 ### Check-in hub (`/client/check-in`)
 
 The Check-in tab is a hub, not a single-purpose submission form. Shows:
-- **Submission form** at top when a check-in is in window (driven by `clients.expected_check_in_day` + `calculateCheckInPeriod()`). When not in window, a friendly "Next check-in opens on [date]" notice replaces the form.
+- **Submission form** at top when a check-in is in window. *(Updated 2026-08-30: `clients.expected_check_in_day` was DROPPED by migrations 154+155 — the gate is now `getCheckInGate` over the one stored `clients.next_check_in_due`, and `calculateCheckInPeriod` / `resolveCheckInWindow` still resolve the reported week. See `ARCHITECTURE.md → Check-in System`.)* When not in window, a friendly "Next check-in opens on [date]" notice replaces the form. **The form's step list is no longer fixed** — it derives from the coach's per-client form (migration 157; `stepsForFields`).
 - **Past check-ins list** below: chronological, newest first. Each row shows date, status badge (pending/ai_processed/reviewed), and a short AI-summary preview.
 - Tapping a past check-in opens a full detail view (`/client/check-in/[id]` already exists per `app/client/progress/check-in/[id]/page.tsx` — reuse it, just route to it from the new hub).
 

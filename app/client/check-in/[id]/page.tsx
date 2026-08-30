@@ -16,6 +16,7 @@ import {
   Brain,
   Activity,
   MessageSquare,
+  HelpCircle,
   Camera,
   Trophy,
   Target,
@@ -377,6 +378,31 @@ export default function CheckInDetailPage() {
                   </div>
                 </>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* The coach's own questions, and what this client answered. Prompts
+            are joined LIVE from the question rows, so a reworded question
+            relabels this answer too — it is the same question. */}
+        {checkIn.customAnswers && checkIn.customAnswers.length > 0 && (
+          <Card className="md:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <HelpCircle className="h-5 w-5" />
+                Your coach asked
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {checkIn.customAnswers.map((answer, index) => (
+                <div key={answer.questionId}>
+                  {index > 0 && <Separator className="mb-4" />}
+                  <h4 className="text-sm font-medium mb-2">{answer.prompt}</h4>
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                    {answer.answer}
+                  </p>
+                </div>
+              ))}
             </CardContent>
           </Card>
         )}

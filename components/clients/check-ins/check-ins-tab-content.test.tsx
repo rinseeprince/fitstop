@@ -27,6 +27,12 @@ vi.mock("@/hooks/use-check-in-data", () => ({
   useInvalidateCheckInsQueue: () => mockInvalidateQueue,
   useInvalidateClientCheckIns: () => mockInvalidateClientCheckIns,
 }));
+// The real sheet pulls in three SWR hooks and useToast; the tab's contract with
+// it is "open" / "closed" (CONVENTIONS §2, don't break the mock contract).
+vi.mock("./check-in-form-sheet", () => ({
+  CheckInFormSheet: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="form-sheet" /> : null,
+}));
 vi.mock("./check-in-detail-view", () => ({
   CheckInDetailView: ({
     checkInId,
@@ -95,6 +101,32 @@ describe("CheckInsTabContent", () => {
     expect(screen.queryByText(/No check-ins yet/i)).not.toBeInTheDocument();
   });
 
+  // The rail carries the ONLY entry point to the form editor (D4.2), and a
+  // coach customises a form before the first check-in exists — so it has to
+  // outlive the list's own states.
+  it.each([
+    ["loading", { isLoading: true }],
+    ["empty", { checkIns: [] }],
+    ["failed", { isError: new Error("nope") }],
+    ["populated", { checkIns: [makeCheckIn()], total: 1 }],
+  ])("keeps the Customise action reachable in the %s state", (_label, overrides) => {
+    setHook(overrides);
+    renderTab();
+    expect(
+      screen.getByRole("button", { name: "Customise check-in" })
+    ).toBeInTheDocument();
+  });
+
+  it("opens the form sheet from the rail", async () => {
+    const user = userEvent.setup();
+    setHook({ checkIns: [makeCheckIn()], total: 1 });
+    renderTab();
+
+    expect(screen.queryByTestId("form-sheet")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Customise check-in" }));
+    expect(screen.getByTestId("form-sheet")).toBeInTheDocument();
+  });
+
   it("shows the empty state", () => {
     setHook({ checkIns: [] });
     renderTab();
@@ -126,6 +158,10 @@ describe("CheckInsTabContent", () => {
 
     expect(screen.getByTestId("detail-view")).toHaveTextContent("ci-9");
     expect(screen.queryByText(/Great progress this week/i)).not.toBeInTheDocument();
+    // The detail replaces the list wholesale — rail included.
+    expect(
+      screen.queryByRole("button", { name: "Customise check-in" })
+    ).not.toBeInTheDocument();
   });
 
   it("opens a deep link on first render, even while the list is still loading", () => {

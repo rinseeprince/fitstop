@@ -707,7 +707,7 @@ A type-level guard in the module fails the build if a seventh view is added with
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |
 | Daily Habits | `HabitsTabContent` + `HabitsHistoryTable` | Habit management, analytics |
-| Check-ins | `CheckInsTabContent` | The client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page; `hooks/use-check-in-data.ts` owns the list key and its invalidator). Each row is a `<Link>` to `checkInReviewUrl`; with `?checkIn=<id>` present the tab renders the review surface, `CheckInDetailView` (`components/clients/check-ins/`), in place of the list — three panes: Current (KPI ribbon, wellness / nutrition / training / habits / client-notes cards, the AI review rail with Regenerate and Send), Comparison & Trends, Goal Progress. See "The coach review surface" under Check-in System |
+| Check-ins | `CheckInsTabContent` | A `Check-in history` rail whose one action, "Customise check-in", opens the per-client form editor (see "The customisable form" under Check-in System) — it sits ABOVE the body's four states, because a coach shapes a form before the first check-in exists. Under it, the client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page; `hooks/use-check-in-data.ts` owns the list key and its invalidator). Each row is a `<Link>` to `checkInReviewUrl`; with `?checkIn=<id>` present the tab renders the review surface, `CheckInDetailView` (`components/clients/check-ins/`), in place of the list — three panes: Current (KPI ribbon, wellness / nutrition / training / habits / client-notes cards, the AI review rail with Regenerate and Send), Comparison & Trends, Goal Progress. See "The coach review surface" under Check-in System |
 | Notes | `NotesTabContent` | `client_notes` list — pinned first, newest-first, add + pin/unpin. Same endpoints as the Overview card |
 
 Tab changes go through `handleTabChange` → `buildClientTabUrl` (`lib/client-tabs.ts`), which `router.replace`s without scroll. **Every cross-tab navigation must go through that handler.** `activeTab` is React state seeded from `?tab=` **at mount only**, so a `<Link>` or a bare `router.replace` changes the URL and leaves the visible tab where it was — the nutrition drawer's `GoalSummary` wrote a sentence instead of a link rather than fight it, and the training history table's exercise drill-down takes the handler as a prop for exactly this reason. The same mount-only seeding means `activeTab` flips *before* the replace lands, so for one render a newly-mounted tab reads the previous tab's query: anything reading a param on arrival must tolerate that (which is why single-owner pane params are read unguarded and the one-shot trip params below are consumed from an effect, not a `useState` initializer). **Every tab owns a pane param named after itself** — `?journey=` (Physique/Training/Wellness/Blocks), `?training=` (Data/Plans), `?nutrition=` (Data/Plans). Single-owner is the whole contract: only its own tab reads it, so it rides through a tab switch and restores that pane on the return trip, and it is read *unconditionally* (a deep link resolves on the first render, before `router.replace` lands). The shared `?subtab=` that Training and Nutrition both used to write is retired (Session 7.2) — still read as a guarded fallback so old links resolve, still deleted on every tab change, written by nothing. `extraParams` ADDRESS a pane on arrival and a `null` value deletes a carried key.
@@ -1142,6 +1142,23 @@ lands behind their back. The join rows are copied; the questions are shared.
 **The form never touches a `clients` column.** `updateClientCheckInConfig` is a
 full replace of the four scheduling columns, so routing a form save through it
 would clear `next_check_in_due` (see "Two writers, and only two" above).
+
+**The coach edits it from the Check-ins tab**, through the "Customise
+check-in" action on that tab's `Check-in history` rail — deliberately not the
+Overview, which is read-only. It opens a 780px sheet (`check-in-form-sheet.tsx`)
+whose two cards are the 14 built-in fields, grouped by the wizard step each sits
+on with a `SegmentedControl` per row, and the coach's own questions with order,
+on/off, wording and membership. **Rewording is edited here but belongs to the
+bank row**, so the editor updates its own list as well as revalidating — an
+invalidate-only reword would leave the old wording on screen while the card
+promises the change lands everywhere.
+
+**The client's wizard derives its steps from the form**, through
+`stepsForFields`: Feeling and Training are unconditional (they read the client's
+own week back to them), Metrics and Photos appear only if some field on them is
+asked. `applyCheckInForm` runs in the browser too, so a saved draft that
+predates a coach's change is shaped before it is sent — the server's own strip,
+after its gate and before the photo uploads, remains the authority.
 
 **Wire.** `GET /api/client/check-in-context` carries an additive
 `form: { fields, questions }`; `POST /api/client/check-ins` accepts optional

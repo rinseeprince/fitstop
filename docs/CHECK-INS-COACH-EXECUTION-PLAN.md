@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0-C5 ALL shipped, smoked and CLOSED. C6 was SPLIT into C6a (schema + wire + server, shipped) and C6b (the two UI surfaces, next). STATUS blocks under §5.**
+**Status: IN PROGRESS — C0-C5 ALL shipped, smoked and CLOSED. C6 was SPLIT into C6a (schema + wire + server, SHIPPED) and C6b (the two UI surfaces, SHIPPED — owner smoke owed for both). STATUS blocks under §5.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -1674,6 +1674,162 @@ the coach page; **save as template → open another client's sheet → "Start fr
 editor shows the template's fields and questions, NOTHING IS SAVED YET → Save changes → their
 form is replaced** (preview-then-commit: apply is editor-side, there is no server apply route);
 all-on → the form still saves a row, and a client with no row still gets all 14.
+
+**STATUS — C6b SHIPPED 2026-08-30. No SQL, no wire change. Owner browser smoke OWED for BOTH C6a and C6b; every surface below is unverified until it runs.**
+
+*What shipped.*
+- **The coach editor.** A `Check-in history` rail on the Check-ins tab whose one action,
+  "Customise check-in" (`SlidersHorizontal`), opens a 780px sheet — dark hero over an
+  `#f4f7f6` body of railed white cards, the `client-details-sheet.tsx` shape. The rail sits
+  ABOVE the body's four states, not inside the list, because a coach shapes a form BEFORE the
+  first check-in exists. Files: `check-in-form-sheet.tsx` (shell, template picker, footer,
+  name dialog), `check-in-form-fields-card.tsx`, `check-in-form-questions-card.tsx`,
+  `use-check-in-form-editor.ts`, `hooks/use-check-in-form-config.ts`.
+- **Fields**: all 14, one `<SegmentedControl>` On/Off per row (D4.4, D4.7 per column), grouped
+  by the wizard STEP each field sits on using the kernel's own order and labels — so the coach
+  toggles rows under the words their client sees. Each control is wrapped in a
+  `role="group" aria-label={label}`, which gives the pair an accessible name without reaching
+  into the shared primitive.
+- **Questions**: order (move up/down), on/off, inline reword, remove-from-form, and a dashed
+  "Add question" footer button opening a 320px Popover over the bank — type a new prompt or
+  reuse one, capped at `MAX_CHECK_IN_QUESTIONS`.
+- **Three SWR reads, each with a key builder and a matching area invalidator**, all gated on
+  `open` so a closed sheet costs nothing (the `useClientGoalHistory` precedent).
+- **The client wizard derives its steps from the form.** `useCheckInForm(token, totalSteps)`;
+  the page renders by step KIND, not index; `canProceed` (four `return true`s) and the
+  `stepLabels` literal are gone; each step hides the fields it is not asked for.
+  `applyCheckInForm` now also runs in the BROWSER before `toCanonicalCheckInSubmission`.
+- **Both read-backs.** The client's `[id]` page gains a "Your coach asked" card; the coach's
+  Client Notes card gains a "Coach questions" block.
+- Docs: `CLIENT-PORTAL-REDESIGN.md:82` (the dropped `expected_check_in_day` cite → the stored
+  date + `getCheckInGate`, migs 154/155, plus the no-longer-fixed step list);
+  `CLIENT-PORTAL-EXECUTION-PLAN.md` Session 2.7 dated supersession line; `ARCHITECTURE.md`
+  "The customisable form" (the entry point + the wizard's derivation) and the Check-ins tab row.
+
+*Owner decisions taken in this session, ahead of coding.*
+- **★ A question prompt does NOT go in `ReviewBlock`'s label slot.** The plan said "render each
+  answer as a `ReviewBlock`", which taken literally puts a 300-character coach sentence in
+  `LABEL_CLASS` — 10px uppercase muted, the treatment for a CATEGORY name. The owner ruled it a
+  category error with a known failure mode rather than a matter of taste. Shipped instead: ONE
+  `ReviewBlock label="Coach questions"` (that IS the category) holding the pairs, with prompt
+  and answer separated by **colour** — `ReviewProse tone="muted"` over the default ink, both at
+  the existing 13px prose scale. C4's "do not invent a fifth label size" holds; `tone` is the one
+  axis added, and it is the axis this system already uses to mute things.
+- **Both ARCHITECTURE edits taken** (they were flagged as off-plan): `:1084` described a feature
+  with no stated entry point because the entry point did not exist when C6a wrote it, and
+  `:710` enumerates what the tab renders. Two sentences each; the copy-based/editor-side apply
+  rule was NOT restated, since that section's "Templates are copy-based" paragraph already has it.
+- **★ A reword must update the editor's LOCAL row, not only invalidate the bank** — raised by
+  the owner, and it was a real bug in the plan. The editor's question list is local state seeded
+  once per open, so an invalidate-only reword left the old wording on screen until the sheet was
+  reopened, while the card's own sentence promises the change lands everywhere. Same shape as
+  C4's stale Share draft. Fixed and mutation-tested.
+
+*Deviations from the plan, and why.*
+1. **★ The template picker is a `DropdownMenu`, not the `<Select>` §2.4 names.** A Select's value
+   would be a lie: applying a template is an ACTION, the editor diverges the moment anything is
+   toggled, and Radix does not re-fire `onValueChange` for the same value — so "start over from
+   Cutting" would have been inexpressible. The applied-template marker is still tracked
+   (`appliedTemplateId`) and cleared by the first edit, which is what makes a re-apply meaningful.
+2. **FOUR step components changed, not three.** `step-subjective` needed the `notes` gate AND
+   hosts the questions section; metrics, photos and training gate their own fields.
+3. **`CheckInFormStep` is NOT exported.** The plan said the page would need the type to index
+   `CHECK_IN_STEP_LABELS`; writing it showed the page never names it (inference covers it), and
+   knip flagged the export. Un-exported — C6a deviation 9's precedent, and the reason the knip
+   diff is now byte-identical to HEAD.
+4. **`CHECK_IN_STEP_LABELS` is ONE map for both audiences** — the client's progress indicator and
+   the coach's field-group headings. §2.4 suggested "Measurements / Photos" for the coach; using
+   the wizard's own words instead avoids a second map that could drift, and costs the coach
+   nothing. Pinned by a completeness test.
+5. **`useToast`, not `sonner`.** The adjacent C4 rail uses sonner; the design SOT and the sibling
+   Notes tab say `useToast()`. The SOT wins for a new coach file. Recorded rather than silent.
+6. **The metrics step opens EXPANDED when weight and body fat are both off** but girths are on —
+   otherwise the step opens on nothing but an "Add Measurements" button.
+7. **The fields card carries an all-off hint** ("still gets a two-step check-in confirming their
+   week"). Not in the plan; it answers the question the kernel's own docstring anticipates, in
+   one line, at the moment a coach would ask it.
+8. Plan/doc cites re-derived this session: `CLIENT-PORTAL-REDESIGN.md:82` **exact**;
+   `ARCHITECTURE.md:710` and `:1084` **exact**; Session 2.7's "Do NOT" line is `:1000` (the plan
+   gave no number). None had drifted.
+
+*Two behaviours stated rather than left to be discovered.*
+- **"Save as template" posts the editor's CURRENT state, unsaved edits included.** That is the
+  gesture a coach wants — shape a form, bank it, then decide whether to commit it to this client
+  — but it means a template can exist from a state this client's form never had. Commented at
+  the call site and pinned by test.
+- **`useInvalidateCheckInsQueue`'s `/api/check-ins` prefix also matches the questions and
+  templates keys.** Harmless today: those two are only mounted while the sheet is open, and the
+  sheet and the review detail are mutually exclusive surfaces. Recorded in the hook's header so
+  the next person does not rediscover it.
+
+*Tests: +4 files, +38 cases (330 files / 3555 tests, from 326 / 3503).* New:
+`use-check-in-form-config.test.ts` (keys, the closed-sheet null key, stable empty arrays, all
+three invalidator accept/reject sets), `use-check-in-form-editor.test.tsx` (seed-once,
+toggle/reorder/remove/add, the cap, the save payload's position-is-array-order, the failed save,
+the reword, template apply and template save), `check-in-form-sheet.test.tsx` (14 rows by group,
+a toggle sending the KEY not the label, the question controls, the two footer commits, the
+disabled picker, the all-off hint, the error state, no-close-while-saving), and
+`custom-questions-section.test.tsx` (answers keyed by id, not position). Grown:
+`check-ins-tab-content.test.tsx` (+ the sheet mock; the rail reachable in all four body states,
+and absent under `?checkIn=`), `page.test.tsx` (step counts for full / photos-off / all-off /
+no-`form`-key, and both strip cases), `client-notes-section.test.tsx` (the one-block treatment
+and its colours), `form-fields.test.ts` (label completeness).
+
+**One `vi.mock` export list had to grow**: `check-ins-tab-content.test.tsx` gains
+`vi.mock("./check-in-form-sheet")` — the real sheet pulls in three SWR hooks and `useToast`. The
+wizard page test needed no new module mock: `stepsForFields` and `applyCheckInForm` are pure and
+run for real.
+
+**Mutation-tested** (backed up with `cp` to the scratchpad and restored from it — never
+`git stash`; all three restores confirmed byte-identical with `diff -q`). Five mutations, five
+dead tests: dropping the reword's local update; dropping the seed-once guard; reverting the step
+switch to `currentStep === N`; dropping the browser-side strip (killed two); and rendering the
+prompt in ink instead of muted.
+
+*§2 review — the ≥5-files trigger fires; the security half is short.*
+1-6 (security): **no route, service, query, migration, policy, grant or `supabaseAdmin` site is
+touched.** C6b is browser code calling four routes C6a shipped and reviewed:
+`GET`/`PUT /api/clients/[id]/check-in-form`, `GET`/`POST /api/check-ins/questions`,
+`PATCH …/questions/[questionId]`, `GET`/`POST /api/check-ins/forms` — each still
+`coachApiRateLimit` → CSRF → `requireCoachOwnsClient`/`requireCoachAuth` → zod → service, with
+the RPC re-proving question ownership in SQL. CSRF is origin-based, so a browser `fetch` needs no
+token. `check:rls` / `check:service-key` not run: nothing they cover changed, and the kernel the
+browser imports (`lib/check-in/form-fields.ts`) still reaches no `supabaseAdmin`.
+7. **Round trips.** Opening the sheet costs THREE parallel GETs (form, bank, templates), gated on
+open so a closed sheet costs none. A save is one PUT plus the route's own echo re-read. A reword
+is one PATCH. None is per-row.
+8-10. Writes are unchanged in shape and bounded by C6a's caps: ≤14 field rows and ≤10 question
+rows per save, ≤10 answers per check-in.
+11. The three sheet reads are parallel (three independent SWR keys), not sequential.
+12. No `.catch()` returning success after a committed write was added. A failed save toasts and
+**keeps the sheet open with the draft intact**; a failed template save leaves its dialog open.
+13. **One seam, and it is deliberate: creating a question writes the bank row IMMEDIATELY while
+its membership of this form lands only with Save changes.** Cancelling after "Add question"
+therefore leaves an unused question in the bank. That is the right half to persist — the bank is
+coach-wide and the question is reusable — but it is a real half-state and it is named here rather
+than discovered. The pre-existing submit seam (`submitCheckIn`'s check-in INSERT then its answers)
+is C6a's and is unchanged. **Not load-tested.**
+
+*What the client now sends that it never sent before:* `customAnswers`, and a payload already
+shaped to the coach's form. Both are validated and re-stripped server-side by C6a code — the
+browser strip is courtesy, the server's is the authority.
+
+*Gates (real output).* `npx tsc --noEmit` **exit 0** · `npx eslint .` **0 errors / 154 warnings**
+— exactly the C4/C5/C6a count, and none in a touched file · `npx vitest run` (captured to a file
+first) **330 files / 3555 tests passed**, no flaky set-tracker trip · `npm run check:labels`
+**"OK — 706 files scanned"** (698 + the eight new files) · **`npx knip` 167 — and byte-identical
+to HEAD**, verified the memory-file way: `git worktree add --detach <tmp> HEAD`, `node_modules`
+symlinked in, knip run there, outputs diffed (`npm run knip` reads 171 because of its 4-line npm
+banner — do not compare the two commands). No `as any`, no markers, no `console.log`, no raw
+`font-mono-display` or hand-spelled focus ring in any touched file. No route file was deleted, so
+no `.next` wipe.
+
+*Still unverified.* **Everything in the browser** — the sheet, the popover, the reword, the
+template round trip, and every gated wizard step exist only against jsdom. Specifically untested
+by anything: how 14 segmented controls read at 780px; whether the Popover's bank list scrolls
+sensibly past a handful of questions; and the sheet's height with all 14 rows plus 10 questions.
+Two concurrent coaches saving one client's form is still reasoned about, not exercised (C6a's
+`FOR UPDATE`).
 
 **Post-C6b:** owner smoke across all six surfaces; both DBs confirmed at 157; memory update.
 Then the separate Comparison / Goal Progress definition session (§2.6).

@@ -3,6 +3,7 @@ import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import ClientCheckInPage from "./page";
+import { DEFAULT_CHECK_IN_FORM_FIELDS } from "@/lib/check-in/form-fields";
 
 const routerPushMock = vi.fn();
 const routerBackMock = vi.fn();
@@ -27,7 +28,10 @@ vi.mock("@/hooks/use-client-check-in", () => ({
 }));
 
 vi.mock("@/hooks/use-check-in-form", () => ({
-  useCheckInForm: () => useCheckInFormMock(),
+  useCheckInForm: (_token: string, totalSteps: number) => {
+    lastTotalSteps = totalSteps;
+    return useCheckInFormMock();
+  },
 }));
 
 vi.mock("@/components/check-in/step-subjective", () => ({
@@ -95,6 +99,8 @@ function setClientCheckIn(
   });
 }
 
+let lastTotalSteps: number | undefined;
+
 function setCheckInForm(currentStep = 1) {
   useCheckInFormMock.mockReturnValue({
     currentStep,
@@ -123,7 +129,15 @@ const baseContextData = {
   periodStart: "2026-05-08",
   periodEnd: "2026-05-14",
   periodDays: 7,
+  // C6a's additive key. Absent (an older client app, or a client whose coach
+  // has never customised anything) resolves to all 14 fields — asserted below.
+  form: { fields: [...DEFAULT_CHECK_IN_FORM_FIELDS], questions: [] },
 };
+
+/** The same context with only the named field keys asked. */
+function contextWithFields(fields: string[], questions: { id: string; prompt: string }[] = []) {
+  return { ...baseContextData, form: { fields, questions } };
+}
 
 describe("ClientCheckInPage", () => {
   beforeEach(() => {
@@ -134,6 +148,7 @@ describe("ClientCheckInPage", () => {
     useClientCheckInMock.mockReset();
     useCheckInFormMock.mockReset();
     submitCheckInMock.mockReset();
+    lastTotalSteps = undefined;
     setSWR({ data: { success: true, data: [] } });
     setClientCheckIn();
     setCheckInForm();
@@ -212,5 +227,107 @@ describe("ClientCheckInPage", () => {
     await waitFor(() => {
       expect(mutateMock).toHaveBeenCalledWith("/api/client/check-ins?limit=10");
     });
+  });
+
+  it("gives a full form four steps and puts Submit on the last one", () => {
+    setClientCheckIn({ contextData: baseContextData });
+    setCheckInForm(4);
+    render(<ClientCheckInPage />);
+
+    expect(lastTotalSteps).toBe(4);
+    expect(screen.getByTestId("step-training")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /submit check-in/i })).toBeInTheDocument();
+  });
+
+  it("drops the Photos step when the coach asks for no photos, and Training moves up", () => {
+    // The whole point of rendering by step KIND: at position 3 an index-keyed
+    // switch would render Photos, which this client is not asked for.
+    setClientCheckIn({
+      contextData: contextWithFields(["notes", "weight", "prs"]),
+    });
+    setCheckInForm(3);
+    render(<ClientCheckInPage />);
+
+    expect(lastTotalSteps).toBe(3);
+    expect(screen.getByTestId("step-training")).toBeInTheDocument();
+    expect(screen.queryByTestId("step-photos")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /submit check-in/i })).toBeInTheDocument();
+  });
+
+  it("leaves a two-step check-in when every field is off", () => {
+    setClientCheckIn({ contextData: contextWithFields([]) });
+    setCheckInForm(1);
+    render(<ClientCheckInPage />);
+
+    expect(lastTotalSteps).toBe(2);
+    expect(screen.getByTestId("step-subjective")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /next/i })).toBeInTheDocument();
+  });
+
+  it("falls back to the full form when the payload carries no `form` key", () => {
+    const { form: _form, ...noForm } = baseContextData;
+    setClientCheckIn({ contextData: noForm });
+    setCheckInForm(1);
+    render(<ClientCheckInPage />);
+
+    expect(lastTotalSteps).toBe(4);
+  });
+
+  it("strips a disabled field out of the submission before it is sent", async () => {
+    // A saved draft can predate the coach turning a field off. The server
+    // strips too — this one keeps a base64 photo off the wire entirely.
+    submitCheckInMock.mockResolvedValueOnce({ success: true });
+    const user = userEvent.setup();
+    setClientCheckIn({ contextData: contextWithFields(["notes"]) });
+    useCheckInFormMock.mockReturnValue({
+      currentStep: 2,
+      formData: { notes: "Kept", prs: "Dropped", photoFront: "data:image/png;base64,x" },
+      isSubmitting: false,
+      setIsSubmitting: vi.fn(),
+      updateFormData: vi.fn(),
+      nextStep: vi.fn(),
+      prevStep: vi.fn(),
+      clearSavedData: vi.fn(),
+    });
+    render(<ClientCheckInPage />);
+
+    await user.click(screen.getByRole("button", { name: /submit check-in/i }));
+
+    await waitFor(() => expect(submitCheckInMock).toHaveBeenCalled());
+    const sent = submitCheckInMock.mock.calls[0][0];
+    expect(sent.notes).toBe("Kept");
+    expect(sent.prs).toBeUndefined();
+    expect(sent.photoFront).toBeUndefined();
+  });
+
+  it("drops an answer to a question this form no longer asks", async () => {
+    submitCheckInMock.mockResolvedValueOnce({ success: true });
+    const user = userEvent.setup();
+    setClientCheckIn({
+      contextData: contextWithFields(["notes"], [{ id: "q-1", prompt: "Still asked?" }]),
+    });
+    useCheckInFormMock.mockReturnValue({
+      currentStep: 2,
+      formData: {
+        customAnswers: [
+          { questionId: "q-1", answer: "yes" },
+          { questionId: "q-gone", answer: "orphan" },
+        ],
+      },
+      isSubmitting: false,
+      setIsSubmitting: vi.fn(),
+      updateFormData: vi.fn(),
+      nextStep: vi.fn(),
+      prevStep: vi.fn(),
+      clearSavedData: vi.fn(),
+    });
+    render(<ClientCheckInPage />);
+
+    await user.click(screen.getByRole("button", { name: /submit check-in/i }));
+
+    await waitFor(() => expect(submitCheckInMock).toHaveBeenCalled());
+    expect(submitCheckInMock.mock.calls[0][0].customAnswers).toEqual([
+      { questionId: "q-1", answer: "yes" },
+    ]);
   });
 });

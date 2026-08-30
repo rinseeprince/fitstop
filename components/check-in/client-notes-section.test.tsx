@@ -1,10 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { ClientNotesSection } from "./client-notes-section";
-import type { CheckIn } from "@/types/check-in";
+import type { CheckInWithDetails } from "@/types/check-in";
 
-function makeCheckIn(overrides: Partial<CheckIn> = {}): CheckIn {
-  return { id: "ci-1", clientId: "c-1", ...overrides } as CheckIn;
+function makeCheckIn(
+  overrides: Partial<CheckInWithDetails> = {},
+): CheckInWithDetails {
+  return { id: "ci-1", clientId: "c-1", ...overrides } as CheckInWithDetails;
 }
 
 afterEach(cleanup);
@@ -55,5 +57,42 @@ describe("ClientNotesSection", () => {
     const wins = screen.getByText(/Squat 140kg/);
     expect(wins.textContent).toBe("Squat 140kg\nBench 100kg\nFirst pull-up");
     expect(wins).toHaveClass("whitespace-pre-wrap");
+  });
+
+  it("renders the coach's questions as one block, prompt over answer", () => {
+    render(
+      <ClientNotesSection
+        checkIn={makeCheckIn({
+          customAnswers: [
+            { questionId: "q-1", prompt: "How did the split feel?", answer: "Heavy." },
+            { questionId: "q-2", prompt: "Sleep any better?", answer: "A bit." },
+          ],
+        })}
+      />,
+    );
+
+    // ONE category label for the pair — a 300-character prompt in the label
+    // slot would set a sentence in 10px uppercase. The prompt and its answer
+    // are separated by colour instead.
+    expect(screen.getByText("Coach questions")).toBeInTheDocument();
+    expect(screen.getAllByText("Coach questions")).toHaveLength(1);
+
+    const prompt = screen.getByText("How did the split feel?");
+    expect(prompt).toHaveClass("text-[#93b0b4]");
+    expect(screen.getByText("Heavy.")).toHaveClass("text-[#0c1a1e]");
+    expect(screen.getByText("Sleep any better?")).toBeInTheDocument();
+  });
+
+  it("renders the card for a client who ONLY answered custom questions", () => {
+    render(
+      <ClientNotesSection
+        checkIn={makeCheckIn({
+          customAnswers: [{ questionId: "q-1", prompt: "Anything hurting?", answer: "No" }],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Coach questions")).toBeInTheDocument();
+    expect(screen.queryByText("Reflection")).not.toBeInTheDocument();
   });
 });
