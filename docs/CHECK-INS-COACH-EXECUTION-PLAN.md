@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0, C1 and C2 shipped 2026-08-29 and C3 on 2026-08-30 (STATUS blocks under §5); C4–C6 not built.**
+**Status: IN PROGRESS — C0-C2 shipped 2026-08-29 and C3 on 2026-08-30, all four SMOKED and CLOSED (STATUS blocks under §5); C4–C6 not built.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -1084,7 +1084,7 @@ Per §2.3 (+ D3.1 card count, D3.2 recent rows). §2 review walked (the ≥5-fil
 no route/auth/write path changed; `/api/check-ins/*` keep in-route auth. Smoke: dashboard card →
 `/clients?view=review` with matching numbers; bell footer both branches; `/check-ins/review` → 404.
 
-**STATUS — SHIPPED 2026-08-30 in `743ab03`. Browser smoke OWED (owner runs it).**
+**STATUS — SHIPPED 2026-08-30 in `743ab03` (+ `21d7fbc8`), browser-SMOKED by the owner the same day: one defect found and fixed, then ALL CLEAR. C3 is CLOSED.**
 
 *Owner decisions taken in this session, ahead of coding.*
 - **The review view is renamed "Unreviewed check-ins"** (was "Ready for review"), everywhere it
@@ -1197,10 +1197,24 @@ schedule vocabulary — `next_check_in_due`, the roster's `due 24 Aug` sub-line,
 Soon" section all mean *scheduled and coming up*, whereas this queue means *submitted and
 awaiting your review*. "Unreviewed" is the same length class and does not collide.
 
-*Still unverified until the owner re-smokes.* Every other pixel; the C2 deactivated-client path is
-still unexercisable (nothing in the app deactivates a client), and the dashboard around this card
-is still largely hardcoded mock data (Active Clients, Unread Messages, Upcoming Calls, and the
-first five values of this card's own sparkline) — do not read those numbers as live.
+*Smoke round 2 (owner, 2026-08-30) — ALL CLEAR. **C3 is CLOSED.*** The sidebar tabs fit under the
+"Check-ins" heading, and the stat band, sticky title and dashboard card all keep the full name.
+The "Due" collision was raised and the owner left it as is — do not reopen it.
+
+*The bell's asymmetric destinations: asked, answered, INTENDED — do not "fix" it.* A New Check-In
+row names a check-in and opens it; an Overdue row names a client who has not submitted one, so
+there is no check-in to open and it can only address the client. Same rule
+`lib/attention-alert-destinations.ts` states in its header ("No alert type maps to check-ins —
+the check-in row owns that destination"). The gap that remains is not the destination but the
+ACTION: `/clients/{id}` shows the overdueness in the identity row, while "Send reminder" lives
+only as a roster row action on `?view=overdue` — which is where the bell FOOTER already goes.
+Owner reviewed the three options (leave it / point the rows at the view / rehome Send reminder)
+and chose to leave it.
+
+*Still unverified, and why.* The C2 deactivated-client path remains unexercisable (nothing in the
+app deactivates a client — build a fixture before trusting it). The dashboard around this card is
+still largely hardcoded mock data (Active Clients, Unread Messages, Upcoming Calls, and the first
+five values of this card's own sparkline) — do not read those numbers as live.
 
 ### C4 — #7 uniform review blocks
 Per §2.7. Tests: `review-block.test.tsx`, `check-in-review-rail.test.tsx` (mock `sonner`;
