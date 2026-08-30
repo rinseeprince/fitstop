@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 const {
-  mockUseClientCheckInForm,
   mockUseCheckInQuestions,
   mockUseCheckInFormTemplates,
   mockInvalidateForm,
@@ -10,7 +9,6 @@ const {
   mockInvalidateTemplates,
   mockToast,
 } = vi.hoisted(() => ({
-  mockUseClientCheckInForm: vi.fn(),
   mockUseCheckInQuestions: vi.fn(),
   mockUseCheckInFormTemplates: vi.fn(),
   mockInvalidateForm: vi.fn(),
@@ -20,7 +18,6 @@ const {
 }));
 
 vi.mock("@/hooks/use-check-in-form-config", () => ({
-  useClientCheckInForm: mockUseClientCheckInForm,
   useCheckInQuestions: mockUseCheckInQuestions,
   useCheckInFormTemplates: mockUseCheckInFormTemplates,
   useInvalidateClientCheckInForm: () => mockInvalidateForm,
@@ -39,9 +36,9 @@ const FORM = {
   ],
 };
 
-function mount(onClose = vi.fn()) {
+function mount(onClose = vi.fn(), initialForm = FORM) {
   return renderHook(() =>
-    useCheckInFormEditor({ clientId: "client-1", open: true, onClose })
+    useCheckInFormEditor({ clientId: "client-1", initialForm, onClose })
   );
 }
 
@@ -55,11 +52,6 @@ function okFetch(data: unknown = {}) {
 describe("useCheckInFormEditor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseClientCheckInForm.mockReturnValue({
-      form: FORM,
-      isLoading: false,
-      isError: false,
-    });
     mockUseCheckInQuestions.mockReturnValue({
       questions: [
         { id: "q-1", prompt: "How did the split feel?", createdAt: "" },
@@ -78,7 +70,7 @@ describe("useCheckInFormEditor", () => {
     mockInvalidateTemplates.mockResolvedValue(undefined);
   });
 
-  it("seeds from the server read, disabled questions included", () => {
+  it("initialises from the saved form, disabled questions included", () => {
     const { result } = mount();
     expect(result.current.fields).toEqual(["notes", "weight", "prs"]);
     expect(result.current.questions.map((q) => q.id)).toEqual(["q-1", "q-2"]);
@@ -86,17 +78,14 @@ describe("useCheckInFormEditor", () => {
     expect(result.current.isDirty).toBe(false);
   });
 
-  it("does NOT re-seed from a background revalidation, so edits survive", () => {
+  it("does NOT re-read the prop after mount, so edits survive a revalidation", () => {
+    // State is initialised ONCE from `initialForm`, structurally — there is no
+    // effect syncing it, so a re-render carrying the stored (pre-edit) form
+    // cannot clobber an edit in progress.
     const { result, rerender } = mount();
     act(() => result.current.toggleField("weight"));
     expect(result.current.fields).not.toContain("weight");
 
-    // A revalidation lands with the stored (pre-edit) form.
-    mockUseClientCheckInForm.mockReturnValue({
-      form: { ...FORM },
-      isLoading: false,
-      isError: false,
-    });
     rerender();
 
     expect(result.current.fields).not.toContain("weight");
@@ -111,14 +100,14 @@ describe("useCheckInFormEditor", () => {
     expect(result.current.isDirty).toBe(true);
   });
 
-  it("reorders, removes and adds questions", () => {
+  it("reorders by drag (active over target), removes and adds questions", () => {
     const { result } = mount();
 
-    act(() => result.current.moveQuestion("q-2", -1));
+    act(() => result.current.reorderQuestion("q-2", "q-1"));
     expect(result.current.questions.map((q) => q.id)).toEqual(["q-2", "q-1"]);
 
-    // Already at the top / bottom is a no-op, not a wrap.
-    act(() => result.current.moveQuestion("q-2", -1));
+    // A drop onto a row that is not on the list is a no-op, not a splice at -1.
+    act(() => result.current.reorderQuestion("q-2", "not-here"));
     expect(result.current.questions.map((q) => q.id)).toEqual(["q-2", "q-1"]);
 
     act(() => result.current.removeQuestion("q-2"));
@@ -140,19 +129,14 @@ describe("useCheckInFormEditor", () => {
   });
 
   it("caps a form at MAX_CHECK_IN_QUESTIONS", () => {
-    mockUseClientCheckInForm.mockReturnValue({
-      form: {
-        fields: [],
-        questions: Array.from({ length: 10 }, (_, i) => ({
-          id: `q${i}`,
-          prompt: `Q${i}`,
-          enabled: true,
-        })),
-      },
-      isLoading: false,
-      isError: false,
+    const { result } = mount(vi.fn(), {
+      fields: [],
+      questions: Array.from({ length: 10 }, (_, i) => ({
+        id: `q${i}`,
+        prompt: `Q${i}`,
+        enabled: true,
+      })),
     });
-    const { result } = mount();
     act(() => result.current.addExistingQuestion({ id: "extra", prompt: "One more" }));
     expect(result.current.questions).toHaveLength(10);
   });
@@ -163,7 +147,7 @@ describe("useCheckInFormEditor", () => {
     const onClose = vi.fn();
     const { result } = mount(onClose);
 
-    act(() => result.current.moveQuestion("q-2", -1));
+    act(() => result.current.reorderQuestion("q-2", "q-1"));
     await act(async () => {
       await result.current.save();
     });
@@ -292,14 +276,16 @@ describe("useCheckInFormEditor", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reports the error state rather than spinning when the read fails", () => {
-    mockUseClientCheckInForm.mockReturnValue({
-      form: null,
+  it("surfaces a failed BANK read on its own, without blocking the editor", () => {
+    // It used to be destructured away entirely, and `isBankLoading` held the
+    // whole sheet's spinner with no error path out of it.
+    mockUseCheckInQuestions.mockReturnValue({
+      questions: [],
       isLoading: false,
       isError: true,
     });
     const { result } = mount();
-    expect(result.current.isError).toBe(true);
-    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isBankError).toBe(true);
+    expect(result.current.fields).toEqual(["notes", "weight", "prs"]);
   });
 });

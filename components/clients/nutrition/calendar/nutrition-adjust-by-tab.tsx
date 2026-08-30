@@ -104,7 +104,6 @@ export function NutritionAdjustByTab({ form }: AdjustByTabProps) {
           checked={form.holdProtein}
           onCheckedChange={form.setHoldProtein}
           aria-label="Hold protein steady"
-          className="data-[state=checked]:bg-[#0d9488]"
         />
       </div>
 

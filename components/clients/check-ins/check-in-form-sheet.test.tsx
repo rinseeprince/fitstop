@@ -1,10 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { mockEditor } = vi.hoisted(() => ({ mockEditor: vi.fn() }));
+const { mockEditor, mockForm } = vi.hoisted(() => ({
+  mockEditor: vi.fn(),
+  mockForm: vi.fn(),
+}));
 vi.mock("./use-check-in-form-editor", () => ({
   useCheckInFormEditor: (args: unknown) => mockEditor(args),
+}));
+// The panel owns the ONE read that gates the editor; the editor's own two are
+// inside the mocked hook. Loading and error live in check-in-form-panel.test.tsx,
+// which runs the real thing.
+vi.mock("@/hooks/use-check-in-form-config", () => ({
+  useClientCheckInForm: () => mockForm(),
 }));
 
 import { CheckInFormSheet } from "./check-in-form-sheet";
@@ -15,18 +24,18 @@ const client = { id: "client-1", name: "Jane Doe", email: "j@d.com" } as Client;
 
 function setEditor(overrides: Record<string, unknown> = {}) {
   const editor = {
-    isLoading: false,
-    isError: false,
     fields: ["notes", "weight"],
     questions: [{ id: "q-1", prompt: "How did the split feel?", enabled: true }],
     bank: [{ id: "q-3", prompt: "Anything hurting?", createdAt: "" }],
     templates: [],
+    isBankError: false,
+    isTemplatesError: false,
     appliedTemplateId: null,
     isDirty: false,
     isSaving: false,
     toggleField: vi.fn(),
     toggleQuestion: vi.fn(),
-    moveQuestion: vi.fn(),
+    reorderQuestion: vi.fn(),
     removeQuestion: vi.fn(),
     addExistingQuestion: vi.fn(),
     createQuestion: vi.fn(),
@@ -48,17 +57,22 @@ function renderSheet(onOpenChange = vi.fn()) {
 describe("CheckInFormSheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockForm.mockReturnValue({
+      form: { fields: ["notes", "weight"], questions: [] },
+      isLoading: false,
+      isError: false,
+    });
     setEditor();
   });
 
-  it("renders every built-in field as its own On/Off row", () => {
+  it("renders every built-in field as its own switch, checked per the form", () => {
     renderSheet();
 
     for (const field of CHECK_IN_FORM_FIELDS) {
-      const row = screen.getByRole("group", { name: field.label });
-      expect(within(row).getByRole("button", { name: "On" })).toBeInTheDocument();
-      expect(within(row).getByRole("button", { name: "Off" })).toBeInTheDocument();
+      expect(screen.getByRole("switch", { name: field.label })).toBeInTheDocument();
     }
+    expect(screen.getByRole("switch", { name: "Weight" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Body fat" })).not.toBeChecked();
     expect(screen.getByText("2/14 on")).toBeInTheDocument();
   });
 
@@ -67,19 +81,35 @@ describe("CheckInFormSheet", () => {
     const editor = setEditor();
     renderSheet();
 
-    const row = screen.getByRole("group", { name: "Body fat" });
-    await user.click(within(row).getByRole("button", { name: "On" }));
+    await user.click(screen.getByRole("switch", { name: "Body fat" }));
 
     expect(editor.toggleField).toHaveBeenCalledWith("body_fat");
   });
 
-  it("renders the coach's questions and their controls", () => {
+  it("renders the coach's questions with a drag grip and no up/down arrows", () => {
     renderSheet();
     expect(screen.getByText("How did the split feel?")).toBeInTheDocument();
     expect(screen.getByText("1 question")).toBeInTheDocument();
     expect(
+      screen.getByRole("button", { name: /Reorder "How did the split feel\?"/ })
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("button", { name: /Remove "How did the split feel\?"/ })
     ).toBeInTheDocument();
+    // The arrows were replaced by the grip — dnd-kit's pointer drag can't be
+    // driven in jsdom, so the reorder KERNEL is pinned in the editor hook's
+    // test and this only asserts the affordance swapped.
+    expect(screen.queryByRole("button", { name: /Move .* up/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Move .* down/ })).not.toBeInTheDocument();
+  });
+
+  it("puts the question's switch last, so it lines up with the fields above", () => {
+    renderSheet();
+    const row = screen.getByRole("switch", { name: "How did the split feel?" })
+      .parentElement as HTMLElement;
+    const controls = Array.from(row.children);
+    // …[prompt] [reword] [remove] [switch]
+    expect(controls[controls.length - 1]).toHaveAttribute("role", "switch");
   });
 
   it("removes a question from the form", async () => {
@@ -146,19 +176,14 @@ describe("CheckInFormSheet", () => {
     expect(screen.getByText(/still gets a two-step check-in/)).toBeInTheDocument();
   });
 
-  it("shows the error state instead of an empty editor when the read fails", () => {
-    setEditor({ isError: true });
-    renderSheet();
-    expect(screen.getByText(/Failed to load the check-in form/)).toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "Weight" })).not.toBeInTheDocument();
-  });
-
-  it("cannot be closed while a save is in flight", async () => {
-    const user = userEvent.setup();
+  it("disables the commits while a save is in flight, and keeps an exit", () => {
     setEditor({ isSaving: true });
-    const onOpenChange = renderSheet();
+    renderSheet();
 
-    await user.click(screen.getByRole("button", { name: "Close" }));
-    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    // The X stays live deliberately: it is the only exit from a slow load, and
+    // Escape and the overlay can close the sheet regardless.
+    expect(screen.getByRole("button", { name: "Close" })).toBeEnabled();
   });
 });

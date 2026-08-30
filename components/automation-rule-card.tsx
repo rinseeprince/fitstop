@@ -40,7 +40,6 @@ export function AutomationRuleCard({ rule, onToggle }: AutomationRuleCardProps) 
             <Switch
               checked={rule.isActive}
               onCheckedChange={(checked) => onToggle?.(rule.id, checked)}
-              className="data-[state=checked]:bg-[#0d9488]"
             />
             <span className={`text-sm ${rule.isActive ? "text-[#0d9488] font-medium" : "text-[#93b0b4]"}`}>
               {rule.isActive ? "Active" : "Inactive"}

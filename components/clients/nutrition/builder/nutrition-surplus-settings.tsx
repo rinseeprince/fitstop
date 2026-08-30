@@ -74,7 +74,6 @@ export function NutritionSurplusSettings({
           checked={includeActivityBurn}
           onCheckedChange={onToggleActivityBurn}
           disabled={isSavingToggle}
-          className="h-[22px] w-[40px] rounded-[11px] data-[state=checked]:bg-[#0d9488] data-[state=unchecked]:bg-[rgba(13,148,136,0.12)] [&>[data-slot=switch-thumb]]:h-4 [&>[data-slot=switch-thumb]]:w-4 [&>[data-slot=switch-thumb]]:shadow-[0_1px_3px_rgba(0,0,0,0.12)] [&>[data-slot=switch-thumb]]:data-[state=checked]:translate-x-[18px]"
         />
       </div>
 

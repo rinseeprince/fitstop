@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import {
   useCheckInFormTemplates,
   useCheckInQuestions,
-  useClientCheckInForm,
   useInvalidateCheckInFormTemplates,
   useInvalidateCheckInQuestions,
   useInvalidateClientCheckInForm,
@@ -13,6 +12,7 @@ import {
 import { MAX_CHECK_IN_QUESTIONS } from "@/lib/constants";
 import type { CheckInFormFieldKey } from "@/lib/check-in/form-fields";
 import type {
+  CheckInFormEditorConfig,
   CheckInFormEditorQuestion,
   CheckInFormTemplate,
 } from "@/types/check-in";
@@ -21,17 +21,27 @@ import type {
  * The coach's check-in-form editor: what is on screen while the sheet is open,
  * and the three writes that leave it.
  *
- * **Seeded ONCE per open.** The draft is local state; a background
- * revalidation must not clobber edits in progress (the program builder's rule).
- * Re-opening the sheet re-seeds from the server, so Cancel really discards.
+ * **It takes the saved form as a PROP and initialises state from it once.** It
+ * does not fetch it, does not know whether the sheet is open, and holds no
+ * "have I seeded yet?" flag — its owner mounts it only once the form has
+ * loaded, and Radix unmounts the sheet's content on close, so one editor
+ * lifetime IS one open. That is what makes "seeded once, a revalidation can
+ * never clobber edits in progress" a structural fact rather than a flag.
+ *
+ * It replaced an effect + `useRef` latch that seeded on `[open, form]`
+ * transitions, and the difference is not stylistic. `seeded` was a REF, and the
+ * sheet's spinner was computed from it during render — so flipping it scheduled
+ * no render. The spinner only ever cleared as a SIDE EFFECT of the four
+ * setState calls beside it changing something. On a second open the saved form
+ * came back from the SWR cache as the SAME OBJECT, all four setters bailed out
+ * on `Object.is`, nothing re-rendered, and the sheet spun forever over a
+ * correctly-loaded form. Render-visible state does not live in a ref.
  *
  * **Nothing here touches a `clients` column.** The form lives in its own tables
  * precisely so a save cannot reach `updateClientCheckInConfig`, which is a full
  * replace of the four scheduling columns and would clear `next_check_in_due`
  * (ARCHITECTURE → "Two writers, and only two").
  */
-
-type SaveState = "idle" | "saving";
 
 async function writeJson(
   url: string,
@@ -52,43 +62,34 @@ async function writeJson(
 
 export function useCheckInFormEditor({
   clientId,
-  open,
+  initialForm,
   onClose,
 }: {
   clientId: string;
-  open: boolean;
+  /** The client's saved form. Read by the panel; this hook never fetches it. */
+  initialForm: CheckInFormEditorConfig;
   onClose: () => void;
 }) {
   const { toast } = useToast();
-  const { form, isLoading, isError } = useClientCheckInForm(clientId, open);
-  const { questions: bank, isLoading: isBankLoading } = useCheckInQuestions(open);
-  const { templates } = useCheckInFormTemplates(open);
+  const { questions: bank, isError: isBankError } = useCheckInQuestions();
+  const { templates, isError: isTemplatesError } = useCheckInFormTemplates();
   const invalidateForm = useInvalidateClientCheckInForm();
   const invalidateBank = useInvalidateCheckInQuestions();
   const invalidateTemplates = useInvalidateCheckInFormTemplates();
 
-  const [fields, setFields] = useState<CheckInFormFieldKey[]>([]);
-  const [questions, setQuestions] = useState<CheckInFormEditorQuestion[]>([]);
-  const [saveState, setSaveState] = useState<SaveState>("idle");
+  // Initialised ONCE from the prop, by construction — see the header.
+  const [fields, setFields] = useState<CheckInFormFieldKey[]>(
+    () => initialForm.fields as CheckInFormFieldKey[]
+  );
+  const [questions, setQuestions] = useState<CheckInFormEditorQuestion[]>(
+    () => initialForm.questions
+  );
+  const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   // Which template the current state came from. Cleared by the first edit,
   // because after one toggle the state is no longer that template — and that
   // is what lets a coach re-apply the same one to start over.
   const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
-  const seeded = useRef(false);
-
-  useEffect(() => {
-    if (!open) {
-      seeded.current = false;
-      return;
-    }
-    if (seeded.current || !form) return;
-    setFields(form.fields as CheckInFormFieldKey[]);
-    setQuestions(form.questions);
-    setIsDirty(false);
-    setAppliedTemplateId(null);
-    seeded.current = true;
-  }, [open, form]);
 
   /** Every mutator routes through this, so nothing can edit without marking. */
   const edit = useCallback((mutate: () => void) => {
@@ -117,15 +118,21 @@ export function useCheckInFormEditor({
     [edit]
   );
 
-  const moveQuestion = useCallback(
-    (questionId: string, direction: -1 | 1) =>
+  /**
+   * Drag-and-drop reorder — the `onReorderExercise` shape (active id over
+   * target id), because it is the same gesture the program builder's exercise
+   * list uses and one kernel per gesture beats two spellings.
+   */
+  const reorderQuestion = useCallback(
+    (activeId: string, overId: string) =>
       edit(() =>
         setQuestions((prev) => {
-          const index = prev.findIndex((q) => q.id === questionId);
-          const target = index + direction;
-          if (index === -1 || target < 0 || target >= prev.length) return prev;
+          const from = prev.findIndex((q) => q.id === activeId);
+          const to = prev.findIndex((q) => q.id === overId);
+          if (from === -1 || to === -1 || from === to) return prev;
           const next = [...prev];
-          [next[index], next[target]] = [next[target], next[index]];
+          const [moved] = next.splice(from, 1);
+          next.splice(to, 0, moved);
           return next;
         })
       ),
@@ -168,7 +175,7 @@ export function useCheckInFormEditor({
    * Reword one bank question.
    *
    * It updates the LOCAL row as well as revalidating the bank. The editor's
-   * list is local state seeded once per open, so an invalidate-only version
+   * list is local state initialised at mount, so an invalidate-only version
    * would leave the old wording on screen until the sheet was reopened — while
    * the card's own sentence promises the change lands everywhere. Same shape as
    * the stale Share draft C4 fixed.
@@ -209,7 +216,7 @@ export function useCheckInFormEditor({
   );
 
   const save = useCallback(async () => {
-    setSaveState("saving");
+    setIsSaving(true);
     try {
       await writeJson(`/api/clients/${clientId}/check-in-form`, "PUT", payload());
       await invalidateForm(clientId);
@@ -222,7 +229,7 @@ export function useCheckInFormEditor({
         variant: "destructive",
       });
     } finally {
-      setSaveState("idle");
+      setIsSaving(false);
     }
   }, [clientId, invalidateForm, onClose, payload, toast]);
 
@@ -234,7 +241,7 @@ export function useCheckInFormEditor({
    */
   const saveAsTemplate = useCallback(
     async (name: string) => {
-      setSaveState("saving");
+      setIsSaving(true);
       try {
         await writeJson("/api/check-ins/forms", "POST", { name, ...payload() });
         await invalidateTemplates();
@@ -248,28 +255,28 @@ export function useCheckInFormEditor({
         });
         throw error;
       } finally {
-        setSaveState("idle");
+        setIsSaving(false);
       }
     },
     [invalidateTemplates, payload, toast]
   );
 
   return {
-    // `!seeded` covers the gap between the fetch settling and the effect
-    // running — but never when the read FAILED, or a failed GET would spin
-    // forever instead of reaching the error state.
-    isLoading: !isError && (isLoading || isBankLoading || (open && !seeded.current)),
-    isError,
     fields,
     questions,
     bank,
     templates,
+    // The two secondary reads get their own error surfaces rather than being
+    // dropped. A failing bank used to hold the whole sheet's spinner with no
+    // way out; now it can only empty its own popover.
+    isBankError,
+    isTemplatesError,
     appliedTemplateId,
     isDirty,
-    isSaving: saveState === "saving",
+    isSaving,
     toggleField,
     toggleQuestion,
-    moveQuestion,
+    reorderQuestion,
     removeQuestion,
     addExistingQuestion,
     createQuestion,

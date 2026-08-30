@@ -1147,8 +1147,14 @@ would clear `next_check_in_due` (see "Two writers, and only two" above).
 check-in" action on that tab's `Check-in history` rail — deliberately not the
 Overview, which is read-only. It opens a 780px sheet (`check-in-form-sheet.tsx`)
 whose two cards are the 14 built-in fields, grouped by the wizard step each sits
-on with a `SegmentedControl` per row, and the coach's own questions with order,
-on/off, wording and membership. **Rewording is edited here but belongs to the
+on with a `Switch` per row, and the coach's own questions with drag order,
+on/off, wording and membership. **The editor is mounted only once the form has
+loaded**, inside the sheet's `SheetContent` — which Radix unmounts on close, so
+one editor lifetime is one open and its draft state is initialised from the
+saved form at mount rather than synced by an effect. That is what makes "a
+revalidation cannot clobber edits in progress" structural, and it is why a
+coach can never save an empty form over a real one: the editor does not exist
+without data. **Rewording is edited here but belongs to the
 bank row**, so the editor updates its own list as well as revalidating — an
 invalidate-only reword would leave the old wording on screen while the card
 promises the change lands everywhere.

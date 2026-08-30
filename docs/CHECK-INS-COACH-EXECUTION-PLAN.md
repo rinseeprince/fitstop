@@ -1831,6 +1831,104 @@ sensibly past a handful of questions; and the sheet's height with all 14 rows pl
 Two concurrent coaches saving one client's form is still reasoned about, not exercised (C6a's
 `FOR UPDATE`).
 
+**C6b FOLLOW-UP — SHIPPED 2026-08-30 (commit A of two).** Owner smoke of C6b found four
+things. Three were mine; the fourth is older and is commit B.
+
+*What shipped.*
+- **★ D4.4 REVERSED to option (b) (owner).** The premise behind "(a) `SegmentedControl` per
+  row" was that the design system had no Switch spec — but there IS a switch, it was simply
+  un-migrated and had **already drifted into three treatments across six call sites**: the full
+  Teal-Summit look hand-written at `nutrition-surplus-settings.tsx`, half of it
+  (`data-[state=checked]:bg-[#0d9488]` alone, so the OFF track stayed OKLCH grey at the default
+  size) at `automation-rule-card.tsx` and `nutrition-adjust-by-tab.tsx`, and the raw shadcn
+  defaults at three more. `components/ui/switch.tsx` now carries that hand-written string, the
+  three overrides are deleted, and `docs/newdesignsystem.md` has a **Switch** section with the
+  spec and the **"no pill shapes" exemption** a switch needs (the pill is the affordance). The
+  three bare call sites change appearance as a consequence — they were OKLCH defaults on
+  Teal-Summit surfaces, so this makes them correct; they are on the smoke list.
+- **Question rows put the switch LAST** so it lines up with the fields card above it. The
+  destructive-rightmost habit is a `SectionLabel` RAIL rule, not a form-row rule, and applying
+  it here cost alignment for nothing.
+- **Reordering is drag-and-drop** (`DndContext` + `verticalListSortingStrategy` + `useSortable`
+  + `GripVertical`) — the program builder's exercise-list shape. The up/down arrows are gone. A
+  `KeyboardSensor` is wired because those arrows were the only keyboard path; the precedent has
+  none, so this is four lines beyond it rather than a divergence from it.
+- **★ The stuck sheet — root cause found, not worked around.** Symptom: open the customise
+  sheet, close it, open it again, and it spins forever over a form that has fully loaded. Three
+  reproductions of the owner's steps passed before the owner's DevTools Network capture settled
+  it — three 200s with real payloads on the reopen, nothing pending. **`seeded` was a `useRef`,
+  and the spinner was computed from it during render, so flipping it scheduled no render.** The
+  spinner only ever cleared as a SIDE EFFECT of the four `setState` calls beside it changing
+  something. On a reopen the saved form came back from the SWR cache as the SAME object, so
+  `setFields(form.fields)` / `setQuestions(form.questions)` / `setIsDirty(false)` /
+  `setAppliedTemplateId(null)` ALL bailed out on `Object.is`, nothing re-rendered, and the flag
+  stayed invisible. The later revalidation could not rescue it either: by then the ref read
+  `true`, so the effect returned early and again called no setter. A page reload fixed it
+  because that made it a first open again.
+- **The fix deletes the machinery rather than the symptom.** `CheckInFormSheet` is now a shell;
+  `check-in-form-panel.tsx` owns the ONE gating read and mounts `CheckInFormEditorBody` only
+  once the form has resolved. Radix unmounts `SheetContent` on close, so **one editor lifetime
+  is one open** — no `enabled` flag on the three reads, no seeding effect, no ref, and no
+  render-visible state outside React state. "Seeded once, a revalidation can't clobber edits"
+  survives as a structural fact. Two things fall out: a coach can no longer save an empty form
+  over a real one (the editor cannot render without data), and the bank and template reads get
+  **their own error surfaces** — a failing bank used to hold the same spinner with no way out,
+  a second independent route to the same screenshot.
+
+*Deviations, and why.*
+1. **The header X is no longer disabled during a save.** It is the only exit from a slow or
+   failed load, and Escape and the overlay can close the sheet regardless — a disabled X beside
+   two working exits is theatre. Cancel and both commits still disable. `use-toast` keeps its
+   state in a module store, so a save that lands after an unmount still reports its outcome.
+2. **The reorder kernel is `reorderQuestion(activeId, overId)`**, not `moveQuestion(id, ±1)` —
+   the `onReorderExercise` shape, so one gesture has one spelling.
+3. `CheckInFormEditor`'s `isLoading` / `isError` are gone from its return: loading and failure
+   are the panel's, above the editor.
+
+*Tests: +1 file, +4 cases; 3 of the 4 verified FAILING against the pre-fix commit.*
+NEW `check-in-form-panel.test.tsx` runs the REAL editor hook and the REAL SWR with only `fetch`
+faked — a mocked hook cannot see a defect that lives in the seam between the two. It covers
+loading → editor, the error state (and that **no Save exists** in it), edits discarded on close,
+and **the reopen**. Verified the honest way rather than assumed: a `git worktree` at HEAD with
+`node_modules` symlinked in, the new file copied over, and vitest run there — **3 failed / 1
+passed** on the pre-fix code, all 4 green after. Its "editor is up" assertion is deliberately
+written against the field LABEL plus the absence of a spinner, not the switch role, so it holds
+against both builds and that verification was possible at all. Grown: the editor-hook test (new
+signature, `reorderQuestion`, the bank-error surface), the sheet test (switch roles, grip
+instead of arrows, switch-is-last, the save-in-flight states), and the config-hook test (the
+`enabled` cases are gone).
+
+*The coverage gap that let this ship:* **no test opened the sheet twice.** Every case mounted,
+opened once, and asserted. The bug needed a second open in the same mount against a warm cache.
+
+*§2 review — the ≥5-file trigger fires; the answer is short.* No route, service, query,
+migration, policy, grant or `supabaseAdmin` site is touched. The three coach routes keep their
+chains untouched; the only request-shape change is that the sheet's three reads now start when
+`SheetContent` mounts instead of when an `enabled` flag flips — same three requests, same
+laziness, one fewer mechanism. `check:rls` / `check:service-key` not run: nothing they cover
+changed. Not load-tested.
+
+*Gates (real output).* `npx tsc --noEmit` **exit 0** · `npx eslint .` **0 errors / 154
+warnings** (the standing count) · `npx vitest run` (captured to a file) · `npm run check:labels`
+OK · `npx knip` **bare**, diffed against a HEAD worktree.
+
+*Still unverified.* Everything in the browser. The switch migration puts four surfaces OUTSIDE
+check-ins on the smoke list — the nutrition builder's activity-burn toggle (must look
+identical), the nutrition calendar's hold-protein toggle, the coach habits inline form's
+numeric toggle and the client portal's habit toggles — plus the automation card and the content
+upload dialog. Drag-and-drop reordering cannot be driven in jsdom, so the **gesture** is
+unverified; only its kernel is pinned.
+
+**Commit B, agreed and not built here (option (d)):** the coach per-client check-in list still
+pages by OFFSET, so a new submission shifts every row down one and the boundary row is returned
+on two pages — proven against Dev, where the duplicated React key `e1b3341b…` is a `check_ins`
+row sitting at index 19 of 53 with `CLIENT_CHECKINS_PAGE_SIZE = 20`. The same two readers also
+carry `revalidateOnFocus: false` AND `revalidateFirstPage: false` with `revalidateAll` at its
+default, so they revalidate **nothing** — which is why Journey stays stale until a hard reload
+while the Overview chart (a plain `useSWR`) refreshes on every visit. Both are pre-C6b. The fix
+is to keyset the list (`lib/cursor.ts`, as `/api/client/check-ins` already does) and restore
+revalidation.
+
 **Post-C6b:** owner smoke across all six surfaces; both DBs confirmed at 157; memory update.
 Then the separate Comparison / Goal Progress definition session (§2.6).
 

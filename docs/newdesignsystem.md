@@ -26,7 +26,7 @@ Single source of truth for the CoachHub visual design. Every new page and compon
 
 Apply these by default on every surface — they are the difference between "right first time" and iteration:
 
-- [ ] **Radius = `rounded-[6px]`** on all cards/buttons/inputs/dialogs/sheets/popovers/badges. Inner chips & segmented-active = `rounded-[4px]`. Circles (dots, ordinals) = `rounded-full`. No pill shapes, no large radii.
+- [ ] **Radius = `rounded-[6px]`** on all cards/buttons/inputs/dialogs/sheets/popovers/badges. Inner chips & segmented-active = `rounded-[4px]`. Circles (dots, ordinals) = `rounded-full`. No pill shapes, no large radii — **the one exemption is `<Switch>`**, where the pill IS the affordance (see "Switch").
 - [ ] **Greys carry a teal undertone.** Ink `#0c1a1e`, secondary `#5a7d82`, muted `#93b0b4`. **Never** use `#64748b`, `#94a3b8`, `#0f172a`, `#1e293b`, or any Tailwind slate/gray default.
 - [ ] **Mono = numbers only.** `font-mono-display` (JetBrains Mono) is ONLY for numerals and number-bearing data strings; every word-only string — labels, eyebrows, instructions, the word "Rest" — is Instrument Sans. See the Typography decision table; `npm run check:labels` enforces it.
 - [ ] **UI text uses Instrument Sans** (the default body font — no class needed).
@@ -37,7 +37,7 @@ Apply these by default on every surface — they are the difference between "rig
 - [ ] **Uppercase micro-labels** get letter-spacing (`tracking-[0.06em]`–`0.14em`) and a muted colour.
 - [ ] **Page background is `#f4f7f6`** (cool-green tint), dark surfaces are `#0f2027` (deep teal-black) — never neutral slate.
 - [ ] **Every pane/period/filter switcher is `<SegmentedControl>`.** One component, one size, one weight — `12.5px` `font-medium` in BOTH states, the active segment carried by the white pill + shadow + darker ink and never by a heavier font. **Never hand-roll the track**; `npm run check:labels` (clause 3) fails on the markup. See "Segmented control".
-- [ ] **Never correct a `ui/` primitive at the call site** — `Input`/`Textarea`/`Label`/`Select`/`Dialog`/`Table` are Teal-Summit; a radius, border, ink or focus ring pasted onto one is a bug report about the primitive. `check:labels` clause 4 enforces the focus half.
+- [ ] **Never correct a `ui/` primitive at the call site** — `Input`/`Textarea`/`Label`/`Select`/`Switch`/`Dialog`/`Table` are Teal-Summit; a radius, border, ink or focus ring pasted onto one is a bug report about the primitive. `check:labels` clause 4 enforces the focus half.
 - [ ] **Search = `<LibrarySearchInput>`, toolbar sort = `<LibrarySortSelect>`.** Never hand-roll either.
 - [ ] **Reuse the shared components/tokens** (see index) before writing new class strings.
 - [ ] **Primary CTA colour pair everywhere:** `bg-[#0d9488] text-white hover:bg-[#0b7f75]`; Cancel/dismiss = `variant="ghost"`.
@@ -243,7 +243,7 @@ Import it as `FOCUS_RING` (see system tokens) rather than retyping.
 
 ### The `ui/` primitives are Teal-Summit — HARD RULE
 
-**Never correct a shared primitive at the call site.** `Input`, `Textarea`, `Label`, `Select` (trigger *and* panel), `Dialog` and `Table` already carry the radius, the teal border, the ink, the placeholder tone and the focus ring. A `rounded-xs`, a `border-[rgba(13,148,136,0.08)]`, a `text-[13px]` or a `focus:` ring pasted onto one of them is not a style — it is a bug report about that primitive, and the fix belongs in `components/ui/**`.
+**Never correct a shared primitive at the call site.** `Input`, `Textarea`, `Label`, `Select` (trigger *and* panel), `Switch`, `Dialog` and `Table` already carry the radius, the teal border, the ink, the placeholder tone and the focus ring. A `rounded-xs`, a `border-[rgba(13,148,136,0.08)]`, a `text-[13px]` or a `focus:` ring pasted onto one of them is not a style — it is a bug report about that primitive, and the fix belongs in `components/ui/**`.
 
 A call site may only add what is genuinely local: a **size tier** (`h-8`/`h-9`), a **width**, `bg-white` where the field sits on a tint, `resize-none`, or `font-medium`.
 
@@ -273,6 +273,36 @@ Pass `className` for **width only** (`flex-1 max-w-md`); the treatment belongs t
 **A toolbar's sort control is `<LibrarySortSelect>`** (`@/components/programs/shared/library-sort-select`) — `h-9 w-[180px]`, secondary ink, options as data. Everywhere else use `<Select>` directly and let it style itself.
 
 The trigger and the panel are ONE control and must not be styled apart: `Select`'s panel now matches `DropdownMenu` exactly (6px radius, `rgba(13,148,136,0.08)` border, `shadow-[0_10px_40px_rgba(13,148,136,0.10)]`, `rounded-[4px]` `px-2.5 py-1.5` 13px items, `0.05` focus wash, `#0a5c55` ink, a teal `Check`). Migrating one half without the other is not a smaller change — it is a grey 8px trigger opening a teal 6px panel.
+
+### Switch — the one sanctioned pill
+
+**Every two-way toggle that is a SETTING is `<Switch>`** (`@/components/ui/switch`) — a
+per-item on/off, not a choice between two named modes. A switcher between *panes, periods,
+filters or modes* is `<SegmentedControl>`; the two are not interchangeable, and the question
+that separates them is whether the off state has a name.
+
+| Part | Class |
+|---|---|
+| Track | `h-[22px] w-[40px] rounded-[11px] border border-transparent shadow-xs transition-all` |
+| On | `bg-[#0d9488]` |
+| Off | `bg-[rgba(13,148,136,0.12)]` |
+| Thumb | `h-4 w-4 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.12)]`, travel `translate-x-[18px]` |
+| Focus | `FOCUS_RING` |
+| Disabled | `disabled:cursor-not-allowed disabled:opacity-50` |
+
+**`rounded-[11px]` on a 22px track is a full pill, and that is the one exemption to
+"no pill shapes"** — on a switch the pill is the affordance, not decoration. It does not
+extend to anything else: a card, a button, a chip or a badge in a pill shape is still wrong.
+
+**A call site passes `checked`, `onCheckedChange`, `disabled` and an `aria-label`. Nothing
+else.** The primitive shipped un-migrated until 2026-08-30 and the result is the reason this
+section exists: six call sites, three treatments — the full look hand-written at
+`nutrition-surplus-settings.tsx`, half of it (`data-[state=checked]:bg-[#0d9488]` alone, so
+the OFF track stayed OKLCH grey at the default size) at two more, and three on the raw
+shadcn defaults. The spec above is that hand-written string, moved into the primitive.
+
+**It carries its own accessible name.** Radix gives it `role="switch"`, so an `aria-label`
+is all it needs — never wrap it in a `role="group"` to name it.
 
 ### Input heights by context
 
@@ -372,6 +402,7 @@ To turn a mono label to normal case (e.g. a meta line), append `normal-case trac
 | Search input (icon + field) | `@/components/programs/shared/library-search-input` → `<LibrarySearchInput size="toolbar" \| "panel" />` — the ONLY search field |
 | Toolbar sort select | `@/components/programs/shared/library-sort-select` → `<LibrarySortSelect options value onChange />` |
 | Relative "updated" formatting | `@/components/programs/shared/format-relative` → `formatRelativeUpdated()` |
+| Per-item on/off toggle | `@/components/ui/switch` → `<Switch checked onCheckedChange aria-label />` — see "Switch" |
 | Dialog / Sheet / Popover / Button / Badge / Input / Select / Table | `@/components/ui/*` (already Teal-Summit-styled — see Overlays) |
 
 ---
@@ -762,7 +793,8 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 ## Anti-patterns — do NOT
 
 - ❌ Use slate/gray defaults (`#64748b`, `#94a3b8`, `text-slate-*`, `bg-gray-*`). ✅ Use the teal-tinted greys.
-- ❌ Use pill shapes or the 10px base radius on cards/dialogs. ✅ `rounded-[6px]` (4px inner chips).
+- ❌ Use pill shapes or the 10px base radius on cards/dialogs. ✅ `rounded-[6px]` (4px inner chips) — `<Switch>` is the single exemption.
+- ❌ Build an on/off setting out of a two-segment `<SegmentedControl>` ("On | Off"). ✅ `<Switch>`; SegmentedControl is for named modes.
 - ❌ Set numerals in the sans font, or words in the numeral font. ✅ Mono = numbers only (see the Typography decision table); word-only labels are sans.
 - ❌ Write the raw `font-mono-display` utility or a hand-rolled `uppercase tracking-` string in a component. ✅ Import a token from `builder-tokens.ts` — `npm run check:labels` fails otherwise.
 - ❌ Invent a primary-button hover colour. ✅ `hover:bg-[#0b7f75]`.

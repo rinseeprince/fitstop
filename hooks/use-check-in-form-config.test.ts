@@ -42,34 +42,35 @@ describe("check-in form config keys", () => {
   });
 
   it("asks for the client's form under its own area key", () => {
-    renderHook(() => useClientCheckInForm("client-1", true));
+    renderHook(() => useClientCheckInForm("client-1"));
     expect(keyOf()).toBe("/api/clients/client-1/check-in-form");
     expect(clientCheckInFormKey("client-1")).toBe(keyOf());
   });
 
-  // A null key is how SWR is told not to fetch — the sheet is closed most of
-  // the time and must not cost the Check-ins tab three requests.
+  // Laziness is structural now: these are called from inside the sheet's
+  // `SheetContent`, which Radix mounts only while the sheet is open. The
+  // `enabled` parameter they used to carry is what let a key flip between real
+  // and null inside one mount, which is where the reopen hang lived.
   it.each<[string, () => void]>([
-    ["the client form", () => void useClientCheckInForm("client-1", false)],
-    ["the question bank", () => void useCheckInQuestions(false)],
-    ["the templates", () => void useCheckInFormTemplates(false)],
-  ])("fetches nothing for %s while the sheet is closed", (_label, hook) => {
+    ["the question bank", () => void useCheckInQuestions()],
+    ["the templates", () => void useCheckInFormTemplates()],
+  ])("asks for %s unconditionally", (_label, hook) => {
     renderHook(hook);
-    expect(keyOf()).toBeNull();
+    expect(keyOf()).not.toBeNull();
   });
 
   it("has no key for a client with no id", () => {
-    renderHook(() => useClientCheckInForm("", true));
+    renderHook(() => useClientCheckInForm(""));
     expect(keyOf()).toBeNull();
   });
 
   it("returns stable empty arrays while unresolved", () => {
-    const first = renderHook(() => useCheckInQuestions(true));
-    const second = renderHook(() => useCheckInQuestions(true));
+    const first = renderHook(() => useCheckInQuestions());
+    const second = renderHook(() => useCheckInQuestions());
     expect(first.result.current.questions).toBe(second.result.current.questions);
 
-    const t1 = renderHook(() => useCheckInFormTemplates(true));
-    const t2 = renderHook(() => useCheckInFormTemplates(true));
+    const t1 = renderHook(() => useCheckInFormTemplates());
+    const t2 = renderHook(() => useCheckInFormTemplates());
     expect(t1.result.current.templates).toBe(t2.result.current.templates);
   });
 });

@@ -19,10 +19,12 @@ import type {
  * Every read exports its key builder AND a matching area invalidator, and no
  * call site builds one of these keys inline (CONVENTIONS §7).
  *
- * **All three are gated on `enabled`.** They back a sheet that is closed most
- * of the time, and an unconditional read would cost every visit to the
- * Check-ins tab three requests nobody opened (the `useClientGoalHistory`
- * precedent).
+ * **Laziness is structural, not a flag.** These are called from inside the
+ * editor sheet's `SheetContent`, which Radix mounts only while the sheet is
+ * open — so a closed sheet issues no request without any of them needing an
+ * `enabled` parameter. That parameter existed until 2026-08-30 and is what let
+ * the reads flip between a real key and `null` inside one mount; the reopen
+ * that hung came out of the seeding machinery built around it.
  *
  * One live overlap worth knowing rather than rediscovering: the queue
  * invalidator `useInvalidateCheckInsQueue` matches the `/api/check-ins` prefix,
@@ -58,9 +60,9 @@ export const checkInFormTemplatesKey = "/api/check-ins/forms";
  * A client's form as the COACH sees it — disabled questions included, so a
  * row that is off renders as off rather than vanishing.
  */
-export function useClientCheckInForm(clientId: string, enabled: boolean) {
+export function useClientCheckInForm(clientId: string) {
   const { data, error, isLoading } = useSWR<FormResponse>(
-    enabled && clientId ? clientCheckInFormKey(clientId) : null,
+    clientId ? clientCheckInFormKey(clientId) : null,
     swrFetcher,
     SWR_OPTS
   );
@@ -81,9 +83,9 @@ export function useInvalidateClientCheckInForm() {
 }
 
 /** The coach's question bank, newest first, archived rows already excluded. */
-export function useCheckInQuestions(enabled: boolean) {
+export function useCheckInQuestions() {
   const { data, error, isLoading } = useSWR<QuestionsResponse>(
-    enabled ? checkInQuestionsKey : null,
+    checkInQuestionsKey,
     swrFetcher,
     SWR_OPTS
   );
@@ -103,9 +105,9 @@ export function useInvalidateCheckInQuestions() {
 }
 
 /** The coach's saved form templates, each carrying its own fields + questions. */
-export function useCheckInFormTemplates(enabled: boolean) {
+export function useCheckInFormTemplates() {
   const { data, error, isLoading } = useSWR<TemplatesResponse>(
-    enabled ? checkInFormTemplatesKey : null,
+    checkInFormTemplatesKey,
     swrFetcher,
     SWR_OPTS
   );
