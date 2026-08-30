@@ -35,6 +35,8 @@ type NutritionSectionProps = {
    * question (did the WEEK land near its target) and is already target-based.
    */
   nutrition: CheckInPeriodAdherence["nutrition"] | null;
+  /** The period's day count — the DENOMINATOR. Never a locally derived one. */
+  periodDays: number | null;
 };
 
 export const NutritionSection = ({
@@ -43,10 +45,16 @@ export const NutritionSection = ({
   contextEndDate,
   fullWeekTarget,
   nutrition,
+  periodDays,
 }: NutritionSectionProps) => {
-  const daysDiff = Math.floor(
+  // The server's own date count wins: it is what the rails and the on-target
+  // figure are indexed against, and it resolves differently from a locally
+  // derived one on a legacy row. The local span is the fallback for exactly
+  // those rows, where there is no server number to prefer.
+  const localDays = Math.floor(
     (contextEndDate.getTime() - contextStartDate.getTime()) / (1000 * 60 * 60 * 24)
   ) + 1;
+  const daysInPeriod = periodDays ?? localDays;
 
   const stats = dailyLogs.reduce(
     (acc, log) => {
@@ -55,12 +63,25 @@ export const NutritionSection = ({
         acc.targetCals += log.targetCalories;
         acc.daysLogged++;
       }
-      if (log.proteinG != null) { acc.protein += log.proteinG; acc.proteinDays++; }
-      if (log.carbsG != null) { acc.carbs += log.carbsG; acc.carbsDays++; }
-      if (log.fatG != null) { acc.fat += log.fatG; acc.fatDays++; }
-      if (log.targetProteinG != null) acc.targetProtein += log.targetProteinG;
-      if (log.targetCarbsG != null) acc.targetCarbs += log.targetCarbsG;
-      if (log.targetFatG != null) acc.targetFat += log.targetFatG;
+      // Each macro's target is summed over the days that macro was LOGGED, so
+      // the bar compares an average with the target that applied on the very
+      // days it averages. Summing targets over all seven while the actual
+      // covered three compared two different weeks on one bar.
+      if (log.proteinG != null) {
+        acc.protein += log.proteinG;
+        acc.targetProtein += log.targetProteinG ?? 0;
+        acc.proteinDays++;
+      }
+      if (log.carbsG != null) {
+        acc.carbs += log.carbsG;
+        acc.targetCarbs += log.targetCarbsG ?? 0;
+        acc.carbsDays++;
+      }
+      if (log.fatG != null) {
+        acc.fat += log.fatG;
+        acc.targetFat += log.targetFatG ?? 0;
+        acc.fatDays++;
+      }
       return acc;
     },
     {
@@ -73,31 +94,38 @@ export const NutritionSection = ({
 
   if (stats.daysLogged === 0) return null;
 
-  // Use full-week target (logged + plan-based unlogged) when available
+  // The TOTAL is the whole period's target: it answers "did they eat what they
+  // were supposed to", and a day they skipped is a day they failed to.
   const effectiveTargetCals = fullWeekTarget ? fullWeekTarget.calories : stats.targetCals;
-  const effectiveTargetProtein = fullWeekTarget ? fullWeekTarget.proteinG : stats.targetProtein;
-  const effectiveTargetCarbs = fullWeekTarget ? fullWeekTarget.carbsG : stats.targetCarbs;
-  const effectiveTargetFat = fullWeekTarget ? fullWeekTarget.fatG : stats.targetFat;
 
   const weeklyDiff = Math.abs(stats.totalCals - effectiveTargetCals);
-  const hitThreshold = WEEKLY_NUTRITION_HIT_PER_DAY * daysDiff;
-  const partialThreshold = WEEKLY_NUTRITION_PARTIAL_PER_DAY * daysDiff;
+  const hitThreshold = WEEKLY_NUTRITION_HIT_PER_DAY * daysInPeriod;
+  const partialThreshold = WEEKLY_NUTRITION_PARTIAL_PER_DAY * daysInPeriod;
   const adherence =
     weeklyDiff <= hitThreshold ? "HIT" :
     weeklyDiff <= partialThreshold ? "PARTIAL" : "MISSED";
 
   const fillPct = effectiveTargetCals > 0 ? Math.min((stats.totalCals / effectiveTargetCals) * 100, 100) : 0;
-  const dailyAvgCal = Math.round(stats.totalCals / daysDiff);
 
-  // Weekly avg macros (divided by full period, not just logged days)
-  const avgProtein = stats.proteinDays > 0 ? Math.round(stats.protein / daysDiff) : 0;
-  const avgCarbs = stats.carbsDays > 0 ? Math.round(stats.carbs / daysDiff) : 0;
-  const avgFat = stats.fatDays > 0 ? Math.round(stats.fat / daysDiff) : 0;
+  // The AVERAGES are over LOGGED days, and that is not an inconsistency with
+  // the total above it — the two answer different questions. An adherence
+  // figure asks "did you do what you were supposed to", so an unlogged day
+  // counts against it. An average asks "what was it typically", and an unlogged
+  // day is UNKNOWN, not zero: dividing by days with no data does not make the
+  // average smaller, it makes it wrong. Three logged days at ~161g of protein
+  // used to render as 69g against a 159g target — a client who was almost
+  // exactly on target, shown as having collapsed.
+  const avgCal = Math.round(stats.totalCals / stats.daysLogged);
+  const perLoggedDay = (total: number, days: number) =>
+    days > 0 ? Math.round(total / days) : 0;
 
-  // Weekly avg targets — use full-week values divided by period length
-  const avgTargetProtein = effectiveTargetProtein > 0 ? Math.round(effectiveTargetProtein / daysDiff) : 0;
-  const avgTargetCarbs = effectiveTargetCarbs > 0 ? Math.round(effectiveTargetCarbs / daysDiff) : 0;
-  const avgTargetFat = effectiveTargetFat > 0 ? Math.round(effectiveTargetFat / daysDiff) : 0;
+  const avgProtein = perLoggedDay(stats.protein, stats.proteinDays);
+  const avgCarbs = perLoggedDay(stats.carbs, stats.carbsDays);
+  const avgFat = perLoggedDay(stats.fat, stats.fatDays);
+
+  const avgTargetProtein = perLoggedDay(stats.targetProtein, stats.proteinDays);
+  const avgTargetCarbs = perLoggedDay(stats.targetCarbs, stats.carbsDays);
+  const avgTargetFat = perLoggedDay(stats.targetFat, stats.fatDays);
 
   const macros = [
     { label: "Protein", actual: avgProtein, target: avgTargetProtein, colorClass: "bg-protein" },
@@ -137,7 +165,7 @@ export const NutritionSection = ({
                   : "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
               )}
             >
-              {adherence} · {nutrition ? `${nutrition.onTarget}/${daysDiff} on target` : `${stats.daysLogged}/${daysDiff} logged`}
+              {adherence} · {nutrition ? `${nutrition.onTarget}/${daysInPeriod} on target` : `${stats.daysLogged}/${daysInPeriod} logged`}
             </span>
           </div>
           <div className="h-2 bg-[rgba(13,148,136,0.06)] rounded-full overflow-hidden">
@@ -147,14 +175,14 @@ export const NutritionSection = ({
             />
           </div>
           <div className="text-[11px] text-[#93b0b4] italic">
-            Avg {dailyAvgCal.toLocaleString()} kcal / day (full week)
+            Avg {avgCal.toLocaleString()} kcal / logged day
           </div>
         </div>
 
         {/* Right: Macros */}
         <div className="flex flex-col gap-2.5">
           <div className="text-xs font-medium text-[#5a7d82] mb-0.5">
-            Avg macros / day (full week)
+            Avg macros / logged day
           </div>
           {macros.map((macro) => {
             const pct = macro.target > 0 ? Math.min((macro.actual / macro.target) * 100, 100) : 0;

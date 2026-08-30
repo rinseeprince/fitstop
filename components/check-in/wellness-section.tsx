@@ -88,10 +88,19 @@ export const WellnessSection = ({
             return log?.[metric.key] ?? null;
           });
 
+          // Divided by the days this metric was actually LOGGED, not by the
+          // calendar days. An unlogged day is unknown, not zero: summing two
+          // stress entries and dividing by seven reported 1.9 — "relaxed" — for
+          // a client averaging 6.7, while the AI summary beside it, reading the
+          // stored snapshot, correctly called the same week high-stress.
+          // `calculateMetricAverages` (which writes that snapshot) has always
+          // divided by its own per-metric count; this card was the only place
+          // that did not. Per metric, not per card: stress and mood can be
+          // logged on different days.
           const validValues = values.filter((v): v is number => v !== null);
           const avg =
             validValues.length > 0
-              ? (validValues.reduce((a, b) => a + b, 0) / dateRange.length).toFixed(1)
+              ? (validValues.reduce((a, b) => a + b, 0) / validValues.length).toFixed(1)
               : "--";
 
           const barData = dateRange.map((day) => ({

@@ -1137,6 +1137,23 @@ one screen is not. `periodAdherence` is `null` when a legacy row's period cannot
 be resolved (pre-038 and no schedule to anchor a week to), and the cells render
 their empty states rather than fall back to a second definition.
 
+**Adherence figures and averages take DIFFERENT denominators, on purpose.** An
+adherence figure asks *did you do what you were supposed to*, so an unlogged day
+counts against it and the denominator is the whole period — the KPI's Nutrition
+cell, the pill's on-target fraction, the kcal total and its bar. An average asks
+*what was it typically*, and an unlogged day is **unknown, not zero**: dividing
+by days with no data does not make the average smaller, it makes it wrong. So
+the wellness means divide by each metric's OWN logged days (per metric — stress
+and mood can be logged on different days), and the nutrition card's kcal and
+macro averages divide by logged days, each macro against the target that applied
+on those same days. Both were calendar-day divisions until 2026-08-30 and both
+were badly misleading: two stress entries averaging 6.5 rendered as 1.9 —
+"relaxed" — beside an AI summary that correctly called the week high-stress
+(`calculateMetricAverages`, which writes the stored snapshot the prompt reads,
+had always divided by its per-metric count; the card was the only place that did
+not), and three logged days at ~161g of protein rendered as 69g against a 159g
+target, a collapse that never happened.
+
 **The stored figure changed meaning** (2026-08-30, D5.2). `check_ins.adherence_percentage`
 and `nutrition_days_on_target` — and the AI prompt's "Weekly adherence" — divide
 by the WHOLE period's targets, resolved through `buildNutritionSummary`

@@ -175,6 +175,7 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
                   contextEndDate={contextEndDate}
                   fullWeekTarget={fullWeekTarget}
                   nutrition={periodAdherence?.nutrition ?? null}
+                  periodDays={periodAdherence?.dates.length ?? null}
                 />
                 <TrainingSection checkIn={data.checkIn} adherence={adherence} />
                 <HabitsSection perHabit={periodAdherence?.habits.perHabit ?? []} />
