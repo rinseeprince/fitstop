@@ -1084,7 +1084,7 @@ Per §2.3 (+ D3.1 card count, D3.2 recent rows). §2 review walked (the ≥5-fil
 no route/auth/write path changed; `/api/check-ins/*` keep in-route auth. Smoke: dashboard card →
 `/clients?view=review` with matching numbers; bell footer both branches; `/check-ins/review` → 404.
 
-**STATUS — SHIPPED 2026-08-30 in `<sha>`. Browser smoke OWED (owner runs it).**
+**STATUS — SHIPPED 2026-08-30 in `743ab03`. Browser smoke OWED (owner runs it).**
 
 *Owner decisions taken in this session, ahead of coding.*
 - **The review view is renamed "Unreviewed check-ins"** (was "Ready for review"), everywhere it
