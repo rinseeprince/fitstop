@@ -27,6 +27,7 @@ import { getClientById } from "./client-service";
 export {
   deriveSessionCompletionsForCheckIn,
   getCheckInExerciseHighlights,
+  getCheckInPeriodAdherence,
   getCheckInWithDetails,
   mapExerciseHighlight,
 } from "./check-in-details-service";

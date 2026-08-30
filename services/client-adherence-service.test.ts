@@ -73,8 +73,8 @@ describe("buildAdherenceSummary", () => {
       // no row on the 23rd
     ],
     habits: [
-      { id: "h1", effective_date: "2026-07-01" },
-      { id: "h2", effective_date: "2026-07-22" }, // becomes eligible mid-window
+      { id: "h1", name: "Water", effective_date: "2026-07-01" },
+      { id: "h2", name: "Steps", effective_date: "2026-07-22" }, // eligible mid-window
     ],
     habitLogs: [
       { date: "2026-07-20", daily_habit_id: "h1", completed: true },
@@ -128,5 +128,109 @@ describe("buildAdherenceSummary", () => {
     expect(empty.nutrition.pct).toBeNull();
     expect(empty.habits.avgPct).toBeNull();
     expect(empty.training.rail).toEqual(["none", "none", "none", "none"]);
+  });
+
+  describe("the per-habit cut", () => {
+    it("scores each habit over its OWN eligible days", () => {
+      const summary = buildAdherenceSummary(fixture);
+
+      expect(summary.habits.perHabit).toEqual([
+        {
+          id: "h1",
+          name: "Water",
+          eligibleDays: 4,
+          completedDays: 2,
+          pct: 50,
+          rail: [true, false, true, false],
+        },
+        {
+          id: "h2",
+          name: "Steps",
+          // Eligible from the 22nd only — the two days before it existed are
+          // null, not misses, so its 0% is over two days rather than four.
+          eligibleDays: 2,
+          completedDays: 0,
+          pct: 0,
+          rail: [null, null, false, false],
+        },
+      ]);
+    });
+
+    it("keeps a habit with NO logs in the window, at 0% rather than absent", () => {
+      // The whole reason this rides on the adherence read: `logHabit` writes a
+      // row only when the client acts, so a habit they ignored for the window has
+      // no rows at all and a logs-derived grid would omit it silently — exactly
+      // the habit a coach needs to see.
+      const summary = buildAdherenceSummary({
+        ...fixture,
+        habits: [{ id: "h3", name: "Sleep 7h+", effective_date: "2026-07-01" }],
+        habitLogs: [],
+      });
+
+      expect(summary.habits.perHabit).toEqual([
+        {
+          id: "h3",
+          name: "Sleep 7h+",
+          eligibleDays: 4,
+          completedDays: 0,
+          pct: 0,
+          rail: [false, false, false, false],
+        },
+      ]);
+    });
+
+    it("reports pct as null for a habit that was never eligible in the window", () => {
+      const summary = buildAdherenceSummary({
+        ...fixture,
+        habits: [{ id: "h4", name: "Stretch", effective_date: "2026-08-01" }],
+        habitLogs: [],
+      });
+
+      expect(summary.habits.perHabit[0].pct).toBeNull();
+      expect(summary.habits.perHabit[0].rail).toEqual([null, null, null, null]);
+    });
+  });
+});
+
+describe("the nutrition denominator", () => {
+  it("is the whole window, not the days the client logged", () => {
+    // #5 in one assertion: three logged days all on target is 3/7 and 43%,
+    // never 100%. `loggedDays` stays available for anyone who wants it, but it
+    // is not what the percentage divides by.
+    const summary = buildAdherenceSummary({
+      dates: ["d1", "d2", "d3", "d4", "d5", "d6", "d7"],
+      trainingEvents: [],
+      nutritionLogs: [
+        { date: "d1", nutrition_adherence: "hit" },
+        { date: "d2", nutrition_adherence: "hit" },
+        { date: "d3", nutrition_adherence: "hit" },
+      ],
+      habits: [],
+      habitLogs: [],
+      spineDates: [],
+    });
+
+    expect(summary.nutrition.onTarget).toBe(3);
+    expect(summary.nutrition.loggedDays).toBe(3);
+    expect(summary.nutrition.pct).toBe(43);
+  });
+
+  it("is the period's OWN length on a short first week", () => {
+    // D5.1: a three-day first period is 3/3, not 3/7. `dates` carries the
+    // window, so a partial week cannot be scored against a full one.
+    const summary = buildAdherenceSummary({
+      dates: ["d1", "d2", "d3"],
+      trainingEvents: [],
+      nutritionLogs: [
+        { date: "d1", nutrition_adherence: "hit" },
+        { date: "d2", nutrition_adherence: "hit" },
+        { date: "d3", nutrition_adherence: "hit" },
+      ],
+      habits: [],
+      habitLogs: [],
+      spineDates: [],
+    });
+
+    expect(summary.nutrition.pct).toBe(100);
   });
 });

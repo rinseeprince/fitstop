@@ -10,6 +10,7 @@ import {
   TEXT_PRIMARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { DailyLog } from "@/types/daily-log";
+import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 import {
   WEEKLY_NUTRITION_HIT_PER_DAY,
   WEEKLY_NUTRITION_PARTIAL_PER_DAY,
@@ -27,6 +28,13 @@ type NutritionSectionProps = {
   contextStartDate: Date;
   contextEndDate: Date;
   fullWeekTarget?: FullWeekTarget | null;
+  /**
+   * Server-computed nutrition figures for the period. The pill's fraction is
+   * days ON TARGET; the weekly HIT/PARTIAL/MISSED verdict beside it stays
+   * locally derived from the kcal totals, because it answers a different
+   * question (did the WEEK land near its target) and is already target-based.
+   */
+  nutrition: CheckInPeriodAdherence["nutrition"] | null;
 };
 
 export const NutritionSection = ({
@@ -34,6 +42,7 @@ export const NutritionSection = ({
   contextStartDate,
   contextEndDate,
   fullWeekTarget,
+  nutrition,
 }: NutritionSectionProps) => {
   const daysDiff = Math.floor(
     (contextEndDate.getTime() - contextStartDate.getTime()) / (1000 * 60 * 60 * 24)
@@ -128,7 +137,7 @@ export const NutritionSection = ({
                   : "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
               )}
             >
-              {adherence} · {stats.daysLogged}/{daysDiff}
+              {adherence} · {nutrition ? `${nutrition.onTarget}/${daysDiff} on target` : `${stats.daysLogged}/${daysDiff} logged`}
             </span>
           </div>
           <div className="h-2 bg-[rgba(13,148,136,0.06)] rounded-full overflow-hidden">

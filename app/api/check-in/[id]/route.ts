@@ -5,6 +5,7 @@ import type { CheckInRow } from "@/lib/database-helpers";
 import {
   deriveSessionCompletionsForCheckIn,
   getCheckInExerciseHighlights,
+  getCheckInPeriodAdherence,
   mapExerciseHighlight,
 } from "@/services/check-in-service";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -67,9 +68,17 @@ export async function GET(
     // (training_events + session_logs) for the check-in's stored period — there
     // is no backing table. Pass the mapped check-in (carries clientId, period,
     // createdAt) so the derivation resolves the correct historical window.
-    const [sessionCompletions, highlightRows] = await Promise.all([
+    // `periodAdherence` carries the nutrition + habit figures for the check-in's
+    // OWN period, computed server-side by the shared Overview kernel. It is here
+    // rather than in the renderer because the denominators are the point: the
+    // page cannot see which days were eligible for a habit, or which had a
+    // target, without the rows this reads. `null` for a legacy row whose period
+    // cannot be resolved — the renderers show their empty states rather than
+    // fall back to a second, client-side definition.
+    const [sessionCompletions, highlightRows, periodAdherence] = await Promise.all([
       deriveSessionCompletionsForCheckIn(checkIn),
       getCheckInExerciseHighlights(id),
+      getCheckInPeriodAdherence(checkIn),
     ]);
 
     return NextResponse.json({
@@ -81,6 +90,7 @@ export async function GET(
         exerciseHighlights: highlightRows.map(mapExerciseHighlight),
       },
       client: checkInData.clients || null,
+      periodAdherence,
     });
   } catch (error) {
     console.error("Error fetching check-in:", error);

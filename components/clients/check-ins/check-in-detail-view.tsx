@@ -87,7 +87,7 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
     comparisonData,
     isLoadingComparison,
     dailyLogs,
-    habitLogs,
+    periodAdherence,
     dailyContextLoading,
     contextStartDate,
     contextEndDate,
@@ -154,12 +154,12 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
           <TabsContent value="current" className="space-y-5">
             <KPIRibbon
               checkIn={data.checkIn}
-              dailyLogs={dailyLogs}
               comparisonData={comparisonData}
-              contextStartDate={contextStartDate}
-              contextEndDate={contextEndDate}
-              fullWeekTarget={fullWeekTarget}
               adherence={adherence}
+              nutrition={periodAdherence?.nutrition ?? null}
+              // The denominator is the server's own date list, never the local
+              // day count — the two resolve differently on a legacy row.
+              periodDays={periodAdherence?.dates.length ?? null}
             />
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-5 items-start">
@@ -174,13 +174,10 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
                   contextStartDate={contextStartDate}
                   contextEndDate={contextEndDate}
                   fullWeekTarget={fullWeekTarget}
+                  nutrition={periodAdherence?.nutrition ?? null}
                 />
                 <TrainingSection checkIn={data.checkIn} adherence={adherence} />
-                <HabitsSection
-                  habitLogs={habitLogs}
-                  contextStartDate={contextStartDate}
-                  contextEndDate={contextEndDate}
-                />
+                <HabitsSection perHabit={periodAdherence?.habits.perHabit ?? []} />
                 <ClientNotesSection checkIn={data.checkIn} />
               </div>
 

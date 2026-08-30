@@ -61,12 +61,62 @@ export type OverviewPlanSummary = {
 /** 'none' = no session planned (training rail only) → faint dash */
 export type DotState = "complete" | "partial" | "missed" | "no_log" | "none";
 
+/**
+ * One habit's window, cut per habit rather than per day.
+ *
+ * Built from the HABIT list, never from the logs: `logHabit` writes a row only
+ * when the client acts, so from the log side "never touched it" and "no such
+ * habit" are the same absence — and the habit a coach most needs to see is
+ * exactly the one with no rows.
+ */
+export type HabitBreakdown = {
+  id: string;
+  name: string;
+  /** Days in the window the habit was eligible (`effective_date <= date`). */
+  eligibleDays: number;
+  completedDays: number;
+  /** Completed over ELIGIBLE days; null when the habit was never eligible. */
+  pct: number | null;
+  /**
+   * Index-aligned with `dates`, like every other rail:
+   * `true` completed · `false` eligible and not completed · `null` not yet
+   * eligible (the habit did not exist yet — not a miss).
+   */
+  rail: (boolean | null)[];
+};
+
+/**
+ * What `GET /api/check-in/[id]` carries for the check-in's own reporting period.
+ *
+ * Training is deliberately absent: the review page derives its training figure
+ * from `summariseSessions` (full + partial), and the kernel's is full-only.
+ * Both are defensible; both on one screen is not.
+ */
+export type CheckInPeriodAdherence = Pick<
+  AdherenceSummary,
+  "dates" | "nutrition" | "habits"
+>;
+
 export type AdherenceSummary = {
-  /** oldest→newest, shared by all rails; window ends client-local today */
+  /**
+   * oldest→newest, shared by all rails.
+   *
+   * The Overview's window ends client-local today; the check-in review's ends
+   * on the period the check-in REPORTED on, which is usually in the past
+   * (`getClientAdherenceForRange`). Read the length from here rather than
+   * recomputing a day count at the call site — the two windows resolve
+   * differently on legacy rows, and a denominator that disagrees with `dates`
+   * is the defect this contract exists to prevent.
+   */
   dates: string[];
   training: { rail: DotState[]; completed: number; planned: number; pct: number | null };
   nutrition: { rail: DotState[]; onTarget: number; loggedDays: number; pct: number | null };
-  habits: { rail: DotState[]; avgPct: number | null; daysBelow50: number };
+  habits: {
+    rail: DotState[];
+    avgPct: number | null;
+    daysBelow50: number;
+    perHabit: HabitBreakdown[];
+  };
 };
 
 /**

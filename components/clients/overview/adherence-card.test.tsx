@@ -37,6 +37,11 @@ const SUMMARY: AdherenceSummary = {
     rail: rail("complete", "partial", "partial", "missed", "no_log", "complete", "complete"),
     avgPct: 71,
     daysBelow50: 2,
+    // The card renders the three RAILS, never the per-habit cut — that is the
+    // check-in review's reader. Empty here on purpose: a value would suggest
+    // this card had an opinion about it. (The Signals card that did render it
+    // is rejected; see project_overview_v2_workstream.)
+    perHabit: [],
   },
 };
 

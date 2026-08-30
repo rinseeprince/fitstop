@@ -6,7 +6,13 @@ export type WeeklyNutritionSummary = {
   weekStartDate: string;
   weekEndDate: string;
 
-  // Targets (summed from daily targets for logged days)
+  // Targets. Summed over EVERY day of the period since 2026-08-30 (C5, D5.2) —
+  // each day's target resolved as a logged day's frozen value, else that date's
+  // nutrition event, else the plan's weekday template. It was the logged days'
+  // targets alone, which made a client who logged three of seven perfect days
+  // read 100% adherent: the four days they skipped counted on neither side of
+  // the ratio. Falls back to logged-days-only when the period has no targets at
+  // all, since a zero denominator would read as infinite adherence.
   totalTargetCalories: number;
   totalTargetProteinG: number | null;
   totalTargetCarbsG: number | null;

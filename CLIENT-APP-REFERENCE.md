@@ -525,6 +525,13 @@ adjustedCalories = baselineCalories + trainingCalories + activityCalories
 
 These are **absolute calorie deltas from `lib/constants.ts`, not percentages.**
 
+**Weekly nutrition adherence** (`CheckIn.adherencePercentage`, stored at submit):
+- Total consumed ÷ total target **across every day of the check-in period**, not
+  just the days the client logged
+- So three logged days at target out of seven reads ~43%, not 100%
+- Changed 2026-08-30; check-ins submitted before that date carry the older
+  logged-days-only figure and were not backfilled
+
 **Training Adherence**:
 - Based on sessions completed / sessions planned
 - Calculated weekly for check-ins

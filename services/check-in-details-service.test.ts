@@ -25,8 +25,16 @@ vi.mock("@/lib/date-helpers", () => ({
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./check-in-service", () => ({ getCheckInById: vi.fn() }));
 
+const getClientAdherenceForRangeMock = vi.fn();
+vi.mock("./client-adherence-service", () => ({
+  getClientAdherenceForRange: (...args: unknown[]) =>
+    getClientAdherenceForRangeMock(...args),
+}));
+
 import {
   deriveSessionCompletionsForCheckIn,
+  getCheckInPeriodAdherence,
+  resolveCheckInReportingPeriod,
   mapExerciseHighlight,
 } from "./check-in-details-service";
 
@@ -223,5 +231,118 @@ describe("mapExerciseHighlight", () => {
     expect(mapped.weightValue).toBeUndefined();
     expect(mapped.reps).toBeUndefined();
     expect(mapped.exerciseName).toBe("Bench Press");
+  });
+});
+
+describe("resolveCheckInReportingPeriod", () => {
+  beforeEach(() => {
+    getClientByIdMock.mockReset();
+    calculateCheckInPeriodMock.mockReset();
+  });
+
+  const legacy = {
+    id: "ci-legacy",
+    clientId: "c1",
+    createdAt: "2026-05-14T12:00:00Z",
+    periodStart: null,
+    periodEnd: null,
+  } as unknown as CheckIn;
+
+  it("prefers the STORED period and asks the client service nothing", async () => {
+    const stored = {
+      id: "ci-1",
+      clientId: "c1",
+      createdAt: "2026-05-14T12:00:00Z",
+      periodStart: "2026-05-08",
+      periodEnd: "2026-05-14",
+    } as unknown as CheckIn;
+
+    expect(await resolveCheckInReportingPeriod(stored)).toEqual({
+      periodStart: "2026-05-08",
+      periodEnd: "2026-05-14",
+    });
+    expect(getClientByIdMock).not.toHaveBeenCalled();
+  });
+
+  it("recomputes a legacy row's window from its OWN createdAt, never today", async () => {
+    getClientByIdMock.mockResolvedValue({ nextCheckInDue: "2026-05-14" });
+    calculateCheckInPeriodMock.mockReturnValue({
+      periodStart: "2026-05-08",
+      periodEnd: "2026-05-14",
+    });
+
+    await resolveCheckInReportingPeriod(legacy);
+
+    const [dateArg] = calculateCheckInPeriodMock.mock.calls[0];
+    expect((dateArg as Date).toISOString()).toBe("2026-05-14T12:00:00.000Z");
+  });
+
+  it("is null when a legacy row's client has no schedule to anchor a week to", async () => {
+    getClientByIdMock.mockResolvedValue({ nextCheckInDue: null });
+
+    expect(await resolveCheckInReportingPeriod(legacy)).toBeNull();
+  });
+});
+
+describe("getCheckInPeriodAdherence", () => {
+  const summary = {
+    dates: ["2026-05-08", "2026-05-09"],
+    training: { rail: [], completed: 1, planned: 2, pct: 50 },
+    nutrition: { rail: [], onTarget: 1, loggedDays: 1, pct: 50 },
+    habits: { rail: [], avgPct: 50, daysBelow50: 0, perHabit: [] },
+  };
+
+  const stored = {
+    id: "ci-1",
+    clientId: "c1",
+    createdAt: "2026-05-14T12:00:00Z",
+    periodStart: "2026-05-08",
+    periodEnd: "2026-05-14",
+  } as unknown as CheckIn;
+
+  beforeEach(() => {
+    getClientAdherenceForRangeMock.mockReset();
+    getClientByIdMock.mockReset();
+  });
+
+  it("reads the kernel over the check-in's OWN period", async () => {
+    getClientAdherenceForRangeMock.mockResolvedValue(summary);
+
+    await getCheckInPeriodAdherence(stored);
+
+    expect(getClientAdherenceForRangeMock).toHaveBeenCalledWith(
+      "c1",
+      "2026-05-08",
+      "2026-05-14",
+    );
+  });
+
+  it("does NOT carry training — the page derives its own, differently", async () => {
+    // The kernel counts full completions; the page's `summariseSessions` counts
+    // full AND partial. Both on one screen is the two-conventions problem this
+    // commit removes, so only what it replaces crosses the wire.
+    getClientAdherenceForRangeMock.mockResolvedValue(summary);
+
+    const result = await getCheckInPeriodAdherence(stored);
+
+    expect(result).toEqual({
+      dates: summary.dates,
+      nutrition: summary.nutrition,
+      habits: summary.habits,
+    });
+    expect(result).not.toHaveProperty("training");
+  });
+
+  it("is null, and reads nothing, when the period cannot be resolved", async () => {
+    getClientByIdMock.mockResolvedValue({ nextCheckInDue: null });
+
+    const result = await getCheckInPeriodAdherence({
+      ...stored,
+      periodStart: null,
+      periodEnd: null,
+    } as unknown as CheckIn);
+
+    expect(result).toBeNull();
+    expect(getClientAdherenceForRangeMock).not.toHaveBeenCalled();
   });
 });

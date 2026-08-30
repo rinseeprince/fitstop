@@ -12,6 +12,8 @@ import { getTrainingEventDetailsForPeriod } from "./check-in-context-service";
 import { calculateCheckInPeriod } from "@/lib/date-helpers";
 import { checkInWeekday } from "@/lib/check-in-week";
 import { getClientById } from "./client-service";
+import { getClientAdherenceForRange } from "./client-adherence-service";
+import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 
 const DAY_OF_WEEK_BY_INDEX: DayOfWeek[] = [
   "sunday",
@@ -32,13 +34,73 @@ const dayOfWeekFromDate = (date: string): DayOfWeek => {
 };
 
 /**
+ * The window a check-in REPORTED on: the stored `period_start`/`period_end`
+ * (migration 038), else — for legacy pre-038 rows where both are null — a
+ * window recomputed from the check-in's OWN `createdAt` and the client's week
+ * anchor. Never a today-relative window for a historical check-in.
+ *
+ * `null` when neither resolves: the row is pre-038 AND the client has no
+ * schedule to anchor a week to. Callers render an empty state rather than
+ * inventing a period, because any window they picked would be a different week
+ * from the one the coach is reading.
+ *
+ * Extracted so the training derivation and the adherence figures resolve the
+ * SAME window. They read different tables; disagreeing about which seven days
+ * they cover would be invisible and wrong.
+ */
+export const resolveCheckInReportingPeriod = async (
+  checkIn: CheckIn
+): Promise<{ periodStart: string; periodEnd: string } | null> => {
+  if (checkIn.periodStart && checkIn.periodEnd) {
+    return { periodStart: checkIn.periodStart, periodEnd: checkIn.periodEnd };
+  }
+
+  const client = await getClientById(checkIn.clientId);
+  if (!client?.nextCheckInDue) return null;
+
+  const period = calculateCheckInPeriod(
+    new Date(checkIn.createdAt),
+    checkInWeekday(client)
+  );
+  return { periodStart: period.periodStart, periodEnd: period.periodEnd };
+};
+
+/**
+ * The nutrition and habit figures for a check-in's own period, from the shipped
+ * Overview kernel — one definition of "on target" and "eligible" across both
+ * surfaces rather than a second one written into the review's renderers.
+ *
+ * **Training is deliberately NOT on this wire.** The review page's training
+ * figure is `summariseSessions` (full + partial completions); the kernel's is
+ * full-only. Both are defensible, but shipping both onto one screen is exactly
+ * the two-live-conventions problem this commit exists to remove — so the page
+ * keeps its own training number and this returns only what it is replacing.
+ */
+export const getCheckInPeriodAdherence = async (
+  checkIn: CheckIn
+): Promise<CheckInPeriodAdherence | null> => {
+  const period = await resolveCheckInReportingPeriod(checkIn);
+  if (!period) return null;
+
+  const summary = await getClientAdherenceForRange(
+    checkIn.clientId,
+    period.periodStart,
+    period.periodEnd
+  );
+
+  return {
+    dates: summary.dates,
+    nutrition: summary.nutrition,
+    habits: summary.habits,
+  };
+};
+
+/**
  * Derive per-session training completions for a check-in directly from the spine
  * (`training_events` + `session_logs`) — the legacy completions table was dropped
  * in Session 6.4 (migration 098); there is no backing table anymore. The window
- * is the check-in's STORED `period_start`/`period_end` (migration 038); only legacy
- * pre-038 rows (both null) fall back to recomputing the period from the client's
- * expected check-in day. We NEVER recompute a today-relative window for a
- * historical check-in.
+ * comes from `resolveCheckInReportingPeriod`, which is also what the adherence
+ * figures use, so the two cannot describe different weeks.
  *
  * The returned shape is the PRESERVED `CheckInSessionCompletion` (camelCase) the
  * UI already reads. `trainingSessionId` may be null (an alt-session swap or an
@@ -47,31 +109,15 @@ const dayOfWeekFromDate = (date: string): DayOfWeek => {
 export const deriveSessionCompletionsForCheckIn = async (
   checkIn: CheckIn
 ): Promise<CheckInSessionCompletion[]> => {
-  let periodStart = checkIn.periodStart;
-  let periodEnd = checkIn.periodEnd;
-
-  // Legacy fallback ONLY when the stored period is missing (pre-038 rows). The
-  // window is derived from the check-in's OWN createdAt date, never "today".
-  if (!periodStart || !periodEnd) {
-    const client = await getClientById(checkIn.clientId);
-    if (client?.nextCheckInDue) {
-      const period = calculateCheckInPeriod(
-        new Date(checkIn.createdAt),
-        checkInWeekday(client)
-      );
-      periodStart = period.periodStart;
-      periodEnd = period.periodEnd;
-    }
-  }
-
-  if (!periodStart || !periodEnd) {
+  const period = await resolveCheckInReportingPeriod(checkIn);
+  if (!period) {
     return [];
   }
 
   const details = await getTrainingEventDetailsForPeriod(
     checkIn.clientId,
-    periodStart,
-    periodEnd
+    period.periodStart,
+    period.periodEnd
   );
 
   return details.map((d) => ({

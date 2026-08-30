@@ -1117,6 +1117,39 @@ nutrition target. The window is the stored `period_start`/`period_end`, else the
 `created_at` (pre-Session-6.4 rows). Three sequential stages, as the raw-fetch version had; SWR now
 dedupes re-opens.
 
+**The figures, and what they divide by.** The review's nutrition and habit
+numbers are computed SERVER-side over the check-in's own reporting period and
+arrive on `GET /api/check-in/[id]` as `periodAdherence`
+(`getCheckInPeriodAdherence` → the shared Overview kernel's
+`getClientAdherenceForRange`). Both denominators are **the whole period**, from
+`periodAdherence.dates.length` — never a day count derived in the renderer,
+which resolves differently on a legacy row. The KPI ribbon's **Nutrition** cell
+is days on target over that period (it was "Calories", a daily average over the
+days a client happened to log, which read HIT for three logged days out of
+seven); the Nutrition card's pill is on-target over period days, beside a weekly
+HIT/PARTIAL/MISSED verdict that stays locally derived because it asks a
+different question. Habits come from `perHabit`, built from the HABIT list, so a
+habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
+writes a row only when they act, and the old grid read `/habits/logs`. **Training
+is deliberately NOT on that wire**: the page counts full and partial completions
+(`summariseSessions`), the kernel counts full only; both are defensible, both on
+one screen is not. `periodAdherence` is `null` when a legacy row's period cannot
+be resolved (pre-038 and no schedule to anchor a week to), and the cells render
+their empty states rather than fall back to a second definition.
+
+**The stored figure changed meaning** (2026-08-30, D5.2). `check_ins.adherence_percentage`
+and `nutrition_days_on_target` — and the AI prompt's "Weekly adherence" — divide
+by the WHOLE period's targets, resolved through `buildNutritionSummary`
+(logged day's frozen target → that date's nutrition event → the plan's weekday
+template). All three writers go through `getNutritionSummaryForPeriod`, so they
+move together. Rows written before that date carry the old logged-days-only
+meaning and were **not** backfilled: reconstructing each historical week's
+targets would invent numbers, because plans get replaced and events get edited.
+The visible consequence is one-off — `comparison-service` reports the change
+between consecutive check-ins, so the first check-in after the switch shows a
+drop against a predecessor measured the old way. It is RN-visible
+(`CLIENT-APP-REFERENCE.md` → Adherence Calculations).
+
 **The client-id guard.** The detail is fetched by check-in id but the context by the page's client
 id, and `GET /api/check-in/[id]` refuses only a *foreign* coach — a coach's own other-client id in
 the URL would pair one client's check-in with another's logs and targets. A check-in whose

@@ -140,8 +140,13 @@ describe("useCheckInDetailData", () => {
     const { result } = renderHook(() =>
       useCheckInDetailData({ checkInId: "ci-1", clientId: "c1" })
     );
+    // `withHabitLogs: false` is asserted, not incidental: the habit figures come
+    // from the server's `periodAdherence` now, and a logs-derived grid silently
+    // drops a habit the client ignored all week. Re-enabling the fetch here
+    // would re-open that hole and cost a request nothing reads.
     expect(mockUseWellnessData).toHaveBeenCalledWith("c1", {
       range: { startDate: "2026-08-22", endDate: "2026-08-28" },
+      withHabitLogs: false,
     });
     expect(result.current.isForeign).toBe(false);
     expect(getDateString(result.current.contextStartDate!)).toBe("2026-08-22");
@@ -153,7 +158,10 @@ describe("useCheckInDetailData", () => {
       useCheckInDetailData({ checkInId: "ci-1", clientId: "c2" })
     );
     expect(result.current.isForeign).toBe(true);
-    expect(mockUseWellnessData).toHaveBeenCalledWith("c2", { range: null });
+    expect(mockUseWellnessData).toHaveBeenCalledWith("c2", {
+      range: null,
+      withHabitLogs: false,
+    });
     expect(result.current.contextStartDate).toBeNull();
     expect(result.current.dailyContextLoading).toBe(false);
     const planTargetKeys = mockUseSWR.mock.calls

@@ -7,60 +7,23 @@ import {
   MONO,
   SECTION_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import type { HabitLogWithDetails } from "@/types/daily-habit";
+import type { HabitBreakdown } from "@/types/coach-overview";
 
 type HabitsSectionProps = {
-  habitLogs: HabitLogWithDetails[];
-  contextStartDate: Date;
-  contextEndDate: Date;
+  /**
+   * One entry per ACTIVE habit, from the server. Built from the habit list, not
+   * from the logs: `logHabit` writes a row only when the client acts, so a
+   * logs-derived grid dropped a habit ignored all week — the one a coach most
+   * needs to see. That habit now reads 0/7 instead of vanishing.
+   */
+  perHabit: HabitBreakdown[];
 };
 
-type HabitSummary = {
-  name: string;
-  completed: number;
-  total: number;
-  dailyStatus: boolean[]; // true = completed, false = missed/no data
-};
-
-function getDayRange(start: Date, end: Date): string[] {
-  const dates: string[] = [];
-  const d = new Date(start);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  while (d <= end) {
-    dates.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
-    d.setDate(d.getDate() + 1);
-  }
-  return dates;
-}
-
-export const HabitsSection = ({
-  habitLogs,
-  contextStartDate,
-  contextEndDate,
-}: HabitsSectionProps) => {
-  if (habitLogs.length === 0) return null;
-
-  const dateRange = getDayRange(contextStartDate, contextEndDate);
-
-  // Group logs by habit
-  const habitMap = new Map<string, { name: string; logs: Map<string, boolean> }>();
-  for (const log of habitLogs) {
-    if (!habitMap.has(log.dailyHabitId)) {
-      habitMap.set(log.dailyHabitId, { name: log.habitName, logs: new Map() });
-    }
-    habitMap.get(log.dailyHabitId)!.logs.set(log.date, log.completed);
-  }
-
-  const habits: HabitSummary[] = Array.from(habitMap.values()).map((h) => {
-    const dailyStatus = dateRange.map((date) => h.logs.get(date) ?? false);
-    const completed = dailyStatus.filter(Boolean).length;
-    return {
-      name: h.name,
-      completed,
-      total: dateRange.length,
-      dailyStatus,
-    };
-  });
+export const HabitsSection = ({ perHabit }: HabitsSectionProps) => {
+  // A habit that was never eligible in this period (created after it ended)
+  // says nothing about the week and is not a miss.
+  const habits = perHabit.filter((habit) => habit.eligibleDays > 0);
+  if (habits.length === 0) return null;
 
   return (
     <motion.div
@@ -76,20 +39,31 @@ export const HabitsSection = ({
 
       <div className="flex gap-6 flex-wrap">
         {habits.map((habit) => (
-          <div key={habit.name} className="flex items-center gap-2">
+          <div key={habit.id} className="flex items-center gap-2">
             <span className="text-sm font-medium text-[#0c1a1e]">{habit.name}</span>
             <span className={cn("text-xs font-semibold", MONO, "text-[#0d9488]")}>
-              {habit.completed}/{habit.total}
+              {habit.completedDays}/{habit.eligibleDays}
             </span>
-            <span className="flex gap-0.5">
-              {habit.dailyStatus.map((done, i) => (
-                <span
-                  key={i}
-                  className={`w-2 h-2 rounded-full ${
-                    done ? "bg-[#0d9488]" : "bg-[rgba(13,148,136,0.12)]"
-                  }`}
-                />
-              ))}
+            <span className="flex items-center gap-0.5">
+              {habit.rail.map((day, i) =>
+                // Before the habit existed: a dash, not an empty dot. A habit
+                // added on Wednesday has not missed Monday, and an unfilled dot
+                // would say it had.
+                day === null ? (
+                  <span
+                    key={i}
+                    className="w-2 h-px bg-[rgba(13,148,136,0.25)]"
+                    title="Not yet added"
+                  />
+                ) : (
+                  <span
+                    key={i}
+                    className={`w-2 h-2 rounded-full ${
+                      day ? "bg-[#0d9488]" : "bg-[rgba(13,148,136,0.12)]"
+                    }`}
+                  />
+                )
+              )}
             </span>
           </div>
         ))}

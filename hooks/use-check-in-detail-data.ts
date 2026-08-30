@@ -6,6 +6,7 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import { expandDateRange, getDateString } from "@/lib/date-helpers";
 import { useWellnessData, type DailyLogRange } from "@/hooks/use-wellness-data";
 import type { CheckInWithDetails, GetCheckInComparisonResponse } from "@/types/check-in";
+import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 import type { DailyLog } from "@/types/daily-log";
 
 type FullWeekTarget = {
@@ -25,6 +26,14 @@ type CheckInWithClient = {
     email?: string;
     avatar_url?: string;
   } | null;
+  /**
+   * The nutrition + habit figures for the period this check-in reported on,
+   * computed server-side. `null` on a legacy row whose period cannot be
+   * resolved. Renderers read their DENOMINATOR from `dates.length` here, never
+   * from a day count derived on this side — the two resolve differently on
+   * exactly those legacy rows.
+   */
+  periodAdherence: CheckInPeriodAdherence | null;
 };
 
 type PlanTarget = {
@@ -178,8 +187,14 @@ export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDa
     [period]
   );
 
-  const { logs: dailyLogs, habitLogs, isLoading: logsLoading } = useWellnessData(clientId, {
+  // No habit logs: the habit figures come from `periodAdherence`, built from the
+  // HABIT list server-side. A logs-derived grid silently drops a habit the
+  // client ignored all week — `logHabit` writes a row only when they act — which
+  // is the one habit worth showing. `withHabitLogs` already existed for the
+  // Overview's wellness cards, so this drops a request rather than adding a flag.
+  const { logs: dailyLogs, isLoading: logsLoading } = useWellnessData(clientId, {
     range,
+    withHabitLogs: false,
   });
 
   const datesNeedingPlanTarget = useMemo(
@@ -218,7 +233,7 @@ export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDa
     comparisonData: comparison.data,
     isLoadingComparison: comparison.isLoading,
     dailyLogs,
-    habitLogs,
+    periodAdherence: detail.data?.periodAdherence ?? null,
     dailyContextLoading: period !== null && (logsLoading || planTargetsLoading),
     contextStartDate: period?.start ?? null,
     contextEndDate: period?.end ?? null,

@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0-C4 ALL shipped, smoked and CLOSED (C0-C2 on 2026-08-29, C3-C4 on 2026-08-30; STATUS blocks under §5). C5 and C6 not built — C5 is next.**
+**Status: IN PROGRESS — C0-C4 shipped, smoked and CLOSED; C5 shipped 2026-08-30 with its smoke OWED (STATUS blocks under §5). Only C6 (the migration) is not built.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -1325,6 +1325,96 @@ the detail GET; `nutrition_logs` read 3× per submission (pre-existing 2×). Smo
 logged days → hero "3/7 · 43%", pill "3/7 on target", weekly verdict MISSED; a habit with no
 logs → 0/7; a mid-week habit shows leading dashes; training unchanged; Regenerate → the Summary
 no longer says 100%.
+
+**STATUS — SHIPPED 2026-08-30 in `<sha>`. Browser smoke OWED (owner runs it).**
+
+*What shipped.*
+- **`getClientAdherenceForRange(clientId, start, end)`** extracted in
+  `services/client-adherence-service.ts`; every read bounded by `endDate`, not today, and `dates`
+  materialised from the range. `getClientAdherence(clientId, days)` is now a thin resolver over it,
+  so the two surfaces differ only in which window they ask for. `perHabit` restored from `c7f3f8b`
+  (the habits select gains `name`) — built from the HABIT list, so a habit the client ignored all
+  week reads 0/7 instead of vanishing.
+- **`resolveCheckInReportingPeriod(checkIn)`** extracted from `deriveSessionCompletionsForCheckIn`'s
+  inline fallback, and **`getCheckInPeriodAdherence(checkIn)`** on top of it. Both derivations now
+  resolve the SAME window; they read different tables, and disagreeing about which seven days they
+  cover would have been invisible and wrong. Training is deliberately absent from the payload.
+- `GET /api/check-in/[id]` carries `periodAdherence` (or `null`), joined to the existing
+  `Promise.all`.
+- **(d):** `getNutritionSummaryForPeriod` builds the period's full targets through
+  `buildNutritionSummary` (logged day's frozen target → that date's event → the plan's weekday
+  template) and passes them as the 4th argument `calculateWeeklySummaryFromLogs` already accepted
+  and had always received as `undefined`. Its **three** callers move together: the coach submit
+  path's stored columns, the client submit path's prompt, and Regenerate.
+- UI: the KPI **Calories** cell is now **Nutrition** — `onTarget/dates.length`, `pct%`, "days on
+  target", `--` / "No nutrition logs" when the period will not resolve. The NutritionSection pill
+  reads `N/7 on target`; its weekly HIT/PARTIAL/MISSED verdict stays (already target-based, and it
+  answers a different question). HabitsSection renders `perHabit`, with a DASH for days before a
+  habit existed rather than an empty dot, which would have read as a miss.
+- The AI prompt's no-summary fallback `Days on target: N/7` takes the period's real length.
+- Docs: ARCHITECTURE → Check-in System gains "The figures, and what they divide by" and "The
+  stored figure changed meaning"; `types/weekly-nutrition.ts`; SPEC `:151`; a NEW entry under
+  `CLIENT-APP-REFERENCE.md` → Adherence Calculations.
+
+*Tests (+3 files, +26 cases; 318 files / 3400 tests green).* `client-adherence-service.test.ts`
+(the three restored `perHabit` cases, plus the 3-of-7-is-43% and 3-of-3-is-100% denominator cases),
+`check-in-details-service.test.ts` (+6: the resolver's three branches; the kernel called on the
+check-in's own period; training absent; null reads nothing), NEW `weekly-nutrition-service.test.ts`,
+NEW `kpi-ribbon.test.tsx`, NEW `habits-section.test.tsx`, a route case asserting `periodAdherence`
+reaches the payload. **Mutation-tested:** reverting the 4th argument to `undefined` fails the
+headline 14000-vs-6000 assertion.
+
+*Corrections to the plan — three of its claims were wrong, verified before coding.*
+1. **The `/habits/logs` fetch was never in `use-check-in-detail-data.ts`.** It lives in the SHARED
+   `useWellnessData`, also mounted by the client Overview tab and the wellness strip. That hook
+   already had a `withHabitLogs` flag (the Overview's wellness cards pass `false`), so this is one
+   word, not surgery on a shared hook. The hook test now ASSERTS `withHabitLogs: false`.
+2. **Three of the four doc cites were stale.** CONVENTIONS `:449` is client-read-scaling content
+   now (the adherence line is `:505`, and it is about TRAINING adherence — left alone).
+   ARCHITECTURE's "Review figures" section and `:702` note **do not exist**; the record was written
+   into Check-in System instead. `CLIENT-APP-REFERENCE.md` had no `adherence_percentage` entry to
+   amend, so one was added. SPEC `:151` was exact.
+3. **`getNutritionSummaryForPeriod` has THREE live callers, not two** — `client-check-in-service.ts`
+   (the client submit path's prompt) is the one the plan missed.
+
+*Deviations, and why.*
+1. **★ The KPI ribbon lost four props.** `dailyLogs`, both context dates and `fullWeekTarget` existed
+   only to average kcal over the days a client happened to log — the cell that is gone. Leaving them
+   would have left a component taking four arguments it ignores, which `knip` cannot see. Two
+   vestigial `card.label === "Calories"` checks went with them: every delta is now a numeral (so mono
+   is unconditional) and every sub-line is words (so never mono).
+2. **A legacy row with no resolvable period renders EMPTY STATES, not a client-side fallback.** A
+   second computation is the two-conventions problem this commit removes. Those rows lose figures
+   they showed before; whether any exist in prod is a smoke item.
+3. `resolveCheckInReportingPeriod` is NOT re-exported from `check-in-service` — knip flagged the
+   re-export as unused, and it is: both callers live in the same module.
+4. The `kpi-ribbon` test mocks `@/contexts/units-context`, not a `use-units` hook — the real context
+   imports the Supabase browser client, which throws without env vars.
+
+*§2 review.* No new write path, migration, policy, grant or `supabaseAdmin` site. Auth unchanged:
+`GET /api/check-in/[id]` still gates on `requireCoachOwnsCheckIn(id)` before any read, and the new
+work happens after it, scoped to `checkIn.clientId`. **Round trips, reported not fixed:** the detail
+GET gains five parallel selects (the kernel's window reads); `getNutritionSummaryForPeriod` goes
+from 1 select to 4; and a submission now reads `nutrition_logs` **three** times (its own read, (d)'s
+via `fetchNutritionDataForPeriod`, and the snapshot service) against a pre-existing 2×. All constant
+per request, none N+1, all bounded by the period. `buildFullWeekTargets` runs only after the log
+read returns rows, so a period with nothing logged still costs one select. No new index needed: every
+predicate is an existing `client_id` + date range. Not load-tested.
+
+*Gates (real output).* `npx tsc --noEmit` **exit 0** · `npx eslint .` **0 errors, 154 warnings**
+(the C4 count; the two I introduced — an unused import and a dead prop — were fixed, not absorbed) ·
+`npx vitest run` **318 files / 3400 tests passed**, no flaky trip across the run ·
+`npm run check:labels` "OK — 689 files scanned" · `npm run knip` **167 — one line BETTER than the
+168 baseline**, because `FullWeekTargets` finally has a caller. `check:rls` / `check:service-key` not
+run: no table, policy, grant or service-key site changed.
+
+*Unverified until the owner smokes it.* Every pixel. **The one-off comparison artefact is expected,
+not a bug:** `comparison-service` reports the change in `adherencePercentage` between consecutive
+check-ins, so the first check-in submitted after this lands is measured the new way against a
+predecessor measured the old way and will show a large phantom drop. It self-corrects from the
+following week. Existing rows were deliberately NOT backfilled — reconstructing what each historical
+week's targets were would invent numbers, since plans get replaced and events get edited. Also
+unverified: whether any check-in in prod has an unresolvable period (the empty-state path).
 
 ### C6 — #4 customisable check-ins (the migration)
 Per §2.4 and D4.*. Migration 157 pushed to DEV then PROD (both at 156 per memory — confirm with

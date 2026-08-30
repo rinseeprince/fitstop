@@ -143,7 +143,14 @@ export function buildCheckInAnalysisPrompt(
   } else {
     prompt += "\nNutrition:\n";
     if (current.nutritionDaysOnTarget !== undefined) {
-      prompt += `- Days on target: ${current.nutritionDaysOnTarget}/7\n`;
+      // The period's own length, not a hardcoded week: a first check-in reports
+      // on a partial period, and telling the model 3/7 when the period was
+      // three days long invites it to describe a shortfall that never existed.
+      const periodDays =
+        startDate && endDate
+          ? Math.round((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1
+          : 7;
+      prompt += `- Days on target: ${current.nutritionDaysOnTarget}/${periodDays}\n`;
       if (current.nutritionNotes) prompt += `- Notes: ${sanitizeForAIPrompt(current.nutritionNotes)}\n`;
     } else if (current.adherencePercentage !== undefined) {
       prompt += `- Adherence: ${current.adherencePercentage}%\n`;

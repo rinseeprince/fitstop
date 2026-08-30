@@ -14,9 +14,13 @@ vi.mock("@/services/supabase-admin", () => ({
   supabaseAdmin: { from: (...args: unknown[]) => fromMock(...args) },
 }));
 
+// A factory mock replaces the module wholesale: an export the route imports and
+// this list omits arrives as undefined and the route 500s at call time, not at
+// import. Grow this list whenever the route's import list grows.
 vi.mock("@/services/check-in-service", () => ({
   deriveSessionCompletionsForCheckIn: vi.fn(),
   getCheckInExerciseHighlights: vi.fn(),
+  getCheckInPeriodAdherence: vi.fn(),
   mapExerciseHighlight: (row: unknown) => row,
 }));
 
@@ -35,6 +39,7 @@ import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 import {
   deriveSessionCompletionsForCheckIn,
   getCheckInExerciseHighlights,
+  getCheckInPeriodAdherence,
 } from "@/services/check-in-service";
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
@@ -69,6 +74,32 @@ describe("GET /api/check-in/[id] (coach)", () => {
         completed: false,
       },
     ]);
+  });
+
+  it("carries the period's server-computed adherence onto the payload", async () => {
+    // The renderers take their DENOMINATOR from `periodAdherence.dates.length`.
+    // If this field goes missing the nutrition and habit cells silently fall to
+    // their empty states rather than erroring, so it is asserted here.
+    const periodAdherence = {
+      dates: ["2026-05-08", "2026-05-09"],
+      nutrition: { rail: [], onTarget: 1, loggedDays: 1, pct: 50 },
+      habits: { rail: [], avgPct: 50, daysBelow50: 0, perHabit: [] },
+    };
+    vi.mocked(getCheckInPeriodAdherence).mockResolvedValue(periodAdherence);
+    mockCheckInRow({
+      data: {
+        id: "ci-1",
+        client_id: "client-1",
+        status: "reviewed",
+        created_at: "2026-05-14T12:00:00Z",
+        clients: { id: "client-1", name: "Alex", email: "a@x.com", avatar_url: null },
+      },
+      error: null,
+    });
+
+    const body = await (await GET(req(), params("ci-1"))).json();
+
+    expect(body.periodAdherence).toEqual(periodAdherence);
   });
 
   it("returns derived sessionCompletions for a historical check-in without a 500", async () => {
