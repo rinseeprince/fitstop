@@ -5,6 +5,8 @@ import {
   indexUnreviewedCheckIns,
   matchesRosterView,
   resolveRosterView,
+  rosterViewLabel,
+  rosterViewNavLabel,
   rosterViewUrl,
   type RosterRow,
   type RosterStatus,
@@ -25,6 +27,30 @@ describe("resolveRosterView", () => {
     expect(resolveRosterView("review")).toBe("review")
     expect(resolveRosterView("nonsense")).toBe("all")
     expect(resolveRosterView(null)).toBe("all")
+  })
+})
+
+describe("the two ways a view is named", () => {
+  it("keeps the full name for surfaces that cite the view alone", () => {
+    // The stat-band cell, the sticky title and the dashboard card have no
+    // heading above them saying what the number is about.
+    expect(rosterViewLabel("review")).toBe("Unreviewed check-ins")
+    expect(rosterViewLabel("overdue")).toBe("Overdue check-ins")
+  })
+
+  it("shortens ONLY the sidebar, which supplies its own subject", () => {
+    // The two attention tabs sit under a "Check-ins" heading in a 200px column
+    // that truncates; the full names clipped.
+    expect(rosterViewNavLabel("review")).toBe("Due")
+    expect(rosterViewNavLabel("overdue")).toBe("Overdue")
+  })
+
+  it("falls back to the full name for a view with no short form", () => {
+    // The four roster shapes are already short and need no entry — and a new
+    // view must not have to add one to appear in the sidebar at all.
+    for (const view of ["all", "active", "onboarding", "inactive"] as const) {
+      expect(rosterViewNavLabel(view)).toBe(rosterViewLabel(view))
+    }
   })
 })
 

@@ -20,6 +20,7 @@ import {
   ROSTER_ATTENTION_VIEWS,
   ROSTER_SHAPE_VIEWS,
   rosterViewLabel,
+  rosterViewNavLabel,
   rosterViewUrl,
   type RosterCounts,
   type RosterView,
@@ -113,13 +114,14 @@ export function RosterSidebar({
         ))}
       </SectionSidebarNav>
 
-      <SectionSidebarGroupLabel label="Attention" />
+      {/* Names the subject the two tabs share, so each can be one word. */}
+      <SectionSidebarGroupLabel label="Check-ins" />
 
       <SectionSidebarNav>
         {ROSTER_ATTENTION_VIEWS.map((view) => (
           <SectionSidebarTab
             key={view}
-            label={rosterViewLabel(view)}
+            label={rosterViewNavLabel(view)}
             href={rosterViewUrl(view)}
             isActive={activeView === view}
             trailing={

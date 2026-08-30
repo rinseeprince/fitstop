@@ -76,9 +76,31 @@ const VIEW_LABELS: Record<RosterView, string> = ROSTER_VIEWS.reduce(
   {} as Record<RosterView, string>,
 )
 
-/** The view's name — the sidebar tab, and the sticky topbar's title. */
+/** The view's full name — the sticky topbar's title, the stat-band cell, the
+ *  dashboard card. Anywhere the view is named without surrounding context. */
 export function rosterViewLabel(view: RosterView): string {
   return VIEW_LABELS[view]
+}
+
+/**
+ * The SIDEBAR's short form, which only exists because the sidebar supplies its
+ * own context: the two attention tabs sit under a "Check-ins" group heading, so
+ * repeating "check-ins" in each tab both said it twice and overflowed a 200px
+ * column that truncates rather than wraps (smoked 2026-08-30 — "Unreviewed
+ * check-ins" clipped).
+ *
+ * Short ONLY here. `rosterViewLabel` stays the name everywhere the view is
+ * cited without that heading above it — a dashboard card reading "DUE" or a
+ * page title reading "Overdue" names nothing. A view with no short form falls
+ * back to its full name, so the four roster shapes need no entry.
+ */
+const VIEW_NAV_LABELS: Partial<Record<RosterView, string>> = {
+  overdue: "Overdue",
+  review: "Due",
+}
+
+export function rosterViewNavLabel(view: RosterView): string {
+  return VIEW_NAV_LABELS[view] ?? VIEW_LABELS[view]
 }
 
 const VALID_VIEWS = new Set<string>(ROSTER_VIEWS.map((view) => view.value))

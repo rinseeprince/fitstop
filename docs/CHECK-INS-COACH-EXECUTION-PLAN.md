@@ -1184,12 +1184,20 @@ did not touch · `npx vitest run` **312 files / 3353 tests passed**, no flaky se
 the pre-C3 baseline measured this session. **Note for later commits: 168 is the live baseline,
 not the 172 C2 recorded** — the three Overview commits between them moved it.
 
-*Unverified until the owner smokes it.* Every pixel. Specifically: **"Unreviewed check-ins" is
-~20px longer than "Ready for review" in a sidebar tab that truncates rather than wraps** — the
-arithmetic says it fits in ~144px with a little to spare, but that is class math, not rendered
-pixels. If it clips, the fallback is dropping the SIDEBAR tab alone to "Unreviewed" (the
-"Attention" group heading and the count carry the context) while the stat band, the sticky title
-and the dashboard card keep the full phrase. Also unverified: the C2 deactivated-client path is
+*Smoke round 1 (owner, 2026-08-30) — one defect, fixed in `<sha2>`.* **The sidebar tab DID clip**,
+as flagged. Fixed the way the STATUS block predicted, with the owner choosing the words: the
+"Attention" group heading became **"Check-ins"**, and the two tabs under it took a short form —
+**"Due"** (review) and **"Overdue"**. The split is a second accessor, `rosterViewNavLabel`, used
+by the sidebar ALONE; `rosterViewLabel` stays the name for the sticky title, the stat-band cell
+and the dashboard card, which have no heading above them (a card reading "DUE" names nothing).
+A view without a short form falls back to its full name, so the four roster shapes need no entry
+and the next view added cannot go missing from the sidebar. +3 test cases pin both halves and
+the fallback. **Flagged to the owner, not changed:** "Due" collides with this app's existing
+schedule vocabulary — `next_check_in_due`, the roster's `due 24 Aug` sub-line, the bell's "Due
+Soon" section all mean *scheduled and coming up*, whereas this queue means *submitted and
+awaiting your review*. "Unreviewed" is the same length class and does not collide.
+
+*Still unverified until the owner re-smokes.* Every other pixel; the C2 deactivated-client path is
 still unexercisable (nothing in the app deactivates a client), and the dashboard around this card
 is still largely hardcoded mock data (Active Clients, Unread Messages, Upcoming Calls, and the
 first five values of this card's own sparkline) — do not read those numbers as live.
