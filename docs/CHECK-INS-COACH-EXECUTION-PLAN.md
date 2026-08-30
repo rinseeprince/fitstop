@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0-C2 shipped 2026-08-29 (smoked, closed); C3 and C4 shipped 2026-08-30, C3 smoked and closed, C4 SMOKE OWED (STATUS blocks under §5); C5–C6 not built.**
+**Status: IN PROGRESS — C0-C4 ALL shipped, smoked and CLOSED (C0-C2 on 2026-08-29, C3-C4 on 2026-08-30; STATUS blocks under §5). C5 and C6 not built — C5 is next.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -1223,7 +1223,7 @@ build the all-empty review directly). Smoke: a v3 check-in, a legacy v2 row, a `
 (one placeholder), a check-in whose prs/challenges contain line breaks, Regenerate (Share draft
 updates; a 429 toasts), Send.
 
-**STATUS — SHIPPED 2026-08-30 in `c84f5fc3`. Browser smoke OWED (owner runs it).**
+**STATUS — SHIPPED 2026-08-30 in `c84f5fc3` (+ `f2df76c4`), browser-SMOKED by the owner the same day, ALL CLEAR on the first pass. C4 is CLOSED.**
 
 *What shipped.*
 - **NEW `components/clients/check-ins/review-block.tsx`** — `ReviewBlock` (a `LABEL_CLASS` label
@@ -1301,11 +1301,15 @@ which fails only under full-suite load) but that is not proven, and no C4 file i
 the set tracker. If a later commit sees the same shape, capture the run to a file first:
 `npx vitest run > log 2>&1` — a bare pipe to `tail` loses it.
 
-*Unverified until the owner smokes it.* Every pixel. **Expect a deliberate asymmetry**: the rail is
-borderless and still while the five left-column section cards keep their borders and framer
-stagger — that is D7.3 as settled, recorded in TECHNICAL-DEBT, not an oversight. Also unverified:
-that a legacy v2 row's mapped watch items and coach actions still read correctly in the new list
-form (the `to-review` mapper is untouched, but its output now renders through different markup).
+*Smoke (owner, 2026-08-30) — ALL CLEAR on the first pass. **C4 is CLOSED.*** The one AI review
+card, the four labelled blocks, the `pending` row's single placeholder with Share still usable, the
+client's line breaks surviving in Wins/Challenges, the Share draft following a Regenerate, the 429
+toast, Send, and the coach-action priority dots all check out — including a legacy v2 row's mapped
+watch items and coach actions reading correctly through the new list markup.
+
+*Carried forward, deliberately.* The Current pane is asymmetric until the five sibling section
+cards lose their borders and framer stagger (D7.3) — logged as TECHNICAL-DEBT → Design System #2
+with a mechanical one-sweep fix. The owner has seen it and accepted it as the interim state.
 
 ### C5 — #5 denominators
 Per §2.5. Tests: `client-adherence-service.test.ts` (fixtures gain `name`; restore the three
