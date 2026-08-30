@@ -447,6 +447,14 @@
   ### Client read scaling (client-portal reads)
   These codify the Phase-3 scale contract (Sessions 3.6 / 3.7 / 3.9); full rationale lives in `docs/CLIENT-PORTAL-REDESIGN.md`. They override the generic "copy the nearest pattern" guidance (§3) where existing client code still uses offset.
   - **Bounded AND keyset by default.** Client list/history reads page on a cursor (e.g. `(completed_at, id)` for sessions, `(created_at, id)` for check-ins), never `OFFSET` / `.range()`. Offset cost grows with how deep the client scrolls into a multi-year history; keyset stays flat. Add the matching keyset index *with* the query (e.g. `session_logs(client_id, completed_at DESC, id DESC)`).
+    **This is not a client-portal-only rule, despite the heading.** Any paginated, time-ordered
+    "load older" list follows it whoever reads it — the COACH's per-client check-in list
+    (`GET /api/clients/[id]/check-ins`) pages on the same `(created_at, id)` cursor as the client's
+    own. It stayed on `OFFSET` for months precisely because this section reads as client-only, and
+    an offset page is not merely slow: it addresses an absolute position in the list *as it is now*,
+    so a row arriving at the head between two page fetches makes the pages repeat a row (a duplicate
+    React key) or skip one, with nothing raising an error. Page *n*'s key derives from page *n-1*'s
+    cursor on the client too — never re-derive it from an index.
   - **Sparse fieldsets.** Select only the columns a row needs — never `select('*')`, and never embed a dictionary inside a row list. Fetch dictionaries (e.g. the exercise catalog) once via their own endpoint; history rows carry IDs (`exercise_id`, with `performed_name` as fallback) and the client joins locally.
   - **Aggregate server-side.** Push GROUP BY / windowed aggregates into Postgres (RPCs) so payloads are render-ready and bounded by the result, not by history size. Native is a thin renderer.
   - **Keyset cursors are opaque.** Encode/decode via `lib/cursor.ts` (base64url of `{createdAt, id}`). Routes accept the cursor as a query param, decode it strictly (reject malformed base64/JSON, non-UUID `id`, or out-of-format timestamps with 400), and build the predicate with PostgREST `.or()` (`created_at.lt.<ts>,and(created_at.eq.<ts>,id.lt.<id>)`) ordered `created_at DESC, id DESC`. `isValidIsoTimestamp()` rejects any value outside the safe ISO charset (no commas/parens) to prevent PostgREST filter injection.

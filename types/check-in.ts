@@ -631,6 +631,21 @@ export type GetCheckInsResponse = {
   total: number;
 };
 
+/**
+ * One page of the coach's per-client check-in list (`GET /api/clients/[id]/check-ins`),
+ * which pages on the same opaque `(created_at, id)` cursor as the client's own history.
+ *
+ * Deliberately NOT an extension of `GetCheckInsResponse`: that shape is shared with
+ * `/api/check-ins/unreviewed`, and `total` here is the exact history count taken on the
+ * FIRST page only — absent on cursor pages rather than sent as a misleading zero.
+ */
+export type GetClientCheckInsPageResponse = {
+  checkIns: CheckIn[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  total?: number;
+};
+
 // Chart data for visualizations
 // No `label` field: it was built for all eight metrics and read by nothing but
 // its own test. The weight one baked a unit into the string inside a pure module

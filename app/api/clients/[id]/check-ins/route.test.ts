@@ -17,8 +17,14 @@ vi.mock("@/services/check-in-service", () => ({
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getClientCheckIns } from "@/services/check-in-service";
+import { encodeCursor } from "@/lib/cursor";
 
 const mockParams = { params: Promise.resolve({ id: "client-1" }) };
+
+const CURSOR = {
+  createdAt: "2026-05-01T00:00:00.000Z",
+  id: "11111111-1111-4111-8111-111111111111",
+};
 
 function createMockRequest(query = "") {
   return new NextRequest(
@@ -37,7 +43,68 @@ describe("GET /api/clients/[id]/check-ins", () => {
     } as never);
   });
 
-  it("returns the client's check-ins with a total", async () => {
+  it("pages on a keyset cursor by default, with the first page's exact total", async () => {
+    vi.mocked(getClientCheckIns).mockResolvedValue({
+      checkIns: [{ id: "ci-1" }],
+      total: 22,
+      nextCursor: { createdAt: CURSOR.createdAt, id: CURSOR.id },
+    } as never);
+
+    const res = await GET(createMockRequest("?limit=20"), mockParams);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.checkIns).toHaveLength(1);
+    expect(body.nextCursor).toBe(encodeCursor(CURSOR));
+    expect(body.hasMore).toBe(true);
+    // The Check-ins tab's rail renders this count.
+    expect(body.total).toBe(22);
+    expect(getClientCheckIns).toHaveBeenCalledWith("client-1", {
+      limit: 20,
+      keyset: true,
+      cursor: undefined,
+      status: undefined,
+      withTotal: true,
+    });
+  });
+
+  it("pages on a valid cursor, and pays for no count past the first page", async () => {
+    vi.mocked(getClientCheckIns).mockResolvedValue({
+      checkIns: [{ id: "ci-2" }],
+      total: 0,
+      nextCursor: null,
+    } as never);
+
+    const res = await GET(
+      createMockRequest(`?limit=20&cursor=${encodeCursor(CURSOR)}`),
+      mockParams
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.nextCursor).toBeNull();
+    expect(body.hasMore).toBe(false);
+    // Absent, not a misleading zero.
+    expect(body).not.toHaveProperty("total");
+    expect(getClientCheckIns).toHaveBeenCalledWith("client-1", {
+      limit: 20,
+      keyset: true,
+      cursor: CURSOR,
+      status: undefined,
+      withTotal: false,
+    });
+  });
+
+  it("rejects a malformed cursor before it reaches the query (400)", async () => {
+    const res = await GET(createMockRequest("?cursor=not-a-cursor"), mockParams);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(getClientCheckIns).not.toHaveBeenCalled();
+  });
+
+  it("still serves the legacy offset mode when ?offset= is explicit", async () => {
     vi.mocked(getClientCheckIns).mockResolvedValue({
       checkIns: [{ id: "ci-1" }],
       total: 1,
@@ -49,6 +116,7 @@ describe("GET /api/clients/[id]/check-ins", () => {
     expect(res.status).toBe(200);
     expect(body.checkIns).toHaveLength(1);
     expect(body.total).toBe(1);
+    expect(body).not.toHaveProperty("nextCursor");
     expect(getClientCheckIns).toHaveBeenCalledWith(
       "client-1",
       expect.objectContaining({ limit: 20, offset: 0 })
@@ -59,6 +127,7 @@ describe("GET /api/clients/[id]/check-ins", () => {
     vi.mocked(getClientCheckIns).mockResolvedValue({
       checkIns: [],
       total: 0,
+      nextCursor: null,
     } as never);
 
     const res = await GET(createMockRequest("?status=reviewed"), mockParams);

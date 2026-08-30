@@ -4,6 +4,7 @@ import useSWRInfinite from "swr/infinite";
 import type {
   CheckIn,
   GetCheckInsResponse,
+  GetClientCheckInsPageResponse,
   Client,
   OverdueClient,
   GetOverdueClientsResponse,
@@ -20,17 +21,51 @@ function clientCheckInsKeyPrefix(clientId: string) {
   return `/api/clients/${clientId}/check-ins`;
 }
 
-// Shared SWRInfinite key builder for the offset-paginated coach check-ins reads
+// Shared SWRInfinite key builder for the KEYSET-paginated coach check-ins reads
 // (the "Load older" tab and the Metrics full-history fetch).
+//
+// Page n is addressed by page n-1's cursor, never by an absolute offset, and that
+// derivation is the whole fix: a window pinned to `offset = n * size` is defined
+// against the list AS IT WAS when that page was fetched, so any insert at the head
+// between two page fetches slides every later row and the pages either repeat a row
+// (a duplicate React key) or skip one — silently, with no error anywhere. Keyed on
+// the previous page's `nextCursor`, a changed page n-1 CHANGES page n's key, so SWR
+// refetches it instead of serving a stale window from cache.
 const buildCheckInsPageKey =
   (clientId: string) =>
-  (pageIndex: number, previousPageData: GetCheckInsResponse | null) => {
+  (pageIndex: number, previousPageData: GetClientCheckInsPageResponse | null) => {
     if (!clientId) return null;
-    // Stop once a page comes back empty.
-    if (previousPageData && previousPageData.checkIns.length === 0) return null;
-    const offset = pageIndex * CLIENT_CHECKINS_PAGE_SIZE;
-    return `${clientCheckInsKeyPrefix(clientId)}?limit=${CLIENT_CHECKINS_PAGE_SIZE}&offset=${offset}`;
+    const base = `${clientCheckInsKeyPrefix(clientId)}?limit=${CLIENT_CHECKINS_PAGE_SIZE}`;
+    if (pageIndex === 0) return base;
+    // No cursor means the previous page was the last one — stop here.
+    const cursor = previousPageData?.nextCursor;
+    return cursor ? `${base}&cursor=${encodeURIComponent(cursor)}` : null;
   };
+
+// The newest page SWR has actually loaded. `hasMore` and the auto-advance both
+// read it, because the payload's own flag is the only honest answer once pages
+// no longer map onto a total (`checkIns.length < total` counts a stale flattened
+// list against a fresh count).
+function lastLoadedPage(
+  pages: GetClientCheckInsPageResponse[] | undefined
+): GetClientCheckInsPageResponse | undefined {
+  if (!pages) return undefined;
+  for (let i = pages.length - 1; i >= 0; i--) {
+    if (pages[i]) return pages[i];
+  }
+  return undefined;
+}
+
+// Deliberately true, against the §7 `revalidateOnFocus: false` default — the same
+// documented exception `useOverdueClients` / `useUnreviewedCheckIns` already carry,
+// and for the same reason: the dominant writer of a client's check-in list is that
+// CLIENT submitting in another session, which no coach-side invalidator can ever
+// reach. `revalidateFirstPage` is left at its default `true` for the same reason;
+// with it off (and no focus revalidation) these readers revalidated NOTHING and
+// only a hard reload refreshed them.
+const CHECK_IN_LIST_SWR_CONFIG = {
+  revalidateOnFocus: true,
+} as const;
 
 /**
  * Invalidates every cached read of a client's check-in list from outside the
@@ -68,18 +103,20 @@ export function useInvalidateClientCheckIns() {
   );
 }
 
-// Hook for the coach per-client check-ins tab: offset-paginated "Load older"
+// Hook for the coach per-client check-ins tab: keyset-paginated "Load older"
 // over the full history (no row cap). Pages accumulate into one flat list.
 export const useClientCheckInsInfinite = (clientId: string) => {
   const { data, error, size, setSize, isLoading, mutate } =
-    useSWRInfinite<GetCheckInsResponse>(buildCheckInsPageKey(clientId), fetcher, {
-      revalidateOnFocus: false,
-      revalidateFirstPage: false,
-    });
+    useSWRInfinite<GetClientCheckInsPageResponse>(
+      buildCheckInsPageKey(clientId),
+      fetcher,
+      CHECK_IN_LIST_SWR_CONFIG
+    );
 
   const checkIns = data ? data.flatMap((page) => page.checkIns) : [];
+  // First page only — see the route's contract.
   const total = data?.[0]?.total ?? 0;
-  const hasMore = checkIns.length < total;
+  const hasMore = Boolean(lastLoadedPage(data)?.hasMore);
   // The last requested page has not resolved yet.
   const isLoadingMore = Boolean(
     size > 0 && data && typeof data[size - 1] === "undefined"
@@ -98,19 +135,20 @@ export const useClientCheckInsInfinite = (clientId: string) => {
   };
 };
 
-// Eagerly pages through a client's ENTIRE check-in history (offset/total
-// contract) so trend charts aren't silently capped at the default page size.
+// Eagerly pages through a client's ENTIRE check-in history (keyset contract) so
+// trend charts aren't silently capped at the default page size.
 export const useAllClientCheckIns = (clientId: string) => {
   const { data, error, size, setSize, isLoading } =
-    useSWRInfinite<GetCheckInsResponse>(buildCheckInsPageKey(clientId), fetcher, {
-      revalidateOnFocus: false,
-      revalidateFirstPage: false,
-    });
+    useSWRInfinite<GetClientCheckInsPageResponse>(
+      buildCheckInsPageKey(clientId),
+      fetcher,
+      CHECK_IN_LIST_SWR_CONFIG
+    );
 
   const checkIns = data ? data.flatMap((page) => page.checkIns) : [];
   const total = data?.[0]?.total ?? 0;
   const lastPageLoaded = !data || typeof data[size - 1] !== "undefined";
-  const hasMore = Boolean(data) && checkIns.length < total;
+  const hasMore = Boolean(lastLoadedPage(data)?.hasMore);
 
   // Auto-advance until the full history is loaded.
   useEffect(() => {

@@ -758,6 +758,8 @@ imports), `npx vitest run` (re-run the flaky set-tracker test before blaming a c
 9. Indexes: no new column in any WHERE/ORDER BY. Both widened predicates are covered by mig 001's
    `idx_check_ins_client_status (client_id, status, created_at DESC)`; the D0.2 UPDATE is a PK
    lookup plus a status filter. Per the migration tree — not re-probed against the live catalog.
+   **KNOWN FALSE ON DEV since 2026-08-30** (probed in C7): that index is NOT in the live catalog,
+   so this coverage claim does not hold there. See C7's STATUS block → "Schema drift found".
 10. Worst-case row count: `updateCheckInAISummary` = exactly 1 row (PK). The unreviewed GET
     keeps its 100-row cap; including `pending` grows the result only for a coach whose AI passes
     are failing.
@@ -2009,13 +2011,143 @@ limiter key per §9). **Cursor injection is the safety story**: `?cursor=` is de
 anything outside the safe ISO charset — BEFORE its values are interpolated into the PostgREST
 `.or()` filter. Round trips unchanged per page; the first page gains a COUNT, deeper pages lose
 the offset scan, so paging into a long history gets faster. Focus revalidation adds one request
-per tab-focus per mounted reader — state it. A `?status=` filter combined with keyset would
-fall to `idx_check_ins_client_status` instead; nothing passes `status` today.
+per tab-focus per mounted reader — state it. ~~A `?status=` filter combined with keyset would
+fall to `idx_check_ins_client_status` instead~~ — **WRONG, corrected at execution:** that index
+does not exist on Dev (see the STATUS block). A status-filtered keyset read still uses
+`idx_check_ins_client_created_id` on its `client_id` prefix and rechecks `status`; nothing passes
+`status` today either way.
 
 **Smoke.** Submit a check-in as the client with the coach's Check-ins tab open on 2+ pages
 ("Load older" first) → no console warning, no repeated row. Switch to Journey and back → the
 new check-in is in the chart **without a reload**. "Load older" still reaches the end of a long
 history, and the rail count is right.
+
+#### STATUS — SHIPPED 2026-08-30
+
+**What shipped.** One commit, no migration.
+
+- `types/check-in.ts` — new `GetClientCheckInsPageResponse` (`checkIns`, `nextCursor`, `hasMore`,
+  optional `total`). `GetCheckInsResponse` deliberately UNTOUCHED: it is shared with
+  `/api/check-ins/unreviewed`, so reshaping it would have moved the queue, the bell and the roster.
+- `services/check-in-service.ts` — `getClientCheckIns` gains `withTotal?: boolean`; `wantsCount =
+  !keyset || withTotal` drives `select("*", …)`. Nothing else in the keyset path changed — it was
+  already correct, built for the client route.
+- `app/api/clients/[id]/check-ins/route.ts` — keyset by default, `?offset=` an explicit legacy
+  opt-in, `?cursor=` decoded through `lib/cursor.ts` (400 on malformed) BEFORE its values reach the
+  PostgREST predicate. `withTotal: cursor === undefined`, and `total` is OMITTED on cursor pages
+  rather than sent as a misleading `0`. Auth chain untouched.
+- `hooks/use-check-in-data.ts` — `buildCheckInsPageKey` is cursor-derived (page 0 `?limit=N`, page
+  *n* `?limit=N&cursor=<prev.nextCursor>`, `null` without one). `hasMore` now comes from the
+  payload via a shared `lastLoadedPage` helper, not `checkIns.length < total`. Both readers share
+  one `CHECK_IN_LIST_SWR_CONFIG` — `revalidateOnFocus: true`, `revalidateFirstPage` left at its
+  default `true`. `useInvalidateClientCheckIns` unchanged, as planned: its page filter is
+  `startsWith(prefix + "?")`, which both key shapes satisfy. No dedupe-on-flatten belt.
+
+**Deviations from the plan, and why.**
+
+1. **The plan's regression scenario had the mechanism backwards, and the fix is not attributable to
+   the Dev row.** The plan said "insert a row at the head, revalidate page 1 … It duplicates row 20
+   on the offset builder." Traced against `swr/infinite@2.3.6` (`dist/infinite/index.mjs`, the
+   `shouldFetchPage` expression) that ordering produces a **skip**, not a duplicate: page 0 refetches
+   to `[new, r0…r18]` while page 1's offset key is unchanged and stays cached at `r20…r39`, so `r19`
+   vanishes. The duplicate needs the reverse order (page 0 cached, page 1 fetched after the insert).
+   **Further** — and this is the owner's correction, not mine — neither ordering explains the Dev
+   evidence: the duplicated row sits at index 19, and its index at any fetch is 18 (pre-insert) or 19
+   (post-insert), never in the `[20,39]` window a page-1 fetch returns. Reproducing it needs TWO head
+   inserts between the two page fetches, and the DB shows one check-in that day. **So C7 removes the
+   CLASS of defect — offset paging over a mutating list duplicates and skips at page boundaries,
+   which is real and now proven in test — but it does NOT establish that this caused the reported
+   React key warning.** The tests are attached to the code property, not to that row. Whether the
+   warning recurs is a SMOKE ITEM, with a diagnostic step in the checklist below.
+2. **Test scenarios doubled, and the assertion strengthened.** Both orderings are tested, under one
+   assertion — "the flattened pages are ONE contiguous window of the list: no id twice, none
+   skipped" — which catches the duplicate AND the skip. Strictly stronger than the planned
+   no-repeated-id check, and it is what makes the second scenario meaningful.
+3. **Four pre-existing `useAllClientCheckIns` fixtures updated.** They expressed "more remains" as
+   `{checkIns: [...20], total: 50}`; `hasMore` is a payload field now, so they carry it. Planned as a
+   mock-contract change to the key-builder test only — this is the same change, one file wider.
+4. **`parsePaginationParams` kept** rather than mirroring the client route's inline clamping, so the
+   route keeps its existing 400s for a bad `limit`/`offset`. The CONTRACT mirrors the client route;
+   the parsing does not.
+
+**Schema drift found (records the `project_live_catalog_is_sot_not_migrations` landmine again).**
+`supabase/migrations/001_create_check_ins_table.sql:57` declares
+`idx_check_ins_client_status ON check_ins(client_id, status, created_at DESC)`. **Dev
+(`aeaphsslctwcmebldrzx`) does not have it** — the live catalog carries only
+`idx_check_ins_status ON check_ins(status)`, a bare single-column index. Probed 2026-08-30 with
+`supabase db query --linked` against `pg_indexes`. Consequences:
+- C7's §2 paragraph asserted the composite index as a live fact; corrected in place above.
+- **C0's §2 review (item 9) asserted index coverage for its two widened unreviewed-queue predicates
+  on the strength of this index. That claim is now known FALSE on Dev.** C0's own STATUS text
+  flagged it as "per the migration tree — not re-probed against the live catalog"; C7's paragraph
+  promoted the same unverified claim to a live fact. Annotated at both sites.
+- **PROD (`etezzztgafcotyahgijk`) IS UNCHECKED.** No prod credentials in this repo (`.env.local` is
+  Dev-only) and `supabase db query` has no `--project-ref`, so reaching prod means relinking, which
+  was not done mid-session. Schema-shape claims usually travel between databases; this one
+  demonstrably did not travel from the migration tree, so it must not be assumed. **Owner asked to
+  run `select indexname, indexdef from pg_indexes where tablename='check_ins';` on prod — answer
+  outstanding.**
+- **Not a C7 blocker either way**: nothing passes `?status=` today, and the keyset read is served by
+  `idx_check_ins_client_created_id`, which WAS verified live on Dev as
+  `(client_id, created_at DESC, id DESC)` — covering the predicate and the ordering exactly.
+
+**§2 security / load / performance review — RAN.**
+- *Security 1 (rate limit + CSRF):* GET only, no CSRF surface. `apiRateLimit` at `route.ts:37`,
+  unchanged; its pre-existing tier deviation stays (retiering `/api/clients/**` is blocked on the
+  limiter key per §9, and is §7 out-of-scope).
+- *Security 2 (auth + tenant ownership):* `requireCoachOwnsClient(clientId)` at `route.ts:44`,
+  untouched — a foreign client still 403s before any query. Verified by the existing IDOR test.
+- *Security 3/4 (validation + scoping):* the read's only new input is `?cursor=`. **This is the
+  safety story**: `decodeCursor` (`lib/cursor.ts:44`) rejects non-base64url, non-JSON, a non-UUID
+  `id`, or a `createdAt` outside an ISO charset containing none of `,` `(` `)` — the structural
+  characters of a PostgREST `.or()`. The route 400s on failure, so no unvalidated value is ever
+  interpolated into the keyset predicate at `check-in-service.ts:290`. Covered by a route test that
+  also asserts the service is never called.
+- *Security 5/6 (RLS / supabaseAdmin):* no schema change, no new table, no policy. The service reads
+  through `supabaseAdmin` as every service does; the route authorizes it.
+- *Perf 7/8 (round trips):* constant per request, no per-row query, no write. Per page: 1 query
+  (+1 COUNT on the first page only).
+- *Perf 9 (index coverage):* `idx_check_ins_client_created_id (client_id, created_at DESC, id DESC)`
+  **verified in the live Dev catalog**, covering `client_id = ? AND (created_at,id) < (?,?) ORDER BY
+  created_at DESC, id DESC` as a range scan. The first page's COUNT is `client_id`-scoped
+  (`idx_check_ins_client_id`, also verified live). No new WHERE/ORDER BY column, no upsert.
+- *Perf 10 (worst case):* a read. Worst-case COUNT domain is ONE client's whole check-in history —
+  53 on the Dev fixture, ~260 for a weekly client at five years. Bounded and small.
+- *Perf 11 (sequential awaits):* one await per page; nothing new to parallelise.
+- *Consistency 12/13:* no writes, no `.catch()`-and-continue, nothing to leave half-written.
+- **Load cost of restoring revalidation, stated plainly:** a focus adds **one** request per mounted
+  reader in the steady state — page 0 refetches, its `nextCursor` is unchanged, so pages 1..n keep
+  their keys and are served from cache. Only when the head HAS changed do the loaded pages refetch
+  (≤3 requests for a 53-row history at 20/page), which is the behaviour being bought.
+- **Measured, vs. read:** all of the above is read off code and the live catalog. **No load was run.**
+  Untested under concurrency: the first-page COUNT's cost on a large history, and the request burst
+  when many coach tabs regain focus at once. `docs/perf-baseline.md` + `PERF_COACH_ID` remain the way
+  to measure if wanted.
+
+**Gates (real output).**
+- `npx tsc --noEmit` → exit 0, no output.
+- `npx eslint .` → **0 errors, 154 warnings** — the recorded baseline exactly.
+- `npx vitest run > log 2>&1` → **331 files / 3567 tests passed**, exit 0. No flakes; the flaky
+  set-tracker test passed first time.
+- `npm run check:labels` → `OK — 708 files scanned, shared tokens hold.`
+- `npx knip` (bare) via a detached `git worktree` at HEAD with `node_modules` symlinked:
+  **167 lines before, 167 after — outputs byte-identical, delta 0.**
+
+**Pre-fix verification (the reason this is trustworthy).** The three test files were copied into a
+detached worktree at HEAD (`51289443`) and run there: **9 of 9 new assertions FAIL on the pre-fix
+build; every pre-existing test still passes.** The two contiguity failures show exactly the two
+predicted directions — scenario A returns **40 rows containing 39 distinct ids** (a row twice), and
+scenario B returns 40 distinct ids with row `…020` **absent** from the window (a row skipped).
+
+**Unverified.**
+- **The entire UI. No browser smoke was run** (the owner runs all smokes).
+- Whether the reported React duplicate-key warning recurs — see deviation 1; it is a smoke item, not
+  a claim of this commit.
+- Prod's `check_ins` index set (above).
+- Real-world behaviour of focus revalidation with two tabs open on the same client, and the shared
+  `$inf$` cache entry between `useClientCheckInsInfinite` and `useAllClientCheckIns` (they build the
+  same first-page key, so they share SWR's page-size state — pre-existing, unchanged by C7, and not
+  exercised by any test).
 
 ---
 

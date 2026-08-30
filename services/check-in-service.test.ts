@@ -594,6 +594,8 @@ describe('Check-in Service', () => {
 
       expect(mockQuery.or).not.toHaveBeenCalled() // first page has no predicate
       expect(mockQuery.limit).toHaveBeenCalledWith(3) // limit + 1
+      // A keyset page pays for no count unless a caller opts in.
+      expect(mockQuery.select).toHaveBeenCalledWith('*', undefined)
       expect(result.checkIns).toHaveLength(2) // extra row trimmed
       expect(result.checkIns.map((c) => c.id)).toEqual([
         '11111111-1111-4111-8111-111111111111',
@@ -674,6 +676,38 @@ describe('Check-in Service', () => {
       const page1Ids = new Set(r1.checkIns.map((c) => c.id))
       expect(r2.checkIns.some((c) => page1Ids.has(c.id))).toBe(false)
       expect(r2.checkIns.map((c) => c.id)).toEqual(['99999999-9999-4999-8999-999999999999'])
+    })
+
+    it('takes an exact count alongside a keyset page when withTotal is set', async () => {
+      // The coach list asks for this on its FIRST page only, because the
+      // Check-ins tab's rail renders the history count.
+      const rows = [
+        { id: '55555555-5555-4555-8555-555555555555', client_id: 'c', status: 'reviewed', created_at: '2024-03-01T00:00:00Z', updated_at: '2024-03-01T00:00:00Z' },
+        { id: '66666666-6666-4666-8666-666666666666', client_id: 'c', status: 'reviewed', created_at: '2024-02-01T00:00:00Z', updated_at: '2024-02-01T00:00:00Z' },
+        { id: '77777777-7777-4777-8777-777777777777', client_id: 'c', status: 'reviewed', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
+      ]
+      const mockQuery = {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        or: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        then: (resolve: (value: unknown) => void) =>
+          Promise.resolve({ data: rows, error: null, count: 22 }).then(resolve),
+      }
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+
+      const { getClientCheckIns } = await import('./check-in-service')
+      const result = await getClientCheckIns('c', { limit: 2, keyset: true, withTotal: true })
+
+      expect(mockQuery.select).toHaveBeenCalledWith('*', { count: 'exact' })
+      expect(result.total).toBe(22)
+      // Still a keyset page: trimmed to the limit, with a cursor onward.
+      expect(result.checkIns).toHaveLength(2)
+      expect(result.nextCursor).toEqual({
+        createdAt: '2024-02-01T00:00:00Z',
+        id: '66666666-6666-4666-8666-666666666666',
+      })
     })
   })
 

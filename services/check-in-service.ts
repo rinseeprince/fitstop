@@ -251,13 +251,18 @@ export const getClientCheckIns = async (
     limit?: number;
     offset?: number;
     status?: CheckInStatus;
-    // Keyset pagination (the client list's native contract). `keyset: true` selects
-    // keyset mode even for the first page (no cursor); `cursor` pages to older rows
-    // on (created_at, id) and is pre-validated via lib/cursor.decodeCursor, so its
-    // values are safe to interpolate into the filter. The coach route and internal
-    // callers pass neither and keep the offset path.
+    // Keyset pagination (the native contract for BOTH list routes since C7).
+    // `keyset: true` selects keyset mode even for the first page (no cursor);
+    // `cursor` pages to older rows on (created_at, id) and is pre-validated via
+    // lib/cursor.decodeCursor, so its values are safe to interpolate into the
+    // filter. Internal callers that just want the N newest rows pass neither and
+    // keep the offset path.
     keyset?: boolean;
     cursor?: CheckInCursor;
+    // Take an exact count alongside a keyset page. The coach's per-client list
+    // asks for it on its FIRST page only, because that tab's rail renders the
+    // history count; the client route never asks and pays nothing.
+    withTotal?: boolean;
   }
 ): Promise<{
   checkIns: CheckIn[];
@@ -269,11 +274,13 @@ export const getClientCheckIns = async (
   const keyset = options?.keyset === true || cursor !== undefined;
 
   // Keyset reads page on (created_at, id) and don't need — and shouldn't pay for —
-  // an exact count. The legacy offset path keeps count:"exact" so the coach route
-  // can still surface a total.
+  // an exact count, so they omit it unless a caller opts in with `withTotal`. The
+  // legacy offset path keeps count:"exact" unconditionally.
+  const wantsCount = !keyset || options?.withTotal === true;
+
   let query = supabaseAdmin
     .from("check_ins")
-    .select("*", keyset ? undefined : { count: "exact" })
+    .select("*", wantsCount ? { count: "exact" } : undefined)
     .eq("client_id", clientId)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false }); // tiebreak for a stable keyset cursor
