@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0-C5 ALL shipped, smoked and CLOSED. C6 was SPLIT into C6a (schema + wire + server, SHIPPED) and C6b (the two UI surfaces, SHIPPED — owner smoke owed for both). STATUS blocks under §5.**
+**Status: IN PROGRESS — C0-C5 CLOSED. C6a + C6b SHIPPED; C6b's follow-up (the platform switch, drag reorder, the stuck sheet) SHIPPED and SMOKED CLEAR 2026-08-30. C7 (the coach check-in list's OFFSET paging + dead revalidation) is PLANNED and NOT BUILT — see §5. STATUS blocks under §5.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -1931,6 +1931,91 @@ revalidation.
 
 **Post-C6b:** owner smoke across all six surfaces; both DBs confirmed at 157; memory update.
 Then the separate Comparison / Goal Progress definition session (§2.6).
+
+### C7 — keyset the coach check-in list + restore revalidation (findings #5 + #6)
+
+**PLANNED, NOT BUILT.** Agreed with the owner 2026-08-30 as option (d) of four. Both defects
+are PRE-C6b; C6b only made #5 easier to hit. One commit.
+
+**The two symptoms and their one root cause.**
+- **#5 — React "two children with the same key".** `/api/clients/[id]/check-ins` pages by
+  `OFFSET`. A new check-in shifts every row down one, so page 2 (`offset=20`) re-returns what
+  was row 19 of page 1, and `data.flatMap(p => p.checkIns)` carries it twice against
+  `key={checkIn.id}`. **Proven on Dev, not inferred:** the duplicated key
+  `e1b3341b-78c3-4dce-8164-d267d5a6ac26` is a `check_ins` row (status `reviewed`, 2026-01-25)
+  sitting at **index 19** of that client's 53, with `CLIENT_CHECKINS_PAGE_SIZE = 20` — the last
+  row of page 1 — and index 0 is the check-in submitted minutes before the report.
+- **#6 — Journey stale until a hard reload.** `useClientCheckInsInfinite` and
+  `useAllClientCheckIns` both carry `revalidateOnFocus: false` AND `revalidateFirstPage: false`,
+  with `revalidateAll` at its default `false`, so they revalidate **nothing** — not on focus,
+  not on mount. Only a reload refreshes them. The Overview's chart feels different because
+  `useMeasurementSeries` is a plain `useSWR` and the tab remounts on every visit.
+
+**The good news: `getClientCheckIns` ALREADY has a working keyset path** (built for
+`/api/client/check-ins` — the `(created_at, id)` cursor, the `limit + 1` probe, `nextCursor`).
+The coach route simply never opted in. This is a route + hooks change, not a service rewrite.
+**No migration:** `idx_check_ins_client_created_id (client_id, created_at DESC, id DESC)` was
+verified live on Dev and covers the predicate and the ordering exactly.
+
+**Changes.**
+- `app/api/clients/[id]/check-ins/route.ts` — mirror the client route's contract: **keyset by
+  default**, `?offset=` an explicit legacy opt-in. Decode `?cursor=` through `lib/cursor.ts`
+  (400 on malformed) and pass `{ limit, keyset: true, cursor, status }`. Auth chain untouched.
+- **Keep an exact `total`, unlike the client route** — the Check-ins tab's rail meta
+  ("22 check-ins") is built on it. Add an explicit `withTotal` option to `getClientCheckIns`
+  rather than changing what keyset means for the client route, and take the count on the
+  **first page only** (`cursor === undefined`). It is one client's history behind
+  `idx_check_ins_client_id`. (Alternative the owner may still prefer: drop the number from the
+  rail and pay nothing.)
+- `hooks/use-check-in-data.ts` — `buildCheckInsPageKey` becomes cursor-derived: page 0 is
+  `?limit=N`, page *n* is `?limit=N&cursor=<previousPageData.nextCursor>`, `null` when there is
+  none. **That key derivation is what makes duplicates impossible**: if page 1's contents
+  change, its `nextCursor` changes, so page 2's KEY changes and SWR refetches it — the windows
+  cannot overlap. `hasMore` comes from the payload, not `checkIns.length < total`;
+  `useAllClientCheckIns`'s auto-advance keys on the last page's `nextCursor`.
+- **Restore revalidation on both readers**: drop `revalidateFirstPage: false` and set
+  `revalidateOnFocus: true`, citing the DOCUMENTED §7 exception `useOverdueClients` /
+  `useUnreviewedCheckIns` already carry — the dominant writer is a client submitting in another
+  session, which no coach-side invalidator can reach. Do not invent a new reason.
+- `useInvalidateClientCheckIns` needs NO change: its page filter matches `prefix + "?"`, which
+  both key shapes satisfy.
+- **No dedupe-on-flatten belt.** It would mask exactly the regression this removes. Keyset can
+  skip a row if one is deleted mid-page (no such product path); it cannot duplicate.
+
+**Tests.**
+- NEW regression at the hook level: page 1 = rows 1–20 with its cursor, page 2 keyed on that
+  cursor = rows 21–40; insert a row at the head, revalidate page 1, and the flattened list must
+  contain **no repeated id**. It duplicates row 20 on the offset builder. **Verify it fails on
+  the pre-fix commit in a `git worktree` at HEAD** — do not assume it does (C6b's follow-up did
+  this and it is the only reason that fix is trustworthy).
+- NEW: page 2's key derives from page 1's `nextCursor`, and is `null` without one.
+- NEW: both readers revalidate on mount and on focus.
+- `hooks/use-check-in-data.test.ts` — **the `vi.mock` contract that must change.** It invokes
+  the `swr/infinite` key builder directly and pins `?limit=20&offset=0` plus "the page clear
+  reaches exactly the keys `useAllClientCheckIns` asks swr for". Both move to the cursor shape.
+- `app/api/clients/[id]/check-ins/route.test.ts` — keyset default, a valid cursor pages, a
+  malformed cursor 400s, `?offset=` still works, `?status=` still validates, `total` on page 1.
+- `services/check-in-service.test.ts` — a `withTotal` case; the offset cases stay.
+
+**Docs.** ARCHITECTURE's Check-ins tab row ("Load older" is keyset now) and one line under the
+tab-structure section recording that the coach per-client list shares the client contract;
+CONVENTIONS §8 "Client read scaling" gains one clause noting the rule now covers this coach
+list too (it currently reads as client-portal-only, which is why this reader stayed on offset).
+
+**§2 review — applies with real content.** Auth untouched (`apiRateLimit` →
+`requireCoachOwnsClient`; its pre-existing tier deviation stays, retiering is blocked on the
+limiter key per §9). **Cursor injection is the safety story**: `?cursor=` is decoded through
+`lib/cursor.ts` — base64url → `{createdAt, id}`, UUID-checked, `isValidIsoTimestamp` rejecting
+anything outside the safe ISO charset — BEFORE its values are interpolated into the PostgREST
+`.or()` filter. Round trips unchanged per page; the first page gains a COUNT, deeper pages lose
+the offset scan, so paging into a long history gets faster. Focus revalidation adds one request
+per tab-focus per mounted reader — state it. A `?status=` filter combined with keyset would
+fall to `idx_check_ins_client_status` instead; nothing passes `status` today.
+
+**Smoke.** Submit a check-in as the client with the coach's Check-ins tab open on 2+ pages
+("Load older" first) → no console warning, no repeated row. Switch to Journey and back → the
+new check-in is in the chart **without a reload**. "Load older" still reaches the end of a long
+history, and the rail count is right.
 
 ---
 
