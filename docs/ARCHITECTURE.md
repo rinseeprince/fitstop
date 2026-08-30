@@ -31,6 +31,11 @@ coaches
   │     └── coach_saved_sessions    -- reusable sessions (saved_plan_id NULL = standalone)
   │           └── coach_saved_exercises  -- exercise_id FK to exercises catalog
   │
+  ├── check_in_questions            -- the coach's question bank (edited in place, archived not deleted)
+  ├── check_in_forms                -- client_id NULL = a named reusable TEMPLATE in the library
+  │     ├── check_in_form_fields        -- (form_id, field_key) — row present = the form asks it
+  │     └── check_in_form_questions     -- (form_id, question_id) + position + enabled
+  │
   └── clients                        -- coach_id FK, one coach per client
         ├── training_plans            -- MANY coexisting provenance rows (date-range, no singleton); saved_plan_id FK tracks library provenance (nullable)
         │     ├── training_sessions   -- carries calorie_surplus_percentage (source for nutrition cascade)
@@ -51,7 +56,9 @@ coaches
         │     │                 └── set_logs   -- per-set actuals (reps, weight, rpe)
         │     └── daily_habit_logs
         │
+        ├── check_in_forms            -- the CLIENT's own form (at most one; no row = the full default form)
         ├── check_ins                 -- weekly structured submissions
+        │     └── check_in_answers    -- one per (check-in, custom question); prompt read through the FK
         ├── client_goals              -- versioned goal records
         ├── client_notes              -- coach notes about the client (one pinned max)
         └── body_metrics              -- immutable measurement events
@@ -1074,6 +1081,85 @@ back through the form screen.
   on its own. `submitCheckIn` translates the resulting `23505` into a readable sentence; a client
   never sees constraint text.
 
+### The customisable form (migration 157)
+
+A coach chooses which of the check-in's built-in fields a client is asked, and
+adds free-text questions of their own. Five tables, no column on `clients` or
+`check_ins`.
+
+| Table | Holds |
+|---|---|
+| `check_in_questions` | the coach's question bank — one row per question |
+| `check_in_forms` | one form. `client_id NOT NULL` = that client's own (at most one); `client_id NULL` = a named TEMPLATE in the library |
+| `check_in_form_fields` | `(form_id, field_key)` — row present = the form asks that field |
+| `check_in_form_questions` | `(form_id, question_id)` + `position` + `enabled` |
+| `check_in_answers` | one per `(check_in_id, question_id)` |
+
+**No form row means the full form.** That default is the entire backward-
+compatibility story: there is no backfill, and every client who has never been
+customised is unaffected. `getClientCheckInForm` resolves absence to all 14
+field keys and no questions.
+
+**Fourteen field keys, and they are the complete set of fields the client fills
+in** (`lib/check-in/form-fields.ts`, CHECK-constrained in the migration — adding
+one means editing both). `mood` / `energy` / `sleep` / `stress` / `soreness` are
+NOT among them and must not be added: Session 6.4 removed their pickers and
+sliders, and `submitCheckIn` derives all five from `wellness_logs` over the
+period, so a key there would promise a toggle over a field nobody fills in. The
+Feeling step's weekly summary and the Training step's session checklist are
+read-only viewers of the client's own week — and the checklist is a fill-gap
+LOGGER writing to `training_events` — so they carry no key either, and the two
+steps are unconditional. With every key off a client still gets a two-step
+"here is your week, confirm it" check-in. (Making those two viewers suppressible
+is a 16th/15th key and a different feature; `TECHNICAL-DEBT.md` records it.)
+
+**A question is a row, not a string copied onto each form.** Rewording it
+changes the question everywhere it is asked AND relabels every past answer,
+because it is the same question — `check_in_answers` carries no prompt snapshot
+and resolves through the FK. An answered question cannot be deleted
+(`check_in_answers.question_id` refuses it), so `archived_at` is the retirement
+gesture; an archived question leaves every form's view while its answers keep
+resolving. The FK is `ON DELETE NO ACTION`, not `RESTRICT`, deliberately: NO
+ACTION defers to end-of-statement, so a full coach/client teardown that removes
+the answers in the same statement still succeeds, while a bare delete of an
+answered question still fails. RESTRICT would have made that a coin-flip on
+cascade order, and there is a live coach-delete path (`scripts/seed-scale-client.ts`).
+
+**Both writes are atomic.** `save_check_in_form_atomic` (a client's form) and
+`create_check_in_form_template_atomic` (a template) each replace three tables in
+one transaction, through a shared `check_in_form_write_children` helper that
+re-proves in SQL that every referenced question belongs to the calling coach —
+the route proves the coach owns the CLIENT and cannot prove that. Neither RPC
+has an optional parameter: the generated `Args` type never emits `| null`, so a
+`DEFAULT NULL` parameter would force an `as never` at the call site.
+
+**Templates are copy-based**, like every other library object here: applying one
+REPLACES the coach's editor state in the browser and they commit it through
+`PUT /api/clients/[id]/check-in-form`. There is deliberately no server-side
+apply route — a template is a starting point the coach reviews, not a write that
+lands behind their back. The join rows are copied; the questions are shared.
+
+**The form never touches a `clients` column.** `updateClientCheckInConfig` is a
+full replace of the four scheduling columns, so routing a form save through it
+would clear `next_check_in_due` (see "Two writers, and only two" above).
+
+**Wire.** `GET /api/client/check-in-context` carries an additive
+`form: { fields, questions }`; `POST /api/client/check-ins` accepts optional
+`customAnswers: [{ questionId, answer }]` (≤ `MAX_CHECK_IN_QUESTIONS`).
+`GET /api/client/check-ins/[id]` and `GET /api/check-in/[id]` return
+`customAnswers` with prompts joined — the single-check-in reads only, never the
+history LIST, which stays a sparse fieldset. A submission carrying a disabled
+field is **stripped, never 400'd** (`applyCheckInForm`, shared by the browser and
+the server): a payload with a disabled value is a client who loaded the form
+before the coach changed it. The server strips **before the photo uploads**, so a
+disabled photo is never uploaded and then discarded.
+
+**The answers are a second statement after the check-in INSERT and are NOT
+swallowed.** If they fail, the check-in stands without them, the POST 500s, and
+the client's retry meets migration 156's period-unique constraint. Surfacing it
+is deliberate — silently losing a client's typed answers is worse — and closing
+the seam means moving the check-in INSERT itself into an RPC.
+
 ### The coach review surface
 
 `components/clients/check-ins/check-in-detail-view.tsx`, rendered by the Check-ins tab in place of
@@ -1181,9 +1267,21 @@ mutate.
 ### The React Native contract
 
 `/api/client/check-in-status`, `check-in-context` and `notifications` are read by the mobile client.
-**Response shapes must not change**; their three test files are the guard, and they exercise the real
-gate rather than mocking it, so the wire values themselves are covered. "No schedule" is tested at
-the call site (`nextCheckInDue == null`), because `checkInWeekday` never returns null.
+**Additive OPTIONAL keys are allowed; removals and renames are not.** Their three test files are the
+guard — `check-in-context`'s asserts the exact sorted key set, so an addition is a deliberate edit
+rather than a drift — and they exercise the real gate rather than mocking it, so the wire values
+themselves are covered. "No schedule" is tested at the call site (`nextCheckInDue == null`), because
+`checkInWeekday` never returns null.
+
+**`CheckInContextResponse` (`types/check-in.ts`) is that contract, and it describes the WHOLE
+payload.** It used to describe five of eleven keys while the route added the rest through a local
+inline intersection and `hooks/use-client-check-in.ts` kept a third private copy of the same shape;
+both were deleted when the `form` key landed. A payload key with no type is how the wire and this
+document drift apart, and the RN work is read off that type.
+
+Two keys have been added this way: `trainingEventDetails` (Session 6.2) and `form` (the customisable
+form). Until a client app reads `form` it renders the full form and sees no custom questions — which
+is exactly what every client gets today.
 
 ---
 

@@ -331,10 +331,15 @@ export type CheckIn = {
 };
 
 // Form data structure for client submission
+export type CheckInCustomAnswers = {
+  customAnswers?: CheckInCustomAnswerInput[];
+};
+
 export type CheckInFormData = SubjectiveMetrics &
   BodyMetrics &
   ProgressPhotos &
-  EnhancedTrainingMetrics;
+  EnhancedTrainingMetrics &
+  CheckInCustomAnswers;
 
 // Coach record from database
 export type Coach = {
@@ -511,18 +516,96 @@ export type CheckInClientInfo = {
 
 // Request/Response types for API
 
+/** One custom question as the client's form receives it. */
+export type CheckInFormQuestion = {
+  id: string;
+  prompt: string;
+};
+
+/**
+ * The resolved check-in form for one client: which built-in fields to render
+ * and which custom questions to ask. `fields` is always resolved — a client
+ * with no form row gets all 14 keys, which is why this feature needs no
+ * backfill. Field keys and their semantics live in `lib/check-in/form-fields.ts`.
+ */
+export type CheckInFormConfig = {
+  fields: string[];
+  questions: CheckInFormQuestion[];
+};
+
+/** A question on the COACH's editor, which sees disabled rows too. */
+export type CheckInFormEditorQuestion = CheckInFormQuestion & {
+  enabled: boolean;
+};
+
+/** The coach's editor view of a form — a client's own, or a template's. */
+export type CheckInFormEditorConfig = {
+  fields: string[];
+  questions: CheckInFormEditorQuestion[];
+};
+
+/** A saved, reusable form in the coach's library. */
+export type CheckInFormTemplate = CheckInFormEditorConfig & {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+/** A row in the coach's question bank. */
+export type CheckInQuestion = {
+  id: string;
+  prompt: string;
+  createdAt: string;
+};
+
+/** What the client sends back for one custom question. */
+export type CheckInCustomAnswerInput = {
+  questionId: string;
+  answer: string;
+};
+
+/**
+ * A stored answer as it is read back. `prompt` is joined LIVE from the
+ * question row, never snapshotted — rewording a question relabels every past
+ * answer, because it is the same question.
+ */
+export type CheckInCustomAnswer = CheckInCustomAnswerInput & {
+  prompt: string;
+};
+
 /**
  * The client portal's check-in context payload (GET /api/client/check-in-context).
  *
  * Was `ValidateCheckInTokenResponse` — it served the magic-link flow, which is
  * deleted. Its `valid` flag went with it: the token that could be invalid no
  * longer exists, and the route already discarded the field.
+ *
+ * **This type is the RN contract** (`ARCHITECTURE.md → The React Native
+ * contract`), so it describes the WHOLE payload. It used to describe five of
+ * eleven keys while the route added the rest through a local inline
+ * intersection and `use-client-check-in.ts` kept a third private copy of the
+ * same shape; a payload key with no type is how the wire and the doc drift
+ * apart. Both of those were deleted when `form` was added — one spelling.
+ * Additive optional keys are allowed here; removals and renames are not.
  */
 export type CheckInContextResponse = {
   clientInfo?: CheckInClientInfo;
   trainingContext?: CheckInTrainingContext;
   nutritionContext?: CheckInNutritionContext;
   dailyLogs?: DailyLog[];
+  /** The check-in's reporting window, resolved server-side. */
+  periodStart?: string;
+  periodEnd?: string;
+  periodDays?: number;
+  trainingPeriodStats?: { sessionsCompleted: number; sessionsPlanned: number };
+  /** Additive (Session 6.2): per-event training detail from `training_events`. */
+  trainingEventDetails?: CheckInTrainingEventDetail[];
+  /**
+   * Additive (C6a): the coach's per-client form. `fields` is resolved and never
+   * null. Until a client app reads this it renders the full form and sees no
+   * custom questions, which is exactly what every client gets today.
+   */
+  form?: CheckInFormConfig;
   errorMessage?: string;
 };
 
@@ -750,4 +833,13 @@ export type GetCheckInComparisonResponse = {
 export type CheckInWithDetails = CheckIn & {
   sessionCompletions?: CheckInSessionCompletion[];
   exerciseHighlights?: CheckInExerciseHighlight[];
+  /**
+   * Answers to the coach's custom questions, joined to their prompts. On
+   * `CheckInWithDetails` rather than `CheckIn` deliberately: the client's
+   * history LIST renders a date, a status and an AI preview, and embedding a
+   * dictionary inside a row list is what CONVENTIONS §8 "Sparse fieldsets"
+   * forbids. Because it is not on `CheckIn`, `CLIENT_FACING_CHECKIN_KEYS`
+   * cannot leak it by default — the allowlist stays fail-closed.
+   */
+  customAnswers?: CheckInCustomAnswer[];
 };

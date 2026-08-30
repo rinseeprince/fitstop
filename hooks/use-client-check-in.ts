@@ -5,29 +5,19 @@ import { useAuth } from "@/contexts/auth-context";
 import type {
   CheckInFormData,
   CheckInClientInfo,
-  CheckInTrainingContext,
-  CheckInNutritionContext,
-  CheckInTrainingEventDetail,
+  CheckInContextResponse,
 } from "@/types/check-in";
-import type { DailyLog } from "@/types/daily-log";
 
-type TrainingPeriodStats = {
-  sessionsCompleted: number;
-  sessionsPlanned: number;
-};
-
-type CheckInContextData = {
+/**
+ * The route's payload, typed off the shared contract rather than a private
+ * copy of it. This hook used to declare a THIRD spelling of the same shape
+ * (the domain type and the route each had one), which is how a key can exist
+ * on the wire with no type describing it. `clientInfo` is narrowed to required
+ * because every success response sets it; everything else stays as the
+ * contract has it.
+ */
+type CheckInContextData = CheckInContextResponse & {
   clientInfo: CheckInClientInfo;
-  trainingContext?: CheckInTrainingContext;
-  nutritionContext?: CheckInNutritionContext;
-  trainingPeriodStats?: TrainingPeriodStats;
-  // Per-event training detail (Session 6.2+), drives the editable/locked rows in
-  // the check-in form's training section (Session 6.4).
-  trainingEventDetails?: CheckInTrainingEventDetail[];
-  dailyLogs?: DailyLog[];
-  periodStart?: string;
-  periodEnd?: string;
-  periodDays?: number;
 };
 
 export function useClientCheckIn() {

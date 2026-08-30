@@ -230,6 +230,26 @@ All client API endpoints require authentication except where noted.
 - `GET /api/client/check-ins/{id}` - Get specific check-in
 - `GET /api/client/check-in-context` - Get context for check-in form
 
+**The customisable form.** `check-in-context` carries
+`form: { fields: string[], questions: [{ id, prompt }] }` — which of the 14
+built-in check-in fields this client's coach asks, and their custom questions in
+order. `fields` is always resolved: a client whose coach has not customised
+anything gets all 14, which is what every client got before the key existed, so
+ignoring `form` renders the full form and is back-compatible.
+
+Field keys: `notes`, `weight`, `body_fat`, `waist`, `hips`, `chest`, `arms`,
+`thighs`, `photo_front`, `photo_side`, `photo_back`, `exercise_highlights`,
+`prs`, `challenges`. There is deliberately no key for mood/energy/sleep/stress/
+soreness — those are derived server-side from the daily logs, not collected on
+the check-in.
+
+`POST /api/client/check-ins` accepts optional
+`customAnswers: [{ questionId, answer }]` (max 10). A value for a field the
+client's form does not ask is **stripped server-side, not rejected** — sending a
+stale draft is safe. `GET /api/client/check-ins/{id}` returns
+`customAnswers: [{ questionId, prompt, answer }]`; the history LIST does not
+(sparse fieldset).
+
 ### Notifications
 - `GET /api/client/notifications` - Get notifications
 

@@ -3,6 +3,7 @@ import { requireClientAuth } from "@/lib/require-client-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import {
   deriveSessionCompletionsForCheckIn,
+  getCheckInAnswers,
   getCheckInExerciseHighlights,
   mapExerciseHighlight,
 } from "@/services/check-in-service";
@@ -42,9 +43,14 @@ export async function GET(
     // (training_events + session_logs) for the check-in's stored period — there
     // is no backing table. The IDOR guard above (eq client_id) already scoped
     // this row to the authenticated client.
-    const [sessionCompletions, highlightRows] = await Promise.all([
+    const [sessionCompletions, highlightRows, customAnswers] = await Promise.all([
       deriveSessionCompletionsForCheckIn(mapCheckInRow(checkIn)),
       getCheckInExerciseHighlights(id),
+      // The client's own answers to the coach's custom questions, read back
+      // with their prompts. On the single-check-in read only: the history LIST
+      // renders a date, a status and a preview, and embedding a dictionary in
+      // a row list is what CONVENTIONS section 8 "Sparse fieldsets" forbids.
+      getCheckInAnswers(id),
     ]);
 
     // getCheckInExerciseHighlights returns RAW snake_case rows (it is a
@@ -98,6 +104,7 @@ export async function GET(
         // Enhanced training data
         sessionCompletions,
         exerciseHighlights,
+        customAnswers,
       },
     });
   } catch (error) {

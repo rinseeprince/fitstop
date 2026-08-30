@@ -516,7 +516,7 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 | 1 | `services/check-in-tracking-service.ts` | 455 | 300 | 155 (51%) | Open |
 | 2 | `app/client/dashboard/page.tsx` | 366 | 250 | 116 (46%) | Open |
 | 3 | ~~`components/check-in/check-in-detail-modal.tsx`~~ | 352 | 250 | 102 (41%) | **Resolved 2026-08-29** — deleted; the review surface is `components/clients/check-ins/check-in-detail-view.tsx` (234 lines, render only) over the SWR hook `hooks/use-check-in-detail-data.ts` (228 lines) |
-| 4 | `app/api/client/check-ins/route.ts` | 292 | 250 | 42 (17%) | Open |
+| 4 | `app/api/client/check-ins/route.ts` | 363 | 250 | 113 (45%) | Open — grew in C6a (the form resolve + strip) |
 | 5 | `app/client/check-in/page.tsx` | 290 | 250 | 40 (16%) | Open |
 | 6 | `components/daily-pulse/daily-pulse.tsx` | 277 | 250 | 27 (11%) | Open |
 | 7 | `components/client/walkthrough/guided-walkthrough.tsx` | 266 | 250 | 16 (6%) | Open |
@@ -533,7 +533,7 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 
 4. **`check-ins/route.ts`** - Extract photo upload handling and AI summary triggering into the check-in service layer. The POST handler has too many inline responsibilities.
 
-5. **`check-in/page.tsx`** - Extract step navigation logic and `canProceed()` validation into a `useCheckInSteps()` hook.
+5. **`check-in/page.tsx`** - Extract step navigation logic and `canProceed()` validation into a `useCheckInSteps()` hook. **Reshaped by C6b**: the step list stops being a fixed 1-4 and comes from `stepsForFields(form.fields)`, so the hook this suggests would own the derived list, the clamp on a restored draft step, and the Next/Submit switch. Its three hard-coded `4`s go with it.
 
 6. **`daily-pulse.tsx`** - Split into `DailyPulseContainer` (hooks, state, handlers) and `DailyPulseView` (JSX rendering).
 
@@ -866,6 +866,36 @@ CONVENTIONS §8 is scheduled for rewrite to describe this pattern accurately (cu
 
 ---
 
+## Check-in form (migration 157, C6a)
+
+### P3 - Considered and declined, recorded so it is not re-litigated
+- **The 14 field keys do not cover the Feeling summary or the Training checklist.**
+  A coach can turn off every field the client fills in — reflection, weight, all five
+  girths, all three photos, exercise highlights, wins, challenges — and the wizard
+  still shows two steps: the week's wellness summary and the session checklist plus
+  the nutrition summary. Making those suppressible is two more presence keys
+  (`wellness_summary`, `training_summary`), and `stepsForFields` would stop treating
+  Feeling and Training as unconditional.
+  **Declined by the owner, 2026-08-30, with the reasoning:** ask #4 is toggles over
+  the fields the client FILLS IN; those two are the app showing the client their own
+  week back, which is a "what does the client see" question wearing a toggle's
+  clothes. Decisive specifics: the Training step's session checklist is a fill-gap
+  LOGGER writing to `training_events`, so suppressing it would remove a logging path
+  rather than a question — a much larger consequence than one more checkbox, and
+  nowhere in the ask; and the resulting floor (a two-step "here's your week, confirm
+  it" with no text inputs) is a reasonable minimum, not a gap. Revisit only if a
+  coach asks for it.
+
+### P3 - Known, no action
+- **`check_in_answers.question_id` is `ON DELETE NO ACTION`, so deleting an answered
+  question raises `23503`.** That is the intent — it is what forces archive-instead-of-
+  delete — and the app has no question-delete path, only `archived_at`. NO ACTION
+  rather than RESTRICT so a full coach/client teardown, which removes the answers in
+  the same statement, still succeeds regardless of cascade order (there is a live
+  coach-delete path: `scripts/seed-scale-client.ts --fullReset`). If a user-facing
+  delete is ever built it must translate `23503` to a sentence rather than letting the
+  constraint text reach a coach (CONVENTIONS §10).
+
 ## Design System & Color Tokens
 
 Reviewed: 2026-05-12
@@ -962,7 +992,9 @@ Logged: 2026-07-25 (Metrics page redesign, migration 132).
   generic `rateLimit()` shares one counter per IP and the effective ceiling depends on
   which limiter ran last. The in-memory fallback namespaces by config, so the two paths
   disagree; `assistantRateLimit` sets its own prefix and is isolated. **Visible symptom:**
-  21 `/api/clients/**` route files sit on `apiRateLimit` where CONVENTIONS §9 mandates
+  15 `/api/clients/**` route files sit on `apiRateLimit` where CONVENTIONS §9 mandates
   `coachApiRateLimit`. Retiering them without fixing the key perturbs unrelated routes for
   the same IP, so the tier sweep is blocked on the key fix, not the other way round.
-  Logged: 2026-08-12 (Session 4B).
+  Logged: 2026-08-12 (Session 4B). **Count re-derived 2026-08-30 (C6a): 15, not 21** —
+  corrected here and in CONVENTIONS §9, which carried the same stale number. C6a's four
+  new routes are on `coachApiRateLimit` from birth and are not part of that backlog.

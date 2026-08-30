@@ -18,6 +18,7 @@ const getCheckInTrainingPeriodStatsMock = vi.fn()
 const getNutritionSummaryForPeriodMock = vi.fn()
 const getDailyLogsMock = vi.fn()
 const insertExerciseHighlightsMock = vi.fn()
+const insertCheckInAnswersMock = vi.fn()
 const calculateCheckInPeriodMock = vi.fn()
 const resolveCheckInWindowMock = vi.fn()
 
@@ -35,11 +36,14 @@ vi.mock('./daily-logs-service', () => ({
 }))
 vi.mock('./check-in-details-service', () => ({
   insertExerciseHighlights: (...args: unknown[]) => insertExerciseHighlightsMock(...args),
+  insertCheckInAnswers: (...args: unknown[]) => insertCheckInAnswersMock(...args),
   // deriveSessionCompletionsForCheckIn / getCheckInWithDetails / getCheckInExerciseHighlights
-  // are re-exported but unused by these tests; stub to keep the module mock total.
+  // / getCheckInAnswers are re-exported but unused by these tests; stub to keep
+  // the module mock total.
   deriveSessionCompletionsForCheckIn: vi.fn(),
   getCheckInWithDetails: vi.fn(),
   getCheckInExerciseHighlights: vi.fn(),
+  getCheckInAnswers: vi.fn(),
 }))
 
 import { supabaseAdmin } from './supabase-admin'
@@ -119,6 +123,7 @@ describe('Check-in Service', () => {
       getNutritionSummaryForPeriodMock.mockReset()
       getDailyLogsMock.mockReset()
       insertExerciseHighlightsMock.mockReset()
+      insertCheckInAnswersMock.mockReset()
       calculateCheckInPeriodMock.mockReset()
       resolveCheckInWindowMock.mockReset()
       // Default happy-path period + client.
@@ -401,6 +406,59 @@ describe('Check-in Service', () => {
       // No session-completions writer exists anymore — assert the highlights one
       // is the only related-data write.
       expect(insertExerciseHighlightsMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('writes the custom answers against the new check-in id', async () => {
+      mockInsert({ data: { id: 'ci' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await submitCheckIn('client-123', {
+        customAnswers: [{ questionId: 'q-a', answer: 'yes' }],
+      } as any)
+
+      expect(insertCheckInAnswersMock).toHaveBeenCalledWith('ci', [
+        { questionId: 'q-a', answer: 'yes' },
+      ])
+    })
+
+    it('writes no answers when the form asks no questions', async () => {
+      mockInsert({ data: { id: 'ci' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await submitCheckIn('client-123', { customAnswers: [] } as any)
+
+      expect(insertCheckInAnswersMock).not.toHaveBeenCalled()
+    })
+
+    it('does NOT swallow an answers-insert failure — unlike the highlights writer', async () => {
+      // The seam this documents (CONVENTIONS section 2 item 13): the check-in row
+      // has already committed, so a throw here leaves it standing WITHOUT its
+      // answers and the client's retry meets migration 156's period-unique
+      // constraint. Surfacing it is still the right call — silently losing a
+      // client's typed answers is worse than a visible failure.
+      mockInsert({ data: { id: 'ci' }, error: null })
+      insertCheckInAnswersMock.mockRejectedValueOnce(new Error('Failed to save your answers: boom'))
+
+      const { submitCheckIn } = await import('./check-in-service')
+
+      await expect(
+        submitCheckIn('client-123', {
+          customAnswers: [{ questionId: 'q-a', answer: 'yes' }],
+        } as any),
+      ).rejects.toThrow(/Failed to save your answers/)
+    })
+
+    it('still swallows an exercise-highlights failure, which is the deliberate asymmetry', async () => {
+      mockInsert({ data: { id: 'ci' }, error: null })
+      insertExerciseHighlightsMock.mockRejectedValueOnce(new Error('boom'))
+
+      const { submitCheckIn } = await import('./check-in-service')
+
+      await expect(
+        submitCheckIn('client-123', {
+          exerciseHighlights: [{ exerciseName: 'Squat', highlightType: 'pr' }],
+        } as any),
+      ).resolves.toBe('ci')
     })
 
     it('throws error when submission fails', async () => {

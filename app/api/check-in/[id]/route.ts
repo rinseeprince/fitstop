@@ -4,6 +4,7 @@ import { mapCheckInRow } from "@/lib/mappers";
 import type { CheckInRow } from "@/lib/database-helpers";
 import {
   deriveSessionCompletionsForCheckIn,
+  getCheckInAnswers,
   getCheckInExerciseHighlights,
   getCheckInPeriodAdherence,
   mapExerciseHighlight,
@@ -75,10 +76,13 @@ export async function GET(
     // target, without the rows this reads. `null` for a legacy row whose period
     // cannot be resolved — the renderers show their empty states rather than
     // fall back to a second, client-side definition.
-    const [sessionCompletions, highlightRows, periodAdherence] = await Promise.all([
+    const [sessionCompletions, highlightRows, periodAdherence, customAnswers] = await Promise.all([
       deriveSessionCompletionsForCheckIn(checkIn),
       getCheckInExerciseHighlights(id),
       getCheckInPeriodAdherence(checkIn),
+      // Answers to the coach's custom questions, with their prompts joined
+      // live from the question rows (#4).
+      getCheckInAnswers(id),
     ]);
 
     return NextResponse.json({
@@ -88,6 +92,7 @@ export async function GET(
         // Map to the camelCase domain type so the payload matches the declared
         // CheckInWithDetails shape (and getCheckInWithDetails), not raw DB rows.
         exerciseHighlights: highlightRows.map(mapExerciseHighlight),
+        customAnswers,
       },
       client: checkInData.clients || null,
       periodAdherence,

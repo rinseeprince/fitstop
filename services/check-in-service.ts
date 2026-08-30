@@ -16,7 +16,10 @@ import { checkInWeekday } from "@/lib/check-in-week";
 import { UNREVIEWED_CHECK_IN_STATUSES } from "@/lib/constants";
 import { getFrequencyInDays, resolveCheckInDue } from "@/lib/check-in-schedule";
 import type { CheckInCursor } from "@/lib/cursor";
-import { insertExerciseHighlights } from "./check-in-details-service";
+import {
+  insertCheckInAnswers,
+  insertExerciseHighlights,
+} from "./check-in-details-service";
 import { getCheckInTrainingPeriodStats } from "./check-in-context-service";
 import { getNutritionSummaryForPeriod } from "./weekly-nutrition-service";
 import { getDailyLogs } from "./daily-logs-service";
@@ -26,6 +29,7 @@ import { getClientById } from "./client-service";
 // Re-export split modules so existing imports continue to work
 export {
   deriveSessionCompletionsForCheckIn,
+  getCheckInAnswers,
   getCheckInExerciseHighlights,
   getCheckInPeriodAdherence,
   getCheckInWithDetails,
@@ -160,6 +164,19 @@ export const submitCheckIn = async (
   }
 
   const checkInId = data.id;
+
+  // The client's answers to the coach's custom questions (#4).
+  //
+  // NOT swallowed, unlike the exercise highlights below — losing a set of typed
+  // answers silently is worse than a visible failure. It is a SECOND statement,
+  // so it carries a seam (CONVENTIONS §2 item 13): if it throws, the check-in
+  // stands with no answers, the POST 500s, and the client's retry meets
+  // migration 156's period-unique constraint rather than a fresh submission.
+  // Closing that seam means moving the 39-column INSERT above into an RPC.
+  // Placed BEFORE the schedule advance so the two failures cannot compound.
+  if (formData.customAnswers?.length) {
+    await insertCheckInAnswers(checkInId, formData.customAnswers);
+  }
 
   // The SECOND of the two writers of clients.next_check_in_due (the other is
   // the coach's date picker). A submitted check-in advances the schedule by one

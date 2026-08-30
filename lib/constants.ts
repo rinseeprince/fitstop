@@ -156,7 +156,19 @@ export const AUDIT_ACTIONS = {
   BLOCK_CHAIN_UPDATE: "block.chain_update",
   BLOCK_DELETE: "block.delete",
   BLOCK_ARCHIVE: "block.archive",
+  CHECK_IN_FORM_UPDATE: "check_in_form.update",
+  CHECK_IN_FORM_TEMPLATE_CREATE: "check_in_form_template.create",
 } as const;
+
+/**
+ * How many custom questions one check-in form may ask.
+ *
+ * ONE definition, because it bounds two different things that must agree: the
+ * form the coach saves (`saveCheckInFormSchema`) and the answers the client
+ * sends back (`submitCheckInSchema.customAnswers`). A form allowed more
+ * questions than a submission may carry answers would silently drop the tail.
+ */
+export const MAX_CHECK_IN_QUESTIONS = 10;
 
 // Client energy (BMR/TDEE) — see services/client-energy-calc.ts.
 // The activity fallback mirrors the column DEFAULT (migration 046) so a NULL

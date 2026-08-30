@@ -161,6 +161,19 @@ export function buildCheckInAnalysisPrompt(
   if (current.challenges) prompt += `\nChallenges (free text): ${sanitizeForAIPrompt(current.challenges)}\n`;
   if (current.notes) prompt += `\nNotes: ${sanitizeForAIPrompt(current.notes)}\n`;
 
+  // The coach's own questions and this client's answers (D4.5). One sanitised
+  // line each, beside the other free text, because without them the Summary is
+  // blind to the questions the coach wrote — it would analyse a week the client
+  // partly described somewhere the model never sees. Both halves are sanitised:
+  // the prompt is coach-authored and the answer is client-authored, and neither
+  // is trusted input to a model.
+  if (current.customAnswers?.length) {
+    prompt += "\nCoach questions:\n";
+    current.customAnswers.forEach((a) => {
+      prompt += `- ${sanitizeForAIPrompt(a.prompt)} — ${sanitizeForAIPrompt(a.answer)}\n`;
+    });
+  }
+
   // Prefer frozen snapshot for day-by-day detail when available
   if (periodSnapshot) {
     prompt += "\n**DAY-BY-DAY TRAINING SCHEDULE (from snapshot):**\n";

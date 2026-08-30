@@ -18,6 +18,7 @@ vi.mock("@/services/supabase-admin", () => ({
 const mapExerciseHighlightMock = vi.fn();
 vi.mock("@/services/check-in-service", () => ({
   deriveSessionCompletionsForCheckIn: vi.fn(),
+  getCheckInAnswers: vi.fn(),
   getCheckInExerciseHighlights: vi.fn(),
   mapExerciseHighlight: (...args: unknown[]) => mapExerciseHighlightMock(...args),
 }));
@@ -36,6 +37,7 @@ import { GET } from "./route";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import {
   deriveSessionCompletionsForCheckIn,
+  getCheckInAnswers,
   getCheckInExerciseHighlights,
 } from "@/services/check-in-service";
 
@@ -58,6 +60,7 @@ describe("GET /api/client/check-ins/[id]", () => {
     vi.clearAllMocks();
     vi.mocked(requireClientAuth).mockResolvedValue({ ok: true, clientId: "client-1" } as any);
     vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([]);
+    vi.mocked(getCheckInAnswers).mockResolvedValue([]);
     vi.mocked(deriveSessionCompletionsForCheckIn).mockResolvedValue([
       {
         id: "e-1",
@@ -161,4 +164,29 @@ describe("GET /api/client/check-ins/[id]", () => {
     const res = await GET(req(), params("ci-1"));
     expect(res.status).toBe(401);
   });
+
+  it("reads back the client's own answers with their prompts", async () => {
+    // The single-check-in read only. The history LIST stays sparse — embedding
+    // a dictionary in a row list is what CONVENTIONS section 8 forbids.
+    vi.mocked(getCheckInAnswers).mockResolvedValue([
+      { questionId: "q-a", prompt: "How was sleep?", answer: "badly" },
+    ]);
+    mockCheckInRow({
+      data: {
+        id: "ci-1",
+        client_id: "client-1",
+        status: "pending",
+        created_at: "2026-05-14T12:00:00Z",
+      },
+      error: null,
+    });
+
+    const body = await (await GET(req(), params("ci-1"))).json();
+
+    expect(getCheckInAnswers).toHaveBeenCalledWith("ci-1");
+    expect(body.data.customAnswers).toEqual([
+      { questionId: "q-a", prompt: "How was sleep?", answer: "badly" },
+    ]);
+  });
 });
+

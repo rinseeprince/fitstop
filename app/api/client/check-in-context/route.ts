@@ -12,7 +12,8 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { checkInWeekday } from "@/lib/check-in-week";
 import { getCheckInGate } from "@/lib/check-in-schedule";
 import { getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
-import type { CheckInContextResponse, CheckInTrainingEventDetail } from "@/types/check-in";
+import { getClientCheckInForm } from "@/services/check-in-form-service";
+import type { CheckInContextResponse } from "@/types/check-in";
 
 /**
  * GET /api/client/check-in-context
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
     // serial round-trip. (Runs only after gating, so a gated request never reaches
     // getCheckInNutritionContext and its plan-promotion side effect.)
     // supabaseAdmin required: no client-facing SELECT RLS policy exists on coaches table
-    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats, dailyLogs, trainingEventDetails] = await Promise.all([
+    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats, dailyLogs, trainingEventDetails, form] = await Promise.all([
       supabaseAdmin
         .from("coaches")
         .select("name")
@@ -109,19 +110,20 @@ export async function GET(request: NextRequest) {
       getCheckInTrainingPeriodStats(client.id, periodStart, periodEnd),
       getDailyLogs(client.id, periodStart, periodEnd),
       getTrainingEventDetailsForPeriod(client.id, periodStart, periodEnd),
+      // The coach's per-client form (C6a). Joined to the existing fan-out, so
+      // it costs no extra round trip. Always resolved: a client with no form
+      // row gets all 14 field keys and no questions, which is exactly what
+      // every client got before this key existed.
+      getClientCheckInForm(client.id),
     ]);
 
     const coach = coachResult.data;
 
-    const response: CheckInContextResponse & {
-      periodStart: string;
-      periodEnd: string;
-      periodDays: number;
-      trainingPeriodStats: { sessionsCompleted: number; sessionsPlanned: number };
-      // Additive (Session 6.2): per-event training detail, single-sourced from
-      // training_events. Optional so existing RN clients stay back-compatible.
-      trainingEventDetails?: CheckInTrainingEventDetail[];
-    } = {
+    // CheckInContextResponse describes the WHOLE payload — it is the RN
+    // contract (ARCHITECTURE -> "The React Native contract"), and it used to
+    // describe five of eleven keys while a local intersection here added the
+    // rest. A payload key with no type is how the wire and the doc drift apart.
+    const response: CheckInContextResponse = {
       clientInfo: {
         id: client.id,
         name: client.name,
@@ -140,6 +142,7 @@ export async function GET(request: NextRequest) {
       periodStart,
       periodEnd,
       periodDays,
+      form,
     };
 
     return NextResponse.json({ success: true, data: { ...response, checkInStatus: checkInGateStatus } });

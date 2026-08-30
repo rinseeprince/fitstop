@@ -3,6 +3,7 @@ import {
   GIRTH_LIMB_CM_MAX,
   GIRTH_TORSO_CM_MAX,
   LOAD_KG_MAX,
+  MAX_CHECK_IN_QUESTIONS,
   WEIGHT_KG_MAX,
   WEIGHT_KG_MIN,
 } from "@/lib/constants";
@@ -136,6 +137,21 @@ export const submitCheckInSchema = z.object({
   sessionCompletions: z.array(sessionCompletionSchema).max(20).optional().nullable().transform((v) => v ?? undefined),
   exerciseHighlights: z.array(exerciseHighlightSchema).max(10).optional().nullable().transform((v) => v ?? undefined),
   nutritionAdherence: nutritionAdherenceSchema.optional().nullable().transform((v) => v ?? undefined),
+
+  // Answers to the coach's custom questions (C6a).
+  //
+  // `answer` is deliberately NOT `.min(1)`. A blank answer is an unanswered
+  // question, and 400ing the whole submission over one would punish the client
+  // for leaving an optional box empty — the same reasoning as D4.3's
+  // strip-don't-reject. `applyCheckInForm` drops blanks, answers to questions
+  // this client's form does not ask, and duplicate question ids, before
+  // anything reaches the `char_length BETWEEN 1 AND 2000` CHECK.
+  customAnswers: z
+    .array(z.object({ questionId: z.string().uuid(), answer: z.string().max(2000) }))
+    .max(MAX_CHECK_IN_QUESTIONS)
+    .optional()
+    .nullable()
+    .transform((v) => v ?? undefined),
 }).superRefine((data, ctx) => {
   // A unit tag is REQUIRED alongside the value it describes.
   //

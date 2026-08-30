@@ -19,6 +19,7 @@ vi.mock("@/services/supabase-admin", () => ({
 // import. Grow this list whenever the route's import list grows.
 vi.mock("@/services/check-in-service", () => ({
   deriveSessionCompletionsForCheckIn: vi.fn(),
+  getCheckInAnswers: vi.fn(),
   getCheckInExerciseHighlights: vi.fn(),
   getCheckInPeriodAdherence: vi.fn(),
   mapExerciseHighlight: (row: unknown) => row,
@@ -38,6 +39,7 @@ import { GET } from "./route";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 import {
   deriveSessionCompletionsForCheckIn,
+  getCheckInAnswers,
   getCheckInExerciseHighlights,
   getCheckInPeriodAdherence,
 } from "@/services/check-in-service";
@@ -64,6 +66,7 @@ describe("GET /api/check-in/[id] (coach)", () => {
       checkIn: { id: "ci-1", clientId: "client-1" },
     } as any);
     vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([]);
+    vi.mocked(getCheckInAnswers).mockResolvedValue([]);
     vi.mocked(deriveSessionCompletionsForCheckIn).mockResolvedValue([
       {
         id: "e-1",
@@ -100,6 +103,28 @@ describe("GET /api/check-in/[id] (coach)", () => {
     const body = await (await GET(req(), params("ci-1"))).json();
 
     expect(body.periodAdherence).toEqual(periodAdherence);
+  });
+
+  it("carries the custom-question answers onto the checkIn payload", async () => {
+    vi.mocked(getCheckInAnswers).mockResolvedValue([
+      { questionId: "q-a", prompt: "How was sleep?", answer: "badly" },
+    ]);
+    mockCheckInRow({
+      data: {
+        id: "ci-1",
+        client_id: "client-1",
+        status: "reviewed",
+        created_at: "2026-05-14T12:00:00Z",
+        clients: { id: "client-1", name: "Alex", email: "a@x.com", avatar_url: null },
+      },
+      error: null,
+    });
+
+    const body = await (await GET(req(), params("ci-1"))).json();
+
+    expect(body.checkIn.customAnswers).toEqual([
+      { questionId: "q-a", prompt: "How was sleep?", answer: "badly" },
+    ]);
   });
 
   it("returns derived sessionCompletions for a historical check-in without a 500", async () => {

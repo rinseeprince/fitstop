@@ -31,9 +31,12 @@ vi.mock("./client-adherence-service", () => ({
     getClientAdherenceForRangeMock(...args),
 }));
 
+import { supabaseAdmin } from "./supabase-admin";
 import {
   deriveSessionCompletionsForCheckIn,
+  getCheckInAnswers,
   getCheckInPeriodAdherence,
+  insertCheckInAnswers,
   resolveCheckInReportingPeriod,
   mapExerciseHighlight,
 } from "./check-in-details-service";
@@ -344,5 +347,99 @@ describe("getCheckInPeriodAdherence", () => {
 
     expect(result).toBeNull();
     expect(getClientAdherenceForRangeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("getCheckInAnswers", () => {
+  /** A `check_in_answers` builder whose `.order()` resolves. */
+  function wire(rows: unknown, error: unknown = null) {
+    const builder: Record<string, unknown> = {};
+    builder.select = vi.fn(() => builder);
+    builder.eq = vi.fn(() => builder);
+    builder.order = vi.fn().mockResolvedValue({ data: rows, error });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(builder as never);
+    return builder;
+  }
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("joins the prompt LIVE from the question row rather than a snapshot", async () => {
+    // Rewording a question relabels every past answer, because it is the same
+    // question. That only holds while the prompt is read through the FK.
+    wire([
+      {
+        question_id: "q-a",
+        answer: "slept badly",
+        check_in_questions: { prompt: "How was sleep?" },
+      },
+    ]);
+
+    await expect(getCheckInAnswers("ci-1")).resolves.toEqual([
+      { questionId: "q-a", prompt: "How was sleep?", answer: "slept badly" },
+    ]);
+  });
+
+  it("scopes to the check-in and orders oldest first, so answers read in form order", async () => {
+    const builder = wire([]);
+    await getCheckInAnswers("ci-1");
+
+    expect(builder.eq).toHaveBeenCalledWith("check_in_id", "ci-1");
+    expect(builder.order).toHaveBeenCalledWith("created_at", { ascending: true });
+  });
+
+  it("degrades to an empty list on a read error rather than failing the whole detail", async () => {
+    wire(null, { message: "boom" });
+    await expect(getCheckInAnswers("ci-1")).resolves.toEqual([]);
+  });
+});
+
+describe("insertCheckInAnswers", () => {
+  function wireInsert(error: unknown = null) {
+    const builder = { insert: vi.fn().mockResolvedValue({ error }) };
+    vi.mocked(supabaseAdmin.from).mockReturnValue(builder as never);
+    return builder;
+  }
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("writes one row per answer in a single INSERT", async () => {
+    const builder = wireInsert();
+
+    await insertCheckInAnswers("ci-1", [
+      { questionId: "q-a", answer: "yes" },
+      { questionId: "q-b", answer: "no" },
+    ]);
+
+    expect(builder.insert).toHaveBeenCalledTimes(1);
+    expect(builder.insert).toHaveBeenCalledWith([
+      { check_in_id: "ci-1", question_id: "q-a", answer: "yes" },
+      { check_in_id: "ci-1", question_id: "q-b", answer: "no" },
+    ]);
+  });
+
+  it("filters blanks as a belt, so a caller that forgot to shape cannot hit the CHECK", async () => {
+    const builder = wireInsert();
+
+    await insertCheckInAnswers("ci-1", [
+      { questionId: "q-a", answer: "   " },
+      { questionId: "q-b", answer: "real" },
+    ]);
+
+    expect(builder.insert).toHaveBeenCalledWith([
+      { check_in_id: "ci-1", question_id: "q-b", answer: "real" },
+    ]);
+  });
+
+  it("issues no statement at all when nothing survives", async () => {
+    const builder = wireInsert();
+    await insertCheckInAnswers("ci-1", [{ questionId: "q-a", answer: "" }]);
+    expect(builder.insert).not.toHaveBeenCalled();
+  });
+
+  it("THROWS on failure — the caller must not swallow a lost set of answers", async () => {
+    wireInsert({ message: "constraint" });
+    await expect(
+      insertCheckInAnswers("ci-1", [{ questionId: "q-a", answer: "yes" }])
+    ).rejects.toThrow(/Failed to save your answers/);
   });
 });

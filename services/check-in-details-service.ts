@@ -1,6 +1,8 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type {
   CheckIn,
+  CheckInCustomAnswer,
+  CheckInCustomAnswerInput,
   CheckInSessionCompletion,
   CheckInExerciseHighlight,
   CheckInWithDetails,
@@ -174,6 +176,75 @@ export const insertExerciseHighlights = async (
   }
 };
 
+/**
+ * Answers to the coach's custom questions for one check-in, in the order the
+ * form asked them.
+ *
+ * The prompt is joined LIVE from `check_in_questions` rather than snapshotted
+ * onto the answer: rewording a question relabels every past answer, because it
+ * is the same question. A question archived after the fact still resolves —
+ * `archived_at` retires it from future forms, not from history.
+ */
+export const getCheckInAnswers = async (
+  checkInId: string
+): Promise<CheckInCustomAnswer[]> => {
+  const { data, error } = await supabaseAdmin
+    .from("check_in_answers")
+    .select("question_id, answer, created_at, check_in_questions ( prompt )")
+    .eq("check_in_id", checkInId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching check-in answers:", error.message);
+    return [];
+  }
+
+  type AnswerRow = {
+    question_id: string;
+    answer: string;
+    check_in_questions: { prompt: string } | null;
+  };
+
+  return ((data ?? []) as AnswerRow[]).map((row) => ({
+    questionId: row.question_id,
+    answer: row.answer,
+    prompt: row.check_in_questions?.prompt ?? "Question",
+  }));
+};
+
+/**
+ * Write a check-in's custom answers.
+ *
+ * One multi-row INSERT, and it is NOT swallowed by its caller — unlike
+ * `insertExerciseHighlights` above. A silently lost set of typed answers is
+ * worse than a visible failure, and the caller records what that leaves behind
+ * (see `submitCheckIn`).
+ *
+ * Blank answers, foreign question ids and duplicates are removed upstream by
+ * `applyCheckInForm`; the filter here is the belt, so a future caller that
+ * forgets to shape its payload cannot violate the column's CHECK.
+ */
+export const insertCheckInAnswers = async (
+  checkInId: string,
+  answers: CheckInCustomAnswerInput[]
+): Promise<void> => {
+  const rows = answers
+    .filter((a) => typeof a.answer === "string" && a.answer.trim() !== "")
+    .map((a) => ({
+      check_in_id: checkInId,
+      question_id: a.questionId,
+      answer: a.answer,
+    }));
+
+  if (rows.length === 0) return;
+
+  const { error } = await supabaseAdmin.from("check_in_answers").insert(rows);
+
+  if (error) {
+    throw new Error(`Failed to save your answers: ${error.message}`);
+  }
+};
+
 // Map internal row to domain type for exercise highlights
 export const mapExerciseHighlight = (
   row: CheckInExerciseHighlightRow
@@ -196,14 +267,16 @@ export const getCheckInWithDetails = async (
   const checkIn = await getCheckInById(checkInId);
   if (!checkIn) return null;
 
-  const [sessionCompletions, highlightRows] = await Promise.all([
+  const [sessionCompletions, highlightRows, customAnswers] = await Promise.all([
     deriveSessionCompletionsForCheckIn(checkIn),
     getCheckInExerciseHighlights(checkInId),
+    getCheckInAnswers(checkInId),
   ]);
 
   return {
     ...checkIn,
     sessionCompletions,
     exerciseHighlights: highlightRows.map(mapExerciseHighlight),
+    customAnswers,
   };
 };

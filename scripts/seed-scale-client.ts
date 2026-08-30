@@ -226,6 +226,11 @@ async function cleanExistingFixtures(fullReset: boolean) {
   await del("client_goals", supabaseAdmin.from("client_goals").delete().eq("client_id", c));
   await del("nutrition_plan_notes", supabaseAdmin.from("nutrition_plan_notes").delete().eq("client_id", c));
   await del("client_phases (journey blocks)", supabaseAdmin.from("client_phases").delete().eq("client_id", c));
+  // The client's check-in form (migration 157). check_in_answers went with the
+  // check_ins delete above (CASCADE); this is the form row and, through its own
+  // CASCADEs, its fields and question rows. Cleared before the coach delete so
+  // the fixture coach's question bank has nothing pointing at it.
+  await del("check_in_forms (→ fields, questions)", supabaseAdmin.from("check_in_forms").delete().eq("client_id", c));
 
   if (fullReset) {
     await del("clients", supabaseAdmin.from("clients").delete().eq("id", c));

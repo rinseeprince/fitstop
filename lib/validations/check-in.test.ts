@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { MAX_CHECK_IN_QUESTIONS } from '@/lib/constants'
 import {
   submitCheckInSchema,
   sessionCompletionSchema,
@@ -382,6 +383,52 @@ describe('Check-in Validation Schemas', () => {
     it('accepts empty object', () => {
       const result = nutritionAdherenceSchema.safeParse({})
       expect(result.success).toBe(true)
+    })
+  })
+
+  describe('customAnswers', () => {
+    const uuid = '00000001-0000-4000-8000-000000000000'
+
+    it('accepts a well-formed answer', () => {
+      const result = submitCheckInSchema.safeParse({
+        customAnswers: [{ questionId: uuid, answer: 'slept badly' }],
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('ACCEPTS a blank answer rather than 400ing the whole submission', () => {
+      // An empty box is an unanswered question, not a malformed payload.
+      // applyCheckInForm drops it before it can reach the column's CHECK.
+      const result = submitCheckInSchema.safeParse({
+        customAnswers: [{ questionId: uuid, answer: '' }],
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects a non-uuid question id', () => {
+      const result = submitCheckInSchema.safeParse({
+        customAnswers: [{ questionId: 'q-a', answer: 'x' }],
+      })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects an answer past 2000 characters, matching the column CHECK', () => {
+      const result = submitCheckInSchema.safeParse({
+        customAnswers: [{ questionId: uuid, answer: 'x'.repeat(2001) }],
+      })
+      expect(result.success).toBe(false)
+    })
+
+    it('caps the array at MAX_CHECK_IN_QUESTIONS', () => {
+      const many = Array.from({ length: MAX_CHECK_IN_QUESTIONS + 1 }, (_, i) => ({
+        questionId: `0000000${i}-0000-4000-8000-000000000000`,
+        answer: 'x',
+      }))
+      expect(submitCheckInSchema.safeParse({ customAnswers: many }).success).toBe(false)
+    })
+
+    it('is optional — an empty check-in is still valid', () => {
+      expect(submitCheckInSchema.safeParse({}).success).toBe(true)
     })
   })
 })

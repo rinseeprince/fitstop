@@ -18,6 +18,7 @@ vi.mock('@/services/check-in-service', () => ({
 // throw without env. Stub them so the suite can import the route under test.
 vi.mock('@/services/supabase-admin', () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock('@/services/client-service', () => ({ getClientById: vi.fn() }));
+vi.mock('@/services/check-in-form-service', () => ({ getClientCheckInForm: vi.fn() }));
 vi.mock('@/services/storage-service', () => ({ uploadProgressPhotoFromBase64: vi.fn() }));
 vi.mock('@/services/client-check-in-service', () => ({
   // Resolved, not bare: the route fires it and chains .catch() on the result.
@@ -31,7 +32,12 @@ import { GET, POST } from './route';
 import { requireClientAuth } from '@/lib/require-client-auth';
 import { getClientCheckIns, submitCheckIn } from '@/services/check-in-service';
 import { getClientById } from '@/services/client-service';
-import { triggerAISummaryGeneration } from '@/services/client-check-in-service';
+import {
+  triggerAISummaryGeneration,
+  updateClientMetricsFromCheckIn,
+} from '@/services/client-check-in-service';
+import { getClientCheckInForm } from '@/services/check-in-form-service';
+import { DEFAULT_CHECK_IN_FORM_FIELDS } from '@/lib/check-in/form-fields';
 import { supabaseAdmin } from '@/services/supabase-admin';
 import { uploadProgressPhotoFromBase64 } from '@/services/storage-service';
 import { encodeCursor } from '@/lib/cursor';
@@ -150,6 +156,13 @@ describe('POST /api/client/check-ins — the write path gates too', () => {
     vi.mocked(requireClientAuth).mockResolvedValue({ ok: true, clientId: 'client-123' } as never);
     vi.mocked(submitCheckIn).mockResolvedValue('new-check-in-id' as never);
     vi.mocked(triggerAISummaryGeneration).mockResolvedValue(undefined as never);
+    // Default: the client has no form row, so every field is asked and the
+    // strip is a no-op — which is what every client gets until a coach edits
+    // one (C6a ships the server half; the editor lands in C6b).
+    vi.mocked(getClientCheckInForm).mockResolvedValue({
+      fields: [...DEFAULT_CHECK_IN_FORM_FIELDS],
+      questions: [],
+    } as never);
     // The post-submit snapshot read. Its period is returned as null so the
     // snapshot generator is skipped — this suite is about the gate.
     vi.mocked(supabaseAdmin.from).mockReturnValue({
@@ -199,6 +212,65 @@ describe('POST /api/client/check-ins — the write path gates too', () => {
 
     expect(res.status).toBe(201);
     expect(submitCheckIn).toHaveBeenCalled();
+  });
+
+  it('STRIPS a disabled field rather than 400ing, and leaves current_weight untouched', async () => {
+    // D4.3: a payload carrying a disabled field is a client who loaded the form
+    // before the coach changed it. The value is dropped; the submission stands.
+    mockClient('2026-06-12');
+    vi.mocked(getClientCheckInForm).mockResolvedValue({
+      fields: DEFAULT_CHECK_IN_FORM_FIELDS.filter((k) => k !== 'weight'),
+      questions: [],
+    } as never);
+
+    const res = await POST(post({ ...PAYLOAD, notes: 'still here' }));
+
+    expect(res.status).toBe(201);
+    const submitted = vi.mocked(submitCheckIn).mock.calls[0][1] as Record<string, unknown>;
+    expect(submitted.weight).toBeUndefined();
+    // The one that matters downstream: updateClientMetricsFromCheckIn only
+    // writes clients.current_weight when a weight is present.
+    expect(
+      (vi.mocked(updateClientMetricsFromCheckIn).mock.calls[0][1] as Record<string, unknown>).weight,
+    ).toBeUndefined();
+    // Everything still asked survives.
+    expect(submitted.notes).toBe('still here');
+  });
+
+  it('strips a disabled photo BEFORE uploading it, so no orphan object is created', async () => {
+    mockClient('2026-06-12');
+    vi.mocked(getClientCheckInForm).mockResolvedValue({
+      fields: DEFAULT_CHECK_IN_FORM_FIELDS.filter((k) => !k.startsWith('photo_')),
+      questions: [],
+    } as never);
+
+    const res = await POST(post({ ...PAYLOAD, photoFront: 'data:image/png;base64,AAAA' }));
+
+    expect(res.status).toBe(201);
+    expect(uploadProgressPhotoFromBase64).not.toHaveBeenCalled();
+  });
+
+  it('drops an answer to a question this client is not asked', async () => {
+    mockClient('2026-06-12');
+    vi.mocked(getClientCheckInForm).mockResolvedValue({
+      fields: [...DEFAULT_CHECK_IN_FORM_FIELDS],
+      questions: [{ id: '00000001-0000-4000-8000-000000000000', prompt: 'Asked' }],
+    } as never);
+
+    await POST(
+      post({
+        ...PAYLOAD,
+        customAnswers: [
+          { questionId: '00000001-0000-4000-8000-000000000000', answer: 'kept' },
+          { questionId: '00000002-0000-4000-8000-000000000000', answer: 'stale draft' },
+        ],
+      }),
+    );
+
+    const submitted = vi.mocked(submitCheckIn).mock.calls[0][1] as Record<string, unknown>;
+    expect(submitted.customAnswers).toEqual([
+      { questionId: '00000001-0000-4000-8000-000000000000', answer: 'kept' },
+    ]);
   });
 
   it('refuses an unscheduled client, and writes nothing', async () => {

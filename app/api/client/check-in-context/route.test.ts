@@ -20,6 +20,10 @@ vi.mock('@/services/daily-logs-service', () => ({
   getDailyLogs: vi.fn(),
 }));
 
+vi.mock('@/services/check-in-form-service', () => ({
+  getClientCheckInForm: vi.fn(),
+}));
+
 vi.mock('@/lib/supabase-server', () => ({
   createServerSupabaseClient: vi.fn(),
 }));
@@ -46,7 +50,9 @@ import {
   getTrainingEventDetailsForPeriod,
 } from '@/services/check-in-context-service';
 import { getDailyLogs } from '@/services/daily-logs-service';
+import { getClientCheckInForm } from '@/services/check-in-form-service';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
+import { DEFAULT_CHECK_IN_FORM_FIELDS } from '@/lib/check-in/form-fields';
 
 const req = () => new NextRequest('https://t.dev/api/client/check-in-context');
 
@@ -84,6 +90,10 @@ describe('GET /api/client/check-in-context', () => {
     vi.mocked(getCheckInTrainingPeriodStats).mockResolvedValue({ sessionsCompleted: 1, sessionsPlanned: 3 } as any);
     vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([] as any);
     vi.mocked(getDailyLogs).mockResolvedValue([] as any);
+    vi.mocked(getClientCheckInForm).mockResolvedValue({
+      fields: [...DEFAULT_CHECK_IN_FORM_FIELDS],
+      questions: [],
+    } as any);
   });
 
   it('available → 200 with the full context shape and the parallel fan-out run', async () => {
@@ -112,6 +122,9 @@ describe('GET /api/client/check-in-context', () => {
         'checkInStatus',
         'clientInfo',
         'dailyLogs',
+        // Additive (C6a) — the coach's per-client form. The RN contract allows
+        // additive optional keys; removals and renames are not allowed.
+        'form',
         'nutritionContext',
         'periodDays',
         'periodEnd',
@@ -121,6 +134,10 @@ describe('GET /api/client/check-in-context', () => {
         'trainingPeriodStats',
       ].sort(),
     );
+    // A client with no form row gets the full form — the whole reason this
+    // feature needs no backfill, and why every existing client is unaffected.
+    expect(body.data.form.fields).toHaveLength(14);
+    expect(body.data.form.questions).toEqual([]);
     expect(body.data.clientInfo).toMatchObject({
       id: 'client-123',
       name: 'Jane',
@@ -128,7 +145,8 @@ describe('GET /api/client/check-in-context', () => {
       coachName: 'Coach Carter',
       checkInFrequencyDays: 7,
     });
-    // Fan-out (including daily logs) ran.
+    // Fan-out (including daily logs and the form) ran.
+    expect(getClientCheckInForm).toHaveBeenCalledTimes(1);
     expect(getCheckInTrainingContext).toHaveBeenCalledTimes(1);
     expect(getCheckInNutritionContext).toHaveBeenCalledTimes(1);
     expect(getDailyLogs).toHaveBeenCalledTimes(1);

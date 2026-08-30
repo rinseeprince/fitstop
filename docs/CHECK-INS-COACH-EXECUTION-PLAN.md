@@ -1,6 +1,6 @@
 # Coach check-ins — execution plan
 
-**Status: IN PROGRESS — C0-C5 ALL shipped, smoked and CLOSED (STATUS blocks under §5). Only C6 (the migration) is left.**
+**Status: IN PROGRESS — C0-C5 ALL shipped, smoked and CLOSED. C6 was SPLIT into C6a (schema + wire + server, shipped) and C6b (the two UI surfaces, next). STATUS blocks under §5.**
 Built from a full read of the check-in subsystem (every route, service,
 component, hook, migration, test and doc that touches `check_ins`), followed by an
 adversarial verification pass. Where a claim below carries a `file:line`, it was
@@ -1446,29 +1446,236 @@ following week. Existing rows were deliberately NOT backfilled — reconstructin
 week's targets were would invent numbers, since plans get replaced and events get edited. Also
 unverified: whether any check-in in prod has an unresolvable period (the empty-state path).
 
-### C6 — #4 customisable check-ins (the migration)
-Per §2.4 and D4.*. Migration 157 pushed to DEV then PROD (both at 156 per memory — confirm with
-`npx supabase migration list --linked` first; `--dry-run` immediately before each push); gen
-types; diff = exactly the migration; `check:rls` clause 1 on the five new tables; the RPCs' `GRANT EXECUTE` cited. Files: kernel + test, `lib/validations/check-in-form.ts` (+ test; import
-the exported `optionalString` from `lib/validations/intake-steps.ts` rather than a third copy),
-`submitCheckInSchema` `customAnswers`, service + test, three routes + tests (mock
-`audit-log-service`), `check-in-context` `form` key (+ the key-list test and ARCHITECTURE
-contract rewrite), POST strip-before-upload + JSDoc, `[id]` route + list allowlist (joined answers), mappers/types, client wizard (all three hard-coded `4`s), client read-back card, Client
-Notes answers as `ReviewBlock`, `check-ins-tab-content.tsx` rail + sheet + `onClientUpdated`
-(+ sheet mock in its test), `page.tsx` prop, templates hook (key + invalidator), sheet + editor
-hook + test, the D4.4 control, D4.5 prompt line (+ `ai-prompt-builder.test.ts`), audit keys.
-Client Notes answers as `ReviewBlock` presumes C4 landed.
-Docs: ARCHITECTURE tree (bank + templates under `coaches` beside the library tables; the
-client form, join tables and answers under `clients`), Check-in System "Customisable form", RN contract paragraph; CLIENT-PORTAL-REDESIGN `:79-84` (fix the dropped
-`expected_check_in_day` cite while there); EXECUTION-PLAN `:969-971`; `CLIENT-APP-REFERENCE.md`;
-TECHNICAL-DEBT `:519-520/:536/:684/:954`. 13-point §2 review reported (PUT = limiter + auth +
-coach lookup + client read + UPDATE — count the auth leg). Smoke: toggle off Photos → the client
-wizard has 3 steps and never reaches a photo; disable weight → a draft with a weight submits
-without it and `current_weight` is untouched; two questions → answered → visible on the client
-[id] page and the coach page; save as template → apply to another client → REPLACES their form;
-all-on → stored NULL.
+### C6 — #4 customisable check-ins — SPLIT into C6a and C6b
 
-**Post-C6:** owner smoke across all six surfaces; both DBs confirmed at 157; memory update.
+The original single C6 was scoped at ~58 files (13 new source, 8 new tests, 20 modified
+source incl. generated types, 8 modified tests, 9 docs) with an irreversible schema change in
+the middle — the §2 review's own "~40 files" undercounted it. Split at the WIRE BOUNDARY on the
+owner's call, 2026-08-30:
+
+- **C6a — schema + wire + server.** Zero visible behaviour change, because no coach can create
+  a form yet: every client has no form row, so `form` resolves to all 14 keys, the strip is a
+  no-op and `customAnswers` is always empty. One "submit a check-in exactly as today" smoke
+  still exercises the migration, both RPCs, the context key and both `[id]` reads.
+- **C6b — the two surfaces.** No SQL, no wire contract.
+
+A schema mistake found in C6b is a migration 158 either way (an applied migration is never
+edited), so the split costs nothing there and buys a smoke of the data path before thirty files
+of UI land on top of it.
+
+### C6a — schema + wire + server
+Per §2.4 and D4.*, minus the UI. Migration 157 → DEV then PROD (`npx supabase migration list
+--linked` first, `--dry-run` immediately before each push); gen types; diff = exactly the
+migration; `check:rls` clause 1 on the five new tables; the RPCs' `GRANT EXECUTE` cited. Files:
+kernel + test, `lib/validations/check-in-form.ts` + test, `submitCheckInSchema` `customAnswers`,
+service + test, four route files + tests (mock `audit-log-service`), `check-in-context` `form`
+key (+ the key-list test and the ARCHITECTURE contract rewrite), POST strip-before-upload, both
+`[id]` reads (joined answers), types, D4.5 prompt line (+ `ai-prompt-builder.test.ts`), audit
+keys. Docs: ARCHITECTURE tree + "The customisable form" + RN contract; `CLIENT-APP-REFERENCE.md`;
+TECHNICAL-DEBT + CONVENTIONS. Smoke: submit a check-in exactly as today and confirm nothing
+changed.
+
+**STATUS — C6a SHIPPED 2026-08-30. Migration 157 applied to DEV and PROD (both now at 157). Owner browser smoke OWED; UI is unverified until it runs.**
+
+*What shipped.*
+- **Migration 157** — five tables (`check_in_questions`, `check_in_forms`,
+  `check_in_form_fields`, `check_in_form_questions`, `check_in_answers`), all RLS-enabled with
+  ZERO policies and `GRANT ALL … TO service_role`; two atomic RPCs
+  (`save_check_in_form_atomic`, `create_check_in_form_template_atomic`) over a shared, ungranted
+  `check_in_form_write_children` helper that re-proves question ownership in SQL. Verified on
+  BOTH databases from the live catalog after the push: 5/5 RLS with 0 policies, and all three
+  functions `anon=false, authenticated=false, service_role=true`.
+- `lib/check-in/form-fields.ts` — the pure kernel: the 14 keys (with their coach-facing labels
+  and wizard steps), `stepsForFields`, and `applyCheckInForm`, the strip both the browser and
+  the server run.
+- `services/check-in-form-service.ts` + `lib/validations/check-in-form.ts` + four route files:
+  `GET`/`PUT /api/clients/[id]/check-in-form`, `GET`/`POST /api/check-ins/questions`,
+  `PATCH /api/check-ins/questions/[questionId]`, `GET`/`POST /api/check-ins/forms`. All on
+  `coachApiRateLimit` → CSRF → `requireCoachOwnsClient`/`requireCoachAuth` (request passed) →
+  zod → service, with `check_in_form.update` and `check_in_form_template.create` audited.
+- Wire: `check-in-context` carries `form`; `POST /api/client/check-ins` accepts `customAnswers`
+  and STRIPS the submission to the form after the gate and **before the photo uploads**; both
+  `[id]` reads return `customAnswers` with prompts joined live; the AI prompt gains a
+  `Coach questions:` block (D4.5), both halves sanitised.
+- `submitCheckIn` writes the answers as a second statement and does **not** swallow the failure.
+
+*Nothing visible changed, by construction.* No coach can create a form yet, so every client has
+no form row: `form` resolves to all 14 keys, the strip is a no-op, `customAnswers` is always
+empty. That is what makes C6a's smoke "submit a check-in exactly as today".
+
+*Corrections to the plan, found while verifying.*
+1. **The `EXECUTION-PLAN :969-971` cite was stale** — those lines are Session 2.7's deviation
+   bullets, unrelated. The real edit (a supersession line for the fixed 4-step wizard) belongs
+   with C6b and moved there.
+2. **`TECHNICAL-DEBT :954` had drifted to `:965`, and its number was wrong**: the live count of
+   `/api/clients/**` files on `apiRateLimit` is **15, not 21**. `CONVENTIONS.md:588` carried the
+   same stale 21. Both corrected — leaving one would have created a fresh disagreement.
+   (CONVENTIONS was not on C6's doc list; flagged and done anyway for that reason.)
+3. `TECHNICAL-DEBT :519-520/:536` were exact.
+4. **§2.4's `optionalString` import was unnecessary** — no field in the new schemas is a
+   null-coercing optional string, so no third copy was created either way.
+
+*Deviations, and why.*
+1. **★ C6 was SPLIT** (owner call). The single commit was ~58 files with the irreversible half in
+   the middle; the §2 review's own "~40 files" undercounted it.
+2. **★ Apply-a-template is EDITOR-SIDE.** No `POST …/check-in-form/apply` route, no third RPC,
+   no `check_in_form.apply_template` audit key. §2.4 offered both readings; the sheet's own copy
+   ("Start from a template") and D4.6's "both new coach writes" (exactly two) settle it as
+   preview-then-commit. C6b's smoke line was rewritten to check what was actually built.
+3. **★ `customAnswers` is on the single-check-in reads only, not the client history LIST.** §2.4
+   asked for the list allowlist too; embedding a dictionary in a row list is what CONVENTIONS §8
+   "Sparse fieldsets" forbids, and the list renders a date, a status and a preview. It sits on
+   `CheckInWithDetails`, not `CheckIn`, so `CLIENT_FACING_CHECKIN_KEYS` stays fail-closed.
+4. **`answer_type` was dropped from the schema.** The draft carried it as "the seam for scale/
+   yes-no later" with a single-value CHECK and no reader. Adding it later is one additive,
+   defaulted `ALTER TABLE`; `client_goals.primary_goal` is the standing evidence that an inert
+   column acquires an unconditional writer and becomes undroppable.
+5. **`check_in_answers.question_id` is `ON DELETE NO ACTION`, not `RESTRICT`.** RESTRICT is
+   checked immediately and is not deferrable, so a `DELETE FROM coaches` — which cascades to
+   clients → check_ins → answers AND to check_in_questions in one statement — would abort or not
+   depending on cascade order. There IS a live coach-delete path
+   (`scripts/seed-scale-client.ts --fullReset`), which survives today only because it deletes
+   `check_ins` at `:216` before `coaches` at `:232`. NO ACTION defers to end-of-statement, so a
+   bare delete of an answered question still fails and a full teardown still succeeds.
+6. **`CheckInContextResponse` absorbed all six keys, not just `form`.** It described five of
+   eleven while the route added the rest through a local inline intersection and
+   `use-client-check-in.ts` kept a third private copy. Both were deleted. Type-only; it is the
+   RN contract and ARCHITECTURE points at it.
+7. **`stepsForFields` and the 14-key enum do NOT cover the Feeling summary or the Training
+   checklist.** Raised unprompted; owner decided fourteen stands, because those two are the app
+   showing the client their own week back rather than fields they fill in, and the checklist is
+   a fill-gap LOGGER — suppressing it would remove a logging path, not a question. Recorded in
+   `TECHNICAL-DEBT.md` with that reasoning.
+8. `scripts/seed-scale-client.ts`'s clean phase gained `check_in_forms` — deletion residue of
+   the new tables, not adjacent tidying.
+9. Four exports were narrowed to keep knip at its 167 baseline (`CHECK_IN_FORM_STEPS` and three
+   types un-exported; two unused inferred types deleted). C6b re-exports what it imports.
+
+*How the migration was proved before either database was touched.* Both directions of this
+session's transport corrupted characters (six mangled SQL tokens in one message; the session
+prompt itself carries four), so nothing went to a database from prose. Written to disk →
+read back → mechanical count check (5 `CREATE TABLE`, 5 `ENABLE ROW LEVEL SECURITY`, 5
+`GRANT ALL`, 3 functions, 3 `REVOKE`, 2 `GRANT EXECUTE`; no non-ASCII; every schema-qualified
+name one of 8 expected) → the whole file run inside `BEGIN;`/`ROLLBACK;` on the live database →
+`--dry-run` → push. Repeated for PROD. **The rehearsal's pass signal is a trailing
+`SELECT 1 AS rehearsal_ok`**, because `db query -f` returns only the last result set: an earlier
+error aborts the file and no such row comes back. The mechanism was verified first, not
+assumed — a deliberately broken probe returned `ERROR: 42601 syntax error at or near "ECK"`, a
+mangled plpgsql body returned the same for `PERFO`, and `to_regclass` confirmed the rollback
+left nothing. The file is also re-runnable by construction (every DDL is `IF NOT EXISTS` /
+`CREATE OR REPLACE`; no bare `ADD CONSTRAINT`), so a partial push is retried, not repaired.
+
+*Six behaviours proved against the LIVE database* (one transaction, rolled back, nothing
+leaked): fields written; a question at position 0 enabled; a re-save REPLACES children rather
+than appending; one form row per client after a re-save (the upsert); **coach A putting coach
+B's question on a form is refused with `foreign_question`**; a nameless template refused with
+`template_needs_name`; a named template lands with `client_id NULL`; and **deleting an answered
+question is refused by the FK** — which is what forces archive-instead-of-delete. No unit test
+can prove any of those.
+
+*Mutation-tested* (backed up with `cp` to the scratchpad and restored from it — never
+`git stash`; both restores confirmed byte-identical with `diff -q`): removing the server-side
+`applyCheckInForm` call fails all three strip tests; removing the `enabled` / `archived_at`
+filters fails the two questions-hidden tests.
+
+*Tests: +6 files, +76 cases (326 files / 3503 tests, from 320 / 3408).* New:
+`form-fields.test.ts`, `check-in-form.test.ts` (validations), `check-in-form-service.test.ts`,
+and route tests for all four new files. Grown: the `check-in-context` key set (+ `form`, +
+the all-14 default), `check-in-service.test.ts` (answers written / not written / **not
+swallowed**, plus a pin that highlights still ARE — the deliberate asymmetry),
+`check-in-details-service.test.ts` (+9), both `[id]` route tests, the submit schema (a blank
+answer is ACCEPTED, not 400'd), and the AI prompt.
+**Four mock contracts had to grow** and two of them failed the full run first, exactly as
+CONVENTIONS §2 warns: `services/check-in-service.test.ts` (the deliberately-total
+details-service mock), `app/api/check-in/[id]/route.test.ts`,
+`app/api/client/check-ins/[id]/route.test.ts` (both mock `@/services/check-in-service` totally),
+and `app/api/client/check-ins/route.test.ts` (needed the new form-service mock).
+
+*§2 review — the triggers fire (new migration, five tables, four routes, new write paths, ~35 files).*
+1. **Rate limit + CSRF.** All four new files: `coachApiRateLimit` first, `requireCSRFProtection`
+   on every PUT/POST/PATCH, both pinned by test (the CSRF test asserts auth is not even reached).
+2. **Auth + ownership.** `check-in-form` → `requireCoachOwnsClient(clientId, request)`, foreign
+   client 404s before any read or write. `questions` / `forms` → `requireCoachAuth(request)`, and
+   every service call filters on the RESOLVED `coach_id` — a body-supplied `coachId` is ignored
+   (pinned). A foreign `questionId` matches zero rows and reads 404.
+3. **zod before every write**, 400 with `details`.
+4. **Tenant scope on the write.** The PUT scopes by `client_id`; question writes carry
+   `.eq("coach_id", …)` on BOTH `id` and `coach_id`; and the RPC re-proves question ownership in
+   SQL — the one thing the route cannot prove. Proved live (deviation note above).
+5. **`check:rls` run against BOTH databases**: 46 public tables, 46 with RLS (was 41). Clause 1
+   covers all five new tables; each has ZERO policies. `GRANT EXECUTE … TO service_role` at
+   `157_check_in_forms.sql` for `save_check_in_form_atomic` and
+   `create_check_in_form_template_atomic`; the shared helper is REVOKEd and never granted.
+   **Finding worth recording:** the five new tables ALSO carry `anon`/`authenticated` privileges
+   from `pg_default_acl`, exactly like `audit_logs`, `client_notes`, `client_phases` and
+   `nutrition_plan_notes` — CONVENTIONS §8's "grant service_role only" describes the migration,
+   not the resulting ACL. RLS deny-all is the control, and it is on.
+6. **`supabaseAdmin`** on every new site, authorized by the chains above.
+7. **Round trips constant, never per-row.** `getClientCheckInForm` = ONE embedded select (form →
+   fields, questions → questions); the coach GET, the PUT's RPC, templates and the bank one each.
+   `check-in-context` gains one read INSIDE its existing `Promise.all` — no new sequential leg.
+   Both `[id]` reads gain one, also inside their existing `Promise.all`. The POST gains one.
+8. **Writes batched**: each RPC's two `INSERT … SELECT` statements are one each;
+   `insertCheckInAnswers` is a single multi-row INSERT.
+9. **Indexes**: every new predicate is covered — `check_in_forms_one_per_client` (partial
+   unique), `idx_check_in_forms_templates` (partial), `idx_check_in_questions_coach`, both child
+   PKs, `idx_check_in_answers_question`. `UNIQUE (form_id, position)` and
+   `UNIQUE (check_in_id, question_id)` are real constraints, not plain indexes.
+   `check_in_form_questions.question_id` is deliberately unindexed (no delete traffic — questions
+   are archived; the `nutrition_plan_notes.coach_id` precedent).
+10. **Worst case**: 14 field rows + 10 question rows per save; ≤10 answer rows per check-in.
+11. **Sequential awaits**: the PUT's save-then-re-read is two round trips by design (the response
+    echoes stored state); everything else is folded into an existing parallel fan-out.
+12. No `.catch()` returning success after a committed write was added.
+13. **The one seam, stated: `submitCheckIn` writes the check-in and then the answers as two
+    statements.** If the second fails the check-in stands without them, the POST 500s, and the
+    client's retry meets migration 156's period-unique constraint. Deliberately not swallowed —
+    silently losing a client's typed answers is worse than a visible failure — and closing it
+    means moving the 39-column check-in INSERT into an RPC, which is not C6a's scope. Pinned by
+    test, and the contrast with `insertExerciseHighlights` (which still swallows) is pinned too.
+    **Not load-tested.** Untested under concurrency: two coaches saving one client's form (the
+    RPC's `FOR UPDATE` is reasoned about, not exercised), and the context GET's extra select
+    under real traffic.
+
+*Gates (real output).* `npx tsc --noEmit` **exit 0** · `npx eslint .` **exit 0, 0 errors /
+154 warnings** — unchanged from C4 and C5, and the two in touched files
+(`use-client-check-in.ts:70`'s pre-existing floating promise, the seed script's CLI
+`console.log`s) are both pre-existing · `npx vitest run` (captured to a file first)
+**326 files / 3503 tests passed**, no flaky trip · `npm run check:labels` **"OK — 698 files
+scanned"** · `npm run knip` **167 — exactly the baseline**, verified by running knip in a
+throwaway git worktree at HEAD and diffing: the only difference is `types/database.ts` line
+numbers shifting under the generated types · `npm run check:rls` **OK on both databases** ·
+`npm run check:service-key` **PASS** · no `as any`, no markers, no `console.log` introduced.
+No route file was deleted, so no `.next` wipe.
+
+*Types diff.* `types/database.ts` differs by exactly the five tables and three functions, plus
+one unrelated line: `PostgrestVersion` `"14.17"` → `"14.5"`. That is a platform-reported value,
+not a schema fact, and regenerating from **PROD** after its push produced a file **byte-identical
+to the repo's** — so 14.5 is what both databases report and the old 14.17 was stale. Not
+hand-edited (CONVENTIONS §8: the file is generated).
+
+*Still unverified.* Everything in the browser — no UI ships in C6a, so the smoke is a
+regression check rather than a feature check. The four new routes have **no caller until C6b**;
+they are covered by tests and by the live-database proofs, not by a real client. `stepsForFields`
+has no consumer yet either (its test is the only caller). The RPCs' behaviour under two
+concurrent saves of one client's form is reasoned about, not exercised.
+
+### C6b — the coach editor and the client wizard
+`check-ins-tab-content.tsx` rail + sheet (+ sheet mock in its test), the sheet + groups + editor
+hook + test, the three SWR hooks (key + invalidator each), the D4.4 control; client wizard (all
+three hard-coded `4`s, steps from `stepsForFields`), the three step components, the questions
+section, the client read-back card, Client Notes answers as `ReviewBlock` (presumes C4 landed —
+it did). Docs: CLIENT-PORTAL-REDESIGN `:82` (fix the dropped `expected_check_in_day` cite while
+there); a dated supersession line under CLIENT-PORTAL-EXECUTION-PLAN's Session 2.7 (the wizard's
+step list is no longer a fixed 4). Smoke: toggle off Photos → the client wizard has 3 steps and
+never reaches a photo; disable weight → a draft with a weight submits without it and
+`current_weight` is untouched; two questions → answered → visible on the client `[id]` page and
+the coach page; **save as template → open another client's sheet → "Start from a template" → the
+editor shows the template's fields and questions, NOTHING IS SAVED YET → Save changes → their
+form is replaced** (preview-then-commit: apply is editor-side, there is no server apply route);
+all-on → the form still saves a row, and a client with no row still gets all 14.
+
+**Post-C6b:** owner smoke across all six surfaces; both DBs confirmed at 157; memory update.
 Then the separate Comparison / Goal Progress definition session (§2.6).
 
 ---

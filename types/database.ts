@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   graphql_public: {
     Tables: {
@@ -167,6 +167,45 @@ export type Database = {
           },
         ]
       }
+      check_in_answers: {
+        Row: {
+          answer: string
+          check_in_id: string
+          created_at: string
+          id: string
+          question_id: string
+        }
+        Insert: {
+          answer: string
+          check_in_id: string
+          created_at?: string
+          id?: string
+          question_id: string
+        }
+        Update: {
+          answer?: string
+          check_in_id?: string
+          created_at?: string
+          id?: string
+          question_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "check_in_answers_check_in_id_fkey"
+            columns: ["check_in_id"]
+            isOneToOne: false
+            referencedRelation: "check_ins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "check_in_answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "check_in_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       check_in_exercise_highlights: {
         Row: {
           check_in_id: string
@@ -214,6 +253,142 @@ export type Database = {
             columns: ["exercise_id"]
             isOneToOne: false
             referencedRelation: "training_exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      check_in_form_fields: {
+        Row: {
+          field_key: string
+          form_id: string
+        }
+        Insert: {
+          field_key: string
+          form_id: string
+        }
+        Update: {
+          field_key?: string
+          form_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "check_in_form_fields_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "check_in_forms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      check_in_form_questions: {
+        Row: {
+          enabled: boolean
+          form_id: string
+          position: number
+          question_id: string
+        }
+        Insert: {
+          enabled?: boolean
+          form_id: string
+          position: number
+          question_id: string
+        }
+        Update: {
+          enabled?: boolean
+          form_id?: string
+          position?: number
+          question_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "check_in_form_questions_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "check_in_forms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "check_in_form_questions_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "check_in_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      check_in_forms: {
+        Row: {
+          client_id: string | null
+          coach_id: string
+          created_at: string
+          id: string
+          name: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id?: string | null
+          coach_id: string
+          created_at?: string
+          id?: string
+          name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string | null
+          coach_id?: string
+          created_at?: string
+          id?: string
+          name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "check_in_forms_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "check_in_forms_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      check_in_questions: {
+        Row: {
+          archived_at: string | null
+          coach_id: string
+          created_at: string
+          id: string
+          prompt: string
+          updated_at: string
+        }
+        Insert: {
+          archived_at?: string | null
+          coach_id: string
+          created_at?: string
+          id?: string
+          prompt: string
+          updated_at?: string
+        }
+        Update: {
+          archived_at?: string | null
+          coach_id?: string
+          created_at?: string
+          id?: string
+          prompt?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "check_in_questions_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
             referencedColumns: ["id"]
           },
         ]
@@ -2704,6 +2879,24 @@ export type Database = {
           expected_count: number
         }[]
       }
+      check_in_form_write_children: {
+        Args: {
+          p_coach_id: string
+          p_fields: string[]
+          p_form_id: string
+          p_questions: Json
+        }
+        Returns: undefined
+      }
+      create_check_in_form_template_atomic: {
+        Args: {
+          p_coach_id: string
+          p_fields: string[]
+          p_name: string
+          p_questions: Json
+        }
+        Returns: string
+      }
       create_nutrition_plan_atomic: {
         Args: {
           p_base_weight_kg: number
@@ -2817,6 +3010,15 @@ export type Database = {
       move_training_events_atomic: {
         Args: { p_client_id: string; p_moves: Json }
         Returns: undefined
+      }
+      save_check_in_form_atomic: {
+        Args: {
+          p_client_id: string
+          p_coach_id: string
+          p_fields: string[]
+          p_questions: Json
+        }
+        Returns: string
       }
       update_client_adherence_stats: {
         Args: { client_uuid: string }

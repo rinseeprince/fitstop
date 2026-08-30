@@ -8,6 +8,8 @@ import { toCanonicalCheckInMetrics } from "@/utils/check-in-canonical-metrics";
 import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/services/client-check-in-service";
 import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
 import { submitCheckInSchema } from "@/lib/validations/check-in";
+import { applyCheckInForm } from "@/lib/check-in/form-fields";
+import { getClientCheckInForm } from "@/services/check-in-form-service";
 import { decodeCursor, encodeCursor } from "@/lib/cursor";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { toClientFacingCheckIn } from "@/lib/mappers";
@@ -216,31 +218,52 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Shape the submission to the form the coach actually asks (#4).
+    //
+    // BEFORE the photo uploads, deliberately: a disabled photo must never be
+    // uploaded and then discarded, which would burn the work and leave an
+    // orphaned storage object — the same reasoning that puts the gate above
+    // them. STRIP, never 400 (D4.3): a payload carrying a disabled field is a
+    // client who loaded the form, or restored a draft, before the coach
+    // changed it, and rejecting punishes them for someone else's edit.
+    //
+    // Resolved unconditionally rather than inside the `if (client)` above:
+    // this needs only the authenticated `clientId`, and `getAuthenticatedClientId`
+    // already filters on `clients.active`, so the null-client branch is
+    // unreachable in practice. A form that failed to resolve THROWS rather
+    // than defaulting to "ask everything" — the read must never impersonate
+    // "no form" on the write path.
+    const form = await getClientCheckInForm(clientId);
+    const shaped = applyCheckInForm(body, {
+      fields: form.fields,
+      questionIds: form.questions.map((q) => q.id),
+    });
+
     // Handle photo uploads if provided
     const photoUrls = {
-      photoFront: body.photoFront,
-      photoSide: body.photoSide,
-      photoBack: body.photoBack,
+      photoFront: shaped.photoFront,
+      photoSide: shaped.photoSide,
+      photoBack: shaped.photoBack,
     };
 
     // If photos are base64, upload them to storage
-    if (body.photoFront && body.photoFront.startsWith("data:image")) {
+    if (shaped.photoFront && shaped.photoFront.startsWith("data:image")) {
       photoUrls.photoFront = await uploadProgressPhotoFromBase64(
-        body.photoFront,
+        shaped.photoFront,
         clientId,
         "front"
       );
     }
-    if (body.photoSide && body.photoSide.startsWith("data:image")) {
+    if (shaped.photoSide && shaped.photoSide.startsWith("data:image")) {
       photoUrls.photoSide = await uploadProgressPhotoFromBase64(
-        body.photoSide,
+        shaped.photoSide,
         clientId,
         "side"
       );
     }
-    if (body.photoBack && body.photoBack.startsWith("data:image")) {
+    if (shaped.photoBack && shaped.photoBack.startsWith("data:image")) {
       photoUrls.photoBack = await uploadProgressPhotoFromBase64(
-        body.photoBack,
+        shaped.photoBack,
         clientId,
         "back"
       );
@@ -248,20 +271,20 @@ export async function POST(request: NextRequest) {
 
     // Display units in, canonical kg/cm out — see toCanonicalCheckInMetrics.
     // Both this call and updateClientMetricsFromCheckIn below take the result.
-    const canonical = toCanonicalCheckInMetrics(body);
+    const canonical = toCanonicalCheckInMetrics(shaped);
 
     // Submit the comprehensive check-in
     const checkInId = await submitCheckIn(clientId, {
       // Subjective metrics
-      mood: body.mood,
-      energy: body.energy,
-      sleep: body.sleep,
-      stress: body.stress,
-      notes: body.notes,
+      mood: shaped.mood,
+      energy: shaped.energy,
+      sleep: shaped.sleep,
+      stress: shaped.stress,
+      notes: shaped.notes,
 
       // Body metrics — canonical kg/cm.
       weight: canonical.weight,
-      bodyFatPercentage: body.bodyFatPercentage,
+      bodyFatPercentage: shaped.bodyFatPercentage,
       waist: canonical.waist,
       hips: canonical.hips,
       chest: canonical.chest,
@@ -272,15 +295,19 @@ export async function POST(request: NextRequest) {
       ...photoUrls,
 
       // Training metrics
-      workoutsCompleted: body.workoutsCompleted,
-      adherencePercentage: body.adherencePercentage,
-      prs: body.prs,
-      challenges: body.challenges,
+      workoutsCompleted: shaped.workoutsCompleted,
+      adherencePercentage: shaped.adherencePercentage,
+      prs: shaped.prs,
+      challenges: shaped.challenges,
 
       // Enhanced tracking
-      sessionCompletions: body.sessionCompletions ?? [],
+      sessionCompletions: shaped.sessionCompletions ?? [],
       exerciseHighlights: canonical.exerciseHighlights ?? [],
-      nutritionAdherence: body.nutritionAdherence,
+      nutritionAdherence: shaped.nutritionAdherence,
+
+      // Answers to the coach's custom questions, already filtered to the
+      // enabled question set with blanks and duplicates removed.
+      customAnswers: shaped.customAnswers,
     });
 
     // Freeze the period snapshot over the period submitCheckIn STORED
