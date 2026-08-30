@@ -1326,7 +1326,7 @@ logged days → hero "3/7 · 43%", pill "3/7 on target", weekly verdict MISSED; 
 logs → 0/7; a mid-week habit shows leading dashes; training unchanged; Regenerate → the Summary
 no longer says 100%.
 
-**STATUS — SHIPPED 2026-08-30 in `<sha>`. Browser smoke OWED (owner runs it).**
+**STATUS — SHIPPED 2026-08-30 in `747c5f98`. Browser smoke OWED (owner runs it).**
 
 *What shipped.*
 - **`getClientAdherenceForRange(clientId, start, end)`** extracted in
