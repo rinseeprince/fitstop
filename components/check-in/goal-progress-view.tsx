@@ -71,12 +71,10 @@ export const GoalProgressView = ({
   if (!hasWeightGoal && !hasBodyFatGoal) {
     return (
       <div className="space-y-6">
-        <div className="space-y-2">
-          <h3 className="text-lg font-semibold text-[#0c1a1e]">Goal Progress</h3>
-          <p className="text-sm text-[#93b0b4]">
-            No goals have been set for {clientName} yet.
-          </p>
-        </div>
+        {/* The heading went with the tabs — the page's rail names this section. */}
+        <p className="text-sm text-[#93b0b4]">
+          No goals have been set for {clientName} yet.
+        </p>
         <div className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-8 text-center">
           <Target className="h-12 w-12 mx-auto mb-4 text-[#93b0b4]" strokeWidth={1.5} />
           <p className="text-[#93b0b4]">
@@ -89,13 +87,10 @@ export const GoalProgressView = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="space-y-2">
-        <h3 className="text-lg font-semibold text-[#0c1a1e]">Goal Progress</h3>
-        <p className="text-sm text-[#93b0b4]">
-          Tracking {clientName}'s progress towards their goals
-        </p>
-      </div>
+      {/* The heading went with the tabs — the page's rail names this section. */}
+      <p className="text-sm text-[#93b0b4]">
+        Tracking {clientName}&apos;s progress towards their goals
+      </p>
 
       {/* Nutrition Regeneration Banner */}
       {clientData.currentWeight &&

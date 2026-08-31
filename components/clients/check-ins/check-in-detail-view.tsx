@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { ArrowLeft, Loader2 } from "lucide-react";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
-import { SegmentedControl } from "@/components/programs/shared/segmented-control";
-import { CheckInReviewRail } from "@/components/check-in/check-in-review-rail";
+import type { ReactNode } from "react";
+import { Loader2 } from "lucide-react";
+import { SectionLabel } from "@/components/programs/shared/section-label";
+import { CheckInReviewSection } from "@/components/check-in/check-in-review-section";
 import { CheckInComparisonView } from "@/components/check-in/check-in-comparison-view";
 import { GoalProgressView } from "@/components/check-in/goal-progress-view";
 import { KPIRibbon } from "@/components/check-in/kpi-ribbon";
@@ -13,12 +12,11 @@ import { NutritionSection } from "@/components/check-in/nutrition-section";
 import { TrainingSection } from "@/components/check-in/training-section";
 import { ClientNotesSection } from "@/components/check-in/client-notes-section";
 import { HabitsSection } from "@/components/check-in/habits-section";
+import { CheckInReviewHeader } from "./check-in-review-header";
 import { useCheckInDetailData } from "@/hooks/use-check-in-detail-data";
-import { cn } from "@/lib/utils";
-import { MONO } from "@/components/clients/training/program-builder/builder-tokens";
 import { summariseSessions } from "@/lib/check-in/adherence";
 import { toCheckInReview } from "@/lib/check-in/to-review";
-import type { Client } from "@/types/check-in";
+import type { Client, GetCheckInComparisonResponse } from "@/types/check-in";
 
 type CheckInDetailViewProps = {
   checkInId: string;
@@ -31,32 +29,6 @@ type CheckInDetailViewProps = {
    */
   onDone: () => void;
 };
-
-const PANES = [
-  { value: "current", label: "Current Check-In" },
-  { value: "comparison", label: "Comparison & Trends" },
-  { value: "goals", label: "Goal Progress" },
-];
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function formatDateRange(start: Date, end: Date): string {
-  const sameMonth =
-    start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
-  if (sameMonth) {
-    return `Week of ${MONTHS[start.getMonth()]} ${start.getDate()} – ${end.getDate()}, ${end.getFullYear()}`;
-  }
-  const sameYear = start.getFullYear() === end.getFullYear();
-  if (sameYear) {
-    return `Week of ${MONTHS[start.getMonth()]} ${start.getDate()} – ${MONTHS[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
-  }
-  return `Week of ${MONTHS[start.getMonth()]} ${start.getDate()}, ${start.getFullYear()} – ${MONTHS[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
-}
-
-function formatSubmittedDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return `Submitted ${MONTHS[d.getMonth()]} ${d.getDate()}`;
-}
 
 const Spinner = () => (
   <div className="flex items-center justify-center py-12">
@@ -72,14 +44,23 @@ const Notice = ({ children }: { children: ReactNode }) => (
 
 /**
  * The coach's review of one check-in, rendered by the Check-ins tab in place of
- * its list when `?checkIn=<id>` is present. The three panes came over from the
- * modal intact: a controlled Tabs driven by the shared SegmentedControl (the
- * reference pairing named in docs/newdesignsystem.md → Segmented control).
- * Comparison & Trends and Goal Progress are carried as they were — their
- * redesign is a separate session.
+ * its list when `?checkIn=<id>` is present.
+ *
+ * ONE PAGE, read top to bottom in the order the review actually runs: what
+ * happened (the band), what the week looked like (training, nutrition,
+ * wellness, measurements, habits, the client's own words), where they stand
+ * (goals), and what gets sent back (the AI review and the reply). The three
+ * panes behind a SegmentedControl are gone — a coach was switching tabs to
+ * assemble one judgement.
+ *
+ * **Each section renders its OWN rail**, inside the component that decides
+ * whether there is something to show. Five of them return null on an empty
+ * week, and a rail owned by this page would leave a bare label over empty
+ * space — or force this page to hold a second copy of each child's
+ * emptiness predicate. The two carried-over panes never return null, so their
+ * rails are here.
  */
 export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckInDetailViewProps) => {
-  const [tab, setTab] = useState("current");
   const {
     data,
     isLoading,
@@ -101,132 +82,121 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
       : 7;
 
   // Single source of training adherence (completed / prescribed) derived from the
-  // check-in's session completions. Shared by the hero card, the prescription
-  // panel and the comparison tab so the figure is identical everywhere.
+  // check-in's session completions. Shared by the band, the training section
+  // and the comparison so the figure is identical everywhere.
   const adherence = summariseSessions(data?.checkIn.sessionCompletions ?? []);
   const clientName = data?.client?.name || client.name;
 
+  const ready = Boolean(data && contextStartDate && contextEndDate);
+
+  // The comparison read feeds two sections. Each gates on it independently, so
+  // a failed comparison costs those two rather than the whole page — the same
+  // per-pane behaviour the tabs had, now per section.
+  const fromComparison = (
+    render: (comparison: GetCheckInComparisonResponse) => ReactNode,
+    failure: string
+  ): ReactNode =>
+    isLoadingComparison ? (
+      <Spinner />
+    ) : comparisonData ? (
+      render(comparisonData)
+    ) : (
+      <Notice>{failure}</Notice>
+    );
+
   return (
-    <Tabs value={tab} onValueChange={setTab} className="space-y-5">
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          {/* The sidebar back-row grammar: the arrow is the affordance, the
-              label names the destination. */}
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back to check-ins"
-            className="group flex items-center gap-2.5"
-          >
-            <ArrowLeft
-              className="h-4 w-4 text-[#93b0b4] transition-colors group-hover:text-[#5a7d82]"
-              strokeWidth={1.5}
-            />
-            <span className="text-[13.5px] font-semibold text-[#0c1a1e]">Check-ins</span>
-          </button>
-          {contextStartDate && contextEndDate && data && !isForeign && !dailyContextLoading && (
-            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-[#93b0b4]">
-              <span className={MONO}>{formatDateRange(contextStartDate, contextEndDate)}</span>
-              <span>&middot;</span>
-              <span className={MONO}>{formatSubmittedDate(data.checkIn.createdAt)}</span>
-              <span>&middot;</span>
-              <span
-                className={cn(
-                  "inline-flex items-center text-xs font-semibold",
-                  MONO,
-                  "text-[#0d9488] bg-[rgba(13,148,136,0.08)] px-1.5 py-0.5 rounded-[4px]"
-                )}
-              >
-                {dailyLogs.length}/{daysDiff} days logged
-              </span>
-            </p>
-          )}
-        </div>
-        <SegmentedControl options={PANES} value={tab} onChange={setTab} />
-      </div>
+    <div className="space-y-5">
+      <CheckInReviewHeader
+        onBack={onBack}
+        meta={
+          data && contextStartDate && contextEndDate && !isForeign && !dailyContextLoading
+            ? {
+                start: contextStartDate,
+                end: contextEndDate,
+                submittedAt: data.checkIn.createdAt,
+                daysLogged: dailyLogs.length,
+                daysInPeriod: daysDiff,
+              }
+            : null
+        }
+      />
 
       {isForeign ? (
         <Notice>This check-in belongs to another client.</Notice>
       ) : isLoading || dailyContextLoading || (data && !contextStartDate) ? (
         <Spinner />
-      ) : data && contextStartDate && contextEndDate ? (
+      ) : data && ready && contextStartDate && contextEndDate ? (
         <>
-          <TabsContent value="current" className="space-y-5">
-            <KPIRibbon
-              checkIn={data.checkIn}
-              comparisonData={comparisonData}
-              adherence={adherence}
-              nutrition={periodAdherence?.nutrition ?? null}
-              // The denominator is the server's own date list, never the local
-              // day count — the two resolve differently on a legacy row.
-              periodDays={periodAdherence?.dates.length ?? null}
-            />
+          <KPIRibbon
+            checkIn={data.checkIn}
+            comparisonData={comparisonData}
+            adherence={adherence}
+            nutrition={periodAdherence?.nutrition ?? null}
+            // The denominator is the server's own date list, never the local
+            // day count — the two resolve differently on a legacy row.
+            periodDays={periodAdherence?.dates.length ?? null}
+          />
 
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-5 items-start">
-              <div className="space-y-4">
-                <WellnessSection
-                  dailyLogs={dailyLogs}
-                  contextStartDate={contextStartDate}
-                  contextEndDate={contextEndDate}
-                />
-                <NutritionSection
-                  dailyLogs={dailyLogs}
-                  contextStartDate={contextStartDate}
-                  contextEndDate={contextEndDate}
-                  fullWeekTarget={fullWeekTarget}
-                  nutrition={periodAdherence?.nutrition ?? null}
-                  periodDays={periodAdherence?.dates.length ?? null}
-                />
-                <TrainingSection checkIn={data.checkIn} adherence={adherence} />
-                <HabitsSection perHabit={periodAdherence?.habits.perHabit ?? []} />
-                <ClientNotesSection checkIn={data.checkIn} />
-              </div>
+          <TrainingSection checkIn={data.checkIn} adherence={adherence} />
 
-              {/* The client band is sticky at the top of the page scroller, so
-                  the rail pins below it rather than sliding under. */}
-              <div className="lg:sticky lg:top-[52px] space-y-5">
-                <CheckInReviewRail
-                  checkInId={checkInId}
+          <NutritionSection
+            dailyLogs={dailyLogs}
+            contextStartDate={contextStartDate}
+            contextEndDate={contextEndDate}
+            fullWeekTarget={fullWeekTarget}
+            nutrition={periodAdherence?.nutrition ?? null}
+            periodDays={periodAdherence?.dates.length ?? null}
+          />
+
+          <WellnessSection
+            dailyLogs={dailyLogs}
+            contextStartDate={contextStartDate}
+            contextEndDate={contextEndDate}
+          />
+
+          <div>
+            <SectionLabel label="Measurements & trends" />
+            {fromComparison(
+              (comparison) => (
+                <CheckInComparisonView
+                  comparison={comparison.comparison}
+                  chartData={comparison.chartData}
+                  adherence={adherence}
+                />
+              ),
+              "Failed to load comparison data"
+            )}
+          </div>
+
+          <HabitsSection perHabit={periodAdherence?.habits.perHabit ?? []} />
+
+          <ClientNotesSection checkIn={data.checkIn} />
+
+          <div>
+            <SectionLabel label="Goal progress" />
+            {fromComparison(
+              (comparison) => (
+                <GoalProgressView
+                  goalProgress={comparison.goalProgress}
                   clientName={clientName}
-                  review={toCheckInReview(data.checkIn)}
-                  onRefresh={refreshDetail}
-                  onSent={onDone}
+                  clientData={comparison.comparison.client}
                 />
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="comparison">
-            {isLoadingComparison ? (
-              <Spinner />
-            ) : comparisonData ? (
-              <CheckInComparisonView
-                comparison={comparisonData.comparison}
-                chartData={comparisonData.chartData}
-                adherence={adherence}
-              />
-            ) : (
-              <Notice>Failed to load comparison data</Notice>
+              ),
+              "Failed to load goal progress data"
             )}
-          </TabsContent>
+          </div>
 
-          <TabsContent value="goals">
-            {isLoadingComparison ? (
-              <Spinner />
-            ) : comparisonData ? (
-              <GoalProgressView
-                goalProgress={comparisonData.goalProgress}
-                clientName={clientName}
-                clientData={comparisonData.comparison.client}
-              />
-            ) : (
-              <Notice>Failed to load goal progress data</Notice>
-            )}
-          </TabsContent>
+          <CheckInReviewSection
+            checkInId={checkInId}
+            clientName={clientName}
+            review={toCheckInReview(data.checkIn)}
+            onRefresh={refreshDetail}
+            onSent={onDone}
+          />
         </>
       ) : (
         <Notice>Failed to load check-in data</Notice>
       )}
-    </Tabs>
+    </div>
   );
 };

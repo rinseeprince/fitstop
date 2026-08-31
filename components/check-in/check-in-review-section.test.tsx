@@ -10,7 +10,7 @@ vi.mock("sonner", () => ({
   toast: { error: toastError, success: toastSuccess },
 }));
 
-import { CheckInReviewRail } from "./check-in-review-rail";
+import { CheckInReviewSection } from "./check-in-review-section";
 import type { CheckInReview } from "@/types/check-in";
 
 function makeReview(overrides: Partial<CheckInReview> = {}): CheckInReview {
@@ -24,9 +24,9 @@ function makeReview(overrides: Partial<CheckInReview> = {}): CheckInReview {
   };
 }
 
-function renderRail(review: CheckInReview, onRefresh = vi.fn()) {
+function renderSection(review: CheckInReview, onRefresh = vi.fn()) {
   render(
-    <CheckInReviewRail
+    <CheckInReviewSection
       checkInId="ci-1"
       clientName="Jane"
       review={review}
@@ -48,9 +48,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("the AI review card", () => {
+describe("the AI review section", () => {
   it("renders the four blocks under one header", () => {
-    renderRail(makeReview());
+    renderSection(makeReview());
 
     expect(screen.getByText("AI review")).toBeInTheDocument();
     for (const label of ["Summary", "What to watch", "Coach actions", "Share with client"]) {
@@ -59,7 +59,7 @@ describe("the AI review card", () => {
   });
 
   it("hides a block that has nothing in it", () => {
-    renderRail(makeReview({ coachActions: [], watchItems: [], themes: [] }));
+    renderSection(makeReview({ coachActions: [], watchItems: [], themes: [] }));
 
     expect(screen.getByText("Summary")).toBeInTheDocument();
     expect(screen.queryByText("Coach actions")).not.toBeInTheDocument();
@@ -69,13 +69,13 @@ describe("the AI review card", () => {
   it("names a coach action's priority for anyone who cannot see the dot", () => {
     // The priority used to be an uppercase word; it is a coloured marker now,
     // so the word has to survive somewhere a screen reader reaches.
-    renderRail(makeReview({ coachActions: [{ priority: "high", text: "Ask about Thursday" }] }));
+    renderSection(makeReview({ coachActions: [{ priority: "high", text: "Ask about Thursday" }] }));
 
     expect(screen.getByText("High priority")).toBeInTheDocument();
   });
 
   it("drops the Summary pencil — it never persisted anything", () => {
-    renderRail(makeReview());
+    renderSection(makeReview());
 
     expect(screen.queryByRole("button", { name: /edit summary/i })).not.toBeInTheDocument();
     // Share's own Edit is the only one left, and it opens a textarea only once
@@ -98,7 +98,7 @@ describe("an empty review", () => {
   });
 
   it("shows ONE placeholder, not one per block", () => {
-    renderRail(empty);
+    renderSection(empty);
 
     expect(screen.getByText(/no ai review yet/i)).toBeInTheDocument();
     expect(screen.queryByText("Summary")).not.toBeInTheDocument();
@@ -107,7 +107,7 @@ describe("an empty review", () => {
   it("still offers Share, so a coach can reply before the AI has run", () => {
     // A pending check-in had a usable Share card before C4 and must keep one:
     // the coach's reply is the coach's, not part of the AI's output.
-    renderRail(empty);
+    renderSection(empty);
 
     expect(screen.getByText("Share with client")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^send$/i })).toBeInTheDocument();
@@ -116,7 +116,7 @@ describe("an empty review", () => {
 
 describe("Regenerate", () => {
   it("refreshes the detail when the call succeeds", async () => {
-    const { onRefresh } = renderRail(makeReview());
+    const { onRefresh } = renderSection(makeReview());
 
     await userEvent.click(screen.getByRole("button", { name: /regenerate review/i }));
 
@@ -128,7 +128,7 @@ describe("Regenerate", () => {
     // A 429 from the coach-keyed aiRateLimit used to spin the icon and then
     // do nothing at all.
     fetchMock.mockResolvedValue({ ok: false, status: 429 });
-    const { onRefresh } = renderRail(makeReview());
+    const { onRefresh } = renderSection(makeReview());
 
     await userEvent.click(screen.getByRole("button", { name: /regenerate review/i }));
 
@@ -138,7 +138,7 @@ describe("Regenerate", () => {
 
   it("reports any other failure rather than swallowing it", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500 });
-    const { onRefresh } = renderRail(makeReview());
+    const { onRefresh } = renderSection(makeReview());
 
     await userEvent.click(screen.getByRole("button", { name: /regenerate review/i }));
 
@@ -155,12 +155,12 @@ describe("the share draft", () => {
     // upstream while this card kept showing — and would have sent — the
     // previous message.
     const { rerender } = render(
-      <CheckInReviewRail checkInId="ci-1" clientName="Jane" review={makeReview()} />,
+      <CheckInReviewSection checkInId="ci-1" clientName="Jane" review={makeReview()} />,
     );
     expect(screen.getByText("Great week — let's talk about sleep.")).toBeInTheDocument();
 
     rerender(
-      <CheckInReviewRail
+      <CheckInReviewSection
         checkInId="ci-1"
         clientName="Jane"
         review={makeReview({ clientMessage: "Rewritten after regenerate." })}

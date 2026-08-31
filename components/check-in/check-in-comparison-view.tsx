@@ -158,16 +158,15 @@ export const CheckInComparisonView = ({ comparison, chartData, adherence }: Chec
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h3 className="text-lg font-semibold text-[#0c1a1e]">
-          {hasPreviousCheckIn ? "Progress comparison" : "Baseline established"}
-        </h3>
-        <p className="text-sm text-[#93b0b4]">
-          {hasPreviousCheckIn && timeBetweenCheckIns
-            ? `Comparing with the check-in from ${timeBetweenCheckIns} days ago`
-            : "This is the first check-in. 1 data point, trends build next week."}
-        </p>
-      </div>
+      {/* The heading went with the tabs — the page's rail names this section
+          now. The lead line stays here rather than moving to the rail's meta:
+          it is a SENTENCE, and a rail meta is set in mono
+          (docs/newdesignsystem.md → "Prose vs data"). */}
+      <p className="text-sm text-[#93b0b4]">
+        {hasPreviousCheckIn && timeBetweenCheckIns
+          ? `Comparing with the check-in from ${timeBetweenCheckIns} days ago`
+          : "This is the first check-in. 1 data point, trends build next week."}
+      </p>
 
       {/* Body */}
       <div className={cardClass}>

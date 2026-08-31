@@ -59,7 +59,6 @@ describe("CheckInComparisonView", () => {
 
     render(<CheckInComparisonView comparison={comparison} chartData={chartData} adherence={adherence} />);
 
-    expect(screen.getByText("Baseline established")).toBeInTheDocument();
     expect(screen.getByText(/trends build next week/i)).toBeInTheDocument();
     expect(screen.getByText(/67%/)).toBeInTheDocument();
     expect(screen.queryByText(/100%/)).not.toBeInTheDocument();
@@ -87,7 +86,6 @@ describe("CheckInComparisonView", () => {
 
     render(<CheckInComparisonView comparison={comparison} chartData={chartData} adherence={adherence} />);
 
-    expect(screen.getByText("Progress comparison")).toBeInTheDocument();
     expect(screen.getByText(/Comparing with the check-in from 7 days ago/i)).toBeInTheDocument();
     expect(screen.getByText(/-1\.2/)).toBeInTheDocument();
   });

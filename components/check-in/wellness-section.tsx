@@ -1,11 +1,10 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SectionLabel } from "@/components/programs/shared/section-label";
 import {
   MONO,
-  SECTION_LABEL_CLASS,
   TEXT_PRIMARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { MiniBarSparkline } from "./mini-bar-sparkline";
@@ -71,63 +70,62 @@ export const WellnessSection = ({
   if (!hasWellnessData) return null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, delay: 0.05 }}
-      className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
-    >
-      <div className={cn(SECTION_LABEL_CLASS, "mb-4 flex items-center gap-2")}>
-        <Heart className="w-4 h-4" strokeWidth={1.5} />
-        Wellness
-      </div>
-      <div className="grid grid-cols-5 gap-4">
-        {METRICS.map((metric) => {
-          const values = dateRange.map((day) => {
-            const log = dayMap.get(day.date);
-            return log?.[metric.key] ?? null;
-          });
+    <div>
+      <SectionLabel label="Wellness" />
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, delay: 0.05 }}
+        className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
+      >
+        <div className="grid grid-cols-5 gap-4">
+          {METRICS.map((metric) => {
+            const values = dateRange.map((day) => {
+              const log = dayMap.get(day.date);
+              return log?.[metric.key] ?? null;
+            });
 
-          // Divided by the days this metric was actually LOGGED, not by the
-          // calendar days. An unlogged day is unknown, not zero: summing two
-          // stress entries and dividing by seven reported 1.9 — "relaxed" — for
-          // a client averaging 6.7, while the AI summary beside it, reading the
-          // stored snapshot, correctly called the same week high-stress.
-          // `calculateMetricAverages` (which writes that snapshot) has always
-          // divided by its own per-metric count; this card was the only place
-          // that did not. Per metric, not per card: stress and mood can be
-          // logged on different days.
-          const validValues = values.filter((v): v is number => v !== null);
-          const avg =
-            validValues.length > 0
-              ? (validValues.reduce((a, b) => a + b, 0) / validValues.length).toFixed(1)
-              : "--";
+            // Divided by the days this metric was actually LOGGED, not by the
+            // calendar days. An unlogged day is unknown, not zero: summing two
+            // stress entries and dividing by seven reported 1.9 — "relaxed" — for
+            // a client averaging 6.7, while the AI summary beside it, reading the
+            // stored snapshot, correctly called the same week high-stress.
+            // `calculateMetricAverages` (which writes that snapshot) has always
+            // divided by its own per-metric count; this card was the only place
+            // that did not. Per metric, not per card: stress and mood can be
+            // logged on different days.
+            const validValues = values.filter((v): v is number => v !== null);
+            const avg =
+              validValues.length > 0
+                ? (validValues.reduce((a, b) => a + b, 0) / validValues.length).toFixed(1)
+                : "--";
 
-          const barData = dateRange.map((day) => ({
-            value: dayMap.get(day.date)?.[metric.key] ?? null,
-            dayLabel: day.dayLabel,
-          }));
+            const barData = dateRange.map((day) => ({
+              value: dayMap.get(day.date)?.[metric.key] ?? null,
+              dayLabel: day.dayLabel,
+            }));
 
-          return (
-            <div key={metric.key} className="text-center">
-              <div className="text-xs font-medium text-[#93b0b4] mb-2">
-                {metric.label}
+            return (
+              <div key={metric.key} className="text-center">
+                <div className="text-xs font-medium text-[#93b0b4] mb-2">
+                  {metric.label}
+                </div>
+                <div className={cn("text-2xl font-bold tracking-tight", MONO, TEXT_PRIMARY)}>
+                  {avg}
+                </div>
+                <div className="text-[11px] text-[#93b0b4]">
+                  {metric.scale}
+                </div>
+                <MiniBarSparkline
+                  data={barData}
+                  metric={metric.key}
+                  maxValue={metric.maxValue}
+                />
               </div>
-              <div className={cn("text-2xl font-bold tracking-tight", MONO, TEXT_PRIMARY)}>
-                {avg}
-              </div>
-              <div className="text-[11px] text-[#93b0b4]">
-                {metric.scale}
-              </div>
-              <MiniBarSparkline
-                data={barData}
-                metric={metric.key}
-                maxValue={metric.maxValue}
-              />
-            </div>
-          );
-        })}
-      </div>
-    </motion.div>
+            );
+          })}
+        </div>
+      </motion.div>
+    </div>
   );
 };

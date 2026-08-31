@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  Sparkles,
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
@@ -13,10 +12,8 @@ import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  SECTION_LABEL_CLASS,
-  TEXT_MUTED,
-} from "@/components/clients/training/program-builder/builder-tokens";
+import { SectionLabel } from "@/components/programs/shared/section-label";
+import { TEXT_MUTED } from "@/components/clients/training/program-builder/builder-tokens";
 import { NeutralChip } from "@/components/clients/overview/overview-primitives";
 import {
   ReviewBlock,
@@ -27,7 +24,7 @@ import {
 import { CheckInShareCard } from "./check-in-share-card";
 import type { CheckInReview, WatchItemType, CoachActionPriority } from "@/types/check-in";
 
-type CheckInReviewRailProps = {
+type CheckInReviewSectionProps = {
   checkInId: string;
   clientName: string;
   review: CheckInReview;
@@ -48,7 +45,7 @@ const WATCH_META: Record<WatchItemType, { icon: LucideIcon; color: string }> = {
 };
 
 // The priority used to be a `border-l-4` on a nested white card plus an
-// uppercase word — a third card shape inside the rail. It is now a marker dot
+// uppercase word — a third card shape inside the card. It is now a marker dot
 // in the shared list slot, carrying the word for anyone who cannot see colour.
 const PRIORITY_META: Record<CoachActionPriority, { dot: string; label: string }> = {
   high: { dot: "bg-[#d97706]", label: "High priority" },
@@ -56,13 +53,13 @@ const PRIORITY_META: Record<CoachActionPriority, { dot: string; label: string }>
   low: { dot: "bg-[rgba(13,148,136,0.35)]", label: "Low priority" },
 };
 
-export const CheckInReviewRail = ({
+export const CheckInReviewSection = ({
   checkInId,
   clientName,
   review,
   onRefresh,
   onSent,
-}: CheckInReviewRailProps) => {
+}: CheckInReviewSectionProps) => {
   const [isRegenerating, setIsRegenerating] = useState(false);
 
   const hasWatch = review.watchItems.length > 0 || review.themes.length > 0;
@@ -103,25 +100,24 @@ export const CheckInReviewRail = ({
   };
 
   return (
-    <div className="rounded-[6px] bg-white p-5">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className={cn(SECTION_LABEL_CLASS, "flex items-center gap-2")}>
-          <Sparkles className="h-4 w-4" strokeWidth={1.5} />
-          AI review
-        </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={handleRegenerate}
-          disabled={isRegenerating}
-          aria-label="Regenerate review"
-          className="h-8 w-8 p-0 text-[#93b0b4] hover:text-[#5a7d82]"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", isRegenerating && "animate-spin")} />
-        </Button>
-      </div>
+    <div>
+      <SectionLabel
+        label="AI review"
+        actions={
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleRegenerate}
+            disabled={isRegenerating}
+            aria-label="Regenerate review"
+            className="h-8 w-8 p-0 text-[#93b0b4] hover:text-[#5a7d82]"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", isRegenerating && "animate-spin")} />
+          </Button>
+        }
+      />
 
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-5 rounded-[6px] bg-white p-5">
         {!hasAiReview ? (
           <p className={cn("text-[13px] leading-relaxed", TEXT_MUTED)}>
             No AI review yet. Regenerate to write one.

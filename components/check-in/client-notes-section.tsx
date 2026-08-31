@@ -1,9 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { MessageSquare } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import { SectionLabel } from "@/components/programs/shared/section-label";
 import {
   ReviewBlock,
   ReviewProse,
@@ -48,51 +46,49 @@ export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
   if (!hasContent) return null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, delay: 0.12 }}
-      className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
-    >
-      <div className={cn(SECTION_LABEL_CLASS, "mb-4 flex items-center gap-2")}>
-        <MessageSquare className="w-4 h-4" strokeWidth={1.5} />
-        Client Notes
-      </div>
+    <div>
+      <SectionLabel label="Client Notes" />
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, delay: 0.12 }}
+        className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
+      >
+        <div className="flex flex-col gap-5">
+          {checkIn.notes && (
+            <ReviewBlock label="Reflection">
+              <ReviewProse>{checkIn.notes}</ReviewProse>
+            </ReviewBlock>
+          )}
 
-      <div className="flex flex-col gap-5">
-        {checkIn.notes && (
-          <ReviewBlock label="Reflection">
-            <ReviewProse>{checkIn.notes}</ReviewProse>
-          </ReviewBlock>
-        )}
+          {checkIn.prs && (
+            <ReviewBlock label="Wins">
+              <ReviewProse>{checkIn.prs}</ReviewProse>
+            </ReviewBlock>
+          )}
 
-        {checkIn.prs && (
-          <ReviewBlock label="Wins">
-            <ReviewProse>{checkIn.prs}</ReviewProse>
-          </ReviewBlock>
-        )}
+          {checkIn.challenges && (
+            <ReviewBlock label="Challenges">
+              <ReviewProse>{checkIn.challenges}</ReviewProse>
+            </ReviewBlock>
+          )}
 
-        {checkIn.challenges && (
-          <ReviewBlock label="Challenges">
-            <ReviewProse>{checkIn.challenges}</ReviewProse>
-          </ReviewBlock>
-        )}
-
-        {answers.length > 0 && (
-          <ReviewBlock label="Coach questions">
-            <div className="flex flex-col gap-3">
-              {answers.map((answer) => (
-                <div key={answer.questionId}>
-                  {/* Read LIVE through the question FK — rewording relabels
-                      every past answer, because it is the same question. */}
-                  <ReviewProse tone="muted">{answer.prompt}</ReviewProse>
-                  <ReviewProse>{answer.answer}</ReviewProse>
-                </div>
-              ))}
-            </div>
-          </ReviewBlock>
-        )}
-      </div>
-    </motion.div>
+          {answers.length > 0 && (
+            <ReviewBlock label="Coach questions">
+              <div className="flex flex-col gap-3">
+                {answers.map((answer) => (
+                  <div key={answer.questionId}>
+                    {/* Read LIVE through the question FK — rewording relabels
+                        every past answer, because it is the same question. */}
+                    <ReviewProse tone="muted">{answer.prompt}</ReviewProse>
+                    <ReviewProse>{answer.answer}</ReviewProse>
+                  </div>
+                ))}
+              </div>
+            </ReviewBlock>
+          )}
+        </div>
+      </motion.div>
+    </div>
   );
 };

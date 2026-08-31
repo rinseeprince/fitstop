@@ -73,9 +73,14 @@ describe("HabitsSection", () => {
     expect(screen.queryByText("Water")).not.toBeInTheDocument();
   });
 
-  it("renders nothing when the client has no habits", () => {
+  it("renders nothing when the client has no habits — the rail goes with it", () => {
+    // The section owns its own rail rather than the page owning it, and this
+    // is the reason: on a one-page review a rail rendered by the parent would
+    // leave a bare HABITS label over empty space, and hiding it there would
+    // mean a second copy of this component's "do I have anything" predicate.
     const { container } = render(<HabitsSection perHabit={[]} />);
 
     expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText("Habits")).not.toBeInTheDocument();
   });
 });

@@ -8,8 +8,8 @@ const { mockDetailData } = vi.hoisted(() => ({ mockDetailData: vi.fn() }));
 vi.mock("@/hooks/use-check-in-detail-data", () => ({
   useCheckInDetailData: mockDetailData,
 }));
-vi.mock("@/components/check-in/check-in-review-rail", () => ({
-  CheckInReviewRail: ({ onSent, onRefresh }: { onSent: () => void; onRefresh: () => void }) => (
+vi.mock("@/components/check-in/check-in-review-section", () => ({
+  CheckInReviewSection: ({ onSent, onRefresh }: { onSent: () => void; onRefresh: () => void }) => (
     <div data-testid="rail">
       <button onClick={onSent}>send</button>
       <button onClick={onRefresh}>regenerate</button>
@@ -92,13 +92,33 @@ describe("CheckInDetailView", () => {
     expect(screen.getByText(/Failed to load check-in data/i)).toBeInTheDocument();
   });
 
-  it("renders the Current pane with the meta line and the rail", () => {
+  it("renders every section on one page — no switcher, nothing behind a click", () => {
     mockDetailData.mockReturnValue(loaded);
     renderView();
     expect(screen.getByTestId("ribbon")).toBeInTheDocument();
     expect(screen.getByTestId("rail")).toBeInTheDocument();
+    // Both carried-over panes render without a click: this is the whole point
+    // of the commit, so it is asserted rather than assumed.
+    expect(screen.getByTestId("comparison")).toBeInTheDocument();
+    expect(screen.getByTestId("goals")).toBeInTheDocument();
     expect(screen.getByText(/2\/7 days logged/)).toBeInTheDocument();
     expect(screen.getByText(/Week of Aug 22 – 28, 2026/)).toBeInTheDocument();
+  });
+
+  it("a failed comparison leaves the rest of the page standing", () => {
+    mockDetailData.mockReturnValue({
+      ...loaded,
+      comparisonData: null,
+      isLoadingComparison: false,
+    });
+    renderView();
+    // The two comparison-fed sections report their own failure...
+    expect(screen.getByText(/Failed to load comparison data/i)).toBeInTheDocument();
+    expect(screen.getByText(/Failed to load goal progress data/i)).toBeInTheDocument();
+    // ...and everything the DETAIL read feeds still renders.
+    expect(screen.getByTestId("ribbon")).toBeInTheDocument();
+    expect(screen.getByTestId("rail")).toBeInTheDocument();
+    expect(screen.queryByText(/Failed to load check-in data/i)).not.toBeInTheDocument();
   });
 
   it("the back row returns to the list", async () => {
@@ -109,18 +129,6 @@ describe("CheckInDetailView", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it("the segmented control switches to the carried-over panes", async () => {
-    const user = userEvent.setup();
-    mockDetailData.mockReturnValue(loaded);
-    renderView();
-
-    await user.click(screen.getByRole("button", { name: "Comparison & Trends" }));
-    expect(screen.getByTestId("comparison")).toBeInTheDocument();
-    expect(screen.queryByTestId("ribbon")).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Goal Progress" }));
-    expect(screen.getByTestId("goals")).toBeInTheDocument();
-  });
 
   it("a sent reply reports done; a regenerate refreshes the detail in place", async () => {
     const user = userEvent.setup();
