@@ -137,7 +137,14 @@ export const NutritionSection = ({
     // node, so the survivor takes the full row without the page having to know
     // which one rendered. `min-w-0` stops the mono numerals setting the basis.
     <div className="flex min-w-0 flex-1 flex-col">
-      <SectionLabel label="Nutrition" />
+      {/* Coverage on the rail, adherence in the pill. How many days the client
+          logged food and how many of them landed on target are different
+          questions, and the pill had been carrying a coverage fallback only
+          because there was nowhere else to put it. */}
+      <SectionLabel
+        label="Nutrition"
+        meta={`${stats.daysLogged} of ${daysInPeriod} days logged`}
+      />
       <div className="flex-1 rounded-[6px] bg-white p-5">
         <div className="flex flex-col gap-4">
           {/* Calories */}
@@ -160,7 +167,8 @@ export const NutritionSection = ({
                     : "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
                 )}
               >
-                {adherence} · {nutrition ? `${nutrition.onTarget}/${daysInPeriod} on target` : `${stats.daysLogged}/${daysInPeriod} logged`}
+                {adherence}
+                {nutrition ? ` · ${nutrition.onTarget}/${daysInPeriod} on target` : ""}
               </span>
             </div>
             <div className="h-2 bg-[rgba(13,148,136,0.06)] rounded-full overflow-hidden">

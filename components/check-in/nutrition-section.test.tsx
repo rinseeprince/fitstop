@@ -30,14 +30,17 @@ const nutrition: CheckInPeriodAdherence["nutrition"] = {
   pct: 43,
 };
 
-function renderCard(periodDays: number | null = 7) {
+function renderCard(
+  periodDays: number | null = 7,
+  periodNutrition: typeof nutrition | null = nutrition,
+) {
   return render(
     <NutritionSection
       dailyLogs={THREE_LOGGED_DAYS}
       contextStartDate={START}
       contextEndDate={END}
       fullWeekTarget={{ calories: 15077, proteinG: 1113, carbsG: 1330, fatG: 588 }}
-      nutrition={nutrition}
+      nutrition={periodNutrition}
       periodDays={periodDays}
     />,
   );
@@ -61,6 +64,31 @@ describe("the totals", () => {
     renderCard(3);
 
     expect(screen.getByText(/3\/3 on target/)).toBeInTheDocument();
+  });
+});
+
+describe("coverage vs adherence", () => {
+  it("puts days LOGGED on the rail and days ON TARGET in the pill", () => {
+    // Two different questions: how much of the week the client recorded, and
+    // how much of what they recorded landed on target. Neither answers the
+    // other, so neither slot may carry the other's number.
+    //
+    // The figures are deliberately DIFFERENT here — one on target out of three
+    // logged. With the shared fixture's 3-and-3 both slots render the same
+    // string and the assertion passes whichever number each is wired to.
+    renderCard(7, { onTarget: 1, loggedDays: 3, pct: 14 });
+
+    expect(screen.getByText("3 of 7 days logged")).toBeInTheDocument();
+    expect(screen.getByText(/1\/7 on target/)).toBeInTheDocument();
+  });
+
+  it("still states coverage on a legacy row with no server figures", () => {
+    // `nutrition` null drops the pill's on-target half; the rail is then the
+    // only place the week's coverage is stated, and it must survive.
+    renderCard(7, null);
+
+    expect(screen.getByText("3 of 7 days logged")).toBeInTheDocument();
+    expect(screen.queryByText(/on target/)).not.toBeInTheDocument();
   });
 });
 
