@@ -34,7 +34,8 @@ page, in the order the review actually runs.
 | **D1** | **No baseline control.** The mockup's last-check-in / 4-weeks-ago / start switcher is dropped. Comparisons stay exactly as today: against the **last check-in**, falling back to `vs start` on a first check-in as the code already does. Reason: "4 weeks ago" is on the wire for no metric, and training/nutrition cannot follow any baseline but the last check-in without one server derivation per historical check-in |
 | **D2** | **Goal progress is the strip as drawn** — four columns per row: name, progress track, `start → goal`, state. This drops the projections the brief named (Estimated Time, Projected Goal Date, the Required/Safe-ceiling pace bars) **and** the percent-complete number, the current value, the remaining figure and the average-weekly-change row. Two rows, four columns, nothing else fits |
 | **D3** | **No prev/next between check-ins.** Removed deliberately at D1.3 and it stays removed. Back to the list is one click |
-| **D4** | **Everything else on the three tabs keeps a home.** Client Notes, the five girth deltas, PR highlights, the workouts-completed delta, the regeneration banner — all still render |
+| **D4** | **Everything else keeps a home** — Client Notes, PR highlights, the regeneration banner. *(Narrowed by D5.)* |
+| **D5** | **Comparison & Trends is DELETED, not re-homed.** Weight and body fat are the band's first two cells, the Wellbeing card is the Wellness section's five deltas, and the "Adherence" row mixed a training value with a nutrition series. Going with it: the **five girth measurements** (still charted on Journey → Physique) and the **workouts-completed delta**, which the band's fraction and breakdown already answer. The "N days since last check-in" line moves to the header — every delta on the page reads "vs last check-in", so the gap has to be stated somewhere |
 
 ---
 
@@ -89,22 +90,14 @@ on `#f4f7f6`.
 | § | Rail | Card contents | Fed by |
 |---|---|---|---|
 | — | *(no rail)* | Back row `← Check-ins`, week range, submitted date, days-logged chip | detail |
-| **1** | *(no rail — the band is its own object)* | Dark 4-cell band: Weight · Body Fat · Nutrition · Training. **Weight and Body Fat gain the sparkline the Comparison pane's trend rows carried** | detail + comparison |
+| **1** | *(no rail — the band is its own object)* | Dark 4-cell band: Weight · Body Fat · Nutrition · Training. Weight and Body Fat carry a sparkline over the client's recent check-ins | detail + comparison |
 | **2** | `TRAINING` ∥ `NUTRITION` | Two cards side by side. Training: per-session list + PR strip. Nutrition: kcal total vs target, verdict pill, macro bars | detail + logs + plan targets |
 | **3** | `WELLNESS` | Five metrics in one row: value, `vs last check-in` delta, per-day sparkline | logs + comparison |
-| **4** | `MEASUREMENTS & TRENDS` | The Comparison pane's remainder: five girth delta rows + Workouts completed + Adherence — **rendered exactly as today** | comparison |
-| **5** | `HABITS` | Compact rows: name · hits · per-day dots | detail (`periodAdherence.habits.perHabit`) |
-| **6** | `CLIENT NOTES` | Reflection · Wins · Challenges · Coach questions | detail |
-| **7** | `GOAL PROGRESS` (meta: deadline) | Regeneration banner when it fires, then the strip: 2 rows × 4 columns | comparison |
-| **8** | `REVIEW` (action: Regenerate) | Summary · What to watch · Coach actions | detail |
-| **9** | `REPLY` | Full-width textarea + Send (the page's single primary button) + Copy | detail |
-
-**Why §4 exists — the one structural call that is mine, not yours.** The brief's eight-section
-target has no slot for the five girth deltas or the Performance card's two rows, and D4 says
-nothing is removed. Putting girths beside Wellness would call tape measurements a wellness
-metric; folding the "Adherence" row into Training would give a *nutrition* series a training
-context (§7.2 C1). One section holding the Comparison pane's remainder, rendered unchanged,
-claims nothing new. **Amend this if you want them placed differently.**
+| **4** | `HABITS` | Compact rows: name · hits · per-day dots | detail (`periodAdherence.habits.perHabit`) |
+| **5** | `CLIENT NOTES` | Reflection · Wins · Challenges · Coach questions | detail |
+| **6** | `GOAL PROGRESS` (meta: deadline) | Regeneration banner when it fires, then the strip: 2 rows × 4 columns | comparison |
+| **7** | `REVIEW` (action: Regenerate) | Summary · What to watch · Coach actions | detail |
+| **8** | `REPLY` | Full-width textarea + Send (the page's single primary button) + Copy | detail |
 
 ---
 
@@ -128,13 +121,12 @@ deliberately not relocated, the precedent `review-block.tsx` already set (plan �
 |---|---|---|
 | `check-in-detail-view.tsx` | `Tabs` + `SegmentedControl` + 3 `TabsContent` → one railed column. Keeps the foreign-client guard, the spinner and all three notices | layout |
 | `kpi-ribbon.tsx` | Adds a sparkline slot, filled for Weight and Body Fat only (`chartData.weight` / `.bodyFat` through the existing `TrendSparkline`). Cells, values, deltas, dots and sub-lines **unchanged** | render-only |
-| `wellness-section.tsx` | Five metrics laid out as one row instead of a grid of tiles; each gains a `vs last check-in` delta from `changes.*`. Takes `comparisonData` as one new prop. Value and sparkline unchanged — see §7.2 C2 | render + 1 prop |
+| `wellness-section.tsx` | Five metrics laid out as one row instead of a grid of tiles; each gains a `vs last check-in` delta from `changes.*`. Takes `changes` as one new prop. Value and sparkline unchanged — see §7.2 C2 | render + 1 prop |
 | `training-section.tsx` | Borderless shell, framer removed, icon+label header → rail. Rows, states, detail lines, PR strip unchanged | style only |
 | `nutrition-section.tsx` | Same shell treatment; two-column body kept | style only |
 | `habits-section.tsx` | Same shell treatment; rows go compact (name · count · dots on one line) | style only |
 | `client-notes-section.tsx` | Same shell treatment. Content untouched | style only |
 | `check-in-review-rail.tsx` | Stops being a sticky 380px rail; becomes a full-width section under a rail with Regenerate in the rail's `actions` slot. Loses the Share sub-block to `CheckInReplyBlock`. Every AI string and the `ReviewBlock` vocabulary unchanged | layout |
-| `check-in-comparison-view.tsx` | Trimmed: the Physique card's Weight and Body Fat rows move to the band; the Wellbeing card moves to §3. What remains — five girth rows + the Performance card — renders as today under §4's rail | carve-out |
 | `check-in-detail-view.test.tsx` | Mocks are per-child; the child list changes | test |
 
 ### 4.3 Deleted — 6 files
@@ -146,6 +138,7 @@ deliberately not relocated, the precedent `review-block.tsx` already set (plan �
 | `body-fat-goal-card.tsx` | → one strip row (D2) |
 | `goal-deadline-card.tsx` | → the `GOAL PROGRESS` rail's meta |
 | `check-in-share-card.tsx` | → `CheckInReplyBlock` |
+| `check-in-comparison-view.tsx` (+ `.test.tsx`) | **D5.** Weight/body-fat rows → the band's cells 1–2 (values and deltas were already there; the sparkline joins them). Wellbeing card → §3's five deltas. Girths, the workouts-completed delta and the "Adherence" row are dropped; `TrendSparkline` survives as the band's sparkline |
 | `goal-cards.test.tsx` | Rewritten against the strip |
 
 **Fields that stop being rendered but keep being computed.** D2 leaves
@@ -222,19 +215,19 @@ decision that dropped it)
 | Element | Source | New home |
 |---|---|---|
 | `"Progress comparison"` / `"Baseline established"` heading | `check-in-comparison-view.tsx:155-157` | ✂ the rail replaces it |
-| `"Comparing with the check-in from {n} days ago"` | `:158-162` | → §4 rail meta — it names the real gap, which is exactly what D1 keeps |
-| `"This is the first check-in. 1 data point, trends build next week."` | `:162` | → §4, when `previous === null` (B7) |
+| `"Comparing with the check-in from {n} days ago"` | `:158-162` | → the **header** meta line, as `"{n} days since last check-in"` (D5) |
+| `"This is the first check-in. 1 data point, trends build next week."` | `:162` | ✂ **D5.** The band already falls back to `vs start`, and the sparklines render their dashed "trend builds next week" ghost |
 | `"Physique"` heading | `:167` | ✂ its two remaining metrics are the band's |
 | Weight trend row (value + delta + sparkline) | `:169-176` | → §1 cell 1 — **sparkline only**; value and delta are already there |
 | Body Fat trend row | `:177-184` | → §1 cell 2, same |
-| Waist / Hips / Chest / Arms / Thighs delta rows (`formatLength`, waist inverse) | `:185-189` | = §4, unchanged (D4) |
+| Waist / Hips / Chest / Arms / Thighs delta rows (`formatLength`, waist inverse) | `:185-189` | ✂ **D5** — charted on Journey → Physique |
 | `"Performance"` heading | `:195` | ✂ folded into §4's rail |
-| `"Workouts completed"` delta row | `:197` | = §4, unchanged (D4) |
-| `"Adherence"` trend row | `:198-204` | = §4, unchanged — **and it is the known mixed-metric defect**; §7.2 C1 |
+| `"Workouts completed"` delta row | `:197` | ✂ **D5** — the band's fraction + `N partial · N missed` answer it |
+| `"Adherence"` trend row | `:198-204` | ✂ **D5** — the known mixed-metric defect goes with the row (§7.2 C1) |
 | Delta colour rule (teal good / amber bad / muted none) | `:23-28` | = carried into §1 and §3 |
-| `TrendSparkline`; `<2` points → dashed ghost + `aria-label="Trend builds next week"` | `trend-sparkline.tsx:17-23` | = **reused as-is** in §1 and §4. Not rewritten — reuse beats a rewrite under §0 |
+| `TrendSparkline`; `<2` points → dashed ghost + `aria-label="Trend builds next week"` | `trend-sparkline.tsx:17-23` | = **reused as-is** in §1's band cells. Not rewritten — reuse beats a rewrite under §0 |
 | `"Wellbeing"` card — 5 trend rows (Mood /5, Energy /10, Sleep /10, Stress /10 inv, Soreness /10 inv) | `:207-220` | → §3, as the five deltas |
-| `"Failed to load comparison data"` | `check-in-detail-view.tsx:207` | → §4, and §1/§3/§7 per B8 |
+| `"Failed to load comparison data"` | `check-in-detail-view.tsx:207` | ✂ **D5** — with the pane gone, the comparison read has one dedicated section (§6, Goal progress) and it keeps `"Failed to load goal progress data"`. The band's deltas and §3's deltas degrade in place |
 
 ### 5.3 Pane "Goal Progress"
 
@@ -308,13 +301,12 @@ correct for under-target, at-target and past-target with no new logic.
 
 ### 7.2 Consequences of putting three tabs on one page
 
-**C1 — The `"Adherence"` row is a known defect, and one page makes it visible.** Its current
-value is the **training** completion pct; its sparkline series is the stored **nutrition**
-`adherence_percentage` (§2.6, verified). On separate tabs nobody saw it beside the band. On one
-page it sits below a Training cell reading `3/5` and a Nutrition cell reading `2/7 on target`,
-and a coach may reasonably read it as either. §0 forbids fixing it here. **This is also why the
-Nutrition band cell gets no sparkline** — wiring that same series into the Nutrition cell would
-be quietly deciding which metric it is. Recorded for the separate bug pass.
+**C1 — The `"Adherence"` row's defect is gone with the row.** It rendered a **training**
+completion pct above a sparkline of the stored **nutrition** `adherence_percentage` (§2.6,
+verified). D5 deletes it. **`chartData.adherence` is still the reason the Nutrition band cell
+gets no sparkline** — it is the nutrition series, and wiring it into that cell would be quietly
+deciding which metric it is, which is the same mistake in a new place. Training has no series
+at all.
 
 **C2 — The Wellness row's value and its delta come from two sources.** The value is the
 per-metric average over `dailyLogs` (today's Wellness card); the delta is `changes.mood.change`
@@ -406,9 +398,9 @@ only renderer in the repo is the **client's** own page. Not created by this work
 | C6 | §2 Nutrition empty state (B2) | ditto | band's `No nutrition logs` |
 | C7 | §3 Wellness empty state (B3) | ditto | none |
 | C8 | §5 Habits empty state (B4) | ditto | none |
-| C9 | §4 rail label | the section is my placement call (§3) | `Comparison & Trends` · proposed `MEASUREMENTS & TRENDS` |
 | C10 | §5 rail meta (habits aggregate) | optional; derivable from `perHabit` with no wire change | `pluralize()` exists |
 | C11 | Section rail labels ×8 | uppercase via `SECTION_LABEL_CLASS` | existing card titles: Wellness, Nutrition, Training, Habits, Client Notes, AI review, Goal Progress |
+| C12 | Header: days since the previous check-in | new line beside the days-logged chip | shipped as `"{n} days since last check-in"` — replace if you want other wording |
 
 ---
 
@@ -422,7 +414,7 @@ that is stated in each commit rather than skipped silently.
 | # | Commit | Contains | Revert restores |
 |---|---|---|---|
 | **R1** | **Page shell** | Tabs die; `CheckInReviewHeader` extracted; every section gets its `SectionLabel` rail and loses the in-card header the rail replaces; the `[1fr_380px]` grid goes; per-section loading/error per B8. Children otherwise mounted **unchanged**, `CheckInComparisonView` and `GoalProgressView` whole. Design-SOT reference re-pointed. See §10 | the three panes |
-| **R2** | **Wellness row + band sparklines** | `check-in-comparison-view.tsx` trimmed (its Physique Weight/Body-Fat rows and the whole Wellbeing card carved out); `wellness-section.tsx` becomes the 5-across row with `vs last check-in` deltas; `kpi-ribbon.tsx` gains the sparkline slot for cells 1–2; §4's rail gates on having rows (B18). **One commit — splitting it orphans the carved-out rows mid-sequence.** Immediately after R1 because it is what removes R1's duplication (§10.8) | the Comparison pane whole |
+| **R2** | **Comparison pane deleted (D5)** | `check-in-comparison-view.tsx` + its test deleted. What survives moves in the same commit: the sparkline to the band's cells 1–2 (`kpi-ribbon.tsx`), the five wellness deltas to `wellness-section.tsx`, the check-in gap to the header. Girths, the workouts delta and the Adherence row go. One commit — deleting first would drop the survivors for a commit | the Comparison pane whole |
 | **R3** | **Reply block** | `CheckInReplyBlock` extracted from `check-in-share-card.tsx`; the Review card stops rendering Share; Reply becomes §9 with Send as the page's single primary. Effect-synced draft preserved verbatim (§7.4 #8) | Share inside the Review card |
 | **R4** | **Card shells** | Training ∥ Nutrition side by side; all five section cards go borderless + un-animated (completing D7.3); Habits rows go compact. **Style and layout only — not one prop changes** | bordered, stacked cards |
 | **R5** | **Goal strip** | `CheckInGoalStrip` replaces `goal-progress-view.tsx` + the three cards (D2); deadline → rail meta; regeneration banner re-mounted above, unchanged; `goal-cards.test.tsx` rewritten | the Goal Progress pane |

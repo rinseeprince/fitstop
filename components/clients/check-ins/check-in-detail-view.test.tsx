@@ -24,9 +24,6 @@ vi.mock("@/components/check-in/nutrition-section", () => ({ NutritionSection: ()
 vi.mock("@/components/check-in/training-section", () => ({ TrainingSection: () => null }));
 vi.mock("@/components/check-in/client-notes-section", () => ({ ClientNotesSection: () => null }));
 vi.mock("@/components/check-in/habits-section", () => ({ HabitsSection: () => null }));
-vi.mock("@/components/check-in/check-in-comparison-view", () => ({
-  CheckInComparisonView: () => <div data-testid="comparison" />,
-}));
 vi.mock("@/components/check-in/goal-progress-view", () => ({
   GoalProgressView: () => <div data-testid="goals" />,
 }));
@@ -48,7 +45,11 @@ const loaded = {
   isLoading: false,
   isError: false,
   isForeign: false,
-  comparisonData: { comparison: { client: {} }, chartData: [], goalProgress: {} },
+  comparisonData: {
+    comparison: { client: {}, changes: {}, timeBetweenCheckIns: 7 },
+    chartData: {},
+    goalProgress: {},
+  },
   isLoadingComparison: false,
   dailyLogs: [{ date: "2026-08-22" }, { date: "2026-08-23" }],
   habitLogs: [],
@@ -97,9 +98,7 @@ describe("CheckInDetailView", () => {
     renderView();
     expect(screen.getByTestId("ribbon")).toBeInTheDocument();
     expect(screen.getByTestId("rail")).toBeInTheDocument();
-    // Both carried-over panes render without a click: this is the whole point
-    // of the commit, so it is asserted rather than assumed.
-    expect(screen.getByTestId("comparison")).toBeInTheDocument();
+    // Goal progress renders without a click — the whole point of the page.
     expect(screen.getByTestId("goals")).toBeInTheDocument();
     expect(screen.getByText(/2\/7 days logged/)).toBeInTheDocument();
     expect(screen.getByText(/Week of Aug 22 – 28, 2026/)).toBeInTheDocument();
@@ -112,8 +111,7 @@ describe("CheckInDetailView", () => {
       isLoadingComparison: false,
     });
     renderView();
-    // The two comparison-fed sections report their own failure...
-    expect(screen.getByText(/Failed to load comparison data/i)).toBeInTheDocument();
+    // The one comparison-fed section reports its own failure...
     expect(screen.getByText(/Failed to load goal progress data/i)).toBeInTheDocument();
     // ...and everything the DETAIL read feeds still renders.
     expect(screen.getByTestId("ribbon")).toBeInTheDocument();

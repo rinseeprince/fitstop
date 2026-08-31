@@ -9,12 +9,15 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { MiniBarSparkline } from "./mini-bar-sparkline";
 import type { DailyLog } from "@/types/daily-log";
+import type { CheckInComparison, MetricChange } from "@/types/check-in";
 import type { WellnessMetric } from "@/utils/wellness-color-thresholds";
 
 type WellnessSectionProps = {
   dailyLogs: DailyLog[];
   contextStartDate: Date;
   contextEndDate: Date;
+  /** Week-over-week changes; null while the comparison read is in flight or has failed. */
+  changes: CheckInComparison["changes"] | null;
 };
 
 type MetricConfig = {
@@ -22,15 +25,26 @@ type MetricConfig = {
   label: string;
   maxValue: number;
   scale: string;
+  /** Down is GOOD — stress and soreness, like every other surface. */
+  inverse?: boolean;
 };
 
 const METRICS: MetricConfig[] = [
   { key: "mood", label: "Mood", maxValue: 5, scale: "/ 5" },
   { key: "energy", label: "Energy", maxValue: 10, scale: "/ 10" },
   { key: "sleep", label: "Sleep", maxValue: 10, scale: "/ 10" },
-  { key: "stress", label: "Stress", maxValue: 10, scale: "/ 10" },
-  { key: "soreness", label: "Soreness", maxValue: 10, scale: "/ 10" },
+  { key: "stress", label: "Stress", maxValue: 10, scale: "/ 10", inverse: true },
+  { key: "soreness", label: "Soreness", maxValue: 10, scale: "/ 10", inverse: true },
 ];
+
+// Good direction teal, bad amber, no comparison muted. Teal Summit is a
+// two-colour status system — there is no red.
+function deltaClass(change: MetricChange | undefined, inverse: boolean): string {
+  if (!change || change.previous === undefined) return "text-[#93b0b4]";
+  if (change.trend === "down") return inverse ? "text-[#0d9488]" : "text-[#d97706]";
+  if (change.trend === "up") return inverse ? "text-[#d97706]" : "text-[#0d9488]";
+  return "text-[#93b0b4]";
+}
 
 const SHORT_DAY = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -59,6 +73,7 @@ export const WellnessSection = ({
   dailyLogs,
   contextStartDate,
   contextEndDate,
+  changes,
 }: WellnessSectionProps) => {
   const dayMap = buildDayMap(dailyLogs);
   const dateRange = getDayRange(contextStartDate, contextEndDate);
@@ -105,6 +120,14 @@ export const WellnessSection = ({
               dayLabel: day.dayLabel,
             }));
 
+            // The delta comes from the STORED per-check-in snapshot while the
+            // value above it averages this period's daily logs. They agree by
+            // construction — `calculateMetricAverages` writes that snapshot with
+            // the same per-metric denominator — but drift if a wellness log
+            // lands after the check-in was submitted.
+            const change = changes?.[metric.key];
+            const hasDelta = change?.change !== undefined && change.previous !== undefined;
+
             return (
               <div key={metric.key} className="text-center">
                 <div className="text-xs font-medium text-[#93b0b4] mb-2">
@@ -116,6 +139,18 @@ export const WellnessSection = ({
                 <div className="text-[11px] text-[#93b0b4]">
                   {metric.scale}
                 </div>
+                {hasDelta && (
+                  <div
+                    className={cn(
+                      "text-[11px] font-medium",
+                      MONO,
+                      deltaClass(change, !!metric.inverse)
+                    )}
+                  >
+                    {change.change! > 0 ? "+" : ""}
+                    {change.change}
+                  </div>
+                )}
                 <MiniBarSparkline
                   data={barData}
                   metric={metric.key}

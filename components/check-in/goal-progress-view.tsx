@@ -71,7 +71,6 @@ export const GoalProgressView = ({
   if (!hasWeightGoal && !hasBodyFatGoal) {
     return (
       <div className="space-y-6">
-        {/* The heading went with the tabs — the page's rail names this section. */}
         <p className="text-sm text-[#93b0b4]">
           No goals have been set for {clientName} yet.
         </p>
@@ -87,7 +86,6 @@ export const GoalProgressView = ({
 
   return (
     <div className="space-y-6">
-      {/* The heading went with the tabs — the page's rail names this section. */}
       <p className="text-sm text-[#93b0b4]">
         Tracking {clientName}&apos;s progress towards their goals
       </p>

@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { CheckInReviewSection } from "@/components/check-in/check-in-review-section";
-import { CheckInComparisonView } from "@/components/check-in/check-in-comparison-view";
 import { GoalProgressView } from "@/components/check-in/goal-progress-view";
 import { KPIRibbon } from "@/components/check-in/kpi-ribbon";
 import { WellnessSection } from "@/components/check-in/wellness-section";
@@ -16,7 +15,7 @@ import { CheckInReviewHeader } from "./check-in-review-header";
 import { useCheckInDetailData } from "@/hooks/use-check-in-detail-data";
 import { summariseSessions } from "@/lib/check-in/adherence";
 import { toCheckInReview } from "@/lib/check-in/to-review";
-import type { Client, GetCheckInComparisonResponse } from "@/types/check-in";
+import type { Client } from "@/types/check-in";
 
 type CheckInDetailViewProps = {
   checkInId: string;
@@ -46,19 +45,16 @@ const Notice = ({ children }: { children: ReactNode }) => (
  * The coach's review of one check-in, rendered by the Check-ins tab in place of
  * its list when `?checkIn=<id>` is present.
  *
- * ONE PAGE, read top to bottom in the order the review actually runs: what
- * happened (the band), what the week looked like (training, nutrition,
- * wellness, measurements, habits, the client's own words), where they stand
- * (goals), and what gets sent back (the AI review and the reply). The three
- * panes behind a SegmentedControl are gone — a coach was switching tabs to
- * assemble one judgement.
+ * One page, read top to bottom in the order the review runs: what happened
+ * (the band), what the week looked like (training, nutrition, wellness,
+ * habits, the client's own words), where they stand (goals), and what gets
+ * sent back (the AI review and the reply).
  *
  * **Each section renders its OWN rail**, inside the component that decides
  * whether there is something to show. Five of them return null on an empty
  * week, and a rail owned by this page would leave a bare label over empty
  * space — or force this page to hold a second copy of each child's
- * emptiness predicate. The two carried-over panes never return null, so their
- * rails are here.
+ * emptiness predicate. Goal progress never returns null, so its rail is here.
  */
 export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckInDetailViewProps) => {
   const {
@@ -89,21 +85,6 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
 
   const ready = Boolean(data && contextStartDate && contextEndDate);
 
-  // The comparison read feeds two sections. Each gates on it independently, so
-  // a failed comparison costs those two rather than the whole page — the same
-  // per-pane behaviour the tabs had, now per section.
-  const fromComparison = (
-    render: (comparison: GetCheckInComparisonResponse) => ReactNode,
-    failure: string
-  ): ReactNode =>
-    isLoadingComparison ? (
-      <Spinner />
-    ) : comparisonData ? (
-      render(comparisonData)
-    ) : (
-      <Notice>{failure}</Notice>
-    );
-
   return (
     <div className="space-y-5">
       <CheckInReviewHeader
@@ -116,6 +97,7 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
                 submittedAt: data.checkIn.createdAt,
                 daysLogged: dailyLogs.length,
                 daysInPeriod: daysDiff,
+                daysSinceLast: comparisonData?.comparison.timeBetweenCheckIns,
               }
             : null
         }
@@ -152,37 +134,29 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
             dailyLogs={dailyLogs}
             contextStartDate={contextStartDate}
             contextEndDate={contextEndDate}
+            changes={comparisonData?.comparison.changes ?? null}
           />
-
-          <div>
-            <SectionLabel label="Measurements & trends" />
-            {fromComparison(
-              (comparison) => (
-                <CheckInComparisonView
-                  comparison={comparison.comparison}
-                  chartData={comparison.chartData}
-                  adherence={adherence}
-                />
-              ),
-              "Failed to load comparison data"
-            )}
-          </div>
 
           <HabitsSection perHabit={periodAdherence?.habits.perHabit ?? []} />
 
           <ClientNotesSection checkIn={data.checkIn} />
 
+          {/* Goal progress is the one section the comparison read feeds on its
+              own, so it carries that read's loading and failure states rather
+              than the page doing. The band's deltas and the wellness deltas
+              degrade in place. */}
           <div>
             <SectionLabel label="Goal progress" />
-            {fromComparison(
-              (comparison) => (
-                <GoalProgressView
-                  goalProgress={comparison.goalProgress}
-                  clientName={clientName}
-                  clientData={comparison.comparison.client}
-                />
-              ),
-              "Failed to load goal progress data"
+            {isLoadingComparison ? (
+              <Spinner />
+            ) : comparisonData ? (
+              <GoalProgressView
+                goalProgress={comparisonData.goalProgress}
+                clientName={clientName}
+                clientData={comparisonData.comparison.client}
+              />
+            ) : (
+              <Notice>Failed to load goal progress data</Notice>
             )}
           </div>
 

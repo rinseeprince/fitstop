@@ -38,16 +38,18 @@ type CheckInReviewHeaderProps = {
     submittedAt: string;
     daysLogged: number;
     daysInPeriod: number;
+    /**
+     * Days since the previous check-in, `undefined` on a first one. Load-bearing
+     * rather than decoration: every delta on this page reads "vs last check-in",
+     * and the gap between two check-ins is whatever it is — 7 days or 92.
+     */
+    daysSinceLast?: number;
   } | null;
 };
 
 /**
  * The review's header: the back row in the sidebar grammar, over the week the
  * check-in reports on.
- *
- * Extracted from the page when the three panes became one column — the page had
- * no room left for the date helpers, and the header is the one block that
- * renders whatever the rest of the page can resolve.
  */
 export const CheckInReviewHeader = ({ onBack, meta }: CheckInReviewHeaderProps) => (
   <div className="min-w-0">
@@ -80,6 +82,12 @@ export const CheckInReviewHeader = ({ onBack, meta }: CheckInReviewHeaderProps) 
         >
           {meta.daysLogged}/{meta.daysInPeriod} days logged
         </span>
+        {meta.daysSinceLast !== undefined && (
+          <>
+            <span>&middot;</span>
+            <span className={MONO}>{meta.daysSinceLast} days since last check-in</span>
+          </>
+        )}
       </p>
     )}
   </div>

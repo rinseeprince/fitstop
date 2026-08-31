@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { WellnessSection } from "./wellness-section";
 import type { DailyLog } from "@/types/daily-log";
+import type { CheckInComparison } from "@/types/check-in";
 
 const START = new Date("2026-08-24T00:00:00");
 const END = new Date("2026-08-30T00:00:00"); // seven days
@@ -10,9 +11,17 @@ function log(date: string, values: Partial<DailyLog>): DailyLog {
   return { date, ...values } as DailyLog;
 }
 
-function renderWeek(logs: DailyLog[]) {
+function renderWeek(
+  logs: DailyLog[],
+  changes: CheckInComparison["changes"] | null = null,
+) {
   return render(
-    <WellnessSection dailyLogs={logs} contextStartDate={START} contextEndDate={END} />,
+    <WellnessSection
+      dailyLogs={logs}
+      contextStartDate={START}
+      contextEndDate={END}
+      changes={changes}
+    />,
   );
 }
 
@@ -56,5 +65,46 @@ describe("the wellness averages", () => {
     const { container } = renderWeek([log("2026-08-24", {})]);
 
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("the week-over-week deltas", () => {
+  it("signs the change and reads good/bad by metric direction", () => {
+    // Stress and soreness are INVERTED: down is good. Sleep is not.
+    renderWeek(
+      [log("2026-08-24", { stress: 6, sleep: 7 })],
+      {
+        stress: { current: 6, previous: 4, change: 2, trend: "up" },
+        sleep: { current: 7, previous: 8, change: -1, trend: "down" },
+      },
+    );
+
+    const up = screen.getByText("+2");
+    expect(up).toBeInTheDocument();
+    expect(up.className).toContain("#d97706"); // stress rising = attention
+
+    const down = screen.getByText("-1");
+    expect(down).toBeInTheDocument();
+    expect(down.className).toContain("#d97706"); // sleep falling = attention
+  });
+
+  it("shows no delta when there is nothing to compare against", () => {
+    // A first check-in: `changes` carries a current with no previous.
+    renderWeek(
+      [log("2026-08-24", { stress: 6 })],
+      { stress: { current: 6 } },
+    );
+
+    expect(screen.getByText("6.0")).toBeInTheDocument();
+    // A signed number, not the "--" placeholders the unlogged metrics render.
+    expect(screen.queryByText(/^[+-]\d/)).not.toBeInTheDocument();
+  });
+
+  it("renders the averages with no comparison data at all", () => {
+    // The comparison read is a separate request and can fail on its own; the
+    // section still has everything it needs for the values.
+    renderWeek([log("2026-08-24", { stress: 6 })], null);
+
+    expect(screen.getByText("6.0")).toBeInTheDocument();
   });
 });
