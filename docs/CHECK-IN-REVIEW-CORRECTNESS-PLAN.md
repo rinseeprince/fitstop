@@ -21,7 +21,7 @@ three corrected numbers.
 
 | # | Issue | Disposition |
 |---|---|---|
-| 1 | The AI read logging coverage as intake and reported a client who hit target on both logged days as severely under-eating | **N1 — SHIPPED** |
+| 1 | The AI read logging coverage as intake and reported a client who hit target on both logged days as severely under-eating | **N1 — SHIPPED + SMOKED, CLOSED** |
 | 2 | Training reads 3/5 in the ribbon, 2 in the comparison pane, "2 out of 5" in the AI summary | **N2** |
 | 3 | Weight goal: 100% Complete + "On track" + "Remaining 5kg" on a goal overshot by 5 kg | **N3** |
 | 4 | Body Fat: 100% Complete + "Needs attention" — same situation, opposite verdict | **N3** |
@@ -65,7 +65,12 @@ answering *were they eating enough*, which divides by the days with data.
 **The fix: move the judgement out of the model.** Compute the intake characterisation
 deterministically and pass it as a stated fact; name the whole-period figure as coverage.
 
-### STATUS — SHIPPED 2026-08-31
+### STATUS — SHIPPED 2026-08-31 in `945c957b`, SMOKED CLEAR the same day. N1 is CLOSED.
+
+**Smoke (owner, 2026-08-31).** Regenerated the AI review on `440112cd`: the summary now reads
+the week correctly — sparse logging is reported as a data-quality problem, not as under-eating.
+The false intake claim and the energy/recovery warning are gone.
+
 
 **What shipped.**
 
