@@ -901,9 +901,9 @@ push the row wider than the page.
 sole importers), so carrying two layout classes on their roots is not a leak into other
 surfaces.
 
-**One thing to watch:** the Nutrition card's body is a `grid-cols-2` (kcal summary ∥ macro
-bars). At half width that is two ~230px columns. R4 drops it to one column below `xl` so the
-macro rows keep their bar length; the kcal block sits above the macros. No numbers move.
+**The Nutrition card's body stacks**: the macros sit under the calories they break down,
+at every width. It was a `grid-cols-2` (kcal summary ∥ macro bars), which at half the row gave
+two ~230px columns — too narrow for a macro bar to read a fill against. No numbers move.
 
 ### 13.4 Habits becomes a grid
 

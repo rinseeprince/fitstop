@@ -139,8 +139,8 @@ export const NutritionSection = ({
     <div className="flex min-w-0 flex-1 flex-col">
       <SectionLabel label="Nutrition" />
       <div className="flex-1 rounded-[6px] bg-white p-5">
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {/* Left: Calorie summary */}
+        <div className="flex flex-col gap-4">
+          {/* Calories */}
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-baseline">
               <div>
@@ -174,7 +174,7 @@ export const NutritionSection = ({
             </div>
           </div>
 
-          {/* Right: Macros */}
+          {/* Macros, under the calories they break down */}
           <div className="flex flex-col gap-2.5">
             <div className="text-xs font-medium text-[#5a7d82] mb-0.5">
               Avg macros / logged day
