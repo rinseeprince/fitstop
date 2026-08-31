@@ -2,7 +2,7 @@
 
 import { CheckCircle2, CircleDashed, XCircle, Trophy } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { CheckInWithDetails, CheckInSessionCompletion } from "@/types/check-in";
+import type { CheckInWithDetails } from "@/types/check-in";
 import type { SessionStatus, SessionSummary } from "@/lib/check-in/adherence";
 import { classifySession } from "@/lib/check-in/adherence";
 import { cn } from "@/lib/utils";
@@ -36,18 +36,6 @@ const STATUS_META: Record<SessionStatus, { label: string; icon: LucideIcon; pill
   partial: { label: "Partial", icon: CircleDashed, pill: "bg-[rgba(245,158,11,0.07)] text-[#d97706]" },
   missed: { label: "Missed", icon: XCircle, pill: "bg-[rgba(13,148,136,0.04)] text-[#93b0b4]" },
 };
-
-// Detail line built only from fields already on the check-in payload (status +
-// logged quality). No exercise/set counts are fetched.
-function detailLine(session: CheckInSessionCompletion, status: SessionStatus): string {
-  if (status === "completed") {
-    return session.completionQuality === "full" ? "Logged in full" : "Marked complete";
-  }
-  if (status === "partial") {
-    return "Stopped early";
-  }
-  return session.completionQuality === "skipped" ? "Skipped" : "Not logged";
-}
 
 export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) => {
   const { preference } = useUnits();
@@ -95,7 +83,6 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate text-[#0c1a1e]">{session.sessionName}</div>
-                    <div className="text-xs text-[#93b0b4]">{detailLine(session, status)}</div>
                     {session.notes && (
                       <div className="text-xs text-[#93b0b4] italic truncate">
                         &ldquo;{session.notes}&rdquo;
