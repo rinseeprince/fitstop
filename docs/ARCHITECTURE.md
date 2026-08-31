@@ -720,7 +720,7 @@ A type-level guard in the module fails the build if a seventh view is added with
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |
 | Daily Habits | `HabitsTabContent` + `HabitsHistoryTable` | Habit management, analytics |
-| Check-ins | `CheckInsTabContent` | A `Check-in history` rail whose one action, "Customise check-in", opens the per-client form editor (see "The customisable form" under Check-in System) — it sits ABOVE the body's four states, because a coach shapes a form before the first check-in exists. Under it, the client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page on a **keyset cursor**; `hooks/use-check-in-data.ts` owns the list key and its invalidator). Each row is a `<Link>` to `checkInReviewUrl`; with `?checkIn=<id>` present the tab renders the review surface, `CheckInDetailView` (`components/clients/check-ins/`), in place of the list — three panes: Current (KPI ribbon, wellness / nutrition / training / habits / client-notes cards, the AI review rail with Regenerate and Send), Comparison & Trends, Goal Progress. See "The coach review surface" under Check-in System |
+| Check-ins | `CheckInsTabContent` | A `Check-in history` rail whose one action, "Customise check-in", opens the per-client form editor (see "The customisable form" under Check-in System) — it sits ABOVE the body's four states, because a coach shapes a form before the first check-in exists. Under it, the client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page on a **keyset cursor**; `hooks/use-check-in-data.ts` owns the list key and its invalidator). Each row is a `<Link>` to `checkInReviewUrl`; with `?checkIn=<id>` present the tab renders the review surface, `CheckInDetailView` (`components/clients/check-ins/`), in place of the list — one page: the KPI ribbon over Training, Nutrition, Wellness, Habits, Client notes, Goal progress and the AI review (Regenerate and Send). See "The coach review surface" under Check-in System |
 | Notes | `NotesTabContent` | `client_notes` list — pinned first, newest-first, add + pin/unpin. Same endpoints as the Overview card |
 
 Tab changes go through `handleTabChange` → `buildClientTabUrl` (`lib/client-tabs.ts`), which `router.replace`s without scroll. **Every cross-tab navigation must go through that handler.** `activeTab` is React state seeded from `?tab=` **at mount only**, so a `<Link>` or a bare `router.replace` changes the URL and leaves the visible tab where it was — the nutrition drawer's `GoalSummary` wrote a sentence instead of a link rather than fight it, and the training history table's exercise drill-down takes the handler as a prop for exactly this reason. The same mount-only seeding means `activeTab` flips *before* the replace lands, so for one render a newly-mounted tab reads the previous tab's query: anything reading a param on arrival must tolerate that (which is why single-owner pane params are read unguarded and the one-shot trip params below are consumed from an effect, not a `useState` initializer). **Every tab owns a pane param named after itself** — `?journey=` (Physique/Training/Wellness/Blocks), `?training=` (Data/Plans), `?nutrition=` (Data/Plans). Single-owner is the whole contract: only its own tab reads it, so it rides through a tab switch and restores that pane on the return trip, and it is read *unconditionally* (a deep link resolves on the first render, before `router.replace` lands). The shared `?subtab=` that Training and Nutrition both used to write is retired (Session 7.2) — still read as a guarded fallback so old links resolve, still deleted on every tab change, written by nothing. `extraParams` ADDRESS a pane on arrival and a `null` value deletes a carried key.
@@ -1215,13 +1215,16 @@ the seam means moving the check-in INSERT itself into an RPC.
 
 `components/clients/check-ins/check-in-detail-view.tsx`, rendered by the Check-ins tab in place of
 its list whenever `?checkIn=<id>` is present (the tab's single-owner param — see "Client page tab
-structure"). It replaced the `CheckInDetailModal` dialog on 2026-08-29 with the content carried over
-intact: three panes behind one `SegmentedControl` driving a controlled `Tabs` (the reference pairing
-in `docs/newdesignsystem.md` → Segmented control) — **Current** (the KPI ribbon, the wellness /
-nutrition / training / habits / client-notes cards, and the sticky AI review rail), **Comparison &
-Trends** and **Goal Progress** (their redesign is a separate session). The
-header is the sidebar back-row grammar ("← Check-ins") over a mono meta line; the modal's prev/next
-chevrons and its window keydown listener went with it.
+structure").
+
+**One page, no switcher**, read in the order the review runs: the KPI ribbon, then Training,
+Nutrition, Wellness, Habits, Client notes, Goal progress and the AI review. **Every section
+renders its own `SectionLabel` rail, inside the component that decides whether it has anything
+to show** — five of them return null on an empty week, so a rail owned by the page would stand
+over empty space, or the page would need a second copy of each child's emptiness predicate.
+The header is the sidebar back-row grammar ("← Check-ins") over a mono meta line carrying the
+week, the submitted date, the days-logged chip and the gap since the previous check-in. There
+is no prev/next between check-ins and no window keydown listener.
 
 **The rail is ONE card, "AI review"** (C4, 2026-08-30) — borderless white on the `#f4f7f6` page per
 the SOT's "spacing does separation, not borders" — with Regenerate as its header action and four
@@ -1265,6 +1268,16 @@ silent before C4). The never-persisted Summary pencil edit is gone. **The five s
 cards keep their borders and framer animation for now** and are owed the borderless treatment
 (D7.3) — the rail took it first as the new card.
 
+**The comparison payload carries only what the page renders.**
+`GET /api/check-in/[id]/comparison` returns `previous` (a null-check for "is there anything to
+compare against"), `timeBetweenCheckIns`, the client's drift-banner fields, `goalProgress`, a
+`weight`/`bodyFatPercentage` chart series, and seven `changes` — those two plus the five wellness
+metrics. Girths, `workoutsCompleted` and `adherencePercentage` are not on it, and neither is the
+current check-in (the caller fetched it by id). `workoutsCompleted` is why: deriving it cost two
+`deriveSessionCompletionsForCheckIn` calls per request, one for each side, purely to render a
+delta — the KPI ribbon's fraction and its `N partial · N missed` breakdown answer the same
+question from data already in hand.
+
 **Data: `hooks/use-check-in-detail-data.ts`, SWR throughout.** `GET /api/check-in/[id]` and
 `…/comparison` read in parallel behind `checkInDetailKey` + `useInvalidateCheckInDetail` (the area
 is the detail and everything under it). The window's daily and habit logs come through
@@ -1291,8 +1304,8 @@ habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
 writes a row only when they act, and the old grid read `/habits/logs`. **Training
 is deliberately NOT on that wire**: this surface counts full AND partial
 completions through `summariseSessions`, while the Overview kernel counts full
-only. ONE derivation serves the whole surface — the KPI ribbon, the comparison
-pane and the AI prompt — and `lib/check-in/adherence-ownership.test.ts` scans the
+only. ONE derivation serves the whole surface — the KPI ribbon, the training
+section and the AI prompt — and `lib/check-in/adherence-ownership.test.ts` scans the
 coach tree to keep it so, forbidding both a read of the stored
 `check_ins.workouts_completed` column (that column is the RN wire's, and the
 client's own surfaces read it) and a hand-rolled count over event statuses.

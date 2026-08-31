@@ -53,38 +53,9 @@ describe('Check-in Utilities', () => {
 
       expect(result.weight).toEqual([])
       expect(result.bodyFat).toEqual([])
-      expect(result.adherence).toEqual([])
-      expect(result.mood).toEqual([])
-      expect(result.energy).toEqual([])
-      expect(result.sleep).toEqual([])
-      expect(result.stress).toEqual([])
-      expect(result.soreness).toEqual([])
     })
 
-    it('prepares sleep and stress chart data', () => {
-      const checkIns = [
-        createMockCheckIn({ sleep: 7, stress: 3, createdAt: '2024-01-01T00:00:00Z' }),
-        createMockCheckIn({ sleep: 8, stress: 2, createdAt: '2024-01-08T00:00:00Z' }),
-      ]
 
-      const result = prepareChartData(checkIns)
-
-      expect(result.sleep).toHaveLength(2)
-      expect(result.stress).toHaveLength(2)
-      expect(result.stress[1].value).toBe(2)
-    })
-
-    it('prepares soreness chart data with /10 labels', () => {
-      const checkIns = [
-        createMockCheckIn({ soreness: 7, createdAt: '2024-01-01T00:00:00Z' }),
-        createMockCheckIn({ soreness: 4, createdAt: '2024-01-08T00:00:00Z' }),
-      ]
-
-      const result = prepareChartData(checkIns)
-
-      expect(result.soreness).toHaveLength(2)
-      expect(result.soreness[1].value).toBe(4)
-    })
 
     it('prepares weight chart data', () => {
       const checkIns = [
@@ -110,27 +81,7 @@ describe('Check-in Utilities', () => {
       expect(result.bodyFat).toHaveLength(2)
     })
 
-    it('prepares mood chart data', () => {
-      const checkIns = [
-        createMockCheckIn({ mood: 4, createdAt: '2024-01-01T00:00:00Z' }),
-        createMockCheckIn({ mood: 5, createdAt: '2024-01-08T00:00:00Z' }),
-      ]
 
-      const result = prepareChartData(checkIns)
-
-      expect(result.mood).toHaveLength(2)
-    })
-
-    it('prepares energy chart data', () => {
-      const checkIns = [
-        createMockCheckIn({ energy: 7, createdAt: '2024-01-01T00:00:00Z' }),
-        createMockCheckIn({ energy: 8, createdAt: '2024-01-08T00:00:00Z' }),
-      ]
-
-      const result = prepareChartData(checkIns)
-
-      expect(result.energy).toHaveLength(2)
-    })
 
     it('sorts check-ins by date ascending', () => {
       const checkIns = [

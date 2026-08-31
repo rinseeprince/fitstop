@@ -660,12 +660,6 @@ type ChartDataPoint = {
 export type ProgressChartData = {
   weight: ChartDataPoint[];
   bodyFat: ChartDataPoint[];
-  adherence: ChartDataPoint[];
-  mood: ChartDataPoint[];
-  energy: ChartDataPoint[];
-  sleep: ChartDataPoint[];
-  stress: ChartDataPoint[];
-  soreness: ChartDataPoint[];
 };
 
 // Extended client types for tracking
@@ -766,7 +760,7 @@ export type MetricChange = {
 
 // Comprehensive check-in comparison data
 export type CheckInComparison = {
-  current: CheckIn;
+  /** The check-in this one is measured against, or null on a first check-in. */
   previous: CheckIn | null;
   client: {
     id: string;
@@ -785,13 +779,6 @@ export type CheckInComparison = {
   changes: {
     weight?: MetricChange;
     bodyFatPercentage?: MetricChange;
-    waist?: MetricChange;
-    hips?: MetricChange;
-    chest?: MetricChange;
-    arms?: MetricChange;
-    thighs?: MetricChange;
-    workoutsCompleted?: MetricChange;
-    adherencePercentage?: MetricChange;
     mood?: MetricChange;
     energy?: MetricChange;
     sleep?: MetricChange;
