@@ -120,6 +120,19 @@ A single pure resolver, `resolveEffectiveGoal()` (`lib/goals/resolve-effective-g
 
 **The resolver's input is composed by one shared helper, `toClientGoalInput(currentGoals, client)`** (same module), used by the five callers above that hold a `Client` record — every one but `client-journey-service` — `use-merged-metrics` joined them in Session 0b Task 0b.3, replacing a private literal that hardcoded `deadline: null, startDate: null` after fetching the full goal. Weight and body fat carry a `?? client.*` mirror leg — the documented read switch for a client whose goal predates `client_goals`. **The deadline does not, and must never regain one:** `mapClientRow` has never mapped `clients.goal_deadline`, so `Client.goalDeadline` was permanently `undefined` and the three `?? client.goalDeadline` fallbacks were unreachable code. Both the field and the fallbacks were **deleted** in Session 0b Task 0b.1 (owner decision 2026-08-12) rather than the column being mapped: mapping would have made a mirror deadline that can silently diverge — `updateGoals`' mirror write is logged-and-swallowed — reachable in three calculator/pace paths for the first time. Pinned by test in `lib/goals/resolve-effective-goal.test.ts` and `services/nutrition-calc-inputs.test.ts`.
 
+### Goal progress and pace
+
+`calculateGoalProgress` (`utils/comparison-utils.ts`) answers where a client stands relative to a goal. It returns two independent facts, and collapsing either into the other is what makes a goal card contradict itself:
+
+- **`status`** — POSITION. `approaching` | `achieved` | `overshot`, from `sign(goal − start)`. With no starting value there is no direction to overshoot in, so the answer is `approaching`.
+- **`isOnTrack`** — TREND. Whether the client is moving towards the goal.
+
+`remaining` is **signed**. A renderer showing a magnitude reads `status` first: the magnitude answers "how far to go" only while a goal is being approached, and is the distance *back* to the target once it has been passed. `percentComplete` is clamped to 0-100 for the progress bar and reads 100 once a goal is met.
+
+`computeGoalPace` (`lib/check-in/goal-pace.ts`) compares the rate **required** to hit the deadline against a safe ceiling of 1% of bodyweight per week, and returns `null` for an achieved or overshot goal. It measures the required rate, **not** the client's current pace — the projected completion date, derived from `avgWeeklyChange`, is the separate figure answering that, and the two can legitimately disagree. Each says which it is.
+
+**Badge precedence on the goal cards is `status` > `paceStatus` > `isOnTrack`.** A met goal renders no remaining distance, no pace check, no projected date and no estimated time, and carries a note suggesting a new target. Weight and Body Fat take the same state, so the two cards cannot reach different verdicts about one client.
+
 ### body_metrics table
 
 Immutable event log with source provenance:
@@ -1206,7 +1219,7 @@ structure"). It replaced the `CheckInDetailModal` dialog on 2026-08-29 with the 
 intact: three panes behind one `SegmentedControl` driving a controlled `Tabs` (the reference pairing
 in `docs/newdesignsystem.md` → Segmented control) — **Current** (the KPI ribbon, the wellness /
 nutrition / training / habits / client-notes cards, and the sticky AI review rail), **Comparison &
-Trends** and **Goal Progress** (carried as they were; their redesign is a separate session). The
+Trends** and **Goal Progress** (their redesign is a separate session). The
 header is the sidebar back-row grammar ("← Check-ins") over a mono meta line; the modal's prev/next
 chevrons and its window keydown listener went with it.
 
@@ -1221,6 +1234,27 @@ card two more. **`ReviewProse` sets `whitespace-pre-wrap`**: every string on thi
 text a client or the AI wrote, and the old markup collapsed their line breaks. It lives in the coach
 folder and is imported BY the mixed `components/check-in/` tree, which is deliberately not
 relocated (it still holds client-facing wizard steps with their own importers).
+
+
+**What the review is given.** `buildCheckInAnalysisPrompt` (`utils/ai-prompt-builder.ts`) assembles
+the prompt; `AI_SYSTEM_PROMPT` and `buildAnalysisTaskPrompt` carry the rules. Three of them are
+load-bearing.
+
+**Nutrition carries both denominators, each named.** Intake is stated over the days the client
+LOGGED, against the targets that applied on those same days (`loggedDayMeanConsumed`,
+`loggedDayAdherencePercentage`); the whole-period figure is labelled *coverage*. The prompt states
+that unlogged days are unknown rather than zero, and forbids characterising intake from the coverage
+figure at all. A client who logs two of seven days and hits target on both is 34% adherent and 100%
+on target: only the first number describes anything, and what it describes is a logging problem.
+
+**The session count is derived** through `summariseSessions` on the live event-detail branch, so it
+matches the KPI ribbon. Previous check-ins in the trend block carry no count at all — they are bare
+`CheckIn` rows, so the only figure available on them is the stored full-only column, and deriving
+one per row would be a query per check-in.
+
+**The task asks for a read, not a recap**: the week's story and what drove it, observations that
+carry what they connect to, and co-occurrence across metrics and across days. An uncertain
+explanation offered as a question is preferred to silence.
 
 **Empty states, and the one asymmetry.** When the AI half is wholly empty the card shows a single
 placeholder rather than one per block — but **Share stays**, because a coach could always write and
@@ -1255,9 +1289,16 @@ HIT/PARTIAL/MISSED verdict that stays locally derived because it asks a
 different question. Habits come from `perHabit`, built from the HABIT list, so a
 habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
 writes a row only when they act, and the old grid read `/habits/logs`. **Training
-is deliberately NOT on that wire**: the page counts full and partial completions
-(`summariseSessions`), the kernel counts full only; both are defensible, both on
-one screen is not. `periodAdherence` is `null` when a legacy row's period cannot
+is deliberately NOT on that wire**: this surface counts full AND partial
+completions through `summariseSessions`, while the Overview kernel counts full
+only. ONE derivation serves the whole surface — the KPI ribbon, the comparison
+pane and the AI prompt — and `lib/check-in/adherence-ownership.test.ts` scans the
+coach tree to keep it so, forbidding both a read of the stored
+`check_ins.workouts_completed` column (that column is the RN wire's, and the
+client's own surfaces read it) and a hand-rolled count over event statuses.
+`components/check-in/training-session-checklist.tsx` is excluded by name: it is
+the client's wizard step, not a coach surface. Unifying the two conventions is
+deferred debt (CONVENTIONS §8). `periodAdherence` is `null` when a legacy row's period cannot
 be resolved (pre-038 and no schedule to anchor a week to), and the cells render
 their empty states rather than fall back to a second definition.
 
