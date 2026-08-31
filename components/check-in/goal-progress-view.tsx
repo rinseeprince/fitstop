@@ -1,14 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import type { GoalProgress, CheckInComparison } from "@/types/check-in";
 import { Target } from "lucide-react";
 import { GoalDeadlineCard } from "./goal-deadline-card";
 import { WeightGoalCard } from "./weight-goal-card";
 import { BodyFatGoalCard } from "./body-fat-goal-card";
 import { NutritionRegenerationBanner } from "../clients/nutrition/nutrition-regeneration-banner";
-import { useToast } from "@/hooks/use-toast";
-import { useRouter } from "next/navigation";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 
@@ -23,10 +20,7 @@ export const GoalProgressView = ({
   clientName,
   clientData
 }: GoalProgressViewProps) => {
-  const { toast } = useToast();
   const { preference } = useUnits();
-  const router = useRouter();
-  const [_isRegenerating, setIsRegenerating] = useState(false);
 
   const hasWeightGoal = goalProgress.weight !== undefined;
   const hasBodyFatGoal = goalProgress.bodyFat !== undefined;
@@ -47,26 +41,6 @@ export const GoalProgressView = ({
     : weight.paceStatus === "on_track" || weight.isOnTrack
     ? { cls: "text-[#0d9488]", text: "On track to meet the goal by the deadline." }
     : { cls: "text-[#d97706]", text: "Consider adjusting the approach to stay on track." };
-
-  const handleRegenerateNutrition = () => {
-    setIsRegenerating(true);
-    try {
-      // Navigate to the client page where they can regenerate
-      router.push(`/clients/${clientData.id}#nutrition`);
-      toast({
-        title: "Navigate to Client Profile",
-        description: "Opening client profile to regenerate nutrition plan",
-      });
-    } catch (_error) {
-      toast({
-        title: "Error",
-        description: "Failed to navigate to client profile",
-        variant: "destructive",
-      });
-    } finally {
-      setIsRegenerating(false);
-    }
-  };
 
   if (!hasWeightGoal && !hasBodyFatGoal) {
     return (
@@ -97,8 +71,6 @@ export const GoalProgressView = ({
             currentWeight={clientData.currentWeight}
             nutritionPlanBaseWeightKg={clientData.nutritionPlanBaseWeightKg}
             nutritionPlanEffectiveDate={clientData.nutritionPlanEffectiveDate}
-            onRegenerate={handleRegenerateNutrition}
-            showRegenerateButton={true}
           />
         )}
 

@@ -1,7 +1,6 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import { shouldShowRegenerationBanner } from "@/utils/nutrition-helpers";
 import { useUnits } from "@/contexts/units-context";
@@ -18,16 +17,12 @@ type NutritionRegenerationBannerProps = {
   currentWeight: number;
   nutritionPlanBaseWeightKg: number;
   nutritionPlanEffectiveDate?: string;
-  onRegenerate?: () => void;
-  showRegenerateButton?: boolean;
 };
 
 export const NutritionRegenerationBanner = ({
   currentWeight,
   nutritionPlanBaseWeightKg,
   nutritionPlanEffectiveDate,
-  onRegenerate,
-  showRegenerateButton = true,
 }: NutritionRegenerationBannerProps) => {
   // The CLIENT's preference used to arrive as a prop; a coach sees their own.
   const { preference } = useUnits();
@@ -46,19 +41,19 @@ export const NutritionRegenerationBanner = ({
   };
 
   return (
-    <div className="bg-warning/10 rounded-lg p-5 border border-warning/20">
+    <div className="rounded-[6px] bg-[rgba(245,158,11,0.07)] p-5">
       <div className="flex items-start gap-3">
-        <div className="w-8 h-8 rounded-full bg-warning/10 flex items-center justify-center flex-shrink-0">
-          <AlertCircle className="h-4 w-4 text-warning" />
+        <div className="w-8 h-8 rounded-full bg-[rgba(245,158,11,0.12)] flex items-center justify-center flex-shrink-0">
+          <AlertCircle className="h-4 w-4 text-[#d97706]" strokeWidth={1.5} />
         </div>
         <div className="flex-1 space-y-3">
           <div>
-            <p className="text-sm font-medium text-foreground">
+            <p className="text-sm font-medium text-[#0c1a1e]">
               Client weight has changed significantly
             </p>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-[#5a7d82] mt-1">
               Weight changed by{" "}
-              <span className="font-semibold text-foreground">
+              <span className="font-semibold text-[#0c1a1e]">
                 {weightChange.isLoss ? "-" : "+"}
                 {weightChange.value} {weightChange.unit}
               </span>{" "}
@@ -67,27 +62,20 @@ export const NutritionRegenerationBanner = ({
                 <>
                   {" "}
                   on{" "}
-                  <span className="font-medium text-foreground">
+                  <span className="font-medium text-[#0c1a1e]">
                     {format(new Date(nutritionPlanEffectiveDate), "MMM d, yyyy")}
                   </span>
                 </>
               )}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-xs text-[#93b0b4] mt-1">
               {show(nutritionPlanBaseWeightKg, preference)} →{" "}
               {show(currentWeightKg, preference)}
             </p>
           </div>
-          {showRegenerateButton && onRegenerate && (
-            <Button
-              onClick={onRegenerate}
-              size="sm"
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg transition-all"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Regenerate Nutrition Plan
-            </Button>
-          )}
+          <p className="text-xs font-medium text-[#d97706]">
+            Consider reviewing their nutrition plan.
+          </p>
         </div>
       </div>
     </div>
