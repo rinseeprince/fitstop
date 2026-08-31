@@ -1,7 +1,6 @@
 import { getCheckInById, getPreviousCheckIn, getClientCheckIns, getFirstCheckIn } from "./check-in-service";
 import { getClientById } from "./client-service";
 import { getNutritionPlanForDate } from "./nutrition-plan-service";
-import { prepareChartData } from "@/lib/check-in-utils";
 import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } from "@/utils/comparison-utils";
 import { computeGoalPace } from "@/lib/check-in/goal-pace";
 import { getBodyMetricsHistory } from "./body-metrics-service";
@@ -294,12 +293,9 @@ export const getCheckInComparison = async (
     };
   }
 
-  // Prepare chart data
-  const chartData = prepareChartData(checkIns);
 
   return {
     comparison,
     goalProgress,
-    chartData,
   };
 };

@@ -6,7 +6,6 @@ import {
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { TrendSparkline } from "./trend-sparkline";
 import type { CheckIn, GetCheckInComparisonResponse, MetricChange } from "@/types/check-in";
 import type { SessionSummary } from "@/lib/check-in/adherence";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
@@ -47,13 +46,6 @@ type KPICardData = {
   subText?: string;
   // Semantic top accent: a colour read before the coach reads the number.
   accent: Accent;
-  /**
-   * Trend across the client's recent check-ins, from `chartData`. Weight and
-   * Body Fat only — those are the two series that exist. Training has none, and
-   * `chartData.adherence` is the stored NUTRITION figure, so wiring it into the
-   * Nutrition cell would be quietly deciding which metric it is.
-   */
-  series?: number[];
 };
 
 // Semantic colour dot per cell - a colour read before the number. Teal Summit is
@@ -181,13 +173,6 @@ export const KPIRibbon = ({
     true
   );
 
-  // Body weights convert freely and never snap (CONVENTIONS §20), so the
-  // series is converted point by point rather than plotted in kilograms under
-  // a pounds headline.
-  const weightSeries = comparisonData?.chartData?.weight?.map(
-    (point) => round1(formatWeight(point.value, preference).value)
-  );
-
   const hasBodyFat = checkIn.bodyFatPercentage !== undefined && checkIn.bodyFatPercentage !== null;
   const bodyFatComparison = hasBodyFat
     ? buildComparison(
@@ -208,9 +193,6 @@ export const KPIRibbon = ({
       delta: weightComparison?.delta,
       subText: weightComparison?.label,
       accent: checkIn.weight ? accentFromDelta(weightComparison) : "neutral",
-      // Converted, like the value above it — a metric coach and an imperial one
-      // read the same series in their own unit.
-      series: weightSeries,
     },
     {
       label: "Body Fat",
@@ -220,8 +202,6 @@ export const KPIRibbon = ({
       delta: bodyFatComparison?.delta,
       subText: bodyFatComparison?.label,
       accent: hasBodyFat ? accentFromDelta(bodyFatComparison) : "neutral",
-      // Percent — unitless, so no conversion.
-      series: comparisonData?.chartData?.bodyFat?.map((point) => point.value),
     },
     {
       label: "Nutrition",
@@ -289,17 +269,6 @@ export const KPIRibbon = ({
               {card.subText && (
                 <span className="text-[10px] text-[rgba(255,255,255,0.3)]">{card.subText}</span>
               )}
-            </div>
-          )}
-          {card.series && card.series.length > 0 && (
-            // Teal reads as an interactive/active colour on this surface, so the
-            // line takes the on-dark faint value instead — it is a passive trend
-            // behind a number, not something to look at first.
-            <div className="mt-2">
-              <TrendSparkline
-                values={card.series}
-                colorClass="text-[rgba(255,255,255,0.4)]"
-              />
             </div>
           )}
         </div>

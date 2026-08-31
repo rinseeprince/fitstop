@@ -35,6 +35,7 @@ page, in the order the review actually runs.
 | **D2** | **Goal progress is the strip as drawn** — four columns per row: name, progress track, `start → goal`, state. This drops the projections the brief named (Estimated Time, Projected Goal Date, the Required/Safe-ceiling pace bars) **and** the percent-complete number, the current value, the remaining figure and the average-weekly-change row. Two rows, four columns, nothing else fits |
 | **D3** | **No prev/next between check-ins.** Removed deliberately at D1.3 and it stays removed. Back to the list is one click |
 | **D4** | **Everything else keeps a home** — Client Notes, PR highlights, the regeneration banner. *(Narrowed by D5.)* |
+| **D6** | **No sparklines on the band.** A trend line behind a value and a delta reads as chart junk on the dark strip. All four cells are value + delta + accent dot. `trend-sparkline.tsx` (the last recharts usage on this surface), `prepareChartData`, `ProgressChartData` and the response's whole `chartData` key go with them |
 | **D5** | **Comparison & Trends is DELETED, not re-homed.** Weight and body fat are the band's first two cells, the Wellbeing card is the Wellness section's five deltas, and the "Adherence" row mixed a training value with a nutrition series. Going with it: the **five girth measurements** (still charted on Journey → Physique) and the **workouts-completed delta**, which the band's fraction and breakdown already answer. The "N days since last check-in" line moves to the header — every delta on the page reads "vs last check-in", so the gap has to be stated somewhere |
 
 ---
@@ -75,7 +76,7 @@ hooks/use-check-in-detail-data.ts                       243  3-stage SWR (detail
 Two reads feed all of it, both already SWR, both already parallel, **both unchanged**:
 
 - `GET /api/check-in/[id]` → `{ checkIn (+ sessionCompletions, exerciseHighlights, customAnswers), client, periodAdherence }`
-- `GET /api/check-in/[id]/comparison` → `{ comparison, goalProgress, chartData }`
+- `GET /api/check-in/[id]/comparison` → `{ comparison, goalProgress }`
 
 plus `useWellnessData(range)` for the period's daily logs and a dependent
 `…/nutrition/plan-targets?dates=` for the unlogged days.
@@ -90,7 +91,7 @@ on `#f4f7f6`.
 | § | Rail | Card contents | Fed by |
 |---|---|---|---|
 | — | *(no rail)* | Back row `← Check-ins`, week range, submitted date, days-logged chip | detail |
-| **1** | *(no rail — the band is its own object)* | Dark 4-cell band: Weight · Body Fat · Nutrition · Training. Weight and Body Fat carry a sparkline over the client's recent check-ins | detail + comparison |
+| **1** | *(no rail — the band is its own object)* | Dark 4-cell band: Weight · Body Fat · Nutrition · Training. Value, delta and an accent dot per cell — **no sparklines** (D6) | detail + comparison |
 | **2** | `TRAINING` ∥ `NUTRITION` | Two cards side by side. Training: per-session list + PR strip. Nutrition: kcal total vs target, verdict pill, macro bars | detail + logs + plan targets |
 | **3** | `WELLNESS` | Five metrics in one row: value, `vs last check-in` delta, per-day sparkline | logs + comparison |
 | **4** | `HABITS` | Compact rows: name · hits · per-day dots | detail (`periodAdherence.habits.perHabit`) |
@@ -120,7 +121,6 @@ deliberately not relocated, the precedent `review-block.tsx` already set (plan �
 | File | Change | Risk |
 |---|---|---|
 | `check-in-detail-view.tsx` | `Tabs` + `SegmentedControl` + 3 `TabsContent` → one railed column. Keeps the foreign-client guard, the spinner and all three notices | layout |
-| `kpi-ribbon.tsx` | Adds a sparkline slot, filled for Weight and Body Fat only (`chartData.weight` / `.bodyFat` through the existing `TrendSparkline`). Cells, values, deltas, dots and sub-lines **unchanged** | render-only |
 | `wellness-section.tsx` | Five metrics laid out as one row instead of a grid of tiles; each gains a `vs last check-in` delta from `changes.*`. Takes `changes` as one new prop. Value and sparkline unchanged — see §7.2 C2 | render + 1 prop |
 | `training-section.tsx` | Borderless shell, framer removed, icon+label header → rail. Rows, states, detail lines, PR strip unchanged | style only |
 | `nutrition-section.tsx` | Same shell treatment; two-column body kept | style only |
@@ -138,7 +138,8 @@ deliberately not relocated, the precedent `review-block.tsx` already set (plan �
 | `body-fat-goal-card.tsx` | → one strip row (D2) |
 | `goal-deadline-card.tsx` | → the `GOAL PROGRESS` rail's meta |
 | `check-in-share-card.tsx` | → `CheckInReplyBlock` |
-| `check-in-comparison-view.tsx` (+ `.test.tsx`) | **D5.** Weight/body-fat rows → the band's cells 1–2 (values and deltas were already there; the sparkline joins them). Wellbeing card → §3's five deltas. Girths, the workouts-completed delta and the "Adherence" row are dropped; `TrendSparkline` survives as the band's sparkline |
+| `check-in-comparison-view.tsx` (+ `.test.tsx`) | **D5.** Weight/body-fat rows → the band's cells 1–2, which already carried their values and deltas. Wellbeing card → §3's five deltas. Girths, the workouts-completed delta and the "Adherence" row are dropped |
+| `trend-sparkline.tsx` | **D6.** Its last importer went with the sparklines |
 | `goal-cards.test.tsx` | Rewritten against the strip |
 
 **Fields that stop being rendered but keep being computed.** D2 leaves
@@ -168,10 +169,10 @@ decision that dropped it)
 | `"Submitted Aug 31"` | `formatSubmittedDate`, `:57-60` | = header meta |
 | `"{n}/{d} days logged"` chip, **teal** | `:140` | = header. Denominator stays the local span, as today |
 | `SegmentedControl` (3 panes) | `:137` | ✂ — the whole point |
-| Band: Weight — value, unit, delta, `"vs last check-in"` / `"vs start"`, dot | `kpi-ribbon.tsx:186-197` | = §1 cell 1 **+ sparkline** |
-| Band: Body Fat — value or `"Not tracked"` | `kpi-ribbon.tsx:198-206` | = §1 cell 2 **+ sparkline** |
-| Band: Nutrition — `onTarget/periodDays`, `"{pct}%"`, `"days on target"` / `"No nutrition logs"` | `kpi-ribbon.tsx:207-215` | = §1 cell 4. **No sparkline** — §7.2 C1 |
-| Band: Training — `completed/prescribed` (full **+ partial**), `"N partial · N missed"` / `"All complete"` / `"No sessions prescribed"` | `kpi-ribbon.tsx:216-225` | = §1 cell 3. **No sparkline** — no series exists |
+| Band: Weight — value, unit, delta, `"vs last check-in"` / `"vs start"`, dot | `kpi-ribbon.tsx:186-197` | = §1 cell 1, unchanged |
+| Band: Body Fat — value or `"Not tracked"` | `kpi-ribbon.tsx:198-206` | = §1 cell 2, unchanged |
+| Band: Nutrition — `onTarget/periodDays`, `"{pct}%"`, `"days on target"` / `"No nutrition logs"` | `kpi-ribbon.tsx:207-215` | = §1 cell 4, unchanged |
+| Band: Training — `completed/prescribed` (full **+ partial**), `"N partial · N missed"` / `"All complete"` / `"No sessions prescribed"` | `kpi-ribbon.tsx:216-225` | = §1 cell 3, unchanged |
 | Wellness `"Wellness"` + Heart icon | `wellness-section.tsx:83-86` | → §3 rail `WELLNESS`; icon ✂ (`SectionLabel` has no icon slot) |
 | Wellness: 5 per-metric averages over each metric's own logged days | `wellness-section.tsx:89-114` | → §3 row values, **same maths** |
 | Wellness: `"/ 5"` `"/ 10"` captions | `wellness-section.tsx:28-34` | → §3, beside the value |
@@ -216,7 +217,7 @@ decision that dropped it)
 |---|---|---|
 | `"Progress comparison"` / `"Baseline established"` heading | `check-in-comparison-view.tsx:155-157` | ✂ the rail replaces it |
 | `"Comparing with the check-in from {n} days ago"` | `:158-162` | → the **header** meta line, as `"{n} days since last check-in"` (D5) |
-| `"This is the first check-in. 1 data point, trends build next week."` | `:162` | ✂ **D5.** The band already falls back to `vs start`, and the sparklines render their dashed "trend builds next week" ghost |
+| `"This is the first check-in. 1 data point, trends build next week."` | `:162` | ✂ **D5.** The band already falls back to `vs start` on a first check-in |
 | `"Physique"` heading | `:167` | ✂ its two remaining metrics are the band's |
 | Weight trend row (value + delta + sparkline) | `:169-176` | → §1 cell 1 — **sparkline only**; value and delta are already there |
 | Body Fat trend row | `:177-184` | → §1 cell 2, same |

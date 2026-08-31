@@ -33,10 +33,6 @@ vi.mock('./supabase-admin', () => ({
   },
 }))
 
-vi.mock('@/lib/check-in-utils', () => ({
-  prepareChartData: vi.fn().mockReturnValue([]),
-}))
-
 vi.mock('@/utils/comparison-utils', () => ({
   calculateMetricChange: vi.fn().mockReturnValue(undefined),
   calculateDaysBetween: vi.fn().mockReturnValue(7),

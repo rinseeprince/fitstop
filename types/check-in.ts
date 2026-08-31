@@ -647,21 +647,6 @@ export type GetClientCheckInsPageResponse = {
   total?: number;
 };
 
-// Chart data for visualizations
-// No `label` field: it was built for all eight metrics and read by nothing but
-// its own test. The weight one baked a unit into the string inside a pure module
-// (lib/check-in-utils.ts), which is unfixable at the render boundary — and did
-// not need fixing, because it never reached a screen.
-type ChartDataPoint = {
-  date: string;
-  value: number;
-};
-
-export type ProgressChartData = {
-  weight: ChartDataPoint[];
-  bodyFat: ChartDataPoint[];
-};
-
 // Extended client types for tracking
 export type ClientWithCheckInInfo = Client & {
   lastCheckInDate?: string;
@@ -838,7 +823,6 @@ export type GoalProgress = {
 export type GetCheckInComparisonResponse = {
   comparison: CheckInComparison;
   goalProgress: GoalProgress;
-  chartData: ProgressChartData;
 };
 
 // Check-in with all related details for AI processing

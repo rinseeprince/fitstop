@@ -1271,9 +1271,10 @@ cards keep their borders and framer animation for now** and are owed the borderl
 **The comparison payload carries only what the page renders.**
 `GET /api/check-in/[id]/comparison` returns `previous` (a null-check for "is there anything to
 compare against"), `timeBetweenCheckIns`, the client's drift-banner fields, `goalProgress`, a
-`weight`/`bodyFatPercentage` chart series, and seven `changes` — those two plus the five wellness
-metrics. Girths, `workoutsCompleted` and `adherencePercentage` are not on it, and neither is the
-current check-in (the caller fetched it by id). `workoutsCompleted` is why: deriving it cost two
+and seven `changes` — weight, body fat and the five wellness metrics. **There is no chart series
+at all**: the band shows a value and a delta, and a trend line behind them read as chart junk on a
+dark strip. Girths, `workoutsCompleted` and `adherencePercentage` are not on it either, and neither
+is the current check-in (the caller fetched it by id). `workoutsCompleted` is why: deriving it cost two
 `deriveSessionCompletionsForCheckIn` calls per request, one for each side, purely to render a
 delta — the KPI ribbon's fraction and its `N partial · N missed` breakdown answer the same
 question from data already in hand.
