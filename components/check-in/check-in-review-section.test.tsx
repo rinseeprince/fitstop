@@ -28,7 +28,6 @@ function renderSection(review: CheckInReview, onRefresh = vi.fn()) {
   render(
     <CheckInReviewSection
       checkInId="ci-1"
-      clientName="Jane"
       review={review}
       onRefresh={onRefresh}
     />,
@@ -49,11 +48,11 @@ afterEach(() => {
 });
 
 describe("the AI review section", () => {
-  it("renders the four blocks under one header", () => {
+  it("renders its three blocks under one rail", () => {
     renderSection(makeReview());
 
     expect(screen.getByText("AI review")).toBeInTheDocument();
-    for (const label of ["Summary", "What to watch", "Coach actions", "Share with client"]) {
+    for (const label of ["Summary", "What to watch", "Coach actions"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });
@@ -74,14 +73,11 @@ describe("the AI review section", () => {
     expect(screen.getByText("High priority")).toBeInTheDocument();
   });
 
-  it("drops the Summary pencil — it never persisted anything", () => {
+  it("has no editable field — the AI review is a readout", () => {
     renderSection(makeReview());
 
     expect(screen.queryByRole("button", { name: /edit summary/i })).not.toBeInTheDocument();
-    // Share's own Edit is the only one left, and it opens a textarea only once
-    // clicked — nothing in the card is editable on arrival.
     expect(screen.queryAllByRole("textbox")).toHaveLength(0);
-    expect(screen.getByRole("button", { name: /edit message/i })).toBeInTheDocument();
   });
 });
 
@@ -104,13 +100,11 @@ describe("an empty review", () => {
     expect(screen.queryByText("Summary")).not.toBeInTheDocument();
   });
 
-  it("still offers Share, so a coach can reply before the AI has run", () => {
-    // A pending check-in had a usable Share card before C4 and must keep one:
-    // the coach's reply is the coach's, not part of the AI's output.
+  it("renders no reply controls — the reply is its own section", () => {
     renderSection(empty);
 
-    expect(screen.getByText("Share with client")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^send$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^send$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 });
 
@@ -146,28 +140,5 @@ describe("Regenerate", () => {
       expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/could not regenerate/i)),
     );
     expect(onRefresh).not.toHaveBeenCalled();
-  });
-});
-
-describe("the share draft", () => {
-  it("follows a regenerated draft instead of showing the old one", () => {
-    // useState seeded from the prop once, so a regenerate rewrote the draft
-    // upstream while this card kept showing — and would have sent — the
-    // previous message.
-    const { rerender } = render(
-      <CheckInReviewSection checkInId="ci-1" clientName="Jane" review={makeReview()} />,
-    );
-    expect(screen.getByText("Great week — let's talk about sleep.")).toBeInTheDocument();
-
-    rerender(
-      <CheckInReviewSection
-        checkInId="ci-1"
-        clientName="Jane"
-        review={makeReview({ clientMessage: "Rewritten after regenerate." })}
-      />,
-    );
-
-    expect(screen.getByText("Rewritten after regenerate.")).toBeInTheDocument();
-    expect(screen.queryByText("Great week — let's talk about sleep.")).not.toBeInTheDocument();
   });
 });

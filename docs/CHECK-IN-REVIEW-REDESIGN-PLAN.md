@@ -702,3 +702,130 @@ described is being deleted in the same commit.
   `training-session-checklist.tsx` — client-facing files that merely share the **mixed**
   `components/check-in/` folder. New coach components go in `components/clients/check-ins/`
   and are imported from it.
+
+---
+
+## 12. Commit R3 — detailed spec
+
+> `refactor(check-ins): R3 — the reply is the page's destination, not a sub-block`
+
+### 12.1 What R3 delivers
+
+The coach's reply stops being the fourth block inside the AI review card and becomes the
+page's last section: its own rail, full width, one primary button. Every string, every toast
+and the send logic move unchanged.
+
+### 12.2 Files
+
+**New — 1.** `components/clients/check-ins/check-in-reply-block.tsx`
+
+```ts
+type CheckInReplyBlockProps = {
+  checkInId: string;
+  clientName: string;          // the "Message sent to {name}" toast
+  draft: string;               // review.clientMessage
+  onSent?: () => void;
+};
+```
+
+**Modified — 3**
+
+| File | Change |
+|---|---|
+| `check-in-review-section.tsx` | Stops rendering `CheckInShareCard`. **Loses two props**: `clientName` (its only use was the share card's toast) and `onSent` (the reply owns it now). Keeps `onRefresh` for Regenerate. Its `hasAiReview` placeholder branch simplifies — it no longer has to keep a sub-block visible underneath |
+| `check-in-detail-view.tsx` | Hoists `toCheckInReview(data.checkIn)` to a variable (both sections read it), mounts `<CheckInReplyBlock>` as the last section, moves `onDone` from the review section to it |
+| `check-in-detail-view.test.tsx` | The `send` button moves out of the mocked review section into a mocked reply block |
+
+**Deleted — 1.** `components/check-in/check-in-share-card.tsx` — one importer, verified.
+
+### 12.3 What changes, and what must not
+
+**Changes — all layout:**
+- `ReviewBlock` wrapper → a `SectionLabel` rail over its own borderless card.
+- The **Edit pencil ⇄ Check toggle goes**; the textarea is always live (brief §8). `ReviewProse`'s
+  read-only rendering of the draft goes with it.
+- Full width instead of the 380px column.
+- Send is the page's primary.
+
+**Preserved verbatim — each one is a bug someone already fixed:**
+1. **The draft is a prop synced by `useEffect`, not `useState` seeded once.** A Regenerate must
+   replace it, and a `key`-remount would drop `isSending` mid-send. Copy the effect and its
+   reasoning across unchanged.
+2. All five toasts: `"Message sent to {clientName}"`, `"Failed to send message"`,
+   `"Write a message before sending"`, `"Message copied"`, `"Could not copy to clipboard"`.
+3. `disabled={isSending || !message.trim()}` on Send, and the empty-message guard before the
+   fetch.
+4. `"No draft message yet."` — still needed as the textarea's `placeholder` now that there is
+   no read-only branch to hold it.
+5. The `POST /api/check-in/[id]/review` call and `onSent` semantics: the review is **done**, so
+   the tab refreshes its list and the queues and returns to the list.
+
+### 12.4 Three copy gaps — I need strings
+
+| # | Slot | Repo today | Mockup | My recommendation |
+|---|---|---|---|---|
+| C1 | Rail label | `Share with client` | `Reply to Sam` | **`Reply`** — shipped |
+| C2 | Primary button | `Send` | `Send and mark reviewed` | **`Send`**, and **`Send follow-up`** once a reply exists — shipped |
+| C3 | Rail meta | *(nothing)* | `draft · not sent` | **`Sent {MMM d}`**, present only once sent — shipped. Plus **`Already sent`** labelling the previous message |
+
+### 12.5 The one real decision: is there a "sent" state?
+
+**Today there is none.** The detail renders the draft and a live Send button whatever
+`responseSentAt` / `coachResponse` say. A coach re-opening a reviewed check-in sees no sign
+they already replied — the list row shows `"Your reply: …"`, the detail does not.
+
+One page makes this worse, because the reply is now the bottom of a long scroll and reads as
+the thing to do.
+
+| | What it costs |
+|---|---|
+| **(a) Leave it** | Nothing. Purest re-layout, and B12 stays exactly as today |
+| **(b) Show it** — **chosen** | `responseSentAt` and `coachResponse` are already on the wire — no fetch, no service change |
+
+**Shipped shape.** The rail dates the reply (`Sent Aug 31`), the previous message renders above
+the box under an `Already sent` label, and the button becomes `Send follow-up`. **The block never
+locks** — box and button stay live, because a coach may legitimately write again (owner,
+2026-08-31). The sent state reports; it does not gate.
+
+### 12.6 Also found, not fixed here
+
+`NutritionRegenerationBanner` renders a **full-width `bg-primary` button** ("Regenerate
+Nutrition Plan") inside Goal progress whenever the client's weight has drifted ≥3 kg. So the
+brief's "single primary button on the page" is conditionally untrue, and that button is on
+legacy OKLCH tokens against a Teal-Summit page, and its click `router.push`es to a dead
+`#nutrition` hash (§7.2 C3). D4 keeps the banner; R5 owns the Goal-progress section and is the
+place to deal with it.
+
+### 12.7 Tests
+
+| Test | Where |
+|---|---|
+| Sends the edited message and reports done | new `check-in-reply-block.test.tsx` |
+| Refuses an empty message with the guard toast, and does not fetch | same |
+| **A regenerate replaces the draft in place** (the effect, not a remount) | same — carried from `check-in-review-section.test.tsx`, which owns it today |
+| Copy writes the current textarea value | same |
+| The review section renders without a reply block | `check-in-review-section.test.tsx` — its share assertions move out |
+| The page mounts the reply block and wires `onDone` to it | `check-in-detail-view.test.tsx` |
+
+`check-in-review-section.test.tsx` currently asserts `"Share with client"` and the Send button
+at `:112-113`, and the draft-resync behaviour at `:158-171`. Both move rather than being
+rewritten — the behaviour is unchanged, only its address.
+
+### 12.8 Gates
+
+`npx tsc --noEmit` · `npx eslint .` · `npx vitest run` · `npm run check:labels` · `npx knip`
+(`check-in-share-card.tsx` disappears with its only importer; nothing else should move).
+
+**CONVENTIONS §2 security/load review: not applicable** — no migration, route, auth, write path
+or data-flow change. The POST it calls is untouched.
+
+### 12.9 Smoke (yours)
+
+1. The reply sits last, full width, one primary button.
+2. Type, Send → toast names the client, the tab returns to the list, the row shows the reply.
+3. Send with an empty box → the guard toast, no request.
+4. Regenerate with an edited draft in the box → the box takes the new draft (not the old one,
+   not your edit).
+5. Copy → clipboard has what is in the box, not the original draft.
+6. A check-in with no AI review → the Review section shows its placeholder and the Reply
+   section still renders.

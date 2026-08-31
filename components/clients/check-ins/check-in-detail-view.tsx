@@ -12,6 +12,7 @@ import { TrainingSection } from "@/components/check-in/training-section";
 import { ClientNotesSection } from "@/components/check-in/client-notes-section";
 import { HabitsSection } from "@/components/check-in/habits-section";
 import { CheckInReviewHeader } from "./check-in-review-header";
+import { CheckInReplyBlock } from "./check-in-reply-block";
 import { useCheckInDetailData } from "@/hooks/use-check-in-detail-data";
 import { summariseSessions } from "@/lib/check-in/adherence";
 import { toCheckInReview } from "@/lib/check-in/to-review";
@@ -82,6 +83,9 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
   // and the comparison so the figure is identical everywhere.
   const adherence = summariseSessions(data?.checkIn.sessionCompletions ?? []);
   const clientName = data?.client?.name || client.name;
+  // Both the Review section and the Reply block read it; narrowing on it below
+  // is what lets them share one call.
+  const review = data ? toCheckInReview(data.checkIn) : null;
 
   const ready = Boolean(data && contextStartDate && contextEndDate);
 
@@ -107,7 +111,7 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
         <Notice>This check-in belongs to another client.</Notice>
       ) : isLoading || dailyContextLoading || (data && !contextStartDate) ? (
         <Spinner />
-      ) : data && ready && contextStartDate && contextEndDate ? (
+      ) : data && review && ready && contextStartDate && contextEndDate ? (
         <>
           <KPIRibbon
             checkIn={data.checkIn}
@@ -162,9 +166,16 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
 
           <CheckInReviewSection
             checkInId={checkInId}
-            clientName={clientName}
-            review={toCheckInReview(data.checkIn)}
+            review={review}
             onRefresh={refreshDetail}
+          />
+
+          <CheckInReplyBlock
+            checkInId={checkInId}
+            clientName={clientName}
+            draft={review.clientMessage}
+            sentMessage={data.checkIn.coachResponse}
+            sentAt={data.checkIn.responseSentAt}
             onSent={onDone}
           />
         </>

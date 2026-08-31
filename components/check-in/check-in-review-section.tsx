@@ -21,19 +21,13 @@ import {
   ReviewListRow,
   ReviewProse,
 } from "@/components/clients/check-ins/review-block";
-import { CheckInShareCard } from "./check-in-share-card";
 import type { CheckInReview, WatchItemType, CoachActionPriority } from "@/types/check-in";
 
 type CheckInReviewSectionProps = {
   checkInId: string;
-  clientName: string;
   review: CheckInReview;
   // Refetch the check-in (after a regenerate) so every block updates in place.
   onRefresh?: () => void;
-  // The response was sent to the client — distinct from onRefresh because the
-  // review is now DONE (parents return to the list + revalidate it), whereas a
-  // regenerate keeps the review open. Falls back to onRefresh.
-  onSent?: () => void;
 };
 
 // Teal Summit two-colour: teal positive, amber attention, secondary-grey neutral.
@@ -55,18 +49,13 @@ const PRIORITY_META: Record<CoachActionPriority, { dot: string; label: string }>
 
 export const CheckInReviewSection = ({
   checkInId,
-  clientName,
   review,
   onRefresh,
-  onSent,
 }: CheckInReviewSectionProps) => {
   const [isRegenerating, setIsRegenerating] = useState(false);
 
   const hasWatch = review.watchItems.length > 0 || review.themes.length > 0;
   const hasActions = review.coachActions.length > 0;
-  // The AI half of the card, not the whole card: the coach's reply is the
-  // coach's, and they could always write one before the AI had produced
-  // anything. Hiding Share here would have removed that.
   const hasAiReview = Boolean(review.summary) || hasWatch || hasActions;
 
   const handleRegenerate = async () => {
@@ -191,13 +180,6 @@ export const CheckInReviewSection = ({
             )}
           </>
         )}
-
-        <CheckInShareCard
-          checkInId={checkInId}
-          clientName={clientName}
-          clientMessage={review.clientMessage}
-          onSent={onSent ?? onRefresh}
-        />
       </div>
     </div>
   );

@@ -9,10 +9,16 @@ vi.mock("@/hooks/use-check-in-detail-data", () => ({
   useCheckInDetailData: mockDetailData,
 }));
 vi.mock("@/components/check-in/check-in-review-section", () => ({
-  CheckInReviewSection: ({ onSent, onRefresh }: { onSent: () => void; onRefresh: () => void }) => (
+  CheckInReviewSection: ({ onRefresh }: { onRefresh: () => void }) => (
     <div data-testid="rail">
-      <button onClick={onSent}>send</button>
       <button onClick={onRefresh}>regenerate</button>
+    </div>
+  ),
+}));
+vi.mock("./check-in-reply-block", () => ({
+  CheckInReplyBlock: ({ onSent }: { onSent: () => void }) => (
+    <div data-testid="reply">
+      <button onClick={onSent}>send</button>
     </div>
   ),
 }));
@@ -98,6 +104,8 @@ describe("CheckInDetailView", () => {
     renderView();
     expect(screen.getByTestId("ribbon")).toBeInTheDocument();
     expect(screen.getByTestId("rail")).toBeInTheDocument();
+    // The reply is the page's destination and its own section.
+    expect(screen.getByTestId("reply")).toBeInTheDocument();
     // Goal progress renders without a click — the whole point of the page.
     expect(screen.getByTestId("goals")).toBeInTheDocument();
     expect(screen.getByText(/2\/7 days logged/)).toBeInTheDocument();
