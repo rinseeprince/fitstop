@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import {
   ReviewBlock,
@@ -48,12 +47,7 @@ export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
   return (
     <div>
       <SectionLabel label="Client Notes" />
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, delay: 0.12 }}
-        className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
-      >
+      <div className="rounded-[6px] bg-white p-5">
         <div className="flex flex-col gap-5">
           {checkIn.notes && (
             <ReviewBlock label="Reflection">
@@ -88,7 +82,7 @@ export const ClientNotesSection = ({ checkIn }: ClientNotesSectionProps) => {
             </ReviewBlock>
           )}
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 };

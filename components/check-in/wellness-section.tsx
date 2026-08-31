@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import {
@@ -87,12 +86,7 @@ export const WellnessSection = ({
   return (
     <div>
       <SectionLabel label="Wellness" />
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, delay: 0.05 }}
-        className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
-      >
+      <div className="rounded-[6px] bg-white p-5">
         <div className="grid grid-cols-5 gap-4">
           {METRICS.map((metric) => {
             const values = dateRange.map((day) => {
@@ -160,7 +154,7 @@ export const WellnessSection = ({
             );
           })}
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 };

@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import {
@@ -133,15 +132,14 @@ export const NutritionSection = ({
   ];
 
   return (
-    <div>
+    // A flex ITEM, not a grid cell: the page puts this beside its sibling, and
+    // either section can return null on an empty week. A null child emits no
+    // node, so the survivor takes the full row without the page having to know
+    // which one rendered. `min-w-0` stops the mono numerals setting the basis.
+    <div className="flex min-w-0 flex-1 flex-col">
       <SectionLabel label="Nutrition" />
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, delay: 0.08 }}
-        className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
-      >
-        <div className="grid grid-cols-2 gap-4">
+      <div className="flex-1 rounded-[6px] bg-white p-5">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {/* Left: Calorie summary */}
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-baseline">
@@ -202,7 +200,7 @@ export const NutritionSection = ({
             })}
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 };

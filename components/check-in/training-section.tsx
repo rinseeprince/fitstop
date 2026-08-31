@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { CheckCircle2, CircleDashed, XCircle, Trophy } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { CheckInWithDetails, CheckInSessionCompletion } from "@/types/check-in";
@@ -60,7 +59,11 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
   if (sessions.length === 0 && prHighlights.length === 0) return null;
 
   return (
-    <div>
+    // A flex ITEM, not a grid cell: the page puts this beside its sibling, and
+    // either section can return null on an empty week. A null child emits no
+    // node, so the survivor takes the full row without the page having to know
+    // which one rendered. `min-w-0` stops the mono numerals setting the basis.
+    <div className="flex min-w-0 flex-1 flex-col">
       {/* The completed count keeps its `prescribed > 0` condition, and it is a
           number-bearing meta, so the rail's own MONO_META_CLASS is correct
           (docs/newdesignsystem.md → Typography: "Metas that contain numbers"). */}
@@ -72,12 +75,7 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
             : undefined
         }
       />
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, delay: 0.1 }}
-        className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
-      >
+      <div className="flex-1 rounded-[6px] bg-white p-5">
         {sessions.length > 0 && (
           <div className="flex flex-col gap-2">
             {sessions.map((session, i) => {
@@ -142,7 +140,7 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
             </div>
           </div>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 };

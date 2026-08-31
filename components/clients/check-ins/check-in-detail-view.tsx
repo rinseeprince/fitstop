@@ -123,16 +123,22 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
             periodDays={periodAdherence?.dates.length ?? null}
           />
 
-          <TrainingSection checkIn={data.checkIn} adherence={adherence} />
+          {/* Flex, not a 2-col grid: either section returns null on an empty
+              week, and a grid would leave a hole where the missing one was.
+              Both carry `flex-1`, so a lone survivor takes the whole row and
+              this page never has to ask which of them rendered. */}
+          <div className="flex flex-col gap-5 lg:flex-row">
+            <TrainingSection checkIn={data.checkIn} adherence={adherence} />
 
-          <NutritionSection
-            dailyLogs={dailyLogs}
-            contextStartDate={contextStartDate}
-            contextEndDate={contextEndDate}
-            fullWeekTarget={fullWeekTarget}
-            nutrition={periodAdherence?.nutrition ?? null}
-            periodDays={periodAdherence?.dates.length ?? null}
-          />
+            <NutritionSection
+              dailyLogs={dailyLogs}
+              contextStartDate={contextStartDate}
+              contextEndDate={contextEndDate}
+              fullWeekTarget={fullWeekTarget}
+              nutrition={periodAdherence?.nutrition ?? null}
+              periodDays={periodAdherence?.dates.length ?? null}
+            />
+          </div>
 
           <WellnessSection
             dailyLogs={dailyLogs}

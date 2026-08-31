@@ -829,3 +829,132 @@ or data-flow change. The POST it calls is untouched.
 5. Copy → clipboard has what is in the box, not the original draft.
 6. A check-in with no AI review → the Review section shows its placeholder and the Reply
    section still renders.
+
+---
+
+## 13. Commit R4 — detailed spec
+
+> `style(check-ins): R4 — borderless cards, and Training beside Nutrition`
+
+### 13.1 What R4 delivers
+
+The last purely visual commit. Five section cards lose their borders and their framer
+animation; Training and Nutrition sit side by side; Habits becomes a scannable grid. **Not one
+prop, number or string changes.**
+
+### 13.2 Borderless + un-animated — the five siblings
+
+Each of `wellness` / `nutrition` / `training` / `habits` / `client-notes` currently wraps its
+body in:
+
+```tsx
+<motion.div
+  initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.2, delay: 0.05 | 0.08 | 0.1 | 0.12 | 0.14 }}
+  className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-5"
+>
+```
+
+becomes
+
+```tsx
+<div className="rounded-[6px] bg-white p-5">
+```
+
+**The border.** `docs/newdesignsystem.md` → Spacing: *"Let spacing do separation work, not
+borders. White cards on `#f4f7f6` provide enough contrast."* This is the follow-up D7.3 already
+owed — the AI review card took the treatment when it shipped and the five siblings were left
+bordered *only* so the column would not look half-done. Reply now matches it too, so the five
+are the odd ones out.
+
+**The animation.** Those stagger delays were tuned for a two-column pane where the cards
+appeared together above the fold. On one long page they are nine sections fading in at
+different times as you scroll past them, and neither the band, the review nor the reply
+animates. `framer-motion` drops out of all five imports; it stays in the repo for everything
+else.
+
+The band keeps its CSS `animate-card-in` — one element, above the fold, already there.
+
+### 13.3 Training beside Nutrition
+
+`check-in-detail-view.tsx` wraps the two in one row:
+
+```tsx
+<div className="flex flex-col gap-5 lg:flex-row">
+  <TrainingSection … />
+  <NutritionSection … />
+</div>
+```
+
+and each of those two components takes `min-w-0 flex-1 flex flex-col` on its root, with its
+card `flex-1` so the shorter of the two stretches to match.
+
+**Why flex and not `grid-cols-2`.** Either section can `return null` on an empty week (B1/B2).
+A grid leaves a hole where the missing one was; a flex row lets the surviving section take the
+full width on its own, with **no predicate on this page** — the §10.3 rule holds. A `null`
+child emits no DOM node at all, so nothing needs to know which one rendered.
+
+`min-w-0` is load-bearing: without it the nutrition card's mono numerals set the flex basis and
+push the row wider than the page.
+
+**Both components are used by this page only** (verified — the detail view and its test are the
+sole importers), so carrying two layout classes on their roots is not a leak into other
+surfaces.
+
+**One thing to watch:** the Nutrition card's body is a `grid-cols-2` (kcal summary ∥ macro
+bars). At half width that is two ~230px columns. R4 drops it to one column below `xl` so the
+macro rows keep their bar length; the kcal block sits above the macros. No numbers move.
+
+### 13.4 Habits becomes a grid
+
+Today: `flex gap-6 flex-wrap`, each habit an inline `name · count · dots` run. Five habits of
+differing name lengths wrap into ragged rows with nothing aligned down the card.
+
+R4: a responsive grid (3 columns wide / 2 medium / 1 narrow) with `rgba(13,148,136,0.06)`
+hairlines between cells, each cell `name … count · dots` with the name truncating. Counts and
+dot rails then line up in columns, which is the whole point of a habit readout.
+
+**Every rule inside a cell survives untouched**: `completedDays/eligibleDays` over the habit's
+own eligible days, the `null`-day dash with its `"Not yet added"` title, the teal/faint dot
+tones, and the `eligibleDays > 0` filter that hides a habit which was never eligible.
+
+### 13.5 What R4 does NOT touch
+
+Any prop, denominator, string, empty state or conditional. `KPIRibbon`, `GoalProgressView`,
+`CheckInReviewSection`, `CheckInReplyBlock` and `CheckInReviewHeader` are not opened — they are
+already borderless or already correct.
+
+### 13.6 Tests
+
+Mostly unchanged: the suites assert text and behaviour, not shells. Two things to confirm
+rather than assume:
+
+- `habits-section.test.tsx` — the `"Not yet added"` dash count and the `2/4` mid-week case must
+  still pass against the grid markup. If a selector was coupled to the flex layout it gets
+  re-pointed, not relaxed.
+- `check-in-detail-view.test.tsx` — the children are mocked, so the flex wrapper is invisible to
+  it. **No new test earns its place here**: asserting a Tailwind class is asserting the
+  implementation, and the layout is what the browser smoke is for.
+
+Anything that *does* break is a signal a test was reaching for markup, and the fix is a better
+selector.
+
+### 13.7 Gates
+
+`npx tsc --noEmit` · `npx eslint .` · `npx vitest run` · `npm run check:labels` · `npx knip`
+(`framer-motion` keeps other importers; nothing should newly orphan).
+
+**CONVENTIONS §2: not applicable** — render-only, no data flow touched.
+
+### 13.8 Smoke (yours — this one is mostly visual)
+
+1. No card has a border; the page reads as cards floating on `#f4f7f6`.
+2. Nothing fades in as you scroll.
+3. Training and Nutrition side by side on a wide window, stacked on a narrow one, **equal
+   height** when side by side.
+4. A client with **no nutrition logged** → Training alone, full width, no gap beside it.
+5. A client with **no sessions prescribed** → Nutrition alone, full width.
+6. The nutrition macro bars are still long enough to read at half width.
+7. Habits: counts and dot rails line up in columns; a long habit name truncates rather than
+   wrapping the row.
+8. A habit added mid-period still shows leading dashes, not empty dots.
