@@ -1,4 +1,6 @@
 import { getCheckInById, getPreviousCheckIn, getClientCheckIns, getFirstCheckIn } from "./check-in-service";
+import { deriveSessionCompletionsForCheckIn } from "./check-in-details-service";
+import { summariseSessions } from "@/lib/check-in/adherence";
 import { getClientById } from "./client-service";
 import { getNutritionPlanForDate } from "./nutrition-plan-service";
 import { prepareChartData } from "@/lib/check-in-utils";
@@ -12,6 +14,7 @@ import {
 } from "@/lib/goals/resolve-effective-goal";
 import { getTodayDateStringInTimezone, getTodayInTimezone, differenceInDays } from "@/lib/date-helpers";
 import type {
+  CheckIn,
   CheckInComparison,
   GoalProgress,
   GetCheckInComparisonResponse,
@@ -108,6 +111,35 @@ export const getCheckInComparison = async (
   const weeksRemaining = daysRemaining !== null ? daysRemaining / 7 : null;
 
   // Calculate time between check-ins
+  // Both sides of the workouts row, derived from each period's own sessions.
+  // `undefined` when a period cannot be resolved, which `calculateMetricChange`
+  // already treats as "no comparison".
+  //
+  // Degraded rather than fatal, following `getNutritionPlanForDate` above: this
+  // feeds ONE row of the comparison pane, and losing the whole read — the goal
+  // cards, the chart, every other metric — because a training period could not
+  // be resolved is disproportionate. Never silently: the failure is logged and
+  // the row falls to "no comparison".
+  const deriveSessions = (checkIn: CheckIn | null) =>
+    checkIn
+      ? deriveSessionCompletionsForCheckIn(checkIn).catch((err) => {
+          console.error("Comparison session-completion derivation failed:", err);
+          return [];
+        })
+      : Promise.resolve([]);
+
+  const [currentSessions, previousSessions] = await Promise.all([
+    deriveSessions(currentCheckIn),
+    deriveSessions(previousCheckIn),
+  ]);
+  const currentCompleted = currentSessions.length
+    ? summariseSessions(currentSessions).completed
+    : undefined;
+  const previousCompleted =
+    previousCheckIn && previousSessions.length
+      ? summariseSessions(previousSessions).completed
+      : undefined;
+
   const timeBetweenCheckIns = previousCheckIn
     ? calculateDaysBetween(currentCheckIn.createdAt, previousCheckIn.createdAt)
     : undefined;
@@ -161,9 +193,15 @@ export const getCheckInComparison = async (
         currentCheckIn.thighs,
         previousCheckIn?.thighs
       ),
+      // DERIVED on both sides, never the stored `workouts_completed` column.
+      // That column counts full completions only; the ribbon and the AI prompt
+      // count full + partial, and this row is a SUBTRACTION — mixing the two
+      // definitions inside one difference is worse than either on its own. The
+      // cost is one extra derivation for the previous check-in, which is
+      // constant rather than per-row.
       workoutsCompleted: calculateMetricChange(
-        currentCheckIn.workoutsCompleted,
-        previousCheckIn?.workoutsCompleted
+        currentCompleted,
+        previousCompleted
       ),
       adherencePercentage: calculateMetricChange(
         currentCheckIn.adherencePercentage,

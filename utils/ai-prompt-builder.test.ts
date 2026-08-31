@@ -121,9 +121,23 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
     expect(training).not.toContain("reason:");
   });
 
-  it("falls back to workoutsCompleted when trainingEventDetails is empty", () => {
+  // The count is DERIVED from the period's own sessions (full + PARTIAL over
+  // prescribed) — the same figure the KPI ribbon and the comparison pane render.
+  // It used to print `current.workoutsCompleted`, the stored full-only column,
+  // which is how the summary came to say "completed only 2 out of 5" beneath a
+  // strip reading 3/5 for the same week.
+  it("derives the count from the period's sessions when trainingEventDetails is empty", () => {
     const prompt = buildCheckInAnalysisPrompt(
-      checkIn({ workoutsCompleted: 4 }),
+      checkIn({
+        workoutsCompleted: 2,
+        sessionCompletions: [
+          { completionQuality: "full" },
+          { completionQuality: "full" },
+          { completionQuality: "partial" },
+          { completionQuality: "skipped" },
+          { completionQuality: "skipped" },
+        ] as never,
+      }),
       [],
       "Jane",
       undefined,
@@ -136,16 +150,32 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
     );
     const training = trainingSection(prompt);
 
-    expect(training).toContain("- Workouts Completed: 4");
-    expect(training).not.toContain("Sessions:");
+    expect(training).toContain("- Workouts completed: 3/5 (1 partial, 2 missed)");
+    // The stored full-only column must not appear beside it.
+    expect(training).not.toContain("Workouts Completed: 2");
   });
 
-  it("falls back to workoutsCompleted when trainingEventDetails is absent", () => {
+  it("prints no count at all when the period has no sessions", () => {
+    // A bare number with no denominator, computed a different way, is not the
+    // same statistic — so it is omitted rather than filled in from the column.
     const prompt = buildCheckInAnalysisPrompt(checkIn({ workoutsCompleted: 2 }), [], "Jane");
-    const training = trainingSection(prompt);
 
-    expect(training).toContain("- Workouts Completed: 2");
-    expect(training).not.toContain("Sessions:");
+    expect(prompt).not.toContain("Workouts completed");
+    expect(prompt).not.toContain("Workouts Completed");
+  });
+
+  it("omits the historical Workouts line, which was the stored column", () => {
+    // Previous check-ins are bare `CheckIn` rows, so the only count on them is
+    // the full-only column — a different statistic from the derived figure
+    // above, and deriving per row would be a query per check-in (§2 item 7).
+    const prompt = buildCheckInAnalysisPrompt(
+      checkIn(),
+      [{ id: "p1", createdAt: "2026-04-06T10:00:00Z", workoutsCompleted: 4, weight: 81 } as never],
+      "Jane",
+    );
+
+    expect(prompt).toContain("PREVIOUS CHECK-INS");
+    expect(prompt).not.toContain("Workouts: 4");
   });
 });
 

@@ -22,14 +22,14 @@ three corrected numbers.
 | # | Issue | Disposition |
 |---|---|---|
 | 1 | The AI read logging coverage as intake and reported a client who hit target on both logged days as severely under-eating | **N1 — SHIPPED + SMOKED, CLOSED** |
-| 2 | Training reads 3/5 in the ribbon, 2 in the comparison pane, "2 out of 5" in the AI summary | **N2** |
+| 2 | Training reads 3/5 in the ribbon, 2 in the comparison pane, "2 out of 5" in the AI summary | **N2 — SHIPPED** |
 | 3 | Weight goal: 100% Complete + "On track" + "Remaining 5kg" on a goal overshot by 5 kg | **N3** |
 | 4 | Body Fat: 100% Complete + "Needs attention" — same situation, opposite verdict | **N3** |
 | 5 | Pace note ("will reach the goal by the deadline") contradicts the projected date (18 Nov vs a 31 Oct deadline) | **N3** |
-| 6 | "vs previous week" rendered against a check-in 92 days old | **N2** (one string; folded there because it is the same file and the same theme) |
+| 6 | "vs previous week" rendered against a check-in 92 days old | **N2 — SHIPPED** |
 | 7 | −7 kg on the nutrition regeneration banner | **Closed, not a bug.** Provenance verified: `body_metrics` held 79 kg (`source: check_in`, 2026-08-27 15:26); the plan saved at 22:32 that day snapshotted it as `base_weight_kg`. The check-in was later deleted; the snapshot survives by design. A snapshot is the correct baseline for "have they drifted from the weight these targets were built for" — re-deriving it from the live series would make the banner change its mind retroactively. |
 | 8 | The AI review sits at the bottom of the Current pane | **Dropped** (owner, 2026-08-31) — card movement only |
-| 9 | `kpi-ribbon.tsx:131` comments that the hero "matches … the comparison tab exactly", which is false | folded into **N2** |
+| 9 | `kpi-ribbon.tsx:131` comments that the hero "matches … the comparison tab exactly", which is false | **N2 — SHIPPED** |
 | 10 | `body_metrics` holds duplicate, orphaned and future-dated rows | **Recorded in `TECHNICAL-DEBT.md`**, no code. Nothing reads it for a current value. |
 | 11 | This surface counts full+partial; the Overview kernel counts full-only | **Stays named deferred debt** (CONVENTIONS §8). N2 fixes the screen and says so; it does not close the schism. |
 
@@ -148,6 +148,53 @@ not."
 - **Delete the false comment** at `kpi-ribbon.tsx:131-132`.
 - **Guard:** a scan test asserting no surface renders `workoutsCompleted` as a completion count
   except the RN wire mapper.
+
+### STATUS — SHIPPED 2026-08-31
+
+**What shipped.** One derivation — `summariseSessions` (full + PARTIAL over prescribed) — now
+feeds all three surfaces.
+
+- `components/check-in/kpi-ribbon.tsx` — the Training cell drops its `60%` delta for a sub-line
+  naming both counts (`All complete` · `1 partial` · `2 missed` · `1 partial · 2 missed`), and the
+  percentage still drives `trainingAccent`, so 3/5 is still amber. **The fallback to
+  `checkIn.workoutsCompleted` when nothing was prescribed is gone** — a bare count with no
+  denominator, computed a different way, is not the same statistic; the cell reads
+  "No sessions prescribed". `"vs previous week"` → `"vs last check-in"` (one string, covering
+  weight and body fat, since both go through `buildComparison`). The false comment claiming the
+  hero "matches … the comparison tab exactly" is replaced by one saying what is actually true.
+- `utils/ai-prompt-builder.ts` — the current period's count derives from `sessionCompletions`
+  (`- Workouts completed: 3/5 (1 partial, 2 missed)`) instead of the stored column. The historical
+  block's `Workouts:` line is **deleted**: those are bare `CheckIn` rows carrying only the
+  full-only column, and deriving per row would be a query per check-in (§2 item 7).
+- `services/comparison-service.ts` — derives for **both** sides of the workouts row. Pointing only
+  the current side at the derived figure would mix two definitions inside one subtraction, which is
+  worse than the bug. One extra derivation, constant rather than per-row.
+
+**Deviation.** One, unplanned and additive: the new derivation is wrapped in a `.catch()` that
+logs and degrades to "no comparison", following `getNutritionPlanForDate`'s precedent in the same
+function. Without it a training period that failed to resolve would have taken down the whole
+comparison read — the goal cards, the chart and every other metric — for one row of a pane.
+
+**`check_ins.workouts_completed` is untouched**, as planned. The client's own surfaces
+(`components/client-portal/check-in/check-in-card.tsx:95`, `app/client/check-in/[id]/page.tsx:278`)
+still read it, legitimately — that is the client reading back their own submission, on the RN
+contract side, and the scan below is scoped to coach surfaces for exactly that reason.
+
+**The guard.** `lib/check-in/adherence-ownership.test.ts` walks `components/check-in/**`,
+`components/clients/**` and the three services, strips comments, and fails on any
+`*.workoutsCompleted` read that is not the derived `changes.workoutsCompleted`. Shape borrowed
+from `lib/check-in-week.test.ts`. **Mutation-tested**: reinstating the ribbon's old fallback makes
+it fail, naming the file and the expression.
+
+**Gates.** `tsc` 0 · `eslint` 0 errors / 154 warnings (baseline) · `vitest` 333 files / 3583 tests
+· `check:labels` OK. **8 of 9 new assertions verified FAILING** on the pre-fix commit in a
+detached worktree. The 9th — that the cell still goes amber at 60% — asserts behaviour N2 does
+*not* change, so it passes on both builds by design; it was verified by mutation instead (flip the
+summary to 100% and it fails).
+
+**Unverified.** Not smoked in a browser. The ribbon's new sub-line, the "vs last check-in" label
+and the comparison pane's workouts row are all unverified visually; jsdom does no layout, so the
+sub-line's fit in a 4-column strip is untested.
 
 ---
 

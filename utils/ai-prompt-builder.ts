@@ -5,6 +5,7 @@ import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
 import type { PeriodSnapshot } from "@/types/schedule";
 import { buildDailyContextForAI } from "@/utils/ai-daily-context-builder";
 import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
+import { summariseSessions } from "@/lib/check-in/adherence";
 import { buildAnalysisTaskPrompt } from "@/utils/ai-analysis-format";
 import {
   DEFAULT_UNIT_SYSTEM,
@@ -112,8 +113,19 @@ export function buildCheckInAnalysisPrompt(
         }
       }
     });
-  } else if (current.workoutsCompleted) {
-    prompt += `- Workouts Completed: ${current.workoutsCompleted}\n`;
+  } else if (current.sessionCompletions?.length) {
+    // Derived from the period's own sessions (full + PARTIAL over prescribed),
+    // the same figure the KPI ribbon and the comparison pane render. It used to
+    // read `current.workoutsCompleted`, the stored full-only column, which is
+    // how the summary came to say "completed only 2 out of 5" under a strip
+    // reading 3/5 for the same week.
+    const summary = summariseSessions(current.sessionCompletions);
+    prompt += `- Workouts completed: ${summary.completed}/${summary.prescribed}`;
+    const detail = [
+      summary.partial > 0 ? `${summary.partial} partial` : null,
+      summary.missed > 0 ? `${summary.missed} missed` : null,
+    ].filter(Boolean);
+    prompt += detail.length ? ` (${detail.join(", ")})\n` : "\n";
   }
 
   if (current.exerciseHighlights?.length) {
@@ -234,7 +246,12 @@ export function buildCheckInAnalysisPrompt(
       prompt += `\n${idx + 1}. ${new Date(prev.createdAt).toLocaleDateString()}\n`;
       if (prev.weight) prompt += `   Weight: ${weight(prev.weight)}\n`;
       if (prev.adherencePercentage) prompt += `   Adherence: ${prev.adherencePercentage}%\n`;
-      if (prev.workoutsCompleted) prompt += `   Workouts: ${prev.workoutsCompleted}\n`;
+      // No `Workouts:` line. These are bare `CheckIn` rows, so the only count on
+      // them is the stored full-only column — a different statistic from the
+      // current period's derived figure above, and putting both in one prompt is
+      // what produced a contradiction. Deriving it per row would be a query per
+      // check-in (CONVENTIONS §2 item 7); the current period's training is
+      // already described in full by the schedule block.
       if (prev.mood) prompt += `   Mood: ${prev.mood}/5\n`;
     });
   }

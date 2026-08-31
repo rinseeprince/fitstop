@@ -95,9 +95,16 @@ export const KPIRibbon = ({
   const changes = comparisonData?.comparison?.changes;
   const hasPreviousCheckIn = comparisonData?.comparison?.previous != null;
 
-  // Comparison line for a progress metric: a real week-over-week delta when a
-  // prior check-in exists, otherwise the change from the starting value on a
+  // Comparison line for a progress metric: the delta against the PREVIOUS
+  // CHECK-IN when one exists, otherwise the change from the starting value on a
   // first check-in. Returns null when neither is available.
+  //
+  // A check-in is a periodic report, so it reports against the previous report;
+  // a measurement logged in between belongs to the Journey series and is
+  // deliberately not consulted here (owner decision, 2026-08-31). The label says
+  // "vs last check-in" rather than "vs previous week" because the gap between two
+  // check-ins is whatever it is — this cell once read "vs previous week" above a
+  // delta measured against a check-in 92 days old.
   const buildComparison = (
     current: number | undefined,
     change: MetricChange | undefined,
@@ -105,7 +112,7 @@ export const KPIRibbon = ({
     invert: boolean
   ): { label: string; delta: DeltaInfo } | null => {
     if (hasPreviousCheckIn && change?.change !== undefined) {
-      return { label: "vs previous week", delta: formatDeltaValue(change.change, invert) };
+      return { label: "vs last check-in", delta: formatDeltaValue(change.change, invert) };
     }
     if (!hasPreviousCheckIn && current !== undefined && startingValue !== undefined) {
       return { label: "vs start", delta: formatDeltaValue(current - startingValue, invert) };
@@ -128,15 +135,32 @@ export const KPIRibbon = ({
     nutritionPct >= 80 ? "success" :
     nutritionPct >= 50 ? "warning" : "destructive";
 
-  // Training adherence comes from the shared helper (completed / prescribed) so
-  // the hero matches the prescription panel and the comparison tab exactly.
+  // Training comes from `summariseSessions` — completed (full + PARTIAL) over
+  // prescribed. One derivation feeds this cell, the comparison pane and the AI
+  // prompt; the stored `check_ins.workouts_completed` counts full only and is
+  // deliberately not read here. It is the RN wire's column, and rendering it
+  // beside a derived figure is what put "3/5" on this strip above an AI summary
+  // saying "completed only 2 out of 5".
+  //
+  // No fallback to that column when nothing was prescribed: a bare count with no
+  // denominator, computed a different way, is not the same statistic.
   const trainingPct = adherence.pct;
   const trainingValue =
-    adherence.prescribed > 0
-      ? `${adherence.completed}/${adherence.prescribed}`
-      : checkIn.workoutsCompleted
-      ? String(checkIn.workoutsCompleted)
-      : "--";
+    adherence.prescribed > 0 ? `${adherence.completed}/${adherence.prescribed}` : "--";
+
+  // The fraction already says how many of the prescribed sessions were done. What
+  // it cannot say is that one of those was only partly completed — so the
+  // sub-line qualifies the numerator, names what was skipped, and never reads
+  // "All complete" over a missed session.
+  const trainingSubText =
+    adherence.prescribed === 0
+      ? "No sessions prescribed"
+      : [
+          adherence.partial > 0 ? `${adherence.partial} partial` : null,
+          adherence.missed > 0 ? `${adherence.missed} missed` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || "All complete";
   const trainingAccent: Accent =
     trainingPct === null ? "neutral" :
     trainingPct >= 80 ? "success" :
@@ -191,13 +215,12 @@ export const KPIRibbon = ({
       accent: nutritionAccent,
     },
     {
+      // No delta: the percentage the fraction already implies was displaced by
+      // the breakdown, which says something the fraction cannot. It still drives
+      // `trainingAccent`, so 3 of 5 is still amber.
       label: "Training",
       value: trainingValue,
-      delta: trainingPct !== null ? {
-        text: `${trainingPct}%`,
-        type: trainingPct >= 80 ? "positive" : trainingPct >= 50 ? "neutral" : "negative",
-      } : undefined,
-      subText: "adherence",
+      subText: trainingSubText,
       accent: trainingAccent,
     },
   ];
@@ -233,9 +256,9 @@ export const KPIRibbon = ({
           </div>
           {/* Every delta is a numeral (a signed value or a percentage), so mono
               is unconditional — it used to be spelled as "not the Calories
-              cell", whose delta was the word HIT. Sub-lines are words ("vs
-              previous week", "days on target", "adherence") and so are never
-              mono: the rule is numerals only. */}
+              cell", whose delta was the word HIT. Sub-lines are phrases ("vs
+              last check-in", "days on target", "1 partial · 2 missed") and so are
+              never mono: the rule is numerals only. */}
           {(card.delta || card.subText) && (
             <div className="flex items-center gap-1.5 mt-1">
               {card.delta && (
