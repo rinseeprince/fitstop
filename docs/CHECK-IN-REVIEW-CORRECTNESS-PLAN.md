@@ -290,3 +290,71 @@ detached worktree.
 "Goal met" **three times** — badge, Remaining cell, and the note — which is what the two answers
 combine to. It may read as emphasis or as repetition; if the latter, the Remaining cell reading
 "None" is the smallest fix.
+
+---
+
+## N4 — make the review reason
+
+Raised by the owner 2026-08-31 after N1–N3 landed: the summary is now accurate but shallow. Every
+line restates one metric; nothing connects two. A coach reading it learns nothing the strip above
+it does not already show.
+
+**The week it was written about, with the streams lined up** (client `f87bee53`, 25–31 Aug):
+
+| Date | Training | Nutrition | Wellness | Soreness | Sleep |
+|---|---|---|---|---|---|
+| 25 Aug | partial | 2442/2442 | logged | 6 | 5 |
+| 26 Aug | completed | 2553/2553 | logged | **7** | **4** |
+| 27 Aug | completed | — | — | — | — |
+| 28 Aug | **missed** | — | — | — | — |
+| 29–31 | rest / **missed** | — | — | — | — |
+
+Every stream stops after the 26th, and the last two logged days show soreness rising while sleep
+falls. That is a week that broke down mid-way with a mechanism attached. The model reported it as
+"low nutrition logging coverage" — logging as an isolated behaviour problem, unconnected to the
+sessions that went missing straight after it.
+
+**Two separable causes**, which is why this splits:
+
+- **Permission** — the output contract caps it. `summary` was "2 to 3 sentences", each `watchItem`
+  "one short sentence", every field a list of *observations*, and nothing anywhere asked for a
+  mechanism. Pure prompt text.
+- **Perception** — training arrives per-day, nutrition as an aggregate, wellness through a separate
+  daily-context block. Three shapes, so co-occurrence in TIME is nearly invisible.
+
+### N4a — give it room to reason. SHIPPED 2026-08-31
+
+`utils/ai-analysis-format.ts` only. `summary` → 4–6 sentences asked for the week's *story and what
+drove it*, not a recap; `watchItems` → one or two sentences carrying the observation **and** what it
+connects to; a new rule to look for things that co-occur across metrics and across days and say what
+they mean; and permission to offer an uncertain explanation as a question rather than withhold it.
+
+Deliberately paired: raising the caps **without** changing the ask would most likely have produced
+longer restatement, and we would have wrongly concluded that more room does not help.
+
+No schema change — `watchItems` already allows 6 and `coachActions` 5 — and `max_tokens: 2000` is
+roughly 3× what a generous response needs. No data path touched.
+
+**Gates.** `tsc` 0 · `eslint` 0 errors / 154 warnings (baseline) · `vitest` 335 files / 3604 tests ·
+`check:labels` OK. No new tests: this changes what is asked of a model, and the existing prompt tests
+pin the fields that matter (they do not assert these strings).
+
+**Unverified — and this one can only be judged by reading it.** Regenerate and see. Because
+`temperature` is 0.7, one sample is not a verdict; read two.
+
+**Left in place, and a candidate for the next turn of the dial if it is still terse:** `"Do not pad"`
+here and `"Only surface what is genuinely notable"` in `AI_SYSTEM_PROMPT`. Both are aimed at list
+padding rather than at depth, so they should not suppress reasoning — but they pull the same way, and
+one variable at a time is what makes this experiment readable.
+
+### N4b — let it SEE the pattern. PARKED
+
+One row per date carrying all four streams, so co-occurrence is legible. Plus, worth a side-by-side:
+`gpt-4o` is doing this synthesis and check-in summaries are the only OpenAI feature left in the
+product, while the assistant already runs on Claude (CONVENTIONS §11). Synthesis across six metrics
+is where the model tier shows.
+
+**What N4a's result decides:** if the output starts connecting the missed sessions to the soreness
+and the logging drop-off, permission was the constraint and N4b shrinks. If it gets longer but stays
+one-fact-per-line, the ceiling is perception and the per-day table is the whole of N4b.
+
