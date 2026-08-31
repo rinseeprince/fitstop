@@ -282,6 +282,7 @@ export const getCheckInComparison = async (
       current: currentCheckIn.weight,
       goal: goalWeight,
       startingWeight,
+      status: progress.status,
       remaining: progress.remaining,
       percentComplete: progress.percentComplete,
       isOnTrack: progress.isOnTrack,
@@ -296,6 +297,7 @@ export const getCheckInComparison = async (
             remainingKg: progress.remaining,
             weeksRemaining,
             currentWeightKg: currentCheckIn.weight,
+            goalStatus: progress.status,
           })
         : null;
     if (pace) {
@@ -304,8 +306,14 @@ export const getCheckInComparison = async (
       goalProgress.weight.safeCeiling = pace.safeCeiling;
     }
 
-    // Calculate projected completion date
-    if (avgWeeklyWeightChange && progress.weeksToGoal) {
+    // Calculate projected completion date. Not for a goal already met or passed:
+    // `weeksToGoal` there is the time to travel BACK to the target, which is not
+    // a completion date by any reading.
+    if (
+      progress.status === "approaching" &&
+      avgWeeklyWeightChange &&
+      progress.weeksToGoal
+    ) {
       const projectedDate = new Date();
       projectedDate.setDate(
         projectedDate.getDate() + progress.weeksToGoal * 7
@@ -337,6 +345,7 @@ export const getCheckInComparison = async (
       current: currentCheckIn.bodyFatPercentage,
       goal: goalBodyFatPercentage,
       startingBodyFat,
+      status: progress.status,
       remaining: progress.remaining,
       percentComplete: progress.percentComplete,
       isOnTrack: progress.isOnTrack,

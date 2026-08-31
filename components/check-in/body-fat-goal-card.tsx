@@ -17,6 +17,11 @@ type BodyFatGoalCardProps = {
 export const BodyFatGoalCard = ({ bodyFatGoal }: BodyFatGoalCardProps) => {
   const onTrack = bodyFatGoal.isOnTrack;
   const badgeCls = onTrack ? "text-[#0d9488]" : "text-[#d97706]";
+  // Met or passed. This card has no pace check, which is why it read "Needs
+  // attention" about the same overshot client the weight card called "On track"
+  // — the two cards now take the same state before either trend verdict.
+  const isMet =
+    bodyFatGoal.status === "achieved" || bodyFatGoal.status === "overshot";
 
   return (
     <div className="bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] p-4">
@@ -28,13 +33,13 @@ export const BodyFatGoalCard = ({ bodyFatGoal }: BodyFatGoalCardProps) => {
               Body Fat Goal
             </h4>
             <div className="flex items-center gap-2">
-              {onTrack ? (
+              {isMet || onTrack ? (
                 <CheckCircle2 className="h-4 w-4 text-[#0d9488]" strokeWidth={1.5} />
               ) : (
                 <AlertCircle className="h-4 w-4 text-[#d97706]" strokeWidth={1.5} />
               )}
-              <span className={`text-xs font-medium ${badgeCls}`}>
-                {onTrack ? "On track" : "Needs attention"}
+              <span className={`text-xs font-medium ${isMet ? "text-[#0d9488]" : badgeCls}`}>
+                {isMet ? "Goal met" : onTrack ? "On track" : "Needs attention"}
               </span>
             </div>
           </div>
@@ -63,11 +68,23 @@ export const BodyFatGoalCard = ({ bodyFatGoal }: BodyFatGoalCardProps) => {
           </div>
           <div>
             <div className="text-xs text-[#93b0b4] mb-1">Remaining</div>
-            <div className={cn("text-lg font-semibold", MONO, TEXT_PRIMARY)}>
-              {Math.abs(bodyFatGoal.remaining)}%
-            </div>
+            {isMet ? (
+              <div className={cn("text-lg font-semibold", TEXT_PRIMARY)}>Goal met</div>
+            ) : (
+              <div className={cn("text-lg font-semibold", MONO, TEXT_PRIMARY)}>
+                {Math.abs(bodyFatGoal.remaining)}%
+              </div>
+            )}
           </div>
         </div>
+
+        {isMet && (
+          <div className="pt-2 border-t border-[rgba(13,148,136,0.08)]">
+            <p className="text-xs text-[#0d9488]">
+              Goal met - consider setting a new target.
+            </p>
+          </div>
+        )}
 
         {/* Average Change */}
         {bodyFatGoal.avgChange !== undefined && (

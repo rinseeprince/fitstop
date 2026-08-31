@@ -33,9 +33,20 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
       ? undefined
       : Math.round(formatWeight(valueKg, preference).value * 10) / 10;
 
-  // Pace-aware badge (Teal Summit two-colour: teal good, amber attention - no red).
-  const badge =
-    paceStatus === "on_track"
+  // Met or passed: nothing about pace applies, and neither does a trend verdict.
+  const isMet = weightGoal.status === "achieved" || weightGoal.status === "overshot";
+
+  // Teal Summit two-colour: teal good, amber attention - no red.
+  //
+  // `status` outranks `paceStatus`, which outranks `isOnTrack`. That order is
+  // the fix: paceStatus judges whether the REQUIRED RATE is safe, isOnTrack
+  // judges whether the client is MOVING TOWARDS the goal, and letting the first
+  // mask the second put "On track" on a client 5 kg past a weight-loss target
+  // whose isOnTrack was already, correctly, false — while Body Fat, which has no
+  // pace check, read "Needs attention" about the very same situation.
+  const badge = isMet
+    ? { label: "Goal met", cls: "text-[#0d9488]", Icon: CheckCircle2 }
+    : paceStatus === "on_track"
       ? { label: "On track", cls: "text-[#0d9488]", Icon: CheckCircle2 }
       : paceStatus === "behind_pace"
       ? { label: "Behind pace", cls: "text-[#d97706]", Icon: AlertCircle }
@@ -46,7 +57,7 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
       : { label: "Needs attention", cls: "text-[#d97706]", Icon: AlertCircle };
   const BadgeIcon = badge.Icon;
 
-  const hasPace = requiredRate !== undefined && safeCeiling !== undefined;
+  const hasPace = !isMet && requiredRate !== undefined && safeCeiling !== undefined;
   const requiredFinite = requiredRate !== undefined && Number.isFinite(requiredRate);
   const ceilingValue = safeCeiling ?? 0;
   const requiredValue = requiredRate ?? 0;
@@ -54,9 +65,16 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
   const requiredPct = requiredFinite ? Math.min(100, (requiredValue / paceMax) * 100) : 100;
   const ceilingPct = hasPace ? Math.min(100, (ceilingValue / paceMax) * 100) : 0;
   const barColor = paceStatus === "on_track" ? "bg-[#0d9488]" : "bg-[#d97706]";
+  // What the pace check ACTUALLY measures: the rate required to hit the deadline,
+  // against a safe ceiling. It says nothing about the client's current pace —
+  // which is a separate figure (the projected date below, from avgWeeklyChange).
+  // This line used to read "Current pace will reach the goal by the deadline",
+  // which is why it could sit directly above a projection landing weeks AFTER
+  // that deadline: the two sentences measure different things and one was
+  // mislabelled. Both are legitimate; each now says which it is.
   const paceNote =
     paceStatus === "on_track"
-      ? "Current pace will reach the goal by the deadline."
+      ? "The rate needed to reach the goal by the deadline is within a safe range."
       : paceStatus === "behind_pace"
       ? "The required rate is above the safe ceiling. Consider extending the deadline."
       : "The required rate is well above a safe pace. Recommend moving the target date or easing the goal.";
@@ -109,10 +127,17 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
           </div>
           <div>
             <div className="text-xs text-[#93b0b4] mb-1">Remaining</div>
-            <div className={cn("text-lg font-semibold", MONO, TEXT_PRIMARY)}>
-              {Math.abs(w(weightGoal.remaining) ?? 0)}
-              {unit}
-            </div>
+            {isMet ? (
+              // No number. `remaining` is signed and its magnitude is the distance
+              // BACK to the target once passed — rendered through Math.abs it read
+              // "Remaining 5kg" at a client who was 5 kg beyond their goal.
+              <div className={cn("text-lg font-semibold", TEXT_PRIMARY)}>Goal met</div>
+            ) : (
+              <div className={cn("text-lg font-semibold", MONO, TEXT_PRIMARY)}>
+                {Math.abs(w(weightGoal.remaining) ?? 0)}
+                {unit}
+              </div>
+            )}
           </div>
         </div>
 
@@ -134,7 +159,9 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
                   </span>
                 </div>
               </div>
-              {weightGoal.weeksToGoal !== undefined && (
+              {/* Not once the goal is met: weeksToGoal is then the time to travel
+                  BACK to the target. */}
+              {!isMet && weightGoal.weeksToGoal !== undefined && (
                 <div className="text-right">
                   <div className="text-xs text-[#93b0b4] mb-1">Estimated Time</div>
                   <div className={cn("font-medium", MONO, TEXT_PRIMARY)}>
@@ -177,6 +204,17 @@ export const WeightGoalCard = ({ weightGoal }: WeightGoalCardProps) => {
               </div>
             </div>
             <p className={`text-xs ${badge.cls}`}>{paceNote}</p>
+          </div>
+        )}
+
+        {/* Goal met: the pace check and the projection are both gone, so this
+            takes their place. An overshot goal left standing keeps generating
+            pace maths against a target the client has already passed. */}
+        {isMet && (
+          <div className="pt-2 border-t border-[rgba(13,148,136,0.08)]">
+            <p className="text-xs text-[#0d9488]">
+              Goal met - consider setting a new target.
+            </p>
           </div>
         )}
 

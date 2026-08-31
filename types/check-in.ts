@@ -1,6 +1,7 @@
 import type { DailyLog } from "./daily-log";
 import type { OnboardingStatus } from "./client-intake";
 import type { TrainingEventStatus } from "@/types/training";
+import type { GoalStatus } from "@/utils/comparison-utils";
 
 // Check-in status types
 export type CheckInStatus = "pending" | "ai_processed" | "reviewed";
@@ -810,6 +811,13 @@ export type GoalProgress = {
     current: number;
     goal: number;
     startingWeight?: number;
+    /**
+     * Position relative to the goal — `approaching` | `achieved` | `overshot`.
+     * Separate from `isOnTrack`, which is the TREND. A renderer showing a
+     * magnitude ("5 kg to go") must check this first: `remaining` is signed, and
+     * its magnitude means nothing once the goal has been passed.
+     */
+    status?: GoalStatus;
     remaining: number;
     percentComplete: number;
     isOnTrack: boolean;
@@ -825,6 +833,8 @@ export type GoalProgress = {
     current: number;
     goal: number;
     startingBodyFat?: number;
+    /** See `weight.status`. */
+    status?: GoalStatus;
     remaining: number;
     percentComplete: number;
     isOnTrack: boolean;

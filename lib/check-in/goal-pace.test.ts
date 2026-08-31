@@ -38,4 +38,39 @@ describe("computeGoalPace", () => {
       "unrealistic"
     );
   });
+
+  // A met or passed goal has no pace. This function used to take Math.abs of the
+  // remainder, so 5 kg BEYOND a weight-loss goal became a 0.6 kg/week "required
+  // rate" comfortably inside the 0.72 safe ceiling — and returned on_track,
+  // which the card then used to override a correct isOnTrack: false.
+  it("returns no pace at all once the goal is met or passed", () => {
+    const overshot = computeGoalPace({
+      remainingKg: 5,
+      weeksRemaining: 8.9,
+      currentWeightKg: 72,
+      goalStatus: "overshot",
+    });
+    expect(overshot).toBeNull();
+
+    expect(
+      computeGoalPace({
+        remainingKg: 0,
+        weeksRemaining: 8.9,
+        currentWeightKg: 72,
+        goalStatus: "achieved",
+      }),
+    ).toBeNull();
+  });
+
+  it("still assesses a goal being approached", () => {
+    const pace = computeGoalPace({
+      remainingKg: -5,
+      weeksRemaining: 8.9,
+      currentWeightKg: 82,
+      goalStatus: "approaching",
+    });
+
+    expect(pace).not.toBeNull();
+    expect(pace!.requiredRate).toBeCloseTo(0.56, 2);
+  });
 });

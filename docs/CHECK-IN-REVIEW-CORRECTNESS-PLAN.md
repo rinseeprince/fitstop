@@ -23,9 +23,9 @@ three corrected numbers.
 |---|---|---|
 | 1 | The AI read logging coverage as intake and reported a client who hit target on both logged days as severely under-eating | **N1 — SHIPPED + SMOKED, CLOSED** |
 | 2 | Training reads 3/5 in the ribbon, 2 in the comparison pane, "2 out of 5" in the AI summary | **N2 — SHIPPED** |
-| 3 | Weight goal: 100% Complete + "On track" + "Remaining 5kg" on a goal overshot by 5 kg | **N3** |
-| 4 | Body Fat: 100% Complete + "Needs attention" — same situation, opposite verdict | **N3** |
-| 5 | Pace note ("will reach the goal by the deadline") contradicts the projected date (18 Nov vs a 31 Oct deadline) | **N3** |
+| 3 | Weight goal: 100% Complete + "On track" + "Remaining 5kg" on a goal overshot by 5 kg | **N3 — SHIPPED** |
+| 4 | Body Fat: 100% Complete + "Needs attention" — same situation, opposite verdict | **N3 — SHIPPED** |
+| 5 | Pace note ("will reach the goal by the deadline") contradicts the projected date (18 Nov vs a 31 Oct deadline) | **N3 — SHIPPED** |
 | 6 | "vs previous week" rendered against a check-in 92 days old | **N2 — SHIPPED** |
 | 7 | −7 kg on the nutrition regeneration banner | **Closed, not a bug.** Provenance verified: `body_metrics` held 79 kg (`source: check_in`, 2026-08-27 15:26); the plan saved at 22:32 that day snapshotted it as `base_weight_kg`. The check-in was later deleted; the snapshot survives by design. A snapshot is the correct baseline for "have they drifted from the weight these targets were built for" — re-deriving it from the live series would make the banner change its mind retroactively. |
 | 8 | The AI review sits at the bottom of the Current pane | **Dropped** (owner, 2026-08-31) — card movement only |
@@ -246,3 +246,47 @@ terminal state.
   is met.
 - The pace note and the projected completion date derive from one computation, so they cannot
   contradict.
+
+### STATUS — SHIPPED 2026-08-31
+
+**What shipped.** `calculateGoalProgress` gains a `status` — `approaching | achieved | overshot`
+— derived once from `sign(goal − start)`, and every surface switches on it.
+
+- `utils/comparison-utils.ts` — `deriveGoalStatus` + `status` on the return. `remaining` stays
+  SIGNED. `percentComplete` still clamps, deliberately: 100% is **true** once a goal is met, and it
+  was never the wrong number — the lie was the figures printed beside it.
+- `lib/check-in/goal-pace.ts` — takes `goalStatus` and returns `null` for a met or overshot goal.
+  Its `Math.abs(remainingKg)` was the real bug: it turned 5 kg BEYOND a weight-loss goal into a
+  0.6 kg/week "required rate" inside the 0.72 safe ceiling, and returned `on_track`.
+- `weight-goal-card.tsx` — `status` now outranks `paceStatus`, which outranks `isOnTrack`. That
+  order is the fix: `paceStatus` judges whether the REQUIRED RATE is safe, `isOnTrack` judges
+  whether the client is MOVING TOWARDS the goal, and letting the first mask the second is why
+  Weight said "On track" while Body Fat — which has no pace check — said "Needs attention" about
+  one client. Pace block, projected date and "Estimated Time" all hidden when met.
+- `body-fat-goal-card.tsx`, `goal-progress-view.tsx` — same state, same verdict.
+- Owner's wording: badge and Remaining cell read **"Goal met"** (no number), and a note reads
+  **"Goal met - consider setting a new target."**
+
+**Deviation from the plan, flagged before building.** The plan said "the six `Math.abs` sites go —
+they are the symptom". **Wrong.** While a goal is being APPROACHED, `|remaining|` is the correct
+display ("5 kg to go", not "−5 kg to go"); the sign only misleads once the goal is passed, and in
+that state the card now prints no number at all. So the fix is the STATE GUARD, and the render-site
+`Math.abs` calls stay — removing them for symmetry would have made the approaching case worse. The
+one that did go is `goal-pace.ts`'s.
+
+**Second defect found while planning, independent of the overshoot.** The pace note read "Current
+pace will reach the goal by the deadline", but `on_track` means "the rate REQUIRED to hit the
+deadline is within a safe ceiling" — nothing about the client's current pace. That mislabelling is
+why it could sit directly above a projection landing three weeks after the same deadline: the two
+sentences measure different things and both are legitimate. The note now says which it is.
+
+**`utils/comparison-utils.ts` had no test file at all** — that is how this shipped. Created.
+
+**Gates.** `tsc` 0 · `eslint` 0 errors / 154 warnings (baseline) · `vitest` 335 files / 3604 tests
+· `check:labels` OK. **13 of 13 new assertions verified FAILING** on the pre-fix commit in a
+detached worktree.
+
+**Unverified, and one thing to decide at the smoke.** Not smoked in a browser. The card now says
+"Goal met" **three times** — badge, Remaining cell, and the note — which is what the two answers
+combine to. It may read as emphasis or as repetition; if the latter, the Remaining cell reading
+"None" is the smallest fix.

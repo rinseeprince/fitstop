@@ -35,8 +35,11 @@ export const GoalProgressView = ({
   // Honest, pace-aware progress note: when the required rate is unsafe, recommend
   // moving the date rather than asserting the goal is on track.
   const weight = goalProgress.weight;
+  const weightMet = weight?.status === "achieved" || weight?.status === "overshot";
   const progressNote = !weight
     ? null
+    : weightMet
+    ? { cls: "text-[#0d9488]", text: "Goal met - consider setting a new target." }
     : weight.paceStatus === "behind_pace"
     ? { cls: "text-[#d97706]", text: "Behind pace. Consider extending the deadline or easing the weekly target." }
     : weight.paceStatus === "unrealistic"
@@ -126,23 +129,32 @@ export const GoalProgressView = ({
             {hasWeightGoal && (
               <p>
                 <span className="font-medium">Weight:</span>{" "}
-                {Math.abs(
-                  Math.round(
-                    formatWeight(goalProgress.weight!.remaining, preference).value * 10,
-                  ) / 10,
-                )}
-                {formatWeight(0, preference).unit} to go
-                {goalProgress.weight!.weeksToGoal && (
-                  <span className="text-[#93b0b4]">
-                    {" "}• ~{Math.round(goalProgress.weight!.weeksToGoal)} weeks remaining
-                  </span>
+                {weightMet ? (
+                  "goal met"
+                ) : (
+                  <>
+                    {Math.abs(
+                      Math.round(
+                        formatWeight(goalProgress.weight!.remaining, preference).value * 10,
+                      ) / 10,
+                    )}
+                    {formatWeight(0, preference).unit} to go
+                    {goalProgress.weight!.weeksToGoal && (
+                      <span className="text-[#93b0b4]">
+                        {" "}• ~{Math.round(goalProgress.weight!.weeksToGoal)} weeks remaining
+                      </span>
+                    )}
+                  </>
                 )}
               </p>
             )}
             {hasBodyFatGoal && (
               <p>
                 <span className="font-medium">Body Fat:</span>{" "}
-                {Math.abs(goalProgress.bodyFat!.remaining)}% to go
+                {goalProgress.bodyFat!.status === "achieved" ||
+                goalProgress.bodyFat!.status === "overshot"
+                  ? "goal met"
+                  : `${Math.abs(goalProgress.bodyFat!.remaining)}% to go`}
               </p>
             )}
             {progressNote && (

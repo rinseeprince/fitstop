@@ -1,4 +1,5 @@
 import type { GoalPaceStatus } from "@/types/check-in";
+import type { GoalStatus } from "@/utils/comparison-utils";
 
 export type GoalPace = {
   // kg per week needed to reach the goal by the deadline.
@@ -16,6 +17,15 @@ type GoalPaceInput = {
   remainingKg: number;
   weeksRemaining: number;
   currentWeightKg?: number;
+  /**
+   * Position relative to the goal. A met or overshot goal has no pace: there is
+   * nothing left to travel, and the rate "required" to get there is either zero
+   * or — for an overshoot — the rate needed to travel BACK, which is what this
+   * function used to return. `Math.abs` on the remainder turned 5 kg past a
+   * weight-loss goal into a comfortable 0.6 kg/week target and a green
+   * "On track" badge.
+   */
+  goalStatus?: GoalStatus;
 };
 
 /**
@@ -31,13 +41,18 @@ export function computeGoalPace({
   remainingKg,
   weeksRemaining,
   currentWeightKg,
+  goalStatus,
 }: GoalPaceInput): GoalPace | null {
   if (!currentWeightKg || currentWeightKg <= 0) return null;
+
+  // Met or passed: no pace to assess. Returning null hides the whole pace block
+  // rather than answering a question nobody asked.
+  if (goalStatus === "achieved" || goalStatus === "overshot") return null;
 
   const safeCeiling = Number((currentWeightKg * SAFE_CEILING_FRACTION).toFixed(2));
   const absRemaining = Math.abs(remainingKg);
 
-  // Goal effectively reached.
+  // Goal effectively reached. Retained for callers that pass no `status`.
   if (absRemaining < 0.05) {
     return { requiredRate: 0, safeCeiling, ratio: 0, status: "on_track" };
   }
