@@ -36,6 +36,11 @@ export function calculateWeeklySummaryFromLogs(
   let totalTargetCarbs = 0;
   let totalFatConsumed = 0;
   let totalTargetFat = 0;
+  // Targets on the days that were actually LOGGED — accumulated inside the
+  // consumed branch, deliberately not reused from totalTargetCalories: a row can
+  // carry a target with no consumed value, and only days with BOTH are a
+  // like-for-like comparison.
+  let loggedTargetCalories = 0;
 
   let daysLogged = 0;
   let daysOnTarget = 0;
@@ -56,6 +61,7 @@ export function calculateWeeklySummaryFromLogs(
       totalProteinConsumed += log.proteinG ?? 0;
       totalCarbsConsumed += log.carbsG ?? 0;
       totalFatConsumed += log.fatG ?? 0;
+      if (target != null) loggedTargetCalories += target;
     }
 
     if (target != null) {
@@ -99,6 +105,23 @@ export function calculateWeeklySummaryFromLogs(
 
   const weeklyAdherence = calculateWeeklyAdherence(calorieDifference, daysInWeek);
 
+  // The logged-day view. Divides by the days WITH DATA, against the targets that
+  // applied on those same days — see the type's comment for why this cannot be
+  // derived from adherencePercentage, which divides by the whole period.
+  const hasLoggedDays = daysLogged > 0;
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  const loggedDayMeanConsumed = hasLoggedDays
+    ? round1(totalCaloriesConsumed / daysLogged)
+    : null;
+  const loggedDayMeanTarget =
+    hasLoggedDays && loggedTargetCalories > 0
+      ? round1(loggedTargetCalories / daysLogged)
+      : null;
+  const loggedDayAdherencePercentage =
+    hasLoggedDays && loggedTargetCalories > 0
+      ? round1((totalCaloriesConsumed / loggedTargetCalories) * 100)
+      : null;
+
   return {
     weekStartDate,
     weekEndDate,
@@ -113,6 +136,10 @@ export function calculateWeeklySummaryFromLogs(
     calorieDifference,
     adherencePercentage,
     weeklyAdherence,
+    loggedTargetCalories: hasLoggedDays && loggedTargetCalories > 0 ? loggedTargetCalories : null,
+    loggedDayMeanConsumed,
+    loggedDayMeanTarget,
+    loggedDayAdherencePercentage,
     daysInWeek,
     daysLogged,
     daysOnTarget,

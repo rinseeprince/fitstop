@@ -130,16 +130,46 @@ export function buildCheckInAnalysisPrompt(
     });
   }
 
-  // Weekly nutrition summary (primary nutrition lens)
+  // Nutrition.
+  //
+  // The block leads with INTAKE on the days the client actually logged, and
+  // names the whole-period figure as COVERAGE. Both numbers are correct and they
+  // answer different questions; presenting only the second one, under a "frame
+  // nutrition weekly" instruction, made the model report a client who hit target
+  // to the calorie on both days they logged as severely under-eating and warn
+  // about their energy and recovery. An unlogged day is unknown, not a zero, and
+  // the prompt has to say so — the model cannot infer it from a percentage.
   if (weeklySummary) {
-    prompt += "\n**WEEKLY NUTRITION SUMMARY:**\n";
-    prompt += `- Weekly target: ${weeklySummary.totalTargetCalories} cal\n`;
-    if (weeklySummary.totalCaloriesConsumed != null) {
-      prompt += `- Weekly consumed: ${weeklySummary.totalCaloriesConsumed} cal\n`;
-      prompt += `- Weekly adherence: ${sanitizeForAIPrompt(weeklySummary.weeklyAdherence ?? "unknown")} (${weeklySummary.adherencePercentage?.toFixed(1) ?? "?"}%)\n`;
+    const s = weeklySummary;
+    prompt += `\n**NUTRITION - ${s.daysLogged} of ${s.daysInWeek} days logged:**\n`;
+
+    if (s.daysLogged > 0 && s.loggedDayMeanConsumed != null) {
+      // Calories are whole numbers to a coach; the stored mean keeps its decimal.
+      const target =
+        s.loggedDayMeanTarget != null
+          ? ` against a ${Math.round(s.loggedDayMeanTarget)} cal/day target`
+          : "";
+      const pct =
+        s.loggedDayAdherencePercentage != null
+          ? ` (${s.loggedDayAdherencePercentage}% of target)`
+          : "";
+      prompt += `- Intake on the days they logged: ${Math.round(s.loggedDayMeanConsumed)} cal/day${target}${pct}\n`;
+      prompt += `- Of those ${s.daysLogged} logged days: ${s.daysOnTarget} on target, ${s.daysOver} over, ${s.daysUnder} under\n`;
+    } else {
+      prompt += "- No days were logged, so their intake cannot be assessed at all.\n";
     }
-    prompt += `- Days on target: ${weeklySummary.daysOnTarget}, over: ${weeklySummary.daysOver}, under: ${weeklySummary.daysUnder}\n`;
-    prompt += `- Days logged: ${weeklySummary.daysLogged}/${weeklySummary.daysInWeek}\n`;
+
+    if (s.totalCaloriesConsumed != null && s.totalTargetCalories > 0) {
+      prompt += `- Logging coverage: ${s.totalCaloriesConsumed} of ${s.totalTargetCalories} cal targeted across the ${s.daysInWeek}-day period (${s.adherencePercentage?.toFixed(1) ?? "?"}%)\n`;
+    } else {
+      prompt += `- Whole-period target: ${s.totalTargetCalories} cal\n`;
+    }
+
+    const unlogged = s.daysInWeek - s.daysLogged;
+    if (unlogged > 0) {
+      prompt += `- The ${unlogged} unlogged day${unlogged === 1 ? "" : "s"} hold NO data. They are unknown, not zero.\n`;
+      prompt += "- Describe their intake ONLY from the logged-day figures above, and say how many days those rest on. Never infer under-eating, low energy availability or poor recovery from the coverage figure - it measures logging, not eating.\n";
+    }
   } else {
     prompt += "\nNutrition:\n";
     if (current.nutritionDaysOnTarget !== undefined) {

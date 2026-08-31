@@ -360,3 +360,96 @@ describe("buildCheckInAnalysisPrompt — the coach's own questions (D4.5)", () =
   });
 });
 
+
+// A weekly summary carrying both denominators. Only the fields the block reads.
+function summary(o: Record<string, unknown> = {}) {
+  return {
+    daysInWeek: 7,
+    daysLogged: 2,
+    daysOnTarget: 2,
+    daysOver: 0,
+    daysUnder: 0,
+    totalTargetCalories: 14545,
+    totalCaloriesConsumed: 4995,
+    adherencePercentage: 34.3,
+    weeklyAdherence: "missed",
+    loggedTargetCalories: 4995,
+    loggedDayMeanConsumed: 2497.5,
+    loggedDayMeanTarget: 2497.5,
+    loggedDayAdherencePercentage: 100,
+    ...o,
+  } as never;
+}
+
+function nutritionSection(prompt: string): string {
+  const start = prompt.indexOf("**NUTRITION");
+  if (start === -1) return "";
+  const rest = prompt.slice(start);
+  const end = rest.indexOf("\n\n");
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
+describe("buildCheckInAnalysisPrompt — nutrition denominators", () => {
+  // The regression this guards: check-in 440112cd. The client logged 2 of 7
+  // days and hit target to the calorie on both; the model was handed only the
+  // whole-period figure (34.3%, labelled "under") under a "frame nutrition
+  // weekly" instruction, and reported severe under-eating with a warning about
+  // energy and recovery.
+  it("leads with intake on the logged days, and names the whole-period figure as coverage", () => {
+    const block = nutritionSection(
+      buildCheckInAnalysisPrompt(checkIn(), [], "Jane", undefined, undefined, undefined, undefined, summary()),
+    );
+
+    expect(block).toContain("2 of 7 days logged");
+    // Intake: the like-for-like figure, against the targets that applied on
+    // those same days. Its absence is what let the model invent under-eating.
+    expect(block).toContain("Intake on the days they logged: 2498 cal/day");
+    expect(block).toContain("100% of target");
+    // Coverage: still present, still correct (D5.2), but named for what it is.
+    expect(block).toContain("34.3%");
+    expect(block).toMatch(/Logging coverage/);
+    expect(block).toContain("unknown, not zero");
+    // The old framing must not come back: a bare "Weekly adherence: missed"
+    // beside "under: 0" is the contradiction the model resolved wrongly.
+    expect(block).not.toContain("Weekly adherence:");
+    expect(block).not.toContain("Weekly consumed:");
+  });
+
+  it("forbids characterising intake from the coverage figure whenever days are missing", () => {
+    const block = nutritionSection(
+      buildCheckInAnalysisPrompt(checkIn(), [], "Jane", undefined, undefined, undefined, undefined, summary()),
+    );
+    expect(block).toContain("it measures logging, not eating");
+  });
+
+  it("says intake cannot be assessed when nothing was logged", () => {
+    const block = nutritionSection(
+      buildCheckInAnalysisPrompt(
+        checkIn(), [], "Jane", undefined, undefined, undefined, undefined,
+        summary({
+          daysLogged: 0, daysOnTarget: 0, totalCaloriesConsumed: null,
+          loggedTargetCalories: null, loggedDayMeanConsumed: null,
+          loggedDayMeanTarget: null, loggedDayAdherencePercentage: null,
+          adherencePercentage: null,
+        }),
+      ),
+    );
+
+    expect(block).toContain("0 of 7 days logged");
+    expect(block).toContain("cannot be assessed");
+    expect(block).not.toContain("Intake on the days they logged");
+  });
+
+  it("drops the coverage caveat when every day was logged", () => {
+    const block = nutritionSection(
+      buildCheckInAnalysisPrompt(
+        checkIn(), [], "Jane", undefined, undefined, undefined, undefined,
+        summary({ daysLogged: 7, daysOnTarget: 7, adherencePercentage: 100 }),
+      ),
+    );
+
+    expect(block).toContain("7 of 7 days logged");
+    expect(block).not.toContain("unknown, not zero");
+    expect(block).not.toContain("it measures logging, not eating");
+  });
+});

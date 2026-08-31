@@ -138,6 +138,22 @@ Logged: 2026-08-13 (found while executing Session 5 Task 5.1 of the goals/blocks
 
 ---
 
+## `body_metrics` accumulates duplicate, orphaned and future-dated rows
+
+Logged: 2026-08-31 (found while tracing a weight figure on the check-in review surface; not fixed there — nothing reads the table for a current value, so it was noise rather than a live defect).
+
+`body_metrics` is an append-only event log fed by dual-writes from several paths (`client-service.ts:141`, `intake-review-service.ts:210`, `client-start-service.ts:169`). Three shapes accumulate in it, observed on one dev client with 156 rows:
+
+- **Duplicates.** The same measurement lands twice on the same timestamp under two different `source` values (`check_in` and `metrics_api`), so a naive count double-reports.
+- **Orphans.** Rows survive the deletion of the check-in that produced them. This is by design — the log is append-only and `client-start-service.ts:86-87` records that the rows are deliberately not rewound — but it means a `source = 'check_in'` row can reference a check-in that no longer exists. (It is also the correct explanation for a nutrition-plan drift banner citing a base weight that appears nowhere in the client's live measurement series: the plan snapshotted a weight that was real when it was taken.)
+- **Future-dated rows.** A `coach_entry` row dated 2026-09-01 was present on 2026-08-31. Nothing validates `recorded_at` against the client's today.
+
+**Why it is not urgent:** no read prefers this table for a current value (`client-start-service.ts:87` states the rule), the merged `check_ins` ⊕ `client_metric_entries` series is what every surface actually renders, and `comparison-service.ts:90` reads only the *earliest* row and prefers `client.startingWeight` over it. **Why it is not nothing:** the table is the fallback source for starting values, so a future-dated or duplicated row is one read away from mattering, and `getBodyMetricsHistory`'s unbounded path (above) walks it.
+
+Fixing it means deciding whether the dual-write should stop now that `client_metric_entries` (migration 132) is the live series — which is a merge-model decision, not a cleanup.
+
+---
+
 ## `getBodyMetricsHistory` silently truncates at ~1000 rows on its unbounded path
 
 Logged: 2026-08-12 (observed while planning Session 4 of the goals/blocks execution plan; not fixed there — the session's weight reads went through the merged series instead, so no caller changed).

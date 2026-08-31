@@ -29,6 +29,19 @@ export type WeeklyNutritionSummary = {
   adherencePercentage: number | null;
   weeklyAdherence: WeeklyAdherenceStatus | null;
 
+  // The AVERAGE half of the adherence/average split above. `adherencePercentage`
+  // answers "did they do what they were supposed to" and so divides by the WHOLE
+  // period; these answer "what was their intake actually like", and an unlogged
+  // day is UNKNOWN, not zero — so they divide by the days with data, each against
+  // the target that applied on those same days. Both meanings are needed and
+  // neither substitutes for the other: a client who logs two of seven perfect
+  // days is 34% adherent and 100% on target, and reporting only the first reads
+  // as under-eating. All four are null when nothing was logged.
+  loggedTargetCalories: number | null;
+  loggedDayMeanConsumed: number | null;
+  loggedDayMeanTarget: number | null;
+  loggedDayAdherencePercentage: number | null;
+
   // Day counts
   daysInWeek: number;
   daysLogged: number;
