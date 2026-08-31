@@ -1,4 +1,9 @@
-import type { CheckInWithDetails, CheckIn, CheckInTrainingEventDetail } from "@/types/check-in";
+import type {
+  CheckInWithDetails,
+  CheckIn,
+  CheckInTrainingEventDetail,
+  CheckInSessionCompletion,
+} from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
 import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
@@ -67,12 +72,27 @@ export function buildCheckInAnalysisPrompt(
 
   prompt += "\nTraining:\n";
   // Source of truth (Session 6.2): per-event detail derived from training_events
-  // (status) left-joined to session_logs (notes/quality). Falls back to the
-  // legacy free-text workout count when no event detail is available.
+  // (status) left-joined to session_logs (notes/quality).
   if (trainingEventDetails?.length) {
-    const completed = trainingEventDetails.filter((d) => d.status === "completed").length;
-    const total = trainingEventDetails.length;
-    prompt += `- Sessions: ${completed}/${total} completed\n`;
+    // Through `summariseSessions`, exactly like the KPI ribbon and the
+    // comparison pane — a PARTIAL session counts towards the numerator. This
+    // line used to filter `status === "completed"` itself, which is a third
+    // spelling of the count and excluded partials: it told the model "2 out of
+    // 5" beneath a strip reading 3/5 for the same week. The kernel takes the
+    // same mapping `deriveSessionCompletionsForCheckIn` applies.
+    const summary = summariseSessions(
+      trainingEventDetails.map((d) => ({
+        completed: d.status === "completed",
+        completionQuality: d.completionQuality,
+      })) as CheckInSessionCompletion[]
+    );
+    const detail = [
+      summary.partial > 0 ? `${summary.partial} partial` : null,
+      summary.missed > 0 ? `${summary.missed} missed` : null,
+    ].filter(Boolean);
+    prompt += `- Sessions: ${summary.completed}/${summary.prescribed} completed${
+      detail.length ? ` (${detail.join(", ")})` : ""
+    }\n`;
     trainingEventDetails.forEach((d) => {
       let status: string;
       if (d.status === "skipped") {

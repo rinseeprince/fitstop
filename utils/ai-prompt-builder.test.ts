@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildCheckInAnalysisPrompt } from "./ai-prompt-builder";
+import { summariseSessions } from "@/lib/check-in/adherence";
 import type { CheckInWithDetails, CheckInTrainingEventDetail } from "@/types/check-in";
 
 // Minimal current check-in: only the fields the Training block / header read.
@@ -481,5 +482,63 @@ describe("buildCheckInAnalysisPrompt — nutrition denominators", () => {
     expect(block).toContain("7 of 7 days logged");
     expect(block).not.toContain("unknown, not zero");
     expect(block).not.toContain("it measures logging, not eating");
+  });
+});
+
+describe("the prompt's session count agrees with every other surface", () => {
+  // The regression this exists for: N2 rewrote the `else` fallback below the
+  // LIVE branch and its test passed `[]` for trainingEventDetails, so it went
+  // green against code no real check-in reaches. The live branch kept a third
+  // spelling of the count — `status === "completed"`, partials excluded — and
+  // told the model "2 out of 5" beneath a ribbon reading 3/5 for the same week.
+  //
+  // So this feeds ONE fixture to the kernel and to the prompt and asserts they
+  // agree, rather than pinning a string either could drift from alone.
+  const week: CheckInTrainingEventDetail[] = [
+    { eventId: "e1", date: "2026-08-25", sessionName: "Lower", status: "partial", completionQuality: "partial" },
+    { eventId: "e2", date: "2026-08-26", sessionName: "Upper", status: "completed", completionQuality: "full" },
+    { eventId: "e3", date: "2026-08-27", sessionName: "Push", status: "completed", completionQuality: "full" },
+    { eventId: "e4", date: "2026-08-28", sessionName: "Pull", status: "scheduled" },
+    { eventId: "e5", date: "2026-08-30", sessionName: "Legs", status: "scheduled" },
+  ] as unknown as CheckInTrainingEventDetail[];
+
+  it("counts partials in the numerator on the LIVE event-detail path", () => {
+    const prompt = buildCheckInAnalysisPrompt(
+      checkIn({ workoutsCompleted: 2 }), [], "Jane",
+      undefined, undefined, undefined, undefined, null, null, week,
+    );
+
+    expect(trainingSection(prompt)).toContain("- Sessions: 3/5 completed (1 partial, 2 missed)");
+  });
+
+  it("matches summariseSessions exactly — one kernel, not a second spelling", () => {
+    const kernel = summariseSessions(
+      week.map((d) => ({
+        completed: d.status === "completed",
+        completionQuality: d.completionQuality,
+      })) as never,
+    );
+    const prompt = buildCheckInAnalysisPrompt(
+      checkIn(), [], "Jane",
+      undefined, undefined, undefined, undefined, null, null, week,
+    );
+
+    // The ribbon renders `${completed}/${prescribed}` from this same kernel.
+    expect(trainingSection(prompt)).toContain(
+      `- Sessions: ${kernel.completed}/${kernel.prescribed} completed`,
+    );
+    expect(kernel.completed).toBe(3);
+  });
+
+  it("omits the breakdown when every prescribed session was fully completed", () => {
+    const allDone = week.map((d) => ({
+      ...d, status: "completed", completionQuality: "full",
+    })) as unknown as CheckInTrainingEventDetail[];
+    const prompt = buildCheckInAnalysisPrompt(
+      checkIn(), [], "Jane",
+      undefined, undefined, undefined, undefined, null, null, allDone,
+    );
+
+    expect(trainingSection(prompt)).toContain("- Sessions: 5/5 completed\n");
   });
 });

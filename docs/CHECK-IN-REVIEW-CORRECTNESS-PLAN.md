@@ -192,6 +192,31 @@ detached worktree. The 9th — that the cell still goes amber at 60% — asserts
 *not* change, so it passes on both builds by design; it was verified by mutation instead (flip the
 summary to 100% and it fails).
 
+**FOLLOW-UP (same day) — the first attempt fixed a dead branch.** The prompt's training section
+has two paths: `if (trainingEventDetails?.length)` (Session 6.2, the LIVE one) and an
+`else if (current.sessionCompletions?.length)` fallback beneath it. N2 rewrote the fallback. The
+live branch kept its own `status === "completed"` filter — a THIRD spelling of the count, partials
+excluded — so the model was still told "2 out of 5" beneath a ribbon reading 3/5. Caught by the
+owner on the first smoke.
+
+**Why the test missed it:** it passed `[]` for `trainingEventDetails` to reach the fallback, so it
+went green against code no real check-in reaches. **Why the guard missed it:** the scan forbade
+reading the stored COLUMN; this branch reads no column, it hand-rolls a count from statuses.
+
+Fixed by routing the live branch through `summariseSessions` (`CheckInTrainingEventDetail` carries
+`completionQuality`, so the kernel takes the same mapping `deriveSessionCompletionsForCheckIn`
+applies), and by two test changes that would have caught it:
+- a **cross-surface** test feeding ONE fixture to the kernel and to the prompt *with
+  `trainingEventDetails` populated*, asserting the numbers agree rather than pinning a string;
+- the guard **widened** to forbid a hand-rolled count (`.filter(… status === "completed" …).length`),
+  not just a stored-column read. Its first regex used `[^)]*` and could not span the `)` in the
+  predicate's own `(d) =>`, so it matched nothing — decorative until mutation testing exposed it.
+
+That widening surfaced one real hit: `components/check-in/training-session-checklist.tsx`, the
+CLIENT's wizard step, whose count also excludes partials. **Excluded by name with its reason**
+rather than dropped from the glob — it is the client's view of their own week, a different
+audience, and changing what a client sees mid-check-in is a decision nobody has taken.
+
 **Unverified.** Not smoked in a browser. The ribbon's new sub-line, the "vs last check-in" label
 and the comparison pane's workouts row are all unverified visually; jsdom does no layout, so the
 sub-line's fit in a 4-column strip is untested.
