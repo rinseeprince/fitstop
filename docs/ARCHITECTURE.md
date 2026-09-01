@@ -676,6 +676,54 @@ Keyset-by-default is scoped to paginated, time-ordered "load older" history (che
 
 ---
 
+## URL-Driven UI State
+
+Any UI state that can be deep-linked, bookmarked or shared — the active tab, an open pane, a
+selected record — lives in the URL and nowhere else.
+
+**The URL is the single source of truth.** `useState` must not mirror or shadow a search param.
+Derive the value from `searchParams` on every render; a setter writes the URL and sets no state.
+
+```tsx
+// The whole pattern.
+const pane = isValidPane(searchParams.get("journey")) ? searchParams.get("journey") : "body"
+const setPane = (next: Pane) => router.replace(buildUrl(next), { scroll: false })
+```
+
+**Navigation is atomic.** Every param a click affects — the tab AND the record it opens — goes into
+ONE router update, so they land on the same render frame. A component that reads a param on arrival
+then always sees the value intended for it.
+
+**Reference implementations:** `app/clients/[id]/page.tsx` (`?tab=`) and
+`components/clients/metrics/metrics-tab-content.tsx` (`?journey=`).
+
+### Anti-pattern: state mirroring
+
+Do not bridge a timing gap with local state. That means: a `useState` shadowing a param, a
+precedence rule ("use the local value if set, else the URL"), and a `useEffect` to clear it. It is
+accidental complexity — synchronisation code written to clean up a split source of truth rather
+than to solve a product problem, and it drifts the moment either half is edited.
+
+**A transient glitch — a flash of the wrong pane, a detail view that opens empty — is the symptom of
+a split source of truth, never of routing.** The fix is always to delete the local state and derive
+from the URL. Never to add more synchronisation.
+
+### Progressive optimism
+
+Clean architecture first; optimise on evidence, not on speculation.
+
+1. **Derive (default).** Rely on the router. The UI updates when the URL commits, which is fast
+   enough to read as instant for almost every transition.
+2. **Measure.** Only act on an observed lag.
+3. **Wrap with `useOptimistic`.** If instant feedback is genuinely needed, wrap the derived URL
+   value — React owns the revert, so there is no clearing logic and no precedence rule. Do not
+   re-introduce local state and do not restructure the components underneath.
+
+`useTransition` is not an alternative here: it defers the update and hands back `isPending`, so the
+value still changes when the URL commits. It buys a pending flag, not an early switch.
+
+---
+
 ## Coach-side Data Flow
 
 ### SWR fetching
@@ -723,21 +771,9 @@ A type-level guard in the module fails the build if a seventh view is added with
 | Check-ins | `CheckInsTabContent` | A `Check-in history` rail whose one action, "Customise check-in", opens the per-client form editor (see "The customisable form" under Check-in System) — it sits ABOVE the body's four states, because a coach shapes a form before the first check-in exists. Under it, the client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page on a **keyset cursor**; `hooks/use-check-in-data.ts` owns the list key and its invalidator). Each row is a `<Link>` to `checkInReviewUrl`; with `?checkIn=<id>` present the tab renders the review surface, `CheckInDetailView` (`components/clients/check-ins/`), in place of the list — one page: the KPI ribbon over Training, Nutrition, Wellness, Habits, Client notes, Goal progress and the AI review (Regenerate and Send). See "The coach review surface" under Check-in System |
 | Notes | `NotesTabContent` | `client_notes` list — pinned first, newest-first, add + pin/unpin. Same endpoints as the Overview card |
 
-**The URL is the source of truth for which tab is open.** `activeTab` is DERIVED from `?tab=` on
-every render — never mirrored into state — so `?tab=` and anything addressed alongside it land in
-ONE update and one render. `handleTabChange` → `buildClientTabUrl` (`lib/client-tabs.ts`)
-`router.replace`s without scroll and sets no state; it is the URL *builder*, and cross-tab
-navigation goes through it so the query is assembled correctly (`?subtab=` stripped, `extraParams`
-applied), not because a bare navigation would fail to switch the tab. `metrics-tab-content.tsx`
-derives its own `?journey=` pane the same way. **Every tab owns a pane param named after itself** —
-`?journey=` (Physique/Training/Wellness/Blocks), `?training=` (Data/Plans), `?nutrition=`
-(Data/Plans). Single-owner is the whole contract: only its own tab reads it, so it rides through a
-tab switch and restores that pane on the return trip, and it is read *unconditionally*. The shared
-`?subtab=` that Training and Nutrition both used to write is retired (Session 7.2) — still read as
-a guarded fallback so old links resolve, still deleted on every tab change, written by nothing.
-`extraParams` ADDRESS a pane on arrival and a `null` value deletes a carried key.
+`activeTab` is DERIVED from `?tab=` on every render (see "URL-Driven UI State"). Tab changes go through `handleTabChange` → `buildClientTabUrl` (`lib/client-tabs.ts`), which `router.replace`s without scroll: it is the URL **builder**, so cross-tab navigation runs through it to get the query assembled correctly (`?subtab=` stripped, `extraParams` applied). The training history table's exercise drill-down takes the handler as a prop, and the nutrition drawer's `GoalSummary` writes a sentence rather than a link. **Every tab owns a pane param named after itself** — `?journey=` (Physique/Training/Wellness/Blocks), `?training=` (Data/Plans), `?nutrition=` (Data/Plans). Single-owner is the whole contract: only its own tab reads it, so it rides through a tab switch and restores that pane on the return trip, and it is read *unconditionally* — a deep link resolves on the first render. The shared `?subtab=` that Training and Nutrition both used to write is retired (Session 7.2) — still read as a guarded fallback so old links resolve, still deleted on every tab change, written by nothing. `extraParams` ADDRESS a pane on arrival and a `null` value deletes a carried key.
 
-**The Check-ins tab's single-owner param is `?checkIn=<id>`** — a record id, like Journey's `?block=`, read unconditionally, so a pasted `/clients/{id}?tab=check-ins&checkIn=<id>` opens the check-in on the first render and an open detail survives a sidebar round trip (see "The coach review surface" under Check-in System). `checkInReviewUrl(clientId, checkInId)` (`lib/client-tabs.ts`) is the ONE writer of that form, for every cross-page deep link: the roster's review rows and their "Review check-in" action, the bell's New Check-Ins rows, and the dashboard's "Recent check-ins" rows. (The legacy `/check-ins/review` queue was the first caller and was deleted 2026-08-30.) **The tab's list rows are real `<Link>`s to it — the one `push` in this contract**: browser Back returns to the list, and the URL and the mount-seeded `activeTab` still agree because it is the same tab. A cross-tab open (the Overview's "Review" row) goes through the handler as `{ checkIn: id }` and stays a `replace`: a push there would leave the URL on `?tab=overview` after Back while the visible tab stayed on Check-ins. The detail's back row, and the return after a reply is sent, clear the param through the handler (`{ checkIn: null }`).
+**The Check-ins tab's single-owner param is `?checkIn=<id>`** — a record id, like Journey's `?block=`, read unconditionally, so a pasted `/clients/{id}?tab=check-ins&checkIn=<id>` opens the check-in on the first render and an open detail survives a sidebar round trip (see "The coach review surface" under Check-in System). `checkInReviewUrl(clientId, checkInId)` (`lib/client-tabs.ts`) is the ONE writer of that form, for every cross-page deep link: the roster's review rows and their "Review check-in" action, the bell's New Check-Ins rows, and the dashboard's "Recent check-ins" rows. (The legacy `/check-ins/review` queue was the first caller and was deleted 2026-08-30.) **The tab's list rows are real `<Link>`s to it — the one `push` in this contract**: browser Back returns to the list, and the tab does not change because it is the same tab. A cross-tab open (the Overview's "Review" row) goes through the handler as `{ checkIn: id }` and stays a `replace`: a push there would leave the URL on `?tab=overview` after Back while the visible tab stayed on Check-ins. The detail's back row, and the return after a reply is sent, clear the param through the handler (`{ checkIn: null }`).
 
 **The Check-ins tab's list pages on a keyset cursor, the same contract as the client's own history**
 (C7, 2026-08-30). `GET /api/clients/[id]/check-ins` is keyset by default — an opaque base64url
