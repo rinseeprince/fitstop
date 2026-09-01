@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { mutate as globalMutate } from "swr"
-import { Copy, LayoutGrid, Loader2, Plus, Trash2 } from "lucide-react"
+import { AlertCircle, Copy, LayoutGrid, Plus, Trash2 } from "lucide-react"
+import { PageLoading } from "@/components/page-loading"
 import {
   TableBody,
   TableCell,
@@ -64,7 +65,7 @@ export function ProgramsTable() {
     setPage(0)
   }, [debouncedQuery])
 
-  const { plans, total, isLoading, mutate } = useSavedPlansPage({
+  const { plans, total, isLoading, error, mutate } = useSavedPlansPage({
     page,
     pageSize: LIBRARY_PAGE_SIZE,
     search: debouncedQuery,
@@ -117,9 +118,26 @@ export function ProgramsTable() {
   }
 
   if (isLoading && plans.length === 0) {
+    return <PageLoading label="Loading programs…" />
+  }
+
+  // A settled failure with nothing on screen must never read as an empty
+  // library — "No programs yet" is a statement about the coach's data, and a
+  // failed read earned no such claim. With rows already shown
+  // (keepPreviousData), the stale page stays and the retry backoff recovers.
+  if (error && plans.length === 0) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-[#93b0b4]" />
+      <div className="py-12 text-center text-[#5a7d82]">
+        <AlertCircle className="mx-auto mb-2 h-8 w-8 opacity-50" strokeWidth={1.5} />
+        <p className="text-sm">Could not load your programs</p>
+        <p className="mt-1 text-xs text-[#93b0b4]">The library did not come back this time</p>
+        <button
+          type="button"
+          onClick={() => void mutate()}
+          className="mt-4 inline-flex items-center rounded-[6px] bg-[#0d9488] px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#0b7f75]"
+        >
+          Try again
+        </button>
       </div>
     )
   }

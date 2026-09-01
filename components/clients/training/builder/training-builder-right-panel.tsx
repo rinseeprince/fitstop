@@ -3,6 +3,7 @@
 import { memo, useState } from "react";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { Loader2, AlertTriangle, RefreshCw } from "lucide-react";
+import { PageLoading } from "@/components/page-loading";
 import {
   Dialog,
   DialogContent,
@@ -87,11 +88,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
 
   // Loading state
   if (builder.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-[#93b0b4]" />
-      </div>
-    );
+    return <PageLoading label="Loading training plan…" />;
   }
 
   // Error state

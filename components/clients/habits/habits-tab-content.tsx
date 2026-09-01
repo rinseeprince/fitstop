@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Loader2, Settings2 } from "lucide-react";
+import { Settings2 } from "lucide-react";
+import { PageLoading } from "@/components/page-loading";
 import { Button } from "@/components/ui/button";
 import { HabitsManageDrawer } from "./habits-manage-drawer";
 import { HabitsWeekNav } from "./habits-week-nav";
@@ -74,12 +75,7 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
   const isInitialLoading = habitsLoading && weekLoading;
 
   if (isInitialLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 space-y-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#93b0b4]" />
-        <p className="text-[13px] text-[#93b0b4]">Loading habits...</p>
-      </div>
-    );
+    return <PageLoading label="Loading habits…" />;
   }
 
   if (habitsError && weekError) {

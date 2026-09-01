@@ -112,7 +112,7 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
     [onTabChange],
   );
 
-  const { rows, total, isLoading } = useHistoryData<TrainingHistoryRow>(
+  const { rows, total, isLoading, isError, mutate } = useHistoryData<TrainingHistoryRow>(
     `/api/clients/${clientId}/history/training`,
     page
   );
@@ -233,6 +233,9 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
           columns={columns}
           data={rows}
           isLoading={isLoading}
+          isError={Boolean(isError)}
+          errorMessage="Could not load training history"
+          onRetry={() => void mutate()}
           emptyMessage="No training sessions logged yet"
           onColumnClick={handleColumnClick}
           onRowClick={handleRowClick}

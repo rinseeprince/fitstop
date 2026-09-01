@@ -92,12 +92,13 @@ describe("CheckInsTabContent", () => {
     search.current = new URLSearchParams("tab=check-ins");
   });
 
-  it("shows a loading spinner", () => {
+  it("holds the list's shape with skeletons while loading", () => {
     setHook({ isLoading: true });
     const { container } = render(
       <CheckInsTabContent client={client} onTabChange={vi.fn()} />
     );
-    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    expect(container.querySelectorAll("[data-slot=skeleton]").length).toBeGreaterThan(0);
+    // Unresolved is never rendered as empty (newdesignsystem → Loading states).
     expect(screen.queryByText(/No check-ins yet/i)).not.toBeInTheDocument();
   });
 

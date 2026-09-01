@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Loader2, SlidersHorizontal } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/programs/shared/section-label";
@@ -77,8 +78,21 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
   // customises a client's form before their first check-in, so the entry point
   // has to survive the empty state.
   const body = isLoading ? (
-    <div className="flex items-center justify-center py-12">
-      <Loader2 className="h-5 w-5 animate-spin text-[#93b0b4]" />
+    // The list's real geometry, held while it loads: date line, preview line,
+    // meta slot — skeletons need no label, the shape is the message.
+    <div className="space-y-3">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div
+          key={index}
+          className="flex items-center justify-between gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white p-4"
+        >
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-3 w-56 max-w-full" />
+          </div>
+          <Skeleton className="h-3 w-16 shrink-0" />
+        </div>
+      ))}
     </div>
   ) : isError ? (
     <div className="bg-white rounded-[6px] p-6 text-center">

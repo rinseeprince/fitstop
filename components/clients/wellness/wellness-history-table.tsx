@@ -100,7 +100,7 @@ export function WellnessHistoryTable({ clientId }: Props) {
   const [page, setPage] = useState(0);
   const [days, setDays] = useState<PeriodOption>(7);
 
-  const { rows, total, isLoading } = useHistoryData<WellnessHistoryRow>(
+  const { rows, total, isLoading, isError, mutate } = useHistoryData<WellnessHistoryRow>(
     `/api/clients/${clientId}/history/wellness`,
     page
   );
@@ -212,6 +212,9 @@ export function WellnessHistoryTable({ clientId }: Props) {
           columns={columns}
           data={rows}
           isLoading={isLoading}
+          isError={Boolean(isError)}
+          errorMessage="Could not load wellness history"
+          onRetry={() => void mutate()}
           emptyMessage="No wellness data logged yet"
         />
       </div>

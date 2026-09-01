@@ -24,6 +24,12 @@ type HistoryTableProps<TRow = Record<string, unknown>> = {
   columns: ColumnDef<TRow>[];
   data: TRow[];
   isLoading: boolean;
+  /** A settled failure. Renders its own row — the empty state is a statement
+   *  about the data and must be unreachable from a failed read
+   *  (docs/newdesignsystem.md → "Loading & async states"). */
+  isError?: boolean;
+  errorMessage?: string;
+  onRetry?: () => void;
   emptyMessage?: string;
   onColumnClick?: (columnKey: string) => void;
   onRowClick?: (row: TRow) => void;
@@ -34,6 +40,9 @@ export function HistoryTable<TRow extends Record<string, unknown>>({
   columns,
   data,
   isLoading,
+  isError = false,
+  errorMessage = "Could not load this history",
+  onRetry,
   emptyMessage = "No data available",
   onColumnClick,
   onRowClick,
@@ -72,6 +81,21 @@ export function HistoryTable<TRow extends Record<string, unknown>>({
               ))}
             </TableRow>
           ))
+        ) : isError ? (
+          <TableRow>
+            <TableCell colSpan={columns.length} className="h-24 text-center">
+              <p className="text-[13px] text-[#5a7d82]">{errorMessage}</p>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="mt-2 text-[12.5px] font-medium text-[#0d9488] transition-colors hover:text-[#0a5c55]"
+                >
+                  Try again
+                </button>
+              )}
+            </TableCell>
+          </TableRow>
         ) : data.length === 0 ? (
           <TableRow>
             <TableCell

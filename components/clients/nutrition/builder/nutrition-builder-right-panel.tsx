@@ -4,7 +4,7 @@ import { memo } from "react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
 import { NutritionWarnings } from "../nutrition-warnings";
 import { NutritionPlanHero } from "../nutrition-plan-hero";
-import { Loader2 } from "lucide-react";
+import { PageLoading } from "@/components/page-loading";
 
 type NutritionBuilderRightPanelProps = {
   onOpenSettings?: () => void;
@@ -16,12 +16,12 @@ export const NutritionBuilderRightPanel = memo(function NutritionBuilderRightPan
   const builder = useNutritionBuilderContext();
 
   // Loading state for training plan or nutrition data
+  // KNOWN GAP: the nutrition builder context exposes no load error, so this
+  // panel has loading and content states only — the error branch needs the
+  // context to surface one first (docs rule: every fetch-backed surface has
+  // an error branch).
   if (builder.isLoadingTrainingPlan || builder.isLoadingNutrition) {
-    return (
-      <div className="flex items-center justify-center h-full bg-white/50 rounded-[6px]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#93b0b4]" />
-      </div>
-    );
+    return <PageLoading label="Loading nutrition plan…" />;
   }
 
   // The hero owns both branches (plan / no plan), so there is a single hero

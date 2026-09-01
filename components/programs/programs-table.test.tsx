@@ -13,6 +13,7 @@ vi.mock("next/navigation", () => ({
 const mockMutate = vi.fn();
 let mockPlans: SavedPlanListItem[] = [];
 let mockTotal = 0;
+let mockError: Error | undefined;
 const lastParams: { current: Record<string, unknown> | null } = { current: null };
 vi.mock("@/hooks/use-saved-plans-page", () => ({
   useSavedPlansPage: (params: Record<string, unknown>) => {
@@ -22,6 +23,7 @@ vi.mock("@/hooks/use-saved-plans-page", () => ({
       total: mockTotal,
       isLoading: false,
       isValidating: false,
+      error: mockError,
       mutate: mockMutate,
     };
   },
@@ -56,6 +58,7 @@ describe("ProgramsTable", () => {
       makeItem({ id: "plan-3", name: "Old Draft", status: "draft" }),
     ];
     mockTotal = 3;
+    mockError = undefined;
   });
 
   afterEach(() => {
@@ -123,6 +126,21 @@ describe("ProgramsTable", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(mockPush).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+
+  it("a failed read is an error, never an empty library", () => {
+    // The regression this guards: error → plans [] → total 0 used to fall
+    // into "No programs yet" — a statement about the coach's data that a
+    // failed read never earned (newdesignsystem → Loading & async states).
+    mockPlans = [];
+    mockTotal = 0;
+    mockError = new Error("boom");
+    render(<ProgramsTable />);
+
+    expect(screen.getByText("Could not load your programs")).toBeInTheDocument();
+    expect(screen.queryByText("No programs yet")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(mockMutate).toHaveBeenCalledTimes(1);
   });
 
   it("shows the empty state when there are no programs", () => {

@@ -571,8 +571,8 @@ roster frame (`view={null}`), the Programs stat band (muted `—` values).
 
 | Surface | Treatment |
 |---|---|
-| A page or tab you navigated to | Spinner + a **visible** label naming what is loading: `Loader2 h-6 w-6 animate-spin text-[#93b0b4]` centred in `py-24`, label beneath in `text-[13px] text-[#93b0b4]`, copy `Loading {thing}…`. Never `sr-only` — a bare spinner says something is happening but not what |
-| A layout whose geometry is known | Skeletons at the real dimensions (Journey's hero and cards, `HistoryTable`'s rows), so nothing moves when data lands. No label — the shape is the message |
+| A page or tab you navigated to | Spinner + a **visible** label naming what is loading: `Loader2 h-6 w-6 animate-spin text-[#93b0b4]` centred in `py-24`, label beneath in `text-[13px] text-[#93b0b4]`, copy `Loading {thing}…`. Never `sr-only` — a bare spinner says something is happening but not what. Implemented once: `components/page-loading.tsx` (`<PageLoading label="Loading clients…" />`) — use it, don't re-spell it |
+| A layout whose geometry is known | Skeletons at the real dimensions (Journey's hero and cards, `HistoryTable`'s rows, the Check-ins list's card skeletons), so nothing moves when data lands. No label — the shape is the message |
 | A value slot inside a loaded surface | A `Skeleton` holding the exact slot the value will occupy (the activation banner's counter and state chips) |
 | A control mid-action (button, row, toggle) | Inline spinner at the control's own size, no label — the control already has one |
 

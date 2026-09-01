@@ -89,7 +89,7 @@ type Props = {
 export function NutritionHistoryTable({ clientId }: Props) {
   const [page, setPage] = useState(0);
 
-  const { rows, total, isLoading } = useHistoryData<NutritionHistoryRow>(
+  const { rows, total, isLoading, isError, mutate } = useHistoryData<NutritionHistoryRow>(
     `/api/clients/${clientId}/history/nutrition`,
     page
   );
@@ -289,6 +289,9 @@ export function NutritionHistoryTable({ clientId }: Props) {
           columns={columns}
           data={rows}
           isLoading={isLoading}
+          isError={Boolean(isError)}
+          errorMessage="Could not load nutrition history"
+          onRetry={() => void mutate()}
           emptyMessage="No nutrition data logged yet"
         />
       </div>

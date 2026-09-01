@@ -1,7 +1,8 @@
 "use client";
 
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PageLoading } from "@/components/page-loading";
 import { RosterShell } from "./roster-shell";
 import { RosterStatBand } from "./roster-stat-band";
 import { RosterTable } from "./roster-table";
@@ -39,10 +40,7 @@ export function RosterFrame({
   return (
     <RosterShell activeView={view} counts={counts} onClientAdded={onRosterChanged}>
       {view === null || isLoading ? (
-        <div role="status" className="flex items-center justify-center py-24">
-          <Loader2 className="h-6 w-6 animate-spin text-[#93b0b4]" />
-          <span className="sr-only">Loading clients</span>
-        </div>
+        <PageLoading label="Loading clients…" />
       ) : isError ? (
         <div className="py-12 text-center text-[#5a7d82]">
           <AlertCircle

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Ban, Loader2, Pencil, Save, Trash2 } from "lucide-react";
+import { PageLoading } from "@/components/page-loading";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -198,11 +199,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   // the spinner too; a placed-plan load failure falls through to the message.
   const stillSeeding = isPlacedPlan ? !draft && !placedLoadError : !draft && !!plan;
   if (isPlanLoading || stillSeeding) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-[#93b0b4]" />
-      </div>
-    );
+    return <PageLoading label={isPlacedPlan ? "Loading plan…" : "Loading program…"} />;
   }
   if (!draft || (!isPlacedPlan && !plan)) {
     return (

@@ -1,8 +1,9 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Loader2, UserPlus } from "lucide-react"
+import { UserPlus } from "lucide-react"
 import { CollapsedIconStrip } from "@/components/collapsed-icon-strip"
+import { PageLoading } from "@/components/page-loading"
 import { ClientSidebar } from "@/components/clients/client-sidebar"
 import { InviteClientDialog } from "@/components/clients/invite-client-dialog"
 import { PinIntakeButton } from "@/components/coach/pin-intake-button"
@@ -84,10 +85,7 @@ export function ClientDetailLayout({
             their own loading state on top of this one. */}
         <main className="flex-1 overflow-y-auto bg-[#f4f7f6] px-8 py-5 pb-[60px]">
           {isLoading ? (
-            <div role="status" className="flex flex-col items-center justify-center gap-3 py-24">
-              <Loader2 className="h-6 w-6 animate-spin text-[#93b0b4]" strokeWidth={1.5} />
-              <p className="text-[13px] text-[#93b0b4]">Loading client…</p>
-            </div>
+            <PageLoading label="Loading client…" />
           ) : (
             children
           )}
