@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react"
 import { Loader2, UserPlus } from "lucide-react"
+import { CollapsedIconStrip } from "@/components/collapsed-icon-strip"
 import { ClientSidebar } from "@/components/clients/client-sidebar"
 import { InviteClientDialog } from "@/components/clients/invite-client-dialog"
 import { PinIntakeButton } from "@/components/coach/pin-intake-button"
@@ -42,9 +43,12 @@ export function ClientDetailLayout({
     // client-specific slots — the sidebar's name/avatar, the intake pin — when
     // it lands, and ClientSidebar already ships the pending treatment for that
     // window. Navigation is the reason this is a rule and not a preference: a
-    // gate here takes the client's own tab list down with the content.
+    // gate here takes the client's own tab list down with the content — and,
+    // since this shell mounts the application rail too, the rail with it.
     <div className="flex min-h-screen bg-background">
-      {/* Client sidebar (icon strip is rendered by PersistentSidebar in root layout) */}
+      {/* The 52px application rail: this shell's, mounted beside the column
+          and outside the loading branch below. */}
+      <CollapsedIconStrip />
       <ClientSidebar
         client={client}
         activeTab={activeTab}

@@ -8,7 +8,6 @@ import { IntakePanelProvider } from "@/contexts/intake-panel-context"
 import { UnitsProvider } from "@/contexts/units-context"
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
-import { PersistentSidebar } from "@/components/persistent-sidebar"
 import { FloatingIntakePanel } from "@/components/coach/floating-intake-panel"
 
 const instrumentSans = Instrument_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"] })
@@ -55,7 +54,6 @@ export default function RootLayout({
                 rather than fetching it a second time. */}
             <UnitsProvider>
               <IntakePanelProvider>
-                <PersistentSidebar />
                 {children}
                 <FloatingIntakePanel />
                 <Toaster />

@@ -56,10 +56,14 @@ export function useUnreviewedCheckInClientCount(): number {
  * NotificationsDropdown and CheckInNotificationListener, so SWR serves them from
  * cache.
  *
- * TRAINER-ONLY. Both call sites mount below PersistentSidebar's role gate, and
- * both endpoints are coach-scoped. There is deliberately no `enabled` flag: both
- * halves ride app-wide fetches that cannot be gated from here, so a parameter
- * would have advertised a guard it did not honour.
+ * TRAINER-ONLY by placement, not by a check: both call sites are the rails,
+ * only the coach shells mount a rail, and those render only under app/(coach)/
+ * — territory middleware has already restricted to trainers. Both endpoints
+ * are coach-scoped besides. The rails render before the auth context resolves,
+ * so these fire on first paint against the session cookie. There is
+ * deliberately no `enabled` flag: both halves ride app-wide fetches that cannot
+ * be gated from here, so a parameter would have advertised a guard it did not
+ * honour.
  */
 export function useClientAttentionCount(): number {
   const { total: overdueTotal } = useOverdueClients()

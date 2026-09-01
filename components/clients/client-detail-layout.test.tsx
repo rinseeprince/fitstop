@@ -15,6 +15,11 @@ vi.mock("@/components/clients/invite-client-dialog", () => ({
 vi.mock("@/components/navbar/notifications-dropdown", () => ({
   NotificationsDropdown: () => null,
 }));
+// The rail reaches auth, the router and SWR. Whether the LAYOUT keeps it
+// outside the loading branch is the question here, so it is a marker.
+vi.mock("@/components/collapsed-icon-strip", () => ({
+  CollapsedIconStrip: () => <aside data-testid="rail" />,
+}));
 
 const CLIENT = { id: "c-1", name: "Sam Doe", email: "sam@example.com" };
 /** What the page passes before the record lands (`client ?? {…name: ""}`). */
@@ -43,6 +48,10 @@ function renderLayout(props: Partial<React.ComponentProps<typeof ClientDetailLay
  * `not.toHaveClass("opacity-0")` assertion was considered and rejected, since
  * it would guard one spelling of the mistake and imply cover for `hidden`,
  * `visibility` and Suspense, which it has not got.
+ *
+ * "keeps the application rail outside the loading branch" is the other real
+ * guard: the loader is a branch, so a rail rendered beside it is a structural
+ * fact, not a class. Mutation-checked by moving the rail into the loaded arm.
  */
 describe("ClientDetailLayout", () => {
   it("renders the whole tab list while the client record is still loading", () => {
@@ -70,6 +79,16 @@ describe("ClientDetailLayout", () => {
     renderLayout({ client: UNRESOLVED, activeTab: "daily-habits", isLoading: true });
 
     expect(screen.getByRole("heading", { name: "Habits" })).toBeInTheDocument();
+  });
+
+  it("keeps the application rail outside the loading branch", () => {
+    // Content loading must never take the chrome with it (ARCHITECTURE →
+    // "Coach route group"). The rail is this shell's, mounted beside the
+    // column; `isLoading` decides only what fills the column.
+    renderLayout({ client: UNRESOLVED, isLoading: true });
+
+    expect(screen.getByTestId("rail")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
   });
 
   it("hands the column to the tab once the record resolves", () => {

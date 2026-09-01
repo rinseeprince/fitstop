@@ -412,8 +412,9 @@ To turn a mono label to normal case (e.g. a meta line), append `normal-case trac
 A standard section page (library-style) is:
 
 ```tsx
-// layout.tsx — wrap in the section shell (52px icon strip is global via PersistentSidebar)
+// layout.tsx — wrap in the section shell; the shell mounts its own 52px icon strip
 <div className="flex min-h-screen bg-background">
+  <CollapsedIconStrip />
   <div className="min-w-0 flex-1 flex flex-col lg:ml-[52px]">   {/* min-w-0 + overflow-x-hidden below are load-bearing */}
     <header className="sticky top-0 z-10 bg-white px-8 py-2">   {/* sticky topbar */}
       <div className="flex items-center justify-between">
@@ -692,7 +693,7 @@ Follow the **Overlays** recipes: session editor & create-session are 780px right
 
 ### Non-client / section pages
 
-- Global 52px icon strip (via `PersistentSidebar`); section content offset `lg:ml-[52px]`, `min-w-0`, `overflow-x-hidden`, `bg-[#f4f7f6]`, sticky white topbar.
+- The section shell mounts the 52px icon strip (`CollapsedIconStrip`); section content offset `lg:ml-[52px]`, `min-w-0`, `overflow-x-hidden`, `bg-[#f4f7f6]`, sticky white topbar.
 
 ---
 

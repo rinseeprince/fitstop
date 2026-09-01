@@ -2,15 +2,16 @@
 
 import type { ReactNode } from "react"
 import { ProgramsTopbar } from "./programs-topbar"
+import { CollapsedIconStrip } from "@/components/collapsed-icon-strip"
 
-// Section shell for /dashboard/programs/** — the 52px dark icon strip is
-// rendered by PersistentSidebar (root layout); this adds the sticky topbar
-// and the page background. The old 200px sub-sidebar (Builder / Programs /
-// The Programs list is full-width,
-// and the builder's own left library panel absorbs Sessions + Exercises.
+// Section shell for /dashboard/programs/** — mounts the 52px dark icon strip
+// (its own rail: the shell decides the variant) plus the sticky topbar and the
+// page background. The Programs list is full-width, and the builder's own left
+// library panel absorbs Sessions + Exercises.
 export function ProgramsShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background">
+      <CollapsedIconStrip />
       {/* Main content area — offset only by the 52px icon strip now.
           min-w-0 + overflow-x-hidden are load-bearing: without them the
           builder grid's intrinsic width propagates up, the BODY scrolls

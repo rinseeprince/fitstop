@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { NotificationsDropdown } from "./navbar/notifications-dropdown"
+import { PersistentSidebar } from "./persistent-sidebar"
 
 interface AppLayoutProps {
   children: ReactNode
@@ -10,7 +11,8 @@ interface AppLayoutProps {
 export function AppLayout({ children, pageHeader, headerActions }: AppLayoutProps) {
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Main Content - sidebar is now in root layout */}
+      <PersistentSidebar />
+      {/* Main content — offset by the 80px rail this shell mounts */}
       <div className="flex-1 flex flex-col bg-background lg:ml-20">
         {/* Header - sticky with solid background and border */}
         <header className="sticky top-0 z-10 bg-white">

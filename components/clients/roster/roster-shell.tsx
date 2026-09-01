@@ -1,6 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
+import { CollapsedIconStrip } from "@/components/collapsed-icon-strip"
 import { NotificationsDropdown } from "@/components/navbar/notifications-dropdown"
 import { RosterSidebar } from "./roster-sidebar"
 import {
@@ -10,10 +11,11 @@ import {
 } from "@/lib/roster-views"
 
 /**
- * The Clients section shell: the 52px icon strip (rendered globally by
- * PersistentSidebar), the 200px roster sidebar, and the main column — the same
- * three-column frame the client detail pages run, so the section and the pages
- * inside it stop being two different products.
+ * The Clients section shell: the 52px icon strip, the 200px roster sidebar and
+ * the main column — the same three-column frame the client detail pages run,
+ * so the section and the pages inside it stop being two different products.
+ * The shell mounts its own rail: which rail a surface gets is the shell's
+ * decision, never the rail's.
  */
 export function RosterShell({
   activeView,
@@ -28,6 +30,7 @@ export function RosterShell({
 }) {
   return (
     <div className="flex min-h-screen bg-background">
+      <CollapsedIconStrip />
       <RosterSidebar
         activeView={activeView}
         counts={counts}

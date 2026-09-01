@@ -1,10 +1,9 @@
 "use client"
 
 import { SidebarNav } from "./sidebar-nav"
-import { CollapsedIconStrip } from "./collapsed-icon-strip"
 import { User, LogOut, ChevronDown } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
-import { useRouter, usePathname } from "next/navigation"
+import { useRouter } from "next/navigation"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,60 +14,18 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
 
-// Pages that should NOT show the sidebar (auth pages, public pages, client portal, etc.)
-const EXCLUDED_PATHS = [
-  "/",
-  "/login",
-  "/signup",
-  "/forgot-password",
-  "/reset-password",
-  "/client/",
-  "/client",
-]
-
+/**
+ * The full 80px coach rail. Mounted by AppLayout — the shell decides that a
+ * surface gets this rail rather than the 52px CollapsedIconStrip, and the
+ * app/(coach)/ boundary plus middleware decide that the viewer is a coach — so
+ * this component decides nothing: no route classification, no role check, no
+ * wait on auth. It renders on first paint. Only the footer's name and email are
+ * user data, and they fill in when the profile resolves.
+ */
 export function PersistentSidebar() {
-  const { coach, logout, loading, isClient, isTrainer, role } = useAuth()
+  const { coach, logout, loading } = useAuth()
   const router = useRouter()
-  const pathname = usePathname()
   const { toast } = useToast()
-
-  // Don't render sidebar on excluded paths
-  // Use exact match for "/" and "/client" to avoid false positives:
-  // - "/" would match all paths since every path starts with "/"
-  // - "/client" would incorrectly match "/clients" (coach's client management page)
-  const shouldHideSidebar = EXCLUDED_PATHS.some(path => {
-    if (path === "/" || path === "/client") {
-      return pathname === path
-    }
-    return pathname?.startsWith(path)
-  })
-
-  // Hide sidebar in these cases:
-  // 1. On excluded paths
-  // 2. For client users (role-based protection)
-  // 3. While loading and we don't know the role yet
-  if (shouldHideSidebar || isClient || (loading && !isTrainer)) {
-    return null
-  }
-
-  // Extra safety: only show for confirmed trainers
-  if (!loading && role !== "trainer") {
-    return null
-  }
-
-  // On sectioned surfaces (the Clients roster, client detail, Programs) render
-  // the collapsed 52px icon strip instead of the full sidebar — the section's
-  // own white sub-sidebar sits beside it.
-  // NOTE: The client-detail pattern assumes tab routing uses query params
-  // (?tab=nutrition), not nested routes like /clients/[id]/nutrition.
-  const COLLAPSED_SHELL_PATTERNS = [
-    /^\/clients$/,
-    /^\/clients\/[^/]+$/,
-    /^\/dashboard\/programs(\/|$)/,
-  ]
-  if (COLLAPSED_SHELL_PATTERNS.some((pattern) => pattern.test(pathname || ""))) {
-    return <CollapsedIconStrip />
-  }
 
   const handleLogout = async () => {
     try {
