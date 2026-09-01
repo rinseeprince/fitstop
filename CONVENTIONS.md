@@ -365,6 +365,34 @@
   `useTransition` is not an alternative here: it defers the update and hands back `isPending`, so
   the value still changes when the URL commits. It buys a pending flag, not an early switch.
 
+  ### Gate content, not structure
+
+  A dependency that decides WHAT a surface shows must never decide WHETHER the
+  structure around it exists. Rails, section sidebars, headers, tab lists, a
+  card whose presence is already known — structural UI renders independently of
+  anything it does not itself read: search params, fetched data, auth/profile
+  resolution.
+
+  - **Gate each piece on the narrowest thing it actually reads.** One gate — a
+    `return null`, a Suspense boundary, an opacity/hidden wrapper — answering
+    "may this exist?" with the answer to "what does it say?" is the defect.
+    Split the questions: render the structure from what is already in hand, and
+    represent the unresolved values as pending inside it.
+  - **Suspense boundaries are as narrow as the true dependency.** In a
+    statically prerendered route, `useSearchParams` bails rendering out to the
+    nearest boundary and the prerendered HTML is the fallback — a page-wide
+    boundary erases the page. Keep the reader in a leaf; everything structural
+    stays outside it.
+  - **Fallbacks preserve the structural shape.** Render the same frame in its
+    pending state — nothing claimed, no guessed values — never `null`, so
+    nothing shifts or flashes when the real state lands.
+
+  Worked examples: `app/(coach)/clients/page.tsx` (the one `?view=` reader
+  behind the boundary, `<RosterFrame view={null}>` as the fallback, held by
+  `scripts/check-prerender.ts`) and `components/clients/client-detail-layout.tsx`
+  (the frame never waits on the client record). The platform consequence is
+  recorded in `docs/ARCHITECTURE.md` → "Coach route group".
+
   ### What NOT to use
   - Do not use TanStack Query / React Query (not installed).
   - Do not use Zustand (not installed).
