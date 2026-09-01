@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Instrument_Sans, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
+import { MotionPreferencesProvider } from "@/contexts/motion-preferences"
 import { IntakePanelProvider } from "@/contexts/intake-panel-context"
 import { UnitsProvider } from "@/contexts/units-context"
 import { Toaster } from "@/components/ui/toaster"
@@ -44,20 +45,25 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${instrumentSans.className} ${jetbrainsMono.variable}`}>
-        <AuthProvider>
-          {/* Inside AuthProvider: a trainer's unit preference rides on the
-              /api/auth/me payload, so UnitsProvider reads it from useAuth()
-              rather than fetching it a second time. */}
-          <UnitsProvider>
-            <IntakePanelProvider>
-              <PersistentSidebar />
-              {children}
-              <FloatingIntakePanel />
-              <Toaster />
-              <SonnerToaster position="bottom-right" richColors />
-            </IntakePanelProvider>
-          </UnitsProvider>
-        </AuthProvider>
+        {/* Outermost: it configures rendering, holds no state, and every Framer
+            animation in the app — including the auth pages' and the marketing
+            page's — sits under it. */}
+        <MotionPreferencesProvider>
+          <AuthProvider>
+            {/* Inside AuthProvider: a trainer's unit preference rides on the
+                /api/auth/me payload, so UnitsProvider reads it from useAuth()
+                rather than fetching it a second time. */}
+            <UnitsProvider>
+              <IntakePanelProvider>
+                <PersistentSidebar />
+                {children}
+                <FloatingIntakePanel />
+                <Toaster />
+                <SonnerToaster position="bottom-right" richColors />
+              </IntakePanelProvider>
+            </UnitsProvider>
+          </AuthProvider>
+        </MotionPreferencesProvider>
       </body>
     </html>
   )

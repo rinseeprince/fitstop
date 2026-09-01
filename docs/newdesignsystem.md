@@ -770,7 +770,7 @@ The client portal animates nothing. Its pages are arrivals, so the rule **permit
 
 **A loop that carries meaning is a status indicator, not an animation.** The habits tracker's pulsing dot on today's cell says *still open* — deleting it deletes the only thing marking that cell — so it is out of scope here. Decorative loops are confined to the auth and marketing pages, which sit outside the product.
 
-**Every entrance is gated on `prefers-reduced-motion`.** `animate-card-in` carries the gate itself; a Framer entrance reads `useReducedMotion()`. Of everything on this page, an entrance is the one thing a reader can be unable to tolerate.
+**Every entrance is gated on `prefers-reduced-motion`, and the gate keeps the fade and drops the travel.** Of everything on this page, an entrance is the one thing a reader can be unable to tolerate; a fade is not what they are asking to be spared. `animate-card-in` swaps to an opacity-only keyframe (`app/globals.css`); Framer is configured app-wide by `MotionPreferencesProvider` (`contexts/motion-preferences.tsx`, `reducedMotion="user"`), which snaps every positional value — the transform props, `width`/`height`/inset — and lets opacity run. The two paths therefore behave identically. A raw `useSpring` outside a `motion` element is the one thing that provider cannot reach, so it reads `useReducedMotion()` itself (`components/animated-counter.tsx`).
 
 Two consequences to know before reaching for an exception:
 
