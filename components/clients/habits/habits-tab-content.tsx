@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import { Settings2 } from "lucide-react";
-import { PageLoading } from "@/components/page-loading";
 import { Button } from "@/components/ui/button";
 import { HabitsManageDrawer } from "./habits-manage-drawer";
 import { HabitsWeekNav } from "./habits-week-nav";
@@ -45,7 +44,6 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
 
   const {
     habits,
-    isLoading: habitsLoading,
     error: habitsError,
     createHabit,
     updateHabit,
@@ -72,12 +70,6 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
       return result;
     };
 
-  const isInitialLoading = habitsLoading && weekLoading;
-
-  if (isInitialLoading) {
-    return <PageLoading label="Loading habits…" />;
-  }
-
   if (habitsError && weekError) {
     return (
       <div className="flex flex-col items-center justify-center py-12 space-y-3">
@@ -99,6 +91,7 @@ export const HabitsTabContent = ({ client }: HabitsTabContentProps) => {
           divider spec's 16px above) */}
       <div className="mb-4">
         <HabitsSummaryStrip
+          pending={weekLoading}
           todayCompleted={summary?.todayCompleted ?? null}
           todayTotal={summary?.todayTotal ?? null}
           weeklyRate={summary?.weeklyRate ?? null}

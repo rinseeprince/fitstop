@@ -7,6 +7,7 @@ import {
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens"
+import { TextSkeleton } from "@/components/text-skeleton"
 
 // Dark KPI band for the library pages — the established dark summary-card
 // pattern (model: check-in/kpi-ribbon.tsx), minus the status dots: library
@@ -18,6 +19,10 @@ export type StatBandCell = {
   sub?: string
   subTone?: "neutral" | "warn" | "up"
   valueMuted?: boolean
+  /** The read behind this cell is still in flight: the value slot renders
+   *  pending text inside the real element — never a muted dash for a value
+   *  that has not resolved. */
+  pending?: boolean
   /** Turns the cell into a real <button> that jumps somewhere — the Clients
    *  roster's attention cells jump to their queue view. A cell without this
    *  stays the passive <div> every existing band renders. */
@@ -56,7 +61,11 @@ export function StatBand({ cells }: { cells: StatBandCell[] }) {
           <>
             <span className={STAT_LABEL_DARK_CLASS}>{cell.label}</span>
             <div className="flex items-baseline gap-1 mt-1.5">
-              {cell.valueMuted ? (
+              {cell.pending ? (
+                <span className={cn("text-[24px] leading-tight", STAT_VALUE_DARK_CLASS)}>
+                  <TextSkeleton className="w-12" />
+                </span>
+              ) : cell.valueMuted ? (
                 <span className="text-[13px] text-[rgba(255,255,255,0.3)]">
                   {cell.value}
                 </span>
@@ -65,13 +74,13 @@ export function StatBand({ cells }: { cells: StatBandCell[] }) {
                   {cell.value}
                 </span>
               )}
-              {cell.unit && (
+              {cell.unit && !cell.pending && (
                 <span className="text-[10px] text-[rgba(255,255,255,0.3)]">
                   {cell.unit}
                 </span>
               )}
             </div>
-            {cell.sub && (
+            {cell.sub && !cell.pending && (
               <span
                 className={cn(
                   "text-[10px] mt-1",

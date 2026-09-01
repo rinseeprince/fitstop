@@ -74,7 +74,7 @@ export function ClientOverviewTab({
     isMarkingSeen,
   } = useOverviewBrief(client.id);
   const { summary, isLoading: summaryLoading } = useOverviewPlanSummary(client.id);
-  const { goal: currentGoals } = useClientGoals(client.id);
+  const { goal: currentGoals, isLoading: goalLoading } = useClientGoals(client.id);
   const invalidateGoals = useInvalidateClientGoals();
   const invalidateSeries = useInvalidateMeasurementSeries();
   const {
@@ -236,6 +236,7 @@ export function ClientOverviewTab({
       <StatusBand
         client={client}
         goal={effectiveGoal}
+        goalPending={goalLoading}
         chart={
           <ProgressionChart
             series={series}

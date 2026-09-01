@@ -105,7 +105,9 @@ export const MetricsTabContent = ({
         </p>
       ) : isLoading ? (
         <div>
-          <Skeleton className="mb-4 h-[150px] w-full rounded-[6px] bg-[#0f2027]" />
+          <div className="mb-4">
+            <MetricHero metric={null} metrics={[]} onSelectMetric={() => {}} />
+          </div>
           <div className="mb-4 grid grid-cols-3 gap-[10px]">
             {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-[88px] rounded-[6px]" />

@@ -15,6 +15,7 @@ import {
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { Client } from "@/types/check-in";
 import { useUnits } from "@/contexts/units-context";
+import { TextSkeleton } from "@/components/text-skeleton";
 import { formatWeight } from "@/utils/unit-conversions";
 
 /**
@@ -43,6 +44,10 @@ type StatusBandProps = {
    */
   chart: ReactNode;
   onOpenMetrics: () => void;
+  /** The goal read is still in flight: the three goal-backed cells render
+   *  pending instead of claiming "Not set" — unresolved is never rendered as
+   *  empty (docs/newdesignsystem.md → "Loading & async states"). */
+  goalPending?: boolean;
 };
 
 const DIVIDER = "border-[rgba(255,255,255,0.07)]";
@@ -111,6 +116,7 @@ function BandCell({
   chip,
   borderClass,
   emptyLabel = "Not set",
+  pending = false,
 }: {
   label: string;
   value?: string;
@@ -128,12 +134,18 @@ function BandCell({
    */
   borderClass?: string;
   emptyLabel?: string;
+  /** Renders the value slot as pending text inside the real element. */
+  pending?: boolean;
 }) {
   return (
     <div className={cn("min-w-0 px-5 py-4", DIVIDER, borderClass)}>
       <p className={STAT_LABEL_DARK_CLASS}>{label}</p>
       <div className="mt-1">
-        {value ? (
+        {pending ? (
+          <span className={cn(STAT_VALUE_DARK_CLASS, VALUE_CLASS, "leading-tight")}>
+            <TextSkeleton className="w-14" />
+          </span>
+        ) : value ? (
           <>
             <span className={cn(STAT_VALUE_DARK_CLASS, VALUE_CLASS, "leading-tight")}>
               {value}
@@ -148,7 +160,7 @@ function BandCell({
           <span className="text-[13px] text-[rgba(255,255,255,0.3)]">{emptyLabel}</span>
         )}
       </div>
-      {sub && (
+      {sub && !pending && (
         <p
           className={cn(
             "mt-1 truncate text-[11px] text-[rgba(255,255,255,0.3)]",
@@ -158,7 +170,7 @@ function BandCell({
           {sub}
         </p>
       )}
-      {chip && (
+      {chip && !pending && (
         <span
           className={cn(
             // CHIP_NEUTRAL_CLASS's geometry (10px / px-1.5 / py-px), tinted.
@@ -174,7 +186,7 @@ function BandCell({
   );
 }
 
-export function StatusBand({ client, goal, chart, onOpenMetrics }: StatusBandProps) {
+export function StatusBand({ client, goal, chart, onOpenMetrics, goalPending = false }: StatusBandProps) {
   // Body weights convert freely — formatWeight, never formatLoad.
   const { preference } = useUnits();
   const kg = (v: number | null | undefined) =>
@@ -223,6 +235,7 @@ export function StatusBand({ client, goal, chart, onOpenMetrics }: StatusBandPro
             value={goalWeight?.toFixed(1)}
             unit={weightUnit}
             chip={weightChip}
+            pending={goalPending}
           />
           <BandCell
             label="Goal body fat"
@@ -230,6 +243,7 @@ export function StatusBand({ client, goal, chart, onOpenMetrics }: StatusBandPro
             unit="%"
             chip={bfChip}
             borderClass="border-l"
+            pending={goalPending}
           />
           <BandCell
             label="BMR"
@@ -245,6 +259,7 @@ export function StatusBand({ client, goal, chart, onOpenMetrics }: StatusBandPro
             sub={remaining?.text}
             subIsNumeric={remaining?.isNumeric ?? false}
             borderClass="border-l border-t"
+            pending={goalPending}
           />
         </div>
       </div>

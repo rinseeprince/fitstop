@@ -12,9 +12,12 @@ import {
 import { MetricSwitcher } from "./metric-switcher";
 import { containsDigit, formatShortDate, formatSigned } from "./metrics-format";
 import type { MetricSummary } from "./metrics-view-types";
+import { TextSkeleton } from "@/components/text-skeleton";
 
 type MetricHeroProps = {
-  metric: MetricSummary;
+  /** null = the metrics read is still in flight: the band renders pending
+   *  inside the real elements, identical size by construction. */
+  metric: MetricSummary | null;
   metrics: MetricSummary[];
   onSelectMetric: (id: string) => void;
 };
@@ -37,7 +40,88 @@ const EMPTY_VALUE_CLASS = "text-[13px] text-[rgba(255,255,255,0.3)] mt-1";
 // (eyebrow+title+chevron trigger cluster), tag chips, and a 3-cell stat band
 // (hand-rolled with the StatBand tokens — the shared component can't nest in
 // the slab nor render sans subs).
+function PendingCell({
+  label,
+  valueClass,
+  valueWidth,
+  subWidth,
+  className,
+}: {
+  label: string;
+  valueClass: string;
+  valueWidth: string;
+  subWidth: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col", className)}>
+      <p className={STAT_LABEL_DARK_CLASS}>{label}</p>
+      <p className={cn(STAT_VALUE_DARK_CLASS, "leading-tight mt-1", valueClass)}>
+        <TextSkeleton className={valueWidth} />
+      </p>
+      <p className={SUB_SANS_CLASS}>
+        <TextSkeleton className={subWidth} />
+      </p>
+    </div>
+  );
+}
+
+/** The hero before the metrics read lands: the same band, same elements, with
+ *  pending text inside them — never a silhouette, never a shorter tree. */
+function MetricHeroPending() {
+  return (
+    <div className="bg-[#0f2027] rounded-[6px] px-5 py-[18px]">
+      <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-[rgba(255,255,255,0.06)]">
+        <div className="-mx-2 -my-1 flex min-w-0 items-center gap-3 rounded-[6px] px-2 py-1 text-left">
+          <div className="min-w-0">
+            <p className={HEADER_EYEBROW_CLASS}>Metric</p>
+            <p className="text-[15px] font-medium text-white mt-0.5 truncate">
+              <TextSkeleton className="w-24" />
+            </p>
+          </div>
+          <ChevronDown
+            className="h-4 w-4 shrink-0 text-[rgba(255,255,255,0.3)]"
+            strokeWidth={1.5}
+          />
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className={TAG_CHIP_CLASS}>
+            <TextSkeleton className="w-8" />
+          </span>
+          <span className={TAG_CHIP_CLASS}>
+            <TextSkeleton className="w-12" />
+          </span>
+        </div>
+      </div>
+      <div className="grid grid-cols-3">
+        <PendingCell
+          label="Current"
+          valueClass="text-[24px]"
+          valueWidth="w-16"
+          subWidth="w-20"
+          className="pr-5 border-r border-[rgba(255,255,255,0.07)]"
+        />
+        <PendingCell
+          label="Total change"
+          valueClass="text-[22px]"
+          valueWidth="w-14"
+          subWidth="w-20"
+          className="pl-5 pr-5 border-r border-[rgba(255,255,255,0.07)]"
+        />
+        <PendingCell
+          label="Avg rate"
+          valueClass="text-[22px]"
+          valueWidth="w-14"
+          subWidth="w-16"
+          className="pl-5"
+        />
+      </div>
+    </div>
+  );
+}
+
 export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps) {
+  if (!metric) return <MetricHeroPending />;
   const { latest, first, totalChange, avgRate, entryCount, unit } = metric;
 
   const chips: string[] = [];

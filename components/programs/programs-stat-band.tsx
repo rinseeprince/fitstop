@@ -8,12 +8,13 @@ import { StatBand, type StatBandCell } from "./shared/stat-band"
 // stay correct while the list paginates); assignments come from their own
 // endpoint. "Most used focus" was dropped (low-value) — three cells now.
 export function ProgramsStatBand() {
-  const { summary } = useSavedPlansSummary(true)
-  const { assignments } = useSavedPlanAssignments()
+  const { summary, isLoading: summaryLoading } = useSavedPlansSummary(true)
+  const { assignments, isLoading: assignmentsLoading } = useSavedPlanAssignments()
 
   const cells: StatBandCell[] = [
     {
       label: "Total programs",
+      pending: summaryLoading,
       value: summary ? String(summary.total) : "—",
       valueMuted: !summary,
       sub: summary
@@ -22,6 +23,7 @@ export function ProgramsStatBand() {
     },
     {
       label: "Active assignments",
+      pending: assignmentsLoading,
       value: assignments ? String(assignments.totalAssignments) : "—",
       valueMuted: !assignments,
       sub: assignments
@@ -30,6 +32,7 @@ export function ProgramsStatBand() {
     },
     {
       label: "Avg length",
+      pending: summaryLoading,
       value: summary?.avgWeeks != null ? summary.avgWeeks.toFixed(1) : "—",
       valueMuted: summary?.avgWeeks == null,
       unit: summary?.avgWeeks != null ? "wks" : undefined,

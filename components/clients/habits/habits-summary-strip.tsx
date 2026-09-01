@@ -1,12 +1,16 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { TextSkeleton } from "@/components/text-skeleton";
 import {
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 
 type HabitsSummaryStripProps = {
+  /** The week read is still in flight: values render as pending text inside
+   *  the real elements — a dash is a settled answer, not a loading state. */
+  pending?: boolean;
   todayCompleted: number | null;
   todayTotal: number | null;
   weeklyRate: number | null;
@@ -19,11 +23,15 @@ function StatColumn({
   value,
   sub,
   isLast,
+  pending,
 }: {
   label: string;
   value: string;
   sub?: string;
   isLast?: boolean;
+  /** Value renders as pending text inside the real element; the static sub
+   *  copy stays — it describes the slot, not the data. */
+  pending?: boolean;
 }) {
   return (
     <div
@@ -37,7 +45,7 @@ function StatColumn({
         {label}
       </p>
       <p className={cn(STAT_VALUE_DARK_CLASS, "text-[28px] leading-tight mt-1")}>
-        {value}
+        {pending ? <TextSkeleton className="w-12" /> : value}
       </p>
       {sub && (
         <p className="text-[11px] text-[rgba(255,255,255,0.3)] mt-1">
@@ -49,6 +57,7 @@ function StatColumn({
 }
 
 export function HabitsSummaryStrip({
+  pending = false,
   todayCompleted,
   todayTotal,
   weeklyRate,
@@ -77,22 +86,26 @@ export function HabitsSummaryStrip({
         label="Today"
         value={todayValue}
         sub="completed"
+        pending={pending}
       />
       <StatColumn
         label="Weekly Rate"
         value={rateValue}
         sub="this week"
+        pending={pending}
       />
       <StatColumn
         label="Streak"
         value={streakValue}
         sub={allHabitsStreak != null && allHabitsStreak > 0 ? "days — all habits hit" : "days"}
+        pending={pending}
       />
       <StatColumn
         label="Active Habits"
         value={activeValue}
         sub="tracked"
         isLast
+        pending={pending}
       />
     </div>
   );
