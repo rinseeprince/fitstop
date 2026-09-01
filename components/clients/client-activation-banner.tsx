@@ -350,9 +350,9 @@ export function ClientActivationBanner({
           </h3>
           {readyCount === null ? (
             // Same slot the counter occupies, so nothing shifts when it lands.
-            <span className="mt-0.5 flex h-4 items-center">
+            <div className="mt-0.5 flex h-4 items-center">
               <Skeleton className="h-2.5 w-24 rounded-[4px] bg-[#f0f5f4]" />
-            </span>
+            </div>
           ) : (
             <p className={cn(MONO_META_CLASS, "mt-0.5 text-[11px]")}>
               {readyCount} of {REQUIRED_ITEMS.length} plans ready
@@ -417,7 +417,10 @@ export function ClientActivationBanner({
         })}
       </div>
 
-      <p className={cn("mt-3.5 border-t pt-3 text-[11px] text-[#93b0b4]", CARD_HAIRLINE)}>
+      {/* A div, not a p: the pending branch holds a Skeleton, which renders a
+          div, and the HTML parser closes a <p> at the first flow element —
+          React 19 flags exactly that as a hydration hazard. */}
+      <div className={cn("mt-3.5 border-t pt-3 text-[11px] text-[#93b0b4]", CARD_HAIRLINE)}>
         {readiness ? (
           activationLine(readiness)
         ) : (
@@ -427,7 +430,7 @@ export function ClientActivationBanner({
             <Skeleton className="h-2.5 w-56 rounded-[4px] bg-[#f0f5f4]" />
           </span>
         )}
-      </p>
+      </div>
     </OverviewCard>
   )
 }

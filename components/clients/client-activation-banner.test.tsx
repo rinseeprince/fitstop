@@ -51,11 +51,14 @@ beforeEach(() => {
 describe("ClientActivationBanner", () => {
   it("mounts with the page and renders readiness as pending, not absent", () => {
     wire({ isLoading: true });
-    render(<ClientActivationBanner client={CLIENT} />);
+    const { container } = render(<ClientActivationBanner client={CLIENT} />);
 
     expect(
       screen.getByRole("heading", { name: "Ready to activate" })
     ).toBeInTheDocument();
+    // The pending slots render Skeletons, which are divs: none may sit inside
+    // a <p>, or the parser closes the paragraph early and hydration mismatches.
+    expect(container.querySelector("p div")).toBeNull();
     // No slot claims a state it does not have yet…
     expect(screen.queryByText(/of 3 plans ready/)).toBeNull();
     expect(screen.queryByText("Not set up")).toBeNull();
