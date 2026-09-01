@@ -317,8 +317,51 @@
   - Server state: SWR.
   - Form state: React Hook Form with Zod where applicable.
   - Local component state: useState.
-  - URL state: Search params for filters/pagination.
+  - URL state: Search params — filters, pagination, and anything deep-linkable (see below).
   - No useState for server data - use SWR.
+
+  ### URL-driven UI state
+
+  Any UI state that can be deep-linked, bookmarked or shared — the active tab, an open pane, a
+  selected record — lives in the URL and nowhere else.
+
+  - **The URL is the single source of truth.** `useState` must not mirror or shadow a search param.
+    Derive the value from `searchParams` on every render; a setter writes the URL and sets no state.
+  - **Navigation is atomic.** Every param a click affects — the tab AND the record it opens — goes
+    into ONE router update, so they land on the same render frame. A component reading a param on
+    arrival then always sees the value intended for it.
+
+  ```tsx
+  // The whole pattern.
+  const pane = isValidPane(searchParams.get("journey")) ? searchParams.get("journey") : "body"
+  const setPane = (next: Pane) => router.replace(buildUrl(next), { scroll: false })
+  ```
+
+  Reference implementations: `app/clients/[id]/page.tsx` (`?tab=`) and
+  `components/clients/metrics/metrics-tab-content.tsx` (`?journey=`). The platform's own params and
+  their single-owner contract are in `docs/ARCHITECTURE.md` → "Client page tab structure".
+
+  **Anti-pattern — state mirroring.** Do not bridge a timing gap with local state: a `useState`
+  shadowing a param, a precedence rule ("use the local value if set, else the URL"), and a
+  `useEffect` to clear it. That is accidental complexity — synchronisation code written to clean up
+  a split source of truth rather than to solve a product problem — and it drifts the moment either
+  half is edited.
+
+  **A transient glitch — a flash of the wrong pane, a detail view that opens empty — is the symptom
+  of a split source of truth, never of routing.** The fix is always to delete the local state and
+  derive from the URL. Never to add more synchronisation.
+
+  **Progressive optimism.** Clean architecture first; optimise on evidence, not on speculation.
+
+  1. **Derive (default).** Rely on the router. The UI updates when the URL commits, which is fast
+     enough to read as instant for almost every transition.
+  2. **Measure.** Only act on an observed lag.
+  3. **Wrap with `useOptimistic`.** If instant feedback is genuinely needed, wrap the derived URL
+     value — React owns the revert, so there is no clearing logic and no precedence rule. Do not
+     re-introduce local state and do not restructure the components underneath.
+
+  `useTransition` is not an alternative here: it defers the update and hands back `isPending`, so
+  the value still changes when the URL commits. It buys a pending flag, not an early switch.
 
   ### What NOT to use
   - Do not use TanStack Query / React Query (not installed).
