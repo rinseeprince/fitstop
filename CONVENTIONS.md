@@ -752,6 +752,10 @@
   7. **§2 "Security, load & performance review"** - if any of its triggers fired (new migration, new
      route, changed auth, new write path, completed plan session, ~≥5 files touching data flow), the
      review has been run and reported. Not applicable is a valid answer; skipping silently is not.
+  8. `npm run build` - when the change touches routing, shells, a page's Suspense structure or anything
+     else that could alter prerendering. The build chains `npm run check:prerender`, which fails if a
+     statically prerendered coach page loses its structural chrome or `/clients`'s prerender claims a
+     view (ARCHITECTURE → "Coach route group"). Not triggered by ordinary component/data changes.
 
   ## 14. Performance
   - Database queries: Indexes on foreign keys, frequently queried fields. Index *with* the query — add the keyset index alongside the read it serves (see §8 "Client read scaling").

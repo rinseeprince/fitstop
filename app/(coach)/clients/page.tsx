@@ -13,7 +13,9 @@ import { resolveRosterView } from "@/lib/roster-views";
 // to the nearest Suspense boundary, so the reader sits alone behind one and
 // everything else — the shell, the rail, the roster sidebar — stays in the
 // prerendered HTML. Adding a `useSearchParams` call anywhere outside this
-// component puts the page's static HTML back to an empty frame.
+// component puts the page's static HTML back to an empty frame —
+// scripts/check-prerender.ts (chained to `npm run build`) fails on exactly
+// that, since no unit test can see prerender bailout.
 function RosterWithParams(props: Omit<RosterFrameProps, "view">) {
   const searchParams = useSearchParams();
   return (
