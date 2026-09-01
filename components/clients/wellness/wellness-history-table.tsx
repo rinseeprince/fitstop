@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from "react";
 import useSWR from "swr";
-import { Skeleton } from "@/components/ui/skeleton";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
+import { TextSkeleton } from "@/components/text-skeleton";
 import { useHistoryData, HISTORY_PAGE_SIZE } from "@/hooks/use-history-data";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { cn } from "@/lib/utils";
@@ -171,30 +171,29 @@ export function WellnessHistoryTable({ clientId }: Props) {
                     {label}
                   </p>
                 </div>
-                {summaryLoading ? (
-                  // Value + subline slots at the loaded line boxes, so the
-                  // band's height is settled before the data is.
-                  <>
-                    <div className="mt-1 flex h-7 items-center">
-                      <Skeleton className="h-6 w-14 bg-white/10" />
-                    </div>
-                    <div className="mt-1 flex h-4 items-center">
-                      <Skeleton className="h-2.5 w-20 bg-white/10" />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p className={cn(MONO, "text-[22px] font-bold mt-1 tracking-[-0.03em]")} style={{ color }}>
+                {/* One tree for both states: pending renders inside the real
+                    elements, so the line boxes are identical by construction. */}
+                <p className={cn(MONO, "text-[22px] font-bold mt-1 tracking-[-0.03em]")} style={{ color }}>
+                  {summaryLoading ? (
+                    <TextSkeleton className="w-14" />
+                  ) : (
+                    <>
                       {avg != null ? avg : "-"}
                       <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
                         / {max}
                       </span>
-                    </p>
-                    <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>
-                      {summary ? `${summary.days_logged}/${summary.days_in_window} days logged` : "-"}
-                    </p>
-                  </>
-                )}
+                    </>
+                  )}
+                </p>
+                <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>
+                  {summaryLoading ? (
+                    <TextSkeleton className="w-20" />
+                  ) : summary ? (
+                    `${summary.days_logged}/${summary.days_in_window} days logged`
+                  ) : (
+                    "-"
+                  )}
+                </p>
               </div>
             );
           })}

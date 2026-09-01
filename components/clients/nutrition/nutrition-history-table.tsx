@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from "react";
 import useSWR from "swr";
-import { Skeleton } from "@/components/ui/skeleton";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
+import { TextSkeleton } from "@/components/text-skeleton";
 import { useHistoryData, HISTORY_PAGE_SIZE } from "@/hooks/use-history-data";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { cn } from "@/lib/utils";
@@ -196,31 +196,29 @@ export function NutritionHistoryTable({ clientId }: Props) {
         {/* Weekly total */}
         <div className="flex flex-col pr-5 border-r border-[rgba(255,255,255,0.08)]">
           <p className={STAT_LABEL_DARK_CLASS}>Weekly Total</p>
-          {summaryLoading ? (
-            // Value, unit and footer slots at the loaded line boxes, so the
-            // band's height is settled before the data is.
-            <>
-              <div className="mt-1 flex h-10 items-center">
-                <Skeleton className="h-8 w-24 bg-white/10" />
-              </div>
-              <div className="flex h-4 items-center">
-                <Skeleton className="h-2.5 w-8 bg-white/10" />
-              </div>
-              <div className="mt-auto flex h-4 items-center pt-2">
-                <Skeleton className="h-2.5 w-28 bg-white/10" />
-              </div>
-            </>
-          ) : (
-            <>
-              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[32px] leading-tight mt-1")}>
-                {summary ? Math.round(summary.total_calories).toLocaleString() : "-"}
-              </p>
-              <p className="text-[11px] text-[rgba(255,255,255,0.35)]">kcal</p>
-              <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.35)] mt-auto pt-2")}>
-                {summary ? `${avgCalories.toLocaleString()}/day \u00b7 ${daysLogged}/${summary.days_in_week} logged` : "-"}
-              </p>
-            </>
-          )}
+          {/* One tree for both states: pending renders inside the real
+              elements, so the line boxes are identical by construction. */}
+          <p className={cn(STAT_VALUE_DARK_CLASS, "text-[32px] leading-tight mt-1")}>
+            {summaryLoading ? (
+              <TextSkeleton className="w-24" />
+            ) : summary ? (
+              Math.round(summary.total_calories).toLocaleString()
+            ) : (
+              "-"
+            )}
+          </p>
+          <p className="text-[11px] text-[rgba(255,255,255,0.35)]">
+            {summaryLoading ? <TextSkeleton className="w-8" /> : "kcal"}
+          </p>
+          <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.35)] mt-auto pt-2")}>
+            {summaryLoading ? (
+              <TextSkeleton className="w-28" />
+            ) : summary ? (
+              `${avgCalories.toLocaleString()}/day \u00b7 ${daysLogged}/${summary.days_in_week} logged`
+            ) : (
+              "-"
+            )}
+          </p>
         </div>
 
         {/* Protein */}
@@ -231,12 +229,12 @@ export function NutritionHistoryTable({ clientId }: Props) {
           </div>
           {summaryLoading ? (
             <>
-              <div className="mt-1 flex h-7 items-center">
-                <Skeleton className="h-6 w-16 bg-white/10" />
-              </div>
-              <div className="mt-1 flex h-4 items-center">
-                <Skeleton className="h-2.5 w-16 bg-white/10" />
-              </div>
+              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
+                <TextSkeleton className="w-14" />
+              </p>
+              <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>
+                <TextSkeleton className="w-16" />
+              </p>
             </>
           ) : (
             <>
@@ -257,12 +255,12 @@ export function NutritionHistoryTable({ clientId }: Props) {
           </div>
           {summaryLoading ? (
             <>
-              <div className="mt-1 flex h-7 items-center">
-                <Skeleton className="h-6 w-16 bg-white/10" />
-              </div>
-              <div className="mt-1 flex h-4 items-center">
-                <Skeleton className="h-2.5 w-16 bg-white/10" />
-              </div>
+              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
+                <TextSkeleton className="w-14" />
+              </p>
+              <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>
+                <TextSkeleton className="w-16" />
+              </p>
             </>
           ) : (
             <>
@@ -283,12 +281,12 @@ export function NutritionHistoryTable({ clientId }: Props) {
           </div>
           {summaryLoading ? (
             <>
-              <div className="mt-1 flex h-7 items-center">
-                <Skeleton className="h-6 w-16 bg-white/10" />
-              </div>
-              <div className="mt-1 flex h-4 items-center">
-                <Skeleton className="h-2.5 w-16 bg-white/10" />
-              </div>
+              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
+                <TextSkeleton className="w-14" />
+              </p>
+              <p className={cn(MONO, "text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>
+                <TextSkeleton className="w-16" />
+              </p>
             </>
           ) : (
             <>

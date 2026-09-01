@@ -7,7 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Skeleton } from "@/components/ui/skeleton";
+import { TextSkeleton } from "@/components/text-skeleton";
 import { cn } from "@/lib/utils";
 import {
   MONO,
@@ -53,10 +53,16 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
           case, and a contraction, never a shove. */}
       {planLoading ? (
         <div className="flex items-center justify-between mb-3 pb-3 border-b border-[rgba(255,255,255,0.06)]">
-          <Skeleton className="h-4 w-44 bg-white/10" />
+          <span className="text-[12px] font-medium text-[rgba(255,255,255,0.5)]">
+            <TextSkeleton className="w-44" />
+          </span>
           <div className="flex items-center gap-1.5">
-            <Skeleton className="h-[18px] w-16 rounded-[3px] bg-white/10" />
-            <Skeleton className="h-[18px] w-14 rounded-[3px] bg-white/10" />
+            <span className="bg-[rgba(255,255,255,0.12)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
+              <TextSkeleton className="w-12" />
+            </span>
+            <span className="bg-[rgba(255,255,255,0.12)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium">
+              <TextSkeleton className="w-10" />
+            </span>
           </div>
         </div>
       ) : plan ? (
@@ -98,27 +104,15 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
           <p className={STAT_LABEL_DARK_CLASS}>
             Sessions Completed
           </p>
-          {summaryLoading ? (
-            // Pending slots hold the loaded block's line boxes — value AND
-            // subline — so the band's height is settled before the data is.
-            <>
-              <div className="mt-1 flex h-10 items-center">
-                <Skeleton className="h-8 w-20 bg-white/10" />
-              </div>
-              <div className="flex h-4 items-center">
-                <Skeleton className="h-2.5 w-24 bg-white/10" />
-              </div>
-            </>
-          ) : (
-            <>
-              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[32px] leading-tight mt-1")}>
-                {summary?.completed ?? 0}
-              </p>
-              <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[11px] text-[rgba(255,255,255,0.35)]")}>
-                of {summary?.totalPlanned ?? 0} planned
-              </p>
-            </>
-          )}
+          {/* One tree for both states: the pending value renders INSIDE the
+              real elements, so the line boxes — and the band's height — are
+              identical by construction. */}
+          <p className={cn(STAT_VALUE_DARK_CLASS, "text-[32px] leading-tight mt-1")}>
+            {summaryLoading ? <TextSkeleton className="w-20" /> : summary?.completed ?? 0}
+          </p>
+          <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[11px] text-[rgba(255,255,255,0.35)]")}>
+            {summaryLoading ? <TextSkeleton className="w-24" /> : <>of {summary?.totalPlanned ?? 0} planned</>}
+          </p>
         </div>
 
         {/* ADHERENCE */}
@@ -126,28 +120,25 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
           <p className={STAT_LABEL_DARK_CLASS}>
             Adherence
           </p>
-          {summaryLoading ? (
-            <>
-              <div className="mt-1 flex h-7 items-center">
-                <Skeleton className="h-6 w-16 bg-white/10" />
-              </div>
-              <div className="mt-1 flex h-4 items-center">
-                <Skeleton className="h-2.5 w-20 bg-white/10" />
-              </div>
-            </>
-          ) : (
-            <>
-              <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
+          <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
+            {summaryLoading ? (
+              <TextSkeleton className="w-14" />
+            ) : (
+              <>
                 {adherencePct}
                 <span className="text-[13px] font-medium text-[rgba(255,255,255,0.25)] ml-0.5">
                   %
                 </span>
-              </p>
-              <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>
-                {summary?.completed ?? 0}/{summary?.plannedUpToToday ?? 0} sessions
-              </p>
-            </>
-          )}
+              </>
+            )}
+          </p>
+          <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal text-[11px] text-[rgba(255,255,255,0.3)] mt-1")}>
+            {summaryLoading ? (
+              <TextSkeleton className="w-20" />
+            ) : (
+              <>{summary?.completed ?? 0}/{summary?.plannedUpToToday ?? 0} sessions</>
+            )}
+          </p>
         </div>
 
         {/* MISSED THIS WEEK */}
@@ -155,15 +146,9 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
           <p className={STAT_LABEL_DARK_CLASS}>
             Missed This Week
           </p>
-          {summaryLoading ? (
-            <div className="mt-1 flex h-7 items-center">
-              <Skeleton className="h-6 w-16 bg-white/10" />
-            </div>
-          ) : (
-            <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
-              {summary?.missed ?? 0}
-            </p>
-          )}
+          <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
+            {summaryLoading ? <TextSkeleton className="w-10" /> : summary?.missed ?? 0}
+          </p>
         </div>
       </div>
     </div>
