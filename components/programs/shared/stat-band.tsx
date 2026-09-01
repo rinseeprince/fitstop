@@ -80,7 +80,13 @@ export function StatBand({ cells }: { cells: StatBandCell[] }) {
                 </span>
               )}
             </div>
-            {cell.sub && !cell.pending && (
+            {/* The sub LINE exists while pending too — suppressing it made
+                the band grow when the sub copy landed. */}
+            {cell.pending ? (
+              <span className={cn("text-[10px] mt-1", MONO, SUB_TONE_CLASS.neutral)}>
+                <TextSkeleton className="w-20" />
+              </span>
+            ) : cell.sub ? (
               <span
                 className={cn(
                   "text-[10px] mt-1",
@@ -90,7 +96,7 @@ export function StatBand({ cells }: { cells: StatBandCell[] }) {
               >
                 {cell.sub}
               </span>
-            )}
+            ) : null}
           </>
         )
 
