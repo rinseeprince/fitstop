@@ -66,7 +66,7 @@ export function RosterSidebar({
   counts,
   onClientAdded,
 }: {
-  activeView: RosterView
+  activeView: RosterView | null
   counts: RosterCounts
   onClientAdded: () => void
 }) {

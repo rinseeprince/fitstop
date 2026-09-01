@@ -23,7 +23,9 @@ export function RosterShell({
   onClientAdded,
   children,
 }: {
-  activeView: RosterView
+  /** null = ?view= not yet readable (the prerendered Suspense fallback):
+   *  neutral header, no tab highlighted. */
+  activeView: RosterView | null
   counts: RosterCounts
   onClientAdded: () => void
   children: ReactNode
@@ -43,7 +45,7 @@ export function RosterShell({
         <header className="sticky top-0 z-10 bg-white px-8 py-2">
           <div className="flex items-center justify-between">
             <h1 className="text-[15px] font-bold text-[#0c1a1e]">
-              {rosterViewLabel(activeView)}
+              {activeView === null ? "Clients" : rosterViewLabel(activeView)}
             </h1>
 
             {/* Title + notifications only, like ProgramsTopbar. Inviting lives
