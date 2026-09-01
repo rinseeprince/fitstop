@@ -48,8 +48,14 @@ export default function ClientProfilePage() {
     // other tab's pane guard and opens the wrong pane. See buildClientTabUrl.
     // extraParams ADDRESS a pane on arrival (the Overview's block-ending row
     // sends { journey: "blocks" }).
-    router.replace(buildClientTabUrl(clientId, tab, searchParams.toString(), extraParams), { scroll: false })
-  }, [clientId, router, searchParams])
+    // scroll: a genuine TAB change scrolls to top — landing on Training at
+    // the Overview's old scroll offset reads as a broken page. Same-tab calls
+    // (a pane param changing in place) keep the position, which is what
+    // scroll: false was for.
+    router.replace(buildClientTabUrl(clientId, tab, searchParams.toString(), extraParams), {
+      scroll: tab !== activeTab,
+    })
+  }, [clientId, router, searchParams, activeTab])
 
 
   const displayClient = client ?? { id: clientId, name: "", email: "" as string }
