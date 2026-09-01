@@ -749,13 +749,33 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 | Animation | Properties |
 |-----------|------------|
 | Card entrance (`animate-card-in`) | `translateY(10px)`→`0`, `opacity 0`→`1`, `0.35s ease`; stagger `0.04s` |
-| Fade in | `opacity 0`→`1`, `0.3s ease` |
-| Slide up | `translateY(6px)`→`0`, `opacity 0`→`1`, `0.35s ease` |
+| Fade in | `opacity 0`→`1`, `0.3s ease` — reached through the overlay transitions, not written by hand |
 | Drawer slide-in (`animate-drawer-slide-in`) | `translateX(100%)`→`0`, `0.35s cubic-bezier(0.16,1,0.3,1)` |
 | Card hover-lift | `-translate-y-px` + `shadow-[0_6px_20px_rgba(13,148,136,0.08)]` |
 | Hover transitions | `0.12–0.15s ease` (`duration-150`) |
 | Chevron rotation | `0.2s ease` (`duration-200`) |
 | Button press | `active:scale-[0.98]` |
+
+### Where animation may be used
+
+**Animation marks arrival.** A surface is arrived at when you navigate to its route, plus the landing tab of that route. A tab switch, a pane switch, or a detail view that replaces a list inside a page you are already on is **not** an arrival — and neither is persistent chrome: the icon sidebar is present on every arrival, so it is never arrived at.
+
+**The rule governs entrance only** — how a surface first appears. It says nothing about how one reacts. The reaction rows in the table above (hover-lift, hover transitions, chevron rotation, button press), plus spinners, skeletons and overlay open/close, belong wherever the interaction is and are untouched by it.
+
+| Animates | Does not |
+|---|---|
+| `/dashboard` · `/clients` · `/dashboard/programs` · a client page's **Overview** · the auth pages and `/` | every other client-page tab and pane · the check-in review surface · the program builder · the icon sidebar |
+
+The client portal animates nothing. Its pages are arrivals, so the rule **permits** an entrance there; it does not ask for one.
+
+**A loop that carries meaning is a status indicator, not an animation.** The habits tracker's pulsing dot on today's cell says *still open* — deleting it deletes the only thing marking that cell — so it is out of scope here. Decorative loops are confined to the auth and marketing pages, which sit outside the product.
+
+**Every entrance is gated on `prefers-reduced-motion`.** `animate-card-in` carries the gate itself; a Framer entrance reads `useReducedMotion()`. Of everything on this page, an entrance is the one thing a reader can be unable to tolerate.
+
+Two consequences to know before reaching for an exception:
+
+- **A shared component carries one verdict.** `StatBand` renders both the roster's band and the Programs library's, so an animation on it is on both surfaces. The rule is drawn so that never has to be settled with a per-call-site prop — both are arrivals.
+- **A tab remounts.** Radix unmounts inactive `TabsContent`, so the Overview replays its entrance on every return to it. Accepted: suppressing it needs per-visit state, which is more machinery than the effect is worth.
 
 ---
 
