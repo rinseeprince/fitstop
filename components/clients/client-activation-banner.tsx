@@ -88,10 +88,11 @@ const READY: RowLine = { kind: "text", text: "Ready", isNumeric: false }
 const NOT_STARTED: RowLine = { kind: "text", text: "Not set up", isNumeric: false }
 
 /**
- * Readiness is the lighter of the two requests and lands first, so a row that
- * is in place would otherwise commit to "Ready" and then swap to its real line
- * a beat later. A placeholder says "still resolving" instead of stating
- * something it is about to replace.
+ * Still resolving, in either direction. Readiness usually lands before the
+ * plan summary, so a row that is in place would otherwise commit to "Ready"
+ * and then swap to its real line a beat later — and before readiness lands at
+ * all, a plan row has no state to claim. A placeholder says "still resolving"
+ * instead of stating something it is about to replace.
  */
 const PENDING: RowLine = { kind: "pending" }
 
@@ -146,7 +147,7 @@ function profileLine(gaps: ProfileGap[], tdee: number | null | undefined): RowLi
 
 function rowLine(
   key: SetupItemKey,
-  ready: boolean,
+  ready: boolean | null,
   summary: OverviewPlanSummary | null | undefined,
   summaryLoading: boolean,
   profile: { gaps: ProfileGap[]; tdee: number | null | undefined }
@@ -154,6 +155,7 @@ function rowLine(
   // The profile row states its own gaps, so it never falls through to the
   // generic "Not set up".
   if (key === "hasProfile") return profileLine(profile.gaps, profile.tdee)
+  if (ready === null) return PENDING
   if (!ready) return NOT_STARTED
   switch (key) {
     case "hasTrainingPlan":
@@ -208,7 +210,8 @@ function PlanRow({
 }: {
   label: string
   icon: ReactNode
-  ready: boolean
+  /** null = readiness still resolving: pending line, held state slot. */
+  ready: boolean | null
   line: RowLine
   onOpen: () => void
 }) {
@@ -216,7 +219,7 @@ function PlanRow({
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`${ready ? "Open" : "Set up"} ${label.toLowerCase()}`}
+      aria-label={`${ready === false ? "Set up" : "Open"} ${label.toLowerCase()}`}
       className={cn(
         "group/row flex w-full items-center gap-2.5 rounded-[6px] bg-white px-3 py-2.5 text-left",
         "transition-all duration-150 hover:-translate-y-px",
@@ -254,7 +257,12 @@ function PlanRow({
         )}
       </span>
 
-      {ready ? (
+      {ready === null ? (
+        // The state chips' footprint, held while readiness resolves.
+        <span className="flex h-4 shrink-0 items-center">
+          <Skeleton className="h-3 w-12 rounded-[4px] bg-[#f0f5f4]" />
+        </span>
+      ) : ready ? (
         <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-[#0d9488]">
           <CircleCheckBig className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden />
           Ready
@@ -291,19 +299,43 @@ export function ClientActivationBanner({
     { revalidateOnFocus: false }
   )
 
-  if (isLoading || !data?.data || client.onboardingStatus !== "setup_in_progress") return null
+  // Existence and contents are two different questions (CONVENTIONS §7 "Gate
+  // content, not structure"). Whether this card exists is `onboardingStatus`,
+  // already on the record — so it mounts with the page and takes its rung of
+  // the entrance ladder. What it says is the readiness read: null while in
+  // flight, rendered as pending inside the mounted card. A read that SETTLES
+  // with nothing (the error path) hides the card exactly as it always has —
+  // only the in-flight window changed.
+  if (client.onboardingStatus !== "setup_in_progress") return null
+  if (!isLoading && !data?.data) return null
 
-  const readiness = data.data
+  const readiness: Readiness | null = data?.data ?? null
   // The counter and the footer sentence stay about the three PLANS. The client
   // profile is a prerequisite — activation does not send it anywhere, so
   // counting it would make this line say "4 of 4 plans ready".
-  const readyCount = REQUIRED_ITEMS.filter((item) => readiness[item.key]).length
+  const readyCount = readiness
+    ? REQUIRED_ITEMS.filter((item) => readiness[item.key]).length
+    : null
 
   // Derived here rather than fetched: computeEnergyPair is pure and the client
   // record is already in hand, so the row costs no query. "Does a TDEE exist?"
   // would NOT do — the calculator silently substitutes a default age and a
   // default activity multiplier, so a client missing both still has one.
   const profileGaps = findProfileGaps(client)
+
+  const activateButton = (
+    <Button
+      size="sm"
+      disabled={readiness === null}
+      className={cn(
+        "h-8 shrink-0 gap-1.5 rounded-[6px] bg-[#0d9488] px-3 text-[13px] font-medium text-white hover:bg-[#0b7f75]",
+        FOCUS_RING
+      )}
+    >
+      <ArrowRight className="size-3.5" strokeWidth={1.5} aria-hidden />
+      Activate client
+    </Button>
+  )
 
   return (
     <OverviewCard className="px-5 py-4" animationDelay="0.02s">
@@ -316,36 +348,44 @@ export function ClientActivationBanner({
           <h3 className="text-[15px] font-semibold leading-tight tracking-[-0.01em] text-[#0c1a1e]">
             Ready to activate
           </h3>
-          <p className={cn(MONO_META_CLASS, "mt-0.5 text-[11px]")}>
-            {readyCount} of {REQUIRED_ITEMS.length} plans ready
-          </p>
+          {readyCount === null ? (
+            // Same slot the counter occupies, so nothing shifts when it lands.
+            <span className="mt-0.5 flex h-4 items-center">
+              <Skeleton className="h-2.5 w-24 rounded-[4px] bg-[#f0f5f4]" />
+            </span>
+          ) : (
+            <p className={cn(MONO_META_CLASS, "mt-0.5 text-[11px]")}>
+              {readyCount} of {REQUIRED_ITEMS.length} plans ready
+            </p>
+          )}
         </div>
 
-        <ClientActivationDialog
-          client={client}
-          readiness={readiness}
-          onActivated={onActivated}
-          trigger={
-            <Button
-              size="sm"
-              className={cn(
-                "h-8 shrink-0 gap-1.5 rounded-[6px] bg-[#0d9488] px-3 text-[13px] font-medium text-white hover:bg-[#0b7f75]",
-                FOCUS_RING
-              )}
-            >
-              <ArrowRight className="size-3.5" strokeWidth={1.5} aria-hidden />
-              Activate client
-            </Button>
-          }
-        />
+        {readiness ? (
+          <ClientActivationDialog
+            client={client}
+            readiness={readiness}
+            onActivated={onActivated}
+            trigger={activateButton}
+          />
+        ) : (
+          // The dialog needs a resolved Readiness (its prop stays required),
+          // so until then the same button renders alone, disabled — one box in
+          // both states, nothing shifts when it becomes the trigger.
+          activateButton
+        )}
       </div>
 
       <div className="mt-3.5 flex flex-col gap-2">
         {SETUP_ITEMS.map((item) => {
           const isProfile = item.key === "hasProfile"
+          // Profile readiness derives synchronously, so that row is live from
+          // the first frame; a plan row has no state to claim until the
+          // readiness read lands (null = pending).
           const ready = isProfile
             ? profileGaps.length === 0
-            : readiness[item.key as keyof Readiness]
+            : readiness
+              ? readiness[item.key as keyof Readiness]
+              : null
           return (
             <PlanRow
               key={item.key}
@@ -378,7 +418,15 @@ export function ClientActivationBanner({
       </div>
 
       <p className={cn("mt-3.5 border-t pt-3 text-[11px] text-[#93b0b4]", CARD_HAIRLINE)}>
-        {activationLine(readiness)}
+        {readiness ? (
+          activationLine(readiness)
+        ) : (
+          // One text line's slot, so the card's height settles before the
+          // sentence does.
+          <span className="flex h-4 items-center">
+            <Skeleton className="h-2.5 w-56 rounded-[4px] bg-[#f0f5f4]" />
+          </span>
+        )}
       </p>
     </OverviewCard>
   )
