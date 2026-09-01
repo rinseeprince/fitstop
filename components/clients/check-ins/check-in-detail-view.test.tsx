@@ -30,8 +30,8 @@ vi.mock("@/components/check-in/nutrition-section", () => ({ NutritionSection: ()
 vi.mock("@/components/check-in/training-section", () => ({ TrainingSection: () => null }));
 vi.mock("@/components/check-in/client-notes-section", () => ({ ClientNotesSection: () => null }));
 vi.mock("@/components/check-in/habits-section", () => ({ HabitsSection: () => null }));
-vi.mock("@/components/check-in/goal-progress-view", () => ({
-  GoalProgressView: () => <div data-testid="goals" />,
+vi.mock("./check-in-goal-strip", () => ({
+  CheckInGoalStrip: () => <div data-testid="goals" />,
 }));
 
 const client = { id: "client-1", name: "Jane Doe", email: "j@d.com" } as Client;

@@ -418,7 +418,8 @@ that is stated in each commit rather than skipped silently.
 | **R2** | **Comparison pane deleted (D5)** | `check-in-comparison-view.tsx` + its test deleted. What survives moves in the same commit: the sparkline to the band's cells 1–2 (`kpi-ribbon.tsx`), the five wellness deltas to `wellness-section.tsx`, the check-in gap to the header. Girths, the workouts delta and the Adherence row go. One commit — deleting first would drop the survivors for a commit | the Comparison pane whole |
 | **R3** | **Reply block** | `CheckInReplyBlock` extracted from `check-in-share-card.tsx`; the Review card stops rendering Share; Reply becomes §9 with Send as the page's single primary. Effect-synced draft preserved verbatim (§7.4 #8) | Share inside the Review card |
 | **R4** | **Card shells** | Training ∥ Nutrition side by side; all five section cards go borderless + un-animated (completing D7.3); Habits rows go compact. **Style and layout only — not one prop changes** | bordered, stacked cards |
-| **R5** | **Goal strip** | `CheckInGoalStrip` replaces `goal-progress-view.tsx` + the three cards (D2); deadline → rail meta; regeneration banner re-mounted above, unchanged; `goal-cards.test.tsx` rewritten | the Goal Progress pane |
+| **R5** | **Goal strip** | `CheckInGoalStrip` replaces `goal-progress-view.tsx` + the three cards (D2); deadline → rail meta; the met-state footer note; regeneration banner re-mounted above, unchanged; `goal-cards.test.tsx` rewritten | the Goal Progress pane |
+| **R5b** | **Set new goals** | The footer's button: `onTabChange` threaded into the review, a one-shot param, Overview opening `ClientDetailsSheet` on arrival. Separate because it is the one change that leaves this surface and touches the client page's URL contract | a note with no action |
 | **R6** | **Sweep** | `npx knip`, dead-import removal, docs: `ARCHITECTURE.md` → "The coach review surface" rewritten to the new shape (**current shape only — no "it used to be"**), `CHECK-INS-COACH-EXECUTION-PLAN.md` §2.6 closed, `TECHNICAL-DEBT.md` D7.3 sibling-cards row resolved, and C1/C2/C3 recorded as open defects | — |
 
 **Two boundary changes from the first draft, and why.** (a) The separate "Review section"
@@ -958,3 +959,188 @@ selector.
 7. Habits: counts and dot rails line up in columns; a long habit name truncates rather than
    wrapping the row.
 8. A habit added mid-period still shows leading dashes, not empty dots.
+
+---
+
+## 14. Commit R5 — detailed spec
+
+> `feat(check-ins): R5 — goal progress is a strip, not a pane`
+
+### 14.1 What R5 delivers
+
+D2's strip. Four files and ~570 lines of goal cards become one component of ~120: two rows,
+four columns each — **name · track · `start → goal` · state**. The last visual commit, and the
+biggest single reduction in the workstream.
+
+### 14.2 Files
+
+**New — 2.** `components/clients/check-ins/check-in-goal-strip.tsx` + its test.
+
+```ts
+type CheckInGoalStripProps = {
+  goalProgress: GoalProgress;
+  clientName: string;                        // the no-goals empty state
+  clientData: CheckInComparison["client"];   // the drift banner
+};
+```
+Same three props `GoalProgressView` takes today, so the page's call site is a rename.
+
+**Deleted — 4.** `goal-progress-view.tsx`, `weight-goal-card.tsx` (240 lines),
+`body-fat-goal-card.tsx`, `goal-deadline-card.tsx`, plus `goal-cards.test.tsx` rewritten
+against the strip.
+
+**Modified — 2.** `check-in-detail-view.tsx` (one import, one element) and its test's mock.
+
+### 14.3 The row
+
+```
+GOAL PROGRESS ·············································· deadline 31 Oct · 61 days
+
+  Weight     ▰▰▰▰▰▰▰▰▰▰   88 → 77 kg    Reached · 5 kg past target
+  Body fat   ▰▰▰▰▰▰▰▰▰▰   26 → 15 %     Reached · 3% past target
+  ─────────────────────────────────────────────────────────────────────
+  ⚠  {footer note — see Q19}                            [ Set new goals ]
+```
+
+| Column | Content | Notes |
+|---|---|---|
+| name | `Weight` / `Body fat` | sans 13px semibold |
+| track | `percentComplete` fill, teal | already clamped 0–100 and reads 100 once met, so under/at/past target render with no new logic |
+| ends | `{start} → {goal}` mono muted | `formatWeight` for weight (converts freely, never snaps); `%` is unitless |
+| state | `{verdict} · {distance}` | teal when reached, amber when it needs attention |
+
+A hairline (`rgba(13,148,136,0.06)`) between the two rows and above the footer — inner
+hairlines inside one card, which is the sanctioned use; the CARD keeps no border.
+
+### 14.4 The state column
+
+Two facts joined by `·`: **where they stand**, then **how far**.
+
+The verdict half keeps the precedence `status` > `paceStatus` > `isOnTrack`. **That order is
+load-bearing and is not mine to change** — it is recorded in `ARCHITECTURE.md` → "Goal progress
+and pace" and was the fix for a card reading "On track" at a client 5 kg past a weight-loss
+target while Body Fat, which has no pace check, read "Needs attention" about the same client.
+
+| Condition | State column | Tone |
+|---|---|---|
+| `status === "overshot"` | `Reached · {abs(remaining)} past target` | teal |
+| `status === "achieved"` | `Reached` | teal |
+| `paceStatus === "on_track"` | `On track · {abs(remaining)} to go` | teal |
+| `paceStatus === "behind_pace"` | `Behind pace · {abs(remaining)} to go` | amber |
+| `paceStatus === "unrealistic"` | `Deadline unrealistic · {abs(remaining)} to go` | amber |
+| else `isOnTrack` | `On track · {abs(remaining)} to go` | teal |
+| else | `Needs attention · {abs(remaining)} to go` | amber |
+
+**Both rows take the same resolver**, so the two cannot reach different verdicts about one
+client — the second half of that same fix. Body fat never has a `paceStatus` and falls through
+to the `isOnTrack` legs.
+
+**The overshoot distance needs no new data.** `remaining` is signed, and ARCHITECTURE records
+that its magnitude "is the distance *back* to the target once it has been passed" — which is
+exactly "5 kg past target". Reading it requires checking `status` first, which this table does.
+
+### 14.5 The footer
+
+An amber-thumbed note on the left, `Set new goals` on the right, above a hairline. It renders
+**only when both goals are met** — otherwise the card is two rows and stops.
+
+Two open items, §14.11 Q19 and Q20.
+
+### 14.6 What goes, and what that costs
+
+Per D2, beyond the projections the brief already named:
+
+| Dropped | Was |
+|---|---|
+| `percentComplete` as a number | `100%` + `Complete`, 2xl mono |
+| Current value | `Current Weight 72.0 kg` — the band's cell 1 carries it |
+| `Remaining` as its own labelled cell | folded into the state column (Q19) |
+| `Average Weekly Change` / `Average Change Per Check-In` | `-0.9 kg/week` |
+| Estimated Time · Projected Goal Date · pace bars | the brief's no-projections rule |
+| Progress Summary card | restated both rows and derived its verdict from weight alone (a recorded contradiction, `TECHNICAL-DEBT.md`) |
+
+**The regeneration banner stays**, above the strip, as it is now.
+
+### 14.7 Cascade
+
+`computeGoalPace` **keeps its caller** — `paceStatus` still drives three of the six branches.
+`requiredRate` and `safeCeiling` lose their only readers; they stay on the wire, because
+removing them is a service change and §0 forbids one here. Same for `projectedCompletionDate`,
+`weeksToGoal`, `avgWeeklyChange`, `avgChange`.
+
+**`components/ui/progress` is not orphaned** — `content-upload-dialog.tsx` still imports it.
+The strip's track is a plain div, matching the wellness/nutrition bars already on this page
+rather than reaching for a primitive for two rows.
+
+**Worth a follow-up, not R5's job:** with the pane gone, the 10-row `getClientCheckIns` read in
+`comparison-service` exists solely to compute `avgWeeklyWeightChange` / `avgBodyFatChange`,
+which now feed only `weeksToGoal` — itself unread. That is a service change; flag it for a
+sweep after R6.
+
+### 14.8 Branches
+
+| # | Case | Strip |
+|---|---|---|
+| B5 | No goals at all | today's verbatim empty state: `"No goals have been set for {name} yet."` + Target icon + `"Set goals in the client profile to track progress here."` |
+| B6 | One goal only | one row |
+| — | No deadline | no rail meta; states resolve on `isOnTrack` |
+| — | Deadline passed | rail meta `Overdue by N days` |
+| — | No starting value | `status` is `approaching` by definition; the ends column reads `— → 77 kg` |
+
+### 14.9 Tests
+
+`goal-cards.test.tsx` becomes `check-in-goal-strip.test.tsx`. Its eight existing cases carry
+across as behaviour, not markup — the overshot client, the "no remaining distance once met",
+the "body fat reaches the same verdict as weight", the distance-as-magnitude-while-approaching.
+Two of them (the pace check's wording, the projected date's absence) become assertions that
+those things do **not** render.
+
+New: the six-branch precedence table exercised end to end, and the deadline in the rail meta.
+**Mutation test:** flip the resolver to check `isOnTrack` before `status` — the overshot case
+must fail. That is the exact bug the precedence exists to prevent.
+
+### 14.10 Gates
+
+`npx tsc --noEmit` · `npx eslint .` · `npx vitest run` · `npm run check:labels` · `npx knip`
+(four deletions; `Progress`, `computeGoalPace` and `date-fns` all keep other importers).
+
+**CONVENTIONS §2: not applicable** — render-only.
+
+### 14.11 The footer — decided
+
+**The note reads `"Goal met - consider setting a new target."`** — the repo's own string
+(`weight-goal-card.tsx`). The mockup's sentence is not used: the brief's copy rule named
+"recommendations about resetting targets" among the placeholders not to port, and its
+"weight is still falling" half is a trend claim whose figure D2 drops. The repo string says the
+same thing off `status` alone.
+
+**`Set new goals` opens the goal editor on the Overview tab.** `ClientDetailsSheet` is mounted
+only inside `client-overview-tab.tsx` behind local state, so this is a round trip, built on the
+`?apply=1` / `?edit=1` precedent in `use-journey-round-trip.ts`:
+
+1. `CheckInDetailView` takes `onTabChange` — it holds only `onBack` / `onDone` today, so
+   `CheckInsTabContent` threads the client page's handler down (ARCHITECTURE: **every**
+   cross-tab navigation goes through that handler, or the URL changes and the visible tab does
+   not).
+2. The button calls it with `{ overview-edit param, checkIn: null }` — clearing `?checkIn=` so
+   Back does not land on a review the coach has left.
+3. `client-overview-tab.tsx` consumes the param **from an effect, not a `useState`
+   initializer**, and strips it. That is the documented shape: `activeTab` flips before the
+   `router.replace` lands, so a newly-mounted tab reads the previous tab's query for one render.
+   A lingering param would also re-open the sheet on every later visit, because Radix unmounts
+   inactive `TabsContent` and each visit is a fresh mount.
+
+**This is the one place R5 leaves the review surface**, and it touches the client page's URL
+contract. It is therefore its own commit — **R5b** — after the strip lands, so a revert of
+either does not take the other. If R5b is not built, the strip renders its note without the
+button and nothing is broken.
+
+### 14.12 Smoke (yours)
+
+1. A client with both goals → two rows, aligned columns, deadline on the rail.
+2. A client **past** a weight goal → `Goal met` on BOTH rows, no distance, no pace wording.
+3. A client mid-journey → a distance in the state column and a part-filled track.
+4. A client with **no goals** → the verbatim empty state.
+5. A client with **one** goal → one row, no empty second.
+6. A **past** deadline → `Overdue by N days` on the rail.
+7. The drift banner still appears above the strip when weight has moved ≥3 kg.

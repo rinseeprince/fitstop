@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { CheckInReviewSection } from "@/components/check-in/check-in-review-section";
-import { GoalProgressView } from "@/components/check-in/goal-progress-view";
 import { KPIRibbon } from "@/components/check-in/kpi-ribbon";
 import { WellnessSection } from "@/components/check-in/wellness-section";
 import { NutritionSection } from "@/components/check-in/nutrition-section";
@@ -13,6 +12,7 @@ import { ClientNotesSection } from "@/components/check-in/client-notes-section";
 import { HabitsSection } from "@/components/check-in/habits-section";
 import { CheckInReviewHeader } from "./check-in-review-header";
 import { CheckInReplyBlock } from "./check-in-reply-block";
+import { CheckInGoalStrip } from "./check-in-goal-strip";
 import { useCheckInDetailData } from "@/hooks/use-check-in-detail-data";
 import { summariseSessions } from "@/lib/check-in/adherence";
 import { toCheckInReview } from "@/lib/check-in/to-review";
@@ -55,7 +55,7 @@ const Notice = ({ children }: { children: ReactNode }) => (
  * whether there is something to show. Five of them return null on an empty
  * week, and a rail owned by this page would leave a bare label over empty
  * space — or force this page to hold a second copy of each child's
- * emptiness predicate. Goal progress never returns null, so its rail is here.
+ * emptiness predicate.
  */
 export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckInDetailViewProps) => {
   const {
@@ -154,21 +154,25 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
           {/* Goal progress is the one section the comparison read feeds on its
               own, so it carries that read's loading and failure states rather
               than the page doing. The band's deltas and the wellness deltas
-              degrade in place. */}
-          <div>
-            <SectionLabel label="Goal progress" />
-            {isLoadingComparison ? (
+              degrade in place. The strip renders its own rail, like every other
+              section — these two states are what needs one when it cannot. */}
+          {isLoadingComparison ? (
+            <div>
+              <SectionLabel label="Goal progress" />
               <Spinner />
-            ) : comparisonData ? (
-              <GoalProgressView
-                goalProgress={comparisonData.goalProgress}
-                clientName={clientName}
-                clientData={comparisonData.comparison.client}
-              />
-            ) : (
+            </div>
+          ) : comparisonData ? (
+            <CheckInGoalStrip
+              goalProgress={comparisonData.goalProgress}
+              clientName={clientName}
+              clientData={comparisonData.comparison.client}
+            />
+          ) : (
+            <div>
+              <SectionLabel label="Goal progress" />
               <Notice>Failed to load goal progress data</Notice>
-            )}
-          </div>
+            </div>
+          )}
 
           <CheckInReviewSection
             checkInId={checkInId}

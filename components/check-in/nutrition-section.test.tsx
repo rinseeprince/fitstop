@@ -76,7 +76,7 @@ describe("coverage vs adherence", () => {
     // The figures are deliberately DIFFERENT here — one on target out of three
     // logged. With the shared fixture's 3-and-3 both slots render the same
     // string and the assertion passes whichever number each is wired to.
-    renderCard(7, { onTarget: 1, loggedDays: 3, pct: 14 });
+    renderCard(7, { rail: [], onTarget: 1, loggedDays: 3, pct: 14 });
 
     expect(screen.getByText("3 of 7 days logged")).toBeInTheDocument();
     expect(screen.getByText(/1\/7 on target/)).toBeInTheDocument();
