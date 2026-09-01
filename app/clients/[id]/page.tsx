@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useCallback } from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { ClientDetailLayout } from "@/components/clients/client-detail-layout"
@@ -27,22 +27,27 @@ export default function ClientProfilePage() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
+  // DERIVED from the URL, never mirrored into state. The URL is the one source
+  // of truth for which tab is open, so `?tab=` and anything a caller addresses
+  // alongside it (`?checkIn=`, `?journey=`) land in ONE update and one render.
+  // Mirrored into state, the tab flipped synchronously while the replace landed
+  // a render later — long enough for a newly-mounted tab to read the PREVIOUS
+  // tab's query, which is how "Review check-in" showed the check-in list for a
+  // frame before the check-in it was told to open.
+  // `metrics-tab-content.tsx` derives its own pane the same way.
   const tabParam = searchParams.get("tab")
-  const initialTab: ClientTab = tabParam && VALID_TABS.has(tabParam as ClientTab) ? (tabParam as ClientTab) : "overview"
+  const activeTab: ClientTab =
+    tabParam && VALID_TABS.has(tabParam as ClientTab) ? (tabParam as ClientTab) : "overview"
 
   const { client, isLoading: clientLoading, isError: clientError, mutate: mutateClient } = useClient(clientId)
-  const [activeTab, setActiveTab] = useState<ClientTab>(initialTab)
 
   const handleTabChange = useCallback((tab: ClientTab, extraParams?: Record<string, string | null>) => {
-    setActiveTab(tab)
     // Single-owner params (Journey's ?journey=) survive the switch so that
     // pane restores on the return trip; the SHARED ?subtab= (written by both
     // Training and Nutrition) is dropped — carried across, it satisfies the
     // other tab's pane guard and opens the wrong pane. See buildClientTabUrl.
     // extraParams ADDRESS a pane on arrival (the Overview's block-ending row
-    // sends { journey: "blocks" }); navigation must run through here rather
-    // than a bare router.replace, because activeTab is React state seeded
-    // from ?tab= only at mount — a URL-only change would not switch the tab.
+    // sends { journey: "blocks" }).
     router.replace(buildClientTabUrl(clientId, tab, searchParams.toString(), extraParams), { scroll: false })
   }, [clientId, router, searchParams])
 
