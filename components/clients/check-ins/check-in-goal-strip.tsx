@@ -1,17 +1,17 @@
 "use client";
 
-import { Target, AlertTriangle } from "lucide-react";
+import { Target, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/programs/shared/section-label";
-import { NutritionRegenerationBanner } from "@/components/clients/nutrition/nutrition-regeneration-banner";
 import {
   MONO,
   MONO_META_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
+import { shouldShowRegenerationBanner } from "@/utils/nutrition-helpers";
 import type { CheckInComparison, GoalProgress } from "@/types/check-in";
 
 type CheckInGoalStripProps = {
@@ -136,19 +136,35 @@ export const CheckInGoalStrip = ({
   // job that is not finished.
   const allMet = rows.every((row) => row.state.tone === "good" && row.state.text.startsWith("Reached"));
 
+  // The client's weight has moved far enough from the one their targets were
+  // built on that the plan no longer describes them. Symmetric: a gain
+  // invalidates the targets as surely as a loss.
+  const baseWeight = clientData.nutritionPlanBaseWeightKg;
+  const hasDrifted =
+    clientData.currentWeight !== undefined &&
+    baseWeight !== undefined &&
+    shouldShowRegenerationBanner(clientData.currentWeight, baseWeight);
+
+  // ONE footer, and goals outrank nutrition: targets built for a goal the
+  // client has passed need the goal reset first, and the plan rebuilt from it.
+  // Advising a nutrition review before that is advice in the wrong order.
+  const footer: { tone: "good" | "attention"; text: string } | null = allMet
+    ? { tone: "good", text: "Goal met - consider setting a new target." }
+    : hasDrifted && clientData.currentWeight !== undefined && baseWeight !== undefined
+      ? {
+          tone: "attention",
+          text: `Weight has moved ${kg(Math.abs(clientData.currentWeight - baseWeight))} since these targets took effect${
+            clientData.nutritionPlanEffectiveDate
+              ? ` on ${format(new Date(clientData.nutritionPlanEffectiveDate), "d MMM")}`
+              : ""
+          } - consider reviewing their nutrition plan.`,
+        }
+      : null;
+
   return (
     <div>
       <SectionLabel label="Goal progress" meta={deadlineMeta} />
 
-      {clientData.currentWeight && clientData.nutritionPlanBaseWeightKg && (
-        <div className="mb-3">
-          <NutritionRegenerationBanner
-            currentWeight={clientData.currentWeight}
-            nutritionPlanBaseWeightKg={clientData.nutritionPlanBaseWeightKg}
-            nutritionPlanEffectiveDate={clientData.nutritionPlanEffectiveDate}
-          />
-        </div>
-      )}
 
       <div className="rounded-[6px] bg-white px-5">
         {rows.map((row, i) => (
@@ -192,15 +208,26 @@ export const CheckInGoalStrip = ({
           </div>
         ))}
 
-        {allMet && (
+        {footer && (
           <div className="flex items-center gap-3 border-t border-[rgba(13,148,136,0.06)] py-3.5">
-            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[6px] bg-[rgba(245,158,11,0.07)]">
-              <AlertTriangle className="h-3.5 w-3.5 text-[#d97706]" strokeWidth={1.5} />
+            <span
+              className={cn(
+                "grid h-6 w-6 shrink-0 place-items-center rounded-[6px]",
+                footer.tone === "good"
+                  ? "bg-[rgba(13,148,136,0.08)]"
+                  : "bg-[rgba(245,158,11,0.07)]"
+              )}
+            >
+              {footer.tone === "good" ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-[#0d9488]" strokeWidth={1.5} />
+              ) : (
+                <AlertTriangle className="h-3.5 w-3.5 text-[#d97706]" strokeWidth={1.5} />
+              )}
             </span>
-            <span className="text-[12px] text-[#5a7d82]">
-              Goal met - consider setting a new target.
-            </span>
-            {onSetNewGoals && (
+            <span className="text-[12px] text-[#5a7d82]">{footer.text}</span>
+            {/* Tied to the goal case: "Set new goals" is the wrong action to
+                offer beside a nutrition-drift note. */}
+            {allMet && onSetNewGoals && (
               <Button
                 size="sm"
                 variant="outline"

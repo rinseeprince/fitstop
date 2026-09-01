@@ -40,6 +40,13 @@ function bodyFatGoal(
 
 const NO_CLIENT = {} as CheckInComparison["client"];
 
+/** 79 kg now against targets built at 75 — four kilos of drift, past the 3 kg threshold. */
+const DRIFTED = {
+  currentWeight: 79,
+  nutritionPlanBaseWeightKg: 75,
+  nutritionPlanEffectiveDate: "2026-08-27",
+} as CheckInComparison["client"];
+
 function renderStrip(goalProgress: GoalProgress, client = NO_CLIENT) {
   return render(
     <CheckInGoalStrip goalProgress={goalProgress} clientName="Sam" clientData={client} />,
@@ -132,6 +139,75 @@ describe("the state column's precedence", () => {
     renderStrip({ weight: weightGoal(), bodyFat: bodyFatGoal({ status: "approaching", isOnTrack: true }) });
 
     expect(screen.queryByText(/consider setting a new target/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("the footer — one slot, two states", () => {
+  const approaching = { status: "approaching" as const, percentComplete: 40, remaining: 5, isOnTrack: true };
+
+  it("advises a nutrition review when the weight has drifted past the threshold", () => {
+    renderStrip({ weight: weightGoal(approaching) }, DRIFTED);
+
+    expect(screen.getByText(/Weight has moved 4 kg since these targets took effect on 27 Aug/))
+      .toBeInTheDocument();
+    expect(screen.getByText(/consider reviewing their nutrition plan/i)).toBeInTheDocument();
+  });
+
+  it("says nothing when the weight has barely moved", () => {
+    const steady = { ...DRIFTED, currentWeight: 76 } as CheckInComparison["client"];
+    renderStrip({ weight: weightGoal(approaching) }, steady);
+
+    expect(screen.queryByText(/nutrition plan/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/new target/i)).not.toBeInTheDocument();
+  });
+
+  it("fires on a GAIN as readily as a loss — either invalidates the targets", () => {
+    const gained = { ...DRIFTED, currentWeight: 71 } as CheckInComparison["client"];
+    renderStrip({ weight: weightGoal(approaching) }, gained);
+
+    expect(screen.getByText(/Weight has moved 4 kg/)).toBeInTheDocument();
+  });
+
+  it("prefers the goal note when a met goal and a drift coincide", () => {
+    // Targets built for a goal the client has passed need the GOAL reset
+    // first, and the plan rebuilt from it — a nutrition review before that is
+    // advice in the wrong order.
+    renderStrip({ weight: weightGoal() }, DRIFTED);
+
+    expect(screen.getByText(/consider setting a new target/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nutrition plan/i)).not.toBeInTheDocument();
+  });
+
+  it("offers Set new goals on the goal note only, never beside a drift note", () => {
+    const onSetNewGoals = vi.fn();
+    const { rerender } = render(
+      <CheckInGoalStrip
+        goalProgress={{ weight: weightGoal() }}
+        clientName="Sam"
+        clientData={NO_CLIENT}
+        onSetNewGoals={onSetNewGoals}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /set new goals/i })).toBeInTheDocument();
+
+    rerender(
+      <CheckInGoalStrip
+        goalProgress={{ weight: weightGoal(approaching) }}
+        clientName="Sam"
+        clientData={DRIFTED}
+        onSetNewGoals={onSetNewGoals}
+      />,
+    );
+    expect(screen.getByText(/nutrition plan/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /set new goals/i })).not.toBeInTheDocument();
+  });
+
+  it("drops the date when the targets carry no effective date", () => {
+    const undated = { currentWeight: 79, nutritionPlanBaseWeightKg: 75 } as CheckInComparison["client"];
+    renderStrip({ weight: weightGoal(approaching) }, undated);
+
+    expect(screen.getByText(/Weight has moved 4 kg since these targets took effect -/))
+      .toBeInTheDocument();
   });
 });
 
