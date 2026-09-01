@@ -101,11 +101,10 @@ export function HabitsWeekTracker({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {habits.map((habit, index) => (
+          {habits.map((habit) => (
             <TableRow
               key={habit.habitId}
-              className="border-b border-[rgba(13,148,136,0.06)] hover:bg-[rgba(13,148,136,0.02)] transition-colors animate-card-in"
-              style={{ animationDelay: `${index * 40}ms` }}
+              className="border-b border-[rgba(13,148,136,0.06)] hover:bg-[rgba(13,148,136,0.02)] transition-colors"
             >
               <TableCell className="py-2.5">
                 <span className="text-[13px] font-medium text-[#0c1a1e]">

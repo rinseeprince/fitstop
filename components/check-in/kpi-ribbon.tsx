@@ -226,7 +226,7 @@ export const KPIRibbon = ({
   ];
 
   return (
-    <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-4 animate-card-in">
+    <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-4">
       {cards.map((card, i) => (
         <div
           key={card.label}

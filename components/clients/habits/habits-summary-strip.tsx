@@ -72,7 +72,7 @@ export function HabitsSummaryStrip({
   const activeValue = activeCount != null ? String(activeCount) : "—";
 
   return (
-    <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-4 animate-card-in">
+    <div className="bg-[#0f2027] rounded-[6px] p-5 grid grid-cols-4">
       <StatColumn
         label="Today"
         value={todayValue}

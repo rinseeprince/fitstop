@@ -23,7 +23,7 @@ export function SidebarNav() {
 
   return (
     <nav className="flex flex-col gap-1">
-      {navigation.map((item, index) => {
+      {navigation.map((item) => {
         // Exact match for dashboard, startsWith for other routes
         const isActiveByPath = item.href === "/dashboard"
           ? pathname === "/dashboard"
@@ -31,12 +31,7 @@ export function SidebarNav() {
         // Use optimistic state for immediate feedback, fall back to pathname
         const isActive = optimisticHref ? item.href === optimisticHref : isActiveByPath
         return (
-          <motion.div
-            key={item.name}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.05 }}
-          >
+          <div key={item.name}>
             <Link
               href={item.href}
               onClick={() => setOptimisticHref(item.href)}
@@ -63,13 +58,11 @@ export function SidebarNav() {
                   )}
                 />
                 {item.showBadge && attentionCount > 0 && (
-                  <motion.span
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
+                  <span
                     className={cn(MONO, "absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#0d9488] text-white text-[10px] font-medium")}
                   >
                     {attentionCount > 9 ? "9+" : attentionCount}
-                  </motion.span>
+                  </span>
                 )}
               </div>
               <span className="relative mt-1 text-[10px] text-center leading-tight">{item.name}</span>
@@ -79,7 +72,7 @@ export function SidebarNav() {
                 </span>
               )}
             </Link>
-          </motion.div>
+          </div>
         )
       })}
     </nav>

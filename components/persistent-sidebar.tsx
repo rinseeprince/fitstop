@@ -3,7 +3,6 @@
 import { SidebarNav } from "./sidebar-nav"
 import { CollapsedIconStrip } from "./collapsed-icon-strip"
 import { User, LogOut, ChevronDown } from "lucide-react"
-import { motion } from "framer-motion"
 import { useAuth } from "@/contexts/auth-context"
 import { useTimezoneSync } from "@/hooks/use-timezone-sync"
 import { useRouter, usePathname } from "next/navigation"
@@ -96,14 +95,12 @@ export function PersistentSidebar() {
   return (
     <aside className="hidden lg:flex w-20 flex-col border-r border-[rgba(255,255,255,0.06)] bg-[#0f2027] fixed inset-y-0 left-0 z-20">
       <div className="flex h-[72px] items-center justify-center border-b border-[rgba(255,255,255,0.06)]">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
+        <div
           className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[13px] font-bold text-white"
           style={{ background: "linear-gradient(135deg, #0d9488, #0f766e)" }}
         >
           CH
-        </motion.div>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
