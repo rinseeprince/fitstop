@@ -135,7 +135,7 @@ export function IdentityRow({
   const isActive = status === "active";
 
   return (
-    <OverviewCard className="px-5 py-3.5" animationDelay="0.02s">
+    <OverviewCard className="px-5 py-3.5" animationDelay="0.04s">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div
           className="grid h-11 w-11 shrink-0 place-items-center rounded-[6px] text-[14px] font-semibold text-white"

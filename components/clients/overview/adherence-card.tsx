@@ -158,7 +158,7 @@ export function AdherenceCard({
     return (
       <div>
         <SectionLabel label="Adherence" meta={meta} />
-        <OverviewCard>
+        <OverviewCard animationDelay="0.16s">
           <p className="px-5 py-10 text-center text-[13px] text-[#93b0b4]">
             Adherence could not be loaded.
           </p>
@@ -181,7 +181,7 @@ export function AdherenceCard({
         }
       />
 
-      <OverviewCard>
+      <OverviewCard animationDelay="0.16s">
         <div className="divide-y divide-[rgba(13,148,136,0.06)]">
           <Row
             name="Training"

@@ -208,7 +208,7 @@ export function StatusBand({ client, goal, chart, onOpenMetrics }: StatusBandPro
   return (
     <div
       className="flex flex-col rounded-[6px] bg-[#0f2027] animate-card-in"
-      style={{ animationDelay: "0.04s" }}
+      style={{ animationDelay: "0.06s" }}
     >
       {/* Chart | cells. The chart is the one WINDOWED thing in the band and it
           is deliberately walled off from the four cells beside it, which are

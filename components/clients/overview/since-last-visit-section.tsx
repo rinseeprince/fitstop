@@ -193,7 +193,7 @@ export function SinceLastVisitSection({
         }
       />
 
-      <OverviewCard className="flex-1" animationDelay="0.08s">
+      <OverviewCard className="flex-1" animationDelay="0.10s">
         {activity.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
             <Inbox className="h-8 w-8 text-[#93b0b4] opacity-50" strokeWidth={1.5} />

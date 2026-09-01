@@ -748,7 +748,7 @@ White card, no border, 6px radius; header clickable (600 title + count badge on 
 
 | Animation | Properties |
 |-----------|------------|
-| Card entrance (`animate-card-in`) | `translateY(10px)`→`0`, `opacity 0`→`1`, `0.35s ease`; stagger `0.04s` |
+| Card entrance (`animate-card-in`) | `translateY(10px)`→`0`, `opacity 0`→`1`, `0.35s ease`; stagger `0.02s` per row, in reading order (the client Overview's eight rows, `0.02s`→`0.20s`, is the only staggered surface) |
 | Fade in | `opacity 0`→`1`, `0.3s ease` — reached through the overlay transitions, not written by hand |
 | Drawer slide-in (`animate-drawer-slide-in`) | `translateX(100%)`→`0`, `0.35s cubic-bezier(0.16,1,0.3,1)` |
 | Card hover-lift | `-translate-y-px` + `shadow-[0_6px_20px_rgba(13,148,136,0.08)]` |

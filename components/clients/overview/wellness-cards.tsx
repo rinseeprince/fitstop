@@ -167,25 +167,33 @@ export function WellnessCards({
         }
       />
 
-      {isLoading && logs.length === 0 ? (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-          {METRICS.map((spec) => (
-            <Skeleton key={spec.metric} className="h-[132px] rounded-[6px]" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-          {cards.map((card) => (
-            <MetricCard
-              key={card.spec.metric}
-              spec={card.spec}
-              points={card.points}
-              flagDays={card.flagDays}
-              onOpenWellness={onOpenWellness}
-            />
-          ))}
-        </div>
-      )}
+      {/* The section's rung of the Overview's entrance ladder. It sits on a
+          wrapper that is always mounted rather than on the cards, because the
+          skeleton and the loaded grid are different nodes: on the cards, the
+          entrance would replay whenever the read settled. The five cards keep
+          their own bordered, hover-lifting button treatment — they are
+          interactive, unlike the passive OverviewCards above them. */}
+      <div className="animate-card-in" style={{ animationDelay: "0.18s" }}>
+        {isLoading && logs.length === 0 ? (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+            {METRICS.map((spec) => (
+              <Skeleton key={spec.metric} className="h-[132px] rounded-[6px]" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+            {cards.map((card) => (
+              <MetricCard
+                key={card.spec.metric}
+                spec={card.spec}
+                points={card.points}
+                flagDays={card.flagDays}
+                onOpenWellness={onOpenWellness}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

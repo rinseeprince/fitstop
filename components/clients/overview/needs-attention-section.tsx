@@ -253,7 +253,7 @@ export function NeedsAttentionSection({
           single visible row is a number restating what is already on screen. */}
       <SectionLabel label="Needs attention" />
 
-      <OverviewCard className="flex-1" animationDelay="0.06s">
+      <OverviewCard className="flex-1" animationDelay="0.08s">
         {pendingCount === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
             <CheckCircle2 className="h-8 w-8 text-[#0d9488] opacity-50" strokeWidth={1.5} />

@@ -144,7 +144,7 @@ export function CoachNotesCard({
     <div>
       <SectionLabel label="Coach notes" />
 
-      <OverviewCard animationDelay="0.06s">
+      <OverviewCard animationDelay="0.20s">
         <div className="px-5 py-4">
           {isLoading && notes.length === 0 ? (
             // The resolved-empty card says nothing at all, so without this the
