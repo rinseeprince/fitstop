@@ -41,6 +41,13 @@ const nextConfig = {
             value: [
               "default-src 'self'",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+              // Sentry Session Replay (instrumentation-client.ts) compresses its
+              // payloads in a Worker created from a blob: URL; without this the
+              // browser falls back to script-src and blocks it (console CSP error,
+              // uncompressed replay envelopes). Same-origin pages only can mint
+              // blob: URLs, and script-src above already allows inline/eval, so
+              // this widens nothing that matters.
+              "worker-src 'self' blob:",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' blob: data: https://*.supabase.co",
               "font-src 'self'",
