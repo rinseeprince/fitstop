@@ -31,7 +31,11 @@ vi.mock("@/components/check-in/training-section", () => ({ TrainingSection: () =
 vi.mock("@/components/check-in/client-notes-section", () => ({ ClientNotesSection: () => null }));
 vi.mock("@/components/check-in/habits-section", () => ({ HabitsSection: () => null }));
 vi.mock("./check-in-goal-strip", () => ({
-  CheckInGoalStrip: () => <div data-testid="goals" />,
+  CheckInGoalStrip: ({ onSetNewGoals }: { onSetNewGoals?: () => void }) => (
+    <div data-testid="goals">
+      <button onClick={onSetNewGoals}>set new goals</button>
+    </div>
+  ),
 }));
 
 const client = { id: "client-1", name: "Jane Doe", email: "j@d.com" } as Client;
@@ -66,11 +70,22 @@ const loaded = {
   refreshDetail: vi.fn(),
 };
 
-function renderView(props: Partial<{ onBack: () => void; onDone: () => void }> = {}) {
+function renderView(
+  props: Partial<{ onBack: () => void; onDone: () => void; onTabChange: () => void }> = {},
+) {
   const onBack = props.onBack ?? vi.fn();
   const onDone = props.onDone ?? vi.fn();
-  render(<CheckInDetailView checkInId="ci-9" client={client} onBack={onBack} onDone={onDone} />);
-  return { onBack, onDone };
+  const onTabChange = props.onTabChange ?? vi.fn();
+  render(
+    <CheckInDetailView
+      checkInId="ci-9"
+      client={client}
+      onBack={onBack}
+      onDone={onDone}
+      onTabChange={onTabChange}
+    />,
+  );
+  return { onBack, onDone, onTabChange };
 }
 
 describe("CheckInDetailView", () => {
@@ -79,7 +94,13 @@ describe("CheckInDetailView", () => {
   it("spins while the detail loads, with no rail", () => {
     mockDetailData.mockReturnValue({ ...loaded, data: null, isLoading: true, contextStartDate: null, contextEndDate: null });
     const { container } = render(
-      <CheckInDetailView checkInId="ci-9" client={client} onBack={vi.fn()} onDone={vi.fn()} />
+      <CheckInDetailView
+        checkInId="ci-9"
+        client={client}
+        onBack={vi.fn()}
+        onDone={vi.fn()}
+        onTabChange={vi.fn()}
+      />
     );
     expect(container.querySelector(".animate-spin")).not.toBeNull();
     expect(screen.queryByTestId("rail")).not.toBeInTheDocument();
@@ -125,6 +146,22 @@ describe("CheckInDetailView", () => {
     expect(screen.getByTestId("ribbon")).toBeInTheDocument();
     expect(screen.getByTestId("rail")).toBeInTheDocument();
     expect(screen.queryByText(/Failed to load check-in data/i)).not.toBeInTheDocument();
+  });
+
+  it("Set new goals crosses to the Overview editor and clears the open check-in", async () => {
+    // The goal editor is the Overview's details sheet. Cross-tab navigation
+    // must go through the handler, and `checkIn: null` stops Back landing on a
+    // review the coach has left.
+    const user = userEvent.setup();
+    mockDetailData.mockReturnValue(loaded);
+    const { onTabChange } = renderView();
+
+    await user.click(screen.getByRole("button", { name: "set new goals" }));
+
+    expect(onTabChange).toHaveBeenCalledWith("overview", {
+      editProfile: "1",
+      checkIn: null,
+    });
   });
 
   it("the back row returns to the list", async () => {

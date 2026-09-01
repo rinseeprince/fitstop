@@ -16,6 +16,7 @@ import { CheckInGoalStrip } from "./check-in-goal-strip";
 import { useCheckInDetailData } from "@/hooks/use-check-in-detail-data";
 import { summariseSessions } from "@/lib/check-in/adherence";
 import { toCheckInReview } from "@/lib/check-in/to-review";
+import { OPEN_PROFILE_EDITOR_PARAM, type ClientTab } from "@/lib/client-tabs";
 import type { Client } from "@/types/check-in";
 
 type CheckInDetailViewProps = {
@@ -28,6 +29,12 @@ type CheckInDetailViewProps = {
    * list and the queues, then returns to the list.
    */
   onDone: () => void;
+  /**
+   * The client page's tab handler. Cross-tab navigation goes through it or the
+   * URL changes while the visible tab does not — `activeTab` is seeded from
+   * `?tab=` at mount only.
+   */
+  onTabChange: (tab: ClientTab, extraParams?: Record<string, string | null>) => void;
 };
 
 const Spinner = () => (
@@ -57,7 +64,13 @@ const Notice = ({ children }: { children: ReactNode }) => (
  * space — or force this page to hold a second copy of each child's
  * emptiness predicate.
  */
-export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckInDetailViewProps) => {
+export const CheckInDetailView = ({
+  checkInId,
+  client,
+  onBack,
+  onDone,
+  onTabChange,
+}: CheckInDetailViewProps) => {
   const {
     data,
     isLoading,
@@ -166,6 +179,14 @@ export const CheckInDetailView = ({ checkInId, client, onBack, onDone }: CheckIn
               goalProgress={comparisonData.goalProgress}
               clientName={clientName}
               clientData={comparisonData.comparison.client}
+              // The goal editor is the Overview's details sheet. `checkIn: null`
+              // goes with it so Back does not land on a review left behind.
+              onSetNewGoals={() =>
+                onTabChange("overview", {
+                  [OPEN_PROFILE_EDITOR_PARAM]: "1",
+                  checkIn: null,
+                })
+              }
             />
           ) : (
             <div>

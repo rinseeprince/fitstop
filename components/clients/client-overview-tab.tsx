@@ -5,6 +5,7 @@ import { ClientActivationBanner } from "@/components/clients/client-activation-b
 import { DeleteNoteDialog } from "@/components/clients/notes/delete-note-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClientProfileEdit } from "@/components/clients/overview/use-client-profile-edit";
+import { useProfileEditorTrip } from "@/hooks/use-profile-editor-trip";
 import { ClientDetailsSheet } from "@/components/clients/details/client-details-sheet";
 import { AdherenceCard } from "@/components/clients/overview/adherence-card";
 import { CoachNotesCard } from "@/components/clients/overview/coach-notes-card";
@@ -162,6 +163,10 @@ export function ClientOverviewTab({
   // pencil. It used to also scroll the page, because the editor it opened was
   // the section below and could be off screen — an overlay needs no such help.
   const openProfileEditor = edit.start;
+
+  // A one-shot arrival param — the check-in review's "Set new goals" sends the
+  // coach here, because this sheet is the only goal editor.
+  useProfileEditorTrip(edit.start);
 
   const handleMarkSeen = useCallback(() => {
     void markSeen();

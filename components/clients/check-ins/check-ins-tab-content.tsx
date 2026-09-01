@@ -58,6 +58,7 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
       <CheckInDetailView
         checkInId={checkInId}
         client={client}
+        onTabChange={onTabChange}
         onBack={() => onTabChange("check-ins", { checkIn: null })}
         onDone={() => {
           // The review is done (status → reviewed). This list refreshes through

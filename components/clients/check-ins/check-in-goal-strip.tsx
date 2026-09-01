@@ -3,6 +3,7 @@
 import { Target, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { NutritionRegenerationBanner } from "@/components/clients/nutrition/nutrition-regeneration-banner";
 import {
@@ -17,6 +18,11 @@ type CheckInGoalStripProps = {
   goalProgress: GoalProgress;
   clientName: string;
   clientData: CheckInComparison["client"];
+  /**
+   * Opens the goal editor. Absent when the page cannot route there, and the
+   * footer then renders its note alone rather than a button that goes nowhere.
+   */
+  onSetNewGoals?: () => void;
 };
 
 type RowState = { text: string; tone: "good" | "attention" };
@@ -71,6 +77,7 @@ export const CheckInGoalStrip = ({
   goalProgress,
   clientName,
   clientData,
+  onSetNewGoals,
 }: CheckInGoalStripProps) => {
   const { preference } = useUnits();
   const { weight, bodyFat, deadline } = goalProgress;
@@ -193,6 +200,16 @@ export const CheckInGoalStrip = ({
             <span className="text-[12px] text-[#5a7d82]">
               Goal met - consider setting a new target.
             </span>
+            {onSetNewGoals && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onSetNewGoals}
+                className="ml-auto h-8 border-[rgba(13,148,136,0.08)] bg-white text-xs text-[#5a7d82] hover:border-[#0d9488] hover:text-[#0d9488]"
+              >
+                Set new goals
+              </Button>
+            )}
           </div>
         )}
       </div>
