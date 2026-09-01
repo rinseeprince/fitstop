@@ -21,6 +21,22 @@ function redirectPreservingCookies(url: URL, carrier: NextResponse): NextRespons
   return redirect
 }
 
+/**
+ * The trainer-only route prefixes — the authorization half of the coach
+ * boundary. The filesystem half is app/(coach)/, and middleware.test.ts binds
+ * the two in both directions: every top-level folder there is listed here, and
+ * every entry here is a folder there. It has to be a literal: middleware runs
+ * on the Edge runtime with no filesystem, and Next's own route manifest is a
+ * build output, so neither can be read from here.
+ */
+export const trainerRoutes = [
+  "/dashboard",
+  "/clients",
+  "/crm",
+  "/automation",
+  "/settings",
+] as const
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -152,16 +168,6 @@ export async function middleware(request: NextRequest) {
   const isClientRoute =
     pathname.startsWith("/client/") || pathname === "/client"
 
-  // Trainer-only routes
-  const trainerRoutes = [
-    "/dashboard",
-    "/clients",
-    "/crm",
-    "/messages",
-    "/automation",
-    "/email",
-    "/settings",
-  ]
   const isTrainerRoute = trainerRoutes.some(
     (route) => pathname === route || pathname.startsWith(route + "/")
   )
@@ -194,7 +200,7 @@ export const config = {
      * which has no nested folders), not to how a URL happens to end. Excluding
      * on a trailing extension alone -- `.*\.(?:png|...)$` -- skipped middleware
      * for any path ending that way at any depth, and route segments are
-     * wildcards: /clients/abc.png is app/clients/[id] with id="abc.png", so it
+     * wildcards: /clients/abc.png is app/(coach)/clients/[id] with id="abc.png", so it
      * rendered with no auth check and no role redirect. `[^/]+` cannot cross a
      * slash, so only a genuine root-level asset matches.
      *

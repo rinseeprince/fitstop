@@ -1,6 +1,5 @@
 import type { ReactNode } from "react"
 import { NotificationsDropdown } from "./navbar/notifications-dropdown"
-import { CheckInNotificationListener } from "./check-in-notification-listener"
 
 interface AppLayoutProps {
   children: ReactNode
@@ -38,7 +37,6 @@ export function AppLayout({ children, pageHeader, headerActions }: AppLayoutProp
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto px-6 lg:px-8 pt-4 pb-6 lg:pb-8 bg-[#f4f7f6]">{children}</main>
       </div>
-      <CheckInNotificationListener />
     </div>
   )
 }

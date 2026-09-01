@@ -59,7 +59,7 @@ Coach-side components go in `components/clients/`. Client-side go in `components
 
 ### 1. Data-Fetching Patterns
 
-**Coach-side (any file under `components/clients/`, `app/clients/`, `app/dashboard/`, hooks used by coach pages):**
+**Coach-side (any file under `components/clients/`, `app/(coach)/clients/`, `app/(coach)/dashboard/`, hooks used by coach pages):**
 - MUST use SWR for server data fetching
 - SWR config MUST include `revalidateOnFocus: false`
 - SHOULD include `errorRetryCount: 3`, `errorRetryInterval: 1000`

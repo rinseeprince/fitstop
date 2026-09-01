@@ -2,15 +2,12 @@
 
 import type { ReactNode } from "react"
 import { ProgramsTopbar } from "./programs-topbar"
-import { CheckInNotificationListener } from "@/components/check-in-notification-listener"
 
 // Section shell for /dashboard/programs/** — the 52px dark icon strip is
 // rendered by PersistentSidebar (root layout); this adds the sticky topbar
 // and the page background. The old 200px sub-sidebar (Builder / Programs /
 // The Programs list is full-width,
 // and the builder's own left library panel absorbs Sessions + Exercises.
-// CheckInNotificationListener is re-mounted here because these pages no
-// longer render AppLayout (which normally provides it).
 export function ProgramsShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background">
@@ -26,8 +23,6 @@ export function ProgramsShell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
-
-      <CheckInNotificationListener />
     </div>
   )
 }

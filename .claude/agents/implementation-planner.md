@@ -45,7 +45,7 @@ You are an implementation planner for a **Supabase + Next.js App Router** fitnes
    Always check whether a hook, service, type, or utility already exists that does what you need.
 
 4. **Identify the audience.** This app has two user roles:
-   - **Coach (trainer):** Uses `components/clients/`, `app/clients/`, `app/dashboard/`, `app/api/clients/`
+   - **Coach (trainer):** Uses `components/clients/`, `app/(coach)/clients/`, `app/(coach)/dashboard/`, `app/api/clients/`
    - **Client:** Uses `components/client-portal/`, `app/client/`, `app/api/client/`
 
    The data-fetching pattern depends on which audience the feature serves.

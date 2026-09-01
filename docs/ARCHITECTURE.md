@@ -656,7 +656,7 @@ One rule in `lib/daily-log-permissions.ts` (pure, client-safe): today always edi
 **Locked model (Sessions 7.81–7.86): "today" is computed in the device timezone of the person whose calendar the date is on — never the server's UTC clock.** A client's day, plan placement, check-in window, streaks → the **client's** zone. A coach's dashboard windows (attention feed, current-week metrics, history summaries) → the **coach's** zone. The cross-person cases (a coach viewing a client's check-in due/overdue; background reminders) → the **client's** zone. One question decides every site: *whose calendar is this date on?*
 
 - **Storage**: `clients.timezone` (migration 089) and `coaches.timezone` (migration 109), both `TEXT NOT NULL DEFAULT 'UTC'`, IANA.
-- **Capture is device-synced, no manual picker** (Session 7.81 — intentionally reverses Session 2.6's "no silent overwrites"): the shared `useTimezoneSync` hook (`hooks/use-timezone-sync.ts`) compares the device zone against the stored value on every app load and fires a fire-and-forget PATCH on mismatch (client shell → `PATCH /api/client/settings`; coach shell → `PATCH /api/coach/settings`). Travel re-syncs on next open.
+- **Capture is device-synced, no manual picker** (Session 7.81 — intentionally reverses Session 2.6's "no silent overwrites"): the shared `useTimezoneSync` hook (`hooks/use-timezone-sync.ts`) compares the device zone against the stored value on every app load and fires a fire-and-forget PATCH on mismatch (client shell `app/client/layout.tsx` → `PATCH /api/client/settings`; coach shell `CoachTimezoneSync` under `app/(coach)/layout.tsx` → `PATCH /api/coach/settings`). Travel re-syncs on next open.
 - **Read side**: server code derives "today" via `getTodayDateStringInTimezone()` in `lib/date-helpers.ts` — the only surface owning `Intl.DateTimeFormat` math. (Sanctioned exception: the two settings routes validate input zones with `Intl.supportedValuesOf("timeZone")` — validation, not date math.)
 - **Helper inventory**: `lib/date-helpers.ts` owns the pure helpers — `getTodayDateStringInTimezone(tz, now?)` (string), `getTodayInTimezone(tz, now?)` (local-midnight `Date` for the injectable check-in helpers; NOT `parseISODate`, which parses as UTC midnight), `getDeviceTimeZone()` (browser capture). `services/today-service.ts` owns the DB-fetching ones — `getClientTodayString(clientId)` (client tz → coach tz fallback while the client is on the unsynced `'UTC'` sentinel → UTC) and `getCoachTodayString(coachId)`. **Rule:** when a `Client` record with `timezone` is already in scope, use the pure helpers (zero extra fetches — the overdue/attention-feed loops rely on this); the fetching helpers are for call sites holding a bare id.
 - A stored `'UTC'` is the "never device-synced" sentinel; coach-initiated placement on a never-synced client's calendar falls back to the coach's zone (`getClientTodayString`, Session 7.82), then UTC.
@@ -687,7 +687,7 @@ All coach-side data fetching uses SWR with:
 
 ### Coach client roster
 
-`/clients` (`app/clients/page.tsx` → `RosterShell` + `RosterStatBand` + `RosterTable`) is the coach's list of clients, in the same three-column frame as a client detail page. **`lib/roster-views.ts` is the single owner of its vocabulary** — the `?view=` param, the status ladder, and every pure predicate — and `hooks/use-roster.ts` is the only fetch-and-memo layer over it. "all" is the bare `/clients`, never `?view=all`; every writer of the param goes through `rosterViewUrl`.
+`/clients` (`app/(coach)/clients/page.tsx` → `RosterShell` + `RosterStatBand` + `RosterTable`) is the coach's list of clients, in the same three-column frame as a client detail page. **`lib/roster-views.ts` is the single owner of its vocabulary** — the `?view=` param, the status ladder, and every pure predicate — and `hooks/use-roster.ts` is the only fetch-and-memo layer over it. "all" is the bare `/clients`, never `?view=all`; every writer of the param goes through `rosterViewUrl`.
 
 **Six views in two groups.** Four *roster shapes* above the sidebar divider — All / Active / Onboarding / Inactive — and two **Attention queues** below it:
 
@@ -710,7 +710,7 @@ A type-level guard in the module fails the build if a seventh view is added with
 
 ### Client page tab structure
 
-`app/clients/[id]/page.tsx` renders tabs synced to the URL via `?tab=` search param:
+`app/(coach)/clients/[id]/page.tsx` renders tabs synced to the URL via `?tab=` search param:
 
 | Tab | Component | Description |
 |-----|-----------|-------------|
@@ -835,9 +835,15 @@ The nine wellness/tracking/activity triggers are pattern detectors over existing
 ### Middleware routing (`middleware.ts`)
 
 - Public routes (skip auth entirely): `/invite/*`, `/api/invitations/*`, `/forgot-password`, `/reset-password`, `/auth/callback`. **`/check-in/*` and `/api/check-in/*` are NOT public** — the magic-link check-in flow went with migration 142; clients check in through the authenticated portal (`/client/check-in`), and `/api/check-in/[id]/*` is a coach route (see "Route namespaces")
-- Trainers: restricted to `/dashboard`, `/clients`, `/crm`, etc. (`/check-ins` left the list when the legacy review queue was deleted, 2026-08-30 — the tree is gone, so any role hitting it now gets a 404 rather than a role redirect)
+- Trainers: restricted to `trainerRoutes` (exported from `middleware.ts`) — `/dashboard`, `/clients`, `/crm`, `/automation`, `/settings`, the five folders of `app/(coach)/` (see "Coach route group"). Any other path is left to Next, which 404s it for either role
 - Clients: restricted to `/client/*` routes
 - Role mismatch: redirects to appropriate dashboard
+
+### Coach route group (`app/(coach)/`)
+
+**Folder membership is what makes a route a coach route.** Every trainer-facing page lives under `app/(coach)/` — `dashboard/`, `clients/`, `crm/`, `automation/`, `settings/` (route groups do not appear in URLs) — and `app/(coach)/layout.tsx` is the coach application boundary: a server layout that renders the page plus the two concerns that must run on every coach page whichever shell it uses, `CheckInNotificationListener` and `CoachTimezoneSync` (`components/coach/coach-timezone-sync.tsx`, the coach twin of the `useTimezoneSync` call in `app/client/layout.tsx`). Nothing else belongs there. In particular it renders no rail and holds no route classification: which rail a surface gets is not a boundary-level question (`/dashboard` and `/dashboard/programs` are parent and child and want different rails, which nesting cannot express), so that stays with the surfaces.
+
+**Authorization keeps its own literal list, bound to the folder by test.** Middleware runs on the Edge runtime with no filesystem, and Next's filesystem→URL map (`.next/app-path-routes-manifest.json`) is a build output, so neither can feed `trainerRoutes`. `middleware.test.ts` scans `app/(coach)/` and asserts the two agree in both directions: every top-level folder is protected (the load-bearing direction — a miss is an unprotected coach route), and every entry protects a folder that exists.
 
 ### Auth helpers (`lib/auth-helpers.ts`)
 

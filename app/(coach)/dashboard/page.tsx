@@ -41,7 +41,8 @@ export default function DashboardPage() {
   // It used to count `ai_processed` rows inside /recent's newest 10 — which
   // under-reported a busy week, missed `pending` rows entirely, and pointed at
   // a queue page that no longer exists. Costs no request: /api/check-ins/
-  // unreviewed is already mounted by AppLayout's CheckInNotificationListener.
+  // unreviewed is already mounted by the coach layout's
+  // CheckInNotificationListener (app/(coach)/layout.tsx).
   const unreviewedClients = useUnreviewedCheckInClientCount()
 
   const pageHeader = (

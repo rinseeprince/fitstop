@@ -1,7 +1,6 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { CheckInNotificationListener } from "@/components/check-in-notification-listener"
 import { NotificationsDropdown } from "@/components/navbar/notifications-dropdown"
 import { RosterSidebar } from "./roster-sidebar"
 import {
@@ -15,10 +14,6 @@ import {
  * PersistentSidebar), the 200px roster sidebar, and the main column — the same
  * three-column frame the client detail pages run, so the section and the pages
  * inside it stop being two different products.
- *
- * CheckInNotificationListener is re-mounted here for the same reason
- * ProgramsShell re-mounts it: these pages no longer render AppLayout, which
- * used to provide it.
  */
 export function RosterShell({
   activeView,
@@ -60,8 +55,6 @@ export function RosterShell({
           {children}
         </main>
       </div>
-
-      <CheckInNotificationListener />
     </div>
   )
 }

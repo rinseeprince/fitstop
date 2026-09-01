@@ -1,17 +1,19 @@
 // @vitest-environment node
+import { readdirSync } from "node:fs"
+import { join } from "node:path"
 import { describe, it, expect } from "vitest"
 import * as pageStaticInfo from "next/dist/build/analysis/get-page-static-info.js"
 import { getMiddlewareRouteMatcher } from "next/dist/shared/lib/router/utils/middleware-route-matcher.js"
 import type { ProxyMatcher } from "next/dist/build/analysis/get-page-static-info"
 import type { MiddlewareRouteMatch } from "next/dist/shared/lib/router/utils/middleware-route-matcher"
 
-import { config } from "./middleware"
+import { config, trainerRoutes } from "./middleware"
 
 /**
  * Guards the middleware matcher against auth bypasses.
  *
  * Route segments are wildcards, so a path is not a static asset just because it
- * ends in an image extension: /clients/abc.png resolves to app/clients/[id] with
+ * ends in an image extension: /clients/abc.png resolves to app/(coach)/clients/[id] with
  * id="abc.png". A matcher that excludes on the trailing extension alone skips
  * middleware for that page -- no auth check, no role redirect. Before this was
  * fixed, a logged-out GET /clients/abc.png returned 200 with the rendered app
@@ -67,7 +69,7 @@ const IMAGE_EXTENSIONS = ["svg", "png", "jpg", "jpeg", "gif", "webp"]
 describe("middleware matcher", () => {
   describe("runs on routes wearing an asset extension", () => {
     it.each(IMAGE_EXTENSIONS)(
-      "/clients/abc.%s is app/clients/[id], not an asset",
+      "/clients/abc.%s is app/(coach)/clients/[id], not an asset",
       (ext) => {
         expect(runsMiddleware(`/clients/abc.${ext}`)).toBe(true)
       }
@@ -115,5 +117,39 @@ describe("middleware matcher", () => {
     // prefix. Both would hand a real route a free pass.
     expect(runsMiddleware("/faviconXico")).toBe(true)
     expect(runsMiddleware("/favicon.ico-anything")).toBe(true)
+  })
+})
+
+/**
+ * Binds the authorization list to the coach route group.
+ *
+ * "Is this a coach route?" has two representations that cannot share a source:
+ * the folder app/(coach)/ (what Next renders) and `trainerRoutes` (what the
+ * Edge middleware protects). Middleware cannot read the filesystem and Next's
+ * route manifest is a build output, so the list has to be a literal — this scan
+ * is what keeps the two from drifting. A top-level folder without an entry is
+ * an UNPROTECTED coach route, so that direction is the one that matters; the
+ * reverse catches an entry that protects nothing.
+ */
+describe("trainerRoutes is bound to app/(coach)/", () => {
+  const COACH_GROUP = join(__dirname, "app", "(coach)")
+  // Only plain route folders live at this level. A route group, parallel slot
+  // or private folder added here would not be a URL segment — extend the scan
+  // when that happens rather than filtering it out silently.
+  const coachSegments = readdirSync(COACH_GROUP, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => `/${entry.name}`)
+
+  it("protects every top-level folder of the coach route group", () => {
+    expect(coachSegments.length).toBeGreaterThan(0)
+    for (const segment of coachSegments) {
+      expect(trainerRoutes).toContain(segment)
+    }
+  })
+
+  it("lists only folders that exist in the coach route group", () => {
+    for (const route of trainerRoutes) {
+      expect(coachSegments).toContain(route)
+    }
   })
 })

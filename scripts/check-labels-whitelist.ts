@@ -24,13 +24,13 @@ export const LABEL_WHITELIST: readonly string[] = [
   "components/clients/daily-pulse/",
 
   // -- Legacy pages not yet migrated to Teal-Summit ----------------------------
-  "app/automation/page.tsx",
+  "app/(coach)/automation/page.tsx",
   "components/automation-rule-card.tsx",
-  "app/crm/page.tsx",
+  "app/(coach)/crm/page.tsx",
   "components/lead-card.tsx",
   "app/login/page.tsx",
   "app/signup/page.tsx",
-  "app/settings/page.tsx",
+  "app/(coach)/settings/page.tsx",
   "app/invite/",
   "app/(marketing)/",
   "components/marketing/",

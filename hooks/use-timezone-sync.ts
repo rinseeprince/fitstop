@@ -28,10 +28,11 @@ export function useTimezoneSync(
 
   useEffect(() => {
     if (storedTimezone == null) {
-      // Profile not loaded — or unloaded again (logout). Re-arm so the next
-      // login can sync: the coach mount (PersistentSidebar) lives in the root
-      // layout and never unmounts, so a per-instance one-shot would otherwise
-      // block every subsequent login in the same SPA session.
+      // Profile not loaded — or gone again, as on logout, which clears it
+      // before the route changes and the mount (app/client/layout.tsx, or
+      // CoachTimezoneSync under app/(coach)/layout.tsx) goes with it. Re-arm so
+      // the next resolved profile is compared afresh; a one-shot that stayed
+      // spent would skip it.
       attemptedRef.current = false;
       return;
     }

@@ -8,7 +8,7 @@ Single source of truth for the CoachHub visual design. Every new page and compon
 
 ### Canonical hierarchy (what wins when things disagree)
 
-1. **Shipped Programs & Builder code is the reference.** The system was established with the Nutrition redesign, then hardened by the **Programs page** (`app/dashboard/programs/**`, `components/programs/**`) and the **Program Builder** (`components/clients/training/program-builder/**`). When a spec here and a shipped component disagree, **match the shipped Programs/Builder code**. Every new page should read like those two.
+1. **Shipped Programs & Builder code is the reference.** The system was established with the Nutrition redesign, then hardened by the **Programs page** (`app/(coach)/dashboard/programs/**`, `components/programs/**`) and the **Program Builder** (`components/clients/training/program-builder/**`). When a spec here and a shipped component disagree, **match the shipped Programs/Builder code**. Every new page should read like those two.
 2. This doc.
 3. Everything else (the OKLCH base layer, old pages) is legacy to be migrated.
 
@@ -440,7 +440,7 @@ Page body rhythm:
 </div>
 ```
 
-Reference: `components/programs/programs-shell.tsx`, `programs-topbar.tsx`, `app/dashboard/programs/page.tsx`.
+Reference: `components/programs/programs-shell.tsx`, `programs-topbar.tsx`, `app/(coach)/dashboard/programs/page.tsx`.
 
 ---
 
@@ -546,7 +546,7 @@ Always `const { toast } = useToast()` — never a bespoke notification surface.
 
 ## Chapter: Programs (Library) page
 
-Reference: `app/dashboard/programs/page.tsx`, `components/programs/programs-table.tsx`, `programs-stat-band.tsx`, `components/programs/shared/**`.
+Reference: `app/(coach)/dashboard/programs/page.tsx`, `components/programs/programs-table.tsx`, `programs-stat-band.tsx`, `components/programs/shared/**`.
 
 ### Stat band
 

@@ -208,6 +208,8 @@
   ## 6. File Structure
   ```
   /app           - Next.js App Router pages and API routes
+    /(coach)       - The coach application boundary: every trainer-facing page, under `app/(coach)/layout.tsx` (ARCHITECTURE → "Coach route group"); `trainerRoutes` in `middleware.ts` is bound to this folder by test
+    /client        - The client portal, under `app/client/layout.tsx`
   /components    - React components
     /clients       - Coach-facing: a coach viewing their clients' data (plural)
       /daily-pulse - Legacy coach-side pulse (wellness strip, day-detail card; being retired)
@@ -337,7 +339,7 @@
   const setPane = (next: Pane) => router.replace(buildUrl(next), { scroll: false })
   ```
 
-  Reference implementations: `app/clients/[id]/page.tsx` (`?tab=`) and
+  Reference implementations: `app/(coach)/clients/[id]/page.tsx` (`?tab=`) and
   `components/clients/metrics/metrics-tab-content.tsx` (`?journey=`). The platform's own params and
   their single-owner contract are in `docs/ARCHITECTURE.md` → "Client page tab structure".
 
