@@ -1,8 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { UserPlus } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { Loader2, UserPlus } from "lucide-react"
 import { ClientSidebar } from "@/components/clients/client-sidebar"
 import { InviteClientDialog } from "@/components/clients/invite-client-dialog"
 import { PinIntakeButton } from "@/components/coach/pin-intake-button"
@@ -36,10 +35,15 @@ export function ClientDetailLayout({
   isLoading,
 }: ClientDetailLayoutProps) {
   return (
-    <div className={cn(
-      "flex min-h-screen bg-background transition-opacity duration-300 ease-in-out",
-      isLoading ? "opacity-0" : "opacity-100"
-    )}>
+    // The frame is never gated on the client record, and nothing here may
+    // introduce an opacity, `hidden` or Suspense gate that would put it behind
+    // one. The tab list, the page title and the back link are all derivable
+    // from the URL, so they paint immediately; the record fills the two
+    // client-specific slots — the sidebar's name/avatar, the intake pin — when
+    // it lands, and ClientSidebar already ships the pending treatment for that
+    // window. Navigation is the reason this is a rule and not a preference: a
+    // gate here takes the client's own tab list down with the content.
+    <div className="flex min-h-screen bg-background">
       {/* Client sidebar (icon strip is rendered by PersistentSidebar in root layout) */}
       <ClientSidebar
         client={client}
@@ -71,9 +75,18 @@ export function ClientDetailLayout({
           </div>
         </header>
 
-        {/* Page content */}
+        {/* Page content. The record decides only what fills the main column,
+            never whether the frame exists — the tab's own reads then show
+            their own loading state on top of this one. */}
         <main className="flex-1 overflow-y-auto bg-[#f4f7f6] px-8 py-5 pb-[60px]">
-          {children}
+          {isLoading ? (
+            <div role="status" className="flex flex-col items-center justify-center gap-3 py-24">
+              <Loader2 className="h-6 w-6 animate-spin text-[#93b0b4]" strokeWidth={1.5} />
+              <p className="text-[13px] text-[#93b0b4]">Loading client…</p>
+            </div>
+          ) : (
+            children
+          )}
         </main>
       </div>
     </div>
