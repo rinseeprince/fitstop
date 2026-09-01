@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TextSkeleton } from "@/components/text-skeleton";
 import {
   MONO,
   STAT_LABEL_DARK_CLASS,
@@ -197,7 +198,11 @@ export function ProgressionChart({
           </p>
           <div className="mt-1">
             {isFirstLoad ? (
-              <Skeleton className="h-[26px] w-24 rounded-[4px] bg-[rgba(255,255,255,0.06)]" />
+              <p>
+                <span className={cn(STAT_VALUE_DARK_CLASS, "text-[26px] leading-none")}>
+                  <TextSkeleton className="w-16" />
+                </span>
+              </p>
             ) : current === null ? (
               <span className="text-[13px] text-[rgba(255,255,255,0.3)]">Not recorded</span>
             ) : (
@@ -213,23 +218,28 @@ export function ProgressionChart({
               </p>
             )}
           </div>
-          {!isFirstLoad && (
-            <p
-              className={cn(
-                "mt-1.5 text-[11px]",
-                rate === null
-                  ? "text-[rgba(255,255,255,0.3)]"
-                  : cn(MONO, "text-[#0d9488]")
-              )}
-            >
-              {rate === null
-                ? // Word-only, so it stays sans beside the mono rate it replaces.
-                  points.length === 0
-                  ? "No measurements in this window"
-                  : "Not enough logged to state a rate"
-                : `${rate > 0 ? "+" : ""}${rate.toFixed(2)} ${unit}/wk`}
-            </p>
-          )}
+          {/* Rendered in BOTH states: removing the line while loading made the
+              band grow when the rate landed (newdesignsystem → Loading &
+              async states). */}
+          <p
+            className={cn(
+              "mt-1.5 text-[11px]",
+              !isFirstLoad && rate !== null
+                ? cn(MONO, "text-[#0d9488]")
+                : "text-[rgba(255,255,255,0.3)]"
+            )}
+          >
+            {isFirstLoad ? (
+              <TextSkeleton className="w-20" />
+            ) : rate === null ? (
+              // Word-only, so it stays sans beside the mono rate it replaces.
+              points.length === 0
+                ? "No measurements in this window"
+                : "Not enough logged to state a rate"
+            ) : (
+              `${rate > 0 ? "+" : ""}${rate.toFixed(2)} ${unit}/wk`
+            )}
+          </p>
         </div>
         <div className="ml-auto">
           <MetricLens metric={metric} onMetricChange={onMetricChange} />
