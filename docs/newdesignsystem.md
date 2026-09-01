@@ -545,6 +545,44 @@ Always `const { toast } = useToast()` — never a bespoke notification surface.
 
 ---
 
+## Loading & async states
+
+Every asynchronous surface distinguishes four states — **loading**, **resolved
+with content**, **resolved empty**, **error** — and only the states that need
+user-facing treatment get one. Resolved-with-content has no treatment: the
+content is the treatment, and nothing ever announces success.
+
+**Unresolved or failed is never rendered as empty.** An empty state is a
+statement about the data ("No check-ins yet"), so it may only render from a
+fetch that settled with an empty result. Reaching it while a read is in
+flight, or after one failed, announces an all-clear nobody earned — a failed
+read renders the error treatment, always.
+
+**A known surface renders immediately; its values arrive as pending.** When a
+surface's existence is decided by something already in hand — the route, the
+record, a prop — it mounts at once and shows unresolved values as pending
+slots: never `return null`, never a guessed value. Structural chrome never
+waits on data it does not read. The code-side rule is `CONVENTIONS.md` §7 →
+"Gate content, not structure"; worked examples: the activation banner
+(existence is `onboardingStatus`, readiness renders as pending inside it), the
+roster frame (`view={null}`), the Programs stat band (muted `—` values).
+
+### Which treatment
+
+| Surface | Treatment |
+|---|---|
+| A page or tab you navigated to | Spinner + a **visible** label naming what is loading: `Loader2 h-6 w-6 animate-spin text-[#93b0b4]` centred in `py-24`, label beneath in `text-[13px] text-[#93b0b4]`, copy `Loading {thing}…`. Never `sr-only` — a bare spinner says something is happening but not what |
+| A layout whose geometry is known | Skeletons at the real dimensions (Journey's hero and cards, `HistoryTable`'s rows), so nothing moves when data lands. No label — the shape is the message |
+| A value slot inside a loaded surface | A `Skeleton` holding the exact slot the value will occupy (the activation banner's counter and state chips) |
+| A control mid-action (button, row, toggle) | Inline spinner at the control's own size, no label — the control already has one |
+
+### Errors
+
+Every fetch-backed surface has an error branch: a plain statement of what
+failed ("Could not load your programs"), a muted hint, and — wherever the
+surface holds a refresh handler — a retry. An error never falls through to
+the empty state's copy or its call-to-action.
+
 ## Chapter: Programs (Library) page
 
 Reference: `app/(coach)/dashboard/programs/page.tsx`, `components/programs/programs-table.tsx`, `programs-stat-band.tsx`, `components/programs/shared/**`.
