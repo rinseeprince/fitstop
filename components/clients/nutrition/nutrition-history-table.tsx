@@ -197,7 +197,19 @@ export function NutritionHistoryTable({ clientId }: Props) {
         <div className="flex flex-col pr-5 border-r border-[rgba(255,255,255,0.08)]">
           <p className={STAT_LABEL_DARK_CLASS}>Weekly Total</p>
           {summaryLoading ? (
-            <Skeleton className="h-8 w-24 mt-1 bg-white/10" />
+            // Value, unit and footer slots at the loaded line boxes, so the
+            // band's height is settled before the data is.
+            <>
+              <div className="mt-1 flex h-10 items-center">
+                <Skeleton className="h-8 w-24 bg-white/10" />
+              </div>
+              <div className="flex h-4 items-center">
+                <Skeleton className="h-2.5 w-8 bg-white/10" />
+              </div>
+              <div className="mt-auto flex h-4 items-center pt-2">
+                <Skeleton className="h-2.5 w-28 bg-white/10" />
+              </div>
+            </>
           ) : (
             <>
               <p className={cn(STAT_VALUE_DARK_CLASS, "text-[32px] leading-tight mt-1")}>
@@ -218,7 +230,14 @@ export function NutritionHistoryTable({ clientId }: Props) {
             <p className={STAT_LABEL_DARK_CLASS}>Protein</p>
           </div>
           {summaryLoading ? (
-            <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
+            <>
+              <div className="mt-1 flex h-7 items-center">
+                <Skeleton className="h-6 w-16 bg-white/10" />
+              </div>
+              <div className="mt-1 flex h-4 items-center">
+                <Skeleton className="h-2.5 w-16 bg-white/10" />
+              </div>
+            </>
           ) : (
             <>
               <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
@@ -237,7 +256,14 @@ export function NutritionHistoryTable({ clientId }: Props) {
             <p className={STAT_LABEL_DARK_CLASS}>Carbs</p>
           </div>
           {summaryLoading ? (
-            <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
+            <>
+              <div className="mt-1 flex h-7 items-center">
+                <Skeleton className="h-6 w-16 bg-white/10" />
+              </div>
+              <div className="mt-1 flex h-4 items-center">
+                <Skeleton className="h-2.5 w-16 bg-white/10" />
+              </div>
+            </>
           ) : (
             <>
               <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
@@ -256,7 +282,14 @@ export function NutritionHistoryTable({ clientId }: Props) {
             <p className={STAT_LABEL_DARK_CLASS}>Fat</p>
           </div>
           {summaryLoading ? (
-            <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
+            <>
+              <div className="mt-1 flex h-7 items-center">
+                <Skeleton className="h-6 w-16 bg-white/10" />
+              </div>
+              <div className="mt-1 flex h-4 items-center">
+                <Skeleton className="h-2.5 w-16 bg-white/10" />
+              </div>
+            </>
           ) : (
             <>
               <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>

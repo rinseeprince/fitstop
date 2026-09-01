@@ -29,7 +29,7 @@ import type { TrainingWeekSummary } from "@/types/history";
 // this endpoint is the truthful source. Reads `plan` from TrainingBuilderContext
 // for the program-info row (both mount sites live inside TrainingBuilderProvider).
 export function TrainingSummaryHero({ clientId }: { clientId: string }) {
-  const { plan } = useTrainingBuilderContext();
+  const { plan, isLoading: planLoading } = useTrainingBuilderContext();
 
   const { data: summaryResponse, isLoading: summaryLoading } = useSWR<{
     success: boolean;
@@ -46,8 +46,20 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
 
   return (
     <div className="bg-[#0f2027] rounded-[6px] p-5">
-      {/* Program info row */}
-      {plan && (
+      {/* Program info row. While the plan read is in flight the row holds its
+          slot as pending — the band must not grow when the plan lands
+          (newdesignsystem → "Loading & async states"). If the read settles
+          with no plan the row leaves and the band tightens once: the rarer
+          case, and a contraction, never a shove. */}
+      {planLoading ? (
+        <div className="flex items-center justify-between mb-3 pb-3 border-b border-[rgba(255,255,255,0.06)]">
+          <Skeleton className="h-4 w-44 bg-white/10" />
+          <div className="flex items-center gap-1.5">
+            <Skeleton className="h-[18px] w-16 rounded-[3px] bg-white/10" />
+            <Skeleton className="h-[18px] w-14 rounded-[3px] bg-white/10" />
+          </div>
+        </div>
+      ) : plan ? (
         <div className="flex items-center justify-between mb-3 pb-3 border-b border-[rgba(255,255,255,0.06)]">
           <div className="flex items-center gap-1.5">
             <span className="text-[12px] font-medium text-[rgba(255,255,255,0.5)]">
@@ -78,7 +90,7 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
             )}
           </div>
         </div>
-      )}
+      ) : null}
       {/* Stat columns */}
       <div className="grid grid-cols-[1fr_1fr_1fr]">
         {/* SESSIONS COMPLETED */}
@@ -87,7 +99,16 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
             Sessions Completed
           </p>
           {summaryLoading ? (
-            <Skeleton className="h-8 w-20 mt-1 bg-white/10" />
+            // Pending slots hold the loaded block's line boxes — value AND
+            // subline — so the band's height is settled before the data is.
+            <>
+              <div className="mt-1 flex h-10 items-center">
+                <Skeleton className="h-8 w-20 bg-white/10" />
+              </div>
+              <div className="flex h-4 items-center">
+                <Skeleton className="h-2.5 w-24 bg-white/10" />
+              </div>
+            </>
           ) : (
             <>
               <p className={cn(STAT_VALUE_DARK_CLASS, "text-[32px] leading-tight mt-1")}>
@@ -106,7 +127,14 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
             Adherence
           </p>
           {summaryLoading ? (
-            <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
+            <>
+              <div className="mt-1 flex h-7 items-center">
+                <Skeleton className="h-6 w-16 bg-white/10" />
+              </div>
+              <div className="mt-1 flex h-4 items-center">
+                <Skeleton className="h-2.5 w-20 bg-white/10" />
+              </div>
+            </>
           ) : (
             <>
               <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
@@ -128,7 +156,9 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
             Missed This Week
           </p>
           {summaryLoading ? (
-            <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
+            <div className="mt-1 flex h-7 items-center">
+              <Skeleton className="h-6 w-16 bg-white/10" />
+            </div>
           ) : (
             <p className={cn(STAT_VALUE_DARK_CLASS, "text-[22px] mt-1")}>
               {summary?.missed ?? 0}

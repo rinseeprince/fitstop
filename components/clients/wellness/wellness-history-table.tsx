@@ -172,7 +172,16 @@ export function WellnessHistoryTable({ clientId }: Props) {
                   </p>
                 </div>
                 {summaryLoading ? (
-                  <Skeleton className="h-7 w-16 mt-1 bg-white/10" />
+                  // Value + subline slots at the loaded line boxes, so the
+                  // band's height is settled before the data is.
+                  <>
+                    <div className="mt-1 flex h-7 items-center">
+                      <Skeleton className="h-6 w-14 bg-white/10" />
+                    </div>
+                    <div className="mt-1 flex h-4 items-center">
+                      <Skeleton className="h-2.5 w-20 bg-white/10" />
+                    </div>
+                  </>
                 ) : (
                   <>
                     <p className={cn(MONO, "text-[22px] font-bold mt-1 tracking-[-0.03em]")} style={{ color }}>
