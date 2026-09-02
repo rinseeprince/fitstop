@@ -30,7 +30,7 @@ export const HabitsSection = ({ perHabit }: HabitsSectionProps) => {
       <div className="grid grid-cols-1 gap-x-8 gap-y-3 rounded-[6px] bg-white p-5 sm:grid-cols-2 xl:grid-cols-3">
         {habits.map((habit) => (
           <div key={habit.id} className="flex items-center gap-3">
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-[#0c1a1e]">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#0c1a1e]">
               {habit.name}
             </span>
             <span className={cn("shrink-0 text-xs font-semibold", MONO, "text-[#0d9488]")}>

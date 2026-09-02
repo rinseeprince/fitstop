@@ -82,7 +82,7 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
                     </span>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate text-[#0c1a1e]">{session.sessionName}</div>
+                    <div className="text-[13px] font-medium truncate text-[#0c1a1e]">{session.sessionName}</div>
                     {session.notes && (
                       <div className="text-xs text-[#93b0b4] italic truncate">
                         &ldquo;{session.notes}&rdquo;
@@ -105,7 +105,7 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
         {prHighlights.length > 0 && (
           <div className="mt-3 p-3 bg-[rgba(13,148,136,0.05)] border-l-[3px] border-l-[#0d9488] rounded-[6px] flex items-center gap-2.5">
             <Trophy className="w-5 h-5 text-[#0d9488] shrink-0" strokeWidth={1.5} />
-            <div className="text-sm font-medium text-[#0c1a1e]">
+            <div className="text-[13px] font-medium text-[#0c1a1e]">
               {prHighlights.map((pr, i) => (
                 <span key={pr.id ?? i}>
                   {pr.exerciseName}

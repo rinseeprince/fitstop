@@ -122,8 +122,8 @@ export const CheckInGoalStrip = ({
         <SectionLabel label="Goal progress" />
         <div className="rounded-[6px] bg-white p-8 text-center">
           <Target className="mx-auto mb-4 h-12 w-12 text-[#93b0b4]" strokeWidth={1.5} />
-          <p className="text-sm text-[#93b0b4]">No goals have been set for {clientName} yet.</p>
-          <p className="mt-1 text-sm text-[#93b0b4]">
+          <p className="text-[13px] text-[#93b0b4]">No goals have been set for {clientName} yet.</p>
+          <p className="mt-1 text-[13px] text-[#93b0b4]">
             Set goals in the client profile to track progress here.
           </p>
         </div>
