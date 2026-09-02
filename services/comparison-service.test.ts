@@ -4,7 +4,6 @@ vi.mock('./check-in-service', () => ({
   getCheckInById: vi.fn(),
   getPreviousCheckIn: vi.fn().mockResolvedValue(null),
   getClientCheckIns: vi.fn().mockResolvedValue({ checkIns: [] }),
-  getFirstCheckIn: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('./client-service', () => ({
@@ -43,10 +42,6 @@ vi.mock('@/utils/comparison-utils', () => ({
   }),
 }))
 
-vi.mock('./body-metrics-service', () => ({
-  getBodyMetricsHistory: vi.fn(),
-}))
-
 vi.mock('./client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))
@@ -74,7 +69,6 @@ vi.mock('@/lib/goals/resolve-effective-goal', async (importOriginal) => {
 
 import { getCheckInById, getClientCheckIns } from './check-in-service'
 import { getClientById } from './client-service'
-import { getBodyMetricsHistory } from './body-metrics-service'
 import { getCurrentGoals } from './client-goals-service'
 import { calculateGoalProgress } from '@/utils/comparison-utils'
 import { getCheckInComparison } from './comparison-service'
@@ -114,7 +108,6 @@ describe('Comparison Service - read-switch behavior', () => {
   })
 
   it('reads goals from client_goals service', async () => {
-    vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
     vi.mocked(getCurrentGoals).mockResolvedValue({
       id: 'goal-1',
       clientId: 'client-1',
@@ -136,23 +129,15 @@ describe('Comparison Service - read-switch behavior', () => {
     expect(calculateGoalProgress).toHaveBeenCalledWith(
       180, // client.currentWeight — the record's reading, never the check-in's
       165, // goalWeight from service
-      190, // earliestWeight falls back to client.startingWeight (empty body_metrics)
+      190, // client.startingWeight — the record's derived baseline
       undefined // avgWeeklyWeightChange (only 1 check-in)
     )
   })
 
-  it("the coach's RECORDED start wins over the derived one", async () => {
-    vi.mocked(getBodyMetricsHistory).mockResolvedValue([
-      {
-        id: 'bm-earliest',
-        clientId: 'client-1',
-        weight: 195,
-        bodyFatPercentage: 24,
-        source: 'intake_sync' as const,
-        recordedAt: '2023-06-01T00:00:00Z',
-        createdAt: '2023-06-01T00:00:00Z',
-      },
-    ])
+  it("takes the start from the client record's baseline, never from the check-in under review", async () => {
+    // The check-in carries 178; the record's baseline — the reading as of the
+    // start date, derived from the measurement log — says 190. A check-in is a
+    // report with every field optional, so it can never stand in as the origin.
     vi.mocked(getCurrentGoals).mockResolvedValue({
       id: 'goal-1',
       clientId: 'client-1',
@@ -166,43 +151,22 @@ describe('Comparison Service - read-switch behavior', () => {
 
     await getCheckInComparison('ci-1')
 
-    expect(getBodyMetricsHistory).toHaveBeenCalledWith('client-1', {
-      limit: 1,
-      ascending: true,
-    })
-
-    // The preference used to run the other way, and had to invert when
-    // `clients.starting_weight` became editable: `body_metrics` is immutable,
-    // so a coach's correction would otherwise show on the Overview card and be
-    // ignored by every check-in figure.
     expect(calculateGoalProgress).toHaveBeenCalledWith(
       180, // client.currentWeight — the record's reading, never the check-in's
       165, // goalWeight from service
-      190, // client.startingWeight — the recorded start, NOT the 195 event
+      190, // client.startingWeight — the derived baseline, NOT the check-in's 178
       undefined // avgWeeklyWeightChange (only 1 check-in)
     )
   })
 
-  it('derives the start from earliest body_metrics when none was recorded', async () => {
-    // The legacy client: no start weight was ever written, so the first event
-    // is the only thing that knows where they began. This is the leg that keeps
-    // the inversion behaviour-identical for everyone who has not been corrected.
+  it('falls back to the current reading when the record has no baseline yet', async () => {
+    // A client with no start date has no derived baseline. Their current
+    // reading stands in, so there is still a direction to be judged in.
     vi.mocked(getClientById).mockResolvedValue({
       ...mockClient,
       startingWeight: undefined,
       startingBodyFatPercentage: undefined,
     } as never)
-    vi.mocked(getBodyMetricsHistory).mockResolvedValue([
-      {
-        id: 'bm-earliest',
-        clientId: 'client-1',
-        weight: 195,
-        bodyFatPercentage: 24,
-        source: 'intake_sync' as const,
-        recordedAt: '2023-06-01T00:00:00Z',
-        createdAt: '2023-06-01T00:00:00Z',
-      },
-    ])
     vi.mocked(getCurrentGoals).mockResolvedValue(null)
 
     await getCheckInComparison('ci-1')
@@ -210,13 +174,12 @@ describe('Comparison Service - read-switch behavior', () => {
     expect(calculateGoalProgress).toHaveBeenCalledWith(
       180, // client.currentWeight — the record's reading, never the check-in's
       170, // client.goalWeight fallback
-      195, // derived from the earliest event
+      180, // the current reading stands in for the missing baseline
       undefined
     )
   })
 
   it('falls back to client fields when services return null', async () => {
-    vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
     vi.mocked(getCurrentGoals).mockResolvedValue(null)
 
     const result = await getCheckInComparison('ci-1')
@@ -244,7 +207,6 @@ describe('Comparison Service - read-switch behavior', () => {
       bodyFatPercentage: undefined,
     } as never)
     vi.mocked(getClientCheckIns).mockResolvedValue({ checkIns: [] } as never)
-    vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
     vi.mocked(getCurrentGoals).mockResolvedValue({
       id: 'goal-1',
       clientId: 'client-1',
@@ -277,7 +239,6 @@ describe('Comparison Service - read-switch behavior', () => {
       currentWeight: undefined,
       currentBodyFatPercentage: undefined,
     } as never)
-    vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
     vi.mocked(getCurrentGoals).mockResolvedValue({
       id: 'goal-1',
       clientId: 'client-1',
@@ -314,7 +275,6 @@ describe('Comparison Service - read-switch behavior', () => {
       )
       vi.mocked(calculateGoalProgress).mockImplementation(actual.calculateGoalProgress)
 
-      vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
       vi.mocked(getCurrentGoals).mockResolvedValue({
         id: 'goal-1',
         clientId: 'client-1',
@@ -349,7 +309,6 @@ describe('Comparison Service - read-switch behavior', () => {
         ...mockClient,
         timezone: 'Pacific/Kiritimati',
       } as never)
-      vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
       vi.mocked(getCurrentGoals).mockResolvedValue(null)
 
       await getCheckInComparison('ci-1')
@@ -373,7 +332,6 @@ describe('Comparison Service - read-switch behavior', () => {
         ...mockClient,
         timezone: 'Pacific/Niue',
       } as never)
-      vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
       vi.mocked(getCurrentGoals).mockResolvedValue({
         id: 'goal-1',
         clientId: 'client-1',
@@ -396,7 +354,7 @@ describe('Comparison Service - read-switch behavior', () => {
 })
 
 // `isOnTrack` is the strip's fallback state and the ONLY thing the ten-row
-// recent read still feeds (plus the third-priority starting value). These run
+// recent read still feeds. These run
 // the real `calculateGoalProgress` against the mocked reads so the whole path
 // from the recent set to the flag is under test — delete the read and the first
 // case reads "on track" for a client moving away from the goal.
@@ -408,7 +366,6 @@ describe('the trend behind isOnTrack', () => {
     )
     vi.mocked(calculateGoalProgress).mockImplementation(actual.calculateGoalProgress)
     vi.mocked(getClientById).mockResolvedValue(mockClient as never)
-    vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
     vi.mocked(getCurrentGoals).mockResolvedValue({
       id: 'goal-2',
       clientId: 'client-1',

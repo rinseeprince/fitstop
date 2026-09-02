@@ -1,3 +1,4 @@
+import type { MeasurementSource } from "@/lib/measurements/keys";
 import type { Tone } from "./metrics-view-types";
 
 // Small render-side formatting helpers for the Metrics page. Date parsing
@@ -41,4 +42,12 @@ export const TONE_TEXT: Record<Tone, string> = {
   good: "text-[#0d9488]",
   bad: "text-[#d97706]",
   neutral: "text-[#93b0b4]",
+};
+
+/** How a reading's source reads to a coach, beside its date. */
+export const SOURCE_LABELS: Record<MeasurementSource, string> = {
+  check_in: "check-in",
+  coach_entry: "coach entry",
+  client_log: "client log",
+  intake: "intake",
 };

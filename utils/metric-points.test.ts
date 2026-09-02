@@ -2,11 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   addDaysToDate,
   buildMetricPoints,
+  dayValuesToMetricPoints,
   daysBetween,
   type MetricSeriesDefinition,
 } from "./metric-points";
 import type { CheckIn } from "@/types/check-in";
 import type { MetricEntry } from "@/types/metric-entries";
+import type { DayValue } from "@/lib/measurements/day-values";
 
 const definitions: MetricSeriesDefinition[] = [
   { id: "weight", key: "weight", category: "body" },
@@ -169,5 +171,58 @@ describe("addDaysToDate", () => {
     expect(addDaysToDate("2026-12-31", 1)).toBe("2027-01-01");
     expect(addDaysToDate("2026-03-01", -1)).toBe("2026-02-28");
     expect(addDaysToDate("2026-07-15", 0)).toBe("2026-07-15");
+  });
+});
+
+describe("dayValuesToMetricPoints", () => {
+  const dayValue = (overrides: Partial<DayValue> = {}): DayValue => ({
+    id: "m-1",
+    metricKey: "weight",
+    value: 80,
+    date: "2026-07-01",
+    recordedAt: "2026-07-01T08:00:00+00:00",
+    measuredAt: null,
+    source: "check_in",
+    sourceId: null,
+    note: null,
+    ...overrides,
+  });
+
+  it("maps a day-value to a point keyed `date | recordedAt | id`, carrying its source and note", () => {
+    const points = dayValuesToMetricPoints([
+      dayValue(),
+      dayValue({
+        id: "m-2",
+        metricKey: "waist",
+        value: 84.5,
+        date: "2026-07-02",
+        recordedAt: "2026-07-02T09:15:00+00:00",
+        source: "client_log",
+        note: "post-run",
+        sourceId: "log-9",
+      }),
+    ]);
+
+    // No source rank in the key: the log already holds one value per day.
+    expect(points).toEqual([
+      {
+        metricId: "weight",
+        value: 80,
+        date: "2026-07-01",
+        sortKey: "2026-07-01|2026-07-01T08:00:00+00:00|m-1",
+        source: "check_in",
+        note: null,
+        sourceRecordId: "m-1",
+      },
+      {
+        metricId: "waist",
+        value: 84.5,
+        date: "2026-07-02",
+        sortKey: "2026-07-02|2026-07-02T09:15:00+00:00|m-2",
+        source: "client_log",
+        note: "post-run",
+        sourceRecordId: "m-2",
+      },
+    ]);
   });
 });

@@ -1,34 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
-vi.mock("./body-metrics-service", () => ({
-  getLatestBodyMetrics: vi.fn(),
-  recordBodyMetrics: vi.fn(),
-}));
-// Mocked at the module boundary deliberately: this suite's supabaseAdmin.from
-// stub returns the ENTRIES upsert object for every table, so a real energy
-// write would throw into dualWriteBodyMetrics' catch and the suite would stay
-// green while the write silently never happened.
+vi.mock("./measurements-service", () => ({ appendMeasurements: vi.fn() }));
+// Mocked so a recompute issued from THIS module would be visible: the energy
+// pair follows the measurement log's append (when the row is the client's
+// newest), and nothing here may trigger a second one.
 vi.mock("./client-energy-service", () => ({
   recalculateClientEnergy: vi.fn().mockResolvedValue({ status: "written" }),
 }));
 
 import { supabaseAdmin } from "./supabase-admin";
-import {
-  getLatestBodyMetrics,
-  recordBodyMetrics,
-} from "./body-metrics-service";
+import { appendMeasurements } from "./measurements-service";
+import { recalculateClientEnergy } from "./client-energy-service";
 import {
   upsertMetricEntry,
   listMetricEntries,
 } from "./metric-entries-service";
 import type { MetricEntryRow } from "@/types/metric-entries";
+import type { MeasurementReading } from "@/lib/measurements/day-values";
+
+type AppendMeasurementsResult = Awaited<ReturnType<typeof appendMeasurements>>;
 
 const mockEntryRow = (overrides: Partial<MetricEntryRow> = {}): MetricEntryRow => ({
   id: "entry-1",
   client_id: "client-1",
-  metric_key: "weight",
-  value: 82.5,
+  metric_key: "mood",
+  value: 4,
   entry_date: "2026-07-20",
   note: null,
   created_by: "coach-1",
@@ -36,6 +33,26 @@ const mockEntryRow = (overrides: Partial<MetricEntryRow> = {}): MetricEntryRow =
   updated_at: "2026-07-20T09:00:00.000Z",
   ...overrides,
 });
+
+/** The row the measurement log reports standing for a key after an append. */
+const mockReading = (overrides: Partial<MeasurementReading> = {}): MeasurementReading => ({
+  id: "m-1",
+  metricKey: "waist",
+  value: 80,
+  date: "2026-07-20",
+  recordedAt: "2026-07-20T09:00:00.000Z",
+  measuredAt: null,
+  source: "coach_entry",
+  sourceId: null,
+  note: null,
+  ...overrides,
+});
+
+const appended = (reading: MeasurementReading): AppendMeasurementsResult => {
+  const rows: AppendMeasurementsResult["rows"] = {};
+  rows[reading.metricKey] = reading;
+  return { rows, inserted: [reading.metricKey], unchanged: [], energy: "not_newest" };
+};
 
 const upsertQuery = (row: MetricEntryRow) => ({
   upsert: vi.fn().mockReturnThis(),
@@ -69,8 +86,7 @@ const pagedListQuery = (pages: MetricEntryRow[][]) => {
   };
 };
 
-// The service no longer reads `clients` at all — migration 141 removed the
-// weight_unit lookup — so this only needs to wire the entries table.
+// The only table this module still touches is the wellness entries one.
 const wireFrom = (entries: ReturnType<typeof upsertQuery>) => {
   vi.mocked(supabaseAdmin.from).mockImplementation((() => entries) as never);
   return { entries };
@@ -78,30 +94,138 @@ const wireFrom = (entries: ReturnType<typeof upsertQuery>) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getLatestBodyMetrics).mockResolvedValue(null);
-  vi.mocked(recordBodyMetrics).mockResolvedValue({} as never);
+  vi.mocked(appendMeasurements).mockReset();
 });
 
-describe("upsertMetricEntry", () => {
-  it("upserts on client_id,metric_key,entry_date with the full payload and no created_at", async () => {
-    const row = mockEntryRow({ metric_key: "waist", value: 86.36, note: "am" });
-    const { entries } = wireFrom(upsertQuery(row));
+describe("upsertMetricEntry — a physique key appends to the measurement log", () => {
+  it("appends the value as a coach entry dated the entry day and returns the standing row", async () => {
+    vi.mocked(appendMeasurements).mockResolvedValue(
+      appended(mockReading({ id: "m-waist", metricKey: "waist", value: 80, note: "am" }))
+    );
 
-    // 34 inches — the unit the coach's Log-measurement dialog still labels the
-    // field with — stored as its canonical 86.36 cm (migration 141).
+    // 80 in, 80 out. The Log-measurement dialog converts from the viewer's
+    // unit BEFORE sending (CONVENTIONS §20); this module used to multiply a
+    // girth by 2.54 on top, and a value that reaches the log as 203.2 is the
+    // regression this pins against.
     const result = await upsertMetricEntry("client-1", {
       metricKey: "waist",
-      value: 34,
+      value: 80,
       entryDate: "2026-07-20",
       note: "am",
       coachId: "coach-1",
     });
 
+    expect(appendMeasurements).toHaveBeenCalledWith({
+      clientId: "client-1",
+      source: "coach_entry",
+      recordedOn: "2026-07-20",
+      values: { waist: 80 },
+      note: "am",
+      createdBy: "coach-1",
+    });
+    // One response shape for both stores: the log's row in MetricEntry clothing,
+    // dated the day it belongs to and stamped when it was recorded.
+    expect(result).toEqual({
+      id: "m-waist",
+      clientId: "client-1",
+      metricKey: "waist",
+      value: 80,
+      entryDate: "2026-07-20",
+      note: "am",
+      createdBy: "coach-1",
+      createdAt: "2026-07-20T09:00:00.000Z",
+      updatedAt: "2026-07-20T09:00:00.000Z",
+    });
+  });
+
+  it("writes note: null and createdBy: null when neither is supplied", async () => {
+    vi.mocked(appendMeasurements).mockResolvedValue(
+      appended(mockReading({ metricKey: "weight", value: 82.5 }))
+    );
+
+    await upsertMetricEntry("client-1", {
+      metricKey: "weight",
+      value: 82.5,
+      entryDate: "2026-07-20",
+    });
+
+    expect(appendMeasurements).toHaveBeenCalledWith(
+      expect.objectContaining({ values: { weight: 82.5 }, note: null, createdBy: null })
+    );
+  });
+
+  it("touches no table and recomputes no energy of its own — the log owns both", async () => {
+    // No dual-write: the seven physique keys have ONE store. The energy pair
+    // recomputes inside the append when the row is the client's newest, so a
+    // second trigger here could only disagree with it.
+    vi.mocked(appendMeasurements).mockResolvedValue(
+      appended(mockReading({ metricKey: "weight", value: 82.5 }))
+    );
+
+    await upsertMetricEntry("client-1", {
+      metricKey: "weight",
+      value: 82.5,
+      entryDate: "2026-07-20",
+      coachId: "coach-1",
+    });
+
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+    expect(recalculateClientEnergy).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a failed append rather than reporting a saved entry", async () => {
+    vi.mocked(appendMeasurements).mockRejectedValueOnce(
+      new Error("Failed to record measurements: boom")
+    );
+
+    await expect(
+      upsertMetricEntry("client-1", {
+        metricKey: "weight",
+        value: 82.5,
+        entryDate: "2026-07-20",
+        coachId: "coach-1",
+      })
+    ).rejects.toThrow("Failed to record measurements: boom");
+  });
+
+  it("throws when the log reports no row standing for the key", async () => {
+    vi.mocked(appendMeasurements).mockResolvedValue({
+      rows: {},
+      inserted: [],
+      unchanged: [],
+      energy: "nothing_inserted",
+    });
+
+    await expect(
+      upsertMetricEntry("client-1", {
+        metricKey: "weight",
+        value: 82.5,
+        entryDate: "2026-07-20",
+        coachId: "coach-1",
+      })
+    ).rejects.toThrow("Failed to save measurement");
+  });
+});
+
+describe("upsertMetricEntry — a wellness key keeps its replace-per-day row", () => {
+  it("upserts on client_id,metric_key,entry_date with the full payload and no created_at", async () => {
+    const row = mockEntryRow({ metric_key: "mood", value: 4, note: "am" });
+    const { entries } = wireFrom(upsertQuery(row));
+
+    const result = await upsertMetricEntry("client-1", {
+      metricKey: "mood",
+      value: 4,
+      entryDate: "2026-07-20",
+      note: "am",
+      coachId: "coach-1",
+    });
+
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("client_metric_entries");
     expect(entries.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         client_id: "client-1",
-        metric_key: "waist",
-        value: expect.closeTo(34 * 2.54, 6),
+        metric_key: "mood",
+        value: 4,
         entry_date: "2026-07-20",
         note: "am",
         created_by: "coach-1",
@@ -116,11 +240,11 @@ describe("upsertMetricEntry", () => {
   });
 
   it("writes note: null when note is omitted", async () => {
-    const { entries } = wireFrom(upsertQuery(mockEntryRow({ metric_key: "waist" })));
+    const { entries } = wireFrom(upsertQuery(mockEntryRow({ metric_key: "sleep", value: 7 })));
 
     await upsertMetricEntry("client-1", {
-      metricKey: "waist",
-      value: 84,
+      metricKey: "sleep",
+      value: 7,
       entryDate: "2026-07-20",
       coachId: "coach-1",
     });
@@ -130,99 +254,9 @@ describe("upsertMetricEntry", () => {
     );
   });
 
-  it("dual-writes a current weight entry with updateClientCache: true", async () => {
-    const row = mockEntryRow({ id: "entry-w", entry_date: "2026-07-20" });
-    wireFrom(upsertQuery(row));
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
-      recordedAt: "2026-07-15T12:00:00.000Z",
-    } as never);
-
-    await upsertMetricEntry("client-1", {
-      metricKey: "weight",
-      value: 82.5,
-      entryDate: "2026-07-20",
-      coachId: "coach-1",
-    });
-
-    expect(getLatestBodyMetrics).toHaveBeenCalledWith("client-1", {
-      requireFields: ["weight"],
-    });
-    expect(recordBodyMetrics).toHaveBeenCalledWith({
-      clientId: "client-1",
-      weight: 82.5,
-      bodyFatPercentage: undefined,
-      source: "coach_entry",
-      sourceId: "entry-w",
-      recordedAt: "2026-07-20T12:00:00.000Z",
-      updateClientCache: true,
-    });
-  });
-
-  it("dual-writes a backdated weight entry with updateClientCache: false", async () => {
-    const row = mockEntryRow({ entry_date: "2026-07-10" });
-    wireFrom(upsertQuery(row));
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
-      recordedAt: "2026-07-15T12:00:00.000Z",
-    } as never);
-
-    await upsertMetricEntry("client-1", {
-      metricKey: "weight",
-      value: 81,
-      entryDate: "2026-07-10",
-      coachId: "coach-1",
-    });
-
-    expect(recordBodyMetrics).toHaveBeenCalledWith(
-      expect.objectContaining({ updateClientCache: false })
-    );
-  });
-
-  it("treats a weight entry as current when no prior body-metrics events exist", async () => {
-    wireFrom(upsertQuery(mockEntryRow()));
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue(null);
-
-    await upsertMetricEntry("client-1", {
-      metricKey: "weight",
-      value: 82.5,
-      entryDate: "2026-07-20",
-      coachId: "coach-1",
-    });
-
-    expect(recordBodyMetrics).toHaveBeenCalledWith(
-      expect.objectContaining({ updateClientCache: true })
-    );
-  });
-
-  it("dual-writes a bodyFat entry as bodyFatPercentage without weight", async () => {
-    const row = mockEntryRow({ id: "entry-bf", metric_key: "bodyFat", value: 18.2 });
-    wireFrom(upsertQuery(row));
-
-    await upsertMetricEntry("client-1", {
-      metricKey: "bodyFat",
-      value: 18.2,
-      entryDate: "2026-07-20",
-      coachId: "coach-1",
-    });
-
-    expect(getLatestBodyMetrics).toHaveBeenCalledWith("client-1", {
-      requireFields: ["body_fat_percentage"],
-    });
-    const params = vi.mocked(recordBodyMetrics).mock.calls[0][0];
-    expect(params.bodyFatPercentage).toBe(18.2);
-    expect(params.weight).toBeUndefined();
-    expect(params.sourceId).toBe("entry-bf");
-  });
-
-  it("does not dual-write girth or wellness entries", async () => {
-    wireFrom(upsertQuery(mockEntryRow({ metric_key: "waist" })));
-    await upsertMetricEntry("client-1", {
-      metricKey: "waist",
-      value: 84,
-      entryDate: "2026-07-20",
-      coachId: "coach-1",
-    });
-
+  it("never reaches the measurement log", async () => {
     wireFrom(upsertQuery(mockEntryRow({ metric_key: "mood", value: 4 })));
+
     await upsertMetricEntry("client-1", {
       metricKey: "mood",
       value: 4,
@@ -230,27 +264,7 @@ describe("upsertMetricEntry", () => {
       coachId: "coach-1",
     });
 
-    expect(getLatestBodyMetrics).not.toHaveBeenCalled();
-    expect(recordBodyMetrics).not.toHaveBeenCalled();
-  });
-
-  it("still resolves with the entry when the body-metrics dual-write throws", async () => {
-    const consoleSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
-    wireFrom(upsertQuery(mockEntryRow()));
-    vi.mocked(recordBodyMetrics).mockRejectedValue(new Error("dual-write boom"));
-
-    const result = await upsertMetricEntry("client-1", {
-      metricKey: "weight",
-      value: 82.5,
-      entryDate: "2026-07-20",
-      coachId: "coach-1",
-    });
-
-    expect(result.id).toBe("entry-1");
-    expect(result.value).toBe(82.5);
-    consoleSpy.mockRestore();
+    expect(appendMeasurements).not.toHaveBeenCalled();
   });
 });
 
@@ -259,8 +273,8 @@ describe("listMetricEntries", () => {
     const rows = [
       mockEntryRow({
         id: "entry-2",
-        metric_key: "bodyFat",
-        value: 18.2,
+        metric_key: "energy",
+        value: 8,
         entry_date: "2026-07-21",
         note: "post-refeed",
       }),
@@ -283,8 +297,8 @@ describe("listMetricEntries", () => {
     expect(result[0]).toEqual({
       id: "entry-2",
       clientId: "client-1",
-      metricKey: "bodyFat",
-      value: 18.2,
+      metricKey: "energy",
+      value: 8,
       entryDate: "2026-07-21",
       note: "post-refeed",
       createdBy: "coach-1",

@@ -21,6 +21,15 @@ const insertExerciseHighlightsMock = vi.fn()
 const insertCheckInAnswersMock = vi.fn()
 const calculateCheckInPeriodMock = vi.fn()
 const resolveCheckInWindowMock = vi.fn()
+const appendMeasurementsMock = vi.fn()
+const getMeasurementsForCheckInsMock = vi.fn()
+
+// The measurement log: a check-in's readings are rows stamped with its id,
+// written by submit and folded back in by every reader.
+vi.mock('./measurements-service', () => ({
+  appendMeasurements: (...args: unknown[]) => appendMeasurementsMock(...args),
+  getMeasurementsForCheckIns: (...args: unknown[]) => getMeasurementsForCheckInsMock(...args),
+}))
 
 vi.mock('./client-service', () => ({
   getClientById: (...args: unknown[]) => getClientByIdMock(...args),
@@ -88,6 +97,15 @@ function createMockQuery(result: { data: unknown; error: unknown }) {
 describe('Check-in Service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    appendMeasurementsMock.mockReset()
+    appendMeasurementsMock.mockResolvedValue({
+      rows: {},
+      inserted: [],
+      unchanged: [],
+      energy: 'nothing_inserted',
+    })
+    getMeasurementsForCheckInsMock.mockReset()
+    getMeasurementsForCheckInsMock.mockResolvedValue(new Map())
   })
 
   describe('submitCheckIn (Session 6.4 spine derivation)', () => {
@@ -143,6 +161,93 @@ describe('Check-in Service', () => {
       expect(result).toBe('new-check-in-id')
       expect(supabaseAdmin.from).toHaveBeenCalledWith('check_ins')
       expect(q.insert).toHaveBeenCalled()
+    })
+
+    // ---- the readings: rows in the measurement log, stamped with the id ----
+
+    it('records the seven readings in the measurement log stamped with the new check-in id, never as columns', async () => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-06-14T12:00:00Z'))
+        getClientByIdMock.mockResolvedValue({ nextCheckInDue: null, startDate: '2026-01-01', timezone: 'UTC' })
+        const q = mockInsert({ data: { id: 'new-check-in-id' }, error: null })
+
+        const { submitCheckIn } = await import('./check-in-service')
+        await submitCheckIn('client-123', {
+          weight: 80,
+          bodyFatPercentage: 18,
+          waist: 81,
+          hips: 95,
+          chest: 100,
+          arms: 35,
+          thighs: 55,
+        })
+
+        const inserted = q.insert.mock.calls[0][0]
+        for (const column of ['weight', 'body_fat_percentage', 'waist', 'hips', 'chest', 'arms', 'thighs']) {
+          expect(inserted).not.toHaveProperty(column)
+        }
+        // Dated the client's day, measured now, the form's bodyFatPercentage
+        // under the log's bodyFat key — and stamped with the INSERT's id.
+        expect(appendMeasurementsMock).toHaveBeenCalledWith({
+          clientId: 'client-123',
+          source: 'check_in',
+          sourceId: 'new-check-in-id',
+          recordedOn: '2026-06-14',
+          measuredAt: '2026-06-14T12:00:00.000Z',
+          values: { weight: 80, bodyFat: 18, waist: 81, hips: 95, chest: 100, arms: 35, thighs: 55 },
+        })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("dates the readings on the CLIENT's day (Kiritimati boundary)", async () => {
+      // UTC+14: at 12:00 UTC June 9 the client is already on June 10, and the
+      // reading belongs to their day — the same day the stored period is on.
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-06-09T12:00:00Z'))
+        getClientByIdMock.mockResolvedValue({
+          nextCheckInDue: null,
+          startDate: '2026-01-01',
+          timezone: 'Pacific/Kiritimati',
+        })
+        mockInsert({ data: { id: 'ci' }, error: null })
+
+        const { submitCheckIn } = await import('./check-in-service')
+        await submitCheckIn('client-123', { weight: 80 })
+
+        expect(appendMeasurementsMock).toHaveBeenCalledWith(
+          expect.objectContaining({ recordedOn: '2026-06-10' }),
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('writes nothing to the log when the form carries no reading', async () => {
+      mockInsert({ data: { id: 'ci' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await submitCheckIn('client-123', { notes: 'reflection' })
+
+      expect(appendMeasurementsMock).not.toHaveBeenCalled()
+    })
+
+    it('does NOT swallow a failed readings write — the check-in stands, the POST does not', async () => {
+      // The same seam as the answers below (CONVENTIONS section 2 item 13),
+      // and placed FIRST: nothing else runs on a check-in whose readings did
+      // not land — here, the schedule advance the client would otherwise get.
+      mockInsert({ data: { id: 'ci' }, error: null })
+      appendMeasurementsMock.mockRejectedValueOnce(new Error('Failed to record measurements: boom'))
+
+      const { submitCheckIn } = await import('./check-in-service')
+
+      await expect(
+        submitCheckIn('client-123', { weight: 80 }),
+      ).rejects.toThrow('Failed to record measurements: boom')
+      expect(advanceQuery.update).not.toHaveBeenCalled()
     })
 
     // The database backstop (migration 156). The write path checks the gate
@@ -473,7 +578,7 @@ describe('Check-in Service', () => {
   })
 
   describe('getCheckInById', () => {
-    it('returns check-in when found', async () => {
+    it('returns check-in when found, with its readings folded in from the measurement log', async () => {
       const mockQuery = createMockQuery({
         data: {
           id: 'check-in-123',
@@ -481,13 +586,19 @@ describe('Check-in Service', () => {
           status: 'pending',
           mood: 4,
           energy: 7,
+          // A stale column beside the log: ignored, the stamped rows win.
+          weight: 999,
           created_at: '2024-01-15T00:00:00Z',
           updated_at: '2024-01-15T00:00:00Z',
         },
         error: null,
       })
-
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+      // The readings are the live log rows stamped with the check-in's id —
+      // the form's bodyFatPercentage lives under the log's bodyFat key.
+      getMeasurementsForCheckInsMock.mockResolvedValue(
+        new Map([['check-in-123', { weight: 80, bodyFat: 18, waist: 81 }]]),
+      )
 
       const { getCheckInById } = await import('./check-in-service')
       const result = await getCheckInById('check-in-123')
@@ -496,6 +607,11 @@ describe('Check-in Service', () => {
       expect(result?.id).toBe('check-in-123')
       expect(result?.clientId).toBe('client-456')
       expect(result?.mood).toBe(4)
+      expect(getMeasurementsForCheckInsMock).toHaveBeenCalledWith(['check-in-123'])
+      expect(result?.weight).toBe(80)
+      expect(result?.bodyFatPercentage).toBe(18)
+      expect(result?.waist).toBe(81)
+      expect(result?.hips).toBeUndefined()
     })
 
     it('returns null when not found', async () => {
@@ -543,6 +659,7 @@ describe('Check-in Service', () => {
       }
 
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+      getMeasurementsForCheckInsMock.mockResolvedValue(new Map([['check-in-2', { weight: 79 }]]))
 
       const { getClientCheckIns } = await import('./check-in-service')
       const result = await getClientCheckIns('client-123', { limit: 10, offset: 0 })
@@ -550,6 +667,11 @@ describe('Check-in Service', () => {
       expect(result.checkIns).toHaveLength(2)
       expect(result.total).toBe(10)
       expect(result.checkIns[0].id).toBe('check-in-1')
+      // ONE log read for the whole page, folded per row by its stamp.
+      expect(getMeasurementsForCheckInsMock).toHaveBeenCalledTimes(1)
+      expect(getMeasurementsForCheckInsMock).toHaveBeenCalledWith(['check-in-1', 'check-in-2'])
+      expect(result.checkIns[0].weight).toBeUndefined()
+      expect(result.checkIns[1].weight).toBe(79)
     })
 
     it('filters by status when provided', async () => {
@@ -597,6 +719,11 @@ describe('Check-in Service', () => {
       // A keyset page pays for no count unless a caller opts in.
       expect(mockQuery.select).toHaveBeenCalledWith('*', undefined)
       expect(result.checkIns).toHaveLength(2) // extra row trimmed
+      // …and the peeked row is trimmed BEFORE the fold, so it costs no log read.
+      expect(getMeasurementsForCheckInsMock).toHaveBeenCalledWith([
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+      ])
       expect(result.checkIns.map((c) => c.id)).toEqual([
         '11111111-1111-4111-8111-111111111111',
         '22222222-2222-4222-8222-222222222222',
@@ -708,6 +835,28 @@ describe('Check-in Service', () => {
         createdAt: '2024-02-01T00:00:00Z',
         id: '66666666-6666-4666-8666-666666666666',
       })
+    })
+  })
+
+  describe('getPreviousCheckIn', () => {
+    it("folds the previous check-in's readings in from the measurement log", async () => {
+      const current = { id: 'ci-2', client_id: 'client-456', status: 'pending', created_at: '2024-01-15T00:00:00Z', updated_at: '2024-01-15T00:00:00Z' }
+      const previous = { id: 'ci-1', client_id: 'client-456', status: 'reviewed', created_at: '2024-01-08T00:00:00Z', updated_at: '2024-01-08T00:00:00Z' }
+      const mockQuery = createMockQuery({ data: current, error: null })
+      mockQuery.single
+        .mockResolvedValueOnce({ data: current, error: null })
+        .mockResolvedValueOnce({ data: previous, error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+      getMeasurementsForCheckInsMock.mockImplementation((ids: string[]) =>
+        Promise.resolve(new Map(ids.filter((id) => id === 'ci-1').map((id) => [id, { weight: 81 }]))),
+      )
+
+      const { getPreviousCheckIn } = await import('./check-in-service')
+      const result = await getPreviousCheckIn('client-456', 'ci-2')
+
+      expect(mockQuery.lt).toHaveBeenCalledWith('created_at', '2024-01-15T00:00:00Z')
+      expect(result?.id).toBe('ci-1')
+      expect(result?.weight).toBe(81)
     })
   })
 

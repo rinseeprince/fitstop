@@ -5,11 +5,13 @@ import {
   type MetricPoint,
   type MetricSeriesDefinition,
 } from "@/utils/metric-points";
+import type { MeasurementSource } from "@/lib/measurements/keys";
 import type { TrendDirection } from "@/types/check-in";
 
 // Deterministic derivations for the coach Metrics page. Every function takes
-// the metric's FULL ascending merged series — the chart's range selector never
-// feeds these. No date-fns: formatting happens at render.
+// the metric's FULL ascending series — the chart's range selector never feeds
+// these. For a physique metric that series is the JOURNEY: readings from the
+// start date on. No date-fns: formatting happens at render.
 
 export type Tone = "good" | "bad" | "neutral";
 
@@ -18,9 +20,27 @@ function toneFor(trend: TrendDirection, downIsGood: boolean): Tone {
   return (trend === "down") === downIsGood ? "good" : "bad";
 }
 
+/** The reading as of the start date — derived by the database, never here. */
+export type HeroBaseline = { value: number; date: string; source: MeasurementSource };
+
+/**
+ * What a PHYSIQUE hero is anchored on (docs/MEASUREMENT-LOG-PLAN.md D4):
+ * "Current" is the newest reading of ANY date and never waits for the start
+ * date; every "since start" figure reads the baseline, and reads `Starts …`
+ * while the start date is ahead. Wellness metrics pass nothing and keep the
+ * first-point anchor, their series being the merged weekly averages.
+ */
+type HeroJourney = {
+  current: MetricPoint | null;
+  baseline: HeroBaseline | null;
+  startDate: string | null;
+};
+
 type HeroStats = {
   current: { value: number; date: string; daysAgo: number };
-  totalChange: { delta: number; sinceDate: string } | null;
+  totalChange: { delta: number; sinceDate: string; baseline?: HeroBaseline } | null;
+  /** The start date while it is still ahead — the since-start cell reads it. */
+  startsOn: string | null;
   avgRate: { perWeek: number; weeks: number } | null;
   entries: { count: number; sinceDate: string };
 };
@@ -28,31 +48,49 @@ type HeroStats = {
 export function deriveHeroStats(
   points: MetricPoint[],
   category: "body" | "wellness",
-  today: string
+  today: string,
+  journey?: HeroJourney
 ): HeroStats | null {
   const n = points.length;
-  if (n === 0) return null;
-  const latest = points[n - 1];
-  const first = points[0];
-  const spanDays = daysBetween(first.date, latest.date);
+  const latest = journey ? journey.current : n > 0 ? points[n - 1] : null;
+  if (!latest) return null;
+  const first = n > 0 ? points[0] : null;
+  const last = n > 0 ? points[n - 1] : null;
+  const spanDays = first && last ? daysBetween(first.date, last.date) : 0;
   // Weekly-rate gate: wellness scores never rate; body metrics need >= 2
   // entries at least a week apart or the extrapolated weekly rate is absurd.
   const showRate = category === "body" && n >= 2 && spanDays >= 7;
+  const startsAhead = journey?.startDate != null && journey.startDate > today;
+
+  let totalChange: HeroStats["totalChange"] = null;
+  if (journey) {
+    if (!startsAhead && journey.baseline && journey.startDate) {
+      totalChange = {
+        delta: latest.value - journey.baseline.value,
+        sinceDate: journey.startDate,
+        baseline: journey.baseline,
+      };
+    }
+  } else if (first && n >= 2) {
+    totalChange = { delta: latest.value - first.value, sinceDate: first.date };
+  }
+
   return {
     current: {
       value: latest.value,
       date: latest.date,
       daysAgo: daysBetween(latest.date, today),
     },
-    totalChange:
-      n >= 2 ? { delta: latest.value - first.value, sinceDate: first.date } : null,
-    avgRate: showRate
-      ? {
-          perWeek: (latest.value - first.value) / (spanDays / 7),
-          weeks: Math.round(spanDays / 7),
-        }
-      : null,
-    entries: { count: n, sinceDate: first.date },
+    totalChange,
+    startsOn: startsAhead ? journey.startDate : null,
+    avgRate:
+      showRate && first && last
+        ? {
+            perWeek: (last.value - first.value) / (spanDays / 7),
+            weeks: Math.round(spanDays / 7),
+          }
+        : null,
+    entries: { count: n, sinceDate: first?.date ?? latest.date },
   };
 }
 

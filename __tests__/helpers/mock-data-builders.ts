@@ -6,7 +6,6 @@
 import { generateUUID, generateISODate } from './test-utils'
 import type { TrainingEventRow } from '@/lib/database-helpers'
 import type { ClientGoalRow } from '@/types/client-goals'
-import type { BodyMetricsEventRow } from '@/types/body-metrics'
 import type { TrainingEvent, TrainingEventStatus } from '@/types/training'
 
 // =============================================================================
@@ -82,41 +81,6 @@ export function createMockClientGoalsRow(options: MockClientGoalsRowOptions = {}
     superseded_at: options.supersededAt ?? null,
     created_at: options.createdAt ?? now,
     updated_at: options.updatedAt ?? now,
-  }
-}
-
-// =============================================================================
-// Body Metrics Builders
-// =============================================================================
-
-interface MockBodyMetricsRowOptions {
-  id?: string
-  clientId?: string
-  weight?: number | null
-  weightUnit?: string | null
-  bodyFatPercentage?: number | null
-  bmr?: number | null
-  tdee?: number | null
-  source?: string
-  sourceId?: string | null
-  recordedAt?: string
-  createdAt?: string
-}
-
-export function createMockBodyMetricsRow(options: MockBodyMetricsRowOptions = {}): BodyMetricsEventRow {
-  const now = generateISODate()
-
-  return {
-    id: options.id ?? generateUUID(),
-    client_id: options.clientId ?? generateUUID(),
-    weight: options.weight ?? 180,
-    body_fat_percentage: options.bodyFatPercentage ?? null,
-    bmr: options.bmr ?? null,
-    tdee: options.tdee ?? null,
-    source: options.source ?? 'check_in',
-    source_id: options.sourceId ?? null,
-    recorded_at: options.recordedAt ?? now,
-    created_at: options.createdAt ?? now,
   }
 }
 

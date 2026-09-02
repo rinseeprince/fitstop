@@ -190,7 +190,7 @@ async function main() {
   await insertSessionLogsAndCompletions(sessionIds, exerciseRowsBySession, args, rng);
   await insertHabitLogs(args.months, rng);
   const checkInRows = await insertCheckIns(args.months, rng);
-  await insertBodyMetrics(checkInRows, rng);
+  await insertMeasurements(checkInRows, getDateDaysAgo(args.months * 30));
   await insertTrainingEvents(sessionIds, args.months);
   // After training events (the surplus source) so generated nutrition events
   // pick up the training-day surplus.
@@ -212,7 +212,11 @@ async function cleanExistingFixtures(fullReset: boolean) {
 
   const c = PERF_CLIENT_ID;
   await del("training_events", supabaseAdmin.from("training_events").delete().eq("client_id", c));
-  await del("body_metrics", supabaseAdmin.from("body_metrics").delete().eq("client_id", c));
+  // client_measurements is NOT cleared here: the app role holds no DELETE on
+  // the measurement log (migration 158, append-only by design). Its rows carry
+  // deterministic ids and are written with ignore-duplicates below, so a
+  // re-seed leaves them standing; only a --full-reset (the client row's
+  // delete, cascading) removes them.
   await del("check_ins", supabaseAdmin.from("check_ins").delete().eq("client_id", String(c)));
   await del("daily_habit_logs", supabaseAdmin.from("daily_habit_logs").delete().eq("client_id", c));
   await del("daily_habits", supabaseAdmin.from("daily_habits").delete().eq("client_id", c));
@@ -279,12 +283,10 @@ async function insertCoachAndClient() {
         // are canonical kg/cm regardless (migration 141); they used to be the
         // same person in lbs/in (185 lb = 83.9 kg, matching base_weight_kg: 84).
         unit_preference: "imperial",
-        current_weight: 83.9,
+        // No weight columns: the readings live in the measurement log
+        // (insertMeasurements below), and "now" / "at the start" derive from it.
         goal_weight: 77.1,
-        starting_weight: 88.5,
-        current_body_fat_percentage: 22,
         goal_body_fat_percentage: 15,
-        starting_body_fat_percentage: 26,
         // The fixture carried no height, gender or activity level, so nothing
         // could compute its metabolism and bmr/tdee were literals (1850/2700)
         // that matched no formula. That 1850 is what the Session 4B
@@ -908,17 +910,27 @@ async function insertHabitLogs(months: number, rng: Rng) {
 // check_ins (52 weekly Sundays)
 // ---------------------------------------------------------------------------
 
-type CheckInRow = { id: string; created_at: string };
+type CheckInRow = {
+  id: string;
+  created_at: string;
+  /** YYYY-MM-DD of `created_at` — the day the stamped readings belong to. */
+  date: string;
+  /** What the check-in reported: canonical kg/cm, keyed by measurement key. */
+  reported: Record<string, number>;
+};
 
 async function insertCheckIns(months: number, rng: Rng): Promise<CheckInRow[]> {
   console.log("Inserting check_ins (weekly)...");
   const days = months * 30;
   const rows: Array<Record<string, unknown>> = [];
+  const out: CheckInRow[] = [];
   // anchor to a Sunday near the start of the window
   for (let i = 0; i < Math.floor(days / 7); i++) {
     const dateStr = getDateDaysAgo(days - 1 - i * 7);
+    const id = deterministicUuid(`ci-${dateStr}`);
+    const createdAt = dateStr + "T12:00:00.000Z";
     rows.push({
-      id: deterministicUuid(`ci-${dateStr}`),
+      id,
       client_id: String(PERF_CLIENT_ID),
       status: "reviewed",
       mood: rng.int(3, 5),
@@ -926,65 +938,79 @@ async function insertCheckIns(months: number, rng: Rng): Promise<CheckInRow[]> {
       sleep: rng.int(5, 9),
       stress: rng.int(2, 6),
       soreness: rng.int(2, 6),
-      // Canonical kg/cm. Was 185 lb ramping by 0.2 lb and 34/40/42/14/24 in.
-      weight: 83.9 - i * 0.09,
-      body_fat_percentage: 22 - i * 0.05,
-      waist: 86.4 - i * 0.13,
-      hips: 101.6,
-      chest: 106.7,
-      arms: 35.6,
-      thighs: 61,
+      // The readings are NOT columns here: they are rows in the measurement
+      // log stamped with this id (insertMeasurements).
       adherence_percentage: rng.int(70, 100),
       workouts_completed: rng.int(2, 4),
-      created_at: dateStr + "T12:00:00.000Z",
+      created_at: createdAt,
+    });
+    out.push({
+      id,
+      created_at: createdAt,
+      date: dateStr,
+      // Canonical kg/cm. Was 185 lb ramping by 0.2 lb and 34/40/42/14/24 in.
+      reported: {
+        weight: 83.9 - i * 0.09,
+        bodyFat: 22 - i * 0.05,
+        waist: 86.4 - i * 0.13,
+        hips: 101.6,
+        chest: 106.7,
+        arms: 35.6,
+        thighs: 61,
+      },
     });
   }
   await insertInBatches("check_ins", rows, 500);
   console.log(`  inserted ${rows.length} check_ins`);
 
-  return rows.map((r) => ({ id: r.id as string, created_at: r.created_at as string }));
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// body_metrics (12 monthly, source_id → nearest check_in)
+// client_measurements — the start reading (an intake row on the start date)
+// and every check-in's seven readings, stamped with the check-in's id.
+// Deterministic ids + ignore-duplicates: the log is append-only for the app
+// role, so a re-seed cannot clear these; it leaves them standing instead.
 // ---------------------------------------------------------------------------
 
-async function insertBodyMetrics(checkIns: CheckInRow[], rng: Rng) {
-  console.log("Inserting body_metrics (monthly)...");
+async function insertMeasurements(checkIns: CheckInRow[], startDate: string) {
+  console.log("Inserting client_measurements...");
   const rows: Array<Record<string, unknown>> = [];
-  for (let i = 0; i < 12; i++) {
-    const monthAgo = 11 - i; // 0..11
-    const dateStr = getDateDaysAgo(monthAgo * 30);
-    // find nearest check_in by date
-    const nearest = nearestCheckIn(checkIns, dateStr);
+  const startAt = startDate + "T09:00:00.000Z";
+  for (const [metricKey, value] of [["weight", 88.5], ["bodyFat", 26]] as const) {
     rows.push({
+      id: deterministicUuid(`cm-start-${metricKey}`),
       client_id: PERF_CLIENT_ID,
-      weight: 83.9 - i * 0.23 + rng.next() - 0.5, // kg; was 185 lb ramping by 0.5 lb
-      body_fat_percentage: 22 - i * 0.2 + rng.next() * 0.5,
-      source: "check_in",
-      source_id: nearest?.id ?? null,
-      recorded_at: dateStr + "T12:00:00.000Z",
+      metric_key: metricKey,
+      value,
+      recorded_on: startDate,
+      recorded_at: startAt,
+      source: "intake",
     });
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await supabaseAdmin.from("body_metrics").insert(rows as any);
-  if (error) throw new Error(`body_metrics insert: ${error.message}`);
-  console.log(`  inserted ${rows.length} body_metrics`);
-}
-
-function nearestCheckIn(checkIns: CheckInRow[], dateStr: string): CheckInRow | null {
-  if (checkIns.length === 0) return null;
-  const target = new Date(dateStr).getTime();
-  let best = checkIns[0];
-  let bestDist = Math.abs(new Date(best.created_at).getTime() - target);
-  for (const ci of checkIns) {
-    const d = Math.abs(new Date(ci.created_at).getTime() - target);
-    if (d < bestDist) {
-      best = ci;
-      bestDist = d;
+  for (const checkIn of checkIns) {
+    for (const [metricKey, value] of Object.entries(checkIn.reported)) {
+      rows.push({
+        id: deterministicUuid(`cm-${checkIn.date}-${metricKey}`),
+        client_id: PERF_CLIENT_ID,
+        metric_key: metricKey,
+        value,
+        recorded_on: checkIn.date,
+        recorded_at: checkIn.created_at,
+        measured_at: checkIn.created_at,
+        source: "check_in",
+        source_id: checkIn.id,
+      });
     }
   }
-  return best;
+  for (let i = 0; i < rows.length; i += 500) {
+    const batch = rows.slice(i, i + 500);
+    const { error } = await supabaseAdmin
+      .from("client_measurements")
+      .upsert(batch as never, { onConflict: "id", ignoreDuplicates: true });
+    if (error) throw new Error(`client_measurements upsert (rows ${i}..${i + batch.length}): ${error.message}`);
+  }
+  console.log(`  wrote ${rows.length} client_measurements (existing ids kept)`);
 }
 
 // ---------------------------------------------------------------------------

@@ -23,7 +23,6 @@ vi.mock('@/services/storage-service', () => ({ uploadProgressPhotoFromBase64: vi
 vi.mock('@/services/client-check-in-service', () => ({
   // Resolved, not bare: the route fires it and chains .catch() on the result.
   triggerAISummaryGeneration: vi.fn().mockResolvedValue(undefined),
-  updateClientMetricsFromCheckIn: vi.fn(),
 }));
 vi.mock('@/services/check-in-adherence-service', () => ({ updateClientAdherenceStats: vi.fn() }));
 vi.mock('@/services/check-in-snapshot-service', () => ({ generateAndSaveCheckInSnapshot: vi.fn() }));
@@ -32,10 +31,7 @@ import { GET, POST } from './route';
 import { requireClientAuth } from '@/lib/require-client-auth';
 import { getClientCheckIns, submitCheckIn } from '@/services/check-in-service';
 import { getClientById } from '@/services/client-service';
-import {
-  triggerAISummaryGeneration,
-  updateClientMetricsFromCheckIn,
-} from '@/services/client-check-in-service';
+import { triggerAISummaryGeneration } from '@/services/client-check-in-service';
 import { getClientCheckInForm } from '@/services/check-in-form-service';
 import { DEFAULT_CHECK_IN_FORM_FIELDS } from '@/lib/check-in/form-fields';
 import { supabaseAdmin } from '@/services/supabase-admin';
@@ -214,7 +210,7 @@ describe('POST /api/client/check-ins — the write path gates too', () => {
     expect(submitCheckIn).toHaveBeenCalled();
   });
 
-  it('STRIPS a disabled field rather than 400ing, and leaves current_weight untouched', async () => {
+  it('STRIPS a disabled field rather than 400ing — submitCheckIn receives no weight', async () => {
     // D4.3: a payload carrying a disabled field is a client who loaded the form
     // before the coach changed it. The value is dropped; the submission stands.
     mockClient('2026-06-12');
@@ -226,13 +222,10 @@ describe('POST /api/client/check-ins — the write path gates too', () => {
     const res = await POST(post({ ...PAYLOAD, notes: 'still here' }));
 
     expect(res.status).toBe(201);
+    // The one that matters downstream: submitCheckIn is what stamps a reading
+    // into the measurement log, so a stripped weight must never reach it.
     const submitted = vi.mocked(submitCheckIn).mock.calls[0][1] as Record<string, unknown>;
     expect(submitted.weight).toBeUndefined();
-    // The one that matters downstream: updateClientMetricsFromCheckIn only
-    // writes clients.current_weight when a weight is present.
-    expect(
-      (vi.mocked(updateClientMetricsFromCheckIn).mock.calls[0][1] as Record<string, unknown>).weight,
-    ).toBeUndefined();
     // Everything still asked survives.
     expect(submitted.notes).toBe('still here');
   });

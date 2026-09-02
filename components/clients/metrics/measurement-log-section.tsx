@@ -96,7 +96,12 @@ const COLUMNS: ColumnDef<LogRow>[] = [
 
 export function MeasurementLogSection({ rows }: MeasurementLogSectionProps) {
   const [page, setPage] = useState(0);
-  const pageRows = rows.slice(
+  // A reading dated before the client's start date is still theirs — it is
+  // listed, under its own rail, and it is simply not part of the journey the
+  // chart and the figures above describe. Few by nature, so unpaged.
+  const journeyRows = rows.filter((row) => !row.beforeStart);
+  const beforeStartRows = rows.filter((row) => row.beforeStart);
+  const pageRows = journeyRows.slice(
     page * HISTORY_PAGE_SIZE,
     page * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE
   );
@@ -108,7 +113,7 @@ export function MeasurementLogSection({ rows }: MeasurementLogSectionProps) {
         actions={
           <DividerPager
             page={page}
-            total={rows.length}
+            total={journeyRows.length}
             pageSize={HISTORY_PAGE_SIZE}
             noun="entries"
             onPageChange={setPage}
@@ -123,6 +128,19 @@ export function MeasurementLogSection({ rows }: MeasurementLogSectionProps) {
           emptyMessage="No measurements logged yet"
         />
       </div>
+      {beforeStartRows.length > 0 && (
+        <div className="mt-6">
+          <SectionLabel label="Before start" />
+          <div className="bg-white rounded-[6px] p-5">
+            <HistoryTable<LogRow>
+              columns={COLUMNS}
+              data={beforeStartRows}
+              isLoading={false}
+              emptyMessage="No readings before the start date"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

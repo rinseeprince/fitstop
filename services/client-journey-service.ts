@@ -1,18 +1,12 @@
-import { supabaseAdmin } from "./supabase-admin";
 import { listBlocks } from "./client-blocks-service";
 import { getCurrentGoals } from "./client-goals-service";
-import { listMetricEntries } from "./metric-entries-service";
+import { getMeasurementSeries } from "./measurements-service";
 import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
-import { fetchAllPages } from "@/lib/paged-fetch";
 import { decorateBlocks } from "@/lib/blocks/block-derivations";
 import { deriveBlockWeightFacts } from "@/lib/blocks/block-weight";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
-import {
-  buildMetricPoints,
-  type MetricPoint,
-  type MetricSeriesDefinition,
-} from "@/utils/metric-points";
-import type { CheckIn } from "@/types/check-in";
+import { dayValuesToMetricPoints } from "@/utils/metric-points";
+import type { MetricPoint } from "@/utils/metric-points";
 import type { ClientJourney, ClientJourneyBlock } from "@/types/client-journey";
 
 /**
@@ -21,9 +15,9 @@ import type { ClientJourney, ClientJourneyBlock } from "@/types/client-journey";
  * block card shows — "the client app simply shows the client what the coach
  * sees" (owner, 2026-08-12).
  *
- * Parity is by construction, not by convention: the series is the same merge
- * (`buildMetricPoints` over check-in weights ⊕ coach metric entries, coach
- * entry winning a same-day tie), the facts walk is the same function
+ * Parity is by construction, not by convention: the series is the measurement
+ * log's weight day-values (rule 2, the same read the coach Journey and the
+ * Overview chart make), the facts walk is the same function
  * (`deriveBlockWeightFacts`), and both audiences anchor on the client's
  * calendar day. Everything here is canonical kilograms (CONVENTIONS §20); the
  * renderer converts. Archived blocks are excluded — the archive curates the
@@ -33,68 +27,10 @@ import type { ClientJourney, ClientJourneyBlock } from "@/types/client-journey";
  * client's today in; every query filters on the passed clientId.
  */
 
-// Mirrors METRIC_DEFINITIONS' weight entry (use-metrics-data.ts) — the
-// structural subset buildMetricPoints needs, declared here because the full
-// catalog lives in a components/**/hooks module a service must not import.
-const WEIGHT_DEF: MetricSeriesDefinition = {
-  id: "weight",
-  key: "weight",
-  category: "body",
-};
-
-// The narrow check-ins projection the weight series needs. `status` is
-// selected only to satisfy the CheckIn type below.
-type CheckInWeightRow = {
-  id: string;
-  client_id: string;
-  status: string;
-  created_at: string | null;
-  updated_at: string | null;
-  weight: number | null;
-};
-
-/**
- * The merged weight series in canonical kg, ascending — identical inputs to
- * what use-merged-metrics feeds the coach card, pre-conversion.
- */
+/** The weight series in canonical kg, ascending — every day's value, of any source. */
 async function fetchWeightSeries(clientId: string): Promise<MetricPoint[]> {
-  const [checkInRows, entries] = await Promise.all([
-    // PARITY-CRITICAL — no status filter. The coach series includes every
-    // check-in regardless of status (use-check-in-data.ts's page key sends
-    // only limit/offset), so filtering here — even "for cleanliness" — would
-    // silently desync the two surfaces with nothing failing. The weight
-    // NOT NULL filter is equivalent-by-construction: buildMetricPoints skips
-    // non-numeric values, so a weightless check-in contributes nothing to the
-    // weight series either way. Paged: this feeds an aggregate and must be
-    // complete past PostgREST's ~1000-row cap; (created_at, id) is a
-    // deterministic order with a unique tiebreak.
-    fetchAllPages<CheckInWeightRow>(
-      (from, to) =>
-        supabaseAdmin
-          .from("check_ins")
-          .select("id, client_id, status, created_at, updated_at, weight")
-          .eq("client_id", clientId)
-          .not("weight", "is", null)
-          .order("created_at", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, to),
-      { errorLabel: "check-in weights" }
-    ),
-    listMetricEntries(clientId),
-  ]);
-
-  // Same createdAt fallback as mapCheckInRow, so a pathological null
-  // timestamp resolves identically on both surfaces.
-  const checkIns: CheckIn[] = checkInRows.map((row) => ({
-    id: row.id,
-    clientId: row.client_id,
-    status: row.status as CheckIn["status"],
-    weight: row.weight ?? undefined,
-    createdAt: row.created_at ?? new Date().toISOString(),
-    updatedAt: row.updated_at ?? new Date().toISOString(),
-  }));
-
-  return buildMetricPoints(checkIns, entries, [WEIGHT_DEF]).get(WEIGHT_DEF.id) ?? [];
+  const series = await getMeasurementSeries(clientId, { metricKeys: ["weight"] });
+  return dayValuesToMetricPoints(series.get("weight") ?? []);
 }
 
 export const getClientJourney = async (

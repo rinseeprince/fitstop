@@ -1,28 +1,45 @@
 import type { CheckIn } from "@/types/check-in";
 import type { MetricEntry } from "@/types/metric-entries";
+import type { DayValue } from "@/lib/measurements/day-values";
+import type { MeasurementSource } from "@/lib/measurements/keys";
 
-// Pure merge layer for the coach Metrics page: check-in-derived values +
-// coach-logged client_metric_entries become one ascending series per metric.
-// No date-fns here (same rule as utils/metric-shaping.ts): dates are
-// YYYY-MM-DD strings and all math is UTC day arithmetic.
-
-type MetricPointSource = "check_in" | "coach_entry";
+// Pure series layer for the coach Metrics page. Two producers of the same
+// point shape: the measurement log's day-values (the seven PHYSIQUE metrics,
+// `dayValuesToMetricPoints`) and the WELLNESS merge of check-in weekly
+// averages ⊕ coach-logged client_metric_entries (`buildMetricPoints`, owner
+// decision D2: wellness keeps its own model). No date-fns here (same rule as
+// utils/metric-shaping.ts): dates are YYYY-MM-DD strings and all math is UTC
+// day arithmetic.
 
 export type MetricPoint = {
   metricId: string;
   value: number;
-  /** YYYY-MM-DD. Check-ins use createdAt's date part (the page's existing
-   *  window-filter convention); coach entries use entry_date. */
+  /** YYYY-MM-DD, the client's calendar day. */
   date: string;
-  /** Deterministic total order: date | source rank | timestamp | record id.
-   *  A coach entry dated D sorts AFTER that day's check-ins — the coach's
-   *  explicit entry wins ties for latest/previous and per-row deltas,
-   *  consistent with the current-weight cache rule in the entries service. */
+  /** Deterministic total order within a metric: date | source rank | timestamp
+   *  | record id. For the wellness merge a coach entry dated D sorts AFTER that
+   *  day's check-in average; for the log a day has ONE value already. */
   sortKey: string;
-  source: MetricPointSource;
+  source: MeasurementSource;
   note: string | null;
   sourceRecordId: string;
 };
+
+/**
+ * The measurement log's day-values as points — one per day per metric already,
+ * so the sort key needs no source rank.
+ */
+export function dayValuesToMetricPoints(values: readonly DayValue[]): MetricPoint[] {
+  return values.map((value) => ({
+    metricId: value.metricKey,
+    value: value.value,
+    date: value.date,
+    sortKey: `${value.date}|${value.recordedAt}|${value.id}`,
+    source: value.source,
+    note: value.note,
+    sourceRecordId: value.id,
+  }));
+}
 
 /** Structural subset of a METRIC_DEFINITIONS entry (dependency-injected so
  *  this util stays a leaf module). */
@@ -43,7 +60,7 @@ export type MetricSeriesDefinition = {
  * an `updatedAt` it never fetched, purely to satisfy a type. A full `CheckIn`
  * is still assignable, so the Metrics page passes its rows unchanged.
  */
-export type MetricSeriesCheckIn = Partial<CheckIn> & Pick<CheckIn, "id" | "createdAt">;
+type MetricSeriesCheckIn = Partial<CheckIn> & Pick<CheckIn, "id" | "createdAt">;
 
 /** UTC-midnight epoch ms for a YYYY-MM-DD string — the numeric form of a
  *  calendar day (the metric chart's time axis runs on these). */

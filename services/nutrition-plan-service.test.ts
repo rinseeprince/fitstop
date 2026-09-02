@@ -12,16 +12,11 @@ vi.mock('@/utils/nutrition-helpers', () => ({
   DAYS_OF_WEEK: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
 }))
 
-vi.mock('./body-metrics-service', () => ({
-  recordBodyMetrics: vi.fn().mockResolvedValue({}),
-}))
-
 vi.mock('./today-service', () => ({
   getClientTodayString: vi.fn().mockResolvedValue('2024-01-17'),
 }))
 
 import { supabaseAdmin } from './supabase-admin'
-import { recordBodyMetrics } from './body-metrics-service'
 import { getClientTodayString } from './today-service'
 import {
   createNutritionPlan,
@@ -83,40 +78,17 @@ describe('Nutrition Plan Service', () => {
       trainingPlan: null,
     }
 
-    it('dual-writes TDEE to body_metrics after plan creation', async () => {
+    it('is the RPC and nothing else — a plan save writes no table of its own', async () => {
+      // The plan row snapshots bmr/tdee through the RPC args; that snapshot IS
+      // the provenance. The TDEE dual-write that used to follow the RPC went
+      // with its store, so a second write here is a regression, not a belt.
       vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
 
-      const updateQuery = {
-        update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      }
-      vi.mocked(supabaseAdmin.from).mockReturnValue(updateQuery as any)
+      const id = await createNutritionPlan(baseParams)
 
-      await createNutritionPlan(baseParams)
-
-      expect(recordBodyMetrics).toHaveBeenCalledWith(
-        expect.objectContaining({
-          clientId: 'client-123',
-          tdee: 2400,
-          bmr: 1800,
-          source: 'nutrition_plan',
-          sourceId: 'plan-123',
-        })
-      )
-    })
-
-    it('does not dual-write when tdee is null', async () => {
-      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
-
-      const updateQuery = {
-        update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      }
-      vi.mocked(supabaseAdmin.from).mockReturnValue(updateQuery as any)
-
-      await createNutritionPlan({ ...baseParams, tdee: null })
-
-      expect(recordBodyMetrics).not.toHaveBeenCalled()
+      expect(id).toBe('plan-123')
+      expect(supabaseAdmin.rpc).toHaveBeenCalledTimes(1)
+      expect(supabaseAdmin.from).not.toHaveBeenCalled()
     })
 
     it('threads the caller-supplied clientToday to the RPC as p_today — never recomputes it', async () => {
@@ -127,12 +99,6 @@ describe('Nutrition Plan Service', () => {
       // accepted. This pins both halves: the threaded value reaches the RPC,
       // and this service performs no today lookup of its own.
       vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
-
-      const updateQuery = {
-        update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      }
-      vi.mocked(supabaseAdmin.from).mockReturnValue(updateQuery as any)
 
       await createNutritionPlan({
         ...baseParams,
@@ -168,11 +134,6 @@ describe('Nutrition Plan Service', () => {
     // save fails while tsc, eslint and vitest all stay green.
     it('sends no arguments the RPC does not declare', async () => {
       vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
-      const updateQuery = {
-        update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      }
-      vi.mocked(supabaseAdmin.from).mockReturnValue(updateQuery as any)
 
       await createNutritionPlan(baseParams)
 

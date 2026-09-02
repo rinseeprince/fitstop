@@ -19,6 +19,12 @@
  * the namespace per table before and after, and aborts if any of them changed.
  * The owner's real account lives in this database, so "we only deleted our own
  * rows" is asserted, not assumed.
+ *
+ * The ONE exception to "no cascade": `client_measurements` (migration 158) is
+ * append-only for the app role — service_role holds SELECT and INSERT and no
+ * DELETE, deliberately — so its seed rows can only leave with their client's
+ * row, through the table's `ON DELETE CASCADE`. It is therefore absent from
+ * TEARDOWN_ORDER, and the `clients` delete is what clears it.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";

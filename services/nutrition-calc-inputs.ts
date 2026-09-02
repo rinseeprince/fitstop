@@ -1,4 +1,3 @@
-import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { getClientTodayString } from "@/services/today-service";
 import {
@@ -85,45 +84,24 @@ export async function resolveNutritionCalcInputs(
   client: Client,
   prefetched?: { today?: string; currentGoals?: ClientGoal | null }
 ): Promise<NutritionCalcInputs> {
-  const [today, latestMetrics, currentGoals] = await Promise.all([
+  const [today, currentGoals] = await Promise.all([
     prefetched?.today ?? getClientTodayString(clientId),
-    getLatestBodyMetrics(clientId),
     prefetched?.currentGoals !== undefined
       ? Promise.resolve(prefetched.currentGoals)
       : getCurrentGoals(clientId),
   ]);
 
-  // THE TWO HALVES OF THIS LADDER RUN IN OPPOSITE DIRECTIONS, DELIBERATELY.
-  // Do not "consistency-fix" them into agreement — each direction is correct
-  // for its own field, and the reasons are different.
-  //
-  // WEIGHT is event-first. `recordBodyMetrics` deliberately withholds a
-  // backdated coach entry from the clients cache (its `updateClientCache`
-  // guard), so the newest event genuinely can be a truer latest measurement
-  // than the mirror.
-  //
-  // ENERGY is profile-first. Since Session 4B the profile OWNS bmr/tdee: one
-  // helper writes the pair atomically from the client's own activity level
-  // (services/client-energy-service.ts). `body_metrics` rows remain history,
-  // and the plan-save row among them carries the PLAN's numbers — so preferring
-  // an event here would rebuild every plan from the PREVIOUS plan's snapshot
-  // instead of the client's current metabolism. That is what a regeneration is
-  // for: it inherits the profile's numbers at the time it runs.
-  //
-  // The `?? latestMetrics` tail is a rescue for a profile whose pair is still
-  // NULL, so a plan save cannot 400 on a client the helper has never reached.
-  // It is a fallback, not a preference.
-  //
-  // (This reverses the previous rule, which preferred the event tables and
-  // treated `client.*` as a legacy cache for pre-migration clients. That was
-  // true when the mirror had no owner and might not be populated; giving the
-  // pair a single owner removed the reason.)
-  //
-  // Both sources are canonical kilograms since migration 141, so no unit
-  // ladder is involved either way.
-  const currentWeight = latestMetrics?.weight ?? client.currentWeight;
-  const bmr = client.bmr ?? latestMetrics?.bmr;
-  const tdee = client.tdee ?? latestMetrics?.tdee;
+  // The client object carries both inputs from their single owners. WEIGHT is
+  // the newest reading in the measurement log, of any source
+  // (`client_current_measurements`, read into `Client.currentWeight`). The
+  // ENERGY pair is the profile's: one helper writes it atomically from the
+  // client's own activity level (services/client-energy-service.ts), and it
+  // recomputes whenever a newest reading lands. A profile with no pair is a
+  // client the calculator cannot be run for — `validateClientForNutrition`
+  // reports it below rather than a rescue inventing one. Canonical kilograms.
+  const currentWeight = client.currentWeight;
+  const bmr = client.bmr;
+  const tdee = client.tdee;
 
   // Validity is COMPUTED here and THROWN by the caller (write path only).
   const validation = validateClientForNutrition({

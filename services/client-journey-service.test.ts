@@ -1,21 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./client-blocks-service", () => ({ listBlocks: vi.fn() }));
 vi.mock("./client-goals-service", () => ({ getCurrentGoals: vi.fn() }));
-vi.mock("./metric-entries-service", () => ({ listMetricEntries: vi.fn() }));
+vi.mock("./measurements-service", () => ({ getMeasurementSeries: vi.fn() }));
 vi.mock("./nutrition-plan-notes-service", () => ({
   listNutritionPlanNotesInRange: vi.fn(),
 }));
 
-import { supabaseAdmin } from "./supabase-admin";
 import { listBlocks } from "./client-blocks-service";
 import { getCurrentGoals } from "./client-goals-service";
-import { listMetricEntries } from "./metric-entries-service";
+import { getMeasurementSeries } from "./measurements-service";
 import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
 import { getClientJourney } from "./client-journey-service";
 import type { ClientBlock } from "@/types/client-blocks";
-import type { MetricEntry } from "@/types/metric-entries";
+import type { DayValue } from "@/lib/measurements/day-values";
+import type { MeasurementKey, MeasurementSource } from "@/lib/measurements/keys";
 
 const CLIENT_ID = "client-1";
 const TODAY = "2026-08-12";
@@ -31,86 +30,51 @@ const block = (overrides: Partial<ClientBlock> = {}): ClientBlock => ({
   ...overrides,
 });
 
-type CheckInWeightRow = {
-  id: string;
-  client_id: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  weight: number;
-};
-
-const checkInRow = (
+/** One day-value of the weight series: what rule 2 left standing for that day. */
+const dayValue = (
   id: string,
-  createdAt: string,
-  weight: number
-): CheckInWeightRow => ({
+  date: string,
+  value: number,
+  source: MeasurementSource = "check_in"
+): DayValue => ({
   id,
-  client_id: CLIENT_ID,
-  status: "pending",
-  created_at: createdAt,
-  updated_at: createdAt,
-  weight,
+  metricKey: "weight",
+  value,
+  date,
+  recordedAt: `${date}T08:00:00+00:00`,
+  measuredAt: null,
+  source,
+  sourceId: null,
+  note: null,
 });
 
-const entry = (
-  id: string,
-  entryDate: string,
-  value: number,
-  metricKey = "weight"
-): MetricEntry =>
-  ({
-    id,
-    clientId: CLIENT_ID,
-    metricKey,
-    value,
-    entryDate,
-    createdAt: `${entryDate}T09:00:00.000Z`,
-    updatedAt: `${entryDate}T09:00:00.000Z`,
-  }) as MetricEntry;
-
-// Chainable check_ins stub serving one page per await (fetchAllPages re-builds
-// the query each iteration). Records every filter call for the parity pins.
-function mockCheckInsQuery(pages: CheckInWeightRow[][]) {
-  let call = 0;
-  const query = {
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    not: vi.fn().mockReturnThis(),
-    in: vi.fn().mockReturnThis(),
-    order: vi.fn().mockReturnThis(),
-    range: vi.fn().mockReturnThis(),
-    then: (resolve: (value: { data: CheckInWeightRow[]; error: null }) => void) =>
-      Promise.resolve({
-        data: pages[Math.min(call++, pages.length - 1)],
-        error: null,
-      }).then(resolve),
-  };
-  vi.mocked(supabaseAdmin.from).mockReturnValue(query as never);
-  return query;
+/** The measurement-log read, answered per metric. Ascending by day is the
+ *  series contract; the fixtures are written in that order. */
+function mockWeightSeries(values: DayValue[]) {
+  vi.mocked(getMeasurementSeries).mockResolvedValue(
+    new Map<MeasurementKey, DayValue[]>([["weight", values]])
+  );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getCurrentGoals).mockResolvedValue(null);
-  vi.mocked(listMetricEntries).mockResolvedValue([]);
   vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([]);
+  mockWeightSeries([]);
 });
 
 describe("getClientJourney", () => {
-  it("decorates blocks with the client's today and derives per-state weight facts", async () => {
+  it("decorates blocks with the client's today and derives per-state weight facts from the day-values", async () => {
     vi.mocked(listBlocks).mockResolvedValue([
       block({ id: "past", name: "Base", startsOn: "2026-06-01", endsOn: "2026-06-28" }),
       block({ id: "current", name: "Build", startsOn: "2026-06-29", endsOn: "2026-08-23" }),
       block({ id: "future", name: "Cut", startsOn: "2026-08-24", endsOn: "2026-09-20" }),
     ]);
-    mockCheckInsQuery([
-      [
-        checkInRow("ci-0", "2026-05-20T08:00:00.000Z", 84.0),
-        checkInRow("ci-1", "2026-06-01T08:00:00.000Z", 83.2), // exactly on the past block's start
-        checkInRow("ci-2", "2026-06-27T08:00:00.000Z", 81.9),
-        checkInRow("ci-3", "2026-07-15T08:00:00.000Z", 81.0),
-      ],
+    mockWeightSeries([
+      dayValue("m-0", "2026-05-20", 84.0),
+      dayValue("m-1", "2026-06-01", 83.2), // exactly on the past block's start
+      dayValue("m-2", "2026-06-27", 81.9),
+      dayValue("m-3", "2026-07-15", 81.0),
     ]);
 
     const journey = await getClientJourney(CLIENT_ID, TODAY);
@@ -135,58 +99,37 @@ describe("getClientJourney", () => {
       startWeightKg: null,
       endWeightKg: null,
     });
+    // The last day-value, the series being ascending.
     expect(journey.currentWeightKg).toBe(81.0);
   });
 
-  it("parity: a same-day coach entry outranks the check-in (merged tie-rank, not timestamp order)", async () => {
+  it("parity: reads the log's weight day-values — the same read the coach Journey and the Overview chart make", async () => {
+    vi.mocked(listBlocks).mockResolvedValue([block()]);
+    mockWeightSeries([dayValue("m-1", "2026-08-02", 82.25)]);
+
+    const journey = await getClientJourney(CLIENT_ID, TODAY);
+
+    // One read, weight only — never the whole log re-filtered here.
+    expect(getMeasurementSeries).toHaveBeenCalledTimes(1);
+    expect(getMeasurementSeries).toHaveBeenCalledWith(CLIENT_ID, { metricKeys: ["weight"] });
+    // Raw kg pass-through, unrounded — the renderer rounds.
+    expect(journey.currentWeightKg).toBe(82.25);
+    expect(journey.blocks[0].startWeightKg).toBeNull(); // nothing at or before 2026-08-01
+    expect(journey.blocks[0].endWeightKg).toBe(82.25);
+  });
+
+  it("parity: a day-value of any source is in the series — a coach entry counts like a check-in", async () => {
     vi.mocked(listBlocks).mockResolvedValue([
       block({ startsOn: "2026-06-01", endsOn: "2026-08-23" }),
     ]);
-    // Check-in submitted at 14:00 on the same day the coach logged 89.8 —
-    // body_metrics timestamp order would pick 90.2; the merged series must not.
-    mockCheckInsQuery([[checkInRow("ci-1", "2026-06-01T14:00:00.000Z", 90.2)]]);
-    vi.mocked(listMetricEntries).mockResolvedValue([
-      entry("entry-1", "2026-06-01", 89.8),
-    ]);
+    // The day's standing value is the coach's correction (rule 2 already
+    // decided that upstream); this read must not rank sources again.
+    mockWeightSeries([dayValue("m-1", "2026-06-01", 89.8, "coach_entry")]);
 
     const journey = await getClientJourney(CLIENT_ID, TODAY);
 
     expect(journey.blocks[0].startWeightKg).toBe(89.8);
     expect(journey.currentWeightKg).toBe(89.8);
-  });
-
-  it("parity: never filters check-ins by status — a pending check-in's weight is in the series", async () => {
-    vi.mocked(listBlocks).mockResolvedValue([block()]);
-    const query = mockCheckInsQuery([
-      [checkInRow("ci-1", "2026-08-02T08:00:00.000Z", 82.25)],
-    ]);
-
-    const journey = await getClientJourney(CLIENT_ID, TODAY);
-
-    // Raw kg pass-through, unrounded — the renderer rounds.
-    expect(journey.currentWeightKg).toBe(82.25);
-    // The only filters are the tenant scope and weight NOT NULL.
-    expect(query.eq).toHaveBeenCalledTimes(1);
-    expect(query.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
-    expect(query.not).toHaveBeenCalledTimes(1);
-    expect(query.not).toHaveBeenCalledWith("weight", "is", null);
-    expect(query.in).not.toHaveBeenCalled();
-    for (const call of query.eq.mock.calls) {
-      expect(call[0]).not.toBe("status");
-    }
-  });
-
-  it("ignores non-weight metric entries", async () => {
-    vi.mocked(listBlocks).mockResolvedValue([block()]);
-    mockCheckInsQuery([[]]);
-    vi.mocked(listMetricEntries).mockResolvedValue([
-      entry("entry-1", "2026-08-02", 18.2, "bodyFat"),
-    ]);
-
-    const journey = await getClientJourney(CLIENT_ID, TODAY);
-
-    expect(journey.currentWeightKg).toBeNull();
-    expect(journey.blocks[0].startWeightKg).toBeNull();
   });
 
   it("excludes archived blocks from the payload", async () => {
@@ -199,7 +142,6 @@ describe("getClientJourney", () => {
       }),
       block({ id: "kept", startsOn: "2026-05-29", endsOn: "2026-08-23" }),
     ]);
-    mockCheckInsQuery([[]]);
 
     const journey = await getClientJourney(CLIENT_ID, TODAY);
 
@@ -220,8 +162,7 @@ describe("getClientJourney", () => {
       currentWeightKg: null,
       currentBlockNotes: null,
     });
-    expect(supabaseAdmin.from).not.toHaveBeenCalled();
-    expect(listMetricEntries).not.toHaveBeenCalled();
+    expect(getMeasurementSeries).not.toHaveBeenCalled();
     expect(listNutritionPlanNotesInRange).not.toHaveBeenCalled();
   });
 
@@ -249,28 +190,6 @@ describe("getClientJourney", () => {
     expect(journey.goal).toEqual({ weightKg: null, deadline: null });
   });
 
-  it("pages the check-ins read past the ~1000-row cap and unions the pages", async () => {
-    vi.mocked(listBlocks).mockResolvedValue([
-      block({ startsOn: "2020-01-01", endsOn: "2026-08-23" }),
-    ]);
-    const fullPage = Array.from({ length: 1000 }, (_, i) =>
-      checkInRow(
-        `ci-${String(i).padStart(4, "0")}`,
-        `2025-01-01T08:00:00.000Z`,
-        80
-      )
-    );
-    // The latest weight lives on page 2 — a truncated read would miss it.
-    const shortPage = [checkInRow("ci-tail", "2026-08-01T08:00:00.000Z", 78.4)];
-    const query = mockCheckInsQuery([fullPage, shortPage]);
-
-    const journey = await getClientJourney(CLIENT_ID, TODAY);
-
-    expect(query.range).toHaveBeenNthCalledWith(1, 0, 999);
-    expect(query.range).toHaveBeenNthCalledWith(2, 1000, 1999);
-    expect(journey.currentWeightKg).toBe(78.4);
-  });
-
   // These pin the POLICY on the wire rather than in a renderer. GET
   // /api/client/journey is the RN contract: if elapsed-block notes crossed it
   // and the web component simply didn't render them, RN would have to
@@ -288,7 +207,6 @@ describe("getClientJourney", () => {
         block({ id: "past", startsOn: "2026-06-01", endsOn: "2026-07-31" }),
         block({ id: "current", startsOn: "2026-08-01", endsOn: "2026-08-31" }),
       ]);
-      mockCheckInsQuery([[]]);
       vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([NOTE]);
 
       const journey = await getClientJourney(CLIENT_ID, TODAY);
@@ -311,7 +229,6 @@ describe("getClientJourney", () => {
       vi.mocked(listBlocks).mockResolvedValue([
         block({ id: "current", startsOn: "2026-08-01", endsOn: "2026-08-31" }),
       ]);
-      mockCheckInsQuery([[]]);
       vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([NOTE]);
 
       const journey = await getClientJourney(CLIENT_ID, TODAY);
@@ -327,7 +244,6 @@ describe("getClientJourney", () => {
       vi.mocked(listBlocks).mockResolvedValue([
         block({ id: "past", startsOn: "2026-06-01", endsOn: "2026-07-31" }),
       ]);
-      mockCheckInsQuery([[]]);
 
       const journey = await getClientJourney(CLIENT_ID, TODAY);
 
@@ -339,7 +255,6 @@ describe("getClientJourney", () => {
       vi.mocked(listBlocks).mockResolvedValue([
         block({ id: "current", startsOn: "2026-08-01", endsOn: "2026-08-31" }),
       ]);
-      mockCheckInsQuery([[]]);
       vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([]);
 
       const journey = await getClientJourney(CLIENT_ID, TODAY);
@@ -351,7 +266,6 @@ describe("getClientJourney", () => {
         block({ id: "past", startsOn: "2026-06-01", endsOn: "2026-07-31" }),
         block({ id: "current", startsOn: "2026-08-01", endsOn: "2026-08-31" }),
       ]);
-      mockCheckInsQuery([[]]);
       vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([NOTE]);
 
       const journey = await getClientJourney(CLIENT_ID, TODAY);

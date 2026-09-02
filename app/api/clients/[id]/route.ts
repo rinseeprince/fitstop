@@ -8,6 +8,7 @@ import { updateClientSchema } from "@/lib/validations/client";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { ReadingRemovalUnavailableError } from "@/services/measurements-service";
 
 // Helper to verify client ownership
 async function verifyClientOwnership(
@@ -113,6 +114,12 @@ export async function PATCH(
     return NextResponse.json({ client });
   } catch (error) {
     console.error("Error updating client:", error);
+
+    // A reading cannot be withdrawn yet (the correct/remove commit brings the
+    // void) — the sentence the coach reads, not a generic failure.
+    if (error instanceof ReadingRemovalUnavailableError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
 
     // Handle duplicate email error
     if (error instanceof Error && error.message.includes("already exists")) {

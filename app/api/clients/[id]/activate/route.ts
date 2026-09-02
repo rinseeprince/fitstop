@@ -115,7 +115,7 @@ export async function POST(
     // flip so a failure here leaves an activated client rather than a
     // half-activated one — and surfaced rather than swallowed, because a
     // client whose journey has no start is the state this exists to prevent.
-    await recordClientStart(clientId, { startsOn, coachId });
+    await recordClientStart(clientId, { startsOn });
 
     void recordAuditEvent({
       actorId: coachId,

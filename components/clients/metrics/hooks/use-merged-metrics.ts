@@ -4,13 +4,18 @@ import { useCallback, useMemo } from "react";
 import { useAllClientCheckIns } from "@/hooks/use-check-in-data";
 import { useClientGoals } from "@/hooks/use-client-goals";
 import { useMetricEntries } from "@/hooks/use-metric-entries";
+import {
+  useInvalidateMeasurementSeries,
+  useMeasurementSeries,
+} from "@/hooks/use-measurement-series";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { DOWN_IS_GOOD } from "@/lib/metrics/metric-entry-definitions";
+import { isMeasurementKey, type MeasurementKey } from "@/lib/measurements/keys";
 import {
   resolveEffectiveGoal,
   toClientGoalInput,
 } from "@/lib/goals/resolve-effective-goal";
-import { buildMetricPoints } from "@/utils/metric-points";
+import { buildMetricPoints, type MetricPoint } from "@/utils/metric-points";
 import {
   buildLogRows,
   deriveBest,
@@ -18,6 +23,7 @@ import {
   deriveHeroStats,
   deriveWeekComparison,
   deriveWindowChange,
+  type HeroBaseline,
 } from "@/utils/metric-derived-stats";
 import { METRIC_DEFINITIONS, type MetricDefinition } from "./use-metrics-data";
 import { useUnits } from "@/contexts/units-context";
@@ -25,6 +31,20 @@ import { formatLength, formatWeight, type UnitSystem } from "@/utils/unit-conver
 import type { LogRow, MetricSummary, MetricTab } from "../metrics-view-types";
 import type { Client } from "@/types/check-in";
 import type { CreateMetricEntryRequest } from "@/types/metric-entries";
+import type { MeasurementSeries } from "@/types/coach-overview";
+
+/**
+ * The Journey's two panes read two stores, deliberately (owner decision D2):
+ *
+ *  - PHYSIQUE (the seven body measurements) reads the measurement log's
+ *    day-values through the series route — one value per day, of any source,
+ *    with the baseline (the reading as of the start date) beside it. Readings
+ *    dated before the start date are listed under "Before start" and kept out
+ *    of the chart and every derived figure.
+ *  - WELLNESS keeps the merge of check-in weekly averages ⊕ coach-logged
+ *    client_metric_entries (`buildMetricPoints`, coach entry winning a
+ *    same-day tie), because wellness has its own source of truth (daily logs).
+ */
 
 // Stored values are canonical kg/cm and are converted HERE, at the point the
 // series is built, rather than at each of the six render sites downstream.
@@ -50,6 +70,19 @@ const convertPoint = (value: number, kind: MetricDefinition["convert"], viewer: 
 // plain string ids are looked up.
 const DOWN_SET: ReadonlySet<string> = DOWN_IS_GOOD;
 
+/** The series route's points as the page's point shape — one per day already. */
+function seriesPoints(series: MeasurementSeries | null, key: MeasurementKey): MetricPoint[] {
+  return (series?.[key] ?? []).map((point) => ({
+    metricId: key,
+    value: point.value,
+    date: point.date,
+    sortKey: `${point.date}|${point.recordedAt}|${point.id}`,
+    source: point.source,
+    note: point.note,
+    sourceRecordId: point.id,
+  }));
+}
+
 type UseMergedMetricsResult = {
   metricsByTab: Record<MetricTab, MetricSummary[]>;
   logRowsByTab: Record<MetricTab, LogRow[]>;
@@ -73,13 +106,29 @@ export const useMergedMetrics = (
     isError: entriesError,
     mutate: mutateEntries,
   } = useMetricEntries(client.id);
+  const {
+    series,
+    isLoading: seriesLoading,
+    isError: seriesError,
+  } = useMeasurementSeries(client.id);
+  const invalidateSeries = useInvalidateMeasurementSeries();
   const { goal: currentGoals } = useClientGoals(client.id);
 
   const { preference } = useUnits();
 
   const { metricsByTab, logRowsByTab } = useMemo(() => {
     const today = getTodayDateString();
-    const rawPointsByMetric = buildMetricPoints(checkIns, entries, METRIC_DEFINITIONS);
+    // The route's start date is the same column the client record carries;
+    // the record covers the first render, before the series lands.
+    const startDate = series?.startDate ?? client.startDate ?? null;
+
+    const wellnessDefinitions = METRIC_DEFINITIONS.filter((d) => d.category === "wellness");
+    const rawPointsByMetric = buildMetricPoints(checkIns, entries, wellnessDefinitions);
+    for (const def of METRIC_DEFINITIONS) {
+      if (def.category === "body" && isMeasurementKey(def.id)) {
+        rawPointsByMetric.set(def.id, seriesPoints(series, def.id));
+      }
+    }
     const convertBy = new Map(METRIC_DEFINITIONS.map((d) => [d.id, d.convert]));
     const pointsByMetric = new Map(
       [...rawPointsByMetric].map(([id, pts]) => [
@@ -106,17 +155,37 @@ export const useMergedMetrics = (
 
     const byTab: Record<MetricTab, MetricSummary[]> = { body: [], wellness: [] };
     for (const def of METRIC_DEFINITIONS) {
-      const points = pointsByMetric.get(def.id) ?? [];
+      const allPoints = pointsByMetric.get(def.id) ?? [];
+      const isBody = def.category === "body";
+      // The journey: a physique reading dated before the start is not a point.
+      const points =
+        isBody && startDate ? allPoints.filter((p) => p.date >= startDate) : allPoints;
       const downIsGood = DOWN_SET.has(def.id);
-      const hero = deriveHeroStats(points, def.category, today);
+
+      let baseline: HeroBaseline | null = null;
+      if (isBody && isMeasurementKey(def.id)) {
+        const raw = series?.baseline?.[def.id] ?? null;
+        baseline = raw
+          ? {
+              value: convertPoint(raw.value, def.convert, preference),
+              date: raw.date,
+              source: raw.source,
+            }
+          : null;
+      }
+      const hero = deriveHeroStats(
+        points,
+        def.category,
+        today,
+        isBody
+          ? { current: allPoints[allPoints.length - 1] ?? null, baseline, startDate }
+          : undefined
+      );
 
       // Goal resolution (weight/bodyFat only).
       let goal: number | null = null;
       let goalToGo: string | null = null;
       if (def.id === "weight" && effectiveGoal.goalWeightKg != null) {
-        // Goal, hero value and difference are all kilograms (migration 141), so
-        // the round-trip through display units is gone. Phase 3 converts these
-        // at the render boundary.
         // The goal is canonical kilograms; convert it the same way the series
         // was, so the difference below is taken between two like numbers.
         const goalDisplay = round1(formatWeight(effectiveGoal.goalWeightKg, preference).value);
@@ -147,6 +216,7 @@ export const useMergedMetrics = (
         entryCount: points.length,
         frequencyLabel: deriveFrequencyLabel(points),
         totalChange: hero?.totalChange ?? null,
+        startsOn: hero?.startsOn ?? null,
         avgRate: hero?.avgRate ?? null,
         change30d: deriveWindowChange(points, downIsGood),
         week: deriveWeekComparison(points, today),
@@ -163,12 +233,15 @@ export const useMergedMetrics = (
         d.getUnit(preference),
       ])
     );
+    // The log lists EVERY reading, before-start ones flagged so the section
+    // can group them; the chart and the figures above read `points` instead.
     const decorate = (category: MetricTab): LogRow[] =>
       buildLogRows(pointsByMetric, METRIC_DEFINITIONS, category, DOWN_SET).map(
         (row) => ({
           ...row,
           metricName: nameById.get(row.metricId) ?? row.metricId,
           unit: unitById.get(row.metricId) ?? "",
+          beforeStart: category === "body" && startDate != null && row.date < startDate,
         })
       );
 
@@ -178,7 +251,7 @@ export const useMergedMetrics = (
     };
     // `preference` is a real dependency: it changes every value in the series,
     // not just the label.
-  }, [checkIns, entries, currentGoals, client, preference]);
+  }, [checkIns, entries, series, currentGoals, client, preference]);
 
   const logMeasurement = useCallback(
     async (input: CreateMetricEntryRequest) => {
@@ -191,21 +264,27 @@ export const useMergedMetrics = (
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Failed to log measurement");
       }
-      await mutateEntries();
-      // Weight/bodyFat entries may have moved the denormalized client cache —
-      // refresh the client record so the goal "to go" stat goes live.
-      if (input.metricKey === "weight" || input.metricKey === "bodyFat") {
-        onClientUpdated?.();
+      if (isMeasurementKey(input.metricKey)) {
+        // The reading landed in the measurement log: the series area serves
+        // this pane AND the Overview chart, so both refresh from one call.
+        await invalidateSeries(client.id);
+        // A weight or body fat may be the client's newest reading — refresh
+        // the client record so "now", the goal "to go" stat and the pair go live.
+        if (input.metricKey === "weight" || input.metricKey === "bodyFat") {
+          onClientUpdated?.();
+        }
+      } else {
+        await mutateEntries();
       }
     },
-    [client.id, mutateEntries, onClientUpdated]
+    [client.id, invalidateSeries, mutateEntries, onClientUpdated]
   );
 
   return {
     metricsByTab,
     logRowsByTab,
-    isLoading: checkInsLoading || entriesLoading,
-    isError: Boolean(checkInsError || entriesError),
+    isLoading: checkInsLoading || entriesLoading || seriesLoading,
+    isError: Boolean(checkInsError || entriesError || seriesError),
     logMeasurement,
   };
 };

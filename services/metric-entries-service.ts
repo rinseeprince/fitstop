@@ -1,16 +1,15 @@
 import { supabaseAdmin } from "./supabase-admin";
-import {
-  getLatestBodyMetrics,
-  recordBodyMetrics,
-} from "./body-metrics-service";
-import { recalculateClientEnergy } from "./client-energy-service";
+import { appendMeasurements } from "./measurements-service";
 import { fetchAllPages } from "@/lib/paged-fetch";
+import { isMeasurementKey, type MeasurementKey } from "@/lib/measurements/keys";
 import type { MetricEntry, MetricEntryRow } from "@/types/metric-entries";
 import type { MetricEntryKey } from "@/lib/metrics/metric-entry-definitions";
-import { inToCm } from "@/utils/unit-conversions";
 
 type UpsertMetricEntryInput = {
   metricKey: MetricEntryKey;
+  /** Canonical: kilograms, centimetres, percent or a unitless score. The
+   *  Log-measurement dialog converts from the viewer's unit before sending
+   *  (CONVENTIONS §20); nothing here converts again. */
   value: number;
   /** YYYY-MM-DD; route-validated and bounded to the coach's today */
   entryDate: string;
@@ -34,42 +33,25 @@ function mapMetricEntryRow(row: MetricEntryRow): MetricEntry {
   };
 }
 
-/** Girth keys, which the coach surface still collects in INCHES. */
-const GIRTH_KEYS: ReadonlySet<MetricEntryKey> = new Set<MetricEntryKey>([
-  "waist",
-  "hips",
-  "chest",
-  "arms",
-  "thighs",
-]);
-
 /**
- * Coach-entered value → canonical storage.
+ * A coach's Log-measurement entry. Two stores, by what the key is:
  *
- * `client_metric_entries.value` is canonical since migration 141 (kilograms for
- * weight, centimetres for girths). The coach's Log-measurement dialog still
- * labels girths "in" — `use-merged-metrics.ts:27` hardcodes `MEASUREMENT_UNIT =
- * "in"` and feeds `METRIC_DEFINITIONS.getUnit` — so a girth arrives in inches
- * and must be converted here. Without this the column mixes inches (new coach
- * entries) with the centimetres migration 141 converted the history to, and
- * nothing distinguishes them.
+ *  - the seven PHYSIQUE keys append to the measurement log
+ *    (services/measurements-service.ts — rule 3 skips a value equal to the
+ *    day's standing coach entry, the energy pair recomputes when the row is
+ *    the client's newest);
+ *  - the five WELLNESS keys keep their replace-per-day row on
+ *    client_metric_entries (owner decision D2: wellness has its own model).
  *
- * Weight is stored canonical kg (migration 141 dropped the per-client unit
- * columns); the coach's OWN preference converts at the presentation boundary
- * (CONVENTIONS §20), never here.
- *
- * Phase 3 fixes the stale "in" label; until then this matches the check-in girth
- * path, which converts on write for the same reason.
+ * One response shape for both, so the Journey's caller does not care which.
  */
-function toCanonicalEntryValue(key: MetricEntryKey, value: number): number {
-  return GIRTH_KEYS.has(key) ? inToCm(value) : value;
-}
-
 export const upsertMetricEntry = async (
   clientId: string,
   input: UpsertMetricEntryInput
 ): Promise<MetricEntry> => {
-  const canonicalValue = toCanonicalEntryValue(input.metricKey, input.value);
+  if (isMeasurementKey(input.metricKey)) {
+    return appendPhysiqueEntry(clientId, input, input.metricKey);
+  }
 
   // created_at is intentionally absent from the payload: the insert default
   // applies and a conflict-update (same-date replace) never touches it.
@@ -79,7 +61,7 @@ export const upsertMetricEntry = async (
       {
         client_id: clientId,
         metric_key: input.metricKey,
-        value: canonicalValue,
+        value: input.value,
         entry_date: input.entryDate,
         note: input.note ?? null,
         created_by: input.coachId ?? null,
@@ -95,71 +77,46 @@ export const upsertMetricEntry = async (
     throw new Error(`Failed to save measurement: ${error.message}`);
   }
 
-  const entry = mapMetricEntryRow(data);
-
-  if (input.metricKey === "weight" || input.metricKey === "bodyFat") {
-    // Pass the canonical value, not the raw input — weight is already kilograms
-    // here, but routing the converted value keeps the two writes impossible to
-    // diverge if a future key needs converting.
-    await dualWriteBodyMetrics(clientId, { ...input, value: canonicalValue }, entry.id);
-  }
-
-  return entry;
+  return mapMetricEntryRow(data);
 };
 
-// Weight/bodyFat entries also land in the immutable body_metrics event log so
-// clients.current_weight (the status-card source) and goal comparisons stay
-// coherent. Non-blocking: a dual-write failure never loses the entry itself.
-async function dualWriteBodyMetrics(
+async function appendPhysiqueEntry(
   clientId: string,
   input: UpsertMetricEntryInput,
-  entryId: string
-): Promise<void> {
-  try {
-    const isWeight = input.metricKey === "weight";
-    const latest = await getLatestBodyMetrics(clientId, {
-      requireFields: [isWeight ? "weight" : "body_fat_percentage"],
-    });
-    // No-regression rule: only an entry dated on/after the latest known event
-    // may update the clients denormalized cache — a backdated measurement must
-    // never move current_weight/current_body_fat_percentage backwards.
-    const isCurrent =
-      latest === null || input.entryDate >= latest.recordedAt.slice(0, 10);
+  metricKey: MeasurementKey
+): Promise<MetricEntry> {
+  const result = await appendMeasurements({
+    clientId,
+    source: "coach_entry",
+    recordedOn: input.entryDate,
+    values: { [metricKey]: input.value },
+    note: input.note ?? null,
+    createdBy: input.coachId ?? null,
+  });
+  const row = result.rows[metricKey];
+  if (!row) throw new Error("Failed to save measurement");
 
-    // The clients.weight_unit lookup that used to sit here is gone with
-    // migration 141 — one fewer round trip, and the value needs no tag: weight
-    // entries are kilograms and girth entries centimetres, canonically.
-    await recordBodyMetrics({
-      clientId,
-      weight: isWeight ? input.value : undefined,
-      bodyFatPercentage: isWeight ? undefined : input.value,
-      source: "coach_entry",
-      sourceId: entryId,
-      // Midday UTC keeps the event on the intended calendar date across zones.
-      recordedAt: `${input.entryDate}T12:00:00.000Z`,
-      updateClientCache: isCurrent,
-    });
-
-    // Same no-regression rule as the cache write above: only an entry dated
-    // on/after the latest known event may move the profile, so a backdated
-    // measurement recomputes nothing.
-    if (isCurrent) {
-      await recalculateClientEnergy(clientId);
-    }
-  } catch (error) {
-    console.error("Failed to dual-write body metrics for coach entry:", error);
-  }
+  return {
+    id: row.id,
+    clientId,
+    metricKey,
+    value: row.value,
+    entryDate: row.date,
+    note: row.note ?? undefined,
+    createdBy: input.coachId,
+    createdAt: row.recordedAt,
+    updatedAt: row.recordedAt,
+  };
 }
 
 export const listMetricEntries = async (
   clientId: string
 ): Promise<MetricEntry[]> => {
-  // Paged: this read feeds the merged metric series on BOTH the coach Metrics
-  // page and the client journey endpoint, so it must be complete — an unpaged
-  // read silently truncates at PostgREST's ~1000-row cap, and the two surfaces
-  // stay in parity only if they share one complete source. The order is
-  // deterministic with no extra tiebreak: (entry_date, metric_key) is unique
-  // per client via the table's upsert key (client_id, metric_key, entry_date).
+  // Paged: this read feeds the merged WELLNESS series on the coach Journey, so
+  // it must be complete — an unpaged read silently truncates at PostgREST's
+  // ~1000-row cap. The order is deterministic with no extra tiebreak:
+  // (entry_date, metric_key) is unique per client via the table's upsert key
+  // (client_id, metric_key, entry_date).
   const rows = await fetchAllPages<MetricEntryRow>(
     (from, to) =>
       supabaseAdmin

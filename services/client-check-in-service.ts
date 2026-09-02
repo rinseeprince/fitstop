@@ -9,8 +9,7 @@ import {
   updateCheckInAISummary,
   getClientCheckIns
 } from "@/services/check-in-service";
-import { getClientById, updateClient } from "@/services/client-service";
-import { recordBodyMetrics } from "@/services/body-metrics-service";
+import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
 import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
@@ -19,7 +18,6 @@ import {
   getTrainingEventDetailsForPeriod,
 } from "@/services/check-in-context-service";
 import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
-import type { CheckInFormData, Client } from "@/types/check-in";
 import type { PeriodSnapshot } from "@/types/schedule";
 import { getCoachUnitPreference } from "@/lib/viewer-preferences";
 import { checkInWeekday } from "@/lib/check-in-week";
@@ -142,65 +140,6 @@ export async function triggerAISummaryGeneration(
     await updateCheckInAISummary(checkInId, aiSummary);
   } catch (error) {
     console.error(`Error in AI summary generation for check-in ${checkInId}:`, error instanceof Error ? error.message : "Unknown error");
-    throw error;
-  }
-}
-
-/**
- * Updates client metrics from check-in data and recalculates BMR/TDEE
- * This function ensures current_weight, current_body_fat_percentage, bmr, and tdee
- * are properly updated in the clients table after a check-in submission
- * 
- * @param client - The client object to update
- * @param checkInData - The check-in data containing new metrics
- * @throws Error if metrics update fails
- */
-export async function updateClientMetricsFromCheckIn(
-  client: Client,
-  checkInData: CheckInFormData,
-  checkInId?: string
-): Promise<void> {
-  try {
-    const updates: Partial<{ currentWeight: number; currentBodyFatPercentage: number }> = {};
-
-    // Update current weight if provided in check-in
-    if (checkInData.weight !== undefined) {
-      updates.currentWeight = checkInData.weight;
-    }
-
-    // Update current body fat if provided in check-in
-    if (checkInData.bodyFatPercentage !== undefined) {
-      updates.currentBodyFatPercentage = checkInData.bodyFatPercentage;
-    }
-
-    // Only update if we have new data
-    if (Object.keys(updates).length > 0) {
-      // Update client with new current metrics. This also recomputes the
-      // BMR/TDEE pair — updateClient owns that call now, so there is no
-      // clients write of our own here. What used to live here computed BMR and
-      // then hardcoded `tdee = bmr * 1.2`, which silently costed every client
-      // as sedentary and overwrote a coach's custom TDEE on every check-in.
-      const updatedClient = await updateClient(client.id, updates);
-
-      // Dual-write to body_metrics (non-blocking). The pair comes off the
-      // updated client rather than being recomputed, so the event log and the
-      // profile cannot disagree about what this check-in recorded.
-      try {
-        await recordBodyMetrics({
-          clientId: client.id,
-          weight: checkInData.weight,
-          bodyFatPercentage: checkInData.bodyFatPercentage,
-          bmr: updatedClient.bmr,
-          tdee: updatedClient.tdee,
-          source: "check_in",
-          sourceId: checkInId,
-        });
-      } catch (dualWriteError) {
-        console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
-      }
-    }
-  } catch (error) {
-    console.error("Error updating client metrics from check-in:", error instanceof Error ? error.message : "Unknown error");
     throw error;
   }
 }

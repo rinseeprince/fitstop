@@ -21,6 +21,7 @@ import {
 import { rollingAverage, weeklyRate, type SeriesPoint } from "@/lib/overview/rolling-average";
 import { toUtcMs } from "@/utils/metric-points";
 import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
+import { SOURCE_LABELS } from "@/components/clients/metrics/metrics-format";
 import { formatDateOnlyShort } from "./overview-format";
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { MeasurementSeries } from "@/types/coach-overview";
@@ -34,6 +35,14 @@ import { formatWeight, type UnitSystem } from "@/utils/unit-conversions";
  * client got to since they started", which is a lifetime question. The axis
  * therefore runs from their start date to today whatever the data does, so an
  * empty stretch reads as an empty stretch rather than being cropped away.
+ *
+ * Three rules from the measurement log (docs/MEASUREMENT-LOG-PLAN.md D4):
+ * the big number is "now" — the newest reading of ANY date, never waiting for
+ * the start date; the line begins at the BASELINE, the reading as of the start
+ * date, drawn AT the start date and labelled with the reading's own date when
+ * it differs; and a start date still ahead reads `Starts …` in place of a line.
+ * A reading dated before the start is not a point here (the Journey lists it
+ * under "Before start").
  *
  * recharts, not hand-rolled SVG: it is already a dependency and
  * `metric-trend-chart.tsx` is the shipped precedent for this exact chart —
@@ -65,6 +74,7 @@ type ProgressionChartProps = {
 
 const SERIES_COLOR = "#0d9488";
 const RAW_DOT_COLOR = "rgba(255,255,255,0.22)";
+const BASELINE_DOT_COLOR = "rgba(255,255,255,0.6)";
 const GOAL_LINE_COLOR = "rgba(255,255,255,0.22)";
 
 /**
@@ -141,40 +151,66 @@ export function ProgressionChart({
   const goalRaw = metric === "weight" ? goal.goalWeightKg : goal.goalBodyFatPercentage;
   const goalValue = goalRaw == null ? null : toViewer(goalRaw, metric, preference);
 
-  const { points, smoothed, current, rate } = useMemo(() => {
-    const raw: SeriesPoint[] = (series?.[metric] ?? []).map((point) => ({
+  const today = getTodayDateStringInTimezone(timezone);
+  const startsAhead = startDate !== null && startDate > today;
+
+  const { points, smoothed, current, rate, baseline } = useMemo(() => {
+    const all: SeriesPoint[] = (series?.[metric] ?? []).map((point) => ({
       date: point.date,
       value: toViewer(point.value, metric, preference),
     }));
-    const mean = rollingAverage(raw);
+    const rawBaseline = series?.baseline?.[metric] ?? null;
+    const baselinePoint = rawBaseline
+      ? {
+          value: toViewer(rawBaseline.value, metric, preference),
+          date: rawBaseline.date,
+          source: rawBaseline.source,
+        }
+      : null;
+    // The JOURNEY: from the start date on, the baseline drawn at the start
+    // date as the first point. Before activation there is no journey to draw,
+    // only the readings themselves.
+    let journey: SeriesPoint[] = all;
+    if (startDate && !startsAhead) {
+      journey = all.filter((point) => point.date >= startDate);
+      if (baselinePoint && journey[0]?.date !== startDate) {
+        journey = [{ date: startDate, value: baselinePoint.value }, ...journey];
+      }
+    } else if (startsAhead) {
+      journey = [];
+    }
+    const mean = rollingAverage(journey);
     return {
-      points: raw,
+      points: journey,
       smoothed: mean,
-      current: raw.length > 0 ? raw[raw.length - 1].value : null,
+      // "Now": the newest reading of ANY date.
+      current: all.length > 0 ? all[all.length - 1].value : null,
       // The SMOOTHED series, so the figure is the trend's slope rather than the
       // distance between two possibly-noisy readings. Null under two points or
       // under a week of span — the same gate deriveHeroStats applies, because
       // below it an extrapolated weekly rate is arithmetic, not information.
       rate: weeklyRate(mean),
+      baseline: baselinePoint,
     };
-  }, [series, metric, preference]);
+  }, [series, metric, preference, startDate, startsAhead]);
 
   // Every point carries both the raw reading and its trailing mean, so one
-  // dataset drives the line, the dots and the shared time axis.
+  // dataset drives the line, the dots and the shared time axis. The baseline
+  // point carries its own key so it can be drawn apart from the readings.
   const data = useMemo(
     () =>
       points.map((point, i) => ({
         ts: toUtcMs(point.date),
-        raw: point.value,
+        raw: i === 0 && startDate !== null && point.date === startDate && baseline ? null : point.value,
+        baseline: i === 0 && startDate !== null && point.date === startDate && baseline ? point.value : null,
         mean: smoothed[i]?.value ?? point.value,
       })),
-    [points, smoothed]
+    [points, smoothed, startDate, baseline]
   );
 
   // The axis is the JOURNEY, not the data: [start date, today]. Anchoring it on
   // the readings instead would crop a client who stopped logging in June back to
   // June and quietly redraw the same trend as though it were current.
-  const today = getTodayDateStringInTimezone(timezone);
   const domain = useMemo<[number, number]>(() => {
     const end = toUtcMs(today);
     // No start date (pre-activation) falls back to the first reading, and with
@@ -224,13 +260,15 @@ export function ProgressionChart({
           <p
             className={cn(
               "mt-1.5 text-[11px]",
-              !isFirstLoad && rate !== null
+              !isFirstLoad && (rate !== null || startsAhead)
                 ? cn(MONO, "text-[#0d9488]")
                 : "text-[rgba(255,255,255,0.3)]"
             )}
           >
             {isFirstLoad ? (
               <TextSkeleton className="w-20" />
+            ) : startsAhead && startDate ? (
+              `Starts ${formatDateOnlyShort(startDate)}`
             ) : rate === null ? (
               // Word-only, so it stays sans beside the mono rate it replaces.
               points.length === 0
@@ -320,6 +358,14 @@ export function ProgressionChart({
                   isAnimationActive={false}
                 />
               )}
+              {/* The baseline, at the start date, drawn apart from the readings. */}
+              <Scatter
+                dataKey="baseline"
+                fill={BASELINE_DOT_COLOR}
+                shape="circle"
+                legendType="none"
+                isAnimationActive={false}
+              />
             </ComposedChart>
           </ResponsiveContainer>
         )}
@@ -327,10 +373,19 @@ export function ProgressionChart({
 
       {/* The axis' own ends — where this client STARTED and today — rather than
           the first and last readings. Those two are the same thing for a client
-          who logs, and the difference is the point for one who stopped. */}
+          who logs, and the difference is the point for one who stopped. The
+          left end names the baseline: its value, and the reading's own date and
+          source when it was not taken on the start date itself. */}
       <div className="mt-1 flex items-center justify-between">
         <span className={cn(MONO, "text-[10px] text-[rgba(255,255,255,0.3)]")}>
           {startDate ? formatDateOnlyShort(startDate) : "Start"}
+          {startDate && !startsAhead && baseline
+            ? ` · ${baseline.value} ${unit}${
+                baseline.date !== startDate
+                  ? ` (${SOURCE_LABELS[baseline.source]}, ${formatDateOnlyShort(baseline.date)})`
+                  : ""
+              }`
+            : ""}
         </span>
         <span className={cn(MONO, "text-[10px] text-[rgba(255,255,255,0.3)]")}>
           {formatDateOnlyShort(today)}

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-import { mapClientRow, mapCoachRow } from "./mappers";
+import { mapCheckInRow, mapClientRow, mapCoachRow } from "./mappers";
 import type { ClientRow, CoachRow } from "./database-helpers";
 
 /**
@@ -75,5 +75,66 @@ describe("mapClientRow — unitPreference", () => {
       expect(mapClientRow(clientRow({ unit_preference: stored })).unitPreference)
         .toBe(mapCoachRow(coachRow({ unit_preference: stored })).unitPreference);
     }
+  });
+});
+
+describe("mapClientRow — the four reading fields come from the embedded views", () => {
+  const base = {
+    id: "c1",
+    coach_id: "co1",
+    name: "A",
+    email: "a@x.test",
+    timezone: "UTC",
+  } as unknown as Parameters<typeof mapClientRow>[0];
+
+  it("reads now from client_current_measurements and the start from client_baseline_measurements", () => {
+    const client = mapClientRow({
+      ...base,
+      client_current_measurements: [
+        { metric_key: "weight", value: 76.1, recorded_on: "2026-08-29", source: "coach_entry", measurement_id: "m1" },
+        { metric_key: "bodyFat", value: 15.2, recorded_on: "2026-08-29", source: "coach_entry", measurement_id: "m2" },
+        { metric_key: "waist", value: 80.3, recorded_on: "2026-08-29", source: "coach_entry", measurement_id: "m3" },
+      ],
+      client_baseline_measurements: [
+        { metric_key: "weight", value: 88.4, recorded_on: "2026-04-01", source: "intake", measurement_id: "b1" },
+      ],
+    });
+    expect(client.currentWeight).toBe(76.1);
+    expect(client.currentBodyFatPercentage).toBe(15.2);
+    expect(client.startingWeight).toBe(88.4);
+    expect(client.startingBodyFatPercentage).toBeUndefined();
+  });
+
+  it("maps the fields undefined when the row was read without the embeds", () => {
+    const client = mapClientRow(base);
+    expect(client.currentWeight).toBeUndefined();
+    expect(client.startingWeight).toBeUndefined();
+  });
+});
+
+describe("mapCheckInRow — readings are folded in, and the keys keep their place", () => {
+  const row = {
+    id: "ci1",
+    client_id: "c1",
+    status: "pending",
+    created_at: "2026-05-04T08:00:00+00:00",
+    updated_at: "2026-05-04T08:00:00+00:00",
+  } as unknown as Parameters<typeof mapCheckInRow>[0];
+
+  it("takes the seven readings from the fold, never from the row", () => {
+    const withColumns = { ...row, weight: 99.9, waist: 99.8 } as typeof row;
+    const checkIn = mapCheckInRow(withColumns, { weight: 79.5, bodyFat: 19.6, waist: 80.2 });
+    expect(checkIn.weight).toBe(79.5);
+    expect(checkIn.bodyFatPercentage).toBe(19.6);
+    expect(checkIn.waist).toBe(80.2);
+    expect(checkIn.hips).toBeUndefined();
+  });
+
+  it("emits the reading keys at the same position whether or not a reading exists — the wire's byte order", () => {
+    const bare = Object.keys(mapCheckInRow(row));
+    const folded = Object.keys(mapCheckInRow(row, { weight: 79.5, thighs: 61 }));
+    expect(folded).toEqual(bare);
+    expect(bare.indexOf("weight")).toBe(bare.indexOf("notes") + 1);
+    expect(bare.indexOf("thighs")).toBe(bare.indexOf("photoFront") - 1);
   });
 });

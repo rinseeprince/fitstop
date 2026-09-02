@@ -41,18 +41,13 @@ vi.mock('@/services/check-in-context-service', () => ({
 
 vi.mock('./client-service', () => ({
   getClientById: vi.fn(),
-  updateClient: vi.fn(),
 }))
 
 vi.mock('@/lib/viewer-preferences', () => ({
   getCoachUnitPreference: (...a: unknown[]) => getCoachUnitPreferenceMock(...a),
 }))
 
-vi.mock('./body-metrics-service', () => ({
-  recordBodyMetrics: vi.fn().mockResolvedValue({}),
-}))
-
-import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from './client-check-in-service'
+import { triggerAISummaryGeneration } from './client-check-in-service'
 
 import { generateCheckInSummary } from './ai-service'
 import { 
@@ -64,9 +59,7 @@ import { getDailyLogs } from './daily-logs-service'
 import { getHabitLogs } from './daily-habits-service'
 import { getNutritionSummaryForPeriod } from './weekly-nutrition-service'
 import { getTrainingEventDetailsForPeriod, getExerciseSummariesForPeriod } from '@/services/check-in-context-service'
-import { getClientById, updateClient } from './client-service'
-import { supabaseAdmin } from './supabase-admin'
-import { recordBodyMetrics } from './body-metrics-service'
+import { getClientById } from './client-service'
 
 describe('Client Check-in Service', () => {
   beforeEach(() => {
@@ -271,62 +264,6 @@ describe('Client Check-in Service', () => {
         expect.any(Map),
         'metric'
       )
-    })
-  })
-
-  describe('updateClientMetricsFromCheckIn', () => {
-    const mockClient = {
-      id: 'client-456',
-      name: 'Test Client',
-      height: 72,
-      heightUnit: 'in',
-      gender: 'male',
-      dateOfBirth: '1990-01-01',
-      currentWeight: 180,
-      weightUnit: 'lbs',
-    } as any
-
-    it('stamps the event with the pair updateClient returned, not a recomputation', async () => {
-      // The previous assertion here pinned tdee: 2160 — literally bmr * 1.2,
-      // the hardcoded sedentary multiplier this service used to apply. It now
-      // takes whatever updateClient's energy recompute produced, so a client on
-      // any other activity level is recorded truthfully.
-      vi.mocked(updateClient).mockResolvedValue({
-        ...mockClient,
-        currentWeight: 175,
-        bmr: 1800,
-        tdee: 3105,
-      })
-
-      await updateClientMetricsFromCheckIn(mockClient, { weight: 175, bodyFatPercentage: 14 } as any, 'check-in-999')
-
-      expect(recordBodyMetrics).toHaveBeenCalledWith({
-        clientId: 'client-456',
-        weight: 175,
-        bodyFatPercentage: 14,
-        bmr: 1800,
-        tdee: 3105,
-        source: 'check_in',
-        sourceId: 'check-in-999',
-      })
-    })
-
-    it('issues no clients write of its own — updateClient owns the energy pair', async () => {
-      vi.mocked(updateClient).mockResolvedValue({ ...mockClient, currentWeight: 175 })
-
-      await updateClientMetricsFromCheckIn(mockClient, { weight: 175 } as any)
-
-      expect(supabaseAdmin.from).not.toHaveBeenCalledWith('clients')
-    })
-
-    it('still resolves if recordBodyMetrics fails', async () => {
-      vi.mocked(updateClient).mockResolvedValue({ ...mockClient, currentWeight: 175 })
-      vi.mocked(recordBodyMetrics).mockRejectedValueOnce(new Error('DB down'))
-
-      // Should not throw despite dual-write failure
-      await expect(
-        updateClientMetricsFromCheckIn(mockClient, { weight: 175 } as any)
-      ).resolves.not.toThrow()
     })
   })
 })

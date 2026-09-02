@@ -23,6 +23,13 @@ vi.mock("@/services/check-in-service", () => ({
   mapExerciseHighlight: (...args: unknown[]) => mapExerciseHighlightMock(...args),
 }));
 
+// What the check-in reported lives in the measurement log, stamped with the
+// check-in's id; the route reads it through the service and emits every key,
+// null where the check-in carried no reading.
+vi.mock("@/services/measurements-service", () => ({
+  getMeasurementsForCheckIns: vi.fn(),
+}));
+
 vi.mock("@/lib/mappers", () => ({
   mapCheckInRow: (row: { id: string; client_id: string }) => ({
     id: row.id,
@@ -40,6 +47,7 @@ import {
   getCheckInAnswers,
   getCheckInExerciseHighlights,
 } from "@/services/check-in-service";
+import { getMeasurementsForCheckIns } from "@/services/measurements-service";
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 const req = () => new NextRequest("https://t.dev/api/client/check-ins/ci-1");
@@ -61,6 +69,7 @@ describe("GET /api/client/check-ins/[id]", () => {
     vi.mocked(requireClientAuth).mockResolvedValue({ ok: true, clientId: "client-1" } as any);
     vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([]);
     vi.mocked(getCheckInAnswers).mockResolvedValue([]);
+    vi.mocked(getMeasurementsForCheckIns).mockResolvedValue(new Map());
     vi.mocked(deriveSessionCompletionsForCheckIn).mockResolvedValue([
       {
         id: "e-1",
@@ -187,6 +196,28 @@ describe("GET /api/client/check-ins/[id]", () => {
     expect(body.data.customAnswers).toEqual([
       { questionId: "q-a", prompt: "How was sleep?", answer: "badly" },
     ]);
+  });
+
+  it("emits the check-in's readings from the measurement log, and null for a reading it never carried", async () => {
+    // The RN wire reads this shape: every measurement key present, canonical
+    // kg/cm, `null` rather than a missing key when the check-in reported none.
+    vi.mocked(getMeasurementsForCheckIns).mockResolvedValue(
+      new Map([["ci-1", { weight: 80.4, waist: 90 }]])
+    );
+    mockCheckInRow({
+      data: { id: "ci-1", client_id: "client-1", status: "pending", created_at: "2026-05-14T12:00:00Z" },
+      error: null,
+    });
+
+    const body = await (await GET(req(), params("ci-1"))).json();
+
+    expect(getMeasurementsForCheckIns).toHaveBeenCalledWith(["ci-1"]);
+    expect(body.data.weight).toBe(80.4);
+    expect(body.data.waist).toBe(90);
+    for (const key of ["bodyFatPercentage", "hips", "chest", "arms", "thighs"]) {
+      expect(body.data).toHaveProperty(key);
+      expect(body.data[key]).toBeNull();
+    }
   });
 });
 

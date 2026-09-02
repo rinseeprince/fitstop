@@ -19,26 +19,30 @@ vi.mock("@/services/supabase-admin", () => ({
 // import. Grow this list whenever the route's import list grows.
 vi.mock("@/services/check-in-service", () => ({
   deriveSessionCompletionsForCheckIn: vi.fn(),
+  // The domain object with the check-in's readings folded in from the
+  // measurement log — the route reads the fold, never the bare row mapper.
+  // Shaped like mapCheckInRow's output for the fields the route hands on.
+  foldCheckInMeasurements: vi.fn((rows: Array<{ id: string; client_id: string }>) =>
+    Promise.resolve(rows.map((row) => ({
+      id: row.id,
+      clientId: row.client_id,
+      periodStart: "2026-05-08",
+      periodEnd: "2026-05-14",
+      createdAt: "2026-05-14T12:00:00Z",
+      weight: 80.4,
+    })))
+  ),
   getCheckInAnswers: vi.fn(),
   getCheckInExerciseHighlights: vi.fn(),
   getCheckInPeriodAdherence: vi.fn(),
   mapExerciseHighlight: (row: unknown) => row,
 }));
 
-vi.mock("@/lib/mappers", () => ({
-  mapCheckInRow: (row: { id: string; client_id: string }) => ({
-    id: row.id,
-    clientId: row.client_id,
-    periodStart: "2026-05-08",
-    periodEnd: "2026-05-14",
-    createdAt: "2026-05-14T12:00:00Z",
-  }),
-}));
-
 import { GET } from "./route";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 import {
   deriveSessionCompletionsForCheckIn,
+  foldCheckInMeasurements,
   getCheckInAnswers,
   getCheckInExerciseHighlights,
   getCheckInPeriodAdherence,
@@ -172,5 +176,30 @@ describe("GET /api/check-in/[id] (coach)", () => {
 
     const res = await GET(req(), params("ci-1"));
     expect(res.status).toBe(404);
+  });
+
+  it("serves the FOLDED check-in — the readings from the measurement log ride on the payload", async () => {
+    mockCheckInRow({
+      data: {
+        id: "ci-1",
+        client_id: "client-1",
+        status: "reviewed",
+        created_at: "2026-05-14T12:00:00Z",
+        clients: { id: "client-1", name: "Alex", email: "a@x.com", avatar_url: null },
+      },
+      error: null,
+    });
+
+    const body = await (await GET(req(), params("ci-1"))).json();
+
+    // The fold received the fetched row (it looks the readings up by id)…
+    expect(foldCheckInMeasurements).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(foldCheckInMeasurements).mock.calls[0][0]).toEqual([
+      expect.objectContaining({ id: "ci-1", client_id: "client-1" }),
+    ]);
+    // …and its output, not the raw row, is what the coach reads.
+    expect(body.checkIn.weight).toBe(80.4);
+    expect(body.checkIn).not.toHaveProperty("client_id");
+    expect(body.client).toEqual({ id: "client-1", name: "Alex", email: "a@x.com", avatar_url: null });
   });
 });

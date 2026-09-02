@@ -23,6 +23,18 @@ export type SetLogInsert = Database["public"]["Tables"]["set_logs"]["Insert"];
 
 export type CheckInExerciseHighlightRow = Database["public"]["Tables"]["check_in_exercise_highlights"]["Row"];
 
+// The two measurement views embedded beside a client row — the four reading
+// fields on `Client` are filled from these, never from a column
+// (services/measurements-service.ts → CLIENT_MEASUREMENT_EMBEDS).
+export type ClientMeasurementEmbed = Pick<
+  Database["public"]["Views"]["client_current_measurements"]["Row"],
+  "metric_key" | "value" | "recorded_on" | "source" | "measurement_id"
+>;
+export type ClientRowWithMeasurements = ClientRow & {
+  client_current_measurements?: ClientMeasurementEmbed[] | null;
+  client_baseline_measurements?: ClientMeasurementEmbed[] | null;
+};
+
 // Additional helper types for insert/update operations
 export type ClientUpdate = Database["public"]["Tables"]["clients"]["Update"];
 

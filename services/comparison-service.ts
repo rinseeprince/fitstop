@@ -1,8 +1,7 @@
-import { getCheckInById, getPreviousCheckIn, getClientCheckIns, getFirstCheckIn } from "./check-in-service";
+import { getCheckInById, getPreviousCheckIn, getClientCheckIns } from "./check-in-service";
 import { getClientById } from "./client-service";
 import { getNutritionPlanForDate } from "./nutrition-plan-service";
 import { calculateMetricChange, calculateDaysBetween } from "@/utils/comparison-utils";
-import { getBodyMetricsHistory } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
 import {
   resolveEffectiveGoal,
@@ -36,23 +35,20 @@ export const getCheckInComparison = async (
     checkInId
   );
 
-  // Fetch all check-ins for chart data (last 10), first check-in for starting
-  // values, the nutrition version COVERING the client's today (migration 144 —
-  // the drift banner must compare against the era actually governing them, and
-  // date its "since" from when those numbers took effect, not from when the
-  // first-ever plan row was born), earliest body_metrics for starting values,
+  // Fetch the recent check-ins (last 10, for the trend), the nutrition version
+  // COVERING the client's today (migration 144 — the drift banner must compare
+  // against the era actually governing them, and date its "since" from when
+  // those numbers took effect, not from when the first-ever plan row was born),
   // and current goals from client_goals.
   const clientLocalToday = getTodayDateStringInTimezone(client.timezone);
-  const [{ checkIns }, firstCheckIn, activePlan, earliestMetrics, currentGoals] = await Promise.all([
+  const [{ checkIns }, activePlan, currentGoals] = await Promise.all([
     getClientCheckIns(currentCheckIn.clientId, { limit: 10 }),
-    getFirstCheckIn(currentCheckIn.clientId),
     getNutritionPlanForDate(currentCheckIn.clientId, clientLocalToday).catch((err) => {
       // Degrade to "no plan" for the banner rather than failing the whole
       // comparison read — but never silently.
       console.error("Comparison covering-plan lookup failed:", err);
       return null;
     }),
-    getBodyMetricsHistory(currentCheckIn.clientId, { limit: 1, ascending: true }),
     getCurrentGoals(currentCheckIn.clientId),
   ]);
 
@@ -66,20 +62,6 @@ export const getCheckInComparison = async (
     // client record is already in scope, so resolve their zone directly.
     today: getTodayDateStringInTimezone(client.timezone),
   });
-
-  // The COACH'S recorded start wins over the derived one. This preference used
-  // to run the other way — earliest `body_metrics` first, column as fallback —
-  // which was right while `starting_weight` was write-once: preferring a real
-  // event over a denormalized copy. It became "ignore the coach" the moment the
-  // column turned editable, because `body_metrics` is immutable by design, so a
-  // corrected start weight would show on the Overview card and nowhere else.
-  //
-  // Behaviour-identical for every client who has not been corrected: creation
-  // writes ONE typed measurement into both the column and the first event, and
-  // the intake sync does the same, so the two agree by construction.
-  const earliestWeight = client.startingWeight ?? earliestMetrics[0]?.weight;
-  const earliestBodyFat =
-    client.startingBodyFatPercentage ?? earliestMetrics[0]?.bodyFatPercentage;
 
   // Goal deadline, used by both the weight pace check and the deadline card —
   // from the SAME scope as the goal weight (no cross-scope mismatch).
@@ -101,10 +83,11 @@ export const getCheckInComparison = async (
     ? calculateDaysBetween(currentCheckIn.createdAt, previousCheckIn.createdAt)
     : undefined;
 
-  // The recent set (ten check-ins) feeds two things and nothing else: the
-  // average change per week, which is the TREND behind `isOnTrack` — body fat's
-  // only trend signal, and weight's when there is no deadline to pace against —
-  // and the third-priority starting-value fallback below.
+  // The recent set (ten check-ins) feeds one thing: the average change per
+  // week, which is the TREND behind `isOnTrack` — body fat's only trend signal,
+  // and weight's when there is no deadline to pace against. Their readings are
+  // the measurement log's rows stamped with each check-in (rule 6: what a
+  // check-in reported), folded in by getClientCheckIns.
   const weightCheckIns = checkIns.filter((ci) => ci.weight);
   let avgWeeklyWeightChange: number | undefined;
   if (weightCheckIns.length >= 2) {
@@ -133,19 +116,12 @@ export const getCheckInComparison = async (
     );
   }
 
-  // The start value. Priority: 1) the coach's recorded start / earliest event,
-  // 2) first check-in, 3) oldest in the recent set, 4) the client's current
-  // reading. Never the check-in under review: it may carry no reading at all.
-  const startingWeight =
-    earliestWeight
-    ?? firstCheckIn?.weight
-    ?? (weightCheckIns.length > 0 ? weightCheckIns[weightCheckIns.length - 1].weight : undefined)
-    ?? client.currentWeight;
-  const startingBodyFat =
-    earliestBodyFat
-    ?? firstCheckIn?.bodyFatPercentage
-    ?? (bodyFatCheckIns.length > 0 ? bodyFatCheckIns[bodyFatCheckIns.length - 1].bodyFatPercentage : undefined)
-    ?? client.currentBodyFatPercentage;
+  // The start value: the client record's baseline — the reading as of their
+  // start date, derived from the measurement log — else their current reading,
+  // so a client with no start date still has a direction to be judged in.
+  // Never the check-in under review: it may carry no reading at all.
+  const startingWeight = client.startingWeight ?? client.currentWeight;
+  const startingBodyFat = client.startingBodyFatPercentage ?? client.currentBodyFatPercentage;
 
   // Where they stand: the client RECORD's current reading against the goal,
   // composed by the one kernel. The check-in is a report of what the client

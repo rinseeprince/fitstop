@@ -102,10 +102,7 @@ export function ClientOverviewTab({
   // it is a lens on one card, not a pane, and the client page's param contract
   // is one param per TAB (docs/ARCHITECTURE.md → Client page tab structure).
   const [chartMetric, setChartMetric] = useState<ChartMetric>("weight");
-  const { series, isLoading: seriesLoading } = useMeasurementSeries(
-    client.id,
-    client.startDate
-  );
+  const { series, isLoading: seriesLoading } = useMeasurementSeries(client.id);
 
   const wellnessDates = useMemo(() => trailingDates(WELLNESS_WINDOW_DAYS), []);
   const { toast } = useToast();

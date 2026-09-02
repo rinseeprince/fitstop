@@ -1,5 +1,6 @@
 import type { MetricPoint } from "@/utils/metric-points";
-import type { Tone } from "@/utils/metric-derived-stats";
+import type { MeasurementSource } from "@/lib/measurements/keys";
+import type { HeroBaseline, Tone } from "@/utils/metric-derived-stats";
 import type { TrendDirection } from "@/types/check-in";
 
 export type { Tone };
@@ -61,13 +62,20 @@ export type MetricSummary = {
   name: string;
   tab: MetricTab;
   unit: string;
-  /** Full merged history, ascending by date. */
+  /** The full ascending series. For a physique metric, the JOURNEY: readings
+   *  from the start date on — a reading dated before it is listed in the log
+   *  under "Before start" and is not a point here. */
   points: MetricPoint[];
+  /** The newest reading of ANY date — never waits for the start date. */
   latest: { value: number; date: string; daysAgo: number } | null;
   first: { value: number; date: string } | null;
   entryCount: number;
   frequencyLabel: string | null;
-  totalChange: { delta: number; sinceDate: string } | null;
+  /** Physique: since the START DATE, against the baseline (the reading as of
+   *  it, whose own date and source are carried). Wellness: since the first point. */
+  totalChange: { delta: number; sinceDate: string; baseline?: HeroBaseline } | null;
+  /** The start date while it is ahead — the since-start cell reads `Starts …`. */
+  startsOn: string | null;
   /** null → the ENTRIES fallback stat is shown instead. */
   avgRate: { perWeek: number; weeks: number } | null;
   change30d: {
@@ -97,5 +105,7 @@ export type LogRow = {
   unit: string;
   change: { amount: number; tone: Tone } | null;
   note: string | null;
-  source: "check_in" | "coach_entry";
+  source: MeasurementSource;
+  /** Dated before the client's start date: listed, excluded from the journey's chart and maths. */
+  beforeStart: boolean;
 };

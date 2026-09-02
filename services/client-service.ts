@@ -6,16 +6,31 @@ import type {
   UpdateCheckInConfigInput,
   UpdateSettingsInput,
 } from "@/lib/validations/client";
-import type { ClientRow } from "@/lib/database-helpers";
+import type { ClientRow, ClientRowWithMeasurements } from "@/lib/database-helpers";
 import { mapClientRow } from "@/lib/mappers";
 import { createIntake } from "@/services/client-intake-service";
 import { sendInvitation } from "@/services/invitation-service";
 import { invalidateClientAuthCache } from "@/lib/auth-cache";
-import { recordBodyMetrics } from "@/services/body-metrics-service";
+import {
+  appendMeasurements,
+  CLIENT_MEASUREMENT_EMBEDS,
+  ReadingRemovalUnavailableError,
+} from "@/services/measurements-service";
 import { recordClientStart } from "@/services/client-start-service";
 import { updateGoals } from "@/services/client-goals-service";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
 import { computeEnergyPair } from "@/services/client-energy-calc";
+import { getClientTodayString, getCoachTodayString } from "@/services/today-service";
+
+// Every read that maps to a `Client` carries the two measurement views, so the
+// four reading fields are filled in the same round trip as the row.
+const CLIENT_SELECT = `*, ${CLIENT_MEASUREMENT_EMBEDS}`;
+
+/** The day a coach's entry is dated: the coach's calendar when one is in
+ *  hand (they are the setter), else the client's. */
+async function todayFor(clientId: string, coachId?: string): Promise<string> {
+  return coachId ? getCoachTodayString(coachId) : getClientTodayString(clientId);
+}
 
 // Extended client type with check-in info
 type ClientWithCheckInInfo = Client & {
@@ -87,10 +102,9 @@ export const createClient = async (
     // `client_goals` row and mirrors it onto `clients` — so writing them here
     // too would reopen the window it exists to close: the mirror holding a goal
     // that `client_goals` never received.
-    current_weight: currentWeightKg ?? null,
-    current_body_fat_percentage: clientData.currentBodyFatPercentage ?? null,
-    starting_weight: currentWeightKg ?? null,
-    starting_body_fat_percentage: clientData.currentBodyFatPercentage ?? null,
+    //
+    // No weight columns either: the reading is a row in the measurement log
+    // (below), and "now" and "at the start" are derived from that log.
     bmr: energy.status === "ready" ? energy.bmr : null,
     tdee: energy.status === "ready" ? energy.tdee : null,
     // Explicitly NULL rather than letting the column DEFAULT ('sedentary')
@@ -126,20 +140,24 @@ export const createClient = async (
 
   const client = mapClientRow(data);
 
-  // Dual-write body metrics for new client (non-blocking)
-  if (clientData.currentWeight !== undefined || clientData.currentBodyFatPercentage !== undefined) {
-    try {
-      await recordBodyMetrics({
-        clientId: client.id,
-        weight: currentWeightKg,
-        bodyFatPercentage: clientData.currentBodyFatPercentage,
-        bmr: energy.status === "ready" ? energy.bmr : undefined,
-        tdee: energy.status === "ready" ? energy.tdee : undefined,
-        source: "intake_sync",
-      });
-    } catch (dualWriteError) {
-      console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
-    }
+  // The first reading: an `intake` row in the measurement log, dated the day
+  // the coach captured it. The pair in the INSERT above was computed from the
+  // same number, so the recompute this append triggers changes nothing. It
+  // THROWS (CONVENTIONS §2 item 13 — the row exists, the reading does not, the
+  // request reports failure): a client whose starting weight was never
+  // recorded is one activation refuses, and a swallowed failure here is how a
+  // profile came to claim a reading no row carried.
+  if (currentWeightKg !== undefined || clientData.currentBodyFatPercentage !== undefined) {
+    const appended = await appendMeasurements({
+      clientId: client.id,
+      source: "intake",
+      recordedOn: await getCoachTodayString(coachId),
+      values: { weight: currentWeightKg, bodyFat: clientData.currentBodyFatPercentage },
+    });
+    // The INSERT's returned row carries no embeds, so without this the
+    // response reports a client with no reading a moment after recording one.
+    client.currentWeight = appended.rows.weight?.value;
+    client.currentBodyFatPercentage = appended.rows.bodyFat?.value;
   }
 
   // Goals are written ONCE, by `updateGoals`, which owns `client_goals` and the
@@ -243,7 +261,7 @@ export const getClientsForCoach = async (
 export const getClientById = async (clientId: string, includeInactive = false): Promise<Client | null> => {
   let query = supabaseAdmin
     .from("clients")
-    .select("*")
+    .select(CLIENT_SELECT)
     .eq("id", clientId);
 
   if (!includeInactive) {
@@ -260,7 +278,7 @@ export const getClientById = async (clientId: string, includeInactive = false): 
 
   if (!data) return null;
 
-  return mapClientRow(data);
+  return mapClientRow(data as ClientRowWithMeasurements);
 };
 
 // Update a client
@@ -269,10 +287,17 @@ export const updateClient = async (
   clientData: UpdateClientInput,
   coachId?: string
 ): Promise<Client> => {
-  // Canonical on arrival — see createClient. The aliases stay because the
-  // dual-write below is a trap worth naming: body-metrics-service writes its
-  // own denormalized cache back to clients.current_weight in the same request,
-  // so both writers must be handed the same number.
+  // Withdrawing a reading is a void, and voids arrive with the correct/remove
+  // commit. Until then a cleared body fat is refused BEFORE any write lands,
+  // so the coach reads a sentence rather than a save that kept the value.
+  if (clientData.currentBodyFatPercentage === null) {
+    throw new ReadingRemovalUnavailableError("body fat");
+  }
+  if (clientData.startingBodyFatPercentage === null) {
+    throw new ReadingRemovalUnavailableError("start body fat");
+  }
+
+  // Canonical on arrival — see createClient.
   const currentWeightKg = clientData.currentWeight;
   const goalWeightKg = clientData.goalWeight;
   const heightCm = clientData.height;
@@ -293,21 +318,17 @@ export const updateClient = async (
   if (clientData.dateOfBirth !== undefined) updateData.date_of_birth = clientData.dateOfBirth ?? null;
   if (clientData.workActivityLevel !== undefined) updateData.work_activity_level = clientData.workActivityLevel;
   if (clientData.phone !== undefined) updateData.phone = clientData.phone || null;
-  // start_date and the two starting_* columns are NOT written here. They
-  // describe the client's ORIGIN, which has one writer — recordClientStart
-  // below — because the columns are a cache of the metric entries dated on the
-  // start date, and a write that touched only the columns would leave the
-  // Physique chart's first point describing a start that no longer exists.
+  // start_date is NOT written here: the origin has one writer, recordClientStart
+  // below. No reading is written here either — every weight and body fat on
+  // this input becomes a row in the measurement log (below), never a column.
   // goal_weight / goal_body_fat_percentage are deliberately NOT in updateData —
   // `updateGoals` below owns both stores. See its comment.
-  if (clientData.currentWeight !== undefined) updateData.current_weight = currentWeightKg ?? null;
-  if (clientData.currentBodyFatPercentage !== undefined) updateData.current_body_fat_percentage = clientData.currentBodyFatPercentage ?? null;
 
   const { data, error } = await supabaseAdmin
     .from("clients")
     .update(updateData)
     .eq("id", clientId)
-    .select()
+    .select(CLIENT_SELECT)
     .single();
 
   if (error) {
@@ -318,7 +339,7 @@ export const updateClient = async (
     throw new Error("Failed to update client");
   }
 
-  const client = mapClientRow(data);
+  const client = mapClientRow(data as ClientRowWithMeasurements);
 
   // If this update deactivated the client, bust its cached auth mapping too
   // (the PATCH /api/clients/[id] active:false path, distinct from deleteClient).
@@ -326,74 +347,90 @@ export const updateClient = async (
     await invalidateClientAuthCache(data.user_id);
   }
 
-  // Recompute the energy pair whenever an INPUT to it changed. The call lives
-  // here rather than at each caller so both of them — the coach PATCH and the
-  // check-in metrics sync — are covered by one site and neither can forget.
-  // It runs AFTER the update above commits, because the helper reads the row
-  // back and must see the new measurements.
+  // Recompute the energy pair whenever a PROFILE input to it changed. A
+  // reading (weight, body fat) recomputes it from inside the measurement log's
+  // append below, when the row is the client's newest — so the two triggers
+  // cannot disagree about which number the pair was built from. It runs
+  // AFTER the update above commits, because the helper reads the row back.
   const energyInputChanged =
-    clientData.currentWeight !== undefined ||
-    clientData.currentBodyFatPercentage !== undefined ||
     clientData.height !== undefined ||
     clientData.gender !== undefined ||
     clientData.dateOfBirth !== undefined ||
     clientData.workActivityLevel !== undefined;
 
-  let energyBmr: number | undefined;
-  let energyTdee: number | undefined;
-
   if (energyInputChanged) {
     const energy = await recalculateClientEnergy(clientId, { coachId });
     if (energy.status === "written") {
-      energyBmr = energy.bmr ?? undefined;
-      energyTdee = energy.tdee ?? undefined;
       // Additive: callers already reading `client` see the fresh pair without a
       // second fetch, and the shape is unchanged.
-      client.bmr = energyBmr;
-      client.tdee = energyTdee;
+      client.bmr = energy.bmr ?? undefined;
+      client.tdee = energy.tdee ?? undefined;
     }
   }
 
-  // The client's ORIGIN, through its single writer. It owns start_date and the
-  // two starting_* cache columns, and it moves the metric entries dated on the
-  // start date so the Physique chart's first point keeps describing the start.
-  //
-  // This THROWS. A silent failure would leave the columns and the entries
-  // describing different origins, which is the divergence the single writer
-  // exists to make impossible.
-  if (
-    clientData.startDate !== undefined ||
-    clientData.startingWeight !== undefined ||
-    clientData.startingBodyFatPercentage !== undefined
-  ) {
-    await recordClientStart(clientId, {
-      startsOn: clientData.startDate ?? undefined,
-      weightKg: clientData.startingWeight,
-      bodyFatPercentage: clientData.startingBodyFatPercentage,
-      coachId,
-    });
+  // The client's ORIGIN, through its single writer. A date and nothing else:
+  // the baseline is derived from the log as the reading as of that date, so
+  // moving the date re-derives it and re-dates nothing. This THROWS.
+  if (clientData.startDate !== undefined) {
+    await recordClientStart(clientId, { startsOn: clientData.startDate });
   }
 
-  // Dual-write body metrics (non-blocking).
-  //
-  // CLEARING a body fat writes no event: `body_metrics` records measurements
-  // TAKEN, and "we no longer believe that figure" is not one. The column is
-  // still nulled by the update above and the energy pair still recomputes
-  // (which is the point — BMR reverts from Katch-McArdle to Mifflin-St Jeor),
-  // so the only thing skipped is an empty row in an event log.
+  let readingsChanged = false;
+
+  // The details sheet's Baseline fields: a coach entry dated ON the start
+  // date, which the derived baseline then reads. Before activation there is no
+  // start date to date it on, so it is an `intake` reading dated today — the
+  // as-of rule picks it up the moment the date is set.
+  const baselineValues = {
+    weight: clientData.startingWeight,
+    bodyFat: clientData.startingBodyFatPercentage ?? undefined,
+  };
+  if (baselineValues.weight !== undefined || baselineValues.bodyFat !== undefined) {
+    const startsOn = clientData.startDate ?? data.start_date ?? null;
+    await appendMeasurements(
+      startsOn
+        ? {
+            clientId,
+            source: "coach_entry",
+            recordedOn: startsOn,
+            values: baselineValues,
+            createdBy: coachId ?? null,
+          }
+        : {
+            clientId,
+            source: "intake",
+            recordedOn: await todayFor(clientId, coachId),
+            values: baselineValues,
+          }
+    );
+    readingsChanged = true;
+  }
+
+  // A current reading on this wire is the coach's entry, dated today.
   const measuredBodyFat = clientData.currentBodyFatPercentage ?? undefined;
   if (currentWeightKg !== undefined || measuredBodyFat !== undefined) {
-    try {
-      await recordBodyMetrics({
-        clientId,
-        bmr: energyBmr,
-        tdee: energyTdee,
-        weight: currentWeightKg,
-        bodyFatPercentage: measuredBodyFat,
-        source: "metrics_api",
-      });
-    } catch (dualWriteError) {
-      console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
+    await appendMeasurements({
+      clientId,
+      source: "coach_entry",
+      recordedOn: await todayFor(clientId, coachId),
+      values: { weight: currentWeightKg, bodyFat: measuredBodyFat },
+      createdBy: coachId ?? null,
+    });
+    readingsChanged = true;
+  }
+
+  // `client` was read before the readings landed, so re-read the derived
+  // fields — "now", the baseline and the pair the append may have recomputed —
+  // rather than echo a save that changed them back as unchanged.
+  if (readingsChanged) {
+    const fresh = await getClientById(clientId, true);
+    if (fresh) {
+      client.currentWeight = fresh.currentWeight;
+      client.currentBodyFatPercentage = fresh.currentBodyFatPercentage;
+      client.startingWeight = fresh.startingWeight;
+      client.startingBodyFatPercentage = fresh.startingBodyFatPercentage;
+      client.bmr = fresh.bmr;
+      client.tdee = fresh.tdee;
     }
   }
 

@@ -6,6 +6,8 @@
  * live in `types/coach-brief.ts`.
  */
 
+import type { MeasurementKey, MeasurementSource } from "@/lib/measurements/keys";
+
 export type OverviewPlanSummary = {
   training: null | {
     planId: string;
@@ -120,29 +122,41 @@ export type AdherenceSummary = {
 };
 
 /**
- * The Overview progression chart's series: the SAME data the Physique view
- * charts — `check_ins` merged with `client_metric_entries` through the same
- * `buildMetricPoints` tie-break — bounded to the selected window and moved
- * server-side.
+ * The client's measurement journey, from the measurement log: every metric's
+ * day-values (rule 2 — one value per day, the latest written), the baseline
+ * per metric (the reading as of the start date, derived by the database) and
+ * the start date itself. One read serves the Overview progression chart, the
+ * Journey's Physique pane and its measurement log.
  *
- * Transport, not new business logic. The Physique page reaches this data by
- * eagerly paging the client's ENTIRE check-in history, `select("*")` on a
- * 37-column table with four JSON blobs, to read two numbers per row. That is
- * the page's whole job there and fine; on the Overview it would be N sequential
- * fat requests to draw eight dots.
+ * The full history, deliberately: the Journey lists readings dated before the
+ * start under "Before start" and excludes them from its chart and maths, so
+ * the split by start date is the browser's, which already holds the date.
  *
- * Values are canonical kilograms / percent (CONVENTIONS §20). The chart
- * converts at the render boundary.
+ * Values are canonical kilograms / centimetres / percent (CONVENTIONS §20).
+ * Renderers convert at the boundary.
  */
 export type MeasurementSeriesPoint = {
-  /** YYYY-MM-DD, ascending. */
+  /** YYYY-MM-DD on the client's calendar, ascending. */
   date: string;
   value: number;
+  source: MeasurementSource;
+  note: string | null;
+  /** The measurement row standing for this day. */
+  id: string;
+  recordedAt: string;
 };
 
-export type MeasurementSeries = {
-  weight: MeasurementSeriesPoint[];
-  bodyFat: MeasurementSeriesPoint[];
+export type MeasurementBaseline = {
+  value: number;
+  /** The reading's own day — on, before or after the start date. */
+  date: string;
+  source: MeasurementSource;
+  id: string;
+};
+
+export type MeasurementSeries = Record<MeasurementKey, MeasurementSeriesPoint[]> & {
+  baseline: Partial<Record<MeasurementKey, MeasurementBaseline>>;
+  startDate: string | null;
 };
 
 export type ClientNote = {

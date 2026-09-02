@@ -8,6 +8,7 @@ import {
   mapExerciseHighlight,
 } from "@/services/check-in-service";
 import { mapCheckInRow } from "@/lib/mappers";
+import { getMeasurementsForCheckIns } from "@/services/measurements-service";
 import type { CheckInExerciseHighlight } from "@/types/check-in";
 
 // GET /api/client/check-ins/[id] - Get specific check-in details for authenticated client
@@ -43,7 +44,7 @@ export async function GET(
     // (training_events + session_logs) for the check-in's stored period — there
     // is no backing table. The IDOR guard above (eq client_id) already scoped
     // this row to the authenticated client.
-    const [sessionCompletions, highlightRows, customAnswers] = await Promise.all([
+    const [sessionCompletions, highlightRows, customAnswers, stamped] = await Promise.all([
       deriveSessionCompletionsForCheckIn(mapCheckInRow(checkIn)),
       getCheckInExerciseHighlights(id),
       // The client's own answers to the coach's custom questions, read back
@@ -51,7 +52,11 @@ export async function GET(
       // renders a date, a status and a preview, and embedding a dictionary in
       // a row list is what CONVENTIONS section 8 "Sparse fieldsets" forbids.
       getCheckInAnswers(id),
+      // What this check-in reported: the measurement-log rows carrying its
+      // stamp. `null` where it carried no reading — the RN wire's shape.
+      getMeasurementsForCheckIns([id]),
     ]);
+    const readings = stamped.get(id) ?? {};
 
     // getCheckInExerciseHighlights returns RAW snake_case rows (it is a
     // `select("*")` with no mapper), so this route must map them exactly as
@@ -75,16 +80,15 @@ export async function GET(
         stress: checkIn.stress,
         soreness: checkIn.soreness,
         notes: checkIn.notes,
-        weight: checkIn.weight,
-        // Canonical kg/cm since migration 141. Kept in the payload rather than
-        // dropped so the response shape stays stable for the RN client; Phase 3
-        // removes the fields once every renderer converts for itself.
-        bodyFatPercentage: checkIn.body_fat_percentage,
-        waist: checkIn.waist,
-        hips: checkIn.hips,
-        chest: checkIn.chest,
-        arms: checkIn.arms,
-        thighs: checkIn.thighs,
+        // Canonical kg/cm, from the measurement log. Every key is emitted, null
+        // when absent: the RN client reads this shape.
+        weight: readings.weight ?? null,
+        bodyFatPercentage: readings.bodyFat ?? null,
+        waist: readings.waist ?? null,
+        hips: readings.hips ?? null,
+        chest: readings.chest ?? null,
+        arms: readings.arms ?? null,
+        thighs: readings.thighs ?? null,
         photoFront: checkIn.photo_front,
         photoSide: checkIn.photo_side,
         photoBack: checkIn.photo_back,

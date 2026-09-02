@@ -18,8 +18,12 @@ vi.mock("@/services/supabase-admin", () => ({
   supabaseAdmin: { from: vi.fn() },
 }));
 
-vi.mock("@/services/body-metrics-service", () => ({
-  recordBodyMetrics: vi.fn().mockResolvedValue({}),
+vi.mock("@/services/measurements-service", () => ({
+  appendMeasurements: vi.fn(),
+}));
+
+vi.mock("@/services/today-service", () => ({
+  getCoachTodayString: vi.fn().mockResolvedValue("2026-09-02"),
 }));
 
 vi.mock("@/services/client-goals-service", () => ({
@@ -31,7 +35,8 @@ vi.mock("@/services/client-energy-service", () => ({
 }));
 
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { recordBodyMetrics } from "@/services/body-metrics-service";
+import { appendMeasurements } from "@/services/measurements-service";
+import { getCoachTodayString } from "@/services/today-service";
 import { updateGoals } from "@/services/client-goals-service";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
 
@@ -40,8 +45,6 @@ const mockParams = { params: Promise.resolve({ id: "client-1" }) };
 const CLIENT_ROW = {
   id: "client-1",
   coach_id: "coach-1",
-  current_weight: 80,
-  current_body_fat_percentage: null,
   height: 180,
   gender: "male",
   date_of_birth: "1996-01-01",
@@ -60,8 +63,7 @@ let query: {
 };
 
 /** One chainable stub shared by every `from()` call — the `then` thenable is
- *  what lets the handler `await` an `.update().eq().eq()` chain directly
- *  (the body-metrics-service.test.ts idiom). */
+ *  what lets a handler `await` a builder chain directly. */
 function wireSupabase() {
   const result = { data: CLIENT_ROW, error: null };
   const q: Record<string, unknown> = {
@@ -102,37 +104,62 @@ function energyResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function appendResult() {
+  return { rows: {}, inserted: [], unchanged: [], energy: "not_newest" as const };
+}
+
 describe("PUT /api/clients/[id]/metrics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     wireSupabase();
+    vi.mocked(getCoachTodayString).mockResolvedValue("2026-09-02");
+    vi.mocked(appendMeasurements).mockResolvedValue(appendResult());
     vi.mocked(recalculateClientEnergy).mockResolvedValue(
       energyResult() as never
     );
   });
 
-  describe("the handler no longer writes the energy pair itself", () => {
-    it("omits bmr, tdee and both override flags from its own update", async () => {
-      // This handler used to set them directly, re-implement Mifflin-St Jeor
-      // inline for reset-to-auto, and hardcode `tdee = bmr * 1.2` twice.
+  describe("a reading is a row in the measurement log, never a column", () => {
+    it("appends the weight as the coach's entry, dated the coach's today, and updates no clients column", async () => {
       const res = await PUT(request({ currentWeight: 82 }), mockParams);
 
       expect(res.status).toBe(200);
-      const payload = query.update.mock.calls[0][0] as Record<string, unknown>;
-      expect(payload).not.toHaveProperty("bmr");
-      expect(payload).not.toHaveProperty("tdee");
-      expect(payload).not.toHaveProperty("bmr_manual_override");
-      expect(payload).not.toHaveProperty("tdee_manual_override");
-      expect(payload).toHaveProperty("current_weight", 82);
+      expect(appendMeasurements).toHaveBeenCalledTimes(1);
+      expect(appendMeasurements).toHaveBeenCalledWith({
+        clientId: "client-1",
+        source: "coach_entry",
+        recordedOn: "2026-09-02",
+        values: { weight: 82, bodyFat: undefined },
+        createdBy: "coach-1",
+      });
+      expect(getCoachTodayString).toHaveBeenCalledWith("coach-1");
+      // The four weight columns left `clients` with migration 158.
+      expect(query.update).not.toHaveBeenCalled();
     });
 
-    it("delegates a weight change to the energy helper", async () => {
+    it("appends a body-fat reading the same way", async () => {
+      await PUT(request({ currentBodyFatPercentage: 18 }), mockParams);
+
+      expect(appendMeasurements).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: "coach_entry",
+          values: { weight: undefined, bodyFat: 18 },
+        })
+      );
+    });
+
+    it("does not call the energy helper for a reading alone — the append recomputes when the row is newest", async () => {
       await PUT(request({ currentWeight: 82 }), mockParams);
 
-      expect(recalculateClientEnergy).toHaveBeenCalledWith("client-1", {
-        coachId: "coach-1",
-        overrides: undefined,
-      });
+      expect(recalculateClientEnergy).not.toHaveBeenCalled();
+    });
+
+    it("a failed append is a 500, never a silent success", async () => {
+      vi.mocked(appendMeasurements).mockRejectedValueOnce(new Error("insert failed"));
+
+      const res = await PUT(request({ currentWeight: 82 }), mockParams);
+
+      expect(res.status).toBe(500);
     });
   });
 
@@ -167,38 +194,36 @@ describe("PUT /api/clients/[id]/metrics", () => {
       });
     });
 
-    it("issues no clients update at all for an override-only body", async () => {
-      // `updates` is empty in that case, and an empty .update({}) is a wasted
-      // round trip.
+    it("issues no clients update and appends nothing for an override-only body", async () => {
       await PUT(request({ tdee: 3100 }), mockParams);
 
       expect(query.update).not.toHaveBeenCalled();
+      expect(appendMeasurements).not.toHaveBeenCalled();
     });
-  });
 
-  describe("body_metrics provenance", () => {
-    it("stamps the event with the helper's pair, never a local recomputation", async () => {
-      await PUT(request({ currentWeight: 82 }), mockParams);
+    it("applies an override AFTER the reading in the same body has landed, so the typed number wins", async () => {
+      await PUT(request({ currentWeight: 82, tdee: 3100 }), mockParams);
 
-      expect(recordBodyMetrics).toHaveBeenCalledWith(
-        expect.objectContaining({ bmr: 1780, tdee: 2136, weight: 82 })
+      expect(appendMeasurements).toHaveBeenCalledTimes(1);
+      expect(recalculateClientEnergy).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(appendMeasurements).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(recalculateClientEnergy).mock.invocationCallOrder[0]
       );
     });
 
-    it("records an event for an override-only change", async () => {
-      await PUT(request({ tdee: 3100 }), mockParams);
-
-      expect(recordBodyMetrics).toHaveBeenCalledOnce();
-    });
-
-    it("records nothing when the helper skipped and no measurement changed", async () => {
+    it("400s an impossible override instead of silently storing nothing", async () => {
       vi.mocked(recalculateClientEnergy).mockResolvedValue(
-        energyResult({ status: "skipped_insufficient_data" }) as never
+        energyResult({
+          status: "rejected_invalid_override",
+          rejection: "TDEE cannot be below BMR",
+        }) as never
       );
 
-      await PUT(request({ goalWeight: 75 }), mockParams);
+      const res = await PUT(request({ tdee: 1000 }), mockParams);
+      const body = await res.json();
 
-      expect(recordBodyMetrics).not.toHaveBeenCalled();
+      expect(res.status).toBe(400);
+      expect(body.error).toBe("TDEE cannot be below BMR");
     });
   });
 
@@ -222,10 +247,18 @@ describe("PUT /api/clients/[id]/metrics", () => {
       expect(updateGoals).not.toHaveBeenCalled();
     });
 
+    it("a goal-only body appends no reading and touches no energy", async () => {
+      await PUT(request({ goalWeight: 75 }), mockParams);
+
+      expect(appendMeasurements).not.toHaveBeenCalled();
+      expect(recalculateClientEnergy).not.toHaveBeenCalled();
+    });
+
     // Task 0b.2 — updateGoals owns both goal stores.
     it("writes no goal column to clients itself", async () => {
       await PUT(request({ goalWeight: 75, goalBodyFatPercentage: 12 }), mockParams);
 
+      expect(query.update).not.toHaveBeenCalled();
       for (const call of query.update.mock.calls) {
         expect(call[0]).not.toHaveProperty("goal_weight");
         expect(call[0]).not.toHaveProperty("goal_body_fat_percentage");
@@ -249,6 +282,7 @@ describe("PUT /api/clients/[id]/metrics", () => {
       const res = await PUT(request({ currentWeight: 82 }), mockParams);
 
       expect(res.status).toBe(401);
+      expect(appendMeasurements).not.toHaveBeenCalled();
       expect(recalculateClientEnergy).not.toHaveBeenCalled();
     });
 
@@ -267,6 +301,7 @@ describe("PUT /api/clients/[id]/metrics", () => {
 
       expect(res.status).toBe(400);
       expect(supabaseAdmin.from).not.toHaveBeenCalledWith("check_ins");
+      expect(appendMeasurements).not.toHaveBeenCalled();
       expect(recalculateClientEnergy).not.toHaveBeenCalled();
     });
   });

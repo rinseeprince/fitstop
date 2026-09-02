@@ -144,7 +144,7 @@ export const ACTIVITY_CAL_MISMATCH_WINDOW_DAYS = 28;
 export const AUDIT_ACTIONS = {
   CLIENT_ACTIVATE: "client.activate",
   GOAL_CREATE: "goal.create",
-  BODY_METRICS_CREATE: "body_metrics.create",
+  MEASUREMENT_CREATE: "measurement.create",
   METRIC_ENTRY_UPSERT: "metric_entry.upsert",
   INTAKE_SYNC_METRICS: "intake.sync_metrics",
   NUTRITION_PLAN_CREATE: "nutrition_plan.create",

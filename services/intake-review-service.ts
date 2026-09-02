@@ -2,9 +2,14 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import type { ClientIntake, ClientIntakeRow } from "@/types/client-intake";
 import { mapClientIntakeRow } from "@/lib/mappers";
 import { getIntake } from "@/services/client-intake-service";
-import { recordBodyMetrics } from "@/services/body-metrics-service";
+import {
+  appendMeasurements,
+  getCurrentMeasurements,
+} from "@/services/measurements-service";
 import { updateGoals } from "@/services/client-goals-service";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
+import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
+import type { MeasurementValues } from "@/lib/measurements/keys";
 
 const db = supabaseAdmin;
 
@@ -82,20 +87,30 @@ export async function reviewIntake(
 }
 
 const FIELD_NAME_MAP: Record<string, string> = {
-  current_weight: "weight",
   height: "height",
   gender: "gender",
   date_of_birth: "date of birth",
-  current_body_fat_percentage: "body fat",
   goal_weight: "goal weight",
   goal_deadline: "goal deadline",
   goal_body_fat_percentage: "goal body fat",
   work_activity_level: "activity level",
 };
 
+const READING_NAMES: Record<keyof MeasurementValues, string> = {
+  weight: "weight",
+  bodyFat: "body fat",
+  waist: "waist",
+  hips: "hips",
+  chest: "chest",
+  arms: "arms",
+  thighs: "thighs",
+};
+
 /**
  * Sync intake metrics to the client record.
- * Only sets fields that are currently null on the client (does not overwrite).
+ * Only sets fields that are currently null on the client (does not overwrite),
+ * and records the intake's weight and body fat as `intake` readings in the
+ * measurement log only when the client has no reading of that metric yet.
  * Returns a list of human-readable field names that were synced.
  */
 export async function syncMetricsToClient(
@@ -104,13 +119,16 @@ export async function syncMetricsToClient(
   const intake = await getIntake(clientId);
   if (!intake) throw new Error("No intake found for this client");
 
-  const { data: client, error: clientError } = await db
-    .from("clients")
-    .select(
-      "current_weight, starting_weight, height, gender, date_of_birth, current_body_fat_percentage, starting_body_fat_percentage, goal_weight, goal_body_fat_percentage, goal_deadline, work_activity_level"
-    )
-    .eq("id", clientId)
-    .single();
+  const [{ data: client, error: clientError }, current] = await Promise.all([
+    db
+      .from("clients")
+      .select(
+        "height, gender, date_of_birth, goal_weight, goal_body_fat_percentage, goal_deadline, work_activity_level, timezone"
+      )
+      .eq("id", clientId)
+      .single(),
+    getCurrentMeasurements(clientId),
+  ]);
 
   if (clientError || !client) {
     console.error("Failed to fetch client for sync:", clientError);
@@ -122,11 +140,15 @@ export async function syncMetricsToClient(
     updated_at: new Date().toISOString(),
   };
 
-  if (client.current_weight == null && intake.currentWeight != null) {
-    updates.current_weight = intake.currentWeight;
+  // "Fill only when the client has no reading" — the guard reads the log's
+  // newest reading, the same source every other "where are they now" reader
+  // uses, so a client already weighed in cannot be overwritten by a sync.
+  const readings: MeasurementValues = {};
+  if (current.weight === undefined && intake.currentWeight != null) {
+    readings.weight = intake.currentWeight;
   }
-  if (client.starting_weight == null && intake.currentWeight != null) {
-    updates.starting_weight = intake.currentWeight;
+  if (current.bodyFat === undefined && intake.bodyFatPercentage != null) {
+    readings.bodyFat = intake.bodyFatPercentage;
   }
   if (client.height == null && intake.height != null) {
     updates.height = intake.height;
@@ -136,18 +158,6 @@ export async function syncMetricsToClient(
   }
   if (client.date_of_birth == null && intake.dateOfBirth != null) {
     updates.date_of_birth = intake.dateOfBirth;
-  }
-  if (
-    client.current_body_fat_percentage == null &&
-    intake.bodyFatPercentage != null
-  ) {
-    updates.current_body_fat_percentage = intake.bodyFatPercentage;
-  }
-  if (
-    client.starting_body_fat_percentage == null &&
-    intake.bodyFatPercentage != null
-  ) {
-    updates.starting_body_fat_percentage = intake.bodyFatPercentage;
   }
   // The goal fields go in their OWN object, which never reaches the `clients`
   // UPDATE below: `updateGoals` owns `client_goals` and the `clients.*` mirror,
@@ -177,12 +187,15 @@ export async function syncMetricsToClient(
   // metric, because client_intake.weight_unit defaults to 'kg' (034:30) and the
   // intake toggle only ever reached localStorage. Overwriting a client's own
   // display preference from a field they never actually set is not a sync.
-  // Spans BOTH objects. This is the list the coach is shown ("Synced: goal
-  // weight, goal deadline…"), so splitting the goals out of `updates` without
-  // this would quietly stop reporting fields the sync still writes.
-  const syncedFields = [...Object.keys(updates), ...Object.keys(goalUpdates)]
-    .filter((k) => k !== "updated_at")
-    .map((k) => FIELD_NAME_MAP[k] ?? k);
+  // Spans all three. This is the list the coach is shown ("Synced: weight,
+  // goal weight, goal deadline…"), so a store left out of it would quietly
+  // stop reporting fields the sync still writes.
+  const syncedFields = [
+    ...(Object.keys(readings) as (keyof MeasurementValues)[]).map((k) => READING_NAMES[k]),
+    ...[...Object.keys(updates), ...Object.keys(goalUpdates)]
+      .filter((k) => k !== "updated_at")
+      .map((k) => FIELD_NAME_MAP[k] ?? k),
+  ];
 
   if (Object.keys(updates).length > 1) {
     const { error } = await supabaseAdmin
@@ -196,19 +209,19 @@ export async function syncMetricsToClient(
     }
   }
 
-  // Dual-write body metrics (non-blocking)
-  if (updates.current_weight !== undefined || updates.current_body_fat_percentage !== undefined) {
-    try {
-      await recordBodyMetrics({
-        clientId,
-        // Already kilograms — client_intake stores canonical kg.
-        weight: updates.current_weight as number | undefined,
-        bodyFatPercentage: updates.current_body_fat_percentage as number | undefined,
-        source: "intake_sync",
-      });
-    } catch (dualWriteError) {
-      console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
-    }
+  // The intake's readings, dated the day the client captured them (the
+  // questionnaire's completion, on their calendar), else today. A second
+  // statement after the profile UPDATE (CONVENTIONS §2 item 13): if it throws
+  // the profile fields stand, the sync reports failure, and a re-run is safe —
+  // the guard above sees the fields already filled and only the readings left.
+  if (Object.keys(readings).length > 0) {
+    const capturedAt = intake.completedAt ? new Date(intake.completedAt) : new Date();
+    await appendMeasurements({
+      clientId,
+      source: "intake",
+      recordedOn: getTodayDateStringInTimezone(client.timezone, capturedAt),
+      values: readings,
+    });
   }
 
   // Goals are written ONCE, by `updateGoals`, from the object the `clients`
@@ -224,10 +237,11 @@ export async function syncMetricsToClient(
     }, "intake");
   }
 
-  // Recompute the energy pair from the freshly-synced data (non-blocking).
-  // This used to write `{ bmr }` alone, leaving TDEE derived from a BMR that no
-  // longer existed. The helper reads the row itself, so the getClientById
-  // re-fetch that used to sit here is gone.
+  // Recompute the energy pair from the freshly-synced profile (non-blocking).
+  // The readings above recompute it themselves when they are the client's
+  // newest; this covers height, gender, birth date and activity level, and is
+  // idempotent when both ran. It used to write `{ bmr }` alone, leaving TDEE
+  // derived from a BMR that no longer existed.
   try {
     const energy = await recalculateClientEnergy(clientId);
     if (energy.status === "written") {

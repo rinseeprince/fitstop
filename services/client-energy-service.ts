@@ -92,8 +92,35 @@ type ClientEnergyResult = {
   rejection: string | null;
 };
 
+// The client's weight and body fat are their NEWEST readings in the measurement
+// log, embedded from `client_current_measurements` in the same read as the
+// profile facts — there is no column to read them from.
 const ENERGY_COLUMNS =
-  "current_weight, current_body_fat_percentage, height, gender, date_of_birth, work_activity_level, bmr, tdee, bmr_manual_override, tdee_manual_override";
+  "height, gender, date_of_birth, work_activity_level, bmr, tdee, bmr_manual_override, tdee_manual_override, " +
+  "client_current_measurements(metric_key, value)";
+
+type CurrentReadingEmbed = { metric_key: string | null; value: number | null };
+
+// Named because the embed defeats postgrest-js's select-string type parser.
+type EnergyRow = {
+  height: number | null;
+  gender: string | null;
+  date_of_birth: string | null;
+  work_activity_level: string | null;
+  bmr: number | null;
+  tdee: number | null;
+  bmr_manual_override: boolean | null;
+  tdee_manual_override: boolean | null;
+  client_current_measurements: CurrentReadingEmbed[] | null;
+};
+
+function currentReading(
+  rows: CurrentReadingEmbed[] | null | undefined,
+  metricKey: "weight" | "bodyFat"
+): number | null {
+  const row = rows?.find((candidate) => candidate.metric_key === metricKey);
+  return row?.value == null ? null : Number(row.value);
+}
 
 function emptyResult(status: ClientEnergyStatus): ClientEnergyResult {
   return {
@@ -132,7 +159,7 @@ export async function recalculateClientEnergy(
     .from("clients")
     .select(ENERGY_COLUMNS)
     .eq("id", clientId)
-    .maybeSingle();
+    .maybeSingle<EnergyRow>();
 
   if (readError) {
     console.error("Failed to read client for energy recalculation:", readError);
@@ -154,10 +181,10 @@ export async function recalculateClientEnergy(
   const missingDateOfBirth = row.date_of_birth == null;
 
   const computation = computeEnergyPair({
-    weightKg: row.current_weight,
+    weightKg: currentReading(row.client_current_measurements, "weight"),
     heightCm: row.height,
     gender: row.gender,
-    bodyFatPercentage: row.current_body_fat_percentage,
+    bodyFatPercentage: currentReading(row.client_current_measurements, "bodyFat"),
     dateOfBirth: row.date_of_birth,
     activityLevel: row.work_activity_level,
     now: options?.now,

@@ -4,8 +4,9 @@ import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ProgressionChart } from "./progression-chart";
+import { addDaysToDate } from "@/utils/metric-points";
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
-import type { MeasurementSeries } from "@/types/coach-overview";
+import type { MeasurementSeries, MeasurementSeriesPoint } from "@/types/coach-overview";
 
 const unitPreference = { value: "metric" as "metric" | "imperial" };
 
@@ -40,19 +41,50 @@ const NO_GOAL: EffectiveGoal = {
   startDate: "2026-07-01",
 };
 
+/** One day-value of the measurement log, as the series carries it. */
+function point(
+  date: string,
+  value: number,
+  extra: Partial<MeasurementSeriesPoint> = {}
+): MeasurementSeriesPoint {
+  return {
+    date,
+    value,
+    source: "check_in",
+    note: null,
+    id: `m-${date}`,
+    recordedAt: `${date}T08:00:00+00:00`,
+    ...extra,
+  };
+}
+
+/** The full payload: seven metrics, the baseline per metric, the start date. */
+function series(overrides: Partial<MeasurementSeries> = {}): MeasurementSeries {
+  return {
+    weight: [],
+    bodyFat: [],
+    waist: [],
+    hips: [],
+    chest: [],
+    arms: [],
+    thighs: [],
+    baseline: {},
+    startDate: null,
+    ...overrides,
+  };
+}
+
 /** A weekly weigh-in series — what a real client actually produces. */
-const WEEKLY: MeasurementSeries = {
+const WEEKLY = series({
   weight: [
-    { date: "2026-07-06", value: 90 },
-    { date: "2026-07-13", value: 89.4 },
-    { date: "2026-07-20", value: 88.9 },
-    { date: "2026-07-27", value: 88.2 },
+    point("2026-07-06", 90),
+    point("2026-07-13", 89.4),
+    point("2026-07-20", 88.9),
+    point("2026-07-27", 88.2),
   ],
-  bodyFat: [
-    { date: "2026-07-06", value: 24 },
-    { date: "2026-07-27", value: 22.6 },
-  ],
-};
+  bodyFat: [point("2026-07-06", 24), point("2026-07-27", 22.6)],
+  startDate: "2026-03-01",
+});
 
 const PROPS = {
   series: WEEKLY,
@@ -63,6 +95,11 @@ const PROPS = {
   startDate: "2026-03-01",
   timezone: "UTC",
 };
+
+/** The drawn dots. recharts mounts an empty symbol layer for a null point, so
+ *  count the symbol paths rather than the layers. */
+const dots = (container: HTMLElement) =>
+  container.querySelectorAll(".recharts-scatter-symbol .recharts-symbols");
 
 beforeEach(() => {
   cleanup();
@@ -85,10 +122,7 @@ describe("ProgressionChart", () => {
 
   it("refuses a rate under two points, rather than extrapolating one", () => {
     render(
-      <ProgressionChart
-        {...PROPS}
-        series={{ weight: [{ date: "2026-07-27", value: 88.2 }], bodyFat: [] }}
-      />
+      <ProgressionChart {...PROPS} series={series({ weight: [point("2026-07-27", 88.2)] })} />
     );
 
     expect(screen.getByText("88.2")).toBeInTheDocument();
@@ -99,13 +133,7 @@ describe("ProgressionChart", () => {
     render(
       <ProgressionChart
         {...PROPS}
-        series={{
-          weight: [
-            { date: "2026-07-26", value: 90 },
-            { date: "2026-07-27", value: 88.2 },
-          ],
-          bodyFat: [],
-        }}
+        series={series({ weight: [point("2026-07-26", 90), point("2026-07-27", 88.2)] })}
       />
     );
 
@@ -113,7 +141,7 @@ describe("ProgressionChart", () => {
   });
 
   it("says the window is empty rather than showing a zero", () => {
-    render(<ProgressionChart {...PROPS} series={{ weight: [], bodyFat: [] }} />);
+    render(<ProgressionChart {...PROPS} series={series()} />);
 
     expect(screen.getByText("Not recorded")).toBeInTheDocument();
     expect(screen.getByText("No measurements in this window")).toBeInTheDocument();
@@ -121,11 +149,7 @@ describe("ProgressionChart", () => {
 
   it("still shows where the goal is when the client has logged nothing", () => {
     render(
-      <ProgressionChart
-        {...PROPS}
-        series={{ weight: [], bodyFat: [] }}
-        goal={{ ...NO_GOAL, goalWeightKg: 85 }}
-      />
+      <ProgressionChart {...PROPS} series={series()} goal={{ ...NO_GOAL, goalWeightKg: 85 }} />
     );
 
     // The target is a fact about the client, not about the window's contents.
@@ -216,23 +240,83 @@ describe("ProgressionChart — the journey axis", () => {
   });
 
   it("drops the raw dots once a journey is long enough for them to merge", () => {
-    const many = Array.from({ length: 60 }, (_, i) => ({
-      date: `2026-0${i < 26 ? "6" : "7"}-${String((i % 26) + 1).padStart(2, "0")}`,
-      value: 90 - i * 0.05,
-    }));
+    const many = Array.from({ length: 60 }, (_, i) =>
+      point(addDaysToDate("2026-06-01", i), 90 - i * 0.05)
+    );
 
     const { container } = render(
-      <ProgressionChart {...PROPS} series={{ weight: many, bodyFat: [] }} />
+      <ProgressionChart {...PROPS} series={series({ weight: many })} />
     );
 
     // The trend line survives; only its markers go.
     expect(container.querySelector(".recharts-area")).not.toBeNull();
-    expect(container.querySelector(".recharts-scatter")).toBeNull();
+    expect(dots(container)).toHaveLength(0);
   });
 
   it("keeps the raw dots on a short journey", () => {
     const { container } = render(<ProgressionChart {...PROPS} />);
 
-    expect(container.querySelector(".recharts-scatter")).not.toBeNull();
+    expect(dots(container)).toHaveLength(4);
+  });
+});
+
+// Three rules from the measurement log (docs/MEASUREMENT-LOG-PLAN.md D4): the
+// big number is "now" whatever its date; the line begins at the BASELINE, drawn
+// at the start date; a start date still ahead reads `Starts …` in place of a
+// line. Pinned clock, as above.
+describe("ProgressionChart — the start date and the baseline", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T12:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  /** The reading as of the start date — here an intake taken nine days before it. */
+  const BASELINE = { value: 92, date: "2026-02-20", source: "intake" as const, id: "m-0" };
+
+  it("reads `Starts …` and draws no line while the start date is ahead", () => {
+    const { container } = render(<ProgressionChart {...PROPS} startDate="2026-10-15" />);
+
+    expect(screen.getByText("Starts 15 Oct")).toBeInTheDocument();
+    expect(container.querySelector(".recharts-surface")).toBeNull();
+    expect(screen.queryByText("No measurements in this window")).not.toBeInTheDocument();
+    // The readout is still "now": the newest reading never waits for the start.
+    expect(screen.getByText("88.2")).toBeInTheDocument();
+  });
+
+  it("begins the line at the baseline, drawn AT the start date and named with its own date", () => {
+    const { container } = render(
+      <ProgressionChart {...PROPS} series={series({ ...WEEKLY, baseline: { weight: BASELINE } })} />
+    );
+
+    // The footer's left end: the start date, the baseline's value, and — the
+    // reading having been taken before the start — where and when it came from.
+    expect(screen.getByText("1 Mar · 92 kg (intake, 20 Feb)")).toBeInTheDocument();
+    // Prepended at 1 Mar, not 20 Feb: the rate spans 148 days to 27 Jul, so
+    // -3.8 kg reads -0.18/wk (it would be -0.17 from 20 Feb, -0.60 without it).
+    expect(screen.getByText("-0.18 kg/wk")).toBeInTheDocument();
+    // Four readings and the one baseline marker.
+    expect(dots(container)).toHaveLength(5);
+  });
+
+  it("names only the value when the baseline was taken on the start date itself", () => {
+    render(
+      <ProgressionChart
+        {...PROPS}
+        series={series({ ...WEEKLY, baseline: { weight: { ...BASELINE, date: "2026-03-01" } } })}
+      />
+    );
+
+    expect(screen.getByText("1 Mar · 92 kg")).toBeInTheDocument();
+  });
+
+  it("leads with the newest reading even when it is dated before the start", () => {
+    render(
+      <ProgressionChart {...PROPS} series={series({ weight: [point("2026-02-20", 92)] })} />
+    );
+
+    expect(screen.getByText("92.0")).toBeInTheDocument();
+    // Not a point of the journey, so there is nothing to draw or to rate.
+    expect(screen.getByText("No measurements in this window")).toBeInTheDocument();
   });
 });

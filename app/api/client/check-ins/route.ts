@@ -5,7 +5,7 @@ import { uploadProgressPhotoFromBase64 } from "@/services/storage-service";
 import { submitCheckIn, getClientCheckIns } from "@/services/check-in-service";
 import { getCheckInGate } from "@/lib/check-in-schedule";
 import { toCanonicalCheckInMetrics } from "@/utils/check-in-canonical-metrics";
-import { triggerAISummaryGeneration, updateClientMetricsFromCheckIn } from "@/services/client-check-in-service";
+import { triggerAISummaryGeneration } from "@/services/client-check-in-service";
 import { updateClientAdherenceStats } from "@/services/check-in-adherence-service";
 import { submitCheckInSchema } from "@/lib/validations/check-in";
 import { applyCheckInForm } from "@/lib/check-in/form-fields";
@@ -270,7 +270,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Display units in, canonical kg/cm out — see toCanonicalCheckInMetrics.
-    // Both this call and updateClientMetricsFromCheckIn below take the result.
+    // submitCheckIn takes the result and stamps the readings into the
+    // measurement log.
     const canonical = toCanonicalCheckInMetrics(shaped);
 
     // Submit the comprehensive check-in
@@ -328,12 +329,10 @@ export async function POST(request: NextRequest) {
         .catch((err) => captureApiError(err, { action: "check-in-snapshot-generation", checkInId, clientId }));
     }
 
-    // Update client metadata
+    // Update client metadata. The readings themselves were stamped into the
+    // measurement log by submitCheckIn, which is also where the energy pair
+    // recomputes when a reading is the client's newest.
     if (client) {
-      // Update client's current weight, body fat, BMR, and TDEE from check-in data
-      await updateClientMetricsFromCheckIn(client, canonical, checkInId);
-
-      // Update adherence stats
       await updateClientAdherenceStats(clientId);
     }
 

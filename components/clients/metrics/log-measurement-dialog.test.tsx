@@ -30,6 +30,7 @@ function metric(overrides: Partial<MetricSummary> = {}): MetricSummary {
     entryCount: 0,
     frequencyLabel: null,
     totalChange: null,
+    startsOn: null,
     avgRate: null,
     change30d: null,
     week: null,

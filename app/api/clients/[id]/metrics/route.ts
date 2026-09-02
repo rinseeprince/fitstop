@@ -4,11 +4,11 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { updateClientMetricsSchema } from "@/lib/validations/client-metrics";
-import { recordBodyMetrics } from "@/services/body-metrics-service";
+import { appendMeasurements } from "@/services/measurements-service";
 import { updateGoals } from "@/services/client-goals-service";
 import { recalculateClientEnergy } from "@/services/client-energy-service";
 import type { ClientEnergyOverrides } from "@/services/client-energy-service";
-import type { ClientUpdate } from "@/lib/database-helpers";
+import { getCoachTodayString } from "@/services/today-service";
 
 export async function PUT(
   request: NextRequest,
@@ -77,20 +77,18 @@ export async function PUT(
     // schema's, so updateClientMetricsSchema has already rejected an
     // out-of-range value before this handler runs.
 
-    // Build update object
-    const updates: ClientUpdate = {};
-
-    if (body.currentWeight !== undefined) {
-      updates.current_weight = body.currentWeight;
+    // A reading on this wire is the coach's entry, dated the coach's today —
+    // a row in the measurement log, never a column. The append recomputes the
+    // energy pair itself when the row is the client's newest.
+    if (body.currentWeight !== undefined || body.currentBodyFatPercentage !== undefined) {
+      await appendMeasurements({
+        clientId,
+        source: "coach_entry",
+        recordedOn: await getCoachTodayString(coachId),
+        values: { weight: body.currentWeight, bodyFat: body.currentBodyFatPercentage },
+        createdBy: coachId,
+      });
     }
-
-    if (body.currentBodyFatPercentage !== undefined) {
-      updates.current_body_fat_percentage = body.currentBodyFatPercentage;
-    }
-
-    // goal_weight / goal_body_fat_percentage are deliberately NOT written here.
-    // `updateGoals` below owns `client_goals` and the `clients.*` mirror; a
-    // second writer is how the two stores came to disagree.
 
     // bmr/tdee are NOT written from here. This handler used to set them
     // directly, re-implement Mifflin-St Jeor inline for "reset to auto", and
@@ -110,35 +108,11 @@ export async function PUT(
     }
     const hasOverrides = overrides.bmr !== undefined || overrides.tdee !== undefined;
 
-    // An override-only body leaves `updates` empty, and an empty .update({})
-    // is a wasted round trip at best.
-    if (Object.keys(updates).length > 0) {
-      const { error: updateError } = await supabaseAdmin
-        .from("clients")
-        .update(updates)
-        .eq("id", clientId)
-        .eq("coach_id", coachId);
-
-      if (updateError) {
-        console.error("Error updating client:", updateError);
-        return NextResponse.json(
-          { error: "Failed to update metrics" },
-          { status: 500 }
-        );
-      }
-    }
-
-    // Recompute the pair. Runs after the measurements above commit, so it reads
-    // the new weight/body fat rather than the pre-write row.
-    const energyInputChanged =
-      body.currentWeight !== undefined || body.currentBodyFatPercentage !== undefined;
-    const energy =
-      energyInputChanged || hasOverrides
-        ? await recalculateClientEnergy(clientId, {
-            coachId,
-            overrides: hasOverrides ? overrides : undefined,
-          })
-        : null;
+    // Runs after the readings above landed, so an override in the same request
+    // is applied over the pair they produced and the coach's typed number wins.
+    const energy = hasOverrides
+      ? await recalculateClientEnergy(clientId, { coachId, overrides })
+      : null;
 
     // An impossible override is a 400, not a silent no-op: the coach typed a
     // number and must be told it was not stored.
@@ -147,24 +121,6 @@ export async function PUT(
         { error: energy.rejection ?? "Invalid energy override" },
         { status: 400 }
       );
-    }
-
-    // Dual-write body metrics (non-blocking). The pair comes from the helper's
-    // result, never recomputed here, so the event matches the profile.
-    if (body.currentWeight !== undefined || body.currentBodyFatPercentage !== undefined ||
-        energy?.status === "written") {
-      try {
-        await recordBodyMetrics({
-          clientId,
-          weight: body.currentWeight,
-          bodyFatPercentage: body.currentBodyFatPercentage,
-          bmr: energy?.bmr ?? undefined,
-          tdee: energy?.tdee ?? undefined,
-          source: "metrics_api",
-        });
-      } catch (dualWriteError) {
-        console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
-      }
     }
 
     // Goals are written ONCE, by `updateGoals`, which owns both stores. **This

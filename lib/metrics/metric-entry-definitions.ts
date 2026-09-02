@@ -4,21 +4,17 @@ import {
   WEIGHT_KG_MAX,
   WEIGHT_KG_MIN,
 } from "@/lib/constants";
+import { MEASUREMENT_KEYS } from "@/lib/measurements/keys";
 
-// Canonical constants for coach-logged metric entries (client_metric_entries).
-// Isomorphic: imported by the zod schema (server), the service, and the
-// Metrics-page UI. METRIC_ENTRY_KEYS must stay in lockstep with the
-// METRIC_DEFINITIONS ids (components/clients/metrics/hooks/use-metrics-data.ts)
-// AND the metric_key CHECK constraint in migration 132.
+// Canonical constants for the coach's Log-measurement entries. Isomorphic:
+// imported by the zod schema (server), the service, and the Metrics-page UI.
+// The seven physique keys ARE the measurement log's keys (one definition, in
+// lockstep with migration 158's CHECK); the five wellness keys stay on
+// client_metric_entries (migration 132's CHECK). METRIC_ENTRY_KEYS must match
+// the METRIC_DEFINITIONS ids (components/clients/metrics/hooks/use-metrics-data.ts).
 
 export const METRIC_ENTRY_KEYS = [
-  "weight",
-  "bodyFat",
-  "waist",
-  "hips",
-  "chest",
-  "arms",
-  "thighs",
+  ...MEASUREMENT_KEYS,
   "mood",
   "energy",
   "sleep",

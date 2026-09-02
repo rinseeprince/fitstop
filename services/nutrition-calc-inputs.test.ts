@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/services/body-metrics-service", () => ({
-  getLatestBodyMetrics: vi.fn(),
-}));
 vi.mock("@/services/client-goals-service", () => ({
   getCurrentGoals: vi.fn(),
 }));
@@ -10,7 +7,6 @@ vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
 
-import { getLatestBodyMetrics } from "@/services/body-metrics-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { getClientTodayString } from "@/services/today-service";
 import { resolveNutritionCalcInputs } from "./nutrition-calc-inputs";
@@ -35,7 +31,6 @@ const CLIENT = {
 describe("resolveNutritionCalcInputs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue(null);
     vi.mocked(getCurrentGoals).mockResolvedValue(null);
     vi.mocked(getClientTodayString).mockResolvedValue("2026-08-05");
   });
@@ -98,32 +93,22 @@ describe("resolveNutritionCalcInputs", () => {
     expect(result.goalWeightKg).toBe(165);
   });
 
-  // The two halves of this ladder run in opposite directions on purpose.
-  it("prefers body_metrics over the client cache for WEIGHT", async () => {
-    // A backdated coach entry is deliberately withheld from the clients cache,
-    // so the newest event can be the truer latest measurement.
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
-      weight: 200,
-      bmr: 1900,
-      tdee: 2500,
-    } as never);
-
-    const result = await resolveNutritionCalcInputs("client-1", CLIENT);
+  // Both inputs come from the client object and nowhere else: the weight is
+  // the newest reading in the measurement log (read into `Client.currentWeight`
+  // from `client_current_measurements`), the pair is the profile's. There is
+  // no second source to prefer or to fall back on.
+  it("takes the WEIGHT from the client object — the log's newest reading", async () => {
+    const result = await resolveNutritionCalcInputs("client-1", {
+      ...CLIENT,
+      currentWeight: 200,
+    });
     if (result.status !== "ready") throw new Error("expected ready");
     expect(result.currentWeightKg).toBe(200);
   });
 
-  it("prefers the PROFILE over body_metrics for the energy pair", async () => {
-    // A generated plan's every calorie rests on this bmr. The body_metrics row
-    // a plan save leaves behind carries the PLAN's numbers, so preferring it
-    // would rebuild each plan from the previous plan's snapshot rather than the
-    // client's current metabolism.
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
-      weight: 200,
-      bmr: 1850,
-      tdee: 3515,
-    } as never);
-
+  it("takes the energy pair from the client object, each half from its own field", async () => {
+    // A generated plan's every calorie rests on this bmr, and TDEE is consumed
+    // directly rather than re-derived — so the two must pass through unmixed.
     const result = await resolveNutritionCalcInputs("client-1", {
       ...CLIENT,
       bmr: 3712,
@@ -155,23 +140,19 @@ describe("resolveNutritionCalcInputs", () => {
     expect(result.workActivityLevel).toBe("sedentary");
   });
 
-  it("falls back to body_metrics when the profile pair is still NULL", async () => {
-    // A rescue, not a preference: a client the energy helper has never reached
-    // must not 400 the plan save.
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
-      weight: 200,
-      bmr: 1900,
-      tdee: 2500,
-    } as never);
-
+  it("a profile with no pair is incomplete — nothing rescues it", async () => {
+    // The rescue that used to read the pair off the event log is gone with the
+    // log: a client the energy helper has never reached is reported as such,
+    // never costed against an invented metabolism.
     const result = await resolveNutritionCalcInputs("client-1", {
       ...CLIENT,
       bmr: undefined,
       tdee: undefined,
     });
-    if (result.status !== "ready") throw new Error("expected ready");
-    expect(result.bmr).toBe(1900);
-    expect(result.tdee).toBe(2500);
+
+    expect(result.status).toBe("incomplete");
+    if (result.status !== "incomplete") return;
+    expect(result.missing.join(" ")).toContain("BMR");
   });
 
   // The whole reason this is a union: a read path must be able to render

@@ -10,7 +10,7 @@ import {
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { MetricSwitcher } from "./metric-switcher";
-import { containsDigit, formatShortDate, formatSigned } from "./metrics-format";
+import { containsDigit, formatShortDate, formatSigned, SOURCE_LABELS } from "./metrics-format";
 import type { MetricSummary } from "./metrics-view-types";
 import { TextSkeleton } from "@/components/text-skeleton";
 
@@ -122,7 +122,7 @@ function MetricHeroPending() {
 
 export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps) {
   if (!metric) return <MetricHeroPending />;
-  const { latest, first, totalChange, avgRate, entryCount, unit } = metric;
+  const { latest, first, totalChange, startsOn, avgRate, entryCount, unit } = metric;
 
   const chips: string[] = [];
   if (unit) chips.push(unit);
@@ -202,7 +202,9 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
           )}
         </div>
 
-        {/* TOTAL CHANGE */}
+        {/* TOTAL CHANGE — since the START DATE for a physique metric, against
+            the baseline (the reading as of it, named with its own date and
+            source); `Starts …` while the start date is still ahead. */}
         <div className="flex flex-col pl-5 pr-5 border-r border-[rgba(255,255,255,0.07)]">
           <p className={STAT_LABEL_DARK_CLASS}>Total change</p>
           {totalChange ? (
@@ -212,8 +214,15 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
                 {unit && <span className={UNIT_SUFFIX_CLASS}>{unit}</span>}
               </p>
               <p className={SUB_MONO_CLASS}>
-                since {formatShortDate(totalChange.sinceDate)}
+                {totalChange.baseline
+                  ? `from ${totalChange.baseline.value}${unit ? ` ${unit}` : ""} · ${SOURCE_LABELS[totalChange.baseline.source]} ${formatShortDate(totalChange.baseline.date)}`
+                  : `since ${formatShortDate(totalChange.sinceDate)}`}
               </p>
+            </>
+          ) : startsOn ? (
+            <>
+              <p className={EMPTY_VALUE_CLASS}>—</p>
+              <p className={SUB_MONO_CLASS}>Starts {formatShortDate(startsOn)}</p>
             </>
           ) : (
             <p className={EMPTY_VALUE_CLASS}>—</p>

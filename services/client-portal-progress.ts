@@ -1,5 +1,10 @@
 import { createPortalClient } from "./client-portal-service";
+import { CLIENT_MEASUREMENT_EMBEDS } from "./measurements-service";
 import { getTrend, calculatePercentChange } from "@/utils/metric-shaping";
+import { fetchAllPages } from "@/lib/paged-fetch";
+import { dayValues, type MeasurementReading } from "@/lib/measurements/day-values";
+import { isMeasurementKey, type MeasurementKey, type MeasurementSource } from "@/lib/measurements/keys";
+import type { ClientMeasurementEmbed } from "@/lib/database-helpers";
 import type { TrendDirection } from "@/types/check-in";
 
 // Render-ready, locale-neutral metric series emitted by the API. `chartData[].date`
@@ -97,6 +102,47 @@ function buildMetricSeries(
   };
 }
 
+// The measurement-log row shape this read selects, under the client's own JWT.
+type LiveMeasurementRow = {
+  id: string | null;
+  metric_key: string | null;
+  value: number | null;
+  recorded_on: string | null;
+  recorded_at: string | null;
+  measured_at: string | null;
+  source: string | null;
+  source_id: string | null;
+  note: string | null;
+};
+
+type ClientProgressRow = {
+  current_streak: number | null;
+  check_in_adherence_rate: number | null;
+  goal_weight: number | null;
+  goal_body_fat_percentage: number | null;
+  client_current_measurements: ClientMeasurementEmbed[] | null;
+  client_baseline_measurements: ClientMeasurementEmbed[] | null;
+};
+
+function embeddedReading(
+  rows: ClientMeasurementEmbed[] | null | undefined,
+  metricKey: "weight" | "bodyFat"
+): number | undefined {
+  const row = rows?.find((candidate) => candidate.metric_key === metricKey);
+  return row?.value == null ? undefined : Number(row.value);
+}
+
+// The history arrays are keyed by the wire's field names, the log by its keys.
+const HISTORY_FIELD: Record<MeasurementKey, keyof ProgressDataPoint> = {
+  weight: "weight",
+  bodyFat: "bodyFatPercentage",
+  waist: "waist",
+  hips: "hips",
+  chest: "chest",
+  arms: "arms",
+  thighs: "thighs",
+};
+
 // Get progress data for charts
 export async function getClientProgressData(
   clientId: string,
@@ -106,68 +152,86 @@ export async function getClientProgressData(
 
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
+  const fromDay = startDate.toISOString().slice(0, 10);
 
-  const { data: checkIns } = await supabase
-    .from("check_ins")
-    .select(`
-      created_at,
-      weight,
-      body_fat_percentage,
-      waist,
-      hips,
-      chest,
-      arms,
-      thighs,
-      mood,
-      energy,
-      sleep,
-      stress,
-      soreness
-    `)
-    .eq("client_id", clientId)
-    .gte("created_at", startDate.toISOString())
-    .order("created_at", { ascending: true });
-
-  const { data: clientData, error: clientError } = await supabase
-    .from("clients")
-    .select(`
-      current_streak,
-      check_in_adherence_rate,
-      goal_weight,
-      goal_body_fat_percentage,
-      starting_weight,
-      starting_body_fat_percentage,
-      current_weight,
-      current_body_fat_percentage
-    `)
-    .eq("id", clientId)
-    .single();
+  // Three independent reads, under the client's JWT: the check-ins' wellness
+  // averages, the measurement log's live rows (the D6 policy is what lets this
+  // client see their own — every reading about them, of any source) and the
+  // client row with its two reading views embedded. The log read is paged: it
+  // feeds a series and must be complete past PostgREST's row cap.
+  const [{ data: checkIns }, readingRows, { data: clientData, error: clientError }] =
+    await Promise.all([
+      supabase
+        .from("check_ins")
+        .select("created_at, mood, energy, sleep, stress, soreness")
+        .eq("client_id", clientId)
+        .gte("created_at", startDate.toISOString())
+        .order("created_at", { ascending: true }),
+      fetchAllPages<LiveMeasurementRow>(
+        (from, to) =>
+          supabase
+            .from("client_measurements_live")
+            .select("id, metric_key, value, recorded_on, recorded_at, measured_at, source, source_id, note")
+            .eq("client_id", clientId)
+            .gte("recorded_on", fromDay)
+            .order("recorded_on", { ascending: true })
+            .order("recorded_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to),
+        { errorLabel: "client measurements" }
+      ),
+      supabase
+        .from("clients")
+        .select(`current_streak, check_in_adherence_rate, goal_weight, goal_body_fat_percentage, ${CLIENT_MEASUREMENT_EMBEDS}`)
+        .eq("id", clientId)
+        .single(),
+    ]);
 
   // Surface a failed client fetch instead of swallowing it. A silent failure
   // here is exactly what made every weight/measurement default to lbs/in for
   // metric clients: a previous version of this query selected a column that does
   // not exist on `clients`, so PostgREST rejected the whole query and
   // `clientData` came back null — with the error logged and the request
-  // continuing. `weight_unit` was removed from this select for the same reason
-  // when migration 141 dropped it; do not reintroduce a column here without
-  // checking it against the live schema.
+  // continuing. The four weight columns left this select with the measurement
+  // log (their readings ride in from the two embedded views); do not
+  // reintroduce a column here without checking it against the live schema.
   if (clientError) {
     console.error(
       `Failed to load client unit/goal fields for ${clientId}:`,
       clientError.message,
     );
   }
+  const client = (clientData ?? null) as ClientProgressRow | null;
 
-  // Stored values are canonical kg/cm (migration 141), so these describe the
-  // STORED unit, not a preference. Phase 3 converts for the viewer at render.
+  // The seven physique histories: one value per day by rule 2, of any source —
+  // the client sees every reading about them (D6).
+  const readings: MeasurementReading[] = readingRows.flatMap((row) =>
+    row.id && row.metric_key && isMeasurementKey(row.metric_key) && row.value != null &&
+    row.recorded_on && row.recorded_at && row.source
+      ? [{
+          id: row.id,
+          metricKey: row.metric_key,
+          value: Number(row.value),
+          date: row.recorded_on,
+          recordedAt: row.recorded_at,
+          measuredAt: row.measured_at,
+          source: row.source as MeasurementSource,
+          sourceId: row.source_id,
+          note: row.note,
+        }]
+      : []
+  );
+  const byMetric = dayValues(readings);
+  const history = (key: MeasurementKey): ProgressDataPoint[] =>
+    (byMetric.get(key) ?? []).map((value) => ({ date: value.date, [HISTORY_FIELD[key]]: value.value }));
 
-  const weightHistory: ProgressDataPoint[] = [];
-  const bodyFatHistory: ProgressDataPoint[] = [];
-  const waistHistory: ProgressDataPoint[] = [];
-  const hipsHistory: ProgressDataPoint[] = [];
-  const chestHistory: ProgressDataPoint[] = [];
-  const armsHistory: ProgressDataPoint[] = [];
-  const thighsHistory: ProgressDataPoint[] = [];
+  const weightHistory = history("weight");
+  const bodyFatHistory = history("bodyFat");
+  const waistHistory = history("waist");
+  const hipsHistory = history("hips");
+  const chestHistory = history("chest");
+  const armsHistory = history("arms");
+  const thighsHistory = history("thighs");
   const moodHistory: ProgressDataPoint[] = [];
   const energyHistory: ProgressDataPoint[] = [];
   const sleepHistory: ProgressDataPoint[] = [];
@@ -178,27 +242,6 @@ export async function getClientProgressData(
     for (const checkIn of checkIns) {
       const date = checkIn.created_at.split("T")[0];
 
-      if (checkIn.weight) {
-        weightHistory.push({ date, weight: checkIn.weight });
-      }
-      if (checkIn.body_fat_percentage) {
-        bodyFatHistory.push({ date, bodyFatPercentage: checkIn.body_fat_percentage });
-      }
-      if (checkIn.waist) {
-        waistHistory.push({ date, waist: checkIn.waist });
-      }
-      if (checkIn.hips) {
-        hipsHistory.push({ date, hips: checkIn.hips });
-      }
-      if (checkIn.chest) {
-        chestHistory.push({ date, chest: checkIn.chest });
-      }
-      if (checkIn.arms) {
-        armsHistory.push({ date, arms: checkIn.arms });
-      }
-      if (checkIn.thighs) {
-        thighsHistory.push({ date, thighs: checkIn.thighs });
-      }
       if (checkIn.mood) {
         moodHistory.push({ date, mood: checkIn.mood });
       }
@@ -253,15 +296,15 @@ export async function getClientProgressData(
     bodyMetrics,
     wellnessMetrics,
     checkInCount: checkIns?.length ?? 0,
-    currentStreak: clientData?.current_streak ?? 0,
-    adherenceRate: clientData?.check_in_adherence_rate ?? 0,
+    currentStreak: client?.current_streak ?? 0,
+    adherenceRate: client?.check_in_adherence_rate ?? 0,
     client: {
-      goalWeight: clientData?.goal_weight ?? undefined,
-      goalBodyFatPercentage: clientData?.goal_body_fat_percentage ?? undefined,
-      startingWeight: clientData?.starting_weight ?? undefined,
-      startingBodyFatPercentage: clientData?.starting_body_fat_percentage ?? undefined,
-      currentWeight: clientData?.current_weight ?? undefined,
-      currentBodyFatPercentage: clientData?.current_body_fat_percentage ?? undefined,
+      goalWeight: client?.goal_weight ?? undefined,
+      goalBodyFatPercentage: client?.goal_body_fat_percentage ?? undefined,
+      startingWeight: embeddedReading(client?.client_baseline_measurements, "weight"),
+      startingBodyFatPercentage: embeddedReading(client?.client_baseline_measurements, "bodyFat"),
+      currentWeight: embeddedReading(client?.client_current_measurements, "weight"),
+      currentBodyFatPercentage: embeddedReading(client?.client_current_measurements, "bodyFat"),
     },
   };
 }

@@ -16,10 +16,6 @@ vi.mock("@/lib/validations/nutrition", () => ({
   validateClientForNutrition: vi.fn().mockReturnValue({ valid: true, errors: [] }),
 }));
 
-vi.mock("@/services/body-metrics-service", () => ({
-  getLatestBodyMetrics: vi.fn().mockResolvedValue(null),
-}));
-
 vi.mock("@/services/client-goals-service", () => ({
   getCurrentGoals: vi.fn().mockResolvedValue(null),
 }));

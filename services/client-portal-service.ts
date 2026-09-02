@@ -2,10 +2,11 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "./supabase-admin";
 import { coversDate } from "./training-plan-window";
 import type { Client, DietType, UnitPreference } from "@/types/check-in";
-import type { Database } from "@/types/database";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { mapClientRow } from "@/lib/mappers";
+import type { ClientRowWithMeasurements } from "@/lib/database-helpers";
+import { CLIENT_MEASUREMENT_EMBEDS } from "./measurements-service";
 import { getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
@@ -47,16 +48,22 @@ export type NutritionTargets = {
 // goal DEADLINE (absent here) reaches the client through GET /api/client/journey
 // via client_goals/resolveEffectiveGoal (owner decision 2026-08-12, scoped to
 // that endpoint only).
+//
+// The client's readings — current and at the start — are not columns: they
+// ride in from the two measurement views (CLIENT_MEASUREMENT_EMBEDS), which
+// read under this client's own JWT through the D6 policy. A stale column name
+// here is a PostgREST 400 that the `return null` below turns into an empty
+// profile, so check every name against the live schema.
 const CLIENT_SELF_COLUMNS =
   "id, coach_id, name, email, avatar_url, active, created_at, updated_at, " +
-  "height, gender, date_of_birth, goal_weight, goal_body_fat_percentage, " +
-  "current_weight, current_body_fat_percentage, bmr, tdee, " +
+  "height, gender, date_of_birth, goal_weight, goal_body_fat_percentage, bmr, tdee, " +
   "check_in_frequency, check_in_frequency_days, next_check_in_due, " +
   "last_reminder_sent_at, reminder_preferences, total_check_ins_expected, " +
   "total_check_ins_completed, check_in_adherence_rate, current_streak, longest_streak, " +
-  "unit_preference, include_activity_burn, surplus_as_carbs, starting_weight, " +
-  "starting_body_fat_percentage, bmr_manual_override, tdee_manual_override, " +
-  "welcome_message, onboarding_status, walkthrough_completed_at, start_date, timezone";
+  "unit_preference, include_activity_burn, surplus_as_carbs, " +
+  "bmr_manual_override, tdee_manual_override, " +
+  "welcome_message, onboarding_status, walkthrough_completed_at, start_date, timezone, " +
+  CLIENT_MEASUREMENT_EMBEDS;
 
 // Get client record for the authenticated user
 export async function getClientForCurrentUser(): Promise<Client | null> {
@@ -78,7 +85,7 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
   if (error || !data) return null;
 
   // `notes` is not selected, so mapClientRow resolves it to undefined.
-  return mapClientRow(data as unknown as Database["public"]["Tables"]["clients"]["Row"]);
+  return mapClientRow(data as unknown as ClientRowWithMeasurements);
 }
 
 // Get nutrition targets for a client with daily breakdown

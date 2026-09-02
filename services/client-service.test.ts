@@ -7,8 +7,26 @@ vi.mock('./supabase-admin', () => ({
   },
 }))
 
-vi.mock('./body-metrics-service', () => ({
-  recordBodyMetrics: vi.fn().mockResolvedValue({}),
+vi.mock('./measurements-service', async (importOriginal) => {
+  // The error class and the embed string stay real — updateClient throws the
+  // one and every single-client read selects the other — and only the writer
+  // is a stub.
+  const actual = await importOriginal<typeof import('./measurements-service')>()
+  return {
+    ...actual,
+    appendMeasurements: vi.fn().mockResolvedValue({
+      rows: {},
+      inserted: [],
+      unchanged: [],
+      energy: 'nothing_inserted',
+    }),
+  }
+})
+
+// Two different days on purpose, so a test can tell WHOSE calendar dated a row.
+vi.mock('./today-service', () => ({
+  getCoachTodayString: vi.fn().mockResolvedValue('2026-09-02'),
+  getClientTodayString: vi.fn().mockResolvedValue('2026-09-01'),
 }))
 
 vi.mock('./client-start-service', () => ({
@@ -35,9 +53,11 @@ vi.mock('./invitation-service', () => ({
 
 import { supabaseAdmin } from './supabase-admin'
 import { recalculateClientEnergy } from './client-energy-service'
-import { recordBodyMetrics } from './body-metrics-service'
+import { appendMeasurements, ReadingRemovalUnavailableError } from './measurements-service'
 import { recordClientStart } from './client-start-service'
+import { getCoachTodayString, getClientTodayString } from './today-service'
 import { updateGoals } from './client-goals-service'
+import type { MeasurementReading } from '@/lib/measurements/day-values'
 import {
   createClient,
   getClientsForCoach,
@@ -80,8 +100,6 @@ function createMockClientRow(overrides: Record<string, unknown> = {}) {
     date_of_birth: '1990-01-01',
     goal_weight: 170,
     goal_body_fat_percentage: 12,
-    current_weight: 180,
-    current_body_fat_percentage: 15,
     bmr: 1800,
     tdee: 2400,
     check_in_frequency: 'weekly',
@@ -103,8 +121,7 @@ function createMockClientRow(overrides: Record<string, unknown> = {}) {
     nutrition_plan_created_date: null,
     nutrition_plan_base_weight_kg: null,
     baseline_calories: 2000,
-    starting_weight: 185,
-    starting_body_fat_percentage: 18,
+    start_date: null,
     calorie_target: 2200,
     protein_target_g: 180,
     carb_target_g: 220,
@@ -118,7 +135,33 @@ function createMockClientRow(overrides: Record<string, unknown> = {}) {
     tdee_manual_override: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-15T00:00:00Z',
+    // The two measurement views embedded beside every single-client read —
+    // "now" and "at the start", one row per metric. The four reading fields on
+    // a Client come from here and from nowhere else.
+    client_current_measurements: [
+      { metric_key: 'weight', value: 180, recorded_on: '2026-08-30', source: 'check_in', measurement_id: 'm-now-w' },
+      { metric_key: 'bodyFat', value: 15, recorded_on: '2026-08-30', source: 'check_in', measurement_id: 'm-now-bf' },
+    ],
+    client_baseline_measurements: [
+      { metric_key: 'weight', value: 185, recorded_on: '2026-01-01', source: 'intake', measurement_id: 'm-start-w' },
+      { metric_key: 'bodyFat', value: 18, recorded_on: '2026-01-01', source: 'intake', measurement_id: 'm-start-bf' },
+    ],
     ...overrides,
+  }
+}
+
+/** The row the measurement log reports standing for a key after an append. */
+function reading(metricKey: 'weight' | 'bodyFat', value: number): MeasurementReading {
+  return {
+    id: `m-${metricKey}`,
+    metricKey,
+    value,
+    date: '2026-09-02',
+    recordedAt: '2026-09-02T09:00:00.000Z',
+    measuredAt: null,
+    source: 'intake',
+    sourceId: null,
+    note: null,
   }
 }
 
@@ -213,27 +256,31 @@ describe('Client Service', () => {
       ).rejects.toThrow('Failed to create client')
     })
 
-    it('sets starting values from current values', async () => {
-      const mockQuery = createMockQuery({
-        data: createMockClientRow(),
-        error: null,
-      })
-
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+    it('writes no weight column — the first reading is an intake row in the measurement log', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
 
       await createClient('coach-456', {
         name: 'Test Client',
         email: 'test@example.com',
         currentWeight: 180,
         currentBodyFatPercentage: 15,
-      } as any)
+      })
 
-      expect(mockQuery.insert).toHaveBeenCalled()
       const insertCall = mockQuery.insert.mock.calls[0][0]
-      expect(insertCall.current_weight).toBe(180)
-      expect(insertCall.starting_weight).toBe(180)
-      expect(insertCall.current_body_fat_percentage).toBe(15)
-      expect(insertCall.starting_body_fat_percentage).toBe(15)
+      expect(insertCall).not.toHaveProperty('current_weight')
+      expect(insertCall).not.toHaveProperty('starting_weight')
+      expect(insertCall).not.toHaveProperty('current_body_fat_percentage')
+      expect(insertCall).not.toHaveProperty('starting_body_fat_percentage')
+      // "Now" and "at the start" are both derived from this one row, dated the
+      // day the coach captured it — on the COACH's calendar, they are the setter.
+      expect(getCoachTodayString).toHaveBeenCalledWith('coach-456')
+      expect(appendMeasurements).toHaveBeenCalledWith({
+        clientId: 'client-123',
+        source: 'intake',
+        recordedOn: '2026-09-02',
+        values: { weight: 180, bodyFat: 15 },
+      })
     })
 
     // The service no longer converts. It used to key on a `weightUnit` /
@@ -254,9 +301,12 @@ describe('Client Service', () => {
       } as any)
 
       const insertCall = mockQuery.insert.mock.calls[0][0]
-      expect(insertCall.current_weight).toBe(81.6466)
-      expect(insertCall.starting_weight).toBe(81.6466)
       expect(insertCall.height).toBe(180.34)
+      // The weight is verbatim too, at the writer it actually reaches: the
+      // measurement log, never a column.
+      expect(appendMeasurements).toHaveBeenCalledWith(
+        expect.objectContaining({ values: expect.objectContaining({ weight: 81.6466 }) })
+      )
       // The goal weight is verbatim too, but it no longer travels in the INSERT:
       // `updateGoals` is the single writer of both goal stores, so this asserts
       // no-conversion at the writer it actually reaches.
@@ -281,32 +331,48 @@ describe('Client Service', () => {
       } as any)
 
       const insertCall = mockQuery.insert.mock.calls[0][0]
-      expect(insertCall.current_weight).toBe(180)
       expect(insertCall.height).toBe(71)
+      expect(appendMeasurements).toHaveBeenCalledWith(
+        expect.objectContaining({ values: expect.objectContaining({ weight: 180 }) })
+      )
     })
 
-    it('dual-writes body metrics when currentWeight provided', async () => {
-      const mockClientRow = createMockClientRow()
-      const mockQuery = createMockQuery({ data: mockClientRow, error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+    it('reports the reading it just recorded on the returned client', async () => {
+      // The INSERT's returned row carries no embeds, so without the overlay the
+      // response reports a client with no reading a moment after recording one.
+      const mockQuery = createMockQuery({
+        data: createMockClientRow({ client_current_measurements: [], client_baseline_measurements: [] }),
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+      vi.mocked(appendMeasurements).mockResolvedValueOnce({
+        rows: { weight: reading('weight', 81.6466) },
+        inserted: ['weight'],
+        unchanged: [],
+        energy: 'recomputed',
+      })
+
+      const client = await createClient('coach-456', {
+        name: 'Test Client',
+        email: 'test@example.com',
+        currentWeight: 81.6466,
+      })
+
+      expect(client.currentWeight).toBe(81.6466)
+      expect(client.currentBodyFatPercentage).toBeUndefined()
+    })
+
+    it('records no reading when neither a weight nor a body fat was given', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
 
       await createClient('coach-456', {
         name: 'Test Client',
         email: 'test@example.com',
-        currentWeight: 81.6466,
-      } as any)
+        setupMode: 'intake',
+      })
 
-      // The dual-write must receive the SAME kilograms the clients row got.
-      // body-metrics-service writes its own denormalized cache back to
-      // clients.current_weight in this request, so a divergence here silently
-      // overwrites the row that was just inserted.
-      expect(recordBodyMetrics).toHaveBeenCalledWith(
-        expect.objectContaining({
-          clientId: 'client-123',
-          weight: 81.6466,
-          source: 'intake_sync',
-        })
-      )
+      expect(appendMeasurements).not.toHaveBeenCalled()
     })
 
     it('dual-writes goals when goalWeight provided', async () => {
@@ -328,22 +394,23 @@ describe('Client Service', () => {
       )
     })
 
-    // Body metrics, NOT goals. This swallow is deliberately kept: a failed
-    // metrics event must not fail client creation. The goal swallow beside it
-    // was removed in 0b.2 — see below.
-    it('does not fail if dual-write throws', async () => {
-      const mockClientRow = createMockClientRow()
-      const mockQuery = createMockQuery({ data: mockClientRow, error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
-      vi.mocked(recordBodyMetrics).mockRejectedValueOnce(new Error('fail'))
+    // The swallow went with the store it fed. A client whose first reading
+    // never landed is one activation refuses, and a swallowed failure here is
+    // how a profile came to claim a reading no row carried.
+    it('a failed reading write fails the creation rather than reporting a client with no reading', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+      vi.mocked(appendMeasurements).mockRejectedValueOnce(
+        new Error('Failed to record measurements: boom')
+      )
 
       await expect(
         createClient('coach-456', {
           name: 'Test Client',
           email: 'test@example.com',
           currentWeight: 180,
-        } as any)
-      ).resolves.toBeDefined()
+        })
+      ).rejects.toThrow('Failed to record measurements: boom')
     })
 
     // Task 0b.2 — `updateGoals` is the sole writer of both goal stores.
@@ -511,20 +578,48 @@ describe('Client Service', () => {
   })
 
   describe('getClientById', () => {
-    it('returns client when found', async () => {
-      const mockClientRow = createMockClientRow()
+    it('returns client when found, with the four reading fields from the embedded views', async () => {
+      // A stale column beside the embeds: the columns are ignored, the views win.
+      const mockClientRow = createMockClientRow({ current_weight: 999, starting_weight: 999 })
       const mockQuery = createMockQuery({
         data: mockClientRow,
         error: null,
       })
 
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
 
       const result = await getClientById('client-123')
 
       expect(result).not.toBeNull()
       expect(result?.id).toBe('client-123')
       expect(result?.name).toBe('Test Client')
+      // The views ride along in the same round trip as the row.
+      expect(mockQuery.select).toHaveBeenCalledWith(
+        expect.stringContaining('client_current_measurements(')
+      )
+      expect(mockQuery.select).toHaveBeenCalledWith(
+        expect.stringContaining('client_baseline_measurements(')
+      )
+      expect(result?.currentWeight).toBe(180)
+      expect(result?.currentBodyFatPercentage).toBe(15)
+      expect(result?.startingWeight).toBe(185)
+      expect(result?.startingBodyFatPercentage).toBe(18)
+    })
+
+    it('maps a client with no reading yet to undefined, not zero', async () => {
+      const mockQuery = createMockQuery({
+        data: createMockClientRow({ client_current_measurements: [], client_baseline_measurements: [] }),
+        error: null,
+      })
+
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      const result = await getClientById('client-123')
+
+      expect(result?.currentWeight).toBeUndefined()
+      expect(result?.currentBodyFatPercentage).toBeUndefined()
+      expect(result?.startingWeight).toBeUndefined()
+      expect(result?.startingBodyFatPercentage).toBeUndefined()
     })
 
     it('returns null when not found', async () => {
@@ -601,12 +696,13 @@ describe('Client Service', () => {
       expect(recalculateClientEnergy).not.toHaveBeenCalled()
     })
 
-    it('delegates the START fields to their single writer, untouched here', async () => {
-      // The columns are a CACHE of the metric entries dated on the start date,
-      // so a write that touched only them would leave the Physique chart's
-      // first point describing a start that no longer exists.
+    it('delegates the start DATE to its single writer and dates the baseline readings on it', async () => {
+      // The origin is one column with one writer, and it is a date and nothing
+      // more. What the client measured at the start is not stored beside it:
+      // the Baseline fields become a coach entry dated ON the start date, which
+      // the derived baseline (the reading as of that date) then reads.
       const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
 
       await updateClient('client-123', {
         startDate: '2026-08-14',
@@ -615,18 +711,60 @@ describe('Client Service', () => {
       }, 'coach-1')
 
       const updateCall = mockQuery.update.mock.calls[0][0]
-      expect(updateCall.starting_weight).toBeUndefined()
-      expect(updateCall.start_date).toBeUndefined()
+      expect(updateCall).not.toHaveProperty('starting_weight')
+      expect(updateCall).not.toHaveProperty('starting_body_fat_percentage')
+      expect(updateCall).not.toHaveProperty('start_date')
       // Correcting a recorded baseline is not a new measurement: the current
       // values are a separate field the coach edits on its own.
-      expect(updateCall.current_weight).toBeUndefined()
+      expect(updateCall).not.toHaveProperty('current_weight')
 
-      expect(recordClientStart).toHaveBeenCalledWith('client-123', {
-        startsOn: '2026-08-14',
-        weightKg: 84,
-        bodyFatPercentage: 21,
-        coachId: 'coach-1',
+      expect(recordClientStart).toHaveBeenCalledWith('client-123', { startsOn: '2026-08-14' })
+      expect(appendMeasurements).toHaveBeenCalledWith({
+        clientId: 'client-123',
+        source: 'coach_entry',
+        recordedOn: '2026-08-14',
+        values: { weight: 84, bodyFat: 21 },
+        createdBy: 'coach-1',
       })
+    })
+
+    it('dates a baseline reading on the STORED start date when the PATCH carries none', async () => {
+      const mockQuery = createMockQuery({
+        data: createMockClientRow({ start_date: '2026-03-01' }),
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      await updateClient('client-123', { startingWeight: 84 }, 'coach-1')
+
+      expect(recordClientStart).not.toHaveBeenCalled()
+      expect(appendMeasurements).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: 'coach_entry',
+          recordedOn: '2026-03-01',
+          values: { weight: 84 },
+        })
+      )
+    })
+
+    it('records a baseline for a client with no start date yet as an intake reading dated today', async () => {
+      // Nothing to date it on before activation, so it is an `intake` row dated
+      // today — the as-of rule picks it up the moment the date is set.
+      const mockQuery = createMockQuery({
+        data: createMockClientRow({ start_date: null }),
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      await updateClient('client-123', { startingWeight: 84 }, 'coach-1')
+
+      expect(appendMeasurements).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: 'intake',
+          recordedOn: '2026-09-02',
+          values: { weight: 84 },
+        })
+      )
     })
 
     it('does NOT recompute energy for a start-only correction', async () => {
@@ -635,10 +773,27 @@ describe('Client Service', () => {
 
       await updateClient('client-123', { startingWeight: 84 })
 
-      // BMR/TDEE are computed from the CURRENT weight. The start entry does
-      // write a body_metrics event, but its backdating guard leaves the
-      // profile alone — see metric-entries-service.
+      // BMR/TDEE follow the CURRENT reading. The baseline row goes into the
+      // log, and the recompute — should that row turn out to be the client's
+      // newest — happens inside the append, never from here.
       expect(recalculateClientEnergy).not.toHaveBeenCalled()
+    })
+
+    it('refuses to withdraw a body fat reading BEFORE any write lands', async () => {
+      // A void arrives with the correct/remove commit; until then the coach
+      // reads a sentence rather than a save that silently kept the value.
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      await expect(
+        updateClient('client-123', { name: 'New Name', currentBodyFatPercentage: null }, 'coach-456')
+      ).rejects.toThrow(ReadingRemovalUnavailableError)
+      await expect(
+        updateClient('client-123', { startingBodyFatPercentage: null }, 'coach-456')
+      ).rejects.toThrow("A recorded start body fat can't be removed yet")
+
+      expect(supabaseAdmin.from).not.toHaveBeenCalled()
+      expect(appendMeasurements).not.toHaveBeenCalled()
     })
 
     it('leaves the start writer alone when no start field is present', async () => {
@@ -710,20 +865,74 @@ describe('Client Service', () => {
       expect(updateCall.notes).toBe('')
     })
 
-    it('dual-writes body metrics when currentWeight updated', async () => {
-      const mockClientRow = createMockClientRow({ current_weight: 175 })
-      const mockQuery = createMockQuery({ data: mockClientRow, error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any)
+    it("records a current weight as a coach entry dated the COACH's today", async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
 
-      await updateClient('client-123', { currentWeight: 175 })
+      await updateClient('client-123', { currentWeight: 175 }, 'coach-456')
 
-      expect(recordBodyMetrics).toHaveBeenCalledWith(
-        expect.objectContaining({
-          clientId: 'client-123',
-          weight: 175,
-          source: 'metrics_api',
+      // Never a column: the reading is a row, and "now" is derived from it.
+      expect(mockQuery.update.mock.calls[0][0]).not.toHaveProperty('current_weight')
+      expect(getCoachTodayString).toHaveBeenCalledWith('coach-456')
+      expect(appendMeasurements).toHaveBeenCalledWith({
+        clientId: 'client-123',
+        source: 'coach_entry',
+        recordedOn: '2026-09-02',
+        values: { weight: 175 },
+        createdBy: 'coach-456',
+      })
+    })
+
+    it("dates a coach entry on the CLIENT's calendar when no coach is in hand", async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      await updateClient('client-123', { currentBodyFatPercentage: 14 })
+
+      expect(getClientTodayString).toHaveBeenCalledWith('client-123')
+      expect(appendMeasurements).toHaveBeenCalledWith({
+        clientId: 'client-123',
+        source: 'coach_entry',
+        recordedOn: '2026-09-01',
+        values: { bodyFat: 14 },
+        createdBy: null,
+      })
+    })
+
+    it('re-reads the derived fields after a reading lands, rather than echoing the pre-write row', async () => {
+      // `client` was mapped from the row read BEFORE the append; "now", the
+      // baseline and the pair the append may have recomputed all live in the
+      // views, so the response is refreshed from a second read.
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      mockQuery.single
+        .mockResolvedValueOnce({ data: createMockClientRow(), error: null })
+        .mockResolvedValueOnce({
+          data: createMockClientRow({
+            bmr: 1750,
+            tdee: 2100,
+            client_current_measurements: [
+              { metric_key: 'weight', value: 175, recorded_on: '2026-09-02', source: 'coach_entry', measurement_id: 'm-new' },
+            ],
+          }),
+          error: null,
         })
-      )
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      const client = await updateClient('client-123', { currentWeight: 175 }, 'coach-456')
+
+      expect(client.currentWeight).toBe(175)
+      expect(client.currentBodyFatPercentage).toBeUndefined()
+      expect(client.bmr).toBe(1750)
+      expect(client.tdee).toBe(2100)
+    })
+
+    it('does not re-read when no reading was written', async () => {
+      const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
+
+      await updateClient('client-123', { name: 'New Name' })
+
+      expect(mockQuery.single).toHaveBeenCalledTimes(1)
     })
 
     it('dual-writes goals when goalWeight updated', async () => {

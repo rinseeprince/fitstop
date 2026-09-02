@@ -4,7 +4,6 @@ import { calculateDailyMacros, DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import type { Database } from "@/types/database";
-import { recordBodyMetrics } from "@/services/body-metrics-service";
 
 type NutritionPlanRow = Database["public"]["Tables"]["nutrition_plans"]["Row"];
 
@@ -172,28 +171,13 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
     return null;
   }
 
-  // A plan save no longer touches the client profile. It used to write
+  // A plan save touches the client profile zero times. It used to write
   // clients.tdee from the PLAN's own work_activity_level, which is how a
   // client whose profile said "sedentary" ended up costed at ×1.9 — the plan
   // and the profile disagreed and the plan won. The profile owns the pair
-  // (services/client-energy-service.ts); the plan snapshots it and a
-  // regeneration inherits whatever it is at that time.
-
-  // Dual-write TDEE to body_metrics (non-blocking) — provenance only, so the
-  // event log records what this version was built from.
-  if (params.tdee != null) {
-    try {
-      await recordBodyMetrics({
-        clientId: params.clientId,
-        tdee: params.tdee,
-        bmr: params.bmr ?? undefined,
-        source: "nutrition_plan",
-        sourceId: newPlanId,
-      });
-    } catch (dualWriteError) {
-      console.error("Dual-write to body_metrics failed:", dualWriteError instanceof Error ? dualWriteError.message : "Unknown error");
-    }
-  }
+  // (services/client-energy-service.ts); the plan row snapshots bmr/tdee (the
+  // RPC args above) and a regeneration inherits whatever the profile says at
+  // that time. That snapshot is the provenance; nothing else records it.
 
   return newPlanId;
 }

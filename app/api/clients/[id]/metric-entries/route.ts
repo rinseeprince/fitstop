@@ -10,6 +10,7 @@ import {
 import { getCoachTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
+import { isMeasurementKey } from "@/lib/measurements/keys";
 
 export async function GET(
   request: NextRequest,
@@ -80,11 +81,16 @@ export async function POST(
       coachId: auth.coachId,
     });
 
+    // A physique key landed in the measurement log, a wellness key on the
+    // entries table — the audit names the store the row is in.
+    const isMeasurement = isMeasurementKey(entry.metricKey);
     void recordAuditEvent({
       actorId: auth.coachId,
       actorRole: "trainer",
-      action: AUDIT_ACTIONS.METRIC_ENTRY_UPSERT,
-      targetTable: "client_metric_entries",
+      action: isMeasurement
+        ? AUDIT_ACTIONS.MEASUREMENT_CREATE
+        : AUDIT_ACTIONS.METRIC_ENTRY_UPSERT,
+      targetTable: isMeasurement ? "client_measurements" : "client_metric_entries",
       targetId: entry.id,
       clientId,
       // metric + date only — measurement values are health data and stay out

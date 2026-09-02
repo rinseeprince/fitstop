@@ -9,11 +9,25 @@ import { computeEnergyPair } from "./client-energy-calc";
 
 const NOW = new Date("2026-08-12T12:00:00Z");
 
+type CurrentReadingEmbed = { metric_key: string; value: number };
+
+/** The `client_current_measurements` embed the read carries: the client's
+ *  newest weight and body fat, one row per metric — there is no column. */
+function readings(weight: number | null, bodyFat: number | null = null): CurrentReadingEmbed[] {
+  const rows: CurrentReadingEmbed[] = [];
+  if (weight != null) rows.push({ metric_key: "weight", value: weight });
+  if (bodyFat != null) rows.push({ metric_key: "bodyFat", value: bodyFat });
+  return rows;
+}
+
+function embedded(rows: CurrentReadingEmbed[], metricKey: "weight" | "bodyFat"): number | null {
+  return rows.find((row) => row.metric_key === metricKey)?.value ?? null;
+}
+
 /** A complete client on the Mifflin path, sedentary, no overrides. */
 function clientRow(overrides: Record<string, unknown> = {}) {
   return {
-    current_weight: 80,
-    current_body_fat_percentage: null,
+    client_current_measurements: readings(80),
     height: 180,
     gender: "male",
     date_of_birth: "1996-01-01",
@@ -30,10 +44,10 @@ function clientRow(overrides: Record<string, unknown> = {}) {
  *  a number the calculator owns. */
 function expected(row: ReturnType<typeof clientRow>) {
   const result = computeEnergyPair({
-    weightKg: row.current_weight,
+    weightKg: embedded(row.client_current_measurements, "weight"),
     heightCm: row.height,
     gender: row.gender,
-    bodyFatPercentage: row.current_body_fat_percentage,
+    bodyFatPercentage: embedded(row.client_current_measurements, "bodyFat"),
     dateOfBirth: row.date_of_birth,
     activityLevel: row.work_activity_level,
     now: NOW,
@@ -42,6 +56,12 @@ function expected(row: ReturnType<typeof clientRow>) {
   return result;
 }
 
+let readQuery: {
+  select: ReturnType<typeof vi.fn>;
+  eq: ReturnType<typeof vi.fn>;
+  maybeSingle: ReturnType<typeof vi.fn>;
+};
+
 let updateQuery: {
   update: ReturnType<typeof vi.fn>;
   eq: ReturnType<typeof vi.fn>;
@@ -49,13 +69,13 @@ let updateQuery: {
   maybeSingle: ReturnType<typeof vi.fn>;
 };
 
-/** Table-routed stubbing, the body-metrics-service.test.ts idiom: the read and
- *  the write are distinct objects so each can be asserted independently. */
+/** Call-order stubbing: the read and the write are distinct objects so each
+ *  can be asserted independently. */
 function wire(
   row: Record<string, unknown> | null,
   opts: { readError?: unknown; writeError?: unknown; writtenRow?: unknown } = {}
 ) {
-  const readQuery = {
+  readQuery = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     maybeSingle: vi
@@ -125,10 +145,10 @@ describe("recalculateClientEnergy", () => {
     });
 
     it.each([
-      ["body fat present (Katch)", { current_body_fat_percentage: 22 }],
-      ["body fat absent (Mifflin)", { current_body_fat_percentage: null }],
-    ])("recomputes both halves on a weight change — %s", async (_label, bf) => {
-      const row = clientRow({ ...bf, current_weight: 91 });
+      ["body fat present (Katch)", readings(91, 22)],
+      ["body fat absent (Mifflin)", readings(91)],
+    ])("recomputes both halves on a weight change — %s", async (_label, embed) => {
+      const row = clientRow({ client_current_measurements: embed });
       wire(row);
 
       const result = await recalculateClientEnergy("client-1", { now: NOW });
@@ -138,6 +158,51 @@ describe("recalculateClientEnergy", () => {
       expect(result.tdee).toBe(e.tdee);
       expect(result.bmrDisposition).toBe("computed");
       expect(result.tdeeDisposition).toBe("computed");
+    });
+  });
+
+  describe("the readings are the embedded current measurements", () => {
+    it("selects the client_current_measurements embed beside the profile facts", async () => {
+      wire(clientRow());
+
+      await recalculateClientEnergy("client-1", { now: NOW });
+
+      expect(readQuery.select).toHaveBeenCalledWith(
+        expect.stringContaining("client_current_measurements(metric_key, value)")
+      );
+    });
+
+    it("reads weight and body fat from the embed rows by metric key, never from a column", async () => {
+      // A stale column beside the live embed: the embed wins, and each half
+      // lands on its own input — weight on the mass, body fat on the formula
+      // switch — rather than the two being read off one another.
+      const row = clientRow({
+        current_weight: 999,
+        current_body_fat_percentage: 5,
+        client_current_measurements: readings(91, 22),
+      });
+      wire(row);
+
+      const result = await recalculateClientEnergy("client-1", { now: NOW });
+      const e = expected(row);
+
+      expect(result.status).toBe("written");
+      expect(result.bmr).toBe(e.bmr);
+      expect(result.tdee).toBe(e.tdee);
+    });
+
+    it.each([
+      ["an empty embed", []],
+      ["a null embed", null],
+    ])("treats %s as no weight — nothing is written and nothing nulled", async (_label, embed) => {
+      wire(clientRow({ client_current_measurements: embed }));
+
+      const result = await recalculateClientEnergy("client-1", { now: NOW });
+
+      expect(result.status).toBe("skipped_insufficient_data");
+      expect(result.missing).toEqual(["weight"]);
+      expect(result.bmr).toBe(1700);
+      expect(supabaseAdmin.from).toHaveBeenCalledTimes(1);
     });
   });
 

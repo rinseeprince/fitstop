@@ -6,12 +6,16 @@ import type {
   CheckInReview,
 } from "@/types/check-in";
 import { mapCheckInRow } from "@/lib/mappers";
+import type { CheckInRow } from "@/lib/database-helpers";
+import type { MeasurementValues } from "@/lib/measurements/keys";
 import {
   addDays,
   formatDateISO,
+  getTodayDateStringInTimezone,
   getTodayInTimezone,
   resolveCheckInWindow,
 } from "@/lib/date-helpers";
+import { appendMeasurements, getMeasurementsForCheckIns } from "./measurements-service";
 import { checkInWeekday } from "@/lib/check-in-week";
 import { UNREVIEWED_CHECK_IN_STATUSES } from "@/lib/constants";
 import { getFrequencyInDays, resolveCheckInDue } from "@/lib/check-in-schedule";
@@ -35,6 +39,31 @@ export {
   getCheckInWithDetails,
   mapExerciseHighlight,
 } from "./check-in-details-service";
+
+/** The readings a check-in form carries, as measurement-log values. */
+function measurementValuesFromForm(formData: CheckInFormData): MeasurementValues {
+  const values: MeasurementValues = {};
+  const take = (key: keyof MeasurementValues, value: number | undefined) => {
+    if (typeof value === "number") values[key] = value;
+  };
+  take("weight", formData.weight);
+  take("bodyFat", formData.bodyFatPercentage);
+  take("waist", formData.waist);
+  take("hips", formData.hips);
+  take("chest", formData.chest);
+  take("arms", formData.arms);
+  take("thighs", formData.thighs);
+  return values;
+}
+
+/**
+ * Fold each check-in's readings — the latest live log rows carrying its stamp
+ * — into the mapped objects. One query for the whole list, whatever its size.
+ */
+export async function foldCheckInMeasurements(rows: CheckInRow[]): Promise<CheckIn[]> {
+  const stamped = await getMeasurementsForCheckIns(rows.map((row) => row.id));
+  return rows.map((row) => mapCheckInRow(row, stamped.get(row.id)));
+}
 
 // Submit a check-in.
 //
@@ -119,16 +148,8 @@ export const submitCheckIn = async (
       stress,
       soreness,
       notes: formData.notes,
-      // Body metrics
-      // Canonical kg/cm (migration 141). Callers convert at the API boundary —
-      // this service never sees a display unit.
-      weight: formData.weight,
-      body_fat_percentage: formData.bodyFatPercentage,
-      waist: formData.waist,
-      hips: formData.hips,
-      chest: formData.chest,
-      arms: formData.arms,
-      thighs: formData.thighs,
+      // Body measurements are not columns on this row: they are rows in the
+      // measurement log stamped with this check-in's id, written just below.
       // Photos
       photo_front: formData.photoFront,
       photo_side: formData.photoSide,
@@ -164,6 +185,30 @@ export const submitCheckIn = async (
   }
 
   const checkInId = data.id;
+
+  // The check-in's readings — weight, body fat and the five girths, canonical
+  // kg/cm — as rows in the measurement log stamped with its id
+  // (docs/MEASUREMENT-LOG-PLAN.md §2 rule 5), dated the client's own day and
+  // measured now. The report, the band, the client's detail and the AI prompt
+  // all read them back through that stamp.
+  //
+  // A SECOND statement after the INSERT, so it carries the same seam as the
+  // answers below (CONVENTIONS §2 item 13): if it throws, the check-in stands
+  // without its readings, the POST 500s, and the retry meets migration 156's
+  // period-unique constraint. Not swallowed — losing the numbers a client typed
+  // is worse than a visible failure — and placed first, so nothing else runs on
+  // a check-in whose readings did not land.
+  const readings = measurementValuesFromForm(formData);
+  if (Object.keys(readings).length > 0) {
+    await appendMeasurements({
+      clientId,
+      source: "check_in",
+      sourceId: checkInId,
+      recordedOn: getTodayDateStringInTimezone(client?.timezone ?? "UTC"),
+      measuredAt: new Date().toISOString(),
+      values: readings,
+    });
+  }
 
   // The client's answers to the coach's custom questions (#4).
   //
@@ -241,7 +286,8 @@ export const getCheckInById = async (
     return null;
   }
 
-  return mapCheckInRow(data);
+  const [checkIn] = await foldCheckInMeasurements([data]);
+  return checkIn;
 };
 
 // Get all check-ins for a client
@@ -328,32 +374,13 @@ export const getClientCheckIns = async (
     nextCursor = hasMore && last?.created_at ? { createdAt: last.created_at, id: last.id } : null;
   }
 
-  const checkIns = rows.map(mapCheckInRow);
+  const checkIns = await foldCheckInMeasurements(rows);
 
   return {
     checkIns,
     total: count || 0,
     nextCursor,
   };
-};
-
-// Get the first (oldest) check-in for a client
-export const getFirstCheckIn = async (
-  clientId: string
-): Promise<CheckIn | null> => {
-  const { data, error } = await supabaseAdmin
-    .from("check_ins")
-    .select("*")
-    .eq("client_id", clientId)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
-
-  if (error || !data) {
-    return null;
-  }
-
-  return mapCheckInRow(data);
 };
 
 // Update check-in with the AI review (v3 format). summary and clientMessage are
@@ -465,5 +492,6 @@ export const getPreviousCheckIn = async (
     return null;
   }
 
-  return mapCheckInRow(data);
+  const [previous] = await foldCheckInMeasurements([data]);
+  return previous;
 };

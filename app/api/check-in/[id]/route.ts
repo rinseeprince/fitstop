@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
-import { mapCheckInRow } from "@/lib/mappers";
 import type { CheckInRow } from "@/lib/database-helpers";
 import {
   deriveSessionCompletionsForCheckIn,
+  foldCheckInMeasurements,
   getCheckInAnswers,
   getCheckInExerciseHighlights,
   getCheckInPeriodAdherence,
@@ -62,8 +62,9 @@ export async function GET(
 
     const checkInData = data as CheckInWithClient;
 
-    // Use mapper function to transform database row to application type
-    const checkIn = mapCheckInRow(checkInData);
+    // The domain object, with the check-in's readings folded in from the
+    // measurement log rows carrying its stamp.
+    const [checkIn] = await foldCheckInMeasurements([checkInData]);
 
     // Fetch related data. Session completions are DERIVED from the spine
     // (training_events + session_logs) for the check-in's stored period — there

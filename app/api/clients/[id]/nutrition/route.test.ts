@@ -77,10 +77,6 @@ vi.mock('@/services/nutrition-plan-service', () => ({
   getNextFutureNutritionPlan: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/services/body-metrics-service', () => ({
-  getLatestBodyMetrics: vi.fn(),
-}))
-
 vi.mock('@/services/client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))
@@ -98,7 +94,6 @@ import {
   getNextFutureNutritionPlan,
 } from '@/services/nutrition-plan-service'
 import { deleteFutureNutritionEventsForClient } from '@/services/nutrition-event-service'
-import { getLatestBodyMetrics } from '@/services/body-metrics-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { getClientTodayString } from '@/services/today-service'
 import { getAuthenticatedCoachId } from '@/lib/auth-helpers'
@@ -132,7 +127,7 @@ function makeRequest(body: Record<string, unknown>): NextRequest {
   })
 }
 
-describe('Nutrition Route POST - read-switch behavior', () => {
+describe('Nutrition Route POST - the calculator reads the client record', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getClientById).mockResolvedValue(mockClient as never)
@@ -150,17 +145,11 @@ describe('Nutrition Route POST - read-switch behavior', () => {
     } as never)
   })
 
-  it('takes weight from body_metrics and the energy pair from the profile', async () => {
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
-      id: 'bm-1',
-      clientId: 'client-1',
-      weight: 175,
-      bmr: 1750,
-      tdee: 2200,
-      source: 'check_in',
-      recordedAt: '2024-01-15T00:00:00Z',
-      createdAt: '2024-01-15T00:00:00Z',
-    })
+  it('takes the weight from client.currentWeight (the newest log reading) and the energy pair from the profile', async () => {
+    // `Client.currentWeight` is filled from `client_current_measurements` in
+    // the same round trip as the row (getClientById); there is no second
+    // weight store for the calculator to prefer.
+    vi.mocked(getClientById).mockResolvedValue({ ...mockClient, currentWeight: 175 } as never)
     vi.mocked(getCurrentGoals).mockResolvedValue({
       id: 'goal-1',
       clientId: 'client-1',
@@ -174,68 +163,32 @@ describe('Nutrition Route POST - read-switch behavior', () => {
     const request = makeRequest(mockBody)
     await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
 
-    // Should use body_metrics weight (175) not client weight (180). Stored
-    // values are kilograms (migration 141), so it must arrive UNCONVERTED —
-    // asserting the number itself catches a reintroduced conversion, which
-    // asserting "a converter was called" could not.
+    // The client record's currentWeight (175), which is the newest reading in
+    // the measurement log. Stored values are kilograms (migration 141), so it
+    // must arrive UNCONVERTED — asserting the number itself catches a
+    // reintroduced conversion, which asserting "a converter was called" could
+    // not.
     expect(generateNutritionPlan).toHaveBeenCalledWith(
       expect.objectContaining({ currentWeightKg: 175 })
     )
-    // Energy runs the OTHER WAY: the profile (1700) beats the body_metrics
-    // snapshot (1750). Since Session 4B one helper owns clients.bmr/tdee, and
-    // the body_metrics row a plan save leaves behind carries the PLAN's
-    // numbers — so preferring the event here would build each plan from the
-    // previous plan's snapshot rather than the client's current metabolism.
+    // The energy pair is the profile's (1700): since Session 4B one helper
+    // owns clients.bmr/tdee, and it recomputes when a newest reading lands.
     expect(generateNutritionPlan).toHaveBeenCalledWith(
       expect.objectContaining({ bmr: 1700 })
     )
-    // Should use goals weight (165) not client goalWeight (170)
     const createCall = vi.mocked(createNutritionPlan).mock.calls[0][0]
     expect(createCall.bmr).toBe(1700)
+    expect(createCall.baseWeightKg).toBe(175)
   })
 
-  it('falls back to client fields when body_metrics returns null', async () => {
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue(null)
-    vi.mocked(getCurrentGoals).mockResolvedValue({
-      id: 'goal-1',
-      clientId: 'client-1',
-      goalWeight: 165,
-      setBy: 'coach',
-      effectiveFrom: '2024-01-01T00:00:00Z',
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-    })
-
-    const request = makeRequest(mockBody)
-    await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
-
-    // Should fall back to client.currentWeight (180), unconverted.
-    expect(generateNutritionPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ currentWeightKg: 180 })
-    )
-    // Should fall back to client.bmr (1700)
-    expect(generateNutritionPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ bmr: 1700 })
-    )
-  })
-
-  it('falls back to client fields when getCurrentGoals returns null', async () => {
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
-      id: 'bm-1',
-      clientId: 'client-1',
-      weight: 175,
-      bmr: 1750,
-      tdee: 2200,
-      source: 'check_in',
-      recordedAt: '2024-01-15T00:00:00Z',
-      createdAt: '2024-01-15T00:00:00Z',
-    })
+  it('falls back to the client goal fields when getCurrentGoals returns null', async () => {
+    vi.mocked(getClientById).mockResolvedValue({ ...mockClient, currentWeight: 175 } as never)
     vi.mocked(getCurrentGoals).mockResolvedValue(null)
 
     const request = makeRequest(mockBody)
     await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
 
-    // Should use body_metrics weight (175); goalWeight falls back to
+    // The weight is still the record's (175); goalWeight falls back to
     // client.goalWeight (170). Both are already kilograms.
     expect(generateNutritionPlan).toHaveBeenCalledWith(
       expect.objectContaining({ currentWeightKg: 175, goalWeightKg: 170 })
@@ -262,16 +215,6 @@ describe('Nutrition Route POST - goal resolution', () => {
   })
 
   it('uses the client goal weight', async () => {
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue({
-      id: 'bm-1',
-      clientId: 'client-1',
-      weight: 175,
-      bmr: 1750,
-      tdee: 2200,
-      source: 'check_in',
-      recordedAt: '2024-01-15T00:00:00Z',
-      createdAt: '2024-01-15T00:00:00Z',
-    })
     vi.mocked(getCurrentGoals).mockResolvedValue({
       id: 'goal-1',
       clientId: 'client-1',
@@ -310,7 +253,6 @@ describe('Nutrition Route POST - effectiveFrom judged against client-local today
       requiredDailyDeficit: 500,
       warnings: [],
     } as never)
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue(null)
     vi.mocked(getCurrentGoals).mockResolvedValue(null)
     // Far-future dates so these tests can ONLY pass/fail via the mocked
     // client-local comparison — a real-clock UTC comparison would never
@@ -455,7 +397,6 @@ describe('Nutrition Route GET — the three-role read (migration 144)', () => {
     vi.mocked(getClientById).mockResolvedValue(mockClient as never)
     vi.mocked(getClientTodayString).mockResolvedValue('2026-08-11')
     vi.mocked(getCurrentGoals).mockResolvedValue(null)
-    vi.mocked(getLatestBodyMetrics).mockResolvedValue(null)
     vi.mocked(getNutritionPlanForDate).mockResolvedValue(null)
     vi.mocked(getOpenNutritionPlan).mockResolvedValue(null)
     vi.mocked(getNextFutureNutritionPlan).mockResolvedValue(null)

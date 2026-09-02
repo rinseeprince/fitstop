@@ -161,8 +161,8 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   const sessionLogs: Record<string, unknown>[] = [];
   const exerciseLogs: Record<string, unknown>[] = [];
   const setLogs: Record<string, unknown>[] = [];
-  const bodyMetrics: Record<string, unknown>[] = [];
-  const metricEntries: Record<string, unknown>[] = [];
+  /** The measurement log: every body reading, stamped or coach-logged. */
+  const measurements: Record<string, unknown>[] = [];
   const checkIns: Record<string, unknown>[] = [];
   /** eventId -> the row object, so the back-link pass can re-emit it in full. */
   const eventRowById = new Map<string, Record<string, unknown>>();
@@ -221,8 +221,9 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
     }
     const isPersona = ctx.personaClientIndices.has(clientIdx);
 
-    // Weight drifts toward goal over the tenure; the latest value becomes the
-    // clients cache, which must equal the latest-recorded_at body_metrics row.
+    // Weight drifts toward goal over the tenure. The latest reading in the
+    // measurement log is what every "now" reader derives from; the profile
+    // pair below is computed from the same number so the two agree.
     const weightAt = (dayIndex: number): number =>
       round(startWeight + (goalWeight - startWeight) * (dayIndex / Math.max(tenureDays, 1)) * idRng.float(0.55, 0.95), 1);
     const finalWeight = weightAt(tenureDays - 1);
@@ -230,9 +231,9 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
 
     // The profile pair, through the app's own calculator — so a seeded fixture
     // can never contradict what recalculateClientEnergy would produce for the
-    // same row. Derived from the CURRENT weight/body fat (what the clients
-    // cache holds), with the anchor date as the clock so `--seed` stays
-    // byte-deterministic.
+    // same row. Derived from the CURRENT weight/body fat (the newest reading
+    // in the measurement log), with the anchor date as the clock so `--seed`
+    // stays byte-deterministic.
     const energy = computeEnergyPair({
       weightKg: finalWeight,
       heightCm,
@@ -271,10 +272,9 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       work_activity_level: workActivityLevel,
       include_activity_burn: idRng.bool(0.7),
       surplus_as_carbs: idRng.bool(0.4),
-      starting_weight: startWeight,
-      starting_body_fat_percentage: startBf,
-      current_weight: finalWeight,
-      current_body_fat_percentage: finalBf,
+      // No weight columns: "now" and "at the start" are derived from the
+      // measurement log (the intake row on the start date below is the
+      // baseline; the last fortnightly coach entry is "now").
       goal_weight: goalWeight,
       goal_body_fat_percentage: round(Math.max(8, startBf - 6), 1),
       bmr,
@@ -794,29 +794,48 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
         }
       }
 
-      // --- body metrics roughly fortnightly, immutable rows
+      // --- the start reading on day 0 (an intake row: the baseline the
+      //     as-of-start-date rule derives), then a coach-logged weight roughly
+      //     fortnightly. Every reading is a row in the measurement log —
+      //     canonical kg, `value > 0` strictly, metric_key from the CHECK list.
+      if (dayIdx === 0) {
+        const recordedAt = timestampAt(iso, 7, logRng);
+        measurements.push(
+          {
+            id: seedUuid("measure", coachIdx, c, dayIdx, "weight", "intake"),
+            client_id: clientId,
+            metric_key: "weight",
+            value: startWeight,
+            recorded_on: iso,
+            recorded_at: recordedAt,
+            source: "intake",
+            created_at: recordedAt,
+          },
+          {
+            id: seedUuid("measure", coachIdx, c, dayIdx, "bodyFat", "intake"),
+            client_id: clientId,
+            metric_key: "bodyFat",
+            value: startBf,
+            recorded_on: iso,
+            recorded_at: recordedAt,
+            source: "intake",
+            created_at: recordedAt,
+          }
+        );
+      }
       if (dayIdx % 14 === 0 && logs) {
         const w = weightAt(dayIdx);
-        bodyMetrics.push({
-          id: seedUuid("bmetric", coachIdx, c, dayIdx),
+        const recordedAt = timestampAt(iso, 7, logRng);
+        measurements.push({
+          id: seedUuid("measure", coachIdx, c, dayIdx, "weight", "coach"),
           client_id: clientId,
-          weight: w,
-              body_fat_percentage: round(Math.max(8, startBf - (startWeight - w) * 0.55), 1),
-          bmr,
-          tdee,
-          source: "check_in", // NOT NULL, no default, no CHECK
-          recorded_at: timestampAt(iso, 7, logRng),
-          created_at: timestampAt(iso, 7, logRng),
-        });
-        metricEntries.push({
-          id: seedUuid("mentry", coachIdx, c, dayIdx),
-          client_id: clientId,
-          metric_key: "weight", // CHECK list; note 'bodyFat' is the one camelCase key
-          value: w, // CHECK value > 0 strictly
-          entry_date: iso,
+          metric_key: "weight",
+          value: w,
+          recorded_on: iso,
+          recorded_at: recordedAt,
+          source: "coach_entry",
           created_by: coachId,
-          created_at: timestampAt(iso, 7, logRng),
-          updated_at: timestampAt(iso, 7, logRng),
+          created_at: recordedAt,
         });
       }
 
@@ -828,8 +847,35 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       // for every client regardless of backdating.
       if (dayOfWeekName(iso) === checkInDay && dayIdx > 6 && logRng.bool(archetype.checkInRate)) {
         const periodStart = addDays(iso, -6);
+        const checkInId = seedUuid("checkin", coachIdx, c, dayIdx);
+        const submittedAt = timestampAt(iso, checkInHour(logRng), logRng);
+        // What the check-in reported: rows in the measurement log stamped with
+        // its id (the check-in row itself owns no measurement columns).
+        const reported: Record<string, number> = {
+          weight: weightAt(dayIdx),
+          bodyFat: round(Math.max(8, startBf - (startWeight - weightAt(dayIdx)) * 0.55), 1),
+          waist: round(logRng.gauss(88, 9, 62, 120), 1),
+          hips: round(logRng.gauss(98, 9, 70, 130), 1),
+          chest: round(logRng.gauss(100, 9, 75, 132), 1),
+          arms: round(logRng.gauss(35, 4, 24, 50), 1),
+          thighs: round(logRng.gauss(58, 6, 42, 78), 1),
+        };
+        for (const [metricKey, value] of Object.entries(reported)) {
+          measurements.push({
+            id: seedUuid("measure", coachIdx, c, dayIdx, metricKey, "checkin"),
+            client_id: clientId,
+            metric_key: metricKey,
+            value,
+            recorded_on: iso,
+            recorded_at: submittedAt,
+            measured_at: submittedAt,
+            source: "check_in",
+            source_id: checkInId,
+            created_at: submittedAt,
+          });
+        }
         checkIns.push({
-          id: seedUuid("checkin", coachIdx, c, dayIdx),
+          id: checkInId,
           client_id: clientId,
           status: logRng.weighted([["reviewed", 6], ["ai_processed", 2], ["pending", 2]] as const),
           mood: logRng.int(2, 5), // CHECK 1..5 — every sibling scale is 1..10
@@ -837,13 +883,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
           sleep: logRng.int(3, 9),
           stress: logRng.int(2, 8),
           soreness: logRng.int(1, 8),
-          weight: weightAt(dayIdx),
-              body_fat_percentage: round(Math.max(8, startBf - (startWeight - weightAt(dayIdx)) * 0.55), 1),
-          waist: round(logRng.gauss(88, 9, 62, 120), 1),
-          hips: round(logRng.gauss(98, 9, 70, 130), 1),
-          chest: round(logRng.gauss(100, 9, 75, 132), 1),
-          arms: round(logRng.gauss(35, 4, 24, 50), 1),
-          thighs: round(logRng.gauss(58, 6, 42, 78), 1),
           notes: checkInResponse(logRng),
           prs: logRng.bool(0.4) ? checkInResponse(logRng) : null,
           challenges: checkInResponse(logRng),
@@ -861,8 +900,8 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
           adherence_percentage: logRng.int(35, 100), // CHECK 0..100
           period_start: periodStart,
           period_end: iso,
-          created_at: timestampAt(iso, checkInHour(logRng), logRng),
-          updated_at: timestampAt(iso, checkInHour(logRng), logRng),
+          created_at: submittedAt,
+          updated_at: submittedAt,
         });
         checkInsWritten++;
       }
@@ -906,8 +945,10 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   );
   push("exercise_logs", exerciseLogs);
   push("set_logs", setLogs);
-  push("body_metrics", bodyMetrics);
-  push("client_metric_entries", metricEntries);
+  // The measurement log is INSERT-only for the app role (migration 158), so
+  // these rows are never deleted by teardown: they go with their client's row
+  // through ON DELETE CASCADE.
+  push("client_measurements", measurements);
   push("check_ins", checkIns);
 
   return steps;

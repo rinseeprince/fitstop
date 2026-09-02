@@ -99,6 +99,78 @@ describe("deriveHeroStats", () => {
   });
 });
 
+// A physique hero is anchored on the JOURNEY (docs/MEASUREMENT-LOG-PLAN.md D4):
+// "current" is the newest reading of any date, and every since-start figure
+// reads the baseline — the reading as of the start date — never the first
+// point. Wellness passes no journey and keeps the first-point anchor above.
+describe("deriveHeroStats — a physique journey", () => {
+  const today = "2026-08-28";
+  const baseline = { value: 92, date: "2026-02-20", source: "intake" as const };
+
+  it("measures total change from the BASELINE, not the first journey point", () => {
+    const points = [pt("2026-07-06", 90), pt("2026-07-27", 87)];
+    const stats = deriveHeroStats(points, "body", today, {
+      current: points[1],
+      baseline,
+      startDate: "2026-03-01",
+    });
+
+    expect(stats!.totalChange).toEqual({ delta: -5, sinceDate: "2026-03-01", baseline });
+    expect(stats!.startsOn).toBeNull();
+    // The rate and the entry count are the journey's own: two readings, three
+    // weeks apart — the baseline is not a point of it.
+    expect(stats!.avgRate).toEqual({ perWeek: -1, weeks: 3 });
+    expect(stats!.entries).toEqual({ count: 2, sinceDate: "2026-07-06" });
+  });
+
+  it("reads `Starts …` and no total change while the start date is ahead", () => {
+    const points = [pt("2026-07-06", 90), pt("2026-07-27", 87)];
+    const stats = deriveHeroStats(points, "body", today, {
+      current: points[1],
+      baseline,
+      startDate: "2026-09-15",
+    });
+
+    expect(stats!.startsOn).toBe("2026-09-15");
+    expect(stats!.totalChange).toBeNull();
+    // "Current" never waits for the start.
+    expect(stats!.current).toEqual({ value: 87, date: "2026-07-27", daysAgo: 32 });
+  });
+
+  it("counts the start date itself as started", () => {
+    const points = [pt(today, 91)];
+    const stats = deriveHeroStats(points, "body", today, {
+      current: points[0],
+      baseline,
+      startDate: today,
+    });
+
+    expect(stats!.startsOn).toBeNull();
+    expect(stats!.totalChange).toEqual({ delta: -1, sinceDate: today, baseline });
+  });
+
+  it("anchors 'current' on the journey's newest reading even when the journey has no points", () => {
+    // The only reading predates the start: no points, yet the client has a "now".
+    const stats = deriveHeroStats([], "body", today, {
+      current: pt("2026-02-20", 92),
+      baseline: null,
+      startDate: "2026-03-01",
+    });
+
+    expect(stats).not.toBeNull();
+    expect(stats!.current).toEqual({ value: 92, date: "2026-02-20", daysAgo: 189 });
+    expect(stats!.totalChange).toBeNull();
+    expect(stats!.avgRate).toBeNull();
+    expect(stats!.entries).toEqual({ count: 0, sinceDate: "2026-02-20" });
+  });
+
+  it("returns null only when there is no current reading at all", () => {
+    expect(
+      deriveHeroStats([], "body", today, { current: null, baseline, startDate: "2026-03-01" })
+    ).toBeNull();
+  });
+});
+
 describe("deriveFrequencyLabel", () => {
   it("returns null with fewer than 2 distinct dates", () => {
     expect(deriveFrequencyLabel([])).toBeNull();

@@ -1,12 +1,24 @@
 import type { ActivityLevel, CheckIn, Client, Coach, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
+import type { MeasurementValues } from "@/lib/measurements/keys";
 import { toUnitSystem } from "@/utils/unit-conversions";
-import type { CheckInRow, ClientRow, CoachRow } from "./database-helpers";
+import type {
+  CheckInRow,
+  ClientMeasurementEmbed,
+  ClientRowWithMeasurements,
+  CoachRow,
+} from "./database-helpers";
 
 /**
- * Map a database check-in row to a CheckIn type
+ * Map a database check-in row to a CheckIn type.
+ *
+ * A check-in owns no measurement columns: its readings are rows in the
+ * measurement log stamped with its id, folded in by the caller
+ * (`getMeasurementsForCheckIns`). The seven fields keep their PLACE in the
+ * object so the JSON a route emits is byte-for-byte what it was — a mapper that
+ * assigned them afterwards would move every key. Canonical kg/cm.
  */
-export function mapCheckInRow(row: CheckInRow): CheckIn {
+export function mapCheckInRow(row: CheckInRow, measurements: MeasurementValues = {}): CheckIn {
   return {
     id: row.id,
     clientId: row.client_id,
@@ -17,17 +29,13 @@ export function mapCheckInRow(row: CheckInRow): CheckIn {
     stress: row.stress ?? undefined,
     soreness: row.soreness ?? undefined,
     notes: row.notes ?? undefined,
-    weight: row.weight ?? undefined,
-    // Storage is canonical kilograms/centimetres since migration 141, so these
-    // are constants rather than columns. The fields survive only because ~50
-    // display sites still read them for a label; Phase 3 deletes the fields and
-    // those labels together. Nothing may branch on them.
-    bodyFatPercentage: row.body_fat_percentage ?? undefined,
-    waist: row.waist ?? undefined,
-    hips: row.hips ?? undefined,
-    chest: row.chest ?? undefined,
-    arms: row.arms ?? undefined,
-    thighs: row.thighs ?? undefined,
+    weight: measurements.weight,
+    bodyFatPercentage: measurements.bodyFat,
+    waist: measurements.waist,
+    hips: measurements.hips,
+    chest: measurements.chest,
+    arms: measurements.arms,
+    thighs: measurements.thighs,
     photoFront: row.photo_front ?? undefined,
     photoSide: row.photo_side ?? undefined,
     photoBack: row.photo_back ?? undefined,
@@ -53,10 +61,25 @@ export function mapCheckInRow(row: CheckInRow): CheckIn {
   };
 }
 
+/** The value of one metric in an embedded measurement view, if the client has one. */
+function embeddedReading(
+  rows: ClientMeasurementEmbed[] | null | undefined,
+  metricKey: "weight" | "bodyFat"
+): number | undefined {
+  const row = rows?.find((candidate) => candidate.metric_key === metricKey);
+  return row?.value == null ? undefined : Number(row.value);
+}
+
 /**
- * Map a database client row to a Client type
+ * Map a database client row to a Client type.
+ *
+ * The four reading fields come from the two measurement views embedded beside
+ * the row — `client_current_measurements` for "now" (the newest reading of any
+ * source) and `client_baseline_measurements` for "at the start" (the reading
+ * as of `start_date`). A row read without the embeds maps them undefined; the
+ * roster never reads them, and every single-client read carries the embeds.
  */
-export function mapClientRow(row: ClientRow): Client {
+export function mapClientRow(row: ClientRowWithMeasurements): Client {
   return {
     id: row.id,
     coachId: row.coach_id,
@@ -78,8 +101,8 @@ export function mapClientRow(row: ClientRow): Client {
     phone: row.phone ?? undefined,
     goalWeight: row.goal_weight ?? undefined,
     goalBodyFatPercentage: row.goal_body_fat_percentage ?? undefined,
-    currentWeight: row.current_weight ?? undefined,
-    currentBodyFatPercentage: row.current_body_fat_percentage ?? undefined,
+    currentWeight: embeddedReading(row.client_current_measurements, "weight"),
+    currentBodyFatPercentage: embeddedReading(row.client_current_measurements, "bodyFat"),
     bmr: row.bmr ?? undefined,
     tdee: row.tdee ?? undefined,
     workActivityLevel: (row.work_activity_level ?? undefined) as ActivityLevel | undefined,
@@ -106,8 +129,8 @@ export function mapClientRow(row: ClientRow): Client {
     unitPreference: toUnitSystem(row.unit_preference),
     includeActivityBurn: row.include_activity_burn ?? true,
     surplusAsCarbs: row.surplus_as_carbs ?? false,
-    startingWeight: row.starting_weight ?? undefined,
-    startingBodyFatPercentage: row.starting_body_fat_percentage ?? undefined,
+    startingWeight: embeddedReading(row.client_baseline_measurements, "weight"),
+    startingBodyFatPercentage: embeddedReading(row.client_baseline_measurements, "bodyFat"),
     bmrManualOverride: row.bmr_manual_override ?? undefined,
     tdeeManualOverride: row.tdee_manual_override ?? undefined,
     welcomeMessage: row.welcome_message ?? undefined,

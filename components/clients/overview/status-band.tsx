@@ -17,6 +17,7 @@ import type { Client } from "@/types/check-in";
 import { useUnits } from "@/contexts/units-context";
 import { TextSkeleton } from "@/components/text-skeleton";
 import { formatWeight } from "@/utils/unit-conversions";
+import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 
 /**
  * Where this client stands: the progression chart beside the four facts that
@@ -216,6 +217,11 @@ export function StatusBand({ client, goal, chart, onOpenMetrics, goalPending = f
   ].filter(Boolean);
 
   const remaining = goal.deadline ? deadlineRemaining(goal.deadline, client.timezone) : null;
+  // Every "since start" figure waits for the start date; the big numbers above
+  // do not (they are "now", the newest reading of any date).
+  const startsAhead =
+    client.startDate != null &&
+    client.startDate > getTodayDateStringInTimezone(client.timezone);
 
   return (
     <div
@@ -265,7 +271,11 @@ export function StatusBand({ client, goal, chart, onOpenMetrics, goalPending = f
       </div>
 
       <div className={cn("flex items-center gap-4 border-t px-5 py-3", DIVIDER)}>
-        {sinceStart.length > 0 && (
+        {startsAhead && client.startDate ? (
+          <span className="rounded-[4px] bg-[rgba(255,255,255,0.06)] px-2 py-0.5 text-[10.5px] text-[rgba(255,255,255,0.55)]">
+            Starts<InlineMono>{formatDateOnlyShort(client.startDate)}</InlineMono>
+          </span>
+        ) : sinceStart.length > 0 && (
           // "Since start:" is load-bearing, not decoration: this is a range
           // figure sitting among four that describe a destination, and the
           // prefix is what tells a reader which kind they are looking at.

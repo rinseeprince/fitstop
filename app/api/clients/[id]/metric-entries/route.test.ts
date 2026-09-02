@@ -272,19 +272,47 @@ describe("/api/clients/[id]/metric-entries", () => {
       });
     });
 
-    it("records an audit event with metric + date only (no measurement value)", async () => {
+    // The audit names the store the row landed in: a physique key is a row in
+    // the measurement log (migration 158), a wellness key stays on
+    // client_metric_entries.
+    it("audits a physique key as a measurement.create on client_measurements, metric + date only", async () => {
       await POST(createMockRequest("POST", validBody()), mockParams);
 
       expect(recordAuditEvent).toHaveBeenCalledTimes(1);
       const event = vi.mocked(recordAuditEvent).mock.calls[0][0];
-      expect(event.action).toBe("metric_entry.upsert");
-      expect(event.targetTable).toBe("client_metric_entries");
+      expect(event.action).toBe("measurement.create");
+      expect(event.targetTable).toBe("client_measurements");
       expect(event.targetId).toBe("entry-1");
       expect(event.clientId).toBe("client-1");
       expect(event.actorId).toBe("coach-1");
       // metric + date only — the measurement value is health data and stays out
       expect(event.metadata).toEqual({
         metricKey: "weight",
+        entryDate: "2026-07-24",
+      });
+      expect(event.metadata).not.toHaveProperty("value");
+    });
+
+    it("audits a wellness key as a metric_entry.upsert on client_metric_entries", async () => {
+      vi.mocked(upsertMetricEntry).mockResolvedValue({
+        ...mockEntry,
+        id: "entry-2",
+        metricKey: "mood",
+        value: 3,
+      });
+
+      await POST(
+        createMockRequest("POST", validBody({ metricKey: "mood", value: 3 })),
+        mockParams
+      );
+
+      expect(recordAuditEvent).toHaveBeenCalledTimes(1);
+      const event = vi.mocked(recordAuditEvent).mock.calls[0][0];
+      expect(event.action).toBe("metric_entry.upsert");
+      expect(event.targetTable).toBe("client_metric_entries");
+      expect(event.targetId).toBe("entry-2");
+      expect(event.metadata).toEqual({
+        metricKey: "mood",
         entryDate: "2026-07-24",
       });
       expect(event.metadata).not.toHaveProperty("value");

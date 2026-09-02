@@ -256,3 +256,46 @@ describe("StatusBand — footer", () => {
     expect(onOpenMetrics).toHaveBeenCalledTimes(1);
   });
 });
+
+// Every "since start" figure waits for the start date; the big numbers above
+// do not — they are "now", the newest reading of any date.
+describe("StatusBand — a start date still ahead", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T12:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("reads `Starts …` in place of the since-start delta", () => {
+    render(
+      <StatusBand
+        client={{ ...BASE, startDate: "2026-10-15", startingWeight: 90, currentWeight: 86 }}
+        {...PROPS}
+      />
+    );
+
+    expect(screen.getByText(/^Starts/)).toBeInTheDocument();
+    expect(screen.getByText("15 Oct")).toBeInTheDocument();
+    expect(screen.queryByText(/Since start:/)).not.toBeInTheDocument();
+  });
+
+  it("anchors 'ahead' on the CLIENT's day, not the device's", () => {
+    // 2026-08-28T12:00Z is already the 29th in Auckland: a start date of the
+    // 29th has arrived for this client, and the delta is due.
+    render(
+      <StatusBand
+        client={{
+          ...BASE,
+          timezone: "Pacific/Auckland",
+          startDate: "2026-08-29",
+          startingWeight: 90,
+          currentWeight: 86,
+        }}
+        {...PROPS}
+      />
+    );
+
+    expect(screen.getByText(/Since start:/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Starts/)).not.toBeInTheDocument();
+  });
+});

@@ -170,7 +170,79 @@ async function fetchCheckInItems(clientId: string, since: string): Promise<Activ
     .map((row) => ({ type: "check_in" as const, at: row.created_at }));
 }
 
+/**
+ * Coach-logged measurements since the coach's last visit: the seven physique
+ * metrics from the measurement log (`source = 'coach_entry'`, keyed on
+ * `recorded_at` — when the row was written) and the five wellness metrics
+ * from client_metric_entries. Both halves degrade to empty on a failed read.
+ */
 async function fetchMeasurementItems(
+  clientId: string,
+  since: string
+): Promise<ActivityItem[]> {
+  const [physique, wellness] = await Promise.all([
+    fetchLoggedMeasurementItems(clientId, since),
+    fetchWellnessEntryItems(clientId, since),
+  ]);
+  return [...physique, ...wellness];
+}
+
+async function fetchLoggedMeasurementItems(
+  clientId: string,
+  since: string
+): Promise<ActivityItem[]> {
+  const { data: newRows, error } = await supabaseAdmin
+    .from("client_measurements_live")
+    .select("metric_key, value, recorded_on, recorded_at")
+    .eq("client_id", clientId)
+    .eq("source", "coach_entry")
+    .gt("recorded_at", since)
+    .order("recorded_at", { ascending: false })
+    .limit(ACTIVITY_FEED_CAP);
+
+  if (error) {
+    console.error("Failed to read new measurements for the activity feed:", error);
+    return [];
+  }
+  const rows: MetricEntryFeedRow[] = (newRows ?? []).flatMap((row) =>
+    row.metric_key != null && row.value != null && row.recorded_on != null && row.recorded_at != null
+      ? [{ metric_key: row.metric_key, value: Number(row.value), entry_date: row.recorded_on, created_at: row.recorded_at }]
+      : []
+  );
+  if (rows.length === 0) return [];
+
+  // One bounded predecessor read per new row (≤20, one row each) rather than
+  // pulling the client's whole measurement history, which would silently
+  // truncate at PostgREST's row cap and yield an arbitrary "previous" value.
+  // The predecessor is the latest EARLIER day's value by rule 2, of any source.
+  const predecessorValues = new Map<string, number>();
+  await Promise.all(
+    rows.map(async (row) => {
+      const { data, error: prevError } = await supabaseAdmin
+        .from("client_measurements_live")
+        .select("value")
+        .eq("client_id", clientId)
+        .eq("metric_key", row.metric_key)
+        .lt("recorded_on", row.entry_date)
+        .order("recorded_on", { ascending: false })
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (prevError) {
+        console.error("Failed to read the previous measurement:", prevError);
+        return;
+      }
+      if (data?.value != null) {
+        predecessorValues.set(predecessorKey(row.metric_key, row.entry_date), Number(data.value));
+      }
+    })
+  );
+
+  return buildMeasurementItems(rows, predecessorValues);
+}
+
+async function fetchWellnessEntryItems(
   clientId: string,
   since: string
 ): Promise<ActivityItem[]> {
@@ -178,6 +250,7 @@ async function fetchMeasurementItems(
     .from("client_metric_entries")
     .select("metric_key, value, entry_date, created_at")
     .eq("client_id", clientId)
+    .in("metric_key", ["mood", "energy", "sleep", "stress", "soreness"])
     .gt("created_at", since)
     .order("created_at", { ascending: false })
     .limit(ACTIVITY_FEED_CAP);
