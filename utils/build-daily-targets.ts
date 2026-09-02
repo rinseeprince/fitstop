@@ -88,7 +88,7 @@ type PlanBaseline = {
  * (three booleans, three optional arrays) are exactly where a call lands a value
  * in the wrong slot with every test still green.
  */
-export type BuildDailyTargetsInput = {
+type BuildDailyTargetsInput = {
   plan: PlanBaseline;
   dailyTargetRows: StoredDailyTarget[] | null;
   includeActivityBurn: boolean;

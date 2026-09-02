@@ -15,7 +15,7 @@ import {
 import { parseWeightToKg, type UnitSystem } from "@/utils/unit-conversions";
 import { displayLoad } from "@/components/clients/training/program-builder/commit-input";
 
-export const UUID_RE =
+const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type SetRowValues = {
@@ -112,7 +112,7 @@ export type PrescribedRowsByIndex = readonly (
  * no prescription, so it can neither raise nor lower how much of the session was
  * completed.
  */
-export function scoreFormExercises(
+function scoreFormExercises(
   exercises: ExerciseFormValues[],
   prescribedRows: PrescribedRowsByIndex,
 ): ScoredExercise[] {
@@ -131,7 +131,7 @@ export function scoreFormExercises(
   });
 }
 
-export type LogOutcome = {
+type LogOutcome = {
   completedWorkingSets: number;
   prescribedWorkingSets: number;
   quality: SessionCompletionQuality;

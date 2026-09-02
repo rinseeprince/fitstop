@@ -11,7 +11,7 @@ type AdherenceResponse = { success: boolean; data: AdherenceSummary };
 export const ADHERENCE_WINDOW_DAYS = 14;
 
 /** The key builder. Never construct this URL at a call site. */
-export function clientAdherenceKey(clientId: string, days: number): string {
+function clientAdherenceKey(clientId: string, days: number): string {
   return `/api/clients/${clientId}/adherence?days=${days}`;
 }
 

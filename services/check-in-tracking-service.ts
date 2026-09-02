@@ -23,7 +23,6 @@ export {
   resolveCheckInDue,
   isClientOverdue,
   getDaysUntilOrPastDue,
-  getOverdueSeverity,
 } from "@/lib/check-in-schedule";
 import type {
   OverdueClient,

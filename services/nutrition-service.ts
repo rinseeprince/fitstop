@@ -20,7 +20,7 @@ export type NutritionPlan = {
   warnings: NutritionWarning[];
 };
 
-export type NutritionCalculationInput = {
+type NutritionCalculationInput = {
   currentWeightKg: number;
   goalWeightKg?: number;
   bmr: number;

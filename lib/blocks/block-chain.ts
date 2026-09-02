@@ -17,7 +17,7 @@ import type { BlockDateChange, ClientBlock } from "@/types/client-blocks";
 
 export const DAYS_PER_BLOCK_WEEK = 7;
 
-export interface BlockWindow {
+interface BlockWindow {
   startsOn: string;
   endsOn: string;
 }

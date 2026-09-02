@@ -9,7 +9,7 @@ import type { DayOfWeek } from "@/types/check-in";
  * pairs them, and because fetching them apart would cost the two history
  * summaries a second round trip for one column.
  */
-export type ClientWeekAnchor = {
+type ClientWeekAnchor = {
   weekday: DayOfWeek;
   startDate: string | null;
 };

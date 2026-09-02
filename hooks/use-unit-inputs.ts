@@ -54,7 +54,7 @@ type Commit = number | null;
 // Single-field: body weight (kg) and girths (cm)
 // ---------------------------------------------------------------------------
 
-export type CanonicalInputKind = "weight" | "length";
+type CanonicalInputKind = "weight" | "length";
 
 function toDisplayString(
   canonical: number | null | undefined,
@@ -80,7 +80,7 @@ function toCanonicalNumber(
     : parseLengthToCm(parsed, viewer);
 }
 
-export type CanonicalInput = {
+type CanonicalInput = {
   /** The string in the box, in the viewer's unit. */
   value: string;
   setValue: (next: string) => void;
@@ -213,7 +213,7 @@ const sameHeight = (a: HeightFields, b: HeightFields): boolean =>
 const isHeightBlank = (f: HeightFields): boolean =>
   !f.cm.trim() && !f.feet.trim() && !f.inches.trim();
 
-export type HeightInput = {
+type HeightInput = {
   /** "imperial" renders feet + inches; anything else renders one cm field. */
   system: UnitSystem;
   fields: HeightFields;

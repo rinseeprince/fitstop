@@ -23,7 +23,7 @@ import type {
 //     rewritten as that session. Logged days never move.
 // =============================================================================
 
-export type SessionPickContext =
+type SessionPickContext =
   | { kind: "rest-day"; date: string }
   | {
       kind: "prescribed-day";
@@ -34,7 +34,7 @@ export type SessionPickContext =
       logged: boolean;
     };
 
-export type SessionPickResolution =
+type SessionPickResolution =
   | { action: "move"; moves: ClientLayoutMove[]; openEventId: string }
   | { action: "swap"; moves: ClientLayoutMove[]; openEventId: string }
   | { action: "alt"; sessionId: string }

@@ -49,7 +49,7 @@ export type TrainingEventRow = {
 type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"]
 type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"]
 
-export type ClientData = {
+type ClientData = {
   client: ClientInfo
   logs: DailyLog[]
   habits: DailyHabit[]

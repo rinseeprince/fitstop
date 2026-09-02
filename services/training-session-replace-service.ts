@@ -8,7 +8,7 @@ import {
 import type { ExerciseInput } from "./training-session-service";
 import { assertSessionUnlogged } from "./training-event-occupancy";
 
-export type ReplaceSessionInput = {
+type ReplaceSessionInput = {
   name: string;
   focus?: string | null;
   estimatedDurationMinutes?: number | null;
@@ -17,7 +17,7 @@ export type ReplaceSessionInput = {
   exercises: ExerciseInput[];
 };
 
-export type ReplaceSessionResult = {
+type ReplaceSessionResult = {
   session: TrainingSession;
   surplusChanged: boolean;
   identityChanged: boolean;

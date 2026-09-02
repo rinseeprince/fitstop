@@ -8,7 +8,7 @@ import type { MeasurementSeries } from "@/types/coach-overview";
 type MeasurementSeriesResponse = { success: boolean; data: MeasurementSeries };
 
 /** The key builder. Never construct this URL at a call site. */
-export function measurementSeriesKey(clientId: string, from?: string | null): string {
+function measurementSeriesKey(clientId: string, from?: string | null): string {
   const base = `/api/clients/${clientId}/measurement-series`;
   return from ? `${base}?from=${from}` : base;
 }

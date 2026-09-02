@@ -49,7 +49,7 @@ import type { TrainingEvent, TrainingEventStatus } from '@/types/training'
 // Client Goals Builders
 // =============================================================================
 
-export interface MockClientGoalsRowOptions {
+interface MockClientGoalsRowOptions {
   id?: string
   clientId?: string
   goalWeight?: number | null
@@ -89,7 +89,7 @@ export function createMockClientGoalsRow(options: MockClientGoalsRowOptions = {}
 // Body Metrics Builders
 // =============================================================================
 
-export interface MockBodyMetricsRowOptions {
+interface MockBodyMetricsRowOptions {
   id?: string
   clientId?: string
   weight?: number | null
@@ -124,7 +124,7 @@ export function createMockBodyMetricsRow(options: MockBodyMetricsRowOptions = {}
 // Training Event Builders
 // =============================================================================
 
-export interface MockTrainingEventOptions {
+interface MockTrainingEventOptions {
   id?: string
   clientId?: string
   trainingPlanId?: string

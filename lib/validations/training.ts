@@ -99,14 +99,14 @@ const prescribedFieldsSchema = z
 // and video_url is rendered as a raw href in the client portal (L3). This is the
 // only videoUrl schema, so every write path (create/overwrite/inline/bulk) is
 // covered.
-export const videoUrlSchema = z
+const videoUrlSchema = z
   .string()
   .url()
   .max(500)
   .refine((u) => /^https?:\/\//i.test(u), { message: "Video URL must be http(s)" })
   .nullish();
 
-export const savedExerciseInputSchema = z.object({
+const savedExerciseInputSchema = z.object({
   name: z.string().min(1).max(200),
   exerciseId: z.string().uuid().nullish(),
   orderIndex: z.number().int().min(0),
@@ -336,7 +336,7 @@ const setPerformanceSchema = z.object({
   setType: setTypeSchema.optional(),
 });
 
-export const exercisePerformanceSchema = z
+const exercisePerformanceSchema = z
   .object({
     trainingExerciseId: z.string().uuid().optional(),
     exerciseId: z.string().uuid().optional(),
@@ -454,7 +454,7 @@ type UpcomingTrainingPlan = {
   sessions: TrainingPlan["sessions"];
 };
 
-export type GetPlanApiResponse = {
+type GetPlanApiResponse = {
   success: boolean;
   plan?: TrainingPlan | null;
   upcomingPlan?: UpcomingTrainingPlan | null;

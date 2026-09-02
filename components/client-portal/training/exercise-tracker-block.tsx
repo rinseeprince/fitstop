@@ -48,7 +48,7 @@ export type PrescribedExerciseView = {
 };
 
 // Small coach-demo video link, shown wherever a prescription is surfaced.
-export function PrescriptionVideoLink({ url }: { url?: string }) {
+function PrescriptionVideoLink({ url }: { url?: string }) {
   if (!url) return null;
   return (
     <a

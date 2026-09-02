@@ -11,7 +11,7 @@ export type Profile = {
 }
 
 // Database row type for profiles
-export type ProfileRow = {
+type ProfileRow = {
   id: string
   user_id: string
   role: UserRole

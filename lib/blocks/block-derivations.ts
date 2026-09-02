@@ -8,7 +8,7 @@ import type { BlockState, ClientBlock } from "@/types/client-blocks";
 // No rounding anywhere — display rounding belongs to the renderer (the
 // Session 1.2 energy-helper precedent).
 
-export interface BlockDates {
+interface BlockDates {
   startsOn: string;
   endsOn: string;
 }
@@ -65,7 +65,7 @@ export function decorateBlocks(
   }));
 }
 
-export interface BlockEndingFacts {
+interface BlockEndingFacts {
   name: string;
   /** The current block's last day. */
   endsOn: string;
@@ -107,7 +107,7 @@ export function deriveBlockEnding(
  * the readout matches the Weight column beside it by construction; a server
  * caller may feed canonical kg instead. Mixing systems here is a bug.
  */
-export interface BlockPaceInputs extends BlockDates {
+interface BlockPaceInputs extends BlockDates {
   /** The block's target weight; null = no target, no pace. */
   targetWeight: number | null;
   /** Latest weight at or before startsOn; null = no baseline, no pace. */

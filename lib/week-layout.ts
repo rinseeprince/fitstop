@@ -34,14 +34,14 @@ export type WeekLayoutEntry = {
   pendingFrom: string | null;
 };
 
-export type WeekLayoutDay = {
+type WeekLayoutDay = {
   date: string; // YYYY-MM-DD
   isToday: boolean;
   isPast: boolean;
   entries: WeekLayoutEntry[];
 };
 
-export type WeekLayout = {
+type WeekLayout = {
   days: WeekLayoutDay[]; // always seven, weekStart first
   /** The write that makes the week look like `days`: one entry per session whose day changed. */
   moves: ClientLayoutMove[];

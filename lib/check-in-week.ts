@@ -54,7 +54,7 @@ export const NO_SCHEDULE_WEEK_ANCHOR: DayOfWeek = "sunday";
  * structural rather than `Client`, so a two-column projection satisfies it
  * without inventing the columns it never fetched.
  */
-export type CheckInWeekSource = {
+type CheckInWeekSource = {
   /** `clients.next_check_in_due`, as YYYY-MM-DD. */
   nextCheckInDue?: string | null;
 };

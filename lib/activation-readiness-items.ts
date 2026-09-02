@@ -15,12 +15,12 @@ export type Readiness = {
  *  not a plan — see SETUP_ITEMS. */
 export type SetupItemKey = keyof Readiness | "hasProfile"
 
-export type SetupItem = { key: SetupItemKey; label: string; tab: ClientTab }
+type SetupItem = { key: SetupItemKey; label: string; tab: ClientTab }
 
 /** A PLAN row. Narrower than SetupItem on purpose: everything that indexes
  *  `Readiness` (the counter, the footer sentence, the activation dialog) takes
  *  these, so a prerequisite can never be typed into a plan's slot. */
-export type PlanItem = SetupItem & { key: keyof Readiness }
+type PlanItem = SetupItem & { key: keyof Readiness }
 
 /**
  * The three PLANS. Activation "sends" these, so the card's counter, its footer

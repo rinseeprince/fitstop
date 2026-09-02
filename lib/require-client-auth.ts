@@ -20,7 +20,7 @@ interface Options {
 type AuthOk = { ok: true; clientId: string };
 type AuthFail = { ok: false; response: Response };
 
-export type ClientAuthResult = AuthOk | AuthFail;
+type ClientAuthResult = AuthOk | AuthFail;
 
 /**
  * Runs the §8 auth chain for client-portal routes: rate limit → CSRF → auth.

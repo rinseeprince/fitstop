@@ -16,7 +16,7 @@ export type SeriesPoint = {
 };
 
 /** The design's line: a 7-day trailing mean. */
-export const ROLLING_SPAN_DAYS = 7;
+const ROLLING_SPAN_DAYS = 7;
 
 /**
  * Trailing mean over a span of CALENDAR DAYS, not of samples.

@@ -8,7 +8,7 @@ import type { ClientTab } from "@/lib/client-tabs";
  * and the client Overview can never disagree about an alert's destination.
  * No alert type maps to check-ins — the check-in row owns that destination.
  */
-export type AlertDestination = {
+type AlertDestination = {
   tab: ClientTab;
   label: "TRAINING" | "WELLNESS" | "NUTRITION" | "HABITS";
 };

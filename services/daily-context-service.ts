@@ -149,7 +149,7 @@ export const assertHasActivePlan = (
   if (id == null) throw new NoActivePlanError(resource);
 };
 
-export type NutritionForDate = {
+type NutritionForDate = {
   consumed: { calories: number | null; proteinG: number | null; carbsG: number | null; fatG: number | null } | null;
   // `note` is the coach's per-day note (event source only — a logged day reads
   // the frozen nutrition_logs snapshot, which has no note column).

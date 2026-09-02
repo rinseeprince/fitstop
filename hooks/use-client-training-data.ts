@@ -28,7 +28,7 @@ export function isClientTrainingAreaKey(key: unknown): boolean {
   );
 }
 
-export function useInvalidateClientTrainingData() {
+function useInvalidateClientTrainingData() {
   const { mutate } = useSWRConfig();
   // Memoized: a hook returning a callback must return a stable one.
   return useCallback(() => mutate(isClientTrainingAreaKey), [mutate]);

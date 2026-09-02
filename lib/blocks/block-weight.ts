@@ -10,7 +10,7 @@ import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 
 /** The two fields the facts walk reads — a structural subset of MetricPoint,
  *  so a server caller can feed raw kg pairs without fabricating the rest. */
-export type BlockWeightPoint = Pick<MetricPoint, "date" | "value">;
+type BlockWeightPoint = Pick<MetricPoint, "date" | "value">;
 
 export interface BlockWeightFacts {
   /** Latest entry at or before the block's start — derivePace's baseline. */

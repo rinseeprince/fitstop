@@ -154,7 +154,7 @@ function isOccupancyViolation(error: unknown): boolean {
 // Rule 2 — a logged day's prescription is frozen.
 // ---------------------------------------------------------------------------
 
-export type SessionEventLink = {
+type SessionEventLink = {
   id: string;
   date: string;
   status: string;

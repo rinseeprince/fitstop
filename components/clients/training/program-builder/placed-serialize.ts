@@ -123,7 +123,7 @@ export function sessionDraftToPlacedPayload(
 
 // --- Whole-plan (amendment) serialization ------------------------------------
 
-export type PlacedPlanDraftSeed = {
+type PlacedPlanDraftSeed = {
   draft: ProgramDraft;
   // Serializable — the assistant sends this array over the wire and the ops
   // ctx rebuilds the same Set on both sides.

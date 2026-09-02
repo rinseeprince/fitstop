@@ -156,7 +156,7 @@ export type RosterCounts = Record<RosterView, number>
  * and the client details sheet has a plain `Client` in hand. Widening the
  * parameter is what stops that sheet minting a second status vocabulary.
  */
-export type RosterStatusFields = Pick<
+type RosterStatusFields = Pick<
   ClientWithCheckInInfo,
   "active" | "onboardingStatus"
 >;

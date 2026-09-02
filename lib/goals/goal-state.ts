@@ -4,13 +4,13 @@
  * short of it"). Pure and unit-agnostic — callers pass start/current/goal in
  * one consistent unit (display-unit weight, body-fat %).
  */
-export type GoalStateInput = {
+type GoalStateInput = {
   start: number | null;
   current: number | null;
   goal: number | null;
 };
 
-export type GoalState =
+type GoalState =
   | { state: "reached" }
   | { state: "beyond"; amount: number }
   | { state: "gap"; amount: number };

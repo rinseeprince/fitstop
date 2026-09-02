@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 
 type Authorized = { authorized: true; coachId: string };
 type Unauthorized = { authorized: false; response: NextResponse };
-export type CoachAuthResult = Authorized | Unauthorized;
+type CoachAuthResult = Authorized | Unauthorized;
 
 /**
  * Requires coach authentication. Returns coachId or a 401 response.

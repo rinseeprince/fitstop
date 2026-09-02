@@ -24,8 +24,8 @@ import {
 // errors the route can answer with a sentence.
 // =============================================================================
 
-export type LayoutMove = { eventId: string; fromDate: string; toDate: string };
-export type AppliedLayout = { moved: LayoutMove[] };
+type LayoutMove = { eventId: string; fromDate: string; toDate: string };
+type AppliedLayout = { moved: LayoutMove[] };
 
 /** The client's view of their week is stale — reload before trying again. Routes answer 409. */
 export class LayoutDriftError extends Error {}

@@ -47,7 +47,7 @@ const TYPE_TAG = {
   working: null,
 } as const;
 
-export function SetTypeTag({ row }: { row?: PrescribedRow }) {
+function SetTypeTag({ row }: { row?: PrescribedRow }) {
   const tag = row ? TYPE_TAG[row.setType] : null;
   if (!tag) return null;
   return (

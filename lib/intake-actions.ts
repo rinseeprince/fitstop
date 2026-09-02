@@ -7,7 +7,7 @@
  * shape: those were already spelled twice, and a third copy was about to be
  * written for the panel's new Sync button.
  */
-export type IntakeAction = "sync-metrics" | "review";
+type IntakeAction = "sync-metrics" | "review";
 
 /** Returns the parsed body; throws on a non-OK response so callers can toast. */
 export async function postIntakeAction(

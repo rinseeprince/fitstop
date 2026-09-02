@@ -76,7 +76,7 @@ export function checkInReviewUrl(clientId: string, checkInId: string): string {
  *  same shape (`?journey=`) but resolves its own value in
  *  `metrics-tab-content.tsx`; these are the two that migrated off the shared
  *  `?subtab=` in Session 7.2. */
-export type PaneOwnerTab = "training" | "nutrition"
+type PaneOwnerTab = "training" | "nutrition"
 
 /**
  * The pane a tab should show, read from the URL.

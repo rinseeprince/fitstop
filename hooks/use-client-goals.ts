@@ -30,7 +30,7 @@ const SWR_OPTS = {
  * it is a separate cache entry that a writer must invalidate too — matching on
  * the prefix covers it by construction.
  */
-export const clientGoalsKeyPrefix = (clientId: string) =>
+const clientGoalsKeyPrefix = (clientId: string) =>
   `/api/clients/${clientId}/goals`;
 
 export function useClientGoals(clientId: string) {

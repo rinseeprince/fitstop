@@ -18,7 +18,7 @@ import { recalculateClientEnergy } from "@/services/client-energy-service";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 
 // Extended client type with check-in info
-export type ClientWithCheckInInfo = Client & {
+type ClientWithCheckInInfo = Client & {
   lastCheckInDate?: string;
   engagement?: "high" | "medium" | "low";
 };

@@ -76,7 +76,7 @@ export function commitOp(ws: DraftWorkspace, op: DraftOp): string | null {
 // Mirrors opLabel's .max(200) in lib/validations/assistant.ts.
 const MAX_OP_LABEL = 200;
 
-export type Resolved<T> = { ok: true; value: T } | { ok: false; error: string };
+type Resolved<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export function resolveWeek(ws: DraftWorkspace, week: number): Resolved<WeekDraft> {
   const found = ws.draft.weeks[week - 1];
