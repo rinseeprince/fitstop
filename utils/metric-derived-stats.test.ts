@@ -238,12 +238,23 @@ describe("deriveWindowChange", () => {
     expect(change!.tone).toBe("bad");
   });
 
-  it("treats |delta| < 0.5 as stable / neutral", () => {
+  it("reads a move the size of the number shown - 0.3 kg up is up, not stable", () => {
+    // The card prints "+0.3" over the trend word; under the 0.5 cut-off this
+    // helper used to apply, that read "Holding steady" in grey.
     const change = deriveWindowChange(
       [pt("2026-07-01", 80), pt("2026-07-10", 80.3)],
       true
     );
     expect(change!.delta).toBeCloseTo(0.3);
+    expect(change!.trend).toBe("up");
+    expect(change!.tone).toBe("bad"); // downIsGood: rising weight is the wrong way
+  });
+
+  it("is stable only when the change rounds to nothing at one decimal", () => {
+    const change = deriveWindowChange(
+      [pt("2026-07-01", 80), pt("2026-07-10", 80.04)],
+      true
+    );
     expect(change!.trend).toBe("stable");
     expect(change!.tone).toBe("neutral");
   });
@@ -343,9 +354,10 @@ describe("buildLogRows", () => {
     expect(rows[0].source).toBe("coach_entry");
     expect(rows[0].note).toBe("gym scale");
 
-    // waist -0.2 falls inside the 0.5 deadband -> neutral; check-in note hidden
+    // waist -0.2 is toned the way the row prints it: down, and down is good for
+    // waist. (A 0.5 deadband used to grey this out under a printed "-0.2".)
     expect(rows[1].change!.amount).toBeCloseTo(-0.2);
-    expect(rows[1].change!.tone).toBe("neutral");
+    expect(rows[1].change!.tone).toBe("good");
     expect(rows[1].source).toBe("check_in");
     expect(rows[1].note).toBeNull();
   });

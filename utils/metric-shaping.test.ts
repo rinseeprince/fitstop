@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { trendOfChange } from "./metric-shaping";
+import { getTrend, trendOfChange } from "./metric-shaping";
 
 describe("trendOfChange", () => {
   it("follows the sign of the change rounded to one decimal", () => {
@@ -14,5 +14,18 @@ describe("trendOfChange", () => {
     expect(trendOfChange(0)).toBe("stable");
     expect(trendOfChange(0.04)).toBe("stable");
     expect(trendOfChange(-0.04)).toBe("stable");
+  });
+});
+
+describe("getTrend", () => {
+  it("is trendOfChange over the two readings", () => {
+    expect(getTrend(80.3, 80)).toBe("up");
+    expect(getTrend(80, 80.3)).toBe("down");
+    expect(getTrend(80.04, 80)).toBe("stable");
+  });
+
+  it("is stable when either reading is missing", () => {
+    expect(getTrend(null, 80)).toBe("stable");
+    expect(getTrend(80, null)).toBe("stable");
   });
 });

@@ -23,9 +23,7 @@ export function getTrend(
   previous: number | null,
 ): TrendDirection {
   if (current === null || previous === null) return "stable";
-  const diff = current - previous;
-  if (Math.abs(diff) < 0.5) return "stable";
-  return diff > 0 ? "up" : "down";
+  return trendOfChange(current - previous);
 }
 
 export function calculatePercentChange(
