@@ -139,30 +139,6 @@ Logged: 2026-08-13 (found while executing Session 5 Task 5.1 of the goals/blocks
 
 ---
 
-## `body_metrics` accumulates duplicate, orphaned and future-dated rows
-
-Logged: 2026-08-31 (found while tracing a weight figure on the check-in review surface; not fixed there — nothing reads the table for a current value, so it was noise rather than a live defect).
-
-`body_metrics` is an append-only event log fed by dual-writes from several paths (`client-service.ts:141`, `intake-review-service.ts:210`, `client-start-service.ts:169`). Three shapes accumulate in it, observed on one dev client with 156 rows:
-
-- **Duplicates.** The same measurement lands twice on the same timestamp under two different `source` values (`check_in` and `metrics_api`), so a naive count double-reports.
-- **Orphans.** Rows survive the deletion of the check-in that produced them. This is by design — the log is append-only and `client-start-service.ts:86-87` records that the rows are deliberately not rewound — but it means a `source = 'check_in'` row can reference a check-in that no longer exists. (It is also the correct explanation for a nutrition-plan drift banner citing a base weight that appears nowhere in the client's live measurement series: the plan snapshotted a weight that was real when it was taken.)
-- **Future-dated rows.** A `coach_entry` row dated 2026-09-01 was present on 2026-08-31. Nothing validates `recorded_at` against the client's today.
-
-**Why it is not urgent:** no read prefers this table for a current value (`client-start-service.ts:87` states the rule), the merged `check_ins` ⊕ `client_metric_entries` series is what every surface actually renders, and `comparison-service.ts:90` reads only the *earliest* row and prefers `client.startingWeight` over it. **Why it is not nothing:** the table is the fallback source for starting values, so a future-dated or duplicated row is one read away from mattering, and `getBodyMetricsHistory`'s unbounded path (above) walks it.
-
-Fixing it means deciding whether the dual-write should stop now that `client_metric_entries` (migration 132) is the live series — which is a merge-model decision, not a cleanup.
-
----
-
-## `getBodyMetricsHistory` silently truncates at ~1000 rows on its unbounded path
-
-Logged: 2026-08-12 (observed while planning Session 4 of the goals/blocks execution plan; not fixed there — the session's weight reads went through the merged series instead, so no caller changed).
-
-`getBodyMetricsHistory` (`services/body-metrics-service.ts`) issues a single unpaged query, so an unbounded call silently returns at most PostgREST's ~1000-row cap. **Every remaining in-repo caller passes `limit`** (mostly `limit: 1` via `getLatestBodyMetrics`). The one unbounded caller — `GET /api/clients/[id]/body-metrics`, whose `limit` could be `undefined` — was never wired to any UI and was deleted in the 2026-08-26 dead-code sweep (commit 3), so the truncation is no longer reachable. **Closed by deletion; the function's shape is unchanged** — a future caller that omits `limit` must page or bound the read (`lib/paged-fetch.ts`).
-
----
-
 ## Typography sweep (mono=numbers-only) — deferred tails
 
 Logged: 2026-07-23 (platform-wide sweep; rule + enforcement in `docs/newdesignsystem.md` → Typography and `npm run check:labels`).
@@ -752,11 +728,6 @@ Reviewed: 2026-03-18
 
 Reviewed: 2026-03-22
 
-### Client Metrics Log Extraction
-
-| # | Issue | File(s) | Details | Status |
-|---|-------|---------|---------|--------|
-| 1 | No body metrics history table | `clients` table | Create `client_metrics_log` table (client_id, date, source, weight, body_fat, bmr, tdee, measurements). Write to it from check-ins, intake sync, manual updates. Keep `current_*` columns on `clients` as denormalized cache. Currently biometrics are overwritten on the clients table with no history outside of check-in snapshots. | Open |
 
 ### Coach Exercise Library
 
@@ -990,9 +961,19 @@ Logged: 2026-06-10; updated 2026-06-12 (Session 7.85). Sessions 7.81–7.84 (`do
 Logged: 2026-07-25 (Metrics page redesign, migration 132).
 
 ### P2 - Deferred
-- **No DELETE/edit path for `client_metric_entries`.** A mistaken entry can only be corrected by re-logging the same metric + date (upsert replaces); it cannot be removed. A DELETE handler is small, but the weight case is not: deleting the latest weight entry should re-derive `clients.current_weight` from the next-latest `body_metrics` event, which the current cache-update path (`recordBodyMetrics`'s `updateClientCache`) has no machinery for. Build the re-derivation with the DELETE, not before.
+- **No DELETE/edit path for `client_metric_entries`** — the coach-logged wellness entries (mood, energy, sleep, stress, soreness; migration 159 narrowed the table's CHECK to those keys). A mistaken entry can only be replaced by re-logging the same metric and date; it cannot be removed. A physique reading is a row in `client_measurements`, whose correct / remove / restore path is `docs/MEASUREMENT-LOG-PLAN.md` commit 4.
+- **Coach-logged wellness has a store of its own.** A client's wellness lives in `wellness_logs`; a coach's entry lives in `client_metric_entries`, replace-per-day with no history; and the Journey's Wellness pane merges the two client-side (`buildMetricPoints`, `utils/metric-points.ts`) over `useAllClientCheckIns`, which pages the client's WHOLE check-in history through `GET /api/clients/[id]/check-ins` — each page folding the measurement log's stamped rows in — to read five weekly averages per row. Owner decision D2 (2026-09-02): outside the measurement-log workstream. Un-park when coach-logged wellness needs history or a delete path, or when the pager's cost shows on a long history.
 - **~~`hooks/use-client-metrics.ts` dead save/dialog members~~ — RESOLVED 2026-08-12 (Session 4B, Task 4b.3).** The whole hook was deleted with the `calculate-bmr` route: the pair recomputes on every input change, so the manual button had no job, and `page.tsx` destructured only those two members. That also removed the broken `saveOption: "update-only"` value by deleting the unreachable code carrying it rather than "fixing" a bug nothing could reach.
 
+
+## Measurement log — follow-ups
+
+Logged: 2026-09-03 (`docs/MEASUREMENT-LOG-PLAN.md`; the shape is ARCHITECTURE → "client_measurements table").
+
+### P2 - Deferred
+- **Nothing captures girths at intake or manual add, and a client cannot log a reading between check-ins.** `client_measurements` accepts `intake` rows for all seven keys and `client_log` rows from the client, so each is a writer and nothing more: the intake questionnaire's step 1 asks weight and body fat only (`intakeStep1Schema`), the add-client form the same, and no `/api/client/**` route writes the log (a `client_log` route is additive to the RN contract). Until then a girth exists only when a check-in form asks for it or a coach logs it.
+
+---
 
 ## Client energy (BMR/TDEE) — residuals after Session 4B
 

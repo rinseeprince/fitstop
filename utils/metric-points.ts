@@ -41,24 +41,19 @@ export function dayValuesToMetricPoints(values: readonly DayValue[]): MetricPoin
   }));
 }
 
-/** Structural subset of a METRIC_DEFINITIONS entry (dependency-injected so
- *  this util stays a leaf module). */
+/** A WELLNESS definition as this merge needs it: the metric id and the CheckIn
+ *  field holding its weekly average (dependency-injected so this util stays a
+ *  leaf module). A physique metric has no such field — its series is the log's. */
 export type MetricSeriesDefinition = {
   id: string;
   key: keyof CheckIn;
-  category: "body" | "wellness";
 };
 
 /**
- * What this merge actually reads off a check-in: an id, a timestamp, and
- * whichever metric columns the definitions name.
- *
- * Stated structurally rather than as `CheckIn` so a caller that selected four
- * columns can pass four columns. The Overview's measurement-series route reads
- * `id, created_at, weight, body_fat_percentage` — against a 37-column table
- * carrying four JSON blobs — and the alternative was inventing a `status` and
- * an `updatedAt` it never fetched, purely to satisfy a type. A full `CheckIn`
- * is still assignable, so the Metrics page passes its rows unchanged.
+ * What this merge reads off a check-in: an id, a timestamp, and whichever
+ * wellness averages the definitions name. Stated structurally rather than as
+ * `CheckIn` so a caller that selected only those columns can pass them; a full
+ * `CheckIn` is still assignable, so the Journey passes its rows unchanged.
  */
 type MetricSeriesCheckIn = Partial<CheckIn> & Pick<CheckIn, "id" | "createdAt">;
 

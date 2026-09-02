@@ -6,12 +6,9 @@ import {
   deriveHeroStats,
   deriveWeekComparison,
   deriveWindowChange,
+  type LogRowDefinition,
 } from "./metric-derived-stats";
-import {
-  addDaysToDate,
-  type MetricPoint,
-  type MetricSeriesDefinition,
-} from "./metric-points";
+import { addDaysToDate, type MetricPoint } from "./metric-points";
 
 function pt(
   date: string,
@@ -393,10 +390,10 @@ describe("deriveBest", () => {
 });
 
 describe("buildLogRows", () => {
-  const definitions: MetricSeriesDefinition[] = [
-    { id: "weight", key: "weight", category: "body" },
-    { id: "waist", key: "waist", category: "body" },
-    { id: "stress", key: "stress", category: "wellness" },
+  const definitions: LogRowDefinition[] = [
+    { id: "weight", category: "body" },
+    { id: "waist", category: "body" },
+    { id: "stress", category: "wellness" },
   ];
   const downIsGood: ReadonlySet<string> = new Set(["weight", "waist", "stress"]);
 

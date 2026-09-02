@@ -579,8 +579,7 @@ describe('Client Service', () => {
 
   describe('getClientById', () => {
     it('returns client when found, with the four reading fields from the embedded views', async () => {
-      // A stale column beside the embeds: the columns are ignored, the views win.
-      const mockClientRow = createMockClientRow({ current_weight: 999, starting_weight: 999 })
+      const mockClientRow = createMockClientRow()
       const mockQuery = createMockQuery({
         data: mockClientRow,
         error: null,

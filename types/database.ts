@@ -120,53 +120,6 @@ export type Database = {
         }
         Relationships: []
       }
-      body_metrics: {
-        Row: {
-          bmr: number | null
-          body_fat_percentage: number | null
-          client_id: string
-          created_at: string
-          id: string
-          recorded_at: string
-          source: string
-          source_id: string | null
-          tdee: number | null
-          weight: number | null
-        }
-        Insert: {
-          bmr?: number | null
-          body_fat_percentage?: number | null
-          client_id: string
-          created_at?: string
-          id?: string
-          recorded_at?: string
-          source: string
-          source_id?: string | null
-          tdee?: number | null
-          weight?: number | null
-        }
-        Update: {
-          bmr?: number | null
-          body_fat_percentage?: number | null
-          client_id?: string
-          created_at?: string
-          id?: string
-          recorded_at?: string
-          source?: string
-          source_id?: string | null
-          tdee?: number | null
-          weight?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "body_metrics_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       check_in_answers: {
         Row: {
           answer: string
@@ -458,16 +411,12 @@ export type Database = {
           ai_recommendations: Json | null
           ai_response_draft: string | null
           ai_summary: string | null
-          arms: number | null
-          body_fat_percentage: number | null
           challenges: string | null
-          chest: number | null
           client_id: string
           coach_response: string | null
           coach_reviewed_at: string | null
           created_at: string | null
           energy: number | null
-          hips: number | null
           id: string
           mood: number | null
           notes: string | null
@@ -485,10 +434,7 @@ export type Database = {
           soreness: number | null
           status: string
           stress: number | null
-          thighs: number | null
           updated_at: string | null
-          waist: number | null
-          weight: number | null
           workouts_completed: number | null
         }
         Insert: {
@@ -498,16 +444,12 @@ export type Database = {
           ai_recommendations?: Json | null
           ai_response_draft?: string | null
           ai_summary?: string | null
-          arms?: number | null
-          body_fat_percentage?: number | null
           challenges?: string | null
-          chest?: number | null
           client_id: string
           coach_response?: string | null
           coach_reviewed_at?: string | null
           created_at?: string | null
           energy?: number | null
-          hips?: number | null
           id?: string
           mood?: number | null
           notes?: string | null
@@ -525,10 +467,7 @@ export type Database = {
           soreness?: number | null
           status?: string
           stress?: number | null
-          thighs?: number | null
           updated_at?: string | null
-          waist?: number | null
-          weight?: number | null
           workouts_completed?: number | null
         }
         Update: {
@@ -538,16 +477,12 @@ export type Database = {
           ai_recommendations?: Json | null
           ai_response_draft?: string | null
           ai_summary?: string | null
-          arms?: number | null
-          body_fat_percentage?: number | null
           challenges?: string | null
-          chest?: number | null
           client_id?: string
           coach_response?: string | null
           coach_reviewed_at?: string | null
           created_at?: string | null
           energy?: number | null
-          hips?: number | null
           id?: string
           mood?: number | null
           notes?: string | null
@@ -565,10 +500,7 @@ export type Database = {
           soreness?: number | null
           status?: string
           stress?: number | null
-          thighs?: number | null
           updated_at?: string | null
-          waist?: number | null
-          weight?: number | null
           workouts_completed?: number | null
         }
         Relationships: [
@@ -1041,9 +973,7 @@ export type Database = {
           check_in_frequency_days: number | null
           coach_id: string
           created_at: string | null
-          current_body_fat_percentage: number | null
           current_streak: number | null
-          current_weight: number | null
           date_of_birth: string | null
           email: string
           gender: string | null
@@ -1062,8 +992,6 @@ export type Database = {
           phone: string | null
           reminder_preferences: Json | null
           start_date: string | null
-          starting_body_fat_percentage: number | null
-          starting_weight: number | null
           surplus_as_carbs: boolean
           tdee: number | null
           tdee_manual_override: boolean | null
@@ -1087,9 +1015,7 @@ export type Database = {
           check_in_frequency_days?: number | null
           coach_id: string
           created_at?: string | null
-          current_body_fat_percentage?: number | null
           current_streak?: number | null
-          current_weight?: number | null
           date_of_birth?: string | null
           email: string
           gender?: string | null
@@ -1108,8 +1034,6 @@ export type Database = {
           phone?: string | null
           reminder_preferences?: Json | null
           start_date?: string | null
-          starting_body_fat_percentage?: number | null
-          starting_weight?: number | null
           surplus_as_carbs?: boolean
           tdee?: number | null
           tdee_manual_override?: boolean | null
@@ -1133,9 +1057,7 @@ export type Database = {
           check_in_frequency_days?: number | null
           coach_id?: string
           created_at?: string | null
-          current_body_fat_percentage?: number | null
           current_streak?: number | null
-          current_weight?: number | null
           date_of_birth?: string | null
           email?: string
           gender?: string | null
@@ -1154,8 +1076,6 @@ export type Database = {
           phone?: string | null
           reminder_preferences?: Json | null
           start_date?: string | null
-          starting_body_fat_percentage?: number | null
-          starting_weight?: number | null
           surplus_as_carbs?: boolean
           tdee?: number | null
           tdee_manual_override?: boolean | null

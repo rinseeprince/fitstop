@@ -1,8 +1,8 @@
 import type { MetricEntryKey } from "@/lib/metrics/metric-entry-definitions";
 
-// Snake_case row as stored in client_metric_entries (matches the generated
-// types/database.ts shape after migration 132; hand-typed for narrowing per
-// the BodyMetricsEventRow precedent in types/body-metrics.ts).
+// Snake_case row as stored in client_metric_entries — the coach-logged
+// WELLNESS entries (matches the generated types/database.ts shape; hand-typed
+// for narrowing).
 export interface MetricEntryRow {
   id: string;
   client_id: string;

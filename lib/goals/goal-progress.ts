@@ -6,9 +6,10 @@ import type { GoalPosition, GoalProgress } from "@/types/check-in";
 /**
  * Where a client stands against each goal they have set — composed ONCE, here.
  *
- * Position reads the CLIENT RECORD's current reading (`clients.current_weight`
- * / `current_body_fat_percentage`, the cache of the latest measurement), never
- * a check-in's own column. A check-in is a report of what the client typed that
+ * Position reads the CLIENT RECORD's current reading (`Client.currentWeight` /
+ * `currentBodyFatPercentage` — the newest row in the measurement log, through
+ * `client_current_measurements`), never a check-in's own reading. A check-in is
+ * a report of what the client typed that
  * week, and every field on it is optional, so a weightless one is ordinary; a
  * goal row built from it vanishes for exactly the client whose weight is on the
  * record. So a check-in is not among these inputs, and

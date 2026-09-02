@@ -45,8 +45,6 @@ export type TrainingEventInsert = Database["public"]["Tables"]["training_events"
 export type NutritionEventRow = Database["public"]["Tables"]["nutrition_events"]["Row"];
 export type NutritionEventInsert = Database["public"]["Tables"]["nutrition_events"]["Insert"];
 
-// No BodyMetricsUpdate — immutable event table
-
 // Coach library types (added by migration 084)
 export type CoachSavedPlanRow = Database["public"]["Tables"]["coach_saved_plans"]["Row"];
 export type CoachSavedPlanInsert = Database["public"]["Tables"]["coach_saved_plans"]["Insert"];

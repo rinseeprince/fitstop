@@ -124,7 +124,7 @@ describe("getOverviewBrief", () => {
 
     await getOverviewBrief("coach-1", "client-1");
 
-    for (const table of ["daily_logs", "body_metrics", "session_logs", "training_events"]) {
+    for (const table of ["daily_logs", "session_logs", "training_events"]) {
       expect(fromMock).not.toHaveBeenCalledWith(table);
     }
   });

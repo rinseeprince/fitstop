@@ -75,8 +75,9 @@ type ClientEnergyResult = {
   status: ClientEnergyStatus;
   /** The pair as it stands in `clients` after this call: what was written on
    *  "written", the stored value otherwise, null when the row was unreadable.
-   *  A caller stamping a body_metrics event MUST use these rather than
-   *  recomputing, or the event log and the profile can disagree. */
+   *  A caller reporting the pair back (the metrics PUT's response, the client
+   *  `updateClient` returns) MUST use these rather than recomputing, or the
+   *  response and the profile can disagree. */
   bmr: number | null;
   tdee: number | null;
   bmrManualOverride: boolean;
@@ -141,10 +142,12 @@ function emptyResult(status: ClientEnergyStatus): ClientEnergyResult {
 /**
  * Recompute and store a client's BMR/TDEE pair.
  *
- * Never throws. It is called from six sites, four of which are already
- * non-blocking dual-writes, and a throw inside `updateClient` would turn a
- * committed profile save into a 500. Errors are destructured, logged and sent
- * to Sentry, and surface as `status: "failed"` carrying the STORED pair.
+ * Never throws. Its callers — `appendMeasurements` after a newest reading
+ * lands, `updateClient` after a profile input changes, the metrics PUT with an
+ * override, the intake sync — have each committed their own write by the time
+ * it runs, and a throw here would turn a committed save into a 500. Errors are
+ * destructured, logged and sent to Sentry, and surface as `status: "failed"`
+ * carrying the STORED pair.
  *
  * It reads the client row itself rather than accepting one, for two reasons:
  * importing `getClientById` from `client-service` would be an import cycle (that

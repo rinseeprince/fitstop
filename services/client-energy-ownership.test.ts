@@ -136,16 +136,16 @@ describe("clients.bmr / clients.tdee have exactly one UPDATE writer", () => {
       findsEnergyUpdate(`
         await supabaseAdmin
           .from("clients")
-          .update({ current_weight: 82 })
+          .update({ height: 182 })
           .eq("id", clientId);
       `)
     ).toBe(false);
 
     expect(
       findsEnergyUpdate(`
-        const cacheUpdate: Record<string, unknown> = {};
-        cacheUpdate.current_weight = 82;
-        await supabaseAdmin.from("clients").update(cacheUpdate).eq("id", id);
+        const profileUpdate: Record<string, unknown> = {};
+        profileUpdate.height = 182;
+        await supabaseAdmin.from("clients").update(profileUpdate).eq("id", id);
       `)
     ).toBe(false);
   });

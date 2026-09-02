@@ -130,7 +130,7 @@ export async function GET(
     // A failure here degrades the preview to null rather than failing the read.
     // This route's catch has no NutritionPlanError branch, so an uncaught throw
     // becomes a blanket 500 — and the client treats a non-OK response as "no
-    // plan", so a body-metrics hiccup would blank a working nutrition tab.
+    // plan", so a measurement-read hiccup would blank a working nutrition tab.
     // The POST does its own strict resolution, so Generate still behaves.
     const calcInputs = await resolveNutritionCalcInputs(clientId, client, {
       today: clientToday,

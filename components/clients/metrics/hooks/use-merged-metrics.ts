@@ -25,7 +25,12 @@ import {
   deriveWindowChange,
   type HeroBaseline,
 } from "@/utils/metric-derived-stats";
-import { METRIC_DEFINITIONS, type MetricDefinition } from "./use-metrics-data";
+import {
+  BODY_METRIC_DEFINITIONS,
+  METRIC_DEFINITIONS,
+  WELLNESS_METRIC_DEFINITIONS,
+  type MetricDefinition,
+} from "./use-metrics-data";
 import { useUnits } from "@/contexts/units-context";
 import { formatLength, formatWeight, type UnitSystem } from "@/utils/unit-conversions";
 import type { LogRow, MetricSummary, MetricTab } from "../metrics-view-types";
@@ -122,12 +127,9 @@ export const useMergedMetrics = (
     // the record covers the first render, before the series lands.
     const startDate = series?.startDate ?? client.startDate ?? null;
 
-    const wellnessDefinitions = METRIC_DEFINITIONS.filter((d) => d.category === "wellness");
-    const rawPointsByMetric = buildMetricPoints(checkIns, entries, wellnessDefinitions);
-    for (const def of METRIC_DEFINITIONS) {
-      if (def.category === "body" && isMeasurementKey(def.id)) {
-        rawPointsByMetric.set(def.id, seriesPoints(series, def.id));
-      }
+    const rawPointsByMetric = buildMetricPoints(checkIns, entries, WELLNESS_METRIC_DEFINITIONS);
+    for (const def of BODY_METRIC_DEFINITIONS) {
+      rawPointsByMetric.set(def.id, seriesPoints(series, def.id));
     }
     const convertBy = new Map(METRIC_DEFINITIONS.map((d) => [d.id, d.convert]));
     const pointsByMetric = new Map(
@@ -163,7 +165,7 @@ export const useMergedMetrics = (
       const downIsGood = DOWN_SET.has(def.id);
 
       let baseline: HeroBaseline | null = null;
-      if (isBody && isMeasurementKey(def.id)) {
+      if (def.category === "body") {
         const raw = series?.baseline?.[def.id] ?? null;
         baseline = raw
           ? {

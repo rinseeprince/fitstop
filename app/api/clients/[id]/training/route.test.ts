@@ -31,10 +31,6 @@ vi.mock('@/lib/csrf-protection', () => ({
   requireCSRFProtection: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/services/body-metrics-service', () => ({
-  getLatestBodyMetrics: vi.fn(),
-}))
-
 vi.mock('@/services/client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))

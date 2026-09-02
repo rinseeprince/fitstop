@@ -3,7 +3,6 @@ import {
   addDaysToDate,
   daysBetween,
   type MetricPoint,
-  type MetricSeriesDefinition,
 } from "@/utils/metric-points";
 import type { MeasurementSource } from "@/lib/measurements/keys";
 import type { TrendDirection } from "@/types/check-in";
@@ -215,9 +214,13 @@ type DerivedLogRow = {
   source: MetricPoint["source"];
 };
 
+/** The metric ids a pane lists, in tab order — the subset of a definition the
+ *  log rows need. */
+export type LogRowDefinition = { id: string; category: "body" | "wellness" };
+
 export function buildLogRows(
   pointsByMetric: Map<string, MetricPoint[]>,
-  definitions: MetricSeriesDefinition[],
+  definitions: LogRowDefinition[],
   category: "body" | "wellness",
   downIsGood: ReadonlySet<string>
 ): DerivedLogRow[] {

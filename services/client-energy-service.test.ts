@@ -172,13 +172,10 @@ describe("recalculateClientEnergy", () => {
       );
     });
 
-    it("reads weight and body fat from the embed rows by metric key, never from a column", async () => {
-      // A stale column beside the live embed: the embed wins, and each half
-      // lands on its own input — weight on the mass, body fat on the formula
-      // switch — rather than the two being read off one another.
+    it("reads weight and body fat from the embed rows by metric key", async () => {
+      // Each half lands on its own input — weight on the mass, body fat on the
+      // formula switch — rather than the two being read off one another.
       const row = clientRow({
-        current_weight: 999,
-        current_body_fat_percentage: 5,
         client_current_measurements: readings(91, 22),
       });
       wire(row);

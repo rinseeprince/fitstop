@@ -15,7 +15,8 @@
     with no identity (`set_specs`, `period_snapshot`), and "there is already a JSONB column on
     this table" is not a precedent. The data model is an **explicit owner decision** in every
     plan, stated with its alternatives, never adopted silently from a draft. Sanctioned
-    denormalisations (caches like `clients.current_weight`, submit-time snapshot columns) are
+    denormalisations (submit-time snapshot columns like `check_ins.workouts_completed`, the
+    per-event `training_events.calorie_surplus_percentage`) are
     documented as such in `docs/ARCHITECTURE.md`; an undocumented one found in passing is debt
     to record, not a shape to copy. Full rule: §8 → "Data modelling". *(Added 2026-08-29 after a
     plan put a coach's check-in questions on `clients` as JSONB and snapshotted the prompt onto
@@ -420,10 +421,10 @@
   read whole (`reminder_preferences`), an AI payload read whole (`ai_insights`). The moment a
   key inside the blob needs a stable identity, an edit, or a reference, it is a table.
 
-  **Denormalisation is allowed only when named and documented.** Caches
-  (`clients.current_weight`, `clients.starting_weight`), submit-time snapshot columns
-  (`check_ins.workouts_completed`), and the copy-based library placement are sanctioned because
-  `docs/ARCHITECTURE.md` says who the single writer is and what the cache is a cache *of*. A
+  **Denormalisation is allowed only when named and documented.** Submit-time snapshot columns
+  (`check_ins.workouts_completed`), the per-event `training_events.calorie_surplus_percentage`,
+  and the copy-based library placement are sanctioned because
+  `docs/ARCHITECTURE.md` says who the single writer is and what the copy is a copy *of*. A
   new one needs the same paragraph in the same commit. An undocumented denormalisation found
   in passing is recorded in `TECHNICAL-DEBT.md`, not used as precedent.
 
@@ -484,13 +485,14 @@
   - RLS is enabled on **every** table in `public` (verified against the live catalog by `npm run check:rls`). For the app path it is a safety net, because service_role bypasses it. For anyone hitting PostgREST directly with the browser-shipped anon key, **it is the only perimeter**.
   - Do NOT write new app-code that relies on RLS to enforce access. If the route layer is broken, RLS under service_role does nothing (service_role bypasses RLS entirely — which is most of our DB traffic).
   - **When adding a new table: `ALTER TABLE … ENABLE ROW LEVEL SECURITY` and write NO policies.** Deny-all is the default posture, because every service read and write goes through `supabaseAdmin`, which bypasses RLS — so a policy grants access that nothing in the app needs. Precedent: `108_create_audit_logs.sql:37`, and migrations 122/125/126. Only add a policy when a specific non-service_role caller provably needs the table, and scope it to the owner.
-  - **A new table also needs its own `GRANT`, in the migration.** "Automatically expose new tables" is OFF in Settings → API, so a freshly created table has no Data API privileges and PostgREST cannot see it until one is granted. Grant `service_role` only — every read and write in the app goes through `supabaseAdmin`, so `anon`/`authenticated` need nothing, and without a grant to them a missing `ENABLE ROW LEVEL SECURITY` is not even a breach (no privilege at all beats a filtered one). Follows the `GRANT EXECUTE ON FUNCTION … TO service_role` idiom already used at `110:327` and `115:154`.
+  - **A new table's privileges are set explicitly, in the migration — a REVOKE, then exactly the grants it needs.** Supabase's stock default privileges hand ALL on a new table to `anon`, `authenticated` and `service_role` the moment it exists, on both projects, whatever "Automatically expose new tables" says in Settings → API (probed on `client_phases`, `check_in_forms` and `nutrition_plan_notes`, 2026-09-02). Left to the defaults, a table is reachable through PostgREST with the browser-shipped anon key and RLS as its only perimeter — silently, never as an error. So revoke first, then grant `service_role` what the service layer uses (ALL for an ordinary table; `SELECT, INSERT` for an append-only one), and `anon`/`authenticated` nothing unless a specific non-service_role caller provably needs the table, scoped by a policy. `158_client_measurements.sql` is the shape, its one client-scoped policy beside the grant.
     ```sql
     CREATE TABLE IF NOT EXISTS public.new_thing (...);
     ALTER TABLE IF EXISTS public.new_thing ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON TABLE public.new_thing FROM PUBLIC, anon, authenticated, service_role;
     GRANT ALL ON TABLE public.new_thing TO service_role;
     ```
-    Put it in the migration, never in the dashboard — a grant made in Studio is invisible to source and drifts, which is how migration 125's `DROP POLICY` became a silent no-op. Forgetting it fails loudly and immediately ("table not found in schema cache" on first use in dev), never as a silent wrong result. **Do not retrofit the existing tables:** they carry `GRANT ALL … TO anon, authenticated` from Supabase's stock default privileges, and revoking across 41 tables is real breakage risk for defence RLS already provides (migration 122:20-26 records that decision).
+    Put it in the migration, never in the dashboard — a grant made in Studio is invisible to source and drifts, which is how migration 125's `DROP POLICY` became a silent no-op. **Do not retrofit the existing tables:** they carry `GRANT ALL … TO anon, authenticated` from those same defaults, and revoking across 41 tables is real breakage risk for defence RLS already provides (migration 122:20-26 records that decision).
   - **NEVER write `TO authenticated USING (true)`.** It is not "deny-by-default"; it is a platform-wide cross-tenant read and write. The anon key ships in the browser bundle and any logged-in user holds an `authenticated` JWT, so such a policy is directly exploitable via `/rest/v1/…`. This convention previously *prescribed* that shape; migrations 091 and 101 followed it and both had to be dropped in 125. See `TECHNICAL-DEBT.md → Known RLS Gaps`.
   - **Always add an explicit `TO` clause.** A policy with no `TO` defaults to `PUBLIC`, which includes `anon`. That is only safe if the qual references `auth.uid()` (NULL without a JWT ⇒ fails closed). A no-`TO` policy whose qual does not reference the caller — e.g. `USING (bucket_id = '…')` — is unauthenticated access; that exact shape exposed the private progress-photos bucket until migration 126.
   - Avoid nested-subquery policies that replicate the IDOR chain: they cost at scale for no benefit under service_role. If a table genuinely needs both coach- and client-side reads, write **one** policy with a single qual rather than two permissive ones — two permissive policies OR together, and a sublink under an `OR` never pulls up to a semi-join.
@@ -507,7 +509,7 @@
   - Migrations: Version controlled, never edit directly
   - Relations: Foreign keys with ON DELETE CASCADE, SET NULL, or RESTRICT. Use RESTRICT on parent tables that must not be hard-deleted (forces archival instead). **Event→plan FKs are SET NULL** (`training_events.training_plan_id`, `nutrition_events.nutrition_plan_id`, both nullable since migration 113) so deleting a plan/template never destroys past/logged events — the events carry the date-specific truth (see "Events-as-SOT" below and `docs/ARCHITECTURE.md → Nutrition & Training Events`).
   - Indexes: On foreign keys, search fields, sort columns
-  - Timestamps: created_at, updated_at on all tables. Exception: immutable event tables (e.g. body_metrics) intentionally skip updated_at - add a comment explaining why.
+  - Timestamps: created_at, updated_at on all tables. Exception: immutable event tables (`client_measurements`, `nutrition_plan_notes`) intentionally skip updated_at - add a comment explaining why.
 
   ### Query result methods
   - `.single()` - Use when expecting exactly one row. Errors if zero or multiple rows returned.

@@ -10,9 +10,11 @@ import type { CheckIn } from "@/types/check-in";
 import type { MetricEntry } from "@/types/metric-entries";
 import type { DayValue } from "@/lib/measurements/day-values";
 
+// Wellness definitions only: the merge is the Wellness pane's. A physique
+// metric never enters it — its series is the measurement log's.
 const definitions: MetricSeriesDefinition[] = [
-  { id: "weight", key: "weight", category: "body" },
-  { id: "energy", key: "energy", category: "wellness" },
+  { id: "energy", key: "energy" },
+  { id: "mood", key: "mood" },
 ];
 
 function checkIn(
@@ -53,75 +55,75 @@ function entry(
 describe("buildMetricPoints", () => {
   it("maps check-in values per definition key and skips absent values", () => {
     const points = buildMetricPoints(
-      [checkIn("ci-1", "2026-07-01T08:30:00Z", { weight: 80 })], // no energy
+      [checkIn("ci-1", "2026-07-01T08:30:00Z", { energy: 7 })], // no mood
       [],
       definitions
     );
 
-    expect(points.get("weight")).toHaveLength(1);
-    expect(points.get("weight")![0]).toMatchObject({
-      metricId: "weight",
-      value: 80,
+    expect(points.get("energy")).toHaveLength(1);
+    expect(points.get("energy")![0]).toMatchObject({
+      metricId: "energy",
+      value: 7,
       source: "check_in",
       note: null,
       sourceRecordId: "ci-1",
     });
-    expect(points.get("energy")).toEqual([]);
+    expect(points.get("mood")).toEqual([]);
   });
 
   it("dates a check-in point by createdAt's date part", () => {
     const points = buildMetricPoints(
-      [checkIn("ci-1", "2026-07-01T23:59:59Z", { weight: 80 })],
+      [checkIn("ci-1", "2026-07-01T23:59:59Z", { energy: 7 })],
       [],
       definitions
     );
 
-    expect(points.get("weight")![0].date).toBe("2026-07-01");
+    expect(points.get("energy")![0].date).toBe("2026-07-01");
   });
 
   it("appends coach entries with their note", () => {
     const points = buildMetricPoints(
       [],
-      [entry("e-1", "weight", "2026-07-02", 79.5, "gym scale")],
+      [entry("e-1", "energy", "2026-07-02", 6, "flat after travel")],
       definitions
     );
 
-    expect(points.get("weight")).toHaveLength(1);
-    expect(points.get("weight")![0]).toMatchObject({
-      metricId: "weight",
-      value: 79.5,
+    expect(points.get("energy")).toHaveLength(1);
+    expect(points.get("energy")![0]).toMatchObject({
+      metricId: "energy",
+      value: 6,
       date: "2026-07-02",
       source: "coach_entry",
-      note: "gym scale",
+      note: "flat after travel",
       sourceRecordId: "e-1",
     });
   });
 
   it("sorts a same-date check-in BEFORE the coach entry (coach entry wins latest)", () => {
     const points = buildMetricPoints(
-      [checkIn("ci-1", "2026-07-02T09:00:00Z", { weight: 80 })],
-      [entry("e-1", "weight", "2026-07-02", 79)],
+      [checkIn("ci-1", "2026-07-02T09:00:00Z", { energy: 7 })],
+      [entry("e-1", "energy", "2026-07-02", 5)],
       definitions
     );
 
-    const series = points.get("weight")!;
+    const series = points.get("energy")!;
     expect(series.map((p) => p.source)).toEqual(["check_in", "coach_entry"]);
-    expect(series[1].value).toBe(79); // the coach's explicit entry is latest
+    expect(series[1].value).toBe(5); // the coach's explicit entry is latest
   });
 
   it("orders multiple same-date check-ins by createdAt, then id", () => {
     const points = buildMetricPoints(
       [
-        checkIn("ci-late", "2026-07-02T18:00:00Z", { weight: 81 }),
-        checkIn("ci-early", "2026-07-02T06:00:00Z", { weight: 80 }),
+        checkIn("ci-late", "2026-07-02T18:00:00Z", { energy: 8 }),
+        checkIn("ci-early", "2026-07-02T06:00:00Z", { energy: 7 }),
         // same createdAt as ci-late — the record id breaks the tie (a < l)
-        checkIn("ci-a", "2026-07-02T18:00:00Z", { weight: 82 }),
+        checkIn("ci-a", "2026-07-02T18:00:00Z", { energy: 9 }),
       ],
       [],
       definitions
     );
 
-    expect(points.get("weight")!.map((p) => p.sourceRecordId)).toEqual([
+    expect(points.get("energy")!.map((p) => p.sourceRecordId)).toEqual([
       "ci-early",
       "ci-a",
       "ci-late",
@@ -131,25 +133,25 @@ describe("buildMetricPoints", () => {
   it("skips coach entries whose metricKey has no definition", () => {
     const points = buildMetricPoints(
       [],
-      [entry("e-1", "bodyFat", "2026-07-02", 18)], // no bodyFat definition here
+      [entry("e-1", "stress", "2026-07-02", 4)], // no stress definition here
       definitions
     );
 
-    expect(points.has("bodyFat")).toBe(false);
-    expect(points.get("weight")).toEqual([]);
+    expect(points.has("stress")).toBe(false);
+    expect(points.get("energy")).toEqual([]);
   });
 
   it("returns each series in ascending date order regardless of input order", () => {
     const points = buildMetricPoints(
       [
-        checkIn("ci-2", "2026-07-10T08:00:00Z", { weight: 79 }),
-        checkIn("ci-1", "2026-07-01T08:00:00Z", { weight: 80 }),
+        checkIn("ci-2", "2026-07-10T08:00:00Z", { energy: 6 }),
+        checkIn("ci-1", "2026-07-01T08:00:00Z", { energy: 7 }),
       ],
-      [entry("e-1", "weight", "2026-07-05", 79.5)],
+      [entry("e-1", "energy", "2026-07-05", 5)],
       definitions
     );
 
-    expect(points.get("weight")!.map((p) => p.date)).toEqual([
+    expect(points.get("energy")!.map((p) => p.date)).toEqual([
       "2026-07-01",
       "2026-07-05",
       "2026-07-10",

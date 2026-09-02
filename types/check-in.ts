@@ -446,11 +446,13 @@ export type Client = {
   goalWeight?: number;
   goalBodyFatPercentage?: number;
 
-  // Starting metrics (original intake values for goal tracking)
+  // The baseline: the reading as of start_date, derived from the measurement
+  // log (client_baseline_measurements) — never a stored pair.
   startingWeight?: number;
   startingBodyFatPercentage?: number;
 
-  // Current metrics (automatically updated from latest check-in)
+  // "Now": the newest reading of any source, derived from the measurement log
+  // (client_current_measurements) — never a cached column.
   currentWeight?: number;
   currentBodyFatPercentage?: number;
 
@@ -776,8 +778,9 @@ export type GoalPaceStatus = "on_track" | "behind_pace" | "unrealistic";
 
 /**
  * Where the client stands against ONE goal, read from the client record's
- * current reading (`clients.current_weight` / `current_body_fat_percentage`) —
- * never from a check-in, which is a report of what the client typed that week.
+ * current reading (`Client.currentWeight` / `currentBodyFatPercentage`, the
+ * newest row in the measurement log) — never from a check-in, which is a
+ * report of what the client typed that week.
  * Composed by `deriveGoalProgress` (`lib/goals/goal-progress.ts`).
  */
 export type GoalPosition = {

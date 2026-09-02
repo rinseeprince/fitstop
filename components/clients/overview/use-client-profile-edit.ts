@@ -55,11 +55,10 @@ const profileFormSchema = z
       "very_active",
       "extremely_active",
     ]),
-    // The recorded BASELINE body fat. Unitless, so unlike the weight beside it
-    // this is a plain form field. The CURRENT body fat is deliberately absent:
-    // it is a denormalized cache of logged measurements (see the note on
-    // `startWeight` below), and editing it here moved the number without
-    // adding a point to any chart.
+    // The BASELINE body fat. Unitless, so unlike the weight beside it this is a
+    // plain form field. The CURRENT body fat is deliberately absent: it is the
+    // newest reading in the measurement log (see the note on `startWeight`
+    // below), and the Journey's Log measurement is its writer.
     startingBodyFatPercentage: z
       .string()
       .refine((v) => v === "" || (Number(v) >= 3 && Number(v) <= 60), {
@@ -158,18 +157,16 @@ export function useClientProfileEdit(
   // "220.5" and re-parses to 100.017, so a form that re-parsed whatever sat in
   // the box would drift the stored goal on every save (CONVENTIONS §20).
   const goalWeight = useCanonicalInput(preference, goal?.goalWeight, "weight");
-  // The recorded START weight, same treatment as the goal weight: collected in
-  // the coach's unit, guarded on the seeded string so a focus-through is an
-  // exact no-op (CONVENTIONS §20).
+  // The BASELINE weight, same treatment as the goal weight: collected in the
+  // coach's unit, guarded on the seeded string so a focus-through is an exact
+  // no-op (CONVENTIONS §20). Saving it appends a reading dated on the start
+  // date, which the derived baseline then reads.
   //
-  // The CURRENT weight is not here. It is a denormalized cache of logged
-  // measurements — the merged check-in + coach-entry series the chart and the
-  // Physique page draw from — and this form's PATCH wrote the cache WITHOUT
-  // adding a point to that series, so the two could disagree permanently. It
-  // also bypassed the no-regression rule `upsertMetricEntry` applies (a
-  // backdated entry must never move the cache backwards). The sheet shows it
-  // read-only and sends the coach to Log a measurement, which writes the entry,
-  // the cache and the energy recompute — a strict superset.
+  // The CURRENT weight is not here. It is the newest reading in the
+  // measurement log — the series the chart and the Physique page draw from —
+  // and a value typed on a profile form would be a reading with no day of its
+  // own. The sheet shows it read-only and sends the coach to Log a measurement,
+  // which appends the row and recomputes the energy pair when it is the newest.
   const startWeight = useCanonicalInput(preference, client.startingWeight, "weight");
 
   // Re-seed whenever editing opens, so a cancelled edit never leaks into the
