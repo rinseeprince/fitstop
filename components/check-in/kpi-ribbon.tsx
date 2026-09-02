@@ -6,7 +6,8 @@ import {
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import type { CheckIn, GetCheckInComparisonResponse, MetricChange } from "@/types/check-in";
+import type { CheckIn, GetCheckInComparisonResponse } from "@/types/check-in";
+import { formatDeltaValue, type DeltaInfo } from "./delta-format";
 import type { SessionSummary } from "@/lib/check-in/adherence";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
@@ -34,8 +35,6 @@ type KPIRibbonProps = {
 
 type Accent = "success" | "warning" | "destructive" | "neutral";
 
-type DeltaInfo = { text: string; type: "positive" | "negative" | "neutral" };
-
 type KPICardData = {
   label: string;
   value: string;
@@ -62,16 +61,6 @@ function deltaTextClass(type: DeltaInfo["type"]): string {
   if (type === "positive") return "text-[#0d9488]";
   if (type === "negative") return "text-[#d97706]";
   return "text-[rgba(255,255,255,0.4)]";
-}
-
-function formatDeltaValue(val: number, invert: boolean): DeltaInfo {
-  const rounded = Number(val.toFixed(1));
-  const sign = rounded > 0 ? "+" : "";
-  const isPositive = invert ? rounded < 0 : rounded > 0;
-  return {
-    text: `${sign}${rounded % 1 === 0 ? rounded : rounded.toFixed(1)}`,
-    type: rounded === 0 ? "neutral" : isPositive ? "positive" : "negative",
-  };
 }
 
 // Accent for a progress metric: good direction -> success, bad -> warning,
@@ -107,12 +96,12 @@ export const KPIRibbon = ({
   // delta measured against a check-in 92 days old.
   const buildComparison = (
     current: number | undefined,
-    change: MetricChange | undefined,
+    change: number | undefined,
     startingValue: number | undefined,
     invert: boolean
   ): { label: string; delta: DeltaInfo } | null => {
-    if (hasPreviousCheckIn && change?.change !== undefined) {
-      return { label: "vs last check-in", delta: formatDeltaValue(change.change, invert) };
+    if (hasPreviousCheckIn && change !== undefined) {
+      return { label: "vs last check-in", delta: formatDeltaValue(change, invert) };
     }
     if (!hasPreviousCheckIn && current !== undefined && startingValue !== undefined) {
       return { label: "vs start", delta: formatDeltaValue(current - startingValue, invert) };

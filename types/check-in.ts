@@ -734,15 +734,6 @@ export type NutritionWarning =
 // Trend direction for metrics
 export type TrendDirection = "up" | "down" | "stable";
 
-// Metric change with trend
-export type MetricChange = {
-  current?: number;
-  previous?: number;
-  change?: number;
-  percentChange?: number;
-  trend?: TrendDirection;
-};
-
 // Comprehensive check-in comparison data
 export type CheckInComparison = {
   /** The check-in this one is measured against, or null on a first check-in. */
@@ -761,14 +752,20 @@ export type CheckInComparison = {
      *  drift banner compares against took effect (migration 144). */
     nutritionPlanEffectiveDate?: string;
   };
+  /**
+   * Signed differences against the previous check-in, in the stored unit,
+   * present only when both check-ins carry the metric. The renderer decides
+   * what a change looks like (`components/check-in/delta-format.ts`); nothing
+   * about its direction or size is decided here.
+   */
   changes: {
-    weight?: MetricChange;
-    bodyFatPercentage?: MetricChange;
-    mood?: MetricChange;
-    energy?: MetricChange;
-    sleep?: MetricChange;
-    stress?: MetricChange;
-    soreness?: MetricChange;
+    weight?: number;
+    bodyFatPercentage?: number;
+    mood?: number;
+    energy?: number;
+    sleep?: number;
+    stress?: number;
+    soreness?: number;
   };
   timeBetweenCheckIns?: number; // days
 };
@@ -793,13 +790,8 @@ export type GoalProgress = {
     remaining: number;
     percentComplete: number;
     isOnTrack: boolean;
-    projectedCompletionDate?: string;
-    avgWeeklyChange?: number;
-    weeksToGoal?: number;
     // Pace check vs deadline (undefined when there is no deadline / current weight).
     paceStatus?: GoalPaceStatus;
-    requiredRate?: number;
-    safeCeiling?: number;
   };
   bodyFat?: {
     current: number;
@@ -810,7 +802,6 @@ export type GoalProgress = {
     remaining: number;
     percentComplete: number;
     isOnTrack: boolean;
-    avgChange?: number;
   };
   deadline?: {
     date: string;

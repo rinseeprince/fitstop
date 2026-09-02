@@ -40,7 +40,6 @@ vi.mock('@/utils/comparison-utils', () => ({
     remaining: 5,
     percentComplete: 50,
     isOnTrack: true,
-    weeksToGoal: 10,
   }),
 }))
 
@@ -331,5 +330,54 @@ describe('Comparison Service - read-switch behavior', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+// `isOnTrack` is the strip's fallback state and the ONLY thing the ten-row
+// recent read still feeds (plus the third-priority starting value). These run
+// the real `calculateGoalProgress` against the mocked reads so the whole path
+// from the recent set to the flag is under test — delete the read and the first
+// case reads "on track" for a client moving away from the goal.
+describe('the trend behind isOnTrack', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    const actual = await vi.importActual<typeof import('@/utils/comparison-utils')>(
+      '@/utils/comparison-utils'
+    )
+    vi.mocked(calculateGoalProgress).mockImplementation(actual.calculateGoalProgress)
+    vi.mocked(getClientById).mockResolvedValue(mockClient as never)
+    vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
+    vi.mocked(getCurrentGoals).mockResolvedValue({
+      id: 'goal-2',
+      clientId: 'client-1',
+      goalWeight: 77,
+      setBy: 'coach',
+      effectiveFrom: '2024-01-01T00:00:00Z',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    } as never)
+  })
+
+  it('reads false for a client whose recent check-ins move AWAY from a loss goal', async () => {
+    const current = { ...mockCheckIn, weight: 82, createdAt: '2024-02-08T00:00:00Z' }
+    const older = { ...mockCheckIn, id: 'ci-0', weight: 81, createdAt: '2024-02-01T00:00:00Z' }
+    vi.mocked(getCheckInById).mockResolvedValue(current as never)
+    // Newest first, as the service reads them: +1 kg over the week.
+    vi.mocked(getClientCheckIns).mockResolvedValue({ checkIns: [current, older] } as never)
+
+    const result = await getCheckInComparison('ci-1')
+
+    expect(result.goalProgress.weight?.isOnTrack).toBe(false)
+  })
+
+  it('reads true while the recent check-ins move TOWARDS it', async () => {
+    const current = { ...mockCheckIn, weight: 80, createdAt: '2024-02-08T00:00:00Z' }
+    const older = { ...mockCheckIn, id: 'ci-0', weight: 81, createdAt: '2024-02-01T00:00:00Z' }
+    vi.mocked(getCheckInById).mockResolvedValue(current as never)
+    vi.mocked(getClientCheckIns).mockResolvedValue({ checkIns: [current, older] } as never)
+
+    const result = await getCheckInComparison('ci-1')
+
+    expect(result.goalProgress.weight?.isOnTrack).toBe(true)
   })
 })

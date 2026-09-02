@@ -8,8 +8,9 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { MiniBarSparkline } from "./mini-bar-sparkline";
 import type { DailyLog } from "@/types/daily-log";
-import type { CheckInComparison, MetricChange } from "@/types/check-in";
+import type { CheckInComparison } from "@/types/check-in";
 import type { WellnessMetric } from "@/utils/wellness-color-thresholds";
+import { formatDeltaValue, type DeltaInfo } from "./delta-format";
 
 type WellnessSectionProps = {
   dailyLogs: DailyLog[];
@@ -36,14 +37,14 @@ const METRICS: MetricConfig[] = [
   { key: "soreness", label: "Soreness", maxValue: 10, scale: "/ 10", inverse: true },
 ];
 
-// Good direction teal, bad amber, no comparison muted. Teal Summit is a
-// two-colour status system — there is no red.
-function deltaClass(change: MetricChange | undefined, inverse: boolean): string {
-  if (!change || change.previous === undefined) return "text-[#93b0b4]";
-  if (change.trend === "down") return inverse ? "text-[#0d9488]" : "text-[#d97706]";
-  if (change.trend === "up") return inverse ? "text-[#d97706]" : "text-[#0d9488]";
-  return "text-[#93b0b4]";
-}
+// Every delta on the review page follows one rule (`formatDeltaValue`): the
+// colour follows the number shown, and only 0.0 is neutral. Teal Summit is a
+// two-colour status system — good teal, attention amber, no red.
+const DELTA_TEXT_CLASS: Record<DeltaInfo["type"], string> = {
+  positive: "text-[#0d9488]",
+  negative: "text-[#d97706]",
+  neutral: "text-[#93b0b4]",
+};
 
 const SHORT_DAY = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -120,7 +121,7 @@ export const WellnessSection = ({
             // the same per-metric denominator — but drift if a wellness log
             // lands after the check-in was submitted.
             const change = changes?.[metric.key];
-            const hasDelta = change?.change !== undefined && change.previous !== undefined;
+            const delta = change !== undefined ? formatDeltaValue(change, !!metric.inverse) : null;
 
             return (
               <div key={metric.key} className="text-center">
@@ -133,16 +134,9 @@ export const WellnessSection = ({
                 <div className="text-[11px] text-[#93b0b4]">
                   {metric.scale}
                 </div>
-                {hasDelta && (
-                  <div
-                    className={cn(
-                      "text-[11px] font-medium",
-                      MONO,
-                      deltaClass(change, !!metric.inverse)
-                    )}
-                  >
-                    {change.change! > 0 ? "+" : ""}
-                    {change.change}
+                {delta && (
+                  <div className={cn("text-[11px] font-medium", MONO, DELTA_TEXT_CLASS[delta.type])}>
+                    {delta.text}
                   </div>
                 )}
                 <MiniBarSparkline

@@ -1,37 +1,12 @@
-import type { MetricChange } from "@/types/check-in";
-
-// Calculate metric change with trend
+// The signed change between two readings of one metric, or undefined when
+// either side is missing. Two decimals: the stored precision, not the printed
+// one — rounding for display is the renderer's job.
 export function calculateMetricChange(
   current?: number,
   previous?: number
-): MetricChange | undefined {
-  if (current === undefined) return undefined;
-
-  const metricChange: MetricChange = {
-    current,
-    previous,
-  };
-
-  if (previous !== undefined) {
-    const change = Number((current - previous).toFixed(2));
-    metricChange.change = change;
-
-    if (previous !== 0) {
-      metricChange.percentChange = Number(
-        ((change / previous) * 100).toFixed(1)
-      );
-    }
-
-    // Determine trend
-    const threshold = 0.5;
-    if (Math.abs(change) < threshold) {
-      metricChange.trend = "stable";
-    } else {
-      metricChange.trend = change > 0 ? "up" : "down";
-    }
-  }
-
-  return metricChange;
+): number | undefined {
+  if (current === undefined || previous === undefined) return undefined;
+  return Number((current - previous).toFixed(2));
 }
 
 // Calculate days between check-ins
@@ -85,7 +60,6 @@ export function calculateGoalProgress(
   remaining: number;
   percentComplete: number;
   isOnTrack: boolean;
-  weeksToGoal?: number;
   status: GoalStatus;
 } {
   // Signed, deliberately. A renderer showing a magnitude ("5 kg to go") takes
@@ -104,13 +78,12 @@ export function calculateGoalProgress(
     );
   }
 
-  // Calculate weeks to goal based on average change
-  let weeksToGoal: number | undefined;
+  // The TREND: on track while the recent average change points at the goal.
+  // With no average (fewer than two recent readings) there is nothing to
+  // contradict, so the answer is true.
   let isOnTrack = true;
 
   if (avgChange && avgChange !== 0) {
-    weeksToGoal = Math.abs(remaining / avgChange);
-    // Consider on track if making any progress in the right direction
     const needToLose = goal < current;
     const isLosingWeight = avgChange < 0;
     const needToGain = goal > current;
@@ -126,7 +99,6 @@ export function calculateGoalProgress(
     // and pace figures printed beside it, not the percentage.
     percentComplete: Math.min(100, Math.max(0, percentComplete)),
     isOnTrack,
-    weeksToGoal,
     status,
   };
 }

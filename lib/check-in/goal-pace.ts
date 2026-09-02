@@ -1,7 +1,7 @@
 import type { GoalPaceStatus } from "@/types/check-in";
 import type { GoalStatus } from "@/utils/comparison-utils";
 
-export type GoalPace = {
+type GoalPace = {
   // kg per week needed to reach the goal by the deadline.
   requiredRate: number;
   // kg per week considered safe (1% of current bodyweight).

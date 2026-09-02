@@ -162,7 +162,10 @@ export const getCheckInComparison = async (
     timeBetweenCheckIns,
   };
 
-  // Calculate average weekly changes from historical data
+  // The recent set (ten check-ins) feeds two things and nothing else: the
+  // average change per week, which is the TREND behind `isOnTrack` — body fat's
+  // only trend signal, and weight's when there is no deadline to pace against —
+  // and the third-priority starting-value fallback below.
   const weightCheckIns = checkIns.filter((ci) => ci.weight);
   let avgWeeklyWeightChange: number | undefined;
   if (weightCheckIns.length >= 2) {
@@ -217,8 +220,6 @@ export const getCheckInComparison = async (
       remaining: progress.remaining,
       percentComplete: progress.percentComplete,
       isOnTrack: progress.isOnTrack,
-      avgWeeklyChange: avgWeeklyWeightChange,
-      weeksToGoal: progress.weeksToGoal,
     };
 
     // Pace check: is the rate required to hit the goal by the deadline safe?
@@ -233,24 +234,6 @@ export const getCheckInComparison = async (
         : null;
     if (pace) {
       goalProgress.weight.paceStatus = pace.status;
-      goalProgress.weight.requiredRate = pace.requiredRate;
-      goalProgress.weight.safeCeiling = pace.safeCeiling;
-    }
-
-    // Calculate projected completion date. Not for a goal already met or passed:
-    // `weeksToGoal` there is the time to travel BACK to the target, which is not
-    // a completion date by any reading.
-    if (
-      progress.status === "approaching" &&
-      avgWeeklyWeightChange &&
-      progress.weeksToGoal
-    ) {
-      const projectedDate = new Date();
-      projectedDate.setDate(
-        projectedDate.getDate() + progress.weeksToGoal * 7
-      );
-      goalProgress.weight.projectedCompletionDate =
-        projectedDate.toISOString();
     }
   }
 
@@ -280,7 +263,6 @@ export const getCheckInComparison = async (
       remaining: progress.remaining,
       percentComplete: progress.percentComplete,
       isOnTrack: progress.isOnTrack,
-      avgChange: avgBodyFatChange,
     };
   }
 

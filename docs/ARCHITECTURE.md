@@ -129,9 +129,9 @@ A single pure resolver, `resolveEffectiveGoal()` (`lib/goals/resolve-effective-g
 
 `remaining` is **signed**. A renderer showing a magnitude reads `status` first: the magnitude answers "how far to go" only while a goal is being approached, and is the distance *back* to the target once it has been passed. `percentComplete` is clamped to 0-100 for the progress bar and reads 100 once a goal is met.
 
-`computeGoalPace` (`lib/check-in/goal-pace.ts`) compares the rate **required** to hit the deadline against a safe ceiling of 1% of bodyweight per week, and returns `null` for an achieved or overshot goal. It measures the required rate, **not** the client's current pace — the projected completion date, derived from `avgWeeklyChange`, is the separate figure answering that, and the two can legitimately disagree. Each says which it is.
+`computeGoalPace` (`lib/check-in/goal-pace.ts`) compares the rate **required** to hit the deadline against a safe ceiling of 1% of bodyweight per week, and returns `null` for an achieved or overshot goal. It measures the required rate, **not** the client's current pace: that is `isOnTrack`, the average change per week across the last ten check-ins pointed at the goal or away from it, and the two can legitimately disagree — a client losing steadily is on track and still behind pace when the deadline asks for more than the ceiling allows.
 
-**Badge precedence on the goal cards is `status` > `paceStatus` > `isOnTrack`.** A met goal renders no remaining distance, no pace check, no projected date and no estimated time, and carries a note suggesting a new target. Weight and Body Fat take the same state, so the two cards cannot reach different verdicts about one client.
+**The goal strip's state column reads `status` > `paceStatus` > `isOnTrack`.** A met goal renders no remaining distance and no pace check, and the strip's footer suggests a new target once every goal is met. Weight and body fat resolve through the same column, so the two rows cannot reach different verdicts about one client.
 
 ### body_metrics table
 
@@ -1278,8 +1278,12 @@ cards keep their borders and framer animation for now** and are owed the borderl
 
 **The comparison payload carries only what the page renders.**
 `GET /api/check-in/[id]/comparison` returns `previous` (a null-check for "is there anything to
-compare against"), `timeBetweenCheckIns`, the client's drift-banner fields, `goalProgress`, a
-and seven `changes` — weight, body fat and the five wellness metrics. **There is no chart series
+compare against"), `timeBetweenCheckIns`, the client's drift-banner fields, `goalProgress` — position,
+trend and pace status per goal, nothing projected — and seven `changes`: weight, body fat and the
+five wellness metrics, each a signed difference against the previous check-in, present only when
+both check-ins carry the metric. Every delta the page draws goes through one rule
+(`formatDeltaValue`, `components/check-in/delta-format.ts`): rounded to one decimal like the value
+beside it, coloured by its direction, neutral only at 0.0. **There is no chart series
 at all**: the band shows a value and a delta, and a trend line behind them read as chart junk on a
 dark strip. Girths, `workoutsCompleted` and `adherencePercentage` are not on it either, and neither
 is the current check-in (the caller fetched it by id). `workoutsCompleted` is why: deriving it cost two

@@ -22,7 +22,7 @@ function weightGoal(
   return {
     current: 72, goal: 77, startingWeight: 88,
     status: "overshot", remaining: 5, percentComplete: 100,
-    isOnTrack: false, avgWeeklyChange: -0.4,
+    isOnTrack: false,
     ...o,
   } as NonNullable<GoalProgress["weight"]>;
 }
@@ -33,7 +33,7 @@ function bodyFatGoal(
   return {
     current: 12, goal: 15, startingBodyFat: 20,
     status: "overshot", remaining: 3, percentComplete: 100,
-    isOnTrack: false, avgChange: -0.5,
+    isOnTrack: false,
     ...o,
   } as NonNullable<GoalProgress["bodyFat"]>;
 }
@@ -75,7 +75,7 @@ describe("a goal that has been overshot", () => {
   });
 
   it("renders no pace check and no projected date", () => {
-    renderStrip({ weight: weightGoal({ paceStatus: "on_track", requiredRate: 0.6, safeCeiling: 0.72 }) });
+    renderStrip({ weight: weightGoal({ paceStatus: "on_track" }) });
 
     expect(screen.queryByText(/Pace check/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Safe ceiling/i)).not.toBeInTheDocument();
