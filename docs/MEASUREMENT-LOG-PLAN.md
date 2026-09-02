@@ -1,6 +1,6 @@
 # Measurement log — one store for every body measurement
 
-**Status: PLANNED 2026-09-02, awaiting the owner's decisions in §3. Nothing built.** Four commits, each with a pasteable prompt (§6), each independently revertable in order, each gated. Commit 1 is useful on its own and fixes a page that is wrong on main today.
+**Status: commit 1 SHIPPED 2026-09-02 (`55ed1242`); commits 2–4 await the owner's decisions in §3.** Four commits, each with a pasteable prompt (§6), each independently revertable in order, each gated. Commit 1 stands on its own: it fixed the goal strip on main.
 
 **Scope:** the seven physique measurements — weight, body fat, waist, hips, chest, arms, thighs — and where they are stored, written and read. **Not in scope:** wellness (mood, energy, sleep, stress, soreness stay on the daily-logs model), the check-in form the client sees, the review page's layout, goals themselves, the RN wire shapes (they must not change).
 
@@ -123,7 +123,7 @@ Each prompt is complete on its own. Paste it into a fresh session. The session m
 
 ### Commit 1 — `fix(goals): goal position reads the client's current reading — one kernel, one source`
 
-**STATUS: NOT STARTED.**
+**STATUS: SHIPPED `55ed1242`, 2026-09-02.** Owner decision on the footer: a `No reading yet` row neither earns nor blocks "Goal met"; with nothing judged there is no note. A fourth doc edit landed with the owner's OK — ARCHITECTURE's strip paragraph names the `No reading yet` state. The DEV premise had moved by execution time: the record read 74.0 (three check-ins at 74 submitted 15:12–15:15 BST and deleted since), and no weightless check-in survived, so the browser smoke starts with a fresh weightless submission. Browser smoke OWED.
 
 Fixes the page on main today. Storage untouched. Also carries the reply-block button fix agreed in the R6 smoke.
 
