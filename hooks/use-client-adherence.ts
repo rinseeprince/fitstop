@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
-import useSWR, { useSWRConfig } from "swr";
+import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { AdherenceSummary } from "@/types/coach-overview";
 
@@ -32,25 +31,4 @@ export function useClientAdherence(clientId: string, days: number) {
   );
 
   return { adherence: data?.data ?? null, isLoading, isError: !!error };
-}
-
-/**
- * Invalidates every window of a client's adherence.
- *
- * Matches the API AREA, not one key: the read is keyed per window, so a write
- * that moves adherence has to clear 30 and 60 together or the coach switches
- * windows and reads a figure that predates their own change.
- */
-export function useInvalidateClientAdherence() {
-  const { mutate } = useSWRConfig();
-
-  return useCallback(
-    (clientId: string) =>
-      mutate(
-        (key) =>
-          typeof key === "string" &&
-          key.startsWith(`/api/clients/${clientId}/adherence`)
-      ),
-    [mutate]
-  );
 }

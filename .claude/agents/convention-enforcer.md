@@ -24,7 +24,6 @@ You are a convention enforcer for a **Supabase + Next.js App Router** fitness co
 components/
   client-portal/        # Client-facing post-activation portal (home, detail pages, nav, settings)
   clients/              # Coach-side components
-    daily-pulse/        # Coach wellness view
     habits/             # Coach habit analytics
     training/           # Training plan management
     nutrition/          # Nutrition management

@@ -23,7 +23,7 @@ import {
 
 export type EnergyInputField = "weight" | "height" | "gender";
 
-export type EnergyInputs = {
+type EnergyInputs = {
   /** KILOGRAMS, canonical (CONVENTIONS §20). */
   weightKg: number | null | undefined;
   /** CENTIMETRES, canonical. */
@@ -56,7 +56,7 @@ export type EnergyComputationMeta = {
   ageSource: "date_of_birth" | "assumed_default" | "not_required";
 };
 
-export type EnergyComputation =
+type EnergyComputation =
   | ({ status: "ready"; bmr: number; tdee: number } & EnergyComputationMeta)
   | { status: "insufficient"; missing: EnergyInputField[] };
 

@@ -393,8 +393,6 @@ export const clientLayoutSchema = z.object({
     .max(7),
 });
 
-export type ClientLayoutInput = z.infer<typeof clientLayoutSchema>;
-
 // =============================================================================
 // API Response Validation Schemas
 // =============================================================================

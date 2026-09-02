@@ -212,7 +212,6 @@
     /client        - The client portal, under `app/client/layout.tsx`
   /components    - React components
     /clients       - Coach-facing: a coach viewing their clients' data (plural)
-      /daily-pulse - Legacy coach-side pulse (wellness strip, day-detail card; being retired)
     /client        - Client-facing: pre-activation flows (onboarding, walkthrough, waiting state)
     /client-portal - Client-facing: post-activation portal (home, detail pages, nav, settings)
     /ui            - Shadcn/Radix base components (vendored generator output; its unused sub-exports are not refactor residue and are not swept)
@@ -255,8 +254,6 @@
   2. Is this shown to a client who has not yet been activated by their coach? → `components/client/`.
   3. Is this shown to an activated client inside the portal? → `components/client-portal/`.
   4. Never mix audiences in the same file. A component used by both coach and client belongs in `components/` or `components/ui/`.
-
-  `components/clients/daily-pulse/` (coach-side: wellness strip, day-detail card) is frozen legacy — still shipped, no deletion scheduled. Do not add new files there and do not imitate its fetch pattern; if you must edit it, keep its existing pattern rather than mixing in SWR. (The old client-side `components/daily-pulse/` was removed in Session 5.1.) See `docs/CLIENT-PORTAL-REDESIGN.md` for the target structure.
 
   ### Where training UI lives (post builder overhaul)
 

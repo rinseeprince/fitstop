@@ -6,15 +6,9 @@ import type {
   EnergyInputField,
 } from "./client-energy-calc";
 
-// Type-only re-exports. NEVER re-export computeEnergyPair as a value from here:
-// this module imports supabaseAdmin, and scripts/check-service-key-leak.ts
-// fails on any "use client" module reachable through value imports.
-export type {
-  EnergyComputation,
-  EnergyComputationMeta,
-  EnergyInputField,
-  EnergyInputs,
-} from "./client-energy-calc";
+// NEVER re-export computeEnergyPair as a value from here: this module imports
+// supabaseAdmin, and scripts/check-service-key-leak.ts fails on any "use client"
+// module reachable through value imports.
 
 /**
  * THE single writer of UPDATES to `clients.bmr` / `clients.tdee`.

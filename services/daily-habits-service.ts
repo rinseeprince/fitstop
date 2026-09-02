@@ -8,7 +8,6 @@ import {
   type DailyHabitLogWithHabit,
 } from "./daily-habits-mappers";
 
-export type { HabitLogWithDetails } from "@/types/daily-habit";
 
 /** Thrown when a body-supplied habit id does not belong to the scoped client. */
 export class HabitOwnershipError extends Error {

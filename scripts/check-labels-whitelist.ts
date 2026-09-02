@@ -20,9 +20,6 @@ export const LABEL_WHITELIST: readonly string[] = [
   "components/client-portal/",
   "app/client/",
 
-  // -- Frozen legacy (coach-side, being retired) -------------------------------
-  "components/clients/daily-pulse/",
-
   // -- Legacy pages not yet migrated to Teal-Summit ----------------------------
   "app/(coach)/automation/page.tsx",
   "components/automation-rule-card.tsx",

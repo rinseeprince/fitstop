@@ -666,14 +666,6 @@ One rule in `lib/daily-log-permissions.ts` (pure, client-safe): today always edi
 
 Keyset-by-default is scoped to paginated, time-ordered "load older" history (check-ins). Small bounded sets return in full with no cursor (habits, a 1-week completions window, the exercise list). History rows are ID-first (`exercise_id` + `performed_name` fallback), never the catalog dictionary; the dictionary syncs separately via `GET /api/client/exercises/catalog?since=` (a read-only delta returning rows with `updated_at` after `since`; the client upserts them into its cached catalog — deletes are invisible to the delta, so a periodic full resync, by omitting `since`, catches them; internally paged past the ~1000-row PostgREST cap). Weights and lengths cross the wire as canonical kg/cm and are rendered client-side in the viewer's unit via `utils/unit-conversions.ts` (no formatter calls in `app/api/client/**`). Per-record unit tags and API-boundary conversion were considered and rejected: the two highest-volume weight tables (`set_logs`, `client_metric_entries`) never carried a tag, so render-time conversion could not recover the true value. Canonical storage replaced them in migrations 140-141.
 
-### Coach-side wellness strip (unmounted)
-
-`components/clients/daily-pulse/daily-wellness-strip.tsx` — frozen legacy, and **no longer mounted anywhere** since the Overview redesign replaced it with the five-card Daily-wellness section. The files stay (nothing is scheduled to delete them); `hooks/use-wellness-data.ts` is still its data source and remains shared with the Overview.
-- Fetched a 28-day rolling window of daily_logs + habit_logs via `Promise.all`
-- Rendered a 2x2 bar chart grid (mood, energy, sleep, stress) + adherence dots
-- Ran `detectAlerts()` client-side — a second, independent alert computation from the server-side attention feed
-- **Intentionally 4-metric**: it never rendered soreness. The Overview's replacement renders all five (see below)
-
 ---
 
 ## Coach-side Data Flow

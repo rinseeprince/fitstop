@@ -71,7 +71,6 @@ const EXEMPT: Record<string, string> = {
   "lib/check-in-week.test.ts": "this file",
   "lib/tracking-triggers.ts": "takes the anchor as a parameter; attention-feed-helpers resolves it",
   "services/habits-weekly-service.ts": "takes the anchor as a parameter; the habits/weekly route resolves it",
-  "lib/daily-wellness-alerts.ts": "frozen legacy — its only consumer, the coach wellness strip, is unmounted",
 };
 
 function sourceFiles(dir: string): string[] {

@@ -8,12 +8,10 @@ export type TrainingExerciseRow = Database["public"]["Tables"]["training_exercis
 export type ExerciseRow = Database["public"]["Tables"]["exercises"]["Row"];
 
 export type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
-export type ClientInvitationRow = Database["public"]["Tables"]["client_invitations"]["Row"];
 export type ContentFolderRow = Database["public"]["Tables"]["content_folders"]["Row"];
 export type ContentItemRow = Database["public"]["Tables"]["content_items"]["Row"];
 export type ContentAssignmentRow = Database["public"]["Tables"]["content_assignments"]["Row"];
 export type CoachRow = Database["public"]["Tables"]["coaches"]["Row"];
-export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 export type SessionLogRow = Database["public"]["Tables"]["session_logs"]["Row"];
 export type SessionLogInsert = Database["public"]["Tables"]["session_logs"]["Insert"];
 export type SessionLogUpdate = Database["public"]["Tables"]["session_logs"]["Update"];
@@ -34,9 +32,6 @@ export type TrainingEventRow = Database["public"]["Tables"]["training_events"]["
 export type TrainingEventInsert = Database["public"]["Tables"]["training_events"]["Insert"];
 export type NutritionEventRow = Database["public"]["Tables"]["nutrition_events"]["Row"];
 export type NutritionEventInsert = Database["public"]["Tables"]["nutrition_events"]["Insert"];
-
-// Goals & metrics types
-export type ClientGoalRow = Database["public"]["Tables"]["client_goals"]["Row"];
 
 // No BodyMetricsUpdate — immutable event table
 

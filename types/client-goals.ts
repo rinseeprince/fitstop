@@ -16,12 +16,6 @@ export type ClientGoal = {
   updatedAt: string;
 };
 
-// Input type for creating goals (excludes server-managed fields)
-export type ClientGoalInput = Omit<
-  ClientGoal,
-  "id" | "effectiveFrom" | "supersededAt" | "createdAt" | "updatedAt"
->;
-
 // Database row shape (until types/database.ts is regenerated)
 export type ClientGoalRow = {
   id: string;

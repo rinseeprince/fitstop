@@ -5,7 +5,6 @@ import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import type { Database } from "@/types/database";
 import { recordBodyMetrics } from "@/services/body-metrics-service";
-import { getClientTodayString } from "@/services/today-service";
 
 type NutritionPlanRow = Database["public"]["Tables"]["nutrition_plans"]["Row"];
 
@@ -197,19 +196,6 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
   }
 
   return newPlanId;
-}
-
-/**
- * Thin covering-today wrapper over `getNutritionPlanIdForDate` — the id of
- * the version governing the client's current calendar day, or null (a client
- * whose only versions are queued or ended resolves null). Kept per the
- * versioning design as the canonical "what governs today" entry point (the
- * training twin is `getActiveTrainingPlanId`); the 1b.2 rewiring left it with
- * no production callers, so any new caller should first check whether a
- * per-date resolution fits better.
- */
-export async function getActiveNutritionPlanId(clientId: string): Promise<string | null> {
-  return getNutritionPlanIdForDate(clientId, await getClientTodayString(clientId));
 }
 
 /**
