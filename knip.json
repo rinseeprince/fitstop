@@ -55,10 +55,14 @@
     "tests/**",
     "tsconfig.tsbuildinfo",
     "schema_dump.md",
-    "*.md"
+    "*.md",
+    "components/ui/**",
+    "types/database.ts"
   ],
   "ignoreDependencies": [
     "autoprefixer",
-    "postcss-load-config"
+    "postcss-load-config",
+    "tailwindcss",
+    "tw-animate-css"
   ]
 }
