@@ -1,6 +1,6 @@
 # Measurement log — one store for every body measurement
 
-**Status: commit 1 SHIPPED 2026-09-02 (`55ed1242`); commits 2–4 await the owner's decisions in §3.** Four commits, each with a pasteable prompt (§6), each independently revertable in order, each gated. Commit 1 stands on its own: it fixed the goal strip on main.
+**Status: commit 1 SHIPPED 2026-09-02 (`55ed1242`); commits 2–5 await the owner's decisions in §3.** Five commits (the fifth conditional on D9), each with a pasteable prompt (§6), each independently revertable in order, each gated. Commit 1 stands on its own: it fixed the goal strip on main.
 
 **Scope:** the seven physique measurements — weight, body fat, waist, hips, chest, arms, thighs — and where they are stored, written and read. **Not in scope:** wellness (mood, energy, sleep, stress, soreness stay on the daily-logs model), the check-in form the client sees, the review page's layout, goals themselves, the RN wire shapes (they must not change).
 
@@ -56,7 +56,7 @@ CREATE INDEX client_measurements_source_idx
 
 **Rules of the shape** (each one exists to delete a rule that exists today):
 
-1. **Append-only.** The app role holds `INSERT` and `SELECT` only; no `UPDATE`, no `DELETE`. A correction is a new row on the same day. History is never rewritten and never silently duplicated (rule 3).
+1. **Append-only.** The app role holds `INSERT` and `SELECT` only; no `UPDATE`, no `DELETE`. A correction is a new row on the same day. History is never rewritten and never silently duplicated (rule 3). *D9 (§3) proposes the one exception: a reading can be VOIDED — an UPDATE that sets `voided_at` and nothing else, through one RPC. A voided row is invisible to every reader and stays in the history; under D9, "latest row" in rule 2 reads "latest live row".*
 2. **The value for a day is the latest row for that client, metric and day, by `recorded_at`.** One rule, no source ranking, no tie-break table. The coach correcting after the check-in wins; that is the case that matters.
 3. **Writers append only on change.** A writer that would append a row equal in value to the day's current value for the same source does not write. This is what ends the phantom duplicates.
 4. **Two caches remain, and only two:** `clients.current_weight` and `clients.current_body_fat_percentage`, because the Overview, the goal strip and the energy calculator want "now" without a query. They are set from the newest row **by `recorded_on`** (a backdated row never regresses the cache — the rule the entries service already has, now the only rule), by one function in one service. *D8 (§3) proposes deleting this rule: both caches go, and "now" is read from the log through a view. If D8 is taken, rule 6's "reads the cache" reads "reads the newest row".*
@@ -80,6 +80,7 @@ CREATE INDEX client_measurements_source_idx
 | D6 | The client app's read path for the new table | `client-portal-progress` reads `check_ins` through `createPortalClient()`, i.e. under RLS with the client's JWT. Either add a `clients_view_own_measurements` policy (the shape `body_metrics` has in mig 064) **or** move that read behind service role in a route that has already verified the client. Recommendation: the policy, proven by the harness (§5), since that keeps the portal's data path as it is | Memory: anon+RLS is load-bearing on the portal path; a table with RLS enabled and no policy is invisible to it. `npm run check:rls` after either choice. |
 | D7 | The audit event name `BODY_METRICS_CREATE` | Rename to `MEASUREMENT_CREATE`; no other audit change | Name follows the table. |
 | D8 | The two "current" caches (raised by the owner 2026-09-02 after a hand-deleted check-in left `clients.current_weight` at a value no reading carried) | **Drop both.** Nothing reads a card; every "where are they now" reader takes the newest row of any source from the log, through one view `client_current_measurements` (one row per client: newest weight and newest body fat by `recorded_on DESC, recorded_at DESC`, `WITH (security_invoker = on)`). `getClientById` / `mapClientRow` read the two numbers through it, so `Client.currentWeight` / `currentBodyFatPercentage` keep their names and every consumer of the object is unchanged. Rule 4 is deleted; `appendMeasurements` writes no cache and instead calls `recalculateClientEnergy` when the appended row is the client's newest (the same predicate the cache guard uses today). Commit 4 drops the two columns. **Depends on D6 = the policy**: the client app reads under its own JWT, and the view only shows a client their rows if that policy exists. Alternative: keep rule 4, with the setter as `refreshMeasurementCache(clientId)` — a recompute from the log, runnable on its own — so a manual delete is healed by re-running it | A cache is a copying rule, and every copying rule here has produced a reader that disagrees with another (§1); the hand-delete showed the Overview contradicting itself on one card (chart 76.0, chip "4.0 kg to go", footer −14.0). With the view there is nothing to go stale and no cleanup procedure. Two readers already prefer the newest reading over the cache today — `nutrition-calc-inputs.ts:124` (`latestMetrics?.weight ?? client.currentWeight`) and the client app's `goals-section.tsx:30` (`client.currentWeight \|\| latestWeight`) — so D8 makes every reader behave as those two do. |
+| D9 | Retracting a wrong reading (raised by the owner 2026-09-02) | **A void mark, not a delete.** `voided_at timestamptz`, `voided_by uuid`, `void_reason text` on `client_measurements`; one RPC `void_measurement(p_id, p_client_id, p_actor, p_reason DEFAULT NULL)` (SECURITY DEFINER, `GRANT EXECUTE … TO service_role`, refuses an already-voided row and a row outside `p_client_id`) is the only UPDATE the table ever sees — the app role's grant stays `SELECT, INSERT`. A view `client_measurements_live` (`security_invoker`, `WHERE voided_at IS NULL`) is what every reader reads, the `client_current_measurements` view of D8 included, so a voided row leaves every surface at once — Journey, Overview, the strip, the client's check-in detail and progress series, the AI prompt — and the history keeps it. **Void only, no restore**: undoing a void is logging the value again (a new row, rule 1). **Coach only for now**, from the Journey's measurement log ("Remove reading" behind the destructive-confirm dialog), audited as `measurement.void`; a client's own `client_log` rows can reach the same RPC behind a client route later, additive to the RN contract. Voiding the newest reading recomputes energy — the same trigger as appending one. Built as **commit 5, after the old stores are gone**, so the equality proofs of commits 2–3 never meet a voided row and the check-in columns need no mirror update | HealthKit lets a user delete a sample; FHIR marks an observation "entered in error"; CONVENTIONS §8 says user-created data is soft-deleted, never hard-deleted. Without it, a wrong reading on a day with no other reading can only be fixed with database access. Alternatives: a "void row" (INSERT-only purity — every read anti-joins, rule 2 becomes a subquery, harder to index); a hard DELETE (rejected: the history is the point); a restore path (rejected for now: it reintroduces a second UPDATE, and re-logging is one tap). |
 
 **D8 reader map** (grep 2026-09-02: 43 non-test files touch the two columns; no SQL function or RPC reads them). Every reader keeps its field and its logic; only where the number is looked up from changes. What must be edited by hand: four **string-built column lists** that name the columns — `services/client-energy-service.ts:96`, `services/client-portal-service.ts:53` (`/api/client/me`, the RN contract; its `if (error \|\| !data) return null` swallows a stale name into an empty profile), `services/client-portal-progress.ts:140` (`/api/client/progress`, rule 7) and `services/intake-review-service.ts:110` — a stale column name there is a PostgREST 400 that `tsc` cannot see.
 
@@ -90,7 +91,7 @@ CREATE INDEX client_measurements_source_idx
 - **Client app** (`services/client-portal-service.ts:53` → `/api/client/me`; `services/client-portal-progress.ts:140,263` → `/api/client/progress`; `components/client-portal/metrics/goals-section.tsx:30`): the wire keeps `currentWeight` / `currentBodyFatPercentage` (additive-only contract), sourced from the view under the client's JWT — hence the D6 dependency.
 - **Also on the list, all read the field off the `Client` object and change nothing:** `lib/client-profile-completeness.ts:44-111` (`hasStartWeight` — the activation gate — and `findProfileGaps`), `components/clients/overview/status-band.tsx`, `check-in-goal-strip.tsx` via `comparison-service.ts`, `details-groups.tsx`, `lib/blocks/block-derivations.ts` (pure, fed by the Journey series). **Writers** that set the columns today (`client-service.ts` create/update, the metrics route, `metric-entries-service.ts`, `body-metrics-service.ts:87-89`, the seeds, `lib/validations/client.ts`'s PATCH fields) are commit 2's writer switch; the PATCH field names on the wire stay.
 
-**Owner's answers** (fill in before commit 2): D1 — · D2 — · D3 — · D4 — · D5 — · D6 — · D7 — · D8 —
+**Owner's answers** (fill in before commit 2; D9 before commit 5): D1 — · D2 — · D3 — · D4 — · D5 — · D6 — · D7 — · D8 — · D9 —
 
 ## 4. Blast radius — every dependant, by subsystem
 
@@ -117,7 +118,7 @@ Verified by grep on 2026-09-02. **Training has no dependency on body measurement
 | Seeds and scripts — `scripts/seed/generate.ts`, `scripts/seed-scale-client.ts`, `scripts/perf-baseline.ts`, `scripts/seed/teardown.ts` | write check-in weights, `body_metrics`, entries | write the log | 2, 4 |
 | Security — mig 064 policies on `body_metrics`, `lib/constants.ts` audit names, `npm run check:rls` | two tables' policies | one table: RLS enabled, `service_role` grant, D6 policy; D7 | 2, 4 |
 | Docs — ARCHITECTURE "body_metrics table", "client_metric_entries table", "The client's origin", the review-surface payload paragraph, Journey tab row; CONVENTIONS §8 examples; TECHNICAL-DEBT ledger | describe three stores | describe one | 4 |
-| Both databases — DEV `aeaphsslctwcmebldrzx`, PROD `etezzztgafcotyahgijk` | at 157 | 158 (commit 2), 159 (commit 4); PROD only after `migration list --linked` and row counts | 2, 4 |
+| Both databases — DEV `aeaphsslctwcmebldrzx`, PROD `etezzztgafcotyahgijk` | at 157 | 158 (commit 2), 159 (commit 4), one more for commit 5 under D9 — **or the next free numbers at execution time**: `docs/TRAINING-COMPLETION-EXECUTION-PLAN.md` also names 158 and 159, and whichever workstream pushes first takes them (never reuse, never skip); PROD only after `migration list --linked` and row counts | 2, 4, 5 |
 
 ## 5. Verification that nothing is missed
 
@@ -127,7 +128,7 @@ Verified by grep on 2026-09-02. **Training has no dependency on body measurement
 - **Gates after every commit:** `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`, `npm run check:labels`, `npx knip` (exits clean since `e9e54916`), `npm run check:service-key`, and `npm run check:rls` for commits 2 and 4. Mutation-test every new assertion from a copy in the scratchpad; never `git stash` or `git checkout --`.
 - **Migrations:** `supabase db push --dry-run` immediately before every push; the push may be classifier-blocked, hand it over via `!`. Drops as `IF EXISTS`. Regenerate types after each push and diff them against the repo.
 
-## 6. The four commits
+## 6. The five commits
 
 Each prompt is complete on its own. Paste it into a fresh session. The session must plan for review before writing anything.
 
@@ -269,7 +270,7 @@ check-in detail with girths.
 
 - Migration `159_drop_measurement_copies.sql`: drop the seven columns on `check_ins`; drop `body_metrics` (mig 064's two policies go with it); delete `client_metric_entries` rows whose `metric_key` is a physique key (D3) and narrow its CHECK to the wellness keys; per D8 (drop), also `clients.current_weight` and `current_body_fat_percentage` — grep every string-built column list at execution time before the push (the D8 reader map names four; a stale name is a PostgREST 400 that `tsc` cannot see, and the portal's is swallowed into an empty profile). `gen types`; diff.
 - Code: every dual-write from commit 2 removed; `services/body-metrics-service.ts` deleted; `utils/metric-points.ts` and its test deleted; the merge code in `use-merged-metrics` deleted; the entries service's physique path deleted; the energy service's event stamping deleted; the audit constant renamed (D7); the equality scan deleted (§5). `npx knip` names the rest — delete what it lists, un-export what only its own file reads.
-- Docs, current shape only: ARCHITECTURE → replace "body_metrics table" and "client_metric_entries table" with one "client_measurements table" section stating §2's seven rules; rewrite "The client's origin" per D4; the review-surface payload paragraph and the Journey tab row; CONVENTIONS §8's examples; TECHNICAL-DEBT → close "Client Metrics Log Extraction", add the D2 follow-up (wellness coach entries) and the girth-capture follow-up. Then delete this plan document (delete-then-document) — **confirm with the owner first**.
+- Docs, current shape only: ARCHITECTURE → replace "body_metrics table" and "client_metric_entries table" with one "client_measurements table" section stating §2's seven rules; rewrite "The client's origin" per D4; the review-surface payload paragraph and the Journey tab row; CONVENTIONS §8's examples; TECHNICAL-DEBT → close "Client Metrics Log Extraction", add the D2 follow-up (wellness coach entries) and the girth-capture follow-up. The plan document is deleted at the end of the LAST commit — commit 5 if D9 is taken, this one if D9 is declined (delete-then-document) — **confirm with the owner first**.
 - PROD: `supabase migration list --linked` and row counts before pushing 158 and 159 together; regenerate prod types and diff against the repo.
 
 ```text
@@ -290,7 +291,8 @@ migration 159; every dual-write, the body-metrics service, the merge layer, the 
 service's physique path, the event stamping and the equality scan removed; npx knip
 clean afterwards; ARCHITECTURE, CONVENTIONS and TECHNICAL-DEBT rewritten to the current
 shape with no "used to" and no shipped/reverted narrative; the plan document deleted
-only after you ask me and I confirm.
+only after you ask me and I confirm — and only if D9 is declined; with D9 taken,
+commit 5 is the last commit and deletes it.
 
 Migration rules as in commit 2, DEV first. Before any PROD push: `supabase migration
 list --linked` against the prod ref and the row counts of check_ins, body_metrics and
@@ -301,6 +303,47 @@ check:rls. Commit directly to main. Then update my memory record for this workst
 final browser smokelist: the review page for a weightless check-in, the Journey with a
 coach correction on a check-in day, the client app after that correction, and the
 Overview status card.
+```
+
+### Commit 5 — `feat(measurements): a reading can be removed — void, not delete`
+
+**STATUS: NOT STARTED. Conditional on D9; after commit 4.**
+
+- Migration (the next free number): `voided_at timestamptz`, `voided_by uuid`, `void_reason text` on `client_measurements`; the view `client_measurements_live` (`WITH (security_invoker = on)`, `WHERE voided_at IS NULL`) and `client_current_measurements` (D8) rebuilt on it; the RPC `void_measurement(p_id uuid, p_client_id uuid, p_actor uuid, p_reason text DEFAULT NULL)` — SECURITY DEFINER, `GRANT EXECUTE … TO service_role`, sets the three columns and nothing else, refuses a row already voided or outside `p_client_id` (the scope belt in SQL, since the route proves the coach owns the client and cannot prove the row does), returns the row's `metric_key` and whether it was the client's newest live row for that metric. The table grant stays `SELECT, INSERT`. If `EXPLAIN` under `SET LOCAL ROLE authenticated` shows the filter losing the series index, add a partial twin `WHERE voided_at IS NULL`. `gen types`; diff.
+- `services/measurements-service.ts`: `voidMeasurement({ clientId, measurementId, actor, reason? })` → the RPC, then `recalculateClientEnergy` when the voided row was the newest weight or body fat — the same trigger `appendMeasurements` uses (under D8-keep, `refreshMeasurementCache` too). Every reader in the service reads `client_measurements_live`, so the filter lives in the view, once: `getMeasurementsForCheckIns` returns no reading for a voided check-in row, and the band's cell, the client's check-in detail and the AI prompt show their empty state for it; rule 3's unchanged-check reads live rows only, so re-logging a voided value writes a new row.
+- Route `POST /api/clients/[id]/measurements/[measurementId]/void`: `coachApiRateLimit` → `requireCSRFProtection` → `getAuthenticatedCoachId(request)` → `requireCoachOwnsClient` → zod `{ reason?: string }` (≤ 200 chars) → service; audited as `measurement.void` (`AUDIT_ACTIONS`, no value in metadata). The §2 security, load and performance review is run and reported — a new route and a new write path both trigger it.
+- UI: the Journey's Physique measurement log gains a row action, **Remove reading**, behind the destructive-confirm dialog (`docs/newdesignsystem.md`): one sentence naming the reading and its date, ghost Cancel, primary Remove. On success, three invalidators: the Journey series area, the Overview area, and the check-in detail area when the row's source is `check_in`. Coach only.
+- Tests, each with a mutation: the RPC refuses a double void and a row of another client (the request-level harness — the belt is SQL, and a vitest that mocks `supabaseAdmin` proves nothing here); a voided row leaves `getMeasurementSeries`, `client_current_measurements`, the check-in object and `GET /api/client/progress` — the last read under the client's JWT, so RLS plus the view are both exercised; the energy recompute fires only when the newest row was voided; a re-logged value after a void writes a new row. `npm run check:rls`.
+- Docs: ARCHITECTURE → "client_measurements table" gains rule 8 (void); the audit constant. Then the plan document is deleted — **confirm with the owner first**.
+
+```text
+Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md before
+planning. Plan for my review before writing anything.
+
+Commits 1–4 have shipped (see §6): every body measurement is a row in
+client_measurements and nothing else stores one. This commit adds the one exception to
+§2 rule 1: a reading can be VOIDED — hidden from every reader, kept in the history —
+through one RPC, per my answer to D9 in §3. Where ARCHITECTURE or CONVENTIONS state a
+rule that contradicts §2, D9 or this commit, do not silently follow it and do not
+silently override it: list each contradiction with the doc line and what the plan says
+instead, and I will review before you write. If D9 is blank, stop and ask.
+
+Job: Commit 5 of docs/MEASUREMENT-LOG-PLAN.md §6 — `feat(measurements): a reading can
+be removed — void, not delete`. Build exactly what that section lists: the migration
+(the columns, the live view, the RPC as the table's only UPDATE, the grant unchanged);
+the service function with the energy recompute; the coach route with the full chain and
+the audit event; the Journey row action behind the destructive-confirm dialog with the
+three invalidators; the tests, including the request-level ones, and their mutations;
+check:rls; the docs.
+
+Migration rules as in commit 2, DEV first; PROD after `migration list --linked`. Rules:
+every fixture number distinct; cp backups before mutating, never git stash or git
+checkout --; gates: npx tsc --noEmit, npx eslint ., npx vitest run, npm run
+check:labels, npx knip, npm run check:service-key, npm run check:rls. Commit directly
+to main. Then replace this commit's STATUS line with SHIPPED, the hash and the date,
+hand me a browser smokelist (remove a check-in's reading and open that check-in; remove
+the newest weight and watch the Overview, the strip and the energy pair; remove then
+re-log the same value), and ask me before deleting this plan document.
 ```
 
 ## 7. Smoke setup on DEV — data the owner asked for (not commits)
