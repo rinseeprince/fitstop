@@ -223,7 +223,7 @@ Services that read goals/metrics prefer the new tables but fall back to legacy `
 goalWeight = currentGoals?.goalWeight ?? client.goalWeight
 earliestWeight = client.startingWeight ?? earliestMetrics[0]?.weight
 ```
-**The start-weight leg runs column-first, and that direction is load-bearing.** It used to prefer the earliest `body_metrics` event — correct while `starting_weight` was write-once, since a real event beats a denormalized copy — but that became "ignore the coach" once the column turned editable, because `body_metrics` is immutable by design: a corrected start weight would have shown on the Overview card and been ignored by the check-in comparison, the weight-goal card and the KPI ribbon. The inversion is behaviour-identical for every uncorrected client (both stores are written from one number at creation), and the event leg still covers clients whose column was never set.
+**The start-weight leg runs column-first, and that direction is load-bearing.** It used to prefer the earliest `body_metrics` event — correct while `starting_weight` was write-once, since a real event beats a denormalized copy — but that became "ignore the coach" once the column turned editable, because `body_metrics` is immutable by design: a corrected start weight would have shown on the Overview card and been ignored by the check-in comparison, the goal strip and the KPI ribbon. The inversion is behaviour-identical for every uncorrected client (both stores are written from one number at creation), and the event leg still covers clients whose column was never set.
 The **goal** half of that switch is no longer written by hand at each call site — `toClientGoalInput()` owns it (see "Effective goal resolution"), because four callers held byte-identical copies and one of them only had to be edited alone for them to diverge. The switch covers goal weight and goal body fat **only**; the deadline has no mirror leg by decision.
 
 ---
@@ -712,7 +712,7 @@ A type-level guard in the module fails the build if a seventh view is added with
 | Nutrition | `NutritionCalculatorCardEnhanced` + `NutritionHistoryTable` | Plan builder, per-day nutrition calendar, weekly adherence history |
 | Wellness | `WellnessTabContent` | Wellness trends and analysis |
 | Daily Habits | `HabitsTabContent` + `HabitsHistoryTable` | Habit management, analytics |
-| Check-ins | `CheckInsTabContent` | A `Check-in history` rail whose one action, "Customise check-in", opens the per-client form editor (see "The customisable form" under Check-in System) — it sits ABOVE the body's four states, because a coach shapes a form before the first check-in exists. Under it, the client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page on a **keyset cursor**; `hooks/use-check-in-data.ts` owns the list key and its invalidator). Each row is a `<Link>` to `checkInReviewUrl`; with `?checkIn=<id>` present the tab renders the review surface, `CheckInDetailView` (`components/clients/check-ins/`), in place of the list — one page: the KPI ribbon over Training, Nutrition, Wellness, Habits, Client notes, Goal progress and the AI review (Regenerate and Send). See "The coach review surface" under Check-in System |
+| Check-ins | `CheckInsTabContent` | A `Check-in history` rail whose one action, "Customise check-in", opens the per-client form editor (see "The customisable form" under Check-in System) — it sits ABOVE the body's four states, because a coach shapes a form before the first check-in exists. Under it, the client's check-in history, newest first, over `useClientCheckInsInfinite` ("Load older", `CLIENT_CHECKINS_PAGE_SIZE` per page on a **keyset cursor**; `hooks/use-check-in-data.ts` owns the list key and its invalidator). Each row is a `<Link>` to `checkInReviewUrl`; with `?checkIn=<id>` present the tab renders the review surface, `CheckInDetailView` (`components/clients/check-ins/`), in place of the list — one page: the KPI ribbon over Training beside Nutrition, then Wellness, Habits, Client notes, Goal progress, the AI review (Regenerate) and the Reply (Send). See "The coach review surface" under Check-in System |
 | Notes | `NotesTabContent` | `client_notes` list — pinned first, newest-first, add + pin/unpin. Same endpoints as the Overview card |
 
 `activeTab` is DERIVED from `?tab=` on every render (CONVENTIONS.md §7 → URL-driven UI state). Tab changes go through `handleTabChange` → `buildClientTabUrl` (`lib/client-tabs.ts`), which `router.replace`s without scroll: it is the URL **builder**, so cross-tab navigation runs through it to get the query assembled correctly (`?subtab=` stripped, `extraParams` applied). The training history table's exercise drill-down takes the handler as a prop, and the nutrition drawer's `GoalSummary` writes a sentence rather than a link. **Every tab owns a pane param named after itself** — `?journey=` (Physique/Training/Wellness/Blocks), `?training=` (Data/Plans), `?nutrition=` (Data/Plans). Single-owner is the whole contract: only its own tab reads it, so it rides through a tab switch and restores that pane on the return trip, and it is read *unconditionally* — a deep link resolves on the first render. The shared `?subtab=` that Training and Nutrition both used to write is retired (Session 7.2) — still read as a guarded fallback so old links resolve, still deleted on every tab change, written by nothing. `extraParams` ADDRESS a pane on arrival and a `null` value deletes a carried key.
@@ -734,7 +734,7 @@ COUNT would buy nothing. Both readers also revalidate on focus and revalidate th
 documented §7 exception `useOverdueClients` carries, for the same reason: the dominant writer of this
 list is the CLIENT submitting in another session, which no coach-side invalidator can reach.
 
-Three params are **one-shot**, consumed and stripped by the surface that receives them (`hooks/use-journey-round-trip.ts`): `?apply=1` / `?edit=1` opens the Training apply tray or the Nutrition plan drawer, and `?returnTo=journey&returnBlock=<id>` names the Journey block to return to on a **successful save** (`?journey=blocks&block=<id>`, which wins over the default-expanded current block). Stripping on arrival is not tidiness — the whole query is carried across every tab change, so a `returnTo` outliving its own flow would bounce a coach to Journey after a **later, unrelated** save, and a lingering open-param would re-open the surface on every hand-return to the tab (Radix unmounts inactive `TabsContent`, so each visit is a fresh mount). The hook also drops the return target on any close without a save. The affordance is offered on **current and future** blocks only; elapsed and archived keep plain text (`blockAcceptsSetup`).
+Four params are **one-shot**, consumed and stripped by the surface that receives them (`hooks/use-journey-round-trip.ts` for the first three, `hooks/use-profile-editor-trip.ts` for the last): `?apply=1` / `?edit=1` opens the Training apply tray or the Nutrition plan drawer, and `?returnTo=journey&returnBlock=<id>` names the Journey block to return to on a **successful save** (`?journey=blocks&block=<id>`, which wins over the default-expanded current block). Stripping on arrival is not tidiness — the whole query is carried across every tab change, so a `returnTo` outliving its own flow would bounce a coach to Journey after a **later, unrelated** save, and a lingering open-param would re-open the surface on every hand-return to the tab (Radix unmounts inactive `TabsContent`, so each visit is a fresh mount). The hook also drops the return target on any close without a save. The affordance is offered on **current and future** blocks only; elapsed and archived keep plain text (`blockAcceptsSetup`). The fourth, `?editProfile=1` (`OPEN_PROFILE_EDITOR_PARAM`), opens the Overview's client details sheet on arrival; the check-in goal strip's `Set new goals` sends a coach there with `checkIn` cleared in the same navigation, so Back does not land on the review it left.
 
 ### Builder flows
 
@@ -1217,27 +1217,54 @@ the seam means moving the check-in INSERT itself into an RPC.
 its list whenever `?checkIn=<id>` is present (the tab's single-owner param — see "Client page tab
 structure").
 
-**One page, no switcher**, read in the order the review runs: the KPI ribbon, then Training,
-Nutrition, Wellness, Habits, Client notes, Goal progress and the AI review. **Every section
-renders its own `SectionLabel` rail, inside the component that decides whether it has anything
-to show** — five of them return null on an empty week, so a rail owned by the page would stand
-over empty space, or the page would need a second copy of each child's emptiness predicate.
-The header is the sidebar back-row grammar ("← Check-ins") over a mono meta line carrying the
-week, the submitted date, the days-logged chip and the gap since the previous check-in. There
-is no prev/next between check-ins and no window keydown listener.
+**One page, no switcher**, read in the order the review runs: the KPI ribbon (Weight, Body Fat,
+Nutrition, Training), then Training beside Nutrition, Wellness, Habits, Client notes, Goal
+progress, the AI review, and last the Reply. Training and Nutrition share a flex row rather than a
+two-column grid: either returns null on an empty week, and a lone survivor takes the whole row
+instead of leaving a hole. **Every section renders its own `SectionLabel` rail, inside the
+component that decides whether it has anything to show** — five of them return null on an empty
+week, so a rail owned by the page would stand over empty space, or the page would need a second
+copy of each child's emptiness predicate. Every card is borderless white on the `#f4f7f6` page per
+the SOT's "spacing does separation, not borders"; nothing animates in; names and body sit at 13px
+like the rail. The header is the sidebar back-row grammar ("← Check-ins") over a mono meta line:
+the week, the submitted date, `N/M days logged` (days in the period with ANY daily log — the
+Nutrition rail's own count is days with food logged, a narrower question, so the two can
+legitimately differ) and `N days since last check-in`. There is no prev/next between check-ins
+and no window keydown listener. Weight and body fat appear twice on purpose: the band answers
+"what changed since last time", the strip answers "where do they stand against the goal".
 
-**The rail is ONE card, "AI review"** (C4, 2026-08-30) — borderless white on the `#f4f7f6` page per
-the SOT's "spacing does separation, not borders" — with Regenerate as its header action and four
-sub-blocks inside: Summary, What to watch, Coach actions, Share with client. Every one of them, and
-the Client Notes card's Reflection / Wins / Challenges, renders through
-`components/clients/check-ins/review-block.tsx` (`ReviewBlock` / `ReviewProse` / `ReviewList` +
-`ReviewListRow`). That primitive is the whole vocabulary — a labelled block, a run of prose, a
-marked list — and it exists because the rail previously carried four label treatments and the notes
-card two more. **`ReviewProse` sets `whitespace-pre-wrap`**: every string on this surface is free
-text a client or the AI wrote, and the old markup collapsed their line breaks. It lives in the coach
-folder and is imported BY the mixed `components/check-in/` tree, which is deliberately not
-relocated (it still holds client-facing wizard steps with their own importers).
+**The goal strip** (`check-in-goal-strip.tsx`) is one row per goal — weight, body fat — each a
+value, a track and a state column resolved `status` > `paceStatus` > `isOnTrack`: `Reached` (with
+the distance past target on an overshoot), `On track`, `Behind pace`, `Deadline unrealistic`,
+`Needs attention`, the last four carrying the distance to go. `paceStatus` judges whether the RATE
+REQUIRED to hit the deadline is safe; `isOnTrack` whether the client is moving towards the goal;
+reading them in that order is what keeps "On track" off a client past a weight-loss target. Body
+fat carries no pace status and falls through the same column, so the two rows cannot reach
+different verdicts about one client. The deadline is the rail's meta (`deadline d MMM · N days`,
+or `Overdue by N days`); with no goals the rail stands over a verbatim empty state. **One advisory
+footer, and goals outrank nutrition**: every goal met → "Goal met - consider setting a new target."
+with the `Set new goals` button, which sends the coach to the Overview with `?editProfile=1` and
+`checkIn` cleared (the details sheet opens on arrival, and Back does not land on the review it
+left); otherwise, weight 3 kg or more from the base weight the nutrition targets were built on →
+the drift note naming the distance and the date the targets took effect, with no button. Targets
+built for a goal the client has passed need the goal reset first, so a nutrition note never
+appears beside a met goal.
 
+**The comparison read's states live on the strip.** Goal progress is the one section the
+`…/comparison` read feeds on its own, so it carries that read's spinner and its failure notice
+under its own rail; the band's deltas and the wellness deltas degrade in place (no comparison, no
+delta), and every detail-fed section still renders. A `?checkIn=` id belonging to another client
+renders the foreign notice and nothing else.
+
+**The AI review is ONE card** — Regenerate as its header action, three blocks inside: Summary,
+What to watch, Coach actions. Every one of them, and the Client Notes card's Reflection / Wins /
+Challenges, renders through `components/clients/check-ins/review-block.tsx` (`ReviewBlock` /
+`ReviewProse` / `ReviewList` + `ReviewListRow`). That primitive is the whole vocabulary — a
+labelled block, a run of prose, a marked list — so the surface has one label treatment.
+**`ReviewProse` sets `whitespace-pre-wrap`**: every string on this surface is free text a client
+or the AI wrote, and their line breaks are content. It lives in the coach folder and is imported BY
+the mixed `components/check-in/` tree, which is deliberately not relocated (it still holds
+client-facing wizard steps with their own importers).
 
 **What the review is given.** `buildCheckInAnalysisPrompt` (`utils/ai-prompt-builder.ts`) assembles
 the prompt; `AI_SYSTEM_PROMPT` and `buildAnalysisTaskPrompt` carry the rules. Three of them are
@@ -1259,14 +1286,18 @@ one per row would be a query per check-in.
 carry what they connect to, and co-occurrence across metrics and across days. An uncertain
 explanation offered as a question is preferred to silence.
 
-**Empty states, and the one asymmetry.** When the AI half is wholly empty the card shows a single
-placeholder rather than one per block — but **Share stays**, because a coach could always write and
-send a reply before the AI had run and that is the coach's message, not the AI's output. The
-`clientMessage` draft is a prop synced by effect, so a Regenerate replaces it instead of leaving a
-stale draft to be sent. Regenerate reports a non-OK response (the coach-keyed `aiRateLimit` 429 was
-silent before C4). The never-persisted Summary pencil edit is gone. **The five sibling section
-cards keep their borders and framer animation for now** and are owed the borderless treatment
-(D7.3) — the rail took it first as the new card.
+**Empty states.** When the AI half is wholly empty the card shows a single placeholder ("No AI
+review yet. Regenerate to write one.") rather than one per block. Regenerate reports a non-OK
+response, the coach-keyed `aiRateLimit` 429 included.
+
+**The Reply block** (`check-in-reply-block.tsx`) is the last section and the destination of the
+page: everything above it is what the coach reads before writing it. Full width, one primary
+button, Copy beside it. The draft is the review's `clientMessage`, a prop synced by effect, so a
+Regenerate replaces it rather than leaving a stale draft to be sent. **A sent reply does not lock
+the block**: the previous message becomes context above a live box, the rail dates it
+(`Sent MMM d`) and the button reads `Send follow-up`. A successful Send returns the coach to the
+list and refreshes it. The block renders whether or not the AI has run — the coach's message is
+not the AI's output.
 
 **The comparison payload carries only what the page renders.**
 `GET /api/check-in/[id]/comparison` returns `previous` (a null-check for "is there anything to

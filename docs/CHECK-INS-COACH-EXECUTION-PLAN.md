@@ -497,41 +497,24 @@ stored/AI nutrition adherence use the week's targets.
 
 ### 2.6 #6 — Comparison & trends / Goal Progress: KEPT, redesign deferred to its own session
 
-The three consumers of `/api/check-in/[id]/comparison` (Comparison & Trends pane, Goal Progress
-pane, KPI ribbon deltas) stay exactly as they are through this workstream; #1 carries them onto
-the page untouched. What they should be **shaved down to** needs its own definition session —
-the owner's verdict is that much of it is slop, ugly, and hard to understand. So that session
-starts from evidence rather than impressions, here is what the deep dive found wrong or
-pointless in the current panes (all verified):
+**STATUS — CLOSED 2026-09-02. The redesign happened (`docs/CHECK-IN-REVIEW-REDESIGN-PLAN.md`, R1–R6).
+The surface's shape lives in ARCHITECTURE → Check-in System → "The coach review surface"; the wire
+in "The comparison payload carries only what the page renders".**
 
-- **Comparison "Adherence" row mixes two metrics**: the sparkline series is the stored
-  *nutrition* `adherence_percentage` while the current value (and the last point, overwritten)
-  is the *training* completed/prescribed pct (`check-in-comparison-view.tsx`).
-- **14 metric-change rows** (weight, body fat, five girths, workouts, adherence, mood, energy,
-  sleep, stress, soreness) each computed as `current − previous` with one `0.5` "stable"
-  threshold regardless of scale (mood 1–5 vs kg) — `utils/comparison-utils.ts`
-  `calculateMetricChange`.
-- **`isOnTrack` defaults to `true`** when there is no rate of change, so a client with one
-  check-in reads "On track" whatever the gap (TECHNICAL-DEBT `:80`); and the Goal Progress
-  summary sentence derives from the weight goal alone while the body-fat card can say the
-  opposite (TECHNICAL-DEBT `:78`).
-- **Two clocks in one response**: `projectedCompletionDate` uses the server's `new Date()`
-  while `daysRemaining` uses client-local today (`comparison-service.ts`).
-- **`NutritionRegenerationBanner`** inside Goal Progress is on legacy OKLCH tokens and
-  duplicates the Nutrition tab's own "Goal changed — regenerate" banner
-  (`nutrition-goal-changed-banner.tsx`).
-- The trend sparklines are a 4th chart library usage (`trend-sparkline.tsx`, recharts) at
-  `h-8 w-20`, unlabelled, over the last 10 check-ins.
-- Goal state, pace and "Since start" already live on the Overview status band; the pane
-  restates them per check-in.
+Where each finding of the deep dive went:
 
-The redesign session should decide: which of the 14 rows survive (weight, body fat, training,
-nutrition days-on-target are the obvious four), whether "vs previous check-in" or "vs start" is
-the comparison that matters, whether Goal Progress is a pane at all or a strip, and whether the
-sparklines earn their place. Until then: **no file under this path is deleted or restyled** by
-C0–C6, and the stale doc claims about it (ARCHITECTURE "Effective goal resolution" counts SIX
-direct callers today incl. `services/client-journey-service.ts`; TECHNICAL-DEBT `:518/:532`
-modal row at 352 lines vs 271 real) are fixed as doc-only lines in C0.
+- The Comparison "Adherence" row, the 14 metric-change rows, the trend sparklines and the OKLCH
+  regeneration banner inside Goal Progress: gone with the Comparison & Trends pane (R2) and the
+  Goal Progress pane (R5). The weight-drift check survives once, as the goal strip's footer note.
+- One `0.5` "stable" threshold regardless of scale: FIXED in `2172af42` (the review page — one
+  rule, `formatDeltaValue`, the colour follows the printed number and only 0.0 is neutral) and
+  `2e303d2a` (`getTrend`, the Journey tab and `/api/client/progress`).
+- Two clocks in one response: FIXED in `2172af42` — `projectedCompletionDate` left the wire with
+  the rest of the unread projection fields.
+- `isOnTrack` defaults to `true` with no rate of change: OPEN, in TECHNICAL-DEBT ("The two goal
+  targets contradict each other").
+- Goal state restated per check-in beside the Overview band: INTENTIONAL (redesign plan §7.2 C4) —
+  the strip answers "where do they stand at this check-in".
 
 ### 2.7 #7 — one presentation for the review blocks
 

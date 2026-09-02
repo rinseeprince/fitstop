@@ -214,7 +214,7 @@
     /clients       - Coach-facing: a coach viewing their clients' data (plural)
     /client        - Client-facing: pre-activation flows (onboarding, walkthrough, waiting state)
     /client-portal - Client-facing: post-activation portal (home, detail pages, nav, settings)
-    /ui            - Shadcn/Radix base components (vendored generator output; its unused sub-exports are not refactor residue and are not swept)
+    /ui            - Shadcn/Radix base components (vendored generator output; its unused sub-exports are not refactor residue and are not swept — `knip.json` ignores the folder for that reason, and `types/database.ts` because `supabase gen types` rewrites it whole)
   /services      - Business logic and data operations
   /utils         - Helper functions (AI, nutrition, training calculations)
   /hooks         - Custom React hooks
@@ -781,6 +781,7 @@
      else that could alter prerendering. The build chains `npm run check:prerender`, which fails if a
      statically prerendered coach page loses its structural chrome or `/clients`'s prerender claims a
      view (ARCHITECTURE → "Coach route group"). Not triggered by ordinary component/data changes.
+  9. `npx knip` - exits clean. Vendored `components/ui/**`, the generated `types/database.ts` and the packages imported only from CSS are configured away in `knip.json`, so anything the report lists is the sweep's work list, not noise to read past.
 
   ## 14. Performance
   - Database queries: Indexes on foreign keys, frequently queried fields. Index *with* the query — add the keyset index alongside the read it serves (see §8 "Client read scaling").

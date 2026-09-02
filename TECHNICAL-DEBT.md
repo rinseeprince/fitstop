@@ -68,18 +68,17 @@ Two live failure modes:
 
 ---
 
-## The two goal targets contradict each other on two live coach surfaces
+## The two goal targets contradict each other on the coach Overview status card
 
-Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it).
+Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; not caused by that workstream and not fixed by it). Narrowed 2026-09-02: the check-in review page no longer contradicts itself — its goal strip resolves weight and body fat through one state column (`status` > `paceStatus` > `isOnTrack`, `components/clients/check-ins/check-in-goal-strip.tsx`), so its two rows cannot reach different verdicts about one client.
 
 `goal_weight` and `goal_body_fat_percentage` are solved independently and reconciled by nobody:
 
 - **Coach Overview status card** renders teal "Goal reached" on the goal-weight cell beside amber "4.0% to go" on the goal-body-fat cell — two chips from the same helper (`lib/goals/goal-state.ts` via `client-status-card.tsx`), computed side by side, never compared.
-- **Check-in review page** prints "Body Fat: 4.0% to go" (`goal-progress-view.tsx`) directly above teal "On track to meet the goal by the deadline", because `progressNote` derives from `goalProgress.weight` alone.
 
-Compounding it: **`isOnTrack` defaults to `true`** when `avgChange` is falsy (`utils/comparison-utils.ts:70`, guarded by `if (avgChange && avgChange !== 0)`), so a client with fewer than two body-fat check-ins reads "On track" no matter how far off they are.
+Compounding it: **`isOnTrack` defaults to `true`** when there is no average change (`calculateGoalProgress` in `utils/comparison-utils.ts`, guarded by `if (avgChange && avgChange !== 0)`), so a client with fewer than two recent check-ins carrying the metric reads "On track" on the check-in goal strip no matter how far off they are.
 
-Fixing this means choosing which target is the headline, or making the summary sentence read both. **That is a check-in-review decision, not a goals-plumbing one** — there is no lean-mass model in the repo, so the two targets cannot be reconciled arithmetically.
+Fixing the card means choosing which target is the headline, or making the summary read both. There is no lean-mass model in the repo, so the two targets cannot be reconciled arithmetically.
 
 ---
 
@@ -530,20 +529,20 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 | # | File | Lines | Limit | Over By | Status |
 |---|------|-------|-------|---------|--------|
 | 1 | `services/check-in-tracking-service.ts` | 455 | 300 | 155 (51%) | Open |
-| 2 | `app/client/dashboard/page.tsx` | 366 | 250 | 116 (46%) | Open |
+| 2 | ~~`app/client/dashboard/page.tsx`~~ | 366 | 250 | 116 (46%) | **Resolved 2026-09-02** — `app/client/dashboard/` was deleted in the client-portal redesign; nothing to split. |
 | 3 | ~~`components/check-in/check-in-detail-modal.tsx`~~ | 352 | 250 | 102 (41%) | **Resolved 2026-08-29** — deleted; the review surface is `components/clients/check-ins/check-in-detail-view.tsx` (234 lines, render only) over the SWR hook `hooks/use-check-in-detail-data.ts` (228 lines) |
 | 4 | `app/api/client/check-ins/route.ts` | 363 | 250 | 113 (45%) | Open — grew in C6a (the form resolve + strip) |
 | 5 | `app/client/check-in/page.tsx` | 290 | 250 | 40 (16%) | Open |
-| 6 | `components/daily-pulse/daily-pulse.tsx` | 277 | 250 | 27 (11%) | Open |
+| 6 | ~~`components/daily-pulse/daily-pulse.tsx`~~ | 277 | 250 | 27 (11%) | **Resolved 2026-09-02** — the old client-side daily pulse was deleted with the external-activities sprint; nothing to split. |
 | 7 | `components/client/walkthrough/guided-walkthrough.tsx` | 266 | 250 | 16 (6%) | Open |
-| 8 | `lib/date-utils.ts` | 221 | 150 | 71 (47%) | Open |
+| 8 | ~~`lib/date-utils.ts`~~ | 221 | 150 | 71 (47%) | **Resolved 2026-09-02** — `lib/date-utils.ts` no longer exists (date helpers live in `lib/date-helpers.ts`); nothing to split. |
 | 9 | `utils/daily-logs-aggregation.ts` | 185 | 150 | 35 (23%) | Open |
 
 **Suggested splits:**
 
 1. **`check-in-tracking-service.ts`** - Split into `check-in-overdue-service.ts` (overdue/due-soon detection) and `check-in-adherence-service.ts` (streak calculations, adherence stats). Currently mixes unrelated concerns: overdue severity, upcoming detection, streak counting, and adherence statistics.
 
-2. **`dashboard/page.tsx`** - Extract a `useDashboardData()` hook to handle the 6-endpoint `Promise.all` fetch and associated state management. The page component should only own layout and rendering.
+~~2. **`dashboard/page.tsx`** - Extract a `useDashboardData()` hook to handle the 6-endpoint `Promise.all` fetch and associated state management. The page component should only own layout and rendering.~~ — **Resolved 2026-09-02**: the file no longer exists.
 
 3. ~~**`check-in-detail-modal.tsx`** - Extract tab content panels into sub-components~~ — **RESOLVED 2026-08-29**: the modal was deleted when the review moved onto the client's Check-ins tab (`components/clients/check-ins/check-in-detail-view.tsx`); its data fetches and state now live in the SWR hook `hooks/use-check-in-detail-data.ts`, and the view only renders.
 
@@ -551,11 +550,11 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 
 5. **`check-in/page.tsx`** - Extract step navigation logic and `canProceed()` validation into a `useCheckInSteps()` hook. **Reshaped by C6b**: the step list stops being a fixed 1-4 and comes from `stepsForFields(form.fields)`, so the hook this suggests would own the derived list, the clamp on a restored draft step, and the Next/Submit switch. Its three hard-coded `4`s go with it.
 
-6. **`daily-pulse.tsx`** - Split into `DailyPulseContainer` (hooks, state, handlers) and `DailyPulseView` (JSX rendering).
+~~6. **`daily-pulse.tsx`** - Split into `DailyPulseContainer` (hooks, state, handlers) and `DailyPulseView` (JSX rendering).~~ — **Resolved 2026-09-02**: the file no longer exists.
 
 7. **`guided-walkthrough.tsx`** - Extract individual step content renderers into a `walkthrough-steps.tsx` sub-component.
 
-8. **`date-utils.ts`** - Move check-in-specific functions (`calculateCheckInPeriod`, `getCheckInStatus`, `getNextPeriodEnd`) to a new `lib/check-in-date-utils.ts`.
+~~8. **`date-utils.ts`** - Move check-in-specific functions (`calculateCheckInPeriod`, `getCheckInStatus`, `getNextPeriodEnd`) to a new `lib/check-in-date-utils.ts`.~~ — **Resolved 2026-09-02**: the file no longer exists.
 
 9. **`daily-logs-aggregation.ts`** - Split metric averaging into a separate `utils/metric-averages.ts`.
 
@@ -565,7 +564,7 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Duplicate constant | `lib/date-utils.ts` | `DAY_MAP` defined twice (lines 50-58 and 129-137). Extract to a single module-level constant. | Open |
+| 1 | Duplicate constant | `lib/date-utils.ts` | `DAY_MAP` defined twice (lines 50-58 and 129-137). Extract to a single module-level constant. | **Resolved 2026-09-02** — `lib/date-utils.ts` no longer exists. |
 | 2 | Hardcoded magic numbers | `services/check-in-tracking-service.ts` | `-3` days upcoming threshold, `frequencyDays + 2` tolerance (lines 262, 311). Extract to named constants. (The `7`-day grace window went with `getMissedCheckInPeriods` in the 2026-08-25 dead-code sweep.) | Open |
 | 3 | Hardcoded magic numbers | `components/check-in/daily-logs-summary.tsx` | Wellness thresholds for all 5 metrics (mood 3/4, stress+soreness 3/6, energy/sleep 5/7) and the per-metric score divisors. Extract to `lib/constants.ts`. | Open |
 | 4 | Hardcoded magic numbers | `components/check-in/step-subjective.tsx` | Minimum logs threshold `3` (line 29), default metric values of `5`. | Open |
@@ -573,20 +572,21 @@ These files exceed the limits defined in CONVENTIONS.md Section 4 and should be 
 | 7 | Unsafe type casts | `lib/mappers.ts` | Lines 37-38 cast raw DB JSON to `AIInsight[]` and `AIRecommendation[]` without runtime validation. Add Zod schemas or type guards. | Open |
 | 8 | Empty catch blocks | `components/client/walkthrough/guided-walkthrough.tsx` | Line 76: catch block with only a comment, no logging. Should at minimum `console.warn`. | Open |
 | 9 | Empty catch blocks | `components/coach/client-activation-dialog.tsx` | Lines 87, 111: errors are logged but not surfaced to the user via toast. | Open |
-| 10 | Incomplete error handling | `app/client/dashboard/page.tsx` | `Promise.all` fetches 6 endpoints but failure in one leaves all state undefined. Should handle per-endpoint failures independently. | Open |
-| 11 | Unmemoized handler factories | `components/daily-pulse/daily-pulse.tsx` | Lines 208-210: `createAddHandler`, `createRemoveHandler`, `createToggleHandler` recreated every render. Wrap in `useCallback`. | Open |
+| 10 | Incomplete error handling | `app/client/dashboard/page.tsx` | `Promise.all` fetches 6 endpoints but failure in one leaves all state undefined. Should handle per-endpoint failures independently. | **Resolved 2026-09-02** — `app/client/dashboard/` was deleted in the client-portal redesign. |
+| 11 | Unmemoized handler factories | `components/daily-pulse/daily-pulse.tsx` | Lines 208-210: `createAddHandler`, `createRemoveHandler`, `createToggleHandler` recreated every render. Wrap in `useCallback`. | **Resolved 2026-09-02** — the file was deleted with the old client-side daily pulse. |
 
 ---
 
 ## Daily Pulse Feature
 
+Reviewed: 2026-03-12. The feature itself is gone — `components/daily-pulse/**`, `hooks/use-daily-pulse*.ts`, `hooks/use-training-restoration.ts` — so every row below that cited it is closed; the one that names a live file stays open.
 Reviewed: 2026-03-12
 
 ### P1 - Bugs
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Wrong date for unplanned activities | `components/daily-pulse/utils/daily-pulse-handlers.ts:84` | `saveUnplannedActivities` hardcodes `new Date().toISOString().split('T')[0]` instead of using the selected date. Saving unplanned activities on a past date incorrectly logs them for today. Fix: pass `selectedDate` as a parameter. | Open |
+| 1 | Wrong date for unplanned activities | `components/daily-pulse/utils/daily-pulse-handlers.ts:84` | `saveUnplannedActivities` hardcodes `new Date().toISOString().split('T')[0]` instead of using the selected date. Saving unplanned activities on a past date incorrectly logs them for today. Fix: pass `selectedDate` as a parameter. | **Resolved 2026-09-02** — the file no longer exists; the old client-side daily pulse, its hooks and handlers were deleted with the external-activities sprint and the client-portal redesign. |
 
 ---
 
@@ -594,13 +594,13 @@ Reviewed: 2026-03-12
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | Duplicate type: `HabitLogWithDetails` | `daily-pulse-content.tsx`, `habits-section.tsx`, `use-daily-pulse.ts`, `use-daily-pulse-state.ts`, `daily-pulse-logged-view.tsx` | Defined independently in 5 files. Canonical export exists in `types/daily-habit.ts`. All other files should import from there. | Open |
-| 2 | Duplicate type: `TodaysActivity` | `daily-pulse-content.tsx`, `training-summary.tsx`, `daily-logs-service.ts`, `use-daily-pulse.ts` | Defined in 4 files. Extract to `types/daily-log.ts` and import everywhere. | Open |
-| 3 | Duplicate type: `UnplannedActivity` | `daily-pulse-content.tsx`, `training-summary.tsx`, `nutrition-tracking-helpers.ts`, `add-activity-form.tsx` | Defined in 4 files. Extract to `types/daily-log.ts` and import everywhere. | Open |
-| 4 | Silent error swallowing | `components/daily-pulse/utils/daily-pulse-handlers.ts:55-57, 90-92` | `handleSessionCompletion` and `saveUnplannedActivities` catch errors with only `console.error`. No user-facing toast. Violates CONVENTIONS "Never swallow errors silently". | Open |
+| 1 | Duplicate type: `HabitLogWithDetails` | `daily-pulse-content.tsx`, `habits-section.tsx`, `use-daily-pulse.ts`, `use-daily-pulse-state.ts`, `daily-pulse-logged-view.tsx` | Defined independently in 5 files. Canonical export exists in `types/daily-habit.ts`. All other files should import from there. | **Resolved 2026-09-02** — the file no longer exists; the old client-side daily pulse, its hooks and handlers were deleted with the external-activities sprint and the client-portal redesign. |
+| 2 | Duplicate type: `TodaysActivity` | `daily-pulse-content.tsx`, `training-summary.tsx`, `daily-logs-service.ts`, `use-daily-pulse.ts` | Defined in 4 files. Extract to `types/daily-log.ts` and import everywhere. | **Resolved 2026-09-02** — the file no longer exists; the old client-side daily pulse, its hooks and handlers were deleted with the external-activities sprint and the client-portal redesign. |
+| 3 | Duplicate type: `UnplannedActivity` | `daily-pulse-content.tsx`, `training-summary.tsx`, `nutrition-tracking-helpers.ts`, `add-activity-form.tsx` | Defined in 4 files. Extract to `types/daily-log.ts` and import everywhere. | **Resolved 2026-09-02** — the file no longer exists; the old client-side daily pulse, its hooks and handlers were deleted with the external-activities sprint and the client-portal redesign. |
+| 4 | Silent error swallowing | `components/daily-pulse/utils/daily-pulse-handlers.ts:55-57, 90-92` | `handleSessionCompletion` and `saveUnplannedActivities` catch errors with only `console.error`. No user-facing toast. Violates CONVENTIONS "Never swallow errors silently". | **Resolved 2026-09-02** — the file no longer exists; the old client-side daily pulse, its hooks and handlers were deleted with the external-activities sprint and the client-portal redesign. |
 | 5 | Duplicated row-to-model mapping | `services/daily-logs-service.ts` | Identical snake_case-to-camelCase mapping repeated 3 times. Extract a `mapRowToDailyLog(row: DailyLogRow): DailyLog` helper. **RESOLVED 2026-05-21 (Session 3.1)** — the duplication was already collapsed into one mapper; renamed it to the exported `mapRowToDailyLog` and added a direct unit test. | Resolved |
-| 6 | Inconsistent date string handling | `components/daily-pulse/habits-section.tsx:83`, `components/daily-pulse/daily-pulse.tsx:40` | Uses `.split('T')[0]` instead of existing `getDateString()` from `lib/date-helpers.ts`. | Open |
-| 7 | Undocumented eslint-disable | `hooks/use-training-restoration.ts:92` | Suppresses `react-hooks/exhaustive-deps` without a "why" comment. CONVENTIONS require commenting the why (Section 3, line 82-83). Audit deps and add rationale or fix. | Open |
+| 6 | Inconsistent date string handling | `components/daily-pulse/habits-section.tsx:83`, `components/daily-pulse/daily-pulse.tsx:40` | Uses `.split('T')[0]` instead of existing `getDateString()` from `lib/date-helpers.ts`. | **Resolved 2026-09-02** — the file no longer exists; the old client-side daily pulse, its hooks and handlers were deleted with the external-activities sprint and the client-portal redesign. |
+| 7 | Undocumented eslint-disable | `hooks/use-training-restoration.ts:92` | Suppresses `react-hooks/exhaustive-deps` without a "why" comment. CONVENTIONS require commenting the why (Section 3, line 82-83). Audit deps and add rationale or fix. | **Resolved 2026-09-02** — the file no longer exists; the old client-side daily pulse, its hooks and handlers were deleted with the external-activities sprint and the client-portal redesign. |
 
 ---
 
@@ -608,8 +608,8 @@ Reviewed: 2026-03-12
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 1 | No tests for daily pulse hooks | `hooks/use-daily-pulse.ts`, `hooks/use-daily-pulse-state.ts`, `hooks/use-training-restoration.ts` | 3 hooks with ~500 lines of logic and zero test coverage. CONVENTIONS require 70% minimum (Section 12). | Open |
-| 2 | No tests for handler utilities | `components/daily-pulse/utils/daily-pulse-handlers.ts`, `daily-pulse-event-handlers.ts`, `nutrition-change-handlers.ts` | Pure functions with no tests. These are easily testable without component mocking. | Open |
+| 1 | No tests for daily pulse hooks | `hooks/use-daily-pulse.ts`, `hooks/use-daily-pulse-state.ts`, `hooks/use-training-restoration.ts` | 3 hooks with ~500 lines of logic and zero test coverage. CONVENTIONS require 70% minimum (Section 12). | **Resolved 2026-09-02** — the file no longer exists; the old client-side daily pulse, its hooks and handlers were deleted with the external-activities sprint and the client-portal redesign. |
+| 2 | No tests for handler utilities | `components/daily-pulse/utils/daily-pulse-handlers.ts`, `daily-pulse-event-handlers.ts`, `nutrition-change-handlers.ts` | Pure functions with no tests. These are easily testable without component mocking. | **Resolved 2026-09-02** — the file no longer exists; the old client-side daily pulse, its hooks and handlers were deleted with the external-activities sprint and the client-portal redesign. |
 
 ---
 
@@ -912,6 +912,18 @@ CONVENTIONS §8 is scheduled for rewrite to describe this pattern accurately (cu
   delete is ever built it must translate `23503` to a sentence rather than letting the
   constraint text reach a coach (CONVENTIONS §10).
 
+## Check-in review surface — open defects after the redesign
+
+Logged: 2026-09-02. Exposed by the review redesign (R1–R6), none fixed by it. The surface's shape is in ARCHITECTURE → Check-in System → "The coach review surface".
+
+- **`previous` is a full row read as a null-check.** `GET /api/check-in/[id]/comparison` returns the previous check-in whole; the page reads only `previous != null` ("is there anything to compare against"). `getPreviousCheckIn` (`services/check-in-service.ts`) also re-fetches the current check-in the comparison service already holds before reading the one before it — two round trips for a boolean. Fix: a `hasPrevious` flag on the wire, and the previous-check-in read keyed off the row the service has.
+- **The wellness value and its delta come from different sources.** The Wellness row's big number averages the period's daily logs at render; the delta beneath it is the difference of the STORED per-check-in snapshots (`calculateMetricAverages` writes them at submit with the same per-metric denominator). They agree by construction and drift if a wellness log lands after the check-in was submitted. Fix: derive both from one source, or re-snapshot on late logs.
+- **Two "days logged" counts, both correct, differently scoped.** The header chip counts days in the period with ANY daily log; the Nutrition rail counts days with food logged. A client who logged wellness but not meals reads e.g. `5/7 days logged` over `2/7` in the section. Fix: name the chip's scope in its label, or count one thing.
+- **Progress photos have no coach-side renderer.** A check-in can carry front, side and back photos (`photoFront` / `photoSide` / `photoBack`); the client wizard collects them (`components/check-in/step-photos.tsx`), the client's own check-in page renders them, and the coach detail read returns them — and no coach surface shows them. A feature, not a sweep item.
+
+---
+
+
 ## Design System & Color Tokens
 
 Reviewed: 2026-05-12
@@ -930,9 +942,9 @@ Reviewed: 2026-05-12
 
 | # | Issue | File(s) | Details | Status |
 |---|-------|---------|---------|--------|
-| 2 | The check-in review's five section cards still carry a border and a framer stagger the new card does not | `components/check-in/wellness-section.tsx`, `nutrition-section.tsx`, `training-section.tsx`, `habits-section.tsx`, `client-notes-section.tsx` | C4 (2026-08-30) made the AI review rail ONE borderless white card, per the SOT's "spacing does separation, not borders" (`docs/newdesignsystem.md:36`), and D7.3 settled that the five siblings in the left column are owed the same rather than being converted in the same commit — converting one of five would have made the column look broken instead of consistent. Until then the Current pane is deliberately asymmetric: a bordered, animated left column beside a borderless, still right rail. Each sibling also renders its own `text-sm` body against the rail's 13px. | Open |
+| 2 | ~~The check-in review's five section cards still carry a border and a framer stagger the new card does not~~ | `components/check-in/wellness-section.tsx`, `nutrition-section.tsx`, `training-section.tsx`, `habits-section.tsx`, `client-notes-section.tsx` | C4 (2026-08-30) made the AI review rail ONE borderless white card, per the SOT's "spacing does separation, not borders" (`docs/newdesignsystem.md:36`), and D7.3 settled that the five siblings in the left column are owed the same rather than being converted in the same commit — converting one of five would have made the column look broken instead of consistent. Until then the Current pane is deliberately asymmetric: a bordered, animated left column beside a borderless, still right rail. Each sibling also renders its own `text-sm` body against the rail's 13px. | **Resolved 2026-09-02** — all five are borderless and still (R4 of the review redesign), and the four `text-sm` bodies (training-section ×2, habits-section, the goal strip's empty state) sit at 13px since `8d2c6548`. |
 
-**Suggested fix:** drop `border border-[rgba(13,148,136,0.08)]` and the `motion.div` wrapper from all five in one sweep, and move their bodies onto `ReviewProse`'s 13px tier where they render prose. Mechanical; no logic. Do all five together.
+~~**Suggested fix:** drop `border border-[rgba(13,148,136,0.08)]` and the `motion.div` wrapper from all five in one sweep, and move their bodies onto `ReviewProse`'s 13px tier where they render prose. Mechanical; no logic. Do all five together.~~ — done.
 
 ---
 
@@ -962,7 +974,7 @@ Re-measured 2026-07-21.
 Logged: 2026-06-10; updated 2026-06-12 (Session 7.85). Sessions 7.81–7.84 (`docs/CLIENT-PORTAL-EXECUTION-PLAN.md`) fix device-synced capture (client + coach), plan placement, promotion, check-in gate, streaks, client home, and coach-side windows to the locked model: *"today" = the device timezone of whoever the date belongs to.* Session 7.85 anchored the write-path stragglers: phase-transition stamps (`p_today`, migration 111), the attention-dismissal date (coach-local; migration 112 dropped the table's UTC default), the three bare delete-future calls, and **four** swallowed `{ data }`-only destructures hardened to loud `{ data, error }` handling (`getDayEditState`, `assertCanEditTrainingDay`, `enrichWithDailyLogCounts`, and `getCoachTodayString` itself). These items are intentionally left for later.
 
 ### P2 - Deferred
-- **Reminder email cron is unwired.** `services/reminder-service.ts` (`sendAutomatedReminders`) has no invoker (no cron). Session 7.84 fixed the shared tracking fns it calls (`getDaysUntilOrPastDue` etc. now resolve the CLIENT's local day from `client.timezone`), so the day math is correct — but the cron itself is still unwired, and `lastReminderSentAt` throttling plus the send time-of-day remain untimezoned. Wire + verify before enabling.
+- ~~**Reminder email cron is unwired.**~~ **Resolved 2026-09-02** — `sendAutomatedReminders` was deleted in `c10f691d`: a function kept for a cron nobody built. If automated reminders are ever scheduled, the send path is `sendCheckInReminder` behind a cron that resolves each client's local day; `lastReminderSentAt` throttling and the send time-of-day would still need timezone handling.
 - **Sites deliberately left on server UTC** (dead fallbacks or non-day-decision uses, all commented in-file where relevant): the planId-only event-cleanup fallbacks (`deleteFutureNutritionEventsForPlan`, `cancelFutureEventsForPlan`; `deleteFutureEventsForPlan` had no caller at all and was deleted in the 2026-08-25 dead-code sweep) — as of Session 7.85 every live caller passes an explicit anchored date (the three bare callers in phase-transition ×2 and library-placement ×1 were the gap; the audit falsified the previous version of this claim), so the optional `fromDate`/`effectiveFrom` params are dead defensive code and could now be made required; `getWeeklyHabitsData`'s `todayAnchor` default (its only caller passes coach-local); coarse abuse bounds (e.g. the habits/weekly "max 7 days in future" range check — ±tz slack is harmless); audit/`created_at`/`updated_at` timestamps throughout (instants, not day decisions). `validateDateParameter` is now format-only — day bounds belong to write-side `canEditDay` (7.83).
 - **Non-day-decision `{ data }`-only swallows left after 7.85** (out of that session's tz scope, same silent-failure smell): the child-row "logged" check in `services/daily-log-permissions-service.ts` (~L90; a swallowed error reads as never-logged). Harden opportunistically. *(The `phase-transition-service.ts` captures referenced here were deleted with the roadmaps/phases removal, 2026-07-25; the former `library-placement-service.ts` active/planned-plan lookups were removed by the additive placement rewrite, events-SOT S2.)*
 
