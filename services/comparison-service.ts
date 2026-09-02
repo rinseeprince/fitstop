@@ -1,18 +1,17 @@
 import { getCheckInById, getPreviousCheckIn, getClientCheckIns, getFirstCheckIn } from "./check-in-service";
 import { getClientById } from "./client-service";
 import { getNutritionPlanForDate } from "./nutrition-plan-service";
-import { calculateMetricChange, calculateDaysBetween, calculateGoalProgress } from "@/utils/comparison-utils";
-import { computeGoalPace } from "@/lib/check-in/goal-pace";
+import { calculateMetricChange, calculateDaysBetween } from "@/utils/comparison-utils";
 import { getBodyMetricsHistory } from "./body-metrics-service";
 import { getCurrentGoals } from "./client-goals-service";
 import {
   resolveEffectiveGoal,
   toClientGoalInput,
 } from "@/lib/goals/resolve-effective-goal";
+import { deriveGoalProgress } from "@/lib/goals/goal-progress";
 import { getTodayDateStringInTimezone, getTodayInTimezone, differenceInDays } from "@/lib/date-helpers";
 import type {
   CheckInComparison,
-  GoalProgress,
   GetCheckInComparisonResponse,
 } from "@/types/check-in";
 
@@ -68,14 +67,6 @@ export const getCheckInComparison = async (
     today: getTodayDateStringInTimezone(client.timezone),
   });
 
-  // Kilograms, like every other weight this service returns (migration 141), so
-  // the goal and the pace still share scope. Rounded to 1 decimal for display
-  // precision. Phase 3 converts to the viewer's unit at the render boundary.
-  const goalWeight =
-    effectiveGoal.goalWeightKg != null
-      ? Math.round(effectiveGoal.goalWeightKg * 10) / 10
-      : undefined;
-  const goalBodyFatPercentage = effectiveGoal.goalBodyFatPercentage ?? undefined;
   // The COACH'S recorded start wins over the derived one. This preference used
   // to run the other way — earliest `body_metrics` first, column as fallback —
   // which was right while `starting_weight` was write-once: preferring a real
@@ -91,7 +82,7 @@ export const getCheckInComparison = async (
     client.startingBodyFatPercentage ?? earliestMetrics[0]?.bodyFatPercentage;
 
   // Goal deadline, used by both the weight pace check and the deadline card —
-  // from the SAME scope as goalWeight above (no cross-scope mismatch).
+  // from the SAME scope as the goal weight (no cross-scope mismatch).
   const goalDeadline = effectiveGoal.deadline ?? undefined;
   // Whole-day difference anchored to the client's local midnight (the pace window
   // is on the client's calendar), not Date.now() ms-math that reads -1 across a
@@ -110,14 +101,78 @@ export const getCheckInComparison = async (
     ? calculateDaysBetween(currentCheckIn.createdAt, previousCheckIn.createdAt)
     : undefined;
 
+  // The recent set (ten check-ins) feeds two things and nothing else: the
+  // average change per week, which is the TREND behind `isOnTrack` — body fat's
+  // only trend signal, and weight's when there is no deadline to pace against —
+  // and the third-priority starting-value fallback below.
+  const weightCheckIns = checkIns.filter((ci) => ci.weight);
+  let avgWeeklyWeightChange: number | undefined;
+  if (weightCheckIns.length >= 2) {
+    const oldestWeight = weightCheckIns[weightCheckIns.length - 1].weight!;
+    const newestWeight = weightCheckIns[0].weight!;
+    const daysBetween = calculateDaysBetween(
+      weightCheckIns[0].createdAt,
+      weightCheckIns[weightCheckIns.length - 1].createdAt
+    );
+    if (daysBetween > 0) {
+      const totalChange = newestWeight - oldestWeight;
+      avgWeeklyWeightChange = Number(
+        ((totalChange / daysBetween) * 7).toFixed(2)
+      );
+    }
+  }
+
+  // Calculate body fat average change
+  const bodyFatCheckIns = checkIns.filter((ci) => ci.bodyFatPercentage);
+  let avgBodyFatChange: number | undefined;
+  if (bodyFatCheckIns.length >= 2) {
+    const oldest = bodyFatCheckIns[bodyFatCheckIns.length - 1].bodyFatPercentage!;
+    const newest = bodyFatCheckIns[0].bodyFatPercentage!;
+    avgBodyFatChange = Number(
+      ((newest - oldest) / bodyFatCheckIns.length).toFixed(2)
+    );
+  }
+
+  // The start value. Priority: 1) the coach's recorded start / earliest event,
+  // 2) first check-in, 3) oldest in the recent set, 4) the client's current
+  // reading. Never the check-in under review: it may carry no reading at all.
+  const startingWeight =
+    earliestWeight
+    ?? firstCheckIn?.weight
+    ?? (weightCheckIns.length > 0 ? weightCheckIns[weightCheckIns.length - 1].weight : undefined)
+    ?? client.currentWeight;
+  const startingBodyFat =
+    earliestBodyFat
+    ?? firstCheckIn?.bodyFatPercentage
+    ?? (bodyFatCheckIns.length > 0 ? bodyFatCheckIns[bodyFatCheckIns.length - 1].bodyFatPercentage : undefined)
+    ?? client.currentBodyFatPercentage;
+
+  // Where they stand: the client RECORD's current reading against the goal,
+  // composed by the one kernel. The check-in is a report of what the client
+  // typed this week, every field on it optional, and is not an input here —
+  // the band's `changes` below are where it speaks.
+  const goalProgress = deriveGoalProgress({
+    effectiveGoal,
+    client: {
+      currentWeight: client.currentWeight,
+      currentBodyFatPercentage: client.currentBodyFatPercentage,
+      startingWeight,
+      startingBodyFatPercentage: startingBodyFat,
+    },
+    trend: { avgWeeklyWeightChange, avgBodyFatChange },
+    daysRemaining,
+    weeksRemaining,
+  });
+
   // Build comparison data
   const comparison: CheckInComparison = {
     previous: previousCheckIn,
     client: {
       id: client.id,
       name: client.name,
-      goalWeight,
-      goalBodyFatPercentage,
+      // The kernel's rounded goals, so the band and the strip print one number.
+      goalWeight: goalProgress.weight?.goal,
+      goalBodyFatPercentage: goalProgress.bodyFat?.goal,
       goalDeadline,
       currentWeight: client.currentWeight,
       currentBodyFatPercentage: client.currentBodyFatPercentage,
@@ -161,120 +216,6 @@ export const getCheckInComparison = async (
     },
     timeBetweenCheckIns,
   };
-
-  // The recent set (ten check-ins) feeds two things and nothing else: the
-  // average change per week, which is the TREND behind `isOnTrack` — body fat's
-  // only trend signal, and weight's when there is no deadline to pace against —
-  // and the third-priority starting-value fallback below.
-  const weightCheckIns = checkIns.filter((ci) => ci.weight);
-  let avgWeeklyWeightChange: number | undefined;
-  if (weightCheckIns.length >= 2) {
-    const oldestWeight = weightCheckIns[weightCheckIns.length - 1].weight!;
-    const newestWeight = weightCheckIns[0].weight!;
-    const daysBetween = calculateDaysBetween(
-      weightCheckIns[0].createdAt,
-      weightCheckIns[weightCheckIns.length - 1].createdAt
-    );
-    if (daysBetween > 0) {
-      const totalChange = newestWeight - oldestWeight;
-      avgWeeklyWeightChange = Number(
-        ((totalChange / daysBetween) * 7).toFixed(2)
-      );
-    }
-  }
-
-  // Calculate body fat average change
-  const bodyFatCheckIns = checkIns.filter((ci) => ci.bodyFatPercentage);
-  let avgBodyFatChange: number | undefined;
-  if (bodyFatCheckIns.length >= 2) {
-    const oldest = bodyFatCheckIns[bodyFatCheckIns.length - 1].bodyFatPercentage!;
-    const newest = bodyFatCheckIns[0].bodyFatPercentage!;
-    avgBodyFatChange = Number(
-      ((newest - oldest) / bodyFatCheckIns.length).toFixed(2)
-    );
-  }
-
-  // Build goal progress
-  const goalProgress: GoalProgress = {};
-
-  // Weight goal progress
-  if (currentCheckIn.weight && goalWeight) {
-    // Priority: 1) earliest body_metrics / client starting weight, 2) first check-in, 3) oldest in recent set, 4) current
-    const startingWeight = earliestWeight
-      ?? firstCheckIn?.weight
-      ?? (weightCheckIns.length > 0 ? weightCheckIns[weightCheckIns.length - 1].weight : undefined)
-      ?? currentCheckIn.weight;
-
-    const progress = calculateGoalProgress(
-      currentCheckIn.weight,
-      goalWeight,
-      startingWeight,
-      avgWeeklyWeightChange
-    );
-
-    goalProgress.weight = {
-      current: currentCheckIn.weight,
-      goal: goalWeight,
-      startingWeight,
-      status: progress.status,
-      remaining: progress.remaining,
-      percentComplete: progress.percentComplete,
-      isOnTrack: progress.isOnTrack,
-    };
-
-    // Pace check: is the rate required to hit the goal by the deadline safe?
-    const pace =
-      weeksRemaining !== null
-        ? computeGoalPace({
-            remainingKg: progress.remaining,
-            weeksRemaining,
-            currentWeightKg: currentCheckIn.weight,
-            goalStatus: progress.status,
-          })
-        : null;
-    if (pace) {
-      goalProgress.weight.paceStatus = pace.status;
-    }
-  }
-
-  // Body fat goal progress
-  if (
-    currentCheckIn.bodyFatPercentage !== undefined &&
-    goalBodyFatPercentage !== undefined
-  ) {
-    // Priority: 1) earliest body_metrics / client starting body fat, 2) first check-in, 3) oldest in recent set, 4) current
-    const startingBodyFat = earliestBodyFat
-      ?? firstCheckIn?.bodyFatPercentage
-      ?? (bodyFatCheckIns.length > 0 ? bodyFatCheckIns[bodyFatCheckIns.length - 1].bodyFatPercentage : undefined)
-      ?? currentCheckIn.bodyFatPercentage;
-
-    const progress = calculateGoalProgress(
-      currentCheckIn.bodyFatPercentage,
-      goalBodyFatPercentage,
-      startingBodyFat,
-      avgBodyFatChange
-    );
-
-    goalProgress.bodyFat = {
-      current: currentCheckIn.bodyFatPercentage,
-      goal: goalBodyFatPercentage,
-      startingBodyFat,
-      status: progress.status,
-      remaining: progress.remaining,
-      percentComplete: progress.percentComplete,
-      isOnTrack: progress.isOnTrack,
-    };
-  }
-
-  // Deadline progress (reuses the hoisted goalDeadline / daysRemaining).
-  if (goalDeadline && daysRemaining !== null) {
-    goalProgress.deadline = {
-      date: goalDeadline,
-      daysRemaining,
-      isPastDeadline: daysRemaining < 0,
-    };
-  }
-
 
   return {
     comparison,

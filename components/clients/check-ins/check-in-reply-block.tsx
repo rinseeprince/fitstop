@@ -111,16 +111,9 @@ export const CheckInReplyBlock = ({
           className="resize-none bg-white"
         />
 
-        <div className="mt-3 flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={handleSend}
-            disabled={isSending || !message.trim()}
-            className="h-8 gap-1.5 bg-[#0d9488] text-xs text-white hover:bg-[#0b7f75]"
-          >
-            <Send className="h-3.5 w-3.5" strokeWidth={1.5} />
-            {hasSent ? "Send follow-up" : "Send"}
-          </Button>
+        {/* Actions sit at the right edge with the primary outermost (divider
+            grammar: identity left, actions right), so Copy reads first. */}
+        <div className="mt-3 flex items-center justify-end gap-2">
           <Button
             size="sm"
             variant="ghost"
@@ -129,6 +122,15 @@ export const CheckInReplyBlock = ({
           >
             <Copy className="h-3.5 w-3.5" strokeWidth={1.5} />
             Copy
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSend}
+            disabled={isSending || !message.trim()}
+            className="h-8 gap-1.5 bg-[#0d9488] text-xs text-white hover:bg-[#0b7f75]"
+          >
+            <Send className="h-3.5 w-3.5" strokeWidth={1.5} />
+            {hasSent ? "Send follow-up" : "Send"}
           </Button>
         </div>
       </div>

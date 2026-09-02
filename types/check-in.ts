@@ -774,34 +774,46 @@ export type CheckInComparison = {
 // deadline is within a safe weekly ceiling.
 export type GoalPaceStatus = "on_track" | "behind_pace" | "unrealistic";
 
-// Goal progress tracking
+/**
+ * Where the client stands against ONE goal, read from the client record's
+ * current reading (`clients.current_weight` / `current_body_fat_percentage`) —
+ * never from a check-in, which is a report of what the client typed that week.
+ * Composed by `deriveGoalProgress` (`lib/goals/goal-progress.ts`).
+ */
+export type GoalPosition = {
+  current: number;
+  /**
+   * Signed. A renderer showing a magnitude ("5 kg to go") must read `status`
+   * first: the magnitude means nothing once the goal has been passed.
+   */
+  remaining: number;
+  percentComplete: number;
+  /**
+   * POSITION relative to the goal — `approaching` | `achieved` | `overshot`.
+   * Separate from `isOnTrack`, which is the TREND.
+   */
+  status: GoalStatus;
+  isOnTrack: boolean;
+  /** Pace check vs the deadline. Weight only, and only when there is a deadline. */
+  paceStatus?: GoalPaceStatus;
+};
+
+/**
+ * Goal progress tracking. A row exists for EVERY goal that is set; its
+ * `position` is null when the client record has no reading for that metric —
+ * the goal is real, the verdict is not, and the strip says "No reading yet"
+ * rather than reading a missing row as "no goal".
+ */
 export type GoalProgress = {
   weight?: {
-    current: number;
     goal: number;
     startingWeight?: number;
-    /**
-     * Position relative to the goal — `approaching` | `achieved` | `overshot`.
-     * Separate from `isOnTrack`, which is the TREND. A renderer showing a
-     * magnitude ("5 kg to go") must check this first: `remaining` is signed, and
-     * its magnitude means nothing once the goal has been passed.
-     */
-    status?: GoalStatus;
-    remaining: number;
-    percentComplete: number;
-    isOnTrack: boolean;
-    // Pace check vs deadline (undefined when there is no deadline / current weight).
-    paceStatus?: GoalPaceStatus;
+    position: GoalPosition | null;
   };
   bodyFat?: {
-    current: number;
     goal: number;
     startingBodyFat?: number;
-    /** See `weight.status`. */
-    status?: GoalStatus;
-    remaining: number;
-    percentComplete: number;
-    isOnTrack: boolean;
+    position: GoalPosition | null;
   };
   deadline?: {
     date: string;

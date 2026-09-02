@@ -12,7 +12,7 @@ import {
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 import { shouldShowRegenerationBanner } from "@/utils/nutrition-helpers";
-import type { CheckInComparison, GoalProgress } from "@/types/check-in";
+import type { CheckInComparison, GoalPosition, GoalProgress } from "@/types/check-in";
 
 type CheckInGoalStripProps = {
   goalProgress: GoalProgress;
@@ -25,7 +25,7 @@ type CheckInGoalStripProps = {
   onSetNewGoals?: () => void;
 };
 
-type RowState = { text: string; tone: "good" | "attention" };
+type RowState = { text: string; tone: "good" | "attention" | "neutral" };
 
 type GoalRow = {
   name: string;
@@ -33,7 +33,13 @@ type GoalRow = {
   start?: string;
   goal: string;
   state: RowState;
+  /** False when the client record has no reading for this goal: nothing to judge. */
+  judged: boolean;
 };
+
+// The goal exists; the record carries no reading for it. Neutral rather than a
+// warning: the coach's next move is to record one, not to worry.
+const NO_READING: RowState = { text: "No reading yet", tone: "neutral" };
 
 /**
  * Where the client stands, then how far — joined by a middot.
@@ -48,10 +54,7 @@ type GoalRow = {
  * verdicts about one client — body fat carries no `paceStatus` and falls
  * through to the trend legs.
  */
-function resolveState(
-  goal: { status?: string; isOnTrack: boolean; paceStatus?: string; remaining: number },
-  distance: string
-): RowState {
+function resolveState(goal: GoalPosition, distance: string): RowState {
   // `remaining` is signed: its magnitude is the distance BACK to the target
   // once the goal has been passed, so `status` decides which sentence it is in.
   if (goal.status === "overshot") {
@@ -90,23 +93,30 @@ export const CheckInGoalStrip = ({
 
   const rows: GoalRow[] = [];
 
+  // A row per goal that is set. `position` is the client record's current
+  // reading against it, or null when the record has none — the goal is still
+  // shown, with an empty track and no verdict.
   if (weight) {
+    const { position } = weight;
     rows.push({
       name: "Weight",
-      percentComplete: weight.percentComplete,
+      percentComplete: position?.percentComplete ?? 0,
       start: weight.startingWeight !== undefined ? kg(weight.startingWeight) : undefined,
       goal: kg(weight.goal),
-      state: resolveState(weight, kg(Math.abs(weight.remaining))),
+      state: position ? resolveState(position, kg(Math.abs(position.remaining))) : NO_READING,
+      judged: position !== null,
     });
   }
 
   if (bodyFat) {
+    const { position } = bodyFat;
     rows.push({
       name: "Body fat",
-      percentComplete: bodyFat.percentComplete,
+      percentComplete: position?.percentComplete ?? 0,
       start: bodyFat.startingBodyFat !== undefined ? `${bodyFat.startingBodyFat} %` : undefined,
       goal: `${bodyFat.goal} %`,
-      state: resolveState(bodyFat, `${round1(Math.abs(bodyFat.remaining))}%`),
+      state: position ? resolveState(position, `${round1(Math.abs(position.remaining))}%`) : NO_READING,
+      judged: position !== null,
     });
   }
 
@@ -116,6 +126,8 @@ export const CheckInGoalStrip = ({
       : `deadline ${format(new Date(deadline.date), "d MMM")} · ${deadline.daysRemaining} days`
     : undefined;
 
+  // Rows come from the goals themselves, so an empty list means none is set. A
+  // goal the record cannot judge yet is a row above, never this state.
   if (rows.length === 0) {
     return (
       <div>
@@ -133,8 +145,13 @@ export const CheckInGoalStrip = ({
 
   // Only once there is nothing left to approach. A note telling a coach to set
   // new targets while one goal is still being worked towards is advice about a
-  // job that is not finished.
-  const allMet = rows.every((row) => row.state.tone === "good" && row.state.text.startsWith("Reached"));
+  // job that is not finished. A goal with no reading is neither met nor unmet,
+  // so it neither earns the note nor blocks it (owner decision 2026-09-02) —
+  // and with nothing judged there is nothing to call met.
+  const judged = rows.filter((row) => row.judged);
+  const allMet =
+    judged.length > 0 &&
+    judged.every((row) => row.state.tone === "good" && row.state.text.startsWith("Reached"));
 
   // The client's weight has moved far enough from the one their targets were
   // built on that the plan no longer describes them. Symmetric: a gain
@@ -193,7 +210,11 @@ export const CheckInGoalStrip = ({
             <span
               className={cn(
                 "w-[190px] shrink-0 text-right text-[12px] font-medium",
-                row.state.tone === "good" ? "text-[#0d9488]" : "text-[#d97706]"
+                row.state.tone === "good"
+                  ? "text-[#0d9488]"
+                  : row.state.tone === "attention"
+                    ? "text-[#d97706]"
+                    : "text-[#93b0b4]"
               )}
             >
               {/* The distance is a numeral inside a phrase, so the two halves

@@ -122,6 +122,8 @@ A single pure resolver, `resolveEffectiveGoal()` (`lib/goals/resolve-effective-g
 
 ### Goal progress and pace
 
+**Position reads the client record, never a check-in.** `deriveGoalProgress` (`lib/goals/goal-progress.ts`) is the one composer of the primitives below. It takes the effective goal and the client record's readings — `clients.current_weight` / `current_body_fat_percentage` as the position, `starting_*` as the start — plus the trend and the deadline arithmetic, and returns `GoalProgress` with a row for **every goal that is set**. A check-in is a report of what the client typed that week, every field on it optional; it is not among the kernel's inputs, and a check-in without a weight changes nothing on the goal strip. A row's `position` is `null` when the record carries no reading for that metric, and the strip renders it as `No reading yet` — the goal is real, the verdict is not. `services/comparison-service.ts` is the only caller; `lib/goals/goal-progress-ownership.test.ts` fails if anything under `services/` or `lib/goals/` calls `calculateGoalProgress`, `deriveGoalStatus` or `computeGoalPace` directly, or hands the kernel a check-in field.
+
 `calculateGoalProgress` (`utils/comparison-utils.ts`) answers where a client stands relative to a goal. It returns two independent facts, and collapsing either into the other is what makes a goal card contradict itself:
 
 - **`status`** — POSITION. `approaching` | `achieved` | `overshot`, from `sign(goal − start)`. With no starting value there is no direction to overshoot in, so the answer is `approaching`.
@@ -131,7 +133,7 @@ A single pure resolver, `resolveEffectiveGoal()` (`lib/goals/resolve-effective-g
 
 `computeGoalPace` (`lib/check-in/goal-pace.ts`) compares the rate **required** to hit the deadline against a safe ceiling of 1% of bodyweight per week, and returns `null` for an achieved or overshot goal. It measures the required rate, **not** the client's current pace: that is `isOnTrack`, the average change per week across the last ten check-ins pointed at the goal or away from it, and the two can legitimately disagree — a client losing steadily is on track and still behind pace when the deadline asks for more than the ceiling allows.
 
-**The goal strip's state column reads `status` > `paceStatus` > `isOnTrack`.** A met goal renders no remaining distance and no pace check, and the strip's footer suggests a new target once every goal is met. Weight and body fat resolve through the same column, so the two rows cannot reach different verdicts about one client.
+**The goal strip's state column reads `status` > `paceStatus` > `isOnTrack`.** A met goal renders no remaining distance and no pace check, and the strip's footer suggests a new target once every goal the record can judge is met — a `No reading yet` row neither earns the note nor blocks it. Weight and body fat resolve through the same column, so the two rows cannot reach different verdicts about one client.
 
 ### body_metrics table
 
@@ -147,7 +149,7 @@ Immutable event log with source provenance:
 Coach-logged measurement entries backing the redesigned client Metrics page:
 - One row per `(client_id, metric_key, entry_date)` — re-logging the same metric on a date **replaces** the earlier value (upsert), so rows are mutable and carry `updated_at` (deliberately unlike the immutable `body_metrics`)
 - `metric_key` stores the Metrics page's canonical metric ids verbatim (camelCase `bodyFat`; CHECK-constrained to the 12 known keys incl. wellness + soreness)
-- Values are stored in the client's display units (no per-row unit snapshot); `note` is an optional per-entry coach note surfaced in the Measurement Log (and labeled as shown to the client)
+- Values are canonical — kilograms, centimetres, percent (migration 141, CONVENTIONS §20), with no per-row unit; `note` is an optional per-entry coach note surfaced in the Measurement Log (and labeled as shown to the client)
 - Weight/bodyFat entries **dual-write a `body_metrics` event** (`source: 'coach_entry'`, `recorded_at` = the entry date at 12:00Z, `source_id` = the entry id) so goal comparisons stay coherent; the `clients` denormalized cache updates **only when the entry is dated on/after the latest known event** — a backdated entry never regresses `current_weight` (`recordBodyMetrics`'s `updateClientCache` param)
 - Write path: `GET/POST /api/clients/[id]/metric-entries` (coach-only; future dates rejected against the coach's timezone; audited as `metric_entry.upsert` with no measurement value in metadata)
 - The Metrics page merges these entries with check-in-derived values client-side (`utils/metric-points.ts` + `utils/metric-derived-stats.ts`); `check_ins` rows are never written by this feature
@@ -1236,13 +1238,17 @@ and no window keydown listener. Weight and body fat appear twice on purpose: the
 **The goal strip** (`check-in-goal-strip.tsx`) is one row per goal — weight, body fat — each a
 value, a track and a state column resolved `status` > `paceStatus` > `isOnTrack`: `Reached` (with
 the distance past target on an overshoot), `On track`, `Behind pace`, `Deadline unrealistic`,
-`Needs attention`, the last four carrying the distance to go. `paceStatus` judges whether the RATE
+`Needs attention`, the last four carrying the distance to go — or `No reading yet`, muted, when the
+client record carries no current reading for that goal: the position is the record's reading
+(`clients.current_*`, see "Goal progress and pace"), never the check-in's, so a check-in submitted
+without a weight leaves the row standing with an empty track. `paceStatus` judges whether the RATE
 REQUIRED to hit the deadline is safe; `isOnTrack` whether the client is moving towards the goal;
 reading them in that order is what keeps "On track" off a client past a weight-loss target. Body
 fat carries no pace status and falls through the same column, so the two rows cannot reach
 different verdicts about one client. The deadline is the rail's meta (`deadline d MMM · N days`,
 or `Overdue by N days`); with no goals the rail stands over a verbatim empty state. **One advisory
-footer, and goals outrank nutrition**: every goal met → "Goal met - consider setting a new target."
+footer, and goals outrank nutrition**: every judged goal met (a `No reading yet` row neither earns
+the note nor blocks it) → "Goal met - consider setting a new target."
 with the `Set new goals` button, which sends the coach to the Overview with `?editProfile=1` and
 `checkIn` cleared (the details sheet opens on arrival, and Back does not land on the review it
 left); otherwise, weight 3 kg or more from the base weight the nutrition targets were built on →

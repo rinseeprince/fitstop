@@ -134,7 +134,7 @@ describe('Comparison Service - read-switch behavior', () => {
 
     // goalProgress weight call should use goals service goalWeight (165)
     expect(calculateGoalProgress).toHaveBeenCalledWith(
-      178, // currentCheckIn.weight
+      180, // client.currentWeight — the record's reading, never the check-in's
       165, // goalWeight from service
       190, // earliestWeight falls back to client.startingWeight (empty body_metrics)
       undefined // avgWeeklyWeightChange (only 1 check-in)
@@ -176,7 +176,7 @@ describe('Comparison Service - read-switch behavior', () => {
     // so a coach's correction would otherwise show on the Overview card and be
     // ignored by every check-in figure.
     expect(calculateGoalProgress).toHaveBeenCalledWith(
-      178, // currentCheckIn.weight
+      180, // client.currentWeight — the record's reading, never the check-in's
       165, // goalWeight from service
       190, // client.startingWeight — the recorded start, NOT the 195 event
       undefined // avgWeeklyWeightChange (only 1 check-in)
@@ -208,7 +208,7 @@ describe('Comparison Service - read-switch behavior', () => {
     await getCheckInComparison('ci-1')
 
     expect(calculateGoalProgress).toHaveBeenCalledWith(
-      178, // currentCheckIn.weight
+      180, // client.currentWeight — the record's reading, never the check-in's
       170, // client.goalWeight fallback
       195, // derived from the earliest event
       undefined
@@ -227,11 +227,73 @@ describe('Comparison Service - read-switch behavior', () => {
 
     // startingWeight should fall back to client.startingWeight (190)
     expect(calculateGoalProgress).toHaveBeenCalledWith(
-      178, // currentCheckIn.weight
+      180, // client.currentWeight — the record's reading, never the check-in's
       170, // client.goalWeight fallback
       190, // client.startingWeight fallback
       undefined // avgWeeklyWeightChange (only 1 check-in)
     )
+  })
+
+  it("builds the row from the client's reading when the check-in carries none", async () => {
+    // Every field on the form is optional (migration 157), so a weightless
+    // check-in is ordinary. Position is the client RECORD's current reading;
+    // the check-in is a report, and its empty box changes nothing here.
+    vi.mocked(getCheckInById).mockResolvedValue({
+      ...mockCheckIn,
+      weight: undefined,
+      bodyFatPercentage: undefined,
+    } as never)
+    vi.mocked(getClientCheckIns).mockResolvedValue({ checkIns: [] } as never)
+    vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
+    vi.mocked(getCurrentGoals).mockResolvedValue({
+      id: 'goal-1',
+      clientId: 'client-1',
+      goalWeight: 165,
+      goalBodyFatPercentage: 12,
+      setBy: 'coach',
+      effectiveFrom: '2024-01-01T00:00:00Z',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    })
+
+    const result = await getCheckInComparison('ci-1')
+
+    expect(calculateGoalProgress).toHaveBeenCalledWith(180, 165, 190, undefined)
+    expect(result.goalProgress.weight?.position?.current).toBe(180)
+    expect(result.goalProgress.bodyFat?.position?.current).toBe(20)
+  })
+
+  it('keeps the row, with no position, for a client the record has no reading for', async () => {
+    // The goal is real even when nothing can be said about it yet: the strip
+    // shows the goal and says "No reading yet" rather than "No goals".
+    vi.mocked(getCheckInById).mockResolvedValue({
+      ...mockCheckIn,
+      weight: undefined,
+      bodyFatPercentage: undefined,
+    } as never)
+    vi.mocked(getClientCheckIns).mockResolvedValue({ checkIns: [] } as never)
+    vi.mocked(getClientById).mockResolvedValue({
+      ...mockClient,
+      currentWeight: undefined,
+      currentBodyFatPercentage: undefined,
+    } as never)
+    vi.mocked(getBodyMetricsHistory).mockResolvedValue([])
+    vi.mocked(getCurrentGoals).mockResolvedValue({
+      id: 'goal-1',
+      clientId: 'client-1',
+      goalWeight: 165,
+      goalBodyFatPercentage: 12,
+      setBy: 'coach',
+      effectiveFrom: '2024-01-01T00:00:00Z',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    })
+
+    const result = await getCheckInComparison('ci-1')
+
+    expect(result.goalProgress.weight).toEqual({ goal: 165, startingWeight: 190, position: null })
+    expect(result.goalProgress.bodyFat).toEqual({ goal: 12, startingBodyFat: 22, position: null })
+    expect(calculateGoalProgress).not.toHaveBeenCalled()
   })
 
   it('the whole pace path runs in ONE unit — no kg/display mixing', async () => {
@@ -239,7 +301,7 @@ describe('Comparison Service - read-switch behavior', () => {
     // (migration 141): there is no longer a kg↔display round trip at all —
     // resolveEffectiveGoal returns the stored kilograms and comparison-service
     // uses them directly. The invariant this protects is unchanged: goal and
-    // check-in weight must be in the SAME unit before subtracting. This runs the
+    // the client's weight must be in the SAME unit before subtracting. This runs the
     // REAL calculateGoalProgress (computeGoalPace is already un-mocked here) so
     // the actual subtraction executes. If a stray conversion ever re-entered one
     // side, remaining would swing by ~2.2x and the pace would falsely read
@@ -270,8 +332,8 @@ describe('Comparison Service - read-switch behavior', () => {
       // Passthrough: the service does not convert. Values are canonical
       // kilograms since migration 141; the render layer converts for the viewer.
       expect(w.goal).toBeCloseTo(165.4, 1)
-      expect(w.remaining).toBeCloseTo(-12.6, 1) // 165.4 - 178
-      expect(w.paceStatus).toBe('on_track')
+      expect(w.position?.remaining).toBeCloseTo(-14.6, 1) // 165.4 - 180, the record's weight
+      expect(w.position?.paceStatus).toBe('on_track')
     } finally {
       vi.useRealTimers()
     }
@@ -367,7 +429,7 @@ describe('the trend behind isOnTrack', () => {
 
     const result = await getCheckInComparison('ci-1')
 
-    expect(result.goalProgress.weight?.isOnTrack).toBe(false)
+    expect(result.goalProgress.weight?.position?.isOnTrack).toBe(false)
   })
 
   it('reads true while the recent check-ins move TOWARDS it', async () => {
@@ -378,6 +440,6 @@ describe('the trend behind isOnTrack', () => {
 
     const result = await getCheckInComparison('ci-1')
 
-    expect(result.goalProgress.weight?.isOnTrack).toBe(true)
+    expect(result.goalProgress.weight?.position?.isOnTrack).toBe(true)
   })
 })

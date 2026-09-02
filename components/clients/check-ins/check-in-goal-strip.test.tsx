@@ -8,35 +8,44 @@ vi.mock("@/contexts/units-context", () => ({
 }));
 
 import { CheckInGoalStrip } from "./check-in-goal-strip";
-import type { CheckInComparison, GoalProgress } from "@/types/check-in";
+import type { CheckInComparison, GoalPosition, GoalProgress } from "@/types/check-in";
 
 afterEach(cleanup);
+
+type WeightRow = NonNullable<GoalProgress["weight"]>;
+type BodyFatRow = NonNullable<GoalProgress["bodyFat"]>;
 
 // The live case: start 88, goal 77, now 72 — five kilos PAST a weight-loss goal.
 // calculateGoalProgress reports isOnTrack:false (correct, they are moving away
 // from 77) but computeGoalPace used to Math.abs the remainder into a safe-looking
 // 0.6 kg/week, and the card let that override the trend.
-function weightGoal(
-  o: Partial<NonNullable<GoalProgress["weight"]>> = {},
-): NonNullable<GoalProgress["weight"]> {
+function weightGoal(position: Partial<GoalPosition> = {}): WeightRow {
   return {
-    current: 72, goal: 77, startingWeight: 88,
-    status: "overshot", remaining: 5, percentComplete: 100,
-    isOnTrack: false,
-    ...o,
-  } as NonNullable<GoalProgress["weight"]>;
+    goal: 77,
+    startingWeight: 88,
+    position: {
+      current: 72, status: "overshot", remaining: 5, percentComplete: 100,
+      isOnTrack: false,
+      ...position,
+    },
+  };
 }
 
-function bodyFatGoal(
-  o: Partial<NonNullable<GoalProgress["bodyFat"]>> = {},
-): NonNullable<GoalProgress["bodyFat"]> {
+function bodyFatGoal(position: Partial<GoalPosition> = {}): BodyFatRow {
   return {
-    current: 12, goal: 15, startingBodyFat: 20,
-    status: "overshot", remaining: 3, percentComplete: 100,
-    isOnTrack: false,
-    ...o,
-  } as NonNullable<GoalProgress["bodyFat"]>;
+    goal: 15,
+    startingBodyFat: 20,
+    position: {
+      current: 12, status: "overshot", remaining: 3, percentComplete: 100,
+      isOnTrack: false,
+      ...position,
+    },
+  };
 }
+
+/** A goal that is set, with no current reading on the client record behind it. */
+const UNREAD_WEIGHT: WeightRow = { goal: 66, startingWeight: 91, position: null };
+const UNREAD_BODY_FAT: BodyFatRow = { goal: 14, startingBodyFat: 23, position: null };
 
 const NO_CLIENT = {} as CheckInComparison["client"];
 
@@ -139,6 +148,53 @@ describe("the state column's precedence", () => {
     renderStrip({ weight: weightGoal(), bodyFat: bodyFatGoal({ status: "approaching", isOnTrack: true }) });
 
     expect(screen.queryByText(/consider setting a new target/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("a goal the record cannot judge yet", () => {
+  // Position reads the client record's current reading. A goal with none is
+  // still a goal: it gets its row, its start → goal, an empty track and a
+  // neutral "No reading yet" — never the "No goals" empty state, which is what
+  // a weightless check-in used to produce for a client whose weight was on the
+  // record the whole time.
+  it("renders the goal, an empty track and No reading yet", () => {
+    const { container } = renderStrip({ weight: UNREAD_WEIGHT });
+
+    expect(screen.getByText("Weight")).toBeInTheDocument();
+    expect(screen.getByText(/91 kg/)).toBeInTheDocument();
+    expect(screen.getByText(/66 kg/)).toBeInTheDocument();
+    expect(screen.getByText("No reading yet")).toBeInTheDocument();
+    expect(screen.queryByText(/to go|Reached|On track|Needs attention/)).not.toBeInTheDocument();
+    expect(container.querySelector('[style*="width: 0%"]')).not.toBeNull();
+  });
+
+  it("reads as neutral, not as a warning", () => {
+    renderStrip({ weight: UNREAD_WEIGHT });
+
+    expect(screen.getByText("No reading yet").parentElement).toHaveClass("text-[#93b0b4]");
+  });
+
+  it("is a goal, so the empty state stays away", () => {
+    renderStrip({ weight: UNREAD_WEIGHT, bodyFat: UNREAD_BODY_FAT });
+
+    expect(screen.queryByText(/No goals have been set/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("No reading yet")).toHaveLength(2);
+  });
+
+  it("neither earns the new-target note nor blocks it", () => {
+    // Weight reached, body fat unread: the note is advice about the goal that
+    // CAN be judged (owner decision 2026-09-02).
+    renderStrip({ weight: weightGoal(), bodyFat: UNREAD_BODY_FAT });
+
+    expect(screen.getByText(/consider setting a new target/i)).toBeInTheDocument();
+  });
+
+  it("earns no note on its own", () => {
+    // Nothing judged, nothing met — `every` over an empty list must not count.
+    renderStrip({ weight: UNREAD_WEIGHT, bodyFat: UNREAD_BODY_FAT });
+
+    expect(screen.queryByText(/new target/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/nutrition plan/i)).not.toBeInTheDocument();
   });
 });
 

@@ -155,3 +155,15 @@ describe("copy", () => {
     expect(toastSuccess).toHaveBeenCalledWith("Message copied");
   });
 });
+
+describe("the footer actions", () => {
+  it("sit at the right edge, Copy before Send, so the primary is outermost", () => {
+    // Divider grammar: identity left, actions right. The primary takes the far
+    // edge, which puts Copy first in reading order.
+    renderBlock();
+
+    const names = screen.getAllByRole("button").map((button) => button.textContent?.trim());
+    expect(names).toEqual(["Copy", "Send"]);
+    expect(screen.getByRole("button", { name: /^send$/i }).parentElement).toHaveClass("justify-end");
+  });
+});

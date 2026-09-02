@@ -80,6 +80,8 @@ Compounding it: **`isOnTrack` defaults to `true`** when there is no average chan
 
 Fixing the card means choosing which target is the headline, or making the summary read both. There is no lean-mass model in the repo, so the two targets cannot be reconciled arithmetically.
 
+**Next step (2026-09-02):** the Overview chips adopt `deriveGoalProgress` (`lib/goals/goal-progress.ts`) — the kernel the check-in goal strip resolves through, fed by the client record's current reading — in place of `lib/goals/goal-state.ts`, so both surfaces read one position and `goal-state.ts` goes. The headline-vs-both question above stays the owner's; the kernel only guarantees the two pages agree about each target.
+
 ---
 
 ## Removing the `clients.*` goal mirror — costed, and its one real landmine
