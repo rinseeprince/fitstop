@@ -365,36 +365,21 @@ describe("the client details sheet", () => {
       expect(profilePatch(fetchSpy)?.startingWeight).toBeCloseTo(90.72, 2);
     });
 
-    it("CLEARS a start body fat rather than forcing another guess", async () => {
-      // A wrong body fat is not merely a wrong number: computeEnergyPair
-      // switches from Mifflin-St Jeor to Katch-McArdle whenever one is
-      // present, so a bad estimate changes which formula produces the BMR.
-      // Withdrawing it has to be expressible, not only replaceable.
-      const fetchSpy = mockFetchOk();
-      const user = await openEditor(MEASURED);
-
-      await user.clear(screen.getByLabelText("Start body fat percentage"));
-      await user.click(screen.getByRole("button", { name: /save changes/i }));
-      await user.click(await screen.findByRole("button", { name: /update start/i }));
-
-      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-      // NULL, not Number("") — which is 0, and would record the client at zero
-      // percent body fat instead of removing the figure.
-      expect(profilePatch(fetchSpy)?.startingBodyFatPercentage).toBeNull();
-    });
-
-    it("confirms REMOVING a start body fat, and says so", async () => {
+    it("refuses to empty a start BODY FAT the same way — no confirm, no request", async () => {
+      // A blank is not an edit to the recorded start. It is refused before the
+      // "Change the recorded start?" dialog, which would otherwise ask the
+      // coach to confirm a removal the server refuses anyway.
       const fetchSpy = mockFetchOk();
       const user = await openEditor(MEASURED);
 
       await user.clear(screen.getByLabelText("Start body fat percentage"));
       await user.click(screen.getByRole("button", { name: /save changes/i }));
 
-      await screen.findByText(/start body fat is removed/i);
-      await user.click(screen.getByRole("button", { name: /update start/i }));
-
-      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-      expect(profilePatch(fetchSpy)?.startingBodyFatPercentage).toBeNull();
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Start body fat percentage")).toBeInTheDocument()
+      );
+      expect(screen.queryByRole("button", { name: /update start/i })).not.toBeInTheDocument();
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
 
     it("still refuses to empty a WEIGHT — the column is not nullable", async () => {

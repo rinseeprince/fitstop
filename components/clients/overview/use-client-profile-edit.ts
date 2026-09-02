@@ -235,6 +235,13 @@ export function useClientProfileEdit(
    */
   const clearedMeasurement = ((): string | null => {
     if (!startWeight.isPristine && startWeight.commit == null) return "start weight";
+    // A recorded start body fat with its box emptied. A blank is not an edit
+    // to the recorded start, so it is refused HERE, before the confirm — the
+    // server refuses the removal (`ReadingRemovalUnavailableError`), and a
+    // dialog asking a coach to confirm an outcome that cannot happen is noise.
+    if (client.startingBodyFatPercentage != null && watched.startingBodyFatPercentage === "") {
+      return "start body fat";
+    }
     return null;
   })();
 
@@ -262,16 +269,12 @@ export function useClientProfileEdit(
   }
   if (
     client.startingBodyFatPercentage != null &&
+    watched.startingBodyFatPercentage !== "" &&
     watched.startingBodyFatPercentage !== toDefaults(client, goal).startingBodyFatPercentage
   ) {
-    // Withdrawing a recorded start body fat is a replacement like any other —
-    // more consequential, if anything, since it changes which formula the
-    // client's BMR comes from.
-    startEdits.push(
-      watched.startingBodyFatPercentage === ""
-        ? "start body fat is removed"
-        : `start body fat becomes ${watched.startingBodyFatPercentage}%`
-    );
+    // An emptied box is not on this list: `clearedMeasurement` refuses it
+    // before the confirm, so the dialog only ever names a replacement.
+    startEdits.push(`start body fat becomes ${watched.startingBodyFatPercentage}%`);
   }
 
   const submit = async (values: ProfileFormValues) => {
@@ -307,7 +310,7 @@ export function useClientProfileEdit(
     if (clearedMeasurement) {
       toast({
         title: "Save failed",
-        description: `A ${clearedMeasurement} can't be removed — change it instead.`,
+        description: `A ${clearedMeasurement} can't be left blank — change it instead.`,
         variant: "destructive",
       });
       return;
@@ -341,14 +344,10 @@ export function useClientProfileEdit(
       // entries dated on the start date.
       const seededNow = toDefaults(client, goal);
       if (!startWeight.isPristine) profile.startingWeight = startWeight.commit;
-      // An emptied box is NULL, not `Number("")` — which is 0, and would have
-      // recorded a client at zero percent body fat instead of removing the
-      // figure.
+      // A blank never reaches here — `clearedMeasurement` refused it above —
+      // so a changed box always holds a number.
       if (values.startingBodyFatPercentage !== seededNow.startingBodyFatPercentage) {
-        profile.startingBodyFatPercentage =
-          values.startingBodyFatPercentage === ""
-            ? null
-            : Number(values.startingBodyFatPercentage);
+        profile.startingBodyFatPercentage = Number(values.startingBodyFatPercentage);
       }
 
       // Recomputes BMR/TDEE server-side because it carries energy inputs. The
