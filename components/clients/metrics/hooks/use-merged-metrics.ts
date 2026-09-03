@@ -237,17 +237,13 @@ export const useMergedMetrics = (
       ])
     );
 
-    // PHYSIQUE rows are one per day — the reading in force — with the day's
-    // other readings folded beneath it (a check-in's value under the coach's
-    // correction of it, a removed reading with its removal); the row's change
-    // is taken against the previous day's standing value, and the chart and
-    // the figures above read the day-values (`points`). Values convert here,
-    // like the points, so a delta sits between two like numbers; the canonical
-    // value rides along for the Edit dialog's seed. Before-start rows are
-    // flagged so the section can group them. The decoration — name, unit,
-    // the measurement flag, the split — applies to a folded reading too: it
-    // is a full row, since the Remove and Restore dialogs take it as they
-    // take any reading.
+    // PHYSIQUE rows are one per reading — newest day first, within a day the
+    // most recently touched first, a removed reading with its removal. A
+    // row's change is taken against the previous day's standing value, and
+    // the chart and the figures above read the day-values (`points`). Values
+    // convert here, like the points, so a delta sits between two like
+    // numbers; the canonical value rides along for the Edit dialog's seed.
+    // Before-start rows are flagged so the section can group them.
     const decorateBody = <T extends { metricId: MeasurementKey; date: string }>(row: T) => ({
       ...row,
       metricName: nameById.get(row.metricId) ?? row.metricId,
@@ -280,7 +276,7 @@ export const useMergedMetrics = (
         source: reading.source,
         sourceId: reading.sourceId,
         note: reading.note,
-        recordedAt: reading.recordedAt,
+        updatedAt: reading.updatedAt,
         voided: reading.voided
           ? { at: reading.voided.at, byName: reading.voided.byName }
           : null,
@@ -289,10 +285,7 @@ export const useMergedMetrics = (
       baselineIds,
       BODY_METRIC_DEFINITIONS.map((def) => def.id),
       DOWN_SET
-    ).map(({ folded, ...row }) => ({
-      ...decorateBody(row),
-      folded: folded.map((reading) => decorateBody(reading)),
-    }));
+    ).map((row) => decorateBody(row));
 
     // WELLNESS rows keep the merged points (D2): one per point, no row action.
     const wellnessRows: LogRow[] = buildLogRows(
@@ -311,7 +304,6 @@ export const useMergedMetrics = (
       isCurrent: false,
       isBaseline: false,
       beforeStart: false,
-      folded: [],
     }));
 
     return {

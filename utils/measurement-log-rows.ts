@@ -3,22 +3,19 @@ import { toneFor, type Tone } from "@/utils/metric-derived-stats";
 import type { MeasurementKey, MeasurementSource } from "@/lib/measurements/keys";
 
 /**
- * The rows of the coach's measurement log: ONE ROW PER DAY per metric — the
- * reading in force, rule 2's winner among the day's live rows — with the
- * day's other readings FOLDED beneath it. A coach who corrected a check-in's
- * 91 kg to 90 sees one row reading 90 with the 91 folded under it as
- * corrected; two genuine readings of one day, the client's home weigh-in
- * under the coach's clinic one, fold as also logged; a removed reading folds
- * as removed, with who removed it and when, so it can be restored. A day
- * whose readings are ALL removed is itself a muted row, led by its newest
- * removed reading. Nothing is hidden and nothing is lost: the store appends,
- * and the list shows the result rather than the mechanism
- * (docs/MEASUREMENT-LOG-PLAN.md §6 commit 7, D21).
+ * The rows of the coach's measurement log: ONE ROW PER READING, newest day
+ * first and within a day the most recently touched first. A coach who edited
+ * a check-in's 91 kg to 90 sees one row reading 90 — the same row, changed in
+ * place; two readings on one day are two rows, because two were added; a
+ * removed reading is a muted row with who removed it and when, so it can be
+ * restored. Nothing beneath a row, no count beside a value
+ * (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8, D23).
  *
  * The chart and every figure above the log read the day-values, so this
  * builder takes both: the readings for the rows, the day-values for which
- * reading stands and what the day changed against (the previous DAY's
- * standing value).
+ * reading is the day's standing value and what a day changed against — the
+ * previous DAY's standing value, which every live row of a day measures
+ * against.
  *
  * Pure and unit-agnostic: the caller converts values to the viewer's unit
  * BEFORE building (the same rule as the series points — a delta is taken
@@ -37,30 +34,22 @@ export type MeasurementLogReadingInput = {
   source: MeasurementSource;
   sourceId: string | null;
   note: string | null;
-  recordedAt: string;
+  /** When the value was last written or edited — orders a day's rows. */
+  updatedAt: string;
   voided: { at: string; byName: string | null } | null;
 };
 
 /** A day's standing value, in the viewer's unit, ascending by date. */
 export type MeasurementDayValueInput = { id: string; date: string; value: number };
 
-/**
- * Why a folded reading is not the day's value (D21): `corrected` when it
- * carries the standing reading's check-in stamp — the store records a
- * correction of a STAMPED reading and nothing else, so a coach's edit of
- * their own unstamped entry and a second coach reading on one day are the
- * same two rows and both read `also`; `removed` when it has been removed.
- */
-export type FoldKind = "corrected" | "also" | "removed";
-
-type MeasurementLogRowBase = {
+type MeasurementLogRow = {
   /** The measurement row's id. */
   id: string;
   date: string;
   metricId: MeasurementKey;
   value: number;
   canonicalValue: number;
-  /** Against the previous day's standing value; null on a folded reading, a removed row or a first reading. */
+  /** Against the previous day's standing value; null on a removed row or a first day. */
   change: { amount: number; tone: Tone } | null;
   note: string | null;
   source: MeasurementSource;
@@ -70,14 +59,6 @@ type MeasurementLogRowBase = {
   isCurrent: boolean;
   /** The reading every "since start" figure uses — the baseline. */
   isBaseline: boolean;
-};
-
-/** A reading folded under the day's row. */
-export type FoldedMeasurementLogRow = MeasurementLogRowBase & { kind: FoldKind };
-
-export type MeasurementLogRow = MeasurementLogRowBase & {
-  /** The day's other readings, newest write first. */
-  folded: FoldedMeasurementLogRow[];
 };
 
 /** The index of the first day-value dated on or after `date`, by binary search. */
@@ -101,21 +82,6 @@ function previousDayValue(
   return at > 0 ? days[at - 1] : null;
 }
 
-/** The day-value dated exactly `date`, if the day has a standing value. */
-function dayValueOn(
-  days: readonly MeasurementDayValueInput[],
-  date: string
-): MeasurementDayValueInput | null {
-  const at = lowerBound(days, date);
-  return at < days.length && days[at].date === date ? days[at] : null;
-}
-
-/** Newest write first; the id breaks an equal instant so two readers agree. */
-function byNewestWrite(a: MeasurementLogReadingInput, b: MeasurementLogReadingInput): number {
-  if (a.recordedAt !== b.recordedAt) return a.recordedAt < b.recordedAt ? 1 : -1;
-  return a.id < b.id ? 1 : -1;
-}
-
 export function buildMeasurementLogRows(
   readings: readonly MeasurementLogReadingInput[],
   dayValues: ReadonlyMap<MeasurementKey, readonly MeasurementDayValueInput[]>,
@@ -125,13 +91,12 @@ export function buildMeasurementLogRows(
 ): MeasurementLogRow[] {
   const rank = new Map(order.map((key, index) => [key, index]));
 
-  const toBase = (
-    reading: MeasurementLogReadingInput,
-    days: readonly MeasurementDayValueInput[],
-    previous: MeasurementDayValueInput | null
-  ): MeasurementLogRowBase => {
+  const rows = readings.map((reading) => {
+    const days = dayValues.get(reading.metricKey) ?? [];
+    // A removed reading is in no figure, so it measures against nothing.
+    const previous = reading.voided ? null : previousDayValue(days, reading.date);
     const trend = getTrend(reading.value, previous?.value ?? null);
-    return {
+    const row: MeasurementLogRow = {
       id: reading.id,
       date: reading.date,
       metricId: reading.metricKey,
@@ -151,52 +116,17 @@ export function buildMeasurementLogRows(
       isCurrent: days.length > 0 && days[days.length - 1].id === reading.id,
       isBaseline: baselineIds[reading.metricKey] === reading.id,
     };
-  };
-
-  // One group per (metric, day).
-  const groups = new Map<string, MeasurementLogReadingInput[]>();
-  for (const reading of readings) {
-    const key = `${reading.metricKey}|${reading.date}`;
-    const group = groups.get(key);
-    if (group) group.push(reading);
-    else groups.set(key, [reading]);
-  }
-
-  const rows: Array<MeasurementLogRow & { rank: number }> = [];
-  for (const group of groups.values()) {
-    const { metricKey, date } = group[0];
-    const days = dayValues.get(metricKey) ?? [];
-    const newestFirst = [...group].sort(byNewestWrite);
-    const live = newestFirst.filter((reading) => !reading.voided);
-    // The reading in force is the day-value's row. A day with no live reading
-    // is led by its newest removed one, so the coach can see it and restore it.
-    const standingId = dayValueOn(days, date)?.id ?? null;
-    const lead = live.find((reading) => reading.id === standingId) ?? live[0] ?? newestFirst[0];
-    const previous = lead.voided ? null : previousDayValue(days, date);
-
-    const folded: FoldedMeasurementLogRow[] = newestFirst
-      .filter((reading) => reading.id !== lead.id)
-      .map((reading) => ({
-        ...toBase(reading, days, null),
-        kind: reading.voided
-          ? "removed"
-          : reading.sourceId != null && reading.sourceId === lead.sourceId
-            ? "corrected"
-            : "also",
-      }));
-
-    rows.push({
-      ...toBase(lead, days, previous),
-      folded,
-      rank: rank.get(metricKey) ?? order.length,
-    });
-  }
-
-  rows.sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? 1 : -1; // date DESC
-    if (a.rank !== b.rank) return a.rank - b.rank; // tab order
-    return a.id < b.id ? 1 : -1;
+    return { row, rank: rank.get(reading.metricKey) ?? order.length, updatedAt: reading.updatedAt };
   });
 
-  return rows.map(({ rank: _rank, ...row }) => row);
+  rows.sort((a, b) => {
+    if (a.row.date !== b.row.date) return a.row.date < b.row.date ? 1 : -1; // date DESC
+    if (a.rank !== b.rank) return a.rank - b.rank; // tab order
+    // Within a day, the most recently touched first; the id breaks an equal
+    // instant so two readers agree.
+    if (a.updatedAt !== b.updatedAt) return a.updatedAt < b.updatedAt ? 1 : -1;
+    return a.row.id < b.row.id ? 1 : -1;
+  });
+
+  return rows.map((entry) => entry.row);
 }

@@ -1,14 +1,16 @@
 import type { MeasurementKey, MeasurementSource } from "./keys";
 
 /**
- * Rule 2 of the measurement log (docs/MEASUREMENT-LOG-PLAN.md §2): the value
- * for a day is the latest row for that client, metric and day, by
- * `recorded_at`. One rule, no source ranking, no tie-break table — the coach
- * correcting after the check-in wins, which is the case that matters.
+ * Rule 2 of the measurement log (docs/MEASUREMENT-LOG-PLAN.md §2, D23): the
+ * value for a day is the reading written or edited LAST — the latest live row
+ * for that client, metric and day by `updated_at`, a tie broken by id. One
+ * rule, no source ranking, no tie-break table: the coach editing after the
+ * check-in wins because the edit is the day's last touch, and a reading added
+ * after that edit wins in turn.
  *
  * Pure, so the server's series, the portal's progress read and any browser
  * caller derive the same day from the same rows. No date-fns: `date` is
- * YYYY-MM-DD on the client's calendar and `recordedAt` is an ISO instant, and
+ * YYYY-MM-DD on the client's calendar and `updatedAt` is an ISO instant, and
  * ISO instants compare correctly as strings only when they share an offset —
  * PostgREST emits every timestamptz in one offset, so they do.
  */
@@ -18,7 +20,10 @@ export type MeasurementReading = {
   value: number;
   /** YYYY-MM-DD, the client's calendar day the reading belongs to. */
   date: string;
+  /** When the row was written. */
   recordedAt: string;
+  /** When the value was last written or edited — what decides the day. */
+  updatedAt: string;
   measuredAt: string | null;
   source: MeasurementSource;
   sourceId: string | null;
@@ -30,8 +35,8 @@ export type MeasurementReading = {
 export type DayValue = MeasurementReading;
 
 function later(a: MeasurementReading, b: MeasurementReading): MeasurementReading {
-  if (a.recordedAt !== b.recordedAt) return a.recordedAt > b.recordedAt ? a : b;
-  // Two writes in the same instant: pick deterministically rather than by
+  if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
+  // Two touches in the same instant: pick deterministically rather than by
   // arrival order, so two readers of the same rows agree.
   return a.id > b.id ? a : b;
 }

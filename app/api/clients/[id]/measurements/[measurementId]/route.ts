@@ -3,20 +3,20 @@ import { z } from "zod";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import { correctMeasurementSchema } from "@/lib/validations/measurements";
+import { updateMeasurementSchema } from "@/lib/validations/measurements";
 import { measurementEditErrorResponse } from "@/lib/measurements/edit-errors";
-import { correctMeasurement } from "@/services/measurement-edits-service";
+import { updateMeasurement } from "@/services/measurement-edits-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 
 const uuid = z.string().uuid();
 
-// Correct a reading: a new row on the same day carrying the original's stamp,
-// so the day's value, a stamped check-in's report and every "now" surface read
-// the corrected number while the wrong one stays in the history (ARCHITECTURE
-// → "client_measurements table", rule 8). The value is canonical; its bounds
+// Edit a reading in place: the row keeps its id, day, source and check-in
+// stamp and its value changes, so the day's value, a stamped check-in's
+// report and every "now" surface follow the same row (ARCHITECTURE →
+// "client_measurements table", rule 8). The value is canonical; its bounds
 // depend on the row's metric, which the service alone can read.
-export async function POST(
+export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; measurementId: string }> }
 ) {
@@ -38,7 +38,7 @@ export async function POST(
     }
 
     const body: unknown = await request.json();
-    const validation = correctMeasurementSchema.safeParse(body);
+    const validation = updateMeasurementSchema.safeParse(body);
     if (!validation.success) {
       return NextResponse.json(
         { success: false, error: "Invalid input", details: validation.error.errors },
@@ -46,28 +46,23 @@ export async function POST(
       );
     }
 
-    const result = await correctMeasurement({
+    const result = await updateMeasurement({
       clientId,
       measurementId,
-      actor: auth.coachId,
       value: validation.data.value,
     });
 
-    // Only a written row is audited — an unchanged value wrote nothing. Metric
-    // and date only: the value is health data and stays out.
-    if (result.inserted) {
+    // Only a written change is audited — an unchanged value wrote nothing.
+    // Metric and date only: the value is health data and stays out.
+    if (result.updated) {
       void recordAuditEvent({
         actorId: auth.coachId,
         actorRole: "trainer",
-        action: AUDIT_ACTIONS.MEASUREMENT_CORRECT,
+        action: AUDIT_ACTIONS.MEASUREMENT_UPDATE,
         targetTable: "client_measurements",
         targetId: result.id,
         clientId,
-        metadata: {
-          metricKey: result.metricKey,
-          date: result.reading.date,
-          correctedId: measurementId,
-        },
+        metadata: { metricKey: result.metricKey, date: result.date },
         request,
       });
     }
@@ -79,7 +74,7 @@ export async function POST(
           id: result.id,
           metricKey: result.metricKey,
           sourceId: result.sourceId,
-          inserted: result.inserted,
+          updated: result.updated,
           energy: result.energy,
         },
       },
@@ -88,7 +83,7 @@ export async function POST(
   } catch (error) {
     const refused = measurementEditErrorResponse(error);
     if (refused) return refused;
-    console.error("Error correcting measurement:", error);
-    return NextResponse.json({ error: "Failed to correct the reading" }, { status: 500 });
+    console.error("Error updating measurement:", error);
+    return NextResponse.json({ error: "Failed to update the reading" }, { status: 500 });
   }
 }

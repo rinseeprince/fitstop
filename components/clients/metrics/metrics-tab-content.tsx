@@ -202,7 +202,7 @@ export const MetricsTabContent = ({
         onOpenChange={(open) => {
           if (!open) setEditingReading(null);
         }}
-        onConfirm={readingActions.correct}
+        onConfirm={readingActions.update}
       />
       <RemoveReadingDialog
         row={removingReading}

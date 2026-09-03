@@ -158,6 +158,7 @@ function reading(metricKey: 'weight' | 'bodyFat', value: number): MeasurementRea
     value,
     date: '2026-09-02',
     recordedAt: '2026-09-02T09:00:00.000Z',
+    updatedAt: '2026-09-02T09:00:00.000Z',
     measuredAt: null,
     source: 'intake',
     sourceId: null,

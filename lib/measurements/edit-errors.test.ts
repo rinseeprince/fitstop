@@ -7,11 +7,12 @@ import {
   measurementEditErrorResponse,
 } from "./edit-errors";
 
-describe("fromRpcMessage — migration 160's prefixes become the routes' vocabulary", () => {
+describe("fromRpcMessage — the RPCs' prefixes become the routes' vocabulary", () => {
   it("maps each refusal prefix to its class", () => {
     expect(fromRpcMessage("not_found: reading x is not this client's")).toBeInstanceOf(
       MeasurementNotFoundError
     );
+    expect(fromRpcMessage("voided: reading x is removed")).toBeInstanceOf(MeasurementStateError);
     expect(fromRpcMessage("already_voided: reading x is already removed")).toBeInstanceOf(
       MeasurementStateError
     );
@@ -21,12 +22,14 @@ describe("fromRpcMessage — migration 160's prefixes become the routes' vocabul
     );
   });
 
-  it("names the last-weight refusal's way out", () => {
-    expect(fromRpcMessage("last_weight: x")?.message).toMatch(/Correct it instead/);
+  it("names each refusal's way out", () => {
+    expect(fromRpcMessage("last_weight: x")?.message).toMatch(/Edit it instead/);
+    expect(fromRpcMessage("voided: x")?.message).toMatch(/Restore it before editing it/);
   });
 
   it("leaves an unexpected failure alone — a prefix must be followed by its colon", () => {
     expect(fromRpcMessage("not_found_elsewhere")).toBeNull();
+    expect(fromRpcMessage("voided_by is null")).toBeNull();
     expect(fromRpcMessage("permission denied for function void_measurement")).toBeNull();
     expect(fromRpcMessage(null)).toBeNull();
   });

@@ -4,8 +4,7 @@ import userEvent from "@testing-library/user-event";
 
 import { MeasurementLogSection } from "./measurement-log-section";
 import { addDaysToDate } from "@/utils/metric-points";
-import { SOURCE_LABELS } from "./metrics-format";
-import type { FoldKind, FoldedLogRow, LogRow } from "./metrics-view-types";
+import type { LogRow } from "./metrics-view-types";
 
 function row(
   id: string,
@@ -30,21 +29,8 @@ function row(
     isCurrent: false,
     isBaseline: false,
     beforeStart: false,
-    folded: [],
     ...overrides,
   };
-}
-
-/** A reading folded under a day's row — a full row plus why it is not the day's value. */
-function folded(
-  id: string,
-  date: string,
-  value: number,
-  kind: FoldKind,
-  overrides: Partial<LogRow> = {}
-): FoldedLogRow {
-  const { folded: _folded, ...base } = row(id, date, value, overrides);
-  return { ...base, kind };
 }
 
 // The section reads two fields of the selected metric: the id it filters on
@@ -192,78 +178,58 @@ describe("MeasurementLogSection — readings before the start", () => {
   });
 });
 
-// docs/MEASUREMENT-LOG-PLAN.md commit 7 (D21): one row per day — the reading
-// in force — with the day's other readings folded beneath it, opened by a
-// count on the row: a superseded reading as corrected or also logged, a
-// removed reading muted with who removed it and when.
-describe("MeasurementLogSection — one row per day, the day's other readings folded", () => {
-  const CORRECTED_DAY = row("m-coach", "2026-08-14", 90, {
-    source: "coach_entry",
-    sourceId: "ci-1",
-    isCurrent: true,
-    folded: [folded("m-checkin", "2026-08-14", 91, "corrected", { source: "check_in", sourceId: "ci-1" })],
-  });
+// docs/MEASUREMENT-LOG-PLAN.md commit 8: every reading is its own row — two
+// readings on one day are two rows, because two were added — with Edit and
+// Remove on each live one, nothing beneath a row and no count beside a value;
+// a removed reading is a muted row with who removed it and when.
+describe("MeasurementLogSection — one row per reading", () => {
+  const COACH_90 = row("m-coach", "2026-08-14", 90, { source: "coach_entry", isCurrent: true });
+  const CHECK_IN_91 = row("m-checkin", "2026-08-14", 91, { source: "check_in", sourceId: "ci-1" });
 
-  it("lists a corrected check-in reading as ONE row, and opens the original beneath it as corrected", async () => {
+  it("lists two readings of one day as two rows, Edit and Remove on each, and nothing to open", async () => {
     const user = userEvent.setup();
-    const { container } = render(<MeasurementLogSection metric={WEIGHT} rows={[CORRECTED_DAY]} />);
-
-    expect(screen.getByText("Showing 1 of 1 weight entries")).toBeInTheDocument();
-    expect(bodyRowsOf(tablesOf(container)[0])).toHaveLength(1);
-    expect(screen.getByText("90")).toBeInTheDocument();
-    expect(screen.queryByText("91")).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Show 1 more reading" }));
-    const [, original] = Array.from(bodyRowsOf(tablesOf(container)[0])) as HTMLElement[];
-    expect(within(original).getByText("91")).toBeInTheDocument();
-    expect(within(original).getByText(/Corrected/)).toBeInTheDocument();
-    expect(original).toHaveTextContent(SOURCE_LABELS.check_in);
-    // The count still says one row in the log.
-    expect(screen.getByText("Showing 1 of 1 weight entries")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Hide 1 more reading" }));
-    expect(bodyRowsOf(tablesOf(container)[0])).toHaveLength(1);
-  });
-
-  it("labels a second genuine reading of the day as also logged, with its source", async () => {
-    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    const onRemove = vi.fn();
     const { container } = render(
       <MeasurementLogSection
         metric={WEIGHT}
-        rows={[
-          row("m-clinic", "2026-08-14", 79.8, {
-            source: "coach_entry",
-            isCurrent: true,
-            folded: [folded("m-client", "2026-08-14", 80.4, "also", { source: "client_log" })],
-          }),
-        ]}
+        rows={[COACH_90, CHECK_IN_91]}
+        onEditReading={onEdit}
+        onRemoveReading={onRemove}
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Show 1 more reading" }));
-    const [, other] = Array.from(bodyRowsOf(tablesOf(container)[0])) as HTMLElement[];
-    expect(within(other).getByText("80.4")).toBeInTheDocument();
-    expect(within(other).getByText(/Also logged/)).toBeInTheDocument();
-    expect(other).toHaveTextContent(SOURCE_LABELS.client_log);
+    expect(screen.getByText("Showing 2 of 2 weight entries")).toBeInTheDocument();
+    const [first, second] = Array.from(bodyRowsOf(tablesOf(container)[0])) as HTMLElement[];
+    expect(within(first).getByText("90")).toBeInTheDocument();
+    expect(within(second).getByText("91")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /more reading/ })).not.toBeInTheDocument();
+
+    expect(screen.getAllByRole("button", { name: "Edit reading" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Remove reading" })).toHaveLength(2);
+
+    await user.click(within(second).getByRole("button", { name: "Edit reading" }));
+    expect(onEdit).toHaveBeenCalledWith(CHECK_IN_91);
+    await user.click(within(second).getByRole("button", { name: "Remove reading" }));
+    expect(onRemove).toHaveBeenCalledWith(CHECK_IN_91);
   });
 
-  it("folds a removed reading beneath the day's row, muted, with who removed it, and offers Restore on it alone", async () => {
+  it("lists a removed reading as a muted row with who removed it, and Restore alone on it", async () => {
     const user = userEvent.setup();
     const onRestore = vi.fn();
-    const removed = folded("m-gone", "2026-08-14", 91, "removed", {
+    const removed = row("m-gone", "2026-08-14", 91, {
       voided: { at: "2026-09-03T10:00:00+00:00", byName: "Sam Kalepa" },
     });
     const { container } = render(
       <MeasurementLogSection
         metric={WEIGHT}
-        rows={[row("m-live", "2026-08-14", 90, { isCurrent: true, folded: [removed] })]}
+        rows={[COACH_90, removed]}
         onEditReading={vi.fn()}
         onRemoveReading={vi.fn()}
         onRestoreReading={onRestore}
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Show 1 more reading" }));
     const [live, gone] = Array.from(bodyRowsOf(tablesOf(container)[0])) as HTMLElement[];
     expect(gone.className).toContain("opacity-60");
     expect(live.className).not.toContain("opacity-60");
@@ -271,59 +237,10 @@ describe("MeasurementLogSection — one row per day, the day's other readings fo
     expect(within(gone).getByText("3 Sept")).toBeInTheDocument();
     expect(within(gone).getByRole("button", { name: "Restore reading" })).toBeInTheDocument();
     expect(within(gone).queryByRole("button", { name: /Edit|Remove/ })).not.toBeInTheDocument();
+    expect(within(live).queryByRole("button", { name: "Restore reading" })).not.toBeInTheDocument();
 
     await user.click(within(gone).getByRole("button", { name: "Restore reading" }));
     expect(onRestore).toHaveBeenCalledWith(expect.objectContaining({ id: "m-gone" }));
-  });
-
-  it("offers Remove but never Edit on a folded live reading", async () => {
-    const user = userEvent.setup();
-    const onRemove = vi.fn();
-    render(
-      <MeasurementLogSection
-        metric={WEIGHT}
-        rows={[
-          row("m-clinic", "2026-08-14", 79.8, {
-            source: "coach_entry",
-            isCurrent: true,
-            folded: [folded("m-client", "2026-08-14", 80.4, "also", { source: "client_log" })],
-          }),
-        ]}
-        onEditReading={vi.fn()}
-        onRemoveReading={onRemove}
-      />
-    );
-
-    await user.click(screen.getByRole("button", { name: "Show 1 more reading" }));
-    expect(screen.getAllByRole("button", { name: "Edit reading" })).toHaveLength(1);
-    const removes = screen.getAllByRole("button", { name: "Remove reading" });
-    expect(removes).toHaveLength(2);
-
-    await user.click(removes[1]);
-    expect(onRemove).toHaveBeenCalledWith(expect.objectContaining({ id: "m-client" }));
-  });
-
-  it("a day whose only reading is removed is itself a muted row with Restore", () => {
-    const { container } = render(
-      <MeasurementLogSection
-        metric={WEIGHT}
-        rows={[
-          row("m-live", "2026-08-21", 89),
-          row("m-gone", "2026-08-14", 91, {
-            voided: { at: "2026-09-03T10:00:00+00:00", byName: "Sam Kalepa" },
-          }),
-        ]}
-        onRestoreReading={vi.fn()}
-      />
-    );
-
-    const [log] = tablesOf(container);
-    const [live, removed] = Array.from(bodyRowsOf(log)) as HTMLElement[];
-    expect(removed.className).toContain("opacity-60");
-    expect(live.className).not.toContain("opacity-60");
-    expect(within(removed).getByText(/Removed by Sam Kalepa/)).toBeInTheDocument();
-    expect(within(removed).getByText("3 Sept")).toBeInTheDocument();
-    expect(within(removed).getByRole("button", { name: "Restore reading" })).toBeInTheDocument();
   });
 
   it("says 'Removed' alone when the remover is no longer known", () => {
@@ -337,21 +254,21 @@ describe("MeasurementLogSection — one row per day, the day's other readings fo
     expect(screen.getByText(/^Removed$/)).toBeInTheDocument();
   });
 
-  it("counts days, not readings — the pager and the hero's chip agree", () => {
+  it("counts readings, so a day with two counts twice", () => {
     const { container } = render(
       <MeasurementLogSection
         metric={WEIGHT}
         rows={[
-          row("d-3", "2026-08-21", 89.3, { folded: [folded("d-3b", "2026-08-21", 89.7, "also")] }),
-          row("d-2", "2026-08-14", 90.1, { folded: [folded("d-2b", "2026-08-14", 90.9, "corrected")] }),
+          row("d-3", "2026-08-21", 89.3),
+          row("d-2b", "2026-08-14", 90.9, { source: "coach_entry" }),
+          row("d-2", "2026-08-14", 90.1),
           row("d-1", "2026-08-07", 91.5),
         ]}
       />
     );
 
-    expect(screen.getByText("Showing 3 of 3 weight entries")).toBeInTheDocument();
-    expect(bodyRowsOf(tablesOf(container)[0])).toHaveLength(3);
-    expect(screen.getAllByRole("button", { name: "Show 1 more reading" })).toHaveLength(2);
+    expect(screen.getByText("Showing 4 of 4 weight entries")).toBeInTheDocument();
+    expect(bodyRowsOf(tablesOf(container)[0])).toHaveLength(4);
   });
 });
 

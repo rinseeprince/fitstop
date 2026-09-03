@@ -25,7 +25,7 @@ function reading(
     source: "check_in",
     sourceId: null,
     note: null,
-    recordedAt: `${date}T08:00:00+00:00`,
+    updatedAt: `${date}T08:00:00+00:00`,
     voided: null,
     ...over,
   };
@@ -37,79 +37,49 @@ const day = (id: string, date: string, value: number): MeasurementDayValueInput 
   value,
 });
 
-// The coach's correction of a check-in's reading: the correction carries the
-// check-in's stamp (docs/MEASUREMENT-LOG-PLAN.md D9), written later.
+// A check-in's reading and a coach's reading logged later the same day: two
+// readings, two rows, the coach's the day's value (docs/MEASUREMENT-LOG-PLAN.md
+// commit 8, D23).
 const CHECK_IN_91 = reading("m-ci", "weight", "2026-08-14", 91, { sourceId: "ci-1" });
-const CORRECTION_90 = reading("m-coach", "weight", "2026-08-14", 90, {
+const COACH_90 = reading("m-coach", "weight", "2026-08-14", 90, {
   source: "coach_entry",
-  sourceId: "ci-1",
-  recordedAt: "2026-08-14T12:00:00+00:00",
+  updatedAt: "2026-08-14T12:00:00+00:00",
 });
 
-describe("buildMeasurementLogRows — one row per day, the day's other readings folded", () => {
-  it("lists a corrected check-in reading as ONE row reading 90, with the 91 folded beneath it as corrected", () => {
+describe("buildMeasurementLogRows — one row per reading", () => {
+  it("lists two readings of one day as two rows, the most recently touched first, nothing beneath either", () => {
     const rows = buildMeasurementLogRows(
-      [CHECK_IN_91, CORRECTION_90],
+      [CHECK_IN_91, COACH_90],
       new Map([["weight", [day("m-coach", "2026-08-14", 90)]]]),
       {},
       ORDER,
       DOWN_IS_GOOD
     );
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ id: "m-coach", value: 90, source: "coach_entry" });
-    expect(rows[0].folded).toEqual([
-      expect.objectContaining({ id: "m-ci", value: 91, source: "check_in", kind: "corrected", change: null }),
+    expect(rows.map((row) => [row.id, row.value])).toEqual([
+      ["m-coach", 90],
+      ["m-ci", 91],
     ]);
+    expect(rows[0]).not.toHaveProperty("folded");
+    expect(rows[1]).toMatchObject({ source: "check_in", sourceId: "ci-1" });
   });
 
-  it("folds two genuine readings of one day as also logged — the coach's clinic reading over the client's home one", () => {
+  it("an edited reading is the same row with its new value — an edit adds nothing", () => {
     const rows = buildMeasurementLogRows(
-      [
-        reading("m-client", "weight", "2026-08-14", 80.4, {
-          source: "client_log",
-          recordedAt: "2026-08-14T07:12:00+00:00",
-        }),
-        reading("m-clinic", "weight", "2026-08-14", 79.8, {
-          source: "coach_entry",
-          recordedAt: "2026-08-14T12:00:00+00:00",
-        }),
-      ],
-      new Map([["weight", [day("m-clinic", "2026-08-14", 79.8)]]]),
+      [reading("m-ci", "weight", "2026-08-14", 89.5, { sourceId: "ci-1", updatedAt: "2026-08-15T09:00:00+00:00" })],
+      new Map([["weight", [day("m-ci", "2026-08-14", 89.5)]]]),
       {},
       ORDER,
       DOWN_IS_GOOD
     );
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe("m-clinic");
-    expect(rows[0].folded).toEqual([
-      expect.objectContaining({ id: "m-client", value: 80.4, kind: "also" }),
-    ]);
+    expect(rows[0]).toMatchObject({ id: "m-ci", value: 89.5, sourceId: "ci-1", isCurrent: true });
   });
 
-  it("reads a coach's edit of their own unstamped entry as also logged — the store cannot tell it from a second reading (D21)", () => {
+  it("takes every live row's change against the PREVIOUS DAY's standing value, never against a same-day row", () => {
     const rows = buildMeasurementLogRows(
-      [
-        reading("m-first", "waist", "2026-08-14", 84.3, { source: "coach_entry" }),
-        reading("m-second", "waist", "2026-08-14", 83.6, {
-          source: "coach_entry",
-          recordedAt: "2026-08-14T08:05:00+00:00",
-        }),
-      ],
-      new Map([["waist", [day("m-second", "2026-08-14", 83.6)]]]),
-      {},
-      ORDER,
-      DOWN_IS_GOOD
-    );
-
-    expect(rows[0].id).toBe("m-second");
-    expect(rows[0].folded[0]).toMatchObject({ id: "m-first", kind: "also" });
-  });
-
-  it("takes the day's change against the PREVIOUS DAY's standing value, never against a folded reading", () => {
-    const rows = buildMeasurementLogRows(
-      [CHECK_IN_91, CORRECTION_90, reading("m-prev", "weight", "2026-08-07", 92)],
+      [CHECK_IN_91, COACH_90, reading("m-prev", "weight", "2026-08-07", 92)],
       new Map([
         ["weight", [day("m-prev", "2026-08-07", 92), day("m-coach", "2026-08-14", 90)]],
       ]),
@@ -119,20 +89,20 @@ describe("buildMeasurementLogRows — one row per day, the day's other readings 
     );
 
     const byId = new Map(rows.map((row) => [row.id, row]));
-    // The 14th's row measures against the 7th's 92, and a fall is good.
+    // Both of the 14th's rows measure against the 7th's 92, and a fall is good.
     expect(byId.get("m-coach")?.change).toEqual({ amount: -2, tone: "good" });
-    expect(byId.get("m-coach")?.folded[0].change).toBeNull();
+    expect(byId.get("m-ci")?.change).toEqual({ amount: -1, tone: "good" });
     expect(byId.get("m-prev")?.change).toBeNull();
   });
 
-  it("folds a removed reading beneath the day's standing row, carrying its removal, and the row's change stands", () => {
+  it("lists a removed reading as its own row carrying its removal, with no change, while the live row's stands", () => {
     const voided = { at: "2026-09-03T10:00:00+00:00", byName: "Sam" };
     const rows = buildMeasurementLogRows(
       [
         reading("m-gone", "weight", "2026-08-14", 91, { voided }),
         reading("m-live", "weight", "2026-08-14", 90, {
           source: "coach_entry",
-          recordedAt: "2026-08-14T12:00:00+00:00",
+          updatedAt: "2026-08-14T12:00:00+00:00",
         }),
         reading("m-prev", "weight", "2026-08-07", 92),
       ],
@@ -144,51 +114,9 @@ describe("buildMeasurementLogRows — one row per day, the day's other readings 
       DOWN_IS_GOOD
     );
 
-    const row = rows.find((r) => r.id === "m-live");
-    expect(row?.change).toEqual({ amount: -2, tone: "good" });
-    expect(row?.folded).toEqual([
-      expect.objectContaining({ id: "m-gone", kind: "removed", voided, change: null }),
-    ]);
-  });
-
-  it("leads a day whose readings are all removed with its newest removed reading, the rest folded", () => {
-    const voidedA = { at: "2026-09-03T10:00:00+00:00", byName: "Sam" };
-    const voidedB = { at: "2026-09-03T10:05:00+00:00", byName: "Sam" };
-    const rows = buildMeasurementLogRows(
-      [
-        reading("m-gone-a", "weight", "2026-08-14", 91, { voided: voidedA }),
-        reading("m-gone-b", "weight", "2026-08-14", 90, {
-          recordedAt: "2026-08-14T12:00:00+00:00",
-          voided: voidedB,
-        }),
-        reading("m-prev", "weight", "2026-08-07", 92),
-      ],
-      new Map([["weight", [day("m-prev", "2026-08-07", 92)]]]),
-      {},
-      ORDER,
-      DOWN_IS_GOOD
-    );
-
-    const row = rows.find((r) => r.date === "2026-08-14");
-    expect(row).toMatchObject({ id: "m-gone-b", voided: voidedB, change: null });
-    expect(row?.folded).toEqual([expect.objectContaining({ id: "m-gone-a", kind: "removed" })]);
-  });
-
-  it("folds newest write first", () => {
-    const rows = buildMeasurementLogRows(
-      [
-        reading("m-a", "weight", "2026-08-14", 91.2, { recordedAt: "2026-08-14T07:00:00+00:00" }),
-        reading("m-b", "weight", "2026-08-14", 91.4, { recordedAt: "2026-08-14T09:00:00+00:00" }),
-        reading("m-c", "weight", "2026-08-14", 91.6, { recordedAt: "2026-08-14T11:00:00+00:00" }),
-      ],
-      new Map([["weight", [day("m-c", "2026-08-14", 91.6)]]]),
-      {},
-      ORDER,
-      DOWN_IS_GOOD
-    );
-
-    expect(rows[0].id).toBe("m-c");
-    expect(rows[0].folded.map((r) => r.id)).toEqual(["m-b", "m-a"]);
+    expect(rows.map((row) => row.id)).toEqual(["m-live", "m-gone", "m-prev"]);
+    expect(rows[0].change).toEqual({ amount: -2, tone: "good" });
+    expect(rows[1]).toMatchObject({ voided, change: null, isCurrent: false });
   });
 
   it("flags the reading every 'now' figure uses and the reading the since-start figures use", () => {
@@ -213,27 +141,29 @@ describe("buildMeasurementLogRows — one row per day, the day's other readings 
     expect(flags).toEqual({ "m-3": [true, false], "m-2": [false, false], "m-1": [false, true] });
   });
 
-  it("a folded same-day reading is not 'current' — only the day's standing row is", () => {
+  it("a same-day reading that is not the day's value is not 'current' — only the day's standing row is", () => {
     const rows = buildMeasurementLogRows(
-      [CHECK_IN_91, CORRECTION_90],
+      [CHECK_IN_91, COACH_90],
       new Map([["weight", [day("m-coach", "2026-08-14", 90)]]]),
       {},
       ORDER,
       DOWN_IS_GOOD
     );
 
-    expect(rows[0].isCurrent).toBe(true);
-    expect(rows[0].folded[0].isCurrent).toBe(false);
+    expect(rows.map((row) => [row.id, row.isCurrent])).toEqual([
+      ["m-coach", true],
+      ["m-ci", false],
+    ]);
   });
 
-  it("orders newest day first, then tab order — one row per day per metric", () => {
+  it("orders newest day first, then tab order, then the most recently touched — one row per reading", () => {
     const rows = buildMeasurementLogRows(
       [
         reading("w-old", "weight", "2026-08-07", 92),
         reading("waist-new", "waist", "2026-08-14", 80),
         reading("w-new-a", "weight", "2026-08-14", 91),
         reading("w-new-b", "weight", "2026-08-14", 90, {
-          recordedAt: "2026-08-14T12:00:00+00:00",
+          updatedAt: "2026-08-14T12:00:00+00:00",
         }),
       ],
       new Map([
@@ -245,8 +175,38 @@ describe("buildMeasurementLogRows — one row per day, the day's other readings 
       DOWN_IS_GOOD
     );
 
-    expect(rows.map((row) => row.id)).toEqual(["w-new-b", "waist-new", "w-old"]);
-    expect(rows[0].folded.map((row) => row.id)).toEqual(["w-new-a"]);
+    expect(rows.map((row) => row.id)).toEqual(["w-new-b", "w-new-a", "waist-new", "w-old"]);
+  });
+
+  it("orders a day's rows by their last touch, never by id — the ids here sort the other way", () => {
+    const rows = buildMeasurementLogRows(
+      [
+        reading("m-b", "weight", "2026-08-14", 91.2, { updatedAt: "2026-08-14T09:00:00+00:00" }),
+        reading("m-a", "weight", "2026-08-14", 91.4, { updatedAt: "2026-08-14T11:00:00+00:00" }),
+        reading("m-c", "weight", "2026-08-14", 91.6, { updatedAt: "2026-08-14T07:00:00+00:00" }),
+      ],
+      new Map([["weight", [day("m-a", "2026-08-14", 91.4)]]]),
+      {},
+      ORDER,
+      DOWN_IS_GOOD
+    );
+
+    expect(rows.map((row) => row.id)).toEqual(["m-a", "m-b", "m-c"]);
+  });
+
+  it("breaks an equal instant by id, so two readers agree on a day's order", () => {
+    const rows = buildMeasurementLogRows(
+      [
+        reading("m-a", "weight", "2026-08-14", 91.2, { updatedAt: "2026-08-14T09:00:00+00:00" }),
+        reading("m-b", "weight", "2026-08-14", 91.4, { updatedAt: "2026-08-14T09:00:00+00:00" }),
+      ],
+      new Map([["weight", [day("m-b", "2026-08-14", 91.4)]]]),
+      {},
+      ORDER,
+      DOWN_IS_GOOD
+    );
+
+    expect(rows.map((row) => row.id)).toEqual(["m-b", "m-a"]);
   });
 
   it("shows a coach's note and never a client's", () => {

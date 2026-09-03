@@ -1,10 +1,9 @@
 import type { MetricPoint } from "@/utils/metric-points";
-import type { FoldKind } from "@/utils/measurement-log-rows";
 import type { MeasurementSource } from "@/lib/measurements/keys";
 import type { HeroBaseline, Tone } from "@/utils/metric-derived-stats";
 import type { TrendDirection } from "@/types/check-in";
 
-export type { FoldKind, Tone };
+export type { Tone };
 
 // View-model contract between use-merged-metrics (data side) and the Metrics
 // page components. Built from the pure derivations in utils/metric-points.ts
@@ -123,18 +122,4 @@ export type LogRow = {
   isBaseline: boolean;
   /** Dated before the client's start date: listed, excluded from the journey's chart and maths. */
   beforeStart: boolean;
-  /**
-   * The day's other readings, folded beneath this row (a physique day only;
-   * a wellness row has none): a superseded reading as corrected or also
-   * logged, a removed reading as removed. The row itself is the reading in
-   * force, so the list shows the result of an edit, not the mechanism.
-   */
-  folded: FoldedLogRow[];
 };
-
-/**
- * A reading folded under a day's row — a full row, so the Remove and Restore
- * dialogs and actions take it as they take any reading — plus why it is not
- * the day's value.
- */
-export type FoldedLogRow = Omit<LogRow, "folded"> & { kind: FoldKind };

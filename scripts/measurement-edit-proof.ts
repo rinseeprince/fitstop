@@ -1,17 +1,18 @@
 /**
- * Request-level proof of the measurement log's three row actions — correct,
- * remove, restore — against the linked DEV database through a running
- * `next dev` (docs/MEASUREMENT-LOG-PLAN.md commit 4).
+ * Request-level proof of the measurement log's three row actions — edit in
+ * place, remove, restore — against the linked DEV database through a running
+ * `next dev` (docs/MEASUREMENT-LOG-PLAN.md commits 4 and 8).
  *
  *   npx tsx scripts/measurement-edit-proof.ts
  *
- * The belts this commit adds live in SQL (migration 160: a foreign row, a
- * double void, a restore of a live row, the client's only weight) and in the
- * live view's filter, so a vitest that mocks `supabaseAdmin` proves nothing
- * about them. This script creates two throwaway clients under the owner's
- * coach row — one with an auth user, so the client's own progress read runs
- * under its JWT and meets RLS plus the view — writes readings through the
- * app's own writer, drives the three routes as the coach with a minted
+ * The belts live in SQL (migration 160: a foreign row, a double void, a
+ * restore of a live row, the client's only weight; migration 161: a foreign
+ * row, a removed row, an unchanged value) and in the live view's filter and
+ * the two derived views' ordering, so a vitest that mocks `supabaseAdmin`
+ * proves nothing about them. This script creates two throwaway clients under
+ * the owner's coach row — one with an auth user, so the client's own progress
+ * read runs under its JWT and meets RLS plus the view — writes readings
+ * through the app's own writer, drives the routes as the coach with a minted
  * session, calls the RPCs directly for their refusals, and reads every
  * surface back:
  *
@@ -23,11 +24,18 @@
  *      not_found
  *   4  re-logging the removed value writes a new row (rule 3 reads live rows)
  *   5  restore: back in every read; the pair recomputed; a live row refused
- *   6  a correction of a check-in's reading: the fold, the day's value and
- *      "now" read it; the table keeps both; an equal value writes nothing
- *   7  another client's row / an out-of-bounds value refused
- *   8  the client's only weight cannot be removed — correct it instead
- *   9  the only body fat CAN be removed, and the formula switches
+ *   6  editing a check-in's reading IN PLACE: the same row — id, day, source,
+ *      stamp and moment kept — with the new value and a later updated_at;
+ *      the check-in fold, the day's value, "now" and the client's progress
+ *      read all follow it; one live row on the day; the audit row without
+ *      the value; an equal edit writes nothing, moves nothing, audits nothing
+ *   7  another client's row / a removed row / an out-of-bounds value refused
+ *   8  D23 on the database: a reading added after the check-in wins the day;
+ *      editing the check-in's row makes IT the day's value again — the view
+ *      and the kernel agree — and a further add wins in turn; the pair
+ *      recomputes only when the edited row is the client's newest
+ *   9  the client's only weight cannot be removed — edit it instead
+ *  10  the only body fat CAN be removed, and the formula switches
  *
  * Every fixture number is distinct. The throwaway rows go with the clients
  * (ON DELETE CASCADE); the auth user and its audit rows are removed last.
@@ -112,9 +120,14 @@ async function mintSession(email: string): Promise<Session> {
 
 type Reply = { status: number; json: Record<string, unknown> | null };
 
-async function post(session: Session, path: string, body?: unknown): Promise<Reply> {
+async function send(
+  session: Session,
+  method: "POST" | "PATCH",
+  path: string,
+  body?: unknown
+): Promise<Reply> {
   const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
+    method,
     headers: {
       Cookie: session.cookie,
       Origin: BASE,
@@ -131,6 +144,9 @@ async function post(session: Session, path: string, body?: unknown): Promise<Rep
   }
   return { status: res.status, json };
 }
+
+const post = (session: Session, path: string, body?: unknown) => send(session, "POST", path, body);
+const patch = (session: Session, path: string, body: unknown) => send(session, "PATCH", path, body);
 
 async function get(session: Session, path: string): Promise<Reply> {
   const res = await fetch(`${BASE}${path}`, {
@@ -170,11 +186,18 @@ async function auditRows(clientId: string, targetId: string) {
 }
 
 async function rpcMessage(
-  fn: "void_measurement" | "restore_measurement",
-  args: Record<string, string>
+  fn: "void_measurement" | "restore_measurement" | "update_measurement",
+  args: Record<string, string | number>
 ): Promise<string> {
   const { error } = await supabaseAdmin.rpc(fn, args as never);
   return error?.message ?? "";
+}
+
+/** The day's value of one metric, straight from the kernel over the live view. */
+async function dayValueOf(clientId: string, metric: "weight" | "bodyFat", date: string) {
+  return (await getMeasurementSeries(clientId, { metricKeys: [metric] }))
+    .get(metric)
+    ?.find((v) => v.date === date);
 }
 
 async function main(): Promise<void> {
@@ -243,13 +266,15 @@ async function main(): Promise<void> {
     const bWeight = (await appendMeasurements({ clientId: B, source: "intake", recordedOn: "2026-04-05", values: { weight: 60.6 } })).rows.weight!;
     void w1;
 
+    check("setup: a fresh row is touched when it is written — updated_at equals recorded_at", w3.updatedAt === w3.recordedAt, { recordedAt: w3.recordedAt, updatedAt: w3.updatedAt });
+
     const pair0 = await energyPair(A);
     check("setup: the pair computed from the newest weight and body fat", pair0.bmr != null && pair0.tdee != null, pair0);
 
     const coachSession = await mintSession(COACH_EMAIL);
     const clientSession = await mintSession(clientEmail);
-    const url = (client: string, row: string, action: string) =>
-      `/api/clients/${client}/measurements/${row}/${action}`;
+    const rowUrl = (client: string, row: string) => `/api/clients/${client}/measurements/${row}`;
+    const url = (client: string, row: string, action: string) => `${rowUrl(client, row)}/${action}`;
 
     console.info("1. Remove the newest weight (a check-in's) as the coach");
     const voided = await post(coachSession, url(A, w3.id, "void"));
@@ -294,7 +319,8 @@ async function main(): Promise<void> {
     const relog = await appendMeasurements({ clientId: A, source: "check_in", sourceId: STAMP, recordedOn: "2026-04-20", values: { weight: 73.3 } });
     check("rule 3 reads live rows only: the equal value is written again", relog.inserted.includes("weight") && relog.rows.weight?.id !== w3.id, relog);
     check("…and it is the newest, so the pair recomputed", relog.energy === "recomputed", relog.energy);
-    const relogVoid = await post(coachSession, url(A, relog.rows.weight!.id, "void"));
+    const relogged = relog.rows.weight!;
+    const relogVoid = await post(coachSession, url(A, relogged.id, "void"));
     check("(cleanup) the re-logged row removed → 200", relogVoid.status === 200, relogVoid);
 
     console.info("5. Restore the original");
@@ -309,34 +335,67 @@ async function main(): Promise<void> {
     check("the RPC itself says not_voided", (await rpcMessage("restore_measurement", { p_id: w2.id, p_client_id: A })).startsWith("not_voided:"));
     check("audited as measurement.restore", (await auditRows(A, w3.id)).some((a) => a.action === "measurement.restore"));
 
-    console.info("6. Correct the check-in's weight");
-    const corrected = await post(coachSession, url(A, w3.id, "correct"), { value: 73.9 });
-    check("correct → 200, a row written", corrected.status === 200 && dataOf(corrected)?.inserted === true, corrected);
-    const fixId = String(dataOf(corrected)?.id ?? "");
-    check("the check-in fold reads the corrected value", (await getMeasurementsForCheckIns([STAMP])).get(STAMP)?.weight === 73.9);
-    const dayAfterFix = (await getMeasurementSeries(A, { metricKeys: ["weight"] })).get("weight")?.find((v) => v.date === "2026-04-20");
-    check("the day's value is the correction", dayAfterFix?.value === 73.9 && dayAfterFix.id === fixId, dayAfterFix);
-    check("'now' is the correction", (await getCurrentMeasurements(A)).weight?.value === 73.9);
-    const both = (await getMeasurementReadings(A)).filter((r) => r.date === "2026-04-20" && r.metricKey === "weight" && !r.voided);
-    check("the table keeps both live rows for the day: the original and the correction", both.length === 2 && both.some((r) => r.id === w3.id) && both.some((r) => r.id === fixId && r.source === "coach_entry" && r.sourceId === STAMP), both.map((r) => [r.id, r.value, r.source]));
-    check("the correction copies the moment the reading was taken", both.find((r) => r.id === fixId)?.measuredAt === both.find((r) => r.id === w3.id)?.measuredAt, both.map((r) => r.measuredAt));
-    check("audited as measurement.correct, no value", (await auditRows(A, fixId)).some((a) => a.action === "measurement.correct" && !JSON.stringify(a.metadata).includes("73.9")));
+    console.info("6. Edit the check-in's weight in place");
+    const before = (await getMeasurementReadings(A)).find((r) => r.id === w3.id)!;
+    const edited = await patch(coachSession, rowUrl(A, w3.id), { value: 73.9 });
+    check("edit → 200, the same row, written", edited.status === 200 && dataOf(edited)?.updated === true && dataOf(edited)?.id === w3.id, edited);
+    check("edit carries the check-in stamp for the invalidation, and the pair recomputed", dataOf(edited)?.sourceId === STAMP && dataOf(edited)?.energy === "recomputed", dataOf(edited));
+    const after = (await getMeasurementReadings(A)).find((r) => r.id === w3.id)!;
+    check("the row kept its id, day, source, stamp and moment, and changed its value", after.value === 73.9 && after.date === before.date && after.source === "check_in" && after.sourceId === STAMP && after.measuredAt === before.measuredAt, { before, after });
+    check("recorded_at is untouched and updated_at moved past it", after.recordedAt === before.recordedAt && after.updatedAt > after.recordedAt && after.updatedAt > before.updatedAt, { before, after });
+    const liveOnDay = (await getMeasurementReadings(A)).filter((r) => r.date === "2026-04-20" && r.metricKey === "weight" && !r.voided);
+    check("ONE live weight row stands on the day — an edit adds nothing", liveOnDay.length === 1 && liveOnDay[0].id === w3.id, liveOnDay.map((r) => [r.id, r.value]));
+    check("the check-in fold reads the edited value", (await getMeasurementsForCheckIns([STAMP])).get(STAMP)?.weight === 73.9);
+    const dayAfterEdit = await dayValueOf(A, "weight", "2026-04-20");
+    check("the day's value is the edited row", dayAfterEdit?.value === 73.9 && dayAfterEdit.id === w3.id, dayAfterEdit);
+    check("'now' is the edited row", (await getCurrentMeasurements(A)).weight?.id === w3.id && (await getCurrentMeasurements(A)).weight?.value === 73.9);
+    const progressAfterEdit = await get(clientSession, "/api/client/progress?days=365");
+    const weightsAfterEdit = ((dataOf(progressAfterEdit)?.weightHistory ?? []) as Array<{ weight?: number }>).map((p) => p.weight);
+    check("GET /api/client/progress under the client's JWT reads 73.9 and no 73.3", progressAfterEdit.status === 200 && weightsAfterEdit.includes(73.9) && !weightsAfterEdit.includes(73.3), weightsAfterEdit);
+    check("the pair moved with the edit", (await energyPair(A)).bmr !== pair0.bmr, { first: pair0, now: await energyPair(A) });
+    const updateAudits = (await auditRows(A, w3.id)).filter((a) => a.action === "measurement.update");
+    const meta = (updateAudits[0]?.metadata ?? {}) as Record<string, unknown>;
+    check("audited as measurement.update by the coach with the metric and the date, no value", updateAudits.length === 1 && updateAudits[0].actor_id === coach.id && meta.metricKey === "weight" && meta.date === "2026-04-20" && Object.keys(meta).length === 2, updateAudits);
+
     const countBefore = (await getMeasurementReadings(A)).length;
-    const again = await post(coachSession, url(A, w3.id, "correct"), { value: 73.9 });
-    check("an equal correction writes nothing", again.status === 200 && dataOf(again)?.inserted === false && (await getMeasurementReadings(A)).length === countBefore, again);
+    const again = await patch(coachSession, rowUrl(A, w3.id), { value: 73.9 });
+    const afterAgain = (await getMeasurementReadings(A)).find((r) => r.id === w3.id)!;
+    check("an equal edit answers updated: false and no recompute", again.status === 200 && dataOf(again)?.updated === false && dataOf(again)?.energy === "not_newest", again);
+    check("…writes nothing: no row added, updated_at unchanged, no audit row", (await getMeasurementReadings(A)).length === countBefore && afterAgain.updatedAt === after.updatedAt && (await auditRows(A, w3.id)).filter((a) => a.action === "measurement.update").length === 1, { countBefore, afterAgain });
 
-    console.info("7. Refusals on a correction");
-    check("another client's row → 404", (await post(coachSession, url(A, bWeight.id, "correct"), { value: 61 })).status === 404);
-    const bounds = await post(coachSession, url(A, w3.id, "correct"), { value: 300 });
+    console.info("7. Refusals on an edit");
+    check("another client's row → 404", (await patch(coachSession, rowUrl(A, bWeight.id), { value: 61 })).status === 404);
+    check("the RPC itself says not_found for a row outside p_client_id", (await rpcMessage("update_measurement", { p_id: bWeight.id, p_client_id: A, p_value: 61 })).startsWith("not_found:"));
+    check("B's row is unchanged", (await getCurrentMeasurements(B)).weight?.value === 60.6);
+    const removedEdit = await patch(coachSession, rowUrl(A, relogged.id), { value: 70.7 });
+    check("a removed row → 409, restore it first", removedEdit.status === 409 && /Restore/.test(errorOf(removedEdit)), removedEdit);
+    check("the RPC itself says voided", (await rpcMessage("update_measurement", { p_id: relogged.id, p_client_id: A, p_value: 70.7 })).startsWith("voided:"));
+    const bounds = await patch(coachSession, rowUrl(A, w3.id), { value: 300 });
     check("300 kg → 400", bounds.status === 400, bounds);
-    check("a malformed id → 404", (await post(coachSession, url(A, "not-a-uuid", "void"))).status === 404);
+    check("a malformed id → 404", (await patch(coachSession, rowUrl(A, "not-a-uuid"), { value: 70 })).status === 404);
 
-    console.info("8. The client's only weight");
+    console.info("8. D23 on the database: the reading written or edited last is the day's value");
+    const added = (await appendMeasurements({ clientId: A, source: "coach_entry", recordedOn: "2026-04-20", values: { weight: 74.4 }, createdBy: coach.id })).rows.weight!;
+    check("a coach reading added after the check-in wins the day (kernel)", (await dayValueOf(A, "weight", "2026-04-20"))?.id === added.id);
+    check("…and 'now' (the view)", (await getCurrentMeasurements(A)).weight?.id === added.id);
+    const reEdit = await patch(coachSession, rowUrl(A, w3.id), { value: 73.5 });
+    check("editing the check-in's row makes it the day's value again — the view and the kernel agree", reEdit.status === 200 && dataOf(reEdit)?.energy === "recomputed" && (await dayValueOf(A, "weight", "2026-04-20"))?.id === w3.id && (await getCurrentMeasurements(A)).weight?.value === 73.5, { reEdit, day: await dayValueOf(A, "weight", "2026-04-20") });
+    check("two live rows stand on the day", (await getMeasurementReadings(A)).filter((r) => r.date === "2026-04-20" && r.metricKey === "weight" && !r.voided).length === 2);
+    const addedAgain = (await appendMeasurements({ clientId: A, source: "coach_entry", recordedOn: "2026-04-20", values: { weight: 74.6 }, createdBy: coach.id })).rows.weight!;
+    check("a further add wins in turn", (await dayValueOf(A, "weight", "2026-04-20"))?.id === addedAgain.id && (await getCurrentMeasurements(A)).weight?.value === 74.6);
+    const pairBeforeOld = await energyPair(A);
+    const oldEdit = await patch(coachSession, rowUrl(A, w2.id), { value: 72.5 });
+    check("editing an older day's weight recomputes nothing", oldEdit.status === 200 && dataOf(oldEdit)?.updated === true && dataOf(oldEdit)?.energy === "not_newest" && (await energyPair(A)).bmr === pairBeforeOld.bmr, { oldEdit, before: pairBeforeOld, after: await energyPair(A) });
+    check("…and 10 Apr's value is the edit", (await dayValueOf(A, "weight", "2026-04-10"))?.value === 72.5);
+    const newestEdit = await patch(coachSession, rowUrl(A, addedAgain.id), { value: 74.8 });
+    check("editing the newest reading recomputes the pair", newestEdit.status === 200 && dataOf(newestEdit)?.energy === "recomputed" && (await energyPair(A)).bmr !== pairBeforeOld.bmr, { newestEdit, before: pairBeforeOld, after: await energyPair(A) });
+
+    console.info("9. The client's only weight");
     const lastWeight = await post(coachSession, url(B, bWeight.id, "void"));
-    check("→ 409, correct it instead", lastWeight.status === 409 && /Correct it instead/.test(errorOf(lastWeight)), lastWeight);
+    check("→ 409, edit it instead", lastWeight.status === 409 && /Edit it instead/.test(errorOf(lastWeight)), lastWeight);
     check("the RPC itself says last_weight", (await rpcMessage("void_measurement", { p_id: bWeight.id, p_client_id: B, p_actor: coach.id })).startsWith("last_weight:"));
 
-    console.info("9. The only body fat");
+    console.info("10. The only body fat");
     const pairBefore = await energyPair(A);
     const bfVoid = await post(coachSession, url(A, bf.id, "void"));
     check("→ 200 and the pair recomputed (Katch-McArdle → Mifflin-St Jeor)", bfVoid.status === 200 && dataOf(bfVoid)?.energy === "recomputed" && (await energyPair(A)).bmr !== pairBefore.bmr, { reply: bfVoid, before: pairBefore, after: await energyPair(A) });

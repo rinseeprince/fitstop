@@ -183,6 +183,7 @@ describe("dayValuesToMetricPoints", () => {
     value: 80,
     date: "2026-07-01",
     recordedAt: "2026-07-01T08:00:00+00:00",
+    updatedAt: "2026-07-01T08:00:00+00:00",
     measuredAt: null,
     source: "check_in",
     sourceId: null,

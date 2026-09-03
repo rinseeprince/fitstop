@@ -17,17 +17,19 @@ import type { Database } from "@/types/database";
 
 /**
  * The measurement log (docs/MEASUREMENT-LOG-PLAN.md §2): every body measurement
- * is one row in `client_measurements`, and this is the ONE module that writes
- * it and the one place its rules are spelled.
+ * is one row in `client_measurements`, and this is the ONE module that inserts
+ * into it and the one place its rules are spelled.
  *
- *  - Append-only. The app role holds SELECT and INSERT; nothing here updates
- *    or deletes. A wrong value is CORRECTED — a new row on the same day
- *    carrying the original's stamp (`appendCorrection`) — and a reading that
- *    should never have existed is REMOVED: a void mark set through the RPC
- *    pair of migration 160 (`services/measurement-edits-service.ts`), the one
- *    UPDATE the table ever sees, and cleared the same way when restored.
- *  - The value for a day is the latest row by `recorded_at`
- *    (`lib/measurements/day-values.ts`, rule 2).
+ *  - The app role holds SELECT and INSERT; nothing here updates or deletes.
+ *    Every UPDATE the table sees is one of three SECURITY DEFINER functions
+ *    (`services/measurement-edits-service.ts`): a wrong value is EDITED in
+ *    place — `update_measurement`, migration 161, keeps the row's id, day,
+ *    source and stamp — and a reading that should never have existed is
+ *    REMOVED by a void mark (`void_measurement`, migration 160) and restored
+ *    by clearing it.
+ *  - The value for a day is the reading written or edited last — the latest
+ *    live row by `updated_at`, a tie broken by id
+ *    (`lib/measurements/day-values.ts`, rule 2, D23).
  *  - A writer appends only on change (rule 3): a value equal to the day's
  *    standing value for the same source and stamp is not written again, which
  *    is what ends the phantom duplicates the entries dual-write produced.
@@ -50,7 +52,7 @@ type CurrentRow = Database["public"]["Views"]["client_current_measurements"]["Ro
 type BaselineRow = Database["public"]["Views"]["client_baseline_measurements"]["Row"];
 
 const READING_COLUMNS =
-  "id, metric_key, value, recorded_on, recorded_at, measured_at, source, source_id, note";
+  "id, metric_key, value, recorded_on, recorded_at, updated_at, measured_at, source, source_id, note";
 
 /**
  * The PostgREST embed that fills a `Client`'s four reading fields from the two
@@ -116,7 +118,16 @@ type AppendMeasurementsResult = {
  *  column nullable — a view's types carry no NOT NULL) and as the table does. */
 type LiveReadingRow = Pick<
   Database["public"]["Views"]["client_measurements_live"]["Row"],
-  "id" | "metric_key" | "value" | "recorded_on" | "recorded_at" | "measured_at" | "source" | "source_id" | "note"
+  | "id"
+  | "metric_key"
+  | "value"
+  | "recorded_on"
+  | "recorded_at"
+  | "updated_at"
+  | "measured_at"
+  | "source"
+  | "source_id"
+  | "note"
 >;
 
 function toReading(row: LiveReadingRow): MeasurementReading | null {
@@ -127,6 +138,7 @@ function toReading(row: LiveReadingRow): MeasurementReading | null {
     row.value == null ||
     row.recorded_on == null ||
     row.recorded_at == null ||
+    row.updated_at == null ||
     row.source == null
   ) {
     return null;
@@ -137,6 +149,7 @@ function toReading(row: LiveReadingRow): MeasurementReading | null {
     value: Number(row.value),
     date: row.recorded_on,
     recordedAt: row.recorded_at,
+    updatedAt: row.updated_at,
     measuredAt: row.measured_at,
     source: row.source as MeasurementSource,
     sourceId: row.source_id,
@@ -207,7 +220,7 @@ export async function appendMeasurements(
     .eq("recorded_on", input.recordedOn)
     .eq("source", input.source)
     .in("metric_key", keys)
-    .order("recorded_at", { ascending: false })
+    .order("updated_at", { ascending: false })
     .order("id", { ascending: false });
   standingQuery = sourceId
     ? standingQuery.eq("source_id", sourceId)
@@ -280,7 +293,7 @@ async function insertReadings(rows: ReadingInsert[]): Promise<MeasurementReading
  * The energy pair follows the client's NEWEST weight and body fat, of any
  * source and by the client's calendar — a backdated row that is not the
  * newest recomputes nothing, which is the rule the cache guard used to hold.
- * Removing or restoring a reading fires the same recompute on the RPC's word
+ * Editing, removing or restoring a reading fires the same recompute on the RPC's word
  * (`services/measurement-edits-service.ts`). Girths feed no formula and never
  * consult the current view.
  */
@@ -313,85 +326,6 @@ async function recomputeEnergyIfNewest(
   return "recomputed";
 }
 
-type AppendCorrectionInput = {
-  clientId: string;
-  /** The reading being corrected: its metric, day, stamp and moment are copied. */
-  original: Pick<MeasurementReading, "metricKey" | "date" | "sourceId" | "measuredAt">;
-  /** Canonical, already checked against the metric's bounds. */
-  value: number;
-  /** `coaches.id` — the corrector, the audit actor. */
-  actor: string;
-};
-
-type AppendCorrectionResult = {
-  /** The row now standing for the reading — the correction, or what already stood. */
-  reading: MeasurementReading;
-  inserted: boolean;
-  energy: "recomputed" | "not_newest";
-};
-
-/**
- * A correction: a new `coach_entry` row carrying the original's metric, day
- * and stamp, so rule 2 makes it the day's value and the check-in fold reads it
- * as the check-in's reading; the original stays in the history.
- *
- * Its rule 3 compares against the reading's STANDING value — the latest live
- * row of any source in the same day and stamp scope — not the same-source key
- * `appendMeasurements` keys on. A correction exists to replace the standing
- * value: a coach entry from earlier in the day equal to the new value must
- * not make the correction of a later client log a no-op, and a correction
- * equal to what already stands has nothing to do.
- *
- * `measured_at` is copied: the reading was TAKEN at that moment, only its
- * number was wrong — and D10's future "latest measured_at wins, null first"
- * would otherwise sort the correction under the original.
- */
-export async function appendCorrection(
-  input: AppendCorrectionInput
-): Promise<AppendCorrectionResult> {
-  const { original } = input;
-  let standingQuery = supabaseAdmin
-    .from("client_measurements_live")
-    .select(READING_COLUMNS)
-    .eq("client_id", input.clientId)
-    .eq("metric_key", original.metricKey)
-    .eq("recorded_on", original.date)
-    .order("recorded_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(1);
-  standingQuery = original.sourceId
-    ? standingQuery.eq("source_id", original.sourceId)
-    : standingQuery.is("source_id", null);
-
-  const { data, error } = await standingQuery;
-  if (error) {
-    console.error("Failed to read the reading's standing value:", error);
-    throw new Error(`Failed to read measurements: ${error.message}`);
-  }
-  const standing = toReadings(data)[0] ?? null;
-  if (standing && standing.value === input.value) {
-    return { reading: standing, inserted: false, energy: "not_newest" };
-  }
-
-  const [reading] = await insertReadings([
-    {
-      client_id: input.clientId,
-      metric_key: original.metricKey,
-      value: input.value,
-      recorded_on: original.date,
-      measured_at: original.measuredAt,
-      source: "coach_entry",
-      source_id: original.sourceId,
-      note: null,
-      created_by: input.actor,
-    },
-  ]);
-  if (!reading) throw new Error("Failed to record the correction: no row");
-
-  const energy = await recomputeEnergyIfNewest(input.clientId, [reading]);
-  return { reading, inserted: true, energy };
-}
-
 type MeasurementSeriesOptions = {
   metricKeys?: readonly MeasurementKey[];
   /** YYYY-MM-DD, inclusive. */
@@ -418,7 +352,7 @@ export async function getMeasurementSeries(
         .eq("client_id", clientId)
         .in("metric_key", [...keys])
         .order("recorded_on", { ascending: true })
-        .order("recorded_at", { ascending: true })
+        .order("updated_at", { ascending: true })
         .order("id", { ascending: true })
         .range(from, to);
       if (options.from) query = query.gte("recorded_on", options.from);
@@ -434,9 +368,10 @@ export async function getMeasurementSeries(
 }
 
 /**
- * What each check-in reported: the latest live row per (stamp, metric),
- * whatever its source — a later correction carries the check-in's stamp and
- * replaces the original in the report. Empty input costs no query.
+ * What each check-in reported: its own live row per metric — the row carrying
+ * its stamp, edited in place when a coach changes it, so the report follows.
+ * The latest by `updated_at` per (stamp, metric): a stamped row written as a
+ * correction before migration 161 still resolves. Empty input costs no query.
  */
 export async function getMeasurementsForCheckIns(
   checkInIds: readonly string[]
@@ -444,15 +379,15 @@ export async function getMeasurementsForCheckIns(
   const out = new Map<string, MeasurementValues>();
   if (checkInIds.length === 0) return out;
 
-  type StampedRow = Pick<LiveReadingRow, "id" | "metric_key" | "value" | "source_id" | "recorded_at">;
+  type StampedRow = Pick<LiveReadingRow, "id" | "metric_key" | "value" | "source_id" | "updated_at">;
   const rows = await fetchAllByChunkedIds<StampedRow, string>(
     [...checkInIds],
     (chunk, from, to) =>
       supabaseAdmin
         .from("client_measurements_live")
-        .select("id, metric_key, value, source_id, recorded_at")
+        .select("id, metric_key, value, source_id, updated_at")
         .in("source_id", chunk)
-        .order("recorded_at", { ascending: false })
+        .order("updated_at", { ascending: false })
         .order("id", { ascending: false })
         .range(from, to),
     { errorLabel: "check-in measurements" }
@@ -533,6 +468,7 @@ type LogReadingRow = Pick<
   | "value"
   | "recorded_on"
   | "recorded_at"
+  | "updated_at"
   | "measured_at"
   | "source"
   | "source_id"
@@ -572,7 +508,7 @@ export async function getMeasurementReadings(
         .select(LOG_COLUMNS)
         .eq("client_id", clientId)
         .order("recorded_on", { ascending: false })
-        .order("recorded_at", { ascending: false })
+        .order("updated_at", { ascending: false })
         .order("id", { ascending: false })
         .range(from, to)
         .overrideTypes<LogReadingRow[], { merge: false }>(),

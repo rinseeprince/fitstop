@@ -42,6 +42,7 @@ const dayValue = (
   value,
   date,
   recordedAt: `${date}T08:00:00+00:00`,
+  updatedAt: `${date}T08:00:00+00:00`,
   measuredAt: null,
   source,
   sourceId: null,

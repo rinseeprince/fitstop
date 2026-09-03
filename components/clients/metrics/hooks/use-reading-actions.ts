@@ -5,11 +5,10 @@ import { useInvalidateMeasurementSeries } from "@/hooks/use-measurement-series";
 import { useInvalidateCheckInDetail } from "@/hooks/use-check-in-detail-data";
 import type { LogRow } from "../metrics-view-types";
 
-type ReadingAction = "correct" | "void" | "restore";
-
 /**
- * The three row actions of the measurement log, each a POST to its route and
- * then the three invalidations a changed reading owes (CONVENTIONS §7):
+ * The three row actions of the measurement log — an edit is a PATCH of the
+ * reading, a removal and a restore are POSTs to its two state routes — each
+ * followed by the three invalidations a changed reading owes (CONVENTIONS §7):
  *
  *  - the series area — the Journey's pane and log, the Overview's chart and
  *    status band, all readers of one key;
@@ -17,7 +16,7 @@ type ReadingAction = "correct" | "void" | "restore";
  *    its "now" readings and the energy pair live there (the record carries no
  *    girth, so a girth leaves it alone);
  *  - the check-in the reading reports on, when it carries a stamp: its report,
- *    band and comparison read the stamped rows.
+ *    band and comparison read the stamped row.
  */
 export function useReadingActions(clientId: string, onClientUpdated?: () => void) {
   const invalidateSeries = useInvalidateMeasurementSeries();
@@ -32,10 +31,15 @@ export function useReadingActions(clientId: string, onClientUpdated?: () => void
     [clientId, invalidateSeries, onClientUpdated, invalidateCheckInDetail]
   );
 
-  const post = useCallback(
-    async (row: LogRow, action: ReadingAction, body?: Record<string, unknown>) => {
-      const res = await fetch(`/api/clients/${clientId}/measurements/${row.id}/${action}`, {
-        method: "POST",
+  const send = useCallback(
+    async (
+      row: LogRow,
+      method: "PATCH" | "POST",
+      path: string,
+      body?: Record<string, unknown>
+    ) => {
+      const res = await fetch(path, {
+        method,
         headers: body ? { "Content-Type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       });
@@ -45,16 +49,16 @@ export function useReadingActions(clientId: string, onClientUpdated?: () => void
       }
       await settle(row);
     },
-    [clientId, settle]
+    [settle]
   );
 
-  return useMemo(
-    () => ({
-      correct: (row: LogRow, valueCanonical: number) =>
-        post(row, "correct", { value: valueCanonical }),
-      remove: (row: LogRow) => post(row, "void"),
-      restore: (row: LogRow) => post(row, "restore"),
-    }),
-    [post]
-  );
+  return useMemo(() => {
+    const reading = (row: LogRow) => `/api/clients/${clientId}/measurements/${row.id}`;
+    return {
+      update: (row: LogRow, valueCanonical: number) =>
+        send(row, "PATCH", reading(row), { value: valueCanonical }),
+      remove: (row: LogRow) => send(row, "POST", `${reading(row)}/void`),
+      restore: (row: LogRow) => send(row, "POST", `${reading(row)}/restore`),
+    };
+  }, [clientId, send]);
 }

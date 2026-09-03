@@ -985,6 +985,7 @@ async function insertMeasurements(checkIns: CheckInRow[], startDate: string) {
       value,
       recorded_on: startDate,
       recorded_at: startAt,
+      updated_at: startAt,
       source: "intake",
     });
   }
@@ -997,6 +998,7 @@ async function insertMeasurements(checkIns: CheckInRow[], startDate: string) {
         value,
         recorded_on: checkIn.date,
         recorded_at: checkIn.created_at,
+        updated_at: checkIn.created_at,
         measured_at: checkIn.created_at,
         source: "check_in",
         source_id: checkIn.id,

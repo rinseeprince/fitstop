@@ -105,7 +105,7 @@ async function appendPhysiqueEntry(
     note: row.note ?? undefined,
     createdBy: input.coachId,
     createdAt: row.recordedAt,
-    updatedAt: row.recordedAt,
+    updatedAt: row.updatedAt,
   };
 }
 

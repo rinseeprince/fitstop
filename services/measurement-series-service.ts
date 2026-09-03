@@ -71,6 +71,7 @@ export function toMeasurementSeries(
     sourceId: reading.sourceId,
     note: reading.note,
     recordedAt: reading.recordedAt,
+    updatedAt: reading.updatedAt,
     measuredAt: reading.measuredAt,
     voided: reading.voided,
   }));

@@ -145,7 +145,7 @@ export const AUDIT_ACTIONS = {
   CLIENT_ACTIVATE: "client.activate",
   GOAL_CREATE: "goal.create",
   MEASUREMENT_CREATE: "measurement.create",
-  MEASUREMENT_CORRECT: "measurement.correct",
+  MEASUREMENT_UPDATE: "measurement.update",
   MEASUREMENT_VOID: "measurement.void",
   MEASUREMENT_RESTORE: "measurement.restore",
   METRIC_ENTRY_UPSERT: "metric_entry.upsert",

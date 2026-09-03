@@ -1,16 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
- * The three row actions over mocked collaborators: the scoped row read, the
- * correction writer and the RPC pair. The SQL belts themselves (a foreign
- * row, a double void, the last weight) are proven on the real database by
- * scripts/measurement-edit-proof.ts — a vitest that mocks supabaseAdmin
- * proves nothing about them.
+ * The three row actions over mocked collaborators: the scoped row read and
+ * the three RPCs. The SQL belts themselves (a foreign row, a removed row, a
+ * double void, the last weight, an unchanged value) are proven on the real
+ * database by scripts/measurement-edit-proof.ts — a vitest that mocks
+ * supabaseAdmin proves nothing about them.
  */
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
   recalculate: vi.fn(),
-  appendCorrection: vi.fn(),
   getMeasurementReading: vi.fn(),
 }));
 
@@ -21,13 +20,12 @@ vi.mock("./client-energy-service", () => ({
   recalculateClientEnergy: (...args: unknown[]) => state.recalculate(...args),
 }));
 vi.mock("./measurements-service", () => ({
-  appendCorrection: (...args: unknown[]) => state.appendCorrection(...args),
   getMeasurementReading: (...args: unknown[]) => state.getMeasurementReading(...args),
 }));
 
 import {
-  correctMeasurement,
   restoreMeasurement,
+  updateMeasurement,
   voidMeasurement,
 } from "./measurement-edits-service";
 import {
@@ -48,6 +46,7 @@ function reading(over: Partial<MeasurementLogReading> = {}): MeasurementLogReadi
     value: 91,
     date: "2026-08-14",
     recordedAt: "2026-08-14T08:00:00+00:00",
+    updatedAt: "2026-08-14T08:00:00+00:00",
     measuredAt: "2026-08-14T07:30:00+00:00",
     source: "check_in",
     sourceId: "ci-1",
@@ -57,85 +56,120 @@ function reading(over: Partial<MeasurementLogReading> = {}): MeasurementLogReadi
   };
 }
 
+const updateRow = (over: Partial<{ metric: string; changed: boolean; affects_current: boolean }> = {}) => ({
+  data: [{ metric: "weight", changed: true, affects_current: true, ...over }],
+  error: null,
+});
+
 beforeEach(() => {
   state.rpc.mockReset();
   state.recalculate.mockReset().mockResolvedValue({ status: "written" });
-  state.appendCorrection.mockReset();
   state.getMeasurementReading.mockReset().mockResolvedValue(reading());
 });
 
-describe("correctMeasurement", () => {
-  it("reads the row scoped by client, and a missing one is not found", async () => {
+describe("updateMeasurement", () => {
+  it("reads the row scoped by client, and a missing one is not found before any RPC", async () => {
     state.getMeasurementReading.mockResolvedValue(null);
 
     await expect(
-      correctMeasurement({ clientId: CLIENT, measurementId: ROW, actor: COACH, value: 90 })
+      updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 90 })
     ).rejects.toBeInstanceOf(MeasurementNotFoundError);
     expect(state.getMeasurementReading).toHaveBeenCalledWith(CLIENT, ROW);
-    expect(state.appendCorrection).not.toHaveBeenCalled();
+    expect(state.rpc).not.toHaveBeenCalled();
   });
 
-  it("refuses to correct a removed reading", async () => {
+  it("refuses to edit a removed reading", async () => {
     state.getMeasurementReading.mockResolvedValue(
       reading({ voided: { at: "2026-09-03T10:00:00+00:00", byName: "Sam", reason: null } })
     );
 
     await expect(
-      correctMeasurement({ clientId: CLIENT, measurementId: ROW, actor: COACH, value: 90 })
-    ).rejects.toBeInstanceOf(MeasurementStateError);
-    expect(state.appendCorrection).not.toHaveBeenCalled();
+      updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 90 })
+    ).rejects.toThrow(/Restore the reading before editing it/);
+    expect(state.rpc).not.toHaveBeenCalled();
   });
 
   it("checks the value against the ROW's metric bounds — a 300 kg weight is refused, a 30 cm arm is not", async () => {
     await expect(
-      correctMeasurement({ clientId: CLIENT, measurementId: ROW, actor: COACH, value: 300 })
+      updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 300 })
     ).rejects.toBeInstanceOf(MeasurementValueError);
-    expect(state.appendCorrection).not.toHaveBeenCalled();
+    expect(state.rpc).not.toHaveBeenCalled();
 
-    state.getMeasurementReading.mockResolvedValue(reading({ metricKey: "arms", value: 33 }));
-    state.appendCorrection.mockResolvedValue({
-      reading: reading({ id: "fix", metricKey: "arms", value: 30, source: "coach_entry" }),
-      inserted: true,
-      energy: "not_newest",
-    });
+    state.getMeasurementReading.mockResolvedValue(reading({ metricKey: "arms", value: 33, sourceId: null }));
+    state.rpc.mockResolvedValue(updateRow({ metric: "arms" }));
     await expect(
-      correctMeasurement({ clientId: CLIENT, measurementId: ROW, actor: COACH, value: 30 })
-    ).resolves.toMatchObject({ inserted: true });
+      updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 30 })
+    ).resolves.toMatchObject({ updated: true, metricKey: "arms", energy: "not_newest" });
   });
 
-  it("hands the original's metric, day, stamp and moment to the writer, with the actor", async () => {
-    state.appendCorrection.mockResolvedValue({
-      reading: reading({ id: "fix", value: 90, source: "coach_entry" }),
-      inserted: true,
-      energy: "recomputed",
-    });
+  it("calls the RPC with the row, the client and the value — no actor — and answers with the same row", async () => {
+    state.rpc.mockResolvedValue(updateRow());
 
-    const result = await correctMeasurement({
-      clientId: CLIENT,
-      measurementId: ROW,
-      actor: COACH,
-      value: 90,
-    });
+    const result = await updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 90 });
 
-    expect(state.appendCorrection).toHaveBeenCalledWith({
-      clientId: CLIENT,
-      original: expect.objectContaining({
-        metricKey: "weight",
-        date: "2026-08-14",
-        sourceId: "ci-1",
-        measuredAt: "2026-08-14T07:30:00+00:00",
-      }),
-      value: 90,
-      actor: COACH,
+    expect(state.rpc).toHaveBeenCalledWith("update_measurement", {
+      p_id: ROW,
+      p_client_id: CLIENT,
+      p_value: 90,
     });
     expect(result).toEqual({
-      id: "fix",
+      id: ROW,
       metricKey: "weight",
       sourceId: "ci-1",
+      date: "2026-08-14",
+      updated: true,
       energy: "recomputed",
-      reading: expect.objectContaining({ id: "fix" }),
-      inserted: true,
     });
+    expect(state.recalculate).toHaveBeenCalledWith(CLIENT);
+  });
+
+  it("recomputes the pair only when the edit CHANGED the client's newest weight or body fat", async () => {
+    // Changed, but the row is not the newest of its metric.
+    state.rpc.mockResolvedValue(updateRow({ affects_current: false }));
+    const older = await updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 90 });
+    expect(older).toMatchObject({ updated: true, energy: "not_newest" });
+    expect(state.recalculate).not.toHaveBeenCalled();
+
+    // Unchanged: nothing was written, so nothing moved — whatever the RPC says
+    // about the row's standing.
+    state.rpc.mockResolvedValue(updateRow({ changed: false, affects_current: true }));
+    const same = await updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 91 });
+    expect(same).toMatchObject({ updated: false, energy: "not_newest" });
+    expect(state.recalculate).not.toHaveBeenCalled();
+
+    // A girth is never the pair's input, even as the newest reading.
+    state.getMeasurementReading.mockResolvedValue(reading({ metricKey: "waist", value: 80, sourceId: null }));
+    state.rpc.mockResolvedValue(updateRow({ metric: "waist" }));
+    const girth = await updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 79 });
+    expect(girth.energy).toBe("not_newest");
+    expect(state.recalculate).not.toHaveBeenCalled();
+  });
+
+  it("turns the RPC's refusals into the typed errors", async () => {
+    state.rpc.mockResolvedValue({ data: null, error: { message: "not_found: reading x is not this client's" } });
+    await expect(
+      updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 90 })
+    ).rejects.toBeInstanceOf(MeasurementNotFoundError);
+
+    state.rpc.mockResolvedValue({ data: null, error: { message: "voided: reading x is removed" } });
+    await expect(
+      updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 90 })
+    ).rejects.toBeInstanceOf(MeasurementStateError);
+    expect(state.recalculate).not.toHaveBeenCalled();
+  });
+
+  it("surfaces an unexpected RPC failure or an empty answer as a plain error, never as a refusal", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    state.rpc.mockResolvedValue({ data: null, error: { message: "connection reset" } });
+    await expect(
+      updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 90 })
+    ).rejects.toThrow("Failed to update the reading: connection reset");
+
+    state.rpc.mockResolvedValue({ data: [], error: null });
+    await expect(
+      updateMeasurement({ clientId: CLIENT, measurementId: ROW, value: 90 })
+    ).rejects.toThrow("update_measurement returned no row");
+    consoleError.mockRestore();
   });
 });
 
@@ -190,7 +224,7 @@ describe("voidMeasurement", () => {
     state.rpc.mockResolvedValue({ data: null, error: { message: "last_weight: the only weight reading cannot be removed" } });
     await expect(
       voidMeasurement({ clientId: CLIENT, measurementId: ROW, actor: COACH })
-    ).rejects.toThrow(/Correct it instead/);
+    ).rejects.toThrow(/Edit it instead/);
 
     state.rpc.mockResolvedValue({ data: null, error: { message: "not_found: reading x is not this client's" } });
     await expect(

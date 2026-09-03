@@ -19,6 +19,7 @@ type LiveRow = {
   value: number;
   recorded_on: string;
   recorded_at: string;
+  updated_at: string;
   measured_at: string | null;
   source: string;
   source_id: string | null;
@@ -38,6 +39,8 @@ const reading = (
   value,
   recorded_on: recordedOn,
   recorded_at: recordedAt,
+  // Untouched since it was written, unless a test says otherwise.
+  updated_at: recordedAt,
   measured_at: null,
   source: "check_in",
   source_id: null,
@@ -235,16 +238,19 @@ describe("getClientProgressData — physique histories come from the measurement
     ]);
   });
 
-  it("two rows on one day collapse to ONE point carrying the later recorded_at's value", async () => {
-    // Rule 2: the coach correcting after the check-in wins. The ids are chosen
-    // so the EARLIER row sorts last by id — a fallback to id order, or to
-    // arrival order, would pick 80.6.
+  it("two rows on one day collapse to ONE point carrying the most recently touched row's value", async () => {
+    // Rule 2 (D23): the reading written or edited last wins. The check-in's
+    // row was written first but edited last; the ids are chosen so it sorts
+    // first by id and the arrival order puts it second — a fallback to
+    // recorded_at, to id order or to arrival order would each pick 80.2.
     vi.mocked(createPortalClient).mockResolvedValue(
       fakeSupabase({
         readings: [
-          reading("m-2", "weight", 80.6, "2026-05-01", "2026-05-01T07:00:00+00:00"),
-          reading("m-1", "weight", 80.2, "2026-05-01", "2026-05-01T18:00:00+00:00", {
+          reading("m-2", "weight", 80.2, "2026-05-01", "2026-05-01T18:00:00+00:00", {
             source: "coach_entry",
+          }),
+          reading("m-1", "weight", 80.6, "2026-05-01", "2026-05-01T07:00:00+00:00", {
+            updated_at: "2026-05-01T20:00:00+00:00",
           }),
         ],
         client: null,
@@ -253,8 +259,8 @@ describe("getClientProgressData — physique histories come from the measurement
 
     const result = await getClientProgressData("c1");
 
-    expect(result.weightHistory).toEqual([{ date: "2026-05-01", weight: 80.2 }]);
-    expect(result.bodyMetrics[0].currentValue).toBe(80.2);
+    expect(result.weightHistory).toEqual([{ date: "2026-05-01", weight: 80.6 }]);
+    expect(result.bodyMetrics[0].currentValue).toBe(80.6);
     expect(result.bodyMetrics[0].chartData).toHaveLength(1);
   });
 
@@ -300,7 +306,7 @@ describe("getClientProgressData — physique histories come from the measurement
     // A series feeds an aggregate, so it must be complete past PostgREST's cap.
     expect(fake.rangeCalls).toEqual([[0, 999]]);
     const select = fake.selects.client_measurements_live[0];
-    for (const column of ["id", "metric_key", "value", "recorded_on", "recorded_at", "source"]) {
+    for (const column of ["id", "metric_key", "value", "recorded_on", "recorded_at", "updated_at", "source"]) {
       expect(select).toContain(column);
     }
   });

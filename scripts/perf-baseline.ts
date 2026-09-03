@@ -220,11 +220,11 @@ async function simulateGetClientProgressDataViaAdmin(clientId: string, days: num
       .order("created_at", { ascending: true }),
     supabaseAdmin
       .from("client_measurements_live")
-      .select("id, metric_key, value, recorded_on, recorded_at, measured_at, source, source_id, note")
+      .select("id, metric_key, value, recorded_on, recorded_at, updated_at, measured_at, source, source_id, note")
       .eq("client_id", clientId)
       .gte("recorded_on", fromDay)
       .order("recorded_on", { ascending: true })
-      .order("recorded_at", { ascending: true })
+      .order("updated_at", { ascending: true })
       .order("id", { ascending: true }),
     supabaseAdmin
       .from("clients")

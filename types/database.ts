@@ -779,6 +779,7 @@ export type Database = {
           recorded_on: string
           source: string
           source_id: string | null
+          updated_at: string
           value: number
           void_reason: string | null
           voided_at: string | null
@@ -796,6 +797,7 @@ export type Database = {
           recorded_on: string
           source: string
           source_id?: string | null
+          updated_at?: string
           value: number
           void_reason?: string | null
           voided_at?: string | null
@@ -813,6 +815,7 @@ export type Database = {
           recorded_on?: string
           source?: string
           source_id?: string | null
+          updated_at?: string
           value?: number
           void_reason?: string | null
           voided_at?: string | null
@@ -2829,6 +2832,7 @@ export type Database = {
           recorded_at: string | null
           recorded_on: string | null
           source: string | null
+          updated_at: string | null
           value: number | null
         }
         Relationships: [
@@ -2850,6 +2854,7 @@ export type Database = {
           recorded_at: string | null
           recorded_on: string | null
           source: string | null
+          updated_at: string | null
           value: number | null
         }
         Relationships: [
@@ -2875,6 +2880,7 @@ export type Database = {
           recorded_on: string | null
           source: string | null
           source_id: string | null
+          updated_at: string | null
           value: number | null
           void_reason: string | null
           voided_at: string | null
@@ -2892,6 +2898,7 @@ export type Database = {
           recorded_on?: string | null
           source?: string | null
           source_id?: string | null
+          updated_at?: string | null
           value?: number | null
           void_reason?: string | null
           voided_at?: string | null
@@ -2909,6 +2916,7 @@ export type Database = {
           recorded_on?: string | null
           source?: string | null
           source_id?: string | null
+          updated_at?: string | null
           value?: number | null
           void_reason?: string | null
           voided_at?: string | null
@@ -3129,6 +3137,14 @@ export type Database = {
       update_client_adherence_stats: {
         Args: { client_uuid: string }
         Returns: undefined
+      }
+      update_measurement: {
+        Args: { p_client_id: string; p_id: string; p_value: number }
+        Returns: {
+          affects_current: boolean
+          changed: boolean
+          metric: string
+        }[]
       }
       upsert_daily_log_atomic:
         | {

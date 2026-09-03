@@ -32,18 +32,18 @@ import { formatLogDate, SOURCE_LABELS } from "./metrics-format";
 import type { LogRow } from "./metrics-view-types";
 
 type EditReadingDialogProps = {
-  /** The reading being corrected; null closes the dialog. */
+  /** The reading being edited; null closes the dialog. */
   row: LogRow | null;
   onOpenChange: (open: boolean) => void;
-  /** The corrected value, canonical: the hook converted it from the viewer's unit. */
+  /** The new value, canonical: the hook converted it from the viewer's unit. */
   onConfirm: (row: LogRow, valueCanonical: number) => Promise<void>;
 };
 
 /**
- * Correct one reading (docs/MEASUREMENT-LOG-PLAN.md D9): one field in the
- * viewer's unit, seeded from the CANONICAL value so an untouched field writes
- * nothing (`useCanonicalInput`'s pristine guard), and refused while it is
- * untouched — a correction that changes nothing is not a correction.
+ * Edit one reading in place (docs/MEASUREMENT-LOG-PLAN.md commit 8): one field
+ * in the viewer's unit, seeded from the CANONICAL value so an untouched field
+ * writes nothing (`useCanonicalInput`'s pristine guard), and refused while it
+ * is untouched — an edit that changes nothing is not an edit.
  */
 export function EditReadingDialog({ row, onOpenChange, onConfirm }: EditReadingDialogProps) {
   const { toast } = useToast();
@@ -103,8 +103,7 @@ export function EditReadingDialog({ row, onOpenChange, onConfirm }: EditReadingD
         <DialogHeader>
           <DialogTitle>Edit reading</DialogTitle>
           <DialogDescription>
-            The corrected value replaces this reading everywhere it is used. The
-            original stays in the log.
+            The new value replaces this reading everywhere it is used.
           </DialogDescription>
         </DialogHeader>
 

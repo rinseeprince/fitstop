@@ -21,7 +21,6 @@ function row(overrides: Partial<LogRow> = {}): LogRow {
     source: "check_in",
     sourceId: "ci-1",
     isMeasurement: true,
-    folded: [],
     voided: null,
     isCurrent: false,
     isBaseline: false,

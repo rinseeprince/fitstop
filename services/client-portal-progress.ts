@@ -109,6 +109,7 @@ type LiveMeasurementRow = {
   value: number | null;
   recorded_on: string | null;
   recorded_at: string | null;
+  updated_at: string | null;
   measured_at: string | null;
   source: string | null;
   source_id: string | null;
@@ -171,11 +172,11 @@ export async function getClientProgressData(
         (from, to) =>
           supabase
             .from("client_measurements_live")
-            .select("id, metric_key, value, recorded_on, recorded_at, measured_at, source, source_id, note")
+            .select("id, metric_key, value, recorded_on, recorded_at, updated_at, measured_at, source, source_id, note")
             .eq("client_id", clientId)
             .gte("recorded_on", fromDay)
             .order("recorded_on", { ascending: true })
-            .order("recorded_at", { ascending: true })
+            .order("updated_at", { ascending: true })
             .order("id", { ascending: true })
             .range(from, to),
         { errorLabel: "client measurements" }
@@ -207,13 +208,14 @@ export async function getClientProgressData(
   // the client sees every reading about them (D6).
   const readings: MeasurementReading[] = readingRows.flatMap((row) =>
     row.id && row.metric_key && isMeasurementKey(row.metric_key) && row.value != null &&
-    row.recorded_on && row.recorded_at && row.source
+    row.recorded_on && row.recorded_at && row.updated_at && row.source
       ? [{
           id: row.id,
           metricKey: row.metric_key,
           value: Number(row.value),
           date: row.recorded_on,
           recordedAt: row.recorded_at,
+          updatedAt: row.updated_at,
           measuredAt: row.measured_at,
           source: row.source as MeasurementSource,
           sourceId: row.source_id,

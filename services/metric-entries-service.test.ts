@@ -41,6 +41,7 @@ const mockReading = (overrides: Partial<MeasurementReading> = {}): MeasurementRe
   value: 80,
   date: "2026-07-20",
   recordedAt: "2026-07-20T09:00:00.000Z",
+  updatedAt: "2026-07-20T09:00:00.000Z",
   measuredAt: null,
   source: "coach_entry",
   sourceId: null,

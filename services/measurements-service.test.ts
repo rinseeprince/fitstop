@@ -50,7 +50,6 @@ vi.mock("./client-energy-service", () => ({
 }));
 
 import {
-  appendCorrection,
   appendMeasurements,
   getBaseline,
   getCurrentMeasurements,
@@ -73,6 +72,7 @@ function liveRow(over: Record<string, unknown>) {
     value: 80.2,
     recorded_on: "2026-05-04",
     recorded_at: "2026-05-04T08:00:00+00:00",
+    updated_at: "2026-05-04T08:00:00+00:00",
     measured_at: null,
     source: "coach_entry",
     source_id: null,
@@ -241,13 +241,13 @@ describe("getMeasurementsForCheckIns", () => {
     expect(state.calls).toEqual([]);
   });
 
-  it("takes the latest row per (stamp, metric), whatever its source, and maps bodyFat by key", async () => {
+  it("takes the most recently touched row per (stamp, metric) — the read orders by updated_at — and maps bodyFat by key", async () => {
     queue("client_measurements_live", {
       data: [
-        { id: "c", metric_key: "weight", value: 78.1, source_id: "ci-1", recorded_at: "2026-05-05T10:00:00+00:00" },
-        { id: "a", metric_key: "weight", value: 79.9, source_id: "ci-1", recorded_at: "2026-05-04T08:00:00+00:00" },
-        { id: "b", metric_key: "bodyFat", value: 18.4, source_id: "ci-1", recorded_at: "2026-05-04T08:00:00+00:00" },
-        { id: "d", metric_key: "waist", value: 82.5, source_id: "ci-2", recorded_at: "2026-04-27T08:00:00+00:00" },
+        { id: "c", metric_key: "weight", value: 78.1, source_id: "ci-1", updated_at: "2026-05-05T10:00:00+00:00" },
+        { id: "a", metric_key: "weight", value: 79.9, source_id: "ci-1", updated_at: "2026-05-04T08:00:00+00:00" },
+        { id: "b", metric_key: "bodyFat", value: 18.4, source_id: "ci-1", updated_at: "2026-05-04T08:00:00+00:00" },
+        { id: "d", metric_key: "waist", value: 82.5, source_id: "ci-2", updated_at: "2026-04-27T08:00:00+00:00" },
       ],
       error: null,
     });
@@ -257,16 +257,19 @@ describe("getMeasurementsForCheckIns", () => {
     expect(out.get("ci-2")).toEqual({ waist: 82.5 });
     const read = callsTo("client_measurements_live")[0].chain;
     expect(read).toContainEqual(["in", ["source_id", ["ci-1", "ci-2"]]]);
-    expect(read).toContainEqual(["order", ["recorded_at", { ascending: false }]]);
+    expect(read).toContainEqual(["select", ["id, metric_key, value, source_id, updated_at"]]);
+    expect(read).toContainEqual(["order", ["updated_at", { ascending: false }]]);
+    expect(read.some(([method, args]) => method === "order" && args[0] === "recorded_at")).toBe(false);
   });
 });
 
 describe("getMeasurementSeries", () => {
-  it("collapses rows to one value per day and returns every requested key", async () => {
+  it("collapses rows to one value per day — the most recently touched — and returns every requested key", async () => {
     queue("client_measurements_live", {
       data: [
-        liveRow({ id: "1", value: 80.2, recorded_on: "2026-05-04", recorded_at: "2026-05-04T07:00:00+00:00" }),
-        liveRow({ id: "2", value: 80.7, recorded_on: "2026-05-04", recorded_at: "2026-05-04T19:00:00+00:00" }),
+        // Written later, but touched earlier: the edited row wins its day.
+        liveRow({ id: "1", value: 80.2, recorded_on: "2026-05-04", recorded_at: "2026-05-04T07:00:00+00:00", updated_at: "2026-05-04T21:00:00+00:00" }),
+        liveRow({ id: "2", value: 80.7, recorded_on: "2026-05-04", recorded_at: "2026-05-04T19:00:00+00:00", updated_at: "2026-05-04T19:00:00+00:00" }),
         liveRow({ id: "3", value: 79.3, recorded_on: "2026-05-06" }),
       ],
       error: null,
@@ -274,13 +277,14 @@ describe("getMeasurementSeries", () => {
 
     const series = await getMeasurementSeries(CLIENT, { metricKeys: ["weight", "waist"], from: "2026-05-01" });
     expect(series.get("weight")?.map((v) => [v.date, v.value])).toEqual([
-      ["2026-05-04", 80.7],
+      ["2026-05-04", 80.2],
       ["2026-05-06", 79.3],
     ]);
     expect(series.get("waist")).toEqual([]);
     const read = callsTo("client_measurements_live")[0].chain;
     expect(read).toContainEqual(["gte", ["recorded_on", "2026-05-01"]]);
     expect(read).toContainEqual(["in", ["metric_key", ["weight", "waist"]]]);
+    expect(read).toContainEqual(["order", ["updated_at", { ascending: true }]]);
   });
 });
 
@@ -306,99 +310,6 @@ describe("the two view readers", () => {
     const baseline = await getBaseline(CLIENT);
     expect(baseline.bodyFat?.value).toBe(26);
     expect(callsTo("client_baseline_measurements")[0].chain).toContainEqual(["eq", ["client_id", CLIENT]]);
-  });
-});
-
-// docs/MEASUREMENT-LOG-PLAN.md commit 4: a correction is a new row carrying
-// the original's day and stamp, and its unchanged-check reads the reading's
-// STANDING value of any source, not the same-source key.
-describe("appendCorrection", () => {
-  const original = {
-    metricKey: "weight" as const,
-    date: "2026-08-14",
-    sourceId: "ci-1",
-    measuredAt: "2026-08-14T07:30:00+00:00",
-  };
-
-  it("reads the standing value in the day-and-stamp scope, of ANY source", async () => {
-    queue("client_measurements_live", { data: [liveRow({ id: "ci-row", value: 91, source: "check_in", source_id: "ci-1", recorded_on: "2026-08-14" })], error: null });
-    queue("client_measurements", { data: [liveRow({ id: "fix", value: 90, source: "coach_entry", source_id: "ci-1", recorded_on: "2026-08-14" })], error: null });
-    queue("client_current_measurements", { data: [], error: null });
-
-    await appendCorrection({ clientId: CLIENT, original, value: 90, actor: "coach-1" });
-
-    const standing = callsTo("client_measurements_live")[0].chain;
-    expect(standing).toContainEqual(["eq", ["client_id", CLIENT]]);
-    expect(standing).toContainEqual(["eq", ["metric_key", "weight"]]);
-    expect(standing).toContainEqual(["eq", ["recorded_on", "2026-08-14"]]);
-    expect(standing).toContainEqual(["eq", ["source_id", "ci-1"]]);
-    expect(standing).toContainEqual(["limit", [1]]);
-    // No source predicate: a check-in's 91 IS the standing value a correction replaces.
-    expect(standing.some(([method, args]) => method === "eq" && args[0] === "source")).toBe(false);
-  });
-
-  it("scopes an unstamped original to unstamped rows", async () => {
-    queue("client_measurements_live", { data: [], error: null });
-    queue("client_measurements", { data: [liveRow({ id: "fix", metric_key: "waist", value: 80 })], error: null });
-
-    await appendCorrection({
-      clientId: CLIENT,
-      original: { metricKey: "waist", date: "2026-08-14", sourceId: null, measuredAt: null },
-      value: 80,
-      actor: "coach-1",
-    });
-
-    expect(callsTo("client_measurements_live")[0].chain).toContainEqual(["is", ["source_id", null]]);
-  });
-
-  it("writes nothing when the value equals what already stands, whatever wrote it", async () => {
-    queue("client_measurements_live", { data: [liveRow({ id: "ci-row", value: 91, source: "check_in", source_id: "ci-1" })], error: null });
-
-    const result = await appendCorrection({ clientId: CLIENT, original, value: 91, actor: "coach-1" });
-
-    expect(result.inserted).toBe(false);
-    expect(result.reading.id).toBe("ci-row");
-    expect(callsTo("client_measurements")).toEqual([]);
-    expect(state.recalculate).not.toHaveBeenCalled();
-  });
-
-  it("inserts a coach_entry row copying the original's metric, day, stamp and moment, by the actor", async () => {
-    queue("client_measurements_live", { data: [liveRow({ id: "ci-row", value: 91, source: "check_in", source_id: "ci-1" })], error: null });
-    queue("client_measurements", { data: [liveRow({ id: "fix", value: 90, source: "coach_entry", source_id: "ci-1", recorded_on: "2026-08-14" })], error: null });
-    queue("client_current_measurements", { data: [{ metric_key: "weight", measurement_id: "fix" }], error: null });
-
-    const result = await appendCorrection({ clientId: CLIENT, original, value: 90, actor: "coach-1" });
-
-    const [, insertArgs] = callsTo("client_measurements")[0].chain.find(([m]) => m === "insert")!;
-    expect(insertArgs[0]).toEqual([
-      {
-        client_id: CLIENT,
-        metric_key: "weight",
-        value: 90,
-        recorded_on: "2026-08-14",
-        measured_at: "2026-08-14T07:30:00+00:00",
-        source: "coach_entry",
-        source_id: "ci-1",
-        note: null,
-        created_by: "coach-1",
-      },
-    ]);
-    expect(result.inserted).toBe(true);
-    expect(result.reading.id).toBe("fix");
-    // The correction became the client's newest weight: the pair recomputes.
-    expect(result.energy).toBe("recomputed");
-    expect(state.recalculate).toHaveBeenCalledWith(CLIENT);
-  });
-
-  it("recomputes nothing when the corrected reading is not the client's newest", async () => {
-    queue("client_measurements_live", { data: [], error: null });
-    queue("client_measurements", { data: [liveRow({ id: "fix", value: 90, source: "coach_entry", source_id: "ci-1" })], error: null });
-    queue("client_current_measurements", { data: [{ metric_key: "weight", measurement_id: "later" }], error: null });
-
-    const result = await appendCorrection({ clientId: CLIENT, original, value: 90, actor: "coach-1" });
-
-    expect(result.energy).toBe("not_newest");
-    expect(state.recalculate).not.toHaveBeenCalled();
   });
 });
 
@@ -432,7 +343,7 @@ describe("getMeasurementReadings", () => {
     const read = callsTo("client_measurements")[0].chain;
     expect(read).toContainEqual(["eq", ["client_id", CLIENT]]);
     expect(read).toContainEqual(["order", ["recorded_on", { ascending: false }]]);
-    expect(read).toContainEqual(["order", ["recorded_at", { ascending: false }]]);
+    expect(read).toContainEqual(["order", ["updated_at", { ascending: false }]]);
     expect(callsTo("client_measurements_live")).toEqual([]);
   });
 
