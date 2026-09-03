@@ -16,10 +16,12 @@ import { METRIC_VALUE_RANGES } from "@/lib/metrics/metric-entry-definitions";
  * never deleted, and never duplicated by an edit.
  *
  *  - Edit: a wrong VALUE. `update_measurement` (migration 161) changes the
- *    row's value and stamps `updated_at`, keeping its id, day, source and
- *    check-in stamp, so the day's value, a stamped check-in's report and
- *    every "now" surface follow the same row. An unchanged value writes
- *    nothing and says so, and the route audits nothing.
+ *    row's value and stamps `updated_at`, keeping its id, day, source,
+ *    check-in stamp and place in the day (`recorded_at` decides, `updated_at`
+ *    records), so a stamped check-in's report follows it, and the day's
+ *    value and every "now" surface follow it when it is the reading written
+ *    last. An unchanged value writes nothing and says so, and the route
+ *    audits nothing.
  *  - Remove: a reading that should never have existed. A void mark through
  *    `void_measurement` (migration 160); the row leaves every calculation and
  *    every client surface at once through the live view, and stays in the

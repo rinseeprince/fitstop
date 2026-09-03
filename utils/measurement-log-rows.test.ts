@@ -25,7 +25,7 @@ function reading(
     source: "check_in",
     sourceId: null,
     note: null,
-    updatedAt: `${date}T08:00:00+00:00`,
+    recordedAt: `${date}T08:00:00+00:00`,
     voided: null,
     ...over,
   };
@@ -43,11 +43,11 @@ const day = (id: string, date: string, value: number): MeasurementDayValueInput 
 const CHECK_IN_91 = reading("m-ci", "weight", "2026-08-14", 91, { sourceId: "ci-1" });
 const COACH_90 = reading("m-coach", "weight", "2026-08-14", 90, {
   source: "coach_entry",
-  updatedAt: "2026-08-14T12:00:00+00:00",
+  recordedAt: "2026-08-14T12:00:00+00:00",
 });
 
 describe("buildMeasurementLogRows — one row per reading", () => {
-  it("lists two readings of one day as two rows, the most recently touched first, nothing beneath either", () => {
+  it("lists two readings of one day as two rows, the most recently written first, nothing beneath either", () => {
     const rows = buildMeasurementLogRows(
       [CHECK_IN_91, COACH_90],
       new Map([["weight", [day("m-coach", "2026-08-14", 90)]]]),
@@ -66,7 +66,7 @@ describe("buildMeasurementLogRows — one row per reading", () => {
 
   it("an edited reading is the same row with its new value — an edit adds nothing", () => {
     const rows = buildMeasurementLogRows(
-      [reading("m-ci", "weight", "2026-08-14", 89.5, { sourceId: "ci-1", updatedAt: "2026-08-15T09:00:00+00:00" })],
+      [reading("m-ci", "weight", "2026-08-14", 89.5, { sourceId: "ci-1" })],
       new Map([["weight", [day("m-ci", "2026-08-14", 89.5)]]]),
       {},
       ORDER,
@@ -102,7 +102,7 @@ describe("buildMeasurementLogRows — one row per reading", () => {
         reading("m-gone", "weight", "2026-08-14", 91, { voided }),
         reading("m-live", "weight", "2026-08-14", 90, {
           source: "coach_entry",
-          updatedAt: "2026-08-14T12:00:00+00:00",
+          recordedAt: "2026-08-14T12:00:00+00:00",
         }),
         reading("m-prev", "weight", "2026-08-07", 92),
       ],
@@ -156,14 +156,14 @@ describe("buildMeasurementLogRows — one row per reading", () => {
     ]);
   });
 
-  it("orders newest day first, then tab order, then the most recently touched — one row per reading", () => {
+  it("orders newest day first, then tab order, then the most recently written — one row per reading", () => {
     const rows = buildMeasurementLogRows(
       [
         reading("w-old", "weight", "2026-08-07", 92),
         reading("waist-new", "waist", "2026-08-14", 80),
         reading("w-new-a", "weight", "2026-08-14", 91),
         reading("w-new-b", "weight", "2026-08-14", 90, {
-          updatedAt: "2026-08-14T12:00:00+00:00",
+          recordedAt: "2026-08-14T12:00:00+00:00",
         }),
       ],
       new Map([
@@ -178,12 +178,12 @@ describe("buildMeasurementLogRows — one row per reading", () => {
     expect(rows.map((row) => row.id)).toEqual(["w-new-b", "w-new-a", "waist-new", "w-old"]);
   });
 
-  it("orders a day's rows by their last touch, never by id — the ids here sort the other way", () => {
+  it("orders a day's rows by when they were written, never by id — the ids here sort the other way", () => {
     const rows = buildMeasurementLogRows(
       [
-        reading("m-b", "weight", "2026-08-14", 91.2, { updatedAt: "2026-08-14T09:00:00+00:00" }),
-        reading("m-a", "weight", "2026-08-14", 91.4, { updatedAt: "2026-08-14T11:00:00+00:00" }),
-        reading("m-c", "weight", "2026-08-14", 91.6, { updatedAt: "2026-08-14T07:00:00+00:00" }),
+        reading("m-b", "weight", "2026-08-14", 91.2, { recordedAt: "2026-08-14T09:00:00+00:00" }),
+        reading("m-a", "weight", "2026-08-14", 91.4, { recordedAt: "2026-08-14T11:00:00+00:00" }),
+        reading("m-c", "weight", "2026-08-14", 91.6, { recordedAt: "2026-08-14T07:00:00+00:00" }),
       ],
       new Map([["weight", [day("m-a", "2026-08-14", 91.4)]]]),
       {},
@@ -197,8 +197,8 @@ describe("buildMeasurementLogRows — one row per reading", () => {
   it("breaks an equal instant by id, so two readers agree on a day's order", () => {
     const rows = buildMeasurementLogRows(
       [
-        reading("m-a", "weight", "2026-08-14", 91.2, { updatedAt: "2026-08-14T09:00:00+00:00" }),
-        reading("m-b", "weight", "2026-08-14", 91.4, { updatedAt: "2026-08-14T09:00:00+00:00" }),
+        reading("m-a", "weight", "2026-08-14", 91.2, { recordedAt: "2026-08-14T09:00:00+00:00" }),
+        reading("m-b", "weight", "2026-08-14", 91.4, { recordedAt: "2026-08-14T09:00:00+00:00" }),
       ],
       new Map([["weight", [day("m-b", "2026-08-14", 91.4)]]]),
       {},

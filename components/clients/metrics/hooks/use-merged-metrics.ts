@@ -238,7 +238,7 @@ export const useMergedMetrics = (
     );
 
     // PHYSIQUE rows are one per reading — newest day first, within a day the
-    // most recently touched first, a removed reading with its removal. A
+    // most recently written first, a removed reading with its removal. A
     // row's change is taken against the previous day's standing value, and
     // the chart and the figures above read the day-values (`points`). Values
     // convert here, like the points, so a delta sits between two like
@@ -276,7 +276,7 @@ export const useMergedMetrics = (
         source: reading.source,
         sourceId: reading.sourceId,
         note: reading.note,
-        updatedAt: reading.updatedAt,
+        recordedAt: reading.recordedAt,
         voided: reading.voided
           ? { at: reading.voided.at, byName: reading.voided.byName }
           : null,

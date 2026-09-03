@@ -241,13 +241,13 @@ describe("getMeasurementsForCheckIns", () => {
     expect(state.calls).toEqual([]);
   });
 
-  it("takes the most recently touched row per (stamp, metric) — the read orders by updated_at — and maps bodyFat by key", async () => {
+  it("takes the row written last per (stamp, metric) — the read orders by recorded_at, never by updated_at — and maps bodyFat by key", async () => {
     queue("client_measurements_live", {
       data: [
-        { id: "c", metric_key: "weight", value: 78.1, source_id: "ci-1", updated_at: "2026-05-05T10:00:00+00:00" },
-        { id: "a", metric_key: "weight", value: 79.9, source_id: "ci-1", updated_at: "2026-05-04T08:00:00+00:00" },
-        { id: "b", metric_key: "bodyFat", value: 18.4, source_id: "ci-1", updated_at: "2026-05-04T08:00:00+00:00" },
-        { id: "d", metric_key: "waist", value: 82.5, source_id: "ci-2", updated_at: "2026-04-27T08:00:00+00:00" },
+        { id: "c", metric_key: "weight", value: 78.1, source_id: "ci-1", recorded_at: "2026-05-05T10:00:00+00:00" },
+        { id: "a", metric_key: "weight", value: 79.9, source_id: "ci-1", recorded_at: "2026-05-04T08:00:00+00:00" },
+        { id: "b", metric_key: "bodyFat", value: 18.4, source_id: "ci-1", recorded_at: "2026-05-04T08:00:00+00:00" },
+        { id: "d", metric_key: "waist", value: 82.5, source_id: "ci-2", recorded_at: "2026-04-27T08:00:00+00:00" },
       ],
       error: null,
     });
@@ -257,17 +257,18 @@ describe("getMeasurementsForCheckIns", () => {
     expect(out.get("ci-2")).toEqual({ waist: 82.5 });
     const read = callsTo("client_measurements_live")[0].chain;
     expect(read).toContainEqual(["in", ["source_id", ["ci-1", "ci-2"]]]);
-    expect(read).toContainEqual(["select", ["id, metric_key, value, source_id, updated_at"]]);
-    expect(read).toContainEqual(["order", ["updated_at", { ascending: false }]]);
-    expect(read.some(([method, args]) => method === "order" && args[0] === "recorded_at")).toBe(false);
+    expect(read).toContainEqual(["select", ["id, metric_key, value, source_id, recorded_at"]]);
+    expect(read).toContainEqual(["order", ["recorded_at", { ascending: false }]]);
+    expect(read.some(([method, args]) => method === "order" && args[0] === "updated_at")).toBe(false);
   });
 });
 
 describe("getMeasurementSeries", () => {
-  it("collapses rows to one value per day — the most recently touched — and returns every requested key", async () => {
+  it("collapses rows to one value per day — the reading written last — and returns every requested key", async () => {
     queue("client_measurements_live", {
       data: [
-        // Written later, but touched earlier: the edited row wins its day.
+        // Edited after the later row was written: the edit does not move it,
+        // and the later write keeps the day.
         liveRow({ id: "1", value: 80.2, recorded_on: "2026-05-04", recorded_at: "2026-05-04T07:00:00+00:00", updated_at: "2026-05-04T21:00:00+00:00" }),
         liveRow({ id: "2", value: 80.7, recorded_on: "2026-05-04", recorded_at: "2026-05-04T19:00:00+00:00", updated_at: "2026-05-04T19:00:00+00:00" }),
         liveRow({ id: "3", value: 79.3, recorded_on: "2026-05-06" }),
@@ -277,14 +278,15 @@ describe("getMeasurementSeries", () => {
 
     const series = await getMeasurementSeries(CLIENT, { metricKeys: ["weight", "waist"], from: "2026-05-01" });
     expect(series.get("weight")?.map((v) => [v.date, v.value])).toEqual([
-      ["2026-05-04", 80.2],
+      ["2026-05-04", 80.7],
       ["2026-05-06", 79.3],
     ]);
     expect(series.get("waist")).toEqual([]);
     const read = callsTo("client_measurements_live")[0].chain;
     expect(read).toContainEqual(["gte", ["recorded_on", "2026-05-01"]]);
     expect(read).toContainEqual(["in", ["metric_key", ["weight", "waist"]]]);
-    expect(read).toContainEqual(["order", ["updated_at", { ascending: true }]]);
+    expect(read).toContainEqual(["order", ["recorded_at", { ascending: true }]]);
+    expect(read.some(([method, args]) => method === "order" && args[0] === "updated_at")).toBe(false);
   });
 });
 
@@ -343,7 +345,8 @@ describe("getMeasurementReadings", () => {
     const read = callsTo("client_measurements")[0].chain;
     expect(read).toContainEqual(["eq", ["client_id", CLIENT]]);
     expect(read).toContainEqual(["order", ["recorded_on", { ascending: false }]]);
-    expect(read).toContainEqual(["order", ["updated_at", { ascending: false }]]);
+    expect(read).toContainEqual(["order", ["recorded_at", { ascending: false }]]);
+    expect(read.some(([method, args]) => method === "order" && args[0] === "updated_at")).toBe(false);
     expect(callsTo("client_measurements_live")).toEqual([]);
   });
 

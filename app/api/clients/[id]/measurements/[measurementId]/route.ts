@@ -11,11 +11,12 @@ import { AUDIT_ACTIONS } from "@/lib/constants";
 
 const uuid = z.string().uuid();
 
-// Edit a reading in place: the row keeps its id, day, source and check-in
-// stamp and its value changes, so the day's value, a stamped check-in's
-// report and every "now" surface follow the same row (ARCHITECTURE →
-// "client_measurements table", rule 8). The value is canonical; its bounds
-// depend on the row's metric, which the service alone can read.
+// Edit a reading in place: the row keeps its id, day, source, check-in stamp
+// and place in the day, and its value changes, so a stamped check-in's report
+// follows it, and the day's value and every "now" surface follow it when it
+// is the reading written last (ARCHITECTURE → "client_measurements table",
+// rules 2 and 8). The value is canonical; its bounds depend on the row's
+// metric, which the service alone can read.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; measurementId: string }> }

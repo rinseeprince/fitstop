@@ -31,9 +31,11 @@
  *      the value; an equal edit writes nothing, moves nothing, audits nothing
  *   7  another client's row / a removed row / an out-of-bounds value refused
  *   8  D23 on the database: a reading added after the check-in wins the day;
- *      editing the check-in's row makes IT the day's value again — the view
- *      and the kernel agree — and a further add wins in turn; the pair
- *      recomputes only when the edited row is the client's newest
+ *      editing the check-in's row changes its value and nothing else — the
+ *      later add keeps the day, the view and the kernel agree, the row keeps
+ *      its place; editing the reading written last changes the day's value
+ *      in place; a further add wins in turn; the pair recomputes only when
+ *      the edited row is the client's current reading
  *   9  the client's only weight cannot be removed — edit it instead
  *  10  the only body fat CAN be removed, and the formula switches
  *
@@ -374,13 +376,17 @@ async function main(): Promise<void> {
     check("300 kg → 400", bounds.status === 400, bounds);
     check("a malformed id → 404", (await patch(coachSession, rowUrl(A, "not-a-uuid"), { value: 70 })).status === 404);
 
-    console.info("8. D23 on the database: the reading written or edited last is the day's value");
+    console.info("8. D23 on the database: the reading written last is the day's value, and an edit never moves a reading");
     const added = (await appendMeasurements({ clientId: A, source: "coach_entry", recordedOn: "2026-04-20", values: { weight: 74.4 }, createdBy: coach.id })).rows.weight!;
     check("a coach reading added after the check-in wins the day (kernel)", (await dayValueOf(A, "weight", "2026-04-20"))?.id === added.id);
     check("…and 'now' (the view)", (await getCurrentMeasurements(A)).weight?.id === added.id);
     const reEdit = await patch(coachSession, rowUrl(A, w3.id), { value: 73.5 });
-    check("editing the check-in's row makes it the day's value again — the view and the kernel agree", reEdit.status === 200 && dataOf(reEdit)?.energy === "recomputed" && (await dayValueOf(A, "weight", "2026-04-20"))?.id === w3.id && (await getCurrentMeasurements(A)).weight?.value === 73.5, { reEdit, day: await dayValueOf(A, "weight", "2026-04-20") });
-    check("two live rows stand on the day", (await getMeasurementReadings(A)).filter((r) => r.date === "2026-04-20" && r.metricKey === "weight" && !r.voided).length === 2);
+    check("editing the check-in's row changes its value in place, and the check-in reports it", reEdit.status === 200 && dataOf(reEdit)?.updated === true && (await getMeasurementsForCheckIns([STAMP])).get(STAMP)?.weight === 73.5, reEdit);
+    check("…but the later add keeps the day — the view and the kernel agree — and the pair does not recompute", dataOf(reEdit)?.energy === "not_newest" && (await dayValueOf(A, "weight", "2026-04-20"))?.id === added.id && (await getCurrentMeasurements(A)).weight?.id === added.id && (await getCurrentMeasurements(A)).weight?.value === 74.4, { reEdit, day: await dayValueOf(A, "weight", "2026-04-20"), now: (await getCurrentMeasurements(A)).weight });
+    const dayRows = (await getMeasurementReadings(A)).filter((r) => r.date === "2026-04-20" && r.metricKey === "weight" && !r.voided);
+    check("two live rows stand on the day, the one written last listed first — the edit moved nothing", dayRows.length === 2 && dayRows[0].id === added.id && dayRows[1].id === w3.id && dayRows[1].value === 73.5, dayRows.map((r) => [r.id, r.value]));
+    const newestEdit1 = await patch(coachSession, rowUrl(A, added.id), { value: 74.5 });
+    check("editing the reading written last changes the day's value in place and recomputes the pair", newestEdit1.status === 200 && dataOf(newestEdit1)?.energy === "recomputed" && (await dayValueOf(A, "weight", "2026-04-20"))?.value === 74.5 && (await getCurrentMeasurements(A)).weight?.value === 74.5, newestEdit1);
     const addedAgain = (await appendMeasurements({ clientId: A, source: "coach_entry", recordedOn: "2026-04-20", values: { weight: 74.6 }, createdBy: coach.id })).rows.weight!;
     check("a further add wins in turn", (await dayValueOf(A, "weight", "2026-04-20"))?.id === addedAgain.id && (await getCurrentMeasurements(A)).weight?.value === 74.6);
     const pairBeforeOld = await energyPair(A);

@@ -19,7 +19,7 @@ function reading(
   };
 }
 
-describe("dayValues — rule 2, the day's value is the reading written or edited last (D23)", () => {
+describe("dayValues — rule 2, the day's value is the reading written last (D23)", () => {
   it("keeps the later write when two rows share a day, whatever their sources", () => {
     const series = dayValues([
       reading({ id: "a", value: 80.1, date: "2026-05-04", recordedAt: "2026-05-04T10:00:00+00:00", source: "coach_entry" }),
@@ -36,7 +36,7 @@ describe("dayValues — rule 2, the day's value is the reading written or edited
     expect(series.get("weight")?.[0].id).toBe("d");
   });
 
-  it("an edited older reading becomes the day's value — the edit is the day's last touch", () => {
+  it("an edit never moves a reading: an older reading edited after a later add stays behind it", () => {
     const series = dayValues([
       // The check-in's row, written in the morning and edited in the evening.
       reading({
@@ -48,24 +48,24 @@ describe("dayValues — rule 2, the day's value is the reading written or edited
         source: "check_in",
         sourceId: "ci-1",
       }),
-      // A coach reading added at noon, untouched since.
+      // A coach reading added at noon, untouched since — still the day's value.
       reading({ id: "f", value: 81.8, date: "2026-05-06", recordedAt: "2026-05-06T12:00:00+00:00", source: "coach_entry" }),
     ]);
-    expect(series.get("weight")?.[0]).toMatchObject({ id: "e", value: 81.3 });
+    expect(series.get("weight")?.[0]).toMatchObject({ id: "f", value: 81.8 });
   });
 
-  it("a reading added after an edit wins over it", () => {
+  it("an edit of the reading written last changes the day's value in place", () => {
     const series = dayValues([
+      reading({ id: "g", value: 82.2, date: "2026-05-07", recordedAt: "2026-05-07T07:00:00+00:00", source: "coach_entry" }),
       reading({
-        id: "g",
-        value: 82.2,
+        id: "h",
+        value: 82.7,
         date: "2026-05-07",
-        recordedAt: "2026-05-07T07:00:00+00:00",
-        updatedAt: "2026-05-07T12:00:00+00:00",
+        recordedAt: "2026-05-07T15:00:00+00:00",
+        updatedAt: "2026-05-08T09:00:00+00:00",
         source: "check_in",
         sourceId: "ci-2",
       }),
-      reading({ id: "h", value: 82.7, date: "2026-05-07", recordedAt: "2026-05-07T15:00:00+00:00", source: "coach_entry" }),
     ]);
     expect(series.get("weight")?.[0]).toMatchObject({ id: "h", value: 82.7 });
   });
@@ -88,7 +88,7 @@ describe("dayValues — rule 2, the day's value is the reading written or edited
     expect(series.get("waist")?.[0].value).toBe(83.5);
   });
 
-  it("breaks an identical updated_at deterministically, by id, never by arrival order", () => {
+  it("breaks an identical recorded_at deterministically, by id, never by arrival order", () => {
     const first = dayValues([
       reading({ id: "n", value: 75.1, date: "2026-05-13", recordedAt: "2026-05-13T12:00:00+00:00" }),
       reading({ id: "o", value: 75.8, date: "2026-05-13", recordedAt: "2026-05-13T12:00:00+00:00" }),

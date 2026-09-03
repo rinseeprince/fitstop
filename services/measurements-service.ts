@@ -27,9 +27,10 @@ import type { Database } from "@/types/database";
  *    source and stamp — and a reading that should never have existed is
  *    REMOVED by a void mark (`void_measurement`, migration 160) and restored
  *    by clearing it.
- *  - The value for a day is the reading written or edited last — the latest
- *    live row by `updated_at`, a tie broken by id
- *    (`lib/measurements/day-values.ts`, rule 2, D23).
+ *  - The value for a day is the reading written last — the latest live row by
+ *    `recorded_at`, a tie broken by id (`lib/measurements/day-values.ts`,
+ *    rule 2, D23). An edit changes a value and nothing else: `updated_at`
+ *    records it and orders nothing.
  *  - A writer appends only on change (rule 3): a value equal to the day's
  *    standing value for the same source and stamp is not written again, which
  *    is what ends the phantom duplicates the entries dual-write produced.
@@ -220,7 +221,7 @@ export async function appendMeasurements(
     .eq("recorded_on", input.recordedOn)
     .eq("source", input.source)
     .in("metric_key", keys)
-    .order("updated_at", { ascending: false })
+    .order("recorded_at", { ascending: false })
     .order("id", { ascending: false });
   standingQuery = sourceId
     ? standingQuery.eq("source_id", sourceId)
@@ -352,7 +353,7 @@ export async function getMeasurementSeries(
         .eq("client_id", clientId)
         .in("metric_key", [...keys])
         .order("recorded_on", { ascending: true })
-        .order("updated_at", { ascending: true })
+        .order("recorded_at", { ascending: true })
         .order("id", { ascending: true })
         .range(from, to);
       if (options.from) query = query.gte("recorded_on", options.from);
@@ -370,7 +371,7 @@ export async function getMeasurementSeries(
 /**
  * What each check-in reported: its own live row per metric — the row carrying
  * its stamp, edited in place when a coach changes it, so the report follows.
- * The latest by `updated_at` per (stamp, metric): a stamped row written as a
+ * The latest by `recorded_at` per (stamp, metric): a stamped row written as a
  * correction before migration 161 still resolves. Empty input costs no query.
  */
 export async function getMeasurementsForCheckIns(
@@ -379,15 +380,15 @@ export async function getMeasurementsForCheckIns(
   const out = new Map<string, MeasurementValues>();
   if (checkInIds.length === 0) return out;
 
-  type StampedRow = Pick<LiveReadingRow, "id" | "metric_key" | "value" | "source_id" | "updated_at">;
+  type StampedRow = Pick<LiveReadingRow, "id" | "metric_key" | "value" | "source_id" | "recorded_at">;
   const rows = await fetchAllByChunkedIds<StampedRow, string>(
     [...checkInIds],
     (chunk, from, to) =>
       supabaseAdmin
         .from("client_measurements_live")
-        .select("id, metric_key, value, source_id, updated_at")
+        .select("id, metric_key, value, source_id, recorded_at")
         .in("source_id", chunk)
-        .order("updated_at", { ascending: false })
+        .order("recorded_at", { ascending: false })
         .order("id", { ascending: false })
         .range(from, to),
     { errorLabel: "check-in measurements" }
@@ -508,7 +509,7 @@ export async function getMeasurementReadings(
         .select(LOG_COLUMNS)
         .eq("client_id", clientId)
         .order("recorded_on", { ascending: false })
-        .order("updated_at", { ascending: false })
+        .order("recorded_at", { ascending: false })
         .order("id", { ascending: false })
         .range(from, to)
         .overrideTypes<LogReadingRow[], { merge: false }>(),

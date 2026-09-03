@@ -132,7 +132,7 @@ export type AdherenceSummary = {
 
 /**
  * The client's measurement journey, from the measurement log: every metric's
- * day-values (rule 2 — one value per day, the reading written or edited last), the baseline
+ * day-values (rule 2 — one value per day, the reading written last), the baseline
  * per metric (the reading as of the start date, derived by the database) and
  * the start date itself. One read serves the Overview progression chart, the
  * Journey's Physique pane and its measurement log.
@@ -181,10 +181,11 @@ export type MeasurementReadingEntry = {
   /** The check-in stamp a check-in's reading carries; an edit keeps it. */
   sourceId: string | null;
   note: string | null;
-  /** When the row was written. */
+  /** When the row was written. Set once: the day's value is the latest of
+   *  these, and the log orders a day's readings by it. */
   recordedAt: string;
-  /** When the value was last written or edited: the day's value is the latest
-   *  of these, and the log orders a day's readings by it. */
+  /** When the value was last written or edited; equal to `recordedAt` until
+   *  an edit. Records the edit and orders nothing. */
   updatedAt: string;
   measuredAt: string | null;
   /** Set when the reading has been removed; null while it is live. */

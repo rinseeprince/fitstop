@@ -4,11 +4,11 @@ import type { MeasurementKey, MeasurementSource } from "@/lib/measurements/keys"
 
 /**
  * The rows of the coach's measurement log: ONE ROW PER READING, newest day
- * first and within a day the most recently touched first. A coach who edited
+ * first and within a day the most recently written first. A coach who edited
  * a check-in's 91 kg to 90 sees one row reading 90 — the same row, changed in
- * place; two readings on one day are two rows, because two were added; a
- * removed reading is a muted row with who removed it and when, so it can be
- * restored. Nothing beneath a row, no count beside a value
+ * place, in the same place; two readings on one day are two rows, because
+ * two were added; a removed reading is a muted row with who removed it and
+ * when, so it can be restored. Nothing beneath a row, no count beside a value
  * (docs/MEASUREMENT-LOG-PLAN.md §6 commit 8, D23).
  *
  * The chart and every figure above the log read the day-values, so this
@@ -34,8 +34,8 @@ export type MeasurementLogReadingInput = {
   source: MeasurementSource;
   sourceId: string | null;
   note: string | null;
-  /** When the value was last written or edited — orders a day's rows. */
-  updatedAt: string;
+  /** When the row was written — orders a day's rows; an edit never moves one. */
+  recordedAt: string;
   voided: { at: string; byName: string | null } | null;
 };
 
@@ -116,15 +116,15 @@ export function buildMeasurementLogRows(
       isCurrent: days.length > 0 && days[days.length - 1].id === reading.id,
       isBaseline: baselineIds[reading.metricKey] === reading.id,
     };
-    return { row, rank: rank.get(reading.metricKey) ?? order.length, updatedAt: reading.updatedAt };
+    return { row, rank: rank.get(reading.metricKey) ?? order.length, recordedAt: reading.recordedAt };
   });
 
   rows.sort((a, b) => {
     if (a.row.date !== b.row.date) return a.row.date < b.row.date ? 1 : -1; // date DESC
     if (a.rank !== b.rank) return a.rank - b.rank; // tab order
-    // Within a day, the most recently touched first; the id breaks an equal
+    // Within a day, the most recently written first; the id breaks an equal
     // instant so two readers agree.
-    if (a.updatedAt !== b.updatedAt) return a.updatedAt < b.updatedAt ? 1 : -1;
+    if (a.recordedAt !== b.recordedAt) return a.recordedAt < b.recordedAt ? 1 : -1;
     return a.row.id < b.row.id ? 1 : -1;
   });
 

@@ -224,7 +224,7 @@ async function simulateGetClientProgressDataViaAdmin(clientId: string, days: num
       .eq("client_id", clientId)
       .gte("recorded_on", fromDay)
       .order("recorded_on", { ascending: true })
-      .order("updated_at", { ascending: true })
+      .order("recorded_at", { ascending: true })
       .order("id", { ascending: true }),
     supabaseAdmin
       .from("clients")

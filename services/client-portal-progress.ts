@@ -176,7 +176,7 @@ export async function getClientProgressData(
             .eq("client_id", clientId)
             .gte("recorded_on", fromDay)
             .order("recorded_on", { ascending: true })
-            .order("updated_at", { ascending: true })
+            .order("recorded_at", { ascending: true })
             .order("id", { ascending: true })
             .range(from, to),
         { errorLabel: "client measurements" }

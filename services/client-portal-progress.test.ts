@@ -238,18 +238,18 @@ describe("getClientProgressData — physique histories come from the measurement
     ]);
   });
 
-  it("two rows on one day collapse to ONE point carrying the most recently touched row's value", async () => {
-    // Rule 2 (D23): the reading written or edited last wins. The check-in's
-    // row was written first but edited last; the ids are chosen so it sorts
-    // first by id and the arrival order puts it second — a fallback to
-    // recorded_at, to id order or to arrival order would each pick 80.2.
+  it("two rows on one day collapse to ONE point carrying the value of the row written last — an edit never moves a reading", async () => {
+    // Rule 2 (D23): the reading written last wins. The check-in's row was
+    // written first and edited last; its id sorts higher and the arrival order
+    // puts it last — a fallback to updated_at, to id order or to arrival order
+    // would each pick 80.6.
     vi.mocked(createPortalClient).mockResolvedValue(
       fakeSupabase({
         readings: [
-          reading("m-2", "weight", 80.2, "2026-05-01", "2026-05-01T18:00:00+00:00", {
+          reading("m-1", "weight", 80.2, "2026-05-01", "2026-05-01T18:00:00+00:00", {
             source: "coach_entry",
           }),
-          reading("m-1", "weight", 80.6, "2026-05-01", "2026-05-01T07:00:00+00:00", {
+          reading("m-2", "weight", 80.6, "2026-05-01", "2026-05-01T07:00:00+00:00", {
             updated_at: "2026-05-01T20:00:00+00:00",
           }),
         ],
@@ -259,8 +259,8 @@ describe("getClientProgressData — physique histories come from the measurement
 
     const result = await getClientProgressData("c1");
 
-    expect(result.weightHistory).toEqual([{ date: "2026-05-01", weight: 80.6 }]);
-    expect(result.bodyMetrics[0].currentValue).toBe(80.6);
+    expect(result.weightHistory).toEqual([{ date: "2026-05-01", weight: 80.2 }]);
+    expect(result.bodyMetrics[0].currentValue).toBe(80.2);
     expect(result.bodyMetrics[0].chartData).toHaveLength(1);
   });
 
