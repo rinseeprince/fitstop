@@ -451,6 +451,22 @@ What is there today, by grep (2026-09-03): the Wellness pane's five metrics — 
 - Tests, each with a mutation: the service — a day with only a client log yields `client_log`; a day with a client log and a later coach entry yields the coach entry and the note (D17; mutation: flip the tie); a null column yields no point for that metric and a point for the others (mutation: emit 0); ascending order across the two sources; the route test in the measurement-series route test's shape (chain, foreign client 404, payload keys). A DEV probe script beside `scripts/measurement-baseline-proof.ts`: for the fixture client, the route's points per metric against a SQL count of logged days with that metric non-null plus coach-entry days — printed, equal by construction.
 - Docs: none — commit 9 rewrites the Journey's paragraphs when the pane reads it.
 
+**Blast radius — every wellness reader, by the store it reads (grep 2026-09-03; re-grep at execution time, do not trust the table).** Commits 8 and 9 move a READ PATH, not a store: `wellness_logs`, the five-key `client_metric_entries` and the check-ins' stored averages stay where they are, with their writers, so no reader below moves. The only consumer of what is replaced — the browser-side merge in `use-merged-metrics` — is the Journey's Wellness pane.
+
+| Surface | Reads | Through | Commits 8–9 |
+|---|---|---|---|
+| Journey, Wellness pane (hero, chart, log) | today: the check-ins' stored averages ⊕ `client_metric_entries`, merged in the browser | `use-merged-metrics` → `useAllClientCheckIns` + `useMetricEntries` + `buildMetricPoints` | **the one reader that changes** (commit 9: the wellness series) |
+| Overview, the five daily wellness cards | `daily_logs_full` | `useWellnessData` → `GET …/daily-logs` (`daily-logs-service`) | untouched |
+| Wellness tab (history table, summary) | `wellness_logs`; the check-ins' averages for the summary | `GET …/history/wellness`, `…/history/wellness/summary` | untouched |
+| Check-in review page | the period's daily logs for the values; the stored per-check-in snapshots for the deltas | `useWellnessData` (`use-check-in-detail-data.ts`), `comparison-service` | untouched |
+| Check-in submit; the AI prompt's trend | `wellness_logs` via `daily_logs_full` at submit; the previous check-ins' stored averages | `check-in-service`, `utils/ai-prompt-builder.ts` | untouched |
+| Attention feed and its triggers | `daily_logs_full` | `attention-feed-service`, `lib/*-triggers.ts`, `lib/attention-feed-helpers.ts` | untouched |
+| Client app: the wellness day card, the daily-logs wellness route | `wellness_logs` | `daily-log-card-service`, `app/api/client/daily-logs/[date]/wellness` | untouched |
+| Client app: `/api/client/progress` wellness series; the check-in list and detail | the check-ins' stored averages (the RN contract) | `client-portal-progress`, the check-in mappers | untouched — a client and their coach read wellness at different grains after commit 9; not in scope |
+| Activity feed, "Since your last visit" | `client_metric_entries` | `client-activity-feed-service` | untouched |
+| Log-measurement dialog, wellness keys | writes `client_metric_entries` | the entries POST | untouched (D18); only the GET handler and `useMetricEntries` go, the merge being their one consumer |
+| Check-ins tab | the check-in list | `useClientCheckInsInfinite`, `buildCheckInsPageKey` | untouched — only the merge used the whole-history pager |
+
 | # | Decision | Recommendation | Why, and the alternatives |
 |---|---|---|---|
 | D16 | The wellness series' source | **The client's daily `wellness_logs`, merged with the coach's `client_metric_entries`** | Daily logs are wellness's source of truth (Phase 6): a check-in's five averages are derived from them at submit, and the Overview cards and the Wellness tab already read them. Plotting the derived weekly averages beside the daily values they were averaged from would count the same days twice, so the check-in points leave the Journey; the review page keeps showing each check-in's averages. Alternatives: serve today's series (weekly averages ⊕ entries) from a route — ends the pager but keeps a 55-point chart over 376 logged days; all three sources — a check-in's average is not a day's value, and rule 2 has no place for it |
@@ -495,6 +511,7 @@ renders it until commit 9.
 - Deleted, each grepped at execution time for a surviving caller: `useAllClientCheckIns` (`hooks/use-check-in-data.ts`) and its tests — the Check-ins tab's `useClientCheckInsInfinite` and `buildCheckInsPageKey` stay; `hooks/use-metric-entries.ts`; the `GET` handler of `app/api/clients/[id]/metric-entries/route.ts` (the POST stays; `listMetricEntries` stays as the series service's read); `buildMetricPoints`, `MetricSeriesDefinition` and their tests in `utils/metric-points.ts` (the module keeps `MetricPoint`, `dayValuesToMetricPoints` and the three date helpers); `WellnessMetricDefinition.key` — with no check-in field left to name, the body/wellness split of `MetricDefinition` (`use-metrics-data.ts`) collapses back to one definition shape, and the `keyof CheckIn` import goes with it. `npx knip` names the rest.
 - Tests, each with a mutation: the hook over two mocked series — the Wellness pane's rows and summaries come from the wellness series and never from a check-in; a scan in the shape of `lib/measurements/baseline-ownership.test.ts` — nothing under `components/clients/metrics/**` reads `/api/clients/[id]/check-ins` or `/metric-entries` for a series (mutation: reintroduce the check-in read); a wellness log from the dialog invalidates the wellness area (mutation: invalidate the measurement area instead); the log section's wellness rows show both sources and the coach's note. `npx knip` exits clean.
 - Docs, current shape only: ARCHITECTURE → the Journey row of "Client page tab structure" (both panes read a series route; the wellness series is the client's daily logs merged with the coach's entries, latest write wins); "client_metric_entries table" (the merge bullet → the server-side merge in the wellness series); "Daily Logs" (the Journey's Wellness pane joins the domain-specific readers of `wellness_logs`). TECHNICAL-DEBT → the "Coach-logged wellness has a store of its own" item loses its pager half; what remains is the store itself (replace-per-day, no history — D18).
+- **Scope rule.** The files this commit may touch: `components/clients/metrics/**`, `hooks/use-check-in-data.ts` (the pager only), `hooks/use-metric-entries.ts`, `hooks/use-wellness-series.ts`, `app/api/clients/[id]/metric-entries/route.ts` (the GET only), `utils/metric-points.ts` and its test, the two docs, and whatever `npx knip` names as orphaned by those. A diff touching any reader in commit 8's blast-radius table is a defect, not a sweep item. The STATUS line lists the files touched, so the rule is verified rather than assumed.
 
 ```text
 Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commits 8
@@ -512,7 +529,9 @@ Job: Commit 9 of docs/MEASUREMENT-LOG-PLAN.md §6 — `refactor(journey): the We
 reads its series — the merge and the check-in pager go`. Build exactly what that section
 lists: the hook on two series; the deletions, each grepped at execution time for a
 surviving caller — never taken from this plan's list; the tests, the scan and their
-mutations; npx knip clean; the docs. Everything you delete must be grepped first.
+mutations; npx knip clean; the docs. Everything you delete must be grepped first. The
+scope rule is a hard boundary: re-grep commit 8's blast-radius table before you start,
+and touch no reader in it.
 
 Rules: every fixture number distinct; cp backups before mutating, never git stash or git
 checkout --; gates: npx tsc --noEmit, npx eslint ., npx vitest run, npm run
