@@ -130,10 +130,11 @@ Grep at execution time. These are the sites verified on 2026-09-02; a session mu
 **Tests carrying `status: "completed"` / `"partial"` / `"skipped"` on events (21 files)**
 `app/api/clients/[id]/training/[planId]/sessions/[sessionId]/route.test.ts`, `components/check-in/training-session-checklist.test.tsx`, `components/clients/training/calendar/placed-session-editor.test.tsx`, `components/clients/training/program-builder/placed-serialize.test.ts`, `components/clients/training/program-builder/program-builder-lock-model.test.ts`, `hooks/use-calendar-dnd.test.ts`, `services/ai-service.test.ts`, `services/attention-feed-service.test.ts`, `services/check-in-context-service.test.ts`, `services/check-in-details-service.test.ts`, `services/client-adherence-service.test.ts`, `services/plan-amendment-service.test.ts`, `services/training-event-calendar-service.test.ts`, `services/training-event-layout-service.test.ts`, `services/training-event-occupancy.test.ts`, `services/training-event-service.test.ts`, `services/training-log-service.test.ts`, `services/training-session-replace-service.test.ts`, `services/training-session-service.test.ts`, `utils/__tests__/training-event-helpers.test.ts`, `utils/ai-prompt-builder.test.ts`. Plus `components/check-in/kpi-ribbon.test.tsx`, `components/clients/overview/adherence-card.test.tsx`, `components/clients/overview/plan-training-card.test.tsx`, `components/clients/training/training-summary-hero.test.tsx`, `app/api/client/check-ins/[id]/route.test.ts`, `app/api/client/check-in-context/route.test.ts` (asserts the exact top-level key set — adding a key *inside* `trainingPeriodStats` does not change it).
 
-## 4. The four commits
+## 4. The commits
 
 Each passes the full CONVENTIONS §13 checklist on its own before the next starts. Commits 1–3
-change no stored value and no count; commit 4 is the only one after which partials count.
+change no stored value and no count; commit 4 is the only one after which partials count; 4b
+changes no number and runs last.
 
 | # | Commit | Migration | Behaviour after it |
 |---|---|---|---|
@@ -346,7 +347,7 @@ Finish: the full CONVENTIONS §13 checklist (tsc, eslint, vitest, check:labels, 
 ## 6. Verification, transition facts, effort
 
 - **Per commit:** CONVENTIONS §13 in full — `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`, `npm run check:labels`, `npm run check:service-key`, `npm run check:rls` where a migration landed, the `as any` and marker greps on changed files, `npx knip` clean. No `npm run build` — nothing touches routing or prerendering.
-- **§2 security/load/performance review:** commits 1, 2 and 4 trip the files-touching-data-flow trigger; commit 3 trips three triggers (migration, route, write path). Each session reports it unprompted.
+- **§2 security/load/performance review:** commits 1, 2, 4 and 4b trip the files-touching-data-flow trigger; commit 3 trips three triggers (migration, route, write path). Each session reports it unprompted.
 - **Owner's browser smoke:** after each commit, from the checklist that commit hands over. The owner runs smokes; sessions never drive the browser.
-- **Transition facts:** check-ins submitted before commit 4 keep the full-only number in `workouts_completed`; only the AI prompt's trend block reads that column for previous check-ins. Frozen `period_snapshot` JSON keeps its old per-day words and still prints. The 209 log-less completed rows on dev stay completed and display as full.
-- **Effort:** roughly three days across the four commits, including gates and the two pushes.
+- **Transition facts:** check-ins submitted before commit 4 keep the full-only number in `workouts_completed`; until 4b only the AI prompt's trend block reads that column for previous check-ins, and after 4b both check-in views read it, so those older check-ins show their stored number on both pages (M13). Frozen `period_snapshot` JSON keeps its old per-day words and still prints. The 209 log-less completed rows on dev stay completed and display as full.
+- **Effort:** roughly three days across commits 1–4, including gates and the two pushes; 4b is under a day.
