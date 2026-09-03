@@ -19,7 +19,7 @@ import {
   formatSigned,
   TONE_TEXT,
 } from "./metrics-format";
-import type { LogRow } from "./metrics-view-types";
+import type { LogRow, MetricSummary } from "./metrics-view-types";
 
 /**
  * The three row actions of a physique reading (docs/MEASUREMENT-LOG-PLAN.md
@@ -35,8 +35,12 @@ type ReadingActionHandlers = {
 };
 
 type MeasurementLogSectionProps = ReadingActionHandlers & {
-  /** Newest-first rows for the CURRENT tab; the host remounts with key={tab}
-   *  so the internal page state resets on tab switch. */
+  /** The selected metric (the hero's switcher): the log is its readings, the
+   *  pager counts them, and its name reads in the copy. The host remounts the
+   *  section with key={metric.id}, so the page returns to 1 on every switch —
+   *  of metric or of pane, since ids are unique across both. */
+  metric: Pick<MetricSummary, "id" | "name">;
+  /** Newest-first rows for the CURRENT pane, every metric of it. */
   rows: LogRow[];
 };
 
@@ -121,13 +125,6 @@ function buildColumns(handlers: ReadingActionHandlers, withActions: boolean): Co
       ),
     },
     {
-      key: "metricName",
-      label: "Metric",
-      render: (_v, row) => (
-        <span className="text-[#0c1a1e] font-medium">{row.metricName}</span>
-      ),
-    },
-    {
       key: "value",
       label: "Value",
       render: (_v, row) => (
@@ -168,6 +165,7 @@ function buildColumns(handlers: ReadingActionHandlers, withActions: boolean): Co
 const rowClassName = (row: LogRow) => (row.voided ? "opacity-60" : undefined);
 
 export function MeasurementLogSection({
+  metric,
   rows,
   onEditReading,
   onRemoveReading,
@@ -175,11 +173,16 @@ export function MeasurementLogSection({
   pendingRowId = null,
 }: MeasurementLogSectionProps) {
   const [page, setPage] = useState(0);
+  // The log is the selected metric's (docs/MEASUREMENT-LOG-PLAN.md commit 6,
+  // D13–D14): the pane's rows are already in memory, so the filter is one
+  // predicate during render — the way the chart section filters its points by
+  // range — and the pager's total follows it.
+  const metricRows = rows.filter((row) => row.metricId === metric.id);
   // A reading dated before the client's start date is still theirs — it is
   // listed, under its own rail, and it is simply not part of the journey the
   // chart and the figures above describe. Few by nature, so unpaged.
-  const journeyRows = rows.filter((row) => !row.beforeStart);
-  const beforeStartRows = rows.filter((row) => row.beforeStart);
+  const journeyRows = metricRows.filter((row) => !row.beforeStart);
+  const beforeStartRows = metricRows.filter((row) => row.beforeStart);
   const pageRows = journeyRows.slice(
     page * HISTORY_PAGE_SIZE,
     page * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE
@@ -206,7 +209,9 @@ export function MeasurementLogSection({
             page={page}
             total={journeyRows.length}
             pageSize={HISTORY_PAGE_SIZE}
-            noun="entries"
+            // D12: the metric is the pager's noun, so the count and the hero's
+            // entries chip read as one phrase — "Showing 10 of 12 weight entries".
+            noun={`${metric.name.toLowerCase()} entries`}
             onPageChange={setPage}
           />
         }
@@ -216,7 +221,8 @@ export function MeasurementLogSection({
           columns={columns}
           data={pageRows}
           isLoading={false}
-          emptyMessage="No measurements logged yet"
+          // D15: the chart section's sentence, whose call to action sits directly above.
+          emptyMessage={`No ${metric.name} entries yet`}
           rowClassName={rowClassName}
         />
       </div>

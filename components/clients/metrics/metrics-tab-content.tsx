@@ -57,6 +57,9 @@ export const MetricsTabContent = ({
   const setPane = (t: JourneySubtab) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("journey", t);
+    // The metric is the pane's subject: a pane switch drops it in the same
+    // navigation, so the URL never asserts a metric the new pane cannot show.
+    params.delete("metric");
     router.replace(`?${params.toString()}`, { scroll: false });
   };
   // The metric-keyed derivations below want a MetricTab; the panes that key
@@ -64,12 +67,18 @@ export const MetricsTabContent = ({
   // metrics-view-types.ts so the next pane is safe without touching this line.
   const tab: MetricTab = toMetricTab(pane);
 
-  // Focused metric resets on tab switch by derivation (no effects): a stored
-  // focus applies only while its own tab is active.
-  const [focused, setFocused] = useState<{ tab: MetricTab; id: string } | null>(
-    null
-  );
-  const focusedId = focused?.tab === tab ? focused.id : DEFAULT_FOCUS[tab];
+  // The selected metric is Journey's second single-owner param, ?metric= —
+  // the subject the hero, the chart and the log all describe (CONVENTIONS §7:
+  // a selected record lives in the URL and nowhere else). Read unconditionally
+  // so a deep link resolves on the first render, and validated below against
+  // the pane's own list, so an unknown value or the other pane's metric
+  // derives to the pane default with no state.
+  const metricParam = searchParams.get("metric");
+  const setMetric = (id: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("metric", id);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
 
   const [range, setRange] = useState<30 | 60 | 90 | "all">(30);
   const [logOpen, setLogOpen] = useState(false);
@@ -109,7 +118,11 @@ export const MetricsTabContent = ({
   };
 
   const metrics = metricsByTab[tab];
-  const focusedMetric = metrics.find((m) => m.id === focusedId) ?? metrics[0] ?? null;
+  const focusedMetric =
+    metrics.find((m) => m.id === metricParam) ??
+    metrics.find((m) => m.id === DEFAULT_FOCUS[tab]) ??
+    metrics[0] ??
+    null;
 
   return (
     <div>
@@ -151,7 +164,7 @@ export const MetricsTabContent = ({
             <MetricHero
               metric={focusedMetric}
               metrics={metrics}
-              onSelectMetric={(id) => setFocused({ tab, id })}
+              onSelectMetric={setMetric}
             />
           </div>
           <MetricProgressionSection
@@ -163,9 +176,11 @@ export const MetricsTabContent = ({
             showBlocks={showBlocks}
             onToggleBlocks={setShowBlocks}
           />
-          {/* key={tab} resets the log's page state when the tab switches */}
+          {/* The key remounts the log on every switch — metric ids are unique
+              across both panes — so its page returns to 1 with no effect. */}
           <MeasurementLogSection
-            key={tab}
+            key={focusedMetric.id}
+            metric={focusedMetric}
             rows={logRowsByTab[tab]}
             onEditReading={setEditingReading}
             onRemoveReading={setRemovingReading}
