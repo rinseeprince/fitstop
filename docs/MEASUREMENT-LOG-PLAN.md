@@ -1,6 +1,6 @@
 # Measurement log — one store for every body measurement
 
-**Status: commits 1–8 SHIPPED — `55ed1242` (2026-09-02), `29456d71` (2026-09-02), `24a2f667` (2026-09-03), `1872eeeb` (2026-09-03), `e8c58cad` (2026-09-03), `6ced90de` (2026-09-03), `83a0f061` (2026-09-03), `d4641a02` + `4e4b7009` (2026-09-03); commits 1–6 smoked, commit 7's fold reverted by commit 8, commit 8's smoke owed; migrations 158–162 on DEV and PROD; the old stores are gone; a reading is edited in place, removed and restored; a logged day is derived once; the log is the selected metric's, and the metric is `?metric=`; the wellness series is a route over the client's daily log. Commit 8 made a reading EDITED IN PLACE (owner decision 2026-09-03, reversing the correction rows of D1 and D9 and the fold of commit 7 and D21: edit replaces, add adds, editing a check-in's reading edits its own row so the check-in follows, delete deactivates with Restore; D23: the day's value is the reading written last — an edit changes a value and nothing else, never a day's order or value, owner revision at execution). Next: commit 8b — the check-in review reads its own day. Commits 8b and 9–11 are planned (8b — the check-in review reads its own day — was added 2026-09-03 with a letter, so nothing renumbers again); D1–D23 are answered (D17 moot; D18 reversed — coach wellness logging is retired, commit 10). Commit 12, the day-spine planning step, runs LAST because it ends by deleting this document (renumbered three times on 2026-09-03: the day-spine step went from 6 to 9 and 7–9 became 6–8; then the retirement of coach wellness logging and the client app's wellness series were inserted as 9 and 10 and the day-spine step became 11; then edit-in-place was inserted as 8, the wellness commits became 9–11 and the day-spine step 12).** Thirteen commits (the fourth conditional on D9; the fifth independent of the rest; the sixth the log's metric filter; the seventh the wellness series over the client's daily log; the eighth a reading edited in place; 8b the check-in review as of its day; the ninth the Wellness pane on that series; the tenth the retirement of coach wellness logging; the eleventh the client app's wellness series through the same kernel; the twelfth a planning step, not a build, and the last to run), each with a pasteable prompt (§6), each independently revertable in order, each gated. Commit 1 stands on its own: it fixed the goal strip on main.
+**Status: commits 1–8 SHIPPED — `55ed1242` (2026-09-02), `29456d71` (2026-09-02), `24a2f667` (2026-09-03), `1872eeeb` (2026-09-03), `e8c58cad` (2026-09-03), `6ced90de` (2026-09-03), `83a0f061` (2026-09-03), `d4641a02` + `4e4b7009` (2026-09-03); commits 1–6 smoked, commit 7's fold reverted by commit 8, commit 8's smoke owed; migrations 158–162 on DEV and PROD; the old stores are gone; a reading is edited in place, removed and restored; a logged day is derived once; the log is the selected metric's, and the metric is `?metric=`; the wellness series is a route over the client's daily log. Commit 8 made a reading EDITED IN PLACE (owner decision 2026-09-03, reversing the correction rows of D1 and D9 and the fold of commit 7 and D21: edit replaces, add adds, editing a check-in's reading edits its own row so the check-in follows, delete deactivates with Restore; D23: the day's value is the reading written last — an edit changes a value and nothing else, never a day's order or value, owner revision at execution). Next: commit 8b — the check-in review reads its own day. Commits 8b–8e and 9–11 are planned (8c a submitted check-in closes its period, 8d a goal lives once, 8e one row per goal — all added 2026-09-03 with letters; 8e runs before 12 or moves to its own plan) (8b — the check-in review reads its own day — was added 2026-09-03 with a letter, so nothing renumbers again); D1–D23 are answered (D17 moot; D18 reversed — coach wellness logging is retired, commit 10). Commit 12, the day-spine planning step, runs LAST because it ends by deleting this document (renumbered three times on 2026-09-03: the day-spine step went from 6 to 9 and 7–9 became 6–8; then the retirement of coach wellness logging and the client app's wellness series were inserted as 9 and 10 and the day-spine step became 11; then edit-in-place was inserted as 8, the wellness commits became 9–11 and the day-spine step 12).** Thirteen commits (the fourth conditional on D9; the fifth independent of the rest; the sixth the log's metric filter; the seventh the wellness series over the client's daily log; the eighth a reading edited in place; 8b the check-in review as of its day; the ninth the Wellness pane on that series; the tenth the retirement of coach wellness logging; the eleventh the client app's wellness series through the same kernel; the twelfth a planning step, not a build, and the last to run), each with a pasteable prompt (§6), each independently revertable in order, each gated. Commit 1 stands on its own: it fixed the goal strip on main.
 
 **Scope:** the seven physique measurements — weight, body fat, waist, hips, chest, arms, thighs — and where they are stored, written and read. **Not in scope:** wellness (mood, energy, sleep, stress, soreness stay on the daily-logs model), the check-in form the client sees, the review page's layout, goals themselves, the RN wire shapes (they must not change). *Commit 8c (added 2026-09-03) touches the logs behind a check-in, not the form: a submitted check-in closes its period to further logging.*
 
@@ -129,6 +129,8 @@ Verified by grep on 2026-09-02. **Training has no dependency on body measurement
 | Editing a reading — `services/measurement-edits-service.ts`, `appendCorrection`, `POST …/measurements/[id]/correct`, the day-value kernel, the two "now"/baseline views, the Journey's log rows and section, `scripts/measurement-edit-proof.ts` | a correction is a NEW stamped row; the log folds a day's readings under its lead | edited IN PLACE (owner, 2026-09-03): one update RPC, `updated_at`, the day's value = the reading written last — an edit changes a value and nothing else, never a day's order or value (owner revision at execution, 2026-09-03), the log one row per reading with Edit on each, the fold deleted | 8 |
 | The check-in review's goal strip — `services/comparison-service.ts`, `check-in-goal-strip.tsx`, `lib/goals/goal-progress-ownership.test.ts`, `getClientCheckIns`' trend read, the drift note | reads NOW: the client's newest reading, the live goal, today's clock, the client's latest ten check-ins, the nutrition version covering today | reads the check-in's DAY (owner, 2026-09-03): the check-in's own reading or the one before it, the goal version in force then, days remaining from then, the ten check-ins up to it, the nutrition version covering it | 8b |
 | Closing a reported period — `lib/daily-log-permissions.ts`, `services/daily-log-permissions-service.ts`, the four client write routes, `services/training-event-layout-service.ts`, the five client-side readers, `locked-day-notice.tsx`, `/api/client/me` | today editable, a past day locked only once it is logged, a never-logged day open for ever; the client calendar move carries its own past-day rule | a day is locked once it falls on or before the last submitted check-in's `period_end` (owner, 2026-09-03); the logged-day lock and the move's backfill read are deleted; `closedThrough` on the wire | 8c |
+| The goal's second store — `clients.goal_weight` / `goal_body_fat_percentage` / `goal_deadline`, the mirror UPDATE in `updateGoals`, the mirror legs of `toClientGoalInput`, the two client wires and the intake sync reading the copy, `primary_goal` | a goal written to two stores in three autocommitted round trips; every save mints a version | one store, one RPC that merges, refuses a bad date pair and writes nothing on no change; the copy dropped; `Client` and the wires filled from `client_current_goals` (owner, 2026-09-03) | 8d |
+| The goal's shape — `client_goals`' two target columns, `resolveEffectiveGoal`, `deriveGoalProgress`, the details sheet's Goals group, the band's chips, the strip, the drift detector, `/api/client/journey` | one version holds a weight target and a body-fat target with one deadline | a row per goal on one measurement with its own direction and dates, versioned per row; `reached_at` set once by the newest-row path and read by a feed trigger (owner, 2026-09-03) | 8e |
 | The day spine — `daily_logs`, its `daily_log_id` FKs, `daily_logs_full`, the per-card ensure-spine writes, the day note | one parent row per day for wellness and nutrition | a plan to flatten it, not a build (commit 12) | 12 |
 
 ## 5. Verification that nothing is missed
@@ -574,7 +576,7 @@ Rules: every fixture number distinct; cp backups before mutating, never git stas
 checkout --; gates: npx tsc --noEmit, npx eslint ., npx vitest run, npm run
 check:labels, npx knip, npm run check:service-key. Commit directly to main. Then replace
 this commit's STATUS line with SHIPPED, the hash and the date, and hand me a browser
-smokelist: the four items in the entry.
+smokelist: the four items in the entry.  
 ```
 
 ### Commit 8c — `feat(check-ins): a submitted check-in closes its period — one day rule, the logged-day lock goes`
@@ -627,6 +629,127 @@ Rules: every fixture number distinct; cp backups before mutating, never git stas
 checkout --; the RN wire is additive-only; gates: npx tsc --noEmit, npx eslint ., npx
 vitest run, npm run check:labels, npx knip, npm run check:service-key. Commit directly
 to main. Then replace this commit's STATUS line with SHIPPED, the hash and the date, and
+hand me a browser smokelist: the items in the entry.
+```
+
+### Commit 8d — `chore(goals): a goal lives once — the profile copy goes, one atomic write, change detection in the writer`
+
+**STATUS: NOT STARTED. Owner decision 2026-09-03, CLOSED: a goal is stored in ONE place, the versioned `client_goals` table; the two goal columns copied onto `clients` (and the never-mapped `goal_deadline` beside them) are dropped; setting a goal is one all-or-nothing write; a save that changes nothing writes nothing and mints no version. The goal SHAPE does not change here — still one version holding a weight target and a body-fat target (8e changes that). Independent of 8b and 8c; run after 8b so the goals service is not edited by two commits in flight. One migration, DEV then PROD after a probe of BOTH databases. No wire shape change.**
+
+Why: the same disease D8 cured for weights. Migration 9 put `goal_weight` and `goal_body_fat_percentage` on `clients`; migration 60 created the versioned table, backfilled every goal into it, and left the columns as a fallback for "a client whose goal predates the table". Since then every goal save has been three autocommitted round trips — supersede the live version, insert the new one, copy the two numbers back onto the profile row — with the copy's UPDATE logged-and-swallowed, so the copy can silently fall behind; the read switch in `toClientGoalInput` (`currentGoals?.goalWeight ?? client.goalWeight`) then decides which store to believe; and `updateGoals` supersedes-and-inserts on EVERY call, so change detection lives in the callers and a details-sheet save with the goal untouched mints a version and an audit event. ARCHITECTURE records all three under "client_goals table" as known and unfixed. A failed insert after the supersede leaves the client with no live version, which every reader takes as maintenance.
+
+What is there today, by grep (2026-09-03): the copy is read or written by twelve non-test files — `lib/mappers.ts` (the two columns onto `Client.goalWeight` / `goalBodyFatPercentage`, and the intake mapper), `lib/goals/resolve-effective-goal.ts` (the mirror legs of `toClientGoalInput`; the deadline has none by the 0b.1 decision), `services/client-goals-service.ts` (the mirror UPDATE), `services/client-service.ts`, `services/client-portal-service.ts` (`/api/client/me`), `services/client-portal-progress.ts` (a string-built select naming the columns, and `goalWeight` / `goalBodyFatPercentage` on the `/api/client/progress` wire read STRAIGHT OFF THE COPY), `services/intake-review-service.ts` (reads the copy to decide what the questionnaire may fill), `components/client-portal/metrics/goals-section.tsx`, `lib/sentry-scrubber.ts`, `scripts/seed/generate.ts`, `scripts/seed-scale-client.ts`, `scripts/perf-baseline.ts`; 23 test files name the fields. `client_goals.primary_goal` is inert but an unconditional INSERT key (ARCHITECTURE: remove the code first, then the column). `updateGoals` is the only writer of both stores (invariant 16) and its callers — the details sheet through `PUT …/goals`, `updateClient` for goal fields carried by `PATCH /api/clients/[id]`, the metrics PUT, `createClient`, the intake sync — each carry their own change detection or none.
+
+- **Migration** (the next free number): one RPC `set_client_goals_atomic(p_client_id uuid, p_set_by uuid, p_goal_weight numeric DEFAULT NULL, p_goal_body_fat_percentage numeric DEFAULT NULL, p_goal_deadline date DEFAULT NULL, p_goal_start_date date DEFAULT NULL, p_notes text DEFAULT NULL, p_fields text[] DEFAULT NULL)` — SECURITY DEFINER, `GRANT EXECUTE … TO service_role`; `p_fields` names the keys the caller is setting (a partial update carries only what the sheet changed), the body merges them over the live version, refuses `goal_start_date > goal_deadline` on the MERGED pair (`invalid_dates:` prefix), returns the live row unchanged when the merge equals it (`changed = false`, nothing written), else supersedes and inserts in one transaction and returns the new row. A view `client_current_goals` (`security_invoker`; one row per client: the live version's weight, body fat, deadline, start date) so a client row can embed its goal the way it embeds its readings. Then, after the probe, `DROP COLUMN` `goal_weight`, `goal_body_fat_percentage`, `goal_deadline` on `clients`, and `primary_goal` on `client_goals` with its code. The probe, on DEV and PROD before the file is written: clients with a non-null copy and no live version (expected 0 — migration 60 backfilled every goal that existed); if any exist, the migration inserts a version for them first. `gen types`; diff; `npm run check:rls`.
+- **The writer.** `updateGoals` calls the RPC and nothing else — no mirror write, no supersede of its own; it returns `{ goal, changed }` so the routes audit only a real change. Callers drop their own change detection where it only existed to avoid a phantom version (grep: `use-client-profile-edit.ts`, `updateClient`, the intake sync); `updateGoalsSchema` keeps its payload refine for the inline message, and the merged check now lives in one place.
+- **The readers.** `toClientGoalInput` loses both mirror legs — the resolver reads the version and nothing else. `mapClientRow` fills `Client.goalWeight` / `goalBodyFatPercentage` from the `client_current_goals` embed (`CLIENT_MEASUREMENT_EMBEDS`' pattern — one more embed, the same round trip), so every consumer of the `Client` object, the portal's goals section and `/api/client/me` included, is unchanged; the progress wire's two goal fields read the same embed; the string-built selects lose the column names. **D25 (below)** decides how the portal reads reach the view under the client's JWT. The intake sync asks the record whether the client has a goal.
+- **Deleted:** the mirror UPDATE and its swallow; the three `clients` columns and every mapping of them; the mirror legs; the callers' change detection; `primary_goal` and its INSERT key; the seeds' and the scrubber's mentions.
+- Tests, each with a mutation. The RPC through the request-level harness (the belt is SQL): an unchanged payload writes nothing and mints no version (mutation: always insert); a changed target supersedes and inserts and the history gains exactly one row; a partial update carrying only a start date is judged against the stored deadline (mutation: judge the payload alone); a foreign client id is refused; `set_by` recorded. The resolver without a mirror leg (mutation: re-add it). The selects name no dropped column (a scan over the string-built lists — a stale name is a PostgREST 400 that `tsc` cannot see). The portal goals section from the embed. `npm run check:rls`.
+- Wire proofs: `GET /api/client/me`, `GET /api/client/progress` and `GET /api/client/journey` byte-identical for a client with a goal version (`scripts/wire-proof-measurements.ts` gains the journey route; the fixture client is the subject); `GET /api/clients/[id]/goals` byte-identical.
+- Docs, current shape only: ARCHITECTURE → "client_goals table" (one store, one atomic write, change detection and the merged date check inside the writer, `primary_goal` gone), "Effective goal resolution" and "Read switch fallback" (no mirror; the section's goal half goes), the Data Hierarchy line; CONVENTIONS §8 "Multi-table writes are atomic" names the goal RPC beside the two it cites; TECHNICAL-DEBT closes the `primary_goal` and the `updateGoals` atomicity entries.
+- Browser smoke: set a goal on the details sheet and read it on the Overview band, the goal strip and the client app; save the sheet with the goal untouched and confirm the history popover gains nothing; change only the deadline; move the start date past the deadline on a partial edit and read the refusal; the client app's progress screen shows the goal.
+
+| # | Decision | Recommendation | Why, and the alternatives |
+|---|---|---|---|
+| D25 | How the client app reads its live goal once the copy is gone (`/api/client/me` and `/api/client/progress` read the client row under the client's own JWT) | **The D6/D8 shape:** `client_current_goals` embedded beside the measurement views, with one client-scoped `SELECT` policy on `client_goals` (`clients.user_id = auth.uid()`, never by anything else) so the view shows a client their own live goal; `npm run check:rls` | Alternative: move the two portal reads behind service role — a bigger change to the portal's data path for no gain, and the memory says anon+RLS is load-bearing on it |
+
+```text
+Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commit 8d
+before planning. Plan for my review before writing anything.
+
+A goal lives in ONE place (my decision, 2026-09-03): the versioned client_goals table.
+The two goal columns copied onto clients, and the never-mapped goal_deadline beside them,
+are dropped; setting a goal is one all-or-nothing write through an RPC that merges,
+refuses a start after the deadline on the merged pair, and writes nothing when nothing
+changed; the read switch's mirror legs go; every consumer of the Client object and every
+client wire keeps its fields, sourced from a view of the live version. The goal's shape —
+one version, a weight target and a body-fat target — does not change here. Where
+ARCHITECTURE or CONVENTIONS state a rule that contradicts this commit, do not silently
+follow it and do not silently override it: list each contradiction with the doc line and
+what the plan says instead, and I will review before you write. Read my answer to D25;
+if it is blank, stop and ask.
+
+Job: Commit 8d of docs/MEASUREMENT-LOG-PLAN.md §6 — `chore(goals): a goal lives once`.
+Build exactly what that section lists: the probe on BOTH databases first; the migration
+(the RPC, the view, the policy per D25, the four column drops); the writer on the RPC;
+the readers on the view; the deletions; the tests including the request-level ones and
+their mutations; the wire proofs; the docs. Grep at execution time for every reader of
+goal_weight, goal_body_fat_percentage, goal_deadline, goalWeight, goalBodyFatPercentage
+and primary_goal; do not trust the list.
+
+Migration rules as in commit 2, DEV first. Before the PROD push: `supabase migration
+list --linked` against the prod ref; show me the output and wait. Rules: every fixture
+number distinct; cp backups before mutating, never git stash or git checkout --; gates:
+npx tsc --noEmit, npx eslint ., npx vitest run, npm run check:labels, npx knip, npm run
+check:service-key, npm run check:rls. Commit directly to main. Then replace this
+commit's STATUS line with SHIPPED, the hash and the date, and hand me a browser
+smokelist: the items in the entry.
+```
+
+### Commit 8e — `feat(goals): one row per goal — a target on one measurement, versioned per row, reached once`
+
+**STATUS: NOT STARTED. Owner decision 2026-09-03: the platform's goals are plural and typed — a target on ONE measurement, each with its own direction and dates — so a goal is a row, never a column. After 8d (one store) and after 8b (whose as-of read then resolves per metric). Runs when a third goal type or the goal-reached notification is wanted, and in any case BEFORE commit 12, which deletes this document; if it has not run by then, this entry moves to its own plan first. One migration with a data move, DEV then PROD after a probe of both. The client wires keep every field they have; a third goal type reaches the RN app as an additive field later.**
+
+Why: a goal version today is one row holding a weight target and a body-fat target with one deadline for both. It cannot express a waist goal, a strength goal, or two deadlines, and every consumer is written against those two columns. By CONVENTIONS §8's test a goal is an entity — referenced by the strip, edited, trended per item — so its shape is a row per goal, and the measurement log already keys readings by metric. One event is worth storing: the moment a goal was reached, so a notification can fire once and a history can say when.
+
+The shape:
+
+```sql
+client_goals (re-cut)
+  id, client_id,
+  metric_key      text NOT NULL CHECK (the seven measurement keys — lib/measurements/keys.ts mirrors it),
+  target          numeric NOT NULL CHECK (target > 0),   -- canonical kg / cm / %
+  direction       text NOT NULL CHECK (direction IN ('down','up')),
+  start_date      date,                                    -- pace is judged from here; null = the client's start date
+  deadline        date,
+  effective_from  timestamptz NOT NULL DEFAULT now(),
+  superseded_at   timestamptz,
+  reached_at      timestamptz,                             -- set once, by the detector; never cleared
+  set_by uuid, notes text, created_at, updated_at
+UNIQUE (client_id, metric_key) WHERE superseded_at IS NULL
+```
+
+- **The migration** (the next free number): the new columns; a data move that turns every existing version into up to two rows — a weight row and a body-fat row — carrying the version's `effective_from`, `superseded_at`, `set_by`, `notes` and dates, with `direction` derived from the target against the client's reading as of the version's `effective_from` (`getReadingsAsOf` from 8b, run as SQL: the latest live row on or before that day), `down` when the target is below it, else `up`; the old two target columns dropped; the live-row index re-cut per metric; `client_current_goals` (8d) becomes one row per (client, metric); the RPC of 8d becomes `set_client_goal_atomic(p_client_id, p_metric_key, p_target, p_direction, p_start_date, p_deadline, p_set_by, p_notes)` — one goal per call, the same merge / unchanged / dates rules — plus `clear_client_goal_atomic(p_client_id, p_metric_key)` (supersede with no successor). The probe on both DBs before the file: the version count and how many carry both targets. `gen types`; diff; `check:rls`.
+- **Reached, once.** `appendMeasurements`' newest-row path (the trigger the energy recompute already uses) asks the live goal of that metric whether the newest reading crossed its target in its direction and `reached_at` is null; if so, sets it — one UPDATE through the RPC `mark_goal_reached(p_goal_id, p_client_id)`. A new attention-feed trigger, `goal_reached` (`lib/goals/goal-triggers.ts`, the shape of `lib/wellness-triggers.ts`), fires when a live goal's `reached_at` falls in the feed's window, deduped by the stored moment like every other trigger. **D26 (below)** decides what a later edit or removal of the crossing reading does to the mark.
+- **The readers.** `resolveEffectiveGoal` returns the live goal rows keyed by metric; `toClientGoalInput` composes from them; `deriveGoalProgress` already returns a row per goal that is set and now takes N rows — position from the log's newest reading of each metric, the start from the baseline of each metric (`getBaseline` already returns all seven), status and pace per row; the nutrition calculator reads the weight row only (the deficit) and ignores the rest; the drift detector reads the weight row; 8b's `getGoalAsOf(clientId, at)` returns the versions in force at `at`, one per metric; the history route returns superseded rows per metric; the Overview band's chips and the goal strip render one row per goal.
+- **The editor.** The details sheet's Goals group becomes a list: one row per metric with target, direction, start and deadline, add a goal for a metric that has none, clear one. The seven metric keys and the viewer's units come from the existing definitions. No new page.
+- **The wires.** `/api/client/journey`'s `goalWeight` and `deadline` read the weight row; `/api/client/me` and `/api/client/progress` keep `goalWeight` / `goalBodyFatPercentage` from the two rows (byte-identical for a client with those two goals); nothing new on the RN wire in this commit.
+- Tests, each with a mutation: the data move on a throwaway client with a two-target version (two rows, the version's dates, direction from the reading then — mutation: direction always `down`); the RPCs through the harness (one goal per call; a clear supersedes with no successor; an unchanged call writes nothing; a foreign client refused); the detector (a reading crossing the target sets `reached_at` once — mutation: set on every newest reading; a reading short of it sets nothing; a `down` goal reached by a lower reading, an `up` goal by a higher one); the trigger (fires once in its window, deduped); the composer over three goals; the resolver per metric; the as-of read per metric; the editor's list; the strip with three rows.
+- Wire proofs: the three client routes byte-identical for the fixture client; `GET /api/clients/[id]/goals` and `…/goals/history` shape-compared (they gain per-metric rows by design).
+- Docs, current shape only: ARCHITECTURE → "client_goals table" (the row-per-goal shape, the two RPCs, the detector, the trigger), "Effective goal resolution", "Goal progress and pace" (a row per goal), the Overview's chips, the review's strip, the attention feed's trigger list, the details sheet; CONVENTIONS §8's examples; `CLIENT-APP-REFERENCE.md` (unchanged fields — say so). This plan's §4 row.
+- Browser smoke: set a weight goal and a waist goal; the band shows two chips and the strip two rows; log a reading that crosses the waist target and see the feed's goal-reached alert once; clear the waist goal; a check-in from before the goal change reads its own versions (8b); the client app's screens unchanged.
+
+| # | Decision | Recommendation | Why, and the alternatives |
+|---|---|---|---|
+| D26 | What editing or removing the reading that crossed the target does to `reached_at` | **Nothing — a reached moment is a fact about when it happened, not a state.** The strip's status keeps deriving live, so a corrected reading un-reaches the goal on every screen while the notification that already fired is not un-sent | Alternative: clear the mark when the crossing reading is edited below the target or removed — a second write path into the goal from the measurement edits, and a notification that can fire twice |
+
+```text
+Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commits 8b,
+8d and 8e before planning. Plan for my review before writing anything.
+
+A goal is a row, never a column (my decision, 2026-09-03): a target on one measurement
+with its own direction, start and deadline, versioned per row, one live row per client
+and metric, and a reached moment stored once when the newest reading crosses the target.
+8d shipped one store and the atomic writer; 8b shipped the as-of read. Where ARCHITECTURE
+or CONVENTIONS state a rule that contradicts this commit, do not silently follow it and
+do not silently override it: list each contradiction with the doc line and what the plan
+says instead, and I will review before you write. Read my answer to D26; if it is blank,
+stop and ask.
+
+Job: Commit 8e of docs/MEASUREMENT-LOG-PLAN.md §6 — `feat(goals): one row per goal`.
+Build exactly what that section lists: the probe on BOTH databases; the migration with
+the data move, the re-cut index, the view, the three RPCs; the detector in the newest-row
+path and the feed trigger; the readers per metric; the editor's list; the wires unchanged;
+the tests including the request-level ones and their mutations; the wire proofs; the
+docs. Grep at execution time for every reader of goalWeight, goalBodyFatPercentage,
+goalDeadline, goalStartDate, ClientGoal and EffectiveGoal; do not trust the list.
+
+Migration rules as in commit 2, DEV first. Before the PROD push: `supabase migration
+list --linked` against the prod ref; show me the output and wait. Rules: every fixture
+number distinct; cp backups before mutating, never git stash or git checkout --; the RN
+wire is additive-only; gates: npx tsc --noEmit, npx eslint ., npx vitest run, npm run
+check:labels, npx knip, npm run check:service-key, npm run check:rls. Commit directly to
+main. Then replace this commit's STATUS line with SHIPPED, the hash and the date, and
 hand me a browser smokelist: the items in the entry.
 ```
 
