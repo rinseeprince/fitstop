@@ -1,6 +1,6 @@
 # Measurement log — one store for every body measurement
 
-**Status: commit 1 SHIPPED 2026-09-02 (`55ed1242`); commits 2–6 await the owner's decisions in §3.** Six commits (the fourth conditional on D9; the fifth independent of the rest; the sixth a planning step, not a build), each with a pasteable prompt (§6), each independently revertable in order, each gated. Commit 1 stands on its own: it fixed the goal strip on main.
+**Status: commits 1–3 SHIPPED and smoked — `55ed1242` (2026-09-02), `29456d71` (2026-09-02), `24a2f667` (2026-09-03); migrations 158 and 159 on DEV and PROD; the old stores are gone. Next: commit 4. Commits 7–9 are planned; D1–D15 are answered, D16–D20 wait for commit 8.** Nine commits (the fourth conditional on D9; the fifth independent of the rest; the sixth a planning step, not a build; the seventh the log's metric filter; the eighth and ninth the wellness series in the physique shape), each with a pasteable prompt (§6), each independently revertable in order, each gated. Commit 1 stands on its own: it fixed the goal strip on main.
 
 **Scope:** the seven physique measurements — weight, body fat, waist, hips, chest, arms, thighs — and where they are stored, written and read. **Not in scope:** wellness (mood, energy, sleep, stress, soreness stay on the daily-logs model), the check-in form the client sees, the review page's layout, goals themselves, the RN wire shapes (they must not change).
 
