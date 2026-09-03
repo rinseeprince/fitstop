@@ -1,6 +1,6 @@
 # Measurement log — one store for every body measurement
 
-**Status: commits 1–5 SHIPPED — `55ed1242` (2026-09-02), `29456d71` (2026-09-02), `24a2f667` (2026-09-03), `1872eeeb` (2026-09-03), `e8c58cad` (2026-09-03); commits 1–5 smoked; migrations 158–160 on DEV and PROD; the old stores are gone; a reading can be corrected, removed and restored; a logged day is derived once. Next: commit 6 or 7. Commits 7–9 are planned; D1–D15 are answered, D16–D20 wait for commit 8.** Nine commits (the fourth conditional on D9; the fifth independent of the rest; the sixth a planning step, not a build; the seventh the log's metric filter; the eighth and ninth the wellness series in the physique shape), each with a pasteable prompt (§6), each independently revertable in order, each gated. Commit 1 stands on its own: it fixed the goal strip on main.
+**Status: commits 1–5 SHIPPED — `55ed1242` (2026-09-02), `29456d71` (2026-09-02), `24a2f667` (2026-09-03), `1872eeeb` (2026-09-03), `e8c58cad` (2026-09-03); commits 1–5 smoked; migrations 158–160 on DEV and PROD; the old stores are gone; a reading can be corrected, removed and restored; a logged day is derived once. Next: commit 6, the log's metric filter. Commits 6–8 are planned; D1–D15 are answered, D16–D20 wait for commit 7. Commit 9, the day-spine planning step, runs LAST because it ends by deleting this document (renumbered 2026-09-03 — it was commit 6, and 7–9 were 6–8).** Nine commits (the fourth conditional on D9; the fifth independent of the rest; the sixth the log's metric filter; the seventh and eighth the wellness series in the physique shape; the ninth a planning step, not a build, and the last to run), each with a pasteable prompt (§6), each independently revertable in order, each gated. Commit 1 stands on its own: it fixed the goal strip on main.
 
 **Scope:** the seven physique measurements — weight, body fat, waist, hips, chest, arms, thighs — and where they are stored, written and read. **Not in scope:** wellness (mood, energy, sleep, stress, soreness stay on the daily-logs model), the check-in form the client sees, the review page's layout, goals themselves, the RN wire shapes (they must not change).
 
@@ -123,7 +123,7 @@ Verified by grep on 2026-09-02. **Training has no dependency on body measurement
 | Docs — ARCHITECTURE "body_metrics table", "client_metric_entries table", "The client's origin", the review-surface payload paragraph, Journey tab row; CONVENTIONS §8 examples; TECHNICAL-DEBT ledger | describe three stores | describe one | 3 |
 | Both databases — DEV `aeaphsslctwcmebldrzx`, PROD `etezzztgafcotyahgijk` | at 157 | one migration each for commits 2, 3 and 4, numbered with **the next free numbers at execution time**: `docs/TRAINING-COMPLETION-EXECUTION-PLAN.md` also names 158 and 159, and whichever workstream pushes first takes them (never reuse, never skip); PROD after `migration list --linked` | 2, 3, 4 |
 | Logged-day readers — `lib/engagement-triggers.ts`, `lib/tracking-triggers.ts`, `services/attention-feed-service.ts`, the check-in detail payload and header (`components/clients/check-ins/check-in-detail-view.tsx:115`) | three definitions of a logged day | one derived definition (D11), no migration | 5 |
-| The day spine — `daily_logs`, its `daily_log_id` FKs, `daily_logs_full`, the per-card ensure-spine writes, the day note | one parent row per day for wellness and nutrition | a plan to flatten it, not a build (commit 6) | 6 |
+| The day spine — `daily_logs`, its `daily_log_id` FKs, `daily_logs_full`, the per-card ensure-spine writes, the day note | one parent row per day for wellness and nutrition | a plan to flatten it, not a build (commit 9) | 9 |
 
 ## 5. Verification that nothing is missed
 
@@ -264,7 +264,7 @@ that drops the check-in columns, body_metrics, the physique entries and the four
 columns; the body-metrics service, the merge layer, the entries service's physique path
 and the event stamping removed; npx knip clean afterwards; ARCHITECTURE, CONVENTIONS and
 TECHNICAL-DEBT rewritten to the current shape with no "used to" and no shipped/reverted
-narrative. Do not delete this plan document — commit 6 does that.
+narrative. Do not delete this plan document — commit 9 does that.
 
 Migration rules as in commit 2, DEV first. Before the PROD push: `supabase migration
 list --linked` against the prod ref; show me the output and wait. Gates: npx tsc
@@ -361,34 +361,9 @@ smokelist: a week with a training-only day and a habits-only day on the check-in
 and the two alerts for a client who only trains.
 ```
 
-### Commit 6 — `plan(logs): flatten the day spine — a plan, not a build`
+### Commit 6 — `feat(measurements): the measurement log shows the selected metric`
 
-**STATUS: NOT STARTED. A planning step: its output is a plan document, not code. After commit 5, before real clients.**
-
-- Write `docs/DAY-SPINE-FLATTEN-PLAN.md` in the shape of this document. The target: every client log is its own table found by client and date — wellness, nutrition, habits, workouts, measurements — with no parent row; the day note moves to its own table `daily_notes (client_id, date, body)`; `daily_logs`, its `daily_log_id` foreign keys, the `daily_logs_full` view (migrations 056 and 123) and the unused `upsert_daily_log_atomic` RPC go; the per-card writers drop their ensure-spine step; the attention feed and the check-in context read the domain tables joined by client and date.
-- Blast radius by grep at planning time: every reader of `daily_logs`, `daily_logs_full` and `daily_log_id`; the flat `DailyLog` type (unchanged on the wire); the RN contract's per-card endpoints (`PATCH /api/client/daily-logs/[date]/*` and their GETs — byte-identical, proven with the request-level harness); RLS for the new notes table (deny-all, `service_role` grant); `check:rls`, and `check:prerender` if a page's structure moves.
-- Decisions for the owner in its §3: where the day note lives; whether the dead `training_logs` table is dropped in the same migration, with its two remaining readers (`utils/daily-logs-aggregation.ts:72` and the mappers) moved to `training_events`; the DEV-then-PROD order.
-- Deliverable: the document, reviewed by the owner. Nothing else changes. Then this plan document is deleted (delete-then-document) — **confirm with the owner first**.
-
-```text
-Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commit 6
-before planning. This is a planning step: do not write code, do not touch a migration.
-
-Job: produce docs/DAY-SPINE-FLATTEN-PLAN.md in the shape of docs/MEASUREMENT-LOG-PLAN.md
-— why the shape changes, the target shape, the decisions for me with alternatives and
-your recommendation, the blast radius verified by grep, the verification, and the
-commits with pasteable prompts. The target is in commit 6's bullets: every client log
-its own table found by client and date, the day note in its own table, the spine and
-its view gone, the per-card client endpoints byte-identical. Where ARCHITECTURE or
-CONVENTIONS describe the spine as the model, list each place the new document must
-rewrite. Show me the document and wait; then, only after I confirm, delete
-docs/MEASUREMENT-LOG-PLAN.md and update my memory record for the measurement-log
-workstream to SHIPPED with every hash.
-```
-
-### Commit 7 — `feat(measurements): the measurement log shows the selected metric`
-
-**STATUS: NOT STARTED. Independent of commits 4–6 — can ship before or after commit 4; whichever ships second keeps the other's behaviour (the filter test below pins it on commit 4's rows-list, since the section stays the renderer). Decided: D12–D15 (owner, 2026-09-03, as recommended).**
+**STATUS: NOT STARTED. Independent of commits 4, 5 and 9 — can ship before or after commit 4; whichever ships second keeps the other's behaviour (the filter test below pins it on commit 4's rows-list, since the section stays the renderer). Decided: D12–D15 (owner, 2026-09-03, as recommended).**
 
 What is there today, by grep (2026-09-03): the Physique and Wellness panes are one tree, `components/clients/metrics/metrics-tab-content.tsx`. The selected metric is `focused`, a `useState` reset by derivation on tab switch; `MetricHero`'s `MetricSwitcher` sets it, and the hero and `MetricProgressionSection` receive `focusedMetric`. The log does not: `MeasurementLogSection` (`components/clients/metrics/measurement-log-section.tsx`) receives `logRowsByTab[tab]` — every metric of the pane — built by `buildLogRows` (`utils/metric-derived-stats.ts`) from `useMergedMetrics`' points: newest-first by date, then definition order, with each row's delta already taken against its own metric's previous row. Its data is in memory before the log renders — the Physique series is ONE fetch of `GET /api/clients/[id]/measurement-series`, all seven metrics, no metric param (`getMeasurementSeriesPayload` → `getMeasurementSeries(clientId)`), and the Wellness rows come from the client-side merge. Paging is client-side in the section: `HISTORY_PAGE_SIZE` (10) over the journey rows, `DividerPager` printing "Showing X of Y entries" from `journeyRows.length`, the "Before start" rail unpaged beneath; the host remounts the section with `key={tab}` so the page resets on a pane switch. Six columns: Date, Day, Metric, Value, Change, Notes; empty message "No measurements logged yet". The hero's chips already count the selected metric's entries (`entryCount`), so today the hero says "12 entries" over a log that says "Showing 10 of 31 entries".
 
@@ -408,7 +383,7 @@ What is there today, by grep (2026-09-03): the Physique and Wellness panes are o
 - Docs: ARCHITECTURE → the Journey row of "Client page tab structure": the measurement log is the SELECTED metric's — the hero's switcher drives the hero, the chart and the log; the pager counts that metric's entries. CONVENTIONS and TECHNICAL-DEBT: nothing.
 
 ```text
-Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commit 7
+Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commit 6
 before planning. Plan for my review before writing anything.
 
 The Journey's Physique and Wellness panes select one metric at the top (the hero's
@@ -420,7 +395,7 @@ do not silently override it: list each contradiction with the doc line and what 
 plan says instead, and I will review before you write. D12–D15 are answered in the
 commit's table.
 
-Job: Commit 7 of docs/MEASUREMENT-LOG-PLAN.md §6 — `feat(measurements): the measurement
+Job: Commit 6 of docs/MEASUREMENT-LOG-PLAN.md §6 — `feat(measurements): the measurement
 log shows the selected metric`. Build exactly what that section lists: the section takes
 the selected metric and filters both of its tables to it, client-side, with the pager's
 count following; the page returns to 1 on a metric switch by derivation, not an effect;
@@ -438,31 +413,31 @@ Wellness; a metric with no readings; a client with a reading before the start da
 2 of one metric, then switch.
 ```
 
-### Commit 8 — `feat(journey): the wellness series — one route, five metrics, day-values`
+### Commit 7 — `feat(journey): the wellness series — one route, five metrics, day-values`
 
-**STATUS: NOT STARTED. Additive: a new route and service, read by nothing until commit 9. Independent of commits 4–7. Decisions D16–D20 below — answer before building.**
+**STATUS: NOT STARTED. Additive: a new route and service, read by nothing until commit 8. Independent of commits 4–6. Decisions D16–D20 below — answer before building.**
 
 What is there today, by grep (2026-09-03): the Wellness pane's five metrics — mood, energy, sleep, stress, soreness — are the one part of the Journey still built in the browser from whole histories. `useMergedMetrics` reads `useAllClientCheckIns` (which pages the client's ENTIRE check-in list through `GET /api/clients/[id]/check-ins`, each page folding in the measurement log's stamped rows it does not need) and `useMetricEntries` (`GET /api/clients/[id]/metric-entries`, every coach entry), and `buildMetricPoints` (`utils/metric-points.ts`) merges them: one point per check-in — the check-in's stored weekly average, dated the submission day — plus one point per coach entry, a coach entry winning a same-day tie. The client's own daily wellness — `wellness_logs`, one row per day carrying the five values (`date`, `updated_at`), the source of truth since Phase 6 and what a check-in's five averages are derived FROM at submit — is not read by the Journey at all; the Overview's five wellness cards and the Wellness tab read it. DEV's largest client: 374 wellness days, 53 check-ins, 2 coach entries — the pane plots 55 points where 376 days exist, and fetches 53 check-in rows to read five numbers each.
 
 - `services/wellness-series-service.ts` (new): `getWellnessSeriesPayload(clientId)` → `WellnessSeries`, the same shape as `MeasurementSeries` keyed by the five wellness metrics, each an ascending list of day-values `{ date, value, source, note, id, recordedAt }`; no `baseline` (D20). Two paged reads (`lib/paged-fetch.ts`) in parallel: `wellness_logs` for the client (the five columns, `date`, `id`, `updated_at`) and the coach's entries (`listMetricEntries` — the table's narrowed CHECK makes it wellness-only). The day's value per metric by D17; a client-logged row is `source: 'client_log'`, a coach entry `'coach_entry'` carrying its note; a null column on a `wellness_logs` row is no reading of that metric that day. Pure assembly (`toWellnessSeries`) unit-tested over fixtures, the way `toMeasurementSeries` is.
 - `app/api/clients/[id]/wellness-series/route.ts` (new, D19): `coachApiRateLimit` → `requireCoachOwnsClient(clientId, request)` → the service, `Cache-Control: no-store` — the file shape of `measurement-series/route.ts`. The §2 security, load and performance review is run and reported: a read-only coach route on the full chain; two paged reads, parallel; the payload bounded by the client's logged days × 5 (DEV's largest ≈ 1,900 points, ~240 KB raw, ~30 KB compressed).
 - `types/coach-overview.ts`: `WellnessKey` (the five, spelled ONCE — `lib/metrics/metric-entry-definitions.ts` already lists them; grep for the one home) and `WellnessSeries`.
-- `hooks/use-wellness-series.ts` (new): the key builder `/api/clients/{id}/wellness-series`, `useWellnessSeries`, `useInvalidateWellnessSeries` matching the area — the `use-measurement-series.ts` shape. Nothing reads it until commit 9.
+- `hooks/use-wellness-series.ts` (new): the key builder `/api/clients/{id}/wellness-series`, `useWellnessSeries`, `useInvalidateWellnessSeries` matching the area — the `use-measurement-series.ts` shape. Nothing reads it until commit 8.
 - Tests, each with a mutation: the service — a day with only a client log yields `client_log`; a day with a client log and a later coach entry yields the coach entry and the note (D17; mutation: flip the tie); a null column yields no point for that metric and a point for the others (mutation: emit 0); ascending order across the two sources; the route test in the measurement-series route test's shape (chain, foreign client 404, payload keys). A DEV probe script beside `scripts/measurement-baseline-proof.ts`: for the fixture client, the route's points per metric against a SQL count of logged days with that metric non-null plus coach-entry days — printed, equal by construction.
-- Docs: none — commit 9 rewrites the Journey's paragraphs when the pane reads it.
+- Docs: none — commit 8 rewrites the Journey's paragraphs when the pane reads it.
 
-**Blast radius — every wellness reader, by the store it reads (grep 2026-09-03; re-grep at execution time, do not trust the table).** Commits 8 and 9 move a READ PATH, not a store: `wellness_logs`, the five-key `client_metric_entries` and the check-ins' stored averages stay where they are, with their writers, so no reader below moves. The only consumer of what is replaced — the browser-side merge in `use-merged-metrics` — is the Journey's Wellness pane.
+**Blast radius — every wellness reader, by the store it reads (grep 2026-09-03; re-grep at execution time, do not trust the table).** Commits 7 and 8 move a READ PATH, not a store: `wellness_logs`, the five-key `client_metric_entries` and the check-ins' stored averages stay where they are, with their writers, so no reader below moves. The only consumer of what is replaced — the browser-side merge in `use-merged-metrics` — is the Journey's Wellness pane.
 
-| Surface | Reads | Through | Commits 8–9 |
+| Surface | Reads | Through | Commits 7–8 |
 |---|---|---|---|
-| Journey, Wellness pane (hero, chart, log) | today: the check-ins' stored averages ⊕ `client_metric_entries`, merged in the browser | `use-merged-metrics` → `useAllClientCheckIns` + `useMetricEntries` + `buildMetricPoints` | **the one reader that changes** (commit 9: the wellness series) |
+| Journey, Wellness pane (hero, chart, log) | today: the check-ins' stored averages ⊕ `client_metric_entries`, merged in the browser | `use-merged-metrics` → `useAllClientCheckIns` + `useMetricEntries` + `buildMetricPoints` | **the one reader that changes** (commit 8: the wellness series) |
 | Overview, the five daily wellness cards | `daily_logs_full` | `useWellnessData` → `GET …/daily-logs` (`daily-logs-service`) | untouched |
 | Wellness tab (history table, summary) | `wellness_logs`; the check-ins' averages for the summary | `GET …/history/wellness`, `…/history/wellness/summary` | untouched |
 | Check-in review page | the period's daily logs for the values; the stored per-check-in snapshots for the deltas | `useWellnessData` (`use-check-in-detail-data.ts`), `comparison-service` | untouched |
 | Check-in submit; the AI prompt's trend | `wellness_logs` via `daily_logs_full` at submit; the previous check-ins' stored averages | `check-in-service`, `utils/ai-prompt-builder.ts` | untouched |
 | Attention feed and its triggers | `daily_logs_full` | `attention-feed-service`, `lib/*-triggers.ts`, `lib/attention-feed-helpers.ts` | untouched |
 | Client app: the wellness day card, the daily-logs wellness route | `wellness_logs` | `daily-log-card-service`, `app/api/client/daily-logs/[date]/wellness` | untouched |
-| Client app: `/api/client/progress` wellness series; the check-in list and detail | the check-ins' stored averages (the RN contract) | `client-portal-progress`, the check-in mappers | untouched — a client and their coach read wellness at different grains after commit 9; not in scope |
+| Client app: `/api/client/progress` wellness series; the check-in list and detail | the check-ins' stored averages (the RN contract) | `client-portal-progress`, the check-in mappers | untouched — a client and their coach read wellness at different grains after commit 8; not in scope |
 | Activity feed, "Since your last visit" | `client_metric_entries` | `client-activity-feed-service` | untouched |
 | Log-measurement dialog, wellness keys | writes `client_metric_entries` | the entries POST | untouched (D18); only the GET handler and `useMetricEntries` go, the merge being their one consumer |
 | Check-ins tab | the check-in list | `useClientCheckInsInfinite`, `buildCheckInsPageKey` | untouched — only the merge used the whole-history pager |
@@ -476,7 +451,7 @@ What is there today, by grep (2026-09-03): the Wellness pane's five metrics — 
 | D20 | "Since start" for wellness | **None: the hero's anchor stays the first point**, as it is today, and the payload carries no `baseline` | A mood as of the start date is not a figure a coach reasons about, and the physique baseline exists for goal maths wellness has none of. Alternative: derive the as-of-start reading for symmetry |
 
 ```text
-Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commit 8
+Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commit 7
 before planning. Plan for my review before writing anything.
 
 The Journey's Wellness pane still builds its series in the browser: it pages the client's
@@ -489,7 +464,7 @@ not silently override it: list each contradiction with the doc line and what the
 says instead, and I will review before you write. Read my answers to D16–D20 in the
 commit's table; if any is blank, stop and ask.
 
-Job: Commit 8 of docs/MEASUREMENT-LOG-PLAN.md §6 — `feat(journey): the wellness series —
+Job: Commit 7 of docs/MEASUREMENT-LOG-PLAN.md §6 — `feat(journey): the wellness series —
 one route, five metrics, day-values`. Build exactly what that section lists: the service
 with its pure assembly, the route on the full coach chain, the types, the hook with its
 key builder and area invalidator, the tests and their mutations, the DEV probe script,
@@ -500,24 +475,24 @@ Rules: every fixture number distinct; cp backups before mutating, never git stas
 checkout --; gates: npx tsc --noEmit, npx eslint ., npx vitest run, npm run
 check:labels, npx knip, npm run check:service-key. Commit directly to main. Then replace
 this commit's STATUS line with SHIPPED, the hash and the date. No browser smoke: nothing
-renders it until commit 9.
+renders it until commit 8.
 ```
 
-### Commit 9 — `refactor(journey): the Wellness pane reads its series — the merge and the check-in pager go`
+### Commit 8 — `refactor(journey): the Wellness pane reads its series — the merge and the check-in pager go`
 
-**STATUS: NOT STARTED. After commit 8. Independent of commits 4–7 in code — grep at execution time, since 7 touches the same log section and 4 the same list.**
+**STATUS: NOT STARTED. After commit 7. Independent of commits 4–6 in code — grep at execution time, since 6 touches the same log section and 4 the same list.**
 
 - `components/clients/metrics/hooks/use-merged-metrics.ts`: the Wellness pane's points come from `useWellnessSeries` through the same `seriesPoints` the Physique pane uses; `useAllClientCheckIns`, `useMetricEntries` and `buildMetricPoints` leave the hook; `isLoading` / `isError` are the two series; `logMeasurement` invalidates the wellness area for a wellness key (in place of `mutateEntries()`) and the measurement area for a physique key, with `onClientUpdated` for weight and body fat as now. Wellness `LogRow`s carry `source: 'client_log' | 'coach_entry'`; the "Before start" split stays physique-only (D20).
 - Deleted, each grepped at execution time for a surviving caller: `useAllClientCheckIns` (`hooks/use-check-in-data.ts`) and its tests — the Check-ins tab's `useClientCheckInsInfinite` and `buildCheckInsPageKey` stay; `hooks/use-metric-entries.ts`; the `GET` handler of `app/api/clients/[id]/metric-entries/route.ts` (the POST stays; `listMetricEntries` stays as the series service's read); `buildMetricPoints`, `MetricSeriesDefinition` and their tests in `utils/metric-points.ts` (the module keeps `MetricPoint`, `dayValuesToMetricPoints` and the three date helpers); `WellnessMetricDefinition.key` — with no check-in field left to name, the body/wellness split of `MetricDefinition` (`use-metrics-data.ts`) collapses back to one definition shape, and the `keyof CheckIn` import goes with it. `npx knip` names the rest.
 - Tests, each with a mutation: the hook over two mocked series — the Wellness pane's rows and summaries come from the wellness series and never from a check-in; a scan in the shape of `lib/measurements/baseline-ownership.test.ts` — nothing under `components/clients/metrics/**` reads `/api/clients/[id]/check-ins` or `/metric-entries` for a series (mutation: reintroduce the check-in read); a wellness log from the dialog invalidates the wellness area (mutation: invalidate the measurement area instead); the log section's wellness rows show both sources and the coach's note. `npx knip` exits clean.
 - Docs, current shape only: ARCHITECTURE → the Journey row of "Client page tab structure" (both panes read a series route; the wellness series is the client's daily logs merged with the coach's entries, latest write wins); "client_metric_entries table" (the merge bullet → the server-side merge in the wellness series); "Daily Logs" (the Journey's Wellness pane joins the domain-specific readers of `wellness_logs`). TECHNICAL-DEBT → the "Coach-logged wellness has a store of its own" item loses its pager half; what remains is the store itself (replace-per-day, no history — D18).
-- **Scope rule.** The files this commit may touch: `components/clients/metrics/**`, `hooks/use-check-in-data.ts` (the pager only), `hooks/use-metric-entries.ts`, `hooks/use-wellness-series.ts`, `app/api/clients/[id]/metric-entries/route.ts` (the GET only), `utils/metric-points.ts` and its test, the two docs, and whatever `npx knip` names as orphaned by those. A diff touching any reader in commit 8's blast-radius table is a defect, not a sweep item. The STATUS line lists the files touched, so the rule is verified rather than assumed.
+- **Scope rule.** The files this commit may touch: `components/clients/metrics/**`, `hooks/use-check-in-data.ts` (the pager only), `hooks/use-metric-entries.ts`, `hooks/use-wellness-series.ts`, `app/api/clients/[id]/metric-entries/route.ts` (the GET only), `utils/metric-points.ts` and its test, the two docs, and whatever `npx knip` names as orphaned by those. A diff touching any reader in commit 7's blast-radius table is a defect, not a sweep item. The STATUS line lists the files touched, so the rule is verified rather than assumed.
 
 ```text
-Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commits 8
-and 9 before planning. Plan for my review before writing anything.
+Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commits 7
+and 8 before planning. Plan for my review before writing anything.
 
-Commit 8 shipped the wellness series route (see its STATUS line). This commit points the
+Commit 7 shipped the wellness series route (see its STATUS line). This commit points the
 Journey's Wellness pane at it and deletes what the client-side merge needed: the
 whole-history check-in pager, the entries hook and its GET, the merge and the check-in
 field on the wellness definitions. Where ARCHITECTURE or CONVENTIONS state a rule that
@@ -525,12 +500,12 @@ contradicts this commit, do not silently follow it and do not silently override 
 each contradiction with the doc line and what the plan says instead, and I will review
 before you write.
 
-Job: Commit 9 of docs/MEASUREMENT-LOG-PLAN.md §6 — `refactor(journey): the Wellness pane
+Job: Commit 8 of docs/MEASUREMENT-LOG-PLAN.md §6 — `refactor(journey): the Wellness pane
 reads its series — the merge and the check-in pager go`. Build exactly what that section
 lists: the hook on two series; the deletions, each grepped at execution time for a
 surviving caller — never taken from this plan's list; the tests, the scan and their
 mutations; npx knip clean; the docs. Everything you delete must be grepped first. The
-scope rule is a hard boundary: re-grep commit 8's blast-radius table before you start,
+scope rule is a hard boundary: re-grep commit 7's blast-radius table before you start,
 and touch no reader in it.
 
 Rules: every fixture number distinct; cp backups before mutating, never git stash or git
@@ -540,6 +515,31 @@ this commit's STATUS line with SHIPPED, the hash and the date, and hand me a bro
 smokelist: the Wellness pane for a client with daily logs (the chart's density, the hero's
 week comparison), a day with a client log and a coach entry, a coach wellness log from
 the dialog reaching the chart without a reload, and the Physique pane unchanged.
+```
+
+### Commit 9 — `plan(logs): flatten the day spine — a plan, not a build`
+
+**STATUS: NOT STARTED. The LAST commit (renumbered from 6 on 2026-09-03): a planning step whose output is a plan document, not code. After commits 6–8, before real clients — it ends by deleting this document, so nothing may run after it.**
+
+- Write `docs/DAY-SPINE-FLATTEN-PLAN.md` in the shape of this document. The target: every client log is its own table found by client and date — wellness, nutrition, habits, workouts, measurements — with no parent row; the day note moves to its own table `daily_notes (client_id, date, body)`; `daily_logs`, its `daily_log_id` foreign keys, the `daily_logs_full` view (migrations 056 and 123) and the unused `upsert_daily_log_atomic` RPC go; the per-card writers drop their ensure-spine step; the attention feed and the check-in context read the domain tables joined by client and date.
+- Blast radius by grep at planning time: every reader of `daily_logs`, `daily_logs_full` and `daily_log_id`; the flat `DailyLog` type (unchanged on the wire); the RN contract's per-card endpoints (`PATCH /api/client/daily-logs/[date]/*` and their GETs — byte-identical, proven with the request-level harness); RLS for the new notes table (deny-all, `service_role` grant); `check:rls`, and `check:prerender` if a page's structure moves.
+- Decisions for the owner in its §3: where the day note lives; whether the dead `training_logs` table is dropped in the same migration, with its two remaining readers (`utils/daily-logs-aggregation.ts:72` and the mappers) moved to `training_events`; the DEV-then-PROD order.
+- Deliverable: the document, reviewed by the owner. Nothing else changes. Then this plan document is deleted (delete-then-document) — **confirm with the owner first**.
+
+```text
+Read CONVENTIONS.md, docs/ARCHITECTURE.md and docs/MEASUREMENT-LOG-PLAN.md §6 commit 9
+before planning. This is a planning step: do not write code, do not touch a migration.
+
+Job: produce docs/DAY-SPINE-FLATTEN-PLAN.md in the shape of docs/MEASUREMENT-LOG-PLAN.md
+— why the shape changes, the target shape, the decisions for me with alternatives and
+your recommendation, the blast radius verified by grep, the verification, and the
+commits with pasteable prompts. The target is in commit 9's bullets: every client log
+its own table found by client and date, the day note in its own table, the spine and
+its view gone, the per-card client endpoints byte-identical. Where ARCHITECTURE or
+CONVENTIONS describe the spine as the model, list each place the new document must
+rewrite. Show me the document and wait; then, only after I confirm, delete
+docs/MEASUREMENT-LOG-PLAN.md and update my memory record for the measurement-log
+workstream to SHIPPED with every hash.
 ```
 
 ## 7. Smoke setup on DEV — data the owner asked for (not commits)
