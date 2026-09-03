@@ -140,19 +140,14 @@ export const useMergedMetrics = (
     );
 
     // One composer, shared with the three server callers, rather than a private
-    // literal. The private one hardcoded `deadline: null, startDate: null` AFTER
-    // fetching the full goal — two surfaces rendering "the same" goal from two
-    // shapes, one of them deliberately blind. Nothing here reads either field
-    // (see the goal block below), so that blindness was inert rather than a live
-    // bug — but it was one edit away from mattering, which is the whole reason
-    // the shape is shared now.
-    //
-    // `today` stays the device day: it also anchors deriveHeroStats and
-    // deriveWeekComparison below, so moving it to the client's zone is a
-    // different change with a different blast radius, not part of this one.
+    // literal. The private one hardcoded `deadline: null` AFTER fetching the
+    // full goal — two surfaces rendering "the same" goal from two shapes, one
+    // of them deliberately blind. Nothing here reads the deadline (see the goal
+    // block below), so that blindness was inert rather than a live bug — but it
+    // was one edit away from mattering, which is the whole reason the shape is
+    // shared now.
     const effectiveGoal = resolveEffectiveGoal({
       clientGoal: toClientGoalInput(currentGoals, client),
-      today,
     });
 
     const byTab: Record<MetricTab, MetricSummary[]> = { body: [], wellness: [] };

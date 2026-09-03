@@ -51,10 +51,8 @@ export const getClientJourney = async (
           goalWeight: currentGoals.goalWeight ?? null,
           goalBodyFatPercentage: currentGoals.goalBodyFatPercentage ?? null,
           deadline: currentGoals.goalDeadline ?? null,
-          startDate: currentGoals.goalStartDate ?? null,
         }
       : null,
-    today: clientToday,
   });
   const goal = {
     weightKg: effective.goalWeightKg,

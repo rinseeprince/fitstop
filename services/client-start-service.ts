@@ -18,8 +18,6 @@ import { supabaseAdmin } from "./supabase-admin";
  *   - a plan's `effective_from` — there are many per client, one can be queued
  *     in the future, and a queued nutrition version can be hard-deleted
  *     (migration 144). An origin that can vanish is not an origin.
- *   - `client_goals.goal_start_date` — versioned per goal, and it answers a
- *     different question ("spread this deficit from when").
  *   - the earliest measurement — that is where the DATA starts, not where the
  *     coaching did; the gap between them is exactly what this records.
  */

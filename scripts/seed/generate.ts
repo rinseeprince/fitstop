@@ -311,7 +311,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       set_by: "coach",
       notes: idRng.bool(0.4) ? coachNote(idRng) : null,
       effective_from: startIso,
-      goal_start_date: startIso,
       superseded_at: null, // partial unique (client_id) WHERE superseded_at IS NULL
       created_at: createdAt,
       updated_at: createdAt,

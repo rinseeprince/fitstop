@@ -11,11 +11,9 @@ type GoalsResponse = { success: boolean; data: ClientGoal | null };
  * The client's live `client_goals` record — the coach-side goal read path
  * (invariant 16: one writer, one read path).
  *
- * Returns the RAW goal rather than a resolved one. `resolveEffectiveGoal`
- * coalesces `goalStartDate` to today, which is right for a consumer asking
- * "what drives this client now?" and wrong for an editor seeding a form: it
- * would write today's date into a field the coach never set. Consumers resolve;
- * this hook fetches.
+ * Returns the RAW goal rather than a resolved one: a resolver answers "what
+ * drives this client now?", while an editor seeds its form from what the coach
+ * actually set. Consumers resolve; this hook fetches.
  */
 
 const SWR_OPTS = {

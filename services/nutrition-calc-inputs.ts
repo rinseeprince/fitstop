@@ -46,11 +46,9 @@ export type NutritionCalcInputs =
       workActivityLevel: ActivityLevel;
       goalWeightKg?: number;
       goalDeadline?: string;
-      /** Named to match `NutritionCalculationInput.startDate` exactly — a
-       *  mismatched name would compile (the field is optional) and silently
-       *  fall back to today, weakening the deficit for future-dated goals. */
-      startDate: string;
-      /** Client-local today. */
+      /** Client-local today. No `startDate` rides here: the calculator's
+       *  window starts at the day the plan takes effect, which the orchestrator
+       *  and the drawer hand in themselves (commit 8bb). */
       today: string;
     }
   | {
@@ -120,7 +118,6 @@ export async function resolveNutritionCalcInputs(
   // any more: goal weights are stored in kilograms (migration 141).
   const effective = resolveEffectiveGoal({
     clientGoal: toClientGoalInput(currentGoals, client),
-    today,
   });
 
   return {
@@ -134,7 +131,6 @@ export async function resolveNutritionCalcInputs(
     workActivityLevel: toActivityLevel(client.workActivityLevel).level,
     goalWeightKg: effective.goalWeightKg ?? undefined,
     goalDeadline: effective.deadline ?? undefined,
-    startDate: effective.startDate,
     today,
   };
 }

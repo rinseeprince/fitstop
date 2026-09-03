@@ -5,28 +5,29 @@ import {
   type ResolveEffectiveGoalInput,
 } from "./resolve-effective-goal";
 
-const TODAY = "2026-06-05";
-
 function input(overrides: Partial<ResolveEffectiveGoalInput> = {}): ResolveEffectiveGoalInput {
   return {
     clientGoal: null,
-    today: TODAY,
     ...overrides,
   };
 }
 
 describe("resolveEffectiveGoal", () => {
-  it("the live client goal drives", () => {
+  it("the live client goal drives — weight, body fat and deadline, and nothing else", () => {
     const result = resolveEffectiveGoal(
       input({
-        clientGoal: { goalWeight: 72, goalBodyFatPercentage: 15, deadline: "2026-12-01", startDate: "2026-02-01" },
+        clientGoal: { goalWeight: 72, goalBodyFatPercentage: 15, deadline: "2026-12-01" },
       })
     );
+    // Exactly three keys. A goal has no start of its own: the window a
+    // nutrition deficit is spread over begins at the day the plan takes effect
+    // (docs/MEASUREMENT-LOG-PLAN.md commit 8bb), handed to the calculator by
+    // the orchestrator and the drawer — a `startDate` here would be a second
+    // lever on that window, and the resolver takes no `today` to fall back to.
     expect(result).toEqual({
       goalWeightKg: 72,
       goalBodyFatPercentage: 15,
       deadline: "2026-12-01",
-      startDate: "2026-02-01",
     });
   });
 
@@ -38,11 +39,10 @@ describe("resolveEffectiveGoal", () => {
   it("passes the stored goal weight through as kilograms, never converting", () => {
     const result = resolveEffectiveGoal(
       input({
-        clientGoal: { goalWeight: 165, goalBodyFatPercentage: null, deadline: null, startDate: null },
+        clientGoal: { goalWeight: 165, goalBodyFatPercentage: null, deadline: null },
       })
     );
     expect(result.goalWeightKg).toBe(165);
-    expect(result.startDate).toBe(TODAY); // no goal_start_date → today
   });
 
   it("zero active goal (no client weight) → maintenance via null", () => {
@@ -51,11 +51,10 @@ describe("resolveEffectiveGoal", () => {
       goalWeightKg: null,
       goalBodyFatPercentage: null,
       deadline: null,
-      startDate: TODAY,
     });
 
     const nullWeightGoal = resolveEffectiveGoal(
-      input({ clientGoal: { goalWeight: null, goalBodyFatPercentage: null, deadline: null, startDate: null } })
+      input({ clientGoal: { goalWeight: null, goalBodyFatPercentage: null, deadline: null } })
     );
     expect(nullWeightGoal.goalWeightKg).toBeNull();
   });
@@ -66,7 +65,6 @@ describe("toClientGoalInput", () => {
     goalWeight: 82,
     goalBodyFatPercentage: 18,
     goalDeadline: "2026-12-01",
-    goalStartDate: "2026-02-01",
   };
   const MIRROR = { goalWeight: 99, goalBodyFatPercentage: 30 };
 
@@ -75,7 +73,6 @@ describe("toClientGoalInput", () => {
       goalWeight: 82,
       goalBodyFatPercentage: 18,
       deadline: "2026-12-01",
-      startDate: "2026-02-01",
     });
   });
 
@@ -86,7 +83,6 @@ describe("toClientGoalInput", () => {
       goalWeight: 99,
       goalBodyFatPercentage: 30,
       deadline: null,
-      startDate: null,
     });
   });
 

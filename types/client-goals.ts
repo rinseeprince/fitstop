@@ -6,7 +6,6 @@ export type ClientGoal = {
   goalWeight?: number;
   goalBodyFatPercentage?: number;
   goalDeadline?: string;
-  goalStartDate?: string;
   primaryGoal?: string;
   setBy: string;
   notes?: string;
@@ -23,7 +22,6 @@ export type ClientGoalRow = {
   goal_weight: number | null;
   goal_body_fat_percentage: number | null;
   goal_deadline: string | null;
-  goal_start_date: string | null;
   primary_goal: string | null;
   set_by: string;
   notes: string | null;

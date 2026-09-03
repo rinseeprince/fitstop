@@ -34,22 +34,6 @@ vi.mock('@/utils/comparison-utils', () => ({
   }),
 }))
 
-// Passthrough spy: real resolver behavior, observable arguments.
-const { resolveEffectiveGoalSpy } = vi.hoisted(() => ({
-  resolveEffectiveGoalSpy: vi.fn(),
-}))
-// Spreads `actual` rather than returning a hand-listed export set: the previous
-// shape returned only `resolveEffectiveGoal`, so the module's next export
-// arrived here as "No X export is defined on the mock" at runtime, with nothing
-// in tsc to catch it (CONVENTIONS §3, don't break the mock contract). Only the
-// spy is an override; everything else stays real, which is what these tests want
-// — they assert on the real resolution arithmetic.
-vi.mock('@/lib/goals/resolve-effective-goal', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/goals/resolve-effective-goal')>()
-  resolveEffectiveGoalSpy.mockImplementation(actual.resolveEffectiveGoal)
-  return { ...actual, resolveEffectiveGoal: resolveEffectiveGoalSpy }
-})
-
 import { getCheckInById, getClientCheckIns } from './check-in-service'
 import { getClientById } from './client-service'
 import { getGoalAsOf } from './client-goals-service'
@@ -251,9 +235,6 @@ describe("the review reads the check-in's day (commit 8b)", () => {
 
     expect(getReadingsAsOf).toHaveBeenCalledWith('client-1', '2026-06-10', 'ci-1')
     expect(getNutritionPlanForDate).toHaveBeenCalledWith('client-1', '2026-06-10')
-    expect(resolveEffectiveGoalSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ today: '2026-06-10' }),
-    )
   })
 
   it("anchors daysRemaining to the check-in's local day (west-of-UTC boundary)", async () => {

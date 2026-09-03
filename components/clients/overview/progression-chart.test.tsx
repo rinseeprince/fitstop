@@ -38,7 +38,6 @@ const NO_GOAL: EffectiveGoal = {
   goalWeightKg: null,
   goalBodyFatPercentage: null,
   deadline: null,
-  startDate: "2026-07-01",
 };
 
 /** One day-value of the measurement log, as the series carries it. */

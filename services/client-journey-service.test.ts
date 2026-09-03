@@ -172,7 +172,6 @@ describe("getClientJourney", () => {
     vi.mocked(getCurrentGoals).mockResolvedValue({
       goalWeight: 85.5,
       goalDeadline: "2026-12-01",
-      goalStartDate: "2026-06-01",
     } as never);
 
     const journey = await getClientJourney(CLIENT_ID, TODAY);

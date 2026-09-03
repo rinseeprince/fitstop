@@ -73,24 +73,16 @@ const profileFormSchema = z
         message: "Body fat must be between 3% and 60%",
       }),
     goalDeadline: z.string().refine(isoDate, { message: "Use a valid date" }),
-    goalStartDate: z.string().refine(isoDate, { message: "Use a valid date" }),
-  })
-  // Mirrors the same rule on `updateGoalsSchema`, so the coach is told before
-  // submitting rather than by a 400. The API-side copy is the load-bearing one.
-  .refine(
-    (v) => !(v.goalStartDate && v.goalDeadline) || v.goalStartDate <= v.goalDeadline,
-    { message: "Start date must be on or before the deadline", path: ["goalStartDate"] }
-  );
+  });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 /**
  * Seeds come from TWO records, deliberately. The profile fields are on `clients`;
  * the goal fields are on the live `client_goals` row, which is the only store
- * that can be trusted for them — and `goalStartDate` in particular must come
- * from the raw goal, never from a resolved `EffectiveGoal`, whose `startDate`
- * is coalesced to today. Seeding a form from that coalesced value would write
- * today's date into a field the coach never set.
+ * that can be trusted for them — the RAW goal, never a resolved `EffectiveGoal`,
+ * so a resolver's coalesced value can never be written into a field the coach
+ * never set.
  */
 function toDefaults(client: Client, goal: ClientGoal | null): ProfileFormValues {
   return {
@@ -112,7 +104,6 @@ function toDefaults(client: Client, goal: ClientGoal | null): ProfileFormValues 
     goalBodyFatPercentage:
       goal?.goalBodyFatPercentage != null ? String(goal.goalBodyFatPercentage) : "",
     goalDeadline: goal?.goalDeadline ?? "",
-    goalStartDate: goal?.goalStartDate ?? "",
   };
 }
 
@@ -410,9 +401,6 @@ export function useClientProfileEdit(
       }
       if (values.goalDeadline !== seeded.goalDeadline) {
         goalPayload.goalDeadline = values.goalDeadline || null;
-      }
-      if (values.goalStartDate !== seeded.goalStartDate) {
-        goalPayload.goalStartDate = values.goalStartDate || null;
       }
       if (Object.keys(goalPayload).length > 0) {
         await sendJson("PUT", `/api/clients/${client.id}/goals`, goalPayload);

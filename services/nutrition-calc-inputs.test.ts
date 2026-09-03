@@ -56,11 +56,11 @@ describe("resolveNutritionCalcInputs", () => {
     expect(result.currentWeightKg).toBe(180);
     expect(result.goalWeightKg).toBe(165);
     expect(result.goalDeadline).toBe("2026-12-31");
-    // Named `startDate`, NOT `goalStartDate`. The calculator's field is
-    // optional, so a mismatched name would compile and silently fall back to
-    // today — weakening the deficit for a future-dated goal start.
-    expect(result.startDate).toBe("2026-08-05");
     expect(result.today).toBe("2026-08-05");
+    // No `startDate`. The calculator's window starts at the day the plan takes
+    // effect, which the orchestrator and the drawer hand in themselves (commit
+    // 8bb); a start riding here would be a second lever on that window.
+    expect("startDate" in result).toBe(false);
   });
 
   it("converts an absent goal to undefined, not null, so the spread satisfies the calculator", async () => {
@@ -202,9 +202,9 @@ describe("resolveNutritionCalcInputs", () => {
 
   // Two different claims, deliberately not merged under one title. The WEIGHT
   // assertion is a precedence test — there is a mirror value to beat. The
-  // deadline and start date are not: neither has a mirror leg any more, so
-  // asserting them under "wins over the denormalized fields" would name a
-  // contest that no longer has two sides.
+  // deadline is not: it has no mirror leg any more, so asserting it under
+  // "wins over the denormalized fields" would name a contest that no longer
+  // has two sides.
   it("a live client goal's WEIGHT wins over the denormalized client field", async () => {
     vi.mocked(getCurrentGoals).mockResolvedValue({
       goalWeight: 154,
@@ -217,17 +217,15 @@ describe("resolveNutritionCalcInputs", () => {
     expect(result.goalWeightKg).toBe(154);
   });
 
-  it("deadline and start date come from client_goals, their only source", async () => {
+  it("the deadline comes from client_goals, its only source", async () => {
     vi.mocked(getCurrentGoals).mockResolvedValue({
       goalWeight: 154,
       goalBodyFatPercentage: null,
       goalDeadline: "2027-01-31",
-      goalStartDate: "2026-10-01",
     } as never);
 
     const result = await resolveNutritionCalcInputs("client-1", CLIENT);
     if (result.status !== "ready") throw new Error("expected ready");
     expect(result.goalDeadline).toBe("2027-01-31");
-    expect(result.startDate).toBe("2026-10-01");
   });
 });

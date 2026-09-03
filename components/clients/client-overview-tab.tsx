@@ -34,7 +34,6 @@ import { useOverviewBrief } from "@/hooks/use-overview-brief";
 import { useOverviewPlanSummary } from "@/hooks/use-overview-plan-summary";
 import { useWellnessData } from "@/hooks/use-wellness-data";
 import { useToast } from "@/hooks/use-toast";
-import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 import {
   resolveEffectiveGoal,
   toClientGoalInput,
@@ -111,17 +110,10 @@ export function ClientOverviewTab({
   // the one shared resolver (invariant 16). The status card used to read the
   // denormalized `clients` mirror directly, which made it the only coach surface
   // rendering a goal nobody had resolved.
-  //
-  // Client-local today: the goal's start date is on the CLIENT's calendar, and
-  // the client record is already in scope, so resolve their zone directly —
-  // the same anchor and the same reasoning as comparison-service.ts:72, which
-  // feeds this identical resolver. The card consumes only the two targets today;
-  // seeding the device day would hand the next consumer the wrong anchor.
   const effectiveGoal = useMemo(
     () =>
       resolveEffectiveGoal({
         clientGoal: toClientGoalInput(currentGoals, client),
-        today: getTodayDateStringInTimezone(client.timezone),
       }),
     [currentGoals, client]
   );

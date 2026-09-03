@@ -516,10 +516,10 @@ describe("the client details sheet", () => {
     });
 
     // Native bounds, so the impossible days are unclickable rather than offered
-    // and then rejected. The route refuses a past deadline and the schema
-    // refuses one before the start; both are expressed as one `min`.
+    // and then rejected. The route refuses a past deadline; today is the floor,
+    // and nothing composes into it.
     it("greys out days before today on the deadline", async () => {
-      await openEditor(makeClient(), makeGoal({ goalStartDate: undefined }));
+      await openEditor();
 
       const today = new Date();
       const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
@@ -528,34 +528,14 @@ describe("the client details sheet", () => {
       expect(screen.getByLabelText("Goal deadline")).toHaveAttribute("min", iso);
     });
 
-    it("greys out days before the goal start when that is later than today", async () => {
-      await openEditor(makeClient(), makeGoal({ goalStartDate: "2099-01-01" }));
-
-      expect(screen.getByLabelText("Goal deadline")).toHaveAttribute("min", "2099-01-01");
-    });
-
-    // A goal that began three weeks ago is a real thing to record, and the route
-    // puts no bound on it — greying out a legitimate day is the same defect in
-    // the other direction.
-    it("leaves the goal start unbounded", async () => {
+    // A goal has no start of its own (docs/MEASUREMENT-LOG-PLAN.md commit 8bb):
+    // the window a nutrition deficit is spread over begins at the day the plan
+    // takes effect, picked in the nutrition drawer. Nothing here asks for one.
+    it("has no Goal start field", async () => {
       await openEditor();
 
-      expect(screen.getByLabelText("Goal start date")).not.toHaveAttribute("min");
-    });
-
-    it("refuses a start date after the deadline, before sending anything", async () => {
-      const fetchSpy = mockFetchOk();
-      const user = await openEditor();
-
-      const start = screen.getByLabelText("Goal start date");
-      await user.clear(start);
-      await user.type(start, "2027-01-01"); // deadline is 2026-12-01
-      await user.click(screen.getByRole("button", { name: /save changes/i }));
-
-      // zodResolver blocks the submit, so NOTHING is written — not even the
-      // profile PATCH that would otherwise have gone first.
-      await waitFor(() => expect(screen.getByLabelText("Goal start date")).toBeInTheDocument());
-      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText("Goal start date")).toBeNull();
+      expect(screen.queryByText("Goal start")).toBeNull();
     });
 
     describe("an imperial coach", () => {

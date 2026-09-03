@@ -20,8 +20,6 @@ export type EffectiveGoal = {
   goalBodyFatPercentage: number | null;
   /** ISO YYYY-MM-DD, or null when no deadline is set. */
   deadline: string | null;
-  /** ISO YYYY-MM-DD; falls back to `today` when the goal has no start date. */
-  startDate: string;
 };
 
 /**
@@ -32,28 +30,26 @@ export type ClientGoalInput = {
   goalWeight: number | null;
   goalBodyFatPercentage: number | null;
   deadline: string | null;
-  /** `client_goals.goal_start_date`. */
-  startDate: string | null;
 };
 
 export type ResolveEffectiveGoalInput = {
   /** null = no live client goal. */
   clientGoal: ClientGoalInput | null;
-  /** ISO YYYY-MM-DD; used as the start-date fallback. */
-  today: string;
 };
 
 export function resolveEffectiveGoal(
   input: ResolveEffectiveGoalInput
 ): EffectiveGoal {
-  const { clientGoal, today } = input;
+  const { clientGoal } = input;
 
-  // The long-term client goal drives (null weight = maintenance).
+  // The long-term client goal drives (null weight = maintenance). A goal has
+  // no start of its own: the window a nutrition deficit is spread over begins
+  // at the day the plan takes effect, which the orchestrator and the drawer
+  // hand to the calculator (docs/MEASUREMENT-LOG-PLAN.md commit 8bb).
   return {
     goalWeightKg: clientGoal?.goalWeight ?? null,
     goalBodyFatPercentage: clientGoal?.goalBodyFatPercentage ?? null,
     deadline: clientGoal?.deadline ?? null,
-    startDate: clientGoal?.startDate ?? today,
   };
 }
 
@@ -62,10 +58,6 @@ export function resolveEffectiveGoal(
  * denormalized `clients` mirror. Every caller composed this literal by hand and
  * all of them agreed character for character, which is exactly the shape that
  * drifts silently the first time one of them is edited alone.
- *
- * `today` deliberately stays at the call site: the anchor is "whose calendar is
- * this date on?", and the answer differs per surface (client-local for pace and
- * the coach Overview, the resolved client day for the nutrition write path).
  *
  * **Weight and body fat keep a mirror leg; the deadline does not.** That is not
  * an oversight:
@@ -90,7 +82,6 @@ export function toClientGoalInput(
         goalWeight?: number | null;
         goalBodyFatPercentage?: number | null;
         goalDeadline?: string | null;
-        goalStartDate?: string | null;
       }
     | null
     | undefined,
@@ -104,6 +95,5 @@ export function toClientGoalInput(
     goalBodyFatPercentage:
       currentGoals?.goalBodyFatPercentage ?? client.goalBodyFatPercentage ?? null,
     deadline: currentGoals?.goalDeadline ?? null,
-    startDate: currentGoals?.goalStartDate ?? null,
   };
 }

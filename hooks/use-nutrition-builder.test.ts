@@ -44,7 +44,6 @@ const CALC_INPUTS: NutritionCalcInputs = {
   workActivityLevel: "sedentary",
   goalWeightKg: 80,
   goalDeadline: "2026-09-30",
-  startDate: CLIENT_TODAY,
   today: CLIENT_TODAY,
 };
 

@@ -74,12 +74,8 @@ export const getCheckInComparison = async (
           goalWeight: goalThen.goalWeight ?? null,
           goalBodyFatPercentage: goalThen.goalBodyFatPercentage ?? null,
           deadline: goalThen.goalDeadline ?? null,
-          startDate: goalThen.goalStartDate ?? null,
         }
       : null,
-    // The check-in's day on the client's calendar: the start-date fallback and
-    // the pace window are anchored there, not at today.
-    today: day,
   });
 
   // Still the client's live goal, or one since replaced? The strip offers

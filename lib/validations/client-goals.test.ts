@@ -25,47 +25,26 @@ describe("updateGoalsSchema", () => {
     }
   });
 
-  // The API-side half of the rule (the form mirrors it for the inline message).
-  // This is the copy that binds React Native, whose contract this schema is.
-  describe("a goal cannot start after it ends", () => {
-    it("rejects a start date after the deadline", () => {
-      const result = updateGoalsSchema.safeParse({
-        goalStartDate: "2027-01-01",
-        goalDeadline: "2026-12-01",
-      });
-      expect(result.success).toBe(false);
+  // A goal has no start of its own (docs/MEASUREMENT-LOG-PLAN.md commit 8bb):
+  // the window a nutrition deficit is spread over begins at the day the plan
+  // takes effect. A payload still carrying one — an older client build — is
+  // accepted with the key dropped: never refused, never validated against the
+  // deadline, never stored. Carrying ONLY one is an empty payload.
+  it("drops a goalStartDate rather than validating or storing it", () => {
+    const result = updateGoalsSchema.safeParse({
+      goalStartDate: "2027-01-01",
+      goalDeadline: "2026-12-01", // "before the start" — no rule reads the pair any more
     });
+    expect(result.success).toBe(true);
+    if (result.success) expect("goalStartDate" in result.data).toBe(false);
 
-    it("accepts equal dates and the normal order", () => {
-      expect(
-        updateGoalsSchema.safeParse({ goalStartDate: "2026-12-01", goalDeadline: "2026-12-01" })
-          .success
-      ).toBe(true);
-      expect(
-        updateGoalsSchema.safeParse({ goalStartDate: "2026-01-01", goalDeadline: "2026-12-01" })
-          .success
-      ).toBe(true);
-    });
-
-    // The documented hole, pinned so nobody reads the refine as complete: a
-    // refine sees only the payload, so a partial update carrying one date can
-    // still land an invalid pair against the stored other one. Closing it means
-    // checking inside updateGoals after its merge.
-    it("cannot catch a partial update against a stored value", () => {
-      expect(updateGoalsSchema.safeParse({ goalStartDate: "2099-01-01" }).success).toBe(true);
-    });
+    expect(updateGoalsSchema.safeParse({ goalStartDate: "2099-01-01" }).success).toBe(false);
   });
 
   it("accepts an explicit null goalDeadline (clearing)", () => {
     const result = updateGoalsSchema.safeParse({ goalDeadline: null });
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.goalDeadline).toBeNull();
-  });
-
-  it("accepts a goalStartDate", () => {
-    const result = updateGoalsSchema.safeParse({ goalStartDate: "2026-02-01" });
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data.goalStartDate).toBe("2026-02-01");
   });
 
   it("accepts a null goalBodyFatPercentage (clearing the optional target)", () => {

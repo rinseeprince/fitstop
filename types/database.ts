@@ -520,7 +520,6 @@ export type Database = {
           effective_from: string
           goal_body_fat_percentage: number | null
           goal_deadline: string | null
-          goal_start_date: string | null
           goal_weight: number | null
           id: string
           notes: string | null
@@ -535,7 +534,6 @@ export type Database = {
           effective_from?: string
           goal_body_fat_percentage?: number | null
           goal_deadline?: string | null
-          goal_start_date?: string | null
           goal_weight?: number | null
           id?: string
           notes?: string | null
@@ -550,7 +548,6 @@ export type Database = {
           effective_from?: string
           goal_body_fat_percentage?: number | null
           goal_deadline?: string | null
-          goal_start_date?: string | null
           goal_weight?: number | null
           id?: string
           notes?: string | null

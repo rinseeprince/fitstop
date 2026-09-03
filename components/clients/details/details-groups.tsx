@@ -138,17 +138,10 @@ export function DetailsGroups({
   const { form } = edit;
   const weightUnit = formatWeight(0, preference).unit;
 
-  // A deadline can be neither in the past (the goals PUT rejects it against the
-  // coach's day) nor before the goal's own start (the schema's cross-field
-  // refine rejects it). Both compose into ONE native `min`, so the impossible
-  // days are unclickable rather than picked and then rejected.
-  //
-  // The goal START deliberately has no bound: a goal that began three weeks ago
-  // is a real thing to record, and the route puts no bound on it either.
+  // A deadline cannot be in the past (the goals PUT rejects it against the
+  // coach's day), and the native `min` makes those days unclickable rather
+  // than picked and then rejected.
   const todayString = getTodayDateString();
-  const goalStartValue = form.watch("goalStartDate");
-  const deadlineMin =
-    goalStartValue && goalStartValue > todayString ? goalStartValue : todayString;
 
   // Activation owns the start date; a client still being set up has none to
   // correct — and an editable box before then was worse than useless, because
@@ -459,20 +452,11 @@ export function DetailsGroups({
         </Grid>
         <div className="mt-3.5 border-t border-[rgba(13,148,136,0.06)] pt-3.5">
           <Grid cols={2}>
-            <Field label="Goal start">
-              <Input
-                aria-label="Goal start date"
-                type="date"
-                value={form.watch("goalStartDate")}
-                onChange={(e) => form.setValue("goalStartDate", e.target.value)}
-                className={cn(MONO_INPUT_CLASS, FOCUS_RING, "h-8 text-[12.5px]")}
-              />
-            </Field>
             <Field label="Deadline">
               <Input
                 aria-label="Goal deadline"
                 type="date"
-                min={deadlineMin}
+                min={todayString}
                 value={form.watch("goalDeadline")}
                 onChange={(e) => form.setValue("goalDeadline", e.target.value)}
                 className={cn(MONO_INPUT_CLASS, FOCUS_RING, "h-8 text-[12.5px]")}

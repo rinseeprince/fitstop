@@ -32,7 +32,6 @@ const NO_GOAL: EffectiveGoal = {
   goalWeightKg: null,
   goalBodyFatPercentage: null,
   deadline: null,
-  startDate: "2026-08-12",
 };
 
 const goalOf = (overrides: Partial<EffectiveGoal>): EffectiveGoal => ({

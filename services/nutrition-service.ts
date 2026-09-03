@@ -39,6 +39,8 @@ type NutritionCalculationInput = {
   proteinTargetGPerKg: number;
   dietType: DietType;
   goalDeadline?: string;
+  /** The day the plan takes effect — the window's start, clamped to today.
+   *  Handed in by the orchestrator and the drawer (commit 8bb). */
   startDate?: string;
   // Client-local today (the goal deadline lives on the client's calendar);
   // server-local midnight is only the fallback.
@@ -75,11 +77,11 @@ export function calculateBaselineCalories(
     };
   }
 
-  // Calculate time to goal.
-  // When the goal starts in the future, count from the goal start, not today.
-  // When it already started, count from today — the CLIENT-local today when the
-  // caller provides it (the deadline lives on the client's calendar);
-  // server-local midnight only as fallback.
+  // Calculate time to goal: the window runs from the later of the plan's
+  // effective date (`calcStartDate`, the day the plan takes effect) and today,
+  // to the deadline. Today is the CLIENT-local today when the caller provides
+  // it (the deadline lives on the client's calendar); server-local midnight
+  // only as fallback.
   //
   // All three dates are reduced to a calendar day and parsed as LOCAL midnight,
   // deliberately. `new Date("YYYY-MM-DD")` is UTC midnight while

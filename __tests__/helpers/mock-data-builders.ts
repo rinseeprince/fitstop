@@ -54,7 +54,6 @@ interface MockClientGoalsRowOptions {
   goalWeight?: number | null
   goalBodyFatPercentage?: number | null
   goalDeadline?: string | null
-  goalStartDate?: string | null
   primaryGoal?: string | null
   setBy?: string
   notes?: string | null
@@ -73,7 +72,6 @@ export function createMockClientGoalsRow(options: MockClientGoalsRowOptions = {}
     goal_weight: options.goalWeight ?? 170,
     goal_body_fat_percentage: options.goalBodyFatPercentage ?? null,
     goal_deadline: options.goalDeadline ?? null,
-    goal_start_date: options.goalStartDate ?? null,
     primary_goal: options.primaryGoal ?? 'weight_loss',
     set_by: options.setBy ?? generateUUID(),
     notes: options.notes ?? null,

@@ -162,14 +162,8 @@ export async function GET(
     // (effective-goal resolver) differ from the snapshot this active plan was
     // built against? Surfaced as "Goal changed — regenerate", distinct from the
     // weight-delta banner (which compares current weight vs the plan base weight).
-    // Anchored on the CLIENT's today, matching the write path. Previously this
-    // used the coach's, so one request carried two "todays". It is a provable
-    // no-op rather than a behaviour change: resolveEffectiveGoal reads `today`
-    // at exactly one place — the startDate fallback — and detectGoalDrift
-    // consumes only goalWeightKg and deadline, neither of which touches it.
     const effectiveGoal = resolveEffectiveGoal({
       clientGoal: toClientGoalInput(currentGoals, client),
-      today: clientToday,
     });
     // Drift compares against the version the drawer will actually seed and
     // overwrite (open ?? covering) — comparing anything else would flag or

@@ -24,8 +24,8 @@ describe('calculateBaselineCalories', () => {
     expect(result.warnings).toEqual([])
   })
 
-  it('uses the goal start date when it is in the future', () => {
-    // Phase starts 30 days from now, deadline 120 days from now
+  it('counts from the effective date when it is in the future', () => {
+    // The plan takes effect 30 days from now, deadline 120 days from now
     const now = new Date()
     const futureStart = new Date(now)
     futureStart.setDate(now.getDate() + 30)
@@ -52,7 +52,7 @@ describe('calculateBaselineCalories', () => {
     )
   })
 
-  it('uses today when the goal start date is in the past', () => {
+  it('counts from today when the effective date is in the past', () => {
     const now = new Date()
     const pastStart = new Date(now)
     pastStart.setDate(now.getDate() - 30)
@@ -111,14 +111,14 @@ describe('calculateBaselineCalories', () => {
       'Pacific/Apia',
     ]
 
-    it('produces an identical baseline in every timezone, with a past goal start', () => {
+    it('produces an identical baseline in every timezone, with a past effective date', () => {
       const results = ZONES.map((tz) => run(tz, '2026-12-31', '2026-06-01'))
       const baselines = results.map((r) => r.baselineCalories)
       expect(new Set(baselines).size).toBe(1)
       expect(baselines[0]).toBeGreaterThan(0)
     })
 
-    it('produces an identical baseline in every timezone, with a future goal start', () => {
+    it('produces an identical baseline in every timezone, with a future effective date', () => {
       const baselines = ZONES.map((tz) => run(tz, '2026-12-31', '2026-09-01').baselineCalories)
       expect(new Set(baselines).size).toBe(1)
     })

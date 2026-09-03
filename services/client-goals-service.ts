@@ -12,7 +12,6 @@ function mapClientGoalRow(row: ClientGoalRow): ClientGoal {
     goalWeight: row.goal_weight ?? undefined,
     goalBodyFatPercentage: row.goal_body_fat_percentage ?? undefined,
     goalDeadline: row.goal_deadline ?? undefined,
-    goalStartDate: row.goal_start_date ?? undefined,
     primaryGoal: row.primary_goal ?? undefined,
     setBy: row.set_by,
     notes: row.notes ?? undefined,
@@ -60,7 +59,6 @@ export const updateGoals = async (
     goalWeight?: number;
     goalBodyFatPercentage?: number | null;
     goalDeadline?: string | null;
-    goalStartDate?: string | null;
     primaryGoal?: string | null;
   },
   setBy: string
@@ -117,9 +115,6 @@ export const updateGoals = async (
     goal_deadline: has("goalDeadline")
       ? goals.goalDeadline ?? null
       : existing?.goalDeadline ?? null,
-    goal_start_date: has("goalStartDate")
-      ? goals.goalStartDate ?? null
-      : existing?.goalStartDate ?? null,
     primary_goal: has("primaryGoal")
       ? goals.primaryGoal ?? null
       : existing?.primaryGoal ?? null,
