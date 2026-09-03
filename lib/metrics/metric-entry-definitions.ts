@@ -5,22 +5,17 @@ import {
   WEIGHT_KG_MIN,
 } from "@/lib/constants";
 import { MEASUREMENT_KEYS } from "@/lib/measurements/keys";
+import { WELLNESS_KEYS } from "@/lib/wellness/keys";
 
 // Canonical constants for the coach's Log-measurement entries. Isomorphic:
 // imported by the zod schema (server), the service, and the Metrics-page UI.
 // The seven physique keys ARE the measurement log's keys (one definition, in
-// lockstep with migration 158's CHECK); the five wellness keys stay on
-// client_metric_entries (migration 132's CHECK). METRIC_ENTRY_KEYS must match
+// lockstep with migration 158's CHECK); the five wellness keys — spelled once, in
+// lib/wellness/keys.ts — stay on client_metric_entries (migration 159's CHECK) until
+// commit 8 of docs/MEASUREMENT-LOG-PLAN.md takes them out of the dialog. METRIC_ENTRY_KEYS must match
 // the METRIC_DEFINITIONS ids (components/clients/metrics/hooks/use-metrics-data.ts).
 
-export const METRIC_ENTRY_KEYS = [
-  ...MEASUREMENT_KEYS,
-  "mood",
-  "energy",
-  "sleep",
-  "stress",
-  "soreness",
-] as const;
+export const METRIC_ENTRY_KEYS = [...MEASUREMENT_KEYS, ...WELLNESS_KEYS] as const;
 
 export type MetricEntryKey = (typeof METRIC_ENTRY_KEYS)[number];
 

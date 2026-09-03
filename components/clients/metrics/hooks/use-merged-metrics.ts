@@ -237,13 +237,24 @@ export const useMergedMetrics = (
       ])
     );
 
-    // PHYSIQUE rows list EVERY reading of the log — a check-in's value under a
-    // coach's same-day correction, a removed reading muted — each change taken
-    // against the previous day's standing value; the chart and the figures
-    // above read the day-values (`points`) instead. Values convert here, like
-    // the points, so a delta sits between two like numbers; the canonical
+    // PHYSIQUE rows are one per day — the reading in force — with the day's
+    // other readings folded beneath it (a check-in's value under the coach's
+    // correction of it, a removed reading with its removal); the row's change
+    // is taken against the previous day's standing value, and the chart and
+    // the figures above read the day-values (`points`). Values convert here,
+    // like the points, so a delta sits between two like numbers; the canonical
     // value rides along for the Edit dialog's seed. Before-start rows are
-    // flagged so the section can group them.
+    // flagged so the section can group them. The decoration — name, unit,
+    // the measurement flag, the split — applies to a folded reading too: it
+    // is a full row, since the Remove and Restore dialogs take it as they
+    // take any reading.
+    const decorateBody = <T extends { metricId: MeasurementKey; date: string }>(row: T) => ({
+      ...row,
+      metricName: nameById.get(row.metricId) ?? row.metricId,
+      unit: unitById.get(row.metricId) ?? "",
+      isMeasurement: true,
+      beforeStart: startDate != null && row.date < startDate,
+    });
     const bodyDayValues = new Map<MeasurementKey, { id: string; date: string; value: number }[]>(
       BODY_METRIC_DEFINITIONS.map((def) => [
         def.id,
@@ -278,12 +289,9 @@ export const useMergedMetrics = (
       baselineIds,
       BODY_METRIC_DEFINITIONS.map((def) => def.id),
       DOWN_SET
-    ).map((row) => ({
-      ...row,
-      metricName: nameById.get(row.metricId) ?? row.metricId,
-      unit: unitById.get(row.metricId) ?? "",
-      isMeasurement: true,
-      beforeStart: startDate != null && row.date < startDate,
+    ).map(({ folded, ...row }) => ({
+      ...decorateBody(row),
+      folded: folded.map((reading) => decorateBody(reading)),
     }));
 
     // WELLNESS rows keep the merged points (D2): one per point, no row action.
@@ -303,6 +311,7 @@ export const useMergedMetrics = (
       isCurrent: false,
       isBaseline: false,
       beforeStart: false,
+      folded: [],
     }));
 
     return {

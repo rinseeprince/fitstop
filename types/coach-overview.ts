@@ -7,6 +7,7 @@
  */
 
 import type { MeasurementKey, MeasurementSource } from "@/lib/measurements/keys";
+import type { WellnessKey } from "@/lib/wellness/keys";
 
 export type OverviewPlanSummary = {
   training: null | {
@@ -192,6 +193,38 @@ export type MeasurementSeries = Record<MeasurementKey, MeasurementSeriesPoint[]>
   /** Every reading in the log, newest first, removed ones included. */
   readings: MeasurementReadingEntry[];
 };
+
+/**
+ * The client's wellness journey for the coach: the five wellness metrics as
+ * day-values, one per day, from the client's own daily log
+ * (`lib/wellness/day-values.ts` — a wellness score is the client's self-report,
+ * so the log is the one source). The whole history, like the measurement
+ * series; read by the Journey's Wellness pane
+ * (`GET /api/clients/[id]/wellness-series`).
+ *
+ * Deliberately narrower than `MeasurementSeries`: no `source` and no `note` on
+ * a point (one source, and it carries no notes), no `baseline` and no
+ * `startDate` (D20 — a mood as of the start date is not a figure a coach
+ * reasons about, and the "Before start" split is physique's), no `readings`
+ * list (a day holds one row, and nothing is ever removed).
+ *
+ * Values are the unitless scores the client logged (mood 1-5, the rest 1-10).
+ */
+export type WellnessSeriesPoint = {
+  /** YYYY-MM-DD on the client's calendar, ascending. */
+  date: string;
+  value: number;
+  /** The `wellness_logs` row for that day. */
+  id: string;
+  /**
+   * The row's LAST write — unlike a measurement point's `recordedAt`, which is
+   * when an immutable row was written. Same name so both panes' points share
+   * one shape downstream; it orders nothing (the series is by `date`).
+   */
+  recordedAt: string;
+};
+
+export type WellnessSeries = Record<WellnessKey, WellnessSeriesPoint[]>;
 
 export type ClientNote = {
   id: string;

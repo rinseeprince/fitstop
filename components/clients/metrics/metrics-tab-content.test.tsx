@@ -92,6 +92,7 @@ function row(
     source: "check_in",
     sourceId: null,
     isMeasurement,
+    folded: [],
     voided: null,
     isCurrent: false,
     isBaseline: false,
