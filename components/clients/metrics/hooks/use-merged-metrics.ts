@@ -20,7 +20,6 @@ import { buildMeasurementLogRows } from "@/utils/measurement-log-rows";
 import {
   buildLogRows,
   deriveBest,
-  deriveFrequencyLabel,
   deriveHeroStats,
   deriveWeekComparison,
   deriveWindowChange,
@@ -217,7 +216,6 @@ export const useMergedMetrics = (
           ? { value: points[0].value, date: points[0].date }
           : null,
         entryCount: points.length,
-        frequencyLabel: deriveFrequencyLabel(points),
         totalChange: hero?.totalChange ?? null,
         startsOn: hero?.startsOn ?? null,
         avgRate: hero?.avgRate ?? null,

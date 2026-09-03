@@ -2,13 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   buildLogRows,
   deriveBest,
-  deriveFrequencyLabel,
   deriveHeroStats,
   deriveWeekComparison,
   deriveWindowChange,
   type LogRowDefinition,
 } from "./metric-derived-stats";
-import { addDaysToDate, type MetricPoint } from "./metric-points";
+import type { MetricPoint } from "./metric-points";
 
 function pt(
   date: string,
@@ -41,10 +40,6 @@ function coachPt(
     note,
     sourceRecordId: `e-${date}`,
   };
-}
-
-function series(...dates: string[]): MetricPoint[] {
-  return dates.map((d) => pt(d, 1));
 }
 
 describe("deriveHeroStats", () => {
@@ -165,81 +160,6 @@ describe("deriveHeroStats — a physique journey", () => {
     expect(
       deriveHeroStats([], "body", today, { current: null, baseline, startDate: "2026-03-01" })
     ).toBeNull();
-  });
-});
-
-describe("deriveFrequencyLabel", () => {
-  it("returns null with fewer than 2 distinct dates", () => {
-    expect(deriveFrequencyLabel([])).toBeNull();
-    expect(deriveFrequencyLabel(series("2026-07-01"))).toBeNull();
-  });
-
-  it("collapses duplicate dates (check-in + coach entry on one day)", () => {
-    // Two points, one logging day — still not enough for a gap.
-    expect(
-      deriveFrequencyLabel([pt("2026-07-01", 80), coachPt("2026-07-01", 79)])
-    ).toBeNull();
-  });
-
-  it("labels a median gap of exactly 1.5 as daily", () => {
-    // gaps [1, 2] -> median 1.5
-    expect(
-      deriveFrequencyLabel(series("2026-07-01", "2026-07-02", "2026-07-04"))
-    ).toBe("daily");
-  });
-
-  it("labels a 2-day gap as 4x/week (round(7/2) = 4)", () => {
-    expect(
-      deriveFrequencyLabel(series("2026-07-01", "2026-07-03", "2026-07-05"))
-    ).toBe("4x/week");
-  });
-
-  it("labels a 3-day gap as 2x/week (round(7/3) = 2)", () => {
-    expect(
-      deriveFrequencyLabel(series("2026-07-01", "2026-07-04", "2026-07-07"))
-    ).toBe("2x/week");
-  });
-
-  it("takes the mean of the middle two gaps on an even count: [4, 5] -> 4.5 -> 2x/week", () => {
-    expect(
-      deriveFrequencyLabel(series("2026-07-01", "2026-07-05", "2026-07-10"))
-    ).toBe("2x/week");
-  });
-
-  it("labels a 7-day gap as weekly", () => {
-    expect(
-      deriveFrequencyLabel(series("2026-07-01", "2026-07-08", "2026-07-15"))
-    ).toBe("weekly");
-  });
-
-  it("labels a 15-day gap as fortnightly", () => {
-    expect(
-      deriveFrequencyLabel(series("2026-07-01", "2026-07-16", "2026-07-31"))
-    ).toBe("fortnightly");
-  });
-
-  it("labels a 30-day gap as monthly", () => {
-    expect(
-      deriveFrequencyLabel(series("2026-01-01", "2026-01-31", "2026-03-02"))
-    ).toBe("monthly");
-  });
-
-  it("labels a 60-day gap as occasional", () => {
-    expect(
-      deriveFrequencyLabel(series("2026-01-01", "2026-03-02", "2026-05-01"))
-    ).toBe("occasional");
-  });
-
-  it("considers only the most recent 12 gaps", () => {
-    // 13 gaps chronologically: [2, 7x6, 30x6]. All 13 -> median 7 (weekly);
-    // the last 12 -> median (7+30)/2 = 18.5 (fortnightly). The label proves
-    // the earliest gap was dropped.
-    const gapSeq = [2, 7, 7, 7, 7, 7, 7, 30, 30, 30, 30, 30, 30];
-    const dates = ["2026-01-01"];
-    for (const gap of gapSeq) {
-      dates.push(addDaysToDate(dates[dates.length - 1], gap));
-    }
-    expect(deriveFrequencyLabel(series(...dates))).toBe("fortnightly");
   });
 });
 

@@ -14,7 +14,6 @@ function metric(overrides: Partial<MetricSummary> = {}): MetricSummary {
     latest: { value: 87, date: "2026-07-27", daysAgo: 32 },
     first: { value: 90, date: "2026-07-06" },
     entryCount: 2,
-    frequencyLabel: null,
     totalChange: null,
     startsOn: null,
     avgRate: null,
@@ -71,6 +70,16 @@ describe("MetricHero — total change", () => {
 
     expect(screen.getByText("+2.0")).toBeInTheDocument();
     expect(screen.getByText("since 1 Apr")).toBeInTheDocument();
+  });
+
+  it("draws no tag pills beside the switcher — no unit, frequency or entry-count chip", () => {
+    const { container } = render(<MetricHero metric={metric({ entryCount: 15 })} {...PROPS} />);
+
+    expect(screen.queryByText("15 entries")).not.toBeInTheDocument();
+    expect(screen.queryByText(/entr(y|ies)$/)).not.toBeInTheDocument();
+    // The header row holds the switcher trigger and nothing beside it.
+    const header = container.querySelector(".border-b");
+    expect(header?.children).toHaveLength(1);
   });
 
   it("reads `Starts …` while the start date is ahead", () => {

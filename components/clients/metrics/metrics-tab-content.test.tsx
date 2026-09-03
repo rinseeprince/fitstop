@@ -58,7 +58,6 @@ function metric(id: string, name: string, tab: "body" | "wellness", unit: string
     latest: null,
     first: null,
     entryCount: 0,
-    frequencyLabel: null,
     totalChange: null,
     startsOn: null,
     avgRate: null,

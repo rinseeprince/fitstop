@@ -93,30 +93,6 @@ export function deriveHeroStats(
   };
 }
 
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-export function deriveFrequencyLabel(points: MetricPoint[]): string | null {
-  // Duplicate dates collapse: a check-in + a coach entry on one date is one
-  // logging day. Median of the most recent <= 12 gaps keeps the label current.
-  const dates = [...new Set(points.map((p) => p.date))].sort();
-  if (dates.length < 2) return null;
-  const gaps: number[] = [];
-  for (let i = 1; i < dates.length; i++) {
-    gaps.push(daysBetween(dates[i - 1], dates[i]));
-  }
-  const g = median(gaps.slice(-12));
-  if (g <= 1.5) return "daily";
-  if (g <= 4.5) return `${Math.min(6, Math.max(2, Math.round(7 / g)))}x/week`;
-  if (g <= 10) return "weekly";
-  if (g <= 20) return "fortnightly";
-  if (g <= 45) return "monthly";
-  return "occasional";
-}
-
 type WindowChange = {
   kind: "30day" | "sinceFirst";
   delta: number;

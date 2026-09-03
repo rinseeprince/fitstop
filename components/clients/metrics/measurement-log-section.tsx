@@ -212,8 +212,7 @@ export function MeasurementLogSection({
             page={page}
             total={journeyRows.length}
             pageSize={HISTORY_PAGE_SIZE}
-            // D12: the metric is the pager's noun, so the count and the hero's
-            // entries chip read as one phrase — "Showing 10 of 12 weight entries".
+            // D12: the metric is the pager's noun — "Showing 10 of 12 weight entries".
             noun={`${metric.name.toLowerCase()} entries`}
             onPageChange={setPage}
           />

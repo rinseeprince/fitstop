@@ -28,7 +28,6 @@ function metric(overrides: Partial<MetricSummary> = {}): MetricSummary {
     latest: null,
     first: null,
     entryCount: 0,
-    frequencyLabel: null,
     totalChange: null,
     startsOn: null,
     avgRate: null,

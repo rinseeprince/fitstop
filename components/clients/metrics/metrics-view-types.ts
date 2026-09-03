@@ -70,7 +70,6 @@ export type MetricSummary = {
   latest: { value: number; date: string; daysAgo: number } | null;
   first: { value: number; date: string } | null;
   entryCount: number;
-  frequencyLabel: string | null;
   /** Physique: since the START DATE, against the baseline (the reading as of
    *  it, whose own date and source are carried). Wellness: since the first point. */
   totalChange: { delta: number; sinceDate: string; baseline?: HeroBaseline } | null;

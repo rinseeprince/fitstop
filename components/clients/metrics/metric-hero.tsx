@@ -4,13 +4,12 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   HEADER_EYEBROW_CLASS,
-  MONO,
   MONO_LABEL_CLASS,
   STAT_LABEL_DARK_CLASS,
   STAT_VALUE_DARK_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { MetricSwitcher } from "./metric-switcher";
-import { containsDigit, formatShortDate, formatSigned, SOURCE_LABELS } from "./metrics-format";
+import { formatShortDate, formatSigned, SOURCE_LABELS } from "./metrics-format";
 import type { MetricSummary } from "./metrics-view-types";
 import { TextSkeleton } from "@/components/text-skeleton";
 
@@ -22,9 +21,6 @@ type MetricHeroProps = {
   onSelectMetric: (id: string) => void;
 };
 
-// Dark chip base (training-summary-hero:67-79); digit-bearing chips go mono.
-const TAG_CHIP_CLASS =
-  "bg-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] text-[10px] px-1.5 py-0.5 rounded-[3px] font-medium";
 // Stat-band sub-lines: number-bearing = mono branch, word-only = sans branch
 // (dynamic-slot rule — the states are distinguishable, so they split).
 const SUB_MONO_CLASS = cn(
@@ -37,7 +33,7 @@ const UNIT_SUFFIX_CLASS =
 const EMPTY_VALUE_CLASS = "text-[13px] text-[rgba(255,255,255,0.3)] mt-1";
 
 // The Metrics page hero: dark slab with the page's only metric switcher
-// (eyebrow+title+chevron trigger cluster), tag chips, and a 3-cell stat band
+// (eyebrow+title+chevron trigger cluster) and a 3-cell stat band
 // (hand-rolled with the StatBand tokens — the shared component can't nest in
 // the slab nor render sans subs).
 function PendingCell({
@@ -84,14 +80,6 @@ function MetricHeroPending() {
             strokeWidth={1.5}
           />
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <span className={TAG_CHIP_CLASS}>
-            <TextSkeleton className="w-8" />
-          </span>
-          <span className={TAG_CHIP_CLASS}>
-            <TextSkeleton className="w-12" />
-          </span>
-        </div>
       </div>
       <div className="grid grid-cols-3">
         <PendingCell
@@ -124,13 +112,6 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
   if (!metric) return <MetricHeroPending />;
   const { latest, first, totalChange, startsOn, avgRate, entryCount, unit } = metric;
 
-  const chips: string[] = [];
-  if (unit) chips.push(unit);
-  if (metric.frequencyLabel) chips.push(metric.frequencyLabel);
-  if (entryCount > 0) {
-    chips.push(`${entryCount} ${entryCount === 1 ? "entry" : "entries"}`);
-  }
-
   const trigger = (
     <button
       type="button"
@@ -151,7 +132,7 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
 
   return (
     <div className="bg-[#0f2027] rounded-[6px] px-5 py-[18px]">
-      {/* Header: switcher trigger + tag chips */}
+      {/* Header: the switcher trigger */}
       <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-[rgba(255,255,255,0.06)]">
         <MetricSwitcher
           metrics={metrics}
@@ -159,18 +140,6 @@ export function MetricHero({ metric, metrics, onSelectMetric }: MetricHeroProps)
           onSelect={onSelectMetric}
           trigger={trigger}
         />
-        {chips.length > 0 && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            {chips.map((chip) => (
-              <span
-                key={chip}
-                className={cn(containsDigit(chip) && MONO, TAG_CHIP_CLASS)}
-              >
-                {chip}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Stat band */}
