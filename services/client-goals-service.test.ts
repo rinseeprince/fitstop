@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   getCurrentGoals,
+  getGoalAsOf,
   updateGoals,
   getGoalsHistory,
 } from './client-goals-service';
@@ -26,6 +27,8 @@ function createMockQuery(result: { data: unknown; error: unknown }) {
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
     not: vi.fn().mockReturnThis(),
+    lte: vi.fn().mockReturnThis(),
+    or: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
@@ -459,5 +462,64 @@ describe('Client Goals Service', () => {
 
       expect(result).toEqual([]);
     });
+  });
+});
+
+describe('getGoalAsOf — the version in force at an instant (commit 8b)', () => {
+  const AT = '2026-05-31T12:00:00+00:00';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('asks for effective_from on or before the instant and no supersede by then, newest first', async () => {
+    const row = createMockClientGoalsRow({
+      clientId: 'client-1',
+      goalWeight: 77,
+      goalDeadline: '2026-07-04',
+      effectiveFrom: '2026-04-11T09:00:00+00:00',
+      supersededAt: '2026-08-27T15:23:50.965+00:00',
+    });
+    const mockQuery = createMockQuery({ data: row, error: null });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
+
+    const result = await getGoalAsOf('client-1', AT);
+
+    expect(result?.goalWeight).toBe(77);
+    expect(result?.goalDeadline).toBe('2026-07-04');
+    expect(result?.supersededAt).toBe('2026-08-27T15:23:50.965+00:00');
+    expect(mockQuery.eq).toHaveBeenCalledWith('client_id', 'client-1');
+    // Inclusive at effective_from: a supersede and its successor share one
+    // instant, so `<=` on the start and `>` on the end is what makes exactly
+    // one version in force at any instant.
+    expect(mockQuery.lte).toHaveBeenCalledWith('effective_from', AT);
+    expect(mockQuery.or).toHaveBeenCalledWith(`superseded_at.is.null,superseded_at.gt.${AT}`);
+    expect(mockQuery.order).toHaveBeenCalledWith('effective_from', { ascending: false });
+    expect(mockQuery.limit).toHaveBeenCalledWith(1);
+    expect(mockQuery.maybeSingle).toHaveBeenCalled();
+  });
+
+  it('returns null when no version was in force then — the review shows no goal', async () => {
+    const mockQuery = createMockQuery({ data: null, error: null });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
+
+    expect(await getGoalAsOf('client-1', AT)).toBeNull();
+  });
+
+  it('refuses a malformed instant before any query — the value reaches a PostgREST .or() predicate', async () => {
+    await expect(
+      getGoalAsOf('client-1', '2026-05-31T12:00:00+00:00,superseded_at.is.null')
+    ).rejects.toThrow(/malformed instant/);
+
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+  });
+
+  it('throws when the query fails', async () => {
+    const mockQuery = createMockQuery({ data: null, error: { message: 'DB error' } });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never);
+
+    await expect(getGoalAsOf('client-1', AT)).rejects.toThrow(
+      'Failed to fetch the goal as of an instant'
+    );
   });
 });

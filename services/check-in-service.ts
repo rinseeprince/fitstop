@@ -309,6 +309,12 @@ export const getClientCheckIns = async (
     // asks for it on its FIRST page only, because that tab's rail renders the
     // history count; the client route never asks and pays nothing.
     withTotal?: boolean;
+    // The check-ins up to and including an instant (`created_at <= upTo`), on
+    // either path. The review's trend and the AI prompt's previous-check-ins
+    // block read the check-ins up to the one under review, never the client's
+    // latest (commit 8b): a review of an old check-in must not be judged
+    // against, or told about, check-ins that came after it.
+    upTo?: string;
   }
 ): Promise<{
   checkIns: CheckIn[];
@@ -333,6 +339,10 @@ export const getClientCheckIns = async (
 
   if (options?.status) {
     query = query.eq("status", options.status);
+  }
+
+  if (options?.upTo) {
+    query = query.lte("created_at", options.upTo);
   }
 
   if (keyset) {

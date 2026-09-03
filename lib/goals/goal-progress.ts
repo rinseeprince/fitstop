@@ -1,23 +1,26 @@
 import { calculateGoalProgress } from "@/utils/comparison-utils";
 import { computeGoalPace } from "@/lib/check-in/goal-pace";
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
-import type { GoalPosition, GoalProgress } from "@/types/check-in";
+import type { GoalPosition, GoalProgressRows } from "@/types/check-in";
 
 /**
- * Where a client stands against each goal they have set — composed ONCE, here.
+ * Where a client stands against each goal they have set — composed ONCE, here,
+ * from a goal and the readings in force AT A DATE.
  *
- * Position reads the CLIENT RECORD's current reading (`Client.currentWeight` /
- * `currentBodyFatPercentage` — the newest row in the measurement log, through
- * `client_current_measurements`), never a check-in's own reading. A check-in is
- * a report of what the client typed that
- * week, and every field on it is optional, so a weightless one is ordinary; a
- * goal row built from it vanishes for exactly the client whose weight is on the
- * record. So a check-in is not among these inputs, and
- * `lib/goals/goal-progress-ownership.test.ts` keeps it out.
+ * The date is the caller's. The check-in review hands in the readings as of
+ * the check-in's own day — its stamped row, else the newest reading before it
+ * (`getReadingsAsOf`) — with the goal version in force then, so a review
+ * describes where the client was at that time; a surface about today hands in
+ * today's. A check-in object is never an input: a check-in is a report of
+ * what the client typed that week, every field on it optional, so a
+ * weightless one is ordinary, and a goal row built from it vanished for
+ * exactly the client whose weight was in the log.
+ * `lib/goals/goal-progress-ownership.test.ts` keeps the check-in out and keeps
+ * the review's readings coming from the as-of read.
  *
- * A row exists for every goal that is set. Its `position` is null when the
- * record carries no reading for that metric: the goal is real, the verdict is
- * not, and the strip says so rather than reading the row's absence as "no goal".
+ * A row exists for every goal that is set. Its `position` is null when no
+ * reading exists as of the date: the goal is real, the verdict is not, and
+ * the strip says so rather than reading the row's absence as "no goal".
  */
 type ClientReadings = {
   currentWeight?: number;
@@ -35,9 +38,10 @@ type GoalTrend = {
 
 type GoalProgressInput = {
   effectiveGoal: Pick<EffectiveGoal, "goalWeightKg" | "goalBodyFatPercentage" | "deadline">;
+  /** The readings in force at the surface's date, and the baseline. */
   client: ClientReadings;
   trend: GoalTrend;
-  /** Whole days to the deadline on the client's calendar; null without one. */
+  /** Whole days from the surface's date to the deadline on the client's calendar; null without one. */
   daysRemaining: number | null;
   weeksRemaining: number | null;
 };
@@ -50,8 +54,8 @@ export function deriveGoalProgress({
   trend,
   daysRemaining,
   weeksRemaining,
-}: GoalProgressInput): GoalProgress {
-  const goalProgress: GoalProgress = {};
+}: GoalProgressInput): GoalProgressRows {
+  const goalProgress: GoalProgressRows = {};
 
   if (effectiveGoal.goalWeightKg != null) {
     // Kilograms, like every other weight the comparison returns (migration

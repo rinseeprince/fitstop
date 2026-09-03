@@ -58,7 +58,7 @@ const loaded = {
   comparisonData: {
     comparison: { client: {}, changes: {}, timeBetweenCheckIns: 7 },
     chartData: {},
-    goalProgress: {},
+    goalProgress: { goalIsCurrent: true },
   },
   isLoadingComparison: false,
   // One day-form row only: the header's count must NOT come from here, since a

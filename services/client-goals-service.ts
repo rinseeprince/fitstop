@@ -2,6 +2,7 @@
 // and dual-writes to clients table are system-level operations.
 import { supabaseAdmin } from "./supabase-admin";
 import { GOAL_HISTORY_LIMIT } from "@/lib/constants";
+import { isValidIsoTimestamp } from "@/lib/cursor";
 import type { ClientGoal, ClientGoalRow } from "@/types/client-goals";
 
 function mapClientGoalRow(row: ClientGoalRow): ClientGoal {
@@ -188,4 +189,45 @@ export const getGoalsHistory = async (
   }
 
   return (data || []).map((row: ClientGoalRow) => mapClientGoalRow(row));
+};
+
+/**
+ * The goal version in force at an instant: `effective_from <= at` and not yet
+ * superseded then. A check-in's review judges its goals against this version
+ * (docs/MEASUREMENT-LOG-PLAN.md commit 8b), never the live one — and a
+ * check-in older than every version has no goal on its page, because the
+ * client had none then: the review reads the versions alone, with no
+ * `clients.*` mirror leg, the client journey read's precedent. `updateGoals`
+ * stamps a supersede and its successor with one instant, so exactly one
+ * version is in force at any `at`. The review is this function's only caller
+ * (`lib/goals/goal-progress-ownership.test.ts`).
+ *
+ * `at` comes from a stored `check_ins.created_at`, but it is interpolated into
+ * a PostgREST `.or()` predicate, so it is held to the keyset cursor's
+ * timestamp charset first — the belt `decodeCursor` wears for the same reason.
+ */
+export const getGoalAsOf = async (
+  clientId: string,
+  at: string
+): Promise<ClientGoal | null> => {
+  if (!isValidIsoTimestamp(at)) {
+    throw new Error(`Refusing to resolve a goal at a malformed instant: ${at}`);
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("client_goals")
+    .select("*")
+    .eq("client_id", clientId)
+    .lte("effective_from", at)
+    .or(`superseded_at.is.null,superseded_at.gt.${at}`)
+    .order("effective_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to fetch the goal as of an instant:", error);
+    throw new Error(`Failed to fetch the goal as of an instant: ${error.message}`);
+  }
+
+  return data ? mapClientGoalRow(data) : null;
 };

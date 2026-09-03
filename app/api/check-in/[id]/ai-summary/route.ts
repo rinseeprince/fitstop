@@ -54,9 +54,12 @@ export async function POST(
     const client = await getClientById(currentCheckIn.clientId);
     const clientName = client?.name ?? "Client";
 
-    // Get previous check-ins for context
+    // Previous check-ins for the prompt's trend block: the ones up to this
+    // check-in, never later ones — a regenerated review of an old check-in
+    // must not be told about check-ins that came after it (commit 8b).
     const { checkIns } = await getClientCheckIns(currentCheckIn.clientId, {
       limit: 5,
+      upTo: currentCheckIn.createdAt,
     });
     const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
 

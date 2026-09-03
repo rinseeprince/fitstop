@@ -33,12 +33,12 @@ type GoalRow = {
   start?: string;
   goal: string;
   state: RowState;
-  /** False when the client record has no reading for this goal: nothing to judge. */
+  /** False when no reading existed as of the check-in's day: nothing to judge. */
   judged: boolean;
 };
 
-// The goal exists; the record carries no reading for it. Neutral rather than a
-// warning: the coach's next move is to record one, not to worry.
+// The goal exists; no reading existed as of the check-in's day. Neutral rather
+// than a warning: the coach's next move is to record one, not to worry.
 const NO_READING: RowState = { text: "No reading yet", tone: "neutral" };
 
 /**
@@ -83,7 +83,7 @@ export const CheckInGoalStrip = ({
   onSetNewGoals,
 }: CheckInGoalStripProps) => {
   const { preference } = useUnits();
-  const { weight, bodyFat, deadline } = goalProgress;
+  const { weight, bodyFat, deadline, goalIsCurrent } = goalProgress;
 
   // Body weights: formatWeight converts freely and never snaps.
   const kg = (value: number): string => {
@@ -93,9 +93,9 @@ export const CheckInGoalStrip = ({
 
   const rows: GoalRow[] = [];
 
-  // A row per goal that is set. `position` is the client record's current
-  // reading against it, or null when the record has none — the goal is still
-  // shown, with an empty track and no verdict.
+  // A row per goal that is set. `position` is the reading as of the check-in's
+  // day against it, or null when there was none — the goal is still shown,
+  // with an empty track and no verdict.
   if (weight) {
     const { position } = weight;
     rows.push({
@@ -143,19 +143,23 @@ export const CheckInGoalStrip = ({
     );
   }
 
-  // Only once there is nothing left to approach. A note telling a coach to set
-  // new targets while one goal is still being worked towards is advice about a
-  // job that is not finished. A goal with no reading is neither met nor unmet,
-  // so it neither earns the note nor blocks it (owner decision 2026-09-02) —
-  // and with nothing judged there is nothing to call met.
+  // Only once there is nothing left to approach, and only while the goal
+  // judged is still the client's live one: a page about a goal since replaced
+  // never invites replacing it again (commit 8b). A note telling a coach to
+  // set new targets while one goal is still being worked towards is advice
+  // about a job that is not finished. A goal with no reading is neither met
+  // nor unmet, so it neither earns the note nor blocks it (owner decision
+  // 2026-09-02) — and with nothing judged there is nothing to call met.
   const judged = rows.filter((row) => row.judged);
   const allMet =
     judged.length > 0 &&
     judged.every((row) => row.state.tone === "good" && row.state.text.startsWith("Reached"));
+  const offerNewGoals = allMet && goalIsCurrent;
 
-  // The client's weight has moved far enough from the one their targets were
-  // built on that the plan no longer describes them. Symmetric: a gain
-  // invalidates the targets as surely as a loss.
+  // The reading as of the check-in's day has moved far enough from the base
+  // weight of the nutrition version covering that day that the plan no longer
+  // described them. Symmetric: a gain invalidates the targets as surely as a
+  // loss.
   const baseWeight = clientData.nutritionPlanBaseWeightKg;
   const hasDrifted =
     clientData.currentWeight !== undefined &&
@@ -165,7 +169,7 @@ export const CheckInGoalStrip = ({
   // ONE footer, and goals outrank nutrition: targets built for a goal the
   // client has passed need the goal reset first, and the plan rebuilt from it.
   // Advising a nutrition review before that is advice in the wrong order.
-  const footer: { tone: "good" | "attention"; text: string } | null = allMet
+  const footer: { tone: "good" | "attention"; text: string } | null = offerNewGoals
     ? { tone: "good", text: "Goal met - consider setting a new target." }
     : hasDrifted && clientData.currentWeight !== undefined && baseWeight !== undefined
       ? {
@@ -248,7 +252,7 @@ export const CheckInGoalStrip = ({
             <span className="text-[12px] text-[#5a7d82]">{footer.text}</span>
             {/* Tied to the goal case: "Set new goals" is the wrong action to
                 offer beside a nutrition-drift note. */}
-            {allMet && onSetNewGoals && (
+            {offerNewGoals && onSetNewGoals && (
               <Button
                 size="sm"
                 variant="outline"

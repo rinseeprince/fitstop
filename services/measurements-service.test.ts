@@ -57,6 +57,7 @@ import {
   getMeasurementReadings,
   getMeasurementSeries,
   getMeasurementsForCheckIns,
+  getReadingsAsOf,
 } from "./measurements-service";
 
 const CLIENT = "11111111-1111-4111-8111-111111111111";
@@ -379,5 +380,85 @@ describe("getMeasurementReading", () => {
 
     const reading = await getMeasurementReading(CLIENT, "gone");
     expect(reading?.voided?.byName).toBe("Sam");
+  });
+});
+
+describe("getReadingsAsOf — the readings a check-in's review judges its goals against", () => {
+  const DAY = "2026-05-31";
+  const STAMP = "ci-31";
+
+  it("takes the check-in's own stamped row over a same-day reading logged later", async () => {
+    // Three reads of the live view, issued together: the stamped rows, then
+    // the newest row on or before the day for weight and for body fat.
+    queue(
+      "client_measurements_live",
+      {
+        data: [
+          liveRow({
+            id: "stamped-w", value: 80, recorded_on: DAY,
+            recorded_at: "2026-05-31T12:00:00+00:00", source: "check_in", source_id: STAMP,
+          }),
+        ],
+        error: null,
+      },
+      {
+        data: [liveRow({ id: "coach-w", value: 72, recorded_on: DAY, recorded_at: "2026-09-03T15:14:54+00:00" })],
+        error: null,
+      },
+      { data: [], error: null },
+    );
+
+    const readings = await getReadingsAsOf(CLIENT, DAY, STAMP);
+
+    expect(readings.weight).toEqual({ id: "stamped-w", metricKey: "weight", value: 80, date: DAY, source: "check_in" });
+    expect(readings.bodyFat).toBeUndefined();
+
+    const [stamped, weightBefore, bodyFatBefore] = callsTo("client_measurements_live").map((c) => c.chain);
+    expect(stamped).toContainEqual(["eq", ["client_id", CLIENT]]);
+    expect(stamped).toContainEqual(["eq", ["source_id", STAMP]]);
+    expect(weightBefore).toContainEqual(["eq", ["client_id", CLIENT]]);
+    expect(weightBefore).toContainEqual(["eq", ["metric_key", "weight"]]);
+    expect(weightBefore).toContainEqual(["lte", ["recorded_on", DAY]]);
+    expect(weightBefore).toContainEqual(["limit", [1]]);
+    expect(bodyFatBefore).toContainEqual(["eq", ["metric_key", "bodyFat"]]);
+    expect(bodyFatBefore).toContainEqual(["lte", ["recorded_on", DAY]]);
+    // The live view, never the table: a removed reading is not a reading.
+    expect(callsTo("client_measurements")).toEqual([]);
+  });
+
+  it("falls back to the newest reading on or before the day when the check-in carried none", async () => {
+    queue(
+      "client_measurements_live",
+      { data: [], error: null },
+      { data: [liveRow({ id: "before-w", value: 78.6, recorded_on: "2026-05-30", source: "client_log" })], error: null },
+      {
+        data: [
+          liveRow({
+            id: "before-bf", metric_key: "bodyFat", value: 17.4, recorded_on: "2026-05-24",
+            source: "check_in", source_id: "ci-24",
+          }),
+        ],
+        error: null,
+      },
+    );
+
+    const readings = await getReadingsAsOf(CLIENT, DAY, STAMP);
+
+    expect(readings.weight).toMatchObject({ id: "before-w", value: 78.6, date: "2026-05-30", source: "client_log" });
+    expect(readings.bodyFat).toMatchObject({ id: "before-bf", value: 17.4, date: "2026-05-24" });
+    for (const call of callsTo("client_measurements_live").slice(1)) {
+      expect(call.chain).toContainEqual(["lte", ["recorded_on", DAY]]);
+    }
+  });
+
+  it("throws when any of the three reads fails, rather than answering with a partial day", async () => {
+    queue(
+      "client_measurements_live",
+      { data: [], error: null },
+      { data: null, error: { message: "boom" } },
+      { data: [], error: null },
+    );
+
+    await expect(getReadingsAsOf(CLIENT, DAY, STAMP)).rejects.toThrow(/boom/);
   });
 });

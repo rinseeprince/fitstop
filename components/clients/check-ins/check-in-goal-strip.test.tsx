@@ -8,14 +8,19 @@ vi.mock("@/contexts/units-context", () => ({
 }));
 
 import { CheckInGoalStrip } from "./check-in-goal-strip";
-import type { CheckInComparison, GoalPosition, GoalProgress } from "@/types/check-in";
+import type {
+  CheckInComparison,
+  GoalPosition,
+  GoalProgress,
+  GoalProgressRows,
+} from "@/types/check-in";
 
 afterEach(cleanup);
 
-type WeightRow = NonNullable<GoalProgress["weight"]>;
-type BodyFatRow = NonNullable<GoalProgress["bodyFat"]>;
+type WeightRow = NonNullable<GoalProgressRows["weight"]>;
+type BodyFatRow = NonNullable<GoalProgressRows["bodyFat"]>;
 
-// The live case: start 88, goal 77, now 72 — five kilos PAST a weight-loss goal.
+// The live case: start 88, goal 77, then 72 — five kilos PAST a weight-loss goal.
 // calculateGoalProgress reports isOnTrack:false (correct, they are moving away
 // from 77) but computeGoalPace used to Math.abs the remainder into a safe-looking
 // 0.6 kg/week, and the card let that override the trend.
@@ -43,22 +48,31 @@ function bodyFatGoal(position: Partial<GoalPosition> = {}): BodyFatRow {
   };
 }
 
-/** A goal that is set, with no current reading on the client record behind it. */
+/** A goal that is set, with no reading as of the check-in's day behind it. */
 const UNREAD_WEIGHT: WeightRow = { goal: 66, startingWeight: 91, position: null };
 const UNREAD_BODY_FAT: BodyFatRow = { goal: 14, startingBodyFat: 23, position: null };
 
 const NO_CLIENT = {} as CheckInComparison["client"];
 
-/** 79 kg now against targets built at 75 — four kilos of drift, past the 3 kg threshold. */
+/** 79 kg then against targets built at 75 — four kilos of drift, past the 3 kg threshold. */
 const DRIFTED = {
   currentWeight: 79,
   nutritionPlanBaseWeightKg: 75,
   nutritionPlanEffectiveDate: "2026-08-27",
 } as CheckInComparison["client"];
 
-function renderStrip(goalProgress: GoalProgress, client = NO_CLIENT) {
+/** The rows against the goal that is still live unless a case says otherwise. */
+function progress(rows: GoalProgressRows, goalIsCurrent = true): GoalProgress {
+  return { ...rows, goalIsCurrent };
+}
+
+function renderStrip(rows: GoalProgressRows, client = NO_CLIENT, goalIsCurrent = true) {
   return render(
-    <CheckInGoalStrip goalProgress={goalProgress} clientName="Sam" clientData={client} />,
+    <CheckInGoalStrip
+      goalProgress={progress(rows, goalIsCurrent)}
+      clientName="Sam"
+      clientData={client}
+    />,
   );
 }
 
@@ -151,12 +165,12 @@ describe("the state column's precedence", () => {
   });
 });
 
-describe("a goal the record cannot judge yet", () => {
-  // Position reads the client record's current reading. A goal with none is
+describe("a goal that could not be judged as of the check-in's day", () => {
+  // Position reads the reading as of the check-in's day. A goal with none is
   // still a goal: it gets its row, its start → goal, an empty track and a
   // neutral "No reading yet" — never the "No goals" empty state, which is what
-  // a weightless check-in used to produce for a client whose weight was on the
-  // record the whole time.
+  // a weightless check-in used to produce for a client whose weight was in the
+  // log the whole time.
   it("renders the goal, an empty track and No reading yet", () => {
     const { container } = renderStrip({ weight: UNREAD_WEIGHT });
 
@@ -198,10 +212,38 @@ describe("a goal the record cannot judge yet", () => {
   });
 });
 
+describe("a goal since replaced (commit 8b)", () => {
+  // The rows judge the version in force on the check-in's day. When that
+  // version is no longer the client's live goal, "Goal met" is history and the
+  // page must not invite replacing a goal already replaced.
+  it("renders the verdict but withholds the new-target note and its button", () => {
+    const onSetNewGoals = vi.fn();
+    render(
+      <CheckInGoalStrip
+        goalProgress={progress({ weight: weightGoal(), bodyFat: bodyFatGoal() }, false)}
+        clientName="Sam"
+        clientData={NO_CLIENT}
+        onSetNewGoals={onSetNewGoals}
+      />,
+    );
+
+    expect(screen.getAllByText(/Reached/)).toHaveLength(2);
+    expect(screen.queryByText(/new target/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /set new goals/i })).not.toBeInTheDocument();
+  });
+
+  it("still carries the drift note, which describes that day's targets", () => {
+    const approaching = { status: "approaching" as const, percentComplete: 40, remaining: 5, isOnTrack: true };
+    renderStrip({ weight: weightGoal(approaching) }, DRIFTED, false);
+
+    expect(screen.getByText(/Weight has moved 4 kg/)).toBeInTheDocument();
+  });
+});
+
 describe("the footer — one slot, two states", () => {
   const approaching = { status: "approaching" as const, percentComplete: 40, remaining: 5, isOnTrack: true };
 
-  it("advises a nutrition review when the weight has drifted past the threshold", () => {
+  it("advises a nutrition review when the weight had drifted past the threshold", () => {
     renderStrip({ weight: weightGoal(approaching) }, DRIFTED);
 
     expect(screen.getByText(/Weight has moved 4 kg since these targets took effect on 27 Aug/))
@@ -209,7 +251,7 @@ describe("the footer — one slot, two states", () => {
     expect(screen.getByText(/consider reviewing their nutrition plan/i)).toBeInTheDocument();
   });
 
-  it("says nothing when the weight has barely moved", () => {
+  it("says nothing when the weight had barely moved", () => {
     const steady = { ...DRIFTED, currentWeight: 76 } as CheckInComparison["client"];
     renderStrip({ weight: weightGoal(approaching) }, steady);
 
@@ -238,7 +280,7 @@ describe("the footer — one slot, two states", () => {
     const onSetNewGoals = vi.fn();
     const { rerender } = render(
       <CheckInGoalStrip
-        goalProgress={{ weight: weightGoal() }}
+        goalProgress={progress({ weight: weightGoal() })}
         clientName="Sam"
         clientData={NO_CLIENT}
         onSetNewGoals={onSetNewGoals}
@@ -248,7 +290,7 @@ describe("the footer — one slot, two states", () => {
 
     rerender(
       <CheckInGoalStrip
-        goalProgress={{ weight: weightGoal(approaching) }}
+        goalProgress={progress({ weight: weightGoal(approaching) })}
         clientName="Sam"
         clientData={DRIFTED}
         onSetNewGoals={onSetNewGoals}

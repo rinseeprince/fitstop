@@ -44,8 +44,13 @@ export async function triggerAISummaryGeneration(
       throw new Error("Check-in not found");
     }
 
-    // Get previous check-ins for comparison and trend analysis
-    const { checkIns } = await getClientCheckIns(clientId, { limit: 5 });
+    // Previous check-ins for the prompt's trend block: the ones up to this
+    // check-in — at submit time that is every earlier one, and the same bound
+    // the coach's Regenerate applies to an old check-in (commit 8b).
+    const { checkIns } = await getClientCheckIns(clientId, {
+      limit: 5,
+      upTo: currentCheckIn.createdAt,
+    });
     const previousCheckIns = checkIns.filter((ci) => ci.id !== checkInId);
 
     // Calculate date range using the fixed 7-day period ending on the weekday

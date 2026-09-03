@@ -746,12 +746,16 @@ export type CheckInComparison = {
     goalWeight?: number;
     goalBodyFatPercentage?: number;
     goalDeadline?: string;
+    /** The reading as of the check-in's day — its own stamped row, else the
+     *  newest before it — not today's; the drift note compares it with the
+     *  base weight below. */
     currentWeight?: number;
     currentBodyFatPercentage?: number;
     unitPreference?: UnitPreference;
+    /** The base weight of the nutrition version covering the check-in's day. */
     nutritionPlanBaseWeightKg?: number;
-    /** The covering nutrition version's effective_from — when the numbers the
-     *  drift banner compares against took effect (migration 144). */
+    /** That version's effective_from — when the numbers the drift note
+     *  compares against took effect (migration 144). */
     nutritionPlanEffectiveDate?: string;
   };
   /**
@@ -777,11 +781,12 @@ export type CheckInComparison = {
 export type GoalPaceStatus = "on_track" | "behind_pace" | "unrealistic";
 
 /**
- * Where the client stands against ONE goal, read from the client record's
- * current reading (`Client.currentWeight` / `currentBodyFatPercentage`, the
- * newest row in the measurement log) — never from a check-in, which is a
- * report of what the client typed that week.
- * Composed by `deriveGoalProgress` (`lib/goals/goal-progress.ts`).
+ * Where the client stands against ONE goal, read from the readings in force
+ * at the surface's date. The check-in review judges its goals against the
+ * reading as of the check-in's own day — its stamped row in the measurement
+ * log, else the newest reading before it — never against today's, and never
+ * against the check-in object, which is a report of what the client typed
+ * that week. Composed by `deriveGoalProgress` (`lib/goals/goal-progress.ts`).
  */
 export type GoalPosition = {
   current: number;
@@ -802,12 +807,12 @@ export type GoalPosition = {
 };
 
 /**
- * Goal progress tracking. A row exists for EVERY goal that is set; its
- * `position` is null when the client record has no reading for that metric —
- * the goal is real, the verdict is not, and the strip says "No reading yet"
- * rather than reading a missing row as "no goal".
+ * The goal rows of one surface, composed by the kernel. A row exists for
+ * EVERY goal that is set; its `position` is null when no reading exists as of
+ * the surface's date — the goal is real, the verdict is not, and the strip
+ * says "No reading yet" rather than reading a missing row as "no goal".
  */
-export type GoalProgress = {
+export type GoalProgressRows = {
   weight?: {
     goal: number;
     startingWeight?: number;
@@ -824,6 +829,14 @@ export type GoalProgress = {
     isPastDeadline: boolean;
   };
 };
+
+/**
+ * The check-in review's goal progress: the rows, judged against the goal
+ * version in force at the check-in's instant, and whether that version is
+ * still the client's live goal. The strip offers "Set new goals" only when it
+ * is — a page about a goal already replaced never invites replacing it again.
+ */
+export type GoalProgress = GoalProgressRows & { goalIsCurrent: boolean };
 
 // Complete comparison response with goal tracking
 export type GetCheckInComparisonResponse = {

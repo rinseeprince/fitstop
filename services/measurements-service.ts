@@ -542,3 +542,80 @@ export async function getMeasurementReading(
   }
   return data ? toLogReading(data) : null;
 }
+
+/** The two readings a goal is set on and judged against. */
+const GOAL_KEYS: readonly MeasurementKey[] = ["weight", "bodyFat"];
+
+function standingOf(reading: MeasurementReading): StandingReading {
+  return {
+    id: reading.id,
+    metricKey: reading.metricKey,
+    value: reading.value,
+    date: reading.date,
+    source: reading.source,
+  };
+}
+
+/**
+ * The readings a check-in's review judges its goals against (commit 8b): per
+ * metric, the check-in's own live stamped row when it has one, else the newest
+ * live reading dated on or before `day` — rule 2 at a date, the as-of rule the
+ * baseline view applies at the start date. The stamped row wins over a
+ * same-day reading logged later, because the review reports what THIS
+ * check-in said (rule 5); the Journey's day-value is a different question.
+ * Weight and body fat only, the two a goal can be set on.
+ *
+ * Three reads in one round trip — the stamped rows, then the newest row on or
+ * before the day per metric. One ordered read cannot answer both: with two
+ * metrics in one list, a limit cuts the other metric's newest row whenever one
+ * metric has been logged more often.
+ *
+ * The review is this function's only caller
+ * (`lib/goals/goal-progress-ownership.test.ts`): the Overview and the Journey
+ * read "now" through `client_current_measurements`.
+ */
+export async function getReadingsAsOf(
+  clientId: string,
+  day: string,
+  checkInId: string
+): Promise<Partial<Record<MeasurementKey, StandingReading>>> {
+  const stampedQuery = supabaseAdmin
+    .from("client_measurements_live")
+    .select(READING_COLUMNS)
+    .eq("client_id", clientId)
+    .eq("source_id", checkInId)
+    .in("metric_key", [...GOAL_KEYS])
+    .order("recorded_at", { ascending: false })
+    .order("id", { ascending: false });
+  const beforeQueries = GOAL_KEYS.map((key) =>
+    supabaseAdmin
+      .from("client_measurements_live")
+      .select(READING_COLUMNS)
+      .eq("client_id", clientId)
+      .eq("metric_key", key)
+      .lte("recorded_on", day)
+      .order("recorded_on", { ascending: false })
+      .order("recorded_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1)
+  );
+  const [stamped, ...before] = await Promise.all([stampedQuery, ...beforeQueries]);
+
+  const failed = [stamped, ...before].find((result) => result.error);
+  if (failed?.error) {
+    console.error("Failed to read the readings as of a day:", failed.error);
+    throw new Error(`Failed to read measurements as of a day: ${failed.error.message}`);
+  }
+
+  const out: Partial<Record<MeasurementKey, StandingReading>> = {};
+  // Stamped rows arrive newest first, so the first per key is the check-in's.
+  for (const reading of toReadings(stamped.data)) {
+    if (!out[reading.metricKey]) out[reading.metricKey] = standingOf(reading);
+  }
+  GOAL_KEYS.forEach((key, i) => {
+    if (out[key]) return;
+    const [reading] = toReadings(before[i].data);
+    if (reading) out[key] = standingOf(reading);
+  });
+  return out;
+}

@@ -116,7 +116,12 @@ describe('Client Check-in Service', () => {
 
       // Assert
       expect(getCheckInWithDetails).toHaveBeenCalledWith(mockCheckInId)
-      expect(getClientCheckIns).toHaveBeenCalledWith(mockClientId, { limit: 5 })
+      // Bounded to the check-ins up to this one (commit 8b) — a no-op at submit
+      // time, and the same bound the coach's Regenerate applies to an old one.
+      expect(getClientCheckIns).toHaveBeenCalledWith(mockClientId, {
+        limit: 5,
+        upTo: '2024-01-15T10:00:00Z',
+      })
       expect(generateCheckInSummary).toHaveBeenCalledWith(
         mockCurrentCheckIn,
         mockPreviousCheckIns,

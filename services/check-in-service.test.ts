@@ -947,3 +947,59 @@ describe('Check-in Service', () => {
     })
   })
 })
+
+describe('getClientCheckIns — the upTo bound (commit 8b)', () => {
+  const AT = '2026-05-31T12:00:00+00:00'
+
+  function boundedQuery() {
+    return {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      lte: vi.fn().mockReturnThis(),
+      or: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      range: vi.fn().mockReturnThis(),
+      then: (resolve: (value: unknown) => void) =>
+        Promise.resolve({ data: [], error: null, count: 0 }).then(resolve),
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getMeasurementsForCheckInsMock.mockResolvedValue(new Map())
+  })
+
+  it('bounds the offset path to created_at <= upTo — the review\'s trend is the check-ins up to the one under review', async () => {
+    const q = boundedQuery()
+    vi.mocked(supabaseAdmin.from).mockReturnValue(q as never)
+
+    const { getClientCheckIns } = await import('./check-in-service')
+    await getClientCheckIns('c', { limit: 10, upTo: AT })
+
+    expect(q.lte).toHaveBeenCalledWith('created_at', AT)
+    expect(q.limit).toHaveBeenCalledWith(10)
+    expect(q.or).not.toHaveBeenCalled()
+  })
+
+  it('bounds the keyset path the same way, beside the cursor predicate', async () => {
+    const q = boundedQuery()
+    vi.mocked(supabaseAdmin.from).mockReturnValue(q as never)
+
+    const { getClientCheckIns } = await import('./check-in-service')
+    await getClientCheckIns('c', { limit: 2, keyset: true, upTo: AT })
+
+    expect(q.lte).toHaveBeenCalledWith('created_at', AT)
+    expect(q.limit).toHaveBeenCalledWith(3)
+  })
+
+  it('applies no bound when none is asked for', async () => {
+    const q = boundedQuery()
+    vi.mocked(supabaseAdmin.from).mockReturnValue(q as never)
+
+    const { getClientCheckIns } = await import('./check-in-service')
+    await getClientCheckIns('c', { limit: 10 })
+
+    expect(q.lte).not.toHaveBeenCalled()
+  })
+})
