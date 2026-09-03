@@ -61,8 +61,21 @@ const loaded = {
     goalProgress: {},
   },
   isLoadingComparison: false,
-  dailyLogs: [{ date: "2026-08-22" }, { date: "2026-08-23" }],
+  // One day-form row only: the header's count must NOT come from here, since a
+  // day the client only trained or only ticked a habit has no such row.
+  dailyLogs: [{ date: "2026-08-22" }],
   habitLogs: [],
+  // The server's own date lists (lib/logged-days.ts through the adherence
+  // kernel): the 24th and 27th are logged days, over a seven-day period.
+  periodAdherence: {
+    dates: [
+      "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25",
+      "2026-08-26", "2026-08-27", "2026-08-28",
+    ],
+    loggedDates: ["2026-08-24", "2026-08-27"],
+    nutrition: { rail: [], onTarget: 0, loggedDays: 0, pct: null },
+    habits: { rail: [], avgPct: null, daysBelow50: 0, perHabit: [] },
+  },
   dailyContextLoading: false,
   contextStartDate: new Date("2026-08-22T00:00:00"),
   contextEndDate: new Date("2026-08-28T00:00:00"),
@@ -130,6 +143,16 @@ describe("CheckInDetailView", () => {
     // Goal progress renders without a click — the whole point of the page.
     expect(screen.getByTestId("goals")).toBeInTheDocument();
     expect(screen.getByText(/2\/7 days logged/)).toBeInTheDocument();
+    expect(screen.getByText(/Week of Aug 22 – 28, 2026/)).toBeInTheDocument();
+  });
+
+  it("omits the days-logged chip on a legacy row whose period cannot be resolved", () => {
+    // `periodAdherence` is null when the server cannot resolve the period. The
+    // cells show their empty states; the header shows no fraction rather than
+    // one counted a second way.
+    mockDetailData.mockReturnValue({ ...loaded, periodAdherence: null });
+    renderView();
+    expect(screen.queryByText(/days logged/)).not.toBeInTheDocument();
     expect(screen.getByText(/Week of Aug 22 – 28, 2026/)).toBeInTheDocument();
   });
 

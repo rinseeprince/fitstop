@@ -17,10 +17,12 @@ import {
   groupClientData,
   evaluateAndSortTriggers,
   filterDismissedAlerts,
+  loggedDaysFor,
   type TrainingEventRow,
   type DismissalRow,
 } from "@/lib/attention-feed-helpers"
 import type { ClientWithAlerts } from "@/types/attention-feed"
+import type { DailyLog } from "@/types/daily-log"
 
 describe("attention-feed-service", () => {
   const baseClient = {
@@ -43,7 +45,7 @@ describe("attention-feed-service", () => {
         { ...baseClient, id: "c2", name: "Client 2" },
       ]
 
-      const result = groupClientData(clients, null, null, null, events)
+      const result = groupClientData(clients, null, null, null, events, null)
 
       const c1 = result.get("c1")!
       expect(c1.trainingEvents).toHaveLength(2)
@@ -62,28 +64,104 @@ describe("attention-feed-service", () => {
         { client_id: "c1", date: "2026-04-03", status: "missed", estimated_calories: 200 },
       ]
 
-      const result = groupClientData([baseClient], null, null, null, events)
+      const result = groupClientData([baseClient], null, null, null, events, null)
 
       expect(result.get("c1")!.plannedSessionCount).toBe(3)
     })
 
     it("should handle null eventRows gracefully", () => {
-      const result = groupClientData([baseClient], null, null, null, null)
+      const result = groupClientData([baseClient], null, null, null, null, null)
 
       expect(result.get("c1")!.trainingEvents).toEqual([])
       expect(result.get("c1")!.plannedSessionCount).toBe(0)
+      expect(result.get("c1")!.clientLogDates).toEqual([])
     })
 
     it("should carry start_date into ClientData.startDate (null when absent)", () => {
-      expect(groupClientData([baseClient], null, null, null, null).get("c1")!.startDate).toBeNull()
+      expect(groupClientData([baseClient], null, null, null, null, null).get("c1")!.startDate).toBeNull()
       const withStart = groupClientData(
         [{ ...baseClient, start_date: "2026-05-01" }],
         null,
         null,
         null,
         null,
+        null,
       )
       expect(withStart.get("c1")!.startDate).toBe("2026-05-01")
+    })
+
+    it("groups the client's own measurement logs per client, as dates, skipping a null row", () => {
+      const result = groupClientData(
+        [baseClient, { ...baseClient, id: "c2", name: "Client 2" }],
+        null,
+        null,
+        null,
+        null,
+        [
+          { client_id: "c1", recorded_on: "2026-04-01" },
+          { client_id: "c2", recorded_on: "2026-04-02" },
+          { client_id: null, recorded_on: "2026-04-03" },
+          { client_id: "c1", recorded_on: null },
+        ],
+      )
+
+      expect(result.get("c1")!.clientLogDates).toEqual(["2026-04-01"])
+      expect(result.get("c2")!.clientLogDates).toEqual(["2026-04-02"])
+    })
+  })
+
+  describe("loggedDaysFor — the feed's assembly of the one definition", () => {
+    const log = (date: string, values: Partial<DailyLog> = {}): DailyLog => ({
+      id: `dl-${date}`,
+      clientId: "c1",
+      date,
+      createdAt: "",
+      updatedAt: "",
+      ...values,
+    })
+    const dateRange = { start: "2026-04-01", end: "2026-04-10" }
+
+    it("counts a day for each source the client used, and nothing for a scheduled event or an empty day-form row", () => {
+      const map = groupClientData(
+        [baseClient],
+        null,
+        null,
+        null,
+        [
+          { client_id: "c1", date: "2026-04-01", status: "completed", estimated_calories: null },
+          { client_id: "c1", date: "2026-04-06", status: "scheduled", estimated_calories: null },
+        ],
+        [{ client_id: "c1", recorded_on: "2026-04-05" }],
+      )
+      const data = map.get("c1")!
+      data.logs = [
+        log("2026-04-03", { mood: 4 }),
+        log("2026-04-04", { caloriesConsumed: 2100 }),
+        log("2026-04-07"), // a spine row with nothing on it is not a log
+      ]
+      data.habitLogs = [
+        { id: "hl", dailyHabitId: "h1", clientId: "c1", date: "2026-04-02", completed: false, createdAt: "", updatedAt: "" },
+      ]
+
+      expect(loggedDaysFor(data, dateRange)).toEqual([
+        "2026-04-01", // trained
+        "2026-04-02", // ticked (or unticked) a habit
+        "2026-04-03", // wellness
+        "2026-04-04", // nutrition
+        "2026-04-05", // logged a measurement
+      ])
+    })
+
+    it("keeps a day outside the window out", () => {
+      const map = groupClientData(
+        [baseClient],
+        null,
+        null,
+        null,
+        [{ client_id: "c1", date: "2026-03-31", status: "completed", estimated_calories: null }],
+        null,
+      )
+      expect(loggedDaysFor(map.get("c1")!, dateRange)).toEqual([])
     })
   })
 
@@ -116,7 +194,7 @@ describe("attention-feed-service", () => {
         { id: "dl1", clientId: "c1", date: d2.toISOString().split("T")[0], createdAt: "", updatedAt: "" },
       ]
 
-      const clientDataMap = groupClientData([baseClient], null, null, null, events)
+      const clientDataMap = groupClientData([baseClient], null, null, null, events, null)
       clientDataMap.get("c1")!.logs = logs
 
       const result = evaluateAndSortTriggers(clientDataMap, dateRange)
@@ -153,7 +231,7 @@ describe("attention-feed-service", () => {
       ]
       const dateRange = { start: iso(start), end: iso(today) }
 
-      const map = groupClientData(clients, null, null, null, events)
+      const map = groupClientData(clients, null, null, null, events, null)
       const result = evaluateAndSortTriggers(map, dateRange)
 
       const c1 = result.find((c) => c.clientId === "c1")
@@ -161,10 +239,84 @@ describe("attention-feed-service", () => {
       expect(c1!.alerts.some((a) => a.type === "no_engagement")).toBe(true)
     })
 
-    it("skips a client with no logs, no events, no habits, and no habit logs", () => {
-      const map = groupClientData([baseClient], null, null, null, null)
+    describe("a client who only trains, or only ticks habits, is never read as silent", () => {
+      // A fixed window: the coach-local today is the window end, so the
+      // silence cutoff is the 24th and a log on the 25th is inside it.
+      const dateRange = { start: "2024-02-28", end: "2024-03-27" }
+      const clients = [{ ...baseClient, start_date: "2024-01-01" }]
+      const prescribed: TrainingEventRow = {
+        client_id: "c1", date: "2024-03-20", status: "scheduled", estimated_calories: 300,
+      }
+      const alertsFor = (map: ReturnType<typeof groupClientData>) =>
+        evaluateAndSortTriggers(map, dateRange)
+          .find((c) => c.clientId === "c1")?.alerts.map((a) => a.type) ?? []
+
+      it("a completed workout in the silence window clears no_engagement, and no spine row is needed", () => {
+        const map = groupClientData(clients, null, null, null, [
+          prescribed,
+          { client_id: "c1", date: "2024-03-25", status: "completed", estimated_calories: 300 },
+        ], null)
+        expect(alertsFor(map)).not.toContain("no_engagement")
+      })
+
+      it("a habit log in the silence window clears it", () => {
+        const map = groupClientData(clients, null, null, null, [prescribed], null)
+        map.get("c1")!.habitLogs = [
+          { id: "hl", dailyHabitId: "h1", clientId: "c1", date: "2024-03-26", completed: true, createdAt: "", updatedAt: "" },
+        ]
+        expect(alertsFor(map)).not.toContain("no_engagement")
+      })
+
+      it("a measurement the client logged themselves clears it", () => {
+        const map = groupClientData(clients, null, null, null, [prescribed], [
+          { client_id: "c1", recorded_on: "2024-03-27" },
+        ])
+        expect(alertsFor(map)).not.toContain("no_engagement")
+      })
+
+      it("a scheduled event alone does not", () => {
+        const map = groupClientData(clients, null, null, null, [prescribed], null)
+        expect(alertsFor(map)).toContain("no_engagement")
+      })
+
+      it("training-only days bridge a logging gap that the spine alone would open", () => {
+        // Spine rows on the 1st and the 9th; workouts on the 3rd, 5th and 7th.
+        // Counting spine rows this is a seven-day gap; counting logged days the
+        // longest gap is one day.
+        const range = { start: "2024-03-01", end: "2024-03-09" }
+        const map = groupClientData(clients, null, null, null, [
+          { client_id: "c1", date: "2024-03-03", status: "completed", estimated_calories: null },
+          { client_id: "c1", date: "2024-03-05", status: "partial", estimated_calories: null },
+          { client_id: "c1", date: "2024-03-07", status: "completed", estimated_calories: null },
+        ], null)
+        map.get("c1")!.logs = [
+          { id: "a", clientId: "c1", date: "2024-03-01", mood: 3, createdAt: "", updatedAt: "" },
+          { id: "b", clientId: "c1", date: "2024-03-09", mood: 3, createdAt: "", updatedAt: "" },
+        ]
+        const types = evaluateAndSortTriggers(map, range)
+          .find((c) => c.clientId === "c1")?.alerts.map((a) => a.type) ?? []
+        expect(types).not.toContain("no_log_gap")
+      })
+    })
+
+    it("skips a client with nothing logged and nothing prescribed", () => {
+      const map = groupClientData([baseClient], null, null, null, null, null)
       const result = evaluateAndSortTriggers(map, { start: "2026-01-01", end: "2026-01-28" })
       expect(result.find((c) => c.clientId === "c1")).toBeUndefined()
+    })
+
+    it("evaluates a client who only logged wellness, with nothing prescribed", () => {
+      // Ten days of mood at 4, then three at 1: the mood-drop trigger needs the
+      // rows, and the guard must not read "nothing prescribed" as "nothing to do".
+      const map = groupClientData([baseClient], null, null, null, null, null)
+      const logs: DailyLog[] = []
+      for (let d = 1; d <= 13; d++) {
+        const date = `2026-01-${String(d).padStart(2, "0")}`
+        logs.push({ id: date, clientId: "c1", date, mood: d <= 10 ? 4 : 1, createdAt: "", updatedAt: "" })
+      }
+      map.get("c1")!.logs = logs
+      const result = evaluateAndSortTriggers(map, { start: "2026-01-01", end: "2026-01-13" })
+      expect(result.find((c) => c.clientId === "c1")?.alerts.some((a) => a.type === "mood_drop")).toBe(true)
     })
 
     it("anchors day-deciding triggers to the window end, not the server clock (Session 7.84)", () => {
@@ -177,7 +329,7 @@ describe("attention-feed-service", () => {
       ]
       const dateRange = { start: "2024-02-28", end: "2024-03-27" }
 
-      const map = groupClientData(clients, null, null, null, events)
+      const map = groupClientData(clients, null, null, null, events, null)
       const result = evaluateAndSortTriggers(map, dateRange)
 
       const alert = result
@@ -263,8 +415,42 @@ describe("attention-feed-service", () => {
       // Promise.allSettled, so their chunks interleave — assert on the union,
       // not on a positional slice.)
       expect(new Set(inCalls.flat()).size).toBe(250)
-      // Each read covers all 250 ids across 3 chunks (100/100/50), 4 reads.
-      expect(inCalls.length).toBe(12)
+      // Each read covers all 250 ids across 3 chunks (100/100/50), 5 reads.
+      expect(inCalls.length).toBe(15)
+    })
+
+    it("reads only the measurements the client logged themselves, from the live view", async () => {
+      // The fifth logged-day source. A coach entry, an intake reading or a
+      // check-in's stamped row is the coach's work or the weekly report.
+      const eqCalls: Record<string, unknown[][]> = {}
+      let rosterServed = false
+      const makeQuery = (table: string) => {
+        const q: Record<string, unknown> = {
+          select: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          lte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockReturnThis(),
+          range: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
+          eq: vi.fn((...args: unknown[]) => { (eqCalls[table] ??= []).push(args); return q }),
+        }
+        Object.defineProperty(q, "then", {
+          value: (resolve: (v: { data: unknown[]; error: null }) => void) => {
+            if (table === "clients" && !rosterServed) {
+              rosterServed = true
+              return Promise.resolve({ data: [baseClient], error: null }).then(resolve)
+            }
+            return Promise.resolve({ data: [], error: null }).then(resolve)
+          },
+        })
+        return q
+      }
+      vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) => makeQuery(t)) as never)
+
+      await evaluateAllClientTriggers("coach-1")
+
+      expect(eqCalls["client_measurements_live"]).toEqual([["source", "client_log"]])
+      expect(eqCalls["daily_logs"]).toBeUndefined()
     })
   })
 

@@ -114,12 +114,12 @@ export function alertLines(alert: AttentionAlert): { title: string; sub: string 
 /**
  * Alerts worth showing, with the redundant one suppressed.
  *
- * `no_log_gap` fires on consecutive missing `daily_logs` rows — the
- * nutrition/wellness spine only. `no_engagement` fires when a client with
- * prescribed work has shown nothing on ANY of three surfaces (daily logs,
- * habit logs, completed sessions). The second is strictly stronger, so a client
- * who trips it usually trips both, and the coach reads two rows describing one
- * silence.
+ * Both alerts read the one definition of a logged day (`lib/logged-days.ts`).
+ * `no_log_gap` fires on a run of consecutive unlogged days between, or after,
+ * the client's logged days. `no_engagement` fires when a client with
+ * prescribed work has no logged day in the silence window. The second is
+ * strictly stronger, so a client who trips it usually trips both, and the coach
+ * reads two rows describing one silence.
  *
  * Suppression rather than a merge, deliberately: dismissals are keyed by alert
  * TYPE (`attention_dismissals`), so a merged row's × would have to dismiss two

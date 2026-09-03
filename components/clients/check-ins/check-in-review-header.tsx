@@ -36,8 +36,13 @@ type CheckInReviewHeaderProps = {
     start: Date;
     end: Date;
     submittedAt: string;
-    daysLogged: number;
-    daysInPeriod: number;
+    /**
+     * Days in the period with any log the client made themselves, over the
+     * period's length — both from the server's own date lists, so the fraction
+     * and the cells below it share one denominator. `null` on a legacy row
+     * whose period cannot be resolved, and the chip is omitted.
+     */
+    daysLogged: { logged: number; inPeriod: number } | null;
     /**
      * Days since the previous check-in, `undefined` on a first one. Load-bearing
      * rather than decoration: every delta on this page reads "vs last check-in",
@@ -72,16 +77,20 @@ export const CheckInReviewHeader = ({ onBack, meta }: CheckInReviewHeaderProps) 
         <span className={MONO}>{formatDateRange(meta.start, meta.end)}</span>
         <span>&middot;</span>
         <span className={MONO}>{formatSubmittedDate(meta.submittedAt)}</span>
-        <span>&middot;</span>
-        <span
-          className={cn(
-            "inline-flex items-center text-xs font-semibold",
-            MONO,
-            "text-[#0d9488] bg-[rgba(13,148,136,0.08)] px-1.5 py-0.5 rounded-[4px]"
-          )}
-        >
-          {meta.daysLogged}/{meta.daysInPeriod} days logged
-        </span>
+        {meta.daysLogged && (
+          <>
+            <span>&middot;</span>
+            <span
+              className={cn(
+                "inline-flex items-center text-xs font-semibold",
+                MONO,
+                "text-[#0d9488] bg-[rgba(13,148,136,0.08)] px-1.5 py-0.5 rounded-[4px]"
+              )}
+            >
+              {meta.daysLogged.logged}/{meta.daysLogged.inPeriod} days logged
+            </span>
+          </>
+        )}
         {meta.daysSinceLast !== undefined && (
           <>
             <span>&middot;</span>

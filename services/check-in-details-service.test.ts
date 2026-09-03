@@ -290,6 +290,7 @@ describe("resolveCheckInReportingPeriod", () => {
 describe("getCheckInPeriodAdherence", () => {
   const summary = {
     dates: ["2026-05-08", "2026-05-09"],
+    loggedDates: ["2026-05-08"],
     training: { rail: [], completed: 1, planned: 2, pct: 50 },
     nutrition: { rail: [], onTarget: 1, loggedDays: 1, pct: 50 },
     habits: { rail: [], avgPct: 50, daysBelow50: 0, perHabit: [] },
@@ -330,6 +331,7 @@ describe("getCheckInPeriodAdherence", () => {
 
     expect(result).toEqual({
       dates: summary.dates,
+      loggedDates: summary.loggedDates,
       nutrition: summary.nutrition,
       habits: summary.habits,
     });

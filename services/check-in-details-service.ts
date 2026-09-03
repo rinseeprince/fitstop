@@ -92,6 +92,7 @@ export const getCheckInPeriodAdherence = async (
 
   return {
     dates: summary.dates,
+    loggedDates: summary.loggedDates,
     nutrition: summary.nutrition,
     habits: summary.habits,
   };

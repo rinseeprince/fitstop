@@ -21,6 +21,7 @@ function rail(...states: DotState[]): DotState[] {
 
 const SUMMARY: AdherenceSummary = {
   dates: DATES,
+  loggedDates: ["2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-25", "2026-07-26"],
   training: {
     rail: rail("complete", "none", "partial", "missed", "none", "complete", "no_log"),
     completed: 2,

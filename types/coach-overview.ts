@@ -96,7 +96,7 @@ export type HabitBreakdown = {
  */
 export type CheckInPeriodAdherence = Pick<
   AdherenceSummary,
-  "dates" | "nutrition" | "habits"
+  "dates" | "loggedDates" | "nutrition" | "habits"
 >;
 
 export type AdherenceSummary = {
@@ -111,6 +111,14 @@ export type AdherenceSummary = {
    * is the defect this contract exists to prevent.
    */
   dates: string[];
+  /**
+   * The days in `dates` with any log the client made themselves — the derived
+   * definition (`loggedDays`, lib/logged-days.ts): a nutrition entry, a
+   * wellness reading, a habit log, a workout log or a client-logged
+   * measurement. The habits rail reads it for Missed versus No log, and the
+   * check-in review's header prints its length over `dates.length`.
+   */
+  loggedDates: string[];
   training: { rail: DotState[]; completed: number; planned: number; pct: number | null };
   nutrition: { rail: DotState[]; onTarget: number; loggedDays: number; pct: number | null };
   habits: {

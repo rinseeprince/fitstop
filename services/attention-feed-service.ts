@@ -6,7 +6,11 @@
  * - daily_logs: 28-day rolling window of logs for all clients
  * - daily_habits: habit definitions for all clients
  * - daily_habit_logs: 28-day rolling window of habit logs for all clients
- * - training_plans & training_sessions: to get planned session counts per client
+ * - training_events: the window's events, for the training triggers and the workout logs
+ * - client_measurements_live: the client's own measurement logs (source = client_log)
+ *
+ * "Did the client log today?" is answered once, by `lib/logged-days.ts`, from
+ * these rows (`loggedDaysFor` in lib/attention-feed-helpers.ts).
  */
 
 import { supabaseAdmin } from "./supabase-admin"
@@ -16,7 +20,8 @@ import { getDateDaysFrom } from "@/lib/date-helpers"
 import { getCoachTodayString } from "./today-service"
 import { groupClientData, evaluateAndSortTriggers, filterDismissedAlerts } from "@/lib/attention-feed-helpers"
 import { fetchAllPages, fetchAllByChunkedIds } from "@/lib/paged-fetch"
-import type { DailyLogRow } from "@/lib/attention-feed-helpers"
+import { CLIENT_MEASUREMENT_SOURCE } from "@/lib/logged-days"
+import type { ClientLogRow, DailyLogRow } from "@/lib/attention-feed-helpers"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
 type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
@@ -63,7 +68,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
 
   const clientIds = clients.map(c => c.id)
 
-  // Fetch all data sources in parallel (Q2-Q6 are independent after Q1)
+  // Fetch all data sources in parallel (Q2-Q7 are independent after Q1)
   // Uses Promise.allSettled to preserve graceful degradation: logs are required,
   // but habits/events/dismissals degrade gracefully if they fail
   // Every cross-client read below is CHUNKED BY CLIENT ID *and* PAGED, because
@@ -88,7 +93,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // the OLDEST dates and discarded exactly the recent end that every trigger
   // reads (dropoff = last 7 days, no_engagement = last 3, cal-mismatch = 28).
   // The `id` tiebreak keeps offset paging stable across pages.
-  const [logsResult, habitsResult, habitLogsResult, eventsResult, dismissalsResult] = await Promise.allSettled([
+  const [logsResult, habitsResult, habitLogsResult, eventsResult, clientLogsResult, dismissalsResult] = await Promise.allSettled([
     // 2. Daily logs (cross-domain view, required for core triggers)
     fetchAllByChunkedIds<DailyLogRow, string>(clientIds, (chunk, from, to) =>
       supabaseAdmin
@@ -139,7 +144,23 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
         .range(from, to),
       { errorLabel: "training events" },
     ),
-    // 6. Dismissed alerts (graceful degradation)
+    // 6. The client's own measurement logs (graceful degradation). Empty until
+    //    the client app can log a weight; read now so the derived logged-day
+    //    definition cannot silently lose its fifth source the day it can.
+    fetchAllByChunkedIds<ClientLogRow, string>(clientIds, (chunk, from, to) =>
+      supabaseAdmin
+        .from("client_measurements_live")
+        .select("client_id, recorded_on")
+        .in("client_id", chunk)
+        .eq("source", CLIENT_MEASUREMENT_SOURCE)
+        .gte("recorded_on", startDate)
+        .lte("recorded_on", endDate)
+        .order("recorded_on", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+      { errorLabel: "client measurement logs" },
+    ),
+    // 7. Dismissed alerts (graceful degradation)
     fetchAllPages((from, to) =>
       supabaseAdmin
         .from("attention_dismissals")
@@ -182,6 +203,13 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     console.error("Error fetching training events:", eventsResult.reason)
   }
 
+  let clientLogRows = null
+  if (clientLogsResult.status === "fulfilled") {
+    clientLogRows = clientLogsResult.value
+  } else {
+    console.error("Error fetching client measurement logs:", clientLogsResult.reason)
+  }
+
   // Group all query results by client
   const clientDataMap = groupClientData(
     clients,
@@ -189,6 +217,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     allHabits,
     allHabitLogs,
     eventRows,
+    clientLogRows,
   )
 
   // Evaluate triggers and sort
@@ -231,7 +260,7 @@ export async function evaluateSingleClientAlerts(
 
   if (clientError || !client) return []
 
-  const [logsResult, habitsResult, habitLogsResult, eventsResult, dismissalsResult] =
+  const [logsResult, habitsResult, habitLogsResult, eventsResult, clientLogsResult, dismissalsResult] =
     await Promise.allSettled([
       supabaseAdmin
         .from("daily_logs_full")
@@ -257,6 +286,13 @@ export async function evaluateSingleClientAlerts(
         .gte("date", startDate)
         .lte("date", endDate),
       supabaseAdmin
+        .from("client_measurements_live")
+        .select("client_id, recorded_on")
+        .eq("client_id", clientId)
+        .eq("source", CLIENT_MEASUREMENT_SOURCE)
+        .gte("recorded_on", startDate)
+        .lte("recorded_on", endDate),
+      supabaseAdmin
         .from("attention_dismissals")
         .select("client_id, alert_type, dismissed_at")
         .eq("coach_id", coachId)
@@ -273,6 +309,10 @@ export async function evaluateSingleClientAlerts(
     habitLogsResult.status === "fulfilled" && !habitLogsResult.value.error ? habitLogsResult.value.data : null
   const eventRows =
     eventsResult.status === "fulfilled" && !eventsResult.value.error ? eventsResult.value.data : null
+  const clientLogRows =
+    clientLogsResult.status === "fulfilled" && !clientLogsResult.value.error
+      ? clientLogsResult.value.data
+      : null
   const dismissals =
     dismissalsResult.status === "fulfilled" && !dismissalsResult.value.error
       ? dismissalsResult.value.data
@@ -284,6 +324,7 @@ export async function evaluateSingleClientAlerts(
     allHabits,
     allHabitLogs,
     eventRows,
+    clientLogRows,
   )
   const withAlerts = evaluateAndSortTriggers(clientDataMap, dateRange)
   const filtered = filterDismissedAlerts(withAlerts, dismissals)

@@ -21,6 +21,12 @@ import {
   type TriggerResult
 } from "@/lib/attention-triggers"
 import { checkInWeekday } from "@/lib/check-in-week"
+import {
+  hasNutritionEntry,
+  hasWellnessReading,
+  isTrainingLogStatus,
+  loggedDays,
+} from "@/lib/logged-days"
 import type { DayOfWeek } from "@/types/check-in"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
@@ -46,6 +52,12 @@ export type TrainingEventRow = {
   estimated_calories: number | null
 }
 
+/** A measurement the client logged themselves: `client_measurements_live`, `source = 'client_log'`. */
+export type ClientLogRow = {
+  client_id: string | null
+  recorded_on: string | null
+}
+
 type DailyHabitRow = Database["public"]["Tables"]["daily_habits"]["Row"]
 type DailyHabitLogRow = Database["public"]["Tables"]["daily_habit_logs"]["Row"]
 
@@ -55,6 +67,8 @@ type ClientData = {
   habits: DailyHabit[]
   habitLogs: DailyHabitLog[]
   trainingEvents: TrainingEventRow[]
+  /** Days the client logged a body measurement themselves — the fifth logged-day source. */
+  clientLogDates: string[]
   plannedSessionCount: number
   /** Resolved through `checkInWeekday`, so never null — see lib/check-in-week.ts. */
   checkInDay: DayOfWeek
@@ -68,6 +82,7 @@ export function groupClientData(
   allHabits: DailyHabitRow[] | null,
   allHabitLogs: DailyHabitLogRow[] | null,
   eventRows: TrainingEventRow[] | null,
+  clientLogRows: ClientLogRow[] | null,
 ): Map<string, ClientData> {
   const clientDataMap = new Map<string, ClientData>()
 
@@ -79,6 +94,7 @@ export function groupClientData(
       habits: [],
       habitLogs: [],
       trainingEvents: [],
+      clientLogDates: [],
       plannedSessionCount: 0,
       checkInDay: checkInWeekday({ nextCheckInDue: client.next_check_in_due }),
       startDate: client.start_date ?? null,
@@ -180,7 +196,41 @@ export function groupClientData(
     }
   }
 
+  // Group the client's own measurement logs per client, as dates
+  if (clientLogRows) {
+    for (const row of clientLogRows) {
+      if (!row.client_id || !row.recorded_on) continue
+      clientDataMap.get(row.client_id)?.clientLogDates.push(row.recorded_on)
+    }
+  }
+
   return clientDataMap
+}
+
+/**
+ * The client's logged days over the feed's window, assembled from the rows the
+ * feed already holds and answered by the one definition (`lib/logged-days.ts`)
+ * — never a private union. A `daily_logs_full` row carries the wellness and
+ * nutrition values of its day-form, so it counts for each source whose values
+ * it carries; a workout counts by its event's status; a habit log counts
+ * whether ticked or not, because either is the client acting.
+ */
+export function loggedDaysFor(
+  data: ClientData,
+  dateRange: { start: string; end: string },
+): string[] {
+  return loggedDays(
+    {
+      wellness: data.logs.filter(hasWellnessReading).map((log) => log.date),
+      nutrition: data.logs.filter(hasNutritionEntry).map((log) => log.date),
+      habits: data.habitLogs.map((log) => log.date),
+      training: data.trainingEvents
+        .filter((event) => isTrainingLogStatus(event.status))
+        .map((event) => event.date),
+      measurements: data.clientLogDates,
+    },
+    { from: dateRange.start, to: dateRange.end },
+  )
 }
 
 /** Evaluates triggers per client and returns a severity-sorted list of clients with alerts */
@@ -193,13 +243,13 @@ export function evaluateAndSortTriggers(
   for (const [_clientId, data] of clientDataMap) {
     const alerts: AttentionAlert[] = []
 
-    // Skip only clients with nothing to evaluate. Event/habit-driven triggers
-    // (training misses, partial pattern, no-engagement) read sources other than
-    // daily_logs, so a client with prescribed work but no logs must NOT be skipped.
+    // Skip only a client with nothing logged and nothing prescribed: the
+    // pattern triggers need logs, the absence signal needs prescribed work, and
+    // a client with prescribed work but no logs must NOT be skipped.
+    const logged = loggedDaysFor(data, dateRange)
     if (
-      data.logs.length === 0 &&
+      logged.length === 0 &&
       data.trainingEvents.length === 0 &&
-      data.habitLogs.length === 0 &&
       data.habits.length === 0
     ) {
       continue
@@ -213,7 +263,7 @@ export function evaluateAndSortTriggers(
     const triggers: (TriggerResult | null)[] = [
       evaluateMoodEnergyDrop(data.logs, "mood"),
       evaluateMoodEnergyDrop(data.logs, "energy"),
-      evaluateLoggingGap(data.logs, dateRange),
+      evaluateLoggingGap(logged, dateRange),
       evaluateNutritionMisses(data.logs),
       evaluateTrainingMisses(data.trainingEvents, windowNow, data.checkInDay),
       evaluatePartialTrainingPattern(data.trainingEvents),
@@ -222,9 +272,8 @@ export function evaluateAndSortTriggers(
       evaluateHabitDropoff(data.habitLogs, data.habits, windowNow),
       evaluateActivityCalMismatch(data.logs, data.trainingEvents, windowNow),
       evaluateNoEngagement({
-        logs: data.logs,
+        loggedDays: logged,
         habits: data.habits,
-        habitLogs: data.habitLogs,
         trainingEvents: data.trainingEvents,
         startDate: data.startDate,
         now: windowNow,

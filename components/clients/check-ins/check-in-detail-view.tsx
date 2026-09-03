@@ -86,11 +86,6 @@ export const CheckInDetailView = ({
     refreshDetail,
   } = useCheckInDetailData({ checkInId, clientId: client.id });
 
-  const daysDiff =
-    contextStartDate && contextEndDate
-      ? Math.round((contextEndDate.getTime() - contextStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
-      : 7;
-
   // Single source of training adherence (completed / prescribed) derived from the
   // check-in's session completions. Shared by the band, the training section
   // and the comparison so the figure is identical everywhere.
@@ -112,8 +107,16 @@ export const CheckInDetailView = ({
                 start: contextStartDate,
                 end: contextEndDate,
                 submittedAt: data.checkIn.createdAt,
-                daysLogged: dailyLogs.length,
-                daysInPeriod: daysDiff,
+                // Days with any client log, from the same server date lists the
+                // cells divide by (lib/logged-days.ts through the adherence
+                // kernel) — never a count of the daily-log rows this page holds,
+                // which only wellness and nutrition create.
+                daysLogged: periodAdherence
+                  ? {
+                      logged: periodAdherence.loggedDates.length,
+                      inPeriod: periodAdherence.dates.length,
+                    }
+                  : null,
                 daysSinceLast: comparisonData?.comparison.timeBetweenCheckIns,
               }
             : null

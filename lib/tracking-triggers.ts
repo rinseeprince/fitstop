@@ -11,19 +11,23 @@ import {
 import { getDateString, getTrainingWeekStart } from "@/lib/date-helpers"
 
 /**
- * Evaluates if there's a gap in daily logging
+ * Evaluates if there's a gap in daily logging.
+ *
+ * `loggedDays` is the derived set — `loggedDays` in `lib/logged-days.ts`,
+ * assembled by the caller from the rows it holds — so a day the client only
+ * trained or only ticked a habit is a logged day here, not a gap.
  */
 export function evaluateLoggingGap(
-  logs: DailyLog[],
+  loggedDays: readonly string[],
   dateRange: { start: string; end: string }
 ): TriggerResult | null {
-  if (logs.length === 0) return null
-  const sortedLogs = [...logs].sort((a, b) => a.date.localeCompare(b.date))
+  if (loggedDays.length === 0) return null
+  const sortedDays = [...loggedDays].sort()
   const missingDays: string[] = []
-  // Check for gaps between existing logs
-  for (let i = 1; i < sortedLogs.length; i++) {
-    const currentDate = new Date(sortedLogs[i].date + 'T00:00:00')
-    const previousDate = new Date(sortedLogs[i - 1].date + 'T00:00:00')
+  // Check for gaps between logged days
+  for (let i = 1; i < sortedDays.length; i++) {
+    const currentDate = new Date(sortedDays[i] + 'T00:00:00')
+    const previousDate = new Date(sortedDays[i - 1] + 'T00:00:00')
     const daysBetween = Math.floor((currentDate.getTime() - previousDate.getTime()) / (1000 * 60 * 60 * 24))
     if (daysBetween > LOGGING_GAP_THRESHOLD_DAYS) {
       // Found a gap
@@ -42,10 +46,10 @@ export function evaluateLoggingGap(
       }
     }
   }
-  // Check gap from last log to end date
-  if (sortedLogs.length > 1) {
+  // Check gap from last logged day to end date
+  if (sortedDays.length > 1) {
     const endDate = new Date(dateRange.end + 'T00:00:00')
-    const mostRecentDate = new Date(sortedLogs[sortedLogs.length - 1].date + 'T00:00:00')
+    const mostRecentDate = new Date(sortedDays[sortedDays.length - 1] + 'T00:00:00')
     const daysSinceLastLog = Math.floor((endDate.getTime() - mostRecentDate.getTime()) / (1000 * 60 * 60 * 24))
     if (daysSinceLastLog > LOGGING_GAP_THRESHOLD_DAYS) {
       for (let i = 1; i <= Math.min(daysSinceLastLog, LOGGING_GAP_THRESHOLD_DAYS); i++) {

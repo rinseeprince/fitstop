@@ -1,15 +1,27 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./today-service", () => ({ getClientTodayString: vi.fn() }));
 
+import { supabaseAdmin } from "./supabase-admin";
 import {
   buildAdherenceSummary,
   classifyTrainingDay,
   classifyNutritionDay,
   classifyHabitDay,
+  getClientAdherenceForRange,
   type AdherenceSourceRows,
 } from "./client-adherence-service";
+
+/** A nutrition row that carries a consumed value — a logged day by itself. */
+const nut = (date: string, nutrition_adherence: string | null) => ({
+  date,
+  nutrition_adherence,
+  calories_consumed: 2000,
+  protein_g: null,
+  carbs_g: null,
+  fat_g: null,
+});
 
 describe("classifyTrainingDay", () => {
   it("follows the classification table for single-event days", () => {
@@ -40,15 +52,15 @@ describe("classifyNutritionDay", () => {
 });
 
 describe("classifyHabitDay", () => {
-  it("distinguishes missed (engaged, zero habits) from no_log (no engagement)", () => {
-    expect(classifyHabitDay({ eligible: 2, completed: 0, hasSpineRow: true }).dot).toBe("missed");
-    expect(classifyHabitDay({ eligible: 2, completed: 0, hasSpineRow: false }).dot).toBe("no_log");
-    expect(classifyHabitDay({ eligible: 2, completed: 1, hasSpineRow: false }).dot).toBe("partial");
-    expect(classifyHabitDay({ eligible: 2, completed: 2, hasSpineRow: false }).dot).toBe("complete");
+  it("distinguishes missed (a logged day, zero habits) from no_log (no log at all)", () => {
+    expect(classifyHabitDay({ eligible: 2, completed: 0, logged: true }).dot).toBe("missed");
+    expect(classifyHabitDay({ eligible: 2, completed: 0, logged: false }).dot).toBe("no_log");
+    expect(classifyHabitDay({ eligible: 2, completed: 1, logged: false }).dot).toBe("partial");
+    expect(classifyHabitDay({ eligible: 2, completed: 2, logged: false }).dot).toBe("complete");
   });
 
   it("carries no signal when no habit is eligible", () => {
-    expect(classifyHabitDay({ eligible: 0, completed: 0, hasSpineRow: true })).toEqual({
+    expect(classifyHabitDay({ eligible: 0, completed: 0, logged: true })).toEqual({
       dot: "no_log",
       pct: null,
     });
@@ -67,9 +79,9 @@ describe("buildAdherenceSummary", () => {
       { date: "2026-07-23", status: "scheduled" },
     ],
     nutritionLogs: [
-      { date: "2026-07-20", nutrition_adherence: "hit" },
-      { date: "2026-07-21", nutrition_adherence: "partial" },
-      { date: "2026-07-22", nutrition_adherence: null },
+      nut("2026-07-20", "hit"),
+      nut("2026-07-21", "partial"),
+      nut("2026-07-22", null),
       // no row on the 23rd
     ],
     habits: [
@@ -81,9 +93,10 @@ describe("buildAdherenceSummary", () => {
       { date: "2026-07-21", daily_habit_id: "h1", completed: false },
       { date: "2026-07-22", daily_habit_id: "h1", completed: true },
       { date: "2026-07-22", daily_habit_id: "h2", completed: false },
-      { date: "2026-07-23", daily_habit_id: "stale-habit", completed: true }, // inactive habit → ignored
+      { date: "2026-07-22", daily_habit_id: "stale-habit", completed: true }, // inactive habit → ignored
     ],
-    spineDates: ["2026-07-20", "2026-07-21", "2026-07-22"],
+    wellnessLogs: [],
+    clientLogDates: [],
   };
 
   it("builds the three rails on the shared date axis", () => {
@@ -92,9 +105,60 @@ describe("buildAdherenceSummary", () => {
     expect(summary.dates).toEqual(dates);
     expect(summary.training.rail).toEqual(["complete", "missed", "none", "no_log"]);
     expect(summary.nutrition.rail).toEqual(["complete", "partial", "no_log", "no_log"]);
-    // 20th: 1/1 complete · 21st: 0/1 with spine row → missed ·
-    // 22nd: 1/2 → partial · 23rd: 0/2, no spine row → no_log
+    // 20th: 1/1 complete · 21st: 0/1 on a logged day → missed ·
+    // 22nd: 1/2 → partial · 23rd: 0/2 with no log of any kind → no_log
     expect(summary.habits.rail).toEqual(["complete", "missed", "partial", "no_log"]);
+  });
+
+  it("carries the logged days — the derived definition — on the summary", () => {
+    const summary = buildAdherenceSummary(fixture);
+    // The 23rd has a scheduled event and nothing the client did.
+    expect(summary.loggedDates).toEqual(["2026-07-20", "2026-07-21", "2026-07-22"]);
+  });
+
+  it("reads a day the client only trained as a logged day, so an unticked habit is Missed", () => {
+    // Nothing on the spine: no wellness, no nutrition. A completed workout on
+    // the 23rd makes it a logged day, and zero of two eligible habits is a
+    // miss rather than silence. Under the spine count it read no_log.
+    const summary = buildAdherenceSummary({
+      ...fixture,
+      nutritionLogs: [],
+      habitLogs: [],
+      trainingEvents: [{ date: "2026-07-23", status: "completed" }],
+    });
+
+    expect(summary.loggedDates).toEqual(["2026-07-23"]);
+    expect(summary.habits.rail).toEqual(["no_log", "no_log", "no_log", "missed"]);
+  });
+
+  it("does not read a scheduled event, a wellness row with no reading or a coach's work as a log", () => {
+    const summary = buildAdherenceSummary({
+      ...fixture,
+      nutritionLogs: [],
+      habitLogs: [],
+      trainingEvents: [{ date: "2026-07-23", status: "scheduled" }],
+      wellnessLogs: [
+        { date: "2026-07-22", mood: null, energy: null, sleep: null, stress: null, soreness: null },
+      ],
+    });
+
+    expect(summary.loggedDates).toEqual([]);
+    expect(summary.habits.rail).toEqual(["no_log", "no_log", "no_log", "no_log"]);
+  });
+
+  it("counts a wellness reading and a client-logged measurement as logged days", () => {
+    const summary = buildAdherenceSummary({
+      ...fixture,
+      nutritionLogs: [],
+      habitLogs: [],
+      trainingEvents: [],
+      wellnessLogs: [
+        { date: "2026-07-21", mood: 4, energy: null, sleep: null, stress: null, soreness: null },
+      ],
+      clientLogDates: ["2026-07-23"],
+    });
+
+    expect(summary.loggedDates).toEqual(["2026-07-21", "2026-07-23"]);
   });
 
   it("computes the training numbers over events (full completions only)", () => {
@@ -122,12 +186,14 @@ describe("buildAdherenceSummary", () => {
       nutritionLogs: [],
       habits: [],
       habitLogs: [],
-      spineDates: [],
+      wellnessLogs: [],
+      clientLogDates: [],
     });
     expect(empty.training.pct).toBeNull();
     expect(empty.nutrition.pct).toBeNull();
     expect(empty.habits.avgPct).toBeNull();
     expect(empty.training.rail).toEqual(["none", "none", "none", "none"]);
+    expect(empty.loggedDates).toEqual([]);
   });
 
   describe("the per-habit cut", () => {
@@ -200,14 +266,11 @@ describe("the nutrition denominator", () => {
     const summary = buildAdherenceSummary({
       dates: ["d1", "d2", "d3", "d4", "d5", "d6", "d7"],
       trainingEvents: [],
-      nutritionLogs: [
-        { date: "d1", nutrition_adherence: "hit" },
-        { date: "d2", nutrition_adherence: "hit" },
-        { date: "d3", nutrition_adherence: "hit" },
-      ],
+      nutritionLogs: [nut("d1", "hit"), nut("d2", "hit"), nut("d3", "hit")],
       habits: [],
       habitLogs: [],
-      spineDates: [],
+      wellnessLogs: [],
+      clientLogDates: [],
     });
 
     expect(summary.nutrition.onTarget).toBe(3);
@@ -221,16 +284,69 @@ describe("the nutrition denominator", () => {
     const summary = buildAdherenceSummary({
       dates: ["d1", "d2", "d3"],
       trainingEvents: [],
-      nutritionLogs: [
-        { date: "d1", nutrition_adherence: "hit" },
-        { date: "d2", nutrition_adherence: "hit" },
-        { date: "d3", nutrition_adherence: "hit" },
-      ],
+      nutritionLogs: [nut("d1", "hit"), nut("d2", "hit"), nut("d3", "hit")],
       habits: [],
       habitLogs: [],
-      spineDates: [],
+      wellnessLogs: [],
+      clientLogDates: [],
     });
 
     expect(summary.nutrition.pct).toBe(100);
+  });
+});
+
+describe("getClientAdherenceForRange — the reads", () => {
+  type Call = [string, ...unknown[]];
+  const calls = new Map<string, Call[]>();
+
+  /** One thenable builder per table, recording every filter it is given. */
+  function builder(table: string) {
+    const record = (method: string) =>
+      vi.fn((...args: unknown[]) => {
+        calls.get(table)!.push([method, ...args]);
+        return q;
+      });
+    const q: Record<string, unknown> = {
+      select: record("select"),
+      eq: record("eq"),
+      gte: record("gte"),
+      lte: record("lte"),
+      then: (resolve: (v: { data: unknown[]; error: null }) => void) =>
+        Promise.resolve({ data: [], error: null }).then(resolve),
+    };
+    return q;
+  }
+
+  beforeEach(() => {
+    calls.clear();
+    vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+      calls.set(table, calls.get(table) ?? []);
+      return builder(table);
+    }) as never);
+  });
+
+  it("reads the five client sources and never the daily_logs spine", async () => {
+    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23");
+
+    expect([...calls.keys()].sort()).toEqual(
+      [
+        "client_measurements_live",
+        "daily_habit_logs",
+        "daily_habits",
+        "nutrition_logs",
+        "training_events",
+        "wellness_logs",
+      ].sort()
+    );
+    expect(calls.has("daily_logs")).toBe(false);
+  });
+
+  it("counts only the measurements the client logged themselves", async () => {
+    // A coach entry, an intake reading or a check-in's stamped row is the
+    // coach's work or the weekly report, and neither is a logged day.
+    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23");
+
+    expect(calls.get("client_measurements_live")).toContainEqual(["eq", "source", "client_log"]);
+    expect(calls.get("client_measurements_live")).toContainEqual(["eq", "client_id", "client-1"]);
   });
 });

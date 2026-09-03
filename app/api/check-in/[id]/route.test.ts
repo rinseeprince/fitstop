@@ -89,6 +89,7 @@ describe("GET /api/check-in/[id] (coach)", () => {
     // their empty states rather than erroring, so it is asserted here.
     const periodAdherence = {
       dates: ["2026-05-08", "2026-05-09"],
+      loggedDates: ["2026-05-08"],
       nutrition: { rail: [], onTarget: 1, loggedDays: 1, pct: 50 },
       habits: { rail: [], avgPct: 50, daysBelow50: 0, perHabit: [] },
     };

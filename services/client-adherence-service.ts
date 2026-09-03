@@ -2,6 +2,13 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import { HABIT_DROPOFF_THRESHOLD_PERCENT } from "@/lib/constants";
+import {
+  CLIENT_MEASUREMENT_SOURCE,
+  hasNutritionEntry,
+  hasWellnessReading,
+  isTrainingLogStatus,
+  loggedDays,
+} from "@/lib/logged-days";
 import type { AdherenceSummary, DotState } from "@/types/coach-overview";
 
 /**
@@ -35,33 +42,75 @@ export function classifyNutritionDay(adherence: string | null | undefined): DotS
 
 /**
  * Per-day habit completion: 100% → complete, partial progress → partial, zero
- * WITH a daily_logs spine row (the client engaged that day) → missed, zero
- * with no engagement → no_log. Days with no eligible habit carry no signal.
+ * on a LOGGED day (the client logged something that day — the derived
+ * definition, lib/logged-days.ts) → missed, zero with no log of any kind →
+ * no_log. Days with no eligible habit carry no signal.
  */
 export function classifyHabitDay(input: {
   eligible: number;
   completed: number;
-  hasSpineRow: boolean;
+  logged: boolean;
 }): { dot: DotState; pct: number | null } {
   if (input.eligible === 0) return { dot: "no_log", pct: null };
   const pct = Math.round((input.completed / input.eligible) * 100);
   if (pct === 100) return { dot: "complete", pct };
   if (pct > 0) return { dot: "partial", pct };
-  return { dot: input.hasSpineRow ? "missed" : "no_log", pct };
+  return { dot: input.logged ? "missed" : "no_log", pct };
 }
 
 export type AdherenceSourceRows = {
   dates: string[];
   trainingEvents: { date: string; status: string }[];
-  nutritionLogs: { date: string; nutrition_adherence: string | null }[];
+  nutritionLogs: {
+    date: string;
+    nutrition_adherence: string | null;
+    calories_consumed: number | null;
+    protein_g: number | null;
+    carbs_g: number | null;
+    fat_g: number | null;
+  }[];
   habits: { id: string; name: string; effective_date: string }[];
   habitLogs: { date: string; daily_habit_id: string; completed: boolean }[];
-  spineDates: string[];
+  wellnessLogs: {
+    date: string;
+    mood: number | null;
+    energy: number | null;
+    sleep: number | null;
+    stress: number | null;
+    soreness: number | null;
+  }[];
+  /** Days the client logged a body measurement themselves (`source = 'client_log'`). */
+  clientLogDates: string[];
 };
 
 /** Pure assembly over fetched rows — unit-tested against fixtures. */
 export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSummary {
   const { dates } = rows;
+
+  // The days the client logged anything, by the one definition — the habits
+  // rail reads it for Missed versus No log, and the check-in review's header
+  // prints it. Assembled from the rows this read already holds.
+  const loggedDates = loggedDays(
+    {
+      wellness: rows.wellnessLogs.filter(hasWellnessReading).map((log) => log.date),
+      nutrition: rows.nutritionLogs
+        .filter((log) =>
+          hasNutritionEntry({
+            caloriesConsumed: log.calories_consumed,
+            proteinG: log.protein_g,
+            carbsG: log.carbs_g,
+            fatG: log.fat_g,
+          })
+        )
+        .map((log) => log.date),
+      habits: rows.habitLogs.map((log) => log.date),
+      training: rows.trainingEvents
+        .filter((event) => isTrainingLogStatus(event.status))
+        .map((event) => event.date),
+      measurements: rows.clientLogDates,
+    },
+    { from: dates[0] ?? "", to: dates[dates.length - 1] ?? "" }
+  );
 
   // Training
   const eventsByDate = new Map<string, string[]>();
@@ -83,9 +132,11 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
     adherenceByDate.set(log.date, log.nutrition_adherence);
   }
   const nutritionRail = dates.map((date) => classifyNutritionDay(adherenceByDate.get(date)));
-  const loggedDays = nutritionRail.filter((dot) => dot !== "no_log").length;
+  // Days with a nutrition classification — the rail's own, narrower count,
+  // not the logged-day set above.
+  const nutritionLoggedDays = nutritionRail.filter((dot) => dot !== "no_log").length;
   const onTarget = nutritionRail.filter((dot) => dot === "complete").length;
-  const nutritionPct = loggedDays > 0 ? Math.round((onTarget / dates.length) * 100) : null;
+  const nutritionPct = nutritionLoggedDays > 0 ? Math.round((onTarget / dates.length) * 100) : null;
 
   // Habits
   const knownHabitIds = new Set(rows.habits.map((habit) => habit.id));
@@ -96,7 +147,7 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
     set.add(log.daily_habit_id);
     completedByDate.set(log.date, set);
   }
-  const spineDates = new Set(rows.spineDates);
+  const loggedDateSet = new Set(loggedDates);
 
   const habitsRail: DotState[] = [];
   const dayPcts: number[] = [];
@@ -107,7 +158,7 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
     const { dot, pct } = classifyHabitDay({
       eligible: eligibleHabits.length,
       completed: completedCount,
-      hasSpineRow: spineDates.has(date),
+      logged: loggedDateSet.has(date),
     });
     habitsRail.push(dot);
     if (pct !== null) dayPcts.push(pct);
@@ -144,8 +195,9 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
 
   return {
     dates,
+    loggedDates,
     training: { rail: trainingRail, completed, planned, pct: trainingPct },
-    nutrition: { rail: nutritionRail, onTarget, loggedDays, pct: nutritionPct },
+    nutrition: { rail: nutritionRail, onTarget, loggedDays: nutritionLoggedDays, pct: nutritionPct },
     habits: { rail: habitsRail, avgPct, daysBelow50, perHabit },
   };
 }
@@ -171,7 +223,7 @@ export const getClientAdherenceForRange = async (
     dates.push(date);
   }
 
-  const [events, nutritionLogs, habits, habitLogs, spine] = await Promise.all([
+  const [events, nutritionLogs, habits, habitLogs, wellnessLogs, clientLogs] = await Promise.all([
     supabaseAdmin
       .from("training_events")
       .select("date, status")
@@ -180,7 +232,7 @@ export const getClientAdherenceForRange = async (
       .lte("date", endDate),
     supabaseAdmin
       .from("nutrition_logs")
-      .select("date, nutrition_adherence")
+      .select("date, nutrition_adherence, calories_consumed, protein_g, carbs_g, fat_g")
       .eq("client_id", clientId)
       .gte("date", startDate)
       .lte("date", endDate),
@@ -196,14 +248,24 @@ export const getClientAdherenceForRange = async (
       .gte("date", startDate)
       .lte("date", endDate),
     supabaseAdmin
-      .from("daily_logs")
-      .select("date")
+      .from("wellness_logs")
+      .select("date, mood, energy, sleep, stress, soreness")
       .eq("client_id", clientId)
       .gte("date", startDate)
       .lte("date", endDate),
+    // The client's own measurement logs — empty until the client app can log
+    // a weight, read now so the logged-day definition cannot lose its fifth
+    // source the day it can. Every calculation reads the live view.
+    supabaseAdmin
+      .from("client_measurements_live")
+      .select("recorded_on")
+      .eq("client_id", clientId)
+      .eq("source", CLIENT_MEASUREMENT_SOURCE)
+      .gte("recorded_on", startDate)
+      .lte("recorded_on", endDate),
   ]);
 
-  for (const result of [events, nutritionLogs, habits, habitLogs, spine]) {
+  for (const result of [events, nutritionLogs, habits, habitLogs, wellnessLogs, clientLogs]) {
     if (result.error) {
       console.error("Failed to read adherence source rows:", result.error);
       throw new Error("Failed to read adherence data");
@@ -216,7 +278,10 @@ export const getClientAdherenceForRange = async (
     nutritionLogs: nutritionLogs.data ?? [],
     habits: habits.data ?? [],
     habitLogs: habitLogs.data ?? [],
-    spineDates: (spine.data ?? []).map((row) => row.date),
+    wellnessLogs: wellnessLogs.data ?? [],
+    clientLogDates: (clientLogs.data ?? []).flatMap((row) =>
+      row.recorded_on ? [row.recorded_on] : []
+    ),
   });
 };
 

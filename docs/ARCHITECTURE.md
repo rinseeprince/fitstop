@@ -255,6 +255,8 @@ daily_logs (spine)         -- id, client_id, date, notes
 - Each child table has `client_id` and `date` columns for direct querying without joining the spine
 - The `DailyLog` TypeScript type remains flat. The split is DB + service layer only. Hooks, components, and utils are unaffected
 
+**A logged day is derived, never stored, and never read off the spine.** "Did the client log today?" has one answer, `loggedDays` in `lib/logged-days.ts`: a day with any log the client made themselves, on their own calendar — a nutrition entry (any consumed value), a wellness reading (any of the five), a habit log (ticked or unticked, since either is the client acting), a workout log (a `training_event` whose status is completed or partial) or a measurement they logged in the app (a `client_measurements_live` row with `source = 'client_log'`, empty until the client app can write one and read from the start so the definition cannot lose a source). One is enough. **Coach entries, intake readings and the check-in submission do not count** (owner decision D11, 2026-09-02): the question is daily engagement, not the coach's work or the weekly report. The spine row is the parent of the client's day-form (wellness, nutrition, the day note) and not an activity flag — workouts and habits never create one, so counting spine rows read a client who only trained as silent, and `lib/logged-days-ownership.test.ts` forbids it. The source predicates live beside the kernel, spelled once; the two readers that hold the rows assemble the five sources from them and ask the kernel: the Overview adherence kernel (`services/client-adherence-service.ts` — `AdherenceSummary.loggedDates`, which the habits rail reads for Missed versus No log and the check-in review's header prints over `dates`) and the attention feed (`loggedDaysFor` in `lib/attention-feed-helpers.ts`, for the logging-gap and no-engagement alerts).
+
 ---
 
 ## Nutrition & Training Events
@@ -779,7 +781,7 @@ Seven SWR reads back it (eight with the lazy goal history), all coach-scoped und
 | `GET …/goals/history` | The footer's Goal-history popover | **Lazy** — the SWR key stays `null` until the popover opens, so the Overview does not pay for it on every load. Superseded versions only, bounded |
 | `POST …/overview-brief/seen` | "Mark seen" | The ONLY writer of `coach_client_views.last_viewed_at`; returns `{ lastViewedAt }` nested under `data` |
 | `GET …/overview-plan-summary` | Current-plan cards | `training`, `upcomingTraining` and `nutrition` are independently nullable |
-| `GET …/adherence?days=` | The three-rail adherence card | The Overview passes `ADHERENCE_WINDOW_DAYS`; the route clamps to **[7, 60]**, wider than any caller needs since the 60-day window it was raised for was removed. Rails are index-aligned with `dates` |
+| `GET …/adherence?days=` | The three-rail adherence card | The Overview passes `ADHERENCE_WINDOW_DAYS`; the route clamps to **[7, 60]**, wider than any caller needs since the 60-day window it was raised for was removed. Rails are index-aligned with `dates`; `loggedDates` carries the derived logged days over the window (see "Daily Logs") |
 | `GET …/measurement-series` | The progression chart, and the status band's four reading figures — current and start weight and body fat, in the Since-start pill and the goal chips | The measurement log's day-values for every metric (`client_measurements_live`, paged past the row cap), the derived baseline per metric, the client's start date and the readings list — one payload, the same one the Journey's Physique pane, its measurement log and the blocks read (`hooks/use-measurement-series.ts` owns the key and the area invalidator). The band reads its four figures from HERE and never from the page-level client record: the record revalidates only on coach-side writes, so a check-in the client submitted reached the chart on the next visit and the pill only on a reload. No date param: the chart's axis runs from the start date to today, the baseline is drawn at the start date with the reading's own date in its label, and a reading dated before the start date is not a point |
 | `GET …/daily-logs` | The five wellness cards | Through `useWellnessData(clientId, { daysBack, withHabitLogs: false })` — narrowed to `WELLNESS_WINDOW_DAYS`, and the habit fetch stays off because nothing on the Overview reads habit logs |
 | `GET`/`POST …/notes`, `PATCH …/notes/[noteId]` | Coach-notes card + Notes tab | See `client_notes` above |
@@ -822,7 +824,7 @@ Wellness/tracking/activity triggers evaluate across all coach's clients:
 - `services/attention-feed-service.ts` - aggregates triggers into prioritized feed
 - `components/dashboard/needs-attention-feed.tsx` - renders on coach dashboard via SWR
 
-The nine wellness/tracking/activity triggers are pattern detectors over existing `daily_logs`, so they can only fire for clients who have logged. `evaluateAndSortTriggers` (`lib/attention-feed-helpers.ts`) therefore evaluates any client with **prescribed work** (training events or habits) even before their first daily log — it skips only clients with nothing logged AND nothing prescribed. `evaluateNoEngagement` is the one *absence* signal: it flags an active client who has prescribed work but no activity across any surface (daily_logs, daily_habit_logs, or completed/partial training_events) within the silence window, past an activation grace period. This is why a never-logged client with an assigned plan now surfaces instead of being silently counted "on track".
+The nine wellness/tracking/activity triggers are pattern detectors over existing `daily_logs`, so they can only fire for clients who have logged. `evaluateAndSortTriggers` (`lib/attention-feed-helpers.ts`) therefore evaluates any client with **prescribed work** (training events or habits) even before their first daily log — it skips only clients with nothing logged AND nothing prescribed. `evaluateNoEngagement` is the one *absence* signal: it flags an active client who has prescribed work but no logged day within the silence window, past an activation grace period. Both it and the logging-gap trigger read the one derived definition of a logged day (see "Daily Logs"), assembled per client by `loggedDaysFor` from the rows the feed already reads plus the client's own measurement logs, so a client who only trains or only ticks habits is never read as silent. This is why a never-logged client with an assigned plan surfaces instead of being silently counted "on track".
 
 ---
 
@@ -1240,9 +1242,12 @@ week, so a rail owned by the page would stand over empty space, or the page woul
 copy of each child's emptiness predicate. Every card is borderless white on the `#f4f7f6` page per
 the SOT's "spacing does separation, not borders"; nothing animates in; names and body sit at 13px
 like the rail. The header is the sidebar back-row grammar ("← Check-ins") over a mono meta line:
-the week, the submitted date, `N/M days logged` (days in the period with ANY daily log — the
+the week, the submitted date, `N/M days logged` (days in the period with any client log — the
+derived definition in "Daily Logs", read as `periodAdherence.loggedDates` over
+`periodAdherence.dates`, so the fraction and the cells below it share one date list; the
 Nutrition rail's own count is days with food logged, a narrower question, so the two can
-legitimately differ) and `N days since last check-in`. There is no prev/next between check-ins
+legitimately differ; the chip is omitted on a legacy row whose period cannot be resolved) and
+`N days since last check-in`. There is no prev/next between check-ins
 and no window keydown listener. Weight and body fat appear twice on purpose: the band answers
 "what changed since last time", the strip answers "where do they stand against the goal".
 

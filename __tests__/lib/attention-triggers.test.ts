@@ -120,15 +120,15 @@ describe('attention-triggers', () => {
     })
   })
 
+  // The trigger takes the DERIVED logged days (lib/logged-days.ts): a day the
+  // client only trained or only ticked a habit is on the list, so it is a
+  // logged day here and never a gap.
   describe('evaluateLoggingGap', () => {
     it('should detect 3+ consecutive days without logs', () => {
-      const logs: DailyLog[] = [
-        { id: '1', clientId: 'c1', date: '2024-01-01', createdAt: '', updatedAt: '' },
-        { id: '2', clientId: 'c1', date: '2024-01-05', createdAt: '', updatedAt: '' },
-      ]
+      const loggedDays = ['2024-01-01', '2024-01-05']
       const dateRange = { start: '2024-01-01', end: '2024-01-10' }
 
-      const result = evaluateLoggingGap(logs, dateRange)
+      const result = evaluateLoggingGap(loggedDays, dateRange)
       
       expect(result).not.toBeNull()
       expect(result?.type).toBe('no_log_gap')
@@ -137,22 +137,27 @@ describe('attention-triggers', () => {
     })
 
     it('should not trigger for 2-day gap', () => {
-      const logs: DailyLog[] = [
-        { id: '1', clientId: 'c1', date: '2024-01-01', createdAt: '', updatedAt: '' },
-        { id: '2', clientId: 'c1', date: '2024-01-03', createdAt: '', updatedAt: '' },
-        { id: '3', clientId: 'c1', date: '2024-01-05', createdAt: '', updatedAt: '' },
-      ]
+      const loggedDays = ['2024-01-01', '2024-01-03', '2024-01-05']
       const dateRange = { start: '2024-01-01', end: '2024-01-05' }
 
-      const result = evaluateLoggingGap(logs, dateRange)
+      const result = evaluateLoggingGap(loggedDays, dateRange)
       expect(result).toBeNull()
     })
 
-    it('should handle empty logs', () => {
-      const logs: DailyLog[] = []
+    it('reads the list in any order — a logged day is a logged day whichever source it came from', () => {
+      // The 3rd would otherwise open a four-day gap between the 1st and the
+      // 6th; on the list it bridges it, unsorted and however it got there.
+      const loggedDays = ['2024-01-06', '2024-01-01', '2024-01-03']
+      const dateRange = { start: '2024-01-01', end: '2024-01-06' }
+
+      expect(evaluateLoggingGap(loggedDays, dateRange)).toBeNull()
+      expect(evaluateLoggingGap(['2024-01-06', '2024-01-01'], dateRange)?.type).toBe('no_log_gap')
+    })
+
+    it('should handle an empty list', () => {
       const dateRange = { start: '2024-01-01', end: '2024-01-10' }
 
-      const result = evaluateLoggingGap(logs, dateRange)
+      const result = evaluateLoggingGap([], dateRange)
       expect(result).toBeNull()
     })
   })
