@@ -94,6 +94,10 @@ export function DrawerFormBody() {
             proteinTargetGPerKg={builder.settings.proteinTargetGPerKg}
             dietType={builder.settings.dietType}
             onSettingsChange={builder.handleSettingsChange}
+            effectiveFrom={builder.effectiveFrom}
+            clientToday={builder.clientToday}
+            queuedChangeDate={builder.nutritionData?.scheduledFor ?? null}
+            onEffectiveFromChange={builder.handleEffectiveFromChange}
           />
           <NutritionGoalChangedBanner
             drift={builder.nutritionData?.goalChanged}

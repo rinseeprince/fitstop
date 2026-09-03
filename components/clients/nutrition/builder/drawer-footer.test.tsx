@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DrawerFooter } from "./drawer-footer";
 
 // Session 7.4: the return trip to Journey hangs off generatePlan's BOOLEAN,
@@ -10,14 +10,19 @@ import { DrawerFooter } from "./drawer-footer";
 
 const generatePlan = vi.fn();
 
+const CLIENT_TODAY = "2026-07-02";
+
 const builder = {
   hasPlan: false,
   manualEnabled: false,
   manualBlockingError: null as string | null,
-  calcInputs: { status: "complete" },
+  calcInputs: { status: "ready", today: CLIENT_TODAY },
   isGenerating: false,
   client: { bmr: 1800 },
-  nutritionData: null as { scheduledFor?: string | null } | null,
+  // The day the plan takes effect is the drawer's Starts on setting, read here
+  // at save time — nothing stands between the button and the save.
+  effectiveFrom: CLIENT_TODAY as string | null,
+  clientToday: CLIENT_TODAY as string | null,
   generatePlan,
 };
 
@@ -25,30 +30,14 @@ vi.mock("@/contexts/nutrition-builder-context", () => ({
   useNutritionBuilderContext: () => builder,
 }));
 
-// The date dialog is a separate, already-tested surface; here it is only the
-// thing that hands `handleApply` an effective date.
-vi.mock("@/components/ui/apply-date-dialog", () => ({
-  ApplyDateDialog: ({
-    open,
-    onApply,
-  }: {
-    open: boolean;
-    onApply: (effectiveFrom: string | null) => void;
-  }) =>
-    open ? (
-      <button type="button" onClick={() => onApply(null)}>
-        confirm-date
-      </button>
-    ) : null,
-}));
+beforeEach(() => {
+  cleanup();
+  generatePlan.mockReset();
+  builder.effectiveFrom = CLIENT_TODAY;
+});
 
-beforeEach(() => generatePlan.mockReset());
-
-function saveAPlan() {
-  // fireEvent is act-wrapped, so the apply dialog is mounted before we reach
-  // for it — a bare .click() leaves the state update unflushed.
+function clickGenerate() {
   fireEvent.click(screen.getByRole("button", { name: /Generate Plan/ }));
-  fireEvent.click(screen.getByRole("button", { name: "confirm-date" }));
 }
 
 describe("DrawerFooter — what counts as a save", () => {
@@ -56,7 +45,7 @@ describe("DrawerFooter — what counts as a save", () => {
     generatePlan.mockResolvedValue(true);
     const onSaved = vi.fn();
     render(<DrawerFooter onSaved={onSaved} />);
-    saveAPlan();
+    clickGenerate();
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   });
 
@@ -66,8 +55,28 @@ describe("DrawerFooter — what counts as a save", () => {
     generatePlan.mockResolvedValue(false);
     const onSaved = vi.fn();
     render(<DrawerFooter onSaved={onSaved} />);
-    saveAPlan();
+    clickGenerate();
     await waitFor(() => expect(generatePlan).toHaveBeenCalledTimes(1));
     expect(onSaved).not.toHaveBeenCalled();
+  });
+});
+
+// docs/MEASUREMENT-LOG-PLAN.md commit 8bb, D26: the save-time date dialog is
+// gone. The date is a drawer setting the coach set before reaching the button.
+describe("DrawerFooter — Generate saves directly from the drawer's settings", () => {
+  it("one click saves, with only the manual flag — the hook reads its own date", async () => {
+    generatePlan.mockResolvedValue(true);
+    render(<DrawerFooter />);
+    clickGenerate();
+    await waitFor(() => expect(generatePlan).toHaveBeenCalledTimes(1));
+    expect(generatePlan).toHaveBeenCalledWith(false);
+  });
+
+  it("refuses a start date before the client's today with a sentence, and saves nothing", () => {
+    builder.effectiveFrom = "2026-07-01";
+    render(<DrawerFooter />);
+    clickGenerate();
+    expect(screen.getByText("The start date can't be in the past.")).toBeInTheDocument();
+    expect(generatePlan).not.toHaveBeenCalled();
   });
 });

@@ -385,12 +385,20 @@ async function handleCalculatedPlan(
   // stored baseline, which meant the numbers on screen were not the numbers
   // saved. "Edit manually" covers that intent honestly: the coach types the
   // number they want and it is stored as the target.
+  // The day the plan takes effect: the version's window starts here (the RPC),
+  // the events regenerate from here, and — docs/MEASUREMENT-LOG-PLAN.md commit
+  // 8bb — the deficit is spread from here to the deadline, in the drawer's
+  // preview and in this save alike. A cut queued four weeks out used to be
+  // costed from the day it was saved, understating its deficit by four weeks.
+  const effectiveDate = body.effectiveFrom ?? clientToday;
+
   const plan = generateNutritionPlan({
     ...calcInputs,
     trainingVolumeHours: body.trainingVolumeHours,
     trainingPlan: null, // vestigial param (generateNutritionPlan ignores it)
     proteinTargetGPerKg: body.proteinTargetGPerKg,
     dietType: body.dietType,
+    startDate: effectiveDate,
   });
   const regenerationReason = existingPlan ? "regenerated" : "initial";
 
@@ -430,7 +438,6 @@ async function handleCalculatedPlan(
   // and returned the version now governing [effectiveDate, ∞) — regenerate
   // that window's events from its prescription. Days before effectiveDate
   // belong to earlier versions and are untouched.
-  const effectiveDate = body.effectiveFrom ?? clientToday;
   await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
   await recordCoachNoteOrThrow(
     clientId,

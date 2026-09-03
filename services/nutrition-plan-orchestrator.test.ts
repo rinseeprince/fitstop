@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: { from: vi.fn() },
@@ -55,6 +55,8 @@ import {
 } from "@/services/nutrition-event-service";
 import { captureApiError } from "@/lib/error-handler";
 import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
+import { getCurrentGoals } from "@/services/client-goals-service";
+import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import {
   orchestrateNutritionPlanCreation,
   orchestrateNutritionPlanDeletion,
@@ -431,5 +433,103 @@ describe("orchestrateNutritionPlanDeletion — chain semantics (migration 144, D
     // SELECT chain exists, and no later from() call was made.
     expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(1);
     expect(chains[0].delete).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// The deficit runs from the day the plan takes effect
+// (docs/MEASUREMENT-LOG-PLAN.md commit 8bb). These pin arithmetic, so they run
+// the REAL calculator over the real input resolver; only the DB reads stay
+// mocked. It used to be spread from the day of the calculation whatever date
+// the coach picked, so a cut queued four weeks out understated its deficit by
+// four weeks.
+// =============================================================================
+describe("orchestrateNutritionPlanCreation — the deficit runs from the day the plan takes effect", () => {
+  // A 5 kg goal 91 days out (client-today is 2026-07-02): under the weekly
+  // safety cap from today AND from three weeks later, so the two windows
+  // yield two different deficits rather than one capped number.
+  const GOAL = { goalWeight: 175, goalDeadline: "2026-09-30" };
+  const THREE_WEEKS_OUT = "2026-07-23";
+
+  let realGenerate: typeof generateNutritionPlan;
+
+  beforeEach(async () => {
+    const actual = await vi.importActual<typeof import("@/services/nutrition-service")>(
+      "@/services/nutrition-service"
+    );
+    realGenerate = actual.generateNutritionPlan;
+    vi.mocked(generateNutritionPlan).mockImplementation(realGenerate);
+    vi.mocked(getCurrentGoals).mockResolvedValue(GOAL as never);
+  });
+
+  afterEach(() => {
+    vi.mocked(getCurrentGoals).mockResolvedValue(null);
+  });
+
+  it("hands the calculator the effective date as the window's start — today when none was sent", async () => {
+    await orchestrateNutritionPlanCreation(
+      clientId,
+      coachId,
+      { ...calculatedBody, effectiveFrom: THREE_WEEKS_OUT },
+      {}
+    );
+    expect(generateNutritionPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ startDate: THREE_WEEKS_OUT })
+    );
+
+    await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
+    expect(generateNutritionPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ startDate: "2026-07-02" })
+    );
+  });
+
+  it("a date three weeks out yields a steeper deficit than today's", async () => {
+    const later = await orchestrateNutritionPlanCreation(
+      clientId,
+      coachId,
+      { ...calculatedBody, effectiveFrom: THREE_WEEKS_OUT },
+      {}
+    );
+    const today = await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
+
+    expect(later.plan.requiredDailyDeficit as number).toBeGreaterThan(
+      today.plan.requiredDailyDeficit as number
+    );
+    expect(later.plan.baselineCalories as number).toBeLessThan(
+      today.plan.baselineCalories as number
+    );
+  });
+
+  it("the preview and the save agree: one pure calculator over the same resolved inputs", async () => {
+    // What the drawer previews: the shared resolver's inputs, the pickers, and
+    // the picked date as the window's start.
+    const inputs = await resolveNutritionCalcInputs(clientId, client as never, {
+      today: "2026-07-02",
+    });
+    if (inputs.status !== "ready") throw new Error("expected ready inputs");
+    const previewed = realGenerate({
+      ...inputs,
+      proteinTargetGPerKg: calculatedBody.proteinTargetGPerKg,
+      dietType: calculatedBody.dietType,
+      startDate: THREE_WEEKS_OUT,
+    });
+
+    const saved = await orchestrateNutritionPlanCreation(
+      clientId,
+      coachId,
+      { ...calculatedBody, effectiveFrom: THREE_WEEKS_OUT },
+      {}
+    );
+
+    expect(saved.plan.baselineCalories).toBe(previewed.baselineCalories);
+    expect(saved.plan.requiredDailyDeficit).toBe(previewed.requiredDailyDeficit);
+    expect(saved.plan.proteinTargetG).toBe(previewed.proteinTargetG);
+    // And the version that lands carries the previewed numbers from that day.
+    expect(createNutritionPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        baselineCalories: previewed.baselineCalories,
+        effectiveFrom: THREE_WEEKS_OUT,
+      })
+    );
   });
 });

@@ -75,12 +75,24 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   // render the literal string "NaN". A null bmr is worse: it yields 0, which
   // looks like a number.
   const calcInputs = nutritionPlan.nutritionData?.calcInputs ?? null;
+
+  // The day the plan takes effect — the coach's pick, else the client's today
+  // (docs/MEASUREMENT-LOG-PLAN.md commit 8bb, D27). Derived rather than seeded
+  // so the default follows the client's day across their midnight, and taken
+  // from the resolved inputs — the day the server's past-date belt judges —
+  // never from the coach's browser clock.
+  const [effectiveFromPick, setEffectiveFromPick] = useState<string | null>(null);
+  const clientToday = calcInputs?.today ?? null;
+  const effectiveFrom = effectiveFromPick ?? clientToday;
+
   const autoPlan = useMemo(
     () =>
-      calcInputs?.status === "ready"
-        ? generateNutritionPlan({ ...calcInputs, ...settings })
+      calcInputs?.status === "ready" && effectiveFrom
+        ? // The deficit's window starts at the picked date — the same override
+          // the save makes — so the numbers move the moment the date does.
+          generateNutritionPlan({ ...calcInputs, ...settings, startDate: effectiveFrom })
         : null,
-    [calcInputs, settings]
+    [calcInputs, settings, effectiveFrom]
   );
 
   const autoTargets: MacroTargets | null = useMemo(
@@ -205,11 +217,17 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     [manualEnabled, recomposeManualMacros, settings, calcInputs]
   );
 
+  const handleEffectiveFromChange = useCallback((date: string) => {
+    // An emptied picker means today again, not an empty string.
+    setEffectiveFromPick(date || null);
+    setSettingsChanged(true);
+  }, []);
+
   // Generate nutrition plan. `useManual` posts the coach's typed targets as the
   // custom-macro override; otherwise the server recalculates from the same
   // pickers the preview used, so the saved numbers match what was on screen.
   const generatePlan = useCallback(
-    async (useManual = false, effectiveFrom?: string | null) => {
+    async (useManual = false) => {
       const validation = validateClientForNutrition(client);
       if (!validation.valid) {
         toast({
@@ -229,6 +247,8 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           // client_goals, resolved server-side. The builder's dead deadline
           // input was replaced by a read-only Goal line.
           ...(coachNotes.trim() ? { coachNotes: coachNotes.trim() } : {}),
+          // The day the plan takes effect and the deficit is spread from — the
+          // day the preview computed from, today included, on the client's calendar.
           ...(effectiveFrom ? { effectiveFrom } : {}),
         };
 
@@ -263,6 +283,8 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           });
           setSettingsChanged(false);
           setCoachNotes("");
+          // The next save defaults to today again (D27).
+          setEffectiveFromPick(null);
           onUpdate?.();
           nutritionPlan.refetchNutrition();
           // The calendar renders from its own SWR events cache — revalidate it
@@ -286,6 +308,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     [
       client,
       settings,
+      effectiveFrom,
       manual.manualTargets,
       manual.manualBlockingError,
       coachNotes,
@@ -304,6 +327,12 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     settings,
     settingsChanged,
     handleSettingsChange,
+
+    // The day the plan takes effect: the coach's pick, else the client's today
+    // (the field's floor). Null until the resolved inputs have loaded.
+    effectiveFrom,
+    clientToday,
+    handleEffectiveFromChange,
 
     // Live preview + manual override. `displayTargets` is the single thing the
     // UI renders and Generate posts — manual when the coach has taken over,

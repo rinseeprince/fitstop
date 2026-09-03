@@ -349,8 +349,8 @@ rejected afterwards — a coach should never be able to select a day the app wil
   past *start date* is a real thing to record, so it is not. Greying out a legitimate day is the
   same defect in the other direction.
 
-Shipped references: `components/ui/apply-date-dialog.tsx` (nutrition builder — "Takes effect",
-`min={today}`), `components/clients/metrics/blocks/block-form.tsx` (blocks — composes two bounds
+Shipped references: `components/clients/nutrition/builder/nutrition-settings-form.tsx` (nutrition
+builder — "Starts on", `min` = the client's today), `components/clients/metrics/blocks/block-form.tsx` (blocks — composes two bounds
 into one `min`, plus a `max`), `components/clients/metrics/log-measurement-dialog.tsx`
 (`max={today}` — a measurement cannot be logged in the future), and the Overview status card's
 goal deadline.

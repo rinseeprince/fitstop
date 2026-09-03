@@ -8,10 +8,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { PROTEIN_TARGETS } from "@/utils/nutrition-helpers";
-import { MONO, SECTION_LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
+import {
+  FOCUS_RING,
+  MONO,
+  SECTION_LABEL_CLASS,
+} from "@/components/clients/training/program-builder/builder-tokens";
 import { useUnits } from "@/contexts/units-context";
 import { KG_PER_LB } from "@/utils/unit-conversions";
+import { formatDateOnlyShort } from "@/components/clients/overview/overview-format";
 
 /**
  * FULLY CONTROLLED, deliberately. This form used to own a second copy of the
@@ -31,6 +38,17 @@ type NutritionSettingsFormProps = {
     proteinTargetGPerKg: number;
     dietType: DietType;
   }) => void;
+  /** The day the plan takes effect — the coach's pick, else the client's
+   *  today. Null until the resolved inputs have loaded. */
+  effectiveFrom: string | null;
+  /** The client's today, the field's floor: on the client's calendar, the
+   *  same day the server's past-date belt judges. */
+  clientToday: string | null;
+  /** The earliest queued version's start (the GET's `scheduledFor`). A pick
+   *  on or before it ABSORBS that version (migration 144) — one sentence says
+   *  so, then the save does what was asked: warn, never block. */
+  queuedChangeDate: string | null;
+  onEffectiveFromChange: (date: string) => void;
 };
 
 const selectTriggerClass =
@@ -44,6 +62,10 @@ export function NutritionSettingsForm({
   proteinTargetGPerKg,
   dietType,
   onSettingsChange,
+  effectiveFrom,
+  clientToday,
+  queuedChangeDate,
+  onEffectiveFromChange,
 }: NutritionSettingsFormProps) {
   // The COACH's own unit, not the client's. A protein multiplier is expressed
   // per unit of BODY WEIGHT, so it flips with whoever is reading the form.
@@ -146,6 +168,30 @@ export function NutritionSettingsForm({
         </p>
       </div>
 
+      {/* Starts on. The window the deficit is spread over begins here, in the
+          preview and in the save alike (docs/MEASUREMENT-LOG-PLAN.md commit
+          8bb). `min` is the affordance; the server refuses a past date. */}
+      <div className="space-y-1.5">
+        <label htmlFor="starts-on" className={SECTION_LABEL_CLASS}>
+          Starts on
+        </label>
+        <Input
+          id="starts-on"
+          type="date"
+          value={effectiveFrom ?? ""}
+          min={clientToday ?? undefined}
+          onChange={(e) => onEffectiveFromChange(e.target.value)}
+          className={cn(MONO, FOCUS_RING, "h-10 bg-white")}
+        />
+        {queuedChangeDate && effectiveFrom && effectiveFrom <= queuedChangeDate && (
+          <p className="text-[11px] leading-[1.4] text-[#b45309]">
+            This replaces the change queued for {formatDateOnlyShort(queuedChangeDate)}.
+          </p>
+        )}
+        <p className="text-[11px] text-[#93b0b4] leading-[1.4]">
+          Targets take effect from this day, and the deficit is spread from it to the deadline.
+        </p>
+      </div>
     </div>
   );
 }
