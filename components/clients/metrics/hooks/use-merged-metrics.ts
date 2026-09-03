@@ -16,6 +16,7 @@ import {
   toClientGoalInput,
 } from "@/lib/goals/resolve-effective-goal";
 import { buildMetricPoints, type MetricPoint } from "@/utils/metric-points";
+import { buildMeasurementLogRows } from "@/utils/measurement-log-rows";
 import {
   buildLogRows,
   deriveBest,
@@ -235,21 +236,78 @@ export const useMergedMetrics = (
         d.getUnit(preference),
       ])
     );
-    // The log lists EVERY reading, before-start ones flagged so the section
-    // can group them; the chart and the figures above read `points` instead.
-    const decorate = (category: MetricTab): LogRow[] =>
-      buildLogRows(pointsByMetric, METRIC_DEFINITIONS, category, DOWN_SET).map(
-        (row) => ({
-          ...row,
-          metricName: nameById.get(row.metricId) ?? row.metricId,
-          unit: unitById.get(row.metricId) ?? "",
-          beforeStart: category === "body" && startDate != null && row.date < startDate,
-        })
-      );
+
+    // PHYSIQUE rows list EVERY reading of the log — a check-in's value under a
+    // coach's same-day correction, a removed reading muted — each change taken
+    // against the previous day's standing value; the chart and the figures
+    // above read the day-values (`points`) instead. Values convert here, like
+    // the points, so a delta sits between two like numbers; the canonical
+    // value rides along for the Edit dialog's seed. Before-start rows are
+    // flagged so the section can group them.
+    const bodyDayValues = new Map<MeasurementKey, { id: string; date: string; value: number }[]>(
+      BODY_METRIC_DEFINITIONS.map((def) => [
+        def.id,
+        (pointsByMetric.get(def.id) ?? []).map((p) => ({
+          id: p.sourceRecordId,
+          date: p.date,
+          value: p.value,
+        })),
+      ])
+    );
+    const baselineIds: Partial<Record<MeasurementKey, string>> = {};
+    for (const def of BODY_METRIC_DEFINITIONS) {
+      const id = series?.baseline?.[def.id]?.id;
+      if (id) baselineIds[def.id] = id;
+    }
+    const bodyRows: LogRow[] = buildMeasurementLogRows(
+      (series?.readings ?? []).map((reading) => ({
+        id: reading.id,
+        metricKey: reading.metricKey,
+        date: reading.date,
+        value: convertPoint(reading.value, convertBy.get(reading.metricKey), preference),
+        canonicalValue: reading.value,
+        source: reading.source,
+        sourceId: reading.sourceId,
+        note: reading.note,
+        recordedAt: reading.recordedAt,
+        voided: reading.voided
+          ? { at: reading.voided.at, byName: reading.voided.byName }
+          : null,
+      })),
+      bodyDayValues,
+      baselineIds,
+      BODY_METRIC_DEFINITIONS.map((def) => def.id),
+      DOWN_SET
+    ).map((row) => ({
+      ...row,
+      metricName: nameById.get(row.metricId) ?? row.metricId,
+      unit: unitById.get(row.metricId) ?? "",
+      isMeasurement: true,
+      beforeStart: startDate != null && row.date < startDate,
+    }));
+
+    // WELLNESS rows keep the merged points (D2): one per point, no row action.
+    const wellnessRows: LogRow[] = buildLogRows(
+      pointsByMetric,
+      METRIC_DEFINITIONS,
+      "wellness",
+      DOWN_SET
+    ).map((row) => ({
+      ...row,
+      metricName: nameById.get(row.metricId) ?? row.metricId,
+      unit: unitById.get(row.metricId) ?? "",
+      canonicalValue: row.value,
+      sourceId: null,
+      isMeasurement: false,
+      voided: null,
+      isCurrent: false,
+      isBaseline: false,
+      beforeStart: false,
+    }));
 
     return {
       metricsByTab: byTab,
-      logRowsByTab: { body: decorate("body"), wellness: decorate("wellness") },
+      logRowsByTab: { body: bodyRows, wellness: wellnessRows },
     };
     // `preference` is a real dependency: it changes every value in the series,
     // not just the label.

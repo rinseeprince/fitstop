@@ -234,6 +234,8 @@ export function ClientOverviewTab({
         client={client}
         goal={effectiveGoal}
         goalPending={goalLoading}
+        series={series}
+        seriesPending={seriesLoading}
         chart={
           <ProgressionChart
             series={series}

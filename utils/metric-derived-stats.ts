@@ -14,7 +14,7 @@ import type { TrendDirection } from "@/types/check-in";
 
 export type Tone = "good" | "bad" | "neutral";
 
-function toneFor(trend: TrendDirection, downIsGood: boolean): Tone {
+export function toneFor(trend: TrendDirection, downIsGood: boolean): Tone {
   if (trend === "stable") return "neutral";
   return (trend === "down") === downIsGood ? "good" : "bad";
 }

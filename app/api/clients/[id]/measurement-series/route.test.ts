@@ -44,6 +44,7 @@ const SERIES: MeasurementSeries = {
     weight: { value: 92, date: "2026-07-01", source: "intake", id: "m-0" },
   },
   startDate: "2026-07-01",
+  readings: [],
 };
 
 describe("GET /api/clients/[id]/measurement-series", () => {

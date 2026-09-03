@@ -509,7 +509,7 @@
   - Migrations: Version controlled, never edit directly
   - Relations: Foreign keys with ON DELETE CASCADE, SET NULL, or RESTRICT. Use RESTRICT on parent tables that must not be hard-deleted (forces archival instead). **Event→plan FKs are SET NULL** (`training_events.training_plan_id`, `nutrition_events.nutrition_plan_id`, both nullable since migration 113) so deleting a plan/template never destroys past/logged events — the events carry the date-specific truth (see "Events-as-SOT" below and `docs/ARCHITECTURE.md → Nutrition & Training Events`).
   - Indexes: On foreign keys, search fields, sort columns
-  - Timestamps: created_at, updated_at on all tables. Exception: immutable event tables (`client_measurements`, `nutrition_plan_notes`) intentionally skip updated_at - add a comment explaining why.
+  - Timestamps: created_at, updated_at on all tables. Exception: append-only tables whose value is never rewritten (`nutrition_plan_notes`; `client_measurements`, whose only mutation is the timestamped removal mark `voided_at`) intentionally skip updated_at - add a comment explaining why.
 
   ### Query result methods
   - `.single()` - Use when expecting exactly one row. Errors if zero or multiple rows returned.

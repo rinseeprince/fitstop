@@ -70,6 +70,7 @@ function series(overrides: Partial<MeasurementSeries> = {}): MeasurementSeries {
     thighs: [],
     baseline: {},
     startDate: null,
+    readings: [],
     ...overrides,
   };
 }

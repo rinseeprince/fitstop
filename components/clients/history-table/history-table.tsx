@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart3 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { HISTORY_PAGE_SIZE } from "@/hooks/use-history-data";
 
 export type ColumnDef<TRow = Record<string, unknown>> = {
@@ -34,6 +35,8 @@ type HistoryTableProps<TRow = Record<string, unknown>> = {
   onColumnClick?: (columnKey: string) => void;
   onRowClick?: (row: TRow) => void;
   isRowClickable?: (row: TRow) => boolean;
+  /** Extra classes for one row — a muted state, never a layout change. */
+  rowClassName?: (row: TRow) => string | undefined;
 };
 
 export function HistoryTable<TRow extends Record<string, unknown>>({
@@ -47,6 +50,7 @@ export function HistoryTable<TRow extends Record<string, unknown>>({
   onColumnClick,
   onRowClick,
   isRowClickable,
+  rowClassName,
 }: HistoryTableProps<TRow>) {
   return (
     <Table>
@@ -109,9 +113,10 @@ export function HistoryTable<TRow extends Record<string, unknown>>({
           data.map((row, rowIdx) => {
             const clickable = onRowClick && (!isRowClickable || isRowClickable(row));
             return (
+              // `group/row` is what a hover-revealed RowActions cluster keys on.
               <TableRow
                 key={rowIdx}
-                className={clickable ? "cursor-pointer" : undefined}
+                className={cn("group/row", clickable && "cursor-pointer", rowClassName?.(row))}
                 onClick={clickable ? () => onRowClick(row) : undefined}
               >
                 {columns.map((col) => (

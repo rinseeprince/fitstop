@@ -8,8 +8,12 @@ import { MetricHero } from "./metric-hero";
 import { MetricProgressionSection } from "./metric-progression-section";
 import { MeasurementLogSection } from "./measurement-log-section";
 import { LogMeasurementDialog } from "./log-measurement-dialog";
+import { EditReadingDialog } from "./edit-reading-dialog";
+import { RemoveReadingDialog } from "./remove-reading-dialog";
 import { useMergedMetrics } from "./hooks/use-merged-metrics";
+import { useReadingActions } from "./hooks/use-reading-actions";
 import { useClientBlocks } from "./hooks/use-client-blocks";
+import { useToast } from "@/hooks/use-toast";
 import { BlocksSubtab } from "./blocks/blocks-subtab";
 import { shapeBlockBandIdentity } from "./blocks/block-chart-bands";
 // The Training pane's analytics live under clients/training/ and are MOUNTED
@@ -22,6 +26,7 @@ import {
   isJourneySubtab,
   toMetricTab,
   type JourneySubtab,
+  type LogRow,
   type MetricTab,
 } from "./metrics-view-types";
 import type { ClientTab } from "@/lib/client-tabs";
@@ -77,6 +82,31 @@ export const MetricsTabContent = ({
   // Shares the SWR cache with the Blocks pane — one read serves both.
   const { blocks } = useClientBlocks(client.id);
   const blockBands = useMemo(() => shapeBlockBandIdentity(blocks), [blocks]);
+
+  // The log's three row actions: Edit and Remove open a dialog, Restore is one
+  // click (the removed row already says what it is). The dialogs toast their
+  // own outcome; the click's toast lives here.
+  const { toast } = useToast();
+  const readingActions = useReadingActions(client.id, onClientUpdated);
+  const [editingReading, setEditingReading] = useState<LogRow | null>(null);
+  const [removingReading, setRemovingReading] = useState<LogRow | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  const restoreReading = async (row: LogRow) => {
+    setRestoringId(row.id);
+    try {
+      await readingActions.restore(row);
+      toast({ title: "Reading restored" });
+    } catch (error) {
+      toast({
+        title: "Restore failed",
+        description: error instanceof Error ? error.message : "Something went wrong",
+        variant: "destructive",
+      });
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   const metrics = metricsByTab[tab];
   const focusedMetric = metrics.find((m) => m.id === focusedId) ?? metrics[0] ?? null;
@@ -134,7 +164,14 @@ export const MetricsTabContent = ({
             onToggleBlocks={setShowBlocks}
           />
           {/* key={tab} resets the log's page state when the tab switches */}
-          <MeasurementLogSection key={tab} rows={logRowsByTab[tab]} />
+          <MeasurementLogSection
+            key={tab}
+            rows={logRowsByTab[tab]}
+            onEditReading={setEditingReading}
+            onRemoveReading={setRemovingReading}
+            onRestoreReading={(row) => void restoreReading(row)}
+            pendingRowId={restoringId}
+          />
         </>
       ) : null}
 
@@ -144,6 +181,21 @@ export const MetricsTabContent = ({
         metrics={[...metricsByTab.body, ...metricsByTab.wellness]}
         initialMetricId={focusedMetric?.id ?? DEFAULT_FOCUS[tab]}
         onSubmit={logMeasurement}
+      />
+      <EditReadingDialog
+        row={editingReading}
+        onOpenChange={(open) => {
+          if (!open) setEditingReading(null);
+        }}
+        onConfirm={readingActions.correct}
+      />
+      <RemoveReadingDialog
+        row={removingReading}
+        clientName={client.name}
+        onOpenChange={(open) => {
+          if (!open) setRemovingReading(null);
+        }}
+        onConfirm={readingActions.remove}
       />
     </div>
   );

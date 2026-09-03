@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { StatusBand } from "./status-band";
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { Client } from "@/types/check-in";
+import type { MeasurementSeries, MeasurementSeriesPoint } from "@/types/coach-overview";
 
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars.
@@ -39,9 +40,55 @@ const goalOf = (overrides: Partial<EffectiveGoal>): EffectiveGoal => ({
   ...overrides,
 });
 
+const point = (date: string, value: number): MeasurementSeriesPoint => ({
+  date,
+  value,
+  source: "check_in",
+  note: null,
+  id: `m-${date}`,
+  recordedAt: `${date}T08:00:00+00:00`,
+});
+
+type Pair = { start?: number; current?: number };
+
+/**
+ * The series payload the band reads its four reading figures from: the
+ * newest point is "now", the baseline is the start. Everything else empty.
+ */
+function seriesOf(readings: { weight?: Pair; bodyFat?: Pair } = {}): MeasurementSeries {
+  const series: MeasurementSeries = {
+    weight: [],
+    bodyFat: [],
+    waist: [],
+    hips: [],
+    chest: [],
+    arms: [],
+    thighs: [],
+    baseline: {},
+    startDate: null,
+    readings: [],
+  };
+  for (const key of ["weight", "bodyFat"] as const) {
+    const pair = readings[key];
+    if (pair?.start != null) {
+      series.baseline[key] = { value: pair.start, date: "2026-03-01", source: "intake", id: `${key}-0` };
+    }
+    if (pair?.current != null) {
+      // An older point first: the band must take the NEWEST, not the first.
+      series[key] = [point("2026-03-08", pair.start ?? pair.current), point("2026-08-20", pair.current)];
+    }
+  }
+  return series;
+}
+
 // The band renders whatever chart it is handed; the chart's own behaviour is
 // pinned by progression-chart.test.tsx.
-const PROPS = { goal: NO_GOAL, chart: <div data-testid="chart" />, onOpenMetrics: vi.fn() };
+const PROPS = {
+  goal: NO_GOAL,
+  chart: <div data-testid="chart" />,
+  onOpenMetrics: vi.fn(),
+  series: seriesOf(),
+};
 
 beforeEach(() => cleanup());
 
@@ -49,8 +96,9 @@ describe("StatusBand — goal chips", () => {
   it("gap: reports the distance still to travel", () => {
     render(
       <StatusBand
-        client={{ ...BASE, startingWeight: 90, currentWeight: 86 }}
+        client={BASE}
         {...PROPS}
+        series={seriesOf({ weight: { start: 90, current: 86 } })}
         goal={goalOf({ goalWeightKg: 82 })}
       />
     );
@@ -61,8 +109,9 @@ describe("StatusBand — goal chips", () => {
   it("reached: says so once the client lands on the goal", () => {
     render(
       <StatusBand
-        client={{ ...BASE, startingWeight: 90, currentWeight: 82 }}
+        client={BASE}
         {...PROPS}
+        series={seriesOf({ weight: { start: 90, current: 82 } })}
         goal={goalOf({ goalWeightKg: 82 })}
       />
     );
@@ -73,8 +122,9 @@ describe("StatusBand — goal chips", () => {
   it("beyond a loss goal reads 'under goal', beyond a gain goal 'over goal'", () => {
     const { rerender } = render(
       <StatusBand
-        client={{ ...BASE, startingWeight: 90, currentWeight: 80 }}
+        client={BASE}
         {...PROPS}
+        series={seriesOf({ weight: { start: 90, current: 80 } })}
         goal={goalOf({ goalWeightKg: 82 })}
       />
     );
@@ -82,8 +132,9 @@ describe("StatusBand — goal chips", () => {
 
     rerender(
       <StatusBand
-        client={{ ...BASE, startingWeight: 70, currentWeight: 78 }}
+        client={BASE}
         {...PROPS}
+        series={seriesOf({ weight: { start: 70, current: 78 } })}
         goal={goalOf({ goalWeightKg: 76 })}
       />
     );
@@ -93,8 +144,9 @@ describe("StatusBand — goal chips", () => {
   it("body fat uses percent rather than the weight unit", () => {
     render(
       <StatusBand
-        client={{ ...BASE, startingBodyFatPercentage: 24, currentBodyFatPercentage: 20 }}
+        client={BASE}
         {...PROPS}
+        series={seriesOf({ bodyFat: { start: 24, current: 20 } })}
         goal={goalOf({ goalBodyFatPercentage: 18 })}
       />
     );
@@ -112,13 +164,12 @@ describe("StatusBand — targets come from client_goals, not the mirror", () => 
       <StatusBand
         client={{
           ...BASE,
-          startingWeight: 90,
-          currentWeight: 86,
           // What a stale/failed dual-write leaves behind. Nothing may read it.
           goalWeight: 99,
           goalBodyFatPercentage: 30,
         }}
         {...PROPS}
+        series={seriesOf({ weight: { start: 90, current: 86 } })}
         goal={goalOf({ goalWeightKg: 82, goalBodyFatPercentage: 18 })}
       />
     );
@@ -132,8 +183,9 @@ describe("StatusBand — targets come from client_goals, not the mirror", () => 
   it("maintenance (no weight target) reads as Not set, whatever the mirror holds", () => {
     render(
       <StatusBand
-        client={{ ...BASE, startingWeight: 90, currentWeight: 86, goalWeight: 99 }}
+        client={{ ...BASE, goalWeight: 99 }}
         {...PROPS}
+        series={seriesOf({ weight: { start: 90, current: 86 } })}
       />
     );
 
@@ -144,12 +196,69 @@ describe("StatusBand — targets come from client_goals, not the mirror", () => 
   });
 });
 
+// The two smoke findings of docs/MEASUREMENT-LOG-PLAN.md commit 4: the pill and
+// the chips read the page-level client record — fetched once, revalidated only
+// by coach-side writes — while the chart beside them read the series, so a
+// check-in the client submitted reached the chart on the next visit and the
+// pill only on a reload. One read for the four figures.
+describe("StatusBand — every reading figure comes from the series", () => {
+  it("ignores the client record's readings: the series is what renders", () => {
+    render(
+      <StatusBand
+        client={{
+          ...BASE,
+          startingWeight: 99,
+          currentWeight: 99,
+          startingBodyFatPercentage: 40,
+          currentBodyFatPercentage: 40,
+        }}
+        {...PROPS}
+        series={seriesOf({ weight: { start: 90, current: 86 }, bodyFat: { start: 24, current: 21.5 } })}
+        goal={goalOf({ goalWeightKg: 82 })}
+      />
+    );
+
+    expect(screen.getByText("4.0 kg to go")).toBeInTheDocument();
+    expect(screen.getByText("-4.0kg · -2.5%")).toBeInTheDocument();
+  });
+
+  it("takes 'now' from the NEWEST point, whatever its date, and the start from the baseline", () => {
+    const series = seriesOf({ weight: { start: 90, current: 86 } });
+    // A backdated reading appended later still sits before the newest day.
+    series.weight = [point("2026-08-20", 86), point("2026-02-01", 95)].sort((a, b) =>
+      a.date < b.date ? -1 : 1
+    );
+    render(<StatusBand client={BASE} {...PROPS} series={series} />);
+
+    expect(screen.getByText("-4.0kg")).toBeInTheDocument();
+  });
+
+  it("renders the chips and the pill pending while the series loads, never as empty", () => {
+    const { container } = render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        series={null}
+        seriesPending
+        goal={goalOf({ goalWeightKg: 82 })}
+      />
+    );
+
+    expect(screen.queryByText(/to go|goal reached/i)).not.toBeInTheDocument();
+    // Only the deadline cell, which waits for the goal alone, may settle.
+    expect(screen.getAllByText("Not set")).toHaveLength(1);
+    expect(screen.getByText(/Since start:/)).toBeInTheDocument();
+    expect(screen.queryByText(/-?\d+\.\d+kg/)).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
+  });
+});
+
 describe("StatusBand — the chart/cells split", () => {
   it("mounts the chart beside the cells rather than owning its read", () => {
     render(<StatusBand client={{ ...BASE, bmr: 1786 }} {...PROPS} />);
 
-    // The band is presentational: the tab fetches the series and passes the
-    // chart in, so the band never grows a data dependency of its own.
+    // The band is presentational: the tab fetches the series and passes both
+    // the chart and the payload in, so the band never grows a read of its own.
     expect(screen.getByTestId("chart")).toBeInTheDocument();
     expect(screen.getByText("Goal weight")).toBeInTheDocument();
     expect(screen.getByText("Deadline")).toBeInTheDocument();
@@ -220,20 +329,29 @@ describe("StatusBand — the deadline cell", () => {
 
     expect(screen.queryByText(/weeks? left|days? left|Deadline passed/)).not.toBeInTheDocument();
   });
+
+  it("waits for the goal alone — the series does not hold the deadline cell", () => {
+    render(
+      <StatusBand
+        client={BASE}
+        {...PROPS}
+        series={null}
+        seriesPending
+        goal={goalOf({ deadline: "2026-08-31" })}
+      />
+    );
+
+    expect(screen.getByText("3 days left")).toBeInTheDocument();
+  });
 });
 
 describe("StatusBand — footer", () => {
   it("labels the lifetime delta 'Since start', because the rail above it is windowed", () => {
     render(
       <StatusBand
-        client={{
-          ...BASE,
-          startingWeight: 90,
-          currentWeight: 86,
-          startingBodyFatPercentage: 24,
-          currentBodyFatPercentage: 21.5,
-        }}
+        client={BASE}
         {...PROPS}
+        series={seriesOf({ weight: { start: 90, current: 86 }, bodyFat: { start: 24, current: 21.5 } })}
       />
     );
 
@@ -269,8 +387,9 @@ describe("StatusBand — a start date still ahead", () => {
   it("reads `Starts …` in place of the since-start delta", () => {
     render(
       <StatusBand
-        client={{ ...BASE, startDate: "2026-10-15", startingWeight: 90, currentWeight: 86 }}
+        client={{ ...BASE, startDate: "2026-10-15" }}
         {...PROPS}
+        series={seriesOf({ weight: { start: 90, current: 86 } })}
       />
     );
 
@@ -284,14 +403,9 @@ describe("StatusBand — a start date still ahead", () => {
     // 29th has arrived for this client, and the delta is due.
     render(
       <StatusBand
-        client={{
-          ...BASE,
-          timezone: "Pacific/Auckland",
-          startDate: "2026-08-29",
-          startingWeight: 90,
-          currentWeight: 86,
-        }}
+        client={{ ...BASE, timezone: "Pacific/Auckland", startDate: "2026-08-29" }}
         {...PROPS}
+        series={seriesOf({ weight: { start: 90, current: 86 } })}
       />
     );
 

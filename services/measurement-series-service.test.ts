@@ -4,12 +4,15 @@ vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./measurements-service", () => ({
   getMeasurementSeries: vi.fn(),
   getBaseline: vi.fn(),
+  getMeasurementReadings: vi.fn(),
 }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import {
   getBaseline,
+  getMeasurementReadings,
   getMeasurementSeries,
+  type MeasurementLogReading,
   type StandingReading,
 } from "./measurements-service";
 import {
@@ -66,9 +69,10 @@ describe("toMeasurementSeries", () => {
     expect(series.weight).toHaveLength(1);
     expect(series.bodyFat).toEqual([]);
     expect(series.thighs).toEqual([]);
-    // Nothing else rides along: the seven series, the baseline, the start date.
+    // Nothing else rides along: the seven series, the baseline, the start
+    // date and the readings list.
     expect(Object.keys(series).sort()).toEqual(
-      [...MEASUREMENT_KEYS, "baseline", "startDate"].sort()
+      [...MEASUREMENT_KEYS, "baseline", "startDate", "readings"].sort()
     );
   });
 
@@ -133,6 +137,65 @@ describe("toMeasurementSeries", () => {
     expect(toMeasurementSeries(new Map(), {}, "2026-03-01").startDate).toBe("2026-03-01");
     expect(toMeasurementSeries(new Map(), {}, null).startDate).toBeNull();
   });
+
+  it("carries every reading, removed ones with their removal, in the order given", () => {
+    const readings: MeasurementLogReading[] = [
+      {
+        id: "m-2",
+        metricKey: "weight",
+        value: 90,
+        date: "2026-08-14",
+        recordedAt: "2026-08-14T12:00:00+00:00",
+        measuredAt: null,
+        source: "coach_entry",
+        sourceId: "ci-1",
+        note: "re-weighed",
+        voided: null,
+      },
+      {
+        id: "m-1",
+        metricKey: "weight",
+        value: 91,
+        date: "2026-08-14",
+        recordedAt: "2026-08-14T08:00:00+00:00",
+        measuredAt: "2026-08-14T07:30:00+00:00",
+        source: "check_in",
+        sourceId: "ci-1",
+        note: null,
+        voided: { at: "2026-09-03T10:00:00+00:00", byName: "Sam", reason: null },
+      },
+    ];
+
+    const series = toMeasurementSeries(new Map(), {}, null, readings);
+
+    expect(series.readings).toEqual([
+      {
+        id: "m-2",
+        metricKey: "weight",
+        date: "2026-08-14",
+        value: 90,
+        source: "coach_entry",
+        sourceId: "ci-1",
+        note: "re-weighed",
+        recordedAt: "2026-08-14T12:00:00+00:00",
+        measuredAt: null,
+        voided: null,
+      },
+      {
+        id: "m-1",
+        metricKey: "weight",
+        date: "2026-08-14",
+        value: 91,
+        source: "check_in",
+        sourceId: "ci-1",
+        note: null,
+        recordedAt: "2026-08-14T08:00:00+00:00",
+        measuredAt: "2026-08-14T07:30:00+00:00",
+        voided: { at: "2026-09-03T10:00:00+00:00", byName: "Sam", reason: null },
+      },
+    ]);
+    expect(toMeasurementSeries(new Map(), {}, null).readings).toEqual([]);
+  });
 });
 
 /** A `clients` builder whose `.maybeSingle()` resolves to `row`. */
@@ -152,10 +215,11 @@ describe("getMeasurementSeriesPayload", () => {
   beforeEach(() => {
     vi.mocked(getMeasurementSeries).mockReset();
     vi.mocked(getBaseline).mockReset();
+    vi.mocked(getMeasurementReadings).mockReset().mockResolvedValue([]);
     vi.mocked(supabaseAdmin.from).mockReset();
   });
 
-  it("reads the series, the baseline and the start date for the one client, and assembles them", async () => {
+  it("reads the series, the baseline, the readings and the start date for the one client, and assembles them", async () => {
     vi.mocked(getMeasurementSeries).mockResolvedValue(
       new Map<MeasurementKey, DayValue[]>([
         ["weight", [dayValue("m-1", "weight", "2026-07-06", 90)]],
@@ -170,6 +234,7 @@ describe("getMeasurementSeriesPayload", () => {
 
     expect(getMeasurementSeries).toHaveBeenCalledWith("client-1");
     expect(getBaseline).toHaveBeenCalledWith("client-1");
+    expect(getMeasurementReadings).toHaveBeenCalledWith("client-1");
     expect(supabaseAdmin.from).toHaveBeenCalledWith("clients");
     expect(builder.select).toHaveBeenCalledWith("start_date");
     expect(builder.eq).toHaveBeenCalledWith("id", "client-1");

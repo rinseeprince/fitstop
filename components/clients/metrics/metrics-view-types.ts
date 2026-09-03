@@ -97,15 +97,29 @@ export type MetricSummary = {
 };
 
 export type LogRow = {
+  /** A measurement row's id for a physique reading; a derived key for a wellness entry. */
   id: string;
   date: string; // YYYY-MM-DD
   metricId: string;
   metricName: string;
   value: number;
   unit: string;
+  /** Canonical kg / cm / % — the Edit dialog seeds from this, never from the
+   *  display value. A wellness score is its own canonical value. */
+  canonicalValue: number;
   change: { amount: number; tone: Tone } | null;
   note: string | null;
   source: MeasurementSource;
+  /** The check-in stamp a physique reading carries; null otherwise. */
+  sourceId: string | null;
+  /** A measurement-log row: Edit, Remove and Restore apply. A wellness entry has no row action. */
+  isMeasurement: boolean;
+  /** Set when the reading has been removed: muted, in no figure, restorable. */
+  voided: { at: string; byName: string | null } | null;
+  /** The reading every "now" figure uses. */
+  isCurrent: boolean;
+  /** The reading every "since start" figure uses. */
+  isBaseline: boolean;
   /** Dated before the client's start date: listed, excluded from the journey's chart and maths. */
   beforeStart: boolean;
 };

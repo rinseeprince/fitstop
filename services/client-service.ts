@@ -287,9 +287,10 @@ export const updateClient = async (
   clientData: UpdateClientInput,
   coachId?: string
 ): Promise<Client> => {
-  // Withdrawing a reading is a void, and voids arrive with the correct/remove
-  // commit. Until then a cleared body fat is refused BEFORE any write lands,
-  // so the coach reads a sentence rather than a save that kept the value.
+  // The profile is not a reading writer: a reading is corrected or removed on
+  // the Journey's measurement log, row by row. A cleared body fat is refused
+  // BEFORE any write lands, so the coach reads a sentence naming that path
+  // rather than a save that kept the value.
   if (clientData.currentBodyFatPercentage === null) {
     throw new ReadingRemovalUnavailableError("body fat");
   }

@@ -154,9 +154,35 @@ export type MeasurementBaseline = {
   id: string;
 };
 
+/**
+ * One row of the log as the coach's measurement list shows it — every
+ * reading, not the day's standing value: a check-in's 91 kg is listed under
+ * the coach's 90 kg logged the same day, and a REMOVED reading stays listed,
+ * muted, with who removed it and when. The day-values above are what every
+ * figure and the chart read; this list is the only surface that sees a
+ * removed row (ARCHITECTURE → "client_measurements table", rule 7).
+ */
+export type MeasurementReadingEntry = {
+  id: string;
+  metricKey: MeasurementKey;
+  /** YYYY-MM-DD on the client's calendar. */
+  date: string;
+  value: number;
+  source: MeasurementSource;
+  /** The check-in stamp, carried by a check-in's reading and any correction of it. */
+  sourceId: string | null;
+  note: string | null;
+  recordedAt: string;
+  measuredAt: string | null;
+  /** Set when the reading has been removed; null while it is live. */
+  voided: { at: string; byName: string | null; reason: string | null } | null;
+};
+
 export type MeasurementSeries = Record<MeasurementKey, MeasurementSeriesPoint[]> & {
   baseline: Partial<Record<MeasurementKey, MeasurementBaseline>>;
   startDate: string | null;
+  /** Every reading in the log, newest first, removed ones included. */
+  readings: MeasurementReadingEntry[];
 };
 
 export type ClientNote = {

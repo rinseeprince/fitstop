@@ -780,6 +780,9 @@ export type Database = {
           source: string
           source_id: string | null
           value: number
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           client_id: string
@@ -794,6 +797,9 @@ export type Database = {
           source: string
           source_id?: string | null
           value: number
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           client_id?: string
@@ -808,6 +814,9 @@ export type Database = {
           source?: string
           source_id?: string | null
           value?: number
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
@@ -815,6 +824,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_measurements_voided_by_fkey"
+            columns: ["voided_by"]
+            isOneToOne: false
+            referencedRelation: "coaches"
             referencedColumns: ["id"]
           },
         ]
@@ -2860,6 +2876,9 @@ export type Database = {
           source: string | null
           source_id: string | null
           value: number | null
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           client_id?: string | null
@@ -2874,6 +2893,9 @@ export type Database = {
           source?: string | null
           source_id?: string | null
           value?: number | null
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           client_id?: string | null
@@ -2888,6 +2910,9 @@ export type Database = {
           source?: string | null
           source_id?: string | null
           value?: number | null
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
@@ -2895,6 +2920,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_measurements_voided_by_fkey"
+            columns: ["voided_by"]
+            isOneToOne: false
+            referencedRelation: "coaches"
             referencedColumns: ["id"]
           },
         ]
@@ -3078,6 +3110,13 @@ export type Database = {
         Args: { p_client_id: string; p_moves: Json }
         Returns: undefined
       }
+      restore_measurement: {
+        Args: { p_client_id: string; p_id: string }
+        Returns: {
+          affects_current: boolean
+          metric: string
+        }[]
+      }
       save_check_in_form_atomic: {
         Args: {
           p_client_id: string
@@ -3116,6 +3155,18 @@ export type Database = {
             }
             Returns: string
           }
+      void_measurement: {
+        Args: {
+          p_actor: string
+          p_client_id: string
+          p_id: string
+          p_reason?: string
+        }
+        Returns: {
+          affects_current: boolean
+          metric: string
+        }[]
+      }
     }
     Enums: {
       content_type: "video_link" | "hyperlink" | "pdf" | "image" | "document"

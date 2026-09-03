@@ -14,6 +14,7 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { EffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import type { Client } from "@/types/check-in";
+import type { MeasurementSeries } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { TextSkeleton } from "@/components/text-skeleton";
 import { formatWeight } from "@/utils/unit-conversions";
@@ -44,12 +45,34 @@ type StatusBandProps = {
    * and the chart's own SWR read stays out of it.
    */
   chart: ReactNode;
+  /**
+   * The measurement journey the tab fetched for the chart. Every reading
+   * figure the band shows — current and start weight and body fat, in the
+   * Since-start pill and the goal chips — comes from HERE, never from the
+   * page-level client record: the record revalidates only on coach-side
+   * writes, so a check-in the client submits reached the chart on the next
+   * visit and the pill only on a full reload. One read for the four figures.
+   */
+  series: MeasurementSeries | null;
   onOpenMetrics: () => void;
   /** The goal read is still in flight: the three goal-backed cells render
    *  pending instead of claiming "Not set" — unresolved is never rendered as
    *  empty (docs/newdesignsystem.md → "Loading & async states"). */
   goalPending?: boolean;
+  /** The series read is still in flight: the chips and the pill render pending. */
+  seriesPending?: boolean;
 };
+
+/** "Now": the newest reading of ANY date — the series is ascending by day. */
+function newestOf(series: MeasurementSeries | null, key: "weight" | "bodyFat"): number | undefined {
+  const points = series?.[key];
+  return points && points.length > 0 ? points[points.length - 1].value : undefined;
+}
+
+/** The baseline: the reading as of the start date, derived by the database. */
+function baselineOf(series: MeasurementSeries | null, key: "weight" | "bodyFat"): number | undefined {
+  return series?.baseline?.[key]?.value;
+}
 
 const DIVIDER = "border-[rgba(255,255,255,0.07)]";
 
@@ -187,30 +210,37 @@ function BandCell({
   );
 }
 
-export function StatusBand({ client, goal, chart, onOpenMetrics, goalPending = false }: StatusBandProps) {
+export function StatusBand({
+  client,
+  goal,
+  chart,
+  series,
+  onOpenMetrics,
+  goalPending = false,
+  seriesPending = false,
+}: StatusBandProps) {
   // Body weights convert freely — formatWeight, never formatLoad.
   const { preference } = useUnits();
   const kg = (v: number | null | undefined) =>
     v == null ? undefined : formatWeight(v, preference).value;
   const weightUnit = formatWeight(0, preference).unit;
 
-  const startWeight = kg(client.startingWeight);
-  const currentWeight = kg(client.currentWeight);
+  const startWeight = kg(baselineOf(series, "weight"));
+  const currentWeight = kg(newestOf(series, "weight"));
+  const startBodyFat = baselineOf(series, "bodyFat");
+  const currentBodyFat = newestOf(series, "bodyFat");
   const goalWeight = kg(goal.goalWeightKg);
   const goalBodyFat = goal.goalBodyFatPercentage ?? undefined;
 
   const weightChip = goalChip(startWeight, currentWeight, goalWeight, weightUnit);
-  const bfChip = goalChip(
-    client.startingBodyFatPercentage,
-    client.currentBodyFatPercentage,
-    goalBodyFat,
-    "%"
-  );
+  const bfChip = goalChip(startBodyFat, currentBodyFat, goalBodyFat, "%");
+  // The chips need both reads; the deadline cell only the goal.
+  const chipPending = goalPending || seriesPending;
 
   // Deltas between the DISPLAYED values, so the footer reconciles with the
-  // numbers the sheet and the chart show.
+  // numbers the chart shows.
   const weightDelta = formatDelta(currentWeight, startWeight);
-  const bfDelta = formatDelta(client.currentBodyFatPercentage, client.startingBodyFatPercentage);
+  const bfDelta = formatDelta(currentBodyFat, startBodyFat);
   const sinceStart = [
     weightDelta && `${weightDelta}${weightUnit}`,
     bfDelta && `${bfDelta}%`,
@@ -241,7 +271,7 @@ export function StatusBand({ client, goal, chart, onOpenMetrics, goalPending = f
             value={goalWeight?.toFixed(1)}
             unit={weightUnit}
             chip={weightChip}
-            pending={goalPending}
+            pending={chipPending}
           />
           <BandCell
             label="Goal body fat"
@@ -249,7 +279,7 @@ export function StatusBand({ client, goal, chart, onOpenMetrics, goalPending = f
             unit="%"
             chip={bfChip}
             borderClass="border-l"
-            pending={goalPending}
+            pending={chipPending}
           />
           <BandCell
             label="BMR"
@@ -274,6 +304,12 @@ export function StatusBand({ client, goal, chart, onOpenMetrics, goalPending = f
         {startsAhead && client.startDate ? (
           <span className="rounded-[4px] bg-[rgba(255,255,255,0.06)] px-2 py-0.5 text-[10.5px] text-[rgba(255,255,255,0.55)]">
             Starts<InlineMono>{formatDateOnlyShort(client.startDate)}</InlineMono>
+          </span>
+        ) : seriesPending ? (
+          // Unresolved is never rendered as empty: the pill's frame stands
+          // while the series lands, so nothing shifts when it does.
+          <span className="rounded-[4px] bg-[rgba(255,255,255,0.06)] px-2 py-0.5 text-[10.5px] text-[rgba(255,255,255,0.55)]">
+            Since start:<InlineMono><TextSkeleton className="w-20" /></InlineMono>
           </span>
         ) : sinceStart.length > 0 && (
           // "Since start:" is load-bearing, not decoration: this is a range

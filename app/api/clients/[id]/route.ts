@@ -115,8 +115,9 @@ export async function PATCH(
   } catch (error) {
     console.error("Error updating client:", error);
 
-    // A reading cannot be withdrawn yet (the correct/remove commit brings the
-    // void) — the sentence the coach reads, not a generic failure.
+    // A reading is not withdrawn through the profile (the Journey's measurement
+    // log removes it, row by row) — the sentence the coach reads, not a
+    // generic failure.
     if (error instanceof ReadingRemovalUnavailableError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

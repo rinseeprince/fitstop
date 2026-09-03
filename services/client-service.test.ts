@@ -779,8 +779,8 @@ describe('Client Service', () => {
     })
 
     it('refuses to withdraw a body fat reading BEFORE any write lands', async () => {
-      // A void arrives with the correct/remove commit; until then the coach
-      // reads a sentence rather than a save that silently kept the value.
+      // The profile is not a reading writer: the coach reads a sentence naming
+      // the Journey's measurement log rather than a save that kept the value.
       const mockQuery = createMockQuery({ data: createMockClientRow(), error: null })
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as never)
 
@@ -789,7 +789,7 @@ describe('Client Service', () => {
       ).rejects.toThrow(ReadingRemovalUnavailableError)
       await expect(
         updateClient('client-123', { startingBodyFatPercentage: null }, 'coach-456')
-      ).rejects.toThrow("A recorded start body fat can't be removed yet")
+      ).rejects.toThrow("A recorded start body fat can't be removed here")
 
       expect(supabaseAdmin.from).not.toHaveBeenCalled()
       expect(appendMeasurements).not.toHaveBeenCalled()
