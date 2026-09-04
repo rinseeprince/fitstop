@@ -5,7 +5,7 @@ import {
 } from "./training-event-service";
 import { getTrainingWeekStart } from "@/lib/date-helpers";
 import { getClientWeekAnchor } from "./check-in-week-service";
-import { assertCanEditTrainingDay } from "./daily-log-permissions-service";
+import { assertCanEdit } from "./daily-log-permissions-service";
 import type {
   ExerciseLogInsert,
   ExerciseLogRow,
@@ -764,14 +764,14 @@ export async function logTrainingEvent(params: {
     throw new Error(`Training event not found: ${eventId}`);
   }
 
-  // Date-edit lock: today is editable; a past day that already has a log is
-  // read-only (throws DayLockedError → 403). loggedStatus comes from the event's
-  // existing link — no extra query.
-  await assertCanEditTrainingDay(
+  // The shared day rule (throws DayLockedError → 403). The event's own log state
+  // plays no part: a workout inside the open period can be logged and re-logged,
+  // and one inside a period a check-in has closed cannot, logged or not.
+  await assertCanEdit({
     clientId,
-    eventRow.date,
-    eventRow.session_log_id ? "logged" : "never-logged",
-  );
+    date: eventRow.date,
+    resourceType: "training",
+  });
 
   const { weekday: checkInDay } = await getClientWeekAnchor(clientId);
   const weekStartDate = getTrainingWeekStart(eventRow.date, checkInDay);

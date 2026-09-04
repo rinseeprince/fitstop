@@ -4,19 +4,26 @@
  * `reason` prop switches the copy. The wrapper/markup mirror the original inline notice on
  * the nutrition page so swapping it in is DOM-neutral.
  */
-type LockedDayReason = "past-logged" | "today-no-plan";
+type LockedDayReason = "locked" | "today-no-plan";
 
 interface LockedDayNoticeProps {
   /**
    * Which situation the notice explains. `today-no-plan` is reserved for plan-gated
    * surfaces (nutrition/training; wellness is not plan-gated — Session 3.1C); current
-   * pages only use `past-logged`.
+   * pages only use `locked`.
    */
   reason: LockedDayReason;
 }
 
+/**
+ * `locked` names no date and no cause deliberately (owner, 2026-09-04). The day
+ * rule closes a day for two reasons — the week is in a check-in already sent, or
+ * the day is in the future — and one sentence is true of both. The copy it
+ * replaced ("This day's log is locked") was also wrong on a future day, which
+ * has no log to lock.
+ */
 const COPY: Record<LockedDayReason, string> = {
-  "past-logged": "This day's log is locked and can't be edited.",
+  locked: "This day is locked.",
   "today-no-plan": "There's no plan scheduled for today yet.",
 };
 

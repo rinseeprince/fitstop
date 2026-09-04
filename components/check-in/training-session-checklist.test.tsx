@@ -79,6 +79,7 @@ describe("TrainingSessionChecklist (Session 6.4)", () => {
           }),
         ]}
         clientTimezone="UTC"
+        logsOpenFrom={null}
         onLogEvent={vi.fn()}
       />
     );
@@ -97,6 +98,7 @@ describe("TrainingSessionChecklist (Session 6.4)", () => {
       <TrainingSessionChecklist
         events={[detail({ eventId: "e-open", sessionName: "Open Pull", logStatus: "not_logged" })]}
         clientTimezone="UTC"
+        logsOpenFrom={null}
         onLogEvent={vi.fn()}
       />
     );
@@ -119,6 +121,7 @@ describe("TrainingSessionChecklist (Session 6.4)", () => {
           }),
         ]}
         clientTimezone="UTC"
+        logsOpenFrom={null}
         onLogEvent={vi.fn()}
       />
     );
@@ -135,6 +138,7 @@ describe("TrainingSessionChecklist (Session 6.4)", () => {
       <TrainingSessionChecklist
         events={[detail({ eventId: "e-open", sessionName: "Open Pull", logStatus: "not_logged" })]}
         clientTimezone="UTC"
+        logsOpenFrom={null}
         onLogEvent={onLogEvent}
       />
     );

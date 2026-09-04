@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { getClientTodayString } from "./today-service";
 import { getClientWeekAnchor } from "./check-in-week-service";
 import { cascadeNutritionAfterTrainingChange } from "./nutrition-event-service";
 import {
@@ -7,11 +6,8 @@ import {
   occupiedMessage,
   rethrowIfAnyDateOccupied,
 } from "./training-event-occupancy";
-import {
-  dateOfTimestamp,
-  getTrainingWeekEnd,
-  getTrainingWeekStart,
-} from "@/lib/date-helpers";
+import { getTrainingWeekEnd, getTrainingWeekStart } from "@/lib/date-helpers";
+import { getLogWindow } from "./daily-log-permissions-service";
 
 // =============================================================================
 // Client week layout — the ONE write path for "a session changes date".
@@ -44,12 +40,19 @@ export const LAYOUT_DRIFT_MESSAGE = "Your week changed since you opened it — r
  *  - a session moves only within the training week it CURRENTLY sits in
  *    (check-in-anchored — the same seven days adherence counts), so a missed
  *    session cannot be pushed forward for ever;
- *  - a target before the client's today is allowed only when that day has no
- *    logged workout (the backfill allowance: "I did Thursday's session on
- *    Tuesday and forgot to log it");
+ *  - neither end of a move may land in a period a check-in has closed: the same
+ *    day rule the client's log writes obey (`lib/daily-log-permissions.ts`).
+ *    A week the client has reported on does not change shape afterwards;
  *  - a target day may not hold any event that is not itself moving — status-
  *    agnostic, the `assertDateFree` posture — so a swap passes and a drop onto
  *    a logged day does not.
+ *
+ * The old "a past target is allowed only when that day has no logged workout"
+ * clause is GONE with the logged-day lock it belonged to. It refused nothing the
+ * rest of the policy does not already refuse: a logged day holds a completed
+ * event, which the status-agnostic occupancy check below rejects on its own, and
+ * a logged session is pinned by the first rule.
+ *
  * Concurrency is the RPC's job: it re-checks ownership, status and the
  * from-date under row locks, so a coach move racing this call surfaces as
  * `drift`, never as a half-applied week.
@@ -68,15 +71,17 @@ export async function applyClientLayout(
   if (real.length === 0) return { moved: [] };
 
   const ids = real.map((m) => m.eventId);
-  const [eventsRes, { weekday: checkInDay }, today] = await Promise.all([
-    supabaseAdmin
-      .from("training_events")
-      .select("id, date, status")
-      .eq("client_id", clientId)
-      .in("id", ids),
-    getClientWeekAnchor(clientId),
-    getClientTodayString(clientId),
-  ]);
+  const [eventsRes, { weekday: checkInDay }, { logsOpenFrom }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("training_events")
+        .select("id, date, status")
+        .eq("client_id", clientId)
+        .in("id", ids),
+      getClientWeekAnchor(clientId),
+      // The day rule's boundary, applied to both ends of every move.
+      getLogWindow(clientId),
+    ]);
   if (eventsRes.error) {
     throw new Error(`Failed to load events for layout: ${eventsRes.error.message}`);
   }
@@ -96,25 +101,14 @@ export async function applyClientLayout(
     if (m.toDate < weekStart || m.toDate > weekEnd) {
       throw new LayoutPolicyError("A session can only move within its own week");
     }
-  }
 
-  // Backfill allowance: a past target must not already hold a logged workout.
-  // completed_at is TIMESTAMPTZ written from a bare date — the house range
-  // pattern, compared by its calendar day.
-  const pastTargets = [...new Set(real.map((m) => m.toDate).filter((d) => d < today))].sort();
-  if (pastTargets.length > 0) {
-    const { data: logs, error: logsError } = await supabaseAdmin
-      .from("session_logs")
-      .select("completed_at")
-      .eq("client_id", clientId)
-      .gte("completed_at", `${pastTargets[0]}T00:00:00`)
-      .lte("completed_at", `${pastTargets[pastTargets.length - 1]}T23:59:59`);
-    if (logsError) {
-      throw new Error(`Failed to check logged days for layout: ${logsError.message}`);
-    }
-    const loggedDays = new Set((logs ?? []).map((l) => dateOfTimestamp(l.completed_at)));
-    if (pastTargets.some((d) => loggedDays.has(d))) {
-      throw new LayoutPolicyError("That day already has a logged workout");
+    // Both ends, not just the target: a session sitting inside a reported week
+    // may not be moved OUT of it either, or the week the check-in described
+    // would change shape after the fact.
+    if (logsOpenFrom !== null && (m.fromDate < logsOpenFrom || m.toDate < logsOpenFrom)) {
+      throw new LayoutPolicyError(
+        "That week is in a check-in you've already sent and can't be changed"
+      );
     }
   }
 

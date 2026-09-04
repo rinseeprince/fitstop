@@ -13,6 +13,8 @@ import { checkInWeekday } from "@/lib/check-in-week";
 import { getCheckInGate } from "@/lib/check-in-schedule";
 import { getTodayInTimezone, resolveCheckInWindow } from "@/lib/date-helpers";
 import { getClientCheckInForm } from "@/services/check-in-form-service";
+import { getLastSubmittedPeriodEnd } from "@/services/daily-log-permissions-service";
+import { resolveLogsOpenFrom } from "@/lib/daily-log-permissions";
 import type { CheckInContextResponse } from "@/types/check-in";
 
 /**
@@ -99,7 +101,7 @@ export async function GET(request: NextRequest) {
     // serial round-trip. (Runs only after gating, so a gated request never reaches
     // getCheckInNutritionContext and its plan-promotion side effect.)
     // supabaseAdmin required: no client-facing SELECT RLS policy exists on coaches table
-    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats, dailyLogs, trainingEventDetails, form] = await Promise.all([
+    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats, dailyLogs, trainingEventDetails, form, lastSubmittedPeriodEnd] = await Promise.all([
       supabaseAdmin
         .from("coaches")
         .select("name")
@@ -115,6 +117,11 @@ export async function GET(request: NextRequest) {
       // row gets all 14 field keys and no questions, which is exactly what
       // every client got before this key existed.
       getClientCheckInForm(client.id),
+      // The day-rule boundary, for the training checklist's per-row lock. Joined
+      // to the fan-out so it costs no round trip of its own, and derived from
+      // the same function `/api/client/me` uses, so the two wires cannot
+      // disagree about which days are open.
+      getLastSubmittedPeriodEnd(client.id),
     ]);
 
     const coach = coachResult.data;
@@ -133,6 +140,7 @@ export async function GET(request: NextRequest) {
         // Session 6.4: needed client-side so canEditDay computes "today" in the
         // client's IANA zone for the editable/locked training rows.
         timezone: client.timezone,
+        logsOpenFrom: resolveLogsOpenFrom(client, lastSubmittedPeriodEnd),
       },
       trainingContext,
       nutritionContext,

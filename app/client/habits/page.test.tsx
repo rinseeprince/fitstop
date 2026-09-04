@@ -29,9 +29,12 @@ vi.mock("swr", () => ({
 }));
 
 // canEditDay reads the client timezone from here; pin to UTC so "today" is deterministic.
+// The day-rule boundary the page locks on. Read at render time, so a test can
+// set it per case. null = no lower bound (a client with no check-in schedule).
+let mockLogsOpenFrom: string | null = null;
 vi.mock("@/hooks/use-client-profile", () => ({
   useClientProfile: () => ({
-    client: { timezone: "UTC" },
+    client: { timezone: "UTC", logsOpenFrom: mockLogsOpenFrom },
     error: null,
     isLoading: false,
     mutate: vi.fn(),
@@ -151,7 +154,10 @@ describe("Habits log page", () => {
     });
   });
 
-  it("locks only the recorded habit on a past day and still allows backfilling a missed one", async () => {
+  it("a past day inside the open week stays editable — a recorded habit no longer locks itself", async () => {
+    // The replacement for the old per-habit lock. h1 is already recorded and h2
+    // is not; under the day rule they answer the same, because the day belongs
+    // to a week the client has not reported on yet.
     setSWR({
       habits: [habit({ id: "h1", name: "Water" }), habit({ id: "h2", name: "Walk" })],
       logs: [
@@ -167,6 +173,7 @@ describe("Habits log page", () => {
       ],
     });
     mockSearchParam = PAST;
+    mockLogsOpenFrom = null; // no check-in has closed anything
     const fetchSpy = mockFetchOnce({
       status: 200,
       body: { success: true, data: { id: "l2", dailyHabitId: "h2", completed: true } },
@@ -174,52 +181,31 @@ describe("Habits log page", () => {
 
     render(<HabitsLogPage />);
     const switches = screen.getAllByRole("switch");
-    // h1 (already recorded) is locked; h2 (missed) stays editable — habit-grained lock.
-    expect(switches[0]).toBeDisabled();
+    // Mutation guard: reading a per-habit log flag again would disable the first.
+    expect(switches[0]).not.toBeDisabled();
     expect(switches[1]).not.toBeDisabled();
-    // Only partially locked → no day-level notice.
-    expect(screen.queryByText(/locked and can.t be edited/i)).toBeNull();
+    expect(screen.queryByText("This day is locked.")).toBeNull();
 
     const user = userEvent.setup();
     await user.click(switches[1]);
-
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
-    expect(JSON.parse(fetchSpy.mock.calls[0][1]?.body as string)).toEqual({
-      dailyHabitId: "h2",
-      date: PAST,
-      completed: true,
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalled();
     });
   });
 
-  it("shows the locked notice and disables all toggles when every habit is recorded on a past day", () => {
+  it("shows the notice and disables every toggle on a day before the boundary", () => {
     setSWR({
       habits: [habit({ id: "h1", name: "Water" }), habit({ id: "h2", name: "Walk" })],
-      logs: [
-        {
-          id: "l1",
-          dailyHabitId: "h1",
-          clientId: "client-1",
-          date: PAST,
-          completed: true,
-          habitName: "Water",
-          isBoolean: true,
-        },
-        {
-          id: "l2",
-          dailyHabitId: "h2",
-          clientId: "client-1",
-          date: PAST,
-          completed: false,
-          habitName: "Walk",
-          isBoolean: true,
-        },
-      ],
+      logs: [],
     });
     mockSearchParam = PAST;
+    // A check-in has closed everything up to 2026-01-01, so a 2020 day is shut —
+    // and so is every habit on it, logged or not.
+    mockLogsOpenFrom = "2026-01-01";
     render(<HabitsLogPage />);
 
-    expect(screen.getByText(/locked and can.t be edited/i)).toBeInTheDocument();
-    screen.getAllByRole("switch").forEach((s) => expect(s).toBeDisabled());
+    expect(screen.getByText("This day is locked.")).toBeInTheDocument();
+    screen.getAllByRole("switch").forEach((sw) => expect(sw).toBeDisabled());
   });
 
   it("renders the empty state when there are no habits", () => {

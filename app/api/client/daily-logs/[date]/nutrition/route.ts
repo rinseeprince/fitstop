@@ -33,7 +33,7 @@ export async function GET(
   try {
     const [nutrition, editState] = await Promise.all([
       getNutritionForDate(auth.clientId, date),
-      getDayEditState(auth.clientId, date, "nutrition"),
+      getDayEditState(auth.clientId, date),
     ]);
     return NextResponse.json(
       { success: true, data: { ...nutrition, editable: editState.editable } },
@@ -51,6 +51,10 @@ export async function GET(
 /**
  * PATCH nutrition (kcal + macros). Guards the date-edit rule via assertCanEdit (403 when
  * locked), resolves plan context, then writes nutrition_logs. Targets are server-resolved.
+ *
+ * Always 200. The old 201-on-first-log branch needed a nutrition_logs existence
+ * read, which the day rule used to do for free and no longer does; the code was
+ * in no client contract and nothing read it (owner decision D24, 2026-09-04).
  */
 export async function PATCH(
   request: NextRequest,
@@ -77,7 +81,7 @@ export async function PATCH(
   }
 
   try {
-    const { loggedStatus } = await assertCanEdit({
+    await assertCanEdit({
       clientId: auth.clientId,
       date,
       resourceType: "nutrition",
@@ -87,10 +91,7 @@ export async function PATCH(
     const dailyLog = await upsertNutritionLog(auth.clientId, date, result.data, {
       nutritionPlanId: ctx.nutritionPlanId,
     });
-    return NextResponse.json(
-      { success: true, data: dailyLog },
-      { status: loggedStatus === "logged" ? 200 : 201 }
-    );
+    return NextResponse.json({ success: true, data: dailyLog });
   } catch (error) {
     if (error instanceof DayLockedError) {
       return NextResponse.json(

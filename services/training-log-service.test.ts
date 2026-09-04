@@ -7,6 +7,13 @@ vi.mock("./supabase-admin", () => ({
   },
 }));
 
+// The day rule. Its derivation is proved in
+// services/daily-log-permissions-service.test.ts; here it is a gate that either
+// lets the write through or throws, which is all this service asks of it.
+vi.mock("./daily-log-permissions-service", () => ({
+  assertCanEdit: vi.fn(),
+}));
+
 // Chainable supabase query mock (mirrors the helper in training-event-service.test.ts).
 function createMockQuery<T = unknown>(result: {
   data: T | null;
@@ -40,6 +47,8 @@ function createMockQuery<T = unknown>(result: {
 }
 
 import { supabaseAdmin } from "./supabase-admin";
+import { assertCanEdit } from "./daily-log-permissions-service";
+import { DayLockedError } from "@/lib/daily-log-permissions";
 import {
   logTrainingEvent,
   getTrainingEventDetail,
@@ -1614,9 +1623,9 @@ describe("logTrainingEvent", () => {
     expect(linkQ.update).not.toHaveBeenCalled();
   });
 
-  it("[14] lock: a PAST event already logged throws DayLockedError before writing", async () => {
+  it("[14] lock: the shared day rule refuses the write before anything is written", async () => {
     const eventQ = createMockQuery({
-      data: eventRow({ date: "2026-05-01", session_log_id: SESSION_LOG_ID }),
+      data: eventRow({ date: "2026-05-01", session_log_id: null }),
       error: null,
     });
     const clientQ = createMockQuery({
@@ -1630,6 +1639,9 @@ describe("logTrainingEvent", () => {
       clients: clientQ,
       session_logs: writeSpy,
     });
+    vi.mocked(assertCanEdit).mockRejectedValueOnce(
+      new DayLockedError("2026-05-01", "training"),
+    );
 
     await expect(
       logTrainingEvent({
@@ -1637,9 +1649,41 @@ describe("logTrainingEvent", () => {
         clientId: CLIENT_ID,
         payload: { completionQuality: "full" },
       }),
-    ).rejects.toThrow(/locked/i);
+    ).rejects.toBeInstanceOf(DayLockedError);
     expect(writeSpy.insert).not.toHaveBeenCalled();
     expect(writeSpy.update).not.toHaveBeenCalled();
+  });
+
+  it("[14b] lock: asks the day rule about the EVENT's date, and hands it no log state", async () => {
+    // Mutation guard: the old guard passed "logged"/"never-logged" off the
+    // event's session_log_id, so a re-log of a past day was refused. The rule
+    // takes the date and the resource and nothing else, so the event below —
+    // which HAS a log — still reaches the writer.
+    const eventQ = createMockQuery({
+      data: eventRow({ date: "2026-05-01", session_log_id: SESSION_LOG_ID }),
+      error: null,
+    });
+    installRouter({
+      training_events: eventQ,
+      clients: createMockQuery({ data: { next_check_in_due: null, timezone: "UTC" }, error: null }),
+      session_logs: createMockQuery({ data: { id: SESSION_LOG_ID }, error: null }),
+      exercise_logs: createMockQuery({ data: [], error: null }),
+    });
+
+    // The guard runs before the write, so what happens downstream is beside the
+    // point — this asserts what it was ASKED, and that a logged event still gets
+    // past it.
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: { completionQuality: "full" },
+    }).catch(() => undefined);
+
+    expect(assertCanEdit).toHaveBeenCalledWith({
+      clientId: CLIENT_ID,
+      date: "2026-05-01",
+      resourceType: "training",
+    });
   });
 });
 

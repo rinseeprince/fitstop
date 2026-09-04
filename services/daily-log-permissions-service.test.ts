@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/services/supabase-admin", () => ({
   supabaseAdmin: { from: vi.fn() },
@@ -6,209 +6,202 @@ vi.mock("@/services/supabase-admin", () => ({
 
 import { supabaseAdmin } from "@/services/supabase-admin";
 import {
+  getLastSubmittedPeriodEnd,
+  getLogWindow,
   getDayEditState,
   assertCanEdit,
-  assertCanEditTrainingDay,
 } from "./daily-log-permissions-service";
 import { DayLockedError } from "@/lib/daily-log-permissions";
-import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 
-const today = getTodayDateStringInTimezone("UTC");
-const daysAgo = (n: number): string => {
-  const d = new Date(`${today}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - n);
-  return d.toISOString().slice(0, 10);
+// Thu 3 Sep 2026, with Sunday check-ins. The outstanding check-in covers the
+// week that ended Sun 30 Aug, so the open range is Mon 24 Aug through today.
+const NOW = "2026-09-03T12:00:00Z";
+const SUNDAY_DUE = "2026-09-06";
+const WINDOW_START = "2026-08-24";
+const TODAY = "2026-09-03";
+
+type ClientRow = {
+  timezone: string;
+  next_check_in_due: string | null;
+  start_date: string | null;
 };
 
-function clientsQuery(timezone: string | null) {
+const CLIENT: ClientRow = {
+  timezone: "UTC",
+  next_check_in_due: SUNDAY_DUE,
+  start_date: "2026-01-01",
+};
+
+/** Records every table the code touched, so a test can prove what it did NOT read. */
+let touched: string[] = [];
+
+function clientsQuery(row: ClientRow | null, error: unknown = null) {
   return {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
-    single: vi.fn().mockResolvedValue({
-      data: timezone === null ? null : { timezone },
-      error: null,
-    }),
+    single: vi.fn().mockResolvedValue({ data: row, error }),
   };
 }
 
-function childQuery(row: { id: string } | null) {
+function checkInsQuery(periodEnd: string | null, error: unknown = null) {
   return {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    not: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: row, error: null }),
+    maybeSingle: vi
+      .fn()
+      .mockResolvedValue({ data: periodEnd === null ? null : { period_end: periodEnd }, error }),
   };
 }
 
-function mockFrom(opts: { timezone?: string | null; childRow?: { id: string } | null }) {
-  vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
-    table === "clients"
-      ? clientsQuery(opts.timezone === undefined ? "UTC" : opts.timezone)
-      : childQuery(opts.childRow ?? null)) as never);
+function mockFrom(
+  opts: {
+    client?: ClientRow | null;
+    clientError?: unknown;
+    lastPeriodEnd?: string | null;
+    checkInsError?: unknown;
+  } = {}
+) {
+  vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+    touched.push(table);
+    if (table === "clients") {
+      return clientsQuery(
+        opts.client === undefined ? CLIENT : opts.client,
+        opts.clientError ?? null
+      );
+    }
+    return checkInsQuery(opts.lastPeriodEnd ?? null, opts.checkInsError ?? null);
+  }) as never);
 }
 
-/**
- * Child-row query for the habit resource whose result depends on the queried
- * `daily_habit_id`: returns a row only when it matches `loggedId`. This lets a test prove
- * the per-habit narrowing — same day, one habit "logged", another "never-logged".
- */
-function habitChildQuery(loggedId: string) {
-  let queriedHabitId: string | undefined;
-  const builder = {
-    select: vi.fn(() => builder),
-    eq: vi.fn((col: string, val: string) => {
-      if (col === "daily_habit_id") queriedHabitId = val;
-      return builder;
-    }),
-    limit: vi.fn(() => builder),
-    maybeSingle: vi.fn(() =>
-      Promise.resolve({ data: queriedHabitId === loggedId ? { id: "hl1" } : null, error: null }),
-    ),
-  };
-  return builder;
-}
+beforeEach(() => {
+  vi.clearAllMocks();
+  touched = [];
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(NOW));
+});
+afterEach(() => vi.useRealTimers());
 
-function mockHabitFrom(loggedId: string, timezone = "UTC") {
-  vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
-    table === "clients" ? clientsQuery(timezone) : habitChildQuery(loggedId)) as never);
-}
-
-describe("getDayEditState / assertCanEdit", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("allows editing today when never logged", async () => {
-    mockFrom({ timezone: "UTC", childRow: null });
-    const state = await getDayEditState("c1", today, "nutrition");
-    expect(state).toEqual({ editable: true, loggedStatus: "never-logged", clientTimezone: "UTC" });
-
-    mockFrom({ timezone: "UTC", childRow: null });
-    await expect(
-      assertCanEdit({ clientId: "c1", date: today, resourceType: "nutrition" })
-    ).resolves.toEqual({ loggedStatus: "never-logged" });
+describe("getLastSubmittedPeriodEnd", () => {
+  it("returns the newest submitted period end", async () => {
+    mockFrom({ lastPeriodEnd: "2026-08-30" });
+    await expect(getLastSubmittedPeriodEnd("c1")).resolves.toBe("2026-08-30");
   });
 
-  it("locks a past logged day and assertCanEdit throws DayLockedError", async () => {
-    const past = daysAgo(3);
-    mockFrom({ timezone: "UTC", childRow: { id: "n1" } });
-    const state = await getDayEditState("c1", past, "nutrition");
-    expect(state.editable).toBe(false);
-    expect(state.loggedStatus).toBe("logged");
+  it("returns null for a client who has never checked in", async () => {
+    mockFrom({ lastPeriodEnd: null });
+    await expect(getLastSubmittedPeriodEnd("c1")).resolves.toBeNull();
+  });
 
-    mockFrom({ timezone: "UTC", childRow: { id: "n1" } });
-    await expect(
-      assertCanEdit({ clientId: "c1", date: past, resourceType: "nutrition" })
-    ).rejects.toBeInstanceOf(DayLockedError);
-
-    mockFrom({ timezone: "UTC", childRow: { id: "n1" } });
-    const err = await assertCanEdit({ clientId: "c1", date: past, resourceType: "nutrition" }).catch(
-      (e) => e
+  it("logs a read failure loudly rather than silently closing or opening days", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFrom({ checkInsError: { message: "boom" } });
+    await expect(getLastSubmittedPeriodEnd("c1")).resolves.toBeNull();
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("getLastSubmittedPeriodEnd"),
+      expect.anything()
     );
-    expect(err).toBeInstanceOf(DayLockedError);
-    expect(err.date).toBe(past);
-    expect(err.resourceType).toBe("nutrition");
-  });
-
-  it("reads the resource's own child table", async () => {
-    const fromSpy = vi.mocked(supabaseAdmin.from);
-    mockFrom({ timezone: "UTC", childRow: null });
-    await getDayEditState("c1", today, "nutrition");
-    expect(fromSpy).toHaveBeenCalledWith("nutrition_logs");
-
-    fromSpy.mockClear();
-    mockFrom({ timezone: "UTC", childRow: null });
-    await getDayEditState("c1", today, "wellness");
-    expect(fromSpy).toHaveBeenCalledWith("wellness_logs");
-  });
-
-  it("treats an invalid client timezone as UTC (no throw)", async () => {
-    mockFrom({ timezone: "Mars/Olympus", childRow: { id: "n1" } });
-    const state = await getDayEditState("c1", today, "nutrition");
-    expect(state.editable).toBe(true); // today is editable; bad tz falls back to UTC
-  });
-
-  it("locks a past day per-habit: the recorded habit is locked, an unrecorded one stays editable", async () => {
-    const past = daysAgo(3);
-
-    mockHabitFrom("logged-habit");
-    const locked = await getDayEditState("c1", past, "habit", { habitId: "logged-habit" });
-    expect(locked.loggedStatus).toBe("logged");
-    expect(locked.editable).toBe(false);
-
-    mockHabitFrom("logged-habit");
-    const open = await getDayEditState("c1", past, "habit", { habitId: "missed-habit" });
-    expect(open.loggedStatus).toBe("never-logged");
-    expect(open.editable).toBe(true);
-
-    mockHabitFrom("logged-habit");
-    await expect(
-      assertCanEdit({ clientId: "c1", date: past, resourceType: "habit", habitId: "logged-habit" }),
-    ).rejects.toBeInstanceOf(DayLockedError);
-
-    mockHabitFrom("logged-habit");
-    await expect(
-      assertCanEdit({ clientId: "c1", date: past, resourceType: "habit", habitId: "missed-habit" }),
-    ).resolves.toEqual({ loggedStatus: "never-logged" });
-  });
-
-  it("queries daily_habit_logs for the habit resource", async () => {
-    const fromSpy = vi.mocked(supabaseAdmin.from);
-    mockHabitFrom("logged-habit");
-    await getDayEditState("c1", today, "habit", { habitId: "h1" });
-    expect(fromSpy).toHaveBeenCalledWith("daily_habit_logs");
+    spy.mockRestore();
   });
 });
 
-// The loud log is the observable contract: a mocked chain can't reproduce a
-// live PostgREST failure (the PGRST201 lesson), so these pin that a fetch
-// error is logged rather than silently becoming a UTC day decision.
-describe("timezone fetch error paths", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  function erroringClientsQuery() {
-    return {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: null,
-        error: { code: "PGRST301", message: "connection failure" },
-      }),
-    };
-  }
-
-  it("getDayEditState logs the fetch error and still falls back to UTC", async () => {
-    vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
-      table === "clients" ? erroringClientsQuery() : childQuery(null)) as never);
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const state = await getDayEditState("c1", today, "nutrition");
-
-    expect(state).toEqual({
-      editable: true,
-      loggedStatus: "never-logged",
-      clientTimezone: "UTC",
-    });
-    expect(consoleError).toHaveBeenCalledWith(
-      expect.stringContaining("getDayEditState: client timezone fetch failed, falling back to UTC"),
-      expect.objectContaining({ code: "PGRST301" })
-    );
-    consoleError.mockRestore();
+describe("getLogWindow", () => {
+  it("reads the client and the check-in period, and NOTHING else", async () => {
+    mockFrom({ lastPeriodEnd: null });
+    await getLogWindow("c1");
+    // Mutation guard: the old rule read a per-resource child table
+    // (nutrition_logs / wellness_logs / daily_habit_logs / training_logs) to ask
+    // whether the day was already logged. Nothing may read one again.
+    expect(new Set(touched)).toEqual(new Set(["clients", "check_ins"]));
   });
 
-  it("assertCanEditTrainingDay logs the fetch error and still applies the UTC fallback rule", async () => {
-    vi.mocked(supabaseAdmin.from).mockImplementation((() =>
-      erroringClientsQuery()) as never);
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("opens at the start of the week the outstanding check-in covers", async () => {
+    mockFrom({ lastPeriodEnd: null });
+    await expect(getLogWindow("c1")).resolves.toEqual({
+      logsOpenFrom: WINDOW_START,
+      clientTimezone: "UTC",
+    });
+  });
 
-    // Today + never-logged is editable under the UTC fallback, so no throw.
-    await expect(
-      assertCanEditTrainingDay("c1", today, "never-logged")
-    ).resolves.toBeUndefined();
-    expect(consoleError).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "assertCanEditTrainingDay: client timezone fetch failed, falling back to UTC"
-      ),
-      expect.objectContaining({ code: "PGRST301" })
+  it("a submitted check-in closes its week and everything before it", async () => {
+    mockFrom({ lastPeriodEnd: "2026-08-30" });
+    const { logsOpenFrom } = await getLogWindow("c1");
+    expect(logsOpenFrom).toBe("2026-08-31");
+  });
+
+  it("a client with no schedule has no lower bound", async () => {
+    mockFrom({ client: { ...CLIENT, next_check_in_due: null }, lastPeriodEnd: null });
+    const { logsOpenFrom } = await getLogWindow("c1");
+    expect(logsOpenFrom).toBeNull();
+  });
+
+  it("logs the client fetch error and still falls back to UTC", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFrom({ client: null, clientError: { message: "nope" }, lastPeriodEnd: null });
+    const { clientTimezone, logsOpenFrom } = await getLogWindow("c1");
+    expect(clientTimezone).toBe("UTC");
+    // No row means no schedule, so the fallback opens rather than locking the
+    // client out of their own day.
+    expect(logsOpenFrom).toBeNull();
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("getLogWindow: client fetch failed"),
+      expect.anything()
     );
-    consoleError.mockRestore();
+    spy.mockRestore();
+  });
+});
+
+describe("getDayEditState / assertCanEdit", () => {
+  it("today is editable and assertCanEdit resolves", async () => {
+    mockFrom({ lastPeriodEnd: null });
+    await expect(getDayEditState("c1", TODAY)).resolves.toMatchObject({ editable: true });
+
+    mockFrom({ lastPeriodEnd: null });
+    await expect(
+      assertCanEdit({ clientId: "c1", date: TODAY, resourceType: "nutrition" })
+    ).resolves.toBeUndefined();
+  });
+
+  it("a day inside a submitted check-in's week is locked, whatever the resource", async () => {
+    for (const resourceType of ["nutrition", "wellness", "habit", "training"] as const) {
+      mockFrom({ lastPeriodEnd: "2026-08-30" });
+      const state = await getDayEditState("c1", "2026-08-28");
+      expect(state.editable).toBe(false);
+
+      mockFrom({ lastPeriodEnd: "2026-08-30" });
+      await expect(
+        assertCanEdit({ clientId: "c1", date: "2026-08-28", resourceType })
+      ).rejects.toBeInstanceOf(DayLockedError);
+    }
+  });
+
+  it("the error names no date and no resource in its sentence", async () => {
+    mockFrom({ lastPeriodEnd: "2026-08-30" });
+    const err = await assertCanEdit({
+      clientId: "c1",
+      date: "2026-08-28",
+      resourceType: "habit",
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DayLockedError);
+    expect((err as DayLockedError).message).toBe("This day is locked.");
+    // The fields survive for a caller that wants them; only the sentence is bare.
+    expect((err as DayLockedError).date).toBe("2026-08-28");
+    expect((err as DayLockedError).resourceType).toBe("habit");
+  });
+
+  it("a day in the open week is editable even after the client has checked in before", async () => {
+    mockFrom({ lastPeriodEnd: "2026-08-30" });
+    await expect(getDayEditState("c1", "2026-09-01")).resolves.toMatchObject({
+      editable: true,
+    });
+  });
+
+  it("the future is locked", async () => {
+    mockFrom({ lastPeriodEnd: null });
+    await expect(getDayEditState("c1", "2026-09-04")).resolves.toMatchObject({
+      editable: false,
+    });
   });
 });

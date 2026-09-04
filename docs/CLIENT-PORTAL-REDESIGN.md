@@ -134,7 +134,7 @@ Each summary is minimal: name, logged-state boolean, progress counts. Target und
 - `PATCH /api/client/daily-logs/[date]/wellness`: wellness fields on `wellness_logs`.
 - Habits continue to use existing habit-log endpoints.
 
-All write endpoints populate the child `*_plan_id` links from the authoritative plan for that date. All write endpoints enforce the past-day lock (see below) server-side.
+All write endpoints populate the child `*_plan_id` links from the authoritative plan for that date. All write endpoints enforce the closed-period lock (see "Date edit rules" below) server-side.
 
 ---
 
@@ -220,22 +220,29 @@ Food logging is a deliberate future phase. The card contract will not change whe
 
 ## Date edit rules
 
-- **Today**: always editable, regardless of prior log state.
-- **Past day, never logged**: editable (the client can fill in missed logs after the fact).
-- **Past day, logged**: locked. Display-only, with clear messaging.
+*(Owner decision 2026-09-04. This replaces the original "past day, logged → locked" rule; a day's log state no longer decides anything.)*
+
+- **The week the client's current check-in covers, plus every day since, up to today**: editable.
+- **That week, once they send the check-in, or once the next check-in day arrives** — whichever comes first: locked, along with everything before it.
+- **Anything older**: locked. A check-in never sent is simply missed, and its week never reopens.
 - **Future day**: view-only. The client can swipe/scroll forward to see what's on their plan but cannot log against it.
+
+So a client normally logs across about two weeks: the seven days their outstanding check-in reports on, plus the days since.
 
 No retroactive nutrition cascade on past days (past nutrition is past).
 
 ### Single source of truth for the rule
 
 The rule above lives in one file — `lib/daily-log-permissions.ts` — as pure helpers:
-- `canEditDay(date, loggedStatus, clientTimezone): boolean` — client-safe, drives UI disabled state.
-- `assertCanEdit(clientId, date, resourceType): Promise<void>` — server-side wrapper that throws an HTTP-friendly error when violated.
+- `resolveLogsOpenFrom(client, lastSubmittedPeriodEnd): string | null` — the ONE derivation of the first loggable day. `null` = no lower bound (a client with no check-in schedule can never check in, so nothing closes a week for them).
+- `canEditDay(date, logsOpenFrom, clientTimezone): boolean` — client-safe, drives UI disabled state.
+- `assertCanEdit({ clientId, date, resourceType }): Promise<void>` — server-side wrapper that throws an HTTP-friendly error when violated.
 
 Both are imported by every surface that cares (UI detail pages for disabled/notice state; every write endpoint for hard rejection). Neither UI nor server reimplements the date math, so they cannot disagree about whether a day is editable (which matters around client-local midnight).
 
-**Habits lock per-habit, not per-day.** Nutrition/wellness are saved as one day record, so "logged" is the existence of any child row that day. Habits are toggled individually (each toggle is its own write), so `assertCanEdit`/`getDayEditState` accept an optional `habitId` that narrows the "logged" check to a single habit. This keeps the documented "past day, never logged: editable" backfill working for habits (fill in a missed day habit-by-habit), while each habit still locks once recorded. The pure `canEditDay` rule is unchanged; only what counts as "logged" is narrowed.
+**Everything on a day locks together.** Nutrition, wellness, habits and training all belong to the same reporting period, so they answer as one. The per-habit narrowing (`habitId`) went with the logged-day rule it served: a habit's own log row decided the lock only while "already logged" was the thing that closed a day.
+
+**The boundary reaches the app on two wires**, from that one derivation: `GET /api/client/me`, refetched after a submit, and `clientInfo.logsOpenFrom` on `GET /api/client/check-in-context` for the form's training checklist, which never reads the profile.
 
 Same pattern for plan context: `resolvePlanContextForDate(clientId, date): { nutritionPlanId, trainingPlanId }` is the single function every write endpoint calls to populate the `*_plan_id` links. Do not duplicate this query per endpoint.
 
@@ -337,7 +344,7 @@ Before Phase 1:
 
 - **Multiple sessions per day**: home renders a list of training cards; summary endpoint returns an array.
 - **Client timezone**: every date computation uses client timezone; server never uses UTC for "today." Past-day locking respects client-local midnight.
-- **Past-day edit policy**: today always editable; past unlogged editable; past logged locked (server-enforced).
+- **Past-day edit policy**: the open check-in week and the days since are editable; a week a check-in has closed, or that rolled over unsent, is locked (server-enforced). See "Date edit rules".
 - **Plan replaced mid-use**: coach drill-down reads `prescribed_session_snapshot` and `prescribed_exercise_snapshot` when live references are null.
 - **Brand-new client**: pre-activation uses existing `client-waiting-state.tsx`. Post-activation with no plans yet: empty states per card ("Your coach is preparing this").
 - **Weight unit**: storage is canonical kilograms; there is no per-record unit. `clients.unit_preference` decides what the client is SHOWN, and the log form converts on submit. See `CONVENTIONS.md` §20.

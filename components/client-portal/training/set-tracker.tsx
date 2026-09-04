@@ -35,6 +35,7 @@ import { CompleteWorkoutFooter } from "./complete-workout-footer";
 import { AddExerciseRow } from "./add-exercise-row";
 import { SessionPicker } from "./session-picker";
 import { useApplyClientLayout } from "@/hooks/use-client-training-data";
+import { CLIENT_PROFILE_KEY } from "@/hooks/use-client-profile";
 import { resolveSessionPick } from "@/lib/session-pick";
 import type { ClientTrainingWeekSession } from "@/types/client-training-week";
 import { useUnits } from "@/contexts/units-context";
@@ -111,7 +112,7 @@ function EventModeTracker({
   );
 
   const { data: meData, isLoading: meLoading } = useSWR<ClientMeResponse>(
-    "/api/client/me",
+    CLIENT_PROFILE_KEY,
     swrFetcher,
     { revalidateOnFocus: false },
   );
@@ -203,10 +204,11 @@ function EventModeTracker({
 
   const sessionLog = eventData.data.sessionLog;
   const timezone = meData?.data?.timezone ?? "UTC";
-  // Date-edit lock (client mirror of the server rule): past + logged → read-only.
+  // Date-edit lock (client mirror of the server rule). The session's own log
+  // state plays no part: what closes a day is the check-in that reported on it.
   const editable = canEditDay(
     eventData.data.event.date,
-    sessionLog ? "logged" : "never-logged",
+    meData?.data?.logsOpenFrom ?? null,
     timezone,
   );
 
@@ -415,7 +417,7 @@ function TrainingLogForm({
             data-testid="locked-banner"
             className="rounded-[6px] bg-[rgba(13,148,136,0.06)] px-3 py-2 text-[12px] text-[#5a7d82]"
           >
-            {"This day is locked — past workouts can\u2019t be edited once logged."}
+            This day is locked.
           </p>
         )}
         {onChangeSession && editable && (

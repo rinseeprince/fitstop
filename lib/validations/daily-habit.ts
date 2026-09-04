@@ -20,9 +20,9 @@ const optionalString = (maxLength: number) =>
 
 // Format-only date validation: a YYYY-MM-DD string. No past/future bounds —
 // those are write-side via assertCanEdit/canEditDay, which judge against the
-// CLIENT's timezone. A server-clock bound here rejects an east-of-UTC client's
-// own today as "future" (see lib/validations/daily-log-cards.ts for the same
-// rule on the read path).
+// CLIENT's calendar and their check-in weeks. A server-clock bound here rejects
+// an east-of-UTC client's own today as "future" (see
+// lib/validations/daily-log-cards.ts for the same rule on the read path).
 const logDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format");

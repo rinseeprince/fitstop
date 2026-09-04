@@ -7,6 +7,8 @@ import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { mapClientRow } from "@/lib/mappers";
 import type { ClientRowWithMeasurements } from "@/lib/database-helpers";
 import { CLIENT_MEASUREMENT_EMBEDS } from "./measurements-service";
+import { getLastSubmittedPeriodEnd } from "./daily-log-permissions-service";
+import { resolveLogsOpenFrom } from "@/lib/daily-log-permissions";
 import { getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-event-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
@@ -85,7 +87,20 @@ export async function getClientForCurrentUser(): Promise<Client | null> {
   if (error || !data) return null;
 
   // `notes` is not selected, so mapClientRow resolves it to undefined.
-  return mapClientRow(data as unknown as ClientRowWithMeasurements);
+  const client = mapClientRow(data as unknown as ClientRowWithMeasurements);
+
+  // The day-rule boundary rides on this read because it is the one client-level
+  // fetch every screen in the app already holds, and the pages that lock a day
+  // read it from here. It is derived, not a column, so it is attached after the
+  // mapper rather than added to the column list above; the schedule facts it
+  // needs (timezone, next_check_in_due, start_date) are already selected, so
+  // only the last submitted period costs a query.
+  const logsOpenFrom = resolveLogsOpenFrom(
+    client,
+    await getLastSubmittedPeriodEnd(client.id)
+  );
+
+  return { ...client, logsOpenFrom };
 }
 
 // Get nutrition targets for a client with daily breakdown

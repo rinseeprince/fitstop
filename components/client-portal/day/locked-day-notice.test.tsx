@@ -8,15 +8,15 @@ describe("LockedDayNotice", () => {
     cleanup();
   });
 
-  it("renders the past-logged copy", () => {
-    render(<LockedDayNotice reason="past-logged" />);
-    expect(screen.getByText(/locked and can.t be edited/i)).toBeInTheDocument();
+  it("renders the locked copy", () => {
+    render(<LockedDayNotice reason="locked" />);
+    expect(screen.getByText("This day is locked.")).toBeInTheDocument();
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
 
   it("renders the today-no-plan copy, not the locked copy", () => {
     render(<LockedDayNotice reason="today-no-plan" />);
     expect(screen.getByText(/no plan scheduled for today/i)).toBeInTheDocument();
-    expect(screen.queryByText(/locked and can.t be edited/i)).toBeNull();
+    expect(screen.queryByText("This day is locked.")).toBeNull();
   });
 });

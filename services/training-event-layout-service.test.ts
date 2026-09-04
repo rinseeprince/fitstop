@@ -6,8 +6,11 @@ vi.mock("./supabase-admin", () => ({
     rpc: vi.fn(),
   },
 }));
-vi.mock("./today-service", () => ({
-  getClientTodayString: vi.fn(),
+// The day rule's boundary. Its DERIVATION is proved in
+// services/daily-log-permissions-service.test.ts; this file owns the POLICY the
+// layout service applies with it.
+vi.mock("./daily-log-permissions-service", () => ({
+  getLogWindow: vi.fn(),
 }));
 vi.mock("./nutrition-event-service", () => ({
   cascadeNutritionAfterTrainingChange: vi.fn().mockResolvedValue(undefined),
@@ -36,7 +39,7 @@ function createMockQuery<T = unknown>(result: {
 }
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getClientTodayString } from "./today-service";
+import { getLogWindow } from "./daily-log-permissions-service";
 import { cascadeNutritionAfterTrainingChange } from "./nutrition-event-service";
 import { DateOccupiedError } from "./training-event-occupancy";
 import {
@@ -51,8 +54,7 @@ const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockRpc = vi.mocked(supabaseAdmin.rpc);
 
 // Monday-anchored week (check-in day null → Monday start): 2026-08-24 (Mon) … 2026-08-30 (Sun).
-const TODAY = "2026-08-26"; // Wednesday
-const WED = "2026-08-26";
+const WED = "2026-08-26"; // Wednesday
 const THU = "2026-08-27";
 const SAT = "2026-08-29";
 const MON = "2026-08-24";
@@ -64,14 +66,17 @@ type EventRow = { id: string; date: string; status: string };
  * Wires the reads the service issues, in order, per table:
  *   training_events #1 = the moving events (client-scoped, by id)
  *   clients          = check-in day
- *   session_logs     = logged days (only when a target is in the past)
  *   training_events #2 = occupants on the target dates
+ *
+ * `session_logs` is wired but must stay untouched: the old backfill rule read it
+ * to ask whether a past target already held a logged workout, and the day rule
+ * replaced that question outright.
  */
 function wire(opts: {
   events: EventRow[];
   occupants?: { id: string; date: string }[];
-  logs?: { completed_at: string }[];
   checkInDue?: string | null;
+  logsOpenFrom?: string | null;
 }) {
   let eventsCalls = 0;
   const eventsQuery = createMockQuery<EventRow[]>({ data: opts.events, error: null });
@@ -80,7 +85,12 @@ function wire(opts: {
     data: { next_check_in_due: opts.checkInDue ?? null },
     error: null,
   });
-  const logsQuery = createMockQuery({ data: opts.logs ?? [], error: null });
+  const sessionLogsQuery = createMockQuery({ data: [], error: null });
+
+  vi.mocked(getLogWindow).mockResolvedValue({
+    logsOpenFrom: opts.logsOpenFrom ?? null,
+    clientTimezone: "UTC",
+  });
 
   mockFrom.mockImplementation((table: string) => {
     if (table === "training_events") {
@@ -88,17 +98,16 @@ function wire(opts: {
       return (eventsCalls === 1 ? eventsQuery : occupantsQuery) as any;
     }
     if (table === "clients") return clientQuery as any;
-    if (table === "session_logs") return logsQuery as any;
+    if (table === "session_logs") return sessionLogsQuery as any;
     return createMockQuery({ data: null, error: null }) as any;
   });
 
-  return { eventsQuery, occupantsQuery, logsQuery };
+  return { eventsQuery, occupantsQuery, sessionLogsQuery };
 }
 
 describe("applyClientLayout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
     mockRpc.mockResolvedValue({ data: null, error: null } as any);
   });
 
@@ -174,30 +183,48 @@ describe("applyClientLayout", () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
-  it("allows a past target only when that day has no logged workout", async () => {
-    // Backfill allowance: Thursday's session onto Monday (past, never logged).
-    const clean = wire({
-      events: [{ id: "ev-thu", date: THU, status: "scheduled" }],
-      logs: [],
-    });
-    await applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: MON }]);
-    expect(clean.logsQuery.gte).toHaveBeenCalledWith("completed_at", `${MON}T00:00:00`);
-    expect(clean.logsQuery.lte).toHaveBeenCalledWith("completed_at", `${MON}T23:59:59`);
-    expect(mockRpc).toHaveBeenCalledTimes(1);
-
-    vi.clearAllMocks();
-    vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
-    mockRpc.mockResolvedValue({ data: null, error: null } as any);
-
-    // Same move, but Monday already holds a logged workout.
+  it("refuses a move whose TARGET falls in a week a check-in has closed", async () => {
     wire({
       events: [{ id: "ev-thu", date: THU, status: "scheduled" }],
-      logs: [{ completed_at: `${MON}T00:00:00+00:00` }],
+      logsOpenFrom: WED, // everything before Wednesday is reported and shut
     });
     await expect(
       applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: MON }]),
     ).rejects.toBeInstanceOf(LayoutPolicyError);
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("refuses a move whose SOURCE falls in a closed week — a reported week keeps its shape", async () => {
+    wire({
+      events: [{ id: "ev-mon", date: MON, status: "scheduled" }],
+      logsOpenFrom: WED,
+    });
+    // Mutation guard: checking only `toDate` lets a session be lifted OUT of the
+    // week a check-in described, which changes that week after the fact.
+    await expect(
+      applyClientLayout("client-1", [{ eventId: "ev-mon", fromDate: MON, toDate: SAT }]),
+    ).rejects.toBeInstanceOf(LayoutPolicyError);
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("allows a past target inside the open week, and reads no session_logs to decide it", async () => {
+    const { sessionLogsQuery } = wire({
+      events: [{ id: "ev-thu", date: THU, status: "scheduled" }],
+      logsOpenFrom: MON, // the whole week is still open
+    });
+    await applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: MON }]);
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    // Mutation guard: restoring the old backfill read would call this.
+    expect(sessionLogsQuery.select).not.toHaveBeenCalled();
+  });
+
+  it("a client with no boundary can move anywhere inside the week", async () => {
+    wire({
+      events: [{ id: "ev-thu", date: THU, status: "scheduled" }],
+      logsOpenFrom: null,
+    });
+    await applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: MON }]);
+    expect(mockRpc).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a target held by a session that is not moving — whatever its status", async () => {

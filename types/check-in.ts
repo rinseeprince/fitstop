@@ -501,6 +501,16 @@ export type Client = {
 
   // IANA time zone for client-local "today" computation
   timezone: string;
+
+  /**
+   * The first day this client may log — the day-rule boundary
+   * (`resolveLogsOpenFrom`, lib/daily-log-permissions.ts). NOT a column: it is
+   * derived per read from the client's check-in schedule and their last
+   * submitted check-in, and it is filled in only on the client's own profile
+   * read (`GET /api/client/me`). `null` means no lower bound; `undefined` means
+   * the reader did not ask for it (every coach-side read).
+   */
+  logsOpenFrom?: string | null;
 };
 
 // Client info for check-in page
@@ -515,6 +525,12 @@ export type CheckInClientInfo = {
   // canEditDay (Session 6.4). Optional: the magic-link flow that first made it
   // optional is gone (mig 142); left optional pending a check of every producer.
   timezone?: string;
+  /**
+   * The day-rule boundary, carried here for the same reason as `timezone`: the
+   * form's training checklist calls `canEditDay` per row, and this page never
+   * reads `/api/client/me`. `null` = no lower bound.
+   */
+  logsOpenFrom?: string | null;
 };
 
 // Request/Response types for API

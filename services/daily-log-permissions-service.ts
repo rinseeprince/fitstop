@@ -1,147 +1,133 @@
 /**
  * Daily-log edit permissions — SERVER side.
  *
- * Reads the client's timezone + per-resource log state from the DB and applies the
- * pure `canEditDay` rule. Lives in `services/` (imports `supabaseAdmin`) so the pure
- * rule in `lib/daily-log-permissions.ts` stays client-safe. Route handlers import
- * `assertCanEdit` from here and translate `DayLockedError` into a 403.
+ * Reads the client facts the boundary is derived from and applies the pure rule
+ * in `lib/daily-log-permissions.ts`, which stays client-safe. Route handlers
+ * import `assertCanEdit` from here and translate `DayLockedError` into a 403.
  *
- * Granularity: nutrition/wellness/training lock per-DAY (any child row that day ⇒
- * "logged"), since each is saved as one day record. Habits are toggled individually,
- * so the `habit` resource accepts an optional `habitId` that narrows the "logged"
- * check to a single habit — letting a missed past day be backfilled habit-by-habit
- * while each habit still locks once recorded. The pure `canEditDay` rule is unchanged.
+ * The rule asks ONE question — which reporting period does this day belong to —
+ * so there is no per-resource granularity any more. Nutrition, wellness, habits
+ * and training all lock together with their day. The old per-habit narrowing
+ * went with the logged-day rule it served: a habit's own log state decides
+ * nothing now.
  */
 
 import { supabaseAdmin } from "@/services/supabase-admin";
 import {
   canEditDay,
   DayLockedError,
+  resolveLogsOpenFrom,
   type DailyLogResourceType,
-  type DayLogStatus,
 } from "@/lib/daily-log-permissions";
 
-/**
- * Each resource's "logged" state is the existence of a row in its own child table
- * for (client_id, date). All four tables carry client_id + date. `daily_habit_logs`
- * additionally carries daily_habit_id, which the habit resource filters on for
- * per-habit locking (see module docstring).
- */
-const RESOURCE_TABLE = {
-  nutrition: "nutrition_logs",
-  wellness: "wellness_logs",
-  training: "training_logs",
-  habit: "daily_habit_logs",
-} as const satisfies Record<DailyLogResourceType, string>;
+/** The columns the boundary is derived from, in one read. */
+const LOG_WINDOW_COLUMNS = "timezone, next_check_in_due, start_date";
 
 type DayEditState = {
   editable: boolean;
-  loggedStatus: DayLogStatus;
+  logsOpenFrom: string | null;
   clientTimezone: string;
 };
 
 /**
- * Load the client's timezone + whether `resourceType` is already logged for `date`,
- * then decide editability via the pure `canEditDay` rule.
- *
- * loggedStatus is read from the resource's CHILD table — NOT the spine or the
- * `daily_logs_full` view: the view returns NULLs for both an absent and an empty
- * child, so it can't tell them apart, and the lock must be per-resource. Reading the
- * child also makes the two-step write self-heal — a failed child write leaves the day
- * editable, so the next attempt succeeds.
+ * The period end of the newest check-in this client has SENT, or null if they
+ * never have. One indexed read: `idx_check_ins_client_period_unique` is
+ * `(client_id, period_end) WHERE period_end IS NOT NULL` (migration 156), so
+ * this is a backward index scan, and its partial condition also skips the legacy
+ * rows that predate periods and could never close a week.
  */
-export async function getDayEditState(
-  clientId: string,
-  date: string,
-  resourceType: DailyLogResourceType,
-  opts?: { habitId?: string }
-): Promise<DayEditState> {
-  const { data: clientRow, error: clientTzError } = await supabaseAdmin
-    .from("clients")
-    .select("timezone")
-    .eq("id", clientId)
-    .single();
-  // Loud fallback: a swallowed fetch error here silently judges the day lock
-  // on UTC (the failure mode that hid the PGRST201 bug — see today-service).
-  if (clientTzError) {
+export async function getLastSubmittedPeriodEnd(
+  clientId: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("check_ins")
+    .select("period_end")
+    .eq("client_id", clientId)
+    .not("period_end", "is", null)
+    .order("period_end", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // Loud fallback: a swallowed error here would silently reopen every day a
+  // submitted check-in has closed, which is the whole point of the rule.
+  if (error) {
     console.error(
-      "getDayEditState: client timezone fetch failed, falling back to UTC",
-      clientTzError
+      "getLastSubmittedPeriodEnd: check-in period read failed, treating the client as never checked in",
+      error
+    );
+    return null;
+  }
+  return data?.period_end ?? null;
+}
+
+/**
+ * The client's boundary, without asking about a particular day — what the two
+ * wires carry to the apps, and what the week-layout service applies to both ends
+ * of every move.
+ *
+ * Two independent reads, issued together (CONVENTIONS §2, performance 11).
+ */
+export async function getLogWindow(
+  clientId: string
+): Promise<{ logsOpenFrom: string | null; clientTimezone: string }> {
+  const [clientResult, lastSubmittedPeriodEnd] = await Promise.all([
+    supabaseAdmin
+      .from("clients")
+      .select(LOG_WINDOW_COLUMNS)
+      .eq("id", clientId)
+      .single(),
+    getLastSubmittedPeriodEnd(clientId),
+  ]);
+
+  // Loud fallback: a swallowed fetch error here silently judges the day lock on
+  // UTC (the failure mode that hid the PGRST201 bug — see today-service).
+  if (clientResult.error) {
+    console.error(
+      "getLogWindow: client fetch failed, falling back to UTC and no schedule",
+      clientResult.error
     );
   }
+  const clientRow = clientResult.data;
   const clientTimezone = clientRow?.timezone ?? "UTC";
 
-  let childQuery = supabaseAdmin
-    .from(RESOURCE_TABLE[resourceType])
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("date", date);
-  // Habits lock per-habit, not per-day: narrow the existence check to this habit so a
-  // missed past day stays backfillable one habit at a time (see module docstring).
-  if (resourceType === "habit" && opts?.habitId) {
-    childQuery = childQuery.eq("daily_habit_id", opts.habitId);
-  }
-  const { data: childRow } = await childQuery.limit(1).maybeSingle();
+  const logsOpenFrom: string | null = resolveLogsOpenFrom(
+    {
+      timezone: clientTimezone,
+      nextCheckInDue: clientRow?.next_check_in_due,
+      startDate: clientRow?.start_date,
+    },
+    lastSubmittedPeriodEnd
+  );
 
-  const loggedStatus: DayLogStatus = childRow ? "logged" : "never-logged";
+  return { logsOpenFrom, clientTimezone };
+}
 
+/** The boundary, plus the answer for one day. */
+export async function getDayEditState(
+  clientId: string,
+  date: string
+): Promise<DayEditState> {
+  const { logsOpenFrom, clientTimezone } = await getLogWindow(clientId);
   return {
-    editable: canEditDay(date, loggedStatus, clientTimezone),
-    loggedStatus,
+    editable: canEditDay(date, logsOpenFrom, clientTimezone),
+    logsOpenFrom,
     clientTimezone,
   };
 }
 
 /**
- * Guard for per-card writes. Throws `DayLockedError` when the day is not editable;
- * otherwise resolves with the resource's `loggedStatus` so callers can return 201
- * (first log) vs 200 (update) without a second query. Routes catch the throw and
- * return 403 via `instanceof DayLockedError`.
+ * Guard for every client write against a dated row. Throws `DayLockedError`
+ * when the day is not editable; routes catch the throw and return 403 via
+ * `instanceof DayLockedError`.
  */
 export async function assertCanEdit(params: {
   clientId: string;
   date: string;
   resourceType: DailyLogResourceType;
-  /** Habit resource only: narrows the lock to this specific habit (see module docstring). */
-  habitId?: string;
-}): Promise<{ loggedStatus: DayLogStatus }> {
-  const { clientId, date, resourceType, habitId } = params;
-  const { editable, loggedStatus } = await getDayEditState(clientId, date, resourceType, {
-    habitId,
-  });
+}): Promise<void> {
+  const { clientId, date, resourceType } = params;
+  const { editable } = await getDayEditState(clientId, date);
   if (!editable) {
     throw new DayLockedError(date, resourceType);
-  }
-  return { loggedStatus };
-}
-
-/**
- * Training-specific date-edit lock. The "logged" signal for training is NOT the
- * `training_logs` spine (session logging never writes it) — it comes from real
- * `session_logs` / `training_events` state, which the caller already has, so it
- * passes `loggedStatus` directly. Applies the same pure `canEditDay` rule (today
- * editable; past + logged → locked; future → locked) and throws `DayLockedError`
- * → 403 when not editable.
- */
-export async function assertCanEditTrainingDay(
-  clientId: string,
-  date: string,
-  loggedStatus: DayLogStatus,
-): Promise<void> {
-  const { data: clientRow, error: clientTzError } = await supabaseAdmin
-    .from("clients")
-    .select("timezone")
-    .eq("id", clientId)
-    .single();
-  // Loud fallback: same contract as getDayEditState above.
-  if (clientTzError) {
-    console.error(
-      "assertCanEditTrainingDay: client timezone fetch failed, falling back to UTC",
-      clientTzError
-    );
-  }
-  const clientTimezone = clientRow?.timezone ?? "UTC";
-  if (!canEditDay(date, loggedStatus, clientTimezone)) {
-    throw new DayLockedError(date, "training");
   }
 }

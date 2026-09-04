@@ -162,7 +162,7 @@ const CLIENT_SELF_KEYS = [
   "checkInAdherenceRate", "currentStreak", "longestStreak", "unitPreference",
   "includeActivityBurn", "surplusAsCarbs", "startingWeight", "startingBodyFatPercentage",
   "bmrManualOverride", "tdeeManualOverride", "welcomeMessage", "onboardingStatus",
-  "walkthroughCompletedAt", "startDate", "timezone",
+  "walkthroughCompletedAt", "startDate", "timezone", "logsOpenFrom",
 ] as const satisfies readonly (keyof Client)[];
 
 export function toClientSelfView(client: Client): Partial<Client> {

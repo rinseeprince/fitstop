@@ -47,8 +47,8 @@ beforeEach(() => {
 });
 
 describe("POST /api/client/habits/log", () => {
-  it("200 and logs the habit on an editable day (asserting per-habit lock check)", async () => {
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
+  it("200 and logs the habit on an editable day, asking the day rule with no habit", async () => {
+    vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     vi.mocked(logHabit).mockResolvedValue({
       id: "log-1",
       dailyHabitId: UID,
@@ -64,7 +64,6 @@ describe("POST /api/client/habits/log", () => {
       clientId: "client-1",
       date: "2026-05-21",
       resourceType: "habit",
-      habitId: UID,
     });
     expect(logHabit).toHaveBeenCalledWith(UID, "client-1", "2026-05-21", true, undefined);
   });
@@ -96,7 +95,6 @@ describe("POST /api/client/habits/log", () => {
       clientId: "client-1",
       date: "2999-01-01",
       resourceType: "habit",
-      habitId: UID,
     });
     expect(logHabit).not.toHaveBeenCalled();
   });
@@ -117,7 +115,7 @@ describe("POST /api/client/habits/log", () => {
   });
 
   it("404 when the habit is not owned (logHabit throws 'not found'), after the lock passes", async () => {
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
+    vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     vi.mocked(logHabit).mockRejectedValue(new Error("Habit not found or access denied"));
 
     const res = await POST(postReq({ dailyHabitId: UID, date: "2026-05-21", completed: true }));

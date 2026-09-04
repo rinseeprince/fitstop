@@ -20,6 +20,11 @@ vi.mock('@/services/daily-logs-service', () => ({
   getDailyLogs: vi.fn(),
 }));
 
+// The day-rule boundary the checklist locks its rows on. Its derivation is
+// proved in lib/daily-log-permissions.test.ts; the route only carries it.
+vi.mock('@/services/daily-log-permissions-service', () => ({
+  getLastSubmittedPeriodEnd: vi.fn(),
+}));
 vi.mock('@/services/check-in-form-service', () => ({
   getClientCheckInForm: vi.fn(),
 }));
@@ -51,6 +56,7 @@ import {
 } from '@/services/check-in-context-service';
 import { getDailyLogs } from '@/services/daily-logs-service';
 import { getClientCheckInForm } from '@/services/check-in-form-service';
+import { getLastSubmittedPeriodEnd } from '@/services/daily-log-permissions-service';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 import { DEFAULT_CHECK_IN_FORM_FIELDS } from '@/lib/check-in/form-fields';
 
@@ -90,6 +96,7 @@ describe('GET /api/client/check-in-context', () => {
     vi.mocked(getCheckInTrainingPeriodStats).mockResolvedValue({ sessionsCompleted: 1, sessionsPlanned: 3 } as any);
     vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([] as any);
     vi.mocked(getDailyLogs).mockResolvedValue([] as any);
+    vi.mocked(getLastSubmittedPeriodEnd).mockResolvedValue(null);
     vi.mocked(getClientCheckInForm).mockResolvedValue({
       fields: [...DEFAULT_CHECK_IN_FORM_FIELDS],
       questions: [],
@@ -145,6 +152,11 @@ describe('GET /api/client/check-in-context', () => {
       coachName: 'Coach Carter',
       checkInFrequencyDays: 7,
     });
+
+    // Additive: the day-rule boundary, carried for the training checklist's
+    // per-row lock. The client's profile read derives it the same way, so the
+    // two wires cannot disagree about which days are open.
+    expect(body.data.clientInfo).toHaveProperty('logsOpenFrom');
     // Fan-out (including daily logs and the form) ran.
     expect(getClientCheckInForm).toHaveBeenCalledTimes(1);
     expect(getCheckInTrainingContext).toHaveBeenCalledTimes(1);

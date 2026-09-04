@@ -47,6 +47,10 @@ function HabitLogInner() {
   const { toast } = useToast();
   const { client } = useClientProfile();
   const timezone = client?.timezone ?? "UTC";
+  // The day rule answers once for the whole day. Habits used to derive a lock
+  // per habit from that habit's own log row; that narrowing went with the
+  // logged-day rule it served.
+  const editable = canEditDay(date, client?.logsOpenFrom ?? null, timezone);
 
   // Two keys: the habit list is date-independent (dedupes across dates); the logs key
   // carries ?date= so navigating days refetches only the per-date state.
@@ -70,17 +74,15 @@ function HabitLogInner() {
   const allHabits = habitsRes.data?.data ?? [];
   const logs = logsRes.data?.data ?? [];
 
-  // Render only habits that had become effective by this date (can't log a habit before
-  // it existed); derive the lock per-habit so a missed past day stays backfillable.
+  // Render only habits that had become effective by this date (can't log a habit
+  // before it existed).
   const visibleHabits = allHabits.filter((h) => h.effectiveDate <= date);
   const logMap = new Map(logs.map((l) => [l.dailyHabitId, l]));
 
   const habitStates = visibleHabits.map((habit) => ({
     habit,
     completed: logMap.get(habit.id)?.completed ?? false,
-    editable: canEditDay(date, logMap.has(habit.id) ? "logged" : "never-logged", timezone),
   }));
-  const fullyLocked = habitStates.length > 0 && habitStates.every((s) => !s.editable);
 
   async function handleToggle(habit: DailyHabit, checked: boolean) {
     setSavingIds((prev) => new Set(prev).add(habit.id));
@@ -201,7 +203,7 @@ function HabitLogInner() {
       <h1 className="text-base font-semibold text-foreground">Log habits</h1>
       <p className="mt-1 text-sm text-muted-foreground">{formatHeading(date)}</p>
 
-      {fullyLocked ? <LockedDayNotice reason="past-logged" /> : null}
+      {!editable ? <LockedDayNotice reason="locked" /> : null}
 
       <Card className="mt-4">
         <CardContent className="space-y-4 py-6">
@@ -210,7 +212,7 @@ function HabitLogInner() {
           ) : visibleHabits.length === 0 ? (
             <p className="text-sm text-muted-foreground">No habits were active on this date</p>
           ) : (
-            habitStates.map(({ habit, completed, editable }) => (
+            habitStates.map(({ habit, completed }) => (
               <HabitToggleRow
                 key={habit.id}
                 habit={habit}

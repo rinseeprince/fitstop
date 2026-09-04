@@ -52,9 +52,12 @@ vi.mock("swr", () => ({
 }));
 
 // canEditDay reads the client timezone from here; pin it to UTC so "today" is deterministic.
+// The day-rule boundary the page locks on. Read at render time, so a test can
+// set it per case. null = no lower bound (a client with no check-in schedule).
+let mockLogsOpenFrom: string | null = null;
 vi.mock("@/hooks/use-client-profile", () => ({
   useClientProfile: () => ({
-    client: { timezone: "UTC" },
+    client: { timezone: "UTC", logsOpenFrom: mockLogsOpenFrom },
     error: null,
     isLoading: false,
     mutate: vi.fn(),
@@ -199,20 +202,23 @@ describe("Wellness log page", () => {
     );
   });
 
-  it("locks a past, already-logged day: inputs disabled, notice shown, no save", () => {
+  it("locks a day before the boundary: inputs disabled, notice shown, no save", () => {
     setSWR({
       data: wellnessData({
         mood: 3,
         energy: 5,
         sleep: 5,
         stress: 5,
-        loggedStatus: "logged",
       }),
     });
     mockSearchParam = PAST;
+    // A check-in has closed everything up to 2026-01-01. Mutation guard: the
+    // page no longer receives a logged flag at all, so only the boundary can
+    // produce this state.
+    mockLogsOpenFrom = "2026-01-01";
     const { container } = render(<WellnessLogPage />);
 
-    expect(screen.getByText(/locked and can.t be edited/i)).toBeInTheDocument();
+    expect(screen.getByText("This day is locked.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /good/i })).toBeDisabled();
     const sliders = container.querySelectorAll('[data-slot="slider"]');
     expect(sliders.length).toBe(4);

@@ -27,6 +27,7 @@ type StepTrainingProps = {
   // training rows (Session 6.4). Source of truth: training_events + session_logs.
   trainingEventDetails?: CheckInTrainingEventDetail[];
   clientTimezone?: string;
+  logsOpenFrom?: string | null;
   // Fill-gap log writer (registers an in-flight POST the page flushes pre-submit).
   onLogEvent: (
     eventId: string,
@@ -45,6 +46,7 @@ export const StepTraining = ({
   trainingContext,
   trainingEventDetails = [],
   clientTimezone = "UTC",
+  logsOpenFrom = null,
   onLogEvent,
   trainingPeriodStats,
   periodDays,
@@ -69,6 +71,7 @@ export const StepTraining = ({
       <TrainingSessionChecklist
         events={trainingEventDetails}
         clientTimezone={clientTimezone}
+        logsOpenFrom={logsOpenFrom}
         onLogEvent={onLogEvent}
       />
 

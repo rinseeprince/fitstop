@@ -52,7 +52,6 @@ describe("GET /api/client/daily-logs/[date]/wellness", () => {
     vi.mocked(getTodayLog).mockResolvedValue({ mood: 4, energy: 7 } as never);
     vi.mocked(getDayEditState).mockResolvedValue({
       editable: true,
-      loggedStatus: "logged",
       clientTimezone: "UTC",
     } as never);
 
@@ -66,7 +65,6 @@ describe("GET /api/client/daily-logs/[date]/wellness", () => {
       stress: null,
       soreness: null,
       editable: true,
-      loggedStatus: "logged",
     });
   });
 
@@ -74,7 +72,6 @@ describe("GET /api/client/daily-logs/[date]/wellness", () => {
     vi.mocked(getTodayLog).mockResolvedValue(null);
     vi.mocked(getDayEditState).mockResolvedValue({
       editable: true,
-      loggedStatus: "never-logged",
       clientTimezone: "UTC",
     } as never);
 
@@ -82,7 +79,9 @@ describe("GET /api/client/daily-logs/[date]/wellness", () => {
     const json = await res.json();
     expect(json.data.mood).toBeNull();
     expect(json.data.editable).toBe(true);
-    expect(json.data.loggedStatus).toBe("never-logged");
+    // `loggedStatus` went with the logged-day lock it fed: nothing reads it,
+    // and the day rule never asks whether a row exists.
+    expect(json.data).not.toHaveProperty("loggedStatus");
   });
 
   it("401 when unauthenticated", async () => {
@@ -93,12 +92,12 @@ describe("GET /api/client/daily-logs/[date]/wellness", () => {
 });
 
 describe("PATCH /api/client/daily-logs/[date]/wellness", () => {
-  it("201 on a first log", async () => {
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
+  it("200 on every save — the created-vs-updated split went with the child read (D24)", async () => {
+    vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     vi.mocked(upsertWellnessLog).mockResolvedValue({ id: "log-1" } as never);
 
     const res = await PATCH(patchReq({ mood: 4, energy: 7, soreness: 6 }), params("2026-05-21"));
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(upsertWellnessLog).toHaveBeenCalledWith(
       "client-1",
       "2026-05-21",
@@ -107,19 +106,19 @@ describe("PATCH /api/client/daily-logs/[date]/wellness", () => {
   });
 
   it("200 when already logged", async () => {
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "logged" } as never);
+    vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     vi.mocked(upsertWellnessLog).mockResolvedValue({ id: "log-1" } as never);
 
     const res = await PATCH(patchReq({ mood: 3 }), params("2026-05-21"));
     expect(res.status).toBe(200);
   });
 
-  it("201 when the client has no plans at all (wellness is not plan-gated)", async () => {
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
+  it("200 when the client has no plans at all (wellness is not plan-gated)", async () => {
+    vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     vi.mocked(upsertWellnessLog).mockResolvedValue({ id: "log-1" } as never);
 
     const res = await PATCH(patchReq({ mood: 3 }), params("2026-05-21"));
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(upsertWellnessLog).toHaveBeenCalledWith(
       "client-1",
       "2026-05-21",
@@ -152,7 +151,7 @@ describe("PATCH /api/client/daily-logs/[date]/wellness", () => {
   });
 
   it("500 when the writer throws a non-lock error", async () => {
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
+    vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     vi.mocked(upsertWellnessLog).mockRejectedValue(new Error("boom"));
     const res = await PATCH(patchReq({ mood: 3 }), params("2026-05-21"));
     expect(res.status).toBe(500);

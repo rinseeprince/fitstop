@@ -64,6 +64,15 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
+// Required, not optional: this hook imports auth-context, which constructs the
+// browser Supabase client at module load and throws without env vars. The
+// tracker imports it for the profile SWR key alone.
+vi.mock("@/hooks/use-client-profile", () => ({
+  CLIENT_PROFILE_KEY: "/api/client/me",
+  useClientProfile: () => ({ client: null, error: null, isLoading: false, mutate: vi.fn() }),
+  useInvalidateClientProfile: () => vi.fn(),
+}));
+
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars.
 vi.mock("@/contexts/units-context", () => ({
@@ -156,9 +165,12 @@ function setEventReady(detail: TrainingEventDetail = baseFixture()) {
   });
 }
 
-function setMe(weightUnit: "lbs" | "kg" = "lbs") {
+function setMe(
+  weightUnit: "lbs" | "kg" = "lbs",
+  logsOpenFrom: string | null = null,
+) {
   mockMe.mockReturnValue({
-    data: { success: true, data: { weightUnit } },
+    data: { success: true, data: { weightUnit, logsOpenFrom } },
     error: undefined,
     isLoading: false,
   });
@@ -1272,8 +1284,21 @@ describe("SetTracker", () => {
     expect(body.performedSessionId).toBe("s-2");
   });
 
-  it("[locked] a past logged day is read-only (banner shown, save disabled)", () => {
-    const detail = baseFixture(); // event.date 2026-05-06 (a past date)
+  it("[locked] a day in a week a check-in has closed is read-only (banner shown, save disabled)", () => {
+    const detail = baseFixture(); // event.date 2026-05-06
+    setEventReady(detail);
+    setMe("lbs", "2026-06-01"); // a check-in closed everything before June
+    render(<SetTracker eventId="evt-1" />);
+
+    expect(screen.getByTestId("locked-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("save-button")).toBeDisabled();
+  });
+
+  it("[locked] a logged day inside the open week stays editable", () => {
+    // Mutation guard: the old rule locked a past day the moment it had a log,
+    // so re-opening a workout to correct it was impossible. Nothing about the
+    // session log may reach the lock now.
+    const detail = baseFixture();
     detail.sessionLog = {
       id: "log-1",
       clientId: "c-1",
@@ -1288,9 +1313,10 @@ describe("SetTracker", () => {
       updatedAt: ISO,
     };
     setEventReady(detail);
+    setMe("lbs", "2026-05-04"); // the week containing 6 May is open
     render(<SetTracker eventId="evt-1" />);
 
-    expect(screen.getByTestId("locked-banner")).toBeInTheDocument();
-    expect(screen.getByTestId("save-button")).toBeDisabled();
+    expect(screen.queryByTestId("locked-banner")).toBeNull();
+    expect(screen.getByTestId("save-button")).not.toBeDisabled();
   });
 });

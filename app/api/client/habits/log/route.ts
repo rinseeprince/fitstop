@@ -35,13 +35,13 @@ export async function POST(request: NextRequest) {
 
     const data = validationResult.data;
 
-    // Shared past-day lock (Session 3.1). Habits lock per-habit: a missed past day can
-    // still be backfilled habit-by-habit, but a habit already recorded that day is locked.
+    // The shared day rule. Habits lock with their DAY like every other resource:
+    // the per-habit narrowing went with the logged-day rule it served, since a
+    // habit's own log state no longer decides anything.
     await assertCanEdit({
       clientId: auth.clientId,
       date: data.date,
       resourceType: "habit",
-      habitId: data.dailyHabitId,
     });
 
     const log = await logHabit(

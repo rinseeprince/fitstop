@@ -18,6 +18,7 @@ import {
 } from "@/components/client-portal/check-in/past-check-ins-section";
 import { useCheckInForm } from "@/hooks/use-check-in-form";
 import { useClientCheckIn } from "@/hooks/use-client-check-in";
+import { useInvalidateClientProfile } from "@/hooks/use-client-profile";
 import { useUnits } from "@/contexts/units-context";
 import { toCanonicalCheckInSubmission } from "@/utils/check-in-canonical-metrics";
 import {
@@ -40,6 +41,7 @@ function formatNextDueDate(iso: string): string {
 export default function ClientCheckInPage() {
   const router = useRouter();
   const { mutate } = useSWRConfig();
+  const invalidateClientProfile = useInvalidateClientProfile();
   const { contextData, isLoadingContext, contextError, nextDueDate, submitCheckIn } =
     useClientCheckIn();
   const { preference } = useUnits();
@@ -140,6 +142,10 @@ export default function ClientCheckInPage() {
       toast.success("Check-in submitted successfully!");
       // Refresh the past-check-ins list so the new submission appears below.
       void mutate(PAST_CHECK_INS_SWR_KEY);
+      // The submit just closed this week. Every screen that locks a day reads
+      // the boundary off the client's profile, and no cache here can reach that
+      // one without asking for it (CONVENTIONS §7).
+      invalidateClientProfile();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Something went wrong";
       setError(errorMessage);
@@ -250,6 +256,7 @@ export default function ClientCheckInPage() {
                   trainingContext={contextData.trainingContext}
                   trainingEventDetails={contextData.trainingEventDetails}
                   clientTimezone={contextData.clientInfo.timezone}
+                  logsOpenFrom={contextData.clientInfo.logsOpenFrom ?? null}
                   onLogEvent={logTrainingEvent}
                   trainingPeriodStats={contextData.trainingPeriodStats}
                   periodDays={contextData.periodDays}

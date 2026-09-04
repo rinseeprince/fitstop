@@ -24,7 +24,6 @@ type WellnessForDate = {
   stress: number | null;
   soreness: number | null;
   editable: boolean;
-  loggedStatus: "logged" | "never-logged";
 };
 
 type WellnessResponse = { success: boolean; data: WellnessForDate };
@@ -94,11 +93,10 @@ function WellnessLogInner() {
   );
 
   const wellness = data?.data;
-  // loggedStatus is server-authoritative (child-row existence); canEditDay then renders the lock
-  // in the client's timezone. `wellness.editable` is the server's parallel answer (enforced on
-  // write by assertCanEdit) — we intentionally drive the UI off canEditDay per the redesign.
-  const loggedStatus = wellness?.loggedStatus ?? "never-logged";
-  const isLocked = !canEditDay(date, loggedStatus, timezone);
+  // `wellness.editable` is the server's parallel answer (enforced on write by
+  // assertCanEdit) — we intentionally drive the UI off canEditDay per the
+  // redesign, so the disabled state and the write guard share one rule.
+  const isLocked = !canEditDay(date, client?.logsOpenFrom ?? null, timezone);
 
   const [inputs, setInputs] = useState<WellnessInputs>(EMPTY_INPUTS);
   const [saving, setSaving] = useState(false);
@@ -206,7 +204,7 @@ function WellnessLogInner() {
       <h1 className="text-base font-semibold text-foreground">Log wellness</h1>
       <p className="mt-1 text-sm text-muted-foreground">{formatHeading(date)}</p>
 
-      {isLocked ? <LockedDayNotice reason="past-logged" /> : null}
+      {isLocked ? <LockedDayNotice reason="locked" /> : null}
 
       <Card className="mt-4">
         <CardContent className="space-y-6 py-6">

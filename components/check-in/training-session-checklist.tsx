@@ -42,6 +42,8 @@ type TrainingSessionChecklistProps = {
   events: CheckInTrainingEventDetail[];
   /** Client IANA timezone — drives canEditDay's "today" computation. */
   clientTimezone: string;
+  /** The day-rule boundary from the check-in context; null = no lower bound. */
+  logsOpenFrom: string | null;
   /**
    * Fill-gap log writer. Registers an in-flight POST so the page can flush+await
    * all pending writes before submitting the check-in (Pin 3). Resolves when the
@@ -58,17 +60,19 @@ type TrainingSessionChecklistProps = {
  *
  * Daily logs are the source of truth — this is a VIEWER over the period's
  * training_events. Each row is either:
- *   - locked (display-only) when canEditDay(date, loggedStatus, tz) === false —
- *     i.e. a future day, or a past day that was already logged; OR
+ *   - locked (display-only) when canEditDay says so — a future day, or a day in
+ *     a week a check-in has already closed; OR
  *   - editable (quick mark complete/partial/skipped + optional notes) which
  *     POSTs to /api/client/training/events/[eventId]/log via onLogEvent.
  *
- * canEditDay is the ONLY lock rule. loggedStatus comes from logStatus
- * ("logged" when the event has a session_log, else "never-logged").
+ * canEditDay is the ONLY lock rule, and the row's own log state is not one of
+ * its inputs: every row of the week being reported on is editable until the
+ * check-in is sent, logged or not.
  */
 export const TrainingSessionChecklist = ({
   events,
   clientTimezone,
+  logsOpenFrom,
   onLogEvent,
 }: TrainingSessionChecklistProps) => {
   // Local optimistic state per editable row (status + notes + saving/error).
@@ -123,8 +127,7 @@ export const TrainingSessionChecklist = ({
       ) : (
         <div className="space-y-3">
           {events.map((event) => {
-            const loggedStatus = event.logStatus === "logged" ? "logged" : "never-logged";
-            const editable = canEditDay(event.date, loggedStatus, clientTimezone);
+            const editable = canEditDay(event.date, logsOpenFrom, clientTimezone);
             const label = statusLabel(event);
             const isCompleted = event.status === "completed";
             const local = rowState[event.eventId];
@@ -223,8 +226,8 @@ export const TrainingSessionChecklist = ({
       )}
 
       <p className="text-xs text-muted-foreground">
-        Days you already logged are locked. You can still fill in any sessions you
-        missed logging.
+        You can fill in any session from this week. Once you send this check-in,
+        the week is locked.
       </p>
     </div>
   );

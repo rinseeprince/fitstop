@@ -122,8 +122,7 @@ function NutritionLogInner() {
 
   const nutrition = data?.data;
   const target = nutrition?.target ?? null;
-  const loggedStatus = nutrition?.source === "log" ? "logged" : "never-logged";
-  const isLocked = !canEditDay(date, loggedStatus, timezone);
+  const isLocked = !canEditDay(date, client?.logsOpenFrom ?? null, timezone);
 
   const [inputs, setInputs] = useState<InputState>(EMPTY_INPUTS);
   const [saving, setSaving] = useState(false);
@@ -228,7 +227,7 @@ function NutritionLogInner() {
       <h1 className="text-base font-semibold text-foreground">Log nutrition</h1>
       <p className="mt-1 text-sm text-muted-foreground">{formatHeading(date)}</p>
 
-      {isLocked ? <LockedDayNotice reason="past-logged" /> : null}
+      {isLocked ? <LockedDayNotice reason="locked" /> : null}
 
       {target?.note ? (
         <div className="mt-4 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">

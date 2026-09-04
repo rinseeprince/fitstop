@@ -7,10 +7,12 @@ import { upsertWellnessLog } from "@/services/daily-log-card-service";
 import { DayLockedError } from "@/lib/daily-log-permissions";
 
 /**
- * GET wellness for a date: mood/energy/sleep/stress/soreness (nulls if absent), plus `editable` and
- * `loggedStatus`. The detail page feeds `loggedStatus` (server-authoritative child-row existence)
- * to the pure `canEditDay` for its lock — it can't infer "logged" from null fields, because the
- * `daily_logs_full` view can't tell an absent child from an all-null one (see getDayEditState).
+ * GET wellness for a date: mood/energy/sleep/stress/soreness (nulls if absent), plus `editable`.
+ *
+ * `loggedStatus` was removed with the logged-day lock it existed for (owner,
+ * 2026-09-04): the day rule no longer asks whether a resource has a row, so the
+ * field had no reader left, and keeping it truthful meant a child-table read on
+ * every load of this screen.
  */
 export async function GET(
   request: NextRequest,
@@ -30,7 +32,7 @@ export async function GET(
   try {
     const [log, editState] = await Promise.all([
       getTodayLog(auth.clientId, date),
-      getDayEditState(auth.clientId, date, "wellness"),
+      getDayEditState(auth.clientId, date),
     ]);
     return NextResponse.json(
       {
@@ -42,7 +44,6 @@ export async function GET(
           stress: log?.stress ?? null,
           soreness: log?.soreness ?? null,
           editable: editState.editable,
-          loggedStatus: editState.loggedStatus,
         },
       },
       { headers: { "Cache-Control": "no-store" } }
@@ -59,6 +60,8 @@ export async function GET(
 /**
  * PATCH wellness (mood/energy/sleep/stress/soreness). Guards the date-edit rule via assertCanEdit
  * (403 when locked), then writes wellness_logs (wellness is not plan-gated).
+ *
+ * Always 200 — see the nutrition route for why the 201 branch went (D24).
  */
 export async function PATCH(
   request: NextRequest,
@@ -85,16 +88,13 @@ export async function PATCH(
   }
 
   try {
-    const { loggedStatus } = await assertCanEdit({
+    await assertCanEdit({
       clientId: auth.clientId,
       date,
       resourceType: "wellness",
     });
     const dailyLog = await upsertWellnessLog(auth.clientId, date, result.data);
-    return NextResponse.json(
-      { success: true, data: dailyLog },
-      { status: loggedStatus === "logged" ? 200 : 201 }
-    );
+    return NextResponse.json({ success: true, data: dailyLog });
   } catch (error) {
     if (error instanceof DayLockedError) {
       return NextResponse.json(

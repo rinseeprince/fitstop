@@ -63,6 +63,12 @@ vi.mock("@/utils/daily-logs-aggregation", () => ({
 
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars.
+vi.mock("@/hooks/use-client-profile", () => ({
+  CLIENT_PROFILE_KEY: "/api/client/me",
+  useClientProfile: () => ({ client: null, error: null, isLoading: false, mutate: vi.fn() }),
+  useInvalidateClientProfile: () => vi.fn(),
+}));
+
 vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
 }));

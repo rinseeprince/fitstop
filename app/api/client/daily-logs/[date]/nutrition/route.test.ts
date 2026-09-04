@@ -76,7 +76,6 @@ describe("GET /api/client/daily-logs/[date]/nutrition", () => {
     } as never);
     vi.mocked(getDayEditState).mockResolvedValue({
       editable: true,
-      loggedStatus: "never-logged",
       clientTimezone: "UTC",
     } as never);
 
@@ -108,12 +107,12 @@ describe("PATCH /api/client/daily-logs/[date]/nutrition", () => {
     vi.mocked(upsertNutritionLog).mockResolvedValue({ id: "log-1" } as never);
   };
 
-  it("201 on a first log", async () => {
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
+  it("200 on every save — the created-vs-updated split went with the child read (D24)", async () => {
+    vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     happyContext();
 
     const res = await PATCH(patchReq({ caloriesConsumed: 2000 }), params("2026-05-21"));
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(upsertNutritionLog).toHaveBeenCalledWith(
       "client-1",
       "2026-05-21",
@@ -123,7 +122,7 @@ describe("PATCH /api/client/daily-logs/[date]/nutrition", () => {
   });
 
   it("200 when the day is already logged", async () => {
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "logged" } as never);
+    vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     happyContext();
 
     const res = await PATCH(patchReq({ caloriesConsumed: 2000 }), params("2026-05-21"));
@@ -161,7 +160,7 @@ describe("PATCH /api/client/daily-logs/[date]/nutrition", () => {
   });
 
   it("422 when no active nutrition plan (orphan log guard)", async () => {
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
+    vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     vi.mocked(resolvePlanContextForDate).mockResolvedValue({
       nutritionPlanId: null,
       trainingPlanId: null,
@@ -175,7 +174,7 @@ describe("PATCH /api/client/daily-logs/[date]/nutrition", () => {
   });
 
   it("500 when the writer throws a non-lock error", async () => {
-    vi.mocked(assertCanEdit).mockResolvedValue({ loggedStatus: "never-logged" } as never);
+    vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     happyContext();
     vi.mocked(upsertNutritionLog).mockRejectedValue(new Error("boom"));
 
