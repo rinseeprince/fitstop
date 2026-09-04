@@ -128,11 +128,15 @@ export async function putBlockChain(
 /** DELETE one block. Callers invalidate the blocks area on success. */
 export async function deleteBlockRequest(
   clientId: string,
-  blockId: string
+  blockId: string,
+  /** The coach's answer to the confirm dialog. Never a default: without it the
+   *  block's events stay exactly where they are. */
+  clearEvents = false
 ): Promise<DeleteBlockResponse["data"]> {
-  const res = await fetch(`${clientBlocksKey(clientId)}/${blockId}`, {
-    method: "DELETE",
-  });
+  const res = await fetch(
+    `${clientBlocksKey(clientId)}/${blockId}${clearEvents ? "?clearEvents=true" : ""}`,
+    { method: "DELETE" }
+  );
   const body = await parseOrThrow<DeleteBlockResponse>(
     res,
     "Failed to delete block"
@@ -157,4 +161,30 @@ export async function patchBlockArchived(
     "Failed to archive block"
   );
   return body.data.blocks;
+}
+
+/**
+ * Bring the calendar in line with a block whose dates just changed — the coach's
+ * answer to the confirm dialog, never automatic.
+ *
+ * `fill` covers the block (nutrition either keeping the targets in force or
+ * re-priced against the client's current numbers, and the training continuing
+ * its program into the new days); `clear` removes the scheduled days that have
+ * left it. Returns what the fill could NOT do, so the caller can say so.
+ */
+export async function syncBlockEvents(
+  clientId: string,
+  blockId: string,
+  body: { mode: "fill"; nutrition: "keep" | "regenerate" } | { mode: "clear" }
+): Promise<{ trainingExtended: boolean }> {
+  const res = await fetch(`${clientBlocksKey(clientId)}/${blockId}/events`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const parsed = await parseOrThrow<{
+    success?: boolean;
+    data: { training?: { slotsAdded: number } | null };
+  }>(res, "Failed to update the calendar");
+  return { trainingExtended: Boolean(parsed.data.training) };
 }

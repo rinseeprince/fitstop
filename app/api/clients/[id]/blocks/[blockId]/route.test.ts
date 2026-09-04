@@ -24,6 +24,15 @@ vi.mock("@/services/today-service", () => ({
 
 // The factory defines the error classes so the route and this test share the
 // same class objects for instanceof.
+// The route reaches the event-sync service only behind ?clearEvents=true; the
+// module is stubbed so importing it does not pull in supabase-admin.
+vi.mock("@/services/block-event-sync-service", () => ({
+  clearScheduledEvents: vi.fn().mockResolvedValue({
+    trainingCleared: 0,
+    nutritionCleared: 0,
+  }),
+}));
+
 vi.mock("@/services/client-blocks-service", () => {
   class ElapsedBlockImmutableError extends Error {}
   class BlockWindowError extends Error {}
@@ -44,10 +53,12 @@ vi.mock("@/services/client-blocks-service", () => {
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
+import { clearScheduledEvents } from "@/services/block-event-sync-service";
 import {
   BlockWindowError,
   deleteBlock,
   ElapsedBlockImmutableError,
+  listBlocks,
   setBlockArchived,
   UnknownBlockIdError,
 } from "@/services/client-blocks-service";
@@ -68,9 +79,9 @@ const REMAINING_BLOCK = {
 };
 
 
-function createMockRequest() {
+function createMockRequest(search = "") {
   return new NextRequest(
-    "http://localhost:3000/api/clients/client-1/blocks/block-b",
+    `http://localhost:3000/api/clients/client-1/blocks/block-b${search}`,
     { method: "DELETE" }
   );
 }
@@ -119,9 +130,37 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
         targetTable: "client_phases",
         targetId: "block-b",
         clientId: "client-1",
-        metadata: { blockCount: 1 },
+        metadata: { blockCount: 1, clearedEvents: false },
       })
     );
+  });
+
+  it("clears the block's own days first when the coach asks for it", async () => {
+    // Never a default: without ?clearEvents=true the events stay put, which is
+    // what keeps a block edit from writing anything on its own.
+    vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
+    vi.mocked(listBlocks).mockResolvedValue([
+      {
+        id: "block-b",
+        name: "Cut",
+        focus: null,
+        targetWeightKg: null,
+        startsOn: "2026-08-11",
+        endsOn: "2026-09-07",
+        archivedAt: null,
+      },
+    ]);
+
+    const response = await DELETE(createMockRequest("?clearEvents=true"), mockParams);
+
+    expect(response.status).toBe(200);
+    expect(clearScheduledEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ from: "2026-08-11", to: "2026-09-07" })
+    );
+    // BEFORE the row goes — the clear needs the window it is clearing.
+    expect(
+      vi.mocked(clearScheduledEvents).mock.invocationCallOrder[0]
+    ).toBeLessThan(vi.mocked(deleteBlock).mock.invocationCallOrder[0]);
   });
 
   it("404s an unknown block id", async () => {

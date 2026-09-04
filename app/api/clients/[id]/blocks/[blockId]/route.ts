@@ -4,9 +4,11 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { decorateBlocks } from "@/lib/blocks/block-derivations";
 import { archiveBlockSchema } from "@/lib/validations/client-blocks";
+import { clearScheduledEvents } from "@/services/block-event-sync-service";
 import {
   BlockWindowError,
   deleteBlock,
+  listBlocks,
   ElapsedBlockImmutableError,
   setBlockArchived,
   UnknownBlockIdError,
@@ -15,12 +17,13 @@ import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 
-// Delete one journey block. A future block's row is removed and what follows
-// shifts back by its full duration; the block the client is currently inside
-// TRUNCATES at yesterday (the next block starts today); elapsed blocks 422.
-// The response carries the realized date changes — computed by the same pure
-// helper (lib/blocks/block-chain.ts) the confirm dialog uses for its preview,
-// so the sentence the coach approved and the shift that ran cannot differ.
+// Delete one journey block: the row goes and nothing else moves (migration 164).
+// Elapsed blocks 422.
+//
+// `?clearEvents=true` additionally clears the block's own scheduled days on both
+// tracks before the row goes — the coach's answer to the confirm dialog, never a
+// default. Without it the events stay exactly where they are, which is the rule
+// that a block edit writes nothing on its own.
 
 export async function DELETE(
   request: NextRequest,
@@ -39,6 +42,25 @@ export async function DELETE(
     if (!auth.authorized) return auth.response;
 
     const clientToday = await getClientTodayString(clientId);
+    const clearEvents =
+      new URL(request.url).searchParams.get("clearEvents") === "true";
+
+    // BEFORE the row goes — the clear needs the window it is clearing.
+    let cleared: { trainingCleared: number; nutritionCleared: number } | null = null;
+    if (clearEvents) {
+      const block = (await listBlocks(clientId)).find((b) => b.id === blockId);
+      if (block) {
+        // The block's OWN window — not the outside-it range the shorten arm
+        // clears. Floored at the client's today inside the service.
+        cleared = await clearScheduledEvents({
+          clientId,
+          clientToday,
+          from: block.startsOn,
+          to: block.endsOn,
+        });
+      }
+    }
+
     const result = await deleteBlock(clientId, clientToday, blockId);
 
     void recordAuditEvent({
@@ -48,7 +70,7 @@ export async function DELETE(
       targetTable: "client_phases",
       targetId: blockId,
       clientId,
-      metadata: { blockCount: result.blocks.length },
+      metadata: { blockCount: result.blocks.length, clearedEvents: clearEvents },
       request,
     });
 
@@ -57,6 +79,7 @@ export async function DELETE(
         success: true,
         data: {
           blocks: decorateBlocks(result.blocks, clientToday),
+          cleared,
           clientToday,
         },
       },

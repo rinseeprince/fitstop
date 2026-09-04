@@ -23,15 +23,18 @@ import {
   deleteBlockRequest,
   patchBlockArchived,
   putBlockChain,
+  syncBlockEvents,
   useBlockFacts,
   useClientBlocks,
   useInvalidateClientBlocks,
 } from "../hooks/use-client-blocks";
+import { formatBlockDate } from "@/lib/blocks/block-format";
 import { blockColor } from "./block-colors";
 import { deriveBlockWeightFacts } from "@/lib/blocks/block-weight";
 import { BlockCard } from "./block-card";
 import { BlockForm, type BlockFormValues } from "./block-form";
 import { buildAppendPayload, buildEditPayload } from "./block-chain-payload";
+import { BlockEventsDialog, type BlockEventsPrompt } from "./block-events-dialog";
 import { DeleteBlockDialog } from "./delete-block-dialog";
 import type { MetricSummary } from "../metrics-view-types";
 
@@ -89,12 +92,55 @@ export function BlocksSubtab({
     [facts]
   );
 
-  const handleDeleteConfirm = async (block: ClientBlockView) => {
+  // Raised AFTER a save that moved a block's dates — the dates are already
+  // stored; this only asks whether the calendar should follow.
+  const [eventsPrompt, setEventsPrompt] = useState<BlockEventsPrompt | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const runSync = async (
+    body: { mode: "fill"; nutrition: "keep" | "regenerate" } | { mode: "clear" }
+  ) => {
+    if (!eventsPrompt) return;
+    setIsSyncing(true);
+    try {
+      const result = await syncBlockEvents(clientId, eventsPrompt.blockId, body);
+      void invalidateBlocks(clientId);
+      toast({
+        title: body.mode === "clear" ? "Those days are clear" : "The new days are filled",
+        // The training half can decline: a block with no program in it, or one
+        // placed before its pass length was recorded, cannot be continued —
+        // and a guessed program is worse than none.
+        description:
+          body.mode === "fill" && !result.trainingExtended
+            ? "Nutrition only — there's no program in this block to carry on. Place one from the Training tab."
+            : undefined,
+      });
+      setEventsPrompt(null);
+    } catch (error) {
+      toast({
+        title: "Couldn't update the calendar",
+        description:
+          error instanceof Error ? error.message : "Nothing was changed",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteConfirm = async (
+    block: ClientBlockView,
+    clearEvents: boolean
+  ) => {
     setIsDeleting(true);
     try {
-      await deleteBlockRequest(clientId, block.id);
+      await deleteBlockRequest(clientId, block.id, clearEvents);
       void invalidateBlocks(clientId);
-      toast({ title: `"${block.name}" deleted` });
+      toast({
+        title: clearEvents
+          ? `"${block.name}" and its days are gone`
+          : `"${block.name}" deleted`,
+      });
       setDeleteTarget(null);
     } catch (error) {
       toast({
@@ -164,6 +210,18 @@ export function BlocksSubtab({
       void invalidateBlocks(clientId);
       toast({ title: `"${values.name}" updated` });
       setEditingId(null);
+
+      // Only a moved END changes which days the block owns going forward; a
+      // start that moved has already been floored at today by the service.
+      const nextEnd = values.endsOn ?? block.endsOn;
+      if (nextEnd !== block.endsOn) {
+        setEventsPrompt({
+          blockId: block.id,
+          blockName: values.name,
+          direction: nextEnd > block.endsOn ? "extended" : "shortened",
+          rangeLabel: formatBlockDate(nextEnd),
+        });
+      }
     } catch (error) {
       toast({
         title: "Save failed",
@@ -438,11 +496,19 @@ export function BlocksSubtab({
         </div>
       )}
 
+      <BlockEventsDialog
+        prompt={eventsPrompt}
+        isWorking={isSyncing}
+        onDismiss={() => setEventsPrompt(null)}
+        onClear={() => void runSync({ mode: "clear" })}
+        onFill={(nutrition) => void runSync({ mode: "fill", nutrition })}
+      />
+
       <DeleteBlockDialog
         block={deleteTarget}
         isDeleting={isDeleting}
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={(block) => void handleDeleteConfirm(block)}
+        onConfirm={(block, clearEvents) => void handleDeleteConfirm(block, clearEvents)}
       />
     </div>
   );

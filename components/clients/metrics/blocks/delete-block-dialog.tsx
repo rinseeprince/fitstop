@@ -17,8 +17,12 @@ import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 // in this system.
 //
 // No consequence sentence: a block owns its own window (migration 164), so
-// deleting one leaves a gap and moves nothing else. Its training and nutrition
-// events are left alone — clearing those is a separate, explicit act.
+// deleting one leaves a gap and moves nothing else.
+//
+// Two CTAs, because the events are a separate decision and neither answer is a
+// default. Deleting the block alone leaves its workouts and targets on the
+// calendar; the second clears its scheduled days too, from today forward,
+// leaving everything logged and everything past where it is.
 
 const DANGER_CTA =
   "border border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]";
@@ -27,7 +31,7 @@ type DeleteBlockDialogProps = {
   block: ClientBlockView | null; // null = closed
   isDeleting: boolean;
   onCancel: () => void;
-  onConfirm: (block: ClientBlockView) => void;
+  onConfirm: (block: ClientBlockView, clearEvents: boolean) => void;
 };
 
 export function DeleteBlockDialog({
@@ -56,7 +60,7 @@ export function DeleteBlockDialog({
             </DialogTitle>
           </div>
         </DialogHeader>
-        <DialogFooter>
+        <DialogFooter className="flex-col gap-2 sm:flex-row">
           <Button variant="ghost" onClick={onCancel} disabled={isDeleting}>
             Cancel
           </Button>
@@ -64,10 +68,18 @@ export function DeleteBlockDialog({
             variant="outline"
             className={DANGER_CTA}
             disabled={isDeleting || !block}
-            onClick={() => block && onConfirm(block)}
+            onClick={() => block && onConfirm(block, false)}
           >
             {isDeleting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
             Delete block
+          </Button>
+          <Button
+            variant="outline"
+            className={DANGER_CTA}
+            disabled={isDeleting || !block}
+            onClick={() => block && onConfirm(block, true)}
+          >
+            Delete block and its days
           </Button>
         </DialogFooter>
       </DialogContent>
