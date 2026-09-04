@@ -129,6 +129,42 @@ export const getFurthestBlockEnd = async (
   return data?.ends_on ?? null;
 };
 
+/**
+ * The end of the block whose window CONTAINS `date`, or null when no block does
+ * — the bound a placement made on that date is placed inside.
+ *
+ * Deliberately a different question from `getFurthestBlockEnd`, which the
+ * nutrition horizon asks. Nutrition asks "how far is anything drawn?" and may
+ * safely over-cover a client who eats every day; training asks "which bound am
+ * I inside?" and must not over-run it. A program placed inside a two-week block
+ * stops after two weeks even when the next block runs twelve — that next block
+ * is its own prescription, with its own placement.
+ *
+ * Degrades to null on a read error (logged, Sentried): the placement then falls
+ * back to the program's own authored length, which is what it did before blocks
+ * bounded anything.
+ */
+export const getBlockEndCoveringDate = async (
+  clientId: string,
+  date: string
+): Promise<string | null> => {
+  const { data, error } = await supabaseAdmin
+    .from("client_phases")
+    .select("ends_on")
+    .eq("client_id", clientId)
+    .is("archived_at", null)
+    .lte("starts_on", date)
+    .gte("ends_on", date)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to read the block covering a date:", error);
+    captureApiError(error, { action: "block-covering-date", clientId });
+    return null;
+  }
+  return data?.ends_on ?? null;
+};
+
 const isCurrent = (block: ClientBlock, today: string): boolean =>
   block.startsOn <= today && today <= block.endsOn;
 

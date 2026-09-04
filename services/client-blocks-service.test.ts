@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  getBlockEndCoveringDate,
   getFurthestBlockEnd,
   listBlocks,
   replaceBlockChain,
@@ -36,6 +37,7 @@ function createMockQuery(result: MockResult) {
     eq: vi.fn(chain),
     is: vi.fn(chain),
     gte: vi.fn(chain),
+    lte: vi.fn(chain),
     limit: vi.fn(chain),
     order: vi.fn(chain),
     maybeSingle: vi.fn(() => Promise.resolve(result)),
@@ -668,5 +670,49 @@ describe("getFurthestBlockEnd", () => {
     // The caller falls through to the training program and then to the fixed
     // window. Throwing here would fail a coach's placement after it committed.
     await expect(getFurthestBlockEnd(CLIENT_ID, ANCHOR)).resolves.toBeNull();
+  });
+});
+
+// ===========================================================================
+// getBlockEndCoveringDate — the bound a placement made on that date sits inside.
+//
+// Deliberately a different question from getFurthestBlockEnd above: nutrition
+// asks how far anything is drawn and may over-cover; training asks which bound
+// it is inside and must not over-run it.
+// ===========================================================================
+
+describe("getBlockEndCoveringDate", () => {
+  const START = "2026-10-19";
+
+  it("returns the end of the block whose window contains the date", async () => {
+    const [query] = queueResults({ data: { ends_on: "2027-01-11" }, error: null });
+
+    expect(await getBlockEndCoveringDate(CLIENT_ID, START)).toBe("2027-01-11");
+
+    expect(query.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
+    expect(query.lte).toHaveBeenCalledWith("starts_on", START);
+    expect(query.gte).toHaveBeenCalledWith("ends_on", START);
+  });
+
+  it("returns null when no block covers the date", async () => {
+    // A placement in a gap, or before the chain opens, declares no bound — the
+    // program keeps its own authored length.
+    queueResults({ data: null, error: null });
+
+    expect(await getBlockEndCoveringDate(CLIENT_ID, START)).toBeNull();
+  });
+
+  it("ignores an archived block", async () => {
+    const [query] = queueResults({ data: null, error: null });
+
+    await getBlockEndCoveringDate(CLIENT_ID, START);
+
+    expect(query.is).toHaveBeenCalledWith("archived_at", null);
+  });
+
+  it("degrades to null on a read error rather than throwing", async () => {
+    queueResults({ data: null, error: { message: "boom" } });
+
+    await expect(getBlockEndCoveringDate(CLIENT_ID, START)).resolves.toBeNull();
   });
 });

@@ -2,14 +2,24 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
-import { generateProgramEvents, calculatePlacementEndDate } from "./program-event-walk";
+import {
+  generateProgramEvents,
+  expandProgramToWindow,
+  resolvePlacementWindowEnd,
+} from "./program-event-walk";
 import { assertDateFree, rethrowIfDateOccupied } from "./training-event-occupancy";
 import type { TrainingEventInsert, TrainingEventRow, CoachSavedExerciseRow } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
 import type { SavedSession, SavedExercise } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import type { InlinePlanBody } from "@/lib/validations/training";
+// Pure date maths, shared with the block chain rather than re-derived here —
+// the block is what supplies this window's length.
+import { inclusiveDays, weeksSpanned } from "@/lib/blocks/block-chain";
 import { toPrescribedFields } from "@/utils/prescribed-fields";
+
+/** Rows per INSERT statement — the placement clone can now run to hundreds. */
+const INSERT_CHUNK = 500;
 
 // --- Shape used by both DB-backed and inline (in-memory) placements ---
 
@@ -307,13 +317,24 @@ async function placePlaceablePlanOnCalendar(params: {
   // 2. Compute the incoming plan's own window end FIRST (capped at the next
   //    coexisting plan's start). It bounds BOTH the RPC's additive delete and the
   //    event generation below to exactly the same range, so re-placing the same
-  //    window is idempotent and non-overlapping plans coexist untouched. Length =
-  //    the whole-program slot count.
-  const endDate = await calculatePlacementEndDate({
+  //    window is idempotent and non-overlapping plans coexist untouched.
+  //
+  //    The LENGTH is the block covering the start date when there is one, else
+  //    the whole-program slot count. So the block is the length knob: a program
+  //    shorter than its block repeats to fill it, a longer one is cut at its end.
+  const endDate = await resolvePlacementWindowEnd({
     clientId,
     slotCount: programSlots.length,
     startDate,
   });
+
+  //    The slots actually placed: the authored program repeated until it covers
+  //    the window, then cut. Each cycle is CLONED below, never shared, so cycle
+  //    three can be progressed past cycle one.
+  const windowSlots = expandProgramToWindow(
+    programSlots,
+    inclusiveDays(startDate, endDate),
+  );
 
   // H3: snapshot the scheduled events the RPC is about to delete, BEFORE it
   // commits, so a failure in the non-transactional clone/event-gen below can
@@ -335,9 +356,11 @@ async function placePlaceablePlanOnCalendar(params: {
     // training_plans.frequency_per_week has CHECK (>= 1 AND <= 7); a 0 fallback
     // (or a stale unclamped multi-week total on an old plan row) fails the RPC.
     frequencyPerWeek: Math.min(7, Math.max(1, savedPlan.frequencyPerWeek || 1)),
-    // Still written as plan metadata / RPC arg even though the placement window is
-    // now driven by the repeat count × whole-program length, not this value.
-    programDurationWeeks: savedPlan.programDurationWeeks ?? undefined,
+    // The PLACED length, not the authored one: with the block as the length knob
+    // a 4-week program can occupy a 12-week window, and the Overview's plan chip
+    // derives its "Ended" date from this column — left at the authored value it
+    // would contradict the calendar.
+    programDurationWeeks: weeksSpanned(startDate, endDate),
     effectiveFrom: startDate,
     windowEnd: endDate,
     // null -> inline placement (edited working copy), don't link back to any
@@ -352,86 +375,116 @@ async function placePlaceablePlanOnCalendar(params: {
   //    self-describing about rest. Rest rows carry is_rest = true, no exercises,
   //    and null surplus. `clonedSlots` is the ordered program the event walk maps
   //    onto calendar dates.
-  const clonedSlots: Array<{
-    id: string;
-    isRest: boolean;
-    name: string;
-    focus: string | null;
-    calorieSurplusPercentage: number | null;
-    estimatedCalories: number | null;
-  }> = [];
-
-  for (const savedSession of programSlots) {
-    const surplusPercentage = savedSession.isRest
+  //
+  //    BATCHED, not one insert per slot. With the block as the length knob a
+  //    short program repeats to fill a long block — a one-week program in a
+  //    52-week block is 364 slots — and a round trip each would take the
+  //    placement well past any request budget. Chunked because a single
+  //    statement of unbounded width is its own problem.
+  const sessionRows = windowSlots.map((slot) => ({
+    plan_id: newPlanId,
+    name: slot.isRest ? "Rest" : slot.name,
+    day_of_week: null,
+    order_index: slot.orderIndex,
+    week_index: slot.weekIndex,
+    is_rest: slot.isRest,
+    focus: slot.isRest ? null : slot.focus ?? null,
+    notes: null,
+    estimated_duration_minutes: slot.estimatedDurationMinutes ?? null,
+    calorie_surplus_percentage: slot.isRest
       ? null
-      : savedSession.calorieSurplusPercentage ?? savedPlan.defaultSurplusPercentage ?? null;
+      : slot.calorieSurplusPercentage ?? savedPlan.defaultSurplusPercentage ?? null,
+    is_active: true,
+  }));
 
-    const { data: clonedSession, error: sessionError } = await supabaseAdmin
-      .from("training_sessions")
-      .insert({
-        plan_id: newPlanId,
-        name: savedSession.isRest ? "Rest" : savedSession.name,
-        day_of_week: null,
-        order_index: savedSession.orderIndex,
-        week_index: savedSession.weekIndex,
-        is_rest: savedSession.isRest,
-        focus: savedSession.isRest ? null : savedSession.focus ?? null,
-        notes: null,
-        estimated_duration_minutes: savedSession.estimatedDurationMinutes ?? null,
-        calorie_surplus_percentage: surplusPercentage,
-        is_active: true,
-      })
-      .select("id")
-      .single();
+  // Keyed on (week_index, order_index) rather than on the returned row order:
+  // Postgres does not promise RETURNING follows the VALUES order, and matching
+  // an exercise to the wrong session would be silent rather than loud.
+  //
+  // That makes the pair load-bearing, so it is checked rather than assumed. The
+  // expander keeps every cycle's slots disjoint, so a collision can only come
+  // from a template that already carried two slots at one coordinate — in which
+  // case the map would quietly give one slot's row both slots' exercises and
+  // leave the other empty. Fail before writing anything instead; the caller's
+  // compensation removes the plan the RPC has already committed.
+  const sessionIdBySlot = new Map<string, string>();
+  const slotKey = (weekIndex: number, orderIndex: number) => `${weekIndex}:${orderIndex}`;
 
-    if (sessionError || !clonedSession) {
-      throw new Error(`Failed to clone session "${savedSession.name}": ${sessionError?.message}`);
-    }
-
-    // Clone exercises for training slots only (rest slots have none). Splat the
-    // per-set model verbatim — the source row's compact columns are already the
-    // correct projection of its set_specs.
-    if (!savedSession.isRest && savedSession.exercises.length > 0) {
-      const exerciseInserts = [...savedSession.exercises]
-        .sort((a, b) => a.orderIndex - b.orderIndex)
-        .map((ex: SavedExercise) => ({
-          session_id: clonedSession.id,
-          name: ex.name,
-          exercise_id: ex.exerciseId ?? null,
-          order_index: ex.orderIndex,
-          sets: ex.sets,
-          reps_min: ex.repsMin ?? null,
-          reps_max: ex.repsMax ?? null,
-          reps_target: ex.repsTarget ?? null,
-          rpe_target: ex.rpeTarget ?? null,
-          percentage_1rm: ex.percentage1rm ?? null,
-          tempo: ex.tempo ?? null,
-          rest_seconds: ex.restSeconds ?? null,
-          notes: ex.notes ?? null,
-          superset_group: ex.supersetGroup ?? null,
-          is_warmup: ex.isWarmup ?? false,
-          set_specs: (ex.setSpecs ?? null) as unknown as Json,
-          video_url: ex.videoUrl ?? null,
-          prescribed_fields: toPrescribedFields(ex.prescribedFields),
-          is_active: true,
-        }));
-
-      const { error: exError } = await supabaseAdmin
-        .from("training_exercises")
-        .insert(exerciseInserts);
-
-      if (exError) throw new Error(`Failed to clone exercises: ${exError.message}`);
-    }
-
-    clonedSlots.push({
-      id: clonedSession.id,
-      isRest: savedSession.isRest,
-      name: savedSession.isRest ? "Rest" : savedSession.name,
-      focus: savedSession.isRest ? null : savedSession.focus ?? null,
-      calorieSurplusPercentage: surplusPercentage,
-      estimatedCalories: null,
-    });
+  const distinctSlots = new Set(windowSlots.map((s) => slotKey(s.weekIndex, s.orderIndex)));
+  if (distinctSlots.size !== windowSlots.length) {
+    throw new Error(
+      "This program has two sessions at the same position in its week — re-save it in the builder before placing it.",
+    );
   }
+
+  for (let from = 0; from < sessionRows.length; from += INSERT_CHUNK) {
+    const chunk = sessionRows.slice(from, from + INSERT_CHUNK);
+    const { data: inserted, error: sessionError } = await supabaseAdmin
+      .from("training_sessions")
+      .insert(chunk)
+      .select("id, week_index, order_index");
+
+    if (sessionError || !inserted || inserted.length !== chunk.length) {
+      throw new Error(
+        `Failed to clone the program's sessions: ${sessionError?.message ?? "row count mismatch"}`,
+      );
+    }
+    for (const row of inserted) {
+      sessionIdBySlot.set(slotKey(row.week_index, row.order_index), row.id);
+    }
+  }
+
+  // Exercises for training slots only (rest slots have none). Splat the per-set
+  // model verbatim — the source row's compact columns are already the correct
+  // projection of its set_specs.
+  const exerciseInserts = windowSlots.flatMap((slot) => {
+    if (slot.isRest || slot.exercises.length === 0) return [];
+    const sessionId = sessionIdBySlot.get(slotKey(slot.weekIndex, slot.orderIndex));
+    if (!sessionId) {
+      throw new Error(`No cloned session for slot ${slot.weekIndex}/${slot.orderIndex}`);
+    }
+    return [...slot.exercises]
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .map((ex: SavedExercise) => ({
+        session_id: sessionId,
+        name: ex.name,
+        exercise_id: ex.exerciseId ?? null,
+        order_index: ex.orderIndex,
+        sets: ex.sets,
+        reps_min: ex.repsMin ?? null,
+        reps_max: ex.repsMax ?? null,
+        reps_target: ex.repsTarget ?? null,
+        rpe_target: ex.rpeTarget ?? null,
+        percentage_1rm: ex.percentage1rm ?? null,
+        tempo: ex.tempo ?? null,
+        rest_seconds: ex.restSeconds ?? null,
+        notes: ex.notes ?? null,
+        superset_group: ex.supersetGroup ?? null,
+        is_warmup: ex.isWarmup ?? false,
+        set_specs: (ex.setSpecs ?? null) as unknown as Json,
+        video_url: ex.videoUrl ?? null,
+        prescribed_fields: toPrescribedFields(ex.prescribedFields),
+        is_active: true,
+      }));
+  });
+
+  for (let from = 0; from < exerciseInserts.length; from += INSERT_CHUNK) {
+    const { error: exError } = await supabaseAdmin
+      .from("training_exercises")
+      .insert(exerciseInserts.slice(from, from + INSERT_CHUNK));
+    if (exError) throw new Error(`Failed to clone exercises: ${exError.message}`);
+  }
+
+  const clonedSlots = windowSlots.map((slot) => ({
+    id: sessionIdBySlot.get(slotKey(slot.weekIndex, slot.orderIndex)) as string,
+    isRest: slot.isRest,
+    name: slot.isRest ? "Rest" : slot.name,
+    focus: slot.isRest ? null : slot.focus ?? null,
+    calorieSurplusPercentage: slot.isRest
+      ? null
+      : slot.calorieSurplusPercentage ?? savedPlan.defaultSurplusPercentage ?? null,
+    estimatedCalories: null,
+  }));
 
   // 5. Generate the events (same window the RPC just cleared). Rest slots
   //    advance the slot position but emit no event.

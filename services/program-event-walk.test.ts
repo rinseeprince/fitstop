@@ -11,16 +11,24 @@ vi.mock("./training-event-service", () => ({
   getNextPlanStartCap: vi.fn(),
 }));
 
+vi.mock("./client-blocks-service", () => ({
+  getBlockEndCoveringDate: vi.fn(),
+}));
+
 import { supabaseAdmin } from "./supabase-admin";
 import { getNextPlanStartCap } from "./training-event-service";
+import { getBlockEndCoveringDate } from "./client-blocks-service";
 import {
   generateProgramEvents,
   calculatePlacementEndDate,
+  expandProgramToWindow,
+  resolvePlacementWindowEnd,
   type ProgramSlot,
 } from "./program-event-walk";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetNextPlanStartCap = vi.mocked(getNextPlanStartCap);
+const mockGetBlockEnd = vi.mocked(getBlockEndCoveringDate);
 
 // Inline query mock helper (same idiom as library-placement-service.test.ts)
 function createMockQuery<T = unknown>(result: { data: T | null; error: { message: string } | null }) {
@@ -286,5 +294,132 @@ describe("program-event-walk", () => {
       ).toBe("2026-07-08");
       expect(mockGetNextPlanStartCap).toHaveBeenCalledWith("client-1", "2026-07-01");
     });
+  });
+});
+
+// ===========================================================================
+// The block is the placement window's length knob.
+//
+// A program shorter than its block repeats to fill it, a longer one is cut at
+// its end, and a placement on a day no block covers behaves exactly as it did
+// before blocks bounded anything.
+// ===========================================================================
+
+describe("resolvePlacementWindowEnd", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetNextPlanStartCap.mockResolvedValue(null);
+    mockGetBlockEnd.mockResolvedValue(null);
+  });
+
+  it("stretches a short program's window to the block's last day", async () => {
+    // 28 authored days placed into a block running to 2026-11-26.
+    mockGetBlockEnd.mockResolvedValue("2026-11-26");
+
+    expect(
+      await resolvePlacementWindowEnd({
+        clientId: "client-1",
+        slotCount: 28,
+        startDate: "2026-09-07",
+      }),
+    ).toBe("2026-11-26");
+  });
+
+  it("cuts a long program's window at the block's last day", async () => {
+    // 112 authored days would reach 2026-12-27; the block stops on 2026-11-05.
+    mockGetBlockEnd.mockResolvedValue("2026-11-05");
+
+    expect(
+      await resolvePlacementWindowEnd({
+        clientId: "client-1",
+        slotCount: 112,
+        startDate: "2026-09-07",
+      }),
+    ).toBe("2026-11-05");
+  });
+
+  it("falls back to the authored length when no block covers the start", async () => {
+    // 35 days from 2026-09-07 runs to 2026-10-11 — today's behaviour, untouched.
+    expect(
+      await resolvePlacementWindowEnd({
+        clientId: "client-1",
+        slotCount: 35,
+        startDate: "2026-09-07",
+      }),
+    ).toBe("2026-10-11");
+    expect(mockGetBlockEnd).toHaveBeenCalledWith("client-1", "2026-09-07");
+  });
+
+  it("still never runs past the next coexisting program's start", async () => {
+    // The block says 2026-12-18, but another program opens on 2026-10-19.
+    mockGetBlockEnd.mockResolvedValue("2026-12-18");
+    mockGetNextPlanStartCap.mockResolvedValue("2026-10-18");
+
+    expect(
+      await resolvePlacementWindowEnd({
+        clientId: "client-1",
+        slotCount: 21,
+        startDate: "2026-09-07",
+      }),
+    ).toBe("2026-10-18");
+  });
+});
+
+describe("expandProgramToWindow", () => {
+  const authored = [
+    { weekIndex: 0, orderIndex: 0, name: "Push" },
+    { weekIndex: 0, orderIndex: 1, name: "Pull" },
+    { weekIndex: 0, orderIndex: 2, name: "Legs" },
+  ];
+
+  it("repeats the program until the window is covered", () => {
+    const out = expandProgramToWindow(authored, 9);
+
+    expect(out).toHaveLength(9);
+    expect(out.map((s) => s.name)).toEqual([
+      "Push", "Pull", "Legs", "Push", "Pull", "Legs", "Push", "Pull", "Legs",
+    ]);
+  });
+
+  it("cuts a final partial cycle mid-program", () => {
+    // The block ends when it ends; the last cycle simply stops.
+    expect(expandProgramToWindow(authored, 7).map((s) => s.name)).toEqual([
+      "Push", "Pull", "Legs", "Push", "Pull", "Legs", "Push",
+    ]);
+  });
+
+  it("truncates a program longer than its window", () => {
+    expect(expandProgramToWindow(authored, 2).map((s) => s.name)).toEqual(["Push", "Pull"]);
+  });
+
+  it("keeps (weekIndex, orderIndex) climbing across cycles", () => {
+    // That pair IS the date-walk's slot position and the ordering every
+    // placed-plan reader uses, so cycle 2 day 1 has to sort after cycle 1 day 3.
+    const out = expandProgramToWindow(authored, 6);
+
+    expect(out.map((s) => s.weekIndex)).toEqual([0, 0, 0, 1, 1, 1]);
+    expect(out.map((s) => s.orderIndex)).toEqual([0, 1, 2, 0, 1, 2]);
+    const keys = out.map((s) => `${s.weekIndex}:${s.orderIndex}`);
+    expect(new Set(keys).size).toBe(out.length);
+  });
+
+  it("offsets later cycles by the authored program's own week span", () => {
+    // A two-week authored program: cycle 2 starts at week 2, not week 1.
+    const twoWeeks = [
+      { weekIndex: 0, orderIndex: 0, name: "A" },
+      { weekIndex: 1, orderIndex: 0, name: "B" },
+    ];
+
+    expect(expandProgramToWindow(twoWeeks, 4).map((s) => s.weekIndex)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("leaves a single pass byte-identical to the authored program", () => {
+    // Placement before blocks bounded anything must be unchanged.
+    expect(expandProgramToWindow(authored, 3)).toEqual(authored);
+  });
+
+  it("returns nothing for an empty program or an empty window", () => {
+    expect(expandProgramToWindow([], 10)).toEqual([]);
+    expect(expandProgramToWindow(authored, 0)).toEqual([]);
   });
 });

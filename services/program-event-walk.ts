@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getNextPlanStartCap } from "./training-event-service";
+import { getBlockEndCoveringDate } from "./client-blocks-service";
 import { rethrowIfAnyDateOccupied } from "./training-event-occupancy";
 import { getDateString } from "@/lib/date-helpers";
 import type { TrainingEventInsert } from "@/lib/database-helpers";
@@ -7,6 +8,13 @@ import type { TrainingEventInsert } from "@/lib/database-helpers";
 // The ordered program the date-walk maps onto calendar dates. One entry per
 // authored slot (training AND rest), referencing the placed training_sessions
 // row id.
+/** `date + n` days, as a YYYY-MM-DD string. */
+function addDays(date: string, n: number): string {
+  const d = new Date(date + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return getDateString(d);
+}
+
 export type ProgramSlot = {
   id: string;
   isRest: boolean;
@@ -97,6 +105,72 @@ export async function generateProgramEvents(params: {
   }
 
   return rows.length;
+}
+
+/**
+ * How far a NEW placement from `startDate` should run — the block's last day
+ * when a block covers that date, else the program's own authored length.
+ * Capped, either way, at the day before the next coexisting program starts.
+ *
+ * **A different question from `calculatePlacementEndDate` below**, and the two
+ * must not be merged. This one DECIDES a window for a placement that does not
+ * exist yet; that one DESCRIBES where an existing placement ends, from the rows
+ * it actually has. They agree for anything placed after this shipped, because
+ * the rows are cloned to fill exactly this window — and they deliberately
+ * disagree for a program placed before its block existed, or one whose block
+ * was re-dated afterwards, where the ROWS are the truth and a block edit is
+ * still allowed to write nothing.
+ *
+ * The block is not a maximum here: a block LONGER than the program stretches
+ * the window and the caller repeats the program to fill it, a block SHORTER
+ * truncates it. A placement on a day no block covers behaves exactly as it did
+ * before blocks bounded anything.
+ */
+export async function resolvePlacementWindowEnd(params: {
+  clientId: string;
+  slotCount: number;
+  startDate: string;
+}): Promise<string> {
+  const { clientId, slotCount, startDate } = params;
+
+  const blockEnd = await getBlockEndCoveringDate(clientId, startDate);
+  const end = blockEnd ?? addDays(startDate, Math.max(1, slotCount) - 1);
+
+  const nextPlanCap = await getNextPlanStartCap(clientId, startDate);
+  if (nextPlanCap && nextPlanCap < end) return nextPlanCap;
+  return end;
+}
+
+/**
+ * Repeat the authored program until it covers `days`, then cut it there.
+ *
+ * Cloning, never sharing: the caller gives every returned slot its OWN row, so a
+ * coach can make cycle three heavier than cycle one. Sharing rows would make one
+ * edit rewrite every cycle at once, which is the opposite of how a block is
+ * programmed.
+ *
+ * Each cycle's `weekIndex` is offset by the authored program's own week span, so
+ * `(weekIndex, orderIndex)` keeps climbing across cycles — that pair IS the
+ * date-walk's slot position and the ordering every placed-plan reader uses.
+ * Cycle 0 is returned with the authored coordinates untouched, so a program
+ * placed once is byte-identical to what placement produced before blocks bounded
+ * anything. A final partial cycle is cut mid-program: the block ends when it ends.
+ */
+export function expandProgramToWindow<T extends { weekIndex: number; orderIndex: number }>(
+  authored: T[],
+  days: number,
+): T[] {
+  if (authored.length === 0 || days <= 0) return [];
+
+  const weeksPerCycle = Math.max(...authored.map((s) => s.weekIndex)) + 1;
+
+  const expanded: T[] = [];
+  for (let i = 0; i < days; i += 1) {
+    const slot = authored[i % authored.length];
+    const cycle = Math.floor(i / authored.length);
+    expanded.push({ ...slot, weekIndex: slot.weekIndex + cycle * weeksPerCycle });
+  }
+  return expanded;
 }
 
 /**

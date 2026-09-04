@@ -21,10 +21,18 @@ vi.mock("./training-event-service", () => ({
   getNextPlanStartCap: vi.fn(),
 }));
 
+// The block covering the start date is now the placement window's length knob.
+// Defaulted to "no block" so every test written before that keeps the authored
+// length it asserts against.
+vi.mock("./client-blocks-service", () => ({
+  getBlockEndCoveringDate: vi.fn(),
+}));
+
 import { supabaseAdmin } from "./supabase-admin";
 import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
 import { getNextPlanStartCap } from "./training-event-service";
+import { getBlockEndCoveringDate } from "./client-blocks-service";
 import {
   placePlanOnCalendar,
   placeSessionOnCalendar,
@@ -37,6 +45,7 @@ const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetSavedPlanById = vi.mocked(getSavedPlanById);
 const mockCreateAtomic = vi.mocked(createTrainingPlanAtomic);
 const mockGetNextPlanStartCap = vi.mocked(getNextPlanStartCap);
+const mockGetBlockEnd = vi.mocked(getBlockEndCoveringDate);
 
 // Inline query mock helper
 function createMockQuery<T = unknown>(result: { data: T | null; error: { message: string } | null }) {
@@ -70,18 +79,38 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
   return mockQuery;
 }
 
-// A training_sessions insert mock that hands out a distinct cloned id per slot,
-// so multi-session / multi-week placements reference distinct sessions.
+// A training_sessions insert mock. The clone is BATCHED, so `insert` takes an
+// ARRAY of slot rows and the awaited result echoes each row's grid coordinate
+// beside a distinct cloned id — the service keys exercises on that coordinate
+// rather than on the returned row order.
 function makeSessionInsertQuery(ids: string[]) {
   let i = 0;
-  return {
+  let rows: Array<Record<string, unknown>> = [];
+  const query: Record<string, unknown> = {
     ...createMockQuery({ data: null, error: null }),
-    insert: vi.fn().mockReturnThis(),
-    select: vi.fn().mockReturnThis(),
-    single: vi.fn().mockImplementation(() =>
-      Promise.resolve({ data: { id: ids[i++] ?? `ts-${i}` }, error: null }),
-    ),
+    insert: vi.fn((chunk: Array<Record<string, unknown>>) => {
+      rows = chunk;
+      return query;
+    }),
+    select: vi.fn(() => query),
   };
+  Object.defineProperty(query, "then", {
+    value: (resolve: (v: unknown) => void) =>
+      Promise.resolve({
+        data: rows.map((row) => ({
+          id: ids[i++] ?? `ts-${i}`,
+          week_index: row.week_index,
+          order_index: row.order_index,
+        })),
+        error: null,
+      }).then(resolve),
+  });
+  return query as ReturnType<typeof createMockQuery> & { insert: ReturnType<typeof vi.fn> };
+}
+
+/** The slot rows a batched session insert was handed, flattened in order. */
+function insertedSlots(q: { insert: ReturnType<typeof vi.fn> }) {
+  return q.insert.mock.calls.flatMap((c) => c[0] as Array<Record<string, never>>);
 }
 
 // --- Test data factories ---
@@ -164,6 +193,9 @@ describe("library-placement-service", () => {
     vi.clearAllMocks();
     // Default: this is the last plan, so no next-plan cap shortens the window.
     mockGetNextPlanStartCap.mockResolvedValue(null);
+    // Default: no block covers the start date, so the window is the authored
+    // program's own length — the behaviour every test below was written against.
+    mockGetBlockEnd.mockResolvedValue(null);
   });
 
   // =========================================================================
@@ -208,17 +240,19 @@ describe("library-placement-service", () => {
         expect.objectContaining({ name: "PPL Program", savedPlanId: "sp-1", effectiveFrom: "2026-04-15" }),
       );
       // All 4 slots cloned (3 workouts + 1 rest); only 3 counted as created.
-      expect(sessionInsertQuery.insert).toHaveBeenCalledTimes(4);
+      expect(sessionInsertQuery.insert).toHaveBeenCalledTimes(1);
+      expect(insertedSlots(sessionInsertQuery)).toHaveLength(4);
       expect(result.sessionsCreated).toBe(3);
-      for (const call of sessionInsertQuery.insert.mock.calls) {
-        expect(call[0].day_of_week).toBeNull();
+      for (const row of insertedSlots(sessionInsertQuery)) {
+        expect(row.day_of_week).toBeNull();
       }
-      const restInsert = sessionInsertQuery.insert.mock.calls.find((c) => c[0].is_rest === true);
+      const restInsert = insertedSlots(sessionInsertQuery).find((r) => r.is_rest === true);
       expect(restInsert).toBeDefined();
-      expect(restInsert![0].name).toBe("Rest");
-      expect(sessionInsertQuery.insert.mock.calls.filter((c) => c[0].is_rest === false)).toHaveLength(3);
+      expect(restInsert!.name).toBe("Rest");
+      expect(insertedSlots(sessionInsertQuery).filter((r) => r.is_rest === false)).toHaveLength(3);
       // Only the 3 non-rest slots get exercises.
-      expect(exerciseInsertQuery.insert).toHaveBeenCalledTimes(3);
+      // One batched statement carrying all three slots' exercises.
+      expect(exerciseInsertQuery.insert).toHaveBeenCalledTimes(1);
       // Window = 4 slots = 4 days → Push, Pull, Legs (rest skipped) = 3 events.
       const events = eventUpsertQuery.upsert.mock.calls[0][0];
       expect(events).toHaveLength(3);
@@ -277,10 +311,10 @@ describe("library-placement-service", () => {
 
       await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
-      expect(sessionInsertQuery.insert.mock.calls[0][0].calorie_surplus_percentage).toBe(20);
-      expect(sessionInsertQuery.insert.mock.calls[1][0].calorie_surplus_percentage).toBe(10);
+      expect(insertedSlots(sessionInsertQuery)[0].calorie_surplus_percentage).toBe(20);
+      expect(insertedSlots(sessionInsertQuery)[1].calorie_surplus_percentage).toBe(10);
       // Rest slot surplus is nulled regardless of the source value.
-      expect(sessionInsertQuery.insert.mock.calls[2][0].calorie_surplus_percentage).toBeNull();
+      expect(insertedSlots(sessionInsertQuery)[2].calorie_surplus_percentage).toBeNull();
     });
 
     it("passes effectiveFrom + windowEnd to the atomic RPC, capped at the next plan's start", async () => {
@@ -516,8 +550,8 @@ describe("library-placement-service", () => {
       await placePlanOnCalendar({ savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15" });
 
       // Session inserts are ordered by (week_index, order_index).
-      expect(sessionInsertQuery.insert.mock.calls.map((c) => c[0].name)).toEqual(["A", "B", "C", "D"]);
-      expect(sessionInsertQuery.insert.mock.calls.map((c) => c[0].week_index)).toEqual([0, 0, 1, 1]);
+      expect(insertedSlots(sessionInsertQuery).map((r) => r.name)).toEqual(["A", "B", "C", "D"]);
+      expect(insertedSlots(sessionInsertQuery).map((r) => r.week_index)).toEqual([0, 0, 1, 1]);
       const events = eventUpsertQuery.upsert.mock.calls[0][0] as { training_session_id: string }[];
       expect(events.map((e) => e.training_session_id)).toEqual([
         "ts-a", "ts-b", "ts-c", "ts-d",
@@ -743,7 +777,7 @@ describe("library-placement-service", () => {
       expect(mockCreateAtomic).toHaveBeenCalledWith(expect.objectContaining({ savedPlanId: undefined }));
       expect(libraryQuery.delete).not.toHaveBeenCalled();
       expect(libraryQuery.insert).not.toHaveBeenCalled();
-      expect(sessionInsertQuery.insert).toHaveBeenCalledWith(
+      expect(insertedSlots(sessionInsertQuery)).toContainEqual(
         expect.objectContaining({ calorie_surplus_percentage: 15, is_rest: false }),
       );
       const eventRows = eventUpsertQuery.upsert.mock.calls[0][0];
@@ -835,5 +869,133 @@ describe("library-placement-service", () => {
         ),
       ).toBe(7);
     });
+  });
+});
+
+// ===========================================================================
+// The block is the placement's length knob (block-as-program, commit 1).
+// ===========================================================================
+
+describe("library-placement-service: the block bounds the placement", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetNextPlanStartCap.mockResolvedValue(null);
+    mockGetBlockEnd.mockResolvedValue(null);
+  });
+
+  /** A 3-slot program: two workouts and a rest day. */
+  function threeSlotPlan() {
+    return makeSavedPlan({
+      sessions: [
+        makeSession({ id: "s1", name: "Upper", orderIndex: 0, exercises: [makeExercise()] }),
+        makeSession({ id: "s2", name: "Lower", orderIndex: 1, exercises: [makeExercise()] }),
+        makeSession({ id: "s3", name: "Rest", orderIndex: 2, isRest: true, exercises: [] }),
+      ],
+    });
+  }
+
+  function wire(ids: string[]) {
+    const sessionInsertQuery = makeSessionInsertQuery(ids);
+    const exerciseInsertQuery = createMockQuery({ data: null, error: null });
+    const eventUpsertQuery = createMockQuery({ data: [], error: null });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "training_sessions") return sessionInsertQuery as never;
+      if (table === "training_exercises") return exerciseInsertQuery as never;
+      if (table === "training_events") return eventUpsertQuery as never;
+      return createMockQuery({ data: null, error: null }) as never;
+    });
+    return { sessionInsertQuery, exerciseInsertQuery, eventUpsertQuery };
+  }
+
+  it("repeats a short program to fill its block, cloning every cycle its own rows", async () => {
+    // 3-slot program in a 9-day block (2026-09-07 → 2026-09-15): three cycles.
+    mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    mockGetBlockEnd.mockResolvedValue("2026-09-15");
+    const { sessionInsertQuery, eventUpsertQuery } = wire(
+      Array.from({ length: 9 }, (_, i) => `ts-${i + 1}`),
+    );
+
+    const result = await placePlanOnCalendar({
+      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+    });
+
+    const slots = insertedSlots(sessionInsertQuery);
+    expect(slots).toHaveLength(9);
+    expect(slots.map((r) => r.name)).toEqual([
+      "Upper", "Lower", "Rest", "Upper", "Lower", "Rest", "Upper", "Lower", "Rest",
+    ]);
+    // CLONED, not shared: nine distinct rows, so cycle three can be progressed
+    // past cycle one. Sharing would make one edit rewrite every cycle.
+    expect(new Set(slots.map((r) => `${r.week_index}:${r.order_index}`)).size).toBe(9);
+    // Six workouts on the calendar; the three rest slots consume a day and emit
+    // nothing.
+    expect(result.eventsCreated).toBe(6);
+    expect(eventUpsertQuery.upsert.mock.calls[0][0]).toHaveLength(6);
+  });
+
+  it("cuts a program longer than its block at the block's last day", async () => {
+    // The same 3-slot program in a 2-day block: the third slot is never placed.
+    mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    mockGetBlockEnd.mockResolvedValue("2026-09-08");
+    const { sessionInsertQuery } = wire(["ts-1", "ts-2"]);
+
+    await placePlanOnCalendar({
+      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+    });
+
+    expect(insertedSlots(sessionInsertQuery).map((r) => r.name)).toEqual(["Upper", "Lower"]);
+  });
+
+  it("places one pass when no block covers the start date", async () => {
+    mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    const { sessionInsertQuery } = wire(["ts-1", "ts-2", "ts-3"]);
+
+    await placePlanOnCalendar({
+      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+    });
+
+    expect(insertedSlots(sessionInsertQuery)).toHaveLength(3);
+  });
+
+  it("records the PLACED length on the plan row, not the authored one", async () => {
+    // A 3-day program filling a 9-day block is a 2-week placement; the Overview
+    // chip derives its "Ended" date from this column and would otherwise
+    // contradict the calendar.
+    mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    mockGetBlockEnd.mockResolvedValue("2026-09-15");
+    wire(Array.from({ length: 9 }, (_, i) => `ts-${i + 1}`));
+
+    await placePlanOnCalendar({
+      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+    });
+
+    expect(mockCreateAtomic).toHaveBeenCalledWith(
+      expect.objectContaining({ programDurationWeeks: 2, windowEnd: "2026-09-15" }),
+    );
+  });
+
+  it("refuses a template carrying two slots at one position rather than mis-linking exercises", async () => {
+    // The exercise batch is keyed on (week_index, order_index); a duplicate
+    // would hand one row both slots' exercises and leave the other empty.
+    mockGetSavedPlanById.mockResolvedValue(
+      makeSavedPlan({
+        sessions: [
+          makeSession({ id: "d1", name: "One", orderIndex: 0, exercises: [makeExercise()] }),
+          makeSession({ id: "d2", name: "Two", orderIndex: 0, exercises: [makeExercise()] }),
+        ],
+      }),
+    );
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    wire(["ts-1", "ts-2"]);
+
+    await expect(
+      placePlanOnCalendar({
+        savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+      }),
+    ).rejects.toThrow("two sessions at the same position");
   });
 });
