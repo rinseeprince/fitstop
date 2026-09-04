@@ -3,7 +3,7 @@
 import { CheckCircle2, CircleDashed, XCircle, Trophy } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { CheckInWithDetails } from "@/types/check-in";
-import type { SessionStatus, SessionSummary } from "@/lib/check-in/adherence";
+import type { SessionStatus } from "@/lib/check-in/adherence";
 import { classifySession } from "@/lib/check-in/adherence";
 import { cn } from "@/lib/utils";
 import { useUnits } from "@/contexts/units-context";
@@ -16,8 +16,6 @@ import {
 
 type TrainingSectionProps = {
   checkIn: CheckInWithDetails;
-  // Shared training adherence so the panel header matches the hero card exactly.
-  adherence: SessionSummary;
 };
 
 const DAY_LABEL: Record<string, string> = {
@@ -37,7 +35,7 @@ const STATUS_META: Record<SessionStatus, { label: string; icon: LucideIcon; pill
   missed: { label: "Missed", icon: XCircle, pill: "bg-[rgba(13,148,136,0.04)] text-[#93b0b4]" },
 };
 
-export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) => {
+export const TrainingSection = ({ checkIn }: TrainingSectionProps) => {
   const { preference } = useUnits();
   const sessions = checkIn.sessionCompletions ?? [];
   const prHighlights = (checkIn.exerciseHighlights ?? []).filter(
@@ -52,17 +50,9 @@ export const TrainingSection = ({ checkIn, adherence }: TrainingSectionProps) =>
     // node, so the survivor takes the full row without the page having to know
     // which one rendered. `min-w-0` stops the mono numerals setting the basis.
     <div className="flex min-w-0 flex-1 flex-col">
-      {/* The completed count keeps its `prescribed > 0` condition, and it is a
-          number-bearing meta, so the rail's own MONO_META_CLASS is correct
-          (docs/newdesignsystem.md → Typography: "Metas that contain numbers"). */}
-      <SectionLabel
-        label="Training"
-        meta={
-          adherence.prescribed > 0
-            ? `${adherence.completed} of ${adherence.prescribed} completed`
-            : undefined
-        }
-      />
+      {/* No count on the rail: the KPI ribbon above states the week's
+          completed-over-prescribed figure once (owner, 2026-09-04). */}
+      <SectionLabel label="Training" />
       <div className="flex-1 rounded-[6px] bg-white p-5">
         {sessions.length > 0 && (
           <div className="flex flex-col gap-2">

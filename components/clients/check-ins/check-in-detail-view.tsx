@@ -144,7 +144,7 @@ export const CheckInDetailView = ({
               Both carry `flex-1`, so a lone survivor takes the whole row and
               this page never has to ask which of them rendered. */}
           <div className="flex flex-col gap-5 lg:flex-row">
-            <TrainingSection checkIn={data.checkIn} adherence={adherence} />
+            <TrainingSection checkIn={data.checkIn} />
 
             <NutritionSection
               dailyLogs={dailyLogs}

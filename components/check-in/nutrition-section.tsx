@@ -137,14 +137,11 @@ export const NutritionSection = ({
     // node, so the survivor takes the full row without the page having to know
     // which one rendered. `min-w-0` stops the mono numerals setting the basis.
     <div className="flex min-w-0 flex-1 flex-col">
-      {/* Coverage on the rail, adherence in the pill. How many days the client
-          logged food and how many of them landed on target are different
-          questions, and the pill had been carrying a coverage fallback only
-          because there was nowhere else to put it. */}
-      <SectionLabel
-        label="Nutrition"
-        meta={`${stats.daysLogged} of ${daysInPeriod} days logged`}
-      />
+      {/* No count on the rail (owner, 2026-09-04): the header's chip states
+          the week's logged days once, and the pill below states days on
+          target — coverage and adherence are different questions, and neither
+          slot carries the other's number. */}
+      <SectionLabel label="Nutrition" />
       <div className="flex-1 rounded-[6px] bg-white p-5">
         <div className="flex flex-col gap-4">
           {/* Calories */}

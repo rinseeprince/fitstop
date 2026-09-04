@@ -68,26 +68,27 @@ describe("the totals", () => {
 });
 
 describe("coverage vs adherence", () => {
-  it("puts days LOGGED on the rail and days ON TARGET in the pill", () => {
+  it("keeps days ON TARGET in the pill and states no coverage count on the rail", () => {
     // Two different questions: how much of the week the client recorded, and
-    // how much of what they recorded landed on target. Neither answers the
-    // other, so neither slot may carry the other's number.
+    // how much of what they recorded landed on target. The header's chip
+    // states the first once for the whole review; the rail carries no count
+    // (owner, 2026-09-04), so the pill's number is the card's only fraction.
     //
     // The figures are deliberately DIFFERENT here — one on target out of three
-    // logged. With the shared fixture's 3-and-3 both slots render the same
-    // string and the assertion passes whichever number each is wired to.
+    // logged — so a coverage figure leaking onto the rail cannot hide behind
+    // the pill's string.
     renderCard(7, { rail: [], onTarget: 1, loggedDays: 3, pct: 14 });
 
-    expect(screen.getByText("3 of 7 days logged")).toBeInTheDocument();
+    expect(screen.queryByText(/days logged/)).not.toBeInTheDocument();
     expect(screen.getByText(/1\/7 on target/)).toBeInTheDocument();
   });
 
-  it("still states coverage on a legacy row with no server figures", () => {
-    // `nutrition` null drops the pill's on-target half; the rail is then the
-    // only place the week's coverage is stated, and it must survive.
+  it("states no count anywhere on a legacy row with no server figures", () => {
+    // `nutrition` null drops the pill's on-target half, and the rail carries
+    // nothing, so the card shows its averages with no fraction at all.
     renderCard(7, null);
 
-    expect(screen.getByText("3 of 7 days logged")).toBeInTheDocument();
+    expect(screen.queryByText(/days logged/)).not.toBeInTheDocument();
     expect(screen.queryByText(/on target/)).not.toBeInTheDocument();
   });
 });

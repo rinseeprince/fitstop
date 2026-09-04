@@ -1240,9 +1240,7 @@ the SOT's "spacing does separation, not borders"; nothing animates in; names and
 like the rail. The header is the sidebar back-row grammar ("← Check-ins") over a mono meta line:
 the week, the submitted date, `N/M days logged` (days in the period with any client log — the
 derived definition in "Daily Logs", read as `periodAdherence.loggedDates` over
-`periodAdherence.dates`, so the fraction and the cells below it share one date list; the
-Nutrition rail's own count is days with food logged, a narrower question, so the two can
-legitimately differ; the chip is omitted on a legacy row whose period cannot be resolved) and
+`periodAdherence.dates`, so the fraction and the cells below it share one date list; the chip is omitted on a legacy row whose period cannot be resolved) and
 `N days since last check-in`. There is no prev/next between check-ins
 and no window keydown listener. Weight and body fat appear twice on purpose: the band answers
 "what changed since last time", the strip answers "where do they stand against the goal".
@@ -1367,8 +1365,7 @@ habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
 writes a row only when they act, and the old grid read `/habits/logs`. **Training
 is deliberately NOT on that wire**: this surface counts full AND partial
 completions through `summariseSessions`, while the Overview kernel counts full
-only. ONE derivation serves the whole surface — the KPI ribbon, the training
-section and the AI prompt — and `lib/check-in/adherence-ownership.test.ts` scans the
+only. ONE derivation serves the whole surface — the KPI ribbon and the AI prompt — and `lib/check-in/adherence-ownership.test.ts` scans the
 coach tree to keep it so, forbidding both a read of the stored
 `check_ins.workouts_completed` column (that column is the RN wire's, and the
 client's own surfaces read it) and a hand-rolled count over event statuses.
