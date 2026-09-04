@@ -269,6 +269,40 @@ describe("training-event-service", () => {
   // =========================================================================
 
   describe("cancelFutureEventsForPlan", () => {
+    // The nutrition cascade's `to`. This delete cancels the plan's ENTIRE
+    // forward ray, and the routes archive the plan first — so the horizon can no
+    // longer see it and the cascade has to be told how far the prescription
+    // reached, or every nutrition day past the horizon keeps a training surplus
+    // for a workout that no longer exists.
+    it("returns the furthest date it deleted", async () => {
+      const detachQuery = createMockQuery({ data: null, error: null });
+      const deleteQuery = createMockQuery({
+        // Deliberately unsorted: the max cannot be read off the last row.
+        data: [{ date: "2026-10-07" }, { date: "2026-12-16" }, { date: "2026-11-25" }],
+        error: null,
+      });
+      mockFrom
+        .mockReturnValueOnce(detachQuery as any)
+        .mockReturnValueOnce(deleteQuery as any);
+
+      const furthest = await cancelFutureEventsForPlan("plan-9", "2026-09-04");
+
+      expect(furthest).toBe("2026-12-16");
+      // Rides the DELETE itself — no second round trip, and it cannot disagree
+      // with what was actually removed.
+      expect(deleteQuery.select).toHaveBeenCalledWith("date");
+    });
+
+    it("returns null when it deleted nothing", async () => {
+      const detachQuery = createMockQuery({ data: null, error: null });
+      const deleteQuery = createMockQuery({ data: [], error: null });
+      mockFrom
+        .mockReturnValueOnce(detachQuery as any)
+        .mockReturnValueOnce(deleteQuery as any);
+
+      expect(await cancelFutureEventsForPlan("plan-10", "2026-09-04")).toBeNull();
+    });
+
     it("detaches logged future days from the plan before deleting the scheduled ones", async () => {
       const detachQuery = createMockQuery({ data: null, error: null });
       const deleteQuery = createMockQuery({ data: null, error: null });

@@ -13,6 +13,8 @@ import {
   versionCoversDate,
 } from "@/services/nutrition-plan-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
+import { getFurthestLiveProgramEnd } from "@/services/training-service";
+import { getFurthestBlockEnd } from "@/services/client-blocks-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import { captureApiError } from "@/lib/error-handler";
@@ -240,21 +242,66 @@ export async function generateNutritionEvents(
  *   (`getPlanTargetForDate` returns null for a missing row, and that null is
  *   snapshotted permanently into `nutrition_logs`).
  * - `from` — a floor; the DELETE and the regenerate derive from ONE computed
- *   range, `[from, from + 8 weeks]`. Days past the horizon keep their existing
- *   (possibly stale) rows; a later cascade sweeps them as today advances.
- *   Stale-but-present beats absent. (3abbfa5 also carried an explicit `to` so
- *   the plan-deletion routes could sweep past the horizon; that half is NOT
- *   re-landed — the stale-tail defect it closed is recorded in
- *   TECHNICAL-DEBT.md rather than fixed here.)
+ *   range, `[from, resolveNutritionHorizon(from)]`. That equality is
+ *   load-bearing: an unbounded delete paired with a bounded regenerate once
+ *   deleted a tail it never rebuilt.
+ * - `to` — an optional extension of that range's END, for a caller that has
+ *   just deleted training rows reaching further than the horizon. The plan-clear
+ *   routes are the case: they cancel a program's ENTIRE forward event ray, so
+ *   every nutrition day that carried one of those events has to be rebuilt or
+ *   it keeps a training surplus for a workout that no longer exists. It only
+ *   ever extends — `max(horizon, to)` — so it cannot shorten the range and
+ *   re-open the bug above.
  */
 export type NutritionRegenScope =
   | { kind: "dates"; dates: string[] }
-  | { kind: "from"; from: string };
+  | { kind: "from"; from: string; to?: string };
+
+/**
+ * How far forward a generation writes, resolved fresh on every call and stored
+ * nowhere.
+ *
+ * The coach's declared bound, in precedence order:
+ *   1. the furthest block that has not finished — a block IS the time-bound
+ *      program the coach sells, so its end is the answer whenever there is one;
+ *   2. else the furthest live training program's last day;
+ *   3. else the fixed window below, which is all a client with neither has.
+ *
+ * Past the bound there are deliberately no events: a client between programs
+ * reads as quiet, and the coach draws the next bound when they are ready. That
+ * is why this is precedence rather than a maximum — a block that never actually
+ * bounded anything would be decoration.
+ *
+ * Resolved per call and never cached, which is the point: a coach who sets the
+ * nutrition up before placing the program keeps the fixed window until the
+ * placement's own cascade runs, and the horizon stretches on its own then.
+ */
+async function resolveNutritionHorizon(
+  clientId: string,
+  anchor: string
+): Promise<string> {
+  const blockEnd = await getFurthestBlockEnd(clientId, anchor);
+  if (blockEnd) return blockEnd;
+
+  const programEnd = await getFurthestLiveProgramEnd(clientId, anchor);
+  if (programEnd) return programEnd;
+
+  return calculateNutritionEndDate(anchor);
+}
 
 /** The one place a scope becomes a concrete date list. */
-function resolveScopeDates(scope: NutritionRegenScope): string[] {
+async function resolveScopeDates(
+  clientId: string,
+  scope: NutritionRegenScope
+): Promise<string[]> {
+  // Narrow scopes name their own days and never look anything up — a move, a
+  // duplicate, an event delete, a surplus edit and the client's own week
+  // rearrangement stay exactly as cheap as they were.
   if (scope.kind === "dates") return scope.dates;
-  return expandDateRange(scope.from, calculateNutritionEndDate(scope.from));
+
+  const horizon = await resolveNutritionHorizon(clientId, scope.from);
+  const end = scope.to && scope.to > horizon ? scope.to : horizon;
+  return expandDateRange(scope.from, end);
 }
 
 /**
@@ -277,7 +324,7 @@ export async function regenerateFutureNutritionEvents(
   // Resolve the dates BEFORE any write. The old code deleted first and only
   // then hit its range guard — an early return after a delete would clear the
   // window without regenerating it, turning a no-op into a wipe.
-  const dates = resolveScopeDates(resolvedScope);
+  const dates = await resolveScopeDates(clientId, resolvedScope);
   if (dates.length === 0) return;
 
   // Fetch the version FIRST (window columns included, error surfaced — a
@@ -305,7 +352,7 @@ export async function regenerateFutureNutritionEvents(
   // A `dates` scope skips the delete entirely (see NutritionRegenScope). A
   // `from` scope deletes over exactly the clamped range it is about to
   // regenerate — the upper bound is load-bearing: an unbounded ray paired
-  // with the fixed 8-week regeneration below meant any cascade anchored
+  // with the bounded regeneration below meant any cascade anchored
   // EARLIER than the anchor that wrote the rows deleted a tail it never
   // rebuilt. CLIENT-scoped since 1b.2: rows inside this version's window may
   // still carry a PRIOR version's id (or NULL after a version delete), and a
@@ -370,7 +417,9 @@ export async function regenerateFutureNutritionEvents(
 
 // --- Calculate end date ---
 
-// Dense forward window for nutrition events: 8 weeks from the anchor date.
+// The FIXED window: 8 weeks from the anchor. The last step of
+// resolveNutritionHorizon, reached only by a client with neither a block nor
+// a live training program — for everyone else the coach's own bound wins.
 function calculateNutritionEndDate(today: string): string {
   const d = new Date(today + "T00:00:00");
   d.setDate(d.getDate() + 8 * 7); // 8 weeks
@@ -404,7 +453,7 @@ export async function cascadeNutritionAfterTrainingChange(
   scope: NutritionRegenScope,
   actionTag: string,
 ): Promise<void> {
-  const scopeDates = resolveScopeDates(scope);
+  const scopeDates = await resolveScopeDates(clientId, scope);
   if (scopeDates.length === 0) return;
   const orderedDates = [...scopeDates].sort();
   const rangeStart = orderedDates[0];

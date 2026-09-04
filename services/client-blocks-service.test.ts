@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  getFurthestBlockEnd,
   listBlocks,
   replaceBlockChain,
   deleteBlock,
@@ -33,6 +34,9 @@ function createMockQuery(result: MockResult) {
     update: vi.fn(chain),
     delete: vi.fn(chain),
     eq: vi.fn(chain),
+    is: vi.fn(chain),
+    gte: vi.fn(chain),
+    limit: vi.fn(chain),
     order: vi.fn(chain),
     maybeSingle: vi.fn(() => Promise.resolve(result)),
     then: (resolve: (value: MockResult) => void) =>
@@ -594,5 +598,75 @@ describe("setBlockArchived", () => {
     await expect(
       setBlockArchived(CLIENT_ID, TODAY, "zz", true)
     ).rejects.toBeInstanceOf(UnknownBlockIdError);
+  });
+});
+
+// ===========================================================================
+// getFurthestBlockEnd — the first term of the nutrition generation horizon.
+//
+// A block is the time-bound program the coach sells, so its last day is how far
+// the nutrition generates. Every assertion here is on the QUERY, because the
+// filtering happens in Postgres: the mock returns whatever it is handed, so a
+// dropped clause is only visible as a missing call.
+// ===========================================================================
+
+describe("getFurthestBlockEnd", () => {
+  const ANCHOR = "2026-09-04";
+
+  it("returns the furthest end among the client's unfinished blocks", async () => {
+    // Two live blocks: the nearer ends 2026-10-02, the further 2026-12-18. The
+    // DESC order + limit 1 is what picks the second, so assert the ordering as
+    // well as the value it produces.
+    const [query] = queueResults({ data: { ends_on: "2026-12-18" }, error: null });
+
+    expect(await getFurthestBlockEnd(CLIENT_ID, ANCHOR)).toBe("2026-12-18");
+
+    expect(query.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
+    expect(query.order).toHaveBeenCalledWith("ends_on", { ascending: false });
+    expect(query.limit).toHaveBeenCalledWith(1);
+  });
+
+  it("ignores a block that has already finished by the anchor", async () => {
+    const [query] = queueResults({ data: null, error: null });
+
+    expect(await getFurthestBlockEnd(CLIENT_ID, ANCHOR)).toBeNull();
+
+    // Without this bound a block that ended on 2026-08-14 would set the horizon
+    // to a date behind the day generation starts, and the range would be empty.
+    expect(query.gte).toHaveBeenCalledWith("ends_on", ANCHOR);
+  });
+
+  it("counts a block that has not started yet — no predicate on starts_on", async () => {
+    // The case the rule exists for: a coach setting the next phase up on the 4th
+    // while the current one still runs, for a block that opens on 2026-09-21 and
+    // closes on 2026-11-30. It extends the horizon the moment they save it.
+    const [query] = queueResults({ data: { ends_on: "2026-11-30" }, error: null });
+
+    expect(await getFurthestBlockEnd(CLIENT_ID, ANCHOR)).toBe("2026-11-30");
+
+    expect(query.gte).not.toHaveBeenCalledWith("starts_on", expect.anything());
+    expect(query.eq).not.toHaveBeenCalledWith("starts_on", expect.anything());
+  });
+
+  it("excludes an archived block", async () => {
+    const [query] = queueResults({ data: null, error: null });
+
+    await getFurthestBlockEnd(CLIENT_ID, ANCHOR);
+
+    expect(query.is).toHaveBeenCalledWith("archived_at", null);
+  });
+
+  it("returns null when the client has no blocks at all", async () => {
+    queueResults({ data: null, error: null });
+
+    expect(await getFurthestBlockEnd(CLIENT_ID, ANCHOR)).toBeNull();
+  });
+
+  it("degrades to null on a read error rather than throwing", async () => {
+    queueResults({ data: null, error: { message: "boom" } });
+
+    // The caller falls through to the training program and then to the fixed
+    // window. Throwing here would fail a coach's placement after it committed.
+    await expect(getFurthestBlockEnd(CLIENT_ID, ANCHOR)).resolves.toBeNull();
   });
 });

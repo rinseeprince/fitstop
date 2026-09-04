@@ -130,16 +130,16 @@ export async function DELETE(
     const today = await getClientTodayString(clientId);
 
     await archiveTrainingPlan(planId);
-    await cancelFutureEventsForPlan(planId, today);
+    const clearedThrough = await cancelFutureEventsForPlan(planId, today);
 
     // Cascade: nutrition burn estimates depend on training events. Open-ended
-    // forward, bounded at the 8-week horizon — days past it keep stale surplus
-    // rows the cancelled plan no longer justifies (recorded in
-    // TECHNICAL-DEBT.md → nutrition stale tail; 3abbfa5's `to` half re-lands
-    // there, not here).
+    // forward to the client's own horizon, EXTENDED to the last day this clear
+    // deleted an event on: the plan is archived by the line above, so the
+    // horizon no longer sees it, and every day it prescribed past the horizon
+    // would otherwise keep a surplus for a workout that is gone.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      { kind: "from", from: today },
+      { kind: "from", from: today, to: clearedThrough ?? undefined },
       "cascade-nutrition-events-from-clear-plan"
     );
 

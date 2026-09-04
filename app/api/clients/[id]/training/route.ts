@@ -139,17 +139,25 @@ export async function DELETE(
       .is("deleted_at", null)
       .neq("status", "archived");
 
+    // The furthest day ANY of these plans had an event on — every one of them is
+    // archived by the loop, so the nutrition horizon can no longer see them, and
+    // the cascade below has to be told how far their prescription reached or it
+    // leaves a stale training surplus on every day past the horizon.
+    let clearedThrough: string | null = null;
     for (const p of plans ?? []) {
       await archiveTrainingPlan(p.id);
-      await cancelFutureEventsForPlan(p.id, today);
+      const cleared = await cancelFutureEventsForPlan(p.id, today);
+      if (cleared !== null && (clearedThrough === null || cleared > clearedThrough)) {
+        clearedThrough = cleared;
+      }
     }
 
     // Cascade once: nutrition burn estimates depend on training events.
-    // Open-ended forward, bounded at the 8-week horizon — see the stale-tail
-    // entry in TECHNICAL-DEBT.md for the days past it.
+    // Open-ended forward to the client's own horizon, extended to cover every
+    // day the loop above just cleared.
     await cascadeNutritionAfterTrainingChange(
       clientId,
-      { kind: "from", from: today },
+      { kind: "from", from: today, to: clearedThrough ?? undefined },
       "cascade-nutrition-events-from-clear-all-training"
     );
 

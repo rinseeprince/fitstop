@@ -135,12 +135,24 @@ export async function generateTrainingEvents(
  * and the scheduled rows are still there for the retry the coach's error
  * prompts. The reverse order risks the one outcome this exists to prevent.
  *
+ * Returns the LAST date it deleted, or null if it deleted nothing. The plan-clear
+ * routes hand that to the nutrition cascade as its scope's `to`: this delete
+ * cancels the plan's ENTIRE forward ray, which reaches past the nutrition
+ * horizon whenever the program is longer than the bound the horizon resolves to
+ * — and after a clear there is no live program left to raise that bound. Without
+ * it, every nutrition day beyond the horizon keeps a training surplus for a
+ * workout that no longer exists, and nothing ever revisits it (recorded in
+ * TECHNICAL-DEBT.md → nutrition cascade, stale tail).
+ *
+ * `.select("date")` rides the DELETE itself, so the max costs no extra round
+ * trip and cannot disagree with what was actually removed.
+ *
  * @param effectiveFrom - Date from which to clear (defaults to today).
  */
 export async function cancelFutureEventsForPlan(
   planId: string,
   effectiveFrom?: string
-): Promise<void> {
+): Promise<string | null> {
   // UTC fallback only: no clientId in scope to resolve a client-local today,
   // and the live callers pass an explicit (client-local) date.
   const fromDate = effectiveFrom ?? getTodayDateString();
@@ -154,14 +166,20 @@ export async function cancelFutureEventsForPlan(
 
   if (detachError) throw detachError;
 
-  const { error: deleteError } = await supabaseAdmin
+  const { data: deleted, error: deleteError } = await supabaseAdmin
     .from("training_events")
     .delete()
     .eq("training_plan_id", planId)
     .gte("date", fromDate)
-    .eq("status", "scheduled");
+    .eq("status", "scheduled")
+    .select("date");
 
   if (deleteError) throw deleteError;
+
+  return (deleted ?? []).reduce<string | null>(
+    (furthest, row) => (furthest === null || row.date > furthest ? row.date : furthest),
+    null,
+  );
 }
 
 // --- Regenerate future events ---

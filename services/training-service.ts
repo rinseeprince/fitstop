@@ -5,6 +5,7 @@ import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
 import { getClientTodayString } from "@/services/today-service";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { coversDate } from "./training-plan-window";
+import { calculatePlacementEndDate } from "./program-event-walk";
 
 // Re-export moved functions so existing imports continue to work
 export { getSessionWithExercises } from "./training-session-service";
@@ -212,6 +213,80 @@ export const getNextFutureTrainingPlan = async (
     frequencyPerWeek: data.frequency_per_week,
     programDurationWeeks: data.program_duration_weeks,
   };
+};
+
+/**
+ * The last day the client's training is prescribed to, or null when nothing
+ * live reaches `onOrAfter` — the second term of the nutrition generation
+ * horizon (see `services/nutrition-event-service.ts`), used when the client
+ * has no block declaring a bound.
+ *
+ * **Not `effective_until`.** That column is NULL on every placed plan by
+ * construction — `create_training_plan_atomic` omits it and says so in its own
+ * body, and `TECHNICAL-DEBT.md` records that it is not a substitute for a
+ * program's end. A live probe of dev found 382 live plans and zero end dates.
+ * A program's end is `effective_from + its authored day count - 1`, through the
+ * same `calculatePlacementEndDate` the client's app and the amendment surface
+ * use, so no two surfaces disagree about the day a program ends.
+ *
+ * **Only the last-starting plan is measured, and that IS the furthest end.**
+ * Placement caps a plan at the day before the next one begins, so
+ * `capped_end(k) < start(k+1) <= capped_end(k+1)`: ends increase with start
+ * dates and the maximum is always the last-starting plan's, which nothing caps.
+ *
+ * Same two exclusions as `getNextFutureTrainingPlan` and
+ * `getTrainingPlansOverlapping`, for the same reason — the copy that forgot
+ * `status <> 'archived'` re-surfaced retired plans. And NO date predicate: a
+ * program queued to start next week must extend the horizon exactly like one
+ * already running, while one that has already finished simply fails the
+ * `onOrAfter` test below.
+ *
+ * Degrades to null on a read error (the `getNextFutureTrainingPlan` posture) —
+ * the caller falls back to the fixed window rather than failing a coach's
+ * write after it has committed.
+ */
+export const getFurthestLiveProgramEnd = async (
+  clientId: string,
+  onOrAfter: string
+): Promise<string | null> => {
+  const { data: plan, error } = await supabaseAdmin
+    .from("training_plans")
+    .select("id, effective_from")
+    .eq("client_id", clientId)
+    .is("deleted_at", null)
+    .neq("status", "archived")
+    .order("effective_from", { ascending: false })
+    // Same tiebreak as getTrainingPlanForDate / getNextFutureTrainingPlan: of
+    // two programs placed for the same day, the newest is the one that governs,
+    // so its length is the one that counts.
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to read the client's furthest live program:", error);
+    return null;
+  }
+  if (!plan) return null;
+
+  const { count, error: slotError } = await supabaseAdmin
+    .from("training_sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("plan_id", plan.id)
+    .eq("is_active", true);
+
+  if (slotError) {
+    console.error("Failed to count a program's day-slots:", slotError);
+    return null;
+  }
+  if (!count) return null;
+
+  const end = await calculatePlacementEndDate({
+    clientId,
+    slotCount: count,
+    startDate: plan.effective_from,
+  });
+  return end >= onOrAfter ? end : null;
 };
 
 export type TrainingPlanWindowSummary = {

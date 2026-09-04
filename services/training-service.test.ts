@@ -11,11 +11,19 @@ vi.mock("./today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
 
+// Only the next-plan cap is stubbed, so calculatePlacementEndDate — the shared
+// definition of the day a program ends — runs for real underneath the horizon
+// read below.
+vi.mock("./training-event-service", () => ({
+  getNextPlanStartCap: vi.fn().mockResolvedValue(null),
+}));
+
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import {
   createTrainingPlanAtomic,
   getActiveTrainingPlanId,
+  getFurthestLiveProgramEnd,
   getNextFutureTrainingPlan,
   getTrainingPlanIdForDate,
 } from "./training-service";
@@ -194,6 +202,140 @@ describe("date-driven plan resolution", () => {
     );
 
     expect(await getNextFutureTrainingPlan("client-1", "2026-06-10")).toBeNull();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+});
+
+// ===========================================================================
+// getFurthestLiveProgramEnd — the SECOND term of the nutrition generation
+// horizon, used when the client has no block declaring a bound.
+//
+// The end is derived from the program's authored day-count, NOT from
+// `effective_until`: nothing has ever written that column (the placement RPC
+// omits it deliberately), so reading it would leave the horizon frozen at the
+// fixed window for every client alive.
+// ===========================================================================
+
+describe("getFurthestLiveProgramEnd", () => {
+  const ANCHOR = "2026-09-04";
+
+  function planQuery(result: { data?: unknown; error: unknown }) {
+    return {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      neq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      lte: vi.fn().mockReturnThis(),
+      gt: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue(result),
+    };
+  }
+
+  function slotCountQuery(result: { count: number | null; error: unknown }) {
+    const q: Record<string, unknown> = {};
+    Object.assign(q, {
+      select: vi.fn(() => q),
+      eq: vi.fn(() => q),
+      then: (resolve: (v: typeof result) => void) =>
+        Promise.resolve(result).then(resolve),
+    });
+    return q as ReturnType<typeof planQuery> & { then: unknown };
+  }
+
+  /** The plan read, then the slot count — in call order. */
+  function wire(
+    plan: { data?: unknown; error: unknown },
+    slots: { count: number | null; error: unknown },
+  ) {
+    const planQ = planQuery(plan);
+    const slotQ = slotCountQuery(slots);
+    let call = 0;
+    vi.mocked(supabaseAdmin.from).mockImplementation((() => {
+      call += 1;
+      return call === 1 ? planQ : slotQ;
+    }) as never);
+    return { planQ, slotQ };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("derives the end from the authored day-count, never from effective_until", async () => {
+    // 36 authored days from 2026-09-07 runs to 2026-10-12 inclusive.
+    wire({ data: { id: "plan-36", effective_from: "2026-09-07" }, error: null }, {
+      count: 36,
+      error: null,
+    });
+
+    expect(await getFurthestLiveProgramEnd("client-1", ANCHOR)).toBe("2026-10-12");
+  });
+
+  it("counts a program queued to start later — no date predicate on the read", async () => {
+    // Placed on the 4th to begin on the 19th, 84 days long: it must stretch the
+    // horizon to 2026-12-11 exactly as a running program would.
+    const { planQ } = wire(
+      { data: { id: "plan-84", effective_from: "2026-09-19" }, error: null },
+      { count: 84, error: null },
+    );
+
+    expect(await getFurthestLiveProgramEnd("client-1", ANCHOR)).toBe("2026-12-11");
+
+    // A `covers today` filter of any shape would drop it entirely.
+    expect(planQ.lte).not.toHaveBeenCalled();
+    expect(planQ.gt).not.toHaveBeenCalled();
+  });
+
+  it("excludes soft-deleted and archived programs", async () => {
+    // The copy that forgot the archived clause re-surfaced retired plans as the
+    // client's current program; the horizon must not inherit that.
+    const { planQ } = wire({ data: null, error: null }, { count: null, error: null });
+
+    await getFurthestLiveProgramEnd("client-1", ANCHOR);
+
+    expect(planQ.is).toHaveBeenCalledWith("deleted_at", null);
+    expect(planQ.neq).toHaveBeenCalledWith("status", "archived");
+  });
+
+  it("measures the LAST-STARTING program, which is provably the furthest end", async () => {
+    // Placement caps a program at the day before the next one begins, so ends
+    // increase with start dates: whichever starts last ends last.
+    const { planQ } = wire(
+      { data: { id: "plan-late", effective_from: "2026-09-14" }, error: null },
+      { count: 21, error: null },
+    );
+
+    expect(await getFurthestLiveProgramEnd("client-1", ANCHOR)).toBe("2026-10-04");
+
+    expect(planQ.order).toHaveBeenCalledWith("effective_from", { ascending: false });
+    expect(planQ.limit).toHaveBeenCalledWith(1);
+  });
+
+  it("returns null when the furthest program has already finished", async () => {
+    // 14 days from 2026-08-05 ended on 2026-08-18, behind the anchor — it must
+    // not drag the horizon backwards past the day generation starts.
+    wire({ data: { id: "plan-done", effective_from: "2026-08-05" }, error: null }, {
+      count: 14,
+      error: null,
+    });
+
+    expect(await getFurthestLiveProgramEnd("client-1", ANCHOR)).toBeNull();
+  });
+
+  it("returns null when the client has no live program", async () => {
+    wire({ data: null, error: null }, { count: null, error: null });
+
+    expect(await getFurthestLiveProgramEnd("client-1", ANCHOR)).toBeNull();
+  });
+
+  it("degrades to null on a read error rather than throwing", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    wire({ data: null, error: { message: "boom" } }, { count: null, error: null });
+
+    await expect(getFurthestLiveProgramEnd("client-1", ANCHOR)).resolves.toBeNull();
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
   });

@@ -65,7 +65,7 @@ export async function recordPlanSaveNote(params: {
   // describes the CHANGE, and 57 identical markers would be noise.
   //
   // A zero-row match is NOT an error. A note dated past the dense event horizon
-  // (8 weeks) has no event row to stamp, and the durable record below must
+  // has no event row to stamp, and the durable record below must
   // still land — the calendar marker is the optional half of this pair.
   const { error: stampError } = await supabaseAdmin
     .from("nutrition_events")

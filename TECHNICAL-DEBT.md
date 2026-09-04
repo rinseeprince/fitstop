@@ -115,7 +115,7 @@ Do not confuse it with `client_intake.primary_goal`, which is a live discriminat
 Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; **both counts re-derived** — the doc's "eight occurrences across five files" was stale).
 
 - **The `is_modified` protection is a read-then-filter across a two-round-trip gap.** `regenerateFutureNutritionEvents` reads the protected days (`services/nutrition-event-service.ts:200`) and writes the upsert (`:226`) in separate round trips. A coach edit landing in that gap is clobbered. Only a transaction or an RPC closes it.
-- **The 8-week nutrition horizon is duplicated with no shared constant.** **Two** occurrences today, not the eight the plan doc claimed: `services/nutrition-event-service.ts:376` and `services/training-event-service.ts:143`. Both use **server-local `Date` arithmetic** despite `addDaysToDateString` being UTC-safe, which is the part that actually bites. A smaller finding than recorded, but a real one.
+- **The 8-week nutrition window uses server-local `Date` arithmetic** despite `addDaysToDateString` being UTC-safe (`calculateNutritionEndDate`, `services/nutrition-event-service.ts`). Since commit 8cc it is only the LAST step of `resolveNutritionHorizon` — reached by a client with neither a block nor a live training program — so its blast radius shrank, but the arithmetic is still the part that bites. The "duplicated across two files" half of this entry is stale: `training-event-service.ts` computes no 8-week window, it only mentions one in a comment that is itself out of date (`calculatePlacementEndDate` has no duration fallback).
 - **Two columns on `nutrition_plans` are inert.** `name` is never written at all (no `p_name` in the migration-144 RPC, and no service writes it). `regeneration_reason` **is** written (`nutrition-plan-service.ts:156` via `p_regeneration_reason`) but never read — so it is write-only rather than dead, a different thing.
 
 ---
@@ -199,20 +199,18 @@ doc's §8 STATUS blocks; **this file is the durable record of the defects**, bec
 plan doc is deleted when its workstream lands (its own §1 rule) and a defect filed only
 there survives solely in git history.
 
-- **Stale training-surplus tail after a plan deletion.** The two plan-clear routes
-  (`DELETE /api/clients/[id]/training`, `DELETE …/training/[planId]`) cancel the plan's
-  **entire forward event ray**, then cascade `{kind:"from"}`, which rebuilds only
-  `[today, today+56]`. Nutrition rows exist out to `lastAnchor+56`, so days past the
-  cascade horizon keep a `calorie_surplus_percentage` from training events that no longer
-  exist — and after a full plan clear there may be no further training writes to sweep
-  them, so "nothing would ever revisit it" is exact. **Closed by `3abbfa5`, re-opened by
-  the `d58120c` revert, deliberately not re-closed by the rescoped re-land** (owner
-  decision 2026-08-11: narrow paths only). Re-land recipe, already worked out in
-  `3abbfa5`: `cancelFutureEventsForPlan` returns the max deleted date via
-  `.delete().select("date")` (same round trip); the two routes thread it as an explicit
-  `to`; `NutritionRegenScope`'s `from` arm regains `to?` and `resolveScopeDates` extends
-  past the horizon when `to` exceeds it. `training_plans.effective_until` is NOT a
-  substitute — it is NULL on placed plans.
+- ~~**Stale training-surplus tail after a plan deletion.**~~ **CLOSED 2026-09-04** (the
+  nutrition generation horizon, MEASUREMENT-LOG-PLAN commit 8cc). The recipe `3abbfa5`
+  worked out is now shipped: `cancelFutureEventsForPlan` returns the max deleted date
+  from `.delete().select("date")` (same round trip), the two plan-clear routes thread it
+  as the scope's `to`, and `resolveScopeDates` extends the range past the horizon when
+  `to` exceeds it — never shortening it. It had to be closed rather than deferred again,
+  because the horizon that commit introduced lets nutrition rows reach a whole program's
+  length: a clear archives every plan BEFORE it cascades, so the horizon collapses to the
+  fixed 8-week window while the rows reach much further, which would have made the tail
+  longer than it had ever been. `training_plans.effective_until` is still NOT a program's
+  end — it is NULL on every placed plan, which is why the horizon derives that end from
+  the plan's active day-row count instead.
 - **The cascade swallows PER-VERSION regeneration failures** (partially resolved by
   S1B.2). The lookup half is FIXED: the version query's error is destructured, logged,
   and Sentried, so a failed read can no longer impersonate "client has no plan" — the

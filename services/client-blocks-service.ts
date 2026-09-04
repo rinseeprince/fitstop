@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import { captureApiError } from "@/lib/error-handler";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import {
   computeBlockChainFromEnds,
@@ -81,6 +82,51 @@ export const listBlocks = async (clientId: string): Promise<ClientBlock[]> => {
     throw new Error(`Failed to fetch blocks: ${error.message}`);
   }
   return (data ?? []).map(mapBlockRow);
+};
+
+/**
+ * The last day of the client's furthest block that has not finished by
+ * `onOrAfter`, or null when they have none — the coach's declared time bound,
+ * and the first term of the nutrition generation horizon (see
+ * `services/nutrition-event-service.ts`).
+ *
+ * NO predicate on `starts_on`, deliberately: a block set up for next week is
+ * exactly the case this exists for — a coach planning the next phase while the
+ * current one still has days left extends the horizon the moment they save it,
+ * not when it begins.
+ *
+ * `archived_at IS NULL` is redundant today — only an elapsed block can be
+ * archived (setBlockArchived), and an elapsed block's end is behind every
+ * anchor a from-scope can carry, so the `ends_on` bound already excludes it.
+ * It is written anyway so this read does not silently depend on a rule
+ * enforced in another function.
+ *
+ * Degrades to null on a read error rather than throwing: the caller falls
+ * through to the training program and then to the fixed window, which is the
+ * behaviour that existed before the horizon did. A generation that quietly
+ * covers less is self-healing on the next one; a coach's placement failing
+ * outright after it has already committed is not.
+ */
+export const getFurthestBlockEnd = async (
+  clientId: string,
+  onOrAfter: string
+): Promise<string | null> => {
+  const { data, error } = await supabaseAdmin
+    .from("client_phases")
+    .select("ends_on")
+    .eq("client_id", clientId)
+    .is("archived_at", null)
+    .gte("ends_on", onOrAfter)
+    .order("ends_on", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to read the client's furthest block end:", error);
+    captureApiError(error, { action: "furthest-block-end", clientId });
+    return null;
+  }
+  return data?.ends_on ?? null;
 };
 
 const isCurrent = (block: ClientBlock, today: string): boolean =>
