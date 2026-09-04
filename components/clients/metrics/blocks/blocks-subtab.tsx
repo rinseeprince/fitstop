@@ -18,7 +18,6 @@ import { FOCUS_RING } from "@/components/clients/training/program-builder/builde
 import { useToast } from "@/hooks/use-toast";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
-import { computeDeleteShift } from "@/lib/blocks/block-chain";
 import { derivePace, type ClientBlockView } from "@/lib/blocks/block-derivations";
 import {
   deleteBlockRequest,
@@ -32,12 +31,7 @@ import { blockColor } from "./block-colors";
 import { deriveBlockWeightFacts } from "@/lib/blocks/block-weight";
 import { BlockCard } from "./block-card";
 import { BlockForm, type BlockFormValues } from "./block-form";
-import {
-  buildAppendPayload,
-  buildEditPayload,
-  computeEditShift,
-} from "./block-chain-payload";
-import { buildDeleteSentence, movedBlocksClause } from "./delete-block-sentence";
+import { buildAppendPayload, buildEditPayload } from "./block-chain-payload";
 import { DeleteBlockDialog } from "./delete-block-dialog";
 import type { MetricSummary } from "../metrics-view-types";
 
@@ -95,27 +89,12 @@ export function BlocksSubtab({
     [facts]
   );
 
-  // Previewed with the SAME pure helper and the SAME client-tz today the
-  // DELETE route executes with, so the approved sentence and the executed
-  // shift cannot differ.
-  const deleteSentence = useMemo(() => {
-    if (!deleteTarget || !clientToday) return null;
-    const outcome = computeDeleteShift(blocks, deleteTarget.id, clientToday);
-    if (!outcome || outcome.kind === "elapsed") return null;
-    return buildDeleteSentence(blocks, deleteTarget.id, outcome);
-  }, [blocks, deleteTarget, clientToday]);
-
   const handleDeleteConfirm = async (block: ClientBlockView) => {
     setIsDeleting(true);
     try {
-      const result = await deleteBlockRequest(clientId, block.id);
+      await deleteBlockRequest(clientId, block.id);
       void invalidateBlocks(clientId);
-      toast({
-        title:
-          result.mode === "truncated"
-            ? `"${block.name}" now ends yesterday`
-            : `"${block.name}" deleted`,
-      });
+      toast({ title: `"${block.name}" deleted` });
       setDeleteTarget(null);
     } catch (error) {
       toast({
@@ -133,16 +112,14 @@ export function BlocksSubtab({
     try {
       await putBlockChain(
         clientId,
-        buildAppendPayload(
-          blocks,
-          {
-            name: values.name,
-            endsOn: values.endsOn as string, // add mode always requires an end
-            focus: values.focus,
-            targetWeightKg: values.targetWeightKg,
-          },
-          values.startsOn
-        )
+        buildAppendPayload(blocks, {
+          name: values.name,
+          // Add mode always requires both dates — a block owns its own window.
+          startsOn: values.startsOn as string,
+          endsOn: values.endsOn as string,
+          focus: values.focus,
+          targetWeightKg: values.targetWeightKg,
+        })
       );
       void invalidateBlocks(clientId);
       toast({ title: `"${values.name}" added` });
@@ -342,21 +319,15 @@ export function BlocksSubtab({
                   mode={{
                     kind: "edit",
                     block,
-                    // The anchor is the coach's to move only while NOTHING is
-                    // lived: the chain's first block, still future.
-                    startEditable:
-                      blocks[0]?.id === block.id && block.state === "future",
+                    // Every block owns its own window, so a future block's start
+                    // is always the coach's to move. A block already under way
+                    // keeps its start — moving it would re-label lived days.
+                    startEditable: block.state === "future",
                     minEnd: block.state === "current" ? clientToday : null,
                   }}
                   minStart={clientToday}
                   otherBlocksWeeks={
                     journeyWeeks - (block.archivedAt ? 0 : block.weeks)
-                  }
-                  shiftPreview={(endsOn) =>
-                    movedBlocksClause(
-                      computeEditShift(blocks, block.id, endsOn),
-                      "move"
-                    )
                   }
                   onSubmit={(values) => handleEdit(block, values)}
                   onCancel={() => setEditingId(null)}
@@ -469,7 +440,6 @@ export function BlocksSubtab({
 
       <DeleteBlockDialog
         block={deleteTarget}
-        sentence={deleteSentence}
         isDeleting={isDeleting}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={(block) => void handleDeleteConfirm(block)}

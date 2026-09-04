@@ -48,7 +48,7 @@ export async function DELETE(
       targetTable: "client_phases",
       targetId: blockId,
       clientId,
-      metadata: { mode: result.mode, shiftedCount: result.changes.length },
+      metadata: { blockCount: result.blocks.length },
       request,
     });
 
@@ -56,8 +56,6 @@ export async function DELETE(
       {
         success: true,
         data: {
-          mode: result.mode,
-          changes: result.changes,
           blocks: decorateBlocks(result.blocks, clientToday),
           clientToday,
         },

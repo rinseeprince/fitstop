@@ -36,27 +36,18 @@ export interface ClientBlock {
 export interface BlockChainEntryInput {
   id?: string;
   name: string;
+  startsOn?: string;
   endsOn?: string;
   focus?: string | null;
   targetWeightKg?: number | null;
 }
 
-/** The PUT body: the whole chain. Ends in, starts out — the caller never
- *  sends date pairs, so overlaps and gaps stay unexpressible (workstream
- *  invariant 3's mechanism, with the duration unit now a date). */
+/** The PUT body: every block the client has, each carrying its OWN window.
+ *  Gaps between blocks are a real state — the client is between programs and
+ *  nothing is planned; overlaps are refused, in the service and by a database
+ *  constraint (migration 164). */
 export interface ReplaceBlockChainInput {
-  startsOn: string;
   blocks: BlockChainEntryInput[];
-}
-
-/** A date movement produced by a delete. Computed pre-confirm by the UI and
- *  returned realized by the DELETE route, through the same pure helper
- *  (`lib/blocks/block-chain.ts`), so the two can never disagree. */
-export interface BlockDateChange {
-  id: string;
-  name: string;
-  previous: { startsOn: string; endsOn: string };
-  next: { startsOn: string; endsOn: string };
 }
 
 // ---------------------------------------------------------------------------

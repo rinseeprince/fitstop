@@ -21,11 +21,12 @@ const dateString = z
   });
 
 /**
- * One block in the PUT chain. `endsOn` is optional HERE because pinned
- * elapsed rows omit it (their dates come from storage); the service 422s a
- * current/future row without it, rejects an end before its derived start,
- * and caps the window length (BLOCK_WEEKS_MAX weeks in days) — those checks
- * need the derived start, which only the service's walk knows.
+ * One block in the PUT payload. Both dates are optional HERE because pinned
+ * elapsed rows omit them (their dates come from storage); the service 422s a
+ * current/future row missing either, rejects an end before its start, caps the
+ * window length (BLOCK_WEEKS_MAX weeks in days), refuses a new block starting
+ * in the past, and refuses any overlap — all of which need the client's stored
+ * rows and their today, which only the service has.
  * `targetWeightKg` is canonical kilograms on the wire (CONVENTIONS §20) — the
  * form converts from the viewer's unit before sending; bounds describe
  * storage. Explicit null clears; omitted means null for a new row and must
@@ -34,6 +35,7 @@ const dateString = z
 const blockEntrySchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(BLOCK_NAME_MAX),
+  startsOn: dateString.optional(),
   endsOn: dateString.optional(),
   focus: z
     .string()
@@ -50,10 +52,8 @@ const blockEntrySchema = z.object({
     .optional(),
 });
 
-/** The whole chain — durations in, dates out; the caller never sends date
- *  pairs (workstream invariant 3). */
+/** Every block the client has, each carrying its own window. */
 export const replaceBlockChainSchema = z.object({
-  startsOn: dateString,
   blocks: z.array(blockEntrySchema).min(1).max(BLOCKS_PER_CLIENT_MAX),
 });
 

@@ -112,10 +112,9 @@ describe("replaceBlockChain", () => {
     );
 
     await replaceBlockChain(CLIENT_ID, TODAY, {
-      startsOn: "2026-08-11",
       blocks: [
-        { name: "Build", endsOn: "2026-09-07" },
-        { name: "Cut", endsOn: "2026-10-19", targetWeightKg: 85 },
+        { name: "Build", startsOn: "2026-08-11", endsOn: "2026-09-07" },
+        { name: "Cut", startsOn: "2026-09-08", endsOn: "2026-10-19", targetWeightKg: 85 },
       ],
     });
 
@@ -158,10 +157,9 @@ describe("replaceBlockChain", () => {
     );
 
     await replaceBlockChain(CLIENT_ID, TODAY, {
-      startsOn: "2026-07-06",
       blocks: [
-        { id: "a", name: "Block a", endsOn: "2026-08-16" },
-        { name: "Peak", endsOn: "2026-08-30" },
+        { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
+        { name: "Peak", startsOn: "2026-08-17", endsOn: "2026-08-30" },
       ],
     });
 
@@ -195,10 +193,9 @@ describe("replaceBlockChain", () => {
     );
 
     await replaceBlockChain(CLIENT_ID, TODAY, {
-      startsOn: "2026-06-01",
       blocks: [
         { id: "e", name: "Renamed", focus: "looking back", targetWeightKg: 90 },
-        { id: "a", name: "Block a", endsOn: "2026-08-16" },
+        { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
       ],
     });
 
@@ -222,10 +219,9 @@ describe("replaceBlockChain", () => {
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-06-01",
         blocks: [
           { id: "e", name: "Block e", endsOn: "2026-07-06" },
-          { id: "a", name: "Block a", endsOn: "2026-08-16" },
+          { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
         ],
       })
     ).rejects.toBeInstanceOf(ElapsedBlockImmutableError);
@@ -239,10 +235,9 @@ describe("replaceBlockChain", () => {
     );
 
     await replaceBlockChain(CLIENT_ID, TODAY, {
-      startsOn: "2026-06-01",
       blocks: [
         { ...elapsedEcho },
-        { id: "a", name: "Block a", endsOn: "2026-08-16" },
+        { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
       ],
     });
 
@@ -255,27 +250,32 @@ describe("replaceBlockChain", () => {
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-06-01",
         blocks: [
-          { id: "a", name: "Block a", endsOn: "2026-08-16" },
+          { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
           { ...elapsedEcho },
         ],
       })
     ).rejects.toBeInstanceOf(ElapsedBlockImmutableError);
   });
 
-  it("rejects moving the journey start while past blocks exist", async () => {
-    queueResults({ data: [ELAPSED, CURRENT], error: null });
+  it("lets a block sit apart from the elapsed one before it — a gap is a real state", async () => {
+    // ELAPSED ends 2026-07-05 and the current block used to have to open on the
+    // 6th. It may now open later: the client was between programs and nothing
+    // was planned for those days.
+    queueResults(
+      { data: [ELAPSED, CURRENT], error: null },
+      { error: null }, // upsert
+      { data: [], error: null } // re-read
+    );
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-06-08",
         blocks: [
           { ...elapsedEcho },
-          { id: "a", name: "Block a", endsOn: "2026-08-16" },
+          { id: "a", name: "Block a", startsOn: "2026-07-20", endsOn: "2026-08-16" },
         ],
       })
-    ).rejects.toBeInstanceOf(BlockPayloadError);
+    ).resolves.toEqual([]);
   });
 
   it("rejects a payload that omits an existing non-elapsed block (DELETE is the removal path)", async () => {
@@ -283,7 +283,6 @@ describe("replaceBlockChain", () => {
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-06-01",
         blocks: [{ ...elapsedEcho }],
       })
     ).rejects.toBeInstanceOf(BlockPayloadError);
@@ -294,9 +293,8 @@ describe("replaceBlockChain", () => {
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-07-06",
         blocks: [
-          { id: "a", name: "Block a", endsOn: "2026-08-16" },
+          { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
           { id: "forged", name: "X", endsOn: "2026-08-30" },
         ],
       })
@@ -308,7 +306,6 @@ describe("replaceBlockChain", () => {
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-07-06",
         blocks: [{ id: "a", name: "Block a" }],
       })
     ).rejects.toBeInstanceOf(BlockPayloadError);
@@ -320,8 +317,7 @@ describe("replaceBlockChain", () => {
     // In its final week on TODAY; ending it 2026-07-19 puts it wholly past.
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-07-06",
-        blocks: [{ id: "a", name: "Block a", endsOn: "2026-07-19" }],
+        blocks: [{ id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-07-19" }],
       })
     ).rejects.toBeInstanceOf(BlockWindowError);
   });
@@ -331,20 +327,18 @@ describe("replaceBlockChain", () => {
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-08-20",
-        blocks: [{ id: "a", name: "Block a", endsOn: "2026-09-30" }],
+        blocks: [{ id: "a", name: "Block a", startsOn: "2026-08-24", endsOn: "2026-09-30" }],
       })
     ).rejects.toBeInstanceOf(BlockWindowError);
   });
 
-  it("window floor: a future block cannot recompute wholly into the past", async () => {
+  it("window floor: a future block cannot be moved wholly into the past", async () => {
     const future = row("f", "2026-08-20", "2026-09-16");
     queueResults({ data: [future], error: null });
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-05-01",
-        blocks: [{ id: "f", name: "Block f", endsOn: "2026-05-28" }],
+        blocks: [{ id: "f", name: "Block f", startsOn: "2026-05-01", endsOn: "2026-05-28" }],
       })
     ).rejects.toBeInstanceOf(BlockWindowError);
   });
@@ -361,8 +355,7 @@ describe("replaceBlockChain", () => {
         // Anchor moved a week earlier, same end kept: the window becomes
         // 2026-06-29..2026-08-16 and still contains today — legal
         // ("we actually started earlier").
-        startsOn: "2026-06-29",
-        blocks: [{ id: "a", name: "Block a", endsOn: "2026-08-16" }],
+        blocks: [{ id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" }],
       })
     ).resolves.toEqual([]);
   });
@@ -379,22 +372,19 @@ describe("replaceBlockChain", () => {
       replaceBlockChain(CLIENT_ID, TODAY, {
         // 2026-08-04..2026-08-31 covers today: a stored future block may
         // become current — only wholly-past is forbidden.
-        startsOn: "2026-08-04",
-        blocks: [{ id: "f", name: "Block f", endsOn: "2026-08-31" }],
+        blocks: [{ id: "f", name: "Block f", startsOn: "2026-08-04", endsOn: "2026-08-31" }],
       })
     ).resolves.toEqual([]);
   });
 
-  it("rejects an end date before the block's DERIVED start", async () => {
+  it("rejects an end date before the block's own start", async () => {
     queueResults({ data: [CURRENT], error: null });
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-07-06",
         blocks: [
-          { id: "a", name: "Block a", endsOn: "2026-08-16" },
-          // Derived start is 2026-08-17; ending 2026-08-10 inverts the window.
-          { name: "Peak", endsOn: "2026-08-10" },
+          { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
+          { name: "Peak", startsOn: "2026-08-17", endsOn: "2026-08-10" },
         ],
       })
     ).rejects.toBeInstanceOf(BlockWindowError);
@@ -405,9 +395,8 @@ describe("replaceBlockChain", () => {
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-08-11",
         // 365 inclusive days — one past the 52-week ceiling.
-        blocks: [{ name: "Endless", endsOn: "2027-08-10" }],
+        blocks: [{ name: "Endless", startsOn: "2026-08-11", endsOn: "2027-08-10" }],
       })
     ).rejects.toBeInstanceOf(BlockPayloadError);
   });
@@ -421,14 +410,73 @@ describe("replaceBlockChain", () => {
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-08-11",
         // 364 inclusive days = exactly 52 weeks.
-        blocks: [{ name: "Year block", endsOn: "2027-08-09" }],
+        blocks: [{ name: "Year block", startsOn: "2026-08-11", endsOn: "2027-08-09" }],
       })
     ).resolves.toEqual([]);
   });
 
-  it("accepts new id-less rows anywhere, including fully past (history backfill)", async () => {
+  it("refuses a block backed onto an ELAPSED one", async () => {
+    // The overlap check spans the whole set, elapsed rows included. ELAPSED runs
+    // to 2026-07-05; pulling the current block's start back to 2026-06-20 still
+    // covers today, so only the overlap rule stops it.
+    queueResults({ data: [ELAPSED, CURRENT], error: null });
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        blocks: [
+          { ...elapsedEcho },
+          { id: "a", name: "Block a", startsOn: "2026-06-20", endsOn: "2026-08-16" },
+        ],
+      })
+    ).rejects.toThrow('overlaps "Block e"');
+  });
+
+  it("rejects an elapsed block's START change, not only its end", async () => {
+    // The write would ignore it (elapsed rows are written from storage), so
+    // without this the coach is told nothing and believes the move landed.
+    queueResults({ data: [ELAPSED, CURRENT], error: null });
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        blocks: [
+          { ...elapsedEcho, startsOn: "2026-05-04" },
+          { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
+        ],
+      })
+    ).rejects.toBeInstanceOf(ElapsedBlockImmutableError);
+  });
+
+  it("refuses a NEW block that opens in the past", async () => {
+    // A past-dated block generates nothing — placement and the nutrition save
+    // both refuse a past date — so it would be a label over days it could never
+    // have prescribed. (This closes the old history-backfill affordance, which
+    // no surface exposed.)
+    queueResults({ data: [], error: null });
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        blocks: [{ name: "Old build", startsOn: "2026-06-08", endsOn: "2026-07-05" }],
+      })
+    ).rejects.toBeInstanceOf(BlockWindowError);
+  });
+
+  it("refuses two blocks that share a day, naming both", async () => {
+    // "The block covering this date" decides the training placement window and
+    // the nutrition horizon; with two answers it resolves arbitrarily.
+    queueResults({ data: [], error: null });
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        blocks: [
+          { name: "Build", startsOn: "2026-08-11", endsOn: "2026-09-21" },
+          { name: "Peak", startsOn: "2026-09-14", endsOn: "2026-10-12" },
+        ],
+      })
+    ).rejects.toThrow('"Peak" overlaps "Build"');
+  });
+
+  it("accepts two blocks with a gap between them", async () => {
     queueResults(
       { data: [], error: null },
       { error: null }, // insert
@@ -437,10 +485,9 @@ describe("replaceBlockChain", () => {
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
-        startsOn: "2026-06-01",
         blocks: [
-          { name: "Old build", endsOn: "2026-07-05" }, // fully past
-          { name: "Cut", endsOn: "2026-08-16" },
+          { name: "Build", startsOn: "2026-08-11", endsOn: "2026-09-07" },
+          { name: "Peak", startsOn: "2026-09-28", endsOn: "2026-10-25" },
         ],
       })
     ).resolves.toEqual([]);
@@ -449,9 +496,9 @@ describe("replaceBlockChain", () => {
 
 describe("deleteBlock", () => {
   it("404-shape: unknown block id throws UnknownBlockIdError", async () => {
-    queueResults({ data: [CURRENT], error: null });
+    queueResults({ data: [ELAPSED, CURRENT], error: null });
 
-    await expect(deleteBlock(CLIENT_ID, TODAY, "zz")).rejects.toBeInstanceOf(
+    await expect(deleteBlock(CLIENT_ID, TODAY, "nope")).rejects.toBeInstanceOf(
       UnknownBlockIdError
     );
   });
@@ -464,82 +511,41 @@ describe("deleteBlock", () => {
     );
   });
 
-  it("truncates the current block in ONE upsert statement — no delete issued", async () => {
-    const following = row("b", "2026-08-17", "2026-09-13");
-    const [, upsertQuery] = queueResults(
-      { data: [CURRENT, following], error: null },
-      { error: null }, // the single upsert
-      { data: [], error: null } // re-read
-    );
-
-    const result = await deleteBlock(CLIENT_ID, TODAY, "a");
-
-    expect(result.mode).toBe("truncated");
-    expect(upsertQuery.delete).not.toHaveBeenCalled();
-    expect(upsertQuery.upsert).toHaveBeenCalledTimes(1);
-    const [rows, options] = upsertQuery.upsert.mock.calls[0];
-    expect(options).toEqual({ onConflict: "id" });
-    expect(rows).toEqual([
-      expect.objectContaining({
-        id: "a",
-        client_id: CLIENT_ID,
-        starts_on: "2026-07-06",
-        ends_on: "2026-08-10", // yesterday
-      }),
-      expect.objectContaining({
-        id: "b",
-        client_id: CLIENT_ID,
-        starts_on: TODAY, // "Cut 2 starts today"
-        ends_on: "2026-09-07",
-      }),
-    ]);
-    for (const rewritten of rows) {
-      expect(rewritten).not.toHaveProperty("created_at");
-    }
-    expect(result.changes.map((c) => c.id)).toEqual(["a", "b"]);
-  });
-
-  it("removes a future block delete-first, then shifts the suffix", async () => {
-    const b = row("b", "2026-08-17", "2026-09-13");
-    const c = row("c", "2026-09-14", "2026-10-11");
-    const [, deleteQuery, upsertQuery] = queueResults(
-      { data: [CURRENT, b, c], error: null },
-      { error: null }, // delete
-      { error: null }, // upsert shifted suffix
-      { data: [], error: null } // re-read
-    );
-
-    const result = await deleteBlock(CLIENT_ID, TODAY, "b");
-
-    expect(result.mode).toBe("removed");
-    expect(deleteQuery.delete).toHaveBeenCalledTimes(1);
-    expect(deleteQuery.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
-    expect(deleteQuery.eq).toHaveBeenCalledWith("id", "b");
-    expect(upsertQuery.upsert).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({
-          id: "c",
-          starts_on: "2026-08-17",
-          ends_on: "2026-09-13",
-        }),
-      ],
-      { onConflict: "id" }
-    );
-  });
-
-  it("removes a day-one current block instead of truncating it", async () => {
-    const dayOne = row("d", TODAY, "2026-09-21");
+  it("removes the row and moves NOTHING else", async () => {
+    // A block owns its own window, so there is no chain to re-anchor: the row
+    // goes and every other block stays exactly where the coach put it. The gap
+    // it leaves is a real state — nothing is planned for those days.
+    const future = row("f", "2026-08-17", "2026-09-13");
     const [, deleteQuery] = queueResults(
-      { data: [dayOne], error: null },
+      { data: [ELAPSED, CURRENT, future], error: null }, // stored read
       { error: null }, // delete
-      { data: [], error: null } // re-read
+      { data: [ELAPSED, CURRENT], error: null } // re-read
     );
 
-    const result = await deleteBlock(CLIENT_ID, TODAY, "d");
+    const result = await deleteBlock(CLIENT_ID, TODAY, "f");
 
-    expect(result.mode).toBe("removed");
-    expect(deleteQuery.delete).toHaveBeenCalledTimes(1);
-    expect(result.changes).toEqual([]);
+    expect(deleteQuery.delete).toHaveBeenCalled();
+    expect(deleteQuery.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
+    expect(deleteQuery.eq).toHaveBeenCalledWith("id", "f");
+    // No second statement: nothing is shifted, truncated or re-anchored.
+    expect(deleteQuery.upsert).not.toHaveBeenCalled();
+    expect(result.blocks.map((b) => b.id)).toEqual(["e", "a"]);
+  });
+
+  it("removes the block in progress outright rather than truncating it", async () => {
+    // With no chain to keep contiguous there is nothing truncation would
+    // preserve; the days it covered simply belong to no block, which is the
+    // same state as any other gap.
+    const [, deleteQuery] = queueResults(
+      { data: [ELAPSED, CURRENT], error: null },
+      { error: null },
+      { data: [ELAPSED], error: null }
+    );
+
+    await deleteBlock(CLIENT_ID, TODAY, "a");
+
+    expect(deleteQuery.delete).toHaveBeenCalled();
+    expect(deleteQuery.upsert).not.toHaveBeenCalled();
   });
 });
 

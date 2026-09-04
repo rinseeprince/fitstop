@@ -85,12 +85,16 @@ const FUTURE_BLOCK = {
 };
 
 const VALID_PUT_BODY = {
-  startsOn: "2026-08-11",
   blocks: [
     // Payload ids must be UUID-shaped (the schema pins the format the stored
-    // ids actually have).
-    { id: "3f2c8a4e-9d1b-4f6a-8e2d-1a2b3c4d5e6f", name: "Build", endsOn: "2026-09-07" },
-    { name: "Cut", endsOn: "2026-10-19", targetWeightKg: 85 },
+    // ids actually have). Each block carries its OWN window (migration 164).
+    {
+      id: "3f2c8a4e-9d1b-4f6a-8e2d-1a2b3c4d5e6f",
+      name: "Build",
+      startsOn: "2026-08-11",
+      endsOn: "2026-09-07",
+    },
+    { name: "Cut", startsOn: "2026-09-08", endsOn: "2026-10-19", targetWeightKg: 85 },
   ],
 };
 
@@ -172,10 +176,10 @@ describe("/api/clients/[id]/blocks", () => {
 
     it("400s invalid payloads before the service runs", async () => {
       for (const body of [
-        { startsOn: "2026-13-99", blocks: [{ name: "X", endsOn: "2026-09-07" }] }, // fake start date
-        { startsOn: "2026-08-11", blocks: [] }, // empty chain
-        { startsOn: "2026-08-11", blocks: [{ name: "", endsOn: "2026-09-07" }] }, // no name
-        { startsOn: "2026-08-11", blocks: [{ name: "X", endsOn: "2026-13-99" }] }, // fake end date
+        { blocks: [{ name: "X", startsOn: "2026-13-99", endsOn: "2026-09-07" }] }, // fake start date
+        { blocks: [] }, // no blocks
+        { blocks: [{ name: "", startsOn: "2026-08-11", endsOn: "2026-09-07" }] }, // no name
+        { blocks: [{ name: "X", startsOn: "2026-08-11", endsOn: "2026-13-99" }] }, // fake end date
       ]) {
         const response = await PUT(createMockRequest("PUT", body), mockParams);
         expect(response.status).toBe(400);
@@ -199,7 +203,11 @@ describe("/api/clients/[id]/blocks", () => {
       expect(replaceBlockChain).toHaveBeenCalledWith(
         "client-1",
         TODAY,
-        expect.objectContaining({ startsOn: "2026-08-11" })
+        expect.objectContaining({
+          blocks: expect.arrayContaining([
+            expect.objectContaining({ name: "Build", startsOn: "2026-08-11" }),
+          ]),
+        })
       );
       expect(payload.data.blocks).toHaveLength(2);
       expect(recordAuditEvent).toHaveBeenCalledWith(

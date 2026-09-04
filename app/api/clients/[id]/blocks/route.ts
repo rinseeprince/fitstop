@@ -117,10 +117,7 @@ export async function PUT(
       action: AUDIT_ACTIONS.BLOCK_CHAIN_UPDATE,
       targetTable: "client_phases",
       clientId,
-      metadata: {
-        blockCount: blocks.length,
-        startsOn: validation.data.startsOn,
-      },
+      metadata: { blockCount: blocks.length },
       request,
     });
 

@@ -71,8 +71,9 @@ type SchemaOptions = {
   /** The current block's end floor (the client's today) — the window floor
    *  expressed as validation instead of a server 422. */
   minEnd: string | null;
-  /** The anchor's floor (the client's today) — the journey can't start in
-   *  the past. Belt behind the input's `min`, which only greys the picker. */
+  /** The start floor (the client's today) — a new block can't open in the
+   *  past, because a past-dated block generates nothing. Belt behind the
+   *  input's `min`, which only greys the picker. */
   minStart: string | null;
 };
 
@@ -187,15 +188,12 @@ export function BlockForm({
 
   const editing = mode.kind === "edit" ? mode.block : null;
   const isElapsedEdit = editing?.state === "past";
-  const needsStartField =
-    mode.kind === "add"
-      ? mode.appendAfterEndsOn === null
-      : mode.startEditable;
-  const fixedStart = needsStartField
-    ? null
-    : mode.kind === "add"
-      ? addDaysToDateString(mode.appendAfterEndsOn as string, 1)
-      : (editing as ClientBlockView).startsOn;
+  // A block owns its own window (migration 164), so the coach picks its start
+  // every time they can: always on an add, and on an edit while the block has
+  // not begun. A block already under way keeps its start — moving it would
+  // re-label days the client has lived — and an elapsed one is pinned history.
+  const needsStartField = mode.kind === "add" || mode.startEditable;
+  const fixedStart = needsStartField ? null : (editing as ClientBlockView).startsOn;
   const minEnd = mode.kind === "edit" ? mode.minEnd : null;
 
   const weightInput = useCanonicalInput(
@@ -225,8 +223,16 @@ export function BlockForm({
     resolver: zodResolver(schema),
     defaultValues: {
       // Seed from the client's today (their tz), not the coach's device day.
+      // Seeded, not derived: an add defaults to the day after the block before
+      // it so the common "next block follows this one" is still one click, and
+      // the coach can move it anywhere from there — including leaving a gap.
       startsOn: needsStartField
-        ? (editing?.startsOn ?? minStart ?? getTodayDateString())
+        ? (editing?.startsOn ??
+          (mode.kind === "add" && mode.appendAfterEndsOn
+            ? addDaysToDateString(mode.appendAfterEndsOn, 1)
+            : null) ??
+          minStart ??
+          getTodayDateString())
         : undefined,
       name: editing?.name ?? "",
       // Adds seed a 4-week block so the live line reads immediately.

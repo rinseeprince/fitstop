@@ -12,18 +12,19 @@ import { Button } from "@/components/ui/button";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 
 // Destructive confirm per the design system's recipe (the delete-event-dialog
-// silhouette): styled Dialog — never AlertDialog — danger thumb, ONE
-// plain-sans sentence naming the consequence (built by delete-block-sentence
-// from the same pure helper the route executes), ghost Cancel + danger-
-// OUTLINE CTA repeating the verb. There is no filled destructive button in
-// this system.
+// silhouette): styled Dialog — never AlertDialog — danger thumb, ghost Cancel +
+// danger-OUTLINE CTA repeating the verb. There is no filled destructive button
+// in this system.
+//
+// No consequence sentence: a block owns its own window (migration 164), so
+// deleting one leaves a gap and moves nothing else. Its training and nutrition
+// events are left alone — clearing those is a separate, explicit act.
 
 const DANGER_CTA =
   "border border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]";
 
 type DeleteBlockDialogProps = {
   block: ClientBlockView | null; // null = closed
-  sentence: string | null;
   isDeleting: boolean;
   onCancel: () => void;
   onConfirm: (block: ClientBlockView) => void;
@@ -31,7 +32,6 @@ type DeleteBlockDialogProps = {
 
 export function DeleteBlockDialog({
   block,
-  sentence,
   isDeleting,
   onCancel,
   onConfirm,
@@ -56,7 +56,6 @@ export function DeleteBlockDialog({
             </DialogTitle>
           </div>
         </DialogHeader>
-        {sentence && <p className="text-sm text-[#5a7d82]">{sentence}</p>}
         <DialogFooter>
           <Button variant="ghost" onClick={onCancel} disabled={isDeleting}>
             Cancel

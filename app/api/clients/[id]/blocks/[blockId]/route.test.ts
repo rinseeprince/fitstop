@@ -67,14 +67,6 @@ const REMAINING_BLOCK = {
   archivedAt: null,
 };
 
-const CHANGES = [
-  {
-    id: "a",
-    name: "Build",
-    previous: { startsOn: "2026-08-01", endsOn: "2026-09-11" },
-    next: { startsOn: "2026-08-01", endsOn: "2026-08-10" },
-  },
-];
 
 function createMockRequest() {
   return new NextRequest(
@@ -105,20 +97,18 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
     expect(deleteBlock).not.toHaveBeenCalled();
   });
 
-  it("deletes with the client's today and returns mode + realized changes + fresh chain", async () => {
-    vi.mocked(deleteBlock).mockResolvedValue({
-      mode: "truncated",
-      changes: CHANGES,
-      blocks: [REMAINING_BLOCK],
-    });
+  it("deletes with the client's today and returns the fresh chain", async () => {
+    // No mode and no realized changes on the wire: a block owns its own window,
+    // so deleting one moves nothing else and there is no consequence to report.
+    vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
 
     const response = await DELETE(createMockRequest(), mockParams);
     const payload = await response.json();
 
     expect(response.status).toBe(200);
     expect(deleteBlock).toHaveBeenCalledWith("client-1", TODAY, "block-b");
-    expect(payload.data.mode).toBe("truncated");
-    expect(payload.data.changes).toEqual(CHANGES);
+    expect(payload.data.mode).toBeUndefined();
+    expect(payload.data.changes).toBeUndefined();
     expect(payload.data.clientToday).toBe(TODAY);
     expect(payload.data.blocks[0]).toEqual(
       expect.objectContaining({ id: "a", state: "past", weeks: 2 })
@@ -129,7 +119,7 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
         targetTable: "client_phases",
         targetId: "block-b",
         clientId: "client-1",
-        metadata: { mode: "truncated", shiftedCount: 1 },
+        metadata: { blockCount: 1 },
       })
     );
   });

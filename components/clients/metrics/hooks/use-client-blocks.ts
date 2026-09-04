@@ -5,7 +5,6 @@ import useSWR, { useSWRConfig } from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import type {
-  BlockDateChange,
   BlockFacts,
   ReplaceBlockChainInput,
 } from "@/types/client-blocks";
@@ -40,8 +39,6 @@ type BlockFactsResponse = {
 type DeleteBlockResponse = {
   success: boolean;
   data: {
-    mode: "removed" | "truncated";
-    changes: BlockDateChange[];
     blocks: ClientBlockView[];
     clientToday: string;
   };
