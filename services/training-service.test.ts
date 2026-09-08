@@ -152,7 +152,7 @@ describe("date-driven plan resolution", () => {
     expect(q.lte).toHaveBeenCalledWith("effective_from", "2026-06-10");
   });
 
-  // The regression this function exists to prevent: "Delete future sessions"
+  // The regression this function exists to prevent: "Delete training plan"
   // archives every plan but leaves its future effective_from intact, so a lookup
   // without the archived exclusion re-surfaced a retired program as the client's
   // current one — while the Overview, which had the exclusion, said "No plan".

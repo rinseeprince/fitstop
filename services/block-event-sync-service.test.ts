@@ -11,7 +11,8 @@ vi.mock("./nutrition-event-service", () => ({
   cascadeNutritionAfterTrainingChange: vi.fn(),
   regenerateFutureNutritionEvents: vi.fn(),
 }));
-vi.mock("./nutrition-plan-service", () => ({ getNutritionPlanIdForDate: vi.fn() }));
+vi.mock("./nutrition-plan-service", () => ({ getOpenNutritionPlan: vi.fn() }));
+vi.mock("./event-deletion-floor", () => ({ resolveEventDeletionFloor: vi.fn() }));
 vi.mock("./nutrition-plan-orchestrator", () => ({
   orchestrateNutritionPlanCreation: vi.fn(),
 }));
@@ -19,11 +20,14 @@ vi.mock("./nutrition-plan-orchestrator", () => ({
 import { supabaseAdmin } from "./supabase-admin";
 import { generateProgramEvents } from "./program-event-walk";
 import { regenerateFutureNutritionEvents } from "./nutrition-event-service";
-import { getNutritionPlanIdForDate } from "./nutrition-plan-service";
+import { getOpenNutritionPlan } from "./nutrition-plan-service";
+import { resolveEventDeletionFloor } from "./event-deletion-floor";
+import { orchestrateNutritionPlanCreation } from "./nutrition-plan-orchestrator";
 import {
   clearScheduledEvents,
   extendTrainingToBlockEnd,
   fillNutritionAcrossBlock,
+  regenerateNutritionForBlock,
 } from "./block-event-sync-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -43,7 +47,11 @@ function query<T>(result: { data: T | null; error: unknown; }) {
   return q as Record<string, ReturnType<typeof vi.fn>>;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Default: the client has not touched today, so removals may start on it.
+  vi.mocked(resolveEventDeletionFloor).mockResolvedValue(TODAY);
+});
 
 describe("clearScheduledEvents", () => {
   it("removes scheduled days on both tracks and deactivates the slots behind them", async () => {
@@ -72,7 +80,7 @@ describe("clearScheduledEvents", () => {
     expect(result).toEqual({ trainingCleared: 1, nutritionCleared: 1 });
   });
 
-  it("floors at the client's today so the past is never cleared", async () => {
+  it("floors at the SHARED deletion floor so the past is never cleared", async () => {
     const training = query({ data: [], error: null });
     const nutrition = query({ data: [], error: null });
     let call = 0;
@@ -82,7 +90,25 @@ describe("clearScheduledEvents", () => {
       clientId: "c1", clientToday: TODAY, from: "2026-07-13", to: "2026-10-26",
     });
 
+    expect(resolveEventDeletionFloor).toHaveBeenCalledWith("c1", TODAY);
     expect(training.gte).toHaveBeenCalledWith("date", TODAY);
+  });
+
+  it("spares today entirely when the floor says the client has touched it", async () => {
+    // Never its own arithmetic: the floor is the one answer, and a clear that
+    // reached today after they logged would empty a day they are living in.
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-09-05");
+    const training = query({ data: [], error: null });
+    const nutrition = query({ data: [], error: null });
+    let call = 0;
+    mockFrom.mockImplementation((() => (call += 1) === 1 ? training : nutrition) as never);
+
+    await clearScheduledEvents({
+      clientId: "c1", clientToday: TODAY, from: "2026-08-17", to: "2026-11-09",
+    });
+
+    expect(training.gte).toHaveBeenCalledWith("date", "2026-09-05");
+    expect(nutrition.gte).toHaveBeenCalledWith("date", "2026-09-05");
   });
 
   it("does nothing when the range has already gone by", async () => {
@@ -199,7 +225,7 @@ describe("extendTrainingToBlockEnd", () => {
 
 describe("fillNutritionAcrossBlock", () => {
   it("regenerates from the block's start when it is still ahead", async () => {
-    vi.mocked(getNutritionPlanIdForDate).mockResolvedValue("v1");
+    vi.mocked(getOpenNutritionPlan).mockResolvedValue({ id: "v1" } as never);
 
     const result = await fillNutritionAcrossBlock({
       clientId: "c1", clientToday: TODAY,
@@ -214,7 +240,7 @@ describe("fillNutritionAcrossBlock", () => {
   });
 
   it("floors at the client's today for a block already under way", async () => {
-    vi.mocked(getNutritionPlanIdForDate).mockResolvedValue("v2");
+    vi.mocked(getOpenNutritionPlan).mockResolvedValue({ id: "v2" } as never);
 
     const result = await fillNutritionAcrossBlock({
       clientId: "c1", clientToday: TODAY,
@@ -224,8 +250,8 @@ describe("fillNutritionAcrossBlock", () => {
     expect(result).toEqual({ from: TODAY });
   });
 
-  it("does nothing when no version covers the days", async () => {
-    vi.mocked(getNutritionPlanIdForDate).mockResolvedValue(null);
+  it("does nothing when the client has no open version at all", async () => {
+    vi.mocked(getOpenNutritionPlan).mockResolvedValue(null);
 
     expect(
       await fillNutritionAcrossBlock({
@@ -234,5 +260,81 @@ describe("fillNutritionAcrossBlock", () => {
       })
     ).toBeNull();
     expect(regenerateFutureNutritionEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe("regenerateNutritionForBlock", () => {
+  const VERSION = {
+    coach_id: "coach-7",
+    work_activity_level: "moderate",
+    training_volume_hours: "4-6",
+    protein_target_g_per_kg: 2.1,
+    diet_type: "balanced",
+    goal_deadline: null,
+    custom_macros_enabled: false,
+    custom_calories: null,
+    custom_protein_g: null,
+    custom_carb_g: null,
+    custom_fat_g: null,
+  };
+
+  const block = (startsOn: string, endsOn: string) =>
+    ({ id: "b1", name: "Cut", startsOn, endsOn, focus: null, targetWeightKg: null,
+       archivedAt: null }) as never;
+
+  it("a RUNNING block recalculates from TOMORROW, never today", async () => {
+    // The client may already have eaten against today's target. Re-pricing it
+    // mid-day is the one outcome a recalculation must not produce.
+    const versionQuery = query({ data: VERSION, error: null });
+    mockFrom.mockImplementation((() => versionQuery) as never);
+
+    await regenerateNutritionForBlock({
+      clientId: "c1", clientToday: TODAY, block: block("2026-08-10", "2026-11-16"),
+    });
+
+    expect(orchestrateNutritionPlanCreation).toHaveBeenCalledWith(
+      "c1",
+      "coach-7",
+      expect.objectContaining({ effectiveFrom: "2026-09-05" }),
+      {}
+    );
+    // The SETTINGS come from the version in force on the day it takes effect.
+    expect(versionQuery.lte).toHaveBeenCalledWith("effective_from", "2026-09-05");
+  });
+
+  it("a FUTURE block recalculates as of its own start", async () => {
+    const versionQuery = query({ data: VERSION, error: null });
+    mockFrom.mockImplementation((() => versionQuery) as never);
+
+    await regenerateNutritionForBlock({
+      clientId: "c1", clientToday: TODAY, block: block("2026-09-28", "2026-12-21"),
+    });
+
+    expect(orchestrateNutritionPlanCreation).toHaveBeenCalledWith(
+      "c1",
+      "coach-7",
+      expect.objectContaining({ effectiveFrom: "2026-09-28" }),
+      {}
+    );
+  });
+
+  it("does nothing for a block whose last day is today", async () => {
+    // Tomorrow is already past its end, so there is nothing left to re-price.
+    await regenerateNutritionForBlock({
+      clientId: "c1", clientToday: TODAY, block: block("2026-07-27", TODAY),
+    });
+
+    expect(orchestrateNutritionPlanCreation).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when no version is in force on the effective day", async () => {
+    mockFrom.mockImplementation((() => query({ data: null, error: null })) as never);
+
+    await regenerateNutritionForBlock({
+      clientId: "c1", clientToday: TODAY, block: block("2026-08-31", "2026-10-12"),
+    });
+
+    expect(orchestrateNutritionPlanCreation).not.toHaveBeenCalled();
   });
 });

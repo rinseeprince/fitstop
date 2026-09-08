@@ -85,6 +85,12 @@ vi.mock('@/services/today-service', () => ({
   getClientTodayString: vi.fn().mockResolvedValue('2026-01-15'),
 }))
 
+vi.mock('@/services/event-deletion-floor', () => ({
+  // The one shared answer to "from which day may events be removed?" — its own
+  // rules are proved in services/event-deletion-floor.test.ts.
+  resolveEventDeletionFloor: vi.fn().mockResolvedValue('2026-01-15'),
+}))
+
 import { getClientById } from '@/services/client-service'
 import { generateNutritionPlan } from '@/services/nutrition-service'
 import {
@@ -297,7 +303,7 @@ describe('Nutrition Route DELETE', () => {
     vi.mocked(getClientTodayString).mockResolvedValue('2026-01-15')
   })
 
-  it('clears the CLIENT\'s events from the day after the client-local today and succeeds', async () => {
+  it('clears the CLIENT\'s events from the shared deletion floor and succeeds', async () => {
     const response = await DELETE(makeDeleteRequest(), {
       params: Promise.resolve({ id: 'client-1' }),
     })
@@ -309,7 +315,7 @@ describe('Nutrition Route DELETE', () => {
     // queued versions' ids, which the old plan-scoped delete missed. The
     // close/queued-delete statement semantics are pinned in
     // nutrition-plan-orchestrator.test.ts.
-    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith('client-1', '2026-01-16')
+    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith('client-1', '2026-01-15')
   })
 
   it('returns 401 when unauthenticated', async () => {

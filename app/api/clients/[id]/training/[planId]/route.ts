@@ -6,6 +6,7 @@ import {
   archiveTrainingPlan,
 } from "@/services/training-service";
 import { cancelFutureEventsForPlan } from "@/services/training-event-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -128,9 +129,13 @@ export async function DELETE(
     // Client-local today: "future" events on the client's calendar are
     // anchored to the client's day, not the server's UTC clock.
     const today = await getClientTodayString(clientId);
+    // The shared deletion floor: today, or tomorrow if the client has already
+    // touched today. The cascade below still runs from today — a regenerate
+    // REPLACES a day's targets rather than emptying them, so it needs no floor.
+    const deleteFrom = await resolveEventDeletionFloor(clientId, today);
 
     await archiveTrainingPlan(planId);
-    const clearedThrough = await cancelFutureEventsForPlan(planId, today);
+    const clearedThrough = await cancelFutureEventsForPlan(planId, deleteFrom);
 
     // Cascade: nutrition burn estimates depend on training events. Open-ended
     // forward to the client's own horizon, EXTENDED to the last day this clear

@@ -14,7 +14,7 @@ import {
 } from "@/services/nutrition-plan-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { getFurthestLiveProgramEnd } from "@/services/training-service";
-import { getFurthestBlockEnd } from "@/services/client-blocks-service";
+import { getBlockEndCoveringDate } from "@/services/client-blocks-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import { captureApiError } from "@/lib/error-handler";
@@ -262,10 +262,17 @@ export type NutritionRegenScope =
  * nowhere.
  *
  * The coach's declared bound, in precedence order:
- *   1. the furthest block that has not finished — a block IS the time-bound
- *      program the coach sells, so its end is the answer whenever there is one;
+ *   1. the end of the block the ANCHOR falls inside — a block IS the time-bound
+ *      program the coach sells, so its end is the answer whenever the days being
+ *      written sit in one;
  *   2. else the furthest live training program's last day;
  *   3. else the fixed window below, which is all a client with neither has.
+ *
+ * Rule 1 is the block COVERING the anchor, never the furthest block the client
+ * has. A later block the coach has not priced yet must not pull targets into
+ * itself: its card would read "Not set" while its days already held numbers.
+ * A generation starting inside that block — its own plan save — resolves it
+ * then, which is the moment the coach has actually said what it costs.
  *
  * Past the bound there are deliberately no events: a client between programs
  * reads as quiet, and the coach draws the next bound when they are ready. That
@@ -280,7 +287,7 @@ async function resolveNutritionHorizon(
   clientId: string,
   anchor: string
 ): Promise<string> {
-  const blockEnd = await getFurthestBlockEnd(clientId, anchor);
+  const blockEnd = await getBlockEndCoveringDate(clientId, anchor);
   if (blockEnd) return blockEnd;
 
   const programEnd = await getFurthestLiveProgramEnd(clientId, anchor);

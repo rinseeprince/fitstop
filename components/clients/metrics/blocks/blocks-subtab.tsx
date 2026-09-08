@@ -29,12 +29,18 @@ import {
   useInvalidateClientBlocks,
 } from "../hooks/use-client-blocks";
 import { formatBlockDate } from "@/lib/blocks/block-format";
+import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
+import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { blockColor } from "./block-colors";
 import { deriveBlockWeightFacts } from "@/lib/blocks/block-weight";
 import { BlockCard } from "./block-card";
 import { BlockForm, type BlockFormValues } from "./block-form";
 import { buildAppendPayload, buildEditPayload } from "./block-chain-payload";
-import { BlockEventsDialog, type BlockEventsPrompt } from "./block-events-dialog";
+import {
+  BlockEventsDialog,
+  type BlockEventsChoice,
+  type BlockEventsPrompt,
+} from "./block-events-dialog";
 import { DeleteBlockDialog } from "./delete-block-dialog";
 import type { MetricSummary } from "../metrics-view-types";
 
@@ -44,6 +50,21 @@ import type { MetricSummary } from "../metrics-view-types";
 // it, so the numbers cannot disagree. Add, edit and delete all mount here.
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
+
+/** The one description line the completed save carries, if it needs one. */
+function calendarOutcome(
+  choice: BlockEventsChoice,
+  trainingExtended: boolean
+): string | undefined {
+  if (choice.calendar === "none") return undefined;
+  if (choice.calendar === "clear") return "The days that left are clear.";
+  // The training half can decline: a block with no program in it, or one placed
+  // before its pass length was recorded, cannot be continued — and a guessed
+  // program is worse than none.
+  return trainingExtended
+    ? "The new days are filled."
+    : "Targets only — there's no program in this block to carry on. Place one from the Training tab.";
+}
 
 const ROW_ICON_BUTTON =
   "rounded p-1 text-[#93b0b4] opacity-0 transition-colors focus-visible:opacity-100 group-hover/row:opacity-100";
@@ -77,6 +98,10 @@ export function BlocksSubtab({
   const { preference } = useUnits();
   const { toast } = useToast();
   const invalidateBlocks = useInvalidateClientBlocks();
+  // The block sync rewrites training_events and nutrition_events, so this screen
+  // owes both calendar areas their invalidator as well as its own.
+  const invalidateTrainingData = useInvalidateTrainingData();
+  const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const [showAddForm, setShowAddForm] = useState(false);
   // Coach-curated views (Session 3.7): "journey" = everything unarchived —
   // a live program's finished phases included; "archive" = what the coach
@@ -92,38 +117,83 @@ export function BlocksSubtab({
     [facts]
   );
 
-  // Raised AFTER a save that moved a block's dates — the dates are already
-  // stored; this only asks whether the calendar should follow.
-  const [eventsPrompt, setEventsPrompt] = useState<BlockEventsPrompt | null>(null);
+  // Raised INSTEAD of a save whose dates moved. Nothing is stored until the
+  // coach picks: every arm of the dialog completes the save, and dismissing it
+  // abandons the edit with the form still open behind it, so a coach can never
+  // end up with new dates and a question they walked away from.
+  const [pendingEdit, setPendingEdit] = useState<{
+    block: ClientBlockView;
+    values: BlockFormValues;
+    prompt: BlockEventsPrompt;
+  } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  const runSync = async (
-    body: { mode: "fill"; nutrition: "keep" | "regenerate" } | { mode: "clear" }
-  ) => {
-    if (!eventsPrompt) return;
+  /**
+   * The coach's answer completes the save: the dates first, the calendar
+   * second, ONE toast at the end.
+   *
+   * The two are SEQUENTIAL, not atomic — the dates land through the chain PUT
+   * and the calendar through its own POST — so the failure between them is a
+   * real state and the toast says exactly that rather than "save failed".
+   */
+  const completeEdit = async (choice: BlockEventsChoice) => {
+    if (!pendingEdit) return;
+    const { block, values } = pendingEdit;
     setIsSyncing(true);
+
     try {
-      const result = await syncBlockEvents(clientId, eventsPrompt.blockId, body);
-      void invalidateBlocks(clientId);
-      toast({
-        title: body.mode === "clear" ? "Those days are clear" : "The new days are filled",
-        // The training half can decline: a block with no program in it, or one
-        // placed before its pass length was recorded, cannot be continued —
-        // and a guessed program is worse than none.
-        description:
-          body.mode === "fill" && !result.trainingExtended
-            ? "Nutrition only — there's no program in this block to carry on. Place one from the Training tab."
-            : undefined,
-      });
-      setEventsPrompt(null);
+      await saveBlockDates(block, values);
     } catch (error) {
       toast({
-        title: "Couldn't update the calendar",
+        title: "Save failed",
         description:
-          error instanceof Error ? error.message : "Nothing was changed",
+          error instanceof Error ? error.message : "Could not save the block",
+        variant: "destructive",
+      });
+      setIsSyncing(false);
+      return;
+    }
+
+    // The dates are stored from here on. Anything that fails below leaves them
+    // saved, and the coach is told which half landed.
+    try {
+      const result =
+        choice.calendar === "none"
+          ? null
+          : await syncBlockEvents(
+              clientId,
+              block.id,
+              choice.calendar === "clear"
+                ? { mode: "clear" }
+                : { mode: "fill", nutrition: choice.nutrition }
+            );
+
+      if (choice.calendar !== "none") {
+        // The sync rewrites both calendars, so both areas are owed their
+        // invalidator (CONVENTIONS §7) — the blocks area alone leaves the
+        // Training and Nutrition tabs showing yesterday's days with no error.
+        void invalidateTrainingData(clientId);
+        void invalidateNutritionCalendar(clientId);
+      }
+
+      toast({
+        title: `"${values.name}" updated`,
+        description: calendarOutcome(choice, result?.trainingExtended ?? false),
+      });
+      setPendingEdit(null);
+      setEditingId(null);
+    } catch (error) {
+      // The dialog deliberately stays OPEN: it is now the retry. The chain PUT
+      // is idempotent (same dates) and the sync reconciles rather than replaying
+      // a diff, so picking again is safe and finishes the half that failed.
+      toast({
+        title: "The dates are saved, but the calendar wasn't updated",
+        description:
+          error instanceof Error ? error.message : "Nothing on the calendar changed",
         variant: "destructive",
       });
     } finally {
+      void invalidateBlocks(clientId);
       setIsSyncing(false);
     }
   };
@@ -136,6 +206,13 @@ export function BlocksSubtab({
     try {
       await deleteBlockRequest(clientId, block.id, clearEvents);
       void invalidateBlocks(clientId);
+      if (clearEvents) {
+        // Same rule as the sync: this removed rows from both calendars, so both
+        // areas are owed their invalidator or the Training and Nutrition tabs
+        // keep showing days that are gone (CONVENTIONS §7).
+        void invalidateTrainingData(clientId);
+        void invalidateNutritionCalendar(clientId);
+      }
       toast({
         title: clearEvents
           ? `"${block.name}" and its days are gone`
@@ -197,31 +274,48 @@ export function BlocksSubtab({
     }
   };
 
+  /** The chain PUT for one edited block. Shared by both arms of Save. */
+  const saveBlockDates = async (
+    block: ClientBlockView,
+    values: BlockFormValues
+  ) => {
+    const { payload } = buildEditPayload(blocks, block.id, {
+      name: values.name,
+      focus: values.focus,
+      targetWeightKg: values.targetWeightKg,
+      endsOn: values.endsOn,
+      startsOn: values.startsOn,
+    });
+    await putBlockChain(clientId, payload);
+  };
+
   const handleEdit = async (block: ClientBlockView, values: BlockFormValues) => {
-    try {
-      const { payload } = buildEditPayload(blocks, block.id, {
-        name: values.name,
-        focus: values.focus,
-        targetWeightKg: values.targetWeightKg,
-        endsOn: values.endsOn,
-        startsOn: values.startsOn,
+    // Only a moved END changes which days the block owns going forward; a start
+    // that moved has already been floored at today by the service.
+    const nextEnd = values.endsOn ?? block.endsOn;
+
+    // Dates moved: ask FIRST. The save happens inside whichever arm the coach
+    // picks, so the X leaves them with their edit still in the form and nothing
+    // stored — rather than dates saved and a question they never answered.
+    if (nextEnd !== block.endsOn) {
+      setPendingEdit({
+        block,
+        values,
+        prompt: {
+          blockName: values.name,
+          direction: nextEnd > block.endsOn ? "extended" : "shortened",
+          newEndLabel: formatBlockDate(nextEnd),
+          previousEndLabel: formatBlockDate(block.endsOn),
+        },
       });
-      await putBlockChain(clientId, payload);
+      return;
+    }
+
+    try {
+      await saveBlockDates(block, values);
       void invalidateBlocks(clientId);
       toast({ title: `"${values.name}" updated` });
       setEditingId(null);
-
-      // Only a moved END changes which days the block owns going forward; a
-      // start that moved has already been floored at today by the service.
-      const nextEnd = values.endsOn ?? block.endsOn;
-      if (nextEnd !== block.endsOn) {
-        setEventsPrompt({
-          blockId: block.id,
-          blockName: values.name,
-          direction: nextEnd > block.endsOn ? "extended" : "shortened",
-          rangeLabel: formatBlockDate(nextEnd),
-        });
-      }
     } catch (error) {
       toast({
         title: "Save failed",
@@ -497,11 +591,10 @@ export function BlocksSubtab({
       )}
 
       <BlockEventsDialog
-        prompt={eventsPrompt}
+        prompt={pendingEdit?.prompt ?? null}
         isWorking={isSyncing}
-        onDismiss={() => setEventsPrompt(null)}
-        onClear={() => void runSync({ mode: "clear" })}
-        onFill={(nutrition) => void runSync({ mode: "fill", nutrition })}
+        onCancel={() => setPendingEdit(null)}
+        onChoose={(choice) => void completeEdit(choice)}
       />
 
       <DeleteBlockDialog

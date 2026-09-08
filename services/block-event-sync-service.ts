@@ -3,7 +3,8 @@ import { addDaysToDateString } from "@/lib/date-helpers";
 import { inclusiveDays } from "@/lib/blocks/block-chain";
 import { expandProgramToWindow, generateProgramEvents } from "./program-event-walk";
 import { regenerateFutureNutritionEvents } from "./nutrition-event-service";
-import { getNutritionPlanIdForDate } from "./nutrition-plan-service";
+import { getOpenNutritionPlan } from "./nutrition-plan-service";
+import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { orchestrateNutritionPlanCreation } from "./nutrition-plan-orchestrator";
 import type { ClientBlock } from "@/types/client-blocks";
 import type {
@@ -24,12 +25,29 @@ import type { TablesInsert } from "@/types/database";
  * be told what the window used to be, and re-running it is idempotent.
  *
  * Both directions leave the past and everything logged alone, the same way every
- * other clear in the product does: scheduled rows from the client's today
- * forward, never a completed or missed one.
+ * other clear in the product does: removals start at the shared deletion floor,
+ * never a completed or missed row.
  */
 
-const FILL_FLOOR = (blockStart: string, clientToday: string) =>
+/**
+ * Where a FILL starts: the block's start, or the client's today if it is
+ * already under way. A fill REPLACES rather than empties, so it needs no floor
+ * — today's targets are rewritten with the numbers today already had.
+ */
+const fillFloor = (blockStart: string, clientToday: string) =>
   blockStart > clientToday ? blockStart : clientToday;
+
+/**
+ * Where a RECALCULATION takes effect: the block's start, or TOMORROW for a
+ * block already under way.
+ *
+ * Never today. A coach re-pricing a running block is changing the numbers, and
+ * the client may already have eaten against today's — moving their target
+ * mid-day is the one thing a re-price must not do. A future block has no such
+ * problem and recalculates as of its own start.
+ */
+const recalculateFloor = (blockStart: string, clientToday: string) =>
+  fillFloor(blockStart, addDaysToDateString(clientToday, 1));
 
 /** Where a clear may reach: the day before the next block, else the last event. */
 async function clearCeiling(
@@ -83,9 +101,9 @@ async function clearCeiling(
  * the coach's editor saying the program runs to the old date while the calendar
  * says otherwise.
  *
- * Floored at the client's today and scoped to `status = 'scheduled'`, so the
- * past and everything logged survive — the same two guards every other clear in
- * the product uses.
+ * Floored at the SHARED deletion floor and scoped to `status = 'scheduled'`, so
+ * the past and everything logged survive — the same two guards every other
+ * removal in the product uses.
  */
 export async function clearScheduledEvents(params: {
   clientId: string;
@@ -94,7 +112,8 @@ export async function clearScheduledEvents(params: {
   to: string;
 }): Promise<{ trainingCleared: number; nutritionCleared: number }> {
   const { clientId, clientToday, to } = params;
-  const from = params.from > clientToday ? params.from : clientToday;
+  const floor = await resolveEventDeletionFloor(clientId, clientToday);
+  const from = params.from > floor ? params.from : floor;
   if (to < from) return { trainingCleared: 0, nutritionCleared: 0 };
 
   const { data: removedTraining, error: trainingError } = await supabaseAdmin
@@ -119,6 +138,10 @@ export async function clearScheduledEvents(params: {
     if (slotError) throw slotError;
   }
 
+  // No "skip the days they logged" filter here, deliberately: the floor above
+  // has already excluded the only day a client can have logged. Adding one
+  // would defend a state that cannot occur, and a nutrition event's own status
+  // could not express it anyway — it never leaves 'scheduled'.
   const { data: removedNutrition, error: nutritionError } = await supabaseAdmin
     .from("nutrition_events")
     .delete()
@@ -280,9 +303,15 @@ export async function extendTrainingToBlockEnd(params: {
  * `keep` regenerates the new days from the version already in force — no
  * recalculation and no new version, so a client eight weeks into a cut keeps the
  * numbers they are working to. `regenerate` is the caller's job to have done
- * first (it mints a version); this then materialises whatever version now covers
- * the days. Either way the horizon already resolves to the block's end, so this
- * is the ordinary from-scope regenerate.
+ * first, and that save GENERATES ITS OWN DAYS out to the horizon, so by the time
+ * this runs the new era is already on the calendar and this is a no-op over it.
+ * Either way the horizon already resolves to the block's end.
+ *
+ * It asks for the OPEN version — the one with no end date — rather than the one
+ * covering the start. The days that need covering are the ones at the far end of
+ * the block, and reaching them is exactly what having no end date means. Asking
+ * for the version covering today instead left everything past a QUEUED version's
+ * start unwritten, because a regenerate is clamped to its own version's window.
  */
 export async function fillNutritionAcrossBlock(params: {
   clientId: string;
@@ -291,24 +320,29 @@ export async function fillNutritionAcrossBlock(params: {
   blockEndsOn: string;
 }): Promise<{ from: string } | null> {
   const { clientId, clientToday, blockStartsOn, blockEndsOn } = params;
-  const from = FILL_FLOOR(blockStartsOn, clientToday);
+  const from = fillFloor(blockStartsOn, clientToday);
   if (from > blockEndsOn) return null;
 
-  const planId = await getNutritionPlanIdForDate(clientId, from);
-  if (!planId) return null;
+  const open = await getOpenNutritionPlan(clientId);
+  if (!open) return null;
 
-  await regenerateFutureNutritionEvents(clientId, planId, { kind: "from", from });
+  await regenerateFutureNutritionEvents(clientId, open.id, { kind: "from", from });
   return { from };
 }
 
 /**
  * Re-price the block's targets against the client's CURRENT weight and goal,
- * minting a new version from the day the fill starts.
+ * minting a new version from TOMORROW — or from the block's own start if it has
+ * not begun yet. Never from today: the client may already have eaten against
+ * today's target, and a re-price that moves it mid-day is the one outcome this
+ * must not produce. "Keep the current targets" changes no numbers, so it has no
+ * such boundary and stays on today.
  *
  * Headless on purpose (owner, 2026-09-04): the whole value of the block-edit
  * dialog is that a coach never leaves the blocks screen, so this reaches the
  * same orchestrator the drawer's Save calls rather than opening one. The
- * SETTINGS come from the version already in force — diet type, protein per kg,
+ * SETTINGS come from the version in force on the day it takes effect — diet
+ * type, protein per kg,
  * activity, and the custom-macro override if the coach set one — because those
  * are the coach's decisions and re-deriving them would silently change the
  * prescription's shape. What moves is the client's own numbers, which is the
@@ -323,7 +357,7 @@ export async function regenerateNutritionForBlock(params: {
   block: ClientBlock;
 }): Promise<void> {
   const { clientId, clientToday, block } = params;
-  const from = FILL_FLOOR(block.startsOn, clientToday);
+  const from = recalculateFloor(block.startsOn, clientToday);
   if (from > block.endsOn) return;
 
   const { data: version, error } = await supabaseAdmin

@@ -76,64 +76,24 @@ export const listBlocks = async (clientId: string): Promise<ClientBlock[]> => {
 };
 
 /**
- * The last day of the client's furthest block that has not finished by
- * `onOrAfter`, or null when they have none — the coach's declared time bound,
- * and the first term of the nutrition generation horizon (see
- * `services/nutrition-event-service.ts`).
+ * The end of the block whose window CONTAINS `date`, or null when no block does.
  *
- * NO predicate on `starts_on`, deliberately: a block set up for next week is
- * exactly the case this exists for — a coach planning the next phase while the
- * current one still has days left extends the horizon the moment they save it,
- * not when it begins.
+ * The ONE block-bound question, asked by both generators: the training placement
+ * ("which bound am I inside?") and the nutrition horizon ("how far do I write?").
+ * A program placed inside a two-week block stops after two weeks even when the
+ * next block runs twelve, and nutrition stops at the same day — that next block
+ * is its own prescription, with its own placement and its own plan save, each of
+ * which resolves this again from inside it.
  *
- * `archived_at IS NULL` is redundant today — only an elapsed block can be
- * archived (setBlockArchived), and an elapsed block's end is behind every
- * anchor a from-scope can carry, so the `ends_on` bound already excludes it.
- * It is written anyway so this read does not silently depend on a rule
- * enforced in another function.
+ * `archived_at IS NULL` is redundant given only an ELAPSED block can be archived
+ * (setBlockArchived), but it is written rather than inherited, so this read does
+ * not silently depend on a rule enforced in another function.
  *
- * Degrades to null on a read error rather than throwing: the caller falls
- * through to the training program and then to the fixed window, which is the
- * behaviour that existed before the horizon did. A generation that quietly
- * covers less is self-healing on the next one; a coach's placement failing
- * outright after it has already committed is not.
- */
-export const getFurthestBlockEnd = async (
-  clientId: string,
-  onOrAfter: string
-): Promise<string | null> => {
-  const { data, error } = await supabaseAdmin
-    .from("client_phases")
-    .select("ends_on")
-    .eq("client_id", clientId)
-    .is("archived_at", null)
-    .gte("ends_on", onOrAfter)
-    .order("ends_on", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Failed to read the client's furthest block end:", error);
-    captureApiError(error, { action: "furthest-block-end", clientId });
-    return null;
-  }
-  return data?.ends_on ?? null;
-};
-
-/**
- * The end of the block whose window CONTAINS `date`, or null when no block does
- * — the bound a placement made on that date is placed inside.
- *
- * Deliberately a different question from `getFurthestBlockEnd`, which the
- * nutrition horizon asks. Nutrition asks "how far is anything drawn?" and may
- * safely over-cover a client who eats every day; training asks "which bound am
- * I inside?" and must not over-run it. A program placed inside a two-week block
- * stops after two weeks even when the next block runs twelve — that next block
- * is its own prescription, with its own placement.
- *
- * Degrades to null on a read error (logged, Sentried): the placement then falls
- * back to the program's own authored length, which is what it did before blocks
- * bounded anything.
+ * Degrades to null on a read error (logged, Sentried) rather than throwing: both
+ * callers fall back to what they did before blocks bounded anything — the
+ * program's authored length, and the program-then-fixed-window chain. A
+ * generation that quietly covers less is self-healing on the next one; a coach's
+ * write failing outright after it has already committed is not.
  */
 export const getBlockEndCoveringDate = async (
   clientId: string,

@@ -17,7 +17,7 @@ vi.mock("@/services/training-service", () => ({
   getFurthestLiveProgramEnd: vi.fn(),
 }));
 vi.mock("@/services/client-blocks-service", () => ({
-  getFurthestBlockEnd: vi.fn(),
+  getBlockEndCoveringDate: vi.fn(),
 }));
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
@@ -71,7 +71,7 @@ function createMockQuery<T = unknown>(result: {
 import { supabaseAdmin } from "./supabase-admin";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { getActiveTrainingPlan, getFurthestLiveProgramEnd } from "@/services/training-service";
-import { getFurthestBlockEnd } from "@/services/client-blocks-service";
+import { getBlockEndCoveringDate } from "@/services/client-blocks-service";
 import { getClientTodayString } from "@/services/today-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getActiveNutritionPlanVersionsOverlapping } from "@/services/nutrition-plan-service";
@@ -94,7 +94,7 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
     vi.mocked(getClientTodayString).mockResolvedValue("2026-04-10");
     // No block and no live program by default: every test written before the
     // horizon existed keeps the fixed 8-week window it asserts against.
-    vi.mocked(getFurthestBlockEnd).mockResolvedValue(null);
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue(null);
     vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue(null);
   });
 
@@ -790,15 +790,15 @@ describe("nutrition-event-service: the generation horizon", () => {
     vi.clearAllMocks();
     vi.mocked(getEventsForDateRange).mockResolvedValue([]);
     vi.mocked(getClientTodayString).mockResolvedValue("2026-09-04");
-    vi.mocked(getFurthestBlockEnd).mockResolvedValue(null);
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue(null);
     vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue(null);
   });
 
-  it("writes to the block's last day, even when a program runs longer", async () => {
+  it("writes to the covering block's last day, even when a program runs longer", async () => {
     // Precedence, not a maximum: the block IS the coach's declared bound, so a
     // program overrunning it does not stretch the window. A block that never
     // bounded anything would be decoration.
-    vi.mocked(getFurthestBlockEnd).mockResolvedValue("2026-11-06");
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue("2026-11-06");
     vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue("2027-01-15");
     const { upsertQuery } = wireNutritionTables();
 
@@ -812,7 +812,7 @@ describe("nutrition-event-service: the generation horizon", () => {
     expect(dates[dates.length - 1]).toBe("2026-11-06");
   });
 
-  it("falls to the furthest live program when the client has no block", async () => {
+  it("falls to the furthest live program when no block covers the anchor", async () => {
     vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue("2026-12-11");
     const { upsertQuery } = wireNutritionTables();
 
@@ -823,6 +823,25 @@ describe("nutrition-event-service: the generation horizon", () => {
 
     const dates = writtenDates(upsertQuery);
     expect(dates[dates.length - 1]).toBe("2026-12-11");
+  });
+
+  it("a block the anchor is not inside never sets the bound", async () => {
+    // The coach has a block set up for next month but has not priced it. The
+    // covering read answers null for today's anchor, so the horizon falls
+    // through — filling that block here would leave its card reading "Not set"
+    // while its days already held targets. Its own plan save resolves the bound
+    // from inside it.
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue(null);
+    vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue("2026-10-16");
+    const { upsertQuery } = wireNutritionTables();
+
+    await regenerateFutureNutritionEvents("client-1", "plan-10", {
+      kind: "from",
+      from: "2026-09-04",
+    });
+
+    expect(getBlockEndCoveringDate).toHaveBeenCalledWith("client-1", "2026-09-04");
+    expect(writtenDates(upsertQuery).at(-1)).toBe("2026-10-16");
   });
 
   it("falls to exactly 8 weeks when the client has neither", async () => {
@@ -842,7 +861,7 @@ describe("nutrition-event-service: the generation horizon", () => {
   it("deletes exactly the range it regenerates, at the stretched horizon", async () => {
     // The equality the module has always depended on: an unbounded delete paired
     // with a bounded regenerate once removed a tail it never rebuilt.
-    vi.mocked(getFurthestBlockEnd).mockResolvedValue("2026-11-27");
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue("2026-11-27");
     const { deleteQuery, upsertQuery } = wireNutritionTables();
 
     await regenerateFutureNutritionEvents("client-1", "plan-4", {
@@ -876,7 +895,7 @@ describe("nutrition-event-service: the generation horizon", () => {
   it("never lets `to` SHORTEN the range below the horizon", async () => {
     // It only ever extends: a `to` inside the bound must not pull the window in
     // and re-open the delete-without-rebuild bug.
-    vi.mocked(getFurthestBlockEnd).mockResolvedValue("2026-11-20");
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue("2026-11-20");
     const { upsertQuery } = wireNutritionTables();
 
     await regenerateFutureNutritionEvents("client-1", "plan-6", {
@@ -918,16 +937,17 @@ describe("nutrition-event-service: the generation horizon", () => {
       dates: ["2026-09-11", "2026-09-18"],
     });
 
-    expect(getFurthestBlockEnd).not.toHaveBeenCalled();
+    expect(getBlockEndCoveringDate).not.toHaveBeenCalled();
     expect(getFurthestLiveProgramEnd).not.toHaveBeenCalled();
   });
 
   it("end to end: the next block, set up while the current one still runs, is covered to its final day", async () => {
-    // The shape the commit exists for. On 2026-09-04 the coach sets up a block
-    // opening on the 10th and closing 12 weeks later on 2026-12-02, then saves
-    // the nutrition to start with it. The old fixed window stopped on 2026-11-05
-    // and the last four weeks of the block came out blank.
-    vi.mocked(getFurthestBlockEnd).mockResolvedValue("2026-12-02");
+    // On 2026-09-04 the coach sets up a block opening on the 10th and closing 12
+    // weeks later on 2026-12-02, then saves the nutrition to START WITH IT. The
+    // anchor is the plan's own effective date, which sits INSIDE that block, so
+    // the block answers and the whole of it is covered. A fixed window would
+    // have stopped on 2026-11-05 and left the last four weeks blank.
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue("2026-12-02");
     const { upsertQuery } = wireNutritionTables();
 
     await regenerateFutureNutritionEvents("client-1", "plan-9", {
@@ -939,6 +959,6 @@ describe("nutrition-event-service: the generation horizon", () => {
     expect(dates[0]).toBe("2026-09-10");
     expect(dates[dates.length - 1]).toBe("2026-12-02");
     expect(dates).toHaveLength(84);
-    expect(getFurthestBlockEnd).toHaveBeenCalledWith("client-1", "2026-09-10");
+    expect(getBlockEndCoveringDate).toHaveBeenCalledWith("client-1", "2026-09-10");
   });
 });

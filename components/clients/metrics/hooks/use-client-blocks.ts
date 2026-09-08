@@ -84,8 +84,14 @@ export function useBlockFacts(clientId: string) {
 }
 
 /**
- * Invalidates every cached read under the blocks area (chain + facts). Blocks
- * writes touch only client_phases, so no other area's invalidator is owed.
+ * Invalidates every cached read under the blocks area (chain + facts).
+ *
+ * NOT sufficient on its own for the two writes that reach the calendar — the
+ * events sync and a delete carrying `clearEvents` rewrite `training_events` and
+ * `nutrition_events` too, so those call sites also invoke
+ * `useInvalidateTrainingData` and `useInvalidateNutritionCalendar`
+ * (CONVENTIONS §7). Only the chain PUT, PATCH and a plain delete are
+ * client_phases-only.
  */
 export function useInvalidateClientBlocks() {
   const { mutate } = useSWRConfig();

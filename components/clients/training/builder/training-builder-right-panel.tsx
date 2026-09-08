@@ -27,7 +27,7 @@ type TrainingBuilderRightPanelProps = {
 };
 
 // The Plans-subtab surface: dark hero (both branches) + the month calendar.
-// Owns the client-level "Delete future sessions" flow (relocated from the
+// Owns the client-level "Delete training plan" flow (relocated from the
 // old TopContentBar) — the trigger renders in the calendar toolbar's
 // Schedule divider, the confirm dialog lives here — and the plan-amendment
 // entry point, the hero's "Edit plan", which opens the full-screen amendment
@@ -73,7 +73,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
       if (!res.ok || !data.success) {
         throw new Error(data.error ?? "Failed to clear plan");
       }
-      toast({ title: "Future sessions deleted" });
+      toast({ title: "Training plan deleted" });
       setShowClearConfirm(false);
       // Deleting training sessions cascade-rewrites nutrition_events.
       void invalidateNutritionCalendar(clientId);
@@ -155,14 +155,15 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(192,96,96,0.08)]">
                 <AlertTriangle className="h-4 w-4 text-[#c06060]" />
               </div>
-              <DialogTitle>Delete all future sessions?</DialogTitle>
+              <DialogTitle>Delete the training plan?</DialogTitle>
             </div>
-            {/* The body has to name the program-level effect, not just the
-                session-level one: this archives every plan, so "Edit plan"
-                disappears and placing a new program becomes the only way to
-                schedule again. Naming what survives is normally filler, but
-                this is the delete-ALL-plans confirm — the case the design doc
-                carves out for spelling it out. */}
+            {/* There is no delete-the-days-but-keep-the-plan act in this
+                product, on either track — so the label says "plan" and the body
+                names both halves. It archives every program the client is on,
+                so "Edit plan" disappears and placing a new one becomes the only
+                way to schedule again. Naming what survives is normally filler,
+                but this is the delete-ALL-plans confirm — the case the design
+                doc carves out for spelling it out. */}
             <DialogDescription className="pt-2">
               This removes every upcoming session from this client&apos;s calendar
               <strong className="font-semibold text-[#0c1a1e]"> and retires every program they are on</strong>
@@ -187,7 +188,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
               {isClearing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                "Delete future sessions"
+                "Delete plan"
               )}
             </Button>
           </DialogFooter>

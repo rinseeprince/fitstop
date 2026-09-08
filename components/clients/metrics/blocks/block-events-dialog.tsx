@@ -11,89 +11,111 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
-// The offer a coach gets after moving a block's dates: bring the calendar with
-// it, or leave it alone. A DIALOG rather than a toast — it carries a choice and
-// a follow-up question, and a toast that times out leaves a coach unsure whether
-// anything happened. It says the real days it will touch, not "extend?".
+// The question a coach answers when they save a block whose dates moved.
 //
-// Nothing here is a default. Dismissing it leaves every event exactly where it
-// is, which is what keeps "a block edit writes nothing on its own" true.
+// It opens INSTEAD of the save, not after it: every choice here completes the
+// save, and the X abandons it, so a coach never ends up with dates stored and a
+// question they walked away from. A dialog rather than a toast because it
+// carries a choice, and it names the real dates rather than asking "extend?".
+//
+// Nothing here is a default. "Just the dates" stores the window and leaves every
+// event exactly where it is, which is what keeps "a block edit writes nothing on
+// its own" true.
 
 export type BlockEventsPrompt = {
-  blockId: string;
   blockName: string;
   direction: "extended" | "shortened";
-  /** The days that just joined or left the block, in the coach's own words. */
-  rangeLabel: string;
+  /** The block's new last day, in the coach's own words. */
+  newEndLabel: string;
+  /** Where the calendar stops today — the end the block had before this edit. */
+  previousEndLabel: string;
 };
+
+/** What the coach picked. Every arm saves the dates; they differ in the calendar. */
+export type BlockEventsChoice =
+  | { calendar: "fill"; nutrition: "keep" | "regenerate" }
+  | { calendar: "clear" }
+  | { calendar: "none" };
 
 type BlockEventsDialogProps = {
   prompt: BlockEventsPrompt | null;
   isWorking: boolean;
-  onDismiss: () => void;
-  onClear: () => void;
-  onFill: (nutrition: "keep" | "regenerate") => void;
+  /** The X, Escape, or a click outside — nothing is saved. */
+  onCancel: () => void;
+  onChoose: (choice: BlockEventsChoice) => void;
 };
+
+const DANGER_CTA =
+  "border border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]";
 
 export function BlockEventsDialog({
   prompt,
   isWorking,
-  onDismiss,
-  onClear,
-  onFill,
+  onCancel,
+  onChoose,
 }: BlockEventsDialogProps) {
   if (!prompt) return null;
   const extended = prompt.direction === "extended";
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onDismiss()}>
+    <Dialog open onOpenChange={(open) => !open && !isWorking && onCancel()}>
       <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle>
-            {extended ? "Fill the new days?" : "Clear the days that left?"}
+            {extended ? "Carry the plan on?" : "Clear the days that left?"}
           </DialogTitle>
           <DialogDescription>
             {extended
-              ? `"${prompt.blockName}" now runs to ${prompt.rangeLabel}. Training and nutrition still stop where they did.`
-              : `"${prompt.blockName}" now ends ${prompt.rangeLabel}. The workouts and targets after it are still on the calendar.`}
+              ? `"${prompt.blockName}" now runs to ${prompt.newEndLabel}, but the workouts and targets stop on ${prompt.previousEndLabel}.`
+              : `"${prompt.blockName}" now ends ${prompt.newEndLabel}, but there are still workouts and targets scheduled after it.`}
           </DialogDescription>
         </DialogHeader>
 
         {extended ? (
-          // Two ways to price the new days, and the difference is the whole
-          // question: someone eight weeks into a cut has moved, so their
-          // maintenance has too.
           <div className="flex flex-col gap-2">
+            {/* Both buttons continue the TRAINING. Saying so is the point: the
+                difference between them is the NUTRITION, and copy that named
+                only the buttons hid that a coach eight weeks into a cut is
+                choosing whether their client's targets move. */}
+            <p className="text-xs text-[#5a7d82]">
+              The workouts carry on either way — the choice is the targets.
+            </p>
             <Button
               variant="outline"
               disabled={isWorking}
-              onClick={() => onFill("keep")}
+              onClick={() => onChoose({ calendar: "fill", nutrition: "keep" })}
             >
-              {isWorking && <Loader2 className="h-4 w-4 animate-spin" />}
-              Keep the current targets
+              {isWorking && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Keep the same targets
             </Button>
             <Button
               variant="outline"
               disabled={isWorking}
-              onClick={() => onFill("regenerate")}
+              onClick={() =>
+                onChoose({ calendar: "fill", nutrition: "regenerate" })
+              }
             >
-              Recalculate from their current weight
+              Recalculate the targets
             </Button>
           </div>
         ) : null}
 
         <DialogFooter>
-          <Button variant="ghost" onClick={onDismiss} disabled={isWorking}>
-            Leave the calendar alone
+          <Button
+            variant="ghost"
+            onClick={() => onChoose({ calendar: "none" })}
+            disabled={isWorking}
+          >
+            Just the dates
           </Button>
           {!extended && (
             <Button
               variant="outline"
-              className="border border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]"
-              onClick={onClear}
+              className={DANGER_CTA}
+              onClick={() => onChoose({ calendar: "clear" })}
               disabled={isWorking}
             >
-              {isWorking && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isWorking && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               Clear those days
             </Button>
           )}

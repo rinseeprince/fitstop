@@ -169,7 +169,7 @@ export type NextFutureTrainingPlan = {
  *
  * It exists because the predicate was hand-rolled three times and the copy that
  * forgot `.neq("status", "archived")` re-surfaced retired plans as the client's
- * current program: "Delete future sessions" archives every plan without clearing
+ * current program: "Delete training plan" archives every plan without clearing
  * its future `effective_from`, so the next read dug one back out and titled the
  * Training tab with a program that had no sessions behind it.
  *

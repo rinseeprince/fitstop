@@ -147,6 +147,12 @@ export async function generateTrainingEvents(
  * `.select("date")` rides the DELETE itself, so the max costs no extra round
  * trip and cannot disagree with what was actually removed.
  *
+ * The live callers now pass the shared deletion floor (`resolveEventDeletionFloor`),
+ * which already excludes a today the client has touched — so on those paths the
+ * detach below has nothing left to catch. It stays: this function's own default
+ * is a UTC today, and the detach is what makes an earlier `effectiveFrom` safe
+ * for any future caller.
+ *
  * @param effectiveFrom - Date from which to clear (defaults to today).
  */
 export async function cancelFutureEventsForPlan(

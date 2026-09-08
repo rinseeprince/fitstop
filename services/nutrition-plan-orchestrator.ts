@@ -18,7 +18,7 @@ import {
 import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
-import { addDaysToDateString } from "@/lib/date-helpers";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 
 /** The resolver's success arm — both plan handlers require complete inputs. */
 type ReadyCalcInputs = Extract<NutritionCalcInputs, { status: "ready" }>;
@@ -106,8 +106,9 @@ async function recordCoachNoteOrThrow(
 /**
  * Delete the client's nutrition plan CHAIN (migration 144): close the
  * covering version at their today, remove queued versions, and clear upcoming
- * scheduled events so no orphaned prescription lingers on the calendar. Today
- * and past days are untouched; coach-edited (is_modified) FUTURE days go too,
+ * scheduled events so no orphaned prescription lingers on the calendar. Past
+ * days are untouched, and so is today once the client has logged against it
+ * (the shared deletion floor); coach-edited (is_modified) FUTURE days go too,
  * deliberately — a deleted plan leaves no forward prescription.
  *
  * Events are cleared FIRST so a mid-flight failure is retryable: with the
@@ -163,16 +164,18 @@ export async function orchestrateNutritionPlanDeletion(
     throw new NutritionPlanError("No active nutrition plan to delete", 404);
   }
 
-  // Client-local today anchors the cutoff on the client's calendar — never a
-  // UTC fallback. Delete strictly AFTER today: nutrition events never leave
-  // 'scheduled' status, so a today the client already part-logged would
-  // otherwise be deleted and the per-card nutrition writer would 422 mid-day.
-  // The kept event carries its own plan stamp, and the dialog's "Today and
-  // past days are kept" stays literally true. Client-scoped so events stamped
-  // by queued versions' ids are swept too. Steps are ordered idempotently: a
-  // mid-flight failure leaves a state a retry completes (events first — a
-  // re-run deletes nothing; then queued rows; then the close).
-  const deleteFrom = addDaysToDateString(clientToday, 1);
+  // The ONE shared deletion floor — never this path's own arithmetic. Today, or
+  // tomorrow if the client has already touched today.
+  //
+  // An untouched today DOES go: the coach is removing the prescription, and the
+  // covering version still explains today either way, so the client's food card
+  // stays writable — it 422s on a missing VERSION, never on a missing event.
+  //
+  // Client-scoped so events stamped by queued versions' ids are swept too. Steps
+  // are ordered idempotently: a mid-flight failure leaves a state a retry
+  // completes (events first — a re-run deletes nothing; then queued rows; then
+  // the close).
+  const deleteFrom = await resolveEventDeletionFloor(clientId, clientToday);
   await deleteFutureNutritionEventsForClient(clientId, deleteFrom);
 
   if (queuedIds.length > 0) {

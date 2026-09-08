@@ -7,6 +7,7 @@ import {
   archiveTrainingPlan,
 } from "@/services/training-service";
 import { cancelFutureEventsForPlan } from "@/services/training-event-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { getClientTodayString } from "@/services/today-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
@@ -105,7 +106,7 @@ export async function GET(
 }
 
 // DELETE - Clear ALL upcoming training sessions for the client across every
-// coexisting plan ("Delete future sessions"). Archives each non-archived plan
+// coexisting plan ("Delete training plan"). Archives each non-archived plan
 // and removes its future events; past/completed sessions are kept as history.
 export async function DELETE(
   request: NextRequest,
@@ -129,8 +130,11 @@ export async function DELETE(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // Client-local today anchors the "future" cutoff on the client's calendar.
+    // Client-local today anchors the "future" cutoff on the client's calendar,
+    // and the shared deletion floor decides which day the removal may start on:
+    // today, or tomorrow if the client has already touched today.
     const today = await getClientTodayString(clientId);
+    const deleteFrom = await resolveEventDeletionFloor(clientId, today);
 
     const { data: plans } = await supabaseAdmin
       .from("training_plans")
@@ -146,7 +150,7 @@ export async function DELETE(
     let clearedThrough: string | null = null;
     for (const p of plans ?? []) {
       await archiveTrainingPlan(p.id);
-      const cleared = await cancelFutureEventsForPlan(p.id, today);
+      const cleared = await cancelFutureEventsForPlan(p.id, deleteFrom);
       if (cleared !== null && (clearedThrough === null || cleared > clearedThrough)) {
         clearedThrough = cleared;
       }

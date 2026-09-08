@@ -12,6 +12,12 @@ vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn().mockResolvedValue("2026-07-02"),
 }));
 
+vi.mock("@/services/event-deletion-floor", () => ({
+  // The one shared answer to "from which day may events be removed?" — its own
+  // rules are proved in services/event-deletion-floor.test.ts.
+  resolveEventDeletionFloor: vi.fn().mockResolvedValue("2026-07-02"),
+}));
+
 vi.mock("@/lib/validations/nutrition", () => ({
   validateClientForNutrition: vi.fn().mockReturnValue({ valid: true, errors: [] }),
 }));
@@ -326,7 +332,7 @@ describe("orchestrateNutritionPlanDeletion — chain semantics (migration 144, D
     expect(fromCalls.length).toBeGreaterThan(0);
   });
 
-  it("closes the covering version at today (status untouched) after clearing events from tomorrow", async () => {
+  it("closes the covering version at today (status untouched) after clearing events from the floor", async () => {
     // from() #1 = queued-versions select (none), #2 = the covering close.
     const chains = mockFromSequence([{ data: [], error: null }, { error: null }]);
 
@@ -336,7 +342,7 @@ describe("orchestrateNutritionPlanDeletion — chain semantics (migration 144, D
     // Floor is the day AFTER the client-local today ('2026-07-02'): today's
     // event survives so a part-logged day keeps its plan context. Client-scoped
     // so rows stamped by queued versions' ids are swept too.
-    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-03");
+    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-02");
     // The queued select probes strictly-future versions against client-today.
     expect(chains[0].gt).toHaveBeenCalledWith("effective_from", "2026-07-02");
     // D2(a): close-never-erase — effective_until = clientToday, NO status write.
@@ -381,7 +387,7 @@ describe("orchestrateNutritionPlanDeletion — chain semantics (migration 144, D
     const result = await orchestrateNutritionPlanDeletion(clientId, coachId);
 
     expect(result).toEqual({ planId: "q1" });
-    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-03");
+    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-02");
     expect(chains[1].in).toHaveBeenCalledWith("id", ["q1"]);
     // No covering version → nothing to close: from() was called exactly twice.
     expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(2);

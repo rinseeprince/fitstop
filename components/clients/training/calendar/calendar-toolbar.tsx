@@ -138,8 +138,8 @@ export function CalendarToolbar({
         {onDeleteFuture && (
           <button
             onClick={onDeleteFuture}
-            aria-label="Delete future sessions"
-            title="Delete future sessions"
+            aria-label="Delete training plan"
+            title="Delete training plan"
             className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060]"
           >
             <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />

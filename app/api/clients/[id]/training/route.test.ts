@@ -13,6 +13,7 @@ vi.mock('@/services/training-service', () => ({
   getTrainingPlanForDate: vi.fn().mockResolvedValue(null),
   getNextFutureTrainingPlan: vi.fn().mockResolvedValue(null),
   getTrainingPlanById: vi.fn().mockResolvedValue(null),
+  archiveTrainingPlan: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/services/today-service', () => ({
@@ -35,6 +36,20 @@ vi.mock('@/services/client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))
 
+vi.mock('@/services/training-event-service', () => ({
+  cancelFutureEventsForPlan: vi.fn().mockResolvedValue(null),
+}))
+
+vi.mock('@/services/nutrition-event-service', () => ({
+  cascadeNutritionAfterTrainingChange: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/services/event-deletion-floor', () => ({
+  // The one shared answer to "from which day may events be removed?" — its own
+  // rules are proved in services/event-deletion-floor.test.ts.
+  resolveEventDeletionFloor: vi.fn().mockResolvedValue('2026-01-16'),
+}))
+
 vi.mock('@/services/supabase-admin', () => ({
   supabaseAdmin: {
     from: vi.fn().mockReturnValue({
@@ -55,7 +70,11 @@ import {
   getNextFutureTrainingPlan,
   getTrainingPlanById,
 } from '@/services/training-service'
-import { GET } from './route'
+import { supabaseAdmin } from '@/services/supabase-admin'
+import { cancelFutureEventsForPlan } from '@/services/training-event-service'
+import { cascadeNutritionAfterTrainingChange } from '@/services/nutrition-event-service'
+import { resolveEventDeletionFloor } from '@/services/event-deletion-floor'
+import { GET, DELETE } from './route'
 
 const mockClient = {
   id: 'client-1',
@@ -192,5 +211,70 @@ describe('Training Route GET - scheduled plan semantics', () => {
     expect(response.status).toBe(200)
     expect(data.plan).toBeNull()
     expect(data.scheduledFor).toBeNull()
+  })
+})
+
+// ===========================================================================
+// DELETE — "Delete the training plan": retires every program the client is on
+// and removes their upcoming sessions.
+// ===========================================================================
+
+describe('Training Route DELETE - the shared deletion floor', () => {
+  const wirePlans = (ids: string[]) => {
+    const chain: Record<string, unknown> = {}
+    Object.assign(chain, {
+      select: vi.fn(() => chain),
+      eq: vi.fn(() => chain),
+      is: vi.fn(() => chain),
+      neq: vi.fn().mockResolvedValue({ data: ids.map((id) => ({ id })), error: null }),
+    })
+    vi.mocked(supabaseAdmin.from).mockReturnValue(chain as never)
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getClientById).mockResolvedValue(mockClient as never)
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue('2026-01-16')
+  })
+
+  const call = () =>
+    DELETE(new NextRequest('http://localhost/api/clients/client-1/training', { method: 'DELETE' }), {
+      params: Promise.resolve({ id: 'client-1' }),
+    })
+
+  it('clears from the FLOOR, not from the client-local today', async () => {
+    // The client logged today, so the floor is tomorrow. Passing `today` here
+    // would delete a session on a day they have already trained.
+    wirePlans(['plan-41'])
+
+    const response = await call()
+
+    expect(response.status).toBe(200)
+    expect(cancelFutureEventsForPlan).toHaveBeenCalledWith('plan-41', '2026-01-16')
+    expect(resolveEventDeletionFloor).toHaveBeenCalledWith('client-1', '2026-01-15')
+  })
+
+  it('resolves the floor ONCE however many programs it retires', async () => {
+    // Round trips stay constant, not per-plan (CONVENTIONS §2 item 7).
+    wirePlans(['plan-63', 'plan-64', 'plan-65'])
+
+    await call()
+
+    expect(resolveEventDeletionFloor).toHaveBeenCalledTimes(1)
+    expect(cancelFutureEventsForPlan).toHaveBeenCalledTimes(3)
+  })
+
+  it('still cascades nutrition from TODAY — a regenerate replaces, it never empties', async () => {
+    // Only removals need the floor. Nutrition on the floored-out day is
+    // rewritten with the same numbers, which is why it is safe.
+    wirePlans(['plan-88'])
+
+    await call()
+
+    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
+      'client-1',
+      expect.objectContaining({ kind: 'from', from: '2026-01-15' }),
+      expect.any(String)
+    )
   })
 })
