@@ -46,11 +46,12 @@ function createMockQuery(result: MockResult) {
 }
 
 // Table-routed from(): one result for nutrition_plans, a QUEUE of page
-// results for nutrition_events and for nutrition_plan_notes (fetchAllPages
-// issues one from() per page for each).
+// results for nutrition_events, nutrition_plan_notes and training_events
+// (fetchAllPages issues one from() per page for each).
 let versionsResult: MockResult;
 let eventPages: MockResult[];
 let notePages: MockResult[];
+let trainingDayPages: MockResult[];
 
 function installFromMock() {
   vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
@@ -61,6 +62,10 @@ function installFromMock() {
     }
     if (table === "nutrition_plan_notes") {
       const page = notePages.shift() ?? { data: [], error: null };
+      return createMockQuery(page);
+    }
+    if (table === "training_events") {
+      const page = trainingDayPages.shift() ?? { data: [], error: null };
       return createMockQuery(page);
     }
     throw new Error(`Unexpected table: ${table}`);
@@ -91,6 +96,11 @@ const version = (
   custom_calories: custom.calories ?? null,
 });
 
+/** n sequential training-event dates from `start` — the "has days" gate's input. */
+function trainingDays(start: string, n: number) {
+  return Array.from({ length: n }, (_, i) => ({ date: addDaysToDateString(start, i) }));
+}
+
 /** n sequential daily event rows from `start`. */
 function eventDays(
   start: string,
@@ -109,8 +119,13 @@ describe("getBlockFacts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     versionsResult = { data: [], error: null };
-    eventPages = [{ data: [], error: null }];
     notePages = [{ data: [], error: null }];
+    // Both gates default to SATISFIED, wide enough to cover every fixture
+    // block, so the "a block shows only what is on its days" rule is exercised
+    // by its own cases rather than silently by every other one. A constant
+    // baseline means the change marker still counts zero.
+    eventPages = [{ data: eventDays("2026-01-01", 500, 2000), error: null }];
+    trainingDayPages = [{ data: trainingDays("2026-01-01", 500), error: null }];
     installFromMock();
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([]);
   });
@@ -144,6 +159,107 @@ describe("getBlockFacts", () => {
       name: "Peak",
       startsOn: "2026-07-01",
     });
+  });
+
+  // =========================================================================
+  // A block shows what is set only if it actually HAS DAYS on the calendar.
+  //
+  // Both columns resolve by window, and neither a placed training plan nor an
+  // open nutrition version ever carries an end date — so without this gate a
+  // September program governs every later block for ever, and a block the coach
+  // has drawn but not set up claims a program and a prescription it has none of.
+  // =========================================================================
+
+  it("a block with NO days claims nothing, however the windows overlap it", async () => {
+    vi.mocked(listBlocks).mockResolvedValue([
+      block("live", "2026-08-01", "2026-08-28"),
+      block("untouched", "2026-10-05", "2026-11-01"),
+    ]);
+    vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
+      // Placed in the live block and never closed — it "covers" the later one.
+      { id: "p31", name: "Hypertrophy", effectiveFrom: "2026-08-01", effectiveUntil: null },
+    ]);
+    versionsResult = {
+      data: [version("v52", "2026-08-01", null, 2700, 2150)],
+      error: null,
+    };
+    // Days exist only in the first block.
+    eventPages = [{ data: eventDays("2026-08-01", 28, 2150), error: null }];
+    trainingDayPages = [{ data: trainingDays("2026-08-01", 28), error: null }];
+
+    const [live, untouched] = await getBlockFacts(CLIENT_ID, TODAY);
+
+    expect(live.training.map((t) => t.id)).toEqual(["p31"]);
+    expect(live.nutrition?.calories).toBe(2150);
+
+    expect(untouched.training).toEqual([]);
+    expect(untouched.nutrition).toBeNull();
+  });
+
+  it("days AFTER a block are not its days — the gate is bounded at both ends", async () => {
+    // The mirror of the case above, and the one a start-only bound would miss:
+    // the coach set the SECOND block up and left the first empty. A gate that
+    // only asked "is there a day on or after this block's start" would hand the
+    // untouched first block the second's program.
+    vi.mocked(listBlocks).mockResolvedValue([
+      block("empty", "2026-07-06", "2026-08-02"),
+      block("setup", "2026-08-03", "2026-08-30"),
+    ]);
+    // Both windows OPEN from before the first block, so window logic alone
+    // hands the plan and the prescription to BOTH — only the days separate them.
+    vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
+      { id: "p19", name: "Base", effectiveFrom: "2026-07-06", effectiveUntil: null },
+    ]);
+    versionsResult = {
+      data: [version("v26", "2026-07-06", null, 2550, 1975)],
+      error: null,
+    };
+    eventPages = [{ data: eventDays("2026-08-03", 28, 1975), error: null }];
+    trainingDayPages = [{ data: trainingDays("2026-08-03", 28), error: null }];
+
+    const [empty, setup] = await getBlockFacts(CLIENT_ID, TODAY);
+
+    expect(empty.training).toEqual([]);
+    expect(empty.nutrition).toBeNull();
+    expect(setup.training.map((t) => t.id)).toEqual(["p19"]);
+    expect(setup.nutrition?.calories).toBe(1975);
+  });
+
+  it("gates each track on ITS OWN days — workouts without targets say so", async () => {
+    // The two are set up separately, so a block can hold one and not the other.
+    vi.mocked(listBlocks).mockResolvedValue([block("c", "2026-09-07", "2026-10-04")]);
+    vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
+      { id: "p47", name: "Strength", effectiveFrom: "2026-09-07", effectiveUntil: null },
+    ]);
+    versionsResult = {
+      data: [version("v63", "2026-06-15", null, 2900, 2380)],
+      error: null,
+    };
+    eventPages = [{ data: [], error: null }];
+    trainingDayPages = [{ data: trainingDays("2026-09-07", 28), error: null }];
+
+    const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+
+    expect(fact.training.map((t) => t.id)).toEqual(["p47"]);
+    expect(fact.nutrition).toBeNull();
+  });
+
+  it("counts a day anywhere in the block, including one still ahead of today", async () => {
+    // A current block whose program starts tomorrow HAS days; clamping the gate
+    // at today would report it as untouched.
+    vi.mocked(listBlocks).mockResolvedValue([block("d", "2026-08-10", "2026-09-06")]);
+    vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
+      { id: "p88", name: "Deload", effectiveFrom: "2026-08-12", effectiveUntil: null },
+    ]);
+    versionsResult = { data: [], error: null };
+    eventPages = [{ data: [], error: null }];
+    trainingDayPages = [
+      { data: trainingDays(addDaysToDateString(TODAY, 1), 14), error: null },
+    ];
+
+    const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
+
+    expect(fact.training.map((t) => t.id)).toEqual(["p88"]);
   });
 
   it("past block: era pin — the version covering its FINAL day, never the newest", async () => {

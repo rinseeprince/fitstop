@@ -19,7 +19,7 @@ import type {
 // The chain routes stay pure CRUD; this service decorates each block with the
 // training and nutrition story of its window. Everything is fetched ONCE for
 // the whole journey span and partitioned per block in memory — round trips
-// are constant (blocks + 3 parallel reads), never per-block.
+// are constant (blocks + 5 parallel reads), never per-block.
 
 type EventCaloriesRow = {
   date: string;
@@ -53,6 +53,41 @@ async function fetchEventCalories(
         .order("date", { ascending: true })
         .range(from, to),
     { errorLabel: "block-facts nutrition events" }
+  );
+}
+
+/**
+ * The dates the client has a TRAINING event on, across the span. Narrow (one
+ * column) and status-agnostic: the question is whether the block has days on
+ * the calendar at all, and a completed or missed day is still a day.
+ *
+ * Paged for the same reason as the calorie read — one event per day means a
+ * 20-block journey at 52 weeks each crosses PostgREST's ~1000-row cap, and a
+ * truncated read here would silently report a block as untouched.
+ */
+async function fetchTrainingEventDates(
+  clientId: string,
+  startDate: string,
+  endDate: string
+): Promise<{ date: string }[]> {
+  return fetchAllPages<{ date: string }>(
+    (from, to) =>
+      supabaseAdmin
+        .from("training_events")
+        .select("date")
+        .eq("client_id", clientId)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: true })
+        .range(from, to),
+    { errorLabel: "block-facts training events" }
+  );
+}
+
+/** Does this block own any day on the calendar? */
+function hasDayInBlock(rows: { date: string }[], block: ClientBlock): boolean {
+  return rows.some(
+    (row) => row.date >= block.startsOn && row.date <= block.endsOn
   );
 }
 
@@ -317,20 +352,37 @@ export async function getBlockFacts(
   const spanStart = blocks[0].startsOn;
   const spanEnd = blocks[blocks.length - 1].endsOn;
 
-  const [plans, versions, events, notes] = await Promise.all([
+  const [plans, versions, events, notes, trainingDays] = await Promise.all([
     getTrainingPlansOverlapping(clientId, spanStart, spanEnd),
     fetchVersionTdeeWindows(clientId, spanStart, spanEnd),
     fetchEventCalories(clientId, spanStart, spanEnd),
-    // Fourth parallel read, partitioned per block in memory like the other
-    // three — round trips stay constant in the number of blocks, never per-block.
     listNutritionPlanNotesInRange(clientId, spanStart, spanEnd),
+    // Fifth parallel read, partitioned per block in memory like the other four
+    // — round trips stay constant in the number of blocks, never per-block.
+    fetchTrainingEventDates(clientId, spanStart, spanEnd),
   ]);
 
   const segments = reduceToGoverningSegments(plans, spanStart, spanEnd);
 
   return blocks.map((block) => {
+    // ★ A BLOCK SHOWS WHAT IS SET ONLY IF IT ACTUALLY HAS DAYS ON THE CALENDAR.
+    //
+    // Both columns resolve by WINDOW, and a placed training plan's window has
+    // no end (`effective_until` is never written) while a nutrition version's
+    // open window has none either — so a January program and its targets
+    // "govern" every later block for ever. A block the coach has drawn but not
+    // set up would claim a program it has no workouts from and a prescription
+    // it has no days of.
+    //
+    // The events are the truth for a date, so they are the gate. Per track,
+    // because the two are set up separately: a block can have workouts and no
+    // targets, or the reverse, and each column should say only what is true of
+    // its own.
+    const hasTrainingDays = hasDayInBlock(trainingDays, block);
+    const hasNutritionDays = hasDayInBlock(events, block);
+
     const training: BlockFacts["training"] = [];
-    for (const segment of segments) {
+    for (const segment of hasTrainingDays ? segments : []) {
       if (segment.from > block.endsOn || segment.to < block.startsOn) continue;
       if (training.some((fact) => fact.id === segment.plan.id)) continue;
       training.push({
@@ -342,7 +394,9 @@ export async function getBlockFacts(
     return {
       blockId: block.id,
       training,
-      nutrition: deriveNutritionFact(events, versions, block, clientToday),
+      nutrition: hasNutritionDays
+        ? deriveNutritionFact(events, versions, block, clientToday)
+        : null,
       // Inclusive on both ends and NOT clamped to today, unlike the nutrition
       // eras: a note dated inside a future block is a plan the coach has
       // already queued and explained, and hiding it until the date arrives
