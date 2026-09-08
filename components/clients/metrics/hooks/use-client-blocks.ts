@@ -106,6 +106,32 @@ export function useInvalidateClientBlocks() {
   );
 }
 
+/**
+ * Write a mutation's OWN response into the chain cache, synchronously and with
+ * no revalidation.
+ *
+ * This exists to close a frame, not to save a request. Every write here returns
+ * the full decorated chain, and a caller that instead fires a revalidation and
+ * closes its form has to pick which stale frame the coach sees: close first and
+ * the list has not arrived (the empty state flashes); await first and the list
+ * arrives while the form is still open (a reset form flashes under the new row).
+ * Reordering only moves the gap. Seeding removes it — the cache write and the
+ * caller's `setState` land in ONE React batch, so there is no frame between.
+ *
+ * Callers still fire the invalidator afterwards, for the FACTS key this cannot
+ * seed.
+ */
+export function useSeedClientBlocks() {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    (clientId: string, data: BlocksResponse["data"]) =>
+      mutate(clientBlocksKey(clientId), { success: true, data }, {
+        revalidate: false,
+      }),
+    [mutate]
+  );
+}
+
 async function parseOrThrow<T extends { success?: boolean }>(
   res: Response,
   fallback: string
@@ -121,14 +147,14 @@ async function parseOrThrow<T extends { success?: boolean }>(
 export async function putBlockChain(
   clientId: string,
   payload: ReplaceBlockChainInput
-): Promise<ClientBlockView[]> {
+): Promise<BlocksResponse["data"]> {
   const res = await fetch(clientBlocksKey(clientId), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   const body = await parseOrThrow<BlocksResponse>(res, "Failed to save blocks");
-  return body.data.blocks;
+  return body.data;
 }
 
 /** DELETE one block. Callers invalidate the blocks area on success. */
@@ -158,7 +184,7 @@ export async function patchBlockArchived(
   clientId: string,
   blockId: string,
   archived: boolean
-): Promise<ClientBlockView[]> {
+): Promise<BlocksResponse["data"]> {
   const res = await fetch(`${clientBlocksKey(clientId)}/${blockId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -168,7 +194,7 @@ export async function patchBlockArchived(
     res,
     "Failed to archive block"
   );
-  return body.data.blocks;
+  return body.data;
 }
 
 /**

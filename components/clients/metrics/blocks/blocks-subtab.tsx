@@ -27,6 +27,7 @@ import {
   useBlockFacts,
   useClientBlocks,
   useInvalidateClientBlocks,
+  useSeedClientBlocks,
 } from "../hooks/use-client-blocks";
 import { formatBlockDate } from "@/lib/blocks/block-format";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
@@ -102,6 +103,10 @@ export function BlocksSubtab({
   const { preference } = useUnits();
   const { toast } = useToast();
   const invalidateBlocks = useInvalidateClientBlocks();
+  // Every write returns the chain it just produced. Seeding it lands the new
+  // list and the closing form in ONE render, which is the only way the frame
+  // between them disappears rather than swapping which stale state shows.
+  const seedBlocks = useSeedClientBlocks();
   // The block sync rewrites training_events and nutrition_events, so this screen
   // owes both calendar areas their invalidator as well as its own.
   const invalidateTrainingData = useInvalidateTrainingData();
@@ -168,8 +173,9 @@ export function BlocksSubtab({
     const { block, values } = pendingEdit;
     setIsSyncing(true);
 
+    let saved;
     try {
-      await saveBlockDates(block, values);
+      saved = await saveBlockDates(block, values);
     } catch (error) {
       toast({
         title: "Save failed",
@@ -203,9 +209,9 @@ export function BlocksSubtab({
         void invalidateNutritionCalendar(clientId);
       }
 
-      // Awaited before the form and the dialog go, so the row underneath is
-      // already showing the new dates rather than the old ones for a frame.
-      await invalidateBlocks(clientId);
+      // Seeded before the form and the dialog go, in the same tick, so the row
+      // underneath never shows the old dates under a closed form.
+      void seedBlocks(clientId, saved);
       toast({
         title: `"${values.name}" updated`,
         description: calendarOutcome(choice, result?.trainingExtended ?? false),
@@ -236,11 +242,12 @@ export function BlocksSubtab({
   ) => {
     setDeleting(clearPlans ? "plans" : "block");
     try {
-      await deleteBlockRequest(clientId, block.id, clearPlans);
-      // Awaited for the same reason as the add: closing the dialog against a
-      // stale list shows the deleted row for a frame, and deleting the LAST
-      // block shows it and then the empty state.
-      await invalidateBlocks(clientId);
+      const remaining = await deleteBlockRequest(clientId, block.id, clearPlans);
+      // Same reason as the add: the dialog closing against a stale list shows
+      // the deleted row for a frame, and deleting the LAST block shows it and
+      // then the empty state.
+      void seedBlocks(clientId, remaining);
+      setDeleteTarget(null);
       if (clearPlans) {
         // Same rule as the sync: this removed rows from both calendars, so both
         // areas are owed their invalidator or the Training and Nutrition tabs
@@ -253,7 +260,7 @@ export function BlocksSubtab({
           ? `"${block.name}" and their plans are gone`
           : `"${block.name}" deleted`,
       });
-      setDeleteTarget(null);
+      void invalidateBlocks(clientId);
     } catch (error) {
       toast({
         title: "Delete failed",
@@ -268,7 +275,7 @@ export function BlocksSubtab({
 
   const handleAdd = async (values: BlockFormValues) => {
     try {
-      await putBlockChain(
+      const saved = await putBlockChain(
         clientId,
         buildAppendPayload(blocks, {
           name: values.name,
@@ -279,14 +286,14 @@ export function BlocksSubtab({
           targetWeightKg: values.targetWeightKg,
         })
       );
-      // AWAITED, not fire-and-forget: the empty state is gated on
-      // `blocks.length === 0`, so closing the form before the revalidation
-      // lands renders "No blocks yet" for a frame — the form is replaced by a
-      // flash of nothing before the new row appears. The submit button holds
-      // its spinner through this, so the wait reads as work.
-      await invalidateBlocks(clientId);
-      toast({ title: `"${values.name}" added` });
+      // Seed + close in the same tick: React batches them, so the coach goes
+      // from form to list with nothing in between. The empty state is gated on
+      // `blocks.length === 0` and the form on `showAddForm`, so ANY frame where
+      // only one of the two has changed shows something wrong.
+      void seedBlocks(clientId, saved);
       setShowAddForm(false);
+      toast({ title: `"${values.name}" added` });
+      void invalidateBlocks(clientId);
     } catch (error) {
       toast({
         title: "Save failed",
@@ -299,10 +306,11 @@ export function BlocksSubtab({
 
   const handleArchive = async (block: ClientBlockView, archived: boolean) => {
     try {
-      await patchBlockArchived(clientId, block.id, archived);
-      // Awaited: an archive moves the row between two filtered views, so a
-      // stale list leaves it in the one it just left.
-      await invalidateBlocks(clientId);
+      const updated = await patchBlockArchived(clientId, block.id, archived);
+      // An archive moves the row between two filtered views, so a stale list
+      // leaves it in the one it just left.
+      void seedBlocks(clientId, updated);
+      void invalidateBlocks(clientId);
       toast({
         title: archived ? `"${block.name}" archived` : `"${block.name}" restored`,
       });
@@ -328,7 +336,7 @@ export function BlocksSubtab({
       endsOn: values.endsOn,
       startsOn: values.startsOn,
     });
-    await putBlockChain(clientId, payload);
+    return putBlockChain(clientId, payload);
   };
 
   const handleEdit = async (block: ClientBlockView, values: BlockFormValues) => {
@@ -355,11 +363,13 @@ export function BlocksSubtab({
     }
 
     try {
-      await saveBlockDates(block, values);
-      // Awaited: the row renders the OLD name and dates for a frame otherwise.
-      await invalidateBlocks(clientId);
-      toast({ title: `"${values.name}" updated` });
+      const saved = await saveBlockDates(block, values);
+      // Seed + close together, or the row renders the OLD name and dates for a
+      // frame under a form that has already gone.
+      void seedBlocks(clientId, saved);
       setEditingId(null);
+      toast({ title: `"${values.name}" updated` });
+      void invalidateBlocks(clientId);
     } catch (error) {
       toast({
         title: "Save failed",
