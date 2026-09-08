@@ -24,14 +24,26 @@ vi.mock("@/services/today-service", () => ({
 
 // The factory defines the error classes so the route and this test share the
 // same class objects for instanceof.
-// The route reaches the event-sync service only behind ?clearEvents=true; the
-// module is stubbed so importing it does not pull in supabase-admin.
-vi.mock("@/services/block-event-sync-service", () => ({
-  clearScheduledEvents: vi.fn().mockResolvedValue({
-    trainingCleared: 0,
-    nutritionCleared: 0,
-  }),
+// The route reaches the two plan-delete services only behind ?clearPlans=true;
+// both are stubbed so importing them does not pull in supabase-admin. Their own
+// behaviour is proved in their own suites — here only that they are FIRED, in
+// the right order, and only when asked.
+vi.mock("@/services/training-plan-clear-service", () => ({
+  clearAllTrainingPlansForClient: vi.fn().mockResolvedValue({ plansCleared: 0 }),
 }));
+
+vi.mock("@/services/nutrition-plan-orchestrator", () => {
+  class NutritionPlanError extends Error {
+    constructor(message: string, public statusCode: number) {
+      super(message);
+      this.name = "NutritionPlanError";
+    }
+  }
+  return {
+    NutritionPlanError,
+    orchestrateNutritionPlanDeletion: vi.fn().mockResolvedValue({ planId: "p1" }),
+  };
+});
 
 vi.mock("@/services/client-blocks-service", () => {
   class ElapsedBlockImmutableError extends Error {}
@@ -53,7 +65,11 @@ vi.mock("@/services/client-blocks-service", () => {
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
-import { clearScheduledEvents } from "@/services/block-event-sync-service";
+import { clearAllTrainingPlansForClient } from "@/services/training-plan-clear-service";
+import {
+  NutritionPlanError,
+  orchestrateNutritionPlanDeletion,
+} from "@/services/nutrition-plan-orchestrator";
 import {
   BlockWindowError,
   deleteBlock,
@@ -130,37 +146,73 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
         targetTable: "client_phases",
         targetId: "block-b",
         clientId: "client-1",
-        metadata: { blockCount: 1, clearedEvents: false },
+        metadata: { blockCount: 1, clearedPlans: false },
       })
     );
   });
 
-  it("clears the block's own days first when the coach asks for it", async () => {
-    // Never a default: without ?clearEvents=true the events stay put, which is
-    // what keeps a block edit from writing anything on its own.
+  it("fires the two plan deletes, nutrition first, when the coach asks for it", async () => {
+    // Three things the coach can already do, together — reusing those paths
+    // rather than inventing a block-scoped deletion.
+    //
+    // NUTRITION FIRST is load-bearing: its delete closes the covering version at
+    // the day before the deletion floor, so the training clear's own cascade
+    // then finds no version governing those days and rebuilds nothing.
     vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
-    vi.mocked(listBlocks).mockResolvedValue([
-      {
-        id: "block-b",
-        name: "Cut",
-        focus: null,
-        targetWeightKg: null,
-        startsOn: "2026-08-11",
-        endsOn: "2026-09-07",
-        archivedAt: null,
-      },
-    ]);
 
-    const response = await DELETE(createMockRequest("?clearEvents=true"), mockParams);
+    const response = await DELETE(createMockRequest("?clearPlans=true"), mockParams);
 
     expect(response.status).toBe(200);
-    expect(clearScheduledEvents).toHaveBeenCalledWith(
-      expect.objectContaining({ from: "2026-08-11", to: "2026-09-07" })
-    );
-    // BEFORE the row goes — the clear needs the window it is clearing.
+    expect(orchestrateNutritionPlanDeletion).toHaveBeenCalledWith("client-1", "coach-1");
+    expect(clearAllTrainingPlansForClient).toHaveBeenCalledWith("client-1", TODAY);
     expect(
-      vi.mocked(clearScheduledEvents).mock.invocationCallOrder[0]
+      vi.mocked(orchestrateNutritionPlanDeletion).mock.invocationCallOrder[0]
+    ).toBeLessThan(
+      vi.mocked(clearAllTrainingPlansForClient).mock.invocationCallOrder[0]
+    );
+    // Both BEFORE the row goes.
+    expect(
+      vi.mocked(clearAllTrainingPlansForClient).mock.invocationCallOrder[0]
     ).toBeLessThan(vi.mocked(deleteBlock).mock.invocationCallOrder[0]);
+  });
+
+  it("touches no plan without ?clearPlans=true", async () => {
+    // What keeps "a block edit writes nothing on its own" true.
+    vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
+
+    await DELETE(createMockRequest(), mockParams);
+
+    expect(orchestrateNutritionPlanDeletion).not.toHaveBeenCalled();
+    expect(clearAllTrainingPlansForClient).not.toHaveBeenCalled();
+  });
+
+  it("carries on when there is no nutrition plan left to delete", async () => {
+    // The coach asked for the plans to go and one was already gone. A 404 from
+    // that path is not a failure of THIS one.
+    vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
+    vi.mocked(orchestrateNutritionPlanDeletion).mockRejectedValueOnce(
+      new NutritionPlanError("No active nutrition plan to delete", 404)
+    );
+
+    const response = await DELETE(createMockRequest("?clearPlans=true"), mockParams);
+
+    expect(response.status).toBe(200);
+    expect(clearAllTrainingPlansForClient).toHaveBeenCalled();
+    expect(deleteBlock).toHaveBeenCalled();
+  });
+
+  it("stops on a REAL nutrition-delete failure rather than deleting the block", async () => {
+    // Losing the block while its plan survives is the one outcome that cannot
+    // be undone from the UI: the label is gone and the prescription is not.
+    vi.mocked(orchestrateNutritionPlanDeletion).mockRejectedValueOnce(
+      new NutritionPlanError("Forbidden", 403)
+    );
+
+    const response = await DELETE(createMockRequest("?clearPlans=true"), mockParams);
+
+    expect(response.status).toBe(500);
+    expect(clearAllTrainingPlansForClient).not.toHaveBeenCalled();
+    expect(deleteBlock).not.toHaveBeenCalled();
   });
 
   it("404s an unknown block id", async () => {

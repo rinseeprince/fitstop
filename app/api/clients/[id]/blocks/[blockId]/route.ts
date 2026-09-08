@@ -4,11 +4,14 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { decorateBlocks } from "@/lib/blocks/block-derivations";
 import { archiveBlockSchema } from "@/lib/validations/client-blocks";
-import { clearScheduledEvents } from "@/services/block-event-sync-service";
+import { clearAllTrainingPlansForClient } from "@/services/training-plan-clear-service";
+import {
+  NutritionPlanError,
+  orchestrateNutritionPlanDeletion,
+} from "@/services/nutrition-plan-orchestrator";
 import {
   BlockWindowError,
   deleteBlock,
-  listBlocks,
   ElapsedBlockImmutableError,
   setBlockArchived,
   UnknownBlockIdError,
@@ -20,10 +23,23 @@ import { AUDIT_ACTIONS } from "@/lib/constants";
 // Delete one journey block: the row goes and nothing else moves (migration 164).
 // Elapsed blocks 422.
 //
-// `?clearEvents=true` additionally clears the block's own scheduled days on both
-// tracks before the row goes — the coach's answer to the confirm dialog, never a
-// default. Without it the events stay exactly where they are, which is the rule
-// that a block edit writes nothing on its own.
+// `?clearPlans=true` additionally fires THREE THINGS THE COACH CAN ALREADY DO,
+// together: delete the nutrition plan, delete the training plan, delete the
+// block. It is the coach's answer to the confirm dialog, never a default —
+// without it nothing but the row goes, which is the rule that a block edit
+// writes nothing on its own.
+//
+// It reuses those two existing paths rather than inventing a block-scoped
+// deletion, deliberately: a rule for which plans "belong to" a block is how a
+// pointer architecture arrives by the back door, and blocks carry DATES, never
+// an id anything else points at.
+//
+// Clearing the block's own days and leaving the plans standing was the previous
+// behaviour and did not survive contact: the plans regenerate the days on the
+// next cascade, so the delete undid itself. The cost of the plan-level act is
+// accepted (owner, 2026-09-08) and stated in the dialog — the two deletes run
+// from the shared floor FORWARD, unbounded, so a LATER block with its own
+// program loses it too and survives as an empty label.
 
 export async function DELETE(
   request: NextRequest,
@@ -42,23 +58,32 @@ export async function DELETE(
     if (!auth.authorized) return auth.response;
 
     const clientToday = await getClientTodayString(clientId);
-    const clearEvents =
-      new URL(request.url).searchParams.get("clearEvents") === "true";
+    const clearPlans =
+      new URL(request.url).searchParams.get("clearPlans") === "true";
 
-    // BEFORE the row goes — the clear needs the window it is clearing.
-    let cleared: { trainingCleared: number; nutritionCleared: number } | null = null;
-    if (clearEvents) {
-      const block = (await listBlocks(clientId)).find((b) => b.id === blockId);
-      if (block) {
-        // The block's OWN window — not the outside-it range the shorten arm
-        // clears. Floored at the client's today inside the service.
-        cleared = await clearScheduledEvents({
-          clientId,
-          clientToday,
-          from: block.startsOn,
-          to: block.endsOn,
-        });
+    // Nutrition FIRST. Its delete closes the covering version at the day before
+    // the deletion floor, so the training clear's own cascade then finds no
+    // version governing those days and rebuilds nothing. The other order works
+    // too but writes days it is about to remove.
+    let cleared: { nutritionPlan: boolean; trainingPlansCleared: number } | null = null;
+    if (clearPlans) {
+      let nutritionPlan = false;
+      try {
+        await orchestrateNutritionPlanDeletion(clientId, auth.coachId);
+        nutritionPlan = true;
+      } catch (error) {
+        // "No active nutrition plan to delete" is not a failure here: the coach
+        // asked for the plans to go and one of them was already gone. Anything
+        // else is real and stops the delete.
+        if (!(error instanceof NutritionPlanError && error.statusCode === 404)) {
+          throw error;
+        }
       }
+      const { plansCleared } = await clearAllTrainingPlansForClient(
+        clientId,
+        clientToday
+      );
+      cleared = { nutritionPlan, trainingPlansCleared: plansCleared };
     }
 
     const result = await deleteBlock(clientId, clientToday, blockId);
@@ -70,7 +95,7 @@ export async function DELETE(
       targetTable: "client_phases",
       targetId: blockId,
       clientId,
-      metadata: { blockCount: result.blocks.length, clearedEvents: clearEvents },
+      metadata: { blockCount: result.blocks.length, clearedPlans: clearPlans },
       request,
     });
 

@@ -4,13 +4,9 @@ import {
   getTrainingPlanForDate,
   getNextFutureTrainingPlan,
   getTrainingPlanById,
-  archiveTrainingPlan,
 } from "@/services/training-service";
-import { cancelFutureEventsForPlan } from "@/services/training-event-service";
-import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
+import { clearAllTrainingPlansForClient } from "@/services/training-plan-clear-service";
 import { getClientTodayString } from "@/services/today-service";
-import { supabaseAdmin } from "@/services/supabase-admin";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -130,45 +126,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // Client-local today anchors the "future" cutoff on the client's calendar,
-    // and the shared deletion floor decides which day the removal may start on:
-    // today, or tomorrow if the client has already touched today.
+    // Client-local today anchors the "future" cutoff on the client's calendar.
+    // The act itself lives in a service because the block delete's "and its
+    // plans" fires the same one — a second copy would be a second answer.
     const today = await getClientTodayString(clientId);
-    const deleteFrom = await resolveEventDeletionFloor(clientId, today);
+    const { plansCleared } = await clearAllTrainingPlansForClient(clientId, today);
 
-    const { data: plans } = await supabaseAdmin
-      .from("training_plans")
-      .select("id")
-      .eq("client_id", clientId)
-      .is("deleted_at", null)
-      .neq("status", "archived");
-
-    // The furthest day ANY of these plans had an event on — every one of them is
-    // archived by the loop, so the nutrition horizon can no longer see them, and
-    // the cascade below has to be told how far their prescription reached or it
-    // leaves a stale training surplus on every day past the horizon.
-    let clearedThrough: string | null = null;
-    for (const p of plans ?? []) {
-      await archiveTrainingPlan(p.id);
-      const cleared = await cancelFutureEventsForPlan(p.id, deleteFrom);
-      if (cleared !== null && (clearedThrough === null || cleared > clearedThrough)) {
-        clearedThrough = cleared;
-      }
-    }
-
-    // Cascade once: nutrition burn estimates depend on training events.
-    // Open-ended forward to the client's own horizon, extended to cover every
-    // day the loop above just cleared.
-    await cascadeNutritionAfterTrainingChange(
-      clientId,
-      { kind: "from", from: today, to: clearedThrough ?? undefined },
-      "cascade-nutrition-events-from-clear-all-training"
-    );
-
-    return NextResponse.json(
-      { success: true, plansCleared: plans?.length ?? 0 },
-      { status: 200 }
-    );
+    return NextResponse.json({ success: true, plansCleared }, { status: 200 });
   } catch (error) {
     console.error("Error clearing future training sessions:", error);
     return NextResponse.json(

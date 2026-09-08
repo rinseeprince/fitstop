@@ -222,13 +222,13 @@ export function BlocksSubtab({
 
   const handleDeleteConfirm = async (
     block: ClientBlockView,
-    clearEvents: boolean
+    clearPlans: boolean
   ) => {
     setIsDeleting(true);
     try {
-      await deleteBlockRequest(clientId, block.id, clearEvents);
+      await deleteBlockRequest(clientId, block.id, clearPlans);
       void invalidateBlocks(clientId);
-      if (clearEvents) {
+      if (clearPlans) {
         // Same rule as the sync: this removed rows from both calendars, so both
         // areas are owed their invalidator or the Training and Nutrition tabs
         // keep showing days that are gone (CONVENTIONS §7).
@@ -236,8 +236,8 @@ export function BlocksSubtab({
         void invalidateNutritionCalendar(clientId);
       }
       toast({
-        title: clearEvents
-          ? `"${block.name}" and its days are gone`
+        title: clearPlans
+          ? `"${block.name}" and their plans are gone`
           : `"${block.name}" deleted`,
       });
       setDeleteTarget(null);
@@ -629,7 +629,7 @@ export function BlocksSubtab({
         block={deleteTarget}
         isDeleting={isDeleting}
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={(block, clearEvents) => void handleDeleteConfirm(block, clearEvents)}
+        onConfirm={(block, clearPlans) => void handleDeleteConfirm(block, clearPlans)}
       />
     </div>
   );

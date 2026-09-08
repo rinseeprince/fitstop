@@ -16,13 +16,18 @@ import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 // danger-OUTLINE CTA repeating the verb. There is no filled destructive button
 // in this system.
 //
-// No consequence sentence: a block owns its own window (migration 164), so
-// deleting one leaves a gap and moves nothing else.
+// Two CTAs, because the plans are a separate decision and neither answer is a
+// default. Deleting the block alone leaves the calendar untouched — a block owns
+// its own window (migration 164), so the row goes and nothing else moves.
 //
-// Two CTAs, because the events are a separate decision and neither answer is a
-// default. Deleting the block alone leaves its workouts and targets on the
-// calendar; the second clears its scheduled days too, from today forward,
-// leaving everything logged and everything past where it is.
+// ONE consequence sentence, for the second CTA only. It fires the two plan
+// deletes the calendars already offer, and those run from today FORWARD with no
+// upper bound — so a later block's program goes with them, and a coach who is
+// not told that finds out by losing work.
+//
+// What the buttons already say is not repeated: "Delete block" needs no gloss,
+// and "upcoming" carries the past-is-safe half without a sentence of its own.
+// A confirm that has to be read twice is not a confirm.
 
 const DANGER_CTA =
   "border border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]";
@@ -31,7 +36,7 @@ type DeleteBlockDialogProps = {
   block: ClientBlockView | null; // null = closed
   isDeleting: boolean;
   onCancel: () => void;
-  onConfirm: (block: ClientBlockView, clearEvents: boolean) => void;
+  onConfirm: (block: ClientBlockView, clearPlans: boolean) => void;
 };
 
 export function DeleteBlockDialog({
@@ -60,6 +65,13 @@ export function DeleteBlockDialog({
             </DialogTitle>
           </div>
         </DialogHeader>
+        <p className="text-sm text-[#5a7d82]">
+          <span className="font-semibold text-[#0c1a1e]">
+            Delete block and its plans
+          </span>{" "}
+          removes their training and nutrition plans too — every upcoming day of
+          both goes, including days in later blocks.
+        </p>
         <DialogFooter className="flex-col gap-2 sm:flex-row">
           <Button variant="ghost" onClick={onCancel} disabled={isDeleting}>
             Cancel
@@ -79,7 +91,7 @@ export function DeleteBlockDialog({
             disabled={isDeleting || !block}
             onClick={() => block && onConfirm(block, true)}
           >
-            Delete block and its days
+            Delete block and its plans
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -87,7 +87,7 @@ export function useBlockFacts(clientId: string) {
  * Invalidates every cached read under the blocks area (chain + facts).
  *
  * NOT sufficient on its own for the two writes that reach the calendar — the
- * events sync and a delete carrying `clearEvents` rewrite `training_events` and
+ * events sync and a delete carrying `clearPlans` rewrite `training_events` and
  * `nutrition_events` too, so those call sites also invoke
  * `useInvalidateTrainingData` and `useInvalidateNutritionCalendar`
  * (CONVENTIONS §7). Only the chain PUT, PATCH and a plain delete are
@@ -136,11 +136,13 @@ export async function deleteBlockRequest(
   clientId: string,
   blockId: string,
   /** The coach's answer to the confirm dialog. Never a default: without it the
-   *  block's events stay exactly where they are. */
-  clearEvents = false
+   *  block's plans and days stay exactly where they are. With it, the client's
+   *  nutrition plan and training plans are deleted alongside the block — the
+   *  same two acts the calendars offer, fired together. */
+  clearPlans = false
 ): Promise<DeleteBlockResponse["data"]> {
   const res = await fetch(
-    `${clientBlocksKey(clientId)}/${blockId}${clearEvents ? "?clearEvents=true" : ""}`,
+    `${clientBlocksKey(clientId)}/${blockId}${clearPlans ? "?clearPlans=true" : ""}`,
     { method: "DELETE" }
   );
   const body = await parseOrThrow<DeleteBlockResponse>(
