@@ -18,11 +18,7 @@ import { useUnits } from "@/contexts/units-context";
 import { useCanonicalInput } from "@/hooks/use-unit-inputs";
 import { formatWeight } from "@/utils/unit-conversions";
 import { addDaysToDateString, getTodayDateString } from "@/lib/date-helpers";
-import {
-  DAYS_PER_BLOCK_WEEK,
-  inclusiveDays,
-  weeksSpanned,
-} from "@/lib/blocks/block-chain";
+import { DAYS_PER_BLOCK_WEEK } from "@/lib/blocks/block-chain";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import {
   BLOCK_FOCUS_MAX,
@@ -31,18 +27,18 @@ import {
   WEIGHT_KG_MAX,
   WEIGHT_KG_MIN,
 } from "@/lib/constants";
-import { formatBlockDate, formatBlockLength } from "@/lib/blocks/block-format";
+import { formatBlockDate } from "@/lib/blocks/block-format";
 
 // One inline form for both adding and editing a block (the habits
 // manage-drawer swap precedent for the SHELL only — its raw-useState
-// internals predate the react-hook-form rule). Lengths are picked as an END
-// DATE (day-granular, 3.6-B); the start is derived from the chain, so the
-// coach never enters a date pair — except the chain's very first block while
-// nothing is lived, where the anchor itself is theirs to move. Elapsed edits
-// are fields-only: their dates render as fixed text. Target weight collects
-// in the VIEWER's unit through useCanonicalInput and commits canonical kg;
-// the RHF field holds the canonical number so zodResolver validates what
-// will actually be stored (the add-client-manual-form pattern).
+// internals predate the react-hook-form rule). Both dates are the coach's;
+// elapsed edits are fields-only, their dates rendered as fixed text. Target
+// weight collects in the VIEWER's unit through useCanonicalInput and commits
+// canonical kg; the RHF field holds the canonical number so zodResolver
+// validates what will actually be stored (the add-client-manual-form pattern).
+//
+// No live summary sentence: the two date fields already say when the block
+// starts and ends, and a journey total is the rail's job, not the form's.
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -164,10 +160,6 @@ type BlockFormProps = {
   /** The client's today (their timezone, off the wire) — floors the Starts
    *  field whenever it renders. Null only while the wire hasn't answered. */
   minStart?: string | null;
-  /** Sum of every OTHER block's weeks, for the live journey-total sentence. */
-  otherBlocksWeeks: number;
-  /** Edit-mode push-forward preview: the moved-blocks clause for an end. */
-  shiftPreview?: (endsOn: string) => string | null;
   onSubmit: (values: BlockFormValues) => Promise<void>;
   onCancel: () => void;
 };
@@ -178,8 +170,6 @@ const FIELD_INPUT = "bg-white";
 export function BlockForm({
   mode,
   minStart = null,
-  otherBlocksWeeks,
-  shiftPreview,
   onSubmit,
   onCancel,
 }: BlockFormProps) {
@@ -255,7 +245,6 @@ export function BlockForm({
     });
   }, [weightInput.commit, weightInput.isPristine, setValue]);
 
-  const endsOnValue = watch("endsOn");
   const startsOnValue = watch("startsOn");
   const nextStart =
     fixedStart ??
@@ -263,25 +252,6 @@ export function BlockForm({
   const maxEnd = nextStart
     ? addDaysToDateString(nextStart, BLOCK_WEEKS_MAX * DAYS_PER_BLOCK_WEEK - 1)
     : undefined;
-  const endValid =
-    !isElapsedEdit &&
-    nextStart != null &&
-    endsOnValue != null &&
-    DATE_RE.test(endsOnValue) &&
-    endsOnValue >= (minEnd && minEnd > nextStart ? minEnd : nextStart) &&
-    (maxEnd === undefined || endsOnValue <= maxEnd);
-  const journeyTotal =
-    otherBlocksWeeks +
-    (isElapsedEdit
-      ? editing.weeks
-      : endValid && nextStart
-        ? weeksSpanned(nextStart, endsOnValue)
-        : 0);
-  const shiftClause =
-    endValid && shiftPreview && endsOnValue !== editing?.endsOn
-      ? shiftPreview(endsOnValue)
-      : null;
-
   const submit = handleSubmit(async (values) => {
     if (weightInput.hasParseError) return;
     await onSubmit({
@@ -404,17 +374,7 @@ export function BlockForm({
         )}
       </div>
 
-      {nextStart && endValid && (
-        // A sentence, therefore 100% sans — the prose rule.
-        <p className="text-xs text-[#5a7d82]">
-          Starts {formatBlockDate(nextStart)}, ends {formatBlockDate(endsOnValue)}{" "}
-          — {formatBlockLength(inclusiveDays(nextStart, endsOnValue))}.
-          {shiftClause ? ` ${shiftClause}` : ""} Journey becomes {journeyTotal}{" "}
-          {journeyTotal === 1 ? "week" : "weeks"}.
-        </p>
-      )}
-
-      <div className="flex items-center justify-end gap-2 pt-1">
+      <div className="flex items-center justify-end gap-2">
         <Button
           type="button"
           variant="ghost"

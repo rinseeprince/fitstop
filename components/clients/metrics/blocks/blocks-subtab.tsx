@@ -403,7 +403,6 @@ export function BlocksSubtab({
         appendAfterEndsOn: blocks[blocks.length - 1]?.endsOn ?? null,
       }}
       minStart={clientToday}
-      otherBlocksWeeks={journeyWeeks}
       onSubmit={handleAdd}
       onCancel={() => setShowAddForm(false)}
     />
@@ -522,9 +521,6 @@ export function BlocksSubtab({
                     minEnd: block.state === "current" ? clientToday : null,
                   }}
                   minStart={clientToday}
-                  otherBlocksWeeks={
-                    journeyWeeks - (block.archivedAt ? 0 : block.weeks)
-                  }
                   onSubmit={(values) => handleEdit(block, values)}
                   onCancel={() => setEditingId(null)}
                 />
