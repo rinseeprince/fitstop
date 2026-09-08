@@ -42,7 +42,10 @@ import {
   type BlockEventsPrompt,
   type BlockEventsStep,
 } from "./block-events-dialog";
-import { DeleteBlockDialog } from "./delete-block-dialog";
+import {
+  DeleteBlockDialog,
+  type BlockDeleteChoice,
+} from "./delete-block-dialog";
 import type { MetricSummary } from "../metrics-view-types";
 
 // The Journey tab's Blocks pane: the chain (decorated server-side in the
@@ -111,7 +114,9 @@ export function BlocksSubtab({
   const [view, setView] = useState<"journey" | "archive">("journey");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientBlockView | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  // Which delete is running, not merely that one is: the spinner belongs on
+  // the button that was pressed.
+  const [deleting, setDeleting] = useState<BlockDeleteChoice | null>(null);
 
   const factsById = useMemo(
     () => new Map(facts.map((fact) => [fact.blockId, fact])),
@@ -198,6 +203,9 @@ export function BlocksSubtab({
         void invalidateNutritionCalendar(clientId);
       }
 
+      // Awaited before the form and the dialog go, so the row underneath is
+      // already showing the new dates rather than the old ones for a frame.
+      await invalidateBlocks(clientId);
       toast({
         title: `"${values.name}" updated`,
         description: calendarOutcome(choice, result?.trainingExtended ?? false),
@@ -215,6 +223,8 @@ export function BlocksSubtab({
         variant: "destructive",
       });
     } finally {
+      // The success path has already awaited it; this catches the failure path,
+      // where the dates DID save and the row must show them.
       void invalidateBlocks(clientId);
       setIsSyncing(false);
     }
@@ -224,10 +234,13 @@ export function BlocksSubtab({
     block: ClientBlockView,
     clearPlans: boolean
   ) => {
-    setIsDeleting(true);
+    setDeleting(clearPlans ? "plans" : "block");
     try {
       await deleteBlockRequest(clientId, block.id, clearPlans);
-      void invalidateBlocks(clientId);
+      // Awaited for the same reason as the add: closing the dialog against a
+      // stale list shows the deleted row for a frame, and deleting the LAST
+      // block shows it and then the empty state.
+      await invalidateBlocks(clientId);
       if (clearPlans) {
         // Same rule as the sync: this removed rows from both calendars, so both
         // areas are owed their invalidator or the Training and Nutrition tabs
@@ -249,7 +262,7 @@ export function BlocksSubtab({
         variant: "destructive",
       });
     } finally {
-      setIsDeleting(false);
+      setDeleting(null);
     }
   };
 
@@ -266,7 +279,12 @@ export function BlocksSubtab({
           targetWeightKg: values.targetWeightKg,
         })
       );
-      void invalidateBlocks(clientId);
+      // AWAITED, not fire-and-forget: the empty state is gated on
+      // `blocks.length === 0`, so closing the form before the revalidation
+      // lands renders "No blocks yet" for a frame — the form is replaced by a
+      // flash of nothing before the new row appears. The submit button holds
+      // its spinner through this, so the wait reads as work.
+      await invalidateBlocks(clientId);
       toast({ title: `"${values.name}" added` });
       setShowAddForm(false);
     } catch (error) {
@@ -282,7 +300,9 @@ export function BlocksSubtab({
   const handleArchive = async (block: ClientBlockView, archived: boolean) => {
     try {
       await patchBlockArchived(clientId, block.id, archived);
-      void invalidateBlocks(clientId);
+      // Awaited: an archive moves the row between two filtered views, so a
+      // stale list leaves it in the one it just left.
+      await invalidateBlocks(clientId);
       toast({
         title: archived ? `"${block.name}" archived` : `"${block.name}" restored`,
       });
@@ -336,7 +356,8 @@ export function BlocksSubtab({
 
     try {
       await saveBlockDates(block, values);
-      void invalidateBlocks(clientId);
+      // Awaited: the row renders the OLD name and dates for a frame otherwise.
+      await invalidateBlocks(clientId);
       toast({ title: `"${values.name}" updated` });
       setEditingId(null);
     } catch (error) {
@@ -627,7 +648,7 @@ export function BlocksSubtab({
 
       <DeleteBlockDialog
         block={deleteTarget}
-        isDeleting={isDeleting}
+        deleting={deleting}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={(block, clearPlans) => void handleDeleteConfirm(block, clearPlans)}
       />

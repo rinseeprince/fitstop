@@ -32,25 +32,36 @@ import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 const DANGER_CTA =
   "border border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]";
 
+/** Which button is working, so the spinner lands on the one that was pressed. */
+export type BlockDeleteChoice = "block" | "plans";
+
 type DeleteBlockDialogProps = {
   block: ClientBlockView | null; // null = closed
-  isDeleting: boolean;
+  deleting: BlockDeleteChoice | null;
   onCancel: () => void;
   onConfirm: (block: ClientBlockView, clearPlans: boolean) => void;
 };
 
 export function DeleteBlockDialog({
   block,
-  isDeleting,
+  deleting,
   onCancel,
   onConfirm,
 }: DeleteBlockDialogProps) {
+  const isDeleting = deleting !== null;
   return (
     <Dialog
       open={block != null}
       onOpenChange={(open) => !open && !isDeleting && onCancel()}
     >
-      <DialogContent className="sm:max-w-md">
+      {/* Deliberately NOT sm:max-w-md. DialogContent is a GRID, and a grid
+          item's default `min-width: auto` means the column cannot shrink below
+          its content's min-content width — three non-shrinking buttons in a row
+          exceeded 448px, widened the column past the panel, and the panel's
+          background then clipped everything in it, the paragraph included.
+          `min-w-0` on both is what actually forbids that; the default width and
+          the wrapping footer are what stop it looking cramped. */}
+      <DialogContent className="min-w-0">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[6px] bg-[rgba(192,96,96,0.08)]">
@@ -72,7 +83,7 @@ export function DeleteBlockDialog({
           removes their training and nutrition plans too — every upcoming day of
           both goes, including days in later blocks.
         </p>
-        <DialogFooter className="flex-col gap-2 sm:flex-row">
+        <DialogFooter className="min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button variant="ghost" onClick={onCancel} disabled={isDeleting}>
             Cancel
           </Button>
@@ -82,7 +93,9 @@ export function DeleteBlockDialog({
             disabled={isDeleting || !block}
             onClick={() => block && onConfirm(block, false)}
           >
-            {isDeleting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+            {deleting === "block" && (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            )}
             Delete block
           </Button>
           <Button
@@ -91,6 +104,9 @@ export function DeleteBlockDialog({
             disabled={isDeleting || !block}
             onClick={() => block && onConfirm(block, true)}
           >
+            {deleting === "plans" && (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            )}
             Delete block and its plans
           </Button>
         </DialogFooter>
