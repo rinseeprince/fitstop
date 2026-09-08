@@ -40,6 +40,7 @@ import {
   BlockEventsDialog,
   type BlockEventsChoice,
   type BlockEventsPrompt,
+  type BlockEventsStep,
 } from "./block-events-dialog";
 import { DeleteBlockDialog } from "./delete-block-dialog";
 import type { MetricSummary } from "../metrics-view-types";
@@ -125,8 +126,29 @@ export function BlocksSubtab({
     block: ClientBlockView;
     values: BlockFormValues;
     prompt: BlockEventsPrompt;
+    /** Which question is on screen. Owned here so dismissing resets it. */
+    step: BlockEventsStep;
   } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  /**
+   * Step 1's yes. The pricing question only follows when there is a nutrition
+   * prescription to price — a block we KNOW has none has nothing to ask, so the
+   * save completes straight away with the training extension and a no-op fill.
+   * While the facts are loading or failed we ask anyway: a pointless question
+   * costs a click, a skipped one silently denies the coach the choice.
+   */
+  const handleExtend = () => {
+    if (!pendingEdit) return;
+    const facts = factsById.get(pendingEdit.block.id);
+    const mightHaveNutrition =
+      factsLoading || factsError || facts == null || facts.nutrition != null;
+    if (mightHaveNutrition) {
+      setPendingEdit((prev) => (prev ? { ...prev, step: "price" } : prev));
+      return;
+    }
+    void completeEdit({ calendar: "fill", nutrition: "keep" });
+  };
 
   /**
    * The coach's answer completes the save: the dates first, the calendar
@@ -301,6 +323,7 @@ export function BlocksSubtab({
       setPendingEdit({
         block,
         values,
+        step: "ask",
         prompt: {
           blockName: values.name,
           direction: nextEnd > block.endsOn ? "extended" : "shortened",
@@ -592,8 +615,13 @@ export function BlocksSubtab({
 
       <BlockEventsDialog
         prompt={pendingEdit?.prompt ?? null}
+        step={pendingEdit?.step ?? "ask"}
         isWorking={isSyncing}
         onCancel={() => setPendingEdit(null)}
+        onBack={() =>
+          setPendingEdit((prev) => (prev ? { ...prev, step: "ask" } : prev))
+        }
+        onExtend={handleExtend}
         onChoose={(choice) => void completeEdit(choice)}
       />
 
