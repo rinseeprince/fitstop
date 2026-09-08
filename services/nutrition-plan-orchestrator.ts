@@ -19,6 +19,7 @@ import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
 import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
+import { addDaysToDateString } from "@/lib/date-helpers";
 
 /** The resolver's success arm — both plan handlers require complete inputs. */
 type ReadyCalcInputs = Extract<NutritionCalcInputs, { status: "ready" }>;
@@ -111,6 +112,11 @@ async function recordCoachNoteOrThrow(
  * (the shared deletion floor); coach-edited (is_modified) FUTURE days go too,
  * deliberately — a deleted plan leaves no forward prescription.
  *
+ * The window and the events end on the SAME day: the covering version closes at
+ * the day before the first day the delete removes. A version still covering a
+ * date whose event is gone is a contradiction, and the next cascade resolves it
+ * by putting the day back.
+ *
  * Events are cleared FIRST so a mid-flight failure is retryable: with the
  * chain intact, a re-DELETE resolves it again and repeats the (idempotent)
  * steps. Throws NutritionPlanError for ownership / not-found failures.
@@ -128,23 +134,40 @@ export async function orchestrateNutritionPlanDeletion(
     throw new NutritionPlanError("Forbidden: You don't have access to this client", 403);
   }
 
+  const clientToday = await getClientTodayString(clientId);
+
+  // The ONE shared deletion floor — never this path's own arithmetic. Today, or
+  // tomorrow if the client has already touched today.
+  const deleteFrom = await resolveEventDeletionFloor(clientId, clientToday);
+
+  // ★ A VERSION'S WINDOW ENDS WHERE ITS EVENTS END. The close date is the day
+  // before the first day the delete removes — not "today".
+  //
+  // These two must not drift apart by even a day. A version left covering a
+  // date whose event was deleted is a contradiction the next cascade resolves
+  // AGAINST the coach: `cascadeNutritionAfterTrainingChange` regenerates every
+  // date its versions govern, so clearing the training plan seconds later put
+  // the deleted day straight back. With the window closed at the floor − 1 no
+  // version overlaps that day, the cascade finds nothing to regenerate, and the
+  // day stays gone.
+  const closeAt = addDaysToDateString(deleteFrom, -1);
+
   // The versioned chain (migration 144). Delete = close, never erase, for
-  // governed days; hard-delete for never-effective queued versions (D2):
-  //  - the COVERING version stays ACTIVE with effective_until = clientToday —
-  //    its ended, successor-less window IS the record of the delete, and it
-  //    keeps explaining today and the past in history reads;
+  // governed days; hard-delete for versions that governed nothing (D2):
+  //  - the COVERING version stays ACTIVE with effective_until = closeAt — its
+  //    ended, successor-less window IS the record of the delete, and it keeps
+  //    explaining the days it governed in history reads;
   //  - QUEUED versions governed nothing, and any retained window would
   //    corrupt no-status-filter history attribution, so their rows go
   //    (daily targets CASCADE; event/log FKs are SET NULL).
-  // Deletable = something reaches PAST today (an open or future-closed
-  // covering window, or a queued version); a chain already ending at today
+  // Deletable = something outlasts the delete (an open or later-closed covering
+  // window, or a queued version); a chain that already ends at the close date
   // has nothing left to remove and 404s, which also makes a same-day second
   // delete a clean 404 rather than a silent success.
-  const clientToday = await getClientTodayString(clientId);
   const covering = await getNutritionPlanForDate(clientId, clientToday);
-  const coveringReachesPastToday =
+  const coveringOutlastsTheDelete =
     covering != null &&
-    (covering.effective_until === null || covering.effective_until > clientToday);
+    (covering.effective_until === null || covering.effective_until > closeAt);
 
   const { data: queuedRows, error: queuedError } = await supabaseAdmin
     .from("nutrition_plans")
@@ -160,29 +183,35 @@ export async function orchestrateNutritionPlanDeletion(
   }
   const queuedIds = (queuedRows ?? []).map((row) => row.id);
 
-  if (!coveringReachesPastToday && queuedIds.length === 0) {
+  if (!coveringOutlastsTheDelete && queuedIds.length === 0) {
     throw new NutritionPlanError("No active nutrition plan to delete", 404);
   }
 
-  // The ONE shared deletion floor — never this path's own arithmetic. Today, or
-  // tomorrow if the client has already touched today.
-  //
-  // An untouched today DOES go: the coach is removing the prescription, and the
-  // covering version still explains today either way, so the client's food card
-  // stays writable — it 422s on a missing VERSION, never on a missing event.
+  // An untouched today DOES go — prescription and window together. The client's
+  // food card then refuses today, which is correct: it 422s on a missing
+  // VERSION, and after this there is no version for that day to write against.
   //
   // Client-scoped so events stamped by queued versions' ids are swept too. Steps
   // are ordered idempotently: a mid-flight failure leaves a state a retry
-  // completes (events first — a re-run deletes nothing; then queued rows; then
-  // the close).
-  const deleteFrom = await resolveEventDeletionFloor(clientId, clientToday);
+  // completes (events first — a re-run deletes nothing; then the version rows;
+  // then the close).
   await deleteFutureNutritionEventsForClient(clientId, deleteFrom);
 
-  if (queuedIds.length > 0) {
+  // A covering version whose own start is past the close date would be left with
+  // an EMPTY window — it governed nothing once its days are gone, so it goes the
+  // same way a queued version does. Postgres would accept the inverted range
+  // silently (an empty daterange overlaps nothing, so the gist exclusion never
+  // fires), which is exactly why this is decided here rather than left to it.
+  const coveringGovernsNothing =
+    coveringOutlastsTheDelete && covering != null && covering.effective_from > closeAt;
+  const versionIdsToRemove =
+    coveringGovernsNothing && covering ? [...queuedIds, covering.id] : queuedIds;
+
+  if (versionIdsToRemove.length > 0) {
     const { error: queuedDeleteError } = await supabaseAdmin
       .from("nutrition_plans")
       .delete()
-      .in("id", queuedIds);
+      .in("id", versionIdsToRemove);
     if (queuedDeleteError) {
       throw new NutritionPlanError(
         `Failed to remove queued nutrition versions: ${queuedDeleteError.message}`,
@@ -191,10 +220,10 @@ export async function orchestrateNutritionPlanDeletion(
     }
   }
 
-  if (coveringReachesPastToday && covering) {
+  if (coveringOutlastsTheDelete && covering && !coveringGovernsNothing) {
     const { error: closeError } = await supabaseAdmin
       .from("nutrition_plans")
-      .update({ effective_until: clientToday, updated_at: new Date().toISOString() })
+      .update({ effective_until: closeAt, updated_at: new Date().toISOString() })
       .eq("id", covering.id);
     if (closeError) {
       throw new NutritionPlanError(

@@ -62,6 +62,7 @@ import {
 import { captureApiError } from "@/lib/error-handler";
 import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import {
   orchestrateNutritionPlanCreation,
@@ -171,6 +172,8 @@ beforeEach(() => {
   vi.mocked(regenerateFutureNutritionEvents).mockResolvedValue(undefined);
   vi.mocked(getNutritionPlanForDate).mockResolvedValue(coveringRow);
   vi.mocked(deleteFutureNutritionEventsForClient).mockResolvedValue(undefined);
+  // Default: the client has not touched today, so the floor IS their today.
+  vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-07-02");
   vi.mocked(recordPlanSaveNote).mockResolvedValue(undefined);
   mockNoExistingPlan();
 });
@@ -332,22 +335,23 @@ describe("orchestrateNutritionPlanDeletion — chain semantics (migration 144, D
     expect(fromCalls.length).toBeGreaterThan(0);
   });
 
-  it("closes the covering version at today (status untouched) after clearing events from the floor", async () => {
+  it("closes the covering version the day BEFORE the delete's first day", async () => {
+    // ★ The window ends where the events end. Off by one and the next cascade
+    // regenerates the day the delete just removed — a training-plan clear five
+    // seconds later put it straight back.
     // from() #1 = queued-versions select (none), #2 = the covering close.
     const chains = mockFromSequence([{ data: [], error: null }, { error: null }]);
 
     const result = await orchestrateNutritionPlanDeletion(clientId, coachId);
 
     expect(result).toEqual({ planId: "plan-1" });
-    // Floor is the day AFTER the client-local today ('2026-07-02'): today's
-    // event survives so a part-logged day keeps its plan context. Client-scoped
-    // so rows stamped by queued versions' ids are swept too.
+    // The floor here is the client-local today: they have not logged it.
     expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-02");
     // The queued select probes strictly-future versions against client-today.
     expect(chains[0].gt).toHaveBeenCalledWith("effective_from", "2026-07-02");
-    // D2(a): close-never-erase — effective_until = clientToday, NO status write.
+    // D2(a): close-never-erase — effective_until = floor - 1, NO status write.
     expect(chains[1].update).toHaveBeenCalledWith(
-      expect.objectContaining({ effective_until: "2026-07-02" })
+      expect.objectContaining({ effective_until: "2026-07-01" })
     );
     expect(chains[1].update).not.toHaveBeenCalledWith(
       expect.objectContaining({ status: expect.anything() })
@@ -373,7 +377,60 @@ describe("orchestrateNutritionPlanDeletion — chain semantics (migration 144, D
     expect(chains[1].delete).toHaveBeenCalled();
     expect(chains[1].in).toHaveBeenCalledWith("id", ["q1", "q2"]);
     expect(chains[2].update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-07-01" })
+    );
+  });
+
+  it("a client who logged today keeps today — window closed at today, events from tomorrow", async () => {
+    // The floor's other answer, end to end: the two move together, so the day
+    // they engaged with keeps both its target AND the version that explains it.
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-07-03");
+    const chains = mockFromSequence([{ data: [], error: null }, { error: null }]);
+
+    await orchestrateNutritionPlanDeletion(clientId, coachId);
+
+    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-03");
+    expect(chains[1].update).toHaveBeenCalledWith(
       expect.objectContaining({ effective_until: "2026-07-02" })
+    );
+  });
+
+  it("hard-deletes a covering version that would be left with an EMPTY window", async () => {
+    // It starts on the day the delete removes, so it governed nothing once its
+    // days are gone. Postgres would take the inverted range silently — an empty
+    // daterange overlaps nothing, so the gist exclusion never fires.
+    vi.mocked(getNutritionPlanForDate).mockResolvedValue({
+      id: "plan-1",
+      effective_from: "2026-07-02",
+      effective_until: null,
+    } as never);
+    const chains = mockFromSequence([{ data: [{ id: "q7" }], error: null }, { error: null }]);
+
+    await orchestrateNutritionPlanDeletion(clientId, coachId);
+
+    expect(chains[1].delete).toHaveBeenCalled();
+    expect(chains[1].in).toHaveBeenCalledWith("id", ["q7", "plan-1"]);
+    // Removed, never closed: from() was called exactly twice.
+    expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(2);
+  });
+
+  it("a version still covering the floor's own day is deletable, not a 404", async () => {
+    // The recovery case. A cascade that rebuilt the floor's day leaves the
+    // window ending ON it; asking whether anything OUTLASTS the delete (rather
+    // than whether it reaches past today) is what lets a second delete finish
+    // the job instead of refusing it.
+    vi.mocked(getNutritionPlanForDate).mockResolvedValue({
+      id: "plan-1",
+      effective_from: "2026-06-11",
+      effective_until: "2026-07-02",
+    } as never);
+    const chains = mockFromSequence([{ data: [], error: null }, { error: null }]);
+
+    await orchestrateNutritionPlanDeletion(clientId, coachId);
+
+    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-02");
+    expect(chains[1].update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-07-01" })
     );
   });
 
@@ -393,12 +450,12 @@ describe("orchestrateNutritionPlanDeletion — chain semantics (migration 144, D
     expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(2);
   });
 
-  it("rejects 404 when the chain already ends at today (same-day second delete), touching nothing", async () => {
-    // Covering version closed AT today by a prior delete → reaches nothing past today.
+  it("rejects 404 when the chain already ends at the close date (same-day second delete), touching nothing", async () => {
+    // A prior delete closed it at floor - 1, so nothing outlasts this one.
     vi.mocked(getNutritionPlanForDate).mockResolvedValue({
       id: "plan-1",
       effective_from: "2026-06-01",
-      effective_until: "2026-07-02",
+      effective_until: "2026-07-01",
     } as never);
     mockFromSequence([{ data: [], error: null }]);
 
