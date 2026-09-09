@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2, Calendar } from "lucide-react";
 import useSWR from "swr";
 import {
@@ -59,14 +59,6 @@ type ClientOption = {
   timezone?: string;
 };
 
-function getNextMonday(): string {
-  const d = new Date();
-  const day = d.getDay();
-  const diff = day === 0 ? 1 : 8 - day;
-  d.setDate(d.getDate() + diff);
-  return getDateString(d);
-}
-
 export function ApplyToClientDialog({
   open,
   onOpenChange,
@@ -87,13 +79,28 @@ export function ApplyToClientDialog({
   // read of state they can see, not a second source of truth. Falls back to the
   // next Monday, the right guess when nobody has said anything.
   //
-  // Floored at today for the same reason the nutrition seed is: a block already
-  // under way seeds today, and the route refuses a past start outright.
+  // Defaults to TODAY, the same day the nutrition builder opens on — a coach
+  // placing a program almost always means now, and a guessed next-Monday made
+  // them retype a date on every apply.
+  //
+  // Seeded from the block instead when they came from one, floored at today
+  // because the route refuses a past start outright: a block already under way
+  // opens on today, not on the day it began.
+  //
+  // Computed lazily from PROPS alone. The `clients` list this component fetches
+  // is not there on the first render, so the preselected client's timezone is
+  // the only one that can be honoured at mount — which is the case that matters,
+  // since the round trip only ever arrives with a client already chosen.
   const blockStart = useRoundTripBlockStart(preselectedClientId, "apply");
-  const today = getDateString(new Date());
-  const [startDate, setStartDate] = useState(
-    blockStart ? (blockStart > today ? blockStart : today) : getNextMonday()
-  );
+  const seedStartDate = useCallback(() => {
+    const tz = clientTimezone && clientTimezone !== "UTC" ? clientTimezone : null;
+    const today = tz ? getTodayDateStringInTimezone(tz) : getTodayDateString();
+    return blockStart && blockStart > today ? blockStart : today;
+  }, [blockStart, clientTimezone]);
+  // Shared with the reset-on-open below, which is the one that usually decides:
+  // the dialog is mounted once and reopened, so a seed only in the initialiser
+  // would be right the first time and stale every time after.
+  const [startDate, setStartDate] = useState(seedStartDate);
   const [isSubmitting, setIsSubmitting] = useState(false);
   // The route's warn-first 409: the chosen start day already holds a completed
   // workout. Shown inline under the date; cleared when the date changes.
@@ -111,10 +118,10 @@ export function ApplyToClientDialog({
   useEffect(() => {
     if (open) {
       setClientId(preselectedClientId ?? "");
-      setStartDate(getNextMonday());
+      setStartDate(seedStartDate());
       setStartDayWarning(null);
     }
-  }, [open, preselectedClientId]);
+  }, [open, preselectedClientId, seedStartDate]);
 
   const trainingDays = savedPlan.sessions.filter((s) => !s.isRest).length;
   const restDays = savedPlan.sessions.length - trainingDays;
