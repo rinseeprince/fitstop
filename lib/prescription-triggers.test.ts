@@ -152,3 +152,58 @@ describe("evaluatePrescriptionEnding", () => {
     ).toBe("Training ends 13 Mar, nothing until 20 Mar")
   })
 })
+
+describe("evaluatePrescriptionEnding — naming the block", () => {
+  const build = { name: "Build", start: "2026-02-01", end: "2026-03-13" }
+  const cut = { name: "Cut", start: "2026-03-14", end: "2026-04-10" }
+  const nutrition = (windows: PlanWindow[], blocks: typeof build[]) =>
+    evaluatePrescriptionEnding({ track: "nutrition", windows, blocks, today: TODAY })?.message
+  const training = (windows: PlanWindow[], blocks: typeof build[]) =>
+    evaluatePrescriptionEnding({ track: "training", windows, blocks, today: TODAY })?.message
+
+  it("keeps the plain form for a client with no blocks, or none covering the day", () => {
+    expect(nutrition([w("2026-02-01", "2026-03-13")], [])).toBe("Nutrition targets end 13 Mar")
+    expect(nutrition([w("2026-02-01", "2026-03-13")], [cut])).toBe("Nutrition targets end 13 Mar")
+    expect(nutrition([w("2026-02-01", "2026-03-06")], [cut])).toBe("No nutrition targets from 7 Mar")
+  })
+
+  it("names the block whose last day the prescription ends on", () => {
+    expect(nutrition([w("2026-02-01", "2026-03-13")], [build])).toBe(
+      "Nutrition targets end 13 Mar, the last day of Build",
+    )
+  })
+
+  it("says the next block has nothing set on this track, in the block card's words", () => {
+    expect(nutrition([w("2026-02-01", "2026-03-13")], [build, cut])).toBe(
+      "Nutrition targets end 13 Mar, the last day of Build, and Cut has no targets set",
+    )
+    expect(training([w("2026-02-01", "2026-03-13")], [build, cut])).toBe(
+      "Training ends 13 Mar, the last day of Build, and Cut has no program placed",
+    )
+  })
+
+  it("lets the queue clause speak for a plan queued after a gap", () => {
+    expect(
+      nutrition([w("2026-02-01", "2026-03-13"), w("2026-03-20", "2026-04-10")], [build, cut]),
+    ).toBe("Nutrition targets end 13 Mar, the last day of Build, nothing until 20 Mar")
+  })
+
+  it("says inside the block when the prescription stops before its block does", () => {
+    const longBuild = { name: "Build", start: "2026-02-01", end: "2026-03-31" }
+    expect(nutrition([w("2026-02-01", "2026-03-11")], [longBuild, { ...cut, start: "2026-04-01", end: "2026-04-28" }])).toBe(
+      "Nutrition targets end 11 Mar, inside Build",
+    )
+  })
+
+  it("names the block the client is sitting in with nothing", () => {
+    // Blocks never overlap (the gist constraint), so Build ends where Cut begins.
+    const ended = { name: "Build", start: "2026-02-01", end: "2026-03-06" }
+    const current = { name: "Cut", start: "2026-03-07", end: "2026-04-03" }
+    expect(nutrition([w("2026-02-01", "2026-03-06")], [ended, current])).toBe(
+      "No nutrition targets from 7 Mar, in Cut",
+    )
+    expect(training([w("2026-02-01", "2026-03-06")], [current])).toBe(
+      "No training scheduled from 7 Mar, in Cut",
+    )
+  })
+})

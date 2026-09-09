@@ -5,6 +5,8 @@ import { inclusiveDays, DAYS_PER_BLOCK_WEEK } from "@/lib/blocks/block-chain";
 import { BLOCK_WEEKS_MAX } from "@/lib/constants";
 import type { TablesInsert } from "@/types/database";
 import type { ClientBlock, ReplaceBlockChainInput } from "@/types/client-blocks";
+import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
+import type { ClientBlockWindow } from "@/lib/prescription-triggers";
 
 /**
  * Journey blocks (client_phases — the table keeps the phases name, the
@@ -59,6 +61,42 @@ function mapBlockRow(row: BlockRow): ClientBlock {
     archivedAt: row.archived_at,
   };
 }
+
+/**
+ * Every non-archived block's name and window for a set of clients, in one
+ * chunked read — the attention feed's, so a prescription-ending alert can name
+ * the block its stop falls in. Context only: nothing here bounds anything, and
+ * the feed's message is the plain form for a client with no block covering the
+ * day. `archived_at IS NULL` is written rather than inherited, as the covering
+ * read below says.
+ */
+export const getBlockWindowsForClients = async (
+  clientIds: string[]
+): Promise<ClientBlockWindow[]> => {
+  const rows = await fetchAllByChunkedIds<
+    { id: string; client_id: string; name: string; starts_on: string; ends_on: string },
+    string
+  >(
+    clientIds,
+    (chunk, from, to) =>
+      supabaseAdmin
+        .from("client_phases")
+        .select("id, client_id, name, starts_on, ends_on")
+        .in("client_id", chunk)
+        .is("archived_at", null)
+        .order("client_id", { ascending: true })
+        .order("starts_on", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    { errorLabel: "journey blocks" }
+  );
+  return rows.map((row) => ({
+    clientId: row.client_id,
+    name: row.name,
+    start: row.starts_on,
+    end: row.ends_on,
+  }));
+};
 
 /** The client's chain in date order. */
 export const listBlocks = async (clientId: string): Promise<ClientBlock[]> => {

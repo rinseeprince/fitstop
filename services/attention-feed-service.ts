@@ -10,6 +10,7 @@
  * - client_measurements_live: the client's own measurement logs (source = client_log)
  * - nutrition_plans + training_plans: every active version's and live program's
  *   window, for the prescription-ending triggers (through the two track services)
+ * - client_phases: the journey blocks those triggers name (through the blocks service)
  *
  * "Did the client log today?" is answered once, by `lib/logged-days.ts`, from
  * these rows (`loggedDaysFor` in lib/attention-feed-helpers.ts).
@@ -25,6 +26,7 @@ import { fetchAllPages, fetchAllByChunkedIds } from "@/lib/paged-fetch"
 import { CLIENT_MEASUREMENT_SOURCE } from "@/lib/logged-days"
 import { getNutritionWindowsForClients } from "./nutrition-plan-service"
 import { getLiveProgramWindowsForClients } from "./training-service"
+import { getBlockWindowsForClients } from "./client-blocks-service"
 import type { ClientLogRow, DailyLogRow } from "@/lib/attention-feed-helpers"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
@@ -106,6 +108,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     dismissalsResult,
     nutritionWindowsResult,
     trainingWindowsResult,
+    blocksResult,
   ] = await Promise.allSettled([
     // 2. Daily logs (cross-domain view, required for core triggers)
     fetchAllByChunkedIds<DailyLogRow, string>(clientIds, (chunk, from, to) =>
@@ -189,6 +192,9 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     //    events posture, and never impersonates "nothing prescribed" elsewhere.
     getNutritionWindowsForClients(clientIds),
     getLiveProgramWindowsForClients(clientIds),
+    // 10. Journey blocks (graceful degradation): a failed read drops the block
+    //     names from the prescription-ending messages, never the alerts.
+    getBlockWindowsForClients(clientIds),
   ])
 
   // Extract results, preserving original error semantics: logs are required
@@ -242,6 +248,13 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     console.error("Error fetching training plan windows:", trainingWindowsResult.reason)
   }
 
+  let blocks = null
+  if (blocksResult.status === "fulfilled") {
+    blocks = blocksResult.value
+  } else {
+    console.error("Error fetching journey blocks:", blocksResult.reason)
+  }
+
   // Group all query results by client
   const clientDataMap = groupClientData(
     clients,
@@ -252,6 +265,7 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     clientLogRows,
     nutritionWindows,
     trainingWindows,
+    blocks,
   )
 
   // Evaluate triggers and sort
@@ -303,6 +317,7 @@ export async function evaluateSingleClientAlerts(
     dismissalsResult,
     nutritionWindowsResult,
     trainingWindowsResult,
+    blocksResult,
   ] = await Promise.allSettled([
       supabaseAdmin
         .from("daily_logs_full")
@@ -343,6 +358,7 @@ export async function evaluateSingleClientAlerts(
       // Overview and the dashboard judge a client's prescription from one read shape.
       getNutritionWindowsForClients([clientId]),
       getLiveProgramWindowsForClients([clientId]),
+      getBlockWindowsForClients([clientId]),
     ])
 
   // Logs are required for the core triggers; without them there are no alerts.
@@ -367,6 +383,7 @@ export async function evaluateSingleClientAlerts(
     nutritionWindowsResult.status === "fulfilled" ? nutritionWindowsResult.value : null
   const trainingWindows =
     trainingWindowsResult.status === "fulfilled" ? trainingWindowsResult.value : null
+  const blocks = blocksResult.status === "fulfilled" ? blocksResult.value : null
 
   const clientDataMap = groupClientData(
     [client] as ClientInfoWithCheckIn[],
@@ -377,6 +394,7 @@ export async function evaluateSingleClientAlerts(
     clientLogRows,
     nutritionWindows,
     trainingWindows,
+    blocks,
   )
   const withAlerts = evaluateAndSortTriggers(clientDataMap, dateRange)
   const filtered = filterDismissedAlerts(withAlerts, dismissals)

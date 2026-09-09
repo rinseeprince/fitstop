@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   getBlockEndCoveringDate,
+  getBlockWindowsForClients,
   listBlocks,
   replaceBlockChain,
   deleteBlock,
@@ -664,5 +665,46 @@ describe("getBlockEndCoveringDate", () => {
     queueResults({ data: null, error: { message: "boom" } });
 
     await expect(getBlockEndCoveringDate(CLIENT_ID, START)).resolves.toBeNull();
+  });
+});
+
+describe("getBlockWindowsForClients — the attention feed's cross-client read", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("maps every non-archived block to its name and window, in one chunked read", async () => {
+    const calls: Record<string, unknown[][]> = {};
+    const q: Record<string, unknown> = {};
+    for (const method of ["select", "in", "is", "order", "range"]) {
+      q[method] = vi.fn((...args: unknown[]) => {
+        (calls[method] ??= []).push(args);
+        return q;
+      });
+    }
+    Object.defineProperty(q, "then", {
+      value: (resolve: (v: { data: unknown[]; error: null }) => void) =>
+        Promise.resolve({
+          data: [
+            { id: "b1", client_id: "c1", name: "Build", starts_on: "2026-02-02", ends_on: "2026-03-01" },
+            { id: "b2", client_id: "c2", name: "Cut", starts_on: "2026-01-05", ends_on: "2026-02-01" },
+          ],
+          error: null,
+        }).then(resolve),
+    });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(q as never);
+
+    expect(await getBlockWindowsForClients(["c1", "c2"])).toEqual([
+      { clientId: "c1", name: "Build", start: "2026-02-02", end: "2026-03-01" },
+      { clientId: "c2", name: "Cut", start: "2026-01-05", end: "2026-02-01" },
+    ]);
+    expect(calls.select).toEqual([["id, client_id, name, starts_on, ends_on"]]);
+    expect(calls.in).toEqual([["client_id", ["c1", "c2"]]]);
+    expect(calls.is).toEqual([["archived_at", null]]);
+  });
+
+  it("reads nothing for no ids", async () => {
+    expect(await getBlockWindowsForClients([])).toEqual([]);
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
   });
 });
