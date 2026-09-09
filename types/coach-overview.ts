@@ -42,6 +42,25 @@ export type OverviewPlanSummary = {
     frequencyPerWeek: number | null;
     programDurationWeeks: number | null;
   };
+  /**
+   * Nutrition targets saved to start later. `nutrition` resolves strictly by
+   * date, so a version queued for a future block leaves it null — without this
+   * field the Overview would tell a coach who just set targets that none exist.
+   * Read through the shared `getNextFutureNutritionPlan`, the predicate the
+   * nutrition hero's "Starts" line reads, so the two cannot disagree.
+   *
+   * Independent of `nutrition`: a client can be on one version with another
+   * queued behind it. The UI only falls back to this when `nutrition` is null.
+   */
+  upcomingNutrition: null | {
+    /** effective_from — the version's first day, strictly after client-local today. */
+    startsOn: string;
+    dietType: string | null;
+    customMacros: boolean;
+    proteinGPerKg: number | null;
+    /** The version's daily target, custom-macros override honoured. */
+    restDayCalories: number;
+  };
   nutrition: null | {
     dietType: string | null;
     customMacros: boolean;

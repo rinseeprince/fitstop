@@ -8,6 +8,7 @@ vi.mock("./training-service", () => ({
 vi.mock("./training-week-summary-service", () => ({ getTrainingWeekSummary: vi.fn() }));
 vi.mock("./today-service", () => ({ getClientTodayString: vi.fn() }));
 vi.mock("./daily-context-service", () => ({ getNutritionForDate: vi.fn() }));
+vi.mock("./nutrition-plan-service", () => ({ getNextFutureNutritionPlan: vi.fn() }));
 vi.mock("./exercise-analytics-service", () => ({
   getClientExerciseList: vi.fn(),
   getExerciseProgressionSeries: vi.fn(),
@@ -103,6 +104,7 @@ describe("progressionFromSeries", () => {
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getNextFutureTrainingPlan, getTrainingPlanForDate } from "./training-service";
+import { getNextFutureNutritionPlan } from "./nutrition-plan-service";
 import { getTrainingWeekSummary } from "./training-week-summary-service";
 import { getClientTodayString } from "./today-service";
 import { getOverviewPlanSummary } from "./overview-plan-summary-service";
@@ -195,5 +197,108 @@ describe("getOverviewPlanSummary — upcomingTraining", () => {
     const summary = await getOverviewPlanSummary("coach-1", "client-1");
 
     expect(summary.upcomingTraining).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Upcoming (not-yet-started) nutrition — the training field's twin.
+// ---------------------------------------------------------------------------
+
+/**
+ * A nutrition_plans read answers only when it is the by-id read of the queued
+ * version: the covering read (no `eq("id", …)`) resolves null, so `nutrition`
+ * stays null and `upcomingNutrition` is what the card falls back to.
+ */
+function mockQueuedVersionRow(row: Record<string, unknown> | null) {
+  vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+    const chain: Record<string, unknown> = {};
+    let byId = false;
+    for (const method of ["select", "eq", "is", "neq", "gt", "gte", "lte", "or", "order", "limit"]) {
+      chain[method] = vi.fn((...args: unknown[]) => {
+        if (method === "eq" && args[0] === "id") byId = true;
+        return chain;
+      });
+    }
+    chain.maybeSingle = vi.fn(() =>
+      Promise.resolve({ data: table === "nutrition_plans" && byId ? row : null, error: null })
+    );
+    chain.then = (resolve: (v: unknown) => unknown) => resolve({ data: null, error: null });
+    return chain;
+  }) as never);
+}
+
+const QUEUED_VERSION_ROW = {
+  diet_type: "balanced",
+  baseline_calories: 1732,
+  protein_target_g_per_kg: 2,
+  custom_macros_enabled: false,
+  custom_calories: null,
+};
+
+describe("getOverviewPlanSummary — upcomingNutrition", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getClientTodayString).mockResolvedValue(CLIENT_TODAY);
+    vi.mocked(getTrainingWeekSummary).mockResolvedValue({
+      completed: 0,
+      plannedUpToToday: 0,
+      totalPlanned: 0,
+      missed: 0,
+      weekStart: "2026-07-20",
+      weekEnd: "2026-07-26",
+    } as never);
+    vi.mocked(getTrainingPlanForDate).mockResolvedValue(null);
+    vi.mocked(getNextFutureTrainingPlan).mockResolvedValue(null);
+  });
+
+  it("surfaces targets saved to start after today, while nutrition stays null", async () => {
+    mockQueuedVersionRow(QUEUED_VERSION_ROW);
+    vi.mocked(getNextFutureNutritionPlan).mockResolvedValue({ id: "v-9", effectiveFrom: "2026-07-27" });
+
+    const summary = await getOverviewPlanSummary("coach-1", "client-1");
+
+    expect(summary.nutrition).toBeNull();
+    expect(summary.upcomingNutrition).toEqual({
+      startsOn: "2026-07-27",
+      dietType: "balanced",
+      customMacros: false,
+      proteinGPerKg: 2,
+      restDayCalories: 1732,
+    });
+  });
+
+  it("a custom-macros override supplies the daily target, as it does on the running card", async () => {
+    mockQueuedVersionRow({
+      ...QUEUED_VERSION_ROW,
+      custom_macros_enabled: true,
+      custom_calories: 1650,
+    });
+    vi.mocked(getNextFutureNutritionPlan).mockResolvedValue({ id: "v-9", effectiveFrom: "2026-07-27" });
+
+    const summary = await getOverviewPlanSummary("coach-1", "client-1");
+
+    expect(summary.upcomingNutrition?.customMacros).toBe(true);
+    expect(summary.upcomingNutrition?.restDayCalories).toBe(1650);
+  });
+
+  it("reads through the shared future-version lookup, anchored on the client's today", async () => {
+    // The predicate (strictly after today, active only, earliest first) is
+    // owned and tested by getNextFutureNutritionPlan — the same read the
+    // nutrition hero's "Starts" line makes, so the two cannot disagree.
+    mockQueuedVersionRow(QUEUED_VERSION_ROW);
+    vi.mocked(getNextFutureNutritionPlan).mockResolvedValue({ id: "v-9", effectiveFrom: "2026-07-27" });
+
+    await getOverviewPlanSummary("coach-1", "client-1");
+
+    expect(getNextFutureNutritionPlan).toHaveBeenCalledWith("client-1", CLIENT_TODAY);
+  });
+
+  it("is null when nothing is queued", async () => {
+    mockQueuedVersionRow(null);
+    vi.mocked(getNextFutureNutritionPlan).mockResolvedValue(null);
+
+    const summary = await getOverviewPlanSummary("coach-1", "client-1");
+
+    expect(summary.upcomingNutrition).toBeNull();
   });
 });

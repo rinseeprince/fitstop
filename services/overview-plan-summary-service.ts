@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { coversDate } from "./training-plan-window";
 import { getNextFutureTrainingPlan, getTrainingPlanForDate } from "./training-service";
+import { getNextFutureNutritionPlan } from "./nutrition-plan-service";
 import {
   getTrainingWeekSummary,
   type TrainingWeekSummaryWithWindow,
@@ -217,6 +218,48 @@ async function buildUpcomingTraining(
   };
 }
 
+/**
+ * The soonest nutrition version whose window has not opened yet.
+ *
+ * Reads through the shared `getNextFutureNutritionPlan` predicate rather than a
+ * local copy — this card and the nutrition hero's "Starts" line must never
+ * disagree about whether a client has targets queued. That lookup carries only
+ * the identity and the start, so the prescription is read by id, scoped to the
+ * client as defence in depth.
+ */
+async function buildUpcomingNutrition(
+  clientId: string,
+  clientToday: string
+): Promise<OverviewPlanSummary["upcomingNutrition"]> {
+  const next = await getNextFutureNutritionPlan(clientId, clientToday);
+  if (!next) return null;
+
+  const { data: plan, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("diet_type, baseline_calories, protein_target_g_per_kg, custom_macros_enabled, custom_calories")
+    .eq("id", next.id)
+    .eq("client_id", clientId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to read the queued nutrition version:", error);
+    throw new Error("Failed to read nutrition plan");
+  }
+  if (!plan) return null;
+
+  const customMacros = plan.custom_macros_enabled;
+  return {
+    startsOn: next.effectiveFrom,
+    dietType: plan.diet_type ?? null,
+    customMacros,
+    proteinGPerKg: plan.protein_target_g_per_kg ?? null,
+    // The custom-macros override is the effective prescription when enabled —
+    // the same precedence the running card applies.
+    restDayCalories:
+      customMacros && plan.custom_calories != null ? plan.custom_calories : plan.baseline_calories,
+  };
+}
+
 async function buildNutritionSummary(
   clientId: string,
   clientToday: string,
@@ -307,11 +350,12 @@ export const getOverviewPlanSummary = async (
   // numbers) so they can never disagree.
   const week = await getTrainingWeekSummary(clientId, coachId);
 
-  const [training, upcomingTraining, nutrition] = await Promise.all([
+  const [training, upcomingTraining, nutrition, upcomingNutrition] = await Promise.all([
     buildTrainingSummary(clientId, clientToday, week),
     buildUpcomingTraining(clientId, clientToday),
     buildNutritionSummary(clientId, clientToday, week.weekStart, week.weekEnd),
+    buildUpcomingNutrition(clientId, clientToday),
   ]);
 
-  return { training, upcomingTraining, nutrition };
+  return { training, upcomingTraining, nutrition, upcomingNutrition };
 };

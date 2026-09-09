@@ -4,19 +4,21 @@ import { Utensils } from "lucide-react";
 import {
   CardHeader,
   EmptyInvite,
+  InlineMono,
   NeutralChip,
   OpenTabLink,
   OverviewCard,
   StatStrip,
   type StatCellData,
 } from "./overview-primitives";
-import { pluralize } from "./overview-format";
+import { formatDateOnlyWeekday, pluralize } from "./overview-format";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { KG_PER_LB } from "@/utils/unit-conversions";
 
 type PlanNutritionCardProps = {
   nutrition: OverviewPlanSummary["nutrition"];
+  upcomingNutrition: OverviewPlanSummary["upcomingNutrition"];
   onOpenNutrition: () => void;
 };
 
@@ -25,8 +27,76 @@ function dietLabel(dietType: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-export function PlanNutritionCard({ nutrition, onOpenNutrition }: PlanNutritionCardProps) {
+/** The prescription's identity chips — shared by the running and queued states. */
+function nutritionChips(
+  source: { dietType: string | null; customMacros: boolean; proteinGPerKg: number | null },
+  preference: ReturnType<typeof useUnits>["preference"]
+): string[] {
+  const chips: string[] = [];
+  if (source.dietType) chips.push(dietLabel(source.dietType));
+  chips.push(source.customMacros ? "Custom macros" : "Calculated");
+  if (source.proteinGPerKg !== null) {
+    // Protein per unit of BODY WEIGHT, so it follows the viewer's unit.
+    const perUnit = preference === "metric" ? "kg" : "lb";
+    const perValue =
+      preference === "metric"
+        ? source.proteinGPerKg
+        : Number((source.proteinGPerKg * KG_PER_LB).toFixed(2));
+    chips.push(`${perValue} g/${perUnit}`);
+  }
+  return chips;
+}
+
+function ChipRow({ chips }: { chips: string[] }) {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+      {chips.map((chip) => (
+        <NeutralChip key={chip}>{chip}</NeutralChip>
+      ))}
+    </div>
+  );
+}
+
+export function PlanNutritionCard({
+  nutrition,
+  upcomingNutrition,
+  onOpenNutrition,
+}: PlanNutritionCardProps) {
   const { preference } = useUnits();
+
+  // Targets saved to start later are set, not absent. Saying "no plan" here
+  // would invite the coach to build a second prescription beside the queued
+  // one — the rule the training card applies to a queued program.
+  if (!nutrition && upcomingNutrition) {
+    return (
+      <OverviewCard animationDelay="0.14s">
+        <CardHeader
+          compact
+          icon={<Utensils className="h-4 w-4" strokeWidth={1.5} />}
+          title="Nutrition targets"
+          subtitle={<ChipRow chips={nutritionChips(upcomingNutrition, preference)} />}
+          right={<OpenTabLink label="Open Nutrition" onClick={onOpenNutrition} />}
+        />
+        <div className="mt-auto border-t border-[rgba(13,148,136,0.06)]">
+          <StatStrip
+            cells={[
+              {
+                label: "Daily target",
+                value: String(upcomingNutrition.restDayCalories),
+                unit: "cal",
+                sub: "Rest day, before any training surplus",
+              },
+            ]}
+          />
+          <p className="px-5 pb-4 text-[13px] font-semibold text-[#0c1a1e]">
+            {/* No space before InlineMono — it owns its own gap. */}
+            Starts<InlineMono>{formatDateOnlyWeekday(upcomingNutrition.startsOn)}</InlineMono>
+          </p>
+        </div>
+      </OverviewCard>
+    );
+  }
+
   if (!nutrition) {
     return (
       <OverviewCard animationDelay="0.14s">
@@ -41,18 +111,7 @@ export function PlanNutritionCard({ nutrition, onOpenNutrition }: PlanNutritionC
     );
   }
 
-  const chips: string[] = [];
-  if (nutrition.dietType) chips.push(dietLabel(nutrition.dietType));
-  chips.push(nutrition.customMacros ? "Custom macros" : "Calculated");
-  if (nutrition.proteinGPerKg !== null) {
-    // Protein per unit of BODY WEIGHT, so it follows the viewer's unit.
-    const perUnit = preference === "metric" ? "kg" : "lb";
-    const perValue =
-      preference === "metric"
-        ? nutrition.proteinGPerKg
-        : Number((nutrition.proteinGPerKg * KG_PER_LB).toFixed(2));
-    chips.push(`${perValue} g/${perUnit}`);
-  }
+  const chips = nutritionChips(nutrition, preference);
 
   const cells: StatCellData[] = [
     {
@@ -94,13 +153,7 @@ export function PlanNutritionCard({ nutrition, onOpenNutrition }: PlanNutritionC
         compact
         icon={<Utensils className="h-4 w-4" strokeWidth={1.5} />}
         title="Nutrition targets"
-        subtitle={
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {chips.map((chip) => (
-              <NeutralChip key={chip}>{chip}</NeutralChip>
-            ))}
-          </div>
-        }
+        subtitle={<ChipRow chips={chips} />}
         right={<OpenTabLink label="Open Nutrition" onClick={onOpenNutrition} />}
       />
 

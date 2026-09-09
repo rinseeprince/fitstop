@@ -41,6 +41,7 @@ export function CurrentPlanSection({
           />
           <PlanNutritionCard
             nutrition={summary?.nutrition ?? null}
+            upcomingNutrition={summary?.upcomingNutrition ?? null}
             onOpenNutrition={() => onTabChange("nutrition")}
           />
         </div>
