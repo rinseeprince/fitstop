@@ -12,6 +12,7 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import {
   journeyReturnParams,
   paneParamSearch,
@@ -131,6 +132,7 @@ function NutritionCalendarMount() {
   const builder = useNutritionBuilderContext();
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const clearBlockFacts = useClearBlockFacts();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -151,6 +153,9 @@ function NutritionCalendarMount() {
       toast({ title: "Nutrition plan deleted" });
       setDeleteOpen(false);
       await invalidateNutritionCalendar(clientId);
+      // The Journey block cards read the plan VERSIONS, so they are wrong the
+      // moment this lands (CONVENTIONS §7 — the area that reads what you wrote).
+      void clearBlockFacts(clientId);
       builder.refetchNutrition();
     } catch (error) {
       toast({

@@ -26,6 +26,7 @@ import {
   syncBlockEvents,
   useBlockFacts,
   useClientBlocks,
+  useClearBlockFacts,
   useInvalidateClientBlocks,
   useSeedClientBlocks,
 } from "../hooks/use-client-blocks";
@@ -107,6 +108,10 @@ export function BlocksSubtab({
   // list and the closing form in ONE render, which is the only way the frame
   // between them disappears rather than swapping which stale state shows.
   const seedBlocks = useSeedClientBlocks();
+  // The facts are derived from the calendars, so anything that rewrites those
+  // makes them wrong — and they render a definite answer, so a stale entry
+  // states something false rather than merely being late.
+  const clearBlockFacts = useClearBlockFacts();
   // The block sync rewrites training_events and nutrition_events, so this screen
   // owes both calendar areas their invalidator as well as its own.
   const invalidateTrainingData = useInvalidateTrainingData();
@@ -207,6 +212,7 @@ export function BlocksSubtab({
         // Training and Nutrition tabs showing yesterday's days with no error.
         void invalidateTrainingData(clientId);
         void invalidateNutritionCalendar(clientId);
+        void clearBlockFacts(clientId);
       }
 
       // Seeded before the form and the dialog go, in the same tick, so the row
@@ -254,6 +260,7 @@ export function BlocksSubtab({
         // keep showing days that are gone (CONVENTIONS §7).
         void invalidateTrainingData(clientId);
         void invalidateNutritionCalendar(clientId);
+        void clearBlockFacts(clientId);
       }
       toast({
         title: clearPlans

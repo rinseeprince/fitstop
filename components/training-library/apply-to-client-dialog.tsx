@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { format } from "date-fns";
 import {
@@ -76,6 +77,7 @@ export function ApplyToClientDialog({
 }: ApplyToClientDialogProps) {
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const clearBlockFacts = useClearBlockFacts();
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
   const [startDate, setStartDate] = useState(getNextMonday());
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -182,6 +184,10 @@ export function ApplyToClientDialog({
       // Placement cascade-rewrites nutrition_events; refresh the nutrition
       // calendar cache here so every host of this dialog is covered once.
       void invalidateNutritionCalendar(clientId);
+      // And the Journey block cards, which are DERIVED from the rows this just
+      // wrote — the area that owes an invalidator is the one that READS what
+      // you wrote, not the one you wrote (CONVENTIONS §7).
+      void clearBlockFacts(clientId);
       onOpenChange(false);
       onSuccess?.(clientId);
     } catch {

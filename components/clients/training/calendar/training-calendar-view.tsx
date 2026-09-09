@@ -5,6 +5,7 @@ import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { calendarCollisionDetection } from "./calendar-collision";
 import { useCalendarEvents, useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useCalendarDnd } from "@/hooks/use-calendar-dnd";
 import { CalendarGrid } from "./calendar-grid";
 import { CalendarToolbar } from "./calendar-toolbar";
@@ -127,6 +128,7 @@ export function TrainingCalendarView({
   // (calorie targets track the training layout), so every success path below
   // must also invalidate the nutrition calendar's cache.
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const clearBlockFacts = useClearBlockFacts();
 
   // Saved plans for apply-from-drop dialog
   const { plans: savedPlans } = useSavedPlans();
@@ -171,6 +173,10 @@ export function TrainingCalendarView({
           toast({ title: "Session placed" });
           await invalidateTrainingData(clientId);
           void invalidateNutritionCalendar(clientId);
+          // The Journey block cards are DERIVED from these rows, so they are
+          // wrong the moment this lands (CONVENTIONS §7 — the area that reads
+          // what you wrote, not the one you wrote).
+          void clearBlockFacts(clientId);
         } catch (error) {
           toast({
             title: "Placement failed",

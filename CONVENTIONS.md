@@ -287,9 +287,38 @@
   - **Invalidators match an API *area*, not one endpoint** — `/api/clients/{id}/training`,
     never `/api/clients/{id}/training/events?`. A narrow prefix silently excludes
     every reader added later. The key builder stays narrow; only the matcher widens.
-  - **Every mutating call site invokes the invalidator for every area its endpoint
-    writes**, on success, before closing or navigating. A training write that
-    cascades into nutrition calls both.
+  - **Every mutating call site invokes the invalidator for every area that READS
+    what the write touched** — not merely the area the endpoint belongs to. On
+    success, before closing or navigating. A training write that cascades into
+    nutrition calls both.
+    **The reading half is the one that gets missed**, because the obvious check
+    is "which endpoint did I just POST to?" and the answer excludes every
+    *derived* read. Placing a program POSTs to `/training/place-from-library` and
+    writes no `client_phases` row at all — but `GET /clients/[id]/blocks/facts`
+    computes the Journey block cards **from** training plans and nutrition
+    versions, so it is wrong the instant that POST lands. Ask "what does this
+    data appear on?", never "what table did I write?".
+    Cheap way to find them: grep the invalidator's consumers. **An area whose
+    only consumer is the screen that owns it is the smell** — every other screen
+    that changes its inputs is missing a call.
+  - **A read that renders a DEFINITE answer is CLEARED, not merely
+    revalidated.** SWR keeps serving the stale entry for the whole refetch, so a
+    component that renders "Not set" / "None" / a count from it publishes
+    something false for as long as the request takes — and the pending branch
+    never fires, because `isLoading` is false whenever there is cached data.
+    `mutate(key, undefined, { revalidate: true })` drops the entry and refetches,
+    which puts the reader into the pending state it already has. Use the plain
+    invalidator for reads whose stale value is merely *old* (a list, a chart);
+    clear the ones whose stale value is a *claim*.
+  - **Never fix a post-write flash by reordering.** Closing local UI state and
+    awaiting a revalidation cannot batch — one of them is a network round trip —
+    so whichever you put first decides which stale frame renders, and there is
+    always one. If the write's own response carries the new data (most do here),
+    seed it into the cache and set the local state in the **same tick**: React
+    batches them and no frame exists between. `useSeedClientBlocks`
+    (`components/clients/metrics/hooks/use-client-blocks.ts`) is the reference.
+    None of this is reachable by any gate in this repo — jsdom renders without
+    painting, so no test can observe a frame.
   - **Anti-pattern:** relying on the `mutate` returned by your own `useSWR`. That
     reaches only your component. The moment a second screen reads the same data it
     goes stale, and nothing errors — it just needs a refresh.

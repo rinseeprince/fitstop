@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import type {
   Client,
   DietType,
@@ -30,6 +31,7 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const { toast } = useToast();
   const nutritionPlan = useNutritionPlan({ client });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const clearBlockFacts = useClearBlockFacts();
 
   const [settings, setSettings] = useState<NutritionSettings>({
     proteinTargetGPerKg: 2.0,
@@ -290,6 +292,12 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           // The calendar renders from its own SWR events cache — revalidate it
           // or the regenerated days only appear after a page refresh.
           void invalidateNutritionCalendar(client.id);
+          // And the Journey block cards, which are DERIVED from the plan
+          // versions this just wrote — the area that owes an invalidator is the
+          // one that READS what you wrote, not the one you wrote
+          // (CONVENTIONS §7). Cleared rather than revalidated: they render a
+          // definite "Not set", so a stale entry states something false.
+          void clearBlockFacts(client.id);
           return true;
         } else {
           throw new Error(data.error || "Failed to generate plan");

@@ -132,6 +132,30 @@ export function useSeedClientBlocks() {
   );
 }
 
+/**
+ * Drop the cached per-block facts, then let them refetch.
+ *
+ * CLEARED, not merely revalidated. SWR keeps serving a stale entry while it
+ * refetches, and this one is rendered as a DEFINITE answer — a block that now
+ * holds a program reads "No program placed" until the read returns. Clearing
+ * puts the card into the pending state it already has, so it says "Loading…"
+ * rather than something false.
+ *
+ * Called from every screen whose write changes what `/blocks/facts` computes —
+ * placing a program, saving or deleting a nutrition plan — none of which write
+ * `client_phases` at all. The facts are DERIVED from the training and nutrition
+ * tables, so the area that owes the invalidator is the one that READS what you
+ * wrote, not the one you wrote (CONVENTIONS §7).
+ */
+export function useClearBlockFacts() {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    (clientId: string) =>
+      mutate(blockFactsKey(clientId), undefined, { revalidate: true }),
+    [mutate]
+  );
+}
+
 async function parseOrThrow<T extends { success?: boolean }>(
   res: Response,
   fallback: string
