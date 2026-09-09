@@ -314,7 +314,7 @@ async function resolveScopeDates(
 /**
  * Regenerate a plan VERSION's scheduled nutrition events over an explicit
  * scope, clamped to the version's own [effective_from, effective_until]
- * window (migration 144). Past events and non-scheduled events (logged,
+ * window (migration 144) AND to the block that window opens in. Past events and non-scheduled events (logged,
  * missed) are preserved by the delete; the upsert then overwrites any
  * surviving row on a covered date with this version's values (see
  * ARCHITECTURE.md → Training → Nutrition cascade for what that means for
@@ -349,10 +349,32 @@ export async function regenerateFutureNutritionEvents(
 
   if (planError || !planRow) throw planError ?? new Error("Nutrition plan not found");
 
+  // ★ AND CLAMPED TO THE BLOCK IT WAS LAID IN, exactly as training is: a
+  // placement truncates its events to the block while `training_plans` carries
+  // no end date at all, so the bound lives in the GENERATION, not the row.
+  //
+  // Without it an open version reaches forward for ever and a training
+  // placement in a LATER block drags the previous block's numbers onto days the
+  // coach never priced — the block's card then truthfully reports targets
+  // nobody set. The version still GOVERNS those days for the client's food log
+  // (a day with no covering version is refused outright, which is why the row
+  // stays open); it just does not materialise a prescription there.
+  //
+  // A version laid in a GAP has no block bound and behaves as before — nothing
+  // was declared, so nothing bounds it. A save's own regenerate is unaffected:
+  // its anchor is its effective date, so the horizon already resolves to this
+  // same block end and the clamp is a no-op.
+  //
+  // Fail-open on a read error, the shared helper's posture: a cascade that
+  // over-covers is self-healing on the next one, while failing closed would
+  // silently write nothing for a coach's save.
+  const blockEnd = await getBlockEndCoveringDate(clientId, planRow.effective_from);
+  const versionEnd = planRow.effective_until;
+  const upperBound =
+    blockEnd && versionEnd ? (blockEnd < versionEnd ? blockEnd : versionEnd) : blockEnd ?? versionEnd;
+
   const clampedDates = dates.filter(
-    (d) =>
-      d >= planRow.effective_from &&
-      (planRow.effective_until === null || d <= planRow.effective_until)
+    (d) => d >= planRow.effective_from && (upperBound === null || d <= upperBound)
   );
   if (clampedDates.length === 0) return;
 

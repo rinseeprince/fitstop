@@ -927,9 +927,11 @@ describe("nutrition-event-service: the generation horizon", () => {
     expect(writtenDates(second.upsertQuery).at(-1)).toBe("2026-11-13");
   });
 
-  it("a narrow scope looks nothing up — the frequent paths stay untouched", async () => {
+  it("a narrow scope resolves NO horizon — the frequent paths stay cheap", async () => {
     // A move, a duplicate, an event delete, a surplus edit and the client's own
     // week rearrangement name their own days and must not pay for the horizon.
+    // They DO pay for the block clamp below, which is one indexed row and is
+    // the difference between repricing a day and prescribing one.
     wireNutritionTables();
 
     await regenerateFutureNutritionEvents("client-1", "plan-8", {
@@ -937,8 +939,103 @@ describe("nutrition-event-service: the generation horizon", () => {
       dates: ["2026-09-11", "2026-09-18"],
     });
 
-    expect(getBlockEndCoveringDate).not.toHaveBeenCalled();
     expect(getFurthestLiveProgramEnd).not.toHaveBeenCalled();
+  });
+
+  it("a version writes only inside the BLOCK it was laid in", async () => {
+    // The defect this exists for: a placement anchored in a LATER block made the
+    // cascade regenerate that block's days from the version governing the
+    // PREVIOUS one, so a block the coach had never priced showed the last
+    // block's calories. The version still governs those days for the client's
+    // food log; it just may not materialise a prescription on them.
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue("2026-10-05");
+    const { upsertQuery } = wireNutritionTables();
+
+    await regenerateFutureNutritionEvents("client-1", "plan-11", {
+      kind: "from",
+      from: "2026-10-01",
+    });
+
+    // 1-5 Oct only: the open version reaches for ever, its block does not.
+    expect(writtenDates(upsertQuery)).toEqual([
+      "2026-10-01",
+      "2026-10-02",
+      "2026-10-03",
+      "2026-10-04",
+      "2026-10-05",
+    ]);
+  });
+
+  it("clamps a MOVE that crosses a block boundary, not just an open-ended scope", async () => {
+    // Narrow scopes name their own days, so nothing else stops them: dragging a
+    // session from one block into the next would otherwise write the first
+    // block's target onto a day in the second.
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue("2026-10-05");
+    // A `dates` scope skips the DELETE, so it is protected-select then upsert.
+    const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+    const upsertQuery = createMockQuery({ data: [], error: null });
+    let nutCount = 0;
+    mockFrom.mockImplementation(((table: string) => {
+      if (table === "nutrition_events") {
+        nutCount += 1;
+        return (nutCount === 1 ? protectedQuery : upsertQuery) as never;
+      }
+      if (table === "nutrition_plans")
+        return createMockQuery({ data: PLAN_ROW, error: null }) as never;
+      return createMockQuery({ data: [], error: null }) as never;
+    }) as never);
+
+    await regenerateFutureNutritionEvents("client-1", "plan-12", {
+      kind: "dates",
+      dates: ["2026-10-03", "2026-10-08"],
+    });
+
+    expect(writtenDates(upsertQuery)).toEqual(["2026-10-03"]);
+  });
+
+  it("the version's OWN window still bounds it when it closes before its block", async () => {
+    // Both bounds are real and the tighter one wins. A closed version inside a
+    // long block must not write past its successor's start just because the
+    // block runs on — that is the era-mixing the migration-144 clamp prevents.
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue("2026-10-05");
+    const deleteQuery = createMockQuery({ data: null, error: null });
+    const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+    const upsertQuery = createMockQuery({ data: [], error: null });
+    let nutCount = 0;
+    mockFrom.mockImplementation(((table: string) => {
+      if (table === "nutrition_events") {
+        nutCount += 1;
+        if (nutCount === 1) return deleteQuery as never;
+        if (nutCount === 2) return protectedQuery as never;
+        return upsertQuery as never;
+      }
+      if (table === "nutrition_plans")
+        return createMockQuery({
+          data: { ...PLAN_ROW, effective_until: "2026-10-02" },
+          error: null,
+        }) as never;
+      return createMockQuery({ data: [], error: null }) as never;
+    }) as never);
+
+    await regenerateFutureNutritionEvents("client-1", "plan-14", {
+      kind: "from",
+      from: "2026-10-01",
+    });
+
+    expect(writtenDates(upsertQuery)).toEqual(["2026-10-01", "2026-10-02"]);
+  });
+
+  it("a version laid in a GAP keeps its own window — nothing declared, nothing bounds it", async () => {
+    vi.mocked(getBlockEndCoveringDate).mockResolvedValue(null);
+    vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue("2026-09-20");
+    const { upsertQuery } = wireNutritionTables();
+
+    await regenerateFutureNutritionEvents("client-1", "plan-13", {
+      kind: "from",
+      from: "2026-09-16",
+    });
+
+    expect(writtenDates(upsertQuery).at(-1)).toBe("2026-09-20");
   });
 
   it("end to end: the next block, set up while the current one still runs, is covered to its final day", async () => {
