@@ -71,6 +71,10 @@ describe("PlanTrainingCard — program placed to start later", () => {
       <PlanTrainingCard training={null} upcomingTraining={QUEUED} onOpenTraining={vi.fn()} />
     );
 
+    // The queued layout the nutrition card shares: a generic title, the
+    // program named in a one-cell body, the start in the footer.
+    expect(screen.getByText("Training plan")).toBeInTheDocument();
+    expect(screen.getByText("Program")).toBeInTheDocument();
     expect(screen.getByText("Strength Block B")).toBeInTheDocument();
     expect(screen.getByText(/Starts/)).toBeInTheDocument();
     expect(screen.getByText(/Mon, 27 Jul/)).toBeInTheDocument();

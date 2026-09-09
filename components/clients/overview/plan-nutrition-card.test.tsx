@@ -39,7 +39,10 @@ describe("PlanNutritionCard — targets saved to start later", () => {
     );
 
     expect(screen.getByText("Nutrition targets")).toBeInTheDocument();
+    expect(screen.getByText("Daily target")).toBeInTheDocument();
     expect(screen.getByText("1732")).toBeInTheDocument();
+    // The cell carries the number alone — no sub-line under it (owner).
+    expect(screen.queryByText(/Rest day/)).not.toBeInTheDocument();
     expect(screen.getByText(/Starts/)).toBeInTheDocument();
     expect(screen.getByText(/Wed, 7 Oct/)).toBeInTheDocument();
     expect(screen.queryByText(/No nutrition plan/i)).not.toBeInTheDocument();

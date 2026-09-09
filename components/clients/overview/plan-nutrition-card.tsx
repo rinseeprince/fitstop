@@ -66,7 +66,9 @@ export function PlanNutritionCard({
 
   // Targets saved to start later are set, not absent. Saying "no plan" here
   // would invite the coach to build a second prescription beside the queued
-  // one — the rule the training card applies to a queued program.
+  // one — the rule the training card applies to a queued program. Same queued
+  // layout as that card: generic title with the chips, a header hairline, a
+  // one-cell body, and the Starts footer under its own hairline.
   if (!nutrition && upcomingNutrition) {
     return (
       <OverviewCard animationDelay="0.14s">
@@ -84,14 +86,15 @@ export function PlanNutritionCard({
                 label: "Daily target",
                 value: String(upcomingNutrition.restDayCalories),
                 unit: "cal",
-                sub: "Rest day, before any training surplus",
               },
             ]}
           />
-          <p className="px-5 pb-4 text-[13px] font-semibold text-[#0c1a1e]">
-            {/* No space before InlineMono — it owns its own gap. */}
-            Starts<InlineMono>{formatDateOnlyWeekday(upcomingNutrition.startsOn)}</InlineMono>
-          </p>
+          <div className="border-t border-[rgba(13,148,136,0.06)] px-5 py-4">
+            <p className="text-[13px] font-semibold text-[#0c1a1e]">
+              {/* No space before InlineMono — it owns its own gap. */}
+              Starts<InlineMono>{formatDateOnlyWeekday(upcomingNutrition.startsOn)}</InlineMono>
+            </p>
+          </div>
         </div>
       </OverviewCard>
     );
