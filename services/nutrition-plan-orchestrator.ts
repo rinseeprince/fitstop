@@ -237,6 +237,99 @@ export async function orchestrateNutritionPlanDeletion(
 }
 
 /**
+ * Delete only the nutrition versions LAID INSIDE one block, and the days they
+ * prescribe — the block delete's "and its plans", scoped.
+ *
+ * A version belongs to a block when its `effective_from` falls in the block's
+ * days. That question dates answer on their own, and correctly, because a
+ * version generates only inside the block it opens in (see the clamp in
+ * `regenerateFutureNutritionEvents`) — so its window and the block's line up by
+ * construction. A version that merely CROSSES the block belongs to an earlier
+ * one and survives.
+ *
+ * Same two outcomes as the client-wide delete, per version: one that never
+ * governed a day is removed outright, one that did is closed at the day before
+ * the deletion floor, so its window and its events still end together.
+ *
+ * Returns how many versions it touched. Zero is not an error here: the coach
+ * asked for the block's plans to go and it may have had none.
+ */
+export async function deleteBlockNutritionPlans(
+  clientId: string,
+  block: { startsOn: string; endsOn: string }
+): Promise<{ versionsCleared: number }> {
+  const clientToday = await getClientTodayString(clientId);
+  const deleteFrom = await resolveEventDeletionFloor(clientId, clientToday);
+  const closeAt = addDaysToDateString(deleteFrom, -1);
+
+  const { data: versions, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id, effective_from")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .gte("effective_from", block.startsOn)
+    .lte("effective_from", block.endsOn);
+  if (error) {
+    throw new NutritionPlanError(
+      `Failed to resolve this block's nutrition versions: ${error.message}`,
+      500
+    );
+  }
+  if (!versions || versions.length === 0) return { versionsCleared: 0 };
+
+  // Events first, so a mid-flight failure leaves a state a retry completes.
+  // Bounded to the block at BOTH ends: the floor protects a day the client has
+  // touched, and the block's end is as far as these versions ever wrote.
+  const from = deleteFrom > block.startsOn ? deleteFrom : block.startsOn;
+  if (from <= block.endsOn) {
+    const { error: eventsError } = await supabaseAdmin
+      .from("nutrition_events")
+      .delete()
+      .eq("client_id", clientId)
+      .gte("date", from)
+      .lte("date", block.endsOn)
+      .eq("status", "scheduled");
+    if (eventsError) {
+      throw new NutritionPlanError(
+        `Failed to clear this block's nutrition days: ${eventsError.message}`,
+        500
+      );
+    }
+  }
+
+  const governedNothing = versions.filter((v) => v.effective_from > closeAt);
+  const governed = versions.filter((v) => v.effective_from <= closeAt);
+
+  if (governedNothing.length > 0) {
+    const { error: deleteError } = await supabaseAdmin
+      .from("nutrition_plans")
+      .delete()
+      .in("id", governedNothing.map((v) => v.id));
+    if (deleteError) {
+      throw new NutritionPlanError(
+        `Failed to remove this block's nutrition versions: ${deleteError.message}`,
+        500
+      );
+    }
+  }
+
+  if (governed.length > 0) {
+    const { error: closeError } = await supabaseAdmin
+      .from("nutrition_plans")
+      .update({ effective_until: closeAt, updated_at: new Date().toISOString() })
+      .in("id", governed.map((v) => v.id));
+    if (closeError) {
+      throw new NutritionPlanError(
+        `Failed to close this block's nutrition versions: ${closeError.message}`,
+        500
+      );
+    }
+  }
+
+  return { versionsCleared: versions.length };
+}
+
+/**
  * Orchestrate creation of a nutrition plan (custom-macro or calculated).
  * Throws NutritionPlanError for validation / business-logic failures.
  */

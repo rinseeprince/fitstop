@@ -29,21 +29,12 @@ vi.mock("@/services/today-service", () => ({
 // behaviour is proved in their own suites — here only that they are FIRED, in
 // the right order, and only when asked.
 vi.mock("@/services/training-plan-clear-service", () => ({
-  clearAllTrainingPlansForClient: vi.fn().mockResolvedValue({ plansCleared: 0 }),
+  clearTrainingPlansForClient: vi.fn().mockResolvedValue({ plansCleared: 0 }),
 }));
 
-vi.mock("@/services/nutrition-plan-orchestrator", () => {
-  class NutritionPlanError extends Error {
-    constructor(message: string, public statusCode: number) {
-      super(message);
-      this.name = "NutritionPlanError";
-    }
-  }
-  return {
-    NutritionPlanError,
-    orchestrateNutritionPlanDeletion: vi.fn().mockResolvedValue({ planId: "p1" }),
-  };
-});
+vi.mock("@/services/nutrition-plan-orchestrator", () => ({
+  deleteBlockNutritionPlans: vi.fn().mockResolvedValue({ versionsCleared: 0 }),
+}));
 
 vi.mock("@/services/client-blocks-service", () => {
   class ElapsedBlockImmutableError extends Error {}
@@ -65,11 +56,8 @@ vi.mock("@/services/client-blocks-service", () => {
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
-import { clearAllTrainingPlansForClient } from "@/services/training-plan-clear-service";
-import {
-  NutritionPlanError,
-  orchestrateNutritionPlanDeletion,
-} from "@/services/nutrition-plan-orchestrator";
+import { clearTrainingPlansForClient } from "@/services/training-plan-clear-service";
+import { deleteBlockNutritionPlans } from "@/services/nutrition-plan-orchestrator";
 import {
   BlockWindowError,
   deleteBlock,
@@ -151,28 +139,47 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
     );
   });
 
-  it("fires the two plan deletes, nutrition first, when the coach asks for it", async () => {
-    // Three things the coach can already do, together — reusing those paths
-    // rather than inventing a block-scoped deletion.
+  it("scopes both plan deletes to THIS block's window, nutrition first", async () => {
+    // A block delete is about one block's date range. Both tracks answer
+    // "does this plan belong here?" from dates — a program is truncated to the
+    // block it is placed in, a version generates only inside the block it opens
+    // in — so a LATER block keeps its own program and its own targets.
     //
-    // NUTRITION FIRST is load-bearing: its delete closes the covering version at
-    // the day before the deletion floor, so the training clear's own cascade
-    // then finds no version governing those days and rebuilds nothing.
+    // NUTRITION FIRST is load-bearing: its delete closes the versions at the day
+    // before the deletion floor, so the training clear's own cascade then finds
+    // no version governing those days and rebuilds nothing.
     vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
+    vi.mocked(listBlocks).mockResolvedValue([
+      {
+        id: "block-b",
+        name: "Cut",
+        focus: null,
+        targetWeightKg: null,
+        startsOn: "2026-08-11",
+        endsOn: "2026-09-07",
+        archivedAt: null,
+      },
+    ]);
 
     const response = await DELETE(createMockRequest("?clearPlans=true"), mockParams);
 
     expect(response.status).toBe(200);
-    expect(orchestrateNutritionPlanDeletion).toHaveBeenCalledWith("client-1", "coach-1");
-    expect(clearAllTrainingPlansForClient).toHaveBeenCalledWith("client-1", TODAY);
+    expect(deleteBlockNutritionPlans).toHaveBeenCalledWith(
+      "client-1",
+      expect.objectContaining({ startsOn: "2026-08-11", endsOn: "2026-09-07" })
+    );
+    expect(clearTrainingPlansForClient).toHaveBeenCalledWith("client-1", TODAY, {
+      from: "2026-08-11",
+      to: "2026-09-07",
+    });
     expect(
-      vi.mocked(orchestrateNutritionPlanDeletion).mock.invocationCallOrder[0]
+      vi.mocked(deleteBlockNutritionPlans).mock.invocationCallOrder[0]
     ).toBeLessThan(
-      vi.mocked(clearAllTrainingPlansForClient).mock.invocationCallOrder[0]
+      vi.mocked(clearTrainingPlansForClient).mock.invocationCallOrder[0]
     );
     // Both BEFORE the row goes.
     expect(
-      vi.mocked(clearAllTrainingPlansForClient).mock.invocationCallOrder[0]
+      vi.mocked(clearTrainingPlansForClient).mock.invocationCallOrder[0]
     ).toBeLessThan(vi.mocked(deleteBlock).mock.invocationCallOrder[0]);
   });
 
@@ -182,36 +189,25 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
 
     await DELETE(createMockRequest(), mockParams);
 
-    expect(orchestrateNutritionPlanDeletion).not.toHaveBeenCalled();
-    expect(clearAllTrainingPlansForClient).not.toHaveBeenCalled();
+    expect(deleteBlockNutritionPlans).not.toHaveBeenCalled();
+    expect(clearTrainingPlansForClient).not.toHaveBeenCalled();
   });
 
-  it("carries on when there is no nutrition plan left to delete", async () => {
-    // The coach asked for the plans to go and one was already gone. A 404 from
-    // that path is not a failure of THIS one.
-    vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
-    vi.mocked(orchestrateNutritionPlanDeletion).mockRejectedValueOnce(
-      new NutritionPlanError("No active nutrition plan to delete", 404)
-    );
-
-    const response = await DELETE(createMockRequest("?clearPlans=true"), mockParams);
-
-    expect(response.status).toBe(200);
-    expect(clearAllTrainingPlansForClient).toHaveBeenCalled();
-    expect(deleteBlock).toHaveBeenCalled();
-  });
-
-  it("stops on a REAL nutrition-delete failure rather than deleting the block", async () => {
-    // Losing the block while its plan survives is the one outcome that cannot
+  it("stops before deleting the block when a plan delete fails", async () => {
+    // Losing the block while its plans survive is the one outcome that cannot
     // be undone from the UI: the label is gone and the prescription is not.
-    vi.mocked(orchestrateNutritionPlanDeletion).mockRejectedValueOnce(
-      new NutritionPlanError("Forbidden", 403)
-    );
+    vi.mocked(listBlocks).mockResolvedValue([
+      {
+        id: "block-b", name: "Cut", focus: null, targetWeightKg: null,
+        startsOn: "2026-08-11", endsOn: "2026-09-07", archivedAt: null,
+      },
+    ]);
+    vi.mocked(deleteBlockNutritionPlans).mockRejectedValueOnce(new Error("boom"));
 
     const response = await DELETE(createMockRequest("?clearPlans=true"), mockParams);
 
     expect(response.status).toBe(500);
-    expect(clearAllTrainingPlansForClient).not.toHaveBeenCalled();
+    expect(clearTrainingPlansForClient).not.toHaveBeenCalled();
     expect(deleteBlock).not.toHaveBeenCalled();
   });
 

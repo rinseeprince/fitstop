@@ -8,27 +8,44 @@ import { resolveEventDeletionFloor } from "./event-deletion-floor";
  * "Delete training plan": retire every program the client is on and remove
  * their upcoming sessions.
  *
- * One act, two callers — the training calendar's own delete and the block
- * delete's "and its plans". There is no delete-the-days-but-keep-the-plan
- * variant on either track (owner, 2026-09-08): a plan left standing with no days
- * is restored by the next cascade, so the two always travel together.
+ * One act, two callers — the training calendar's own delete (every live program)
+ * and the block delete's "and its plans" (only the ones placed inside it).
+ * There is no delete-the-days-but-keep-the-plan variant on either track (owner,
+ * 2026-09-08): a plan left standing with no days is restored by the next
+ * cascade, so the two always travel together.
  *
  * The nutrition cascade runs FROM the client's today, not from the deletion
  * floor: a regenerate REPLACES a day's targets rather than emptying them, so it
  * needs no floor. Only the event removal does.
  */
-export async function clearAllTrainingPlansForClient(
+export async function clearTrainingPlansForClient(
   clientId: string,
-  clientToday: string
+  clientToday: string,
+  /**
+   * Optional block window. Given, only the programs PLACED INSIDE it go — a
+   * plan belongs to a block when its start falls in the block's days, which is
+   * a question dates answer on their own because placement truncates a program
+   * to the block it is placed in. Omitted, every live program goes: that is the
+   * training calendar's own delete.
+   *
+   * A program that merely CROSSES the block (placed before it existed, or
+   * extended into it) belongs to no block and survives — the coach removes it
+   * from the calendar, where they can see what they are removing.
+   */
+  window?: { from: string; to: string }
 ): Promise<{ plansCleared: number }> {
   const deleteFrom = await resolveEventDeletionFloor(clientId, clientToday);
 
-  const { data: plans, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from("training_plans")
     .select("id")
     .eq("client_id", clientId)
     .is("deleted_at", null)
     .neq("status", "archived");
+  if (window) {
+    query = query.gte("effective_from", window.from).lte("effective_from", window.to);
+  }
+  const { data: plans, error } = await query;
   if (error) throw error;
 
   // The furthest day ANY of these plans had an event on. Every one of them is

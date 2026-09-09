@@ -5,7 +5,7 @@ import {
   getNextFutureTrainingPlan,
   getTrainingPlanById,
 } from "@/services/training-service";
-import { clearAllTrainingPlansForClient } from "@/services/training-plan-clear-service";
+import { clearTrainingPlansForClient } from "@/services/training-plan-clear-service";
 import { getClientTodayString } from "@/services/today-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -130,7 +130,7 @@ export async function DELETE(
     // The act itself lives in a service because the block delete's "and its
     // plans" fires the same one — a second copy would be a second answer.
     const today = await getClientTodayString(clientId);
-    const { plansCleared } = await clearAllTrainingPlansForClient(clientId, today);
+    const { plansCleared } = await clearTrainingPlansForClient(clientId, today);
 
     return NextResponse.json({ success: true, plansCleared }, { status: 200 });
   } catch (error) {

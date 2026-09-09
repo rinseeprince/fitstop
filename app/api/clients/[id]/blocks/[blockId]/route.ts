@@ -4,15 +4,13 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { decorateBlocks } from "@/lib/blocks/block-derivations";
 import { archiveBlockSchema } from "@/lib/validations/client-blocks";
-import { clearAllTrainingPlansForClient } from "@/services/training-plan-clear-service";
-import {
-  NutritionPlanError,
-  orchestrateNutritionPlanDeletion,
-} from "@/services/nutrition-plan-orchestrator";
+import { clearTrainingPlansForClient } from "@/services/training-plan-clear-service";
+import { deleteBlockNutritionPlans } from "@/services/nutrition-plan-orchestrator";
 import {
   BlockWindowError,
   deleteBlock,
   ElapsedBlockImmutableError,
+  listBlocks,
   setBlockArchived,
   UnknownBlockIdError,
 } from "@/services/client-blocks-service";
@@ -34,12 +32,13 @@ import { AUDIT_ACTIONS } from "@/lib/constants";
 // pointer architecture arrives by the back door, and blocks carry DATES, never
 // an id anything else points at.
 //
-// Clearing the block's own days and leaving the plans standing was the previous
+// Clearing the block's own days and leaving the plans standing was an earlier
 // behaviour and did not survive contact: the plans regenerate the days on the
-// next cascade, so the delete undid itself. The cost of the plan-level act is
-// accepted (owner, 2026-09-08) and stated in the dialog — the two deletes run
-// from the shared floor FORWARD, unbounded, so a LATER block with its own
-// program loses it too and survives as an empty label.
+// next cascade, so the delete undid itself.
+//
+// Both deletes are SCOPED TO THIS BLOCK's window. A later block keeps its own
+// program and its own targets — the coach asked about one block's date range,
+// and nothing outside it is theirs to remove here.
 
 export async function DELETE(
   request: NextRequest,
@@ -65,25 +64,28 @@ export async function DELETE(
     // the deletion floor, so the training clear's own cascade then finds no
     // version governing those days and rebuilds nothing. The other order works
     // too but writes days it is about to remove.
-    let cleared: { nutritionPlan: boolean; trainingPlansCleared: number } | null = null;
+    let cleared:
+      | { nutritionVersionsCleared: number; trainingPlansCleared: number }
+      | null = null;
     if (clearPlans) {
-      let nutritionPlan = false;
-      try {
-        await orchestrateNutritionPlanDeletion(clientId, auth.coachId);
-        nutritionPlan = true;
-      } catch (error) {
-        // "No active nutrition plan to delete" is not a failure here: the coach
-        // asked for the plans to go and one of them was already gone. Anything
-        // else is real and stops the delete.
-        if (!(error instanceof NutritionPlanError && error.statusCode === 404)) {
-          throw error;
-        }
-      }
-      const { plansCleared } = await clearAllTrainingPlansForClient(
-        clientId,
-        clientToday
-      );
-      cleared = { nutritionPlan, trainingPlansCleared: plansCleared };
+      // SCOPED TO THIS BLOCK. Both tracks answer "does this plan belong to the
+      // block?" from dates alone — a program is truncated to the block it is
+      // placed in, and a version generates only inside the block it opens in —
+      // so the windows line up with the block's by construction and no pointer
+      // is needed. A plan that merely CROSSES the block belongs to an earlier
+      // one and survives; the coach removes it from its own calendar.
+      const block = (await listBlocks(clientId)).find((b) => b.id === blockId);
+      if (!block) throw new UnknownBlockIdError("Block not found");
+
+      const { versionsCleared } = await deleteBlockNutritionPlans(clientId, block);
+      const { plansCleared } = await clearTrainingPlansForClient(clientId, clientToday, {
+        from: block.startsOn,
+        to: block.endsOn,
+      });
+      cleared = {
+        nutritionVersionsCleared: versionsCleared,
+        trainingPlansCleared: plansCleared,
+      };
     }
 
     const result = await deleteBlock(clientId, clientToday, blockId);

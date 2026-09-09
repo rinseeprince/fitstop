@@ -65,6 +65,7 @@ import { getCurrentGoals } from "@/services/client-goals-service";
 import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import {
+  deleteBlockNutritionPlans,
   orchestrateNutritionPlanCreation,
   orchestrateNutritionPlanDeletion,
   NutritionPlanError,
@@ -145,7 +146,7 @@ function mockFromSequence(results: ChainResult[]) {
   vi.mocked(supabaseAdmin.from).mockImplementation((() => {
     const result = results[chains.length] ?? { data: null, error: null };
     const chain: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "gt", "in", "update", "delete", "order", "limit"]) {
+    for (const m of ["select", "eq", "gt", "gte", "lte", "in", "update", "delete", "order", "limit"]) {
       chain[m] = vi.fn().mockReturnValue(chain);
     }
     chain.maybeSingle = vi.fn().mockResolvedValue(result);
@@ -594,5 +595,91 @@ describe("orchestrateNutritionPlanCreation — the deficit runs from the day the
         effectiveFrom: THREE_WEEKS_OUT,
       })
     );
+  });
+});
+
+// ===========================================================================
+// deleteBlockNutritionPlans — the block delete's "and its plans", scoped.
+//
+// A version belongs to a block when its effective_from falls in the block's
+// days; that works because a version generates only inside the block it opens
+// in, so its window and the block's line up by construction.
+// ===========================================================================
+
+describe("deleteBlockNutritionPlans", () => {
+  const BLOCK = { startsOn: "2026-07-06", endsOn: "2026-08-02" };
+
+  it("takes only the versions whose start falls inside the block", async () => {
+    // #1 versions select, #2 events delete, #3 the close.
+    const chains = mockFromSequence([
+      { data: [{ id: "v81", effective_from: "2026-07-06" }], error: null },
+      { error: null },
+      { error: null },
+    ]);
+
+    const result = await deleteBlockNutritionPlans(clientId, BLOCK);
+
+    expect(result).toEqual({ versionsCleared: 1 });
+    expect(chains[0].gte).toHaveBeenCalledWith("effective_from", "2026-07-06");
+    expect(chains[0].lte).toHaveBeenCalledWith("effective_from", "2026-08-02");
+  });
+
+  it("bounds the day removal at BOTH ends — the floor and the block's last day", async () => {
+    const chains = mockFromSequence([
+      { data: [{ id: "v81", effective_from: "2026-07-06" }], error: null },
+      { error: null },
+      { error: null },
+    ]);
+
+    await deleteBlockNutritionPlans(clientId, BLOCK);
+
+    // Floor is the client's today (2026-07-02), which is before the block, so
+    // the block's own start wins at the near end.
+    expect(chains[1].gte).toHaveBeenCalledWith("date", "2026-07-06");
+    expect(chains[1].lte).toHaveBeenCalledWith("date", "2026-08-02");
+    expect(chains[1].eq).toHaveBeenCalledWith("status", "scheduled");
+  });
+
+  it("REMOVES a version that never governed a day, rather than closing it", async () => {
+    // Its window would be empty once its days are gone — the same rule the
+    // client-wide delete applies to a queued version.
+    const chains = mockFromSequence([
+      { data: [{ id: "v92", effective_from: "2026-07-06" }], error: null },
+      { error: null },
+      { error: null },
+    ]);
+
+    await deleteBlockNutritionPlans(clientId, BLOCK);
+
+    expect(chains[2].delete).toHaveBeenCalled();
+    expect(chains[2].in).toHaveBeenCalledWith("id", ["v92"]);
+  });
+
+  it("CLOSES a version that did govern days, at the day before the floor", async () => {
+    const chains = mockFromSequence([
+      { data: [{ id: "v37", effective_from: "2026-06-15" }], error: null },
+      { error: null },
+      { error: null },
+    ]);
+
+    await deleteBlockNutritionPlans(clientId, {
+      startsOn: "2026-06-15",
+      endsOn: "2026-08-02",
+    });
+
+    expect(chains[2].update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-07-01" })
+    );
+    expect(chains[2].in).toHaveBeenCalledWith("id", ["v37"]);
+  });
+
+  it("does nothing at all for a block that holds no versions", async () => {
+    mockFromSequence([{ data: [], error: null }]);
+
+    expect(await deleteBlockNutritionPlans(clientId, BLOCK)).toEqual({
+      versionsCleared: 0,
+    });
+    // One read, no writes: an empty block is not an error.
+    expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(1);
   });
 });

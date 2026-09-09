@@ -20,13 +20,11 @@ import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 // default. Deleting the block alone leaves the calendar untouched — a block owns
 // its own window (migration 164), so the row goes and nothing else moves.
 //
-// ONE consequence sentence, for the second CTA only. It fires the two plan
-// deletes the calendars already offer, and those run from today FORWARD with no
-// upper bound — so a later block's program goes with them, and a coach who is
-// not told that finds out by losing work.
+// ONE line for the second CTA, saying the only thing the buttons do not: that
+// the plans go too, and that the scope is THIS block. Both deletes are bounded
+// by the block's window, so a later block keeps its own program and targets.
 //
-// What the buttons already say is not repeated: "Delete block" needs no gloss,
-// and "upcoming" carries the past-is-safe half without a sentence of its own.
+// What the buttons already say is not repeated: "Delete block" needs no gloss.
 // A confirm that has to be read twice is not a confirm.
 
 const DANGER_CTA =
@@ -80,8 +78,8 @@ export function DeleteBlockDialog({
           <span className="font-semibold text-[#0c1a1e]">
             Delete block and its plans
           </span>{" "}
-          removes their training and nutrition plans too — every upcoming day of
-          both goes, including days in later blocks.
+          removes the training and nutrition plans set up in this block, and
+          their upcoming days. Other blocks keep theirs.
         </p>
         <DialogFooter className="min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button variant="ghost" onClick={onCancel} disabled={isDeleting}>
