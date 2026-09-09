@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import { useRoundTripBlockStart } from "@/components/clients/metrics/hooks/use-round-trip-block";
 import type {
   Client,
   DietType,
@@ -85,7 +86,19 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   // never from the coach's browser clock.
   const [effectiveFromPick, setEffectiveFromPick] = useState<string | null>(null);
   const clientToday = calcInputs?.today ?? null;
-  const effectiveFrom = effectiveFromPick ?? clientToday;
+  // Seeded from the block the coach came from, when they came from one — a
+  // derivation, never a second piece of state, so their own pick still wins and
+  // there is nothing to keep in sync. Floored at the client's today because a
+  // past effective date is refused by the server's own belt: a block already
+  // under way seeds today, not the day it began.
+  const blockStart = useRoundTripBlockStart(client.id, "edit");
+  const blockSeed =
+    blockStart && clientToday
+      ? blockStart > clientToday
+        ? blockStart
+        : clientToday
+      : null;
+  const effectiveFrom = effectiveFromPick ?? blockSeed ?? clientToday;
 
   const autoPlan = useMemo(
     () =>

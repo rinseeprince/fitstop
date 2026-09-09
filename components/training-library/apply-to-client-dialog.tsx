@@ -25,6 +25,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import { useRoundTripBlockStart } from "@/components/clients/metrics/hooks/use-round-trip-block";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { format } from "date-fns";
 import {
@@ -79,7 +80,20 @@ export function ApplyToClientDialog({
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
-  const [startDate, setStartDate] = useState(getNextMonday());
+  // Seeded from the block the coach came from, when they came from one: the
+  // whole point of "place one" is that they have already said which days they
+  // mean. The block id rides the URL under the round-trip contract, and the
+  // chain is in SWR's cache because they were just looking at it — so this is a
+  // read of state they can see, not a second source of truth. Falls back to the
+  // next Monday, the right guess when nobody has said anything.
+  //
+  // Floored at today for the same reason the nutrition seed is: a block already
+  // under way seeds today, and the route refuses a past start outright.
+  const blockStart = useRoundTripBlockStart(preselectedClientId, "apply");
+  const today = getDateString(new Date());
+  const [startDate, setStartDate] = useState(
+    blockStart ? (blockStart > today ? blockStart : today) : getNextMonday()
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   // The route's warn-first 409: the chosen start day already holds a completed
   // workout. Shown inline under the date; cleared when the date changes.

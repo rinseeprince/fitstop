@@ -62,8 +62,11 @@ export function useClientBlocks(clientId: string) {
     SWR_CONFIG
   );
   return {
-    blocks: data?.data.blocks ?? [],
-    clientToday: data?.data.clientToday ?? null,
+    // Optional all the way down: a cache entry can be cleared to undefined, and
+    // a failed or partial payload must read as "nothing yet", never throw in a
+    // render.
+    blocks: data?.data?.blocks ?? [],
+    clientToday: data?.data?.clientToday ?? null,
     isLoading,
     isError: Boolean(error),
   };
@@ -77,7 +80,7 @@ export function useBlockFacts(clientId: string) {
     SWR_CONFIG
   );
   return {
-    facts: data?.data.facts ?? [],
+    facts: data?.data?.facts ?? [],
     isLoading,
     isError: Boolean(error),
   };
