@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { overviewBriefKey } from "@/hooks/use-client-overview";
 import type { OverviewBrief } from "@/types/coach-brief";
 
 type BriefResponse = { success: boolean; data: OverviewBrief };
@@ -16,7 +17,7 @@ type BriefResponse = { success: boolean; data: OverviewBrief };
  */
 export function useOverviewBrief(clientId: string) {
   const { data, error, isLoading, mutate } = useSWR<BriefResponse>(
-    clientId ? `/api/clients/${clientId}/overview-brief` : null,
+    clientId ? overviewBriefKey(clientId) : null,
     swrFetcher,
     { revalidateOnFocus: false, errorRetryCount: 3, errorRetryInterval: 1000 }
   );

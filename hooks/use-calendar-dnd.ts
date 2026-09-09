@@ -13,6 +13,8 @@ import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
+import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import type { TrainingEvent } from "@/types/training";
 import type { KeyedMutator } from "swr";
 
@@ -45,6 +47,8 @@ export function useCalendarDnd({
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const invalidateTrainingData = useInvalidateTrainingData();
+  const clearClientOverview = useClearClientOverview();
+  const clearAttentionFeed = useClearAttentionFeed();
   const [activeEvent, setActiveEvent] = useState<TrainingEvent | null>(null);
 
   const sensors = useSensors(
@@ -112,6 +116,8 @@ export function useCalendarDnd({
         toast({ title: "Session moved" });
         await invalidateTrainingData(clientId);
         void invalidateNutritionCalendar(clientId);
+        void clearClientOverview(clientId);
+        void clearAttentionFeed();
       } catch (error) {
         // Revert by REFETCHING rather than restoring a captured snapshot: with
         // the dialog gone, drags are no longer serialized behind a confirm, and
@@ -124,7 +130,7 @@ export function useCalendarDnd({
         });
       }
     },
-    [clientId, mutate, invalidateTrainingData, invalidateNutritionCalendar, toast]
+    [clientId, mutate, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, toast]
   );
 
   /**

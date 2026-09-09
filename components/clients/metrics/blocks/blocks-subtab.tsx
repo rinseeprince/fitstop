@@ -33,6 +33,8 @@ import {
 import { formatBlockDate } from "@/lib/blocks/block-format";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
+import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { blockColor } from "./block-colors";
 import { deriveBlockWeightFacts } from "@/lib/blocks/block-weight";
 import { BlockCard } from "./block-card";
@@ -116,6 +118,8 @@ export function BlocksSubtab({
   // owes both calendar areas their invalidator as well as its own.
   const invalidateTrainingData = useInvalidateTrainingData();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const clearClientOverview = useClearClientOverview();
+  const clearAttentionFeed = useClearAttentionFeed();
   const [showAddForm, setShowAddForm] = useState(false);
   // Coach-curated views (Session 3.7): "journey" = everything unarchived —
   // a live program's finished phases included; "archive" = what the coach
@@ -238,6 +242,8 @@ export function BlocksSubtab({
       // The success path has already awaited it; this catches the failure path,
       // where the dates DID save and the row must show them.
       void invalidateBlocks(clientId);
+      void clearClientOverview(clientId);
+      void clearAttentionFeed();
       setIsSyncing(false);
     }
   };
@@ -268,6 +274,8 @@ export function BlocksSubtab({
           : `"${block.name}" deleted`,
       });
       void invalidateBlocks(clientId);
+      void clearClientOverview(clientId);
+      void clearAttentionFeed();
     } catch (error) {
       toast({
         title: "Delete failed",
@@ -301,6 +309,8 @@ export function BlocksSubtab({
       setShowAddForm(false);
       toast({ title: `"${values.name}" added` });
       void invalidateBlocks(clientId);
+      void clearClientOverview(clientId);
+      void clearAttentionFeed();
     } catch (error) {
       toast({
         title: "Save failed",
@@ -318,6 +328,8 @@ export function BlocksSubtab({
       // leaves it in the one it just left.
       void seedBlocks(clientId, updated);
       void invalidateBlocks(clientId);
+      void clearClientOverview(clientId);
+      void clearAttentionFeed();
       toast({
         title: archived ? `"${block.name}" archived` : `"${block.name}" restored`,
       });
@@ -377,6 +389,8 @@ export function BlocksSubtab({
       setEditingId(null);
       toast({ title: `"${values.name}" updated` });
       void invalidateBlocks(clientId);
+      void clearClientOverview(clientId);
+      void clearAttentionFeed();
     } catch (error) {
       toast({
         title: "Save failed",

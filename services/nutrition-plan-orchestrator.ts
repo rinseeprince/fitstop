@@ -7,11 +7,15 @@ import {
 } from "@/services/nutrition-calc-inputs";
 import {
   createNutritionPlan,
+  getActiveNutritionPlanVersionsOverlapping,
   resolveNutritionPlacementEnd,
 } from "@/services/nutrition-plan-service";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import {
+  regenerateFutureNutritionEvents,
+  sweepUncoveredNutritionDays,
+} from "@/services/nutrition-event-service";
 import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
@@ -35,7 +39,15 @@ export class NutritionPlanError extends Error {
  * return success, or the coach sees a green toast over a stale/gapped
  * calendar. The plan row has already committed by this point, so the message
  * says so; a retry re-POST is idempotent (upsert on client_id,date; coach
- * edits protected by is_modified) and repairs any partial state.
+ * edits protected by is_modified; the same-day version replaced in place) and
+ * repairs any partial state.
+ *
+ * A save supersedes the old version from its start onward: the RPC capped the
+ * predecessor at the day before, and the predecessor's days past this
+ * version's end — and past every queued version — are governed by nothing, so
+ * they are swept once this version's own days are on the calendar. Without
+ * the sweep a block carved out of a longer plan got the block filled and the
+ * OLD targets reappearing the day after it ended.
  */
 async function regenerateEventsOrThrow(
   clientId: string,
@@ -44,6 +56,8 @@ async function regenerateEventsOrThrow(
 ): Promise<void> {
   try {
     await regenerateFutureNutritionEvents(clientId, planId, { kind: "from", from: fromDate });
+    const versions = await getActiveNutritionPlanVersionsOverlapping(clientId, fromDate);
+    await sweepUncoveredNutritionDays(clientId, fromDate, versions);
   } catch (err) {
     captureApiError(err, { action: "generate-nutrition-events", planId });
     throw new NutritionPlanError(

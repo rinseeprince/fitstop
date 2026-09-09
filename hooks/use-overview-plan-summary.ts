@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { overviewPlanSummaryKey } from "@/hooks/use-client-overview";
 import type { OverviewPlanSummary } from "@/types/coach-overview";
 
 type PlanSummaryResponse = { success: boolean; data: OverviewPlanSummary };
@@ -13,7 +14,7 @@ type PlanSummaryResponse = { success: boolean; data: OverviewPlanSummary };
  */
 export function useOverviewPlanSummary(clientId: string) {
   const { data, error, isLoading } = useSWR<PlanSummaryResponse>(
-    clientId ? `/api/clients/${clientId}/overview-plan-summary` : null,
+    clientId ? overviewPlanSummaryKey(clientId) : null,
     swrFetcher,
     { revalidateOnFocus: false, errorRetryCount: 3, errorRetryInterval: 1000 }
   );

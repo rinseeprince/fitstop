@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
+import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { usePlacedPlan } from "@/hooks/use-placed-plan";
 import { TrainingCalendarView } from "../calendar/training-calendar-view";
 import { PlanAmendmentOverlay } from "./plan-amendment-overlay";
@@ -50,6 +52,8 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
+  const clearClientOverview = useClearClientOverview();
+  const clearAttentionFeed = useClearAttentionFeed();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [amendOpen, setAmendOpen] = useState(false);
@@ -81,6 +85,8 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
       // definite answer, and SWR serves the stale one for the whole refetch
       // (CONVENTIONS §7).
       void clearBlockFacts(clientId);
+      void clearClientOverview(clientId);
+      void clearAttentionFeed();
       setShowClearConfirm(false);
       // Deleting training sessions cascade-rewrites nutrition_events.
       void invalidateNutritionCalendar(clientId);

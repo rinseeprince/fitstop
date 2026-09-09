@@ -27,10 +27,12 @@ vi.mock("@/services/nutrition-service", () => ({
 vi.mock("@/services/nutrition-plan-service", () => ({
   createNutritionPlan: vi.fn(),
   resolveNutritionPlacementEnd: vi.fn(),
+  getActiveNutritionPlanVersionsOverlapping: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@/services/nutrition-event-service", () => ({
   regenerateFutureNutritionEvents: vi.fn(),
+  sweepUncoveredNutritionDays: vi.fn().mockResolvedValue(undefined),
 }));
 
 // The delete is one act, owned by the clear service (migration 166); its
@@ -52,9 +54,13 @@ import { getClientById } from "@/services/client-service";
 import { generateNutritionPlan } from "@/services/nutrition-service";
 import {
   createNutritionPlan,
+  getActiveNutritionPlanVersionsOverlapping,
   resolveNutritionPlacementEnd,
 } from "@/services/nutrition-plan-service";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import {
+  regenerateFutureNutritionEvents,
+  sweepUncoveredNutritionDays,
+} from "@/services/nutrition-event-service";
 import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
 import { captureApiError } from "@/lib/error-handler";
 import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
@@ -133,6 +139,8 @@ beforeEach(() => {
   vi.mocked(generateNutritionPlan).mockReturnValue(calculatedPlan as never);
   vi.mocked(createNutritionPlan).mockResolvedValue("plan-1" as never);
   vi.mocked(regenerateFutureNutritionEvents).mockResolvedValue(undefined);
+  vi.mocked(sweepUncoveredNutritionDays).mockResolvedValue(undefined);
+  vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([]);
   vi.mocked(resolveNutritionPlacementEnd).mockResolvedValue("2026-08-27");
   vi.mocked(clearNutritionPlansForClient).mockResolvedValue({
     versionsCleared: 1,
@@ -209,6 +217,41 @@ describe("orchestrateNutritionPlanCreation — event-rewrite error propagation",
 
 describe("orchestrateNutritionPlanCreation — the coach note (migration 147)", () => {
   const NOTE = "Dropping calories 200 while we hold training volume.";
+
+  it("sweeps the superseded tail AFTER the events land and BEFORE the note", async () => {
+    // The RPC capped the predecessor at the day before this version starts; the
+    // predecessor's days past this version's end are governed by nothing and
+    // would otherwise reappear the day after the block ended.
+    const versions = [{ id: "plan-1", effectiveFrom: "2026-07-02", effectiveUntil: "2026-08-27" }];
+    vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue(versions);
+
+    await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {
+      coachNotes: NOTE,
+    });
+
+    expect(getActiveNutritionPlanVersionsOverlapping).toHaveBeenCalledWith(clientId, "2026-07-02");
+    expect(sweepUncoveredNutritionDays).toHaveBeenCalledWith(clientId, "2026-07-02", versions);
+    const order = (fn: unknown) => vi.mocked(fn as () => unknown).mock.invocationCallOrder[0];
+    expect(order(sweepUncoveredNutritionDays)).toBeGreaterThan(order(regenerateFutureNutritionEvents));
+    expect(order(recordPlanSaveNote)).toBeGreaterThan(order(sweepUncoveredNutritionDays));
+  });
+
+  it("a failed sweep fails the save with the calendar sentence and records no note", async () => {
+    vi.mocked(sweepUncoveredNutritionDays).mockRejectedValue(new Error("boom"));
+
+    await expect(
+      orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, { coachNotes: NOTE })
+    ).rejects.toMatchObject({
+      name: "NutritionPlanError",
+      statusCode: 500,
+      message:
+        "Plan targets were saved, but calendar events failed to update. Regenerate the plan to retry.",
+    });
+    // The retry re-saves the same day, which replaces the version in place and
+    // runs the sweep again; a note written now would describe a calendar the
+    // coach has not accepted.
+    expect(recordPlanSaveNote).not.toHaveBeenCalled();
+  });
 
   it("records the note AFTER the events are rewritten, on the effective date", async () => {
     await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {

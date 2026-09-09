@@ -3,6 +3,8 @@
 import { useState, useMemo, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
+import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import {
   eligibleDatesIn,
   monthDatesWhere,
@@ -46,6 +48,8 @@ export function useNutritionCalendarEditing({
 }: UseNutritionCalendarEditingArgs) {
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const clearClientOverview = useClearClientOverview();
+  const clearAttentionFeed = useClearAttentionFeed();
   const [editMode, setEditMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -135,6 +139,8 @@ export function useNutritionCalendarEditing({
         setSheetOpen(false);
         setSelected(new Set());
         await invalidateNutritionCalendar(clientId);
+        void clearClientOverview(clientId);
+        void clearAttentionFeed();
         onUpdate();
       } catch (e) {
         toast({
@@ -146,7 +152,7 @@ export function useNutritionCalendarEditing({
         setIsSaving(false);
       }
     },
-    [resolvedSelected, clientId, invalidateNutritionCalendar, onUpdate, toast]
+    [resolvedSelected, clientId, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, onUpdate, toast]
   );
 
   const resetDates = useCallback(
@@ -168,6 +174,8 @@ export function useNutritionCalendarEditing({
         const affected = new Set(dates);
         setSelected((prev) => new Set([...prev].filter((d) => !affected.has(d))));
         await invalidateNutritionCalendar(clientId);
+        void clearClientOverview(clientId);
+        void clearAttentionFeed();
         onUpdate();
       } catch (e) {
         toast({
@@ -179,7 +187,7 @@ export function useNutritionCalendarEditing({
         setIsSaving(false);
       }
     },
-    [clientId, invalidateNutritionCalendar, onUpdate, toast]
+    [clientId, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, onUpdate, toast]
   );
 
   /** Selection bar "Revert to auto": reset only the frozen days in the selection. */

@@ -15,6 +15,9 @@ vi.mock("@/services/training-event-service", () => ({
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
+vi.mock("@/services/event-deletion-floor", () => ({
+  resolveEventDeletionFloor: vi.fn(),
+}));
 vi.mock("@/lib/error-handler", () => ({
   captureApiError: vi.fn(),
 }));
@@ -65,11 +68,13 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getEventsForDateRange } from "@/services/training-event-service";
 import { getClientTodayString } from "@/services/today-service";
 import { captureApiError } from "@/lib/error-handler";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { getActiveNutritionPlanVersionsOverlapping } from "@/services/nutrition-plan-service";
 import {
   generateNutritionEvents,
   regenerateFutureNutritionEvents,
   cascadeNutritionAfterTrainingChange,
+  sweepUncoveredNutritionDays,
 } from "./nutrition-event-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -640,14 +645,16 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       expect(v2Rows[0].baseline_calories).toBe(2200);
     });
 
-    it("from-scope: sweeps stale rows past every version's end, as far as the caller cleared training", async () => {
-      // One version ending a week in; the training clear reached 2026-06-05.
+    it("from-scope: sweeps the uncovered stretch past the version's end, one range, as far as the caller cleared training", async () => {
+      // One version ending a week in; the training clear reached 2026-06-05;
+      // the last stale row sits at 2026-05-20, inside that reach.
       vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([
         { id: "v1", effectiveFrom: "2026-01-01", effectiveUntil: "2026-04-16" },
       ]);
 
       let nutCount = 0;
-      const gapDeleteQuery = createMockQuery({ data: null, error: null });
+      const lastQuery = createMockQuery({ data: { date: "2026-05-20" }, error: null });
+      const sweepDeleteQuery = createMockQuery({ data: null, error: null });
       const versionDeleteQuery = createMockQuery({ data: null, error: null });
       const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
       const upsertQuery = createMockQuery({ data: [], error: null });
@@ -655,11 +662,12 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       mockFrom.mockImplementation((table: string) => {
         if (table === "nutrition_events") {
           nutCount += 1;
-          // 1 = the cascade-level gap sweep, 2 = v1's clamped delete,
-          // 3 = protected read, 4 = upsert.
-          if (nutCount === 1) return gapDeleteQuery as any;
-          if (nutCount === 2) return versionDeleteQuery as any;
-          if (nutCount === 3) return protectedQuery as any;
+          // 1 = the sweep's read of the last stale day, 2 = its range delete,
+          // 3 = v1's clamped delete, 4 = protected read, 5 = upsert.
+          if (nutCount === 1) return lastQuery as any;
+          if (nutCount === 2) return sweepDeleteQuery as any;
+          if (nutCount === 3) return versionDeleteQuery as any;
+          if (nutCount === 4) return protectedQuery as any;
           return upsertQuery as any;
         }
         if (table === "nutrition_plans")
@@ -680,15 +688,16 @@ describe("nutrition-event-service: cascade-preserve guards", () => {
       // A from-scope asks for every version with days on or after the anchor —
       // no upper bound; each regenerates to its own end.
       expect(getActiveNutritionPlanVersionsOverlapping).toHaveBeenCalledWith("client-1", "2026-04-10");
-      // The gap sweep covers exactly the 50 uncovered dates, client-scoped,
-      // with the three survival predicates intact.
-      const gapDates = vi.mocked(gapDeleteQuery.in).mock.calls[0][1] as string[];
-      expect(gapDates).toHaveLength(50);
-      expect(gapDates[0]).toBe("2026-04-17");
-      expect(gapDates[gapDates.length - 1]).toBe("2026-06-05");
-      expect(gapDeleteQuery.eq).toHaveBeenCalledWith("client_id", "client-1");
-      expect(gapDeleteQuery.eq).toHaveBeenCalledWith("is_modified", false);
-      expect(gapDeleteQuery.is).toHaveBeenCalledWith("coach_note", null);
+      // The sweep: one range from the day after v1's end to the day the caller
+      // cleared training, client-scoped, the three survival predicates intact.
+      expect(sweepDeleteQuery.delete).toHaveBeenCalled();
+      expect(sweepDeleteQuery.gte).toHaveBeenCalledWith("date", "2026-04-17");
+      expect(sweepDeleteQuery.lte).toHaveBeenCalledWith("date", "2026-06-05");
+      expect(sweepDeleteQuery.eq).toHaveBeenCalledWith("client_id", "client-1");
+      expect(sweepDeleteQuery.eq).toHaveBeenCalledWith("is_modified", false);
+      expect(sweepDeleteQuery.is).toHaveBeenCalledWith("coach_note", null);
+      // The stretch opens after the anchor, so the floor was never asked.
+      expect(resolveEventDeletionFloor).not.toHaveBeenCalled();
       // The version's own delete stays inside its window.
       expect(versionDeleteQuery.gte).toHaveBeenCalledWith("date", "2026-04-10");
       expect(versionDeleteQuery.lte).toHaveBeenCalledWith("date", "2026-04-16");
@@ -918,9 +927,9 @@ describe("nutrition-event-service: the window is the row", () => {
       }
       if (table === "nutrition_events") {
         nutCount += 1;
-        // Per version, a from-scope touches events three times: delete,
-        // protected read, upsert.
-        if (nutCount % 3 === 0) {
+        // The sweep's one read first, then per version: delete, protected
+        // read, upsert.
+        if (nutCount > 1 && (nutCount - 1) % 3 === 0) {
           const upsert = createMockQuery({ data: [], error: null });
           upserts.push(upsert);
           return upsert as any;
@@ -943,19 +952,32 @@ describe("nutrition-event-service: the window is the row", () => {
     expect(v1Dates.at(-1)).toBe("2026-09-30");
     expect(v2Dates[0]).toBe("2026-10-01");
     expect(v2Dates.at(-1)).toBe("2026-11-06");
-    // No gap between them, so no sweep: exactly two versions' worth of writes.
-    expect(nutCount).toBe(6);
+    // No day between or past them to sweep: the sweep's read, then two
+    // versions' worth of writes.
+    expect(nutCount).toBe(7);
   });
 
-  it("cascade, from-scope: the sweep stops at the furthest version end unless the caller cleared further", async () => {
+  it("cascade, from-scope: a version reaching past every stale day leaves nothing to sweep — one read, then the version's own delete", async () => {
     vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([
       { id: "v1", effectiveFrom: "2026-01-01", effectiveUntil: "2026-09-16" },
     ]);
-    const { deleteQuery } = wireNutritionTables({
-      ...PLAN_ROW,
-      effective_from: "2026-01-01",
-      effective_until: "2026-09-16",
-    });
+    const lastQuery = createMockQuery({ data: { date: "2026-09-16" }, error: null });
+    const deleteQuery = createMockQuery({ data: null, error: null });
+    const protectedQuery = createMockQuery<{ date: string }[]>({ data: [], error: null });
+    const upsertQuery = createMockQuery({ data: [], error: null });
+    let nutCount = 0;
+    mockFrom.mockImplementation(((table: string) => {
+      if (table === "nutrition_events") {
+        nutCount += 1;
+        return (nutCount === 1 ? lastQuery : nutCount === 2 ? deleteQuery : nutCount === 3 ? protectedQuery : upsertQuery) as never;
+      }
+      if (table === "nutrition_plans")
+        return createMockQuery({
+          data: { ...PLAN_ROW, effective_from: "2026-01-01", effective_until: "2026-09-16" },
+          error: null,
+        }) as never;
+      return createMockQuery({ data: [], error: null }) as never;
+    }) as never);
 
     await cascadeNutritionAfterTrainingChange(
       "client-1",
@@ -963,10 +985,142 @@ describe("nutrition-event-service: the window is the row", () => {
       "test-move"
     );
 
-    // Nothing lies between the anchor and the furthest end, so no gap sweep
-    // ran: the first nutrition_events statement is the version's own delete.
-    expect(deleteQuery.in).not.toHaveBeenCalled();
+    // Nothing lies between the anchor and the window's end, and nothing past
+    // it: the sweep read once and deleted nothing, then the version's own
+    // delete ran.
+    expect(nutCount).toBe(4);
     expect(deleteQuery.gte).toHaveBeenCalledWith("date", "2026-09-04");
     expect(deleteQuery.lte).toHaveBeenCalledWith("date", "2026-09-16");
+  });
+});
+
+// ===========================================================================
+// sweepUncoveredNutritionDays — the days no version covers, from the anchor on.
+// ===========================================================================
+
+describe("sweepUncoveredNutritionDays", () => {
+  const CLIENT = "client-1";
+
+  /** The last-stale-day read, then one delete query per uncovered stretch. */
+  function wire(lastDate: string | null, readError: { message: string } | null = null) {
+    const lastQuery = createMockQuery({ data: lastDate ? { date: lastDate } : null, error: readError });
+    const deletes: Array<ReturnType<typeof createMockQuery>> = [];
+    let n = 0;
+    mockFrom.mockImplementation(((table: string) => {
+      if (table !== "nutrition_events") return createMockQuery({ data: null, error: null }) as never;
+      n += 1;
+      if (n === 1) return lastQuery as never;
+      const q = createMockQuery({ data: null, error: null });
+      deletes.push(q);
+      return q as never;
+    }) as never);
+    return { lastQuery, deletes };
+  }
+
+  const range = (q: ReturnType<typeof createMockQuery>) => [
+    (q.gte.mock.calls.find((c) => c[0] === "date") ?? [])[1],
+    (q.lte.mock.calls.find((c) => c[0] === "date") ?? [])[1],
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-09-04");
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-09-04");
+  });
+
+  it("deletes one range per uncovered stretch — between two windows and past the last — reaching the last stale day", async () => {
+    const { lastQuery, deletes } = wire("2026-10-15");
+
+    await sweepUncoveredNutritionDays(CLIENT, "2026-09-04", [
+      { effectiveFrom: "2026-09-01", effectiveUntil: "2026-09-10" },
+      { effectiveFrom: "2026-09-21", effectiveUntil: "2026-09-30" },
+    ]);
+
+    // One read of the last sweepable day, client-scoped from the anchor.
+    expect(lastQuery.gte).toHaveBeenCalledWith("date", "2026-09-04");
+    expect(lastQuery.order).toHaveBeenCalledWith("date", { ascending: false });
+    expect(lastQuery.limit).toHaveBeenCalledWith(1);
+    // Two stretches: the gap between the windows, then past the last window
+    // to the last stale day.
+    expect(deletes.map(range)).toEqual([
+      ["2026-09-11", "2026-09-20"],
+      ["2026-10-01", "2026-10-15"],
+    ]);
+    // Neither stretch opens on the anchor, so the floor was never asked.
+    expect(resolveEventDeletionFloor).not.toHaveBeenCalled();
+  });
+
+  it("reaches the caller's `to` when it lies past the last stale day", async () => {
+    const { deletes } = wire("2026-10-15");
+
+    await sweepUncoveredNutritionDays(
+      CLIENT,
+      "2026-09-04",
+      [{ effectiveFrom: "2026-09-01", effectiveUntil: "2026-09-30" }],
+      "2026-11-30"
+    );
+
+    expect(deletes.map(range)).toEqual([["2026-10-01", "2026-11-30"]]);
+  });
+
+  it("sweeps nothing when the windows reach past every stale day — one read, no delete", async () => {
+    const { deletes } = wire("2026-09-20");
+
+    await sweepUncoveredNutritionDays(CLIENT, "2026-09-04", [
+      { effectiveFrom: "2026-09-01", effectiveUntil: "2026-09-30" },
+    ]);
+
+    expect(deletes).toHaveLength(0);
+  });
+
+  it("floors the stretch that opens on the anchor — a logged today is never emptied", async () => {
+    // Today is uncovered (the version starts on the 10th) and the client has
+    // logged against today's stale target: the floor says tomorrow.
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-09-05");
+    const { deletes } = wire("2026-09-04");
+
+    await sweepUncoveredNutritionDays(CLIENT, "2026-09-04", [
+      { effectiveFrom: "2026-09-10", effectiveUntil: "2026-09-30" },
+    ]);
+
+    expect(resolveEventDeletionFloor).toHaveBeenCalledWith(CLIENT, "2026-09-04");
+    expect(deletes.map(range)).toEqual([["2026-09-05", "2026-09-09"]]);
+  });
+
+  it("drops an anchor stretch the floor swallows whole", async () => {
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-09-05");
+    const { deletes } = wire("2026-09-04");
+
+    await sweepUncoveredNutritionDays(CLIENT, "2026-09-04", [
+      { effectiveFrom: "2026-09-05", effectiveUntil: "2026-09-30" },
+    ]);
+
+    expect(deletes).toHaveLength(0);
+  });
+
+  it("carries the three survival predicates on the read and on every range", async () => {
+    const { lastQuery, deletes } = wire("2026-10-15");
+
+    await sweepUncoveredNutritionDays(CLIENT, "2026-09-04", [
+      { effectiveFrom: "2026-09-01", effectiveUntil: "2026-09-30" },
+    ]);
+
+    for (const q of [lastQuery, deletes[0]]) {
+      expect(q.eq).toHaveBeenCalledWith("client_id", CLIENT);
+      expect(q.eq).toHaveBeenCalledWith("status", "scheduled");
+      expect(q.eq).toHaveBeenCalledWith("is_modified", false);
+      expect(q.is).toHaveBeenCalledWith("coach_note", null);
+    }
+    expect(deletes[0].delete).toHaveBeenCalled();
+  });
+
+  it("throws on a failed read — the caller decides what a stale day costs", async () => {
+    wire(null, { message: "boom" });
+
+    await expect(
+      sweepUncoveredNutritionDays(CLIENT, "2026-09-04", [
+        { effectiveFrom: "2026-09-01", effectiveUntil: "2026-09-30" },
+      ])
+    ).rejects.toEqual({ message: "boom" });
   });
 });

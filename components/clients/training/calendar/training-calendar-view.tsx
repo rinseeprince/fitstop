@@ -6,6 +6,8 @@ import { calendarCollisionDetection } from "./calendar-collision";
 import { useCalendarEvents, useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
+import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useCalendarDnd } from "@/hooks/use-calendar-dnd";
 import { CalendarGrid } from "./calendar-grid";
 import { CalendarToolbar } from "./calendar-toolbar";
@@ -129,6 +131,8 @@ export function TrainingCalendarView({
   // must also invalidate the nutrition calendar's cache.
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
+  const clearClientOverview = useClearClientOverview();
+  const clearAttentionFeed = useClearAttentionFeed();
 
   // Saved plans for apply-from-drop dialog
   const { plans: savedPlans } = useSavedPlans();
@@ -173,6 +177,8 @@ export function TrainingCalendarView({
           toast({ title: "Session placed" });
           await invalidateTrainingData(clientId);
           void invalidateNutritionCalendar(clientId);
+          void clearClientOverview(clientId);
+          void clearAttentionFeed();
           // The Journey block cards are DERIVED from these rows, so they are
           // wrong the moment this lands (CONVENTIONS §7 — the area that reads
           // what you wrote, not the one you wrote).
@@ -217,6 +223,8 @@ export function TrainingCalendarView({
       toast({ title: "Session duplicated" });
       await invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
+          void clearClientOverview(clientId);
+          void clearAttentionFeed();
     } catch (error) {
       toast({
         title: "Duplicate failed",
@@ -226,7 +234,7 @@ export function TrainingCalendarView({
     } finally {
       setPendingDuplicate(null);
     }
-  }, [pendingDuplicate, clientId, invalidateTrainingData, invalidateNutritionCalendar, toast]);
+  }, [pendingDuplicate, clientId, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, toast]);
 
   // Resolve the single plan a week row belongs to, or null if mixed/empty.
   const weekRowPlanId = useCallback(
@@ -288,11 +296,13 @@ export function TrainingCalendarView({
       }
       await invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
+          void clearClientOverview(clientId);
+          void clearAttentionFeed();
     } finally {
       setIsWeekActionLoading(false);
       setPendingClearWeek(null);
     }
-  }, [clientId, clientToday, eventsByDate, invalidateTrainingData, invalidateNutritionCalendar, toast]);
+  }, [clientId, clientToday, eventsByDate, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, toast]);
 
   // Per-event delete executor — runs only after the DeleteEventDialog confirm.
   const executeDeleteEvent = useCallback(async (event: TrainingEvent) => {
@@ -309,6 +319,8 @@ export function TrainingCalendarView({
       }
       await invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
+          void clearClientOverview(clientId);
+          void clearAttentionFeed();
       toast({ title: "Session removed" });
       setDeleteTarget(null);
     } catch {
@@ -316,7 +328,7 @@ export function TrainingCalendarView({
     } finally {
       setIsDeletingEvent(false);
     }
-  }, [clientId, invalidateTrainingData, invalidateNutritionCalendar, toast]);
+  }, [clientId, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, toast]);
 
   // Week action handler. `WeekAction` is down to its one surviving member, so
   // the action itself is not read — the parameter stays to keep the row → view

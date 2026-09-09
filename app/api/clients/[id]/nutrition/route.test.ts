@@ -24,6 +24,9 @@ vi.mock('@/services/training-service', () => ({
 // running", so this factory no longer declares it.
 vi.mock('@/services/nutrition-event-service', () => ({
   regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
+  // The save sweeps the superseded tail after the regenerate; its statement
+  // semantics are pinned in nutrition-event-service.test.ts.
+  sweepUncoveredNutritionDays: vi.fn().mockResolvedValue(undefined),
 }))
 
 // The DELETE hands the whole act to the clear service (migration 166); its
@@ -81,6 +84,7 @@ vi.mock('@/services/nutrition-plan-service', () => ({
   getLatestNutritionPlan: vi.fn().mockResolvedValue(null),
   getNextFutureNutritionPlan: vi.fn().mockResolvedValue(null),
   resolveNutritionPlacementEnd: vi.fn().mockResolvedValue('2026-03-11'),
+  getActiveNutritionPlanVersionsOverlapping: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('@/services/client-goals-service', () => ({

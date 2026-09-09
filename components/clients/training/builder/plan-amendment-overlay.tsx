@@ -7,6 +7,8 @@ import { ProgramBuilder } from "@/components/clients/training/program-builder/pr
 import { ClientDraftLeaveGuard } from "./client-draft-leave-guard";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
+import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { cn } from "@/lib/utils";
 
 // The plan-amendment surface (Job 2): the SHARED Program builder mounted
@@ -33,6 +35,8 @@ export function PlanAmendmentOverlay({
   const builder = useTrainingBuilderContext();
   const invalidateTrainingData = useInvalidateTrainingData();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const clearClientOverview = useClearClientOverview();
+  const clearAttentionFeed = useClearAttentionFeed();
 
   return (
     <DialogPrimitive.Root
@@ -77,6 +81,8 @@ export function PlanAmendmentOverlay({
                 void builder.fetchPlan();
                 void invalidateTrainingData(clientId);
                 void invalidateNutritionCalendar(clientId);
+                void clearClientOverview(clientId);
+                void clearAttentionFeed();
                 onOpenChange(false);
               }}
             >

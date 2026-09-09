@@ -327,7 +327,11 @@
 
   The two reference implementations are `useInvalidateTrainingData`
   (`hooks/use-calendar-events.ts`) and `useInvalidateNutritionCalendar`
-  (`hooks/use-nutrition-calendar-events.ts`).
+  (`hooks/use-nutrition-calendar-events.ts`). The clearing form's are
+  `useClearBlockFacts`, `useClearClientOverview` (`hooks/use-client-overview.ts`)
+  and `useClearAttentionFeed` (`hooks/use-attention-feed.ts`): every calendar
+  writer calls the last two on success, and `hooks/use-client-overview.test.ts`
+  scans the tree for one that does not.
 
   **Known gap:** this is a rule for new and touched code, not a claim about the
   codebase. Roughly 50 coach-side SWR reads exist against those two exported

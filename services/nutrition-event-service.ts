@@ -3,6 +3,7 @@ import type { NutritionEvent, NutritionEventStatus, DietType } from "@/types/che
 import type { NutritionEventRow, NutritionEventInsert } from "@/lib/database-helpers";
 import type { TrainingPlan } from "@/types/training";
 import {
+  addDaysToDateString,
   expandDateRange,
   DAY_NUM,
 } from "@/lib/date-helpers";
@@ -15,6 +16,7 @@ import { getEventsForDateRange } from "@/services/training-event-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import { captureApiError } from "@/lib/error-handler";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 
 // --- Row mapper ---
 
@@ -422,36 +424,18 @@ export async function cascadeNutritionAfterTrainingChange(
 
   if (versions.length === 0) return;
 
-  // From-scope only: sweep regenerable rows on GAP dates — dates in the range
-  // covered by NO version (the stretch past a version's end, or between two).
-  // Nothing regenerates them, so without this they would survive as stale
-  // targets from an era that no longer reaches them. The sweep runs from the
-  // anchor to the furthest version end, widened to `to` when the caller cleared
-  // training further than that. Client-scoped, same three survival predicates
-  // as the regenerate's own delete. Narrow (dates) scopes stay pure-upsert by
-  // contract and leave uncovered dates untouched.
+  // From-scope only: the days no version covers — between two windows, or past
+  // the last — keep nothing. Nothing regenerates them, so without this they
+  // would survive as stale targets from an era that no longer reaches them.
+  // Narrow (dates) scopes stay pure-upsert by contract and leave uncovered
+  // dates untouched. Logged like the per-version failures: the training write
+  // has committed, and a failed sweep is a stale day, not a lost one.
   if (scope.kind === "from") {
-    const furthestEnd = versions.reduce(
-      (max, v) => (v.effectiveUntil > max ? v.effectiveUntil : max),
-      scope.from
-    );
-    const sweepEnd = scope.to && scope.to > furthestEnd ? scope.to : furthestEnd;
-    const gapDates = expandDateRange(scope.from, sweepEnd).filter(
-      (d) => !versions.some((v) => versionCoversDate(v, d))
-    );
-    if (gapDates.length > 0) {
-      const { error: gapError } = await supabaseAdmin
-        .from("nutrition_events")
-        .delete()
-        .eq("client_id", clientId)
-        .in("date", gapDates)
-        .eq("status", "scheduled")
-        .eq("is_modified", false)
-        .is("coach_note", null);
-      if (gapError) {
-        console.error(`Nutrition cascade gap sweep failed (${actionTag}):`, gapError);
-        captureApiError(gapError, { action: actionTag, clientId });
-      }
+    try {
+      await sweepUncoveredNutritionDays(clientId, scope.from, versions, scope.to);
+    } catch (gapError) {
+      console.error(`Nutrition cascade gap sweep failed (${actionTag}):`, gapError);
+      captureApiError(gapError, { action: actionTag, clientId });
     }
   }
 
@@ -461,6 +445,97 @@ export async function cascadeNutritionAfterTrainingChange(
     await regenerateFutureNutritionEvents(clientId, version.id, scope).catch((err) =>
       captureApiError(err, { action: actionTag, planId: version.id }),
     );
+  }
+}
+
+// --- The uncovered-days sweep ---
+
+/** The three predicates every removal of a regenerable day shares. */
+type UncoveredStretch = { from: string; to: string };
+
+/**
+ * Remove the regenerable nutrition days no ACTIVE version covers, from `from`
+ * onward — the days between the versions' windows and the days past the last
+ * one. A save caps its predecessor at the day before its own start
+ * (migration 166), and the predecessor's days past the new version's end are
+ * then governed by nothing; the training cascade's gap days are the same
+ * state reached from the other side. Both call this.
+ *
+ * The reach is the furthest of the versions' ends, the caller's `to` (the
+ * last day it cleared training on) and the client's last sweepable nutrition
+ * day, read once — so a tail left by a predecessor that once ran further than
+ * any window still reaches goes with it, however far. Each uncovered stretch
+ * is one range delete; the three survival predicates are the regenerate's own
+ * (scheduled, never hand-edited, no coach note).
+ *
+ * A removal asks the deletion floor. The only day a client can have logged is
+ * today, and it can be in range only when the first stretch opens on the
+ * anchor itself — so that is the one case the floor is resolved, and the
+ * stretch starts at it. Every other stretch begins after a window's end, on a
+ * day the client cannot have touched.
+ */
+export async function sweepUncoveredNutritionDays(
+  clientId: string,
+  from: string,
+  versions: Array<{ effectiveFrom: string; effectiveUntil: string }>,
+  to?: string
+): Promise<void> {
+  const sweepable = supabaseAdmin
+    .from("nutrition_events")
+    .select("date")
+    .eq("client_id", clientId)
+    .gte("date", from)
+    .eq("status", "scheduled")
+    .eq("is_modified", false)
+    .is("coach_note", null)
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const { data: last, error: lastError } = await sweepable;
+  if (lastError) throw lastError;
+
+  let sweepEnd = versions.reduce(
+    (max, v) => (v.effectiveUntil > max ? v.effectiveUntil : max),
+    from
+  );
+  if (to && to > sweepEnd) sweepEnd = to;
+  if (last?.date && last.date > sweepEnd) sweepEnd = last.date;
+
+  const stretches: UncoveredStretch[] = [];
+  let cursor = from;
+  const ordered = [...versions]
+    .filter((v) => v.effectiveUntil >= from)
+    .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  for (const version of ordered) {
+    const start = version.effectiveFrom > from ? version.effectiveFrom : from;
+    if (start > cursor) {
+      stretches.push({ from: cursor, to: addDaysToDateString(start, -1) });
+    }
+    const after = addDaysToDateString(version.effectiveUntil, 1);
+    if (after > cursor) cursor = after;
+  }
+  if (cursor <= sweepEnd) stretches.push({ from: cursor, to: sweepEnd });
+
+  if (stretches.length > 0 && stretches[0].from === from) {
+    const clientToday = await getClientTodayString(clientId);
+    if (from <= clientToday) {
+      const floor = await resolveEventDeletionFloor(clientId, clientToday);
+      if (floor > stretches[0].from) stretches[0] = { ...stretches[0], from: floor };
+      if (stretches[0].from > stretches[0].to) stretches.shift();
+    }
+  }
+
+  for (const stretch of stretches) {
+    const { error } = await supabaseAdmin
+      .from("nutrition_events")
+      .delete()
+      .eq("client_id", clientId)
+      .gte("date", stretch.from)
+      .lte("date", stretch.to)
+      .eq("status", "scheduled")
+      .eq("is_modified", false)
+      .is("coach_note", null);
+    if (error) throw error;
   }
 }
 

@@ -5,6 +5,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
+import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useRoundTripBlockStart } from "@/components/clients/metrics/hooks/use-round-trip-block";
 import type {
   Client,
@@ -33,6 +35,8 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const nutritionPlan = useNutritionPlan({ client });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
+  const clearClientOverview = useClearClientOverview();
+  const clearAttentionFeed = useClearAttentionFeed();
 
   const [settings, setSettings] = useState<NutritionSettings>({
     proteinTargetGPerKg: 2.0,
@@ -311,6 +315,8 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           // (CONVENTIONS §7). Cleared rather than revalidated: they render a
           // definite "Not set", so a stale entry states something false.
           void clearBlockFacts(client.id);
+          void clearClientOverview(client.id);
+          void clearAttentionFeed();
           return true;
         } else {
           throw new Error(data.error || "Failed to generate plan");
@@ -337,6 +343,9 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
       toast,
       nutritionPlan,
       invalidateNutritionCalendar,
+      clearBlockFacts,
+      clearClientOverview,
+      clearAttentionFeed,
     ]
   );
 

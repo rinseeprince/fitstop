@@ -6,6 +6,8 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
+import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { replaceSessionSchema } from "@/lib/validations/training";
 import type { TrainingSession } from "@/types/training";
 import { useProgramBuilderState } from "@/components/clients/training/program-builder/use-program-builder-state";
@@ -63,6 +65,8 @@ export function usePlacedSessionEditor(
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const invalidateTrainingData = useInvalidateTrainingData();
+  const clearClientOverview = useClearClientOverview();
+  const clearAttentionFeed = useClearAttentionFeed();
   const builder = useProgramBuilderState();
   const editSetSpec = useSetSpecMutations(builder.updateExercise);
 
@@ -205,6 +209,8 @@ export function usePlacedSessionEditor(
       // and an amendment saved from that seed reasons about the wrong row.
       void invalidateTrainingData(state.clientId);
       void invalidateNutritionCalendar(state.clientId);
+      void clearClientOverview(state.clientId);
+      void clearAttentionFeed();
       void mutateSession();
       opts.onUpdate();
       if (scope === "day" && targetSessionId !== state.sessionId) {

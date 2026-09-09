@@ -13,6 +13,8 @@ import { SegmentedControl } from "@/components/programs/shared/segmented-control
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
+import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import {
   journeyReturnParams,
   paneParamSearch,
@@ -133,6 +135,8 @@ function NutritionCalendarMount() {
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
+  const clearClientOverview = useClearClientOverview();
+  const clearAttentionFeed = useClearAttentionFeed();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -156,6 +160,8 @@ function NutritionCalendarMount() {
       // The Journey block cards read the plan VERSIONS, so they are wrong the
       // moment this lands (CONVENTIONS §7 — the area that reads what you wrote).
       void clearBlockFacts(clientId);
+      void clearClientOverview(clientId);
+      void clearAttentionFeed();
       builder.refetchNutrition();
     } catch (error) {
       toast({

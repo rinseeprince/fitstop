@@ -25,6 +25,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
+import { useClearClientOverview } from "@/hooks/use-client-overview";
+import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useRoundTripBlockStart } from "@/components/clients/metrics/hooks/use-round-trip-block";
 import { swrFetcher } from "@/lib/swr-fetcher";
@@ -73,6 +75,8 @@ export function ApplyToClientDialog({
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const invalidateTrainingData = useInvalidateTrainingData();
   const clearBlockFacts = useClearBlockFacts();
+  const clearClientOverview = useClearClientOverview();
+  const clearAttentionFeed = useClearAttentionFeed();
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
   // Seeded from the block the coach came from, when they came from one: the
   // whole point of "place one" is that they have already said which days they
@@ -217,6 +221,11 @@ export function ApplyToClientDialog({
       // wrote — the area that owes an invalidator is the one that READS what
       // you wrote, not the one you wrote (CONVENTIONS §7).
       void clearBlockFacts(clientId);
+      // And the Overview's cards and rows and the dashboard feed, which are
+      // DERIVED from what this wrote — cleared, not revalidated, because they
+      // render definite answers (CONVENTIONS §7).
+      void clearClientOverview(clientId);
+      void clearAttentionFeed();
       onOpenChange(false);
       onSuccess?.(clientId);
     } catch {

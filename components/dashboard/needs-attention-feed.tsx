@@ -4,8 +4,8 @@ import { useState } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
 import { CheckCircle, ChevronDown, ChevronUp, X } from "lucide-react"
-import useSWR from "swr"
-import type { AttentionFeedResponse, AttentionAlert } from "@/types/attention-feed"
+import { useAttentionFeed } from "@/hooks/use-attention-feed"
+import type { AttentionAlert } from "@/types/attention-feed"
 import { cn } from "@/lib/utils"
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
 import { alertDestination } from "@/lib/attention-alert-destinations"
@@ -47,29 +47,10 @@ function AlertRow({ clientId, alert, onDismiss }: {
   )
 }
 
-const fetcher = async (url: string) => {
-  const response = await fetch(url, { cache: "no-store" })
-  if (!response.ok) {
-    throw new Error("Failed to fetch attention feed")
-  }
-  const data: AttentionFeedResponse = await response.json()
-  return data.data
-}
-
 export function NeedsAttentionFeed() {
-  const { data, error, isLoading, mutate } = useSWR(
-    "/api/dashboard/attention-feed",
-    fetcher,
-    {
-      revalidateOnFocus: false,
-      errorRetryCount: 3,
-      errorRetryInterval: 1000,
-      dedupingInterval: 2000,
-      onError: (error) => {
-        console.error("Failed to fetch attention feed:", error)
-      }
-    }
-  )
+  // The key and its clearer live in the hook, so a plan writer on a client
+  // page can drop this cache without knowing the literal (CONVENTIONS §7).
+  const { data, error, isLoading, mutate } = useAttentionFeed()
 
   const [showAll, setShowAll] = useState(false)
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set())
