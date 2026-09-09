@@ -114,14 +114,23 @@ export const listBlocks = async (clientId: string): Promise<ClientBlock[]> => {
 };
 
 /**
- * The end of the block whose window CONTAINS `date`, or null when no block does.
+ * What a block says about a plan placed on `date`, or null when no block does:
+ *
+ * - `covering` — the block CONTAINING `date`, whose last day IS the window. A
+ *   program placed inside a two-week block stops after two weeks even when the
+ *   next block runs twelve, and nutrition stops at the same day — that next
+ *   block is its own prescription, with its own placement and its own plan
+ *   save, each of which resolves this again from inside it.
+ * - `next` — no block covers `date`; the first block AFTER it, whose start is a
+ *   CAP on the caller's own fallback, never a length. A plan placed in a gap
+ *   keeps its authored length and stops the day before the block, so it can
+ *   never run into a block the coach has not set up (its card would claim it,
+ *   and setting the block up later would leave the plan's tail past the block).
  *
  * The ONE block-bound question, asked by both generators: the training placement
- * ("which bound am I inside?") and the nutrition horizon ("how far do I write?").
- * A program placed inside a two-week block stops after two weeks even when the
- * next block runs twelve, and nutrition stops at the same day — that next block
- * is its own prescription, with its own placement and its own plan save, each of
- * which resolves this again from inside it.
+ * and the nutrition placement end. One read answers both arms: blocks never
+ * overlap, so the earliest-starting block that ends on or after `date` either
+ * contains it or is the next one.
  *
  * `archived_at IS NULL` is redundant given only an ELAPSED block can be archived
  * (setBlockArchived), but it is written rather than inherited, so this read does
@@ -133,25 +142,33 @@ export const listBlocks = async (clientId: string): Promise<ClientBlock[]> => {
  * generation that quietly covers less is self-healing on the next one; a coach's
  * write failing outright after it has already committed is not.
  */
-export const getBlockEndCoveringDate = async (
+type BlockBound =
+  | { kind: "covering"; endsOn: string }
+  | { kind: "next"; startsOn: string };
+
+export const getBlockBoundForDate = async (
   clientId: string,
   date: string
-): Promise<string | null> => {
+): Promise<BlockBound | null> => {
   const { data, error } = await supabaseAdmin
     .from("client_phases")
-    .select("ends_on")
+    .select("starts_on, ends_on")
     .eq("client_id", clientId)
     .is("archived_at", null)
-    .lte("starts_on", date)
     .gte("ends_on", date)
+    .order("starts_on", { ascending: true })
+    .limit(1)
     .maybeSingle();
 
   if (error) {
-    console.error("Failed to read the block covering a date:", error);
-    captureApiError(error, { action: "block-covering-date", clientId });
+    console.error("Failed to read the block bound for a date:", error);
+    captureApiError(error, { action: "block-bound-for-date", clientId });
     return null;
   }
-  return data?.ends_on ?? null;
+  if (!data) return null;
+  return data.starts_on <= date
+    ? { kind: "covering", endsOn: data.ends_on }
+    : { kind: "next", startsOn: data.starts_on };
 };
 
 const isCurrent = (block: ClientBlock, today: string): boolean =>

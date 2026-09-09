@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
-  getBlockEndCoveringDate,
+  getBlockBoundForDate,
   getBlockWindowsForClients,
   listBlocks,
   replaceBlockChain,
@@ -610,7 +610,7 @@ describe("setBlockArchived", () => {
 });
 
 // ===========================================================================
-// getBlockEndCoveringDate — the ONE block-bound question.
+// getBlockBoundForDate — the ONE block-bound question, answered as covering or next.
 //
 // Both generators ask it: the training placement ("which bound am I inside?")
 // and the nutrition horizon ("how far do I write?"). Every assertion is on the
@@ -618,45 +618,48 @@ describe("setBlockArchived", () => {
 // it is handed, so a dropped clause is only visible as a missing call.
 // ===========================================================================
 
-describe("getBlockEndCoveringDate", () => {
+describe("getBlockBoundForDate", () => {
   const START = "2026-10-19";
 
-  it("returns the end of the block whose window contains the date", async () => {
-    const [query] = queueResults({ data: { ends_on: "2027-01-11" }, error: null });
+  it("answers covering with the end of the block whose window contains the date", async () => {
+    const [query] = queueResults({ data: { starts_on: "2026-10-05", ends_on: "2027-01-11" }, error: null });
 
-    expect(await getBlockEndCoveringDate(CLIENT_ID, START)).toBe("2027-01-11");
+    expect(await getBlockBoundForDate(CLIENT_ID, START)).toEqual({ kind: "covering", endsOn: "2027-01-11" });
 
+    // One read for both arms: the earliest-starting block ending on or after
+    // the date either contains it or is the next one, because blocks never overlap.
     expect(query.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
-    expect(query.lte).toHaveBeenCalledWith("starts_on", START);
     expect(query.gte).toHaveBeenCalledWith("ends_on", START);
+    expect(query.order).toHaveBeenCalledWith("starts_on", { ascending: true });
+    expect(query.limit).toHaveBeenCalledWith(1);
   });
 
-  it("returns null when no block covers the date", async () => {
-    // A placement in a gap, or before the chain opens, declares no bound — the
-    // program keeps its own authored length, and nutrition falls through to the
-    // program and then to its fixed window.
+  it("answers next with the start of the first block after the date when none covers it", async () => {
+    // A placement in a gap: the caller keeps its own fallback and caps it the
+    // day before this block, so a block the coach has not set up is never filled.
+    queueResults({ data: { starts_on: "2026-11-02", ends_on: "2026-11-29" }, error: null });
+
+    expect(await getBlockBoundForDate(CLIENT_ID, START)).toEqual({ kind: "next", startsOn: "2026-11-02" });
+  });
+
+  it("answers covering for a block starting on the date itself", async () => {
+    queueResults({ data: { starts_on: START, ends_on: "2026-11-15" }, error: null });
+
+    expect(await getBlockBoundForDate(CLIENT_ID, START)).toEqual({ kind: "covering", endsOn: "2026-11-15" });
+  });
+
+  it("returns null when no block ends on or after the date", async () => {
+    // Before the chain opens, or after it has run out: no bound, the callers'
+    // own fallbacks apply.
     queueResults({ data: null, error: null });
 
-    expect(await getBlockEndCoveringDate(CLIENT_ID, START)).toBeNull();
-  });
-
-  it("a LATER block never answers — the window is bounded at both ends", async () => {
-    // The decision this function exists to hold. A block the coach has set up
-    // for next month must not pull generation into itself: its card would read
-    // "Not set" while its days already carried targets. Its own plan save
-    // resolves this from inside it, which is when the coach has priced it.
-    const [query] = queueResults({ data: null, error: null });
-
-    expect(await getBlockEndCoveringDate(CLIENT_ID, START)).toBeNull();
-
-    expect(query.lte).toHaveBeenCalledWith("starts_on", START);
-    expect(query.order).not.toHaveBeenCalled();
+    expect(await getBlockBoundForDate(CLIENT_ID, START)).toBeNull();
   });
 
   it("ignores an archived block", async () => {
     const [query] = queueResults({ data: null, error: null });
 
-    await getBlockEndCoveringDate(CLIENT_ID, START);
+    await getBlockBoundForDate(CLIENT_ID, START);
 
     expect(query.is).toHaveBeenCalledWith("archived_at", null);
   });
@@ -664,7 +667,7 @@ describe("getBlockEndCoveringDate", () => {
   it("degrades to null on a read error rather than throwing", async () => {
     queueResults({ data: null, error: { message: "boom" } });
 
-    await expect(getBlockEndCoveringDate(CLIENT_ID, START)).resolves.toBeNull();
+    await expect(getBlockBoundForDate(CLIENT_ID, START)).resolves.toBeNull();
   });
 });
 

@@ -12,12 +12,12 @@ vi.mock("./training-event-service", () => ({
 }));
 
 vi.mock("./client-blocks-service", () => ({
-  getBlockEndCoveringDate: vi.fn(),
+  getBlockBoundForDate: vi.fn(),
 }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getNextPlanStartCap } from "./training-event-service";
-import { getBlockEndCoveringDate } from "./client-blocks-service";
+import { getBlockBoundForDate } from "./client-blocks-service";
 import {
   generateProgramEvents,
   calculatePlacementEndDate,
@@ -29,7 +29,7 @@ import {
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetNextPlanStartCap = vi.mocked(getNextPlanStartCap);
-const mockGetBlockEnd = vi.mocked(getBlockEndCoveringDate);
+const mockGetBlockBound = vi.mocked(getBlockBoundForDate);
 
 // Inline query mock helper (same idiom as library-placement-service.test.ts)
 function createMockQuery<T = unknown>(result: { data: T | null; error: { message: string } | null }) {
@@ -318,12 +318,12 @@ describe("resolvePlacementWindowEnd", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetNextPlanStartCap.mockResolvedValue(null);
-    mockGetBlockEnd.mockResolvedValue(null);
+    mockGetBlockBound.mockResolvedValue(null);
   });
 
   it("stretches a short program's window to the block's last day", async () => {
     // 28 authored days placed into a block running to 2026-11-26.
-    mockGetBlockEnd.mockResolvedValue("2026-11-26");
+    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-11-26" });
 
     expect(
       await resolvePlacementWindowEnd({
@@ -336,7 +336,7 @@ describe("resolvePlacementWindowEnd", () => {
 
   it("cuts a long program's window at the block's last day", async () => {
     // 112 authored days would reach 2026-12-27; the block stops on 2026-11-05.
-    mockGetBlockEnd.mockResolvedValue("2026-11-05");
+    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-11-05" });
 
     expect(
       await resolvePlacementWindowEnd({
@@ -356,12 +356,52 @@ describe("resolvePlacementWindowEnd", () => {
         startDate: "2026-09-07",
       }),
     ).toBe("2026-10-11");
-    expect(mockGetBlockEnd).toHaveBeenCalledWith("client-1", "2026-09-07");
+    expect(mockGetBlockBound).toHaveBeenCalledWith("client-1", "2026-09-07");
+  });
+
+  it("stops a program placed in a gap the day before the next block", async () => {
+    // 35 authored days from 2026-09-07 would reach 2026-10-11; a block the coach
+    // has drawn opens on 2026-09-21. The program keeps its own length up to the
+    // day before it, so the block's card cannot claim a program it has none of.
+    mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-09-21" });
+
+    expect(
+      await resolvePlacementWindowEnd({
+        clientId: "client-1",
+        slotCount: 35,
+        startDate: "2026-09-07",
+      }),
+    ).toBe("2026-09-20");
+  });
+
+  it("never stretches a program to fill a gap — the next block is a cap, not a length", async () => {
+    // 21 authored days from 2026-09-07 end on 2026-09-27; the next block is far off.
+    mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-12-01" });
+
+    expect(
+      await resolvePlacementWindowEnd({
+        clientId: "client-1",
+        slotCount: 21,
+        startDate: "2026-09-07",
+      }),
+    ).toBe("2026-09-27");
+  });
+
+  it("a one-day gap yields a one-day plan — the coach put it there", async () => {
+    mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-09-08" });
+
+    expect(
+      await resolvePlacementWindowEnd({
+        clientId: "client-1",
+        slotCount: 21,
+        startDate: "2026-09-07",
+      }),
+    ).toBe("2026-09-07");
   });
 
   it("still never runs past the next coexisting program's start", async () => {
     // The block says 2026-12-18, but another program opens on 2026-10-19.
-    mockGetBlockEnd.mockResolvedValue("2026-12-18");
+    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-12-18" });
     mockGetNextPlanStartCap.mockResolvedValue("2026-10-18");
 
     expect(

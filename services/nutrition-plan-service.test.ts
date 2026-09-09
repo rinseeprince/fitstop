@@ -19,7 +19,7 @@ vi.mock('./today-service', () => ({
 // The end resolver's two declared bounds are other services' questions; stubbed
 // so this suite pins the PRECEDENCE between them, not their queries.
 vi.mock('./client-blocks-service', () => ({
-  getBlockEndCoveringDate: vi.fn(),
+  getBlockBoundForDate: vi.fn(),
 }))
 vi.mock('./training-service', () => ({
   getFurthestLiveProgramEnd: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock('./training-service', () => ({
 
 import { supabaseAdmin } from './supabase-admin'
 import { getClientTodayString } from './today-service'
-import { getBlockEndCoveringDate } from './client-blocks-service'
+import { getBlockBoundForDate } from './client-blocks-service'
 import { getFurthestLiveProgramEnd } from './training-service'
 import {
   createNutritionPlan,
@@ -73,7 +73,7 @@ describe('Nutrition Plan Service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getClientTodayString).mockResolvedValue('2024-01-17')
-    vi.mocked(getBlockEndCoveringDate).mockResolvedValue(null)
+    vi.mocked(getBlockBoundForDate).mockResolvedValue(null)
     vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue(null)
   })
 
@@ -441,12 +441,38 @@ describe('Nutrition Plan Service', () => {
     it('the block covering the start wins, even when a program runs longer', async () => {
       // Precedence, not a maximum: the block IS the coach's declared bound, so a
       // program overrunning it does not stretch the window.
-      vi.mocked(getBlockEndCoveringDate).mockResolvedValue('2026-11-06')
+      vi.mocked(getBlockBoundForDate).mockResolvedValue({ kind: 'covering', endsOn: '2026-11-06' })
       vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue('2027-01-15')
       noQueuedVersion()
 
       expect(await resolveNutritionPlacementEnd('client-123', START)).toBe('2026-11-06')
-      expect(getBlockEndCoveringDate).toHaveBeenCalledWith('client-123', START)
+      expect(getBlockBoundForDate).toHaveBeenCalledWith('client-123', START)
+    })
+
+    it("caps the program fallback at the day before the next block when the start is in a gap", async () => {
+      // The furthest program runs to 2026-12-11, but the next block opens on
+      // 2026-10-01: targets saved in the gap stop the day before it, so a block
+      // the coach has not priced never carries these numbers.
+      vi.mocked(getBlockBoundForDate).mockResolvedValue({ kind: 'next', startsOn: '2026-10-01' })
+      vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue('2026-12-11')
+      noQueuedVersion()
+
+      expect(await resolveNutritionPlacementEnd('client-123', START)).toBe('2026-09-30')
+    })
+
+    it('caps the eight-week fallback the same way', async () => {
+      vi.mocked(getBlockBoundForDate).mockResolvedValue({ kind: 'next', startsOn: '2026-09-20' })
+      noQueuedVersion()
+
+      expect(await resolveNutritionPlacementEnd('client-123', START)).toBe('2026-09-19')
+    })
+
+    it('a next block past the fallback changes nothing — a cap, never a length', async () => {
+      vi.mocked(getBlockBoundForDate).mockResolvedValue({ kind: 'next', startsOn: '2027-01-01' })
+      vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue('2026-12-11')
+      noQueuedVersion()
+
+      expect(await resolveNutritionPlacementEnd('client-123', START)).toBe('2026-12-11')
     })
 
     it("falls to the furthest live program's end when no block covers the start", async () => {
@@ -464,7 +490,7 @@ describe('Nutrition Plan Service', () => {
     })
 
     it('is capped at the day before the next queued version', async () => {
-      vi.mocked(getBlockEndCoveringDate).mockResolvedValue('2026-11-06')
+      vi.mocked(getBlockBoundForDate).mockResolvedValue({ kind: 'covering', endsOn: '2026-11-06' })
       vi.mocked(supabaseAdmin.from).mockReturnValue(
         createResolverQuery({ data: { effective_from: '2026-10-12' }, error: null }) as any
       )
@@ -473,7 +499,7 @@ describe('Nutrition Plan Service', () => {
     })
 
     it('a queued version past the declared bound changes nothing', async () => {
-      vi.mocked(getBlockEndCoveringDate).mockResolvedValue('2026-11-06')
+      vi.mocked(getBlockBoundForDate).mockResolvedValue({ kind: 'covering', endsOn: '2026-11-06' })
       vi.mocked(supabaseAdmin.from).mockReturnValue(
         createResolverQuery({ data: { effective_from: '2026-11-20' }, error: null }) as any
       )

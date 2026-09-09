@@ -25,14 +25,14 @@ vi.mock("./training-event-service", () => ({
 // Defaulted to "no block" so every test written before that keeps the authored
 // length it asserts against.
 vi.mock("./client-blocks-service", () => ({
-  getBlockEndCoveringDate: vi.fn(),
+  getBlockBoundForDate: vi.fn(),
 }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
 import { getNextPlanStartCap } from "./training-event-service";
-import { getBlockEndCoveringDate } from "./client-blocks-service";
+import { getBlockBoundForDate } from "./client-blocks-service";
 import {
   placePlanOnCalendar,
   placeSessionOnCalendar,
@@ -45,7 +45,7 @@ const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetSavedPlanById = vi.mocked(getSavedPlanById);
 const mockCreateAtomic = vi.mocked(createTrainingPlanAtomic);
 const mockGetNextPlanStartCap = vi.mocked(getNextPlanStartCap);
-const mockGetBlockEnd = vi.mocked(getBlockEndCoveringDate);
+const mockGetBlockBound = vi.mocked(getBlockBoundForDate);
 
 // Inline query mock helper
 function createMockQuery<T = unknown>(result: { data: T | null; error: { message: string } | null }) {
@@ -195,7 +195,7 @@ describe("library-placement-service", () => {
     mockGetNextPlanStartCap.mockResolvedValue(null);
     // Default: no block covers the start date, so the window is the authored
     // program's own length — the behaviour every test below was written against.
-    mockGetBlockEnd.mockResolvedValue(null);
+    mockGetBlockBound.mockResolvedValue(null);
   });
 
   // =========================================================================
@@ -880,7 +880,7 @@ describe("library-placement-service: the block bounds the placement", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetNextPlanStartCap.mockResolvedValue(null);
-    mockGetBlockEnd.mockResolvedValue(null);
+    mockGetBlockBound.mockResolvedValue(null);
   });
 
   /** A 3-slot program: two workouts and a rest day. */
@@ -911,7 +911,7 @@ describe("library-placement-service: the block bounds the placement", () => {
     // 3-slot program in a 9-day block (2026-09-07 → 2026-09-15): three cycles.
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
-    mockGetBlockEnd.mockResolvedValue("2026-09-15");
+    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-15" });
     const { sessionInsertQuery, eventUpsertQuery } = wire(
       Array.from({ length: 9 }, (_, i) => `ts-${i + 1}`),
     );
@@ -938,7 +938,7 @@ describe("library-placement-service: the block bounds the placement", () => {
     // The same 3-slot program in a 2-day block: the third slot is never placed.
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
-    mockGetBlockEnd.mockResolvedValue("2026-09-08");
+    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-08" });
     const { sessionInsertQuery } = wire(["ts-1", "ts-2"]);
 
     await placePlanOnCalendar({
@@ -946,6 +946,24 @@ describe("library-placement-service: the block bounds the placement", () => {
     });
 
     expect(insertedSlots(sessionInsertQuery).map((r) => r.name)).toEqual(["Upper", "Lower"]);
+  });
+
+  it("stops a program placed in a gap the day before the next block", async () => {
+    // The same 3-slot program placed on 2026-09-07 with an empty block opening
+    // on 2026-09-09: two slots land, the third would have been the block's.
+    mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-09-09" });
+    const { sessionInsertQuery } = wire(["ts-1", "ts-2"]);
+
+    await placePlanOnCalendar({
+      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+    });
+
+    expect(insertedSlots(sessionInsertQuery).map((r) => r.name)).toEqual(["Upper", "Lower"]);
+    expect(mockCreateAtomic).toHaveBeenCalledWith(
+      expect.objectContaining({ windowEnd: "2026-09-08" }),
+    );
   });
 
   it("places one pass when no block covers the start date", async () => {
@@ -966,7 +984,7 @@ describe("library-placement-service: the block bounds the placement", () => {
     // contradict the calendar.
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
-    mockGetBlockEnd.mockResolvedValue("2026-09-15");
+    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-15" });
     wire(Array.from({ length: 9 }, (_, i) => `ts-${i + 1}`));
 
     await placePlanOnCalendar({

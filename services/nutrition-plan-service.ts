@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { coversDate } from "./training-plan-window";
-import { getBlockEndCoveringDate } from "./client-blocks-service";
+import { getBlockBoundForDate } from "./client-blocks-service";
 import { getFurthestLiveProgramEnd } from "./training-service";
 import { calculateDailyMacros, DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import { addDaysToDateString } from "@/lib/date-helpers";
@@ -434,9 +434,12 @@ export async function getNextNutritionVersionStartCap(
  *   3. else `NUTRITION_PLACEMENT_FALLBACK_DAYS` from `start`, all a client with
  *      neither has;
  *
- * capped, whichever it is, at the day before the next queued version — the
- * same cap every training placement takes, so a save before a queued change
- * runs until that change rather than replacing it.
+ * the fallbacks (2 and 3) capped at the day before the NEXT block when the
+ * start is in a gap — a cap, never a length, so targets saved in a gap stop at
+ * the block rather than running into one the coach has not set up — and the
+ * result capped, whichever it is, at the day before the next queued version —
+ * the same cap every training placement takes, so a save before a queued
+ * change runs until that change rather than replacing it.
  *
  * Resolved ONCE, at save, and stored on the row (migration 166): the window is
  * the record, and every regenerate reads it there. Past it there are
@@ -447,11 +450,16 @@ export async function resolveNutritionPlacementEnd(
   clientId: string,
   start: string
 ): Promise<string> {
-  const blockEnd = await getBlockEndCoveringDate(clientId, start);
-  const declared =
-    blockEnd ??
-    (await getFurthestLiveProgramEnd(clientId, start)) ??
-    addDaysToDateString(start, NUTRITION_PLACEMENT_FALLBACK_DAYS);
+  const bound = await getBlockBoundForDate(clientId, start);
+  let declared =
+    bound?.kind === "covering"
+      ? bound.endsOn
+      : ((await getFurthestLiveProgramEnd(clientId, start)) ??
+        addDaysToDateString(start, NUTRITION_PLACEMENT_FALLBACK_DAYS));
+  if (bound?.kind === "next") {
+    const dayBefore = addDaysToDateString(bound.startsOn, -1);
+    if (dayBefore < declared) declared = dayBefore;
+  }
 
   const cap = await getNextNutritionVersionStartCap(clientId, start);
   return cap && cap < declared ? cap : declared;

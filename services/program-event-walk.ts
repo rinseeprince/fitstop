@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getNextPlanStartCap } from "./training-event-service";
-import { getBlockEndCoveringDate } from "./client-blocks-service";
+import { getBlockBoundForDate } from "./client-blocks-service";
 import { rethrowIfAnyDateOccupied } from "./training-event-occupancy";
 import { getDateString } from "@/lib/date-helpers";
 import type { TrainingEventInsert } from "@/lib/database-helpers";
@@ -123,8 +123,10 @@ export async function generateProgramEvents(params: {
  *
  * The block is not a maximum here: a block LONGER than the program stretches
  * the window and the caller repeats the program to fill it, a block SHORTER
- * truncates it. A placement on a day no block covers behaves exactly as it did
- * before blocks bounded anything.
+ * truncates it. A placement on a day no block covers keeps the program's own
+ * length, capped at the day before the NEXT block starts — a cap, never a
+ * length, so a program placed in a gap stops at the block rather than filling
+ * the gap or running into a block the coach has not set up.
  */
 export async function resolvePlacementWindowEnd(params: {
   clientId: string;
@@ -133,8 +135,12 @@ export async function resolvePlacementWindowEnd(params: {
 }): Promise<string> {
   const { clientId, slotCount, startDate } = params;
 
-  const blockEnd = await getBlockEndCoveringDate(clientId, startDate);
-  const end = blockEnd ?? addDays(startDate, Math.max(1, slotCount) - 1);
+  const bound = await getBlockBoundForDate(clientId, startDate);
+  let end = bound?.kind === "covering" ? bound.endsOn : placementEndDate(startDate, slotCount);
+  if (bound?.kind === "next") {
+    const dayBefore = addDays(bound.startsOn, -1);
+    if (dayBefore < end) end = dayBefore;
+  }
 
   const nextPlanCap = await getNextPlanStartCap(clientId, startDate);
   if (nextPlanCap && nextPlanCap < end) return nextPlanCap;
