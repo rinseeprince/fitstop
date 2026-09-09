@@ -90,6 +90,13 @@ export function PlanNutritionCard({
                 value: String(upcomingNutrition.restDayCalories),
                 unit: "cal",
                 valueSize: "sm",
+                // The macros beside the calories, each formatted the same way:
+                // the number, then its unit (owner, 2026-09-09).
+                beside: [
+                  { value: String(upcomingNutrition.macros.proteinG), unit: "p" },
+                  { value: String(upcomingNutrition.macros.carbG), unit: "c" },
+                  { value: String(upcomingNutrition.macros.fatG), unit: "f" },
+                ],
               },
             ]}
           />

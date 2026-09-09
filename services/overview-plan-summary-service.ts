@@ -236,7 +236,9 @@ async function buildUpcomingNutrition(
 
   const { data: plan, error } = await supabaseAdmin
     .from("nutrition_plans")
-    .select("diet_type, baseline_calories, protein_target_g_per_kg, custom_macros_enabled, custom_calories")
+    .select(
+      "diet_type, baseline_calories, protein_target_g_per_kg, custom_macros_enabled, custom_calories, protein_target_g, carb_target_g, fat_target_g, custom_protein_g, custom_carb_g, custom_fat_g"
+    )
     .eq("id", next.id)
     .eq("client_id", clientId)
     .maybeSingle();
@@ -257,6 +259,14 @@ async function buildUpcomingNutrition(
     // the same precedence the running card applies.
     restDayCalories:
       customMacros && plan.custom_calories != null ? plan.custom_calories : plan.baseline_calories,
+    // Grams, the override first — the same precedence the calories take; the
+    // plan's own targets are the fallback (a custom-macros save writes the
+    // custom grams into them as well, so the two agree by construction).
+    macros: {
+      proteinG: Number((customMacros ? plan.custom_protein_g : null) ?? plan.protein_target_g),
+      carbG: Number((customMacros ? plan.custom_carb_g : null) ?? plan.carb_target_g),
+      fatG: Number((customMacros ? plan.custom_fat_g : null) ?? plan.fat_target_g),
+    },
   };
 }
 

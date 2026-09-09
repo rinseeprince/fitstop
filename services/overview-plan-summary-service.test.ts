@@ -233,6 +233,12 @@ const QUEUED_VERSION_ROW = {
   protein_target_g_per_kg: 2,
   custom_macros_enabled: false,
   custom_calories: null,
+  protein_target_g: 138,
+  carb_target_g: 157,
+  fat_target_g: 70,
+  custom_protein_g: null,
+  custom_carb_g: null,
+  custom_fat_g: null,
 };
 
 describe("getOverviewPlanSummary — upcomingNutrition", () => {
@@ -264,6 +270,7 @@ describe("getOverviewPlanSummary — upcomingNutrition", () => {
       customMacros: false,
       proteinGPerKg: 2,
       restDayCalories: 1732,
+      macros: { proteinG: 138, carbG: 157, fatG: 70 },
     });
   });
 
@@ -272,6 +279,9 @@ describe("getOverviewPlanSummary — upcomingNutrition", () => {
       ...QUEUED_VERSION_ROW,
       custom_macros_enabled: true,
       custom_calories: 1650,
+      custom_protein_g: 150,
+      custom_carb_g: 130,
+      custom_fat_g: 60,
     });
     vi.mocked(getNextFutureNutritionPlan).mockResolvedValue({ id: "v-9", effectiveFrom: "2026-07-27" });
 
@@ -279,6 +289,7 @@ describe("getOverviewPlanSummary — upcomingNutrition", () => {
 
     expect(summary.upcomingNutrition?.customMacros).toBe(true);
     expect(summary.upcomingNutrition?.restDayCalories).toBe(1650);
+    expect(summary.upcomingNutrition?.macros).toEqual({ proteinG: 150, carbG: 130, fatG: 60 });
   });
 
   it("reads through the shared future-version lookup, anchored on the client's today", async () => {

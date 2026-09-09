@@ -60,6 +60,8 @@ export type OverviewPlanSummary = {
     proteinGPerKg: number | null;
     /** The version's daily target, custom-macros override honoured. */
     restDayCalories: number;
+    /** The version's daily macros in grams, the same override honoured. */
+    macros: { proteinG: number; carbG: number; fatG: number };
   };
   nutrition: null | {
     dietType: string | null;

@@ -128,6 +128,9 @@ export type StatCellData = {
    *  sit level with a name in the card beside it. Still mono: it is a number. */
   valueSize?: "sm";
   unit?: string;
+  /** Further datums on the SAME line, each in the value's own treatment — the
+   *  number, then its unit (a target's macros beside its calories). */
+  beside?: { value: string; unit: string }[];
   sub?: string;
   /** Sub-line carries a numeral → mono. Word-only sub-lines stay sans. */
   subIsNumeric?: boolean;
@@ -135,6 +138,9 @@ export type StatCellData = {
 
 // Static classes so Tailwind's JIT emits them (no dynamic grid-cols-${n}).
 const STRIP_COLS: Record<number, string> = {
+  // A one-cell strip spans the card: the queued plan cards' single datum line
+  // was falling to three columns and truncating a third of the way across.
+  1: "grid-cols-1",
   2: "grid-cols-2",
   3: "grid-cols-3",
   4: "grid-cols-4",
@@ -172,6 +178,12 @@ export function StatStrip({ cells }: { cells: StatCellData[] }) {
               {cell.unit && (
                 <span className="ml-1 text-[11px] font-normal text-[#93b0b4]">{cell.unit}</span>
               )}
+              {cell.beside?.map((datum) => (
+                <span key={datum.unit} className="ml-3">
+                  {datum.value}
+                  <span className="ml-1 text-[11px] font-normal text-[#93b0b4]">{datum.unit}</span>
+                </span>
+              ))}
             </span>
           )}
           {cell.sub && (

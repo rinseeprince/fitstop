@@ -28,6 +28,7 @@ const QUEUED: NonNullable<OverviewPlanSummary["upcomingNutrition"]> = {
   customMacros: false,
   proteinGPerKg: 2,
   restDayCalories: 1732,
+  macros: { proteinG: 139, carbG: 173, fatG: 61 },
 };
 
 beforeEach(() => cleanup());
@@ -41,7 +42,14 @@ describe("PlanNutritionCard — targets saved to start later", () => {
     expect(screen.getByText("Nutrition targets")).toBeInTheDocument();
     expect(screen.getByText("Daily target")).toBeInTheDocument();
     expect(screen.getByText("1732")).toBeInTheDocument();
-    // The cell carries the number alone — no sub-line under it (owner).
+    // The macros beside the calories, each a number then its unit — no sub-line.
+    expect(screen.getByText("139")).toBeInTheDocument();
+    expect(screen.getByText("173")).toBeInTheDocument();
+    expect(screen.getByText("61")).toBeInTheDocument();
+    expect(screen.getByText("p")).toBeInTheDocument();
+    expect(screen.getByText("c")).toBeInTheDocument();
+    expect(screen.getByText("f")).toBeInTheDocument();
+    expect(screen.queryByText(/139p/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Rest day/)).not.toBeInTheDocument();
     expect(screen.getByText(/Starts/)).toBeInTheDocument();
     expect(screen.getByText(/Wed, 7 Oct/)).toBeInTheDocument();
