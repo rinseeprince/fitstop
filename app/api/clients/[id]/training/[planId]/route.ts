@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import {
-  getTrainingPlanById,
-  updateTrainingPlan,
-  archiveTrainingPlan,
-} from "@/services/training-service";
+import { getTrainingPlanById, updateTrainingPlan } from "@/services/training-service";
 import { cancelFutureEventsForPlan } from "@/services/training-event-service";
+import { retireTrainingPlans } from "@/services/training-plan-clear-service";
 import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
@@ -97,7 +94,8 @@ export async function PATCH(
   }
 }
 
-// DELETE - Archive training plan
+// DELETE - End one training plan: a running one ends yesterday and keeps its
+// past, a queued one is archived, a finished one is untouched (migration 167).
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; planId: string }> }
@@ -134,7 +132,18 @@ export async function DELETE(
     // REPLACES a day's targets rather than emptying them, so it needs no floor.
     const deleteFrom = await resolveEventDeletionFloor(clientId, today);
 
-    await archiveTrainingPlan(planId);
+    // The same rule the client-level clear applies to every program: the
+    // columns are NOT NULL on the row, so the fallbacks below are type belts.
+    await retireTrainingPlans(
+      [
+        {
+          id: planId,
+          effective_from: existingPlan.effectiveFrom ?? today,
+          effective_until: existingPlan.effectiveUntil ?? today,
+        },
+      ],
+      today
+    );
     const clearedThrough = await cancelFutureEventsForPlan(planId, deleteFrom);
 
     // Cascade: nutrition burn estimates depend on training events. Open-ended
@@ -150,7 +159,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error("Error archiving training plan:", error);
-    return NextResponse.json({ error: "Failed to archive plan" }, { status: 500 });
+    console.error("Error ending training plan:", error);
+    return NextResponse.json({ error: "Failed to delete plan" }, { status: 500 });
   }
 }

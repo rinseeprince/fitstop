@@ -41,9 +41,9 @@ export function DeleteNutritionPlanDialog({
           </div>
         </DialogHeader>
         <p className="text-sm text-[#5a7d82]">
-          Removes this client&apos;s nutrition plan and every upcoming daily
-          target — edited days and any queued changes included. Past days are
-          kept, and today too once they&apos;ve logged against it.
+          Ends this client&apos;s nutrition plan and removes every upcoming daily
+          target — edited days and any queued changes included. Past days keep
+          their plan, and today too once they&apos;ve logged against it.
         </p>
         <DialogFooter>
           <Button variant="ghost" onClick={onCancel} disabled={isDeleting}>

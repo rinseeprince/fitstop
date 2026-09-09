@@ -166,16 +166,17 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
             </div>
             {/* There is no delete-the-days-but-keep-the-plan act in this
                 product, on either track — so the label says "plan" and the body
-                names both halves. It archives every program the client is on,
-                so "Edit plan" disappears and placing a new one becomes the only
-                way to schedule again. Naming what survives is normally filler,
-                but this is the delete-ALL-plans confirm — the case the design
-                doc carves out for spelling it out. */}
+                names both halves. The program they are on ends yesterday and
+                keeps its past, a queued one goes, so "Edit plan" disappears and
+                placing a new one becomes the only way to schedule again. Naming
+                what survives is normally filler, but this is the delete-ALL-
+                plans confirm — the case the design doc carves out for spelling
+                it out. */}
             <DialogDescription className="pt-2">
               This removes every upcoming session from this client&apos;s calendar
-              <strong className="font-semibold text-[#0c1a1e]"> and retires every program they are on</strong>
-              {" — "}a retired program can&apos;t be edited, so scheduling again means placing a new one.
-              Sessions they already logged are kept.
+              <strong className="font-semibold text-[#0c1a1e]"> and ends every program they are on</strong>
+              {" — "}an ended program can&apos;t be edited, so scheduling again means placing a new one.
+              Days already done keep their program, and sessions they already logged are kept.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

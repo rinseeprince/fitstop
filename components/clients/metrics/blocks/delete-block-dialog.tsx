@@ -78,8 +78,9 @@ export function DeleteBlockDialog({
           <span className="font-semibold text-[#0c1a1e]">
             Delete block and its plans
           </span>{" "}
-          removes the training and nutrition plans set up in this block, and
-          their upcoming days. Other blocks keep theirs.
+          ends the training and nutrition plans set up in this block and removes
+          their upcoming days. Days already done keep their plans, and other
+          blocks keep theirs.
         </p>
         <DialogFooter className="min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button variant="ghost" onClick={onCancel} disabled={isDeleting}>

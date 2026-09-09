@@ -100,17 +100,19 @@ async function recordCoachNoteOrThrow(
 }
 
 /**
- * Delete the client's nutrition plan: retire every active version and clear
- * the upcoming days from the shared deletion floor — the training clear's
- * shape (`clearNutritionPlansForClient`, migration 166). Past days are
- * untouched, and so is today once the client has logged against it; coach-
- * edited FUTURE days go too, deliberately — a deleted plan leaves no forward
- * prescription. Nothing stays active: the hero, the Overview and the client's
- * Program tab all read "no plan", and the block cards lose the plan's eras
- * exactly as they lose a program after a training delete.
+ * Delete the client's nutrition plan: a save of nothing from today. The
+ * running version ends yesterday and keeps its past, queued versions are
+ * archived, finished ones are untouched, and the upcoming days go from the
+ * shared deletion floor — the training clear's shape
+ * (`clearNutritionPlansForClient`, migration 167). Past days keep their
+ * version, on the calendar and on every block it ran in; today's target stays
+ * once the client has logged against it; coach-edited FUTURE days go too,
+ * deliberately — a deleted plan leaves no forward prescription. From today
+ * nothing covers a day: the hero, the Overview and the client's Program tab
+ * all read "no plan" the moment it lands.
  *
  * Throws NutritionPlanError for ownership / not-found failures, and 404 when
- * nothing is left to retire — which also makes a same-day second delete a
+ * nothing is running or queued — which also makes a same-day second delete a
  * clean 404 rather than a silent success.
  */
 export async function orchestrateNutritionPlanDeletion(

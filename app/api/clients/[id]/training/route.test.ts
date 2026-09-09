@@ -13,7 +13,6 @@ vi.mock('@/services/training-service', () => ({
   getTrainingPlanForDate: vi.fn().mockResolvedValue(null),
   getNextFutureTrainingPlan: vi.fn().mockResolvedValue(null),
   getTrainingPlanById: vi.fn().mockResolvedValue(null),
-  archiveTrainingPlan: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/services/today-service', () => ({
@@ -38,6 +37,7 @@ vi.mock('@/services/client-goals-service', () => ({
 
 vi.mock('@/services/training-event-service', () => ({
   cancelFutureEventsForPlan: vi.fn().mockResolvedValue(null),
+  cancelFutureEventsForPlans: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('@/services/nutrition-event-service', () => ({
@@ -71,7 +71,7 @@ import {
   getTrainingPlanById,
 } from '@/services/training-service'
 import { supabaseAdmin } from '@/services/supabase-admin'
-import { cancelFutureEventsForPlan } from '@/services/training-event-service'
+import { cancelFutureEventsForPlans } from '@/services/training-event-service'
 import { cascadeNutritionAfterTrainingChange } from '@/services/nutrition-event-service'
 import { resolveEventDeletionFloor } from '@/services/event-deletion-floor'
 import { GET, DELETE } from './route'
@@ -221,14 +221,18 @@ describe('Training Route GET - scheduled plan semantics', () => {
 // ===========================================================================
 
 describe('Training Route DELETE - the shared deletion floor', () => {
+  /** Every program is running: started before today, reaching past it. The
+   *  chain is thenable so the read, the cap and the archive all resolve. */
   const wirePlans = (ids: string[]) => {
     const chain: Record<string, unknown> = {}
-    Object.assign(chain, {
-      select: vi.fn(() => chain),
-      eq: vi.fn(() => chain),
-      is: vi.fn(() => chain),
-      neq: vi.fn().mockResolvedValue({ data: ids.map((id) => ({ id })), error: null }),
-    })
+    for (const m of ['select', 'eq', 'is', 'neq', 'gte', 'lte', 'in', 'update']) {
+      chain[m] = vi.fn(() => chain)
+    }
+    chain.then = (resolve: (v: unknown) => unknown) =>
+      Promise.resolve({
+        data: ids.map((id) => ({ id, effective_from: '2026-01-01', effective_until: '2026-03-01' })),
+        error: null,
+      }).then(resolve)
     vi.mocked(supabaseAdmin.from).mockReturnValue(chain as never)
   }
 
@@ -251,18 +255,19 @@ describe('Training Route DELETE - the shared deletion floor', () => {
     const response = await call()
 
     expect(response.status).toBe(200)
-    expect(cancelFutureEventsForPlan).toHaveBeenCalledWith('plan-41', '2026-01-16')
+    expect(cancelFutureEventsForPlans).toHaveBeenCalledWith(['plan-41'], '2026-01-16')
     expect(resolveEventDeletionFloor).toHaveBeenCalledWith('client-1', '2026-01-15')
   })
 
-  it('resolves the floor ONCE however many programs it retires', async () => {
+  it('resolves the floor ONCE and cancels ONCE however many programs it retires', async () => {
     // Round trips stay constant, not per-plan (CONVENTIONS §2 item 7).
     wirePlans(['plan-63', 'plan-64', 'plan-65'])
 
     await call()
 
     expect(resolveEventDeletionFloor).toHaveBeenCalledTimes(1)
-    expect(cancelFutureEventsForPlan).toHaveBeenCalledTimes(3)
+    expect(cancelFutureEventsForPlans).toHaveBeenCalledTimes(1)
+    expect(cancelFutureEventsForPlans).toHaveBeenCalledWith(['plan-63', 'plan-64', 'plan-65'], '2026-01-16')
   })
 
   it('still cascades nutrition from TODAY — a regenerate replaces, it never empties', async () => {

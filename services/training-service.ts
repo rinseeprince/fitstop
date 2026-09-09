@@ -171,9 +171,9 @@ export type NextFutureTrainingPlan = {
  *
  * It exists because the predicate was hand-rolled three times and the copy that
  * forgot `.neq("status", "archived")` re-surfaced retired plans as the client's
- * current program: "Delete training plan" archives every plan without clearing
- * its future `effective_from`, so the next read dug one back out and titled the
- * Training tab with a program that had no sessions behind it.
+ * current program: "Delete training plan" archives a queued program without
+ * clearing its future `effective_from`, so the next read dug one back out and
+ * titled the Training tab with a program that had no sessions behind it.
  *
  * Placement deliberately permits a future start date (only the past is
  * rejected), so a queued program is a supported state, not an edge case.
@@ -397,16 +397,6 @@ export const updateTrainingPlan = async (
   const plan = await getTrainingPlanById(planId);
   if (!plan) throw new Error("Plan not found after update");
   return plan;
-};
-
-// Archive training plan
-export const archiveTrainingPlan = async (planId: string): Promise<void> => {
-  const { error } = await supabaseAdmin
-    .from("training_plans")
-    .update({ status: "archived", updated_at: new Date().toISOString() })
-    .eq("id", planId);
-
-  if (error) throw new Error(`Failed to archive plan: ${error.message}`);
 };
 
 // Atomically archive old plan + insert new plan via RPC
