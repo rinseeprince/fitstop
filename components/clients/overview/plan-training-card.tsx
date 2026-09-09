@@ -69,16 +69,19 @@ export function PlanTrainingCard({
           subtitle={<ChipRow chips={planChips(upcomingTraining)} />}
           right={<OpenTabLink label="Open Training" onClick={onOpenTraining} />}
         />
-        <div className="mt-auto border-t border-[rgba(13,148,136,0.06)]">
+        {/* The body sits under a FIXED header hairline and the footer is what
+            pins to the bottom — a shorter body must not drag its hairline
+            down, or the two cards' header lines drift apart. */}
+        <div className="border-t border-[rgba(13,148,136,0.06)]">
           <StatStrip
             cells={[{ label: "Program", value: upcomingTraining.planName, valueIsName: true }]}
           />
-          <div className="border-t border-[rgba(13,148,136,0.06)] px-5 py-4">
-            <p className="text-[13px] font-semibold text-[#0c1a1e]">
-              {/* No space before InlineMono — it owns its own gap. */}
-              Starts<InlineMono>{formatDateOnlyWeekday(upcomingTraining.startsOn)}</InlineMono>
-            </p>
-          </div>
+        </div>
+        <div className="mt-auto border-t border-[rgba(13,148,136,0.06)] px-5 py-4">
+          <p className="text-[13px] font-semibold text-[#0c1a1e]">
+            {/* No space before InlineMono — it owns its own gap. */}
+            Starts<InlineMono>{formatDateOnlyWeekday(upcomingTraining.startsOn)}</InlineMono>
+          </p>
         </div>
       </OverviewCard>
     );

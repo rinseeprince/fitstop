@@ -79,22 +79,26 @@ export function PlanNutritionCard({
           subtitle={<ChipRow chips={nutritionChips(upcomingNutrition, preference)} />}
           right={<OpenTabLink label="Open Nutrition" onClick={onOpenNutrition} />}
         />
-        <div className="mt-auto border-t border-[rgba(13,148,136,0.06)]">
+        {/* Same frame as the training card's queued state: the body under a
+            FIXED header hairline, the number at the program name's size so
+            the two bodies are one height, and the footer pinned to the bottom. */}
+        <div className="border-t border-[rgba(13,148,136,0.06)]">
           <StatStrip
             cells={[
               {
                 label: "Daily target",
                 value: String(upcomingNutrition.restDayCalories),
                 unit: "cal",
+                valueSize: "sm",
               },
             ]}
           />
-          <div className="border-t border-[rgba(13,148,136,0.06)] px-5 py-4">
-            <p className="text-[13px] font-semibold text-[#0c1a1e]">
-              {/* No space before InlineMono — it owns its own gap. */}
-              Starts<InlineMono>{formatDateOnlyWeekday(upcomingNutrition.startsOn)}</InlineMono>
-            </p>
-          </div>
+        </div>
+        <div className="mt-auto border-t border-[rgba(13,148,136,0.06)] px-5 py-4">
+          <p className="text-[13px] font-semibold text-[#0c1a1e]">
+            {/* No space before InlineMono — it owns its own gap. */}
+            Starts<InlineMono>{formatDateOnlyWeekday(upcomingNutrition.startsOn)}</InlineMono>
+          </p>
         </div>
       </OverviewCard>
     );

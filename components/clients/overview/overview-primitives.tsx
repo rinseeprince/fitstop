@@ -124,6 +124,9 @@ export type StatCellData = {
   value: string | null;
   /** Set when the value is a NAME rather than a datum (session name). */
   valueIsName?: boolean;
+  /** A datum at the NAME's size (13px) — for a one-cell queued body that must
+   *  sit level with a name in the card beside it. Still mono: it is a number. */
+  valueSize?: "sm";
   unit?: string;
   sub?: string;
   /** Sub-line carries a numeral → mono. Word-only sub-lines stay sans. */
@@ -158,7 +161,13 @@ export function StatStrip({ cells }: { cells: StatCellData[] }) {
               {cell.value}
             </span>
           ) : (
-            <span className={cn(MONO, "mt-1 truncate text-[18px] font-semibold text-[#0c1a1e]")}>
+            <span
+              className={cn(
+                MONO,
+                "mt-1 truncate font-semibold text-[#0c1a1e]",
+                cell.valueSize === "sm" ? "text-[13px]" : "text-[18px]"
+              )}
+            >
               {cell.value}
               {cell.unit && (
                 <span className="ml-1 text-[11px] font-normal text-[#93b0b4]">{cell.unit}</span>
