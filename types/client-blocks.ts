@@ -100,6 +100,11 @@ export interface BlockNutritionEra {
 }
 
 export interface BlockNutritionFact {
+  /** The day the version covering the reference date took (or takes) effect —
+   *  the counterpart of a training fact's `startsOn`, so a queued prescription
+   *  says when it starts. Earlier than the block's start for a version that was
+   *  already running when the block began, as a crossing program's is. */
+  startsOn: string;
   calories: number;
   deficitPerDay: number | null;
   changeCount: number;

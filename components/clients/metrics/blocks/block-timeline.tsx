@@ -41,10 +41,9 @@ interface BlockTimelineEntry {
  * its host's, so nothing is lost.
  *
  * A note with no nutrition entry at all to hang from (a block where no version
- * covers the reference date, so `nutrition` is null, or a future block whose
- * eras are skipped) is returned in `orphans` and gets its own dated entry. Rare,
- * but a client-visible note that silently fails to render is the one outcome
- * this feature cannot afford.
+ * covers the reference date, so `nutrition` is null) is returned in `orphans`
+ * and gets its own dated entry. Rare, but a client-visible note that silently
+ * fails to render is the one outcome this feature cannot afford.
  */
 function attachNotesToHosts(
   entries: BlockTimelineEntry[],
@@ -92,10 +91,11 @@ export function deriveTimelineEntries(
   // What the client was actually eating, and when it changed — the question a
   // coach reviewing a finished block asks first. Each era carries the numbers
   // off its own plan version, so a later plan save cannot rewrite an entry that
-  // has already happened. A future block is skipped for the same reason its
-  // "Block started" entry is: nothing has happened yet.
+  // has already happened. A future block lists its queued prescription as
+  // "Nutrition set" the way it lists a queued program as started: the card of a
+  // block that has not begun describes what is planned for it.
   const nutritionEntries: BlockTimelineEntry[] = [];
-  if (block.state !== "future" && nutrition) {
+  if (nutrition) {
     nutrition.eras.forEach((era, index) => {
       const entry: BlockTimelineEntry = {
         key: `nutrition-${block.id}-${era.from}`,

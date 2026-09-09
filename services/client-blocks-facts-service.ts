@@ -204,6 +204,7 @@ function deriveNutritionFact(
 
   const calories = versionCalories(version);
   return {
+    startsOn: version.effectiveFrom,
     calories,
     deficitPerDay: version.tdee != null ? version.tdee - calories : null,
     changeCount,

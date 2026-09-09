@@ -37,12 +37,14 @@ const EMPTY_FACTS: BlockFacts = {
 function renderCard(block: ClientBlockView, handlers: {
   onPlaceProgram?: () => void;
   onSetNutrition?: () => void;
+  facts?: BlockFacts;
 } = {}) {
+  const { facts = EMPTY_FACTS, ...rest } = handlers;
   return render(
     <BlockCard
       block={block}
       color="#0d9488"
-      facts={EMPTY_FACTS}
+      facts={facts}
       factsLoading={false}
       factsError={false}
       weight={{ start: null, end: null, change: null }}
@@ -50,7 +52,7 @@ function renderCard(block: ClientBlockView, handlers: {
       targetDisplay={null}
       weightUnit="kg"
       defaultOpen
-      {...handlers}
+      {...rest}
     />
   );
 }
@@ -102,6 +104,27 @@ describe("BlockCard — the round-trip empty states", () => {
     renderCard(makeBlock({ state: "current" }), { onPlaceProgram });
     screen.getByRole("button", { name: /No program placed/ }).click();
     expect(onPlaceProgram).toHaveBeenCalledTimes(1);
+  });
+
+  // A set block says when its targets start, as the training column says when
+  // its program starts — a queued prescription on a future block would
+  // otherwise show numbers with no date (migration 166).
+  it("says when the targets start beside the numbers", () => {
+    renderCard(makeBlock({ state: "future" }), {
+      facts: {
+        ...EMPTY_FACTS,
+        nutrition: {
+          startsOn: "2026-10-08",
+          calories: 1732,
+          deficitPerDay: 214,
+          changeCount: 0,
+          lastChangedOn: null,
+          eras: [],
+        },
+      },
+    });
+    expect(screen.getByText(/from 8 Oct/)).toBeDefined();
+    expect(screen.getByText("1,732")).toBeDefined();
   });
 
   // The Nutrition fact's empty state (7.4) is gated identically — one rule,

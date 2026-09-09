@@ -44,7 +44,7 @@ beforeEach(() => {
 });
 
 describe("clearNutritionPlansForClient — the calendar's own delete (no window)", () => {
-  it("retires every ACTIVE version with days on or after the floor, and clears the days from the floor", async () => {
+  it("retires EVERY active version, finished ones included, and clears the days from the floor", async () => {
     const chains = mockFromSequence([
       { data: [{ id: "v41" }, { id: "v42" }], error: null },
       { error: null },
@@ -54,11 +54,12 @@ describe("clearNutritionPlansForClient — the calendar's own delete (no window)
     const result = await clearNutritionPlansForClient(CLIENT, TODAY);
 
     expect(result).toEqual({ versionsCleared: 2, versionIds: ["v41", "v42"] });
-    // The versions: active, with days on or after the floor — a finished
-    // version is history and stays; the running one and the queued ones go.
+    // The versions: every active one, with NO date predicate — the training
+    // clear's shape. A version whose last day was today, or last month, goes
+    // with the running and queued ones; only the days stay.
     expect(chains[0].eq).toHaveBeenCalledWith("client_id", CLIENT);
     expect(chains[0].eq).toHaveBeenCalledWith("status", "active");
-    expect(chains[0].gte).toHaveBeenCalledWith("effective_until", TODAY);
+    expect(chains[0].gte).not.toHaveBeenCalled();
     expect(chains[0].lte).not.toHaveBeenCalled();
     // The days: client-scoped from the floor, scheduled only, no upper bound,
     // edited days included (no is_modified sparing).
@@ -77,14 +78,15 @@ describe("clearNutritionPlansForClient — the calendar's own delete (no window)
     expect(chains[2].delete).not.toHaveBeenCalled();
   });
 
-  it("a client who logged today keeps today: the floor is tomorrow on both statements", async () => {
+  it("a client who logged today keeps today's target: the day removal starts tomorrow, the versions still all go", async () => {
     vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-07-03");
     const chains = mockFromSequence([{ data: [{ id: "v43" }], error: null }, { error: null }, { error: null }]);
 
     await clearNutritionPlansForClient(CLIENT, TODAY);
 
-    expect(chains[0].gte).toHaveBeenCalledWith("effective_until", "2026-07-03");
+    expect(chains[0].gte).not.toHaveBeenCalled();
     expect(chains[1].gte).toHaveBeenCalledWith("date", "2026-07-03");
+    expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ status: "archived" }));
   });
 
   it("nothing to retire: one read, no writes, zero", async () => {

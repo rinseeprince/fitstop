@@ -5,12 +5,12 @@ import { resolveEventDeletionFloor } from "./event-deletion-floor";
  * "Delete nutrition plan": retire the versions the client is on and remove
  * their upcoming targets — the nutrition twin of `clearTrainingPlansForClient`.
  *
- * One act, two callers: the nutrition calendar's own delete (every version
- * with days on or after the deletion floor — the running one and any queued
- * ones) and the block delete's "and its plans" (only the versions laid inside
- * it). There is no delete-the-days-but-keep-the-plan variant (owner,
- * 2026-09-08): a version left active with no days is restored by the next
- * cascade, so the two always travel together.
+ * One act, two callers: the nutrition calendar's own delete (every active
+ * version, finished ones included — exactly as the training clear archives
+ * every live program) and the block delete's "and its plans" (only the
+ * versions laid inside it). There is no delete-the-days-but-keep-the-plan
+ * variant (owner, 2026-09-08): a version left active with no days is restored
+ * by the next cascade, so the two always travel together.
  *
  * A retired version is ARCHIVED, never closed at the floor and never
  * hard-deleted (migration 166). Every read resolves among `status = 'active'`
@@ -34,9 +34,10 @@ export async function clearNutritionPlansForClient(
    * version belongs to a block when its start falls in the block's days, which
    * is a question dates answer on their own because a version's end is
    * resolved to the block covering its start (see resolveNutritionPlacementEnd).
-   * Omitted, every version with days on or after the floor goes: that is the
-   * nutrition calendar's own delete. A finished version has no days left to
-   * remove and stays as history either way.
+   * Omitted, every active version goes, finished ones included: that is the
+   * nutrition calendar's own delete, and it is the training calendar's shape
+   * (owner, 2026-09-09) — the block cards lose the plan's eras exactly as they
+   * lose a program after a training delete.
    *
    * A version that merely CROSSES the block (saved before it existed) belongs
    * to no block and survives — the coach removes it from the calendar, where
@@ -54,7 +55,7 @@ export async function clearNutritionPlansForClient(
     .order("effective_from", { ascending: true });
   const { data: versions, error } = window
     ? await versionsQuery.gte("effective_from", window.from).lte("effective_from", window.to)
-    : await versionsQuery.gte("effective_until", deleteFrom);
+    : await versionsQuery;
   if (error) {
     throw new Error(`Failed to resolve the nutrition versions to clear: ${error.message}`);
   }

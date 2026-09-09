@@ -61,6 +61,7 @@ describe("GET /api/clients/[id]/blocks/facts", () => {
         blockId: "a",
         training: [{ id: "p1", name: "Base", startsOn: "2026-06-01" }],
         nutrition: {
+          startsOn: "2026-06-01",
           calories: 2000,
           deficitPerDay: 500,
           changeCount: 0,

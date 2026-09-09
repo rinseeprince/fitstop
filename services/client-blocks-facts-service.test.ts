@@ -279,6 +279,7 @@ describe("getBlockFacts", () => {
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
+      startsOn: "2026-05-01",
       calories: 2400,
       deficitPerDay: 400,
       changeCount: 0,
@@ -306,6 +307,7 @@ describe("getBlockFacts", () => {
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
+      startsOn: "2026-08-11",
       calories: 1995,
       deficitPerDay: 225,
       changeCount: 0, // modified days can neither flag nor mask a change
@@ -331,6 +333,7 @@ describe("getBlockFacts", () => {
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
+      startsOn: "2026-05-01",
       calories: 1850,
       deficitPerDay: 750,
       changeCount: 0,
@@ -357,6 +360,7 @@ describe("getBlockFacts", () => {
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
+      startsOn: "2026-05-01",
       calories: 2000, // the version's baseline, not an event aggregate
       deficitPerDay: 500,
       changeCount: 0,
@@ -371,6 +375,7 @@ describe("getBlockFacts", () => {
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
+      startsOn: "2026-05-01",
       calories: 1700,
       deficitPerDay: null,
       changeCount: 0,
@@ -406,6 +411,7 @@ describe("getBlockFacts", () => {
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
+      startsOn: "2026-05-01",
       calories: 2100,
       deficitPerDay: 500,
       changeCount: 0,

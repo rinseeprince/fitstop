@@ -179,6 +179,9 @@ function NutritionColumn({
           {formatDeficitPerDay(deficit)}
         </p>
       )}
+      <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+        from {formatBlockDate(fact.startsOn)}
+      </p>
       {fact.changeCount > 0 && (
         <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
           {fact.changeCount === 1 && fact.lastChangedOn

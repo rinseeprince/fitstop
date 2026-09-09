@@ -5,6 +5,7 @@ import type { BlockNutritionFact } from "@/types/client-blocks";
 const nutrition = (
   eras: BlockNutritionFact["eras"]
 ): BlockNutritionFact => ({
+  startsOn: eras[0]?.from ?? "2026-06-01",
   calories: 2200,
   deficitPerDay: 400,
   changeCount: 0,
@@ -109,14 +110,17 @@ describe("deriveTimelineEntries", () => {
       expect(entries.map((e) => e.label)).toEqual(["Block started"]);
     });
 
-    // Same reason its "Block started" entry is skipped: nothing has happened.
-    it("future block: no nutrition entry even with a queued era", () => {
+    // A block that has not begun describes what is planned for it: a queued
+    // prescription lists as "Nutrition set", as a queued program lists as
+    // started. Only the block's own "started" entry waits for the day.
+    it("future block: a queued prescription lists as 'Nutrition set' with its numbers", () => {
       const entries = deriveTimelineEntries(
         { ...BLOCK, state: "future" },
         [],
         nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }])
       );
-      expect(entries).toEqual([]);
+      expect(entries.map((e) => [e.date, e.label])).toEqual([["2026-06-01", "Nutrition set"]]);
+      expect(entries[0].detail).toBe("3,471 kcal · −629 kcal/day");
     });
   });
 
