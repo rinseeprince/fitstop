@@ -17,6 +17,9 @@ vi.mock("./today-service", () => ({
 vi.mock("./training-event-service", () => ({
   getNextPlanStartCap: vi.fn(),
 }));
+vi.mock("./client-blocks-service", () => ({
+  getBlockBoundForDate: vi.fn().mockResolvedValue(null),
+}));
 
 vi.mock("./library-placement-service", () => ({
   fetchVisibleExerciseIds: vi.fn(),
@@ -25,6 +28,7 @@ vi.mock("./library-placement-service", () => ({
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getNextPlanStartCap } from "./training-event-service";
+import { getBlockBoundForDate } from "./client-blocks-service";
 import { fetchVisibleExerciseIds } from "./library-placement-service";
 import {
   getPlacedPlanForBuilder,
@@ -355,7 +359,8 @@ function makeScenario(): Scenario {
         frequency_per_week: 3,
         program_duration_weeks: 2,
         effective_from: EFFECTIVE_FROM,
-        effective_until: null,
+        // The old 14-slot window's last day: the row is the window (167).
+        effective_until: "2026-07-28",
         saved_plan_id: null,
         deleted_at: null,
         created_at: "2026-07-14T00:00:00Z",
@@ -505,6 +510,7 @@ describe("plan-amendment-service", () => {
     wireScenario(state);
     mockToday.mockResolvedValue("2026-07-22");
     mockNextPlanCap.mockResolvedValue(null);
+    vi.mocked(getBlockBoundForDate).mockResolvedValue(null);
     mockVisibleIds.mockResolvedValue(new Set(["vis-1"]));
   });
 
@@ -560,7 +566,8 @@ describe("plan-amendment-service", () => {
         updatedAt: PLAN_UPDATED_AT,
       });
       expect(read!.clientToday).toBe("2026-07-22");
-      expect(read!.windowEnd).toBe(dateAt(13)); // 14 slots, one pass
+      expect(read!.windowEnd).toBe(dateAt(13)); // the row's own end (migration 167)
+      expect(read!.windowCap).toBeNull();
       expect(read!.isFullyPast).toBe(false);
       expect(read!.amendmentToken).toEqual(expect.any(String));
 
@@ -850,7 +857,8 @@ describe("plan-amendment-service", () => {
     // A nulled focus falls back to the NOT NULL column's placement default.
     expect(update.split_type).toBe("custom");
     expect(update.updated_at).toEqual(expect.any(String));
-    expect(update.effective_until).toBeUndefined();
+    // The window follows the rows (migration 167): 14 slots from 15 Jul.
+    expect(update.effective_until).toBe("2026-07-28");
   });
 
   it("offset 0 for a not-yet-started plan: nothing elapsed, only logged days frozen", async () => {
@@ -997,7 +1005,42 @@ describe("plan-amendment-service", () => {
       expect(state.sessionInserts).toHaveLength(0);
     });
 
-    it("next-plan cap bounds the walk", async () => {
+    it("refuses a grid that would GROW past the next program — the cap every placement takes (migration 167)", async () => {
+      // That program's placement capped this row at the day before it started.
+      mockNextPlanCap.mockResolvedValue("2026-07-25");
+      state.plans[0].effective_until = "2026-07-25";
+      const token = await tokenFor();
+      await expect(
+        amendPlacedPlanFuture({
+          clientId: CLIENT_ID,
+          coachId: COACH_ID,
+          planId: PLAN_ID,
+          sessions: makeAmendedGrid(), // 14 slots → 2026-07-28, past the cap
+          expectedToken: token,
+        }),
+      ).rejects.toThrow("The next program starts on 2026-07-26 — remove the weeks that reach into it.");
+      expect(state.sessionInserts).toHaveLength(0);
+      expect(state.eventUpserts).toHaveLength(0);
+    });
+
+    it("refuses a grid that would grow past the block the program was placed in, naming the block's end", async () => {
+      vi.mocked(getBlockBoundForDate).mockResolvedValue({ kind: "covering", endsOn: "2026-07-25" });
+      state.plans[0].effective_until = "2026-07-25";
+      const token = await tokenFor();
+      await expect(
+        amendPlacedPlanFuture({
+          clientId: CLIENT_ID,
+          coachId: COACH_ID,
+          planId: PLAN_ID,
+          sessions: makeAmendedGrid(),
+          expectedToken: token,
+        }),
+      ).rejects.toThrow("This program's block ends on 2026-07-25 — remove the weeks past it.");
+    });
+
+    it("keeps an end the row already has past the cap — a program placed before its block existed", async () => {
+      // The row still ends 2026-07-28; a block drawn afterwards caps growth at
+      // 07-25 but does not shrink what the coach already has.
       mockNextPlanCap.mockResolvedValue("2026-07-25");
       const token = await tokenFor();
       await amendPlacedPlanFuture({
@@ -1009,8 +1052,15 @@ describe("plan-amendment-service", () => {
       });
 
       const dates = state.eventUpserts[0].rows.map((r) => r.date);
-      expect(dates.every((d) => (d as string) <= "2026-07-25")).toBe(true);
-      expect(dates).toEqual(["2026-07-22", "2026-07-24"]); // New Legs (07-27) capped away
+      expect(dates).toEqual(["2026-07-22", "2026-07-24", "2026-07-27"]);
+      expect(state.planUpdates[0].effective_until).toBe("2026-07-28");
+    });
+
+    it("the GET carries the cap so the editor can say where the program may grow to", async () => {
+      vi.mocked(getBlockBoundForDate).mockResolvedValue({ kind: "covering", endsOn: "2026-08-31" });
+      const read = await getPlacedPlanForBuilder(CLIENT_ID, PLAN_ID);
+      expect(read!.windowCap).toEqual({ endsOn: "2026-08-31", source: "block" });
+      expect(getBlockBoundForDate).toHaveBeenCalledWith(CLIENT_ID, EFFECTIVE_FROM);
     });
   });
 

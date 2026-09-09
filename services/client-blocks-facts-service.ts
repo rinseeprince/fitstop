@@ -283,7 +283,7 @@ function governingPlanAt(
   let best: TrainingPlanWindowSummary | null = null;
   for (const plan of plans) {
     if (plan.effectiveFrom > date) continue;
-    if (plan.effectiveUntil !== null && plan.effectiveUntil < date) continue;
+    if (plan.effectiveUntil < date) continue;
     if (!best || plan.effectiveFrom > best.effectiveFrom) best = plan;
   }
   return best;
@@ -298,13 +298,12 @@ interface GoverningPlanSegment {
 /**
  * Reduce coach-visible plans to the segments where each actually GOVERNED —
  * the per-date winner under getTrainingPlanForDate's latest-start-wins rule.
- * Raw window overlap over-includes: placed plans keep `effective_until =
- * NULL` forever, so a January program "overlaps" every later block even
- * though a March one took over — a client's fourth block would list all
- * four programs. The winner only changes at a plan's start or the day after
- * one's window closes, so those are the only boundaries evaluated. A capped
- * plan expiring hands govern-ship BACK to the older open plan for the days
- * after its `effective_until` — exactly what per-date resolution answers.
+ * Both ends are on the row and live windows cannot overlap (migration 167),
+ * so for live plans this is a plain intersection with the span; the per-date
+ * resolution stays for the one tie the exclusion cannot see — a `draft` or
+ * `planned` row sharing a live plan's days — and so boundaries are evaluated
+ * once rather than per day. The winner only changes at a plan's start or the
+ * day after one's window closes, so those are the only boundaries evaluated.
  */
 export function reduceToGoverningSegments(
   plans: TrainingPlanWindowSummary[],
@@ -316,11 +315,9 @@ export function reduceToGoverningSegments(
     if (plan.effectiveFrom > spanStart && plan.effectiveFrom <= spanEnd) {
       boundarySet.add(plan.effectiveFrom);
     }
-    if (plan.effectiveUntil !== null) {
-      const dayAfter = addDaysToDateString(plan.effectiveUntil, 1);
-      if (dayAfter > spanStart && dayAfter <= spanEnd) {
-        boundarySet.add(dayAfter);
-      }
+    const dayAfter = addDaysToDateString(plan.effectiveUntil, 1);
+    if (dayAfter > spanStart && dayAfter <= spanEnd) {
+      boundarySet.add(dayAfter);
     }
   }
   const boundaries = [...boundarySet].sort();
@@ -370,12 +367,12 @@ export async function getBlockFacts(
   return blocks.map((block) => {
     // ★ A BLOCK SHOWS WHAT IS SET ONLY IF IT ACTUALLY HAS DAYS ON THE CALENDAR.
     //
-    // Both columns resolve by WINDOW, and a placed training plan's window has
-    // no end (`effective_until` is never written) — so a January program
-    // "governs" every later block for ever, and a block the coach has drawn but
-    // not set up would claim a program it has no workouts from. A nutrition
-    // version's window does end (migration 166), but the gate stays one rule
-    // for both tracks: the events are the truth for a date.
+    // Both columns resolve by WINDOW, and both windows end (migrations 166 and
+    // 167), but the gate stays one rule for both tracks: a window says where a
+    // plan was placed to run, the events say which days it actually put on the
+    // calendar, and a block the coach has drawn but not set up must not claim a
+    // program whose rows merely reach into it. The events are the truth for a
+    // date.
     //
     // Per track, because the two are set up separately: a block can have
     // workouts and no targets, or the reverse, and each column should say only

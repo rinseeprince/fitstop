@@ -19,6 +19,7 @@ vi.mock("./training-service", () => ({
 
 vi.mock("./training-event-service", () => ({
   getNextPlanStartCap: vi.fn(),
+  cancelFutureEventsForPlans: vi.fn().mockResolvedValue(null),
 }));
 
 // The block covering the start date is now the placement window's length knob.
@@ -31,12 +32,13 @@ vi.mock("./client-blocks-service", () => ({
 import { supabaseAdmin } from "./supabase-admin";
 import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
-import { getNextPlanStartCap } from "./training-event-service";
+import { getNextPlanStartCap, cancelFutureEventsForPlans } from "./training-event-service";
 import { getBlockBoundForDate } from "./client-blocks-service";
 import {
   placePlanOnCalendar,
   placeSessionOnCalendar,
   placeInlineEditedPlanOnCalendar,
+  PlacementSupersedeError,
 } from "./library-placement-service";
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import type { InlinePlanBody } from "@/lib/validations/training";
@@ -62,6 +64,7 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
     lt: vi.fn().mockReturnThis(),
     lte: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
+    is: vi.fn().mockReturnThis(),
     or: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
@@ -1015,5 +1018,93 @@ describe("library-placement-service: the block bounds the placement", () => {
         savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
       }),
     ).rejects.toThrow("two sessions at the same position");
+  });
+});
+
+// ===========================================================================
+// A placement supersedes the earlier programs (migration 167).
+// ===========================================================================
+
+describe("library-placement-service: the placement supersedes the earlier programs", () => {
+  const EARLIER = [{ id: "old-1", effective_until: "2026-06-30", status: "active" }];
+
+  function wire(opts: { plans?: unknown[]; exerciseError?: { message: string } | null } = {}) {
+    const plansQuery = createMockQuery({ data: opts.plans ?? EARLIER, error: null });
+    const sessionInsertQuery = makeSessionInsertQuery(["ts-1", "ts-2", "ts-3", "ts-rest"]);
+    const exerciseInsertQuery = createMockQuery({ data: null, error: opts.exerciseError ?? null });
+    const eventUpsertQuery = createMockQuery({ data: [], error: null });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "training_plans") return plansQuery as never;
+      if (table === "training_sessions") return sessionInsertQuery as never;
+      if (table === "training_exercises") return exerciseInsertQuery as never;
+      if (table === "training_events") return eventUpsertQuery as never;
+      return createMockQuery({ data: null, error: null }) as never;
+    });
+    return { plansQuery, eventUpsertQuery };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetNextPlanStartCap.mockResolvedValue(null);
+    mockGetBlockBound.mockResolvedValue(null);
+    mockGetSavedPlanById.mockResolvedValue(makeSavedPlan());
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    vi.mocked(cancelFutureEventsForPlans).mockResolvedValue(null);
+  });
+
+  it("cancels the earlier programs' forward rays from the start day AFTER the events land, and returns the furthest day", async () => {
+    const { plansQuery, eventUpsertQuery } = wire();
+    vi.mocked(cancelFutureEventsForPlans).mockResolvedValue("2026-06-30");
+
+    const result = await placePlanOnCalendar({
+      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15",
+    });
+
+    expect(result.supersededThrough).toBe("2026-06-30");
+    // The snapshot read: every live program starting on or before the start.
+    expect(plansQuery.lte).toHaveBeenCalledWith("effective_from", "2026-04-15");
+    expect(plansQuery.neq).toHaveBeenCalledWith("status", "archived");
+    expect(cancelFutureEventsForPlans).toHaveBeenCalledWith(["old-1"], "2026-04-15");
+    // Post-commit: the walk's upsert has already run.
+    expect(vi.mocked(cancelFutureEventsForPlans).mock.invocationCallOrder[0]).toBeGreaterThan(
+      eventUpsertQuery.upsert.mock.invocationCallOrder[0],
+    );
+    // Nothing was rolled back.
+    expect(plansQuery.delete).not.toHaveBeenCalled();
+  });
+
+  it("a supersede failure is reported as such and never rolls the placement back", async () => {
+    const { plansQuery, eventUpsertQuery } = wire();
+    vi.mocked(cancelFutureEventsForPlans).mockRejectedValue(new Error("boom"));
+
+    await expect(
+      placePlanOnCalendar({
+        savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15",
+      }),
+    ).rejects.toBeInstanceOf(PlacementSupersedeError);
+
+    // No compensation: the new plan and its events stay, and the earlier
+    // programs' rows keep the cap the RPC gave them — the only training_plans
+    // update is the placement's own pass-length write.
+    expect(plansQuery.delete).not.toHaveBeenCalled();
+    expect(plansQuery.update).not.toHaveBeenCalledWith({ effective_until: "2026-06-30", status: "active" });
+    expect(eventUpsertQuery.delete).not.toHaveBeenCalled();
+  });
+
+  it("a failed clone puts the earlier programs' windows and statuses back exactly", async () => {
+    const { plansQuery } = wire({ exerciseError: { message: "disk full" } });
+
+    await expect(
+      placePlanOnCalendar({
+        savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15",
+      }),
+    ).rejects.toThrow("Failed to clone exercises: disk full");
+
+    // The RPC capped old-1 at 2026-04-14 (and would have archived a same-day
+    // one); with the new plan gone, each row gets its snapshot back.
+    expect(plansQuery.update).toHaveBeenCalledWith({ effective_until: "2026-06-30", status: "active" });
+    expect(plansQuery.eq).toHaveBeenCalledWith("id", "old-1");
+    // And the supersede never ran.
+    expect(cancelFutureEventsForPlans).not.toHaveBeenCalled();
   });
 });

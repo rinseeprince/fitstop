@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getSavedPlanById } from "./coach-saved-plan-service";
 import { createTrainingPlanAtomic } from "./training-service";
+import { cancelFutureEventsForPlans } from "./training-event-service";
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import {
   generateProgramEvents,
@@ -20,6 +21,45 @@ import { toPrescribedFields } from "@/utils/prescribed-fields";
 
 /** Rows per INSERT statement — the placement clone can now run to hundreds. */
 const INSERT_CHUNK = 500;
+
+/**
+ * The placement is on the calendar, but the earlier programs' sessions past
+ * its window could not be removed. Raised AFTER the placement has committed
+ * and never rolls it back: the route reports it with this message so the
+ * coach knows the program landed and what is left to do.
+ */
+export class PlacementSupersedeError extends Error {}
+
+/** The result every placement returns. `supersededThrough` is the furthest
+ *  day an earlier program's session was removed on, for the nutrition
+ *  cascade's `to`; null when nothing lay past the new window. */
+type PlacementResult = {
+  planId: string;
+  sessionsCreated: number;
+  eventsCreated: number;
+  supersededThrough: string | null;
+};
+
+/** The rows the placement RPC rewrites besides the new one: every live plan
+ *  starting on or before the new start is capped at the day before it, and a
+ *  same-day one archived (migration 167). Snapshotted before the RPC so a
+ *  failed clone can put them back exactly. */
+type EarlierPlanSnapshot = { id: string; effective_until: string; status: string };
+
+async function snapshotEarlierPlans(
+  clientId: string,
+  startDate: string,
+): Promise<EarlierPlanSnapshot[]> {
+  const { data, error } = await supabaseAdmin
+    .from("training_plans")
+    .select("id, effective_until, status")
+    .eq("client_id", clientId)
+    .is("deleted_at", null)
+    .neq("status", "archived")
+    .lte("effective_from", startDate);
+  if (error) throw new Error(`Failed to snapshot the client's earlier programs: ${error.message}`);
+  return data ?? [];
+}
 
 // --- Shape used by both DB-backed and inline (in-memory) placements ---
 
@@ -42,7 +82,7 @@ export async function placePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-}): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
+}): Promise<PlacementResult> {
   const { savedPlanId, coachId, clientId, startDate } = params;
 
   // 1. Fetch saved plan with sessions + exercises
@@ -76,7 +116,7 @@ export async function placeInlineEditedPlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-}): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
+}): Promise<PlacementResult> {
   const { plan, coachId, clientId, startDate } = params;
 
   const frequencyPerWeek = deriveFrequencyPerWeek(
@@ -252,9 +292,10 @@ async function snapshotWindowEvents(
 async function compensatePlacement(params: {
   newPlanId: string;
   snapshot: TrainingEventRow[];
+  earlierPlans: EarlierPlanSnapshot[];
   rootErr: unknown;
 }): Promise<never> {
-  const { newPlanId, snapshot, rootErr } = params;
+  const { newPlanId, snapshot, earlierPlans, rootErr } = params;
   const problems: string[] = [];
 
   const { error: evErr } = await supabaseAdmin
@@ -268,6 +309,20 @@ async function compensatePlacement(params: {
     .delete()
     .eq("id", newPlanId);
   if (planErr) problems.push(`plan cleanup: ${planErr.message}`);
+
+  // The RPC capped the earlier programs at the day before the start and
+  // archived a same-day one (migration 167); with the new plan gone their
+  // windows are theirs again. Row by row: this path is rare, and a partial
+  // restore is named below rather than hidden.
+  for (const earlier of earlierPlans) {
+    const { error: restoreErr } = await supabaseAdmin
+      .from("training_plans")
+      .update({ effective_until: earlier.effective_until, status: earlier.status })
+      .eq("id", earlier.id);
+    if (restoreErr) {
+      problems.push(`earlier plan restore (${earlier.id}): ${restoreErr.message}`);
+    }
+  }
 
   // The window is now clear of scheduled events (RPC deleted the old ones; the
   // step above deleted the new plan's). Re-insert the snapshot verbatim.
@@ -297,7 +352,7 @@ async function placePlaceablePlanOnCalendar(params: {
   coachId: string;
   clientId: string;
   startDate: string;
-}): Promise<{ planId: string; sessionsCreated: number; eventsCreated: number }> {
+}): Promise<PlacementResult> {
   const {
     plan: savedPlan,
     savedPlanId,
@@ -341,11 +396,13 @@ async function placePlaceablePlanOnCalendar(params: {
   // restore them. Floor at startDate (a superset of the RPC's GREATEST(from,
   // today) delete) so the restore is exact regardless of the today boundary.
   const windowSnapshot = await snapshotWindowEvents(clientId, startDate, endDate);
+  const earlierPlans = await snapshotEarlierPlans(clientId, startDate);
 
-  // 3. Additively insert the new plan as provenance and clear ONLY its own
-  //    future window (the RPC no longer archives prior plans or wipes the
-  //    calendar). Non-overlapping plans coexist; an overlapping placement wins
-  //    only on its contested dates.
+  // 3. Insert the new plan as provenance with its window on the row, clear its
+  //    own future window, cap every earlier live program at the day before the
+  //    start and archive a same-day one — one transaction (migration 167). The
+  //    earlier programs' sessions PAST this window are removed after the
+  //    commit, in step 6.
   const newPlanId = await createTrainingPlanAtomic({
     clientId,
     coachId,
@@ -511,17 +568,37 @@ async function placePlaceablePlanOnCalendar(params: {
     endDate,
   });
 
+  // 6. Supersede: the earlier programs' sessions from the start day onward go
+  //    — inside the window the RPC already removed them, past it they are the
+  //    stale tail a block carved out of a longer program used to leave. Logged
+  //    days are detached, not deleted. The placement is committed by now, so a
+  //    failure here is reported as such and never compensated.
+  const supersededThrough = await cancelFutureEventsForPlans(
+    earlierPlans.map((plan) => plan.id),
+    startDate,
+  ).catch((err: unknown) => {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new PlacementSupersedeError(
+      `The program is on the calendar, but the previous program's sessions from ${startDate} could not be removed (${detail}). Delete them from the calendar, or place the program again.`,
+    );
+  });
+
   return {
     planId: newPlanId,
     sessionsCreated: clonedSlots.filter((s) => !s.isRest).length,
     eventsCreated,
+    supersededThrough,
   };
   } catch (err) {
-    // Restore the calendar to its pre-placement state, then rethrow (never
-    // shadows the root cause; augments it if cleanup itself fails).
+    // A supersede failure is not a failed placement: the plan is committed and
+    // the message says so. Everything else restores the calendar to its
+    // pre-placement state, then rethrows (never shadows the root cause;
+    // augments it if cleanup itself fails).
+    if (err instanceof PlacementSupersedeError) throw err;
     return await compensatePlacement({
       newPlanId,
       snapshot: windowSnapshot,
+      earlierPlans,
       rootErr: err,
     });
   }
@@ -660,6 +737,6 @@ export async function placeSessionOnCalendar(params: {
   return { sessionId: clonedSession.id, eventId: event.id };
 }
 
-// The date-walk (generateProgramEvents) and window calculator
-// (calculatePlacementEndDate) live in ./program-event-walk — shared with the
-// plan-amendment writer, which resumes the walk mid-program via startPosition.
+// The date-walk (generateProgramEvents) and the window cap (resolveWindowCap)
+// live in ./program-event-walk — shared with the plan-amendment writer, which
+// resumes the walk mid-program via startPosition and grows under the same cap.

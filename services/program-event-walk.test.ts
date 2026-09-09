@@ -20,10 +20,10 @@ import { getNextPlanStartCap } from "./training-event-service";
 import { getBlockBoundForDate } from "./client-blocks-service";
 import {
   generateProgramEvents,
-  calculatePlacementEndDate,
   placementEndDate,
   expandProgramToWindow,
   resolvePlacementWindowEnd,
+  resolveWindowCap,
   type ProgramSlot,
 } from "./program-event-walk";
 
@@ -265,43 +265,11 @@ describe("program-event-walk", () => {
     });
   });
 
-  // =========================================================================
-  // calculatePlacementEndDate
-  // =========================================================================
-
   describe("placementEndDate", () => {
-    it("is start + max(1, slots) − 1, the arithmetic calculatePlacementEndDate shares", () => {
+    it("is start + max(1, slots) − 1, the length a placement asks for when no block stretches it", () => {
       expect(placementEndDate("2026-01-05", 0)).toBe("2026-01-05");
       expect(placementEndDate("2026-01-05", 1)).toBe("2026-01-05");
       expect(placementEndDate("2026-01-05", 28)).toBe("2026-02-01");
-    });
-  });
-
-  describe("calculatePlacementEndDate", () => {
-    it("window = slotCount days, one pass", async () => {
-      expect(
-        await calculatePlacementEndDate({
-          clientId: "client-1", slotCount: 14, startDate: "2026-07-01",
-        }),
-      ).toBe("2026-07-14");
-    });
-
-    it("clamps slotCount up to at least one day", async () => {
-      expect(
-        await calculatePlacementEndDate({
-          clientId: "client-1", slotCount: 0, startDate: "2026-07-01",
-        }),
-      ).toBe("2026-07-01");
-    });
-
-    it("caps at the next coexisting plan's start", async () => {
-      mockGetNextPlanStartCap.mockResolvedValue("2026-07-08");
-      expect(
-        await calculatePlacementEndDate({
-          clientId: "client-1", slotCount: 28, startDate: "2026-07-01",
-        }),
-      ).toBe("2026-07-08");
-      expect(mockGetNextPlanStartCap).toHaveBeenCalledWith("client-1", "2026-07-01");
     });
   });
 });
@@ -470,5 +438,60 @@ describe("expandProgramToWindow", () => {
   it("returns nothing for an empty program or an empty window", () => {
     expect(expandProgramToWindow([], 10)).toEqual([]);
     expect(expandProgramToWindow(authored, 0)).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// resolveWindowCap — the one bound placement and the amendment share.
+// ===========================================================================
+
+describe("resolveWindowCap", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetNextPlanStartCap.mockResolvedValue(null);
+    mockGetBlockBound.mockResolvedValue(null);
+  });
+
+  it("a covering block is the cap, and the placement stretches to it", async () => {
+    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-11-26" });
+    expect(await resolveWindowCap("client-1", "2026-09-07")).toEqual({
+      stretchesToCap: true,
+      cap: { endsOn: "2026-11-26", source: "block" },
+    });
+  });
+
+  it("a block after the date caps at the day before it, without stretching", async () => {
+    mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-10-05" });
+    expect(await resolveWindowCap("client-1", "2026-09-07")).toEqual({
+      stretchesToCap: false,
+      cap: { endsOn: "2026-10-04", source: "next_block" },
+    });
+  });
+
+  it("the next program wins when it starts before the block ends", async () => {
+    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-11-26" });
+    mockGetNextPlanStartCap.mockResolvedValue("2026-10-11");
+    expect(await resolveWindowCap("client-1", "2026-09-07")).toEqual({
+      stretchesToCap: true,
+      cap: { endsOn: "2026-10-11", source: "next_plan" },
+    });
+  });
+
+  it("a later next program does not shorten a block's cap", async () => {
+    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-11-26" });
+    mockGetNextPlanStartCap.mockResolvedValue("2026-12-31");
+    expect((await resolveWindowCap("client-1", "2026-09-07")).cap).toEqual({
+      endsOn: "2026-11-26",
+      source: "block",
+    });
+  });
+
+  it("nothing bounds a program with no block and no later program", async () => {
+    expect(await resolveWindowCap("client-1", "2026-09-07")).toEqual({
+      stretchesToCap: false,
+      cap: null,
+    });
+    expect(mockGetBlockBound).toHaveBeenCalledWith("client-1", "2026-09-07");
+    expect(mockGetNextPlanStartCap).toHaveBeenCalledWith("client-1", "2026-09-07");
   });
 });

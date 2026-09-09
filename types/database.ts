@@ -2573,7 +2573,7 @@ export type Database = {
           deleted_at: string | null
           description: string | null
           effective_from: string
-          effective_until: string | null
+          effective_until: string
           frequency_per_week: number
           id: string
           name: string
@@ -2602,7 +2602,7 @@ export type Database = {
           deleted_at?: string | null
           description?: string | null
           effective_from?: string
-          effective_until?: string | null
+          effective_until: string
           frequency_per_week: number
           id?: string
           name?: string
@@ -2631,7 +2631,7 @@ export type Database = {
           deleted_at?: string | null
           description?: string | null
           effective_from?: string
-          effective_until?: string | null
+          effective_until?: string
           frequency_per_week?: number
           id?: string
           name?: string

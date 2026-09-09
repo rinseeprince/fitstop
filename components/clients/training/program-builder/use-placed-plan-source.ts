@@ -110,6 +110,7 @@ export function usePlacedPlanSource(params: {
       enabled && error ? "This plan couldn't be loaded for editing" : null,
     ...seedInfo,
     futureModifiedEvents: placedPlan?.futureModifiedEvents ?? [],
+    windowCap: placedPlan?.windowCap ?? null,
     discard,
     reload,
     refreshToken,

@@ -5,12 +5,14 @@ import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import { fetchVisibleExerciseIds } from "./library-placement-service";
 import {
   generateProgramEvents,
-  calculatePlacementEndDate,
+  placementEndDate,
+  resolveWindowCap,
   type ProgramSlot,
+  type WindowCap,
 } from "./program-event-walk";
 import { mapExerciseRow } from "./training-mappers";
 import { fetchAllPages, fetchAllByChunkedIds, chunkIds } from "@/lib/paged-fetch";
-import { differenceInDays } from "@/lib/date-helpers";
+import { addDaysToDateString, differenceInDays } from "@/lib/date-helpers";
 import type { z } from "zod";
 import type { savedSessionInputSchema } from "@/lib/validations/training";
 import type { TrainingExercise } from "@/types/training";
@@ -42,6 +44,19 @@ export type AmendSessionInput = z.infer<typeof savedSessionInputSchema>;
 export class AmendmentConflictError extends Error {} // → 409
 export class AmendmentValidationError extends Error {} // → 422
 export class AmendmentEmptyFutureError extends AmendmentValidationError {} // → 422
+
+/** The sentence a coach reads when the grid reaches past its cap. */
+function windowCapMessage(cap: WindowCap): string {
+  const dayAfter = addDaysToDateString(cap.endsOn, 1);
+  switch (cap.source) {
+    case "block":
+      return `This program's block ends on ${cap.endsOn} — remove the weeks past it.`;
+    case "next_block":
+      return `The next block starts on ${dayAfter} — remove the weeks that reach into it.`;
+    case "next_plan":
+      return `The next program starts on ${dayAfter} — remove the weeks that reach into it.`;
+  }
+}
 
 // One string for both belts: the GET refuses to open the editor and the PUT
 // refuses to save. They must not drift — a coach who gets past the first and
@@ -89,6 +104,10 @@ export type PlacedPlanForBuilder = {
   };
   clientToday: string;
   windowEnd: string;
+  /** What bounds the program's growth from the editor — the block it was
+   *  placed in, the next block, or the next program — or null when nothing
+   *  does. The grid may keep its current end but may not grow past this. */
+  windowCap: WindowCap | null;
   isFullyPast: boolean;
   amendmentToken: string;
   sessions: PlacedSlotRead[];
@@ -337,11 +356,10 @@ export async function getPlacedPlanForBuilder(
   }
 
   const effectiveFrom = planRow.effective_from;
-  const windowEnd = await calculatePlacementEndDate({
-    clientId,
-    slotCount: sessionRows.length,
-    startDate: effectiveFrom,
-  });
+  // The window is the row (migration 167): the same end the client's app, the
+  // Overview and the hero read.
+  const windowEnd = planRow.effective_until;
+  const { cap: windowCap } = await resolveWindowCap(clientId, effectiveFrom);
   const floor = effectiveFrom > clientToday ? effectiveFrom : clientToday;
   const deleteCandidates = await fetchDeleteCandidates(clientId, planId, floor, windowEnd);
 
@@ -359,6 +377,7 @@ export async function getPlacedPlanForBuilder(
     },
     clientToday,
     windowEnd,
+    windowCap,
     isFullyPast: windowEnd < clientToday,
     amendmentToken: computeAmendmentToken({
       planUpdatedAt: planRow.updated_at,
@@ -437,11 +456,7 @@ export async function amendPlacedPlanFuture(params: {
   //    here: extending an ended plan is blocked ("apply a new program" is the
   //    gesture — decision 8).
   const currentRows = await fetchSlotRows(planId);
-  const currentWindowEnd = await calculatePlacementEndDate({
-    clientId,
-    slotCount: currentRows.length,
-    startDate: effectiveFrom,
-  });
+  const currentWindowEnd = plan.effective_until;
   if (currentWindowEnd < floor) {
     throw new AmendmentEmptyFutureError(
       "This plan has already ended — apply a new program instead",
@@ -478,13 +493,16 @@ export async function amendPlacedPlanFuture(params: {
     );
   }
 
-  // 5. Recompute the window for the NEW grid (next-plan cap re-applied — a
-  //    program can grow only into uncapped space).
-  const windowEnd = await calculatePlacementEndDate({
-    clientId,
-    slotCount: sessions.length,
-    startDate: effectiveFrom,
-  });
+  // 5. The window for the NEW grid is the grid: its rows end it (migration
+  //    167). It may keep the end it has, but it may not GROW past the cap
+  //    placement takes — the block it was placed in, the next block, or the
+  //    next program (owner, 2026-09-10) — and a grid reaching past that is
+  //    refused with the date rather than cut silently.
+  const windowEnd = placementEndDate(effectiveFrom, sessions.length);
+  const { cap } = await resolveWindowCap(clientId, effectiveFrom);
+  if (cap && windowEnd > cap.endsOn && windowEnd > currentWindowEnd) {
+    throw new AmendmentValidationError(windowCapMessage(cap));
+  }
   if (windowEnd < floor) {
     throw new AmendmentEmptyFutureError(
       "The plan window ends before today — nothing future to amend",
@@ -732,10 +750,11 @@ export async function amendPlacedPlanFuture(params: {
     });
 
     // 12. Plan meta. The updated_at bump invalidates every other holder's token.
-    //     effective_until stays untouched (plan resolution unchanged).
+    //     The window follows the rows (migration 167).
     const { error: metaError } = await supabaseAdmin
       .from("training_plans")
       .update({
+        effective_until: windowEnd,
         program_duration_weeks: sessions.length / 7,
         frequency_per_week: deriveFrequencyPerWeek(
           sessions.map((s) => ({ weekIndex: s.weekIndex, isRest: s.isRest })),

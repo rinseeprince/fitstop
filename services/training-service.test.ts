@@ -11,9 +11,7 @@ vi.mock("./today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
 
-// Only the next-plan cap is stubbed, so calculatePlacementEndDate — the shared
-// definition of the day a program ends — runs for real underneath the horizon
-// read below.
+// The next-plan cap is stubbed for the placement-time reads that still ask it.
 vi.mock("./training-event-service", () => ({
   getNextPlanStartCap: vi.fn().mockResolvedValue(null),
 }));
@@ -110,6 +108,7 @@ describe("date-driven plan resolution", () => {
       neq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
       lte: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
       gt: vi.fn().mockReturnThis(),
       or: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
@@ -163,6 +162,7 @@ describe("date-driven plan resolution", () => {
         id: "plan-queued",
         name: "Hypertrophy Block",
         effective_from: "2026-06-20",
+        effective_until: "2026-08-14",
         split_type: "upper_lower",
         frequency_per_week: 4,
         program_duration_weeks: 8,
@@ -177,6 +177,7 @@ describe("date-driven plan resolution", () => {
       id: "plan-queued",
       name: "Hypertrophy Block",
       effectiveFrom: "2026-06-20",
+      effectiveUntil: "2026-08-14",
       splitType: "upper_lower",
       frequencyPerWeek: 4,
       programDurationWeeks: 8,
@@ -208,16 +209,6 @@ describe("date-driven plan resolution", () => {
   });
 });
 
-// ===========================================================================
-// getFurthestLiveProgramEnd — the SECOND term of the nutrition generation
-// horizon, used when the client has no block declaring a bound.
-//
-// The end is derived from the program's authored day-count, NOT from
-// `effective_until`: nothing has ever written that column (the placement RPC
-// omits it deliberately), so reading it would leave the horizon frozen at the
-// fixed window for every client alive.
-// ===========================================================================
-
 describe("getLiveProgramWindowsForClients — the attention feed's cross-client read", () => {
   type Calls = Record<string, unknown[][]>;
 
@@ -239,26 +230,22 @@ describe("getLiveProgramWindowsForClients — the attention feed's cross-client 
     return calls;
   }
 
-  const plan = (
-    client_id: string,
-    id: string,
-    effective_from: string,
-    count: number,
-    created_at = "2026-08-01T09:00:00Z",
-  ) => ({ id, client_id, effective_from, created_at, training_sessions: [{ count }] });
+  const plan = (client_id: string, effective_from: string, effective_until: string) => ({
+    client_id,
+    effective_from,
+    effective_until,
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("caps an older program at the day before the next later-starting one", async () => {
-    // 56 slots from 7 Sep would run to 1 Nov, but a program placed from 5 Oct
-    // took those days: the older plan's slot rows stay active (the parked
-    // orphan-rows item) while its events there are gone, so uncapped it would
-    // claim days it no longer has. Same rule as getNextPlanStartCap.
+  it("reads every live window off the rows — nothing derived, nothing capped in memory (migration 167)", async () => {
+    // A placement inside an older program capped that program's row at the
+    // day before its own start, so the rows already carry the cap.
     windowsQuery([
-      plan("c1", "p-old", "2026-09-07", 56),
-      plan("c1", "p-new", "2026-10-05", 28),
+      plan("c1", "2026-09-07", "2026-10-04"),
+      plan("c1", "2026-10-05", "2026-11-01"),
     ]);
 
     expect(await getLiveProgramWindowsForClients(["c1"])).toEqual([
@@ -267,48 +254,21 @@ describe("getLiveProgramWindowsForClients — the attention feed's cross-client 
     ]);
   });
 
-  it("caps at a LATER start only — two programs placed for the same day both keep their own end", async () => {
-    // A correction placed over a queued program shares its start. The cap
-    // predicate is strictly later (`getNextPlanStartCap` is `.gt`), so neither
-    // is capped; the feed unions the windows and reads the longer coverage.
-    windowsQuery([
-      plan("c1", "p-b", "2026-10-05", 28, "2026-09-02T09:00:00Z"),
-      plan("c1", "p-a", "2026-10-05", 14, "2026-09-01T09:00:00Z"),
-    ]);
-
-    expect(await getLiveProgramWindowsForClients(["c1"])).toEqual([
-      { clientId: "c1", start: "2026-10-05", end: "2026-10-18" },
-      { clientId: "c1", start: "2026-10-05", end: "2026-11-01" },
-    ]);
-  });
-
-  it("gives a program with no active slot rows a one-day window, like calculatePlacementEndDate", async () => {
-    windowsQuery([
-      plan("c1", "p-empty", "2026-09-14", 0),
-      { id: "p-none", client_id: "c2", effective_from: "2026-09-21", created_at: "2026-08-01T09:00:00Z", training_sessions: [] },
-    ]);
-
-    expect(await getLiveProgramWindowsForClients(["c1", "c2"])).toEqual([
-      { clientId: "c1", start: "2026-09-14", end: "2026-09-14" },
-      { clientId: "c2", start: "2026-09-21", end: "2026-09-21" },
-    ]);
-  });
-
-  it("keeps clients apart and reads with the live predicates and the filtered embedded count", async () => {
+  it("keeps clients apart and reads with the live predicates and no embedded count", async () => {
     const calls = windowsQuery([
-      plan("c1", "p-1", "2026-09-07", 7),
-      plan("c2", "p-2", "2026-09-28", 21),
+      plan("c1", "2026-09-07", "2026-09-13"),
+      plan("c2", "2026-09-28", "2026-10-18"),
     ]);
 
     expect(await getLiveProgramWindowsForClients(["c1", "c2"])).toEqual([
       { clientId: "c1", start: "2026-09-07", end: "2026-09-13" },
       { clientId: "c2", start: "2026-09-28", end: "2026-10-18" },
     ]);
-    expect(calls.select).toEqual([["id, client_id, effective_from, created_at, training_sessions(count)"]]);
+    expect(calls.select).toEqual([["client_id, effective_from, effective_until"]]);
     expect(calls.in).toEqual([["client_id", ["c1", "c2"]]]);
     expect(calls.is).toEqual([["deleted_at", null]]);
     expect(calls.neq).toEqual([["status", "archived"]]);
-    expect(calls.eq).toEqual([["training_sessions.is_active", true]]);
+    expect(calls.eq).toBeUndefined();
   });
 
   it("reads nothing for no ids", async () => {
@@ -326,73 +286,51 @@ describe("getFurthestLiveProgramEnd", () => {
       eq: vi.fn().mockReturnThis(),
       neq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
       lte: vi.fn().mockReturnThis(),
       gt: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
       maybeSingle: vi.fn().mockResolvedValue(result),
     };
   }
 
-  function slotCountQuery(result: { count: number | null; error: unknown }) {
-    const q: Record<string, unknown> = {};
-    Object.assign(q, {
-      select: vi.fn(() => q),
-      eq: vi.fn(() => q),
-      then: (resolve: (v: typeof result) => void) =>
-        Promise.resolve(result).then(resolve),
-    });
-    return q as ReturnType<typeof planQuery> & { then: unknown };
-  }
-
-  /** The plan read, then the slot count — in call order. */
-  function wire(
-    plan: { data?: unknown; error: unknown },
-    slots: { count: number | null; error: unknown },
-  ) {
+  function wire(plan: { data?: unknown; error: unknown }) {
     const planQ = planQuery(plan);
-    const slotQ = slotCountQuery(slots);
-    let call = 0;
-    vi.mocked(supabaseAdmin.from).mockImplementation((() => {
-      call += 1;
-      return call === 1 ? planQ : slotQ;
-    }) as never);
-    return { planQ, slotQ };
+    vi.mocked(supabaseAdmin.from).mockReturnValue(planQ as never);
+    return planQ;
   }
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("derives the end from the authored day-count, never from effective_until", async () => {
-    // 36 authored days from 2026-09-07 runs to 2026-10-12 inclusive.
-    wire({ data: { id: "plan-36", effective_from: "2026-09-07" }, error: null }, {
-      count: 36,
-      error: null,
-    });
+  it("reads the furthest live end on or after the anchor off the row — one read, nothing counted", async () => {
+    const planQ = wire({ data: { effective_until: "2026-10-12" }, error: null });
 
     expect(await getFurthestLiveProgramEnd("client-1", ANCHOR)).toBe("2026-10-12");
+
+    expect(planQ.select).toHaveBeenCalledWith("effective_until");
+    expect(planQ.gte).toHaveBeenCalledWith("effective_until", ANCHOR);
+    expect(planQ.order).toHaveBeenCalledWith("effective_until", { ascending: false });
+    expect(planQ.limit).toHaveBeenCalledWith(1);
+    expect(supabaseAdmin.from).toHaveBeenCalledTimes(1);
   });
 
-  it("counts a program queued to start later — no date predicate on the read", async () => {
-    // Placed on the 4th to begin on the 19th, 84 days long: it must stretch the
-    // horizon to 2026-12-11 exactly as a running program would.
-    const { planQ } = wire(
-      { data: { id: "plan-84", effective_from: "2026-09-19" }, error: null },
-      { count: 84, error: null },
-    );
+  it("counts a program queued to start later — no start predicate on the read", async () => {
+    const planQ = wire({ data: { effective_until: "2026-12-11" }, error: null });
 
     expect(await getFurthestLiveProgramEnd("client-1", ANCHOR)).toBe("2026-12-11");
 
-    // A `covers today` filter of any shape would drop it entirely.
+    // A `covers today` filter of any shape would drop a queued program.
     expect(planQ.lte).not.toHaveBeenCalled();
     expect(planQ.gt).not.toHaveBeenCalled();
   });
 
   it("excludes soft-deleted and archived programs", async () => {
     // The copy that forgot the archived clause re-surfaced retired plans as the
-    // client's current program; the horizon must not inherit that.
-    const { planQ } = wire({ data: null, error: null }, { count: null, error: null });
+    // client's current program; the bound must not inherit that.
+    const planQ = wire({ data: null, error: null });
 
     await getFurthestLiveProgramEnd("client-1", ANCHOR);
 
@@ -400,40 +338,15 @@ describe("getFurthestLiveProgramEnd", () => {
     expect(planQ.neq).toHaveBeenCalledWith("status", "archived");
   });
 
-  it("measures the LAST-STARTING program, which is provably the furthest end", async () => {
-    // Placement caps a program at the day before the next one begins, so ends
-    // increase with start dates: whichever starts last ends last.
-    const { planQ } = wire(
-      { data: { id: "plan-late", effective_from: "2026-09-14" }, error: null },
-      { count: 21, error: null },
-    );
-
-    expect(await getFurthestLiveProgramEnd("client-1", ANCHOR)).toBe("2026-10-04");
-
-    expect(planQ.order).toHaveBeenCalledWith("effective_from", { ascending: false });
-    expect(planQ.limit).toHaveBeenCalledWith(1);
-  });
-
-  it("returns null when the furthest program has already finished", async () => {
-    // 14 days from 2026-08-05 ended on 2026-08-18, behind the anchor — it must
-    // not drag the horizon backwards past the day generation starts.
-    wire({ data: { id: "plan-done", effective_from: "2026-08-05" }, error: null }, {
-      count: 14,
-      error: null,
-    });
-
-    expect(await getFurthestLiveProgramEnd("client-1", ANCHOR)).toBeNull();
-  });
-
-  it("returns null when the client has no live program", async () => {
-    wire({ data: null, error: null }, { count: null, error: null });
+  it("returns null when no live program reaches the anchor", async () => {
+    wire({ data: null, error: null });
 
     expect(await getFurthestLiveProgramEnd("client-1", ANCHOR)).toBeNull();
   });
 
   it("degrades to null on a read error rather than throwing", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    wire({ data: null, error: { message: "boom" } }, { count: null, error: null });
+    wire({ data: null, error: { message: "boom" } });
 
     await expect(getFurthestLiveProgramEnd("client-1", ANCHOR)).resolves.toBeNull();
     expect(consoleError).toHaveBeenCalled();

@@ -15,15 +15,11 @@ vi.mock("./today-service", () => ({
 vi.mock("./training-service", () => ({
   getNextFutureTrainingPlan: vi.fn(),
 }));
-vi.mock("./program-event-walk", () => ({
-  calculatePlacementEndDate: vi.fn(),
-}));
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTrainingPlan } from "./client-training-plan-service";
 import { getClientTodayString } from "./today-service";
 import { getNextFutureTrainingPlan } from "./training-service";
-import { calculatePlacementEndDate } from "./program-event-walk";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 
@@ -45,6 +41,7 @@ function awaitableQuery<T>(result: MockResult<T>) {
     // one short page ends the loop.
     range: vi.fn().mockReturnThis(),
     lte: vi.fn().mockReturnThis(),
+    gte: vi.fn().mockReturnThis(),
     or: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue(result),
   };
@@ -60,8 +57,6 @@ describe("client-training-plan-service", () => {
     vi.clearAllMocks();
     vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
     vi.mocked(getNextFutureTrainingPlan).mockResolvedValue(null);
-    // Default: the program's window comfortably covers today.
-    vi.mocked(calculatePlacementEndDate).mockResolvedValue("2026-12-31");
   });
 
   /** plan → sessions → exercises, dispatched by table. */
@@ -108,18 +103,17 @@ describe("client-training-plan-service", () => {
       expect(planQuery.eq).toHaveBeenCalledWith("status", "active");
       expect(planQuery.is).toHaveBeenCalledWith("deleted_at", null);
       expect(planQuery.lte).toHaveBeenCalledWith("effective_from", TODAY);
-      expect(planQuery.or).toHaveBeenCalledWith(
-        `effective_until.gte.${TODAY},effective_until.is.null`
-      );
+      expect(planQuery.gte).toHaveBeenCalledWith("effective_until", TODAY);
       expect(planQuery.order).toHaveBeenCalledWith("effective_from", { ascending: false });
       expect(planQuery.order).toHaveBeenCalledWith("created_at", { ascending: false });
     });
 
-    it("never filters on effective_until IS NULL (nothing writes it; the window covers it)", async () => {
+    it("reads both ends off the row — no open-window arm (migration 167)", async () => {
       const { planQuery } = mockTables({ plan: null });
 
       await getClientTrainingPlan(CLIENT_ID);
 
+      expect(planQuery.gte).toHaveBeenCalledWith("effective_until", TODAY);
       expect(planQuery.is).not.toHaveBeenCalledWith("effective_until", null);
     });
 
@@ -135,11 +129,15 @@ describe("client-training-plan-service", () => {
   });
 
   describe("lifecycle state", () => {
-    const started = { id: "plan-1", name: "Running", effective_from: "2026-07-01" };
+    const started = {
+      id: "plan-1",
+      name: "Running",
+      effective_from: "2026-07-01",
+      effective_until: "2026-08-11",
+    };
 
     it("labels a program whose window covers today as active", async () => {
-      vi.mocked(calculatePlacementEndDate).mockResolvedValue("2026-08-11");
-      mockTables({ plan: started });
+            mockTables({ plan: { ...started, effective_until: "2026-08-11" } });
 
       const result = await getClientTrainingPlan(CLIENT_ID);
 
@@ -153,8 +151,7 @@ describe("client-training-plan-service", () => {
     });
 
     it("labels a program whose last day has passed as ended", async () => {
-      vi.mocked(calculatePlacementEndDate).mockResolvedValue("2026-07-26");
-      mockTables({ plan: started });
+            mockTables({ plan: { ...started, effective_until: "2026-07-26" } });
 
       const result = await getClientTrainingPlan(CLIENT_ID);
 
@@ -162,8 +159,7 @@ describe("client-training-plan-service", () => {
     });
 
     it("stays active on the program's final day (boundary is inclusive)", async () => {
-      vi.mocked(calculatePlacementEndDate).mockResolvedValue(TODAY);
-      mockTables({ plan: started });
+            mockTables({ plan: { ...started, effective_until: TODAY } });
 
       const result = await getClientTrainingPlan(CLIENT_ID);
 
@@ -175,11 +171,11 @@ describe("client-training-plan-service", () => {
         id: "plan-2",
         name: "Next block",
         effectiveFrom: "2026-08-17",
+        effectiveUntil: "2026-09-13",
         splitType: "ppl",
         frequencyPerWeek: 4,
         programDurationWeeks: 4,
       });
-      vi.mocked(calculatePlacementEndDate).mockResolvedValue("2026-09-13");
       mockTables({ plan: null });
 
       const result = await getClientTrainingPlan(CLIENT_ID);
@@ -188,27 +184,28 @@ describe("client-training-plan-service", () => {
         planId: "plan-2",
         state: "upcoming",
         startsOn: "2026-08-17",
+        endsOn: "2026-09-13",
       });
     });
 
     it("prefers a queued program over an ended one — live information beats history", async () => {
-      vi.mocked(calculatePlacementEndDate).mockResolvedValue("2026-07-20");
       vi.mocked(getNextFutureTrainingPlan).mockResolvedValue({
         id: "plan-2",
         name: "Next block",
         effectiveFrom: "2026-08-17",
+        effectiveUntil: "2026-09-13",
         splitType: "ppl",
         frequencyPerWeek: 4,
         programDurationWeeks: 4,
       });
-      mockTables({ plan: started });
+      mockTables({ plan: { ...started, effective_until: "2026-07-20" } });
 
       const result = await getClientTrainingPlan(CLIENT_ID);
 
       expect(result).toMatchObject({ planId: "plan-2", state: "upcoming" });
     });
 
-    it("derives the window from the slot count, matching the amendment surface", async () => {
+    it("reads the end from the row, never from the slot count", async () => {
       mockTables({
         plan: started,
         sessions: [
@@ -217,14 +214,11 @@ describe("client-training-plan-service", () => {
         ],
       });
 
-      await getClientTrainingPlan(CLIENT_ID);
+      const result = await getClientTrainingPlan(CLIENT_ID);
 
-      // Rest rows count — they consume a date on the walk.
-      expect(calculatePlacementEndDate).toHaveBeenCalledWith({
-        clientId: CLIENT_ID,
-        slotCount: 2,
-        startDate: "2026-07-01",
-      });
+      // Two slot rows would have read as a two-day program under the old
+      // derivation; the row says six weeks (migration 167), and the row wins.
+      expect(result!.endsOn).toBe("2026-08-11");
     });
   });
 
@@ -233,6 +227,7 @@ describe("client-training-plan-service", () => {
       id: "plan-1",
       name: "My Plan",
       effective_from: "2026-07-01",
+      effective_until: "2026-08-11",
     };
     const sessionRows = [
       {

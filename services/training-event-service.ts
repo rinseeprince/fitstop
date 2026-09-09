@@ -3,7 +3,7 @@ import type { TrainingEvent, TrainingEventStatus, TrainingEventSummary } from "@
 import type { SessionCompletionQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
-import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
+import { fetchAllByChunkedIds, chunkIds } from "@/lib/paged-fetch";
 
 // --- Row mapper ---
 
@@ -161,31 +161,48 @@ export async function cancelFutureEventsForPlan(
 ): Promise<string | null> {
   // UTC fallback only: no clientId in scope to resolve a client-local today,
   // and the live callers pass an explicit (client-local) date.
-  const fromDate = effectiveFrom ?? getTodayDateString();
+  return cancelFutureEventsForPlans([planId], effectiveFrom ?? getTodayDateString());
+}
 
-  const { error: detachError } = await supabaseAdmin
-    .from("training_events")
-    .update({ training_plan_id: null, updated_at: new Date().toISOString() })
-    .eq("training_plan_id", planId)
-    .gte("date", fromDate)
-    .neq("status", "scheduled");
+/**
+ * The set form of `cancelFutureEventsForPlan`: the same two statements, in the
+ * same order, over every plan in `planIds` at once, chunked so the id list
+ * stays under the request-line ceiling. A placement supersedes every earlier
+ * program of the client from its start day (migration 167), and a client
+ * re-placed monthly for a year has a dozen of them — two round trips per plan
+ * would make placement scale with the client's history (CONVENTIONS §2,
+ * performance 7). Returns the furthest date deleted across the set, or null.
+ */
+export async function cancelFutureEventsForPlans(
+  planIds: string[],
+  fromDate: string
+): Promise<string | null> {
+  let furthest: string | null = null;
+  for (const chunk of chunkIds(planIds)) {
+    const { error: detachError } = await supabaseAdmin
+      .from("training_events")
+      .update({ training_plan_id: null, updated_at: new Date().toISOString() })
+      .in("training_plan_id", chunk)
+      .gte("date", fromDate)
+      .neq("status", "scheduled");
 
-  if (detachError) throw detachError;
+    if (detachError) throw detachError;
 
-  const { data: deleted, error: deleteError } = await supabaseAdmin
-    .from("training_events")
-    .delete()
-    .eq("training_plan_id", planId)
-    .gte("date", fromDate)
-    .eq("status", "scheduled")
-    .select("date");
+    const { data: deleted, error: deleteError } = await supabaseAdmin
+      .from("training_events")
+      .delete()
+      .in("training_plan_id", chunk)
+      .gte("date", fromDate)
+      .eq("status", "scheduled")
+      .select("date");
 
-  if (deleteError) throw deleteError;
+    if (deleteError) throw deleteError;
 
-  return (deleted ?? []).reduce<string | null>(
-    (furthest, row) => (furthest === null || row.date > furthest ? row.date : furthest),
-    null,
-  );
+    for (const row of deleted ?? []) {
+      if (furthest === null || row.date > furthest) furthest = row.date;
+    }
+  }
+  return furthest;
 }
 
 // --- Regenerate future events ---
@@ -198,12 +215,11 @@ export async function cancelFutureEventsForPlan(
  * event generation so a plan (especially a no-duration one falling back to the
  * 8-week default) never bleeds past the start of a later coexisting plan.
  *
- * Scoped to non-deleted, non-archived rows: the archived filter only matters
- * for pre-migration legacy rows (nothing archives under the new model) but
- * stops a stale archived plan with a later start from over-shortening a live
- * plan's window. Strict `>` is deliberate: two plans sharing the exact same
- * effective_from do NOT cap each other (a degenerate same-day double-placement
- * is a known no-cap case, not a surprise).
+ * Scoped to non-deleted, non-archived rows: a deleted program is archived, a
+ * program superseded on its own start day is archived by the placement RPC
+ * (migration 167), and neither may shorten a live plan's window. Strict `>`
+ * is deliberate: it keeps a plan from capping itself, and since 167 no two
+ * LIVE plans of a client share a start.
  */
 export async function getNextPlanStartCap(
   clientId: string,

@@ -12,6 +12,7 @@ vi.mock("./nutrition-event-service", () => ({
   regenerateFutureNutritionEvents: vi.fn(),
 }));
 vi.mock("./nutrition-plan-service", () => ({ getNextNutritionVersionStartCap: vi.fn() }));
+vi.mock("./training-event-service", () => ({ getNextPlanStartCap: vi.fn().mockResolvedValue(null) }));
 vi.mock("./event-deletion-floor", () => ({ resolveEventDeletionFloor: vi.fn() }));
 vi.mock("./nutrition-plan-orchestrator", () => ({
   orchestrateNutritionPlanCreation: vi.fn(),
@@ -21,6 +22,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { generateProgramEvents } from "./program-event-walk";
 import { regenerateFutureNutritionEvents } from "./nutrition-event-service";
 import { getNextNutritionVersionStartCap } from "./nutrition-plan-service";
+import { getNextPlanStartCap } from "./training-event-service";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { orchestrateNutritionPlanCreation } from "./nutrition-plan-orchestrator";
 import {
@@ -165,6 +167,47 @@ describe("extendTrainingToBlockEnd", () => {
     const rows = insertQ.insert.mock.calls[0][0] as Array<{ name: string }>;
     expect(rows).toHaveLength(1);
     expect(rows[0].name).toBe("Rest");
+  });
+
+  it("writes the block's new end onto the row BEFORE laying the events (migration 167)", async () => {
+    const { insertQ } = wire(
+      { id: "p1", effective_from: "2026-09-01", authored_slot_count: 3 },
+      [{ id: "n0", week_index: 1, order_index: 0 }]
+    );
+
+    await extendTrainingToBlockEnd({
+      clientId: "c1", clientToday: TODAY,
+      blockStartsOn: "2026-09-01", blockEndsOn: "2026-09-06",
+    });
+
+    // The harness hands every call after the slot read the insert query, so
+    // the row update lands on it: the end is the block's, and it is written
+    // before the walk runs.
+    expect(insertQ.update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-09-06" })
+    );
+    expect(insertQ.update.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(generateProgramEvents).mock.invocationCallOrder[0]
+    );
+  });
+
+  it("stops at the day before a program queued inside the block — the cap every placement takes", async () => {
+    vi.mocked(getNextPlanStartCap).mockResolvedValueOnce("2026-09-04");
+    const { insertQ } = wire(
+      { id: "p1", effective_from: "2026-09-01", authored_slot_count: 3 },
+      [{ id: "n0", week_index: 1, order_index: 0 }]
+    );
+
+    const result = await extendTrainingToBlockEnd({
+      clientId: "c1", clientToday: TODAY,
+      blockStartsOn: "2026-09-01", blockEndsOn: "2026-09-30",
+    });
+
+    // 5 placed days from 1 Sep reach 5 Sep already; a cap at 4 Sep leaves
+    // nothing to add.
+    expect(result).toBeNull();
+    expect(insertQ.insert).not.toHaveBeenCalled();
+    expect(getNextPlanStartCap).toHaveBeenCalledWith("c1", "2026-09-01");
   });
 
   it("continues the grid's coordinates so the new rows sort after every existing one", async () => {
@@ -346,11 +389,14 @@ describe("clearEventsOutsideBlock", () => {
   it("pulls a version reaching past the new end back to it, and retires one starting in the cleared stretch (migration 166)", async () => {
     const capQuery = query({ data: null, error: null });
     const retireQuery = query({ data: null, error: null });
+    const trainingCapQuery = query({ data: null, error: null });
+    const trainingRetireQuery = query({ data: null, error: null });
     wireTables({
       client_phases: [query({ data: { starts_on: "2026-11-01" }, error: null })],
       training_events: [query({ data: [], error: null })],
       nutrition_events: [query({ data: [], error: null })],
       nutrition_plans: [capQuery, retireQuery],
+      training_plans: [trainingCapQuery, trainingRetireQuery],
     });
 
     await clearEventsOutsideBlock({
@@ -372,15 +418,32 @@ describe("clearEventsOutsideBlock", () => {
     );
     expect(retireQuery.gt).toHaveBeenCalledWith("effective_from", "2026-10-05");
     expect(retireQuery.lte).toHaveBeenCalledWith("effective_from", "2026-10-31");
+    // The training programs follow their days too (migration 167): a live one
+    // reaching past the new end is pulled back, a queued one in the cleared
+    // stretch is archived — the same two statements, on the other track.
+    expect(trainingCapQuery.update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-10-05" })
+    );
+    expect(trainingCapQuery.is).toHaveBeenCalledWith("deleted_at", null);
+    expect(trainingCapQuery.neq).toHaveBeenCalledWith("status", "archived");
+    expect(trainingCapQuery.lte).toHaveBeenCalledWith("effective_from", "2026-10-05");
+    expect(trainingCapQuery.gt).toHaveBeenCalledWith("effective_until", "2026-10-05");
+    expect(trainingRetireQuery.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "archived" })
+    );
+    expect(trainingRetireQuery.gt).toHaveBeenCalledWith("effective_from", "2026-10-05");
+    expect(trainingRetireQuery.lte).toHaveBeenCalledWith("effective_from", "2026-10-31");
   });
 
   it("with nothing past the block, still pulls the versions back and retires none", async () => {
     const capQuery = query({ data: null, error: null });
+    const trainingCapQuery = query({ data: null, error: null });
     wireTables({
       client_phases: [query({ data: null, error: null })],
       training_events: [query({ data: null, error: null })],
       nutrition_events: [query({ data: null, error: null })],
       nutrition_plans: [capQuery],
+      training_plans: [trainingCapQuery],
     });
 
     const cleared = await clearEventsOutsideBlock({
@@ -391,8 +454,11 @@ describe("clearEventsOutsideBlock", () => {
     expect(capQuery.update).toHaveBeenCalledWith(
       expect.objectContaining({ effective_until: "2026-10-05" })
     );
-    // No ceiling → no day removal and no retirement: probes + the one cap.
-    expect(mockFrom).toHaveBeenCalledTimes(4);
+    expect(trainingCapQuery.update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-10-05" })
+    );
+    // No ceiling → no day removal and no retirement: probes + one cap per track.
+    expect(mockFrom).toHaveBeenCalledTimes(5);
   });
 });
 

@@ -8,7 +8,6 @@ import type {
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { coversDate } from "./training-plan-window";
-import { calculatePlacementEndDate } from "./program-event-walk";
 import { getNextFutureTrainingPlan, type NextFutureTrainingPlan } from "./training-service";
 import { getClientTodayString } from "./today-service";
 
@@ -77,7 +76,7 @@ function mapSession(
   };
 }
 
-type ResolvedPlanRow = { id: string; name: string; effective_from: string };
+type ResolvedPlanRow = { id: string; name: string; effective_from: string; effective_until: string };
 
 /**
  * The program whose window has already opened — newest start wins, `created_at`
@@ -92,7 +91,7 @@ async function fetchStartedPlan(
   const { data, error } = await coversDate(
     supabaseAdmin
       .from("training_plans")
-      .select("id, name, effective_from")
+      .select("id, name, effective_from, effective_until")
       .eq("client_id", clientId)
       .eq("status", "active")
       .is("deleted_at", null),
@@ -110,12 +109,12 @@ async function fetchStartedPlan(
 /**
  * Client-facing read of the training plan a client is on.
  *
- * **Resolution is by DATE, not by creation order.** Placement is additive, so a
- * client can hold several coexisting `status='active'` rows, and nothing ever
- * writes `effective_until` — the old "newest created, no end date" predicate
- * therefore answered a different question from the coach side and got both ends
- * wrong: a program placed to start next month became the client's current one
- * the moment it was created, and a finished program stayed current forever.
+* **Resolution is by DATE, not by creation order.** Placement is additive, so a
+ * client can hold several coexisting `status='active'` rows, and both ends are
+ * on the row (migration 167) — the old "newest created, no end date" predicate
+ * answered a different question from the coach side and got both ends wrong: a
+ * program placed to start next month became the client's current one the moment
+ * it was created, and a finished program stayed current forever.
  *
  * That divergence was reachable, not theoretical. `SessionPicker` lists from
  * this endpoint while `GET /api/client/training/sessions/[sessionId]` validates
@@ -144,17 +143,12 @@ export async function getClientTrainingPlan(
 
   const startedPlan = await fetchStartedPlan(clientId, today);
   if (startedPlan) {
-    // A started plan stays current only until its date-walk runs out. The window
-    // comes from the slot count via the SAME helper the amendment surface uses
-    // for `isFullyPast`, so the coach's editor and the client's app agree on the
-    // day a program ends. (The Overview's "Ended" chip derives its own from
-    // authored duration — see docs/ARCHITECTURE.md.)
+    // A started plan stays current only until its window runs out. The end is
+    // on the row (migration 167) — the same fact the coach's hero, the Overview
+    // and the amendment surface read, so every surface agrees on the day a
+    // program ends.
     const entries = await fetchPlanEntries(startedPlan.id);
-    const endsOn = await calculatePlacementEndDate({
-      clientId,
-      slotCount: entries.length,
-      startDate: startedPlan.effective_from,
-    });
+    const endsOn = startedPlan.effective_until;
     if (today <= endsOn) {
       return buildPlan(startedPlan, entries, "active", endsOn);
     }
@@ -162,12 +156,12 @@ export async function getClientTrainingPlan(
     // Ended. A queued program still outranks it — that is live information,
     // where a finished program is history.
     const queued = await getNextFutureTrainingPlan(clientId, today);
-    if (queued) return buildQueuedPlan(clientId, queued);
+    if (queued) return buildQueuedPlan(queued);
     return buildPlan(startedPlan, entries, "ended", endsOn);
   }
 
   const queued = await getNextFutureTrainingPlan(clientId, today);
-  if (queued) return buildQueuedPlan(clientId, queued);
+  if (queued) return buildQueuedPlan(queued);
   return null;
 }
 
@@ -187,22 +181,15 @@ function buildPlan(
   };
 }
 
-async function buildQueuedPlan(
-  clientId: string,
-  queued: NextFutureTrainingPlan
-): Promise<ClientTrainingPlan> {
+async function buildQueuedPlan(queued: NextFutureTrainingPlan): Promise<ClientTrainingPlan> {
   const plan: ResolvedPlanRow = {
     id: queued.id,
     name: queued.name,
     effective_from: queued.effectiveFrom,
+    effective_until: queued.effectiveUntil,
   };
   const entries = await fetchPlanEntries(plan.id);
-  const endsOn = await calculatePlacementEndDate({
-    clientId,
-    slotCount: entries.length,
-    startDate: plan.effective_from,
-  });
-  return buildPlan(plan, entries, "upcoming", endsOn);
+  return buildPlan(plan, entries, "upcoming", plan.effective_until);
 }
 
 /**

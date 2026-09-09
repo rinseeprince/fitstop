@@ -5,8 +5,6 @@ import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
 import { getClientTodayString } from "@/services/today-service";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { coversDate } from "./training-plan-window";
-import { calculatePlacementEndDate, placementEndDate } from "./program-event-walk";
-import { addDaysToDateString } from "@/lib/date-helpers";
 import type { ClientPlanWindow } from "@/lib/prescription-triggers";
 
 // Re-export moved functions so existing imports continue to work
@@ -66,8 +64,9 @@ const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSessi
 
 // Get the training plan whose date range covers a specific date. Under additive
 // placement, plans are coexisting provenance rows; "active" is date-driven, not
-// a status. effective_until stays NULL on placed plans, so resolution falls out
-// of effective_from ordering (the latest-started plan whose start <= date).
+// a status. Both ends are on the row (migration 167), so the day after a
+// program's end nothing here resolves it — the hero, the Overview and the
+// client all read "no program" from the same fact.
 export const getTrainingPlanForDate = async (
   clientId: string,
   date: string
@@ -160,6 +159,7 @@ export type NextFutureTrainingPlan = {
   id: string;
   name: string;
   effectiveFrom: string;
+  effectiveUntil: string;
   splitType: string;
   frequencyPerWeek: number;
   programDurationWeeks: number | null;
@@ -184,7 +184,7 @@ export const getNextFutureTrainingPlan = async (
 ): Promise<NextFutureTrainingPlan | null> => {
   const { data, error } = await supabaseAdmin
     .from("training_plans")
-    .select("id, name, effective_from, split_type, frequency_per_week, program_duration_weeks")
+    .select("id, name, effective_from, effective_until, split_type, frequency_per_week, program_duration_weeks")
     .eq("client_id", clientId)
     .is("deleted_at", null)
     .neq("status", "archived")
@@ -211,6 +211,7 @@ export const getNextFutureTrainingPlan = async (
     id: data.id,
     name: data.name,
     effectiveFrom: data.effective_from,
+    effectiveUntil: data.effective_until,
     splitType: data.split_type,
     frequencyPerWeek: data.frequency_per_week,
     programDurationWeeks: data.program_duration_weeks,
@@ -219,29 +220,18 @@ export const getNextFutureTrainingPlan = async (
 
 /**
  * The last day the client's training is prescribed to, or null when nothing
- * live reaches `onOrAfter` — the second term of the nutrition generation
- * horizon (see `services/nutrition-event-service.ts`), used when the client
- * has no block declaring a bound.
+ * live reaches `onOrAfter` — the second term of the nutrition placement end
+ * (`resolveNutritionPlacementEnd`), used when the client has no block
+ * declaring a bound.
  *
- * **Not `effective_until`.** That column is NULL on every placed plan by
- * construction — `create_training_plan_atomic` omits it and says so in its own
- * body, and `TECHNICAL-DEBT.md` records that it is not a substitute for a
- * program's end. A live probe of dev found 382 live plans and zero end dates.
- * A program's end is `effective_from + its authored day count - 1`, through the
- * same `calculatePlacementEndDate` the client's app and the amendment surface
- * use, so no two surfaces disagree about the day a program ends.
- *
- * **Only the last-starting plan is measured, and that IS the furthest end.**
- * Placement caps a plan at the day before the next one begins, so
- * `capped_end(k) < start(k+1) <= capped_end(k+1)`: ends increase with start
- * dates and the maximum is always the last-starting plan's, which nothing caps.
- *
- * Same two exclusions as `getNextFutureTrainingPlan` and
- * `getTrainingPlansOverlapping`, for the same reason — the copy that forgot
- * `status <> 'archived'` re-surfaced retired plans. And NO date predicate: a
- * program queued to start next week must extend the horizon exactly like one
- * already running, while one that has already finished simply fails the
- * `onOrAfter` test below.
+ * The end is on the row (migration 167) — a placement decides it, the
+ * amendment, the block extension and the block shorten move it, and a later
+ * placement caps it — so this is one read for the furthest `effective_until`
+ * among the client's live programs. Same two exclusions as
+ * `getNextFutureTrainingPlan` and `getTrainingPlansOverlapping`, for the same
+ * reason: the copy that forgot `status <> 'archived'` re-surfaced retired
+ * plans. No lower bound on the start: a program queued to start next week
+ * extends the bound exactly like one already running.
  *
  * Degrades to null on a read error (the `getNextFutureTrainingPlan` posture) —
  * the caller falls back to the fixed window rather than failing a coach's
@@ -251,17 +241,14 @@ export const getFurthestLiveProgramEnd = async (
   clientId: string,
   onOrAfter: string
 ): Promise<string | null> => {
-  const { data: plan, error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("training_plans")
-    .select("id, effective_from")
+    .select("effective_until")
     .eq("client_id", clientId)
     .is("deleted_at", null)
     .neq("status", "archived")
-    .order("effective_from", { ascending: false })
-    // Same tiebreak as getTrainingPlanForDate / getNextFutureTrainingPlan: of
-    // two programs placed for the same day, the newest is the one that governs,
-    // so its length is the one that counts.
-    .order("created_at", { ascending: false })
+    .gte("effective_until", onOrAfter)
+    .order("effective_until", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -269,56 +256,26 @@ export const getFurthestLiveProgramEnd = async (
     console.error("Failed to read the client's furthest live program:", error);
     return null;
   }
-  if (!plan) return null;
-
-  const { count, error: slotError } = await supabaseAdmin
-    .from("training_sessions")
-    .select("id", { count: "exact", head: true })
-    .eq("plan_id", plan.id)
-    .eq("is_active", true);
-
-  if (slotError) {
-    console.error("Failed to count a program's day-slots:", slotError);
-    return null;
-  }
-  if (!count) return null;
-
-  const end = await calculatePlacementEndDate({
-    clientId,
-    slotCount: count,
-    startDate: plan.effective_from,
-  });
-  return end >= onOrAfter ? end : null;
+  return data?.effective_until ?? null;
 };
 
 type LiveProgramWindowRow = {
-  id: string;
   client_id: string;
   effective_from: string;
-  created_at: string;
-  /** PostgREST's embedded count, filtered to the plan's ACTIVE slot rows. */
-  training_sessions: { count: number }[];
+  effective_until: string;
 };
 
 /**
  * Every live program's window for a set of clients, in one chunked read — the
  * attention feed's cross-client twin of `getFurthestLiveProgramEnd`, which
- * answers for one client with two round trips and cannot be called per client
- * from a feed.
+ * answers for one client and cannot be called per client from a feed.
  *
  * Same two exclusions as its siblings (`deleted_at IS NULL`,
  * `status <> 'archived'`), for the same reason: a deleted program is archived,
- * and the feed must stop reading it the moment the coach retires it. The slot
- * count rides on the same read as an embedded count filtered to `is_active`,
- * so a block shorten that deactivated rows is reflected (probed against the
- * live catalog 2026-09-10: 12 active of 28 rows on a shortened plan).
- *
- * Each window ends where one pass of the program ends (`placementEndDate`),
- * capped at the day before the next later-starting plan — `getNextPlanStartCap`'s
- * rule, applied in memory because the read already holds every plan. The cap
- * is load-bearing: a placement inside an older program's window deletes that
- * program's events there but leaves its slot rows active, so its uncapped
- * window would claim days it no longer has on the calendar.
+ * and the feed must stop reading it the moment the coach retires it. The
+ * window is the row (migration 167): a plain select, nothing derived and no
+ * count embedded — a later placement caps an earlier program's end on the row
+ * itself, so no in-memory cap is needed either.
  */
 export const getLiveProgramWindowsForClients = async (
   clientIds: string[]
@@ -328,52 +285,28 @@ export const getLiveProgramWindowsForClients = async (
     (chunk, from, to) =>
       supabaseAdmin
         .from("training_plans")
-        .select("id, client_id, effective_from, created_at, training_sessions(count)")
+        .select("client_id, effective_from, effective_until")
         .in("client_id", chunk)
         .is("deleted_at", null)
         .neq("status", "archived")
-        .eq("training_sessions.is_active", true)
         .order("client_id", { ascending: true })
         .order("effective_from", { ascending: true })
-        .order("created_at", { ascending: true })
         .order("id", { ascending: true })
         .range(from, to),
     { errorLabel: "live training plans" }
   );
-
-  const byClient = new Map<string, LiveProgramWindowRow[]>();
-  for (const row of rows) {
-    const plans = byClient.get(row.client_id) ?? [];
-    plans.push(row);
-    byClient.set(row.client_id, plans);
-  }
-
-  const windows: ClientPlanWindow[] = [];
-  for (const [clientId, plans] of byClient) {
-    plans.sort(
-      (a, b) =>
-        a.effective_from.localeCompare(b.effective_from) ||
-        a.created_at.localeCompare(b.created_at)
-    );
-    plans.forEach((plan, index) => {
-      const ownEnd = placementEndDate(plan.effective_from, plan.training_sessions[0]?.count ?? 0);
-      const next = plans.slice(index + 1).find((p) => p.effective_from > plan.effective_from);
-      const cap = next ? addDaysToDateString(next.effective_from, -1) : null;
-      windows.push({
-        clientId,
-        start: plan.effective_from,
-        end: cap !== null && cap < ownEnd ? cap : ownEnd,
-      });
-    });
-  }
-  return windows;
+  return rows.map((row) => ({
+    clientId: row.client_id,
+    start: row.effective_from,
+    end: row.effective_until,
+  }));
 };
 
 export type TrainingPlanWindowSummary = {
   id: string;
   name: string;
   effectiveFrom: string;
-  effectiveUntil: string | null;
+  effectiveUntil: string;
 };
 
 /**
@@ -383,8 +316,9 @@ export type TrainingPlanWindowSummary = {
  * getNextFutureTrainingPlan owns, but it carries the same exclusions
  * (`deleted_at IS NULL`, `status <> 'archived'`) for the same reason: the copy
  * that forgot them re-surfaced retired plans. Overlap is
- * `effective_from <= rangeEnd AND (effective_until >= rangeStart OR open)` —
- * the range-widened form of coversDate's single-date predicate.
+ * `effective_from <= rangeEnd AND effective_until >= rangeStart` — the
+ * range-widened form of coversDate's single-date predicate; both ends are on
+ * the row (migration 167).
  */
 export const getTrainingPlansOverlapping = async (
   clientId: string,
@@ -398,7 +332,7 @@ export const getTrainingPlansOverlapping = async (
     .is("deleted_at", null)
     .neq("status", "archived")
     .lte("effective_from", rangeEnd)
-    .or(`effective_until.gte.${rangeStart},effective_until.is.null`)
+    .gte("effective_until", rangeStart)
     .order("effective_from", { ascending: true })
     .order("created_at", { ascending: false });
 

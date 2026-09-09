@@ -587,12 +587,12 @@ describe("attention-feed-service", () => {
 
       expect(calls["nutrition_plans"].select).toEqual([["id, client_id, effective_from, effective_until"]])
       expect(calls["nutrition_plans"].eq).toEqual([["status", "active"]])
-      expect(calls["training_plans"].select).toEqual([
-        ["id, client_id, effective_from, created_at, training_sessions(count)"],
-      ])
+      // The window is the row (migration 167): a plain select, no embedded
+      // count and no filter on it.
+      expect(calls["training_plans"].select).toEqual([["client_id, effective_from, effective_until"]])
       expect(calls["training_plans"].is).toEqual([["deleted_at", null]])
       expect(calls["training_plans"].neq).toEqual([["status", "archived"]])
-      expect(calls["training_plans"].eq).toEqual([["training_sessions.is_active", true]])
+      expect(calls["training_plans"].eq ?? []).toEqual([])
       // The blocks the messages name: non-archived only, like the covering read.
       expect(calls["client_phases"].select).toEqual([["id, client_id, name, starts_on, ends_on"]])
       expect(calls["client_phases"].is).toEqual([["archived_at", null]])

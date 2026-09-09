@@ -36,6 +36,7 @@ function createMockQuery(result: { data: unknown; error: unknown }) {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     lte: vi.fn().mockReturnThis(),
+    gte: vi.fn().mockReturnThis(),
     or: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),

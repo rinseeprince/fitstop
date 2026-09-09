@@ -215,6 +215,11 @@ async function seedClient() {
 async function seedPlanAndExercises() {
   console.log("Seeding training plan / session / exercises...");
 
+  // The window is the row (migration 167): eight weeks from today, the
+  // fixture's own length.
+  const planStart = new Date();
+  const planEnd = new Date(planStart);
+  planEnd.setUTCDate(planEnd.getUTCDate() + 55);
   const { error: planErr } = await supabaseAdmin.from("training_plans").insert({
     id: FIXTURE_PLAN_ID,
     client_id: FIXTURE_CLIENT_ID,
@@ -223,6 +228,8 @@ async function seedPlanAndExercises() {
     coach_prompt: "fixture",
     split_type: "full_body",
     frequency_per_week: 1,
+    effective_from: planStart.toISOString().slice(0, 10),
+    effective_until: planEnd.toISOString().slice(0, 10),
   });
   if (planErr) throw new Error(`plan: ${planErr.message}`);
 

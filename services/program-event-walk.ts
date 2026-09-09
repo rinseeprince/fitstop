@@ -80,8 +80,8 @@ export async function generateProgramEvents(params: {
         is_modified: false,
       });
     }
-    // The window never exceeds the program length (calculatePlacementEndDate),
-    // so the walk cannot run off the end; the modulo is a cheap guard.
+    // Every caller lays exactly as many slots as its window has days, so the
+    // walk cannot run off the end; the modulo is a cheap guard.
     slotPosition = (slotPosition + 1) % slotCount;
   }
 
@@ -107,19 +107,54 @@ export async function generateProgramEvents(params: {
   return rows.length;
 }
 
+/** What bounds a program's window from a date, and which bound it is. */
+export type WindowCap = {
+  /** The last day a program starting on the queried date may run to. */
+  endsOn: string;
+  source: "block" | "next_block" | "next_plan";
+};
+
+/**
+ * The furthest day a program starting on `startDate` may run to, and why: the
+ * block covering the date ends it; a block after it caps it at the day before
+ * that block; the next live program caps it at the day before its start; the
+ * earliest of those wins. `stretchesToCap` says a block COVERS the date, in
+ * which case a placement fills to the cap rather than stopping at its own
+ * length. A null cap means nothing bounds the program but itself.
+ *
+ * One question for placement and for the amendment, so the editor cannot let
+ * a program outgrow the bound placement gave it.
+ */
+export async function resolveWindowCap(
+  clientId: string,
+  startDate: string,
+): Promise<{ stretchesToCap: boolean; cap: WindowCap | null }> {
+  const [bound, nextPlanCap] = await Promise.all([
+    getBlockBoundForDate(clientId, startDate),
+    getNextPlanStartCap(clientId, startDate),
+  ]);
+
+  let cap: WindowCap | null =
+    bound?.kind === "covering"
+      ? { endsOn: bound.endsOn, source: "block" }
+      : bound?.kind === "next"
+        ? { endsOn: addDays(bound.startsOn, -1), source: "next_block" }
+        : null;
+  if (nextPlanCap && (!cap || nextPlanCap < cap.endsOn)) {
+    cap = { endsOn: nextPlanCap, source: "next_plan" };
+  }
+  return { stretchesToCap: bound?.kind === "covering", cap };
+}
+
 /**
  * How far a NEW placement from `startDate` should run — the block's last day
  * when a block covers that date, else the program's own authored length.
  * Capped, either way, at the day before the next coexisting program starts.
  *
- * **A different question from `calculatePlacementEndDate` below**, and the two
- * must not be merged. This one DECIDES a window for a placement that does not
- * exist yet; that one DESCRIBES where an existing placement ends, from the rows
- * it actually has. They agree for anything placed after this shipped, because
- * the rows are cloned to fill exactly this window — and they deliberately
- * disagree for a program placed before its block existed, or one whose block
- * was re-dated afterwards, where the ROWS are the truth and a block edit is
- * still allowed to write nothing.
+ * Decided once, here, and stored on the row (migration 167): every reader
+ * takes a program's end from `training_plans.effective_until`, and the three
+ * writers that change a program's length — the amendment, the block extension
+ * and the block shorten — move it under the same cap.
  *
  * The block is not a maximum here: a block LONGER than the program stretches
  * the window and the caller repeats the program to fill it, a block SHORTER
@@ -134,17 +169,10 @@ export async function resolvePlacementWindowEnd(params: {
   startDate: string;
 }): Promise<string> {
   const { clientId, slotCount, startDate } = params;
-
-  const bound = await getBlockBoundForDate(clientId, startDate);
-  let end = bound?.kind === "covering" ? bound.endsOn : placementEndDate(startDate, slotCount);
-  if (bound?.kind === "next") {
-    const dayBefore = addDays(bound.startsOn, -1);
-    if (dayBefore < end) end = dayBefore;
-  }
-
-  const nextPlanCap = await getNextPlanStartCap(clientId, startDate);
-  if (nextPlanCap && nextPlanCap < end) return nextPlanCap;
-  return end;
+  const { stretchesToCap, cap } = await resolveWindowCap(clientId, startDate);
+  const ownEnd = placementEndDate(startDate, slotCount);
+  if (stretchesToCap && cap) return cap.endsOn;
+  return cap && cap.endsOn < ownEnd ? cap.endsOn : ownEnd;
 }
 
 /**
@@ -181,33 +209,10 @@ export function expandProgramToWindow<T extends { weekIndex: number; orderIndex:
 
 /**
  * The last day of one pass of a placed program: `startDate + max(1, slotCount) − 1`.
- * The arithmetic half of `calculatePlacementEndDate`, exported on its own for
- * readers that already know the next plan's start and cap in memory (the
- * attention feed's cross-client read), so a program's end is spelled once.
+ * The length a placement asks for when no block stretches it. Nothing derives
+ * an existing program's end from its rows any more — the end is on the row
+ * (migration 167) and every reader takes it from there.
  */
 export function placementEndDate(startDate: string, slotCount: number): string {
   return addDays(startDate, Math.max(1, slotCount) - 1);
-}
-
-/**
- * Calculate the placement window end date. The authored program length is the
- * ONLY length knob: the whole-program slot count in days, placed exactly once.
- * There is deliberately no programDurationWeeks or 8-week fallback. The start
- * of the next coexisting plan is a MAXIMUM cap only (a program never runs past
- * it and never stretches to fill it).
- */
-export async function calculatePlacementEndDate(params: {
-  clientId: string;
-  slotCount: number;
-  startDate: string;
-}): Promise<string> {
-  const { clientId, slotCount, startDate } = params;
-
-  const computedEnd = placementEndDate(startDate, slotCount);
-
-  // Additive placement: never let this plan's window bleed past the start of a
-  // later coexisting plan.
-  const nextPlanCap = await getNextPlanStartCap(clientId, startDate);
-  if (nextPlanCap && nextPlanCap < computedEnd) return nextPlanCap;
-  return computedEnd;
 }

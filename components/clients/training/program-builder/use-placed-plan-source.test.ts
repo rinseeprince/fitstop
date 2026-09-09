@@ -28,6 +28,7 @@ function makeRead(token: string, planName = "PPL Block"): PlacedPlanForBuilder {
     },
     clientToday: "2026-07-15", // nothing locked — locking isn't under test here
     windowEnd: "2026-07-21",
+    windowCap: null,
     isFullyPast: false,
     amendmentToken: token,
     sessions: Array.from({ length: 7 }, (_, i) => ({

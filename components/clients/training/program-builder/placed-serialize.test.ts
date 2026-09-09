@@ -75,6 +75,7 @@ function makeRead(overrides: Partial<PlacedPlanForBuilder> = {}): PlacedPlanForB
     },
     clientToday: "2026-07-22",
     windowEnd: "2026-07-28",
+    windowCap: null,
     isFullyPast: false,
     amendmentToken: "tok-1",
     sessions: Array.from({ length: 14 }, (_, i) => makeSlot(i)),

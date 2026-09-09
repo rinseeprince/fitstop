@@ -146,7 +146,7 @@ describe("getBlockFacts", () => {
       // Covers block a only.
       { id: "p1", name: "Base", effectiveFrom: "2026-05-20", effectiveUntil: "2026-06-20" },
       // Open-ended from inside block b: overlaps b only.
-      { id: "p2", name: "Peak", effectiveFrom: "2026-07-01", effectiveUntil: null },
+      { id: "p2", name: "Peak", effectiveFrom: "2026-07-01", effectiveUntil: "2027-12-31" },
     ]);
 
     const facts = await getBlockFacts(CLIENT_ID, TODAY);
@@ -177,7 +177,7 @@ describe("getBlockFacts", () => {
     ]);
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
       // Placed in the live block and never closed — it "covers" the later one.
-      { id: "p31", name: "Hypertrophy", effectiveFrom: "2026-08-01", effectiveUntil: null },
+      { id: "p31", name: "Hypertrophy", effectiveFrom: "2026-08-01", effectiveUntil: "2027-12-31" },
     ]);
     versionsResult = {
       data: [version("v52", "2026-08-01", "2027-12-31", 2700, 2150)],
@@ -208,7 +208,7 @@ describe("getBlockFacts", () => {
     // Both windows OPEN from before the first block, so window logic alone
     // hands the plan and the prescription to BOTH — only the days separate them.
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
-      { id: "p19", name: "Base", effectiveFrom: "2026-07-06", effectiveUntil: null },
+      { id: "p19", name: "Base", effectiveFrom: "2026-07-06", effectiveUntil: "2027-12-31" },
     ]);
     versionsResult = {
       data: [version("v26", "2026-07-06", "2027-12-31", 2550, 1975)],
@@ -229,7 +229,7 @@ describe("getBlockFacts", () => {
     // The two are set up separately, so a block can hold one and not the other.
     vi.mocked(listBlocks).mockResolvedValue([block("c", "2026-09-07", "2026-10-04")]);
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
-      { id: "p47", name: "Strength", effectiveFrom: "2026-09-07", effectiveUntil: null },
+      { id: "p47", name: "Strength", effectiveFrom: "2026-09-07", effectiveUntil: "2027-12-31" },
     ]);
     versionsResult = {
       data: [version("v63", "2026-06-15", "2027-12-31", 2900, 2380)],
@@ -249,7 +249,7 @@ describe("getBlockFacts", () => {
     // at today would report it as untouched.
     vi.mocked(listBlocks).mockResolvedValue([block("d", "2026-08-10", "2026-09-06")]);
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
-      { id: "p88", name: "Deload", effectiveFrom: "2026-08-12", effectiveUntil: null },
+      { id: "p88", name: "Deload", effectiveFrom: "2026-08-12", effectiveUntil: "2027-12-31" },
     ]);
     versionsResult = { data: [], error: null };
     eventPages = [{ data: [], error: null }];
@@ -533,17 +533,17 @@ describe("getBlockFacts", () => {
     expect(eventCalls).toHaveLength(2);
   });
 
-  it("does NOT leak a superseded open-window plan into later blocks", async () => {
-    // Placed plans keep effective_until = NULL forever; raw overlap would
-    // list the January program in the June block. Governing segments end a
-    // plan's reign where its successor starts.
+  it("a program's window ends where its row says — a January program never reaches a June block", async () => {
+    // Both ends are on the row (migration 167): the January program was capped
+    // at the day before its successor started, so a June block lists only the
+    // program whose window reaches it.
     vi.mocked(listBlocks).mockResolvedValue([
       block("a", "2026-01-05", "2026-02-01"),
       block("b", "2026-06-01", "2026-06-28"),
     ]);
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
-      { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: null },
-      { id: "p2", name: "Peak", effectiveFrom: "2026-03-01", effectiveUntil: null },
+      { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: "2026-02-28" },
+      { id: "p2", name: "Peak", effectiveFrom: "2026-03-01", effectiveUntil: "2026-12-31" },
     ]);
 
     const facts = await getBlockFacts(CLIENT_ID, TODAY);
@@ -551,17 +551,30 @@ describe("getBlockFacts", () => {
     expect(facts[1].training.map((t) => t.id)).toEqual(["p2"]);
   });
 
-  it("hands govern-ship back to the older open plan when a capped successor expires", async () => {
+  it("a program's last day is still its own — a block opening on it lists the program", async () => {
+    // The window is inclusive on both ends (migration 167): a block whose first
+    // day is a program's last day got one workout from it.
+    vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-03-15", "2026-04-11")]);
+    vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
+      { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: "2026-03-15" },
+    ]);
+
+    const facts = await getBlockFacts(CLIENT_ID, TODAY);
+    expect(facts[0].training.map((t) => t.id)).toEqual(["p1"]);
+  });
+
+  it("the days after every window are ungoverned — nothing hands govern-ship back", async () => {
+    // There is no open plan to fall back to (migration 167): once the bridge
+    // ends, March belongs to no program, the same answer getTrainingPlanForDate
+    // gives any March date.
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-03-01", "2026-03-28")]);
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
-      { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: null },
+      { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: "2026-01-31" },
       { id: "p2", name: "Bridge", effectiveFrom: "2026-02-01", effectiveUntil: "2026-02-28" },
     ]);
 
     const facts = await getBlockFacts(CLIENT_ID, TODAY);
-    // March is past the bridge's window; the open base plan governs again —
-    // the same answer getTrainingPlanForDate gives any March date.
-    expect(facts[0].training.map((t) => t.id)).toEqual(["p1"]);
+    expect(facts[0].training).toEqual([]);
   });
 
   it("same-day tie: the list-first (newest-created) plan governs; the loser never appears", async () => {
@@ -569,8 +582,8 @@ describe("getBlockFacts", () => {
     // getTrainingPlansOverlapping orders created_at DESC within a start
     // date, so p2 (list-first) is the resolution winner.
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([
-      { id: "p2", name: "Corrected", effectiveFrom: "2026-06-01", effectiveUntil: null },
-      { id: "p1", name: "Mistake", effectiveFrom: "2026-06-01", effectiveUntil: null },
+      { id: "p2", name: "Corrected", effectiveFrom: "2026-06-01", effectiveUntil: "2026-06-28" },
+      { id: "p1", name: "Mistake", effectiveFrom: "2026-06-01", effectiveUntil: "2026-06-28" },
     ]);
 
     const facts = await getBlockFacts(CLIENT_ID, TODAY);
@@ -675,9 +688,12 @@ describe("getBlockFacts", () => {
 });
 
 describe("reduceToGoverningSegments", () => {
-  it("merges adjacent same-plan segments and clips reigns at successors", () => {
+  it("clips reigns at successors and leaves the days after every window ungoverned", () => {
+    // A `draft` row can still share a live plan's days (the exclusion is scoped
+    // to live rows), so the per-date resolution stays: the later start wins
+    // while both cover the day, and once every window has ended nothing does.
     const plans = [
-      { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: null },
+      { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: "2026-03-15" },
       { id: "p2", name: "Bridge", effectiveFrom: "2026-02-01", effectiveUntil: "2026-02-28" },
     ];
     const segments = reduceToGoverningSegments(plans, "2026-01-05", "2026-04-30");
@@ -686,13 +702,13 @@ describe("reduceToGoverningSegments", () => {
     ).toEqual([
       ["p1", "2026-01-05", "2026-01-31"],
       ["p2", "2026-02-01", "2026-02-28"],
-      ["p1", "2026-03-01", "2026-04-30"],
+      ["p1", "2026-03-01", "2026-03-15"],
     ]);
   });
 
   it("leaves a true gap ungoverned (no plan covers before the first start)", () => {
     const plans = [
-      { id: "p1", name: "Base", effectiveFrom: "2026-02-01", effectiveUntil: null },
+      { id: "p1", name: "Base", effectiveFrom: "2026-02-01", effectiveUntil: "2026-03-31" },
     ];
     const segments = reduceToGoverningSegments(plans, "2026-01-01", "2026-03-01");
     expect(segments.map((s) => [s.plan.id, s.from, s.to])).toEqual([

@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useRoundTripBlockStart } from "@/components/clients/metrics/hooks/use-round-trip-block";
 import { swrFetcher } from "@/lib/swr-fetcher";
@@ -70,6 +71,7 @@ export function ApplyToClientDialog({
 }: ApplyToClientDialogProps) {
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const invalidateTrainingData = useInvalidateTrainingData();
   const clearBlockFacts = useClearBlockFacts();
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
   // Seeded from the block the coach came from, when they came from one: the
@@ -194,6 +196,12 @@ export function ApplyToClientDialog({
           description: data.error || "Something went wrong",
           variant: "destructive",
         });
+        // A placement can fail AFTER it has committed — the program is on the
+        // calendar and only the earlier program's later sessions survived
+        // (PlacementSupersedeError). Refresh both calendar areas so what the
+        // coach sees matches the sentence they just read.
+        void invalidateNutritionCalendar(clientId);
+        void invalidateTrainingData(clientId);
         return;
       }
 

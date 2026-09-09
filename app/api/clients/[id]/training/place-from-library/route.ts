@@ -10,6 +10,7 @@ import {
   placePlanOnCalendar,
   placeSessionOnCalendar,
   placeInlineEditedPlanOnCalendar,
+  PlacementSupersedeError,
 } from "@/services/library-placement-service";
 import { getClientTodayString } from "@/services/today-service";
 import { cascadeNutritionAfterTrainingChange, type NutritionRegenScope } from "@/services/nutrition-event-service";
@@ -127,8 +128,14 @@ export async function POST(
         startDate: data.startDate,
       });
 
-      // Nutrition cascade: a whole-program placement is open-ended forward.
-      await cascadeNutritionEvents(clientId, { kind: "from", from: data.startDate });
+      // Nutrition cascade: a whole-program placement is open-ended forward,
+      // widened to the last day a superseded program's session was removed on
+      // — the same `to` the plan-clear routes thread.
+      await cascadeNutritionEvents(clientId, {
+        kind: "from",
+        from: data.startDate,
+        to: result.supersededThrough ?? undefined,
+      });
 
       void recordAuditEvent({
         actorId: coachId,
@@ -191,8 +198,12 @@ export async function POST(
         startDate: data.startDate,
       });
 
-      // Nutrition cascade: a whole-program placement is open-ended forward.
-      await cascadeNutritionEvents(clientId, { kind: "from", from: data.startDate });
+      // Nutrition cascade: same scope as the plan branch above.
+      await cascadeNutritionEvents(clientId, {
+        kind: "from",
+        from: data.startDate,
+        to: result.supersededThrough ?? undefined,
+      });
 
       void recordAuditEvent({
         actorId: coachId,
@@ -255,6 +266,11 @@ export async function POST(
   } catch (error) {
     if (error instanceof DateOccupiedError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    // The program IS on the calendar; only the earlier program's later
+    // sessions survived. Say exactly that rather than "failed to place".
+    if (error instanceof PlacementSupersedeError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     const message = error instanceof Error ? error.message : "Failed to place from library";

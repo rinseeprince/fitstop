@@ -58,6 +58,7 @@ import {
   linkSessionLogToEvent,
   getEventSummariesForDate,
   cancelFutureEventsForPlan,
+  cancelFutureEventsForPlans,
 } from "./training-event-service";
 import type { SessionInput } from "./training-event-service";
 
@@ -316,14 +317,14 @@ describe("training-event-service", () => {
       expect(detachQuery.update).toHaveBeenCalledWith(
         expect.objectContaining({ training_plan_id: null }),
       );
-      expect(detachQuery.eq).toHaveBeenCalledWith("training_plan_id", "plan-1");
+      expect(detachQuery.in).toHaveBeenCalledWith("training_plan_id", ["plan-1"]);
       expect(detachQuery.gte).toHaveBeenCalledWith("date", "2026-08-26");
       expect(detachQuery.neq).toHaveBeenCalledWith("status", "scheduled");
       expect(detachQuery.delete).not.toHaveBeenCalled();
 
       // Statement 2 — delete: still-scheduled days only.
       expect(deleteQuery.delete).toHaveBeenCalled();
-      expect(deleteQuery.eq).toHaveBeenCalledWith("training_plan_id", "plan-1");
+      expect(deleteQuery.in).toHaveBeenCalledWith("training_plan_id", ["plan-1"]);
       expect(deleteQuery.gte).toHaveBeenCalledWith("date", "2026-08-26");
       expect(deleteQuery.eq).toHaveBeenCalledWith("status", "scheduled");
       expect(deleteQuery.update).not.toHaveBeenCalled();
@@ -455,5 +456,39 @@ describe("training-event-service", () => {
       expect(result[0].isAlternative).toBe(false);
       expect(result[0].sessionName).toBe("Chest Day");
     });
+  });
+});
+
+describe("cancelFutureEventsForPlans — the set form a placement supersedes with", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("issues one detach and one delete per chunk of 100 ids, and returns the furthest date across chunks", async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => `plan-${i}`);
+    const detach1 = createMockQuery({ data: null, error: null });
+    const delete1 = createMockQuery({ data: [{ date: "2026-10-07" }], error: null });
+    const detach2 = createMockQuery({ data: null, error: null });
+    const delete2 = createMockQuery({ data: [{ date: "2026-12-16" }, { date: "2026-11-25" }], error: null });
+    mockFrom
+      .mockReturnValueOnce(detach1 as any)
+      .mockReturnValueOnce(delete1 as any)
+      .mockReturnValueOnce(detach2 as any)
+      .mockReturnValueOnce(delete2 as any);
+
+    expect(await cancelFutureEventsForPlans(ids, "2026-09-11")).toBe("2026-12-16");
+
+    expect(mockFrom).toHaveBeenCalledTimes(4);
+    expect(detach1.in).toHaveBeenCalledWith("training_plan_id", ids.slice(0, 100));
+    expect(delete1.in).toHaveBeenCalledWith("training_plan_id", ids.slice(0, 100));
+    expect(detach2.in).toHaveBeenCalledWith("training_plan_id", ids.slice(100));
+    expect(delete2.in).toHaveBeenCalledWith("training_plan_id", ids.slice(100));
+    expect(detach1.gte).toHaveBeenCalledWith("date", "2026-09-11");
+    expect(delete1.eq).toHaveBeenCalledWith("status", "scheduled");
+  });
+
+  it("issues nothing for an empty set and returns null", async () => {
+    expect(await cancelFutureEventsForPlans([], "2026-09-11")).toBeNull();
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 });

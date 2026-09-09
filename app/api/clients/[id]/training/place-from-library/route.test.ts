@@ -32,6 +32,9 @@ vi.mock("@/services/library-placement-service", () => ({
   placePlanOnCalendar: vi.fn(),
   placeSessionOnCalendar: vi.fn(),
   placeInlineEditedPlanOnCalendar: vi.fn(),
+  // The route branches on this class; a plain mock would leave `instanceof`
+  // comparing against undefined.
+  PlacementSupersedeError: class PlacementSupersedeError extends Error {},
 }));
 
 vi.mock("@/services/coach-saved-plan-service", () => ({
@@ -58,6 +61,8 @@ import {
 import { getClientTodayString } from "@/services/today-service";
 import { hasCompletedWorkoutOn } from "@/services/training-event-occupancy";
 import { getSavedPlanFirstSlotIsRest } from "@/services/coach-saved-plan-service";
+import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
+import { PlacementSupersedeError } from "@/services/library-placement-service";
 import { POST } from "./route";
 
 const clientId = "client-1";
@@ -106,6 +111,7 @@ describe("POST /api/clients/[id]/training/place-from-library start-date guard", 
       planId: "plan-1",
       sessionsCreated: 3,
       eventsCreated: 12,
+      supersededThrough: null,
     });
   });
 
@@ -192,11 +198,13 @@ describe("POST /api/clients/[id]/training/place-from-library inline", () => {
       planId: "plan-1",
       sessionsCreated: 3,
       eventsCreated: 12,
+      supersededThrough: null,
     });
     vi.mocked(placeInlineEditedPlanOnCalendar).mockResolvedValue({
       planId: "inline-plan-1",
       sessionsCreated: 1,
       eventsCreated: 5,
+      supersededThrough: null,
     });
   });
 
@@ -225,5 +233,49 @@ describe("POST /api/clients/[id]/training/place-from-library inline", () => {
 
     expect(res.status).toBe(400);
     expect(placeInlineEditedPlanOnCalendar).not.toHaveBeenCalled();
+  });
+});
+
+describe("the placement supersedes the earlier programs (migration 167)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getClientById).mockResolvedValue({
+      id: clientId,
+      coachId: "coach-1",
+    } as never);
+    vi.mocked(getClientTodayString).mockResolvedValue("2026-01-15");
+  });
+
+  it("threads the furthest superseded day into the nutrition cascade as `to` (migration 167)", async () => {
+    vi.mocked(placePlanOnCalendar).mockResolvedValue({
+      planId: "plan-1",
+      sessionsCreated: 3,
+      eventsCreated: 12,
+      supersededThrough: "2026-03-29",
+    });
+
+    const res = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15" });
+
+    expect(res.status).toBe(200);
+    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
+      clientId,
+      { kind: "from", from: "2026-01-15", to: "2026-03-29" },
+      expect.any(String)
+    );
+  });
+
+  it("a supersede failure is a 500 carrying the service's own sentence — the program IS on the calendar", async () => {
+    vi.mocked(placePlanOnCalendar).mockRejectedValue(
+      new PlacementSupersedeError(
+        "The program is on the calendar, but the previous program's sessions from 2026-01-15 could not be removed (boom). Delete them from the calendar, or place the program again."
+      )
+    );
+
+    const res = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15" });
+    const data = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(data.error).toMatch(/^The program is on the calendar/);
+    expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
   });
 });

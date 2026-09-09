@@ -1,5 +1,7 @@
 "use client";
 
+import type { WindowCap } from "@/services/program-event-walk";
+import { addDaysToDateString, formatDateOnlyShort } from "@/lib/date-helpers";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -54,6 +56,20 @@ type ProgramBuilderProps = {
   onExit?: () => void;
 };
 
+/** The one line the placed-plan editor shows about how far the program may
+ *  grow — the same bound the amendment PUT refuses past. */
+function windowCapNotice(cap: WindowCap): string {
+  const dayAfter = formatDateOnlyShort(addDaysToDateString(cap.endsOn, 1));
+  switch (cap.source) {
+    case "block":
+      return `This block ends ${formatDateOnlyShort(cap.endsOn)}. Weeks past it cannot be placed.`;
+    case "next_block":
+      return `The next block starts ${dayAfter}. Weeks reaching into it cannot be placed.`;
+    case "next_plan":
+      return `The next program starts ${dayAfter}. Weeks reaching into it cannot be placed.`;
+  }
+}
+
 export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -96,6 +112,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     movedPastSlotUids,
     fullyLocked,
     futureModifiedEvents,
+    windowCap,
     placedLoadError,
     amend,
   } = useProgramDraft();
@@ -426,6 +443,14 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 <div className="mb-2 rounded-[6px] border border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] px-3 py-2 text-[12.5px] text-[#0a5c55]">
                   This plan has ended — nothing left to edit. Apply a new program
                   to continue.
+                </div>
+              )}
+              {isPlacedPlan && !fullyLocked && windowCap && (
+                // The grid may keep its end but may not grow past the bound
+                // placement gave it (migration 167); the save refuses weeks past
+                // it with the same date, so the coach reads it here first.
+                <div className="mb-2 rounded-[6px] border border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] px-3 py-2 text-[12.5px] text-[#0a5c55]">
+                  {windowCapNotice(windowCap)}
                 </div>
               )}
               <ProgramGrid

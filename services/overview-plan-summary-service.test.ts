@@ -117,6 +117,7 @@ const UPCOMING_PLAN = {
   id: "plan-2",
   name: "Strength Block B",
   effectiveFrom: "2026-07-27",
+  effectiveUntil: "2026-09-06",
   splitType: "push_pull_legs",
   frequencyPerWeek: 5,
   programDurationWeeks: 6,

@@ -562,6 +562,10 @@ async function insertTrainingPlan(
     split_type: "upper_lower_full",
     frequency_per_week: 4,
     program_duration_weeks: 52,
+    // The window is the row (migration 167): a year from today, the length
+    // the weekday generator below fills.
+    effective_from: getDateDaysFrom(new Date(), 0),
+    effective_until: getDateDaysFrom(new Date(), 52 * 7 - 1),
   });
   if (planErr) throw new Error(`training_plans insert: ${planErr.message}`);
 

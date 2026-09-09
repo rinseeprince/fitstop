@@ -7,6 +7,11 @@
  * carried `.is("effective_until", null)` and no date bound at all, which is how
  * a program starting next month could title a client's Program tab today.
  *
+ * Both ends are on the row (migration 167): a program's end is decided at
+ * placement and stored, exactly as a nutrition version's is (migration 166),
+ * so the two tracks answer this question from one fact and nothing derives an
+ * end per read. The day after `effective_until` no reader finds the plan.
+ *
  * The STATUS half deliberately stays at each call site, because the two
  * audiences legitimately differ: coach reads exclude only 'archived', while the
  * client read requires 'active'. `training_plans.status` accepts all four
@@ -22,11 +27,9 @@
 /** Structural shape of the two PostgREST filters this applies (self-returning). */
 type WindowFilterable<T> = {
   lte(column: string, value: string): T;
-  or(filters: string): T;
+  gte(column: string, value: string): T;
 };
 
 export function coversDate<T extends WindowFilterable<T>>(query: T, date: string): T {
-  return query
-    .lte("effective_from", date)
-    .or(`effective_until.gte.${date},effective_until.is.null`);
+  return query.lte("effective_from", date).gte("effective_until", date);
 }

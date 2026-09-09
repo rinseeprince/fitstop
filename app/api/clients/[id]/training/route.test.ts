@@ -120,6 +120,7 @@ const upcomingFullPlan = {
 const upcomingRow = {
   id: 'plan-upcoming',
   effectiveFrom: '2026-01-19',
+  effectiveUntil: '2026-02-15',
   name: 'Scheduled Plan',
   splitType: 'full_body',
   frequencyPerWeek: 3,

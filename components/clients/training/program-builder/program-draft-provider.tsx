@@ -1,5 +1,6 @@
 "use client";
 
+import type { WindowCap } from "@/services/program-event-walk";
 import {
   createContext,
   useCallback,
@@ -82,6 +83,9 @@ type ProgramDraftContextValue = ProgramBuilderState & {
   fullyLocked: boolean;
   sessionIdByUid: ReadonlyMap<string, string>;
   futureModifiedEvents: Array<{ id: string; date: string; sessionName: string }>;
+  /** What bounds the placed program's growth from the editor (migration 167);
+   *  null when nothing does. Placed-plan mode only. */
+  windowCap: WindowCap | null;
   placedLoadError: string | null;
   amend: AmendPlanApi;
   isAmending: boolean;
@@ -262,6 +266,7 @@ export function ProgramDraftProvider({
     fullyLocked: placed.fullyLocked,
     sessionIdByUid: placed.sessionIdByUid,
     futureModifiedEvents: placed.futureModifiedEvents,
+    windowCap: placed.windowCap,
     placedLoadError: placed.loadError,
     amend,
     isAmending: amend.isAmending,

@@ -369,7 +369,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
           frequency_per_week: TRAIN_DAYS_PER_WEEK, // per-week average, CHECK 1..7
           program_duration_weeks: Math.round(blockLen / 7),
           effective_from: effFrom,
-          effective_until: null,
+          effective_until: addDays(effFrom, blockLen - 1),
           client_weight_kg: weightAt(blockStartIdx),
           client_goal_weight_kg: goalWeight,
           client_tdee: tdee,

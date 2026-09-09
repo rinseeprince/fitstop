@@ -215,7 +215,7 @@ describe('Nutrition Plan Service', () => {
       // The `is.null` arm is training's (its placed plans never write an end);
       // a nutrition row never matches it since migration 166, harmlessly.
       expect(query.lte).toHaveBeenCalledWith('effective_from', '2026-08-11')
-      expect(query.or).toHaveBeenCalledWith('effective_until.gte.2026-08-11,effective_until.is.null')
+      expect(query.gte).toHaveBeenCalledWith('effective_until', '2026-08-11')
       expect(query.order).toHaveBeenNthCalledWith(1, 'effective_from', { ascending: false })
       expect(query.order).toHaveBeenNthCalledWith(2, 'created_at', { ascending: false })
       expect(query.limit).toHaveBeenCalledWith(1)
@@ -245,7 +245,7 @@ describe('Nutrition Plan Service', () => {
       expect(query.select).toHaveBeenCalledWith('id')
       expect(query.eq).toHaveBeenCalledWith('status', 'active')
       expect(query.lte).toHaveBeenCalledWith('effective_from', '2026-08-11')
-      expect(query.or).toHaveBeenCalledWith('effective_until.gte.2026-08-11,effective_until.is.null')
+      expect(query.gte).toHaveBeenCalledWith('effective_until', '2026-08-11')
       expect(id).toBe('v2')
     })
 

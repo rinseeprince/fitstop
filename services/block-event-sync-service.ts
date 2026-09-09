@@ -2,6 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import { inclusiveDays } from "@/lib/blocks/block-chain";
 import { expandProgramToWindow, generateProgramEvents } from "./program-event-walk";
+import { getNextPlanStartCap } from "./training-event-service";
 import { regenerateFutureNutritionEvents } from "./nutrition-event-service";
 import { getNextNutritionVersionStartCap } from "./nutrition-plan-service";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
@@ -163,7 +164,8 @@ export async function clearScheduledEvents(params: {
  * its new end, bounded so the clear can never reach a window this block does not
  * own.
  *
- * The nutrition VERSIONS follow the days (migration 166). A version's end is
+ * The nutrition VERSIONS follow the days (migration 166), and so do the
+ * training PROGRAMS (migration 167). A version's end is
  * stored, so one reaching past the block's new end is pulled back to it — its
  * window ends where its days end, or the next cascade would regenerate the very
  * days this clear removed — and a queued version that now starts in the cleared
@@ -206,6 +208,31 @@ export async function clearEventsOutsideBlock(params: {
       .gt("effective_from", blockEndsOn)
       .lte("effective_from", ceiling);
     if (retireError) throw retireError;
+  }
+
+  // The training programs follow their days too (migration 167): one reaching
+  // past the new end is pulled back to it, and one queued to start in the
+  // cleared stretch — its every day just removed — is archived.
+  const { error: trainingCapError } = await supabaseAdmin
+    .from("training_plans")
+    .update({ effective_until: blockEndsOn, updated_at: now })
+    .eq("client_id", clientId)
+    .is("deleted_at", null)
+    .neq("status", "archived")
+    .lte("effective_from", blockEndsOn)
+    .gt("effective_until", blockEndsOn);
+  if (trainingCapError) throw trainingCapError;
+
+  if (ceiling) {
+    const { error: trainingRetireError } = await supabaseAdmin
+      .from("training_plans")
+      .update({ status: "archived", updated_at: now })
+      .eq("client_id", clientId)
+      .is("deleted_at", null)
+      .neq("status", "archived")
+      .gt("effective_from", blockEndsOn)
+      .lte("effective_from", ceiling);
+    if (trainingRetireError) throw trainingRetireError;
   }
 
   return cleared;
@@ -251,6 +278,12 @@ export async function extendTrainingToBlockEnd(params: {
   if (planError) throw planError;
   if (!plan?.authored_slot_count) return null;
 
+  // The program's window follows its rows (migration 167), and its new end
+  // takes the cap every placement takes: the day before the next live program
+  // starts, so an extension never runs into a program queued inside the block.
+  const nextPlanCap = await getNextPlanStartCap(clientId, plan.effective_from);
+  const end = nextPlanCap && nextPlanCap < blockEndsOn ? nextPlanCap : blockEndsOn;
+
   const { data: slotRows, error: slotError } = await supabaseAdmin
     .from("training_sessions")
     .select("id, name, focus, is_rest, week_index, order_index, calorie_surplus_percentage, estimated_duration_minutes")
@@ -261,7 +294,7 @@ export async function extendTrainingToBlockEnd(params: {
   if (slotError) throw slotError;
 
   const placed = slotRows ?? [];
-  const windowDays = inclusiveDays(plan.effective_from, blockEndsOn);
+  const windowDays = inclusiveDays(plan.effective_from, end);
   const missing = windowDays - placed.length;
   if (placed.length === 0 || missing <= 0) return null;
 
@@ -309,6 +342,15 @@ export async function extendTrainingToBlockEnd(params: {
     inserted.map((row) => [`${row.week_index}:${row.order_index}`, row.id])
   );
 
+  // The end moves BEFORE the events are laid, the nutrition fill's order: a
+  // failure between the two leaves a window the next reconcile fills, never
+  // days the row disowns.
+  const { error: endError } = await supabaseAdmin
+    .from("training_plans")
+    .update({ effective_until: end, updated_at: new Date().toISOString() })
+    .eq("id", plan.id);
+  if (endError) throw endError;
+
   const eventsCreated = await generateProgramEvents({
     clientId,
     planId: plan.id,
@@ -321,7 +363,7 @@ export async function extendTrainingToBlockEnd(params: {
       estimatedCalories: null,
     })),
     startDate: firstNewDate > clientToday ? firstNewDate : clientToday,
-    endDate: blockEndsOn,
+    endDate: end,
   });
 
   return { planId: plan.id, slotsAdded: rows.length, eventsCreated };
