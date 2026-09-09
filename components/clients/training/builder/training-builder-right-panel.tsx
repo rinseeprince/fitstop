@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { usePlacedPlan } from "@/hooks/use-placed-plan";
 import { TrainingCalendarView } from "../calendar/training-calendar-view";
 import { PlanAmendmentOverlay } from "./plan-amendment-overlay";
@@ -48,6 +49,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   const { editMode, setEditMode } = builder;
   const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
+  const clearBlockFacts = useClearBlockFacts();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [amendOpen, setAmendOpen] = useState(false);
@@ -74,6 +76,11 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
         throw new Error(data.error ?? "Failed to clear plan");
       }
       toast({ title: "Training plan deleted" });
+      // The Journey block cards are DERIVED from these rows, so they now claim a
+      // program that is gone. Cleared rather than revalidated: they render a
+      // definite answer, and SWR serves the stale one for the whole refetch
+      // (CONVENTIONS §7).
+      void clearBlockFacts(clientId);
       setShowClearConfirm(false);
       // Deleting training sessions cascade-rewrites nutrition_events.
       void invalidateNutritionCalendar(clientId);
