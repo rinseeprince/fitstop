@@ -4,7 +4,10 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
-import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import {
+  useClearBlockFacts,
+  useClientBlocks,
+} from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useRoundTripBlockStart } from "@/components/clients/metrics/hooks/use-round-trip-block";
@@ -90,19 +93,31 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   // never from the coach's browser clock.
   const [effectiveFromPick, setEffectiveFromPick] = useState<string | null>(null);
   const clientToday = calcInputs?.today ?? null;
+  // The earliest day targets may START: the shared deletion floor — the
+  // client's today, or tomorrow once they have logged anything today. A server
+  // answer, so it rides the blocks payload the round-trip seed below already
+  // reads. Null until the resolved inputs have loaded, like everything here;
+  // today until the payload lands, and never before today whatever it says.
+  // The server's own belt refuses a start before it either way.
+  const { planStartFloor } = useClientBlocks(client.id);
+  const startFloor = clientToday
+    ? planStartFloor && planStartFloor > clientToday
+      ? planStartFloor
+      : clientToday
+    : null;
   // Seeded from the block the coach came from, when they came from one — a
   // derivation, never a second piece of state, so their own pick still wins and
-  // there is nothing to keep in sync. Floored at the client's today because a
-  // past effective date is refused by the server's own belt: a block already
-  // under way seeds today, not the day it began.
+  // there is nothing to keep in sync. Floored at the floor above: a block
+  // already under way seeds today, or tomorrow once today is logged, not the
+  // day it began.
   const blockStart = useRoundTripBlockStart(client.id, "edit");
   const blockSeed =
-    blockStart && clientToday
-      ? blockStart > clientToday
+    blockStart && startFloor
+      ? blockStart > startFloor
         ? blockStart
-        : clientToday
+        : startFloor
       : null;
-  const effectiveFrom = effectiveFromPick ?? blockSeed ?? clientToday;
+  const effectiveFrom = effectiveFromPick ?? blockSeed ?? startFloor;
 
   const autoPlan = useMemo(
     () =>
@@ -358,10 +373,12 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     settingsChanged,
     handleSettingsChange,
 
-    // The day the plan takes effect: the coach's pick, else the client's today
-    // (the field's floor). Null until the resolved inputs have loaded.
+    // The day the plan takes effect: the coach's pick, else the floor — the
+    // client's today, or tomorrow once they have logged today. Null until the
+    // resolved inputs have loaded.
     effectiveFrom,
     clientToday,
+    startFloor,
     handleEffectiveFromChange,
 
     // Live preview + manual override. `displayTargets` is the single thing the

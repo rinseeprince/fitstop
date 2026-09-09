@@ -28,7 +28,16 @@ function blocksAreaKeyPrefix(clientId: string) {
 
 type BlocksResponse = {
   success: boolean;
-  data: { blocks: ClientBlockView[]; clientToday: string };
+  data: {
+    blocks: ClientBlockView[];
+    clientToday: string;
+    /** The earliest day a plan may START on this client's calendar: their
+     *  today, or tomorrow once they have logged anything today — the shared
+     *  deletion floor (`resolveEventDeletionFloor`), read server-side because
+     *  it depends on the client's logs. Both setup surfaces' date pickers
+     *  floor on it; a block itself is not constrained by it. */
+    planStartFloor: string;
+  };
 };
 
 type BlockFactsResponse = {
@@ -41,6 +50,7 @@ type DeleteBlockResponse = {
   data: {
     blocks: ClientBlockView[];
     clientToday: string;
+    planStartFloor: string;
   };
 };
 
@@ -56,8 +66,11 @@ const SWR_CONFIG = {
  *  date derivation (pace fraction, delete-shift preview) uses it, never the
  *  coach's device day. */
 export function useClientBlocks(clientId: string) {
+  // No client, no read: the apply dialog holds this until a client is picked,
+  // and the round-trip seed calls it with no client at all outside a client
+  // page. A key built from an empty id would fetch a URL naming no client.
   const { data, error, isLoading } = useSWR<BlocksResponse>(
-    clientBlocksKey(clientId),
+    clientId ? clientBlocksKey(clientId) : null,
     swrFetcher,
     SWR_CONFIG
   );
@@ -67,6 +80,7 @@ export function useClientBlocks(clientId: string) {
     // render.
     blocks: data?.data?.blocks ?? [],
     clientToday: data?.data?.clientToday ?? null,
+    planStartFloor: data?.data?.planStartFloor ?? null,
     isLoading,
     isError: Boolean(error),
   };

@@ -22,6 +22,12 @@ vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
 
+// The plan-start floor rides the chain payload; its own rules are proved in
+// services/event-deletion-floor.test.ts.
+vi.mock("@/services/event-deletion-floor", () => ({
+  resolveEventDeletionFloor: vi.fn(),
+}));
+
 // Invariant 7's route-half tripwire: blocks save independently of the goal.
 // The goals service is mocked with spies so that if anyone ever wires
 // updateGoals into this route, the never-called pin below fails.
@@ -51,6 +57,7 @@ vi.mock("@/services/client-blocks-service", () => {
 
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getClientTodayString } from "@/services/today-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import {
   listBlocks,
@@ -123,6 +130,7 @@ describe("/api/clients/[id]/blocks", () => {
       coachId: "coach-1",
     });
     vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue(TODAY);
   });
 
   describe("GET", () => {
@@ -158,6 +166,22 @@ describe("/api/clients/[id]/blocks", () => {
       // clientToday rides the payload (Session 3.4) so the delete-preview
       // runs computeDeleteShift with the SAME today the DELETE executes with.
       expect(payload.data.clientToday).toBe(TODAY);
+      expect(payload.data.planStartFloor).toBe(TODAY);
+    });
+
+    it("carries the plan-start floor the server resolved, not merely today", async () => {
+      // The client has logged today, so the earliest day a plan may start is
+      // tomorrow. Both setup surfaces floor their pickers on this value, and
+      // only the server can answer it — it depends on the client's logs.
+      vi.mocked(listBlocks).mockResolvedValue([CURRENT_BLOCK]);
+      vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-08-12");
+
+      const response = await GET(createMockRequest("GET"), mockParams);
+      const payload = await response.json();
+
+      expect(resolveEventDeletionFloor).toHaveBeenCalledWith("client-1", TODAY);
+      expect(payload.data.clientToday).toBe(TODAY);
+      expect(payload.data.planStartFloor).toBe("2026-08-12");
     });
   });
 
@@ -210,6 +234,9 @@ describe("/api/clients/[id]/blocks", () => {
         })
       );
       expect(payload.data.blocks).toHaveLength(2);
+      // The seed helper writes this response straight into the chain cache,
+      // so every echo of the payload carries the floor.
+      expect(payload.data.planStartFloor).toBe(TODAY);
       expect(recordAuditEvent).toHaveBeenCalledWith(
         expect.objectContaining({
           action: "block.chain_update",

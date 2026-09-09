@@ -112,6 +112,7 @@ import {
 import { clearNutritionPlansForClient } from '@/services/nutrition-plan-clear-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { getClientTodayString } from '@/services/today-service'
+import { resolveEventDeletionFloor } from '@/services/event-deletion-floor'
 import { getAuthenticatedCoachId } from '@/lib/auth-helpers'
 import { GET, POST, DELETE } from './route'
 
@@ -291,6 +292,39 @@ describe('Nutrition Route POST - effectiveFrom judged against client-local today
 
     expect(response.status).toBe(400)
     expect(data.error).toBe('Effective date cannot be in the past')
+  })
+
+  // The shared deletion floor, both directions: a day the client has touched
+  // can be neither emptied nor re-prescribed. Here the client logged today, so
+  // the floor is tomorrow.
+  it('refuses effectiveFrom on a day the client has already logged, naming them and the first day targets can start', async () => {
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue('2099-01-03')
+    const request = makeRequest({ ...mockBody, effectiveFrom: '2099-01-02' })
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toBe('Test Client has already logged 2 Jan. Targets can start from 3 Jan.')
+    // Judged with the CLIENT's today, the same anchor as the past-date belt.
+    expect(resolveEventDeletionFloor).toHaveBeenCalledWith('client-1', '2099-01-02')
+    expect(createNutritionPlan).not.toHaveBeenCalled()
+  })
+
+  it('judges the default start (no effectiveFrom = today) against the floor too', async () => {
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue('2099-01-03')
+    const request = makeRequest(mockBody)
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+
+    expect(response.status).toBe(400)
+    expect(createNutritionPlan).not.toHaveBeenCalled()
+  })
+
+  it('accepts effectiveFrom on the floor itself', async () => {
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue('2099-01-03')
+    const request = makeRequest({ ...mockBody, effectiveFrom: '2099-01-03' })
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+
+    expect(response.status).toBe(200)
   })
 })
 

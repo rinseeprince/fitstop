@@ -13,7 +13,15 @@ const CLIENT_TODAY = "2026-07-02";
 const RUNS_UNTIL = /Targets are already queued for/;
 const REPLACES = /This replaces the targets queued for/;
 
-function renderForm(overrides: Partial<ComponentProps<typeof NutritionSettingsForm>> = {}) {
+// `Partial` of a required prop would type each override as possibly undefined,
+// so the overrides are a plain subset: every key given is given in full.
+type FormOverrides = {
+  [K in keyof ComponentProps<typeof NutritionSettingsForm>]?: ComponentProps<
+    typeof NutritionSettingsForm
+  >[K];
+};
+
+function renderForm(overrides: FormOverrides = {}) {
   const onEffectiveFromChange = vi.fn();
   render(
     <NutritionSettingsForm
@@ -23,6 +31,8 @@ function renderForm(overrides: Partial<ComponentProps<typeof NutritionSettingsFo
       onSettingsChange={vi.fn()}
       effectiveFrom={CLIENT_TODAY}
       clientToday={CLIENT_TODAY}
+      startFloor={CLIENT_TODAY}
+      clientName="Alex Doe"
       queuedChangeDate={null}
       onEffectiveFromChange={onEffectiveFromChange}
       {...overrides}
@@ -37,9 +47,30 @@ function renderForm(overrides: Partial<ComponentProps<typeof NutritionSettingsFo
 describe("NutritionSettingsForm — Starts on", () => {
   beforeEach(cleanup);
 
-  it("floors the field at the CLIENT's today — the server's past-date belt, as an affordance", () => {
+  it("floors the field at the start floor — the server's belt, as an affordance", () => {
     renderForm();
     expect(screen.getByLabelText("Starts on")).toHaveAttribute("min", CLIENT_TODAY);
+  });
+
+  // The floor is the shared deletion floor (commit B): today, or tomorrow once
+  // the client has logged today. A greyed-out today with no explanation is
+  // worse than an error, so the field says why.
+  describe("the logged-today line", () => {
+    const TOMORROW = "2026-07-03";
+
+    it("floors at the deletion floor and says who logged which day, and when targets can start", () => {
+      renderForm({ startFloor: TOMORROW, effectiveFrom: TOMORROW });
+      expect(screen.getByLabelText("Starts on")).toHaveAttribute("min", TOMORROW);
+      // en-AU spells July in full (June/July/Sept are the four-letter months).
+      expect(screen.getByText(/has already logged/)).toHaveTextContent(
+        "Alex Doe has already logged 2 July. Targets can start from 3 July."
+      );
+    });
+
+    it("says nothing while the floor is today", () => {
+      renderForm();
+      expect(screen.queryByText(/has already logged/)).toBeNull();
+    });
   });
 
   it("shows the day it was given — the client's today until the coach picks", () => {
@@ -54,7 +85,7 @@ describe("NutritionSettingsForm — Starts on", () => {
   });
 
   it("renders empty, with no floor, until the resolved inputs have loaded", () => {
-    renderForm({ effectiveFrom: null, clientToday: null });
+    renderForm({ effectiveFrom: null, clientToday: null, startFloor: null });
     const field = screen.getByLabelText("Starts on");
     expect(field).toHaveValue("");
     expect(field).not.toHaveAttribute("min");

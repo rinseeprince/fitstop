@@ -146,6 +146,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
         plan={builder.plan ?? null}
         editMode={editMode}
         clientTimezone={builder.clientTimezone}
+        clientName={clientName}
         onUpdate={builder.fetchPlan}
         onEditModeChange={setEditMode}
         onDeleteFuture={

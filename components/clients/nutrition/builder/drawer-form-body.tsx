@@ -96,6 +96,8 @@ export function DrawerFormBody() {
             onSettingsChange={builder.handleSettingsChange}
             effectiveFrom={builder.effectiveFrom}
             clientToday={builder.clientToday}
+            startFloor={builder.startFloor}
+            clientName={builder.client.name}
             queuedChangeDate={builder.nutritionData?.scheduledFor ?? null}
             onEffectiveFromChange={builder.handleEffectiveFromChange}
           />

@@ -229,6 +229,31 @@ describe("extendTrainingToBlockEnd", () => {
     expect(rows.every((r) => r.week_index > 0)).toBe(true);
   });
 
+  it("lays the continuation from the deletion floor, never onto a day the client has logged", async () => {
+    // The grid stopped yesterday: 5 slots from 30 Aug reach 3 Sep, and TODAY
+    // is 4 Sep, so the first new day is today. The client has logged today,
+    // so the floor is tomorrow, and a session laid on today would sit beside
+    // the one they logged — the double-event defect the placement refuses.
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValueOnce("2026-09-05");
+    wire(
+      { id: "p1", effective_from: "2026-08-30", authored_slot_count: 3 },
+      [
+        { id: "n0", week_index: 1, order_index: 0 },
+        { id: "n1", week_index: 1, order_index: 1 },
+      ]
+    );
+
+    await extendTrainingToBlockEnd({
+      clientId: "c1", clientToday: TODAY,
+      blockStartsOn: "2026-08-30", blockEndsOn: "2026-09-05",
+    });
+
+    expect(resolveEventDeletionFloor).toHaveBeenCalledWith("c1", TODAY);
+    expect(generateProgramEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ startDate: "2026-09-05", endDate: "2026-09-05" })
+    );
+  });
+
   it("declines a plan whose pass length was never recorded", async () => {
     // Placed before migration 165. A guessed program is worse than none, so the
     // caller tells the coach to place one.

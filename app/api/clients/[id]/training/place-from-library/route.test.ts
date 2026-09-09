@@ -5,7 +5,6 @@ vi.mock("@/services/training-event-occupancy", () => ({
   // The route imports this only for the error class; the real module pulls in
   // supabase-admin at load, which has no env in tests.
   DateOccupiedError: class DateOccupiedError extends Error {},
-  hasCompletedWorkoutOn: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("@/services/client-service", () => ({
@@ -37,12 +36,14 @@ vi.mock("@/services/library-placement-service", () => ({
   PlacementSupersedeError: class PlacementSupersedeError extends Error {},
 }));
 
-vi.mock("@/services/coach-saved-plan-service", () => ({
-  getSavedPlanFirstSlotIsRest: vi.fn().mockResolvedValue(false),
-}));
-
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
+}));
+
+// The one shared answer to "from which day may a plan start?" — its own rules
+// are proved in services/event-deletion-floor.test.ts.
+vi.mock("@/services/event-deletion-floor", () => ({
+  resolveEventDeletionFloor: vi.fn(),
 }));
 
 vi.mock("@/services/nutrition-event-service", () => ({
@@ -59,8 +60,7 @@ import {
   placeInlineEditedPlanOnCalendar,
 } from "@/services/library-placement-service";
 import { getClientTodayString } from "@/services/today-service";
-import { hasCompletedWorkoutOn } from "@/services/training-event-occupancy";
-import { getSavedPlanFirstSlotIsRest } from "@/services/coach-saved-plan-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { PlacementSupersedeError } from "@/services/library-placement-service";
 import { POST } from "./route";
@@ -99,14 +99,18 @@ async function callRoute(body: Record<string, unknown>) {
 
 // Fixed past dates: the guard compares request input against the mocked
 // client-local today, so assertions can never collide with the host clock.
+// The client's today is 15 Jan; the floor is 15 Jan until a test says the
+// client has logged today, when it is 16 Jan.
 describe("POST /api/clients/[id]/training/place-from-library start-date guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getClientById).mockResolvedValue({
       id: clientId,
       coachId: "coach-1",
+      name: "Chloe",
     } as never);
     vi.mocked(getClientTodayString).mockResolvedValue("2026-01-15");
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-01-15");
     vi.mocked(placePlanOnCalendar).mockResolvedValue({
       planId: "plan-1",
       sessionsCreated: 3,
@@ -149,27 +153,40 @@ describe("POST /api/clients/[id]/training/place-from-library start-date guard", 
     );
   });
 
-  it("warns (409) when the start day already has a completed workout, and places when the coach says start anyway", async () => {
-    vi.mocked(hasCompletedWorkoutOn).mockResolvedValueOnce(true);
-    const warned = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15" });
-    expect(warned.status).toBe(409);
-    expect((await warned.json()).error).toBe("start_day_has_completed_workout");
-    expect(placePlanOnCalendar).not.toHaveBeenCalled();
+  it("refuses a start on a day the client has already logged, naming them and the first day a plan can start", async () => {
+    // The floor moved to tomorrow: the client logged today. The old
+    // warn-and-override wrote the program's first session beside the
+    // completed one, and the check-in counted the pair as a missed session.
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-01-16");
+    const res = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15" });
+    const data = await res.json();
 
-    // startAnyway skips the check entirely (no second query), so nothing is
-    // queued here — a leftover mockResolvedValueOnce would leak into the next test.
-    const forced = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15", startAnyway: true });
-    expect(forced.status).toBe(200);
-    expect(hasCompletedWorkoutOn).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(400);
+    expect(data.error).toBe("Chloe has already logged 15 Jan. A plan can start from 16 Jan.");
+    // Judged with the CLIENT's today — the same anchor the past-date guard uses.
+    expect(resolveEventDeletionFloor).toHaveBeenCalledWith(clientId, "2026-01-15");
+    expect(placePlanOnCalendar).not.toHaveBeenCalled();
+  });
+
+  it("allows a start on the floor itself", async () => {
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-01-16");
+    const res = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-16" });
+
+    expect(res.status).toBe(200);
     expect(placePlanOnCalendar).toHaveBeenCalledTimes(1);
   });
 
-  it("does not warn when the program's first slot is a rest day (nothing lands on the start day)", async () => {
-    vi.mocked(hasCompletedWorkoutOn).mockResolvedValueOnce(true);
-    vi.mocked(getSavedPlanFirstSlotIsRest).mockResolvedValueOnce(true);
-    const res = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15" });
-    expect(res.status).toBe(200);
-    expect(placePlanOnCalendar).toHaveBeenCalledTimes(1);
+  it("has no override: a startAnyway flag changes nothing", async () => {
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-01-16");
+    const res = await callRoute({
+      type: "plan",
+      savedPlanId,
+      startDate: "2026-01-15",
+      startAnyway: true,
+    });
+
+    expect(res.status).toBe(400);
+    expect(placePlanOnCalendar).not.toHaveBeenCalled();
   });
 
   it("allows a future start date", async () => {
@@ -192,8 +209,10 @@ describe("POST /api/clients/[id]/training/place-from-library inline", () => {
     vi.mocked(getClientById).mockResolvedValue({
       id: clientId,
       coachId: "coach-1",
+      name: "Chloe",
     } as never);
     vi.mocked(getClientTodayString).mockResolvedValue("2026-01-15");
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-01-15");
     vi.mocked(placePlanOnCalendar).mockResolvedValue({
       planId: "plan-1",
       sessionsCreated: 3,
@@ -234,6 +253,20 @@ describe("POST /api/clients/[id]/training/place-from-library inline", () => {
     expect(res.status).toBe(400);
     expect(placeInlineEditedPlanOnCalendar).not.toHaveBeenCalled();
   });
+
+  it("re-runs the floor guard on the inline branch", async () => {
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-01-16");
+    const res = await callRoute({
+      type: "inline",
+      plan: inlinePlanBody,
+      startDate: "2026-01-15",
+    });
+    const data = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(data.error).toBe("Chloe has already logged 15 Jan. A plan can start from 16 Jan.");
+    expect(placeInlineEditedPlanOnCalendar).not.toHaveBeenCalled();
+  });
 });
 
 describe("the placement supersedes the earlier programs (migration 167)", () => {
@@ -242,8 +275,10 @@ describe("the placement supersedes the earlier programs (migration 167)", () => 
     vi.mocked(getClientById).mockResolvedValue({
       id: clientId,
       coachId: "coach-1",
+      name: "Chloe",
     } as never);
     vi.mocked(getClientTodayString).mockResolvedValue("2026-01-15");
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-01-15");
   });
 
   it("threads the furthest superseded day into the nutrition cascade as `to` (migration 167)", async () => {

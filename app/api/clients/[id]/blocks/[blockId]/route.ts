@@ -15,6 +15,7 @@ import {
   UnknownBlockIdError,
 } from "@/services/client-blocks-service";
 import { getClientTodayString } from "@/services/today-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 
@@ -91,7 +92,12 @@ export async function DELETE(
       };
     }
 
-    const result = await deleteBlock(clientId, clientToday, blockId);
+    // The chain payload carries the plan-start floor beside the client's today
+    // (see the GET); it does not depend on the delete, so the two run together.
+    const [result, planStartFloor] = await Promise.all([
+      deleteBlock(clientId, clientToday, blockId),
+      resolveEventDeletionFloor(clientId, clientToday),
+    ]);
 
     void recordAuditEvent({
       actorId: auth.coachId,
@@ -111,6 +117,7 @@ export async function DELETE(
           blocks: decorateBlocks(result.blocks, clientToday),
           cleared,
           clientToday,
+          planStartFloor,
         },
       },
       { status: 200 }
@@ -171,12 +178,10 @@ export async function PATCH(
     }
 
     const clientToday = await getClientTodayString(clientId);
-    const blocks = await setBlockArchived(
-      clientId,
-      clientToday,
-      blockId,
-      validation.data.archived
-    );
+    const [blocks, planStartFloor] = await Promise.all([
+      setBlockArchived(clientId, clientToday, blockId, validation.data.archived),
+      resolveEventDeletionFloor(clientId, clientToday),
+    ]);
 
     void recordAuditEvent({
       actorId: auth.coachId,
@@ -192,7 +197,7 @@ export async function PATCH(
     return NextResponse.json(
       {
         success: true,
-        data: { blocks: decorateBlocks(blocks, clientToday), clientToday },
+        data: { blocks: decorateBlocks(blocks, clientToday), clientToday, planStartFloor },
       },
       { status: 200 }
     );

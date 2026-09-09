@@ -312,6 +312,13 @@ export async function extendTrainingToBlockEnd(params: {
   const firstNewDate = addDaysToDateString(plan.effective_from, placed.length);
   const lastWeekIndex = placed[placed.length - 1].week_index;
 
+  // The walk below lays NEW sessions, so it starts at the shared deletion
+  // floor: the client's today, or tomorrow once they have logged anything
+  // today — a session laid beside a logged one is the double-event defect the
+  // placement's start guard refuses. The nutrition fill needs no floor because
+  // it replaces today's target with the numbers it already had; this adds.
+  const floor = await resolveEventDeletionFloor(clientId, clientToday);
+
   const rows: TablesInsert<"training_sessions">[] = continued.map((slot, i) => ({
     plan_id: plan.id,
     name: slot.is_rest ? "Rest" : slot.name,
@@ -362,7 +369,7 @@ export async function extendTrainingToBlockEnd(params: {
       calorieSurplusPercentage: (row.calorie_surplus_percentage as number | null) ?? null,
       estimatedCalories: null,
     })),
-    startDate: firstNewDate > clientToday ? firstNewDate : clientToday,
+    startDate: firstNewDate > floor ? firstNewDate : floor,
     endDate: end,
   });
 

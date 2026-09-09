@@ -19,6 +19,8 @@ import {
 import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
+import { formatDateOnlyShort } from "@/lib/date-helpers";
 import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
 
 /** The resolver's success arm — both plan handlers require complete inputs. */
@@ -182,11 +184,26 @@ export async function orchestrateNutritionPlanCreation(
   // spurious "past date" rejection.
   const clientToday = await getClientTodayString(clientId);
 
-  // Validate effectiveFrom date
-  if (body.effectiveFrom) {
-    if (body.effectiveFrom < clientToday) {
-      throw new NutritionPlanError("Effective date cannot be in the past", 400);
-    }
+  // The day the version takes effect: the coach's pick, else today.
+  const effectiveDate = body.effectiveFrom ?? clientToday;
+  if (effectiveDate < clientToday) {
+    throw new NutritionPlanError("Effective date cannot be in the past", 400);
+  }
+
+  // Nor may it start on a day the client has already logged: the shared
+  // deletion floor — the client's today, or tomorrow once they have logged
+  // anything today — the same line the training placement and both plan
+  // clears keep to. On this track alone a replaced target would be harmless
+  // (the next food save re-snapshots it); the rule is taken whole so the two
+  // tracks and the two directions cannot drift. So a same-day re-save is
+  // possible only while today is unlogged; afterwards the earliest start is
+  // tomorrow, and the RPC caps the running version at today.
+  const startFloor = await resolveEventDeletionFloor(clientId, clientToday);
+  if (effectiveDate < startFloor) {
+    throw new NutritionPlanError(
+      `${client.name} has already logged ${formatDateOnlyShort(clientToday)}. Targets can start from ${formatDateOnlyShort(startFloor)}.`,
+      400
+    );
   }
 
   // One resolver, shared with the coach GET, so the numbers the builder
@@ -209,7 +226,6 @@ export async function orchestrateNutritionPlanCreation(
   // version (migration 166). Both handlers hand it to the RPC, which stores it
   // on the row; the regenerate then reads the window there, so the row and the
   // days it materialises describe one window by construction.
-  const effectiveDate = body.effectiveFrom ?? clientToday;
   const effectiveUntil = await resolveNutritionPlacementEnd(clientId, effectiveDate);
 
   // Handle custom macros

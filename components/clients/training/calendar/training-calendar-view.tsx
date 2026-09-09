@@ -29,6 +29,8 @@ type TrainingCalendarViewProps = {
   plan: TrainingPlan | null;
   editMode: boolean;
   clientTimezone?: string;
+  /** For the apply dialog's sentence under its date field. */
+  clientName?: string;
   onUpdate: () => void;
   /** Renders the toolbar's View/Edit segmented control when provided. */
   onEditModeChange?: (editMode: boolean) => void;

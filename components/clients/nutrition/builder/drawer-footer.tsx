@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sparkles, AlertCircle } from "lucide-react";
 import { useNutritionBuilderContext } from "@/contexts/nutrition-builder-context";
+import { formatDateOnlyShort } from "@/lib/date-helpers";
 
 type DrawerFooterProps = {
   /** Fires only on a plan that actually SAVED (Session 7.4's return trip). */
@@ -42,6 +43,18 @@ export function DrawerFooter({ onSaved }: DrawerFooterProps) {
       builder.effectiveFrom < builder.clientToday
     ) {
       setSubmitError("The start date can't be in the past.");
+      return;
+    }
+    // Not past, but before the floor: a day the client has already logged.
+    if (
+      builder.effectiveFrom &&
+      builder.clientToday &&
+      builder.startFloor &&
+      builder.effectiveFrom < builder.startFloor
+    ) {
+      setSubmitError(
+        `${builder.client.name} has already logged ${formatDateOnlyShort(builder.clientToday)}. Targets can start from ${formatDateOnlyShort(builder.startFloor)}.`
+      );
       return;
     }
     setSubmitError(null);

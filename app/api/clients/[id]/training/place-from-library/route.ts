@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
-import { DateOccupiedError, hasCompletedWorkoutOn } from "@/services/training-event-occupancy";
+import { DateOccupiedError } from "@/services/training-event-occupancy";
 import { getTrainingPlanById } from "@/services/training-service";
-import { getSavedPlanFirstSlotIsRest } from "@/services/coach-saved-plan-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -13,6 +12,8 @@ import {
   PlacementSupersedeError,
 } from "@/services/library-placement-service";
 import { getClientTodayString } from "@/services/today-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
+import { formatDateOnlyShort } from "@/lib/date-helpers";
 import { cascadeNutritionAfterTrainingChange, type NutritionRegenScope } from "@/services/nutrition-event-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
@@ -30,9 +31,6 @@ const placeFromLibrarySchema = z.discriminatedUnion("type", [
     type: z.literal("plan"),
     savedPlanId: z.string().uuid(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
-    // The coach has seen the "start day already has a completed workout" 409
-    // and chose to proceed. Never sent on a first attempt.
-    startAnyway: z.boolean().optional(),
   }),
   // Apply an edited working copy without overwriting the library template. No
   // savedPlanId field: the inline path structurally cannot accept/trust a
@@ -41,7 +39,6 @@ const placeFromLibrarySchema = z.discriminatedUnion("type", [
     type: z.literal("inline"),
     plan: inlinePlanBodySchema,
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
-    startAnyway: z.boolean().optional(),
   }),
   z.object({
     type: z.literal("session"),
@@ -50,6 +47,51 @@ const placeFromLibrarySchema = z.discriminatedUnion("type", [
     targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
   }),
 ]);
+
+/**
+ * A program may not start before the shared deletion floor: the client's
+ * today, or tomorrow once they have logged anything today.
+ *
+ * "Past" is judged against the client's local today (the placement RPC's own
+ * p_today anchor), never the coach's device or server UTC. The floor is the
+ * one the plan clears remove days from — ONE function, both directions, so a
+ * day the client has touched can be neither emptied nor re-prescribed. There
+ * is no override: placing onto a logged day used to be a warn-and-override,
+ * and the override wrote the program's first session BESIDE the completed one
+ * (the walk's upsert arbitrates on (client_id, training_session_id, date) and
+ * the completed event belongs to another session row), which the check-in
+ * then counted as a missed session.
+ *
+ * Lives at the route, where the past-date guard has always lived, and both
+ * program branches call it.
+ */
+async function refuseStartBeforeFloor(
+  clientId: string,
+  clientName: string,
+  startDate: string
+): Promise<NextResponse | null> {
+  const clientToday = await getClientTodayString(clientId);
+  if (startDate < clientToday) {
+    return NextResponse.json(
+      {
+        error: `Start date ${startDate} has already passed for this client (their local date is ${clientToday}).`,
+      },
+      { status: 400 }
+    );
+  }
+
+  const floor = await resolveEventDeletionFloor(clientId, clientToday);
+  if (startDate < floor) {
+    return NextResponse.json(
+      {
+        error: `${clientName} has already logged ${formatDateOnlyShort(clientToday)}. A plan can start from ${formatDateOnlyShort(floor)}.`,
+      },
+      { status: 400 }
+    );
+  }
+
+  return null;
+}
 
 /**
  * POST - Place a saved plan or session from the coach library onto a client's calendar.
@@ -89,37 +131,8 @@ export async function POST(
     const data = validation.data;
 
     if (data.type === "plan") {
-      // Judge "past" against the client's local today (same anchor as the
-      // placement RPC's p_today), not the coach's device or server UTC.
-      const clientToday = await getClientTodayString(clientId);
-      if (data.startDate < clientToday) {
-        return NextResponse.json(
-          {
-            error: `Start date ${data.startDate} has already passed for this client (their local date is ${clientToday}).`,
-          },
-          { status: 400 }
-        );
-      }
-
-      // Warn-first, never silent: a start day that already holds a completed
-      // (or partial) workout would put the program's first session beside it
-      // and show the client two workouts that day. 409 with a stable code; the
-      // dialog offers "Start anyway" (re-sends with startAnyway) or a new date.
-      // A rest-first program lands nothing on the start day, so there is nothing
-      // to warn about; the slot read runs only once the day check has fired.
-      if (
-        !data.startAnyway &&
-        (await hasCompletedWorkoutOn(clientId, data.startDate)) &&
-        (await getSavedPlanFirstSlotIsRest(data.savedPlanId, coachId)) !== true
-      ) {
-        return NextResponse.json(
-          {
-            error: "start_day_has_completed_workout",
-            message: `${data.startDate} already has a completed workout. Start anyway, or pick another start date.`,
-          },
-          { status: 409 }
-        );
-      }
+      const refused = await refuseStartBeforeFloor(clientId, client.name, data.startDate);
+      if (refused) return refused;
 
       const result = await placePlanOnCalendar({
         savedPlanId: data.savedPlanId,
@@ -160,36 +173,10 @@ export async function POST(
     }
 
     if (data.type === "inline") {
-      // Same client-local "past" guard as the plan branch — it lives here, not
-      // in the service/RPC, so it must be re-run for this branch.
-      const clientToday = await getClientTodayString(clientId);
-      if (data.startDate < clientToday) {
-        return NextResponse.json(
-          {
-            error: `Start date ${data.startDate} has already passed for this client (their local date is ${clientToday}).`,
-          },
-          { status: 400 }
-        );
-      }
-
-      // Warn-first, never silent: a start day that already holds a completed
-      // (or partial) workout would put the program's first session beside it
-      // and show the client two workouts that day. 409 with a stable code; the
-      // dialog offers "Start anyway" (re-sends with startAnyway) or a new date.
-      const firstSlot = [...data.plan.sessions].sort((a, b) => a.orderIndex - b.orderIndex)[0];
-      if (
-        !data.startAnyway &&
-        firstSlot?.isRest !== true &&
-        (await hasCompletedWorkoutOn(clientId, data.startDate))
-      ) {
-        return NextResponse.json(
-          {
-            error: "start_day_has_completed_workout",
-            message: `${data.startDate} already has a completed workout. Start anyway, or pick another start date.`,
-          },
-          { status: 409 }
-        );
-      }
+      // The same guard as the plan branch — it lives here, not in the
+      // service/RPC, so it must be re-run for this branch.
+      const refused = await refuseStartBeforeFloor(clientId, client.name, data.startDate);
+      if (refused) return refused;
 
       const result = await placeInlineEditedPlanOnCalendar({
         plan: data.plan,

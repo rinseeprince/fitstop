@@ -709,6 +709,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
             inlinePlan={apply.inlinePlan}
             preselectedClientId={clientId ?? undefined}
             clientTimezone={clientTimezone ?? undefined}
+            clientName={clientName ?? undefined}
             onSuccess={() => onApplied?.()}
           />
         </>

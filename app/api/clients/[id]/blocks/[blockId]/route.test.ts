@@ -22,6 +22,12 @@ vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
 
+// The plan-start floor rides the chain payload; its own rules are proved in
+// services/event-deletion-floor.test.ts.
+vi.mock("@/services/event-deletion-floor", () => ({
+  resolveEventDeletionFloor: vi.fn(),
+}));
+
 // The factory defines the error classes so the route and this test share the
 // same class objects for instanceof.
 // The route reaches the two plan-delete services only behind ?clearPlans=true;
@@ -55,6 +61,7 @@ vi.mock("@/services/client-blocks-service", () => {
 
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getClientTodayString } from "@/services/today-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { clearTrainingPlansForClient } from "@/services/training-plan-clear-service";
 import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
@@ -98,6 +105,7 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
       coachId: "coach-1",
     });
     vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue(TODAY);
   });
 
   it("404s a client the coach does not own, before any read", async () => {
@@ -125,6 +133,9 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
     expect(payload.data.mode).toBeUndefined();
     expect(payload.data.changes).toBeUndefined();
     expect(payload.data.clientToday).toBe(TODAY);
+    // Every echo of the chain payload carries the plan-start floor: the seed
+    // helper writes this response straight into the chain cache.
+    expect(payload.data.planStartFloor).toBe(TODAY);
     expect(payload.data.blocks[0]).toEqual(
       expect.objectContaining({ id: "a", state: "past", weeks: 2 })
     );
@@ -261,6 +272,7 @@ describe("/api/clients/[id]/blocks/[blockId] PATCH (archive)", () => {
       coachId: "coach-1",
     });
     vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue(TODAY);
   });
 
   it("404s a client the coach does not own, before any read", async () => {
@@ -300,6 +312,7 @@ describe("/api/clients/[id]/blocks/[blockId] PATCH (archive)", () => {
       true
     );
     expect(payload.data.clientToday).toBe(TODAY);
+    expect(payload.data.planStartFloor).toBe(TODAY);
     expect(payload.data.blocks[0]).toEqual(
       expect.objectContaining({ id: "a", archivedAt: "2026-08-12T09:00:00Z" })
     );

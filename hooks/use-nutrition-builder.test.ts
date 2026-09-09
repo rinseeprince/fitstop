@@ -10,6 +10,21 @@ vi.mock("@/hooks/use-nutrition-calendar-events", () => ({
   useInvalidateNutritionCalendar: () => vi.fn().mockResolvedValue(undefined),
 }));
 
+// The blocks payload, which carries the plan-start floor (the shared deletion
+// floor: today, or tomorrow once the client has logged today). Held where the
+// module mock can reach it; null = the payload has not landed.
+const blocksState = vi.hoisted(() => ({ planStartFloor: null as string | null }));
+vi.mock("@/components/clients/metrics/hooks/use-client-blocks", () => ({
+  useClientBlocks: () => ({
+    blocks: [],
+    clientToday: null,
+    planStartFloor: blocksState.planStartFloor,
+    isLoading: false,
+    isError: false,
+  }),
+  useClearBlockFacts: () => vi.fn().mockResolvedValue(undefined),
+}));
+
 // What the coach GET ships, held where the module mock below can reach it.
 const planState = vi.hoisted(() => ({
   nutritionData: null as unknown,
@@ -172,5 +187,64 @@ describe("useNutritionBuilder — the day the plan takes effect", () => {
     });
 
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
+  });
+});
+
+// The field's floor is the shared deletion floor (commit B): a version may not
+// start on a day the client has already logged, the same line the training
+// placement and both plan clears keep to. The server refuses a start before it;
+// this is the affordance, and the default start follows it.
+describe("useNutritionBuilder — the start floor", () => {
+  const TOMORROW = "2026-07-03";
+
+  beforeEach(() => {
+    planState.nutritionData = {
+      calcInputs: CALC_INPUTS,
+      hasPlan: false,
+      includeActivityBurn: true,
+      scheduledFor: null,
+    };
+    planState.refetchNutrition.mockReset();
+    blocksState.planStartFloor = null;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    blocksState.planStartFloor = null;
+  });
+
+  it("is the client's today until the payload lands", () => {
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    expect(result.current.startFloor).toBe(CLIENT_TODAY);
+  });
+
+  it("moves to the floor once the client has logged today, and the default start follows it", () => {
+    blocksState.planStartFloor = TOMORROW;
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    expect(result.current.startFloor).toBe(TOMORROW);
+    expect(result.current.effectiveFrom).toBe(TOMORROW);
+    expect(result.current.clientToday).toBe(CLIENT_TODAY);
+  });
+
+  it("never floors before the client's today, whatever a stale payload says", () => {
+    blocksState.planStartFloor = "2026-07-01";
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    expect(result.current.startFloor).toBe(CLIENT_TODAY);
+    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
+  });
+
+  it("is null until the resolved inputs have loaded, even with the floor in hand", () => {
+    planState.nutritionData = null;
+    blocksState.planStartFloor = TOMORROW;
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    expect(result.current.startFloor).toBeNull();
+    expect(result.current.effectiveFrom).toBeNull();
+  });
+
+  it("the coach's own pick still wins over the floor's default", () => {
+    blocksState.planStartFloor = TOMORROW;
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
+    expect(result.current.effectiveFrom).toBe(THREE_WEEKS_OUT);
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Calendar } from "lucide-react";
 import useSWR from "swr";
 import {
@@ -27,12 +27,15 @@ import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-e
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
-import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
+import {
+  useClearBlockFacts,
+  useClientBlocks,
+} from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useRoundTripBlockStart } from "@/components/clients/metrics/hooks/use-round-trip-block";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { format } from "date-fns";
 import {
-  getDateString,
+  formatDateOnlyShort,
   getTodayDateString,
   getTodayDateStringInTimezone,
 } from "@/lib/date-helpers";
@@ -53,6 +56,8 @@ type ApplyToClientDialogProps = {
   preselectedClientId?: string;
   /** Timezone of the preselected client (the client list isn't fetched in that path). */
   clientTimezone?: string;
+  /** Name of the preselected client, for the sentence under the date field. */
+  clientName?: string;
   onSuccess?: (clientId: string) => void;
 };
 
@@ -69,6 +74,7 @@ export function ApplyToClientDialog({
   inlinePlan,
   preselectedClientId,
   clientTimezone,
+  clientName,
   onSuccess,
 }: ApplyToClientDialogProps) {
   const { toast } = useToast();
@@ -78,39 +84,13 @@ export function ApplyToClientDialog({
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
-  // Seeded from the block the coach came from, when they came from one: the
-  // whole point of "place one" is that they have already said which days they
-  // mean. The block id rides the URL under the round-trip contract, and the
-  // chain is in SWR's cache because they were just looking at it — so this is a
-  // read of state they can see, not a second source of truth. Falls back to the
-  // next Monday, the right guess when nobody has said anything.
-  //
-  // Defaults to TODAY, the same day the nutrition builder opens on — a coach
-  // placing a program almost always means now, and a guessed next-Monday made
-  // them retype a date on every apply.
-  //
-  // Seeded from the block instead when they came from one, floored at today
-  // because the route refuses a past start outright: a block already under way
-  // opens on today, not on the day it began.
-  //
-  // Computed lazily from PROPS alone. The `clients` list this component fetches
-  // is not there on the first render, so the preselected client's timezone is
-  // the only one that can be honoured at mount — which is the case that matters,
-  // since the round trip only ever arrives with a client already chosen.
-  const blockStart = useRoundTripBlockStart(preselectedClientId, "apply");
-  const seedStartDate = useCallback(() => {
-    const tz = clientTimezone && clientTimezone !== "UTC" ? clientTimezone : null;
-    const today = tz ? getTodayDateStringInTimezone(tz) : getTodayDateString();
-    return blockStart && blockStart > today ? blockStart : today;
-  }, [blockStart, clientTimezone]);
-  // Shared with the reset-on-open below, which is the one that usually decides:
-  // the dialog is mounted once and reopened, so a seed only in the initialiser
-  // would be right the first time and stale every time after.
-  const [startDate, setStartDate] = useState(seedStartDate);
+  // The coach's own pick, null until they touch the field. The date the field
+  // shows is DERIVED from it below — the pick, else a seed built from the
+  // floor and the round-trip block — so the default follows the floor as the
+  // payload lands instead of being reset by an effect (the nutrition
+  // builder's shape). An emptied field means the seed again.
+  const [startDatePick, setStartDatePick] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // The route's warn-first 409: the chosen start day already holds a completed
-  // workout. Shown inline under the date; cleared when the date changes.
-  const [startDayWarning, setStartDayWarning] = useState<string | null>(null);
 
   // Fetch clients (only when no preselected client)
   const { data: clientsData } = useSWR<{ clients: ClientOption[] }>(
@@ -124,10 +104,9 @@ export function ApplyToClientDialog({
   useEffect(() => {
     if (open) {
       setClientId(preselectedClientId ?? "");
-      setStartDate(seedStartDate());
-      setStartDayWarning(null);
+      setStartDatePick(null);
     }
-  }, [open, preselectedClientId, seedStartDate]);
+  }, [open, preselectedClientId]);
 
   const trainingDays = savedPlan.sessions.filter((s) => !s.isRest).length;
   const restDays = savedPlan.sessions.length - trainingDays;
@@ -137,24 +116,47 @@ export function ApplyToClientDialog({
       ? Math.max(...savedPlan.sessions.map((s) => s.weekIndex)) + 1
       : 1);
 
-  // Mirror the server guard's anchor (getClientTodayString): a real synced
-  // client timezone wins; the 'UTC' never-synced sentinel and an unknown
-  // timezone fall back to the coach's device (= stored coach tz), so the
-  // picker always greys out the past. The server guard stays the authority.
+  // Mirror the server guard's anchor (getClientTodayString) until the payload
+  // below lands: a real synced client timezone wins; the 'UTC' never-synced
+  // sentinel and an unknown timezone fall back to the coach's device (= stored
+  // coach tz). The server guard stays the authority.
   const selectedClientTimezone = preselectedClientId
     ? clientTimezone
     : clients.find((c) => c.id === clientId)?.timezone;
   const selectedClientName = preselectedClientId
-    ? null
+    ? (clientName ?? null)
     : (clients.find((c) => c.id === clientId)?.name ?? null);
   const deviceToday = getTodayDateString();
   const clientLocalToday =
     selectedClientTimezone && selectedClientTimezone !== "UTC"
       ? getTodayDateStringInTimezone(selectedClientTimezone)
       : null;
-  const minStartDate = clientLocalToday ?? deviceToday;
 
-  const handleSubmit = async (startAnyway = false) => {
+  // The earliest day a program may START: the shared deletion floor — the
+  // client's today, or tomorrow once they have logged anything today. A server
+  // answer (it reads the client's logs), so it rides the blocks payload beside
+  // the client's today, the same read the round-trip seed already makes; an
+  // empty client id fetches nothing. Until it lands the timezone-derived today
+  // stands in, and the server refuses a start before the floor either way.
+  const { clientToday: payloadToday, planStartFloor } = useClientBlocks(clientId);
+  const startFloor = planStartFloor ?? clientLocalToday ?? deviceToday;
+  // Seeded from the block the coach came from, when they came from one: the
+  // whole point of "place one" is that they have already said which days they
+  // mean. The block id rides the URL under the round-trip contract, and the
+  // chain is in SWR's cache because they were just looking at it. A block
+  // already under way seeds the floor, not the day it began; with no round
+  // trip the floor itself is the seed — a coach placing a program almost
+  // always means now.
+  const blockStart = useRoundTripBlockStart(preselectedClientId, "apply");
+  const seedStartDate = blockStart && blockStart > startFloor ? blockStart : startFloor;
+  const startDate = startDatePick ?? seedStartDate;
+  // Why today is greyed out, when it is — said only once the payload says so.
+  const loggedLine =
+    planStartFloor && payloadToday && planStartFloor > payloadToday
+      ? { logged: payloadToday, from: planStartFloor }
+      : null;
+
+  const handleSubmit = async () => {
     if (!clientId) {
       toast({ title: "Select a client", variant: "destructive" });
       return;
@@ -166,18 +168,8 @@ export function ApplyToClientDialog({
       // Edited working copy -> place inline (template untouched). Otherwise
       // place the saved plan by id (pristine, ownership-checked server-side).
       const body = inlinePlan
-        ? {
-            type: "inline" as const,
-            plan: inlinePlan,
-            startDate,
-            ...(startAnyway ? { startAnyway: true } : {}),
-          }
-        : {
-            type: "plan" as const,
-            savedPlanId: savedPlan.id,
-            startDate,
-            ...(startAnyway ? { startAnyway: true } : {}),
-          };
+        ? { type: "inline" as const, plan: inlinePlan, startDate }
+        : { type: "plan" as const, savedPlanId: savedPlan.id, startDate };
 
       const res = await fetch(url, {
         method: "POST",
@@ -186,13 +178,6 @@ export function ApplyToClientDialog({
       });
 
       const data = await res.json();
-
-      if (res.status === 409 && data.error === "start_day_has_completed_workout") {
-        setStartDayWarning(
-          typeof data.message === "string" ? data.message : "That day already has a completed workout.",
-        );
-        return;
-      }
 
       if (!res.ok) {
         toast({
@@ -272,36 +257,23 @@ export function ApplyToClientDialog({
             </div>
           )}
 
-          {/* Start date */}
+          {/* Start date. `min` is the floor; the server refuses a start before
+              it, and the sentence under the field says why today is greyed. */}
           <div className="space-y-1.5">
             <Label htmlFor="start-date">Start Date</Label>
             <Input
               id="start-date"
               type="date"
               value={startDate}
-              min={minStartDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setStartDayWarning(null);
-              }}
+              min={startFloor}
+              onChange={(e) => setStartDatePick(e.target.value || null)}
             />
-            {startDayWarning && (
-              <div
-                role="alert"
-                className="flex items-start justify-between gap-3 rounded-[6px] bg-[rgba(192,96,96,0.08)] px-3 py-2 text-[12px] text-[#c06060]"
-              >
-                <span>{startDayWarning}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto shrink-0 px-2 py-0.5 text-[12px] text-[#c06060] hover:text-[#c06060]"
-                  disabled={isSubmitting}
-                  onClick={() => void handleSubmit(true)}
-                >
-                  Start anyway
-                </Button>
-              </div>
+            {loggedLine && (
+              <p className="text-[11px] leading-[1.4] text-[#5a7d82]">
+                {selectedClientName ?? "This client"} has already logged{" "}
+                {formatDateOnlyShort(loggedLine.logged)}. A plan can start from{" "}
+                {formatDateOnlyShort(loggedLine.from)}.
+              </p>
             )}
             {clientLocalToday && clientLocalToday !== deviceToday && (
               <p className="text-[10px] text-muted-foreground">

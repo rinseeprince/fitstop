@@ -12,6 +12,12 @@ vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn().mockResolvedValue("2026-07-02"),
 }));
 
+// The start floor. Today unless a test says the client has logged today; its
+// own rules are proved in services/event-deletion-floor.test.ts.
+vi.mock("@/services/event-deletion-floor", () => ({
+  resolveEventDeletionFloor: vi.fn().mockResolvedValue("2026-07-02"),
+}));
+
 vi.mock("@/lib/validations/nutrition", () => ({
   validateClientForNutrition: vi.fn().mockReturnValue({ valid: true, errors: [] }),
 }));

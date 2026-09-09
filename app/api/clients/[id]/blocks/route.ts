@@ -12,6 +12,7 @@ import {
   BlockWindowError,
 } from "@/services/client-blocks-service";
 import { getClientTodayString } from "@/services/today-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 
@@ -50,19 +51,28 @@ export async function GET(
     const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
-    const [clientToday, blocks] = await Promise.all([
-      getClientTodayString(clientId),
+    const clientToday = await getClientTodayString(clientId);
+    const [blocks, planStartFloor] = await Promise.all([
       listBlocks(clientId),
+      resolveEventDeletionFloor(clientId, clientToday),
     ]);
 
     // clientToday rides the payload so the browser previews the delete shift
     // (computeDeleteShift) with the SAME today the DELETE will execute with —
     // a device-tz today diverges from the client's around midnight, which is
     // exactly the preview-vs-execution drift the shared pure helper forbids.
+    //
+    // planStartFloor rides beside it for the same reason: the earliest day a
+    // plan may START on this calendar (the shared deletion floor — today, or
+    // tomorrow once the client has logged anything today) depends on the
+    // client's logs, so only the server can answer it. Both setup surfaces
+    // floor their date pickers on it; a block itself is not constrained by it.
+    // Every handler that echoes this payload carries it, because the seed
+    // helper writes a mutation's response straight into the chain cache.
     return NextResponse.json(
       {
         success: true,
-        data: { blocks: decorateBlocks(blocks, clientToday), clientToday },
+        data: { blocks: decorateBlocks(blocks, clientToday), clientToday, planStartFloor },
       },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
@@ -105,11 +115,12 @@ export async function PUT(
     }
 
     const clientToday = await getClientTodayString(clientId);
-    const blocks = await replaceBlockChain(
-      clientId,
-      clientToday,
-      validation.data
-    );
+    // The floor does not depend on the write (a block edit touches no log), so
+    // the two run together.
+    const [blocks, planStartFloor] = await Promise.all([
+      replaceBlockChain(clientId, clientToday, validation.data),
+      resolveEventDeletionFloor(clientId, clientToday),
+    ]);
 
     void recordAuditEvent({
       actorId: auth.coachId,
@@ -124,7 +135,7 @@ export async function PUT(
     return NextResponse.json(
       {
         success: true,
-        data: { blocks: decorateBlocks(blocks, clientToday), clientToday },
+        data: { blocks: decorateBlocks(blocks, clientToday), clientToday, planStartFloor },
       },
       { status: 200 }
     );

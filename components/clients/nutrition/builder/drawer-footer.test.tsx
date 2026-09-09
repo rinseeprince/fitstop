@@ -18,11 +18,13 @@ const builder = {
   manualBlockingError: null as string | null,
   calcInputs: { status: "ready", today: CLIENT_TODAY },
   isGenerating: false,
-  client: { bmr: 1800 },
+  client: { bmr: 1800, name: "Alex Doe" },
   // The day the plan takes effect is the drawer's Starts on setting, read here
   // at save time — nothing stands between the button and the save.
   effectiveFrom: CLIENT_TODAY as string | null,
   clientToday: CLIENT_TODAY as string | null,
+  // The field's floor: today, or tomorrow once the client has logged today.
+  startFloor: CLIENT_TODAY as string | null,
   generatePlan,
 };
 
@@ -34,6 +36,7 @@ beforeEach(() => {
   cleanup();
   generatePlan.mockReset();
   builder.effectiveFrom = CLIENT_TODAY;
+  builder.startFloor = CLIENT_TODAY;
 });
 
 function clickGenerate() {
@@ -77,6 +80,18 @@ describe("DrawerFooter — Generate saves directly from the drawer's settings", 
     render(<DrawerFooter />);
     clickGenerate();
     expect(screen.getByText("The start date can't be in the past.")).toBeInTheDocument();
+    expect(generatePlan).not.toHaveBeenCalled();
+  });
+
+  it("refuses a typed date on a day the client has already logged — not past, but before the floor — and saves nothing", () => {
+    builder.startFloor = "2026-07-03";
+    builder.effectiveFrom = CLIENT_TODAY;
+    render(<DrawerFooter />);
+    clickGenerate();
+    // en-AU spells July in full (June/July/Sept are the four-letter months).
+    expect(
+      screen.getByText("Alex Doe has already logged 2 July. Targets can start from 3 July.")
+    ).toBeInTheDocument();
     expect(generatePlan).not.toHaveBeenCalled();
   });
 });
