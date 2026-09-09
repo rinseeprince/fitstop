@@ -414,7 +414,7 @@ async function insertClientGoal() {
 async function insertNutritionPlan() {
   console.log("Inserting nutrition_plans version pair (closed + open) + daily targets...");
 
-  // Versioned model (migration 144): a closed predecessor + the open current
+  // Placement model (migration 166): a closed predecessor + the current
   // version, tiling the client's tenure, so date-resolved lookups
   // (coversDate, per-era history attribution) are exercised by the fixture
   // instead of degenerating to a single covering row.
@@ -450,7 +450,9 @@ async function insertNutritionPlan() {
       ...shared,
       id: PERF_NUTRITION_PLAN_ID,
       effective_from: v2From,
-      effective_until: null,
+      // Ends where insertNutritionEvents stops generating (migration 166: a
+      // version always carries its end).
+      effective_until: getDateDaysFrom(new Date(), 8 * 7),
       baseline_calories: 2400,
     },
   ]);

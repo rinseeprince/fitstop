@@ -57,7 +57,7 @@ describe("PATCH /nutrition/events/reset — per-version grouping (migration 144)
   it("splits a date list straddling an era boundary and resets each group from ITS version", async () => {
     vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([
       { id: "v1", effectiveFrom: "2026-01-01", effectiveUntil: "2026-04-30" },
-      { id: "v2", effectiveFrom: "2026-05-01", effectiveUntil: null },
+      { id: "v2", effectiveFrom: "2026-05-01", effectiveUntil: "2026-06-25" },
     ]);
 
     const response = await PATCH(makeRequest(["2026-05-02", "2026-04-29", "2026-04-30"]), params);
@@ -83,7 +83,7 @@ describe("PATCH /nutrition/events/reset — per-version grouping (migration 144)
 
   it("skips dates no version covers (there is no prescription to reset them to)", async () => {
     vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([
-      { id: "v2", effectiveFrom: "2026-05-01", effectiveUntil: null },
+      { id: "v2", effectiveFrom: "2026-05-01", effectiveUntil: "2026-06-25" },
     ]);
 
     const response = await PATCH(makeRequest(["2026-04-29", "2026-05-02"]), params);

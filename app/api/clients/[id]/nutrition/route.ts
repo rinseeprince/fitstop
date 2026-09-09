@@ -22,7 +22,7 @@ import {
 } from "@/services/nutrition-plan-orchestrator";
 import {
   getNutritionPlanForDate,
-  getOpenNutritionPlan,
+  getLatestNutritionPlan,
   getNextFutureNutritionPlan,
 } from "@/services/nutrition-plan-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
@@ -82,21 +82,21 @@ export async function GET(
     // needs it AND the calc-input resolver needs it, so fetching it once here
     // costs one query instead of two and removes a sequential hop.
     //
-    // THREE PLAN ROLES (migration 144 — versions, resolved by date):
+    // THREE PLAN ROLES (versions placed by date, migration 166):
     //   covering  → what governs TODAY: "Active since" + hasCurrentTargets.
-    //   open      → the latest-saved prescription: the drawer's seeds and the
+    //   latest    → the latest-saved prescription: the drawer's seeds and the
     //               goal-drift comparison. Seeding from anything else lets
     //               Generate clobber a queued prescription.
     //   future    → the EARLIEST queued version: "New targets from" / "Starts".
     //               A two-row shape hid the next change behind a third queued
     //               version; earliest-first cannot.
-    // The old todayEvent probe is retired: under versioning the covering ROW
-    // answers "is anything running" directly (events before a queued change
-    // belong to the still-covering old version).
-    const [covering, openPlan, nextFuture, activePlan, nextPlan, currentGoals] =
+    // The old todayEvent probe is retired: the covering ROW answers "is
+    // anything running" directly (events before a queued change belong to the
+    // still-covering old version).
+    const [covering, latestPlan, nextFuture, activePlan, nextPlan, currentGoals] =
       await Promise.all([
         getNutritionPlanForDate(clientId, clientToday),
-        getOpenNutritionPlan(clientId),
+        getLatestNutritionPlan(clientId),
         getNextFutureNutritionPlan(clientId, clientToday),
         getTrainingPlanSummaryForDate(clientId, clientToday),
         getNextFutureTrainingPlan(clientId, clientToday),
@@ -105,11 +105,12 @@ export async function GET(
     const hasTrainingPlan = Boolean(activePlan ?? nextPlan);
 
     // hasPlan = a version covers today OR one is queued (design: no covering
-    // AND no future = none). The drawer seeds from `open ?? covering` — never
-    // fresh defaults while hasPlan is true (the post-delete same-day state has
-    // a closed covering version and no open row; an untouched Regenerate must
-    // re-mint ITS numbers, not sedentary defaults).
-    const seedPlan = openPlan ?? covering;
+    // AND no future = none). A client whose every version has ENDED reads as
+    // having no plan — a gap is a real state — and the drawer starts fresh.
+    // The drawer seeds from `latest ?? covering` — never fresh defaults while
+    // hasPlan is true, so an untouched Regenerate re-mints ITS numbers, not
+    // sedentary defaults.
+    const seedPlan = latestPlan ?? covering;
     const hasPlan = (covering != null || nextFuture != null) && seedPlan != null;
 
     // `nutrition_plans.name` is never written, so the Plans-tab hero titles
@@ -166,7 +167,7 @@ export async function GET(
       clientGoal: toClientGoalInput(currentGoals, client),
     });
     // Drift compares against the version the drawer will actually seed and
-    // overwrite (open ?? covering) — comparing anything else would flag or
+    // overwrite (latest ?? covering) — comparing anything else would flag or
     // clear the banner against numbers Generate does not touch.
     const goalChanged = detectGoalDrift(
       { goalWeightKg: seedPlan.goal_weight_kg ?? null, deadline: seedPlan.goal_deadline ?? null },

@@ -45,8 +45,9 @@ type NutritionSettingsFormProps = {
    *  same day the server's past-date belt judges. */
   clientToday: string | null;
   /** The earliest queued version's start (the GET's `scheduledFor`). A pick
-   *  on or before it ABSORBS that version (migration 144) — one sentence says
-   *  so, then the save does what was asked: warn, never block. */
+   *  BEFORE it runs until the day before it; a pick ON it replaces it
+   *  (migration 166) — one sentence says which, then the save does what was
+   *  asked: inform, never block. */
   queuedChangeDate: string | null;
   onEffectiveFromChange: (date: string) => void;
 };
@@ -183,9 +184,15 @@ export function NutritionSettingsForm({
           onChange={(e) => onEffectiveFromChange(e.target.value)}
           className={cn(MONO, FOCUS_RING, "h-10 bg-white")}
         />
-        {queuedChangeDate && effectiveFrom && effectiveFrom <= queuedChangeDate && (
+        {queuedChangeDate && effectiveFrom && effectiveFrom < queuedChangeDate && (
+          <p className="text-[11px] leading-[1.4] text-[#5a7d82]">
+            Targets are already queued for {formatDateOnlyShort(queuedChangeDate)}. These run
+            until the day before.
+          </p>
+        )}
+        {queuedChangeDate && effectiveFrom && effectiveFrom === queuedChangeDate && (
           <p className="text-[11px] leading-[1.4] text-[#b45309]">
-            This replaces the change queued for {formatDateOnlyShort(queuedChangeDate)}.
+            This replaces the targets queued for {formatDateOnlyShort(queuedChangeDate)}.
           </p>
         )}
         <p className="text-[11px] text-[#93b0b4] leading-[1.4]">

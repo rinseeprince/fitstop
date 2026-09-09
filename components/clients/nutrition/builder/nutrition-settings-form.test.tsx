@@ -10,7 +10,8 @@ vi.mock("@/contexts/units-context", () => ({
 }));
 
 const CLIENT_TODAY = "2026-07-02";
-const WARNING = /This replaces the change queued for/;
+const RUNS_UNTIL = /Targets are already queued for/;
+const REPLACES = /This replaces the targets queued for/;
 
 function renderForm(overrides: Partial<ComponentProps<typeof NutritionSettingsForm>> = {}) {
   const onEffectiveFromChange = vi.fn();
@@ -59,30 +60,35 @@ describe("NutritionSettingsForm — Starts on", () => {
     expect(field).not.toHaveAttribute("min");
   });
 
-  // The absorb warning (migration 144): a save dated on or before a queued
-  // version's start replaces that version. Warn, never block — the same
-  // sentence the save-time dialog used to carry, now under the field.
-  describe("the absorb warning", () => {
+  // The queued-change line (migration 166): a save dated BEFORE a queued
+  // version runs until the day before it and leaves it standing; a save dated
+  // ON it replaces it in place. Inform, never block — one sentence says which,
+  // then the save does what was asked.
+  describe("the queued-change line", () => {
     const QUEUED = "2026-07-12";
 
-    it("shows for a pick before the queued change", () => {
+    it("a pick BEFORE the queued change says these targets run until the day before it", () => {
       renderForm({ queuedChangeDate: QUEUED, effectiveFrom: "2026-07-02" });
-      expect(screen.getByText(WARNING)).toHaveTextContent("12 Jul");
+      expect(screen.getByText(RUNS_UNTIL)).toHaveTextContent("12 Jul");
+      expect(screen.queryByText(REPLACES)).toBeNull();
     });
 
-    it("shows for a pick ON the queued date — a same-day save absorbs too", () => {
+    it("a pick ON the queued date says it replaces those targets", () => {
       renderForm({ queuedChangeDate: QUEUED, effectiveFrom: QUEUED });
-      expect(screen.getByText(WARNING)).toBeInTheDocument();
+      expect(screen.getByText(REPLACES)).toHaveTextContent("12 Jul");
+      expect(screen.queryByText(RUNS_UNTIL)).toBeNull();
     });
 
-    it("does not show for a pick after the queued change", () => {
+    it("a pick after the queued change shows neither", () => {
       renderForm({ queuedChangeDate: QUEUED, effectiveFrom: "2026-07-13" });
-      expect(screen.queryByText(WARNING)).toBeNull();
+      expect(screen.queryByText(RUNS_UNTIL)).toBeNull();
+      expect(screen.queryByText(REPLACES)).toBeNull();
     });
 
-    it("does not show with nothing queued", () => {
+    it("nothing queued shows neither", () => {
       renderForm({ queuedChangeDate: null, effectiveFrom: "2026-07-02" });
-      expect(screen.queryByText(WARNING)).toBeNull();
+      expect(screen.queryByText(RUNS_UNTIL)).toBeNull();
+      expect(screen.queryByText(REPLACES)).toBeNull();
     });
   });
 });

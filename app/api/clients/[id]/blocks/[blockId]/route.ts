@@ -5,7 +5,7 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { decorateBlocks } from "@/lib/blocks/block-derivations";
 import { archiveBlockSchema } from "@/lib/validations/client-blocks";
 import { clearTrainingPlansForClient } from "@/services/training-plan-clear-service";
-import { deleteBlockNutritionPlans } from "@/services/nutrition-plan-orchestrator";
+import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
 import {
   BlockWindowError,
   deleteBlock,
@@ -27,10 +27,10 @@ import { AUDIT_ACTIONS } from "@/lib/constants";
 // without it nothing but the row goes, which is the rule that a block edit
 // writes nothing on its own.
 //
-// It reuses those two existing paths rather than inventing a block-scoped
-// deletion, deliberately: a rule for which plans "belong to" a block is how a
-// pointer architecture arrives by the back door, and blocks carry DATES, never
-// an id anything else points at.
+// It reuses the two clears the calendars' own deletes call, each given this
+// block's window, rather than inventing a block-scoped deletion: a rule for
+// which plans "belong to" a block is how a pointer architecture arrives by the
+// back door, and blocks carry DATES, never an id anything else points at.
 //
 // Clearing the block's own days and leaving the plans standing was an earlier
 // behaviour and did not survive contact: the plans regenerate the days on the
@@ -60,8 +60,8 @@ export async function DELETE(
     const clearPlans =
       new URL(request.url).searchParams.get("clearPlans") === "true";
 
-    // Nutrition FIRST. Its delete closes the covering version at the day before
-    // the deletion floor, so the training clear's own cascade then finds no
+    // Nutrition FIRST. Its clear archives the block's versions and removes
+    // their days, so the training clear's own cascade then finds no active
     // version governing those days and rebuilds nothing. The other order works
     // too but writes days it is about to remove.
     let cleared:
@@ -70,14 +70,17 @@ export async function DELETE(
     if (clearPlans) {
       // SCOPED TO THIS BLOCK. Both tracks answer "does this plan belong to the
       // block?" from dates alone — a program is truncated to the block it is
-      // placed in, and a version generates only inside the block it opens in —
-      // so the windows line up with the block's by construction and no pointer
-      // is needed. A plan that merely CROSSES the block belongs to an earlier
-      // one and survives; the coach removes it from its own calendar.
+      // placed in, and a version's end is resolved to the block its start
+      // falls in — so the windows line up with the block's by construction and
+      // no pointer is needed. A plan that merely CROSSES the block belongs to
+      // an earlier one and survives; the coach removes it from its own calendar.
       const block = (await listBlocks(clientId)).find((b) => b.id === blockId);
       if (!block) throw new UnknownBlockIdError("Block not found");
 
-      const { versionsCleared } = await deleteBlockNutritionPlans(clientId, block);
+      const { versionsCleared } = await clearNutritionPlansForClient(clientId, clientToday, {
+        from: block.startsOn,
+        to: block.endsOn,
+      });
       const { plansCleared } = await clearTrainingPlansForClient(clientId, clientToday, {
         from: block.startsOn,
         to: block.endsOn,

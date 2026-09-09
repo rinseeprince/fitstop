@@ -3,7 +3,6 @@ import type { NutritionEvent, NutritionEventStatus, DietType } from "@/types/che
 import type { NutritionEventRow, NutritionEventInsert } from "@/lib/database-helpers";
 import type { TrainingPlan } from "@/types/training";
 import {
-  getDateString,
   expandDateRange,
   DAY_NUM,
 } from "@/lib/date-helpers";
@@ -13,8 +12,6 @@ import {
   versionCoversDate,
 } from "@/services/nutrition-plan-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
-import { getFurthestLiveProgramEnd } from "@/services/training-service";
-import { getBlockEndCoveringDate } from "@/services/client-blocks-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DayOfWeek } from "@/utils/nutrition-helpers";
 import { captureApiError } from "@/lib/error-handler";
@@ -233,7 +230,10 @@ export async function generateNutritionEvents(
 // --- Regenerate future events ---
 
 /**
- * Which dates a regeneration covers.
+ * Which dates a regeneration covers. Both kinds are clamped to the version's
+ * own [effective_from, effective_until] window: the window IS the row
+ * (migration 166), nothing resolves a horizon per call, and nothing bounds a
+ * version but its own end.
  *
  * - `dates` — exactly these days. Pure upsert, NO delete: the conflict key is
  *   (client_id, date) and the generator already skips `is_modified` days and
@@ -241,84 +241,43 @@ export async function generateNutritionEvents(
  *   opened a four-round-trip window in which those dates had no row at all
  *   (`getPlanTargetForDate` returns null for a missing row, and that null is
  *   snapshotted permanently into `nutrition_logs`).
- * - `from` — a floor; the DELETE and the regenerate derive from ONE computed
- *   range, `[from, resolveNutritionHorizon(from)]`. That equality is
- *   load-bearing: an unbounded delete paired with a bounded regenerate once
- *   deleted a tail it never rebuilt.
- * - `to` — an optional extension of that range's END, for a caller that has
- *   just deleted training rows reaching further than the horizon. The plan-clear
- *   routes are the case: they cancel a program's ENTIRE forward event ray, so
- *   every nutrition day that carried one of those events has to be rebuilt or
- *   it keeps a training surplus for a workout that no longer exists. It only
- *   ever extends — `max(horizon, to)` — so it cannot shorten the range and
- *   re-open the bug above.
+ * - `from` — a floor; the version regenerates
+ *   `[max(from, effective_from), effective_until]`, and its DELETE covers
+ *   exactly that range. That equality is load-bearing: an unbounded delete
+ *   paired with a bounded regenerate once deleted a tail it never rebuilt.
+ * - `to` — how far the CASCADE's gap sweep reaches, for a caller that has just
+ *   deleted training rows past every version's end: the plan-clear routes
+ *   cancel a program's ENTIRE forward event ray, so every nutrition day that
+ *   carried one of those events has to be rebuilt or removed, or it keeps a
+ *   training surplus for a workout that no longer exists. A version never
+ *   writes past its own end, so `to` widens the sweep and nothing else — and it
+ *   only ever widens.
  */
 export type NutritionRegenScope =
   | { kind: "dates"; dates: string[] }
   | { kind: "from"; from: string; to?: string };
 
-/**
- * How far forward a generation writes, resolved fresh on every call and stored
- * nowhere.
- *
- * The coach's declared bound, in precedence order:
- *   1. the end of the block the ANCHOR falls inside — a block IS the time-bound
- *      program the coach sells, so its end is the answer whenever the days being
- *      written sit in one;
- *   2. else the furthest live training program's last day;
- *   3. else the fixed window below, which is all a client with neither has.
- *
- * Rule 1 is the block COVERING the anchor, never the furthest block the client
- * has. A later block the coach has not priced yet must not pull targets into
- * itself: its card would read "Not set" while its days already held numbers.
- * A generation starting inside that block — its own plan save — resolves it
- * then, which is the moment the coach has actually said what it costs.
- *
- * Past the bound there are deliberately no events: a client between programs
- * reads as quiet, and the coach draws the next bound when they are ready. That
- * is why this is precedence rather than a maximum — a block that never actually
- * bounded anything would be decoration.
- *
- * Resolved per call and never cached, which is the point: a coach who sets the
- * nutrition up before placing the program keeps the fixed window until the
- * placement's own cascade runs, and the horizon stretches on its own then.
- */
-async function resolveNutritionHorizon(
-  clientId: string,
-  anchor: string
-): Promise<string> {
-  const blockEnd = await getBlockEndCoveringDate(clientId, anchor);
-  if (blockEnd) return blockEnd;
-
-  const programEnd = await getFurthestLiveProgramEnd(clientId, anchor);
-  if (programEnd) return programEnd;
-
-  return calculateNutritionEndDate(anchor);
-}
-
-/** The one place a scope becomes a concrete date list. */
-async function resolveScopeDates(
-  clientId: string,
-  scope: NutritionRegenScope
-): Promise<string[]> {
-  // Narrow scopes name their own days and never look anything up — a move, a
-  // duplicate, an event delete, a surplus edit and the client's own week
-  // rearrangement stay exactly as cheap as they were.
-  if (scope.kind === "dates") return scope.dates;
-
-  const horizon = await resolveNutritionHorizon(clientId, scope.from);
-  const end = scope.to && scope.to > horizon ? scope.to : horizon;
-  return expandDateRange(scope.from, end);
+/** The one place a scope becomes a concrete date list — inside the window. */
+function datesInsideWindow(
+  scope: NutritionRegenScope,
+  effectiveFrom: string,
+  effectiveUntil: string
+): string[] {
+  if (scope.kind === "dates") {
+    return scope.dates.filter((d) => d >= effectiveFrom && d <= effectiveUntil);
+  }
+  const start = scope.from > effectiveFrom ? scope.from : effectiveFrom;
+  return start > effectiveUntil ? [] : expandDateRange(start, effectiveUntil);
 }
 
 /**
  * Regenerate a plan VERSION's scheduled nutrition events over an explicit
  * scope, clamped to the version's own [effective_from, effective_until]
- * window (migration 144) AND to the block that window opens in. Past events and non-scheduled events (logged,
- * missed) are preserved by the delete; the upsert then overwrites any
- * surviving row on a covered date with this version's values (see
- * ARCHITECTURE.md → Training → Nutrition cascade for what that means for
- * logged rows).
+ * window — the window stored on the row at save (migration 166). Past events
+ * and non-scheduled events (logged, missed) are preserved by the delete; the
+ * upsert then overwrites any surviving row on a covered date with this
+ * version's values (see ARCHITECTURE.md → Training → Nutrition cascade for
+ * what that means for logged rows).
  */
 export async function regenerateFutureNutritionEvents(
   clientId: string,
@@ -328,19 +287,13 @@ export async function regenerateFutureNutritionEvents(
   const resolvedScope: NutritionRegenScope =
     scope ?? { kind: "from", from: await getClientTodayString(clientId) };
 
-  // Resolve the dates BEFORE any write. The old code deleted first and only
-  // then hit its range guard — an early return after a delete would clear the
-  // window without regenerating it, turning a no-op into a wipe.
-  const dates = await resolveScopeDates(clientId, resolvedScope);
-  if (dates.length === 0) return;
-
-  // Fetch the version FIRST (window columns included, error surfaced — a
-  // failed read must never masquerade as "no plan"). The clamp below is the
-  // whole segmentation story: this version can only ever write or delete
-  // inside its own window, so the cascade hands the SAME scope to every
-  // overlapping version and each regenerates exactly its own slice. A save's
-  // regenerate is unaffected — the just-saved version is open, so the clamp
-  // is a no-op past its start.
+  // The version FIRST (window columns included, error surfaced — a failed read
+  // must never masquerade as "no plan"). Its window is the whole segmentation
+  // story: this version can only ever write or delete inside it, so the cascade
+  // hands the SAME scope to every version with days in range and each
+  // regenerates exactly its own slice. A save's regenerate reads the window the
+  // RPC just wrote, so a version laid in a block writes to the block's end and
+  // not a day further.
   const { data: planRow, error: planError } = await supabaseAdmin
     .from("nutrition_plans")
     .select("baseline_calories, protein_target_g, diet_type, effective_from, effective_until")
@@ -349,34 +302,11 @@ export async function regenerateFutureNutritionEvents(
 
   if (planError || !planRow) throw planError ?? new Error("Nutrition plan not found");
 
-  // ★ AND CLAMPED TO THE BLOCK IT WAS LAID IN, exactly as training is: a
-  // placement truncates its events to the block while `training_plans` carries
-  // no end date at all, so the bound lives in the GENERATION, not the row.
-  //
-  // Without it an open version reaches forward for ever and a training
-  // placement in a LATER block drags the previous block's numbers onto days the
-  // coach never priced — the block's card then truthfully reports targets
-  // nobody set. The version still GOVERNS those days for the client's food log
-  // (a day with no covering version is refused outright, which is why the row
-  // stays open); it just does not materialise a prescription there.
-  //
-  // A version laid in a GAP has no block bound and behaves as before — nothing
-  // was declared, so nothing bounds it. A save's own regenerate is unaffected:
-  // its anchor is its effective date, so the horizon already resolves to this
-  // same block end and the clamp is a no-op.
-  //
-  // Fail-open on a read error, the shared helper's posture: a cascade that
-  // over-covers is self-healing on the next one, while failing closed would
-  // silently write nothing for a coach's save.
-  const blockEnd = await getBlockEndCoveringDate(clientId, planRow.effective_from);
-  const versionEnd = planRow.effective_until;
-  const upperBound =
-    blockEnd && versionEnd ? (blockEnd < versionEnd ? blockEnd : versionEnd) : blockEnd ?? versionEnd;
-
-  const clampedDates = dates.filter(
-    (d) => d >= planRow.effective_from && (upperBound === null || d <= upperBound)
-  );
-  if (clampedDates.length === 0) return;
+  // Resolve the dates BEFORE any write. The old code deleted first and only
+  // then hit its range guard — an early return after a delete would clear the
+  // window without regenerating it, turning a no-op into a wipe.
+  const dates = datesInsideWindow(resolvedScope, planRow.effective_from, planRow.effective_until);
+  if (dates.length === 0) return;
 
   // A `dates` scope skips the delete entirely (see NutritionRegenScope). A
   // `from` scope deletes over exactly the clamped range it is about to
@@ -403,8 +333,8 @@ export async function regenerateFutureNutritionEvents(
       .from("nutrition_events")
       .delete()
       .eq("client_id", clientId)
-      .gte("date", clampedDates[0])
-      .lte("date", clampedDates[clampedDates.length - 1])
+      .gte("date", dates[0])
+      .lte("date", dates[dates.length - 1])
       .eq("status", "scheduled")
       .eq("is_modified", false)
       .is("coach_note", null);
@@ -440,31 +370,19 @@ export async function regenerateFutureNutritionEvents(
     },
     dailyTargetRows,
     null, // trainingPlan param is vestigial; training days derive from training_events
-    clampedDates
+    dates
   );
-}
-
-// --- Calculate end date ---
-
-// The FIXED window: 8 weeks from the anchor. The last step of
-// resolveNutritionHorizon, reached only by a client with neither a block nor
-// a live training program — for everyone else the coach's own bound wins.
-function calculateNutritionEndDate(today: string): string {
-  const d = new Date(today + "T00:00:00");
-  d.setDate(d.getDate() + 8 * 7); // 8 weeks
-  return getDateString(d);
 }
 
 // --- Cascade helper ---
 
 /**
  * Regenerate a client's nutrition events after a training change, across
- * every plan VERSION the scope touches (migration 144). Each overlapping
- * active version receives the SAME scope; `regenerateFutureNutritionEvents`
- * clamps to the version's own window, so the loop IS the segmentation — a
- * training edit inside an old era rebuilds those days from that era's grid,
- * never from the current template (the pre-window baseline leak, closed by
- * construction).
+ * every plan VERSION the scope touches. Each version receives the SAME scope;
+ * `regenerateFutureNutritionEvents` clamps to the version's own window, so
+ * the loop IS the segmentation — a training edit inside an old era rebuilds
+ * those days from that era's grid, never from the current template (the
+ * pre-window baseline leak, closed by construction).
  *
  * Per-version regeneration failures are logged to Sentry so a failing regen
  * doesn't block the caller's primary operation (recorded trade-off — see
@@ -475,22 +393,27 @@ function calculateNutritionEndDate(today: string): string {
  * @param scope which dates this change actually touched. Routes that know their
  *   exact dates pass `{kind:"dates"}` (move = [source, target]; duplicate =
  *   [targetDate]; a surplus edit = [eventDate]) and get a pure upsert over just
- *   those days. Routes whose change is open-ended forward pass `{kind:"from"}`.
+ *   those days. Routes whose change is open-ended forward pass `{kind:"from"}`:
+ *   every version with days on or after the anchor regenerates to its OWN end.
  */
 export async function cascadeNutritionAfterTrainingChange(
   clientId: string,
   scope: NutritionRegenScope,
   actionTag: string,
 ): Promise<void> {
-  const scopeDates = await resolveScopeDates(clientId, scope);
-  if (scopeDates.length === 0) return;
-  const orderedDates = [...scopeDates].sort();
-  const rangeStart = orderedDates[0];
-  const rangeEnd = orderedDates[orderedDates.length - 1];
-
   let versions;
   try {
-    versions = await getActiveNutritionPlanVersionsOverlapping(clientId, rangeStart, rangeEnd);
+    if (scope.kind === "dates") {
+      const orderedDates = [...scope.dates].sort();
+      if (orderedDates.length === 0) return;
+      versions = await getActiveNutritionPlanVersionsOverlapping(
+        clientId,
+        orderedDates[0],
+        orderedDates[orderedDates.length - 1]
+      );
+    } else {
+      versions = await getActiveNutritionPlanVersionsOverlapping(clientId, scope.from);
+    }
   } catch (err) {
     console.error(`Nutrition cascade version lookup failed (${actionTag}):`, err);
     captureApiError(err, { action: actionTag, clientId });
@@ -500,13 +423,20 @@ export async function cascadeNutritionAfterTrainingChange(
   if (versions.length === 0) return;
 
   // From-scope only: sweep regenerable rows on GAP dates — dates in the range
-  // covered by NO version (the interregnum after a plan delete followed by a
-  // queued re-create). Nothing regenerates them, so without this they would
-  // survive as stale targets from a deleted era. Client-scoped, same three
-  // survival predicates as the regenerate's own delete. Narrow (dates) scopes
-  // stay pure-upsert by contract and leave uncovered dates untouched.
+  // covered by NO version (the stretch past a version's end, or between two).
+  // Nothing regenerates them, so without this they would survive as stale
+  // targets from an era that no longer reaches them. The sweep runs from the
+  // anchor to the furthest version end, widened to `to` when the caller cleared
+  // training further than that. Client-scoped, same three survival predicates
+  // as the regenerate's own delete. Narrow (dates) scopes stay pure-upsert by
+  // contract and leave uncovered dates untouched.
   if (scope.kind === "from") {
-    const gapDates = orderedDates.filter(
+    const furthestEnd = versions.reduce(
+      (max, v) => (v.effectiveUntil > max ? v.effectiveUntil : max),
+      scope.from
+    );
+    const sweepEnd = scope.to && scope.to > furthestEnd ? scope.to : furthestEnd;
+    const gapDates = expandDateRange(scope.from, sweepEnd).filter(
       (d) => !versions.some((v) => versionCoversDate(v, d))
     );
     if (gapDates.length > 0) {
@@ -532,33 +462,6 @@ export async function cascadeNutritionAfterTrainingChange(
       captureApiError(err, { action: actionTag, planId: version.id }),
     );
   }
-}
-
-// --- Delete future events ---
-
-/**
- * Delete a client's future scheduled nutrition events — the plan-deletion
- * sweep (chain-aware since migration 144).
- */
-export async function deleteFutureNutritionEventsForClient(
-  clientId: string,
-  fromDate: string
-): Promise<void> {
-  // CLIENT-scoped deliberately (1b.2): a chain's future events may be stamped
-  // by queued versions' ids — or carry a NULL plan id after a version delete —
-  // so the old plan-id-scoped delete silently missed them. No is_modified /
-  // coach_note sparing: the plan is being deleted and the dialog says
-  // everything upcoming goes, edited days included. `fromDate` is required —
-  // the caller owns the client-local "keep today" boundary; a UTC fallback
-  // here would silently move it across midnight.
-  const { error } = await supabaseAdmin
-    .from("nutrition_events")
-    .delete()
-    .eq("client_id", clientId)
-    .gte("date", fromDate)
-    .eq("status", "scheduled");
-
-  if (error) throw error;
 }
 
 // --- Query functions ---

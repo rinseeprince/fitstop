@@ -7,19 +7,15 @@ import {
 } from "@/services/nutrition-calc-inputs";
 import {
   createNutritionPlan,
-  getNutritionPlanForDate,
+  resolveNutritionPlacementEnd,
 } from "@/services/nutrition-plan-service";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
-import {
-  deleteFutureNutritionEventsForClient,
-  regenerateFutureNutritionEvents,
-} from "@/services/nutrition-event-service";
+import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
 import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
-import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
-import { addDaysToDateString } from "@/lib/date-helpers";
+import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
 
 /** The resolver's success arm — both plan handlers require complete inputs. */
 type ReadyCalcInputs = Extract<NutritionCalcInputs, { status: "ready" }>;
@@ -78,13 +74,12 @@ interface NutritionPlanResult {
  *
  * WHY A RETRY IS SAFE, and it is not obvious: this throws AFTER the plan row
  * has committed, so the coach re-saves and the whole save re-runs, RPC
- * included. That does not mint a second plan version because of migration 144's
- * branch (c) — an open version starting on/after the incoming date is ABSORBED,
- * updated in place, rather than closed-and-inserted, so a same-effective-date
- * re-save collapses into the existing row (144:60-63, body at :237-267). The
- * guarantee is scoped to the same effective date; a save on a LATER day takes
- * branch (b) and mints a version, which is correct behaviour rather than a
- * retry hazard.
+ * included. That does not mint a second plan version because a version
+ * starting on the same day is REPLACED IN PLACE by the RPC (migration 166), so
+ * a same-effective-date re-save collapses into the existing row and keeps its
+ * id. The guarantee is scoped to the same effective date; a save on a LATER
+ * day is a new placement, which is correct behaviour rather than a retry
+ * hazard.
  */
 async function recordCoachNoteOrThrow(
   clientId: string,
@@ -105,21 +100,16 @@ async function recordCoachNoteOrThrow(
 }
 
 /**
- * Delete the client's nutrition plan CHAIN (migration 144): close the
- * covering version at their today, remove queued versions, and clear upcoming
- * scheduled events so no orphaned prescription lingers on the calendar. Past
- * days are untouched, and so is today once the client has logged against it
- * (the shared deletion floor); coach-edited (is_modified) FUTURE days go too,
- * deliberately — a deleted plan leaves no forward prescription.
+ * Delete the client's nutrition plan: retire every version with days on or
+ * after the shared deletion floor and clear those days — the training clear's
+ * shape (`clearNutritionPlansForClient`, migration 166). Past days are
+ * untouched, and so is today once the client has logged against it; coach-
+ * edited FUTURE days go too, deliberately — a deleted plan leaves no forward
+ * prescription. A version that already finished is history and stays.
  *
- * The window and the events end on the SAME day: the covering version closes at
- * the day before the first day the delete removes. A version still covering a
- * date whose event is gone is a contradiction, and the next cascade resolves it
- * by putting the day back.
- *
- * Events are cleared FIRST so a mid-flight failure is retryable: with the
- * chain intact, a re-DELETE resolves it again and repeats the (idempotent)
- * steps. Throws NutritionPlanError for ownership / not-found failures.
+ * Throws NutritionPlanError for ownership / not-found failures, and 404 when
+ * nothing is left to retire — which also makes a same-day second delete a
+ * clean 404 rather than a silent success.
  */
 export async function orchestrateNutritionPlanDeletion(
   clientId: string,
@@ -135,198 +125,18 @@ export async function orchestrateNutritionPlanDeletion(
   }
 
   const clientToday = await getClientTodayString(clientId);
+  const { versionsCleared, versionIds } = await clearNutritionPlansForClient(
+    clientId,
+    clientToday
+  );
 
-  // The ONE shared deletion floor — never this path's own arithmetic. Today, or
-  // tomorrow if the client has already touched today.
-  const deleteFrom = await resolveEventDeletionFloor(clientId, clientToday);
-
-  // ★ A VERSION'S WINDOW ENDS WHERE ITS EVENTS END. The close date is the day
-  // before the first day the delete removes — not "today".
-  //
-  // These two must not drift apart by even a day. A version left covering a
-  // date whose event was deleted is a contradiction the next cascade resolves
-  // AGAINST the coach: `cascadeNutritionAfterTrainingChange` regenerates every
-  // date its versions govern, so clearing the training plan seconds later put
-  // the deleted day straight back. With the window closed at the floor − 1 no
-  // version overlaps that day, the cascade finds nothing to regenerate, and the
-  // day stays gone.
-  const closeAt = addDaysToDateString(deleteFrom, -1);
-
-  // The versioned chain (migration 144). Delete = close, never erase, for
-  // governed days; hard-delete for versions that governed nothing (D2):
-  //  - the COVERING version stays ACTIVE with effective_until = closeAt — its
-  //    ended, successor-less window IS the record of the delete, and it keeps
-  //    explaining the days it governed in history reads;
-  //  - QUEUED versions governed nothing, and any retained window would
-  //    corrupt no-status-filter history attribution, so their rows go
-  //    (daily targets CASCADE; event/log FKs are SET NULL).
-  // Deletable = something outlasts the delete (an open or later-closed covering
-  // window, or a queued version); a chain that already ends at the close date
-  // has nothing left to remove and 404s, which also makes a same-day second
-  // delete a clean 404 rather than a silent success.
-  const covering = await getNutritionPlanForDate(clientId, clientToday);
-  const coveringOutlastsTheDelete =
-    covering != null &&
-    (covering.effective_until === null || covering.effective_until > closeAt);
-
-  const { data: queuedRows, error: queuedError } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .gt("effective_from", clientToday);
-  if (queuedError) {
-    throw new NutritionPlanError(
-      `Failed to resolve queued nutrition versions: ${queuedError.message}`,
-      500
-    );
-  }
-  const queuedIds = (queuedRows ?? []).map((row) => row.id);
-
-  if (!coveringOutlastsTheDelete && queuedIds.length === 0) {
+  if (versionsCleared === 0) {
     throw new NutritionPlanError("No active nutrition plan to delete", 404);
   }
 
-  // An untouched today DOES go — prescription and window together. The client's
-  // food card then refuses today, which is correct: it 422s on a missing
-  // VERSION, and after this there is no version for that day to write against.
-  //
-  // Client-scoped so events stamped by queued versions' ids are swept too. Steps
-  // are ordered idempotently: a mid-flight failure leaves a state a retry
-  // completes (events first — a re-run deletes nothing; then the version rows;
-  // then the close).
-  await deleteFutureNutritionEventsForClient(clientId, deleteFrom);
-
-  // A covering version whose own start is past the close date would be left with
-  // an EMPTY window — it governed nothing once its days are gone, so it goes the
-  // same way a queued version does. Postgres would accept the inverted range
-  // silently (an empty daterange overlaps nothing, so the gist exclusion never
-  // fires), which is exactly why this is decided here rather than left to it.
-  const coveringGovernsNothing =
-    coveringOutlastsTheDelete && covering != null && covering.effective_from > closeAt;
-  const versionIdsToRemove =
-    coveringGovernsNothing && covering ? [...queuedIds, covering.id] : queuedIds;
-
-  if (versionIdsToRemove.length > 0) {
-    const { error: queuedDeleteError } = await supabaseAdmin
-      .from("nutrition_plans")
-      .delete()
-      .in("id", versionIdsToRemove);
-    if (queuedDeleteError) {
-      throw new NutritionPlanError(
-        `Failed to remove queued nutrition versions: ${queuedDeleteError.message}`,
-        500
-      );
-    }
-  }
-
-  if (coveringOutlastsTheDelete && covering && !coveringGovernsNothing) {
-    const { error: closeError } = await supabaseAdmin
-      .from("nutrition_plans")
-      .update({ effective_until: closeAt, updated_at: new Date().toISOString() })
-      .eq("id", covering.id);
-    if (closeError) {
-      throw new NutritionPlanError(
-        `Failed to close the covering nutrition version: ${closeError.message}`,
-        500
-      );
-    }
-  }
-
-  return { planId: covering?.id ?? queuedIds[0] };
-}
-
-/**
- * Delete only the nutrition versions LAID INSIDE one block, and the days they
- * prescribe — the block delete's "and its plans", scoped.
- *
- * A version belongs to a block when its `effective_from` falls in the block's
- * days. That question dates answer on their own, and correctly, because a
- * version generates only inside the block it opens in (see the clamp in
- * `regenerateFutureNutritionEvents`) — so its window and the block's line up by
- * construction. A version that merely CROSSES the block belongs to an earlier
- * one and survives.
- *
- * Same two outcomes as the client-wide delete, per version: one that never
- * governed a day is removed outright, one that did is closed at the day before
- * the deletion floor, so its window and its events still end together.
- *
- * Returns how many versions it touched. Zero is not an error here: the coach
- * asked for the block's plans to go and it may have had none.
- */
-export async function deleteBlockNutritionPlans(
-  clientId: string,
-  block: { startsOn: string; endsOn: string }
-): Promise<{ versionsCleared: number }> {
-  const clientToday = await getClientTodayString(clientId);
-  const deleteFrom = await resolveEventDeletionFloor(clientId, clientToday);
-  const closeAt = addDaysToDateString(deleteFrom, -1);
-
-  const { data: versions, error } = await supabaseAdmin
-    .from("nutrition_plans")
-    .select("id, effective_from")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .gte("effective_from", block.startsOn)
-    .lte("effective_from", block.endsOn);
-  if (error) {
-    throw new NutritionPlanError(
-      `Failed to resolve this block's nutrition versions: ${error.message}`,
-      500
-    );
-  }
-  if (!versions || versions.length === 0) return { versionsCleared: 0 };
-
-  // Events first, so a mid-flight failure leaves a state a retry completes.
-  // Bounded to the block at BOTH ends: the floor protects a day the client has
-  // touched, and the block's end is as far as these versions ever wrote.
-  const from = deleteFrom > block.startsOn ? deleteFrom : block.startsOn;
-  if (from <= block.endsOn) {
-    const { error: eventsError } = await supabaseAdmin
-      .from("nutrition_events")
-      .delete()
-      .eq("client_id", clientId)
-      .gte("date", from)
-      .lte("date", block.endsOn)
-      .eq("status", "scheduled");
-    if (eventsError) {
-      throw new NutritionPlanError(
-        `Failed to clear this block's nutrition days: ${eventsError.message}`,
-        500
-      );
-    }
-  }
-
-  const governedNothing = versions.filter((v) => v.effective_from > closeAt);
-  const governed = versions.filter((v) => v.effective_from <= closeAt);
-
-  if (governedNothing.length > 0) {
-    const { error: deleteError } = await supabaseAdmin
-      .from("nutrition_plans")
-      .delete()
-      .in("id", governedNothing.map((v) => v.id));
-    if (deleteError) {
-      throw new NutritionPlanError(
-        `Failed to remove this block's nutrition versions: ${deleteError.message}`,
-        500
-      );
-    }
-  }
-
-  if (governed.length > 0) {
-    const { error: closeError } = await supabaseAdmin
-      .from("nutrition_plans")
-      .update({ effective_until: closeAt, updated_at: new Date().toISOString() })
-      .in("id", governed.map((v) => v.id));
-    if (closeError) {
-      throw new NutritionPlanError(
-        `Failed to close this block's nutrition versions: ${closeError.message}`,
-        500
-      );
-    }
-  }
-
-  return { versionsCleared: versions.length };
+  // The earliest retired version — the one the client was on, when a running
+  // version existed — names the act in the audit trail.
+  return { planId: versionIds[0] };
 }
 
 /**
@@ -350,8 +160,8 @@ export async function orchestrateNutritionPlanCreation(
 
   // Client-local today (coach-tz fallback): both the past-date validation and
   // the goal resolver must agree with the RPC's past-date belt and its
-  // close-and-insert decision (migration 144), or
-  // a coach near local midnight gets a spurious "past date" rejection.
+  // placement decision (migration 166), or a coach near local midnight gets a
+  // spurious "past date" rejection.
   const clientToday = await getClientTodayString(clientId);
 
   // Validate effectiveFrom date
@@ -375,13 +185,30 @@ export async function orchestrateNutritionPlanCreation(
     throw new NutritionPlanError("Client missing required data for nutrition calculation", 400);
   }
 
+  // The placement's window. Its END is resolved here, once, the way a training
+  // program's is at placement — the block covering the start, else the furthest
+  // live program's end, else the fixed fallback — capped at the next queued
+  // version (migration 166). Both handlers hand it to the RPC, which stores it
+  // on the row; the regenerate then reads the window there, so the row and the
+  // days it materialises describe one window by construction.
+  const effectiveDate = body.effectiveFrom ?? clientToday;
+  const effectiveUntil = await resolveNutritionPlacementEnd(clientId, effectiveDate);
+
   // Handle custom macros
   if (body.customMacrosEnabled) {
-    return handleCustomMacros(clientId, coachId, body, calcInputs, validatedData);
+    return handleCustomMacros(clientId, coachId, body, calcInputs, validatedData, effectiveUntil);
   }
 
   // Generate calculated nutrition plan
-  return handleCalculatedPlan(clientId, coachId, body, client, calcInputs, validatedData);
+  return handleCalculatedPlan(
+    clientId,
+    coachId,
+    body,
+    client,
+    calcInputs,
+    validatedData,
+    effectiveUntil
+  );
 }
 
 async function handleCustomMacros(
@@ -389,7 +216,8 @@ async function handleCustomMacros(
   coachId: string,
   body: GenerateNutritionPlanRequest,
   calcInputs: ReadyCalcInputs,
-  validatedData: { coachNotes?: string }
+  validatedData: { coachNotes?: string },
+  effectiveUntil: string
 ): Promise<NutritionPlanResult> {
   const { currentWeightKg, bmr, tdee: tdeeValue, today: clientToday } = calcInputs;
 
@@ -442,16 +270,18 @@ async function handleCustomMacros(
     regenerationReason: "custom_macros",
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     effectiveFrom: body.effectiveFrom,
+    effectiveUntil,
   });
 
   if (!newPlanId) {
     throw new NutritionPlanError("Failed to create nutrition plan", 500);
   }
 
-  // Versioned plan (migration 144): the RPC closed/absorbed the open version
-  // and returned the version now governing [effectiveDate, ∞) — regenerate
-  // that window's events from its prescription. Days before effectiveDate
-  // belong to earlier versions and are untouched.
+  // The RPC capped the predecessor (or replaced a same-day version in place)
+  // and returned the version now governing [effectiveDate, effectiveUntil] —
+  // regenerate that window's events from its prescription; the regenerate
+  // reads the window off the row. Days before effectiveDate belong to earlier
+  // versions and are untouched.
   const effectiveDate = body.effectiveFrom ?? clientToday;
   await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
   await recordCoachNoteOrThrow(
@@ -482,15 +312,16 @@ async function handleCalculatedPlan(
   body: GenerateNutritionPlanRequest,
   _client: NonNullable<Awaited<ReturnType<typeof getClientById>>>,
   calcInputs: ReadyCalcInputs,
-  validatedData: { coachNotes?: string }
+  validatedData: { coachNotes?: string },
+  effectiveUntil: string
 ): Promise<NutritionPlanResult> {
   const { currentWeightKg, bmr, today: clientToday } = calcInputs;
 
   // Only to distinguish an "initial" plan from a "regenerated" one. Order +
-  // limit because the versioned model (migration 144) legitimately holds
-  // several active rows — a bare maybeSingle() would error on any chain. The
-  // error is destructured and logged (house rule): a failed read defaults the
-  // label to "initial", which is cosmetic, but it must never be silent.
+  // limit because the placement model legitimately holds several active rows
+  // — a bare maybeSingle() would error on any client with history. The error
+  // is destructured and logged (house rule): a failed read defaults the label
+  // to "initial", which is cosmetic, but it must never be silent.
   const { data: existingPlan, error: existingPlanError } = await supabaseAdmin
     .from("nutrition_plans")
     .select("id")
@@ -553,16 +384,18 @@ async function handleCalculatedPlan(
     regenerationReason,
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     effectiveFrom: body.effectiveFrom,
+    effectiveUntil,
   });
 
   if (!newPlanId) {
     throw new NutritionPlanError("Failed to create nutrition plan", 500);
   }
 
-  // Versioned plan (migration 144): the RPC closed/absorbed the open version
-  // and returned the version now governing [effectiveDate, ∞) — regenerate
-  // that window's events from its prescription. Days before effectiveDate
-  // belong to earlier versions and are untouched.
+  // The RPC capped the predecessor (or replaced a same-day version in place)
+  // and returned the version now governing [effectiveDate, effectiveUntil] —
+  // regenerate that window's events from its prescription; the regenerate
+  // reads the window off the row. Days before effectiveDate belong to earlier
+  // versions and are untouched.
   await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
   await recordCoachNoteOrThrow(
     clientId,

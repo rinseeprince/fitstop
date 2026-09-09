@@ -94,7 +94,7 @@ function hasDayInBlock(rows: { date: string }[], block: ClientBlock): boolean {
 type VersionTdeeWindow = {
   id: string;
   effectiveFrom: string;
-  effectiveUntil: string | null;
+  effectiveUntil: string;
   tdee: number | null;
   baselineCalories: number;
   customMacrosEnabled: boolean;
@@ -123,7 +123,7 @@ async function fetchVersionTdeeWindows(
     .eq("client_id", clientId)
     .eq("status", "active")
     .lte("effective_from", rangeEnd)
-    .or(`effective_until.gte.${rangeStart},effective_until.is.null`)
+    .gte("effective_until", rangeStart)
     .order("effective_from", { ascending: true });
 
   if (error) {
@@ -154,10 +154,11 @@ async function fetchVersionTdeeWindows(
  * the version covering TODAY ("what are they on now"), a past block the
  * version covering its final day ("what they finished on"), a future block
  * the version covering its first day (the queued prescription). Version
- * windows cannot overlap (the migration-144 gist exclusion), so at most one
- * covers any date; no covering version → null ("Not set"). Calories honour a
- * custom-macros override; deficit = that version's tdee − calories (positive
- * = deficit), null without a tdee.
+ * windows cannot overlap (the gist exclusion), so at most one covers any
+ * date; no covering version → null ("Not set"), which is also what a retired
+ * version leaves behind — a delete archives it (migration 166). Calories
+ * honour a custom-macros override; deficit = that version's tdee − calories
+ * (positive = deficit), null without a tdee.
  *
  * The "Changed" marker keeps its event-based detection: baseline transitions
  * across consecutive UNMODIFIED lived days. That catches every prescription
@@ -222,9 +223,10 @@ function versionCalories(version: VersionTdeeWindow): number {
  * The prescription era by era, for the block's "what happened" timeline.
  *
  * The version rows ARE the era log: `[effective_from, effective_until]` windows
- * tile the client's timeline by construction, so this is a plain intersection
- * with the block window — no resolution rule, unlike training, because the
- * migration-144 gist exclusion makes overlapping active windows impossible.
+ * never overlap (the gist exclusion), so this is a plain intersection with the
+ * block window — no resolution rule, unlike training. Gaps between them are
+ * real (migration 166: a version ends where it was placed to end, and a
+ * retired one is archived out of this read), and a gap simply has no era.
  *
  * Each era carries the numbers off its OWN row. The block headline reads the
  * reference-date version instead, which is right for "what are they on now" and
@@ -244,7 +246,7 @@ function deriveEras(
   // walk is already chronological.
   for (const version of versions) {
     if (version.effectiveFrom > windowEnd) continue;
-    if (version.effectiveUntil !== null && version.effectiveUntil < blockStart) continue;
+    if (version.effectiveUntil < blockStart) continue;
 
     const calories = versionCalories(version);
     const deficitPerDay = version.tdee != null ? version.tdee - calories : null;
@@ -368,16 +370,15 @@ export async function getBlockFacts(
     // ★ A BLOCK SHOWS WHAT IS SET ONLY IF IT ACTUALLY HAS DAYS ON THE CALENDAR.
     //
     // Both columns resolve by WINDOW, and a placed training plan's window has
-    // no end (`effective_until` is never written) while a nutrition version's
-    // open window has none either — so a January program and its targets
-    // "govern" every later block for ever. A block the coach has drawn but not
-    // set up would claim a program it has no workouts from and a prescription
-    // it has no days of.
+    // no end (`effective_until` is never written) — so a January program
+    // "governs" every later block for ever, and a block the coach has drawn but
+    // not set up would claim a program it has no workouts from. A nutrition
+    // version's window does end (migration 166), but the gate stays one rule
+    // for both tracks: the events are the truth for a date.
     //
-    // The events are the truth for a date, so they are the gate. Per track,
-    // because the two are set up separately: a block can have workouts and no
-    // targets, or the reverse, and each column should say only what is true of
-    // its own.
+    // Per track, because the two are set up separately: a block can have
+    // workouts and no targets, or the reverse, and each column should say only
+    // what is true of its own.
     const hasTrainingDays = hasDayInBlock(trainingDays, block);
     const hasNutritionDays = hasDayInBlock(events, block);
 

@@ -14,7 +14,7 @@ import { supabaseAdmin } from "./supabase-admin";
 export type NutritionPlanWithTargets = {
   id: string;
   effectiveFrom: string;
-  effectiveUntil: string | null;
+  effectiveUntil: string;
   dailyTargets: Array<{
     dayOfWeek: string;
     calories: number;
@@ -49,7 +49,10 @@ export async function fetchNutritionDataForPeriod(
 }> {
   // Uses supabaseAdmin: read-only client-scoped query in server context (RLS exception 2/3)
   const [plansResult, logsResult] = await Promise.all([
-    // Nutrition plans overlapping the period
+    // Nutrition versions overlapping the period. ACTIVE only: a retired
+    // version is archived rather than closed (migration 166), so without the
+    // filter its stored window would keep supplying a weekday template for
+    // days the coach deleted the targets from.
     supabaseAdmin
       .from("nutrition_plans")
       .select(`
@@ -59,8 +62,9 @@ export async function fetchNutritionDataForPeriod(
         )
       `)
       .eq("client_id", clientId)
+      .eq("status", "active")
       .lte("effective_from", periodEnd)
-      .or(`effective_until.gte.${periodStart},effective_until.is.null`)
+      .gte("effective_until", periodStart)
       .order("effective_from", { ascending: false }),
 
     // Nutrition logs in the period (includes stored targets with activity burn)
@@ -81,7 +85,7 @@ export async function fetchNutritionDataForPeriod(
   const plans: NutritionPlanWithTargets[] = (plansResult.data || []).map((p: Record<string, unknown>) => ({
     id: p.id as string,
     effectiveFrom: p.effective_from as string,
-    effectiveUntil: (p.effective_until as string) || null,
+    effectiveUntil: p.effective_until as string,
     dailyTargets: (
       (p.nutrition_plan_daily_targets as Array<Record<string, unknown>>) || []
     ).map((t) => ({

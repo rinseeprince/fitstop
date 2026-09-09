@@ -11,7 +11,7 @@ vi.mock("./nutrition-event-service", () => ({
   cascadeNutritionAfterTrainingChange: vi.fn(),
   regenerateFutureNutritionEvents: vi.fn(),
 }));
-vi.mock("./nutrition-plan-service", () => ({ getOpenNutritionPlan: vi.fn() }));
+vi.mock("./nutrition-plan-service", () => ({ getNextNutritionVersionStartCap: vi.fn() }));
 vi.mock("./event-deletion-floor", () => ({ resolveEventDeletionFloor: vi.fn() }));
 vi.mock("./nutrition-plan-orchestrator", () => ({
   orchestrateNutritionPlanCreation: vi.fn(),
@@ -20,10 +20,11 @@ vi.mock("./nutrition-plan-orchestrator", () => ({
 import { supabaseAdmin } from "./supabase-admin";
 import { generateProgramEvents } from "./program-event-walk";
 import { regenerateFutureNutritionEvents } from "./nutrition-event-service";
-import { getOpenNutritionPlan } from "./nutrition-plan-service";
+import { getNextNutritionVersionStartCap } from "./nutrition-plan-service";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { orchestrateNutritionPlanCreation } from "./nutrition-plan-orchestrator";
 import {
+  clearEventsOutsideBlock,
   clearScheduledEvents,
   extendTrainingToBlockEnd,
   fillNutritionAcrossBlock,
@@ -224,8 +225,29 @@ describe("extendTrainingToBlockEnd", () => {
 });
 
 describe("fillNutritionAcrossBlock", () => {
-  it("regenerates from the block's start when it is still ahead", async () => {
-    vi.mocked(getOpenNutritionPlan).mockResolvedValue({ id: "v1" } as never);
+  /** The version laid in the block: one read, then (only if it is extended)
+   *  one update. from() is called in that order. */
+  function wireVersion(
+    version: { id: string; effective_from: string; effective_until: string } | null
+  ) {
+    const readQuery = query({ data: version, error: null });
+    const updateQuery = query({ data: null, error: null });
+    let calls = 0;
+    mockFrom.mockImplementation((() => {
+      calls += 1;
+      return calls === 1 ? readQuery : updateQuery;
+    }) as never);
+    return { readQuery, updateQuery };
+  }
+
+  beforeEach(() => {
+    vi.mocked(getNextNutritionVersionStartCap).mockResolvedValue(null);
+  });
+
+  it("regenerates from the block's start when it is still ahead, from the version laid INSIDE the block", async () => {
+    const { readQuery, updateQuery } = wireVersion({
+      id: "v1", effective_from: "2026-09-21", effective_until: "2026-12-13",
+    });
 
     const result = await fillNutritionAcrossBlock({
       clientId: "c1", clientToday: TODAY,
@@ -233,6 +255,14 @@ describe("fillNutritionAcrossBlock", () => {
     });
 
     expect(result).toEqual({ from: "2026-09-21" });
+    // Laid inside the block = its start falls in the block's days; a version
+    // that merely crosses the block belongs to no block and is left alone.
+    expect(readQuery.eq).toHaveBeenCalledWith("status", "active");
+    expect(readQuery.gte).toHaveBeenCalledWith("effective_from", "2026-09-21");
+    expect(readQuery.lte).toHaveBeenCalledWith("effective_from", "2026-12-13");
+    expect(readQuery.order).toHaveBeenNthCalledWith(1, "effective_from", { ascending: false });
+    // Already reaching the end: nothing to extend.
+    expect(updateQuery.update).not.toHaveBeenCalled();
     expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith("c1", "v1", {
       kind: "from",
       from: "2026-09-21",
@@ -240,7 +270,7 @@ describe("fillNutritionAcrossBlock", () => {
   });
 
   it("floors at the client's today for a block already under way", async () => {
-    vi.mocked(getOpenNutritionPlan).mockResolvedValue({ id: "v2" } as never);
+    wireVersion({ id: "v2", effective_from: "2026-08-03", effective_until: "2026-12-13" });
 
     const result = await fillNutritionAcrossBlock({
       clientId: "c1", clientToday: TODAY,
@@ -250,8 +280,46 @@ describe("fillNutritionAcrossBlock", () => {
     expect(result).toEqual({ from: TODAY });
   });
 
-  it("does nothing when the client has no open version at all", async () => {
-    vi.mocked(getOpenNutritionPlan).mockResolvedValue(null);
+  it("EXTENDS the version's stored end to the block's new end BEFORE regenerating (migration 166)", async () => {
+    // The end is stored, so a longer block has to move it or the regenerate
+    // stops at the old end while the block runs on.
+    const { updateQuery } = wireVersion({
+      id: "v3", effective_from: "2026-09-21", effective_until: "2026-11-15",
+    });
+
+    await fillNutritionAcrossBlock({
+      clientId: "c1", clientToday: TODAY,
+      blockStartsOn: "2026-09-21", blockEndsOn: "2026-12-13",
+    });
+
+    expect(updateQuery.update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-12-13" })
+    );
+    expect(updateQuery.eq).toHaveBeenCalledWith("id", "v3");
+    expect(updateQuery.update.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(regenerateFutureNutritionEvents).mock.invocationCallOrder[0]
+    );
+  });
+
+  it("caps the extension at the day before the next queued version — the same cap every placement takes", async () => {
+    vi.mocked(getNextNutritionVersionStartCap).mockResolvedValue("2026-11-30");
+    const { updateQuery } = wireVersion({
+      id: "v4", effective_from: "2026-09-21", effective_until: "2026-11-15",
+    });
+
+    await fillNutritionAcrossBlock({
+      clientId: "c1", clientToday: TODAY,
+      blockStartsOn: "2026-09-21", blockEndsOn: "2026-12-13",
+    });
+
+    expect(getNextNutritionVersionStartCap).toHaveBeenCalledWith("c1", "2026-09-21");
+    expect(updateQuery.update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-11-30" })
+    );
+  });
+
+  it("does nothing when the block holds no version — the coach is told to set targets, not handed a guess", async () => {
+    wireVersion(null);
 
     expect(
       await fillNutritionAcrossBlock({
@@ -260,6 +328,71 @@ describe("fillNutritionAcrossBlock", () => {
       })
     ).toBeNull();
     expect(regenerateFutureNutritionEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe("clearEventsOutsideBlock", () => {
+  /** from() per table, in call order: the next-block probe, the two
+   *  last-event probes when there is no next block, the two day removals,
+   *  then the version cap and the version retirement. */
+  function wireTables(byTable: Record<string, ReturnType<typeof query>[]>) {
+    mockFrom.mockImplementation(((table: string) => {
+      const next = byTable[table]?.shift();
+      if (!next) throw new Error(`unexpected from(${table})`);
+      return next;
+    }) as never);
+  }
+
+  it("pulls a version reaching past the new end back to it, and retires one starting in the cleared stretch (migration 166)", async () => {
+    const capQuery = query({ data: null, error: null });
+    const retireQuery = query({ data: null, error: null });
+    wireTables({
+      client_phases: [query({ data: { starts_on: "2026-11-01" }, error: null })],
+      training_events: [query({ data: [], error: null })],
+      nutrition_events: [query({ data: [], error: null })],
+      nutrition_plans: [capQuery, retireQuery],
+    });
+
+    await clearEventsOutsideBlock({
+      clientId: "c1", clientToday: TODAY, blockEndsOn: "2026-10-05",
+    });
+
+    // Its window ends where its days end, or the next cascade regenerates the
+    // days this clear removed.
+    expect(capQuery.update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-10-05" })
+    );
+    expect(capQuery.eq).toHaveBeenCalledWith("status", "active");
+    expect(capQuery.lte).toHaveBeenCalledWith("effective_from", "2026-10-05");
+    expect(capQuery.gt).toHaveBeenCalledWith("effective_until", "2026-10-05");
+    // A queued version now sitting in the cleared stretch goes with its days —
+    // bounded by the next block, which owns its own versions.
+    expect(retireQuery.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "archived" })
+    );
+    expect(retireQuery.gt).toHaveBeenCalledWith("effective_from", "2026-10-05");
+    expect(retireQuery.lte).toHaveBeenCalledWith("effective_from", "2026-10-31");
+  });
+
+  it("with nothing past the block, still pulls the versions back and retires none", async () => {
+    const capQuery = query({ data: null, error: null });
+    wireTables({
+      client_phases: [query({ data: null, error: null })],
+      training_events: [query({ data: null, error: null })],
+      nutrition_events: [query({ data: null, error: null })],
+      nutrition_plans: [capQuery],
+    });
+
+    const cleared = await clearEventsOutsideBlock({
+      clientId: "c1", clientToday: TODAY, blockEndsOn: "2026-10-05",
+    });
+
+    expect(cleared).toEqual({ trainingCleared: 0, nutritionCleared: 0 });
+    expect(capQuery.update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-10-05" })
+    );
+    // No ceiling → no day removal and no retirement: probes + the one cap.
+    expect(mockFrom).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -298,8 +431,11 @@ describe("regenerateNutritionForBlock", () => {
       expect.objectContaining({ effectiveFrom: "2026-09-05" }),
       {}
     );
-    // The SETTINGS come from the version in force on the day it takes effect.
+    // The SETTINGS come from the ACTIVE version in force on the day it takes
+    // effect — a retired version is archived, never a source (migration 166).
+    expect(versionQuery.eq).toHaveBeenCalledWith("status", "active");
     expect(versionQuery.lte).toHaveBeenCalledWith("effective_from", "2026-09-05");
+    expect(versionQuery.gte).toHaveBeenCalledWith("effective_until", "2026-09-05");
   });
 
   it("a FUTURE block recalculates as of its own start", async () => {

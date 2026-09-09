@@ -115,7 +115,7 @@ Do not confuse it with `client_intake.primary_goal`, which is a live discriminat
 Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; **both counts re-derived** — the doc's "eight occurrences across five files" was stale).
 
 - **The `is_modified` protection is a read-then-filter across a two-round-trip gap.** `regenerateFutureNutritionEvents` reads the protected days (`services/nutrition-event-service.ts:200`) and writes the upsert (`:226`) in separate round trips. A coach edit landing in that gap is clobbered. Only a transaction or an RPC closes it.
-- **The 8-week nutrition window uses server-local `Date` arithmetic** despite `addDaysToDateString` being UTC-safe (`calculateNutritionEndDate`, `services/nutrition-event-service.ts`). Since commit 8cc it is only the LAST step of `resolveNutritionHorizon` — reached by a client with neither a block nor a live training program — so its blast radius shrank, but the arithmetic is still the part that bites. The "duplicated across two files" half of this entry is stale: `training-event-service.ts` computes no 8-week window, it only mentions one in a comment that is itself out of date (`calculatePlacementEndDate` has no duration fallback).
+- ~~**The 8-week nutrition window uses server-local `Date` arithmetic**~~ **CLOSED 2026-09-09 (migration 166).** The fallback is now the last step of `resolveNutritionPlacementEnd` (`services/nutrition-plan-service.ts`), spelled `addDaysToDateString(start, NUTRITION_PLACEMENT_FALLBACK_DAYS)` — UTC-safe — and `calculateNutritionEndDate` is gone with `resolveNutritionHorizon`: a version's end is resolved once at save and stored on the row, so nothing derives a window per call any more.
 - **Two columns on `nutrition_plans` are inert.** `name` is never written at all (no `p_name` in the migration-144 RPC, and no service writes it). `regeneration_reason` **is** written (`nutrition-plan-service.ts:156` via `p_regeneration_reason`) but never read — so it is write-only rather than dead, a different thing.
 
 ---
@@ -203,8 +203,10 @@ there survives solely in git history.
   nutrition generation horizon, MEASUREMENT-LOG-PLAN commit 8cc). The recipe `3abbfa5`
   worked out is now shipped: `cancelFutureEventsForPlan` returns the max deleted date
   from `.delete().select("date")` (same round trip), the two plan-clear routes thread it
-  as the scope's `to`, and `resolveScopeDates` extends the range past the horizon when
-  `to` exceeds it — never shortening it. It had to be closed rather than deferred again,
+  as the scope's `to`, and the cascade's gap sweep reaches it — never shortening its range.
+  Since migration 166 a version never writes past its own stored end, so `to` widens only
+  the sweep, which removes the stale surplus days rather than rebuilding them. It had to be
+  closed rather than deferred again,
   because the horizon that commit introduced lets nutrition rows reach a whole program's
   length: a clear archives every plan BEFORE it cascades, so the horizon collapses to the
   fixed 8-week window while the rows reach much further, which would have made the tail
@@ -243,9 +245,9 @@ there survives solely in git history.
   Nutrition cascade" and the `status` bullet now say so.
 - ~~**Baseline leak onto pre-`effective_from` days after a future-dated regenerate.**~~
   **CLOSED by S1B.2 (migration 144 versioning) — fixed by construction.** The premise
-  ("there is no stored source for the old numbers") died with versioning: a queued save
-  now closes the outgoing version at `new_start − 1` and inserts a new one, so the old
-  prescription's template survives as the closed version's own daily-targets grid. The
+  ("there is no stored source for the old numbers") died with versioning: a save caps the
+  outgoing version at `new_start − 1` and inserts a new one, so the old prescription's
+  template survives as the capped version's own daily-targets grid. The
   cascade fetches every active version overlapping its scope and hands each the same
   scope; `regenerateFutureNutritionEvents` clamps to the version's window, so a
   training edit inside the pre-window era rebuilds those days from THAT era's grid —

@@ -8,7 +8,7 @@ import type { NutritionEvent } from "@/types/check-in";
 const makePlan = (overrides: Partial<NutritionPlanWithTargets> = {}): NutritionPlanWithTargets => ({
   id: "nplan-1",
   effectiveFrom: "2026-03-30",
-  effectiveUntil: null,
+  effectiveUntil: "2026-05-24",
   dailyTargets: [
     { dayOfWeek: "monday", calories: 2200, proteinG: 160, carbG: 250, fatG: 70 },
     { dayOfWeek: "tuesday", calories: 2000, proteinG: 150, carbG: 220, fatG: 65 },

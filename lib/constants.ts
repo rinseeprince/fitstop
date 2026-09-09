@@ -41,6 +41,12 @@ export const UNREVIEWED_CHECK_IN_STATUSES = [
 // Custom macros validation
 export const CUSTOM_MACRO_CALORIE_TOLERANCE = 50; // Max allowed difference between stated calories and macro totals
 
+// How far a nutrition version runs when the client has neither a block nor a
+// live training program to bound it: eight weeks from its start. The last step
+// of resolveNutritionPlacementEnd (services/nutrition-plan-service.ts);
+// migration 166's backfill spelled the same number.
+export const NUTRITION_PLACEMENT_FALLBACK_DAYS = 56;
+
 // Energy density of one kilogram of body-mass change, in kcal. The single
 // source for every rate <-> calorie conversion (utils/energy-conversions.ts);
 // it previously lived as an inline 7700 at three calculator sites and a

@@ -321,7 +321,7 @@ async function main(): Promise<void> {
     await voidMeasurement({ clientId: C, measurementId: removed.id, actor: coach.id });
     await insertCheckIn({ id: W_ID, created_at: `${d(-3)}T12:00:00+00:00`, period_start: d(-9), period_end: d(-3) });
 
-    // Two nutrition versions: [D-30, D-1] at base 87, [D, open) at base 82.
+    // Two nutrition versions: [D-30, D-1] at base 87, [D, D+56] at base 82.
     const shared = {
       client_id: C,
       coach_id: coach.id,
@@ -339,7 +339,7 @@ async function main(): Promise<void> {
     };
     const { error: planError } = await supabaseAdmin.from("nutrition_plans").insert([
       { ...shared, effective_from: d(-30), effective_until: d(-1), base_weight_kg: 87, baseline_calories: 2000 },
-      { ...shared, effective_from: today, effective_until: null, base_weight_kg: 82, baseline_calories: 1800 },
+      { ...shared, effective_from: today, effective_until: d(56), base_weight_kg: 82, baseline_calories: 1800 },
     ] as never);
     if (planError) throw new Error(`nutrition_plans insert failed: ${planError.message}`);
 

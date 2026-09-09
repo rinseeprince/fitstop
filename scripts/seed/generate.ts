@@ -510,14 +510,12 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
     const fatG = Math.round((baseCals * logRng.float(0.22, 0.3)) / 9);
     const carbG = Math.max(40, Math.round((baseCals - proteinG * 4 - fatG * 9) / 4));
 
-    // Versioned model (migration 144): each client gets a CLOSED predecessor
-    // version + the OPEN current one, tiling the tenure at its midpoint, so
-    // "which version governed date X" is a real lookup against seed data
-    // (mirroring the training side's consecutive blocks). Short tenures fall
-    // back to a single open version. The open guard is now the partial unique
-    // index idx_nutrition_plans_open_unique — (client_id) WHERE
-    // status='active' AND effective_until IS NULL — so a pair of active rows
-    // is legal as long as exactly one is open.
+    // Placement model (migration 166): each client gets a CLOSED predecessor
+    // version + the current one, tiling the tenure at its midpoint, so "which
+    // version governed date X" is a real lookup against seed data (mirroring
+    // the training side's consecutive blocks). Short tenures fall back to a
+    // single version. Every version carries an end (the column is NOT NULL);
+    // the current one ends on the tenure's last day, where its events end.
     const nPlanId = seedUuid("nplan", coachIdx, c);
     const splitVersions = tenureDays >= 14;
     const v2FromIso = splitVersions ? addDays(startIso, Math.floor(tenureDays / 2)) : startIso;
@@ -553,7 +551,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
       ...sharedPlanCols,
       id: nPlanId,
       effective_from: v2FromIso,
-      effective_until: null,
+      effective_until: addDays(startIso, tenureDays - 1),
       baseline_calories: baseCals,
     });
 

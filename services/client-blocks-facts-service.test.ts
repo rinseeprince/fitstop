@@ -82,7 +82,7 @@ const block = (
 const version = (
   id: string,
   effective_from: string,
-  effective_until: string | null,
+  effective_until: string,
   tdee: number | null,
   baseline_calories = 2000,
   custom: { enabled?: boolean; calories?: number | null } = {}
@@ -180,7 +180,7 @@ describe("getBlockFacts", () => {
       { id: "p31", name: "Hypertrophy", effectiveFrom: "2026-08-01", effectiveUntil: null },
     ]);
     versionsResult = {
-      data: [version("v52", "2026-08-01", null, 2700, 2150)],
+      data: [version("v52", "2026-08-01", "2027-12-31", 2700, 2150)],
       error: null,
     };
     // Days exist only in the first block.
@@ -211,7 +211,7 @@ describe("getBlockFacts", () => {
       { id: "p19", name: "Base", effectiveFrom: "2026-07-06", effectiveUntil: null },
     ]);
     versionsResult = {
-      data: [version("v26", "2026-07-06", null, 2550, 1975)],
+      data: [version("v26", "2026-07-06", "2027-12-31", 2550, 1975)],
       error: null,
     };
     eventPages = [{ data: eventDays("2026-08-03", 28, 1975), error: null }];
@@ -232,7 +232,7 @@ describe("getBlockFacts", () => {
       { id: "p47", name: "Strength", effectiveFrom: "2026-09-07", effectiveUntil: null },
     ]);
     versionsResult = {
-      data: [version("v63", "2026-06-15", null, 2900, 2380)],
+      data: [version("v63", "2026-06-15", "2027-12-31", 2900, 2380)],
       error: null,
     };
     eventPages = [{ data: [], error: null }];
@@ -271,7 +271,7 @@ describe("getBlockFacts", () => {
     versionsResult = {
       data: [
         version("vA", "2026-05-01", "2026-06-10", 2800, 2400),
-        version("vB", "2026-06-11", null, 2600, 1800),
+        version("vB", "2026-06-11", "2027-12-31", 2600, 1800),
       ],
       error: null,
     };
@@ -296,7 +296,7 @@ describe("getBlockFacts", () => {
     versionsResult = {
       data: [
         version("old", "2025-07-02", "2026-08-10", 2220, 2220),
-        version("new", "2026-08-11", null, 2220, 1995),
+        version("new", "2026-08-11", "2027-12-31", 2220, 1995),
       ],
       error: null,
     };
@@ -324,7 +324,7 @@ describe("getBlockFacts", () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-08-01", "2026-09-03")]);
     versionsResult = {
       data: [
-        version("v", "2026-05-01", null, 2600, 2100, { enabled: true, calories: 1850 }),
+        version("v", "2026-05-01", "2027-12-31", 2600, 2100, { enabled: true, calories: 1850 }),
       ],
       error: null,
     };
@@ -342,7 +342,7 @@ describe("getBlockFacts", () => {
 
   it("the change marker skips hand-edited days: an edit stretch can neither flag nor mask", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-14")]);
-    versionsResult = { data: [version("v", "2026-05-01", null, 2500)], error: null };
+    versionsResult = { data: [version("v", "2026-05-01", "2027-12-31", 2500)], error: null };
     eventPages = [
       {
         data: [
@@ -367,7 +367,7 @@ describe("getBlockFacts", () => {
 
   it("a version without a tdee shows calories only", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-07")]);
-    versionsResult = { data: [version("v", "2026-05-01", null, null, 1700)], error: null };
+    versionsResult = { data: [version("v", "2026-05-01", "2027-12-31", null, 1700)], error: null };
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
@@ -384,7 +384,7 @@ describe("getBlockFacts", () => {
       block("a", "2026-06-01", "2026-06-14"), // ends before the version starts
       block("b", "2026-06-15", "2026-06-28"),
     ]);
-    versionsResult = { data: [version("v", "2026-06-15", null, 2500, 2000)], error: null };
+    versionsResult = { data: [version("v", "2026-06-15", "2027-12-31", 2500, 2000)], error: null };
 
     const facts = await getBlockFacts(CLIENT_ID, TODAY);
     expect(facts[0].nutrition).toBeNull();
@@ -393,7 +393,7 @@ describe("getBlockFacts", () => {
 
   it("the change window clamps at today — a queued change's future events do not flag yet", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-08-07", "2026-09-03")]);
-    versionsResult = { data: [version("v", "2026-05-01", null, 2600, 2100)], error: null };
+    versionsResult = { data: [version("v", "2026-05-01", "2027-12-31", 2600, 2100)], error: null };
     eventPages = [
       {
         data: [
@@ -424,7 +424,7 @@ describe("getBlockFacts", () => {
       versionsResult = {
         data: [
           version("v1", "2026-05-01", "2026-06-30", 3000, 2400),
-          version("v2", "2026-07-01", null, 3000, 2000),
+          version("v2", "2026-07-01", "2027-12-31", 3000, 2000),
         ],
         error: null,
       };
@@ -443,7 +443,7 @@ describe("getBlockFacts", () => {
     it("clips the first era to the block's start, not the version's", async () => {
       vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-28")]);
       versionsResult = {
-        data: [version("v", "2024-01-01", null, 2500, 2000)],
+        data: [version("v", "2024-01-01", "2027-12-31", 2500, 2000)],
         error: null,
       };
 
@@ -459,7 +459,7 @@ describe("getBlockFacts", () => {
       versionsResult = {
         data: [
           version("now", "2026-07-01", "2026-08-11", 2600, 2100),
-          version("queued", "2026-08-12", null, 2600, 1700),
+          version("queued", "2026-08-12", "2027-12-31", 2600, 1700),
         ],
         error: null,
       };
@@ -477,7 +477,7 @@ describe("getBlockFacts", () => {
           version("v1", "2026-05-01", "2026-06-30", 3000, 2400),
           // Same calories AND same tdee: nothing the coach would recognise as
           // a change, so no entry.
-          version("v2", "2026-07-01", null, 3000, 2400),
+          version("v2", "2026-07-01", "2027-12-31", 3000, 2400),
         ],
         error: null,
       };
@@ -493,7 +493,7 @@ describe("getBlockFacts", () => {
       versionsResult = {
         data: [
           version("before", "2026-01-01", "2026-05-31", 2500, 1500),
-          version("during", "2026-06-01", null, 2500, 2000),
+          version("during", "2026-06-01", "2027-12-31", 2500, 2000),
         ],
         error: null,
       };
@@ -510,7 +510,7 @@ describe("getBlockFacts", () => {
     // short and terminates it. The era transition sits at page 2's first row —
     // a truncated read (page 1 only) would report changeCount 0.
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2022-01-03", "2026-08-01")]);
-    versionsResult = { data: [version("v", "2020-01-01", null, 2400, 1800)], error: null };
+    versionsResult = { data: [version("v", "2020-01-01", "2027-12-31", 2400, 1800)], error: null };
     const transitionDate = addDaysToDateString("2022-01-03", 1000);
     eventPages = [
       { data: eventDays("2022-01-03", 1000, 2000), error: null },
@@ -573,7 +573,7 @@ describe("getBlockFacts", () => {
 
   it("counts multiple prescription changes and reports the newest era's first day", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-21")]);
-    versionsResult = { data: [version("v", "2026-05-01", null, null, 1800)], error: null };
+    versionsResult = { data: [version("v", "2026-05-01", "2027-12-31", null, 1800)], error: null };
     eventPages = [
       {
         data: [

@@ -29,8 +29,7 @@ function findActiveNutritionPlan(
   date: string
 ): NutritionPlanWithTargets | null {
   return plans.find((p) =>
-    p.effectiveFrom <= date &&
-    (p.effectiveUntil === null || p.effectiveUntil >= date)
+    p.effectiveFrom <= date && p.effectiveUntil >= date
   ) ?? null;
 }
 

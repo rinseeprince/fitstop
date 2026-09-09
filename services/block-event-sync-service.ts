@@ -3,7 +3,7 @@ import { addDaysToDateString } from "@/lib/date-helpers";
 import { inclusiveDays } from "@/lib/blocks/block-chain";
 import { expandProgramToWindow, generateProgramEvents } from "./program-event-walk";
 import { regenerateFutureNutritionEvents } from "./nutrition-event-service";
-import { getOpenNutritionPlan } from "./nutrition-plan-service";
+import { getNextNutritionVersionStartCap } from "./nutrition-plan-service";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { orchestrateNutritionPlanCreation } from "./nutrition-plan-orchestrator";
 import type { ClientBlock } from "@/types/client-blocks";
@@ -162,6 +162,13 @@ export async function clearScheduledEvents(params: {
  * The shorten arm: clear the days that have LEFT the block — everything after
  * its new end, bounded so the clear can never reach a window this block does not
  * own.
+ *
+ * The nutrition VERSIONS follow the days (migration 166). A version's end is
+ * stored, so one reaching past the block's new end is pulled back to it — its
+ * window ends where its days end, or the next cascade would regenerate the very
+ * days this clear removed — and a queued version that now starts in the cleared
+ * stretch is retired with them. A version crossing into the NEXT block is pulled
+ * back too; the days it leaves behind there belong to that block's own setup.
  */
 export async function clearEventsOutsideBlock(params: {
   clientId: string;
@@ -171,14 +178,37 @@ export async function clearEventsOutsideBlock(params: {
   const { clientId, clientToday, blockEndsOn } = params;
 
   const ceiling = await clearCeiling(clientId, blockEndsOn);
-  if (!ceiling) return { trainingCleared: 0, nutritionCleared: 0 };
+  const cleared = ceiling
+    ? await clearScheduledEvents({
+        clientId,
+        clientToday,
+        from: addDaysToDateString(blockEndsOn, 1),
+        to: ceiling,
+      })
+    : { trainingCleared: 0, nutritionCleared: 0 };
 
-  return clearScheduledEvents({
-    clientId,
-    clientToday,
-    from: addDaysToDateString(blockEndsOn, 1),
-    to: ceiling,
-  });
+  const now = new Date().toISOString();
+  const { error: capError } = await supabaseAdmin
+    .from("nutrition_plans")
+    .update({ effective_until: blockEndsOn, updated_at: now })
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .lte("effective_from", blockEndsOn)
+    .gt("effective_until", blockEndsOn);
+  if (capError) throw capError;
+
+  if (ceiling) {
+    const { error: retireError } = await supabaseAdmin
+      .from("nutrition_plans")
+      .update({ status: "archived", updated_at: now })
+      .eq("client_id", clientId)
+      .eq("status", "active")
+      .gt("effective_from", blockEndsOn)
+      .lte("effective_from", ceiling);
+    if (retireError) throw retireError;
+  }
+
+  return cleared;
 }
 
 /**
@@ -300,18 +330,20 @@ export async function extendTrainingToBlockEnd(params: {
 /**
  * Cover the block's days with nutrition targets.
  *
- * `keep` regenerates the new days from the version already in force — no
- * recalculation and no new version, so a client eight weeks into a cut keeps the
- * numbers they are working to. `regenerate` is the caller's job to have done
- * first, and that save GENERATES ITS OWN DAYS out to the horizon, so by the time
- * this runs the new era is already on the calendar and this is a no-op over it.
- * Either way the horizon already resolves to the block's end.
+ * `keep` extends the version laid in the block to the block's end and
+ * regenerates its days — no recalculation and no new version, so a client eight
+ * weeks into a cut keeps the numbers they are working to. `regenerate` is the
+ * caller's job to have done first: that save resolves its end against the
+ * already re-dated block and GENERATES ITS OWN DAYS to it, so by the time this
+ * runs the new era is on the calendar and this is a no-op over it.
  *
- * It asks for the OPEN version — the one with no end date — rather than the one
- * covering the start. The days that need covering are the ones at the far end of
- * the block, and reaching them is exactly what having no end date means. Asking
- * for the version covering today instead left everything past a QUEUED version's
- * start unwritten, because a regenerate is clamped to its own version's window.
+ * A version's end is STORED (migration 166), so a block extension has to move
+ * it or the next regenerate stops at the old end while the block runs on. The
+ * version is the latest one laid INSIDE the block — one that merely crosses the
+ * block belongs to no block and is left alone — and its new end takes the same
+ * cap every placement takes, the next queued version. Returns null when the
+ * block holds no version: the coach is told to set targets rather than handed a
+ * guessed prescription, the training extension's posture.
  */
 export async function fillNutritionAcrossBlock(params: {
   clientId: string;
@@ -323,10 +355,33 @@ export async function fillNutritionAcrossBlock(params: {
   const from = fillFloor(blockStartsOn, clientToday);
   if (from > blockEndsOn) return null;
 
-  const open = await getOpenNutritionPlan(clientId);
-  if (!open) return null;
+  const { data: version, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id, effective_from, effective_until")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .gte("effective_from", blockStartsOn)
+    .lte("effective_from", blockEndsOn)
+    .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!version) return null;
 
-  await regenerateFutureNutritionEvents(clientId, open.id, { kind: "from", from });
+  if (version.effective_until < blockEndsOn) {
+    const cap = await getNextNutritionVersionStartCap(clientId, version.effective_from);
+    const end = cap && cap < blockEndsOn ? cap : blockEndsOn;
+    if (end > version.effective_until) {
+      const { error: extendError } = await supabaseAdmin
+        .from("nutrition_plans")
+        .update({ effective_until: end, updated_at: new Date().toISOString() })
+        .eq("id", version.id);
+      if (extendError) throw extendError;
+    }
+  }
+
+  await regenerateFutureNutritionEvents(clientId, version.id, { kind: "from", from });
   return { from };
 }
 
@@ -366,8 +421,9 @@ export async function regenerateNutritionForBlock(params: {
       "coach_id, work_activity_level, training_volume_hours, protein_target_g_per_kg, diet_type, goal_deadline, custom_macros_enabled, custom_calories, custom_protein_g, custom_carb_g, custom_fat_g"
     )
     .eq("client_id", clientId)
+    .eq("status", "active")
     .lte("effective_from", from)
-    .or(`effective_until.gte.${from},effective_until.is.null`)
+    .gte("effective_until", from)
     .order("effective_from", { ascending: false })
     .limit(1)
     .maybeSingle();

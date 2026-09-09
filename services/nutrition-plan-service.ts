@@ -1,6 +1,10 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { coversDate } from "./training-plan-window";
+import { getBlockEndCoveringDate } from "./client-blocks-service";
+import { getFurthestLiveProgramEnd } from "./training-service";
 import { calculateDailyMacros, DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
+import { addDaysToDateString } from "@/lib/date-helpers";
+import { NUTRITION_PLACEMENT_FALLBACK_DAYS } from "@/lib/constants";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import type { Database } from "@/types/database";
@@ -33,11 +37,12 @@ type NullableRpcArgKeys =
   | "p_effective_from";
 
 /**
- * The payload this service must send: all 24 of migration 144's parameters,
+ * The payload this service must send: all 25 of migration 166's parameters,
  * present, with NULL admitted on the nine above. `Required<>` makes the two the
  * SQL gives defaults (`p_effective_from`, `p_today`) mandatory here — the RPC's
  * past-date belt reads `p_today`, so dropping it is a bug on this side even
- * though the function itself would accept the call.
+ * though the function itself would accept the call. `p_effective_until` has no
+ * default: a version without an end is the model migration 166 retired.
  */
 type CreateNutritionPlanRpcPayload = Required<Omit<CreatePlanRpcArgs, NullableRpcArgKeys>> & {
   [K in NullableRpcArgKeys]: CreatePlanRpcArgs[K] | null;
@@ -75,16 +80,22 @@ type CreateNutritionPlanParams = {
   regenerationReason: string;
   trainingPlan: TrainingPlan | null;
   effectiveFrom?: string;
+  /**
+   * The placement's last day — `resolveNutritionPlacementEnd`'s answer for the
+   * effective date, resolved once by the orchestrator so the row the RPC
+   * writes and the days the regenerate covers describe one window.
+   */
+  effectiveUntil: string;
 };
 
 /**
- * Save a nutrition plan VERSION (migration 144, close-and-insert — one
- * transaction). Three branches on the client's open version: none → insert;
- * open starts before the new date → close it at new_start − 1 and insert;
- * open starts on/after → absorb it in place (same-day re-saves collapse,
- * saving earlier than a queued change replaces it). A universal sweep removes
- * fully-replaced queued versions and re-closes any straddler, so windows can
- * never overlap. Returns the surviving version's id or null on error.
+ * Save a nutrition plan VERSION as a PLACEMENT (migration 166 — one
+ * transaction). The RPC caps the predecessor at `start − 1`, caps this version
+ * at the next queued version's start, REPLACES IN PLACE a version starting on
+ * the same day (a same-day re-save collapses; a retry never mints a twin) and
+ * inserts otherwise, then replaces the version's daily-target grid. Windows can
+ * never overlap: the gist exclusion is the backstop that must never fire.
+ * Returns the surviving version's id or null on error.
  */
 export async function createNutritionPlan(params: CreateNutritionPlanParams): Promise<string | null> {
   // Compute daily target rows before calling the atomic RPC
@@ -127,8 +138,8 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
     }
   }
 
-  // Single transactional RPC: close/absorb the open version + insert/update
-  // the new version + replace its daily-target grid (migration 144).
+  // Single transactional RPC: cap the predecessor + replace-in-place or insert
+  // the new version + replace its daily-target grid (migration 166).
   const { data: newPlanId, error: rpcError } = await supabaseAdmin
     .rpc("create_nutrition_plan_atomic", {
       p_client_id: params.clientId,
@@ -153,9 +164,10 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_custom_fat_g: params.customFatG,
       p_regeneration_reason: params.regenerationReason,
       p_daily_targets: dailyTargets,
+      p_effective_until: params.effectiveUntil,
       p_effective_from: params.effectiveFrom || null,
       p_today: params.clientToday,
-      // `satisfies` checks this payload against migration 144's 24-parameter
+      // `satisfies` checks this payload against migration 166's 25-parameter
       // signature: an added, dropped or renamed key is a compile error HERE,
       // rather than a PGRST202 at runtime where PostgREST cannot resolve the
       // overload, rpcError is set below, this returns null, and EVERY plan save
@@ -246,29 +258,31 @@ export async function getNutritionPlanIdForDate(
 type NutritionPlanVersionWindow = {
   id: string;
   effectiveFrom: string;
-  effectiveUntil: string | null;
+  effectiveUntil: string;
 };
 
 /**
  * Every ACTIVE version whose window overlaps [rangeStart, rangeEnd], earliest
- * first. The version-segmentation primitive: the training cascade maps each
+ * first — or, with no `rangeEnd`, every one whose window reaches `rangeStart`
+ * or later. The version-segmentation primitive: the training cascade maps each
  * date in its scope to the version covering it (the schedule-data windowed
  * query shape), and the bulk reset groups its date list the same way. Overlap
- * is `effective_from <= rangeEnd AND (effective_until >= rangeStart OR open)`.
+ * is `effective_until >= rangeStart AND effective_from <= rangeEnd`; every
+ * version has an end (migration 166), so there is no open-row arm.
  */
 export async function getActiveNutritionPlanVersionsOverlapping(
   clientId: string,
   rangeStart: string,
-  rangeEnd: string
+  rangeEnd?: string
 ): Promise<NutritionPlanVersionWindow[]> {
-  const { data, error } = await supabaseAdmin
+  const query = supabaseAdmin
     .from("nutrition_plans")
     .select("id, effective_from, effective_until")
     .eq("client_id", clientId)
     .eq("status", "active")
-    .lte("effective_from", rangeEnd)
-    .or(`effective_until.gte.${rangeStart},effective_until.is.null`)
+    .gte("effective_until", rangeStart)
     .order("effective_from", { ascending: true });
+  const { data, error } = rangeEnd ? await query.lte("effective_from", rangeEnd) : await query;
 
   if (error) {
     throw new Error(`Failed to fetch nutrition plan versions: ${error.message}`);
@@ -282,28 +296,30 @@ export async function getActiveNutritionPlanVersionsOverlapping(
 
 /** Pure window test shared by the in-memory date→version mappers. */
 export function versionCoversDate(v: NutritionPlanVersionWindow, date: string): boolean {
-  return v.effectiveFrom <= date && (v.effectiveUntil === null || v.effectiveUntil >= date);
+  return v.effectiveFrom <= date && v.effectiveUntil >= date;
 }
 
 /**
- * The client's OPEN version (`effective_until IS NULL`) — the latest-saved
- * prescription, and therefore the drawer's seed source: seeding from anything
- * else lets Generate silently clobber a queued prescription. At most one
- * exists (`idx_nutrition_plans_open_unique`). Null after a delete, when a
- * closed covering version may still govern today — seed `open ?? covering`,
- * never fresh defaults while a plan exists.
+ * The client's LATEST version by start — the last-saved prescription, and
+ * therefore the drawer's seed source and the goal-drift comparison's subject:
+ * seeding from anything else lets Generate silently clobber a queued
+ * prescription. Under the placement model (migration 166) every version has an
+ * end, so this is a plain ordering rather than an open-row lookup. Null only
+ * when the client has no active version at all.
  */
-export async function getOpenNutritionPlan(clientId: string): Promise<NutritionPlanRow | null> {
+export async function getLatestNutritionPlan(clientId: string): Promise<NutritionPlanRow | null> {
   const { data, error } = await supabaseAdmin
     .from("nutrition_plans")
     .select("*")
     .eq("client_id", clientId)
     .eq("status", "active")
-    .is("effective_until", null)
+    .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error) {
-    throw new Error(`Failed to fetch open nutrition plan: ${error.message}`);
+    throw new Error(`Failed to fetch the latest nutrition plan: ${error.message}`);
   }
   return data;
 }
@@ -339,4 +355,68 @@ export async function getNextFutureNutritionPlan(
     throw new Error(`Failed to resolve next future nutrition plan: ${error.message}`);
   }
   return data ? { id: data.id, effectiveFrom: data.effective_from } : null;
+}
+
+/**
+ * The day before the next queued version starts, or null when a version
+ * starting on `start` would be the last — training's `getNextPlanStartCap`,
+ * for nutrition. Strict `>`, deliberately: a version starting on the same day
+ * is the one the RPC replaces in place, not a cap.
+ */
+export async function getNextNutritionVersionStartCap(
+  clientId: string,
+  start: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("effective_from")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .gt("effective_from", start)
+    .order("effective_from", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to resolve the next nutrition version: ${error.message}`);
+  }
+  return data ? addDaysToDateString(data.effective_from, -1) : null;
+}
+
+/**
+ * How far a version placed on `start` runs — the question
+ * `resolvePlacementWindowEnd` answers for a training program, asked of the
+ * same bounds so the two tracks end on the same day inside a block:
+ *
+ *   1. the last day of the block COVERING `start` — a block is the time-bound
+ *      program the coach sells, so its end is the answer whenever the days
+ *      being written sit in one. The block covering the start, never the
+ *      furthest the client has: a later block the coach has not priced must
+ *      not be pulled into this version, or its card would read "Not set" while
+ *      its days held numbers;
+ *   2. else the furthest live training program's last day on or after `start`;
+ *   3. else `NUTRITION_PLACEMENT_FALLBACK_DAYS` from `start`, all a client with
+ *      neither has;
+ *
+ * capped, whichever it is, at the day before the next queued version — the
+ * same cap every training placement takes, so a save before a queued change
+ * runs until that change rather than replacing it.
+ *
+ * Resolved ONCE, at save, and stored on the row (migration 166): the window is
+ * the record, and every regenerate reads it there. Past it there are
+ * deliberately no days, and the client's food log is refused — the coach draws
+ * the next bound when they are ready.
+ */
+export async function resolveNutritionPlacementEnd(
+  clientId: string,
+  start: string
+): Promise<string> {
+  const blockEnd = await getBlockEndCoveringDate(clientId, start);
+  const declared =
+    blockEnd ??
+    (await getFurthestLiveProgramEnd(clientId, start)) ??
+    addDaysToDateString(start, NUTRITION_PLACEMENT_FALLBACK_DAYS);
+
+  const cap = await getNextNutritionVersionStartCap(clientId, start);
+  return cap && cap < declared ? cap : declared;
 }

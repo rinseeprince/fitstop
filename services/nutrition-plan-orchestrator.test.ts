@@ -12,12 +12,6 @@ vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn().mockResolvedValue("2026-07-02"),
 }));
 
-vi.mock("@/services/event-deletion-floor", () => ({
-  // The one shared answer to "from which day may events be removed?" — its own
-  // rules are proved in services/event-deletion-floor.test.ts.
-  resolveEventDeletionFloor: vi.fn().mockResolvedValue("2026-07-02"),
-}));
-
 vi.mock("@/lib/validations/nutrition", () => ({
   validateClientForNutrition: vi.fn().mockReturnValue({ valid: true, errors: [] }),
 }));
@@ -32,12 +26,17 @@ vi.mock("@/services/nutrition-service", () => ({
 
 vi.mock("@/services/nutrition-plan-service", () => ({
   createNutritionPlan: vi.fn(),
-  getNutritionPlanForDate: vi.fn(),
+  resolveNutritionPlacementEnd: vi.fn(),
 }));
 
 vi.mock("@/services/nutrition-event-service", () => ({
   regenerateFutureNutritionEvents: vi.fn(),
-  deleteFutureNutritionEventsForClient: vi.fn(),
+}));
+
+// The delete is one act, owned by the clear service (migration 166); its
+// statement semantics are proved in nutrition-plan-clear-service.test.ts.
+vi.mock("@/services/nutrition-plan-clear-service", () => ({
+  clearNutritionPlansForClient: vi.fn(),
 }));
 
 vi.mock("@/services/nutrition-plan-notes-service", () => ({
@@ -53,19 +52,15 @@ import { getClientById } from "@/services/client-service";
 import { generateNutritionPlan } from "@/services/nutrition-service";
 import {
   createNutritionPlan,
-  getNutritionPlanForDate,
+  resolveNutritionPlacementEnd,
 } from "@/services/nutrition-plan-service";
-import {
-  deleteFutureNutritionEventsForClient,
-  regenerateFutureNutritionEvents,
-} from "@/services/nutrition-event-service";
+import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
 import { captureApiError } from "@/lib/error-handler";
 import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
-import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import {
-  deleteBlockNutritionPlans,
   orchestrateNutritionPlanCreation,
   orchestrateNutritionPlanDeletion,
   NutritionPlanError,
@@ -132,49 +127,17 @@ function mockNoExistingPlan(): void {
   vi.mocked(supabaseAdmin.from).mockReturnValue(chain as never);
 }
 
-type ChainResult = { data?: unknown; error?: unknown };
-
-/**
- * Deletion-path harness: each supabaseAdmin.from() call gets its own chain
- * bound to the next queued result, and every chain is THENABLE so awaited
- * builders (the queued-versions select, the queued delete, the covering
- * close) resolve it. Returned array = the chains in from()-call order, for
- * per-statement assertions.
- */
-function mockFromSequence(results: ChainResult[]) {
-  const chains: Array<Record<string, ReturnType<typeof vi.fn>>> = [];
-  vi.mocked(supabaseAdmin.from).mockImplementation((() => {
-    const result = results[chains.length] ?? { data: null, error: null };
-    const chain: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "gt", "gte", "lte", "in", "update", "delete", "order", "limit"]) {
-      chain[m] = vi.fn().mockReturnValue(chain);
-    }
-    chain.maybeSingle = vi.fn().mockResolvedValue(result);
-    chain.then = (resolve: (v: ChainResult) => unknown, reject?: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject);
-    chains.push(chain as Record<string, ReturnType<typeof vi.fn>>);
-    return chain;
-  }) as never);
-  return chains;
-}
-
-/** An open covering version — the ordinary single-version client. */
-const coveringRow = {
-  id: "plan-1",
-  effective_from: "2026-06-01",
-  effective_until: null,
-} as never;
-
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getClientById).mockResolvedValue(client as never);
   vi.mocked(generateNutritionPlan).mockReturnValue(calculatedPlan as never);
   vi.mocked(createNutritionPlan).mockResolvedValue("plan-1" as never);
   vi.mocked(regenerateFutureNutritionEvents).mockResolvedValue(undefined);
-  vi.mocked(getNutritionPlanForDate).mockResolvedValue(coveringRow);
-  vi.mocked(deleteFutureNutritionEventsForClient).mockResolvedValue(undefined);
-  // Default: the client has not touched today, so the floor IS their today.
-  vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-07-02");
+  vi.mocked(resolveNutritionPlacementEnd).mockResolvedValue("2026-08-27");
+  vi.mocked(clearNutritionPlansForClient).mockResolvedValue({
+    versionsCleared: 1,
+    versionIds: ["plan-1"],
+  });
   vi.mocked(recordPlanSaveNote).mockResolvedValue(undefined);
   mockNoExistingPlan();
 });
@@ -320,152 +283,39 @@ describe("orchestrateNutritionPlanCreation — the coach note (migration 147)", 
   });
 });
 
-describe("orchestrateNutritionPlanDeletion — chain semantics (migration 144, D2)", () => {
-  it("never touches nutrition_plan_notes — a plan delete leaves every note standing", async () => {
-    // Deleting a plan hard-deletes queued nutrition_plans rows, and the whole
-    // reason notes are a client-scoped table with ON DELETE SET NULL is that
-    // they must outlive that. This pins the app half: no code path here reaches
-    // the notes table. The FK half is schema-level (migration 147) and cannot
-    // be proven against a mocked client — a real delete is the browser smoke.
-    const fromCalls = mockFromSequence([{ data: [], error: null }, { error: null }]);
+describe("orchestrateNutritionPlanDeletion — one act, the clear service's (migration 166)", () => {
+  it("retires the versions the client is on, with the client's today, and names the earliest for the audit", async () => {
+    vi.mocked(clearNutritionPlansForClient).mockResolvedValue({
+      versionsCleared: 2,
+      versionIds: ["plan-1", "q1"],
+    });
 
+    const result = await orchestrateNutritionPlanDeletion(clientId, coachId);
+
+    // Unscoped — no block window: the calendar's own delete. The floor, the
+    // day removal and the archive are the clear service's.
+    expect(clearNutritionPlansForClient).toHaveBeenCalledWith(clientId, "2026-07-02");
+    expect(result).toEqual({ planId: "plan-1" });
+  });
+
+  it("never touches nutrition_plan_notes — a plan delete leaves every note standing", async () => {
+    // Notes are a client-scoped table with ON DELETE SET NULL precisely so they
+    // outlive the versions they describe. This pins the app half: no code path
+    // here reaches the notes table.
     await orchestrateNutritionPlanDeletion(clientId, coachId);
 
     const tables = vi.mocked(supabaseAdmin.from).mock.calls.map((c) => c[0]);
     expect(tables).not.toContain("nutrition_plan_notes");
-    expect(fromCalls.length).toBeGreaterThan(0);
   });
 
-  it("closes the covering version the day BEFORE the delete's first day", async () => {
-    // ★ The window ends where the events end. Off by one and the next cascade
-    // regenerates the day the delete just removed — a training-plan clear five
-    // seconds later put it straight back.
-    // from() #1 = queued-versions select (none), #2 = the covering close.
-    const chains = mockFromSequence([{ data: [], error: null }, { error: null }]);
-
-    const result = await orchestrateNutritionPlanDeletion(clientId, coachId);
-
-    expect(result).toEqual({ planId: "plan-1" });
-    // The floor here is the client-local today: they have not logged it.
-    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-02");
-    // The queued select probes strictly-future versions against client-today.
-    expect(chains[0].gt).toHaveBeenCalledWith("effective_from", "2026-07-02");
-    // D2(a): close-never-erase — effective_until = floor - 1, NO status write.
-    expect(chains[1].update).toHaveBeenCalledWith(
-      expect.objectContaining({ effective_until: "2026-07-01" })
-    );
-    expect(chains[1].update).not.toHaveBeenCalledWith(
-      expect.objectContaining({ status: expect.anything() })
-    );
-    expect(chains[1].eq).toHaveBeenCalledWith("id", "plan-1");
-    // Events go first so a mid-flight failure leaves the version open and retryable.
-    expect(
-      vi.mocked(deleteFutureNutritionEventsForClient).mock.invocationCallOrder[0]
-    ).toBeLessThan(chains[1].update.mock.invocationCallOrder[0]);
-  });
-
-  it("hard-deletes queued versions (D2(b)) alongside closing the covering one", async () => {
-    // #1 queued select, #2 queued delete, #3 covering close.
-    const chains = mockFromSequence([
-      { data: [{ id: "q1" }, { id: "q2" }], error: null },
-      { error: null },
-      { error: null },
-    ]);
-
-    const result = await orchestrateNutritionPlanDeletion(clientId, coachId);
-
-    expect(result).toEqual({ planId: "plan-1" });
-    expect(chains[1].delete).toHaveBeenCalled();
-    expect(chains[1].in).toHaveBeenCalledWith("id", ["q1", "q2"]);
-    expect(chains[2].update).toHaveBeenCalledWith(
-      expect.objectContaining({ effective_until: "2026-07-01" })
-    );
-  });
-
-  it("a client who logged today keeps today — window closed at today, events from tomorrow", async () => {
-    // The floor's other answer, end to end: the two move together, so the day
-    // they engaged with keeps both its target AND the version that explains it.
-    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-07-03");
-    const chains = mockFromSequence([{ data: [], error: null }, { error: null }]);
-
-    await orchestrateNutritionPlanDeletion(clientId, coachId);
-
-    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-03");
-    expect(chains[1].update).toHaveBeenCalledWith(
-      expect.objectContaining({ effective_until: "2026-07-02" })
-    );
-  });
-
-  it("hard-deletes a covering version that would be left with an EMPTY window", async () => {
-    // It starts on the day the delete removes, so it governed nothing once its
-    // days are gone. Postgres would take the inverted range silently — an empty
-    // daterange overlaps nothing, so the gist exclusion never fires.
-    vi.mocked(getNutritionPlanForDate).mockResolvedValue({
-      id: "plan-1",
-      effective_from: "2026-07-02",
-      effective_until: null,
-    } as never);
-    const chains = mockFromSequence([{ data: [{ id: "q7" }], error: null }, { error: null }]);
-
-    await orchestrateNutritionPlanDeletion(clientId, coachId);
-
-    expect(chains[1].delete).toHaveBeenCalled();
-    expect(chains[1].in).toHaveBeenCalledWith("id", ["q7", "plan-1"]);
-    // Removed, never closed: from() was called exactly twice.
-    expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(2);
-  });
-
-  it("a version still covering the floor's own day is deletable, not a 404", async () => {
-    // The recovery case. A cascade that rebuilt the floor's day leaves the
-    // window ending ON it; asking whether anything OUTLASTS the delete (rather
-    // than whether it reaches past today) is what lets a second delete finish
-    // the job instead of refusing it.
-    vi.mocked(getNutritionPlanForDate).mockResolvedValue({
-      id: "plan-1",
-      effective_from: "2026-06-11",
-      effective_until: "2026-07-02",
-    } as never);
-    const chains = mockFromSequence([{ data: [], error: null }, { error: null }]);
-
-    await orchestrateNutritionPlanDeletion(clientId, coachId);
-
-    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-02");
-    expect(chains[1].update).toHaveBeenCalledWith(
-      expect.objectContaining({ effective_until: "2026-07-01" })
-    );
-  });
-
-  it("deletes a queued-only chain (no covering version) instead of 404ing", async () => {
-    vi.mocked(getNutritionPlanForDate).mockResolvedValue(null);
-    const chains = mockFromSequence([
-      { data: [{ id: "q1" }], error: null },
-      { error: null },
-    ]);
-
-    const result = await orchestrateNutritionPlanDeletion(clientId, coachId);
-
-    expect(result).toEqual({ planId: "q1" });
-    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith(clientId, "2026-07-02");
-    expect(chains[1].in).toHaveBeenCalledWith("id", ["q1"]);
-    // No covering version → nothing to close: from() was called exactly twice.
-    expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(2);
-  });
-
-  it("rejects 404 when the chain already ends at the close date (same-day second delete), touching nothing", async () => {
-    // A prior delete closed it at floor - 1, so nothing outlasts this one.
-    vi.mocked(getNutritionPlanForDate).mockResolvedValue({
-      id: "plan-1",
-      effective_from: "2026-06-01",
-      effective_until: "2026-07-01",
-    } as never);
-    mockFromSequence([{ data: [], error: null }]);
+  it("rejects 404 when nothing is left to retire — a same-day second delete is a clean 404, not a silent success", async () => {
+    vi.mocked(clearNutritionPlansForClient).mockResolvedValue({ versionsCleared: 0, versionIds: [] });
 
     await expect(orchestrateNutritionPlanDeletion(clientId, coachId)).rejects.toMatchObject({
       name: "NutritionPlanError",
       statusCode: 404,
       message: "No active nutrition plan to delete",
     });
-    expect(deleteFutureNutritionEventsForClient).not.toHaveBeenCalled();
   });
 
   it("rejects 404 when the client does not exist", async () => {
@@ -475,7 +325,7 @@ describe("orchestrateNutritionPlanDeletion — chain semantics (migration 144, D
       name: "NutritionPlanError",
       statusCode: 404,
     });
-    expect(deleteFutureNutritionEventsForClient).not.toHaveBeenCalled();
+    expect(clearNutritionPlansForClient).not.toHaveBeenCalled();
   });
 
   it("rejects 403 when the coach does not own the client", async () => {
@@ -483,20 +333,63 @@ describe("orchestrateNutritionPlanDeletion — chain semantics (migration 144, D
       name: "NutritionPlanError",
       statusCode: 403,
     });
-    expect(deleteFutureNutritionEventsForClient).not.toHaveBeenCalled();
+    expect(clearNutritionPlansForClient).not.toHaveBeenCalled();
   });
 
-  it("propagates an event-delete failure without touching the versions (chain stays retryable)", async () => {
-    const chains = mockFromSequence([{ data: [{ id: "q1" }], error: null }]);
-    vi.mocked(deleteFutureNutritionEventsForClient).mockRejectedValue(new Error("delete exploded"));
+  it("propagates a clear failure as-is (the route reports it; the clear left the versions retryable)", async () => {
+    vi.mocked(clearNutritionPlansForClient).mockRejectedValue(new Error("delete exploded"));
 
     await expect(orchestrateNutritionPlanDeletion(clientId, coachId)).rejects.toThrow(
       "delete exploded"
     );
-    // Neither the queued delete nor the covering close ran: only the queued
-    // SELECT chain exists, and no later from() call was made.
-    expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(1);
-    expect(chains[0].delete).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// The placement's end (migration 166): resolved once, for the effective date,
+// and handed to the RPC — the row IS the window.
+// =============================================================================
+
+describe("orchestrateNutritionPlanCreation — the placement's end", () => {
+  it("resolves the end for the effective date — today when none was sent — and hands it to the RPC", async () => {
+    await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
+
+    expect(resolveNutritionPlacementEnd).toHaveBeenCalledWith(clientId, "2026-07-02");
+    expect(createNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ effectiveUntil: "2026-08-27" })
+    );
+  });
+
+  it("resolves it for a queued start, not for today", async () => {
+    vi.mocked(resolveNutritionPlacementEnd).mockResolvedValue("2026-10-11");
+
+    await orchestrateNutritionPlanCreation(
+      clientId,
+      coachId,
+      { ...calculatedBody, effectiveFrom: "2026-08-16" },
+      {}
+    );
+
+    expect(resolveNutritionPlacementEnd).toHaveBeenCalledWith(clientId, "2026-08-16");
+    expect(createNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ effectiveFrom: "2026-08-16", effectiveUntil: "2026-10-11" })
+    );
+  });
+
+  it("the custom-macros branch hands the same end to the RPC — both handlers, not one", async () => {
+    await orchestrateNutritionPlanCreation(clientId, coachId, customBody, {});
+
+    expect(createNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ customMacrosEnabled: true, effectiveUntil: "2026-08-27" })
+    );
+  });
+
+  it("resolves the end BEFORE the RPC, never after — the row is written with it", async () => {
+    await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
+
+    expect(vi.mocked(resolveNutritionPlacementEnd).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(createNutritionPlan).mock.invocationCallOrder[0]
+    );
   });
 });
 
@@ -595,91 +488,5 @@ describe("orchestrateNutritionPlanCreation — the deficit runs from the day the
         effectiveFrom: THREE_WEEKS_OUT,
       })
     );
-  });
-});
-
-// ===========================================================================
-// deleteBlockNutritionPlans — the block delete's "and its plans", scoped.
-//
-// A version belongs to a block when its effective_from falls in the block's
-// days; that works because a version generates only inside the block it opens
-// in, so its window and the block's line up by construction.
-// ===========================================================================
-
-describe("deleteBlockNutritionPlans", () => {
-  const BLOCK = { startsOn: "2026-07-06", endsOn: "2026-08-02" };
-
-  it("takes only the versions whose start falls inside the block", async () => {
-    // #1 versions select, #2 events delete, #3 the close.
-    const chains = mockFromSequence([
-      { data: [{ id: "v81", effective_from: "2026-07-06" }], error: null },
-      { error: null },
-      { error: null },
-    ]);
-
-    const result = await deleteBlockNutritionPlans(clientId, BLOCK);
-
-    expect(result).toEqual({ versionsCleared: 1 });
-    expect(chains[0].gte).toHaveBeenCalledWith("effective_from", "2026-07-06");
-    expect(chains[0].lte).toHaveBeenCalledWith("effective_from", "2026-08-02");
-  });
-
-  it("bounds the day removal at BOTH ends — the floor and the block's last day", async () => {
-    const chains = mockFromSequence([
-      { data: [{ id: "v81", effective_from: "2026-07-06" }], error: null },
-      { error: null },
-      { error: null },
-    ]);
-
-    await deleteBlockNutritionPlans(clientId, BLOCK);
-
-    // Floor is the client's today (2026-07-02), which is before the block, so
-    // the block's own start wins at the near end.
-    expect(chains[1].gte).toHaveBeenCalledWith("date", "2026-07-06");
-    expect(chains[1].lte).toHaveBeenCalledWith("date", "2026-08-02");
-    expect(chains[1].eq).toHaveBeenCalledWith("status", "scheduled");
-  });
-
-  it("REMOVES a version that never governed a day, rather than closing it", async () => {
-    // Its window would be empty once its days are gone — the same rule the
-    // client-wide delete applies to a queued version.
-    const chains = mockFromSequence([
-      { data: [{ id: "v92", effective_from: "2026-07-06" }], error: null },
-      { error: null },
-      { error: null },
-    ]);
-
-    await deleteBlockNutritionPlans(clientId, BLOCK);
-
-    expect(chains[2].delete).toHaveBeenCalled();
-    expect(chains[2].in).toHaveBeenCalledWith("id", ["v92"]);
-  });
-
-  it("CLOSES a version that did govern days, at the day before the floor", async () => {
-    const chains = mockFromSequence([
-      { data: [{ id: "v37", effective_from: "2026-06-15" }], error: null },
-      { error: null },
-      { error: null },
-    ]);
-
-    await deleteBlockNutritionPlans(clientId, {
-      startsOn: "2026-06-15",
-      endsOn: "2026-08-02",
-    });
-
-    expect(chains[2].update).toHaveBeenCalledWith(
-      expect.objectContaining({ effective_until: "2026-07-01" })
-    );
-    expect(chains[2].in).toHaveBeenCalledWith("id", ["v37"]);
-  });
-
-  it("does nothing at all for a block that holds no versions", async () => {
-    mockFromSequence([{ data: [], error: null }]);
-
-    expect(await deleteBlockNutritionPlans(clientId, BLOCK)).toEqual({
-      versionsCleared: 0,
-    });
-    // One read, no writes: an empty block is not an error.
-    expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(1);
   });
 });

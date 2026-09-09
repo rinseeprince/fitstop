@@ -2092,7 +2092,7 @@ export type Database = {
           custom_protein_g: number | null
           diet_type: string
           effective_from: string
-          effective_until: string | null
+          effective_until: string
           fat_target_g: number
           goal_deadline: string | null
           goal_weight_kg: number | null
@@ -2122,7 +2122,7 @@ export type Database = {
           custom_protein_g?: number | null
           diet_type?: string
           effective_from: string
-          effective_until?: string | null
+          effective_until: string
           fat_target_g: number
           goal_deadline?: string | null
           goal_weight_kg?: number | null
@@ -2152,7 +2152,7 @@ export type Database = {
           custom_protein_g?: number | null
           diet_type?: string
           effective_from?: string
-          effective_until?: string | null
+          effective_until?: string
           fat_target_g?: number
           goal_deadline?: string | null
           goal_weight_kg?: number | null
@@ -3020,6 +3020,7 @@ export type Database = {
           p_daily_targets: Json
           p_diet_type: string
           p_effective_from?: string
+          p_effective_until: string
           p_fat_target_g: number
           p_goal_deadline: string
           p_goal_weight_kg: number

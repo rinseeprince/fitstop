@@ -32,8 +32,8 @@ vi.mock("@/services/training-plan-clear-service", () => ({
   clearTrainingPlansForClient: vi.fn().mockResolvedValue({ plansCleared: 0 }),
 }));
 
-vi.mock("@/services/nutrition-plan-orchestrator", () => ({
-  deleteBlockNutritionPlans: vi.fn().mockResolvedValue({ versionsCleared: 0 }),
+vi.mock("@/services/nutrition-plan-clear-service", () => ({
+  clearNutritionPlansForClient: vi.fn().mockResolvedValue({ versionsCleared: 0, versionIds: [] }),
 }));
 
 vi.mock("@/services/client-blocks-service", () => {
@@ -57,7 +57,7 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getClientTodayString } from "@/services/today-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { clearTrainingPlansForClient } from "@/services/training-plan-clear-service";
-import { deleteBlockNutritionPlans } from "@/services/nutrition-plan-orchestrator";
+import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
 import {
   BlockWindowError,
   deleteBlock,
@@ -142,12 +142,12 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
   it("scopes both plan deletes to THIS block's window, nutrition first", async () => {
     // A block delete is about one block's date range. Both tracks answer
     // "does this plan belong here?" from dates — a program is truncated to the
-    // block it is placed in, a version generates only inside the block it opens
-    // in — so a LATER block keeps its own program and its own targets.
+    // block it is placed in, a version's end is resolved to the block its start
+    // falls in — so a LATER block keeps its own program and its own targets.
     //
-    // NUTRITION FIRST is load-bearing: its delete closes the versions at the day
-    // before the deletion floor, so the training clear's own cascade then finds
-    // no version governing those days and rebuilds nothing.
+    // NUTRITION FIRST is load-bearing: its clear archives the block's versions
+    // and removes their days, so the training clear's own cascade then finds no
+    // active version governing those days and rebuilds nothing.
     vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
     vi.mocked(listBlocks).mockResolvedValue([
       {
@@ -164,16 +164,16 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
     const response = await DELETE(createMockRequest("?clearPlans=true"), mockParams);
 
     expect(response.status).toBe(200);
-    expect(deleteBlockNutritionPlans).toHaveBeenCalledWith(
-      "client-1",
-      expect.objectContaining({ startsOn: "2026-08-11", endsOn: "2026-09-07" })
-    );
+    expect(clearNutritionPlansForClient).toHaveBeenCalledWith("client-1", TODAY, {
+      from: "2026-08-11",
+      to: "2026-09-07",
+    });
     expect(clearTrainingPlansForClient).toHaveBeenCalledWith("client-1", TODAY, {
       from: "2026-08-11",
       to: "2026-09-07",
     });
     expect(
-      vi.mocked(deleteBlockNutritionPlans).mock.invocationCallOrder[0]
+      vi.mocked(clearNutritionPlansForClient).mock.invocationCallOrder[0]
     ).toBeLessThan(
       vi.mocked(clearTrainingPlansForClient).mock.invocationCallOrder[0]
     );
@@ -189,7 +189,7 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
 
     await DELETE(createMockRequest(), mockParams);
 
-    expect(deleteBlockNutritionPlans).not.toHaveBeenCalled();
+    expect(clearNutritionPlansForClient).not.toHaveBeenCalled();
     expect(clearTrainingPlansForClient).not.toHaveBeenCalled();
   });
 
@@ -202,7 +202,7 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
         startsOn: "2026-08-11", endsOn: "2026-09-07", archivedAt: null,
       },
     ]);
-    vi.mocked(deleteBlockNutritionPlans).mockRejectedValueOnce(new Error("boom"));
+    vi.mocked(clearNutritionPlansForClient).mockRejectedValueOnce(new Error("boom"));
 
     const response = await DELETE(createMockRequest("?clearPlans=true"), mockParams);
 

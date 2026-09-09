@@ -20,11 +20,16 @@ vi.mock('@/services/training-service', () => ({
 
 // The orchestrator PROPAGATES event-rewrite failures (previously swallowed),
 // so the success-path tests must mock the rewrite as succeeding. The GET's old
-// todayEvent probe is retired (migration 144) — the covering VERSION answers
-// "is anything running", so this factory no longer declares it.
+// todayEvent probe is retired — the covering VERSION answers "is anything
+// running", so this factory no longer declares it.
 vi.mock('@/services/nutrition-event-service', () => ({
   regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
-  deleteFutureNutritionEventsForClient: vi.fn().mockResolvedValue(undefined),
+}))
+
+// The DELETE hands the whole act to the clear service (migration 166); its
+// statement semantics are pinned in nutrition-plan-clear-service.test.ts.
+vi.mock('@/services/nutrition-plan-clear-service', () => ({
+  clearNutritionPlansForClient: vi.fn(),
 }))
 
 // One self-returning, THENABLE chain serves every direct supabaseAdmin read
@@ -71,10 +76,11 @@ vi.mock('@/services/nutrition-plan-service', () => ({
   getNutritionPlanForDate: vi.fn().mockResolvedValue({
     id: 'plan-1',
     effective_from: '2025-12-01',
-    effective_until: null,
+    effective_until: '2026-03-31',
   }),
-  getOpenNutritionPlan: vi.fn().mockResolvedValue(null),
+  getLatestNutritionPlan: vi.fn().mockResolvedValue(null),
   getNextFutureNutritionPlan: vi.fn().mockResolvedValue(null),
+  resolveNutritionPlacementEnd: vi.fn().mockResolvedValue('2026-03-11'),
 }))
 
 vi.mock('@/services/client-goals-service', () => ({
@@ -96,10 +102,10 @@ import { generateNutritionPlan } from '@/services/nutrition-service'
 import {
   createNutritionPlan,
   getNutritionPlanForDate,
-  getOpenNutritionPlan,
+  getLatestNutritionPlan,
   getNextFutureNutritionPlan,
 } from '@/services/nutrition-plan-service'
-import { deleteFutureNutritionEventsForClient } from '@/services/nutrition-event-service'
+import { clearNutritionPlansForClient } from '@/services/nutrition-plan-clear-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { getClientTodayString } from '@/services/today-service'
 import { getAuthenticatedCoachId } from '@/lib/auth-helpers'
@@ -295,15 +301,14 @@ describe('Nutrition Route DELETE', () => {
     vi.clearAllMocks()
     vi.mocked(getAuthenticatedCoachId).mockResolvedValue('coach-1')
     vi.mocked(getClientById).mockResolvedValue(mockClient as never)
-    vi.mocked(getNutritionPlanForDate).mockResolvedValue({
-      id: 'plan-1',
-      effective_from: '2025-12-01',
-      effective_until: null,
-    } as never)
     vi.mocked(getClientTodayString).mockResolvedValue('2026-01-15')
+    vi.mocked(clearNutritionPlansForClient).mockResolvedValue({
+      versionsCleared: 1,
+      versionIds: ['plan-1'],
+    })
   })
 
-  it('clears the CLIENT\'s events from the shared deletion floor and succeeds', async () => {
+  it("retires the versions the client is on, with the client's today, and succeeds", async () => {
     const response = await DELETE(makeDeleteRequest(), {
       params: Promise.resolve({ id: 'client-1' }),
     })
@@ -311,11 +316,9 @@ describe('Nutrition Route DELETE', () => {
 
     expect(response.status).toBe(200)
     expect(data.success).toBe(true)
-    // Client-scoped (migration 144): a chain's future events may be stamped by
-    // queued versions' ids, which the old plan-scoped delete missed. The
-    // close/queued-delete statement semantics are pinned in
-    // nutrition-plan-orchestrator.test.ts.
-    expect(deleteFutureNutritionEventsForClient).toHaveBeenCalledWith('client-1', '2026-01-15')
+    // One act, unscoped (no block window): the calendar's own delete. The
+    // floor, the day removal and the archive are the clear service's.
+    expect(clearNutritionPlansForClient).toHaveBeenCalledWith('client-1', '2026-01-15')
   })
 
   it('returns 401 when unauthenticated', async () => {
@@ -326,7 +329,7 @@ describe('Nutrition Route DELETE', () => {
     })
 
     expect(response.status).toBe(401)
-    expect(deleteFutureNutritionEventsForClient).not.toHaveBeenCalled()
+    expect(clearNutritionPlansForClient).not.toHaveBeenCalled()
   })
 
   it("returns 403 when the coach does not own the client", async () => {
@@ -337,11 +340,11 @@ describe('Nutrition Route DELETE', () => {
     })
 
     expect(response.status).toBe(403)
-    expect(deleteFutureNutritionEventsForClient).not.toHaveBeenCalled()
+    expect(clearNutritionPlansForClient).not.toHaveBeenCalled()
   })
 
-  it('returns 404 when no version covers today and none is queued', async () => {
-    vi.mocked(getNutritionPlanForDate).mockResolvedValue(null)
+  it('returns 404 when no version has days left to retire', async () => {
+    vi.mocked(clearNutritionPlansForClient).mockResolvedValue({ versionsCleared: 0, versionIds: [] })
 
     const response = await DELETE(makeDeleteRequest(), {
       params: Promise.resolve({ id: 'client-1' }),
@@ -350,11 +353,10 @@ describe('Nutrition Route DELETE', () => {
 
     expect(response.status).toBe(404)
     expect(data.error).toBe('No active nutrition plan to delete')
-    expect(deleteFutureNutritionEventsForClient).not.toHaveBeenCalled()
   })
 })
 
-describe('Nutrition Route GET — the three-role read (migration 144)', () => {
+describe('Nutrition Route GET — the three-role read (versions placed by date)', () => {
   /** A full nutrition_plans row; override the fields a state cares about. */
   function planRow(overrides: Record<string, unknown> = {}) {
     return {
@@ -363,7 +365,7 @@ describe('Nutrition Route GET — the three-role read (migration 144)', () => {
       coach_id: 'coach-1',
       status: 'active',
       effective_from: '2026-01-01',
-      effective_until: null,
+      effective_until: '2026-12-31',
       baseline_calories: 2200,
       protein_target_g: 170,
       carb_target_g: 240,
@@ -404,14 +406,14 @@ describe('Nutrition Route GET — the three-role read (migration 144)', () => {
     vi.mocked(getClientTodayString).mockResolvedValue('2026-08-11')
     vi.mocked(getCurrentGoals).mockResolvedValue(null)
     vi.mocked(getNutritionPlanForDate).mockResolvedValue(null)
-    vi.mocked(getOpenNutritionPlan).mockResolvedValue(null)
+    vi.mocked(getLatestNutritionPlan).mockResolvedValue(null)
     vi.mocked(getNextFutureNutritionPlan).mockResolvedValue(null)
   })
 
   it('single active version: covering IS the seed — active since its start, nothing queued', async () => {
     const row = planRow()
     vi.mocked(getNutritionPlanForDate).mockResolvedValue(row)
-    vi.mocked(getOpenNutritionPlan).mockResolvedValue(row)
+    vi.mocked(getLatestNutritionPlan).mockResolvedValue(row)
 
     const response = await GET(makeGetRequest(), getParams)
     const data = await response.json()
@@ -427,13 +429,13 @@ describe('Nutrition Route GET — the three-role read (migration 144)', () => {
     expect(getNextFutureNutritionPlan).toHaveBeenCalledWith('client-1', '2026-08-11')
   })
 
-  it('a chain: the hero dates the EARLIEST queued change, the drawer seeds the LATEST (open) version', async () => {
+  it('a chain: the hero dates the EARLIEST queued change, the drawer seeds the LATEST version', async () => {
     vi.mocked(getNutritionPlanForDate).mockResolvedValue(
       planRow({ id: 'v-current', effective_until: '2026-08-31', baseline_calories: 2200 })
     )
-    // The open row is the latest-saved queued prescription…
-    vi.mocked(getOpenNutritionPlan).mockResolvedValue(
-      planRow({ id: 'v-latest', effective_from: '2026-09-15', baseline_calories: 1800 })
+    // The latest-starting version is the last-saved queued prescription…
+    vi.mocked(getLatestNutritionPlan).mockResolvedValue(
+      planRow({ id: 'v-latest', effective_from: '2026-09-15', effective_until: '2026-11-09', baseline_calories: 1800 })
     )
     // …while the NEXT change the client will feel is the earliest future one.
     vi.mocked(getNextFutureNutritionPlan).mockResolvedValue({
@@ -448,12 +450,12 @@ describe('Nutrition Route GET — the three-role read (migration 144)', () => {
     expect(data.hasCurrentTargets).toBe(true)
     expect(data.effectiveFrom).toBe('2026-01-01') // covering version's start
     expect(data.scheduledFor).toBe('2026-09-01') // EARLIEST queued, not the open row's
-    expect(data.calorieTarget).toBe(1800) // seeds from the OPEN (latest) version
+    expect(data.calorieTarget).toBe(1800) // seeds from the LATEST version
   })
 
-  it('queued-only chain: a plan exists, nothing runs yet — "Starts", seeds from the open version', async () => {
-    vi.mocked(getOpenNutritionPlan).mockResolvedValue(
-      planRow({ id: 'v-queued', effective_from: '2026-09-01', baseline_calories: 2000 })
+  it('queued-only: a plan exists, nothing runs yet — "Starts", seeds from the latest version', async () => {
+    vi.mocked(getLatestNutritionPlan).mockResolvedValue(
+      planRow({ id: 'v-queued', effective_from: '2026-09-01', effective_until: '2026-10-26', baseline_calories: 2000 })
     )
     vi.mocked(getNextFutureNutritionPlan).mockResolvedValue({
       id: 'v-queued',
@@ -470,21 +472,36 @@ describe('Nutrition Route GET — the three-role read (migration 144)', () => {
     expect(data.calorieTarget).toBe(2000)
   })
 
-  it('post-delete same day: no open row — seeds fall back to the closed covering version, never defaults', async () => {
-    vi.mocked(getNutritionPlanForDate).mockResolvedValue(
-      planRow({ id: 'v-closed', effective_until: '2026-08-11', baseline_calories: 2400 })
-    )
+  it('a version ending today still covers it: the drawer seeds from it, never defaults', async () => {
+    const row = planRow({ id: 'v-ending', effective_until: '2026-08-11', baseline_calories: 2400 })
+    vi.mocked(getNutritionPlanForDate).mockResolvedValue(row)
+    vi.mocked(getLatestNutritionPlan).mockResolvedValue(row)
 
     const response = await GET(makeGetRequest(), getParams)
     const data = await response.json()
 
-    // The D2 seed rule: the drawer never seeds fresh defaults while hasPlan is
+    // The seed rule: the drawer never seeds fresh defaults while hasPlan is
     // true — an untouched Regenerate must re-mint these numbers.
     expect(data.hasPlan).toBe(true)
     expect(data.hasCurrentTargets).toBe(true)
     expect(data.scheduledFor).toBeNull()
     expect(data.calorieTarget).toBe(2400)
     expect(data.workActivityLevel).toBe('moderately_active')
+  })
+
+  it('every version has ENDED: no plan — a gap is a real state (migration 166)', async () => {
+    // The latest version is history; nothing covers today and nothing is
+    // queued, so the tab reads as no plan and the drawer starts fresh.
+    vi.mocked(getLatestNutritionPlan).mockResolvedValue(
+      planRow({ id: 'v-ended', effective_until: '2026-08-10', baseline_calories: 2400 })
+    )
+
+    const response = await GET(makeGetRequest(), getParams)
+    const data = await response.json()
+
+    expect(data.hasPlan).toBe(false)
+    expect(data.calorieTarget).toBeUndefined()
+    expect(data).toHaveProperty('calcInputs')
   })
 
   it('no versions at all: explicit hasPlan false with calcInputs still served', async () => {
