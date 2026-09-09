@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, Dumbbell } from "lucide-react";
+import { Dumbbell } from "lucide-react";
 import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
 import {
   CardHeader,
@@ -64,7 +64,7 @@ export function PlanTrainingCard({
       <OverviewCard animationDelay="0.12s">
         <CardHeader
           compact
-          icon={<CalendarClock className="h-4 w-4" strokeWidth={1.5} />}
+          icon={<Dumbbell className="h-4 w-4" strokeWidth={1.5} />}
           title="Training plan"
           subtitle={<ChipRow chips={planChips(upcomingTraining)} />}
           right={<OpenTabLink label="Open Training" onClick={onOpenTraining} />}
