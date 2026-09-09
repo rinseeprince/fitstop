@@ -326,6 +326,25 @@ describe("attention-feed-service", () => {
       expect(result.find((c) => c.clientId === "c1")).toBeUndefined()
     })
 
+    it("hands each client's alerts over most severe first, whatever order the triggers ran in", () => {
+      // no_engagement (medium) runs before the prescription triggers in the
+      // list; the ended nutrition version fires HIGH after it. The client's
+      // alerts must still lead with the HIGH.
+      const map = groupClientData(
+        [{ ...baseClient, start_date: "2025-10-06" }], null, null, null,
+        [{ client_id: "c1", date: "2026-01-19", status: "scheduled", estimated_calories: 300 }],
+        null,
+        [{ clientId: "c1", start: "2025-11-17", end: "2025-12-28" }],
+        null,
+      )
+      const alerts = evaluateAndSortTriggers(map, { start: "2026-01-01", end: "2026-01-28" })
+        .find((c) => c.clientId === "c1")?.alerts ?? []
+      expect(alerts.map((a) => [a.type, a.severity])).toEqual([
+        ["nutrition_ending", "high"],
+        ["no_engagement", "medium"],
+      ])
+    })
+
     it("evaluates a client with nothing logged and nothing in the window whose prescription has stopped", () => {
       // The walled client: every version ended before the window, no events in
       // it, no habits, no logs. The old guard skipped them and the coach never

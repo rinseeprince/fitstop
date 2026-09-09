@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { alertDestination } from "@/lib/attention-alert-destinations";
 import { alertLines, visibleAlerts } from "@/lib/attention-alert-copy";
+import { sortAlertsBySeverity } from "@/lib/attention-alert-severity";
 import {
   LABEL_CLASS,
   MONO_META_CLASS,
@@ -68,8 +69,6 @@ const SEVERITY_THUMB: Record<AlertSeverity, string> = {
   medium: "bg-[rgba(245,158,11,0.07)] text-[#d97706]",
   low: THUMB_CLASS,
 };
-
-const SEVERITY_RANK: Record<AlertSeverity, number> = { high: 0, medium: 1, low: 2 };
 
 // Sentence prose, so the weekday stays sans like the words around it.
 const endsWeekday = (iso: string) =>
@@ -169,10 +168,7 @@ export function NeedsAttentionSection({
   // strictly stronger and the coach was reading two rows about one silence.
   // Renderer-only: the dismissal store stays 1:1 and the suppressed alert
   // returns by itself the moment `no_engagement` clears.
-  const alerts = visibleAlerts(attentionAlerts);
-  const sortedAlerts = [...alerts].sort(
-    (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
-  );
+  const sortedAlerts = sortAlertsBySeverity(visibleAlerts(attentionAlerts));
   const pendingCount =
     sortedAlerts.length + (unreviewedCheckIn ? 1 : 0) + (blockEnding ? 1 : 0);
   const submitted = unreviewedCheckIn ? relativeDayPhrase(unreviewedCheckIn.submittedAt) : null;

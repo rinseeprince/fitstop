@@ -22,6 +22,7 @@ import {
   type TriggerResult
 } from "@/lib/attention-triggers"
 import type { ClientPlanWindow, PlanWindow } from "@/lib/prescription-triggers"
+import { sortAlertsBySeverity } from "@/lib/attention-alert-severity"
 import { checkInWeekday } from "@/lib/check-in-week"
 import {
   hasNutritionEntry,
@@ -318,13 +319,16 @@ export function evaluateAndSortTriggers(
       }
     })
 
-    // Only include clients that have at least one alert
+    // Only include clients that have at least one alert. Their alerts leave
+    // here most severe first: the list above is trigger order, and a surface
+    // that renders it as given would put a HIGH from a late trigger under the
+    // mediums that ran before it.
     if (alerts.length > 0) {
       clientsWithAlerts.push({
         clientId: data.client.id,
         clientName: data.client.name,
         clientAvatar: data.client.avatar_url,
-        alerts
+        alerts: sortAlertsBySeverity(alerts),
       })
     }
   }
