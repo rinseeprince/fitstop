@@ -57,13 +57,10 @@ export function relativeDayPhrase(
   return { text: `${days} days ago`, isNumeric: true };
 }
 
-/** "31 Jul" from a YYYY-MM-DD calendar date. */
-export function formatDateOnlyShort(dateStr: string): string {
-  return new Date(`${dateStr}T00:00:00`).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-  });
-}
+// The short date lives in lib/date-helpers.ts (the attention triggers build
+// their prose there, and lib cannot import from components); re-exported so
+// this module stays the Overview's one formatting surface.
+export { formatDateOnlyShort } from "@/lib/date-helpers";
 
 /** "Fri, 31 Jul" from a YYYY-MM-DD calendar date. */
 export function formatDateOnlyWeekday(dateStr: string): string {

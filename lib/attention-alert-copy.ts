@@ -14,6 +14,10 @@ import type { AttentionAlert } from "@/types/attention-feed";
  * edited.** The parsing is the whole point: a trigger buries its counts in
  * prose ("3 of 7 days below 50%"), and these recover them. Edit a template in
  * `lib/*-triggers.ts` and both surfaces silently fall back to the raw message.
+ *
+ * The two prescription-ending types are the exception: their dates ARE the
+ * message, so both switches hand the message back unparsed and the Overview
+ * row is one line (`alertLines` drops a sub that repeats the title).
  */
 
 /** The headline: a short label, counts recovered from the message. */
@@ -45,6 +49,9 @@ export function getShortAlertText(alert: AttentionAlert): string {
       return `${days} sessions partial`;
     case "no_engagement":
       return "No recent activity";
+    case "nutrition_ending":
+    case "training_ending":
+      return alert.message;
     default:
       return alert.message;
   }
@@ -92,6 +99,9 @@ export function getPriorityAlertText(alert: AttentionAlert): string {
       return "Calorie intake matched activities despite skipping them";
     case "partial_training_pattern":
       return `${days} of recent sessions only partially completed`;
+    case "nutrition_ending":
+    case "training_ending":
+      return alert.message;
     default:
       return alert.message;
   }

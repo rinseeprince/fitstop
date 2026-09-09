@@ -26,6 +26,7 @@ import {
   getFurthestLiveProgramEnd,
   getNextFutureTrainingPlan,
   getTrainingPlanIdForDate,
+  getLiveProgramWindowsForClients,
 } from "./training-service";
 
 describe("createTrainingPlanAtomic", () => {
@@ -216,6 +217,105 @@ describe("date-driven plan resolution", () => {
 // omits it deliberately), so reading it would leave the horizon frozen at the
 // fixed window for every client alive.
 // ===========================================================================
+
+describe("getLiveProgramWindowsForClients — the attention feed's cross-client read", () => {
+  type Calls = Record<string, unknown[][]>;
+
+  /** One thenable query serving `rows` on every page request, recording each filter. */
+  function windowsQuery(rows: unknown[]) {
+    const calls: Calls = {};
+    const q: Record<string, unknown> = {};
+    for (const method of ["select", "in", "is", "neq", "eq", "order", "range"]) {
+      q[method] = vi.fn((...args: unknown[]) => {
+        (calls[method] ??= []).push(args);
+        return q;
+      });
+    }
+    Object.defineProperty(q, "then", {
+      value: (resolve: (v: { data: unknown[]; error: null }) => void) =>
+        Promise.resolve({ data: rows, error: null }).then(resolve),
+    });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(q as never);
+    return calls;
+  }
+
+  const plan = (
+    client_id: string,
+    id: string,
+    effective_from: string,
+    count: number,
+    created_at = "2026-08-01T09:00:00Z",
+  ) => ({ id, client_id, effective_from, created_at, training_sessions: [{ count }] });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("caps an older program at the day before the next later-starting one", async () => {
+    // 56 slots from 7 Sep would run to 1 Nov, but a program placed from 5 Oct
+    // took those days: the older plan's slot rows stay active (the parked
+    // orphan-rows item) while its events there are gone, so uncapped it would
+    // claim days it no longer has. Same rule as getNextPlanStartCap.
+    windowsQuery([
+      plan("c1", "p-old", "2026-09-07", 56),
+      plan("c1", "p-new", "2026-10-05", 28),
+    ]);
+
+    expect(await getLiveProgramWindowsForClients(["c1"])).toEqual([
+      { clientId: "c1", start: "2026-09-07", end: "2026-10-04" },
+      { clientId: "c1", start: "2026-10-05", end: "2026-11-01" },
+    ]);
+  });
+
+  it("caps at a LATER start only — two programs placed for the same day both keep their own end", async () => {
+    // A correction placed over a queued program shares its start. The cap
+    // predicate is strictly later (`getNextPlanStartCap` is `.gt`), so neither
+    // is capped; the feed unions the windows and reads the longer coverage.
+    windowsQuery([
+      plan("c1", "p-b", "2026-10-05", 28, "2026-09-02T09:00:00Z"),
+      plan("c1", "p-a", "2026-10-05", 14, "2026-09-01T09:00:00Z"),
+    ]);
+
+    expect(await getLiveProgramWindowsForClients(["c1"])).toEqual([
+      { clientId: "c1", start: "2026-10-05", end: "2026-10-18" },
+      { clientId: "c1", start: "2026-10-05", end: "2026-11-01" },
+    ]);
+  });
+
+  it("gives a program with no active slot rows a one-day window, like calculatePlacementEndDate", async () => {
+    windowsQuery([
+      plan("c1", "p-empty", "2026-09-14", 0),
+      { id: "p-none", client_id: "c2", effective_from: "2026-09-21", created_at: "2026-08-01T09:00:00Z", training_sessions: [] },
+    ]);
+
+    expect(await getLiveProgramWindowsForClients(["c1", "c2"])).toEqual([
+      { clientId: "c1", start: "2026-09-14", end: "2026-09-14" },
+      { clientId: "c2", start: "2026-09-21", end: "2026-09-21" },
+    ]);
+  });
+
+  it("keeps clients apart and reads with the live predicates and the filtered embedded count", async () => {
+    const calls = windowsQuery([
+      plan("c1", "p-1", "2026-09-07", 7),
+      plan("c2", "p-2", "2026-09-28", 21),
+    ]);
+
+    expect(await getLiveProgramWindowsForClients(["c1", "c2"])).toEqual([
+      { clientId: "c1", start: "2026-09-07", end: "2026-09-13" },
+      { clientId: "c2", start: "2026-09-28", end: "2026-10-18" },
+    ]);
+    expect(calls.select).toEqual([["id, client_id, effective_from, created_at, training_sessions(count)"]]);
+    expect(calls.in).toEqual([["client_id", ["c1", "c2"]]]);
+    expect(calls.is).toEqual([["deleted_at", null]]);
+    expect(calls.neq).toEqual([["status", "archived"]]);
+    expect(calls.eq).toEqual([["training_sessions.is_active", true]]);
+  });
+
+  it("reads nothing for no ids", async () => {
+    expect(await getLiveProgramWindowsForClients([])).toEqual([]);
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+  });
+});
 
 describe("getFurthestLiveProgramEnd", () => {
   const ANCHOR = "2026-09-04";

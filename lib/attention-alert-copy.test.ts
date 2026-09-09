@@ -84,6 +84,15 @@ describe("getShortAlertText", () => {
       getShortAlertText(alert({ type: "no_log_gap", message: "No daily logs for 3 consecutive days" }))
     ).toBe("No daily logs for 3 consecutive days");
   });
+
+  it("hands the prescription-ending messages back unparsed — the date is the message", () => {
+    expect(
+      getShortAlertText(alert({ type: "nutrition_ending", message: "No nutrition targets from 7 Jun" }))
+    ).toBe("No nutrition targets from 7 Jun");
+    expect(
+      getShortAlertText(alert({ type: "training_ending", message: "Training ends 13 Jun, nothing until 20 Jun" }))
+    ).toBe("Training ends 13 Jun, nothing until 20 Jun");
+  });
 });
 
 describe("getPriorityAlertText", () => {
@@ -122,6 +131,14 @@ describe("getPriorityAlertText", () => {
     const message = "No activity logged in the last 3 days";
     expect(getPriorityAlertText(alert({ type: "no_engagement", message }))).toBe(message);
   });
+
+  it("keeps the prescription-ending message whole for the dashboard's priority line", () => {
+    const message = "Nutrition targets end 16 Jun";
+    expect(getPriorityAlertText(alert({ type: "nutrition_ending", message }))).toBe(message);
+    expect(getPriorityAlertText(alert({ type: "training_ending", message: "No training scheduled from 7 Jun" }))).toBe(
+      "No training scheduled from 7 Jun"
+    );
+  });
 });
 
 describe("alertLines", () => {
@@ -146,6 +163,11 @@ describe("alertLines", () => {
       title: "No recent activity",
       sub: message,
     });
+  });
+
+  it("renders a prescription-ending alert as one line", () => {
+    const message = "No nutrition targets from 7 Jun";
+    expect(alertLines(alert({ type: "nutrition_ending", message }))).toEqual({ title: message, sub: null });
   });
 });
 

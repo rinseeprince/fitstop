@@ -8,6 +8,8 @@
  * - daily_habit_logs: 28-day rolling window of habit logs for all clients
  * - training_events: the window's events, for the training triggers and the workout logs
  * - client_measurements_live: the client's own measurement logs (source = client_log)
+ * - nutrition_plans + training_plans: every active version's and live program's
+ *   window, for the prescription-ending triggers (through the two track services)
  *
  * "Did the client log today?" is answered once, by `lib/logged-days.ts`, from
  * these rows (`loggedDaysFor` in lib/attention-feed-helpers.ts).
@@ -21,6 +23,8 @@ import { getCoachTodayString } from "./today-service"
 import { groupClientData, evaluateAndSortTriggers, filterDismissedAlerts } from "@/lib/attention-feed-helpers"
 import { fetchAllPages, fetchAllByChunkedIds } from "@/lib/paged-fetch"
 import { CLIENT_MEASUREMENT_SOURCE } from "@/lib/logged-days"
+import { getNutritionWindowsForClients } from "./nutrition-plan-service"
+import { getLiveProgramWindowsForClients } from "./training-service"
 import type { ClientLogRow, DailyLogRow } from "@/lib/attention-feed-helpers"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
@@ -93,7 +97,16 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
   // the OLDEST dates and discarded exactly the recent end that every trigger
   // reads (dropoff = last 7 days, no_engagement = last 3, cal-mismatch = 28).
   // The `id` tiebreak keeps offset paging stable across pages.
-  const [logsResult, habitsResult, habitLogsResult, eventsResult, clientLogsResult, dismissalsResult] = await Promise.allSettled([
+  const [
+    logsResult,
+    habitsResult,
+    habitLogsResult,
+    eventsResult,
+    clientLogsResult,
+    dismissalsResult,
+    nutritionWindowsResult,
+    trainingWindowsResult,
+  ] = await Promise.allSettled([
     // 2. Daily logs (cross-domain view, required for core triggers)
     fetchAllByChunkedIds<DailyLogRow, string>(clientIds, (chunk, from, to) =>
       supabaseAdmin
@@ -171,6 +184,11 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
         .range(from, to),
       { errorLabel: "dismissals" },
     ),
+    // 8 + 9. Each track's plan windows (graceful degradation): a failed read
+    //    hides the prescription-ending alerts for this request, the habits and
+    //    events posture, and never impersonates "nothing prescribed" elsewhere.
+    getNutritionWindowsForClients(clientIds),
+    getLiveProgramWindowsForClients(clientIds),
   ])
 
   // Extract results, preserving original error semantics: logs are required
@@ -210,6 +228,20 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     console.error("Error fetching client measurement logs:", clientLogsResult.reason)
   }
 
+  let nutritionWindows = null
+  if (nutritionWindowsResult.status === "fulfilled") {
+    nutritionWindows = nutritionWindowsResult.value
+  } else {
+    console.error("Error fetching nutrition plan windows:", nutritionWindowsResult.reason)
+  }
+
+  let trainingWindows = null
+  if (trainingWindowsResult.status === "fulfilled") {
+    trainingWindows = trainingWindowsResult.value
+  } else {
+    console.error("Error fetching training plan windows:", trainingWindowsResult.reason)
+  }
+
   // Group all query results by client
   const clientDataMap = groupClientData(
     clients,
@@ -218,6 +250,8 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     allHabitLogs,
     eventRows,
     clientLogRows,
+    nutritionWindows,
+    trainingWindows,
   )
 
   // Evaluate triggers and sort
@@ -260,8 +294,16 @@ export async function evaluateSingleClientAlerts(
 
   if (clientError || !client) return []
 
-  const [logsResult, habitsResult, habitLogsResult, eventsResult, clientLogsResult, dismissalsResult] =
-    await Promise.allSettled([
+  const [
+    logsResult,
+    habitsResult,
+    habitLogsResult,
+    eventsResult,
+    clientLogsResult,
+    dismissalsResult,
+    nutritionWindowsResult,
+    trainingWindowsResult,
+  ] = await Promise.allSettled([
       supabaseAdmin
         .from("daily_logs_full")
         .select("*")
@@ -297,6 +339,10 @@ export async function evaluateSingleClientAlerts(
         .select("client_id, alert_type, dismissed_at")
         .eq("coach_id", coachId)
         .eq("client_id", clientId),
+      // The same two readers the cross-client path uses, over one id, so the
+      // Overview and the dashboard judge a client's prescription from one read shape.
+      getNutritionWindowsForClients([clientId]),
+      getLiveProgramWindowsForClients([clientId]),
     ])
 
   // Logs are required for the core triggers; without them there are no alerts.
@@ -317,6 +363,10 @@ export async function evaluateSingleClientAlerts(
     dismissalsResult.status === "fulfilled" && !dismissalsResult.value.error
       ? dismissalsResult.value.data
       : null
+  const nutritionWindows =
+    nutritionWindowsResult.status === "fulfilled" ? nutritionWindowsResult.value : null
+  const trainingWindows =
+    trainingWindowsResult.status === "fulfilled" ? trainingWindowsResult.value : null
 
   const clientDataMap = groupClientData(
     [client] as ClientInfoWithCheckIn[],
@@ -325,6 +375,8 @@ export async function evaluateSingleClientAlerts(
     allHabitLogs,
     eventRows,
     clientLogRows,
+    nutritionWindows,
+    trainingWindows,
   )
   const withAlerts = evaluateAndSortTriggers(clientDataMap, dateRange)
   const filtered = filterDismissedAlerts(withAlerts, dismissals)

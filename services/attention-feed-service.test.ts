@@ -90,6 +90,27 @@ describe("attention-feed-service", () => {
       expect(withStart.get("c1")!.startDate).toBe("2026-05-01")
     })
 
+    it("carries each track's plan windows per client, and none when the read degraded", () => {
+      const result = groupClientData(
+        [baseClient, { ...baseClient, id: "c2", name: "Client 2" }],
+        null, null, null, null, null,
+        [
+          { clientId: "c1", start: "2026-04-01", end: "2026-05-26" },
+          { clientId: "c2", start: "2026-03-02", end: "2026-04-27" },
+          { clientId: "c9", start: "2026-01-01", end: "2026-01-31" }, // not this coach's roster
+        ],
+        [{ clientId: "c1", start: "2026-04-06", end: "2026-05-03" }],
+      )
+      expect(result.get("c1")!.nutritionWindows).toEqual([{ start: "2026-04-01", end: "2026-05-26" }])
+      expect(result.get("c1")!.trainingWindows).toEqual([{ start: "2026-04-06", end: "2026-05-03" }])
+      expect(result.get("c2")!.nutritionWindows).toEqual([{ start: "2026-03-02", end: "2026-04-27" }])
+      expect(result.get("c2")!.trainingWindows).toEqual([])
+
+      const degraded = groupClientData([baseClient], null, null, null, null, null, null, null)
+      expect(degraded.get("c1")!.nutritionWindows).toEqual([])
+      expect(degraded.get("c1")!.trainingWindows).toEqual([])
+    })
+
     it("groups the client's own measurement logs per client, as dates, skipping a null row", () => {
       const result = groupClientData(
         [baseClient, { ...baseClient, id: "c2", name: "Client 2" }],
@@ -305,6 +326,24 @@ describe("attention-feed-service", () => {
       expect(result.find((c) => c.clientId === "c1")).toBeUndefined()
     })
 
+    it("evaluates a client with nothing logged and nothing in the window whose prescription has stopped", () => {
+      // The walled client: every version ended before the window, no events in
+      // it, no habits, no logs. The old guard skipped them and the coach never
+      // learned; a plan window now counts as prescribed.
+      const map = groupClientData(
+        [baseClient], null, null, null, null, null,
+        [{ clientId: "c1", start: "2025-11-03", end: "2025-12-14" }],
+        [{ clientId: "c1", start: "2025-11-03", end: "2025-12-21" }],
+      )
+      const alerts = evaluateAndSortTriggers(map, { start: "2026-01-01", end: "2026-01-28" })
+        .find((c) => c.clientId === "c1")?.alerts ?? []
+      expect(alerts.map((a) => [a.type, a.severity, a.message])).toEqual([
+        ["nutrition_ending", "high", "No nutrition targets from 15 Dec"],
+        ["training_ending", "high", "No training scheduled from 22 Dec"],
+      ])
+      expect(alerts.every((a) => a.affectedDays[0] === "2026-01-28")).toBe(true)
+    })
+
     it("evaluates a client who only logged wellness, with nothing prescribed", () => {
       // Ten days of mood at 4, then three at 1: the mood-drop trigger needs the
       // rows, and the guard must not read "nothing prescribed" as "nothing to do".
@@ -350,6 +389,8 @@ describe("attention-feed-service", () => {
       const emptyQuery = {
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
+        is: vi.fn().mockReturnThis(),
+        neq: vi.fn().mockReturnThis(),
         in: vi.fn().mockReturnThis(),
         gte: vi.fn().mockReturnThis(),
         lte: vi.fn().mockReturnThis(),
@@ -384,6 +425,8 @@ describe("attention-feed-service", () => {
         const q: Record<string, unknown> = {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          neq: vi.fn().mockReturnThis(),
           gte: vi.fn().mockReturnThis(),
           lte: vi.fn().mockReturnThis(),
           order: vi.fn().mockReturnThis(),
@@ -411,12 +454,13 @@ describe("attention-feed-service", () => {
       // No chunk may exceed the 100-id default.
       expect(Math.max(...inCalls.map((c) => c.length))).toBeLessThanOrEqual(100)
       // Chunking must be lossless: the union of every chunk is the full roster,
-      // so no client is silently dropped. (The four cross-client reads run under
+      // so no client is silently dropped. (The cross-client reads run under
       // Promise.allSettled, so their chunks interleave — assert on the union,
       // not on a positional slice.)
       expect(new Set(inCalls.flat()).size).toBe(250)
-      // Each read covers all 250 ids across 3 chunks (100/100/50), 5 reads.
-      expect(inCalls.length).toBe(15)
+      // Each read covers all 250 ids across 3 chunks (100/100/50), 7 reads: the
+      // five window reads plus the two plan-window reads.
+      expect(inCalls.length).toBe(21)
     })
 
     it("reads only the measurements the client logged themselves, from the live view", async () => {
@@ -432,6 +476,8 @@ describe("attention-feed-service", () => {
           order: vi.fn().mockReturnThis(),
           range: vi.fn().mockReturnThis(),
           in: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          neq: vi.fn().mockReturnThis(),
           eq: vi.fn((...args: unknown[]) => { (eqCalls[table] ??= []).push(args); return q }),
         }
         Object.defineProperty(q, "then", {
@@ -451,6 +497,52 @@ describe("attention-feed-service", () => {
 
       expect(eqCalls["client_measurements_live"]).toEqual([["source", "client_log"]])
       expect(eqCalls["daily_logs"]).toBeUndefined()
+    })
+
+    it("reads each track's plan windows with the live predicates, through one shape per track", async () => {
+      // A deleted plan is archived on both tracks, so a retired plan must stop
+      // the alert the moment it lands: nutrition filters status = active, and
+      // training carries the same two exclusions as every sibling reader plus
+      // the is_active filter on the embedded slot count.
+      const calls: Record<string, Record<string, unknown[][]>> = {}
+      const record = (table: string, method: string, args: unknown[]) => {
+        ;((calls[table] ??= {})[method] ??= []).push(args)
+      }
+      let rosterServed = false
+      const makeQuery = (table: string) => {
+        const q: Record<string, unknown> = {
+          gte: vi.fn().mockReturnThis(),
+          lte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockReturnThis(),
+          range: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
+        }
+        for (const method of ["select", "eq", "is", "neq"]) {
+          q[method] = vi.fn((...args: unknown[]) => { record(table, method, args); return q })
+        }
+        Object.defineProperty(q, "then", {
+          value: (resolve: (v: { data: unknown[]; error: null }) => void) => {
+            if (table === "clients" && !rosterServed) {
+              rosterServed = true
+              return Promise.resolve({ data: [baseClient], error: null }).then(resolve)
+            }
+            return Promise.resolve({ data: [], error: null }).then(resolve)
+          },
+        })
+        return q
+      }
+      vi.mocked(supabaseAdmin.from).mockImplementation(((t: string) => makeQuery(t)) as never)
+
+      await evaluateAllClientTriggers("coach-1")
+
+      expect(calls["nutrition_plans"].select).toEqual([["id, client_id, effective_from, effective_until"]])
+      expect(calls["nutrition_plans"].eq).toEqual([["status", "active"]])
+      expect(calls["training_plans"].select).toEqual([
+        ["id, client_id, effective_from, created_at, training_sessions(count)"],
+      ])
+      expect(calls["training_plans"].is).toEqual([["deleted_at", null]])
+      expect(calls["training_plans"].neq).toEqual([["status", "archived"]])
+      expect(calls["training_plans"].eq).toEqual([["training_sessions.is_active", true]])
     })
   })
 

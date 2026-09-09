@@ -24,3 +24,4 @@ export { evaluateMoodEnergyDrop, evaluateHighStress, evaluateHighSoreness } from
 export { evaluateLoggingGap, evaluateNutritionMisses, evaluateTrainingMisses, evaluatePartialTrainingPattern } from "./tracking-triggers"
 export { evaluateHabitDropoff, evaluateActivityCalMismatch } from "./activity-triggers"
 export { evaluateNoEngagement } from "./engagement-triggers"
+export { evaluatePrescriptionEnding } from "./prescription-triggers"

@@ -48,7 +48,7 @@ type NeedsAttentionSectionProps = {
 
 /**
  * The thumb icon names the DESTINATION, not the alert type: an alert's whole
- * job is to send the coach somewhere, and eleven types share four destinations.
+ * job is to send the coach somewhere, and thirteen types share four destinations.
  * Keyed on `alertDestination(type).tab` so a new trigger inherits an icon from
  * the map that already decides where it leads, instead of needing a row here.
  */

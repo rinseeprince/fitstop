@@ -1,5 +1,6 @@
 import { daysBetween } from "@/utils/metric-points";
 import { weeksSpanned } from "@/lib/blocks/block-chain";
+import { PLAN_ENDING_LEAD_DAYS } from "@/lib/constants";
 import type { BlockState, ClientBlock } from "@/types/client-blocks";
 
 // The three derived reads for journey blocks (Session 2 Task 2.3) — pure,
@@ -74,9 +75,10 @@ interface BlockEndingFacts {
 }
 
 /**
- * The "this block is in its final 7 days" signal behind the Overview's
- * coach-action row: fires while `today` sits within [endsOn − 6, endsOn] of
- * the CURRENT block. Days-remaining, deliberately NOT
+ * The "this block is in its final PLAN_ENDING_LEAD_DAYS" signal behind the
+ * Overview's coach-action row: fires while `today` sits within
+ * [endsOn − (lead − 1), endsOn] of the CURRENT block — the same lead the
+ * prescription-ending alerts on that card use. Days-remaining, deliberately NOT
  * `weekOfTotal.current === total`: ceil-weeks makes a truncated block's
  * "last week" as short as one day — useless for a row whose job is getting
  * the next block scheduled before this one ends. `blocks` is the chain in
@@ -92,7 +94,7 @@ export function deriveBlockEnding(
   );
   if (index === -1) return null;
   const current = blocks[index];
-  if (daysBetween(today, current.endsOn) > 6) return null;
+  if (daysBetween(today, current.endsOn) >= PLAN_ENDING_LEAD_DAYS) return null;
   return {
     name: current.name,
     endsOn: current.endsOn,

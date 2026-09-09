@@ -5,7 +5,9 @@ import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
 import { getClientTodayString } from "@/services/today-service";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { coversDate } from "./training-plan-window";
-import { calculatePlacementEndDate } from "./program-event-walk";
+import { calculatePlacementEndDate, placementEndDate } from "./program-event-walk";
+import { addDaysToDateString } from "@/lib/date-helpers";
+import type { ClientPlanWindow } from "@/lib/prescription-triggers";
 
 // Re-export moved functions so existing imports continue to work
 export { getSessionWithExercises } from "./training-session-service";
@@ -287,6 +289,84 @@ export const getFurthestLiveProgramEnd = async (
     startDate: plan.effective_from,
   });
   return end >= onOrAfter ? end : null;
+};
+
+type LiveProgramWindowRow = {
+  id: string;
+  client_id: string;
+  effective_from: string;
+  created_at: string;
+  /** PostgREST's embedded count, filtered to the plan's ACTIVE slot rows. */
+  training_sessions: { count: number }[];
+};
+
+/**
+ * Every live program's window for a set of clients, in one chunked read — the
+ * attention feed's cross-client twin of `getFurthestLiveProgramEnd`, which
+ * answers for one client with two round trips and cannot be called per client
+ * from a feed.
+ *
+ * Same two exclusions as its siblings (`deleted_at IS NULL`,
+ * `status <> 'archived'`), for the same reason: a deleted program is archived,
+ * and the feed must stop reading it the moment the coach retires it. The slot
+ * count rides on the same read as an embedded count filtered to `is_active`,
+ * so a block shorten that deactivated rows is reflected (probed against the
+ * live catalog 2026-09-10: 12 active of 28 rows on a shortened plan).
+ *
+ * Each window ends where one pass of the program ends (`placementEndDate`),
+ * capped at the day before the next later-starting plan — `getNextPlanStartCap`'s
+ * rule, applied in memory because the read already holds every plan. The cap
+ * is load-bearing: a placement inside an older program's window deletes that
+ * program's events there but leaves its slot rows active, so its uncapped
+ * window would claim days it no longer has on the calendar.
+ */
+export const getLiveProgramWindowsForClients = async (
+  clientIds: string[]
+): Promise<ClientPlanWindow[]> => {
+  const rows = await fetchAllByChunkedIds<LiveProgramWindowRow, string>(
+    clientIds,
+    (chunk, from, to) =>
+      supabaseAdmin
+        .from("training_plans")
+        .select("id, client_id, effective_from, created_at, training_sessions(count)")
+        .in("client_id", chunk)
+        .is("deleted_at", null)
+        .neq("status", "archived")
+        .eq("training_sessions.is_active", true)
+        .order("client_id", { ascending: true })
+        .order("effective_from", { ascending: true })
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    { errorLabel: "live training plans" }
+  );
+
+  const byClient = new Map<string, LiveProgramWindowRow[]>();
+  for (const row of rows) {
+    const plans = byClient.get(row.client_id) ?? [];
+    plans.push(row);
+    byClient.set(row.client_id, plans);
+  }
+
+  const windows: ClientPlanWindow[] = [];
+  for (const [clientId, plans] of byClient) {
+    plans.sort(
+      (a, b) =>
+        a.effective_from.localeCompare(b.effective_from) ||
+        a.created_at.localeCompare(b.created_at)
+    );
+    plans.forEach((plan, index) => {
+      const ownEnd = placementEndDate(plan.effective_from, plan.training_sessions[0]?.count ?? 0);
+      const next = plans.slice(index + 1).find((p) => p.effective_from > plan.effective_from);
+      const cap = next ? addDaysToDateString(next.effective_from, -1) : null;
+      windows.push({
+        clientId,
+        start: plan.effective_from,
+        end: cap !== null && cap < ownEnd ? cap : ownEnd,
+      });
+    });
+  }
+  return windows;
 };
 
 export type TrainingPlanWindowSummary = {

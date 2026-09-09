@@ -15,6 +15,8 @@ export type AlertType =
   | "activity_cal_mismatch"
   | "partial_training_pattern"
   | "no_engagement"
+  | "nutrition_ending"
+  | "training_ending"
 
 export interface WellnessAlert {
   type: AlertType

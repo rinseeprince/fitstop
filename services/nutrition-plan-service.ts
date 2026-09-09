@@ -5,6 +5,8 @@ import { getFurthestLiveProgramEnd } from "./training-service";
 import { calculateDailyMacros, DAYS_OF_WEEK } from "@/utils/nutrition-helpers";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import { NUTRITION_PLACEMENT_FALLBACK_DAYS } from "@/lib/constants";
+import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
+import type { ClientPlanWindow } from "@/lib/prescription-triggers";
 import type { DietType } from "@/types/check-in";
 import type { TrainingPlan } from "@/types/training";
 import type { Database } from "@/types/database";
@@ -291,6 +293,40 @@ export async function getActiveNutritionPlanVersionsOverlapping(
     id: row.id,
     effectiveFrom: row.effective_from,
     effectiveUntil: row.effective_until,
+  }));
+}
+
+/**
+ * Every ACTIVE version's window for a set of clients, in one chunked read —
+ * the attention feed's cross-client read, beside the per-client resolvers
+ * above. The window is the row (migration 166), so this is a plain select:
+ * no end is derived. An archived version is not returned, so a deleted plan
+ * stops the feed's alert the moment the coach retires it.
+ */
+export async function getNutritionWindowsForClients(
+  clientIds: string[]
+): Promise<ClientPlanWindow[]> {
+  const rows = await fetchAllByChunkedIds<
+    { id: string; client_id: string; effective_from: string; effective_until: string },
+    string
+  >(
+    clientIds,
+    (chunk, from, to) =>
+      supabaseAdmin
+        .from("nutrition_plans")
+        .select("id, client_id, effective_from, effective_until")
+        .in("client_id", chunk)
+        .eq("status", "active")
+        .order("client_id", { ascending: true })
+        .order("effective_from", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    { errorLabel: "nutrition plan versions" }
+  );
+  return rows.map((row) => ({
+    clientId: row.client_id,
+    start: row.effective_from,
+    end: row.effective_until,
   }));
 }
 

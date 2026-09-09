@@ -32,6 +32,8 @@ export const ALERT_DESTINATIONS: Record<AlertType, AlertDestination> = {
   partial_training_pattern: { tab: "training", label: TAB_LABELS.training },
   habit_dropoff: { tab: "daily-habits", label: TAB_LABELS["daily-habits"] },
   no_engagement: { tab: "training", label: TAB_LABELS.training },
+  nutrition_ending: { tab: "nutrition", label: TAB_LABELS.nutrition },
+  training_ending: { tab: "training", label: TAB_LABELS.training },
 };
 
 export function alertDestination(type: AlertType): AlertDestination {

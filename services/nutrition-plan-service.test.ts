@@ -37,6 +37,7 @@ import {
   getLatestNutritionPlan,
   getActiveNutritionPlanVersionsOverlapping,
   getNextNutritionVersionStartCap,
+  getNutritionWindowsForClients,
   resolveNutritionPlacementEnd,
 } from './nutrition-plan-service'
 
@@ -391,6 +392,44 @@ describe('Nutrition Plan Service', () => {
   // resolvePlacementWindowEnd decides a training window, then stored on the
   // row. Precedence, then the cap.
   // =========================================================================
+  describe('getNutritionWindowsForClients — the attention feed\'s cross-client read', () => {
+    it('maps every active version to its stored window, in one chunked read', async () => {
+      const calls: Record<string, unknown[][]> = {}
+      const q: Record<string, unknown> = {}
+      for (const method of ['select', 'in', 'eq', 'order', 'range']) {
+        q[method] = vi.fn((...args: unknown[]) => {
+          ;(calls[method] ??= []).push(args)
+          return q
+        })
+      }
+      Object.defineProperty(q, 'then', {
+        value: (resolve: (v: { data: unknown[]; error: null }) => void) =>
+          Promise.resolve({
+            data: [
+              { id: 'v1', client_id: 'c1', effective_from: '2026-02-02', effective_until: '2026-03-01' },
+              { id: 'v2', client_id: 'c2', effective_from: '2026-01-05', effective_until: '2026-02-01' },
+            ],
+            error: null,
+          }).then(resolve),
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(q as never)
+
+      expect(await getNutritionWindowsForClients(['c1', 'c2'])).toEqual([
+        { clientId: 'c1', start: '2026-02-02', end: '2026-03-01' },
+        { clientId: 'c2', start: '2026-01-05', end: '2026-02-01' },
+      ])
+      // An archived version governs nothing, so a deleted plan stops the alert.
+      expect(calls.eq).toEqual([['status', 'active']])
+      expect(calls.in).toEqual([['client_id', ['c1', 'c2']]])
+    })
+
+    it('reads nothing for no ids', async () => {
+      vi.mocked(supabaseAdmin.from).mockClear()
+      expect(await getNutritionWindowsForClients([])).toEqual([])
+      expect(supabaseAdmin.from).not.toHaveBeenCalled()
+    })
+  })
+
   describe('resolveNutritionPlacementEnd', () => {
     const START = '2026-09-04'
 

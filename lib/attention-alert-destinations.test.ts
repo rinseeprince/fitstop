@@ -16,12 +16,14 @@ const EXPECTED_TABS: Record<AlertType, string> = {
   partial_training_pattern: "training",
   habit_dropoff: "daily-habits",
   no_engagement: "training",
+  nutrition_ending: "nutrition",
+  training_ending: "training",
 };
 
 describe("alertDestination", () => {
-  it("covers all 11 alert types", () => {
+  it("covers all 13 alert types", () => {
     expect(Object.keys(ALERT_DESTINATIONS).sort()).toEqual(Object.keys(EXPECTED_TABS).sort());
-    expect(Object.keys(ALERT_DESTINATIONS)).toHaveLength(11);
+    expect(Object.keys(ALERT_DESTINATIONS)).toHaveLength(13);
   });
 
   it.each(Object.entries(EXPECTED_TABS))("maps %s to the %s tab", (type, tab) => {

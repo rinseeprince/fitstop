@@ -245,6 +245,14 @@ export function addDays(date: Date, days: number): Date {
   return result;
 }
 
+/** "31 Jul" from a YYYY-MM-DD calendar date — the coach-facing short date. */
+export function formatDateOnlyShort(dateStr: string): string {
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
 /**
  * Add days to a YYYY-MM-DD date string, returning YYYY-MM-DD. UTC-anchored end
  * to end so the result never shifts with the server's local timezone (a

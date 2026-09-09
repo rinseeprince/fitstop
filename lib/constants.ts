@@ -132,6 +132,11 @@ export const PARTIAL_TRAINING_THRESHOLD = 3;
 export const NO_ENGAGEMENT_SILENCE_DAYS = 3; // No activity (logs/habits/completed sessions) in this many days
 export const NO_ENGAGEMENT_ACTIVATION_GRACE_DAYS = 3; // Days after start_date before a silent client is flagged
 
+// The final N days of a block or a prescription, the end day included: the
+// Overview's block-ending row and the prescription-ending alerts read this one
+// number so the rows on one card cannot disagree about what "ending soon" means.
+export const PLAN_ENDING_LEAD_DAYS = 7;
+
 export const HIGH_STRESS_THRESHOLD = 8; // Stress level
 export const HIGH_STRESS_CONSECUTIVE_DAYS = 3;
 

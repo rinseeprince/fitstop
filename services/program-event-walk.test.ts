@@ -21,6 +21,7 @@ import { getBlockEndCoveringDate } from "./client-blocks-service";
 import {
   generateProgramEvents,
   calculatePlacementEndDate,
+  placementEndDate,
   expandProgramToWindow,
   resolvePlacementWindowEnd,
   type ProgramSlot,
@@ -267,6 +268,14 @@ describe("program-event-walk", () => {
   // =========================================================================
   // calculatePlacementEndDate
   // =========================================================================
+
+  describe("placementEndDate", () => {
+    it("is start + max(1, slots) − 1, the arithmetic calculatePlacementEndDate shares", () => {
+      expect(placementEndDate("2026-01-05", 0)).toBe("2026-01-05");
+      expect(placementEndDate("2026-01-05", 1)).toBe("2026-01-05");
+      expect(placementEndDate("2026-01-05", 28)).toBe("2026-02-01");
+    });
+  });
 
   describe("calculatePlacementEndDate", () => {
     it("window = slotCount days, one pass", async () => {

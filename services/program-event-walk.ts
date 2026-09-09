@@ -174,6 +174,16 @@ export function expandProgramToWindow<T extends { weekIndex: number; orderIndex:
 }
 
 /**
+ * The last day of one pass of a placed program: `startDate + max(1, slotCount) − 1`.
+ * The arithmetic half of `calculatePlacementEndDate`, exported on its own for
+ * readers that already know the next plan's start and cap in memory (the
+ * attention feed's cross-client read), so a program's end is spelled once.
+ */
+export function placementEndDate(startDate: string, slotCount: number): string {
+  return addDays(startDate, Math.max(1, slotCount) - 1);
+}
+
+/**
  * Calculate the placement window end date. The authored program length is the
  * ONLY length knob: the whole-program slot count in days, placed exactly once.
  * There is deliberately no programDurationWeeks or 8-week fallback. The start
@@ -187,11 +197,7 @@ export async function calculatePlacementEndDate(params: {
 }): Promise<string> {
   const { clientId, slotCount, startDate } = params;
 
-  // Program length = the whole-program slot count, one pass.
-  const days = Math.max(1, slotCount);
-  const durationEnd = new Date(startDate + "T00:00:00");
-  durationEnd.setDate(durationEnd.getDate() + days - 1);
-  const computedEnd = getDateString(durationEnd);
+  const computedEnd = placementEndDate(startDate, slotCount);
 
   // Additive placement: never let this plan's window bleed past the start of a
   // later coexisting plan.

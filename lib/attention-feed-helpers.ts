@@ -18,8 +18,10 @@ import {
   evaluateHabitDropoff,
   evaluateActivityCalMismatch,
   evaluateNoEngagement,
+  evaluatePrescriptionEnding,
   type TriggerResult
 } from "@/lib/attention-triggers"
+import type { ClientPlanWindow, PlanWindow } from "@/lib/prescription-triggers"
 import { checkInWeekday } from "@/lib/check-in-week"
 import {
   hasNutritionEntry,
@@ -69,6 +71,10 @@ type ClientData = {
   trainingEvents: TrainingEventRow[]
   /** Days the client logged a body measurement themselves — the fifth logged-day source. */
   clientLogDates: string[]
+  /** Every active nutrition version's window — the prescription-ending trigger's input. */
+  nutritionWindows: PlanWindow[]
+  /** Every live program's window, capped at the next plan's start — its training twin. */
+  trainingWindows: PlanWindow[]
   plannedSessionCount: number
   /** Resolved through `checkInWeekday`, so never null — see lib/check-in-week.ts. */
   checkInDay: DayOfWeek
@@ -83,6 +89,8 @@ export function groupClientData(
   allHabitLogs: DailyHabitLogRow[] | null,
   eventRows: TrainingEventRow[] | null,
   clientLogRows: ClientLogRow[] | null,
+  nutritionWindows: ClientPlanWindow[] | null = null,
+  trainingWindows: ClientPlanWindow[] | null = null,
 ): Map<string, ClientData> {
   const clientDataMap = new Map<string, ClientData>()
 
@@ -95,6 +103,8 @@ export function groupClientData(
       habitLogs: [],
       trainingEvents: [],
       clientLogDates: [],
+      nutritionWindows: [],
+      trainingWindows: [],
       plannedSessionCount: 0,
       checkInDay: checkInWeekday({ nextCheckInDue: client.next_check_in_due }),
       startDate: client.start_date ?? null,
@@ -204,6 +214,14 @@ export function groupClientData(
     }
   }
 
+  // Group each track's plan windows per client
+  for (const window of nutritionWindows ?? []) {
+    clientDataMap.get(window.clientId)?.nutritionWindows.push({ start: window.start, end: window.end })
+  }
+  for (const window of trainingWindows ?? []) {
+    clientDataMap.get(window.clientId)?.trainingWindows.push({ start: window.start, end: window.end })
+  }
+
   return clientDataMap
 }
 
@@ -245,12 +263,17 @@ export function evaluateAndSortTriggers(
 
     // Skip only a client with nothing logged and nothing prescribed: the
     // pattern triggers need logs, the absence signal needs prescribed work, and
-    // a client with prescribed work but no logs must NOT be skipped.
+    // a client with prescribed work but no logs must NOT be skipped. A plan
+    // window counts as prescribed: the client whose every prescription has
+    // ended and who has stopped logging is exactly the one the
+    // prescription-ending trigger exists for.
     const logged = loggedDaysFor(data, dateRange)
     if (
       logged.length === 0 &&
       data.trainingEvents.length === 0 &&
-      data.habits.length === 0
+      data.habits.length === 0 &&
+      data.nutritionWindows.length === 0 &&
+      data.trainingWindows.length === 0
     ) {
       continue
     }
@@ -277,7 +300,9 @@ export function evaluateAndSortTriggers(
         trainingEvents: data.trainingEvents,
         startDate: data.startDate,
         now: windowNow,
-      })
+      }),
+      evaluatePrescriptionEnding({ track: "nutrition", windows: data.nutritionWindows, today: dateRange.end }),
+      evaluatePrescriptionEnding({ track: "training", windows: data.trainingWindows, today: dateRange.end }),
     ]
 
     // Convert trigger results to alerts
