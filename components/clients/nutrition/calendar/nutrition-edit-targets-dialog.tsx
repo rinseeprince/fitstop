@@ -109,7 +109,7 @@ export function NutritionEditTargetsDialog({
           </DialogClose>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-5 pb-4">
           {/* Which days this edit touches */}
           <div className="flex flex-wrap gap-1.5">
             {dayChips.map((d) => (
@@ -154,8 +154,11 @@ export function NutritionEditTargetsDialog({
           </div>
         </div>
 
-        {/* The pin box's wash instead of a hairline: a footer band, not a rule. */}
-        <div className="flex shrink-0 items-center justify-end gap-2 bg-[rgba(13,148,136,0.05)] px-6 py-3">
+        {/* No rule and no band under the fields: the buttons sit one gap (16px)
+            below the note and the macro card and one gap above the card's edge —
+            the body's bottom padding above them, this row's own below. Still a
+            row of its own, so a short viewport scrolls the body and not them. */}
+        <div className="flex shrink-0 items-center justify-end gap-2 px-6 pb-4">
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
