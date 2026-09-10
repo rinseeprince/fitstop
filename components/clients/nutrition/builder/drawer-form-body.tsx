@@ -224,8 +224,8 @@ function CollapsibleNotes({
       {expanded && (
         <div className="space-y-2 border-t border-[rgba(13,148,136,0.08)] pt-2.5">
           <p className="text-[11px] leading-[1.4] text-[#93b0b4]">
-            {firstName ?? "Your client"} can see this &mdash; it shows on their
-            Program tab with the block it falls in.
+            <span className="font-medium text-[#5a7d82]">{firstName ?? "Your client"}</span> can
+            see this. It shows on their Program tab with the block it falls in.
           </p>
           <Textarea
             autoFocus
