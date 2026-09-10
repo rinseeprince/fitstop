@@ -4,12 +4,12 @@ import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helper
 import type { MacroGrams } from "@/lib/nutrition/macro-balance";
 
 /**
- * Pure model for the Edit-targets sheet (no React). Selection resolution and
+ * Pure model for the Edit-targets dialog (no React). Selection resolution and
  * the seed live here so they are unit-testable and shared between the form
  * hook and the selection bar.
  */
 
-/** The edit payload sent to PATCH …/nutrition/events/range. The sheet is the
+/** The edit payload sent to PATCH …/nutrition/events/range. The dialog is the
  * macro balancer, so it always carries the calories and the three grams its
  * split derives, and every selected day gets the same four (owner decision
  * 2026-09-10). `note`: omitted = preserve existing notes; "" = clear; string =
@@ -62,7 +62,7 @@ type AbsoluteSeed = {
   /** That day's grams, the split the balancer opens on. */
   grams: MacroGrams | null;
   /** Min–max of the selection's displayed calories; present only when the
-   * selected days differ, so the sheet can say what the one target replaces. */
+   * selected days differ, so the dialog can say what the one target replaces. */
   calorieRange: { min: number; max: number } | null;
 };
 

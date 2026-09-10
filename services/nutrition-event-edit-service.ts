@@ -11,7 +11,7 @@ import type { DietType, NutritionEvent } from "@/types/check-in";
  * Coach per-day nutrition edits, on the edits table (migration 169).
  *
  * A range edit writes the coach's target onto each selected day as one edit
- * row — the same four numbers for every day, the sheet being the macro
+ * row — the same four numbers for every day, the dialog being the macro
  * balancer — reading the days AS COMPUTED only for what an edit inherits: the
  * standing note, and the protein and diet type a macro-less payload holds
  * and rebalances around. A computed day with an edit takes those numbers
@@ -40,7 +40,7 @@ export type RangeEdit = {
 function resolveEdit(day: NutritionEvent, edit: RangeEdit): NutritionDayEdit {
   const { calories } = edit;
 
-  // Macros: the sheet sends all three (the balancer's grams) and they are
+  // Macros: the dialog sends all three (the balancer's grams) and they are
   // taken verbatim. A payload without them — a raw API caller's — holds
   // protein (its own, else the day's) and rebalances carbs and fat to the
   // total by the version's diet type.

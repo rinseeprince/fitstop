@@ -14,13 +14,13 @@ import {
 } from "@/lib/nutrition/macro-balance";
 
 /**
- * All transient form state for the Edit-targets sheet, seeded from the
+ * All transient form state for the Edit-targets dialog, seeded from the
  * resolved selection on the open rising edge. The seed comes from the pure
  * model in utils/nutrition-range-edit-model.ts; the arithmetic is the macro
  * balancer's kernel.
  */
 export function useEditTargetsForm(open: boolean, days: ResolvedSelectedDay[]) {
-  // The sheet IS the macro balancer: one calorie target and one split, the
+  // The dialog IS the macro balancer: one calorie target and one split, the
   // grams derived — and every selected day gets the same four numbers.
   const [balance, setBalance] = useState<MacroBalanceValue>({
     calories: null,

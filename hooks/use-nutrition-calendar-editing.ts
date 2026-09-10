@@ -35,7 +35,7 @@ type UseNutritionCalendarEditingArgs = {
  * scattered, or contiguous are all built the same way. Mutations post a `dates[]`
  * payload (plain same-origin fetch; CSRF is origin-based) so a scattered
  * selection edits exactly the chosen days and leaves the gaps untouched. The
- * edit is the sheet's macro balancer: one target, the same four numbers for
+ * edit is the editor's macro balancer: one target, the same four numbers for
  * every selected day.
  */
 export function useNutritionCalendarEditing({
@@ -54,7 +54,7 @@ export function useNutritionCalendarEditing({
   const clearAttentionFeed = useClearAttentionFeed();
   const [editMode, setEditMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const toggleDay = useCallback((date: string) => {
@@ -93,15 +93,15 @@ export function useNutritionCalendarEditing({
   }, []);
 
   // Week-rail "Edit this week": replace the selection with the week's eligible
-  // days, then open the sheet (menu semantics are "act on this week", not add-to).
+  // days, then open the editor (menu semantics are "act on this week", not add-to).
   const selectDatesAndEdit = useCallback((dates: string[]) => {
     if (dates.length === 0) return;
     setSelected(new Set(dates));
-    setSheetOpen(true);
+    setEditorOpen(true);
   }, []);
 
   // The selection resolved against loaded events — what the bar average, the
-  // Revert affordance, and the sheet's seeding all read from. Dates outside the
+  // Revert affordance, and the editor's seeding all read from. Dates outside the
   // loaded window stay selected but contribute nothing.
   const resolvedSelected = useMemo(
     () => resolveSelectedEvents(selected, eventsByDate, includeActivityBurn, surplusAsCarbs),
@@ -118,7 +118,7 @@ export function useNutritionCalendarEditing({
 
   const applyEdit = useCallback(
     async (payload: RangeEditPayload) => {
-      // Write ONLY the dates the sheet could resolve and show. A selection can
+      // Write ONLY the dates the editor could resolve and show. A selection can
       // outlive its month window (nothing prunes it on nav), and writing an
       // unresolvable date would apply values — and single-day note semantics —
       // the coach never saw.
@@ -138,7 +138,7 @@ export function useNutritionCalendarEditing({
           title: `Updated ${n} day${n === 1 ? "" : "s"}`,
           description: describeEdit(payload),
         });
-        setSheetOpen(false);
+        setEditorOpen(false);
         setSelected(new Set());
         await invalidateNutritionCalendar(clientId);
         void clearClientOverview(clientId);
@@ -211,8 +211,8 @@ export function useNutritionCalendarEditing({
     resolvedSelected,
     averageCalories,
     modifiedSelected,
-    sheetOpen,
-    setSheetOpen,
+    editorOpen,
+    setEditorOpen,
     isSaving,
     applyEdit,
     resetDates,

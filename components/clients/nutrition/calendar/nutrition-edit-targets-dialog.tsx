@@ -2,13 +2,13 @@
 
 import { useEffect, useRef } from "react";
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Pin, SlidersHorizontal, X } from "lucide-react";
@@ -29,7 +29,7 @@ import type {
 
 const MAX_DAY_CHIPS = 6;
 
-type NutritionEditTargetsSheetProps = {
+type NutritionEditTargetsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The selection resolved against loaded events — exactly the days an Apply
@@ -39,20 +39,20 @@ type NutritionEditTargetsSheetProps = {
   onApply: (payload: RangeEditPayload) => void;
 };
 
-/** "Edit targets" right sheet — the plan generator's drawer shell (the same
- * width, page-tint body, overlay and slide, and the same dark hero band),
- * hosting the macro balancer over the selection: one calorie target and
- * split, the same four numbers for every selected day. */
-export function NutritionEditTargetsSheet({
+/** "Edit targets" modal — centred and sized to its content, carrying the plan
+ * generator's hero (the dark band, the teal icon square, the title scale, its
+ * own close) over the macro balancer: one calorie target and split, the same
+ * four numbers for every selected day. */
+export function NutritionEditTargetsDialog({
   open,
   onOpenChange,
   days,
   isSaving,
   onApply,
-}: NutritionEditTargetsSheetProps) {
+}: NutritionEditTargetsDialogProps) {
   // Latch the days while open: a successful apply clears the selection in the
-  // same commit that starts the exit animation, and the closing sheet must not
-  // flash "0 days selected" (the selection bar's exit latch, same reason).
+  // same commit that starts the exit animation, and the closing dialog must
+  // not flash "0 days selected" (the selection bar's exit latch, same reason).
   const latchedDays = useRef(days);
   useEffect(() => {
     if (open) latchedDays.current = days;
@@ -71,40 +71,41 @@ export function NutritionEditTargetsSheet({
   }
 
   return (
-    <Sheet
+    <Dialog
       open={open}
       onOpenChange={(next) => {
         // Block dismissal mid-save so a half-applied edit can't lose its form.
         if (!isSaving) onOpenChange(next);
       }}
     >
-      <SheetContent
-        side="right"
-        hideClose
-        overlayClassName="bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]"
-        className="w-[420px] bg-[#f4f7f6] p-0 gap-0 flex flex-col inset-y-0 right-0 h-full data-[state=open]:animate-none data-[state=closed]:animate-none data-[state=open]:slide-in-from-right-0 animate-drawer-slide-in data-[state=closed]:slide-out-to-right data-[state=closed]:duration-300"
+      {/* Content-sized: the card is as tall as the form, and only a viewport
+          shorter than it scrolls the body inside. p-0 + overflow-hidden so the
+          hero takes the card's rounded top edge. */}
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
       >
         {/* The generator's hero: the dark band, the teal icon square, the title
-            scale and its own close, since the built-in one is hidden. */}
-        <SheetHeader className="shrink-0 flex-row items-start gap-3 bg-[#0f2027] px-6 pb-5 pt-5">
+            scale and its own close, since the built-in one is off. */}
+        <DialogHeader className="shrink-0 flex-row items-start gap-3 bg-[#0f2027] px-6 pb-5 pt-5 text-left">
           <div className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[6px] bg-[rgba(13,148,136,0.15)]">
             <SlidersHorizontal className="h-[15px] w-[15px] text-[#0d9488]" strokeWidth={1.5} />
           </div>
           <div className="min-w-0 flex-1">
-            <SheetTitle className="text-[16px] font-bold leading-tight text-white">
+            <DialogTitle className="text-[16px] font-bold leading-tight tracking-normal text-white">
               Edit targets
-            </SheetTitle>
-            <SheetDescription
+            </DialogTitle>
+            <DialogDescription
               className={cn(MONO, "mt-1 text-[12px] leading-[1.4] text-[rgba(255,255,255,0.4)]")}
             >
               {dayCount} day{dayCount === 1 ? "" : "s"} selected
-            </SheetDescription>
+            </DialogDescription>
           </div>
-          <SheetClose className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[6px] bg-[rgba(255,255,255,0.06)] transition-colors hover:bg-[rgba(255,255,255,0.1)]">
+          <DialogClose className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[6px] bg-[rgba(255,255,255,0.06)] transition-colors hover:bg-[rgba(255,255,255,0.1)]">
             <X className="h-4 w-4 text-[rgba(255,255,255,0.5)]" strokeWidth={1.5} />
             <span className="sr-only">Close</span>
-          </SheetClose>
-        </SheetHeader>
+          </DialogClose>
+        </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
           {/* Which days this edit touches */}
@@ -133,7 +134,7 @@ export function NutritionEditTargetsSheet({
           <NutritionSetTargetsTab form={form} />
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-[rgba(13,148,136,0.08)] px-6 py-3">
+        <div className="flex shrink-0 flex-col gap-3 border-t border-[rgba(13,148,136,0.08)] px-6 py-3">
           <div className="space-y-1.5">
             <label htmlFor="et-note" className={LABEL_CLASS}>
               Note <span className="normal-case tracking-normal">· Optional · shown to the client</span>
@@ -149,7 +150,7 @@ export function NutritionEditTargetsSheet({
                   ? "e.g. Deload week — go easy"
                   : "Applies one note to every selected day"
               }
-              className={cn(FOCUS_RING, "resize-none bg-white text-sm")}
+              className={cn(FOCUS_RING, "resize-none text-sm")}
             />
           </div>
           <div className="flex items-center justify-end gap-2">
@@ -166,7 +167,7 @@ export function NutritionEditTargetsSheet({
             </Button>
           </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }

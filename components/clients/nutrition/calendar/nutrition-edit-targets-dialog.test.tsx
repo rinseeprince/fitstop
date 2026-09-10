@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { NutritionEvent } from "@/types/check-in";
 import { resolveSelectedEvents } from "@/utils/nutrition-range-edit-model";
 import { gramsToSplit, splitToGrams } from "@/lib/nutrition/macro-balance";
-import { NutritionEditTargetsSheet } from "./nutrition-edit-targets-sheet";
+import { NutritionEditTargetsDialog } from "./nutrition-edit-targets-dialog";
 
 // jsdom doesn't implement the APIs the balancer's Radix Slider needs to render.
 class ResizeObserverStub {
@@ -51,16 +51,18 @@ function resolve(events: NutritionEvent[]) {
 
 beforeEach(() => cleanup());
 
-// The sheet is the macro balancer and nothing else: "Adjust by" (a percent or
+// The dialog is the macro balancer and nothing else: "Adjust by" (a percent or
 // kcal delta scaled per day) was removed on 2026-09-10, and with it the tab
-// switcher — there is one edit, so there is nothing to switch between.
-describe("NutritionEditTargetsSheet — one edit, the balancer", () => {
-  it("opens on the balancer over the first selected day, with no tab switcher and no Adjust by", () => {
+// switcher — there is one edit, so there is nothing to switch between. It is a
+// centred modal sized to its content, carrying the plan generator's hero.
+describe("NutritionEditTargetsDialog — one edit, the balancer", () => {
+  it("opens as a modal on the balancer over the first selected day, with no tab switcher and no Adjust by", () => {
     const days = resolve([ev("2026-06-01"), ev("2026-06-02", { baselineCalories: 2200 })]);
     render(
-      <NutritionEditTargetsSheet open onOpenChange={vi.fn()} days={days} isSaving={false} onApply={vi.fn()} />
+      <NutritionEditTargetsDialog open onOpenChange={vi.fn()} days={days} isSaving={false} onApply={vi.fn()} />
     );
 
+    expect(screen.getByRole("dialog", { name: "Edit targets" })).toBeInTheDocument();
     expect(screen.getByText("2 days selected")).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Carbs and fat boundary" })).toBeInTheDocument();
     expect(screen.getByLabelText<HTMLInputElement>("Calories").value).toBe("2000");
@@ -68,16 +70,16 @@ describe("NutritionEditTargetsSheet — one edit, the balancer", () => {
     expect(screen.queryByText("Adjust by")).toBeNull();
     expect(screen.queryByText("Set targets")).toBeNull();
     expect(screen.queryByText(/Hold protein steady/)).toBeNull();
-    // The generator drawer's shell: the built-in close is hidden and the dark
-    // hero carries exactly one labelled close of its own.
+    // The generator's hero: the built-in close is off and the dark band
+    // carries exactly one labelled close of its own.
     expect(screen.getAllByRole("button", { name: "Close" })).toHaveLength(1);
   });
 
-  it("the close on the hero dismisses the sheet, but not while a save is in flight", () => {
+  it("the close on the hero dismisses the dialog, but not while a save is in flight", () => {
     const days = resolve([ev("2026-06-01")]);
     const onOpenChange = vi.fn();
     const { unmount } = render(
-      <NutritionEditTargetsSheet open onOpenChange={onOpenChange} days={days} isSaving={false} onApply={vi.fn()} />
+      <NutritionEditTargetsDialog open onOpenChange={onOpenChange} days={days} isSaving={false} onApply={vi.fn()} />
     );
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -85,7 +87,7 @@ describe("NutritionEditTargetsSheet — one edit, the balancer", () => {
 
     const blocked = vi.fn();
     render(
-      <NutritionEditTargetsSheet open onOpenChange={blocked} days={days} isSaving onApply={vi.fn()} />
+      <NutritionEditTargetsDialog open onOpenChange={blocked} days={days} isSaving onApply={vi.fn()} />
     );
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(blocked).not.toHaveBeenCalled();
@@ -95,7 +97,7 @@ describe("NutritionEditTargetsSheet — one edit, the balancer", () => {
     const days = resolve([ev("2026-06-01"), ev("2026-06-02")]);
     const onApply = vi.fn();
     render(
-      <NutritionEditTargetsSheet open onOpenChange={vi.fn()} days={days} isSaving={false} onApply={onApply} />
+      <NutritionEditTargetsDialog open onOpenChange={vi.fn()} days={days} isSaving={false} onApply={onApply} />
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Apply to 2 days" }));
@@ -111,7 +113,7 @@ describe("NutritionEditTargetsSheet — one edit, the balancer", () => {
   it("Apply stays disabled with no calorie target", () => {
     const days = resolve([ev("2026-06-01")]);
     render(
-      <NutritionEditTargetsSheet open onOpenChange={vi.fn()} days={days} isSaving={false} onApply={vi.fn()} />
+      <NutritionEditTargetsDialog open onOpenChange={vi.fn()} days={days} isSaving={false} onApply={vi.fn()} />
     );
 
     fireEvent.change(screen.getByLabelText("Calories"), { target: { value: "" } });

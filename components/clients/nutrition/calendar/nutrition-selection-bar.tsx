@@ -38,7 +38,7 @@ const QUIET_CLASS =
 /**
  * Floating action bar for the calendar's edit-mode selection. Portaled to
  * <body> (a transformed ancestor would break `fixed` — same hazard the builder
- * portals its DragOverlay for) and layered at z-40: under the edit sheet's
+ * portals its DragOverlay for) and layered at z-40: under the edit dialog's
  * z-50 overlay, under z-[100] toasts, above the page.
  */
 export function NutritionSelectionBar({

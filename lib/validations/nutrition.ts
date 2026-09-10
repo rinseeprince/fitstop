@@ -77,7 +77,7 @@ export const nutritionPlanSchema = z.object({
 // Coach per-day edit (events-as-SOT, Session 3 D4 / Session 4). Operates on an
 // explicit date LIST (any arrangement — single, scattered, or contiguous), not a
 // [start,end] range, so a scattered selection edits exactly the chosen days and
-// leaves the gaps untouched. The Edit-targets sheet is the macro balancer, so
+// leaves the gaps untouched. The Edit-targets dialog is the macro balancer, so
 // it sends the calories and the three grams its split derives — the same four
 // for every selected day; a payload without the macros (a raw API caller's)
 // holds protein and rebalances carbs and fat. Written as nutrition_day_edits

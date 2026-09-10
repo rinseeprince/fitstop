@@ -7,7 +7,7 @@ import { NutritionCalendarWeekRow } from "./nutrition-calendar-week-row";
 import type { NutritionWeekAction } from "./nutrition-calendar-week-rail";
 import { NutritionCalendarToolbar } from "./nutrition-calendar-toolbar";
 import { NutritionSelectionBar } from "./nutrition-selection-bar";
-import { NutritionEditTargetsSheet } from "./nutrition-edit-targets-sheet";
+import { NutritionEditTargetsDialog } from "./nutrition-edit-targets-dialog";
 import { CAL_GRID_COLS } from "@/components/clients/training/calendar/calendar-tokens";
 import {
   getTodayDateString,
@@ -207,12 +207,12 @@ export function NutritionCalendarView({
         onSelectRest={() => edit.replaceSelection(edit.groups.rest)}
         onRevert={() => void edit.revertModified()}
         onClear={edit.clearSelection}
-        onEditTargets={() => edit.setSheetOpen(true)}
+        onEditTargets={() => edit.setEditorOpen(true)}
       />
 
-      <NutritionEditTargetsSheet
-        open={edit.sheetOpen}
-        onOpenChange={edit.setSheetOpen}
+      <NutritionEditTargetsDialog
+        open={edit.editorOpen}
+        onOpenChange={edit.setEditorOpen}
         days={edit.resolvedSelected}
         isSaving={edit.isSaving}
         onApply={(payload) => void edit.applyEdit(payload)}
