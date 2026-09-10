@@ -16,7 +16,8 @@
     this table" is not a precedent. The data model is an **explicit owner decision** in every
     plan, stated with its alternatives, never adopted silently from a draft. Sanctioned
     denormalisations (submit-time snapshot columns like `check_ins.workouts_completed`, the
-    per-event `training_events.calorie_surplus_percentage`) are
+    per-event `training_events.calorie_surplus_percentage`, the food log's target snapshot on
+    `nutrition_logs`) are
     documented as such in `docs/ARCHITECTURE.md`; an undocumented one found in passing is debt
     to record, not a shape to copy. Full rule: §8 → "Data modelling". *(Added 2026-08-29 after a
     plan put a coach's check-in questions on `clients` as JSONB and snapshotted the prompt onto
@@ -289,8 +290,8 @@
     every reader added later. The key builder stays narrow; only the matcher widens.
   - **Every mutating call site invokes the invalidator for every area that READS
     what the write touched** — not merely the area the endpoint belongs to. On
-    success, before closing or navigating. A training write that cascades into
-    nutrition calls both.
+    success, before closing or navigating. A training write changes what the
+    nutrition days are computed from, so it calls both.
     **The reading half is the one that gets missed**, because the obvious check
     is "which endpoint did I just POST to?" and the answer excludes every
     *derived* read. Placing a program POSTs to `/training/place-from-library` and
@@ -340,7 +341,7 @@
   read you depend on is already covered.
 
   ### Nutrition calendar cache invalidation (landmine)
-  - The coach nutrition calendar renders from an SWR cache keyed per month window (`/api/clients/{clientId}/nutrition/events?startDate=...&endDate=...`). **Any client-side success path whose server route rewrites `nutrition_events`** — plan regenerate, the training cascades via `cascadeNutritionAfterTrainingChange` (place/move/duplicate/delete/surplus edits) — **must call `useInvalidateNutritionCalendar` from `hooks/use-nutrition-calendar-events.ts`**, or the calendar silently shows stale targets until a page refresh.
+  - The coach nutrition calendar renders from an SWR cache keyed per month window (`/api/clients/{clientId}/nutrition/events?startDate=...&endDate=...`). The days it shows are COMPUTED on the server (ARCHITECTURE → "The window is the row") — nothing is stored per day, so nothing can tell the cache it is stale. **Any client-side success path whose server route changes what a day is computed from** — a nutrition version's window or grid (the plan save and delete, the block fill, clear and re-price), a session on a date or its surplus (place, move, duplicate, delete, amend, the client's own week move), a per-day edit or reset — **must call `useInvalidateNutritionCalendar` from `hooks/use-nutrition-calendar-events.ts`**, or the calendar silently shows stale targets until a page refresh.
   - The key-builder and invalidator are co-located in that hook module deliberately so they can never drift. Never construct a `/nutrition/events` key anywhere else.
 
   ### Legacy (being retired)
@@ -456,7 +457,8 @@
 
   **Denormalisation is allowed only when named and documented.** Submit-time snapshot columns
   (`check_ins.workouts_completed`), the per-event `training_events.calorie_surplus_percentage`,
-  and the copy-based library placement are sanctioned because
+  the food log's target snapshot (`nutrition_logs`, re-snapshotted from the computed day on every
+  save) and the copy-based library placement are sanctioned because
   `docs/ARCHITECTURE.md` says who the single writer is and what the copy is a copy *of*. A
   new one needs the same paragraph in the same commit. An undocumented denormalisation found
   in passing is recorded in `TECHNICAL-DEBT.md`, not used as precedent.
@@ -540,7 +542,7 @@
 
   ### General
   - Migrations: Version controlled, never edit directly
-  - Relations: Foreign keys with ON DELETE CASCADE, SET NULL, or RESTRICT. Use RESTRICT on parent tables that must not be hard-deleted (forces archival instead). **Event→plan FKs are SET NULL** (`training_events.training_plan_id`, `nutrition_events.nutrition_plan_id`, both nullable since migration 113) so deleting a plan/template never destroys past/logged events — the events carry the date-specific truth (see "Events-as-SOT" below and `docs/ARCHITECTURE.md → Nutrition & Training Events`).
+  - Relations: Foreign keys with ON DELETE CASCADE, SET NULL, or RESTRICT. Use RESTRICT on parent tables that must not be hard-deleted (forces archival instead). **The event→plan FK is SET NULL** (`training_events.training_plan_id`, nullable since migration 113; `nutrition_plan_notes.nutrition_plan_id` takes the same posture) so deleting a plan/template never destroys past/logged events — the events carry the date-specific truth (see "Events-as-SOT" below and `docs/ARCHITECTURE.md → Nutrition & Training Events`).
   - Indexes: On foreign keys, search fields, sort columns
   - Timestamps: created_at, updated_at on all tables. Exception: append-only tables whose value is never rewritten (`nutrition_plan_notes`) intentionally skip updated_at - add a comment explaining why.
 
@@ -570,7 +572,7 @@
   - **is_active pattern**: Training sessions, exercises, and daily habits use `is_active = false`. Always filter by `.eq("is_active", true)` in read queries
   - **Status-based lifecycle**: Entities with richer states use a status column instead of is_active. The lifecycle is **not uniform across entities** — match the one already in place:
     - **Training plans** moved to **date-range coexistence** (events-as-SOT): many provenance `training_plans` rows coexist, there is **no `planned`/promotion concept**, and "active" is resolved **by date** (the row whose `[effective_from, effective_until]` covers today — both ends stored, migration 167), not `status='active'`. Placement is additive on the past and supersedes the future: the RPC caps every earlier live program at the day before the new start and archives one that started on the same day (it never ran a day of its own), and the service then removes the earlier programs' scheduled days from the start onward, logged days detached. Nothing before the new start is touched.
-    - **Nutrition plans** are **date-ranged VERSIONS placed like training programs** (migration 166): N rows per client whose `[effective_from, effective_until]` windows never overlap, every one carrying an end (`effective_until` is NOT NULL). The end is resolved at save the way a training placement window is — the block covering the start, else the furthest live program's end, else eight weeks, the fallbacks capped at the day before the next block when the start is in a gap — capped at the next queued version's start (`resolveNutritionPlacementEnd`); the coach never types it. A save caps the predecessor at `new_start − 1` and replaces in place a version starting on the same day (`create_nutrition_plan_atomic`); a save dated before a queued version runs until the day before it and leaves it standing. "Active" resolves **BY DATE** (`coversDate` — the same window predicate as training), never by picking the newest `status='active'` row; a day no version covers has no target and refuses the client's food log. `status` records coach acts only: **delete is a save of nothing from today** — the running version ends YESTERDAY and keeps its past, a queued version is archived, a finished one is untouched — and removes the days from the deletion floor (`clearNutritionPlansForClient`, the training clear's shape; the block delete does the same for the versions laid in the block); there is **no `planned` status** — planned/current/ended derive from dates. Events remain the per-date SOT, per-day coach edits still materialize onto `nutrition_events` (`is_modified`) and never mint versions, and one target per day stays correct (`nutrition_events UNIQUE(client_id, date)`).
+    - **Nutrition plans** are **date-ranged VERSIONS placed like training programs** (migration 166): N rows per client whose `[effective_from, effective_until]` windows never overlap, every one carrying an end (`effective_until` is NOT NULL). The end is resolved at save the way a training placement window is — the block covering the start, else the furthest live program's end, else eight weeks, the fallbacks capped at the day before the next block when the start is in a gap — capped at the next queued version's start (`resolveNutritionPlacementEnd`); the coach never types it. A save caps the predecessor at `new_start − 1` and replaces in place a version starting on the same day (`create_nutrition_plan_atomic`); a save dated before a queued version runs until the day before it and leaves it standing. "Active" resolves **BY DATE** (`coversDate` — the same window predicate as training), never by picking the newest `status='active'` row; a day no version covers has no target and refuses the client's food log. `status` records coach acts only: **delete is a save of nothing from today** — the running version ends YESTERDAY and keeps its past, a queued version is archived, a finished one is untouched — and writes no day, because the days are computed from the versions (`clearNutritionPlansForClient`, the training clear's shape; the block delete does the same for the versions laid in the block); there is **no `planned` status** — planned/current/ended derive from dates. A day's target is computed from the covering version (see "Events-as-SOT" below); per-day coach edits are rows in `nutrition_day_edits` and never mint versions.
   - Unique constraints must account for inactive rows (check for inactive before inserting, reactivate if found)
   - Provide UI for viewing and reactivating inactive items where appropriate
 
@@ -610,13 +612,13 @@
     sedentary" — the default silently disabled the intake sync's null-guard and a
     client's questionnaire answer never reached their profile.
 
-  ### Events-as-SOT (plans are templates/provenance)
+  ### Events-as-SOT on the training track; a computed day on the nutrition track
 
-  Date-specific training/nutrition targets live on **events** (`training_events`, `nutrition_events`), one row per date. Plans and their templates (`training_sessions`, `nutrition_plan_daily_targets`) are **blueprints that generate events + provenance for analytics/reapply** — not the live read path for a given day, and never embedded via a live join to a deletable plan. Historical reads resolve from immutable snapshots (`session_logs`, `nutrition_logs`), never from regenerable events. When you add a date-specific feature, write it onto the event, not the plan. Full model: `docs/ARCHITECTURE.md → Nutrition & Training Events`.
+  Date-specific TRAINING targets live on **events** (`training_events`), one row per session per date. Plans and their slot rows (`training_sessions`) are **the placed program that generates events + provenance for analytics/reapply** — not the live read path for a given day, and never embedded via a live join to a deletable plan. Historical reads resolve from immutable snapshots (`session_logs`, `nutrition_logs`), never from re-layable events. When you add a date-specific training feature, write it onto the event, not the plan. **A NUTRITION day is computed, never stored**: the target on a date is resolved when asked from the version covering it (`nutrition_plans` — a window plus its weekday grid), the session on the date and the coach's per-day edit (`nutrition_day_edits`). No writer keeps days in sync — there is no cascade, sweep or regenerate — and a day table, a day-sync writer or a nutrition-day deletion floor must not be reintroduced. A version's grid is never edited in place once its first day has passed; that is what keeps a derived past stable, so a feature that adjusts a running plan's numbers mints a version. Full model: `docs/ARCHITECTURE.md → Nutrition & Training Events`.
 
   **Deferred debt (events-SOT — documented, not done):**
   - **Adherence is not unified.** Two divergent live adherence calc conventions coexist (coach history = `session_logs` / `frequency_per_week`; client check-in = `training_events` count). A periodisation-safe denominator + unifying them is a separate decision — do not change adherence math under the guise of an events-SOT edit.
-  - **Prescribed denormalization.** `training_events.calorie_surplus_percentage` is denormalized from the session so the nutrition cascade can read it per date; **every** training event-write path must keep populating it (one dropped write silently falls nutrition back to rest-day calories while the TRAIN badge still renders). See `TECHNICAL-DEBT.md`.
+  - **Prescribed denormalization.** `training_events.calorie_surplus_percentage` is denormalized from the session so a nutrition day can read it per date; **every** training event-write path must keep populating it (one dropped write silently prices that day at rest-day calories while the TRAIN badge still renders). See `TECHNICAL-DEBT.md`.
 
   ### Training prescription model (migrations 119-121)
 

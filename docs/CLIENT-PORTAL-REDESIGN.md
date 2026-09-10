@@ -278,7 +278,7 @@ of `CLIENT-PORTAL-EXECUTION-PLAN.md` (Sessions 8.1-8.3) is superseded with it.
 
 1. **API contract is what mobile consumes.** Ship the right contract once. Changing it later means coordinating web, iOS, and Android simultaneously (forced updates, dual-write, data migration).
 2. **Day-centric swipe UX is the mobile UX.** Validating it on web before writing it natively saves a rebuild.
-3. **Data is already day-keyed.** `training_events`, `nutrition_events`, `daily_logs` with children, `daily_habit_logs` are all date-partitioned. The redesign is primarily a UI plus API-shape change. (The weight-unit column anticipated here went the other way: migrations 140 + 141 made storage canonical kg/cm and DROPPED every unit-tag column.)
+3. **Data is already day-keyed.** `training_events`, `daily_logs` with children, `daily_habit_logs` are all date-partitioned, and a nutrition day is computed per date from the version covering it (the day table went in migration 170; `docs/ARCHITECTURE.md` → "The window is the row"). The redesign is primarily a UI plus API-shape change. (The weight-unit column anticipated here went the other way: migrations 140 + 141 made storage canonical kg/cm and DROPPED every unit-tag column.)
 4. **Detailed workout logging is a mobile-first feature.** Clients log sets on their phone. Shipping empty `exercise_logs` to mobile launch means that surface has no implementation at all.
 
 ---

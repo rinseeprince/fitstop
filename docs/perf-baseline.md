@@ -180,6 +180,8 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 | 4 | nutrition_plans | 2 | 387 | 43.1 |
 | 5 | nutrition_events | 375 | 25126 | 43.2 |
 
+> Query 5's table was dropped in migration 170 (2026-09-10): the facts read now takes its nutrition days from the day reader (`services/nutrition-days-service.ts`, five reads of its own). Re-measure before citing this breakdown.
+
 ## listNutritionPlanNotesInRange (365d)
 
 **File:** `services/nutrition-plan-notes-service.ts` · **Call:** `listNutritionPlanNotesInRange(PERF_CLIENT_ID, today-365, today)`

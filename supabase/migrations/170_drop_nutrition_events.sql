@@ -1,0 +1,31 @@
+-- =============================================================================
+-- 170: the nutrition day table goes.
+--
+-- WHY (owner decision 2026-09-10): a nutrition day's target is COMPUTED, never
+-- stored. Since migration 169 the stored nutrition facts are the version rows
+-- (nutrition_plans: the window and the per-weekday grid), the coach's per-day
+-- edits (nutrition_day_edits), the plan-save notes (nutrition_plan_notes) and
+-- the client's food-log snapshot (nutrition_logs). "What is the target on this
+-- date" is resolved when asked -- services/nutrition-day-resolver.ts over the
+-- batched reads in services/nutrition-days-service.ts -- from the version
+-- covering the date, its grid row for the weekday, the session on the date and
+-- the edit. Nothing has read this table since 169, nothing has written it since
+-- the generators, the cascade and the sweep were deleted (ee116ff1), and its
+-- edited rows were copied into nutrition_day_edits by 169.
+--
+-- PROBED 2026-09-10, BOTH PROJECTS, before this file was written:
+--   - PROD (etezzztgafcotyahgijk): 0 rows (0 clients, 0 versions, 0 edits).
+--   - DEV (aeaphsslctwcmebldrzx): 28,582 rows across 232 test clients -- a copy
+--     of what the versions compute, reachable by nothing in the app.
+--   - pg_depend, every pg_proc body, every view definition and every inbound
+--     FK, on both projects: nothing outside the table names it. daily_logs_full
+--     does not join it, no RPC reads it, no FK points at it. What goes with the
+--     table is its own: the PK, UNIQUE(client_id, date), two indexes, two
+--     outbound FKs, the status CHECK and the two SELECT policies from 077.
+--
+-- NO CASCADE, deliberately: the probe says nothing depends on the table, so a
+-- plain DROP is enough -- and if a project ever drifted to hold a dependent
+-- object, the push must fail here rather than silently take it too.
+-- =============================================================================
+
+DROP TABLE IF EXISTS public.nutrition_events;
