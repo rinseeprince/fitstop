@@ -140,18 +140,14 @@ export function NutritionEditTargetsDialog({
             <NutritionSetTargetsTab form={form} />
             <div className="flex min-h-0 flex-col gap-1.5">
               <label htmlFor="et-note" className={LABEL_CLASS}>
-                Note <span className="normal-case tracking-normal">· Optional · shown to the client</span>
+                Note
               </label>
               <Textarea
                 id="et-note"
                 maxLength={500}
                 value={form.note}
                 onChange={(e) => form.setNote(e.target.value)}
-                placeholder={
-                  form.singleDay
-                    ? "e.g. Deload week — go easy"
-                    : "Applies one note to every selected day"
-                }
+                placeholder="Optional · shown to the client"
                 className={cn(FOCUS_RING, "min-h-0 flex-1 resize-none text-sm")}
               />
             </div>

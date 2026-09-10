@@ -79,7 +79,6 @@ export function useEditTargetsForm(open: boolean, days: ResolvedSelectedDay[]) {
     seed,
     note,
     setNote,
-    singleDay,
     valid,
     buildPayload,
   };
