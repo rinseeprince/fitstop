@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
-import { getNutritionEventsForDateRange } from "@/services/nutrition-event-service";
+import { getNutritionEventsForDateRange } from "@/services/nutrition-days-service";
 import { getTotalCalories } from "@/utils/nutrition-event-helpers";
 import { supabaseAdmin } from "@/services/supabase-admin";
 

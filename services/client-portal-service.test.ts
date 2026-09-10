@@ -16,7 +16,7 @@ vi.mock("./training-event-service", () => ({
   getEventsForDateRange: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("./nutrition-event-service", () => ({
+vi.mock("./nutrition-days-service", () => ({
   getNutritionEventsForDateRange: vi.fn().mockResolvedValue([]),
 }));
 
@@ -27,7 +27,7 @@ vi.mock("@/utils/build-daily-targets", () => ({
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getEventsForDateRange } from "./training-event-service";
-import { getNutritionEventsForDateRange } from "./nutrition-event-service";
+import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { buildDailyTargetsFromPlan } from "@/utils/build-daily-targets";
 import { getClientNutritionTargets } from "./client-portal-service";
 

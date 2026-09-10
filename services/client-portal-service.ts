@@ -10,7 +10,7 @@ import { CLIENT_MEASUREMENT_EMBEDS } from "./measurements-service";
 import { getLastSubmittedPeriodEnd } from "./daily-log-permissions-service";
 import { resolveLogsOpenFrom } from "@/lib/daily-log-permissions";
 import { getEventsForDateRange } from "./training-event-service";
-import { getNutritionEventsForDateRange } from "./nutrition-event-service";
+import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { getClientWeekAnchor } from "./check-in-week-service";
 import { getClientTodayString } from "./today-service";

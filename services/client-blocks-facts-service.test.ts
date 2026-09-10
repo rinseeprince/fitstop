@@ -15,9 +15,16 @@ vi.mock("./training-service", () => ({
   getTrainingPlansOverlapping: vi.fn(),
 }));
 
+// The span's nutrition days are the day reader's (one computed day per date a
+// version covers); the facts never read a day table.
+vi.mock("./nutrition-days-service", () => ({
+  getNutritionEventsForDateRange: vi.fn(),
+}));
+
 import { supabaseAdmin } from "./supabase-admin";
 import { listBlocks } from "./client-blocks-service";
 import { getTrainingPlansOverlapping } from "./training-service";
+import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import {
   getBlockFacts,
   reduceToGoverningSegments,
@@ -46,20 +53,20 @@ function createMockQuery(result: MockResult) {
 }
 
 // Table-routed from(): one result for nutrition_plans, a QUEUE of page
-// results for nutrition_events, nutrition_plan_notes and training_events
-// (fetchAllPages issues one from() per page for each).
+// results for nutrition_plan_notes and training_events (fetchAllPages issues
+// one from() per page for each). The nutrition days are the reader's answer,
+// read lazily so a test can set them after the beforeEach.
 let versionsResult: MockResult;
-let eventPages: MockResult[];
+let nutritionDays: DayFixture[];
 let notePages: MockResult[];
 let trainingDayPages: MockResult[];
 
 function installFromMock() {
+  vi.mocked(getNutritionEventsForDateRange).mockImplementation(() =>
+    Promise.resolve(nutritionDays as never)
+  );
   vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
     if (table === "nutrition_plans") return createMockQuery(versionsResult);
-    if (table === "nutrition_events") {
-      const page = eventPages.shift() ?? { data: [], error: null };
-      return createMockQuery(page);
-    }
     if (table === "nutrition_plan_notes") {
       const page = notePages.shift() ?? { data: [], error: null };
       return createMockQuery(page);
@@ -101,17 +108,14 @@ function trainingDays(start: string, n: number) {
   return Array.from({ length: n }, (_, i) => ({ date: addDaysToDateString(start, i) }));
 }
 
-/** n sequential daily event rows from `start`. */
-function eventDays(
-  start: string,
-  n: number,
-  baseline: number | null,
-  isModified = false
-) {
+type DayFixture = { date: string; baselineCalories: number; isModified: boolean };
+
+/** n sequential computed days from `start` — the fields the facts read. */
+function eventDays(start: string, n: number, baseline: number, isModified = false): DayFixture[] {
   return Array.from({ length: n }, (_, i) => ({
     date: addDaysToDateString(start, i),
-    baseline_calories: baseline,
-    is_modified: isModified,
+    baselineCalories: baseline,
+    isModified,
   }));
 }
 
@@ -124,7 +128,7 @@ describe("getBlockFacts", () => {
     // block, so the "a block shows only what is on its days" rule is exercised
     // by its own cases rather than silently by every other one. A constant
     // baseline means the change marker still counts zero.
-    eventPages = [{ data: eventDays("2026-01-01", 500, 2000), error: null }];
+    nutritionDays = eventDays("2026-01-01", 500, 2000);
     trainingDayPages = [{ data: trainingDays("2026-01-01", 500), error: null }];
     installFromMock();
     vi.mocked(getTrainingPlansOverlapping).mockResolvedValue([]);
@@ -135,6 +139,7 @@ describe("getBlockFacts", () => {
     expect(await getBlockFacts(CLIENT_ID, TODAY)).toEqual([]);
     expect(supabaseAdmin.from).not.toHaveBeenCalled();
     expect(getTrainingPlansOverlapping).not.toHaveBeenCalled();
+    expect(getNutritionEventsForDateRange).not.toHaveBeenCalled();
   });
 
   it("partitions overlapping training plans per block window", async () => {
@@ -184,7 +189,7 @@ describe("getBlockFacts", () => {
       error: null,
     };
     // Days exist only in the first block.
-    eventPages = [{ data: eventDays("2026-08-01", 28, 2150), error: null }];
+    nutritionDays = eventDays("2026-08-01", 28, 2150);
     trainingDayPages = [{ data: trainingDays("2026-08-01", 28), error: null }];
 
     const [live, untouched] = await getBlockFacts(CLIENT_ID, TODAY);
@@ -214,7 +219,7 @@ describe("getBlockFacts", () => {
       data: [version("v26", "2026-07-06", "2027-12-31", 2550, 1975)],
       error: null,
     };
-    eventPages = [{ data: eventDays("2026-08-03", 28, 1975), error: null }];
+    nutritionDays = eventDays("2026-08-03", 28, 1975);
     trainingDayPages = [{ data: trainingDays("2026-08-03", 28), error: null }];
 
     const [empty, setup] = await getBlockFacts(CLIENT_ID, TODAY);
@@ -235,7 +240,7 @@ describe("getBlockFacts", () => {
       data: [version("v63", "2026-06-15", "2027-12-31", 2900, 2380)],
       error: null,
     };
-    eventPages = [{ data: [], error: null }];
+    nutritionDays = [];
     trainingDayPages = [{ data: trainingDays("2026-09-07", 28), error: null }];
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
@@ -252,7 +257,7 @@ describe("getBlockFacts", () => {
       { id: "p88", name: "Deload", effectiveFrom: "2026-08-12", effectiveUntil: "2027-12-31" },
     ]);
     versionsResult = { data: [], error: null };
-    eventPages = [{ data: [], error: null }];
+    nutritionDays = [];
     trainingDayPages = [
       { data: trainingDays(addDaysToDateString(TODAY, 1), 14), error: null },
     ];
@@ -275,7 +280,7 @@ describe("getBlockFacts", () => {
       ],
       error: null,
     };
-    eventPages = [{ data: eventDays("2026-06-01", 10, 2400), error: null }];
+    nutritionDays = eventDays("2026-06-01", 10, 2400);
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
@@ -301,9 +306,7 @@ describe("getBlockFacts", () => {
       ],
       error: null,
     };
-    eventPages = [
-      { data: eventDays("2026-07-27", 17, 2300, true), error: null },
-    ];
+    nutritionDays = eventDays("2026-07-27", 17, 2300, true);
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
@@ -346,17 +349,12 @@ describe("getBlockFacts", () => {
   it("the change marker skips hand-edited days: an edit stretch can neither flag nor mask", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-14")]);
     versionsResult = { data: [version("v", "2026-05-01", "2027-12-31", 2500)], error: null };
-    eventPages = [
-      {
-        data: [
+    nutritionDays = [
           ...eventDays("2026-06-01", 5, 2000),
           // Three hand-edited days at a different value: no flag.
           ...eventDays("2026-06-06", 3, 1500, true),
           ...eventDays("2026-06-09", 6, 2000),
-        ],
-        error: null,
-      },
-    ];
+        ];
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
@@ -399,15 +397,10 @@ describe("getBlockFacts", () => {
   it("the change window clamps at today — a queued change's future events do not flag yet", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-08-07", "2026-09-03")]);
     versionsResult = { data: [version("v", "2026-05-01", "2027-12-31", 2600, 2100)], error: null };
-    eventPages = [
-      {
-        data: [
+    nutritionDays = [
           ...eventDays("2026-08-07", 5, 2100), // through TODAY (2026-08-11)
           ...eventDays("2026-08-12", 10, 1700), // tomorrow's era — not lived
-        ],
-        error: null,
-      },
-    ];
+        ];
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition).toEqual({
@@ -511,26 +504,21 @@ describe("getBlockFacts", () => {
     });
   });
 
-  it("pages past the 1000-row cap — a change only visible on page 2 still flags", async () => {
-    // Page 1 is full (1000×2000) so the loop continues; page 2 (500×1800) is
-    // short and terminates it. The era transition sits at page 2's first row —
-    // a truncated read (page 1 only) would report changeCount 0.
+  it("reads the span's days ONCE through the day reader, and a change deep in a long span still flags", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2022-01-03", "2026-08-01")]);
     versionsResult = { data: [version("v", "2020-01-01", "2027-12-31", 2400, 1800)], error: null };
     const transitionDate = addDaysToDateString("2022-01-03", 1000);
-    eventPages = [
-      { data: eventDays("2022-01-03", 1000, 2000), error: null },
-      { data: eventDays(transitionDate, 500, 1800), error: null },
+    nutritionDays = [
+      ...eventDays("2022-01-03", 1000, 2000),
+      ...eventDays(transitionDate, 500, 1800),
     ];
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition?.changeCount).toBe(1);
     expect(fact.nutrition?.lastChangedOn).toBe(transitionDate);
-    // Both pages were requested: nutrition_events hit twice.
-    const eventCalls = vi
-      .mocked(supabaseAdmin.from)
-      .mock.calls.filter((call) => String(call[0]) === "nutrition_events");
-    expect(eventCalls).toHaveLength(2);
+    // One read for the whole journey span, never one per block or per page.
+    expect(getNutritionEventsForDateRange).toHaveBeenCalledTimes(1);
+    expect(getNutritionEventsForDateRange).toHaveBeenCalledWith(CLIENT_ID, "2022-01-03", "2026-08-01");
   });
 
   it("a program's window ends where its row says — a January program never reaches a June block", async () => {
@@ -593,16 +581,11 @@ describe("getBlockFacts", () => {
   it("counts multiple prescription changes and reports the newest era's first day", async () => {
     vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-21")]);
     versionsResult = { data: [version("v", "2026-05-01", "2027-12-31", null, 1800)], error: null };
-    eventPages = [
-      {
-        data: [
+    nutritionDays = [
           ...eventDays("2026-06-01", 8, 2000),
           ...eventDays("2026-06-09", 6, 1900),
           ...eventDays("2026-06-15", 7, 1800),
-        ],
-        error: null,
-      },
-    ];
+        ];
 
     const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
     expect(fact.nutrition?.calories).toBe(1800);

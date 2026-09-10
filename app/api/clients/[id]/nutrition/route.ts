@@ -38,8 +38,9 @@ import { AUDIT_ACTIONS } from "@/lib/constants";
 
 /**
  * GET: Return the active nutrition plan's baseline targets + calculator
- * settings for the coach view. Per-day targets are NOT here — they live on
- * nutrition_events and the calendar reads them directly.
+ * settings for the coach view. Per-day targets are NOT here — they are
+ * computed per date (services/nutrition-days-service.ts) and the calendar
+ * reads them through GET …/nutrition/events.
  */
 export async function GET(
   request: NextRequest,
@@ -156,8 +157,8 @@ export async function GET(
     // them into a 7-row `dailyTargets` projection, purely to feed the Plans-tab
     // stat band. That band is gone — the Plans hero now names the program and
     // the calendar owns per-day targets — so the two queries had no reader.
-    // Per-day truth lives on nutrition_events (events-as-SOT); the client
-    // portal builds its own date-accurate targets in client-portal-service.
+    // Per-day targets are computed per date from the covering version; the
+    // client portal builds its own date-accurate targets in client-portal-service.
 
     // Goal-drift flag (Session 7.8): does the goal that drives the client NOW
     // (effective-goal resolver) differ from the snapshot this active plan was

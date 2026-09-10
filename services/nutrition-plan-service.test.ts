@@ -36,6 +36,8 @@ import {
   getNextFutureNutritionPlan,
   getLatestNutritionPlan,
   getActiveNutritionPlanVersionsOverlapping,
+  getNutritionPrescriptionsForRange,
+  getNutritionPlanGrids,
   getNextNutritionVersionStartCap,
   getNutritionWindowsForClients,
   resolveNutritionPlacementEnd,
@@ -58,6 +60,7 @@ function createResolverQuery(result: { data: unknown; error: { message: string }
     or: vi.fn().mockReturnThis(),
     gt: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue(result),
@@ -356,6 +359,78 @@ describe('Nutrition Plan Service', () => {
         createResolverQuery({ data: null, error: { message: 'boom' } }) as any
       )
       await expect(getActiveNutritionPlanVersionsOverlapping('client-123', '2026-07-01')).rejects.toThrow(/boom/)
+    })
+  })
+
+  describe('getNutritionPrescriptionsForRange — the day reader\'s version read', () => {
+    it('applies the same overlap predicate and carries the three prescription fields', async () => {
+      const query = createResolverQuery({
+        data: [
+          { id: 'v1', effective_from: '2026-06-01', effective_until: '2026-07-19', baseline_calories: 1875, protein_target_g: 152, diet_type: 'balanced' },
+          { id: 'v2', effective_from: '2026-07-20', effective_until: '2026-09-13', baseline_calories: 2025, protein_target_g: 158, diet_type: 'high_carb' },
+        ],
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(query as any)
+
+      const versions = await getNutritionPrescriptionsForRange('client-123', '2026-07-01', '2026-08-01')
+
+      expect(query.select).toHaveBeenCalledWith(
+        'id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type'
+      )
+      expect(query.eq).toHaveBeenCalledWith('client_id', 'client-123')
+      expect(query.eq).toHaveBeenCalledWith('status', 'active')
+      expect(query.gte).toHaveBeenCalledWith('effective_until', '2026-07-01')
+      expect(query.lte).toHaveBeenCalledWith('effective_from', '2026-08-01')
+      expect(query.or).not.toHaveBeenCalled()
+      expect(query.order).toHaveBeenCalledWith('effective_from', { ascending: true })
+      expect(versions).toEqual([
+        { id: 'v1', effectiveFrom: '2026-06-01', effectiveUntil: '2026-07-19', baselineCalories: 1875, proteinTargetG: 152, dietType: 'balanced' },
+        { id: 'v2', effectiveFrom: '2026-07-20', effectiveUntil: '2026-09-13', baselineCalories: 2025, proteinTargetG: 158, dietType: 'high_carb' },
+      ])
+    })
+
+    it('throws on a query error', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(
+        createResolverQuery({ data: null, error: { message: 'boom' } }) as any
+      )
+      await expect(getNutritionPrescriptionsForRange('client-123', '2026-07-01', '2026-08-01')).rejects.toThrow(/boom/)
+    })
+  })
+
+  describe('getNutritionPlanGrids — the versions\' weekday grids in one read', () => {
+    it('reads every given version\'s rows in one IN query and maps them', async () => {
+      const query = createResolverQuery({
+        data: [
+          { nutrition_plan_id: 'v1', day_of_week: 'monday', calories: 1850, protein_g: 152, carb_g: 205, fat_g: 62 },
+          { nutrition_plan_id: 'v2', day_of_week: 'monday', calories: 2050, protein_g: 158, carb_g: 240, fat_g: 66 },
+        ],
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(query as any)
+
+      const rows = await getNutritionPlanGrids(['v1', 'v2'])
+
+      expect(supabaseAdmin.from).toHaveBeenCalledTimes(1)
+      expect(supabaseAdmin.from).toHaveBeenCalledWith('nutrition_plan_daily_targets')
+      expect(query.select).toHaveBeenCalledWith('nutrition_plan_id, day_of_week, calories, protein_g, carb_g, fat_g')
+      expect(query.in).toHaveBeenCalledWith('nutrition_plan_id', ['v1', 'v2'])
+      expect(rows).toEqual([
+        { planId: 'v1', dayOfWeek: 'monday', calories: 1850, proteinG: 152, carbG: 205, fatG: 62 },
+        { planId: 'v2', dayOfWeek: 'monday', calories: 2050, proteinG: 158, carbG: 240, fatG: 66 },
+      ])
+    })
+
+    it('reads nothing for no ids', async () => {
+      expect(await getNutritionPlanGrids([])).toEqual([])
+      expect(supabaseAdmin.from).not.toHaveBeenCalled()
+    })
+
+    it('throws on a query error', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(
+        createResolverQuery({ data: null, error: { message: 'boom' } }) as any
+      )
+      await expect(getNutritionPlanGrids(['v1'])).rejects.toThrow(/boom/)
     })
   })
 

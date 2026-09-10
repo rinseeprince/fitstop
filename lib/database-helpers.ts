@@ -42,7 +42,6 @@ export type TrainingPlanUpdate = Database["public"]["Tables"]["training_plans"][
 
 export type TrainingEventRow = Database["public"]["Tables"]["training_events"]["Row"];
 export type TrainingEventInsert = Database["public"]["Tables"]["training_events"]["Insert"];
-export type NutritionEventRow = Database["public"]["Tables"]["nutrition_events"]["Row"];
 export type NutritionEventInsert = Database["public"]["Tables"]["nutrition_events"]["Insert"];
 
 // Coach library types (added by migration 084)

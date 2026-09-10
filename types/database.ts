@@ -1813,6 +1813,63 @@ export type Database = {
           },
         ]
       }
+      nutrition_day_edits: {
+        Row: {
+          calories: number
+          carb_g: number
+          client_id: string
+          coach_id: string | null
+          created_at: string
+          date: string
+          fat_g: number
+          id: string
+          note: string | null
+          protein_g: number
+          updated_at: string
+        }
+        Insert: {
+          calories: number
+          carb_g: number
+          client_id: string
+          coach_id?: string | null
+          created_at?: string
+          date: string
+          fat_g: number
+          id?: string
+          note?: string | null
+          protein_g: number
+          updated_at?: string
+        }
+        Update: {
+          calories?: number
+          carb_g?: number
+          client_id?: string
+          coach_id?: string | null
+          created_at?: string
+          date?: string
+          fat_g?: number
+          id?: string
+          note?: string | null
+          protein_g?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nutrition_day_edits_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nutrition_day_edits_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       nutrition_events: {
         Row: {
           baseline_calories: number

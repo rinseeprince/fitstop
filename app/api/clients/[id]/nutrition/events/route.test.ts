@@ -14,14 +14,14 @@ vi.mock("@/services/client-service", () => ({
   getClientById: vi.fn(),
 }));
 
-vi.mock("@/services/nutrition-event-service", () => ({
+vi.mock("@/services/nutrition-days-service", () => ({
   getNutritionEventsForDateRange: vi.fn(),
 }));
 
 import { GET } from "./route";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
-import { getNutritionEventsForDateRange } from "@/services/nutrition-event-service";
+import { getNutritionEventsForDateRange } from "@/services/nutrition-days-service";
 
 const mockCoachId = vi.mocked(getAuthenticatedCoachId);
 const mockGetClient = vi.mocked(getClientById);
@@ -51,8 +51,6 @@ const sampleEvent: NutritionEvent = {
   note: null,
   coachNote: null,
   status: "scheduled",
-  createdAt: "",
-  updatedAt: "",
 };
 
 describe("GET /api/clients/[id]/nutrition/events", () => {

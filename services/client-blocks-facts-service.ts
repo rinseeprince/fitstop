@@ -6,8 +6,10 @@ import {
 } from "./training-service";
 import { versionCoversDate } from "./nutrition-plan-service";
 import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
+import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { fetchAllPages } from "@/lib/paged-fetch";
 import { addDaysToDateString } from "@/lib/date-helpers";
+import type { NutritionEvent } from "@/types/check-in";
 import type {
   BlockFacts,
   BlockNutritionEra,
@@ -19,42 +21,10 @@ import type {
 // The chain routes stay pure CRUD; this service decorates each block with the
 // training and nutrition story of its window. Everything is fetched ONCE for
 // the whole journey span and partitioned per block in memory — round trips
-// are constant (blocks + 5 parallel reads), never per-block.
-
-type EventCaloriesRow = {
-  date: string;
-  baseline_calories: number | null;
-  is_modified: boolean;
-};
-
-/**
- * Complete narrow read of the span's event calories. Paged via fetchAllPages
- * because this feeds an aggregate (the modal baseline) — an unpaged read
- * silently truncates at PostgREST's ~1000-row cap, which a 20-block journey
- * at 12 weeks each (1,680 dense event days) already crosses. `date` is unique
- * per client (`nutrition_events UNIQUE(client_id, date)`), so ordering by it
- * satisfies the deterministic-order contract with no extra tiebreak. Worst
- * case: 20 blocks × 52 weeks = 7,280 rows ≈ 8 pages of 3 columns each;
- * a realistic 12–40-week journey is 84–280 rows, one page.
- */
-async function fetchEventCalories(
-  clientId: string,
-  startDate: string,
-  endDate: string
-): Promise<EventCaloriesRow[]> {
-  return fetchAllPages<EventCaloriesRow>(
-    (from, to) =>
-      supabaseAdmin
-        .from("nutrition_events")
-        .select("date, baseline_calories, is_modified")
-        .eq("client_id", clientId)
-        .gte("date", startDate)
-        .lte("date", endDate)
-        .order("date", { ascending: true })
-        .range(from, to),
-    { errorLabel: "block-facts nutrition events" }
-  );
-}
+// are constant (blocks + 5 parallel reads, one of them the day reader's own
+// batch), never per-block. The span's nutrition days come from the day reader
+// (services/nutrition-days-service.ts): one computed day per date a version
+// covers, complete by construction — there is no day table to page.
 
 /**
  * The dates the client has a TRAINING event on, across the span. Narrow (one
@@ -160,18 +130,13 @@ async function fetchVersionTdeeWindows(
  * honour a custom-macros override; deficit = that version's tdee − calories
  * (positive = deficit), null without a tdee.
  *
- * The "Changed" marker keeps its event-based detection: baseline transitions
- * across consecutive UNMODIFIED lived days. That catches every prescription
- * change that regenerated events — including pre-versioning history no plan
- * row remembers — while hand-edited stretches can neither flag nor mask one.
- * Pre-versioning caveat, recorded: for blocks that ended before migration
- * 144, the single legacy version's window covers them and its LAST-saved
- * numbers stand in for eras the row no longer remembers — the events-era
- * marker is the honest "it changed" signal there. No rounding here; display
- * rounding belongs to the renderer.
+ * The "Changed" marker keeps its day-based detection: baseline transitions
+ * across consecutive UNMODIFIED lived days, read off the computed days —
+ * while hand-edited stretches can neither flag nor mask one. No rounding
+ * here; display rounding belongs to the renderer.
  */
 function deriveNutritionFact(
-  events: EventCaloriesRow[],
+  events: NutritionEvent[],
   versions: VersionTdeeWindow[],
   block: ClientBlock,
   clientToday: string
@@ -193,13 +158,13 @@ function deriveNutritionFact(
   let lastChangedOn: string | null = null;
   let previous: number | null = null;
   for (const event of events) {
-    if (event.is_modified || event.baseline_calories == null) continue;
+    if (event.isModified) continue;
     if (event.date < block.startsOn || event.date > windowEnd) continue;
-    if (previous !== null && event.baseline_calories !== previous) {
+    if (previous !== null && event.baselineCalories !== previous) {
       changeCount += 1;
       lastChangedOn = event.date;
     }
-    previous = event.baseline_calories;
+    previous = event.baselineCalories;
   }
 
   const calories = versionCalories(version);
@@ -355,7 +320,7 @@ export async function getBlockFacts(
   const [plans, versions, events, notes, trainingDays] = await Promise.all([
     getTrainingPlansOverlapping(clientId, spanStart, spanEnd),
     fetchVersionTdeeWindows(clientId, spanStart, spanEnd),
-    fetchEventCalories(clientId, spanStart, spanEnd),
+    getNutritionEventsForDateRange(clientId, spanStart, spanEnd),
     listNutritionPlanNotesInRange(clientId, spanStart, spanEnd),
     // Fifth parallel read, partitioned per block in memory like the other four
     // — round trips stay constant in the number of blocks, never per-block.

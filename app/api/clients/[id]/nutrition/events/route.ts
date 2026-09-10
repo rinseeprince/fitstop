@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
-import { getNutritionEventsForDateRange } from "@/services/nutrition-event-service";
+import { getNutritionEventsForDateRange } from "@/services/nutrition-days-service";
 
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 // The coach calendar grid spans at most a 6-week month view (42 days); allow a
@@ -10,8 +10,9 @@ const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 62;
 
 /**
- * GET: Ranged read of a client's nutrition_events for the coach calendar.
- * Thin wrap of getNutritionEventsForDateRange.
+ * GET: Ranged read of a client's nutrition days for the coach calendar — the
+ * days as COMPUTED (services/nutrition-days-service.ts), one per date a
+ * version covers. Thin wrap of getNutritionEventsForDateRange.
  * Query params: startDate=YYYY-MM-DD&endDate=YYYY-MM-DD (inclusive).
  */
 export async function GET(

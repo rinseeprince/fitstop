@@ -185,8 +185,6 @@ describe("buildNutritionSummary", () => {
       note: null,
       coachNote: null,
       status: "scheduled",
-      createdAt: "",
-      updatedAt: "",
     };
 
     const result = buildNutritionSummary(
@@ -223,8 +221,6 @@ describe("buildNutritionSummary", () => {
       note: null,
       coachNote: null,
       status: "logged",
-      createdAt: "",
-      updatedAt: "",
     };
 
     const result = buildNutritionSummary(

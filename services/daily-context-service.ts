@@ -6,14 +6,15 @@
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getEventForDate } from "./training-event-service";
-import { getNutritionEventForDate } from "./nutrition-event-service";
+import { getNutritionEventForDate } from "./nutrition-days-service";
 import { getNutritionPlanIdForDate } from "./nutrition-plan-service";
 import { getActiveTrainingPlanId } from "./training-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 
 /**
- * Find the plan that was active on a specific date and return its daily target.
- * Resolves from the date's nutrition_event; returns null when there is no event (no template fallback exists yet).
+ * The client's target on a specific date, from the day as COMPUTED (the version
+ * covering the date, its grid row, the session on the date, the coach's edit).
+ * Returns null when no version covers the date — a gap between plans.
  * Optional includeActivityBurn / surplusAsCarbs avoid repeated clients table queries when called in a loop.
  */
 type PlanDayTarget = {
@@ -70,29 +71,25 @@ type PlanContextForDate = {
 
 /**
  * Single resolver every per-card write calls to populate the child `*_plan_id`
- * links. Each id prefers the date-accurate event, then falls back to the plan
- * resolved FOR THAT DATE (versioned model, migration 144) — a backdated log
- * stamps the version that governed its own day, and a queued save no longer
- * mis-stamps today's log with the future version's id.
+ * links. The nutrition id is the version COVERING the log's date — the same
+ * version a computed day derives from, so there is no day-row leg to prefer —
+ * and the training id prefers the date-accurate event, then falls back to the
+ * active plan. A backdated log stamps the version that governed its own day,
+ * and a queued save never mis-stamps today's log with the future version's id.
  */
 export const resolvePlanContextForDate = async (
   clientId: string,
   date: string
 ): Promise<PlanContextForDate> => {
-  const [nutritionEvent, trainingEvent] = await Promise.all([
-    getNutritionEventForDate(clientId, date),
+  // nutrition_plan_id is written by upsertNutritionLog: the version covering
+  // the log's date, never a date-blind singleton read. A pre-start day (a
+  // queued-first-plan client) and a gap after a delete have no covering
+  // version, so the stamp is null and the guard below rejects the write: a
+  // client cannot log nutrition on a day with no target, which is correct.
+  const [nutritionPlanId, trainingEvent] = await Promise.all([
+    getNutritionPlanIdForDate(clientId, date),
     getEventForDate(clientId, date),
   ]);
-
-  // nutrition_plan_id is written by upsertNutritionLog; on a no-event day it
-  // falls back to the version COVERING the log's date (never a date-blind
-  // singleton read). The date is already in scope — this costs nothing. A
-  // pre-start day (a queued-first-plan client) has no covering version, so the
-  // stamp is null and the guard below rejects the write: a client cannot log
-  // nutrition before their plan starts, which is correct — there is no target
-  // that day.
-  const nutritionPlanId =
-    nutritionEvent?.nutritionPlanId ?? (await getNutritionPlanIdForDate(clientId, date));
 
   // training_plan_id prefers the date's event, then falls back to the active
   // plan so the per-card training write (Session 5.3) links even on a no-event
@@ -158,10 +155,10 @@ type NutritionForDate = {
 };
 
 /**
- * Resolve the nutrition card for a date by the ARCHITECTURE three-level priority:
- *   1. Logged day  → the snapshot in `nutrition_logs` (authoritative).
- *   2. Unlogged + event → the `nutrition_event` target (via getPlanTargetForDate).
- *   3. Unlogged + no event → null (level-3 template fallback is unbuilt — ARCHITECTURE:258).
+ * Resolve the nutrition card for a date by the read priority:
+ *   1. Logged day → the snapshot in `nutrition_logs` (authoritative).
+ *   2. Unlogged day a version covers → the computed day (via getPlanTargetForDate).
+ *   3. Unlogged day no version covers → null: no target exists that day.
  * A `nutrition_logs` row existing = "logged" regardless of values (distinguishes absent vs
  * empty, which the daily_logs_full view cannot).
  */

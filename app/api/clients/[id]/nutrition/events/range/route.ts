@@ -11,8 +11,8 @@ import {
 } from "@/services/nutrition-event-edit-service";
 
 /**
- * PATCH - Materialize a coach edit (absolute or %/amount delta) onto every
- * future scheduled nutrition event in a date range. Today-forward only.
+ * PATCH - Write a coach edit (absolute or %/amount delta) onto every selected
+ * future day (`nutrition_day_edits`). Today-forward only.
  */
 export async function PATCH(
   request: NextRequest,
@@ -84,12 +84,13 @@ export async function PATCH(
       };
     }
 
-    const { updated } = await materializeNutritionEventDays(
+    const { updated } = await materializeNutritionEventDays({
       clientId,
-      futureDates,
+      coachId,
+      dates: futureDates,
       edit,
-      clientToday
-    );
+      clientToday,
+    });
 
     return NextResponse.json({ success: true, updated }, { status: 200 });
   } catch (error) {

@@ -1,350 +1,359 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { NutritionEvent } from "@/types/check-in";
 
-vi.mock("./supabase-admin", () => ({
-  supabaseAdmin: { from: vi.fn() },
+vi.mock("./nutrition-days-service", () => ({
+  getNutritionEventsForDateRange: vi.fn(),
 }));
 
-vi.mock("@/services/nutrition-event-service", () => ({
-  regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
+vi.mock("./nutrition-day-edits-service", () => ({
+  upsertNutritionDayEdits: vi.fn().mockResolvedValue(undefined),
+  deleteNutritionDayEdits: vi.fn(),
 }));
 
 vi.mock("@/utils/nutrition-helpers", () => ({
   calculateDailyMacros: vi.fn().mockReturnValue({ proteinG: 150, carbsG: 200, fatG: 60 }),
 }));
 
-import { supabaseAdmin } from "./supabase-admin";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import { getNutritionEventsForDateRange } from "./nutrition-days-service";
+import {
+  deleteNutritionDayEdits,
+  upsertNutritionDayEdits,
+} from "./nutrition-day-edits-service";
+import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import {
   materializeNutritionEventDays,
   resetNutritionEventDays,
 } from "./nutrition-event-edit-service";
 
-type Row = {
-  id: string;
-  baseline_calories: number;
-  protein_g: number;
-  carb_g: number;
-  fat_g: number;
-  training_burn_calories: number;
-  calorie_surplus_percentage: number | null;
-  diet_type: string;
-};
-
-const updateEqSpy = vi.fn();
-const updateInSpy = vi.fn();
-const updateSpy = vi.fn();
-const selectInSpy = vi.fn();
-
-/** from() returns a node serving both the IN-list select and the updates. */
-function mockEvents(rows: Row[]): void {
-  // Update chain is thenable so `.update().eq(...)` (materialize: 1 eq),
-  // `.update().eq().eq().eq()` (single reset: 3 eqs), and
-  // `.update().eq().eq().in()` (multi reset: 2 eqs + in) all await { error: null }.
-  const updateChain: Record<string, unknown> = {
-    then: (resolve: (v: { error: null }) => void) => resolve({ error: null }),
-  };
-  updateChain.eq = updateEqSpy.mockReturnValue(updateChain);
-  updateChain.in = updateInSpy.mockReturnValue(updateChain);
-  updateSpy.mockReturnValue(updateChain);
-
-  const selectChain: Record<string, unknown> = {};
-  selectChain.eq = vi.fn().mockReturnValue(selectChain);
-  selectChain.in = selectInSpy.mockResolvedValue({ data: rows, error: null });
-
-  vi.mocked(supabaseAdmin.from).mockReturnValue({
-    select: vi.fn().mockReturnValue(selectChain),
-    update: updateSpy,
-  } as never);
-}
-
 const clientId = "client-1";
+const coachId = "coach-7";
+const TODAY = "2026-01-15";
 
-function row(overrides: Partial<Row> = {}): Row {
+/** One computed day, the plan's own numbers unless overridden. */
+function day(overrides: Partial<NutritionEvent> = {}): NutritionEvent {
   return {
-    id: "e1",
-    baseline_calories: 2000,
-    protein_g: 150,
-    carb_g: 200,
-    fat_g: 60,
-    training_burn_calories: 0,
-    calorie_surplus_percentage: null,
-    diet_type: "balanced",
+    id: "2026-02-01",
+    clientId,
+    nutritionPlanId: "v-1",
+    date: "2026-02-01",
+    dayOfWeek: "sunday",
+    baselineCalories: 2000,
+    trainingBurnCalories: 0,
+    proteinG: 150,
+    carbG: 200,
+    fatG: 60,
+    dietType: "balanced",
+    isTrainingDay: false,
+    calorieSurplusPercentage: null,
+    isModified: false,
+    note: null,
+    coachNote: null,
+    status: "scheduled",
     ...overrides,
   };
 }
 
+const writtenRows = () =>
+  vi.mocked(upsertNutritionDayEdits).mock.calls[0][2];
+
 describe("nutrition-event-edit-service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([day()]);
+    vi.mocked(deleteNutritionDayEdits).mockResolvedValue(0);
   });
 
   describe("materializeNutritionEventDays", () => {
-    it("absolute: materializes calories + macros, freezes surplus/burn, flags modified", async () => {
-      mockEvents([row()]);
-
-      const { updated } = await materializeNutritionEventDays(
+    it("absolute: writes the calories with the day's macros rebalanced, as the coach's edit row", async () => {
+      const { updated } = await materializeNutritionEventDays({
         clientId,
-        ["2026-02-01"],
-        { mode: "absolute", calories: 1800 },
-        "2026-01-15"
-      );
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "absolute", calories: 1800 },
+        clientToday: TODAY,
+      });
 
       expect(updated).toBe(1);
-      expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          baseline_calories: 1800,
-          protein_g: 150,
-          carb_g: 200,
-          fat_g: 60,
-          calorie_surplus_percentage: null,
-          training_burn_calories: 0,
-          is_modified: true,
-        })
-      );
-      expect(updateEqSpy).toHaveBeenCalledWith("id", "e1");
+      expect(upsertNutritionDayEdits).toHaveBeenCalledTimes(1);
+      expect(upsertNutritionDayEdits).toHaveBeenCalledWith(clientId, coachId, [
+        { date: "2026-02-01", calories: 1800, proteinG: 150, carbG: 200, fatG: 60, note: null },
+      ]);
+      // Protein held at the day's own grams, carbs/fat rebalanced to the total.
+      expect(calculateDailyMacros).toHaveBeenCalledWith(1800, 150, false, "balanced");
     });
 
-    it("delta: scales the surplus-stacked displayed calories", async () => {
-      // displayed = round(2000 * 1.1) = 2200; * 0.5 = 1100
-      mockEvents([row({ calorie_surplus_percentage: 10 })]);
+    it("reads the computed days ONCE over the selection's span and writes ONLY the selected dates", async () => {
+      // Mon + Wed + Sat with Tue/Thu/Fri gaps: the span is read whole, the
+      // gaps are never written.
+      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue(
+        ["2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-07"].map(
+          (date) => day({ id: date, date })
+        )
+      );
 
-      await materializeNutritionEventDays(
+      const { updated } = await materializeNutritionEventDays({
         clientId,
-        ["2026-02-01"],
-        { mode: "delta", percent: -50 },
-        "2026-01-15"
-      );
+        coachId,
+        dates: ["2026-02-07", "2026-02-02", "2026-02-04"],
+        edit: { mode: "absolute", calories: 1800 },
+        clientToday: TODAY,
+      });
 
-      expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ baseline_calories: 1100, calorie_surplus_percentage: null })
-      );
+      expect(getNutritionEventsForDateRange).toHaveBeenCalledTimes(1);
+      expect(getNutritionEventsForDateRange).toHaveBeenCalledWith(clientId, "2026-02-02", "2026-02-07");
+      expect(writtenRows().map((row) => row.date)).toEqual(["2026-02-02", "2026-02-04", "2026-02-07"]);
+      expect(updated).toBe(3);
+    });
+
+    it("delta: scales the surplus-stacked displayed calories, and the edit takes no surplus of its own", async () => {
+      // displayed = round(2000 * 1.1) = 2200; * 0.5 = 1100
+      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
+        day({ calorieSurplusPercentage: 10, isTrainingDay: true }),
+      ]);
+
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "delta", percent: -50 },
+        clientToday: TODAY,
+      });
+
+      expect(writtenRows()[0]).toMatchObject({ calories: 1100 });
+      expect(writtenRows()[0]).not.toHaveProperty("calorieSurplusPercentage");
+    });
+
+    it("delta on an already-edited day scales the edit's own calories — no surplus, no burn stack", async () => {
+      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
+        day({ baselineCalories: 1500, isModified: true, note: "Deload week" }),
+      ]);
+
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "delta", percent: 10 },
+        clientToday: TODAY,
+      });
+
+      expect(writtenRows()[0]).toMatchObject({ calories: 1650, note: "Deload week" });
+    });
+
+    it("delta: the legacy flat burn is part of the base when no surplus is set", async () => {
+      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
+        day({ trainingBurnCalories: 300 }),
+      ]);
+
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "delta", calorieDelta: -100 },
+        clientToday: TODAY,
+      });
+
+      expect(writtenRows()[0]).toMatchObject({ calories: 2200 });
     });
 
     it("delta: floors the resolved calories at zero for oversized negative deltas", async () => {
-      mockEvents([row()]);
-
-      await materializeNutritionEventDays(
+      await materializeNutritionEventDays({
         clientId,
-        ["2026-02-01"],
-        { mode: "delta", calorieDelta: -5000 },
-        "2026-01-15"
-      );
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "delta", calorieDelta: -5000 },
+        clientToday: TODAY,
+      });
 
-      expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ baseline_calories: 0 })
-      );
+      expect(writtenRows()[0]).toMatchObject({ calories: 0 });
     });
 
-    it("delta holdProtein=false: scales the day's stored macro split onto the new total", async () => {
+    it("delta holdProtein=false: scales the day's macro split onto the new total", async () => {
       // Surplus day: base = round(2000 * 1.1) = 2200; -50% -> 1100 kcal.
-      // Stored split kcal: p 150*4=600, c 200*4=800, f 60*9=540 (sum 1940).
+      // Split kcal: p 150*4=600, c 200*4=800, f 60*9=540 (sum 1940).
       // Shares of 1100: p round(1100*600/1940/4)=85, c round(...800.../4)=113,
       // f round(...540.../9)=34 -> sums to 1098 ~ 1100.
-      mockEvents([row({ calorie_surplus_percentage: 10 })]);
-
-      await materializeNutritionEventDays(
-        clientId,
-        ["2026-02-01"],
-        { mode: "delta", percent: -50, holdProtein: false },
-        "2026-01-15"
-      );
-
-      expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          baseline_calories: 1100,
-          protein_g: 85,
-          carb_g: 113,
-          fat_g: 34,
-        })
-      );
-    });
-
-    it("delta holdProtein=false with zero stored macros: falls back to the diet rebalance", async () => {
-      mockEvents([row({ protein_g: 0, carb_g: 0, fat_g: 0 })]);
-
-      await materializeNutritionEventDays(
-        clientId,
-        ["2026-02-01"],
-        { mode: "delta", calorieDelta: -200, holdProtein: false },
-        "2026-01-15"
-      );
-
-      // calculateDailyMacros is mocked to { 150, 200, 60 }.
-      expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ protein_g: 150, carb_g: 200, fat_g: 60 })
-      );
-    });
-
-    it("delta: holdProtein absent and holdProtein=true produce the identical legacy update (regression pin)", async () => {
-      mockEvents([row({ calorie_surplus_percentage: 10 })]);
-      await materializeNutritionEventDays(
-        clientId,
-        ["2026-02-01"],
-        { mode: "delta", percent: -50 },
-        "2026-01-15"
-      );
-      const absentPayload = updateSpy.mock.calls[0][0] as Record<string, unknown>;
-
-      vi.clearAllMocks();
-      mockEvents([row({ calorie_surplus_percentage: 10 })]);
-      await materializeNutritionEventDays(
-        clientId,
-        ["2026-02-01"],
-        { mode: "delta", percent: -50, holdProtein: true },
-        "2026-01-15"
-      );
-      const truePayload = updateSpy.mock.calls[0][0] as Record<string, unknown>;
-
-      // Both hit the hold-protein rebalance branch (mock: 150/200/60).
-      const { updated_at: _a, ...absentRest } = absentPayload;
-      const { updated_at: _b, ...trueRest } = truePayload;
-      expect(absentRest).toEqual(trueRest);
-      expect(absentRest).toMatchObject({ protein_g: 150, carb_g: 200, fat_g: 60 });
-    });
-
-    it("scattered: queries EXACTLY the selected days (gaps are never touched)", async () => {
-      mockEvents([row()]);
-
-      // Mon + Wed + Sat with Tue/Thu/Fri gaps — the gaps are not in the IN-list.
-      await materializeNutritionEventDays(
-        clientId,
-        ["2026-02-02", "2026-02-04", "2026-02-07"],
-        { mode: "absolute", calories: 1800 },
-        "2026-01-15"
-      );
-
-      expect(selectInSpy).toHaveBeenCalledWith("date", [
-        "2026-02-02",
-        "2026-02-04",
-        "2026-02-07",
+      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
+        day({ calorieSurplusPercentage: 10 }),
       ]);
+
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "delta", percent: -50, holdProtein: false },
+        clientToday: TODAY,
+      });
+
+      expect(writtenRows()[0]).toMatchObject({ calories: 1100, proteinG: 85, carbG: 113, fatG: 34 });
+      expect(calculateDailyMacros).not.toHaveBeenCalled();
     });
 
-    it("partial-past: drops past dates, keeps the future ones in the IN-list", async () => {
-      mockEvents([row()]);
+    it("delta holdProtein=false with zero stored macros: falls back to the diet split", async () => {
+      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
+        day({ proteinG: 0, carbG: 0, fatG: 0 }),
+      ]);
 
-      await materializeNutritionEventDays(
+      await materializeNutritionEventDays({
         clientId,
-        ["2026-01-01", "2026-02-01"],
-        { mode: "absolute", calories: 1800 },
-        "2026-01-15"
-      );
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "delta", percent: -10, holdProtein: false },
+        clientToday: TODAY,
+      });
 
-      expect(selectInSpy).toHaveBeenCalledWith("date", ["2026-02-01"]);
+      expect(calculateDailyMacros).toHaveBeenCalledWith(1800, 0, false, "balanced");
+      expect(writtenRows()[0]).toMatchObject({ proteinG: 150, carbG: 200, fatG: 60 });
+    });
+
+    it("absolute with explicit macros: writes them verbatim", async () => {
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "absolute", calories: 1900, proteinG: 170, carbG: 190, fatG: 55 },
+        clientToday: TODAY,
+      });
+
+      expect(writtenRows()[0]).toMatchObject({ calories: 1900, proteinG: 170, carbG: 190, fatG: 55 });
+      expect(calculateDailyMacros).not.toHaveBeenCalled();
+    });
+
+    it("absolute with protein only: holds THAT protein and rebalances the rest", async () => {
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "absolute", calories: 1900, proteinG: 170 },
+        clientToday: TODAY,
+      });
+
+      expect(calculateDailyMacros).toHaveBeenCalledWith(1900, 170, false, "balanced");
+    });
+
+    it("partial-past: drops past dates and reads only the future span", async () => {
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: ["2026-01-01", "2026-02-01"],
+        edit: { mode: "absolute", calories: 1800 },
+        clientToday: TODAY,
+      });
+
+      expect(getNutritionEventsForDateRange).toHaveBeenCalledWith(clientId, "2026-02-01", "2026-02-01");
+      expect(writtenRows().map((row) => row.date)).toEqual(["2026-02-01"]);
     });
 
     it("no-ops when every selected day is in the past", async () => {
-      const { updated } = await materializeNutritionEventDays(
+      const { updated } = await materializeNutritionEventDays({
         clientId,
-        ["2026-01-01", "2026-01-10"],
-        { mode: "absolute", calories: 1800 },
-        "2026-01-15"
-      );
+        coachId,
+        dates: ["2026-01-01", "2026-01-10"],
+        edit: { mode: "absolute", calories: 1800 },
+        clientToday: TODAY,
+      });
+
       expect(updated).toBe(0);
-      expect(supabaseAdmin.from).not.toHaveBeenCalled();
+      expect(getNutritionEventsForDateRange).not.toHaveBeenCalled();
+      expect(upsertNutritionDayEdits).not.toHaveBeenCalled();
     });
 
-    // D-B: undefined = preserve (omit the column); "" = clear (null); text = set.
+    it("skips a selected day no version covers — there is no target to edit", async () => {
+      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([]);
+
+      const { updated } = await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "absolute", calories: 1800 },
+        clientToday: TODAY,
+      });
+
+      expect(updated).toBe(0);
+      expect(upsertNutritionDayEdits).not.toHaveBeenCalled();
+    });
+
+    // D-B: undefined = preserve the day's standing note; "" = clear; text = set.
     it("note set: writes the trimmed note text", async () => {
-      mockEvents([row()]);
-      await materializeNutritionEventDays(
+      await materializeNutritionEventDays({
         clientId,
-        ["2026-02-01"],
-        { mode: "absolute", calories: 1800, note: "  Deload week  " },
-        "2026-01-15"
-      );
-      expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ note: "Deload week" })
-      );
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "absolute", calories: 1800, note: "  Deload week  " },
+        clientToday: TODAY,
+      });
+      expect(writtenRows()[0]).toMatchObject({ note: "Deload week" });
     });
 
-    it("note empty string: clears the note (null)", async () => {
-      mockEvents([row()]);
-      await materializeNutritionEventDays(
+    it("note empty string: clears the note", async () => {
+      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
+        day({ isModified: true, note: "Old note" }),
+      ]);
+      await materializeNutritionEventDays({
         clientId,
-        ["2026-02-01"],
-        { mode: "absolute", calories: 1800, note: "" },
-        "2026-01-15"
-      );
-      expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ note: null })
-      );
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "absolute", calories: 1800, note: "" },
+        clientToday: TODAY,
+      });
+      expect(writtenRows()[0]).toMatchObject({ note: null });
     });
 
-    it("note undefined: preserves any existing note (column omitted from the update)", async () => {
-      mockEvents([row()]);
-      await materializeNutritionEventDays(
+    it("note undefined: the day's standing note survives the edit", async () => {
+      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
+        day({ isModified: true, note: "Old note" }),
+      ]);
+      await materializeNutritionEventDays({
         clientId,
-        ["2026-02-01"],
-        { mode: "absolute", calories: 1800 },
-        "2026-01-15"
-      );
-      const payload = updateSpy.mock.calls[0][0] as Record<string, unknown>;
-      expect(payload).not.toHaveProperty("note");
+        coachId,
+        dates: ["2026-02-01"],
+        edit: { mode: "absolute", calories: 1800 },
+        clientToday: TODAY,
+      });
+      expect(writtenRows()[0]).toMatchObject({ note: "Old note" });
     });
   });
 
-  describe("resetNutritionEventDays (multi)", () => {
-    it("clears the date list then regenerates exactly those days", async () => {
-      mockEvents([]);
+  describe("resetNutritionEventDays", () => {
+    it("removes the edits on the future days in one call and reports how many held one", async () => {
+      vi.mocked(deleteNutritionDayEdits).mockResolvedValue(2);
 
-      const { reset } = await resetNutritionEventDays(
+      const { reset } = await resetNutritionEventDays({
         clientId,
-        ["2026-02-10", "2026-02-01", "2026-02-05"],
-        "plan-1",
-        "2026-01-15"
-      );
+        dates: ["2026-02-10", "2026-02-01", "2026-02-05"],
+        clientToday: TODAY,
+      });
 
-      expect(reset).toBe(3);
-      expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ is_modified: false, note: null })
-      );
-      expect(updateInSpy).toHaveBeenCalledWith("date", [
+      expect(reset).toBe(2);
+      expect(deleteNutritionDayEdits).toHaveBeenCalledTimes(1);
+      expect(deleteNutritionDayEdits).toHaveBeenCalledWith(clientId, [
         "2026-02-10",
         "2026-02-01",
         "2026-02-05",
       ]);
-      // Regen covers exactly the reset days — a scattered selection no longer
-      // collapses to the earliest date and rewrites everything after it.
-      expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
-        clientId,
-        "plan-1",
-        { kind: "dates", dates: ["2026-02-10", "2026-02-01", "2026-02-05"] }
-      );
-      expect(updateSpy.mock.invocationCallOrder[0]).toBeLessThan(
-        vi.mocked(regenerateFutureNutritionEvents).mock.invocationCallOrder[0]
-      );
     });
 
     it("partial-past: resets only the future days", async () => {
-      mockEvents([]);
+      vi.mocked(deleteNutritionDayEdits).mockResolvedValue(1);
 
-      const { reset } = await resetNutritionEventDays(
+      const { reset } = await resetNutritionEventDays({
         clientId,
-        ["2026-01-01", "2026-02-01"],
-        "plan-1",
-        "2026-01-15"
-      );
+        dates: ["2026-01-01", "2026-02-01"],
+        clientToday: TODAY,
+      });
 
       expect(reset).toBe(1);
-      expect(updateInSpy).toHaveBeenCalledWith("date", ["2026-02-01"]);
-      expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(
-        clientId,
-        "plan-1",
-        { kind: "dates", dates: ["2026-02-01"] }
-      );
+      expect(deleteNutritionDayEdits).toHaveBeenCalledWith(clientId, ["2026-02-01"]);
     });
 
     it("no-ops when every selected day is in the past", async () => {
-      const { reset } = await resetNutritionEventDays(
+      const { reset } = await resetNutritionEventDays({
         clientId,
-        ["2026-01-01"],
-        "plan-1",
-        "2026-01-15"
-      );
+        dates: ["2026-01-01"],
+        clientToday: TODAY,
+      });
+
       expect(reset).toBe(0);
-      expect(supabaseAdmin.from).not.toHaveBeenCalled();
-      expect(regenerateFutureNutritionEvents).not.toHaveBeenCalled();
+      expect(deleteNutritionDayEdits).not.toHaveBeenCalled();
     });
   });
 });

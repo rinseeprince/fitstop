@@ -2,7 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getActiveTrainingPlan } from "./training-service";
 import { getNutritionPlanForDate } from "./nutrition-plan-service";
 import { countEventsInRange, getEventsForDateRange } from "./training-event-service";
-import { getNutritionEventsForDateRange } from "./nutrition-event-service";
+import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
 import { getClientTodayString } from "./today-service";

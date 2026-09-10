@@ -6,7 +6,7 @@ import {
 } from "@/utils/weekly-nutrition-helpers";
 import { mapNutritionRowToDailyLog, type NutritionRow } from "@/utils/weekly-nutrition-mappers";
 import { fetchNutritionDataForPeriod } from "./schedule-data-service";
-import { getNutritionEventsForDateRange } from "./nutrition-event-service";
+import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { buildNutritionSummary } from "@/utils/nutrition-period-summary";
 import { addDaysToDateString } from "@/lib/date-helpers";
 

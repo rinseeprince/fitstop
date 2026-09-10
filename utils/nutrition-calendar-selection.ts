@@ -2,10 +2,12 @@ import type { NutritionEvent } from "@/types/check-in";
 
 /**
  * Coach calendar selection helpers (Session 4 ◆2). A nutrition day is editable
- * (selectable) only when it is today-forward AND carries a scheduled event —
- * the client-side mirror of the server's per-element `date >= clientToday` +
- * `status = 'scheduled'` guards in materializeNutritionEventDays. Pure functions
- * so the eligibility rules are unit-testable away from React.
+ * (selectable) only when it is today-forward AND exists — a computed day exists
+ * exactly when a version covers the date, and there is nothing to edit on a
+ * day with no target. The client-side mirror of the server's `date >=
+ * clientToday` guard and its skip of uncovered days in
+ * materializeNutritionEventDays. Pure functions so the eligibility rules are
+ * unit-testable away from React.
  */
 
 export function isDateEligible(
@@ -14,8 +16,7 @@ export function isDateEligible(
   clientToday: string
 ): boolean {
   if (date < clientToday) return false;
-  const event = eventsByDate.get(date);
-  return !!event && event.status === "scheduled";
+  return eventsByDate.has(date);
 }
 
 /** Eligible subset of an arbitrary date list, original order preserved. */

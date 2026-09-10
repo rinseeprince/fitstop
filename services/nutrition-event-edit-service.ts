@@ -1,20 +1,26 @@
-import { supabaseAdmin } from "./supabase-admin";
+import { getNutritionEventsForDateRange } from "./nutrition-days-service";
+import {
+  deleteNutritionDayEdits,
+  upsertNutritionDayEdits,
+  type NutritionDayEdit,
+} from "./nutrition-day-edits-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
-import type { DietType } from "@/types/check-in";
-import { regenerateFutureNutritionEvents } from "@/services/nutrition-event-service";
+import type { DietType, NutritionEvent } from "@/types/check-in";
 
 /**
- * Coach per-day nutrition edits (events-as-SOT overhaul, Session 3 D4 / spec §3).
+ * Coach per-day nutrition edits, on the edits table (migration 169).
  *
- * A range edit MATERIALIZES the resolved numbers onto each future nutrition_event
- * (`baseline_calories` + macros set, `calorie_surplus_percentage := NULL`,
- * `training_burn_calories := 0`, `is_modified := true`). The frozen day no longer
- * stacks training surplus, and the cascade preserves it (Session 1 guard).
- * A reset clears the flag and regenerates that day from the plan.
+ * A range edit resolves the coach's numbers for each selected day against
+ * the day AS COMPUTED — the plan's baseline, the session's surplus, an edit
+ * already standing — and writes one edit row per day. A computed day with an
+ * edit takes those numbers verbatim, carries the note, and takes no training
+ * surplus (`services/nutrition-day-resolver.ts`). A reset removes the rows,
+ * and the plan's own numbers answer again; nothing regenerates.
  *
- * Both paths are today-forward only — past/logged days are immutable. The route
- * rejects a past date; the service additionally floors the range at clientToday
- * and only touches `status = 'scheduled'` rows.
+ * Both paths are today-forward only — past days are immutable. The routes
+ * reject an all-past selection; the service additionally floors the list at
+ * clientToday. A selected day no version covers has no computed day and is
+ * skipped: there is no target to edit.
  */
 
 // `note` semantics (D-B): undefined = preserve any existing note; "" (or
@@ -24,164 +30,138 @@ export type RangeEdit =
   | { mode: "absolute"; calories: number; proteinG?: number; carbG?: number; fatG?: number; note?: string | null }
   | { mode: "delta"; percent?: number; calorieDelta?: number; holdProtein?: boolean; note?: string | null };
 
-type EligibleRow = {
-  id: string;
-  baseline_calories: number;
-  protein_g: number;
-  carb_g: number;
-  fat_g: number;
-  training_burn_calories: number;
-  calorie_surplus_percentage: number | null;
-  diet_type: string;
-};
-
-/** The calorie number a coach currently sees for a scheduled day (mirrors
+/** The calorie number a coach currently sees for a day (mirrors
  * `buildNutritionSummary`): surplus stacks on the baseline when set, otherwise
- * the legacy training-burn add-on applies. */
-function currentDisplayedCalories(row: EligibleRow): number {
-  if (row.calorie_surplus_percentage != null) {
-    return Math.round(row.baseline_calories * (1 + row.calorie_surplus_percentage / 100));
+ * the legacy training-burn add-on applies. An edited day has neither, so its
+ * base is the edit's own calories. */
+function currentDisplayedCalories(day: NutritionEvent): number {
+  if (day.calorieSurplusPercentage != null) {
+    return Math.round(day.baselineCalories * (1 + day.calorieSurplusPercentage / 100));
   }
-  return row.baseline_calories + row.training_burn_calories;
+  return day.baselineCalories + day.trainingBurnCalories;
 }
 
-/**
- * Materialize an absolute or %/amount-delta edit onto an explicit LIST of future
- * scheduled events (any arrangement — single, scattered, or contiguous). A
- * scattered selection edits exactly the chosen days and leaves the gaps
- * untouched (the IN-list, not a [min,max] range). Returns the days updated.
- */
-export async function materializeNutritionEventDays(
-  clientId: string,
-  dates: string[],
-  edit: RangeEdit,
-  clientToday: string
-): Promise<{ updated: number }> {
-  // Keep only today-forward dates (defensive — the route also filters); a past
-  // row is never written. Only scheduled rows are editable (logged/missed are
-  // immutable).
-  const eligibleDates = dates.filter((d) => d >= clientToday);
-  if (eligibleDates.length === 0) return { updated: 0 };
+/** The edit row a coach's instruction resolves to over one computed day. */
+function resolveEdit(day: NutritionEvent, edit: RangeEdit): NutritionDayEdit {
+  // Resolve the day's new calorie total.
+  let calories: number;
+  if (edit.mode === "absolute") {
+    calories = edit.calories;
+  } else {
+    const base = currentDisplayedCalories(day);
+    const scaled = edit.percent != null ? base * (1 + edit.percent / 100) : base;
+    // Floor at zero: an oversized negative delta must never materialize
+    // negative calories/macros onto the client's calendar.
+    calories = Math.max(0, Math.round(scaled + (edit.calorieDelta ?? 0)));
+  }
 
-  const { data: rows, error } = await supabaseAdmin
-    .from("nutrition_events")
-    .select("id, baseline_calories, protein_g, carb_g, fat_g, training_burn_calories, calorie_surplus_percentage, diet_type")
-    .eq("client_id", clientId)
-    .eq("status", "scheduled")
-    .in("date", eligibleDates);
-
-  if (error) throw error;
-  if (!rows || rows.length === 0) return { updated: 0 };
-
-  // D-B: only touch `note` when the edit carries one. undefined -> preserve;
-  // "" / whitespace -> clear (null); text -> set.
-  const noteUpdate =
-    edit.note === undefined
-      ? {}
-      : { note: edit.note && edit.note.trim() !== "" ? edit.note.trim() : null };
-
-  for (const row of rows as EligibleRow[]) {
-    // Resolve the day's new calorie total.
-    let calories: number;
-    if (edit.mode === "absolute") {
-      calories = edit.calories;
+  // Macros: explicit macros win; otherwise hold protein and rebalance carbs/fat
+  // to the new calorie total (D4 "macros auto-rebalance, protein fixed").
+  let proteinG: number;
+  let carbG: number;
+  let fatG: number;
+  if (edit.mode === "absolute" && edit.proteinG != null && edit.carbG != null && edit.fatG != null) {
+    proteinG = edit.proteinG;
+    carbG = edit.carbG;
+    fatG = edit.fatG;
+  } else if (edit.mode === "delta" && edit.holdProtein === false) {
+    // Scale the day's macro SPLIT onto the new total (protein not held).
+    // Ratio-of-new-total, not old-total scaling: on a surplus day the macros
+    // sum to the baseline while the delta base is the stacked total, so
+    // old-ratio scaling would not sum to the new calories.
+    const p4 = day.proteinG * 4;
+    const c4 = day.carbG * 4;
+    const f9 = day.fatG * 9;
+    const macroCals = p4 + c4 + f9;
+    if (macroCals > 0) {
+      proteinG = Math.round((calories * (p4 / macroCals)) / 4);
+      carbG = Math.round((calories * (c4 / macroCals)) / 4);
+      fatG = Math.round((calories * (f9 / macroCals)) / 9);
     } else {
-      const base = currentDisplayedCalories(row);
-      const scaled = edit.percent != null ? base * (1 + edit.percent / 100) : base;
-      // Floor at zero: an oversized negative delta must never materialize
-      // negative calories/macros onto the client's calendar.
-      calories = Math.max(0, Math.round(scaled + (edit.calorieDelta ?? 0)));
-    }
-
-    // Macros: explicit macros win; otherwise hold protein and rebalance carbs/fat
-    // to the new calorie total (D4 "macros auto-rebalance, protein fixed").
-    let proteinG: number;
-    let carbG: number;
-    let fatG: number;
-    if (edit.mode === "absolute" && edit.proteinG != null && edit.carbG != null && edit.fatG != null) {
-      proteinG = edit.proteinG;
-      carbG = edit.carbG;
-      fatG = edit.fatG;
-    } else if (edit.mode === "delta" && edit.holdProtein === false) {
-      // Scale the day's stored macro SPLIT onto the new total (protein not
-      // held). Ratio-of-new-total, not old-total scaling: on a surplus day the
-      // stored macros sum to the baseline while the delta base is the stacked
-      // total, so old-ratio scaling would not sum to the new calories.
-      const p4 = Number(row.protein_g) * 4;
-      const c4 = Number(row.carb_g) * 4;
-      const f9 = Number(row.fat_g) * 9;
-      const macroCals = p4 + c4 + f9;
-      if (macroCals > 0) {
-        proteinG = Math.round((calories * (p4 / macroCals)) / 4);
-        carbG = Math.round((calories * (c4 / macroCals)) / 4);
-        fatG = Math.round((calories * (f9 / macroCals)) / 9);
-      } else {
-        const macros = calculateDailyMacros(calories, Number(row.protein_g), false, (row.diet_type as DietType) || "balanced");
-        proteinG = macros.proteinG;
-        carbG = macros.carbsG;
-        fatG = macros.fatG;
-      }
-    } else {
-      const fixedProtein = edit.mode === "absolute" && edit.proteinG != null ? edit.proteinG : Number(row.protein_g);
-      const macros = calculateDailyMacros(calories, fixedProtein, false, (row.diet_type as DietType) || "balanced");
+      const macros = calculateDailyMacros(calories, day.proteinG, false, (day.dietType as DietType) || "balanced");
       proteinG = macros.proteinG;
       carbG = macros.carbsG;
       fatG = macros.fatG;
     }
-
-    const { error: updateError } = await supabaseAdmin
-      .from("nutrition_events")
-      .update({
-        baseline_calories: calories,
-        protein_g: proteinG,
-        carb_g: carbG,
-        fat_g: fatG,
-        // Freeze the day: training surplus no longer stacks (spec §3).
-        calorie_surplus_percentage: null,
-        training_burn_calories: 0,
-        is_modified: true,
-        ...noteUpdate,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", row.id);
-
-    if (updateError) throw updateError;
+  } else {
+    const fixedProtein = edit.mode === "absolute" && edit.proteinG != null ? edit.proteinG : day.proteinG;
+    const macros = calculateDailyMacros(calories, fixedProtein, false, (day.dietType as DietType) || "balanced");
+    proteinG = macros.proteinG;
+    carbG = macros.carbsG;
+    fatG = macros.fatG;
   }
 
-  return { updated: rows.length };
+  // D-B: the day's standing note survives an edit that carries none;
+  // "" / whitespace clears it; text sets it.
+  const note =
+    edit.note === undefined
+      ? day.note
+      : edit.note && edit.note.trim() !== ""
+        ? edit.note.trim()
+        : null;
+
+  return { date: day.date, calories, proteinG, carbG, fatG, note };
 }
 
+type MaterializeParams = {
+  clientId: string;
+  /** The editing coach — the audit actor on each edit row. */
+  coachId: string;
+  dates: string[];
+  edit: RangeEdit;
+  clientToday: string;
+};
+
 /**
- * Reset a LIST of coach-edited days back to auto in one call: clear `is_modified`
- * on every today-forward scheduled day in `dates`, then regenerate exactly those
- * days from the plan. A scattered selection resets exactly the chosen days and
- * leaves the gaps untouched — it no longer collapses to the earliest date and
- * rewrites everything after it. Order matters: clear the flags BEFORE
- * regenerating, since the regenerator's protected-days filter skips is_modified
- * rows. Returns the days reset.
+ * Write the coach's edit onto an explicit LIST of future days (any arrangement
+ * — single, scattered, or contiguous). The computed days are read once over the
+ * selection's span; only the selected dates are written, so a scattered
+ * selection edits exactly the chosen days and leaves the gaps untouched. One
+ * upsert for the whole list. Returns the days written.
  */
-export async function resetNutritionEventDays(
-  clientId: string,
-  dates: string[],
-  activePlanId: string,
-  clientToday: string
-): Promise<{ reset: number }> {
+export async function materializeNutritionEventDays({
+  clientId,
+  coachId,
+  dates,
+  edit,
+  clientToday,
+}: MaterializeParams): Promise<{ updated: number }> {
+  // Keep only today-forward dates (defensive — the route also filters); a past
+  // day is never written.
+  const eligible = new Set(dates.filter((d) => d >= clientToday));
+  if (eligible.size === 0) return { updated: 0 };
+
+  const sorted = [...eligible].sort();
+  const days = (
+    await getNutritionEventsForDateRange(clientId, sorted[0], sorted[sorted.length - 1])
+  ).filter((day) => eligible.has(day.date));
+  if (days.length === 0) return { updated: 0 };
+
+  const edits = days.map((day) => resolveEdit(day, edit));
+  await upsertNutritionDayEdits(clientId, coachId, edits);
+
+  return { updated: edits.length };
+}
+
+type ResetParams = {
+  clientId: string;
+  dates: string[];
+  clientToday: string;
+};
+
+/**
+ * Remove the edits on a LIST of future days in one statement, so the plan's
+ * own numbers answer for them again. A scattered selection resets exactly the
+ * chosen days. Returns the days that held an edit.
+ */
+export async function resetNutritionEventDays({
+  clientId,
+  dates,
+  clientToday,
+}: ResetParams): Promise<{ reset: number }> {
   const eligibleDates = dates.filter((d) => d >= clientToday);
   if (eligibleDates.length === 0) return { reset: 0 };
 
-  const { error } = await supabaseAdmin
-    .from("nutrition_events")
-    .update({ is_modified: false, note: null, updated_at: new Date().toISOString() })
-    .eq("client_id", clientId)
-    .eq("status", "scheduled")
-    .in("date", eligibleDates);
-
-  if (error) throw error;
-
-  await regenerateFutureNutritionEvents(clientId, activePlanId, {
-    kind: "dates",
-    dates: eligibleDates,
-  });
-
-  return { reset: eligibleDates.length };
+  const reset = await deleteNutritionDayEdits(clientId, eligibleDates);
+  return { reset };
 }

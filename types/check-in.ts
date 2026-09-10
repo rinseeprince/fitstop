@@ -375,12 +375,22 @@ export type DietType = "balanced" | "high_carb" | "low_carb" | "keto" | "custom"
 
 export type NutritionEventStatus = "scheduled" | "logged" | "missed";
 
+/**
+ * A client's nutrition day: COMPUTED when asked, never stored (owner decision
+ * 2026-09-10). `services/nutrition-day-resolver.ts` builds it from the version
+ * covering the date, that version's grid row for the weekday, the session on
+ * the date and the coach's edit; `services/nutrition-days-service.ts` reads
+ * those four in a batch. The shape is the retired day row's, so every consumer
+ * keeps reading the same fields.
+ */
 export type NutritionEvent = {
+  // The date, YYYY-MM-DD — stable and unique per client. A computed day has no
+  // row id; the edit routes address days by date.
   id: string;
   clientId: string;
-  // Nullable since mig 113: the event->plan FK is ON DELETE SET NULL, so a plan
-  // hard-delete (events-as-SOT overhaul, Sessions 2-3) can orphan the event.
-  nutritionPlanId: string | null;
+  // The version covering the date. A date no version covers yields no day at
+  // all, so this is never null.
+  nutritionPlanId: string;
   date: string;
   dayOfWeek: string;
   baselineCalories: number;
@@ -391,22 +401,21 @@ export type NutritionEvent = {
   dietType: string;
   isTrainingDay: boolean;
   calorieSurplusPercentage: number | null;
-  // Coach materialized a per-day override onto this event (mig 113, Session 1).
-  // The cascade/regenerate leaves is_modified=true days untouched; reset clears it.
+  // The coach overrode this day (a `nutrition_day_edits` row, migration 169):
+  // its numbers are the edit's, verbatim, and no training surplus stacks.
   isModified: boolean;
-  // Optional per-day note (mig 118) SHOWN TO THE CLIENT. Rides is_modified=true
-  // so it survives regen; cleared on reset. Authored in the calendar's
-  // Edit-targets sheet.
+  // The edit's per-day note, SHOWN TO THE CLIENT. Part of the edit — gone with
+  // it on reset. Authored in the calendar's Edit-targets sheet.
   note: string | null;
-  // COACH-PRIVATE note (mig 139), written by the plan builder onto the date a
-  // change takes effect. Never returned by /api/client/** — every client route
-  // that reaches an event builds a new object literal rather than spreading
-  // one, which is the only thing keeping it off the wire. Survives the cascade
-  // in its own right (it does NOT need is_modified, unlike `note`).
+  // The plan-save note dated this day (`nutrition_plan_notes`, mig 147), the
+  // newest when a date holds two. Never returned by /api/client/** — every
+  // client route that reaches a day builds a new object literal rather than
+  // spreading one, which is the only thing keeping it off that wire; the
+  // client reads the notes table through GET /api/client/journey instead.
   coachNote: string | null;
+  // Always "scheduled": a computed day has no lifecycle. Kept because the
+  // coach calendar's edit gates read it.
   status: NutritionEventStatus;
-  createdAt: string;
-  updatedAt: string;
 };
 
 // Client record from database

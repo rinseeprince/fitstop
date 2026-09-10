@@ -7,13 +7,11 @@ import {
   weekContaining,
 } from "../nutrition-calendar-selection";
 
-function ev(
-  date: string,
-  status: NutritionEvent["status"] = "scheduled",
-  isTrainingDay = false
-): NutritionEvent {
+// A computed day: it exists exactly when a version covers the date, and its
+// status is always "scheduled" (a computed day has no lifecycle).
+function ev(date: string, isTrainingDay = false): NutritionEvent {
   return {
-    id: `ne-${date}`,
+    id: date,
     clientId: "c1",
     nutritionPlanId: "np-1",
     date,
@@ -27,8 +25,10 @@ function ev(
     isTrainingDay,
     calorieSurplusPercentage: null,
     isModified: false,
-    status,
-  } as NutritionEvent;
+    note: null,
+    coachNote: null,
+    status: "scheduled",
+  };
 }
 
 function mapOf(events: NutritionEvent[]): Map<string, NutritionEvent> {
@@ -42,24 +42,23 @@ describe("nutrition-calendar-selection", () => {
     it("rejects past dates even with a scheduled event", () => {
       expect(isDateEligible("2026-06-14", mapOf([ev("2026-06-14")]), clientToday)).toBe(false);
     });
-    it("accepts today and future scheduled events", () => {
+    it("accepts today and future days that exist", () => {
       const map = mapOf([ev("2026-06-15"), ev("2026-06-20")]);
       expect(isDateEligible("2026-06-15", map, clientToday)).toBe(true);
       expect(isDateEligible("2026-06-20", map, clientToday)).toBe(true);
     });
-    it("rejects future dates with no event", () => {
-      expect(isDateEligible("2026-06-20", mapOf([]), clientToday)).toBe(false);
-    });
-    it("rejects logged/missed (non-scheduled) events", () => {
-      const map = mapOf([ev("2026-06-20", "logged"), ev("2026-06-21", "missed")]);
-      expect(isDateEligible("2026-06-20", map, clientToday)).toBe(false);
+    it("rejects a future date with no day — no version covers it, so there is nothing to edit", () => {
+      const map = mapOf([ev("2026-06-20")]);
+      expect(isDateEligible("2026-06-20", map, clientToday)).toBe(true);
       expect(isDateEligible("2026-06-21", map, clientToday)).toBe(false);
+      expect(isDateEligible("2026-06-20", mapOf([]), clientToday)).toBe(false);
     });
   });
 
   describe("eligibleDatesIn", () => {
     it("keeps only eligible days and preserves order", () => {
-      const map = mapOf([ev("2026-06-16"), ev("2026-06-18", "logged"), ev("2026-06-20")]);
+      // 06-14 is past; 06-18 has no day (a gap between versions).
+      const map = mapOf([ev("2026-06-16"), ev("2026-06-20")]);
       expect(
         eligibleDatesIn(["2026-06-14", "2026-06-16", "2026-06-18", "2026-06-20"], map, clientToday)
       ).toEqual(["2026-06-16", "2026-06-20"]);
@@ -69,10 +68,10 @@ describe("nutrition-calendar-selection", () => {
   describe("monthDatesWhere", () => {
     const weeks = [["2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03"]];
     const map = mapOf([
-      ev("2026-05-31", "scheduled", true), // outside month -> excluded even as train day
-      ev("2026-06-01", "scheduled", true),
-      ev("2026-06-02", "scheduled", false),
-      ev("2026-06-03", "logged", true), // ineligible status -> excluded
+      ev("2026-05-31", true), // outside month -> excluded even as train day
+      ev("2026-06-01", true),
+      ev("2026-06-02", false),
+      // 2026-06-03 has no day (no version covers it) -> excluded
     ]);
 
     it("filters eligible in-month days by the predicate (train days)", () => {

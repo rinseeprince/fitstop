@@ -12,7 +12,7 @@ vi.mock("./schedule-data-service", () => ({
 }));
 
 const getNutritionEventsForDateRangeMock = vi.fn();
-vi.mock("./nutrition-event-service", () => ({
+vi.mock("./nutrition-days-service", () => ({
   getNutritionEventsForDateRange: (...args: unknown[]) =>
     getNutritionEventsForDateRangeMock(...args),
 }));

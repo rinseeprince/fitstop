@@ -8,7 +8,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { fetchNutritionDataForPeriod } from "./schedule-data-service";
 import { getEventsForDateRange } from "./training-event-service";
-import { getNutritionEventsForDateRange } from "./nutrition-event-service";
+import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
 import { buildNutritionSummary } from "@/utils/nutrition-period-summary";
 import type { PeriodSnapshot } from "@/types/schedule";

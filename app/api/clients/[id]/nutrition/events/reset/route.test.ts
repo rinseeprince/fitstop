@@ -19,18 +19,11 @@ vi.mock("@/services/client-service", () => ({
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn().mockResolvedValue("2026-04-10"),
 }));
-// versionCoversDate stays REAL (pure) — the grouping under test is the
-// shipped window arithmetic, only the DB read is stubbed.
-vi.mock("@/services/nutrition-plan-service", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/services/nutrition-plan-service")>();
-  return { ...actual, getActiveNutritionPlanVersionsOverlapping: vi.fn() };
-});
 vi.mock("@/services/nutrition-event-edit-service", () => ({
   resetNutritionEventDays: vi.fn(),
 }));
 
 import { getClientById } from "@/services/client-service";
-import { getActiveNutritionPlanVersionsOverlapping } from "@/services/nutrition-plan-service";
 import { resetNutritionEventDays } from "@/services/nutrition-event-edit-service";
 import { PATCH } from "./route";
 
@@ -48,73 +41,61 @@ const params = { params: Promise.resolve({ id: "client-1" }) };
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getClientById).mockResolvedValue(CLIENT as never);
-  vi.mocked(resetNutritionEventDays).mockImplementation((_c, dates) =>
+  vi.mocked(resetNutritionEventDays).mockImplementation(({ dates }) =>
     Promise.resolve({ reset: dates.length })
   );
 });
 
-describe("PATCH /nutrition/events/reset — per-version grouping (migration 144)", () => {
-  it("splits a date list straddling an era boundary and resets each group from ITS version", async () => {
-    vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([
-      { id: "v1", effectiveFrom: "2026-01-01", effectiveUntil: "2026-04-30" },
-      { id: "v2", effectiveFrom: "2026-05-01", effectiveUntil: "2026-06-25" },
-    ]);
-
+// A reset is ONE act on the edits table (migration 169): the selected days'
+// edit rows go, and the plan's own numbers answer again. Nothing regenerates,
+// so there is nothing to group by version any more.
+describe("PATCH /nutrition/events/reset", () => {
+  it("removes the edits on every future selected day in one call, as sent", async () => {
     const response = await PATCH(makeRequest(["2026-05-02", "2026-04-29", "2026-04-30"]), params);
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    // Grouped per covering version, dates sorted, one reset call per group.
-    expect(resetNutritionEventDays).toHaveBeenCalledTimes(2);
-    expect(resetNutritionEventDays).toHaveBeenCalledWith(
-      "client-1",
-      ["2026-04-29", "2026-04-30"],
-      "v1",
-      "2026-04-10"
-    );
-    expect(resetNutritionEventDays).toHaveBeenCalledWith(
-      "client-1",
-      ["2026-05-02"],
-      "v2",
-      "2026-04-10"
-    );
-    expect(data.reset).toBe(3);
+    expect(resetNutritionEventDays).toHaveBeenCalledTimes(1);
+    expect(resetNutritionEventDays).toHaveBeenCalledWith({
+      clientId: "client-1",
+      dates: ["2026-05-02", "2026-04-29", "2026-04-30"],
+      clientToday: "2026-04-10",
+    });
+    expect(data).toEqual({ success: true, reset: 3 });
   });
 
-  it("skips dates no version covers (there is no prescription to reset them to)", async () => {
-    vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([
-      { id: "v2", effectiveFrom: "2026-05-01", effectiveUntil: "2026-06-25" },
-    ]);
+  it("reports the days that held an edit, not the days selected", async () => {
+    vi.mocked(resetNutritionEventDays).mockResolvedValue({ reset: 1 });
 
-    const response = await PATCH(makeRequest(["2026-04-29", "2026-05-02"]), params);
+    const response = await PATCH(makeRequest(["2026-05-02", "2026-05-03"]), params);
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(resetNutritionEventDays).toHaveBeenCalledTimes(1);
-    expect(resetNutritionEventDays).toHaveBeenCalledWith(
-      "client-1",
-      ["2026-05-02"],
-      "v2",
-      "2026-04-10"
-    );
     expect(data.reset).toBe(1);
   });
 
-  it("404s when no version covers any selected date", async () => {
-    vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([]);
+  it("drops past dates before the reset and keeps the future ones", async () => {
+    const response = await PATCH(makeRequest(["2026-04-01", "2026-05-02"]), params);
 
-    const response = await PATCH(makeRequest(["2026-04-29"]), params);
-    const data = await response.json();
-
-    expect(response.status).toBe(404);
-    expect(data.error).toBe("No nutrition plan covers the selected dates");
-    expect(resetNutritionEventDays).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(resetNutritionEventDays).toHaveBeenCalledWith(
+      expect.objectContaining({ dates: ["2026-05-02"] })
+    );
   });
 
-  it("still drops past dates before grouping (403 when none remain)", async () => {
+  it("403s when every selected day is in the past, touching nothing", async () => {
     const response = await PATCH(makeRequest(["2026-04-01"]), params);
 
     expect(response.status).toBe(403);
-    expect(getActiveNutritionPlanVersionsOverlapping).not.toHaveBeenCalled();
+    expect(resetNutritionEventDays).not.toHaveBeenCalled();
+  });
+
+  it("403s a client the coach does not own", async () => {
+    vi.mocked(getClientById).mockResolvedValue({ id: "client-1", coachId: "coach-9" } as never);
+
+    const response = await PATCH(makeRequest(["2026-05-02"]), params);
+
+    expect(response.status).toBe(403);
+    expect(resetNutritionEventDays).not.toHaveBeenCalled();
   });
 });

@@ -263,28 +263,54 @@ type NutritionPlanVersionWindow = {
   effectiveUntil: string;
 };
 
+/** Structural shape of the four PostgREST calls the overlap predicate applies (self-returning). */
+type OverlapFilterable<T> = {
+  eq(column: string, value: string): T;
+  gte(column: string, value: string): T;
+  lte(column: string, value: string): T;
+  order(column: string, options: { ascending: boolean }): T;
+};
+
+/**
+ * The ONE spelling of "the client's ACTIVE versions overlapping a range,
+ * earliest first": `effective_until >= rangeStart AND effective_from <=
+ * rangeEnd` — or, with no `rangeEnd`, every version reaching `rangeStart` or
+ * later. Every version has an end (migration 166), so there is no open-row
+ * arm. Both readers below apply it; only their column lists differ.
+ */
+function overlappingActiveVersions<T extends OverlapFilterable<T>>(
+  query: T,
+  clientId: string,
+  rangeStart: string,
+  rangeEnd?: string
+): T {
+  const reaching = query
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .gte("effective_until", rangeStart)
+    .order("effective_from", { ascending: true });
+  return rangeEnd ? reaching.lte("effective_from", rangeEnd) : reaching;
+}
+
 /**
  * Every ACTIVE version whose window overlaps [rangeStart, rangeEnd], earliest
  * first — or, with no `rangeEnd`, every one whose window reaches `rangeStart`
  * or later. The version-segmentation primitive: the training cascade maps each
  * date in its scope to the version covering it (the schedule-data windowed
- * query shape), and the bulk reset groups its date list the same way. Overlap
- * is `effective_until >= rangeStart AND effective_from <= rangeEnd`; every
- * version has an end (migration 166), so there is no open-row arm.
+ * query shape). Windows only — the day reader takes the sibling below, which
+ * carries the prescription too.
  */
 export async function getActiveNutritionPlanVersionsOverlapping(
   clientId: string,
   rangeStart: string,
   rangeEnd?: string
 ): Promise<NutritionPlanVersionWindow[]> {
-  const query = supabaseAdmin
-    .from("nutrition_plans")
-    .select("id, effective_from, effective_until")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .gte("effective_until", rangeStart)
-    .order("effective_from", { ascending: true });
-  const { data, error } = rangeEnd ? await query.lte("effective_from", rangeEnd) : await query;
+  const { data, error } = await overlappingActiveVersions(
+    supabaseAdmin.from("nutrition_plans").select("id, effective_from, effective_until"),
+    clientId,
+    rangeStart,
+    rangeEnd
+  );
 
   if (error) {
     throw new Error(`Failed to fetch nutrition plan versions: ${error.message}`);
@@ -293,6 +319,83 @@ export async function getActiveNutritionPlanVersionsOverlapping(
     id: row.id,
     effectiveFrom: row.effective_from,
     effectiveUntil: row.effective_until,
+  }));
+}
+
+/** A version's window plus the plan-level prescription a computed day derives from. */
+type NutritionVersionPrescription = NutritionPlanVersionWindow & {
+  baselineCalories: number;
+  proteinTargetG: number;
+  dietType: string;
+};
+
+/**
+ * The day reader's version read: every ACTIVE version overlapping
+ * [rangeStart, rangeEnd], earliest first, with the three plan fields the
+ * resolver prices a day from. The same predicate as the segmentation
+ * primitive above, kept a sibling rather than a widening of it so the
+ * cascade's callers keep their window-only shape.
+ */
+export async function getNutritionPrescriptionsForRange(
+  clientId: string,
+  rangeStart: string,
+  rangeEnd: string
+): Promise<NutritionVersionPrescription[]> {
+  const { data, error } = await overlappingActiveVersions(
+    supabaseAdmin
+      .from("nutrition_plans")
+      .select("id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type"),
+    clientId,
+    rangeStart,
+    rangeEnd
+  );
+
+  if (error) {
+    throw new Error(`Failed to fetch nutrition versions for the range: ${error.message}`);
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    effectiveFrom: row.effective_from,
+    effectiveUntil: row.effective_until,
+    baselineCalories: row.baseline_calories,
+    proteinTargetG: Number(row.protein_target_g),
+    dietType: row.diet_type,
+  }));
+}
+
+/** One weekday row of a version's grid — the coach's numbers for that weekday. */
+type NutritionPlanGridRow = {
+  planId: string;
+  dayOfWeek: string;
+  calories: number;
+  proteinG: number;
+  carbG: number;
+  fatG: number;
+};
+
+/**
+ * The per-weekday grids of the given versions, in one read. Seven rows per
+ * version and single-digit versions per range, so unpaged; `[]` for no ids
+ * without a round trip.
+ */
+export async function getNutritionPlanGrids(planIds: string[]): Promise<NutritionPlanGridRow[]> {
+  if (planIds.length === 0) return [];
+
+  const { data, error } = await supabaseAdmin
+    .from("nutrition_plan_daily_targets")
+    .select("nutrition_plan_id, day_of_week, calories, protein_g, carb_g, fat_g")
+    .in("nutrition_plan_id", planIds);
+
+  if (error) {
+    throw new Error(`Failed to fetch nutrition plan grids: ${error.message}`);
+  }
+  return (data ?? []).map((row) => ({
+    planId: row.nutrition_plan_id,
+    dayOfWeek: row.day_of_week,
+    calories: row.calories,
+    proteinG: Number(row.protein_g),
+    carbG: Number(row.carb_g),
+    fatG: Number(row.fat_g),
   }));
 }
 

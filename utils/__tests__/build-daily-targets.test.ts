@@ -54,8 +54,6 @@ function nev(overrides: Partial<NutritionEvent>): NutritionEvent {
     isModified: false,
     note: null,
     status: "scheduled",
-    createdAt: "",
-    updatedAt: "",
     coachNote: null,
     ...overrides,
   };

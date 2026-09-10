@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
-vi.mock("./nutrition-event-service", () => ({ getNutritionEventForDate: vi.fn() }));
+vi.mock("./nutrition-days-service", () => ({ getNutritionEventForDate: vi.fn() }));
 vi.mock("./training-event-service", () => ({ getEventForDate: vi.fn() }));
 vi.mock("./nutrition-plan-service", () => ({
   getNutritionPlanIdForDate: vi.fn(),
@@ -9,7 +9,7 @@ vi.mock("./nutrition-plan-service", () => ({
 vi.mock("./training-service", () => ({ getActiveTrainingPlanId: vi.fn() }));
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getNutritionEventForDate } from "./nutrition-event-service";
+import { getNutritionEventForDate } from "./nutrition-days-service";
 import { getEventForDate } from "./training-event-service";
 import { getNutritionPlanIdForDate } from "./nutrition-plan-service";
 import { getActiveTrainingPlanId } from "./training-service";
@@ -23,33 +23,33 @@ import {
 beforeEach(() => vi.clearAllMocks());
 
 describe("resolvePlanContextForDate", () => {
-  it("uses date-accurate event plan ids when present", async () => {
-    vi.mocked(getNutritionEventForDate).mockResolvedValue({ nutritionPlanId: "np-1" } as never);
-    vi.mocked(getEventForDate).mockResolvedValue({ trainingPlanId: "tp-1" } as never);
-
-    const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
-
-    expect(ctx).toEqual({ nutritionPlanId: "np-1", trainingPlanId: "tp-1" });
-    expect(getNutritionPlanIdForDate).not.toHaveBeenCalled();
-    // Date-accurate event present → no active-plan fallback for training either.
-    expect(getActiveTrainingPlanId).not.toHaveBeenCalled();
-  });
-
-  it("falls back to the version covering the LOG's date, not a date-blind singleton", async () => {
-    vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
-    vi.mocked(getEventForDate).mockResolvedValue(null);
+  it("stamps nutrition from the version covering the LOG's date — a computed day has no row to prefer", async () => {
     vi.mocked(getNutritionPlanIdForDate).mockResolvedValue("np-covering");
-    vi.mocked(getActiveTrainingPlanId).mockResolvedValue("tp-active");
+    vi.mocked(getEventForDate).mockResolvedValue({ trainingPlanId: "tp-1" } as never);
 
     const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
 
     // The per-date pin: a backdated log stamps its own day's era.
     expect(getNutritionPlanIdForDate).toHaveBeenCalledWith("c1", "2026-05-21");
+    // A computed day derives from that same version, so no day is read for it.
+    expect(getNutritionEventForDate).not.toHaveBeenCalled();
+    expect(ctx).toEqual({ nutritionPlanId: "np-covering", trainingPlanId: "tp-1" });
+    // Date-accurate training event present → no active-plan fallback.
+    expect(getActiveTrainingPlanId).not.toHaveBeenCalled();
+  });
+
+  it("training falls back to the active plan on a no-event day", async () => {
+    vi.mocked(getNutritionPlanIdForDate).mockResolvedValue("np-covering");
+    vi.mocked(getEventForDate).mockResolvedValue(null);
+    vi.mocked(getActiveTrainingPlanId).mockResolvedValue("tp-active");
+
+    const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
+
+    expect(getActiveTrainingPlanId).toHaveBeenCalledWith("c1");
     expect(ctx).toEqual({ nutritionPlanId: "np-covering", trainingPlanId: "tp-active" });
   });
 
   it("a pre-start day (queued-first-plan client) gets a NULL nutrition stamp — no covering version", async () => {
-    vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
     vi.mocked(getEventForDate).mockResolvedValue(null);
     // No version covers this date — only a future one is queued, which
     // resolvePlanContextForDate deliberately does NOT consult: a queued plan is
@@ -63,7 +63,6 @@ describe("resolvePlanContextForDate", () => {
   });
 
   it("returns all-null when there is no plan at all", async () => {
-    vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
     vi.mocked(getEventForDate).mockResolvedValue(null);
     vi.mocked(getNutritionPlanIdForDate).mockResolvedValue(null);
     vi.mocked(getActiveTrainingPlanId).mockResolvedValue(null);
@@ -140,7 +139,7 @@ describe("getNutritionForDate", () => {
     expect(getNutritionEventForDate).not.toHaveBeenCalled();
   });
 
-  it("level 2: no log but an event → event target (source 'event')", async () => {
+  it("level 2: no log but a computed day → its target (source 'event')", async () => {
     fromImpl(null);
     vi.mocked(getNutritionEventForDate).mockResolvedValue({
       dayOfWeek: "thursday", baselineCalories: 2000, trainingBurnCalories: 0,
@@ -176,7 +175,7 @@ describe("getNutritionForDate", () => {
     expect(result.target).toEqual({ calories: 2200, proteinG: 150, carbsG: 288, fatG: 50, note: null });
   });
 
-  it("level 3: no log and no event → null", async () => {
+  it("level 3: no log and no version covering the date → null", async () => {
     fromImpl(null);
     vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
 

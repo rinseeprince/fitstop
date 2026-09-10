@@ -8,7 +8,7 @@ import { supabaseAdmin } from "@/services/supabase-admin";
 import { getCoachTodayString } from "@/services/today-service";
 import type { NutritionHistoryRow } from "@/types/history";
 import type { NutritionDay } from "@/types/schedule";
-import { getNutritionEventsForDateRange } from "@/services/nutrition-event-service";
+import { getNutritionEventsForDateRange } from "@/services/nutrition-days-service";
 
 function generateDateRange(start: string, end: string): string[] {
   const dates: string[] = [];
@@ -47,12 +47,14 @@ function mapNutritionDayToRow(day: NutritionDay): NutritionHistoryRow {
 }
 
 /**
- * Earliest date the client has any nutrition activity — the earliest of their
- * first logged nutrition_log and first nutrition_event. Bounds the history
- * range. Returns null when the client has no logs and no events.
+ * Earliest date the client has any nutrition activity — the earlier of their
+ * first logged nutrition_log and the first day a version prescribed (the
+ * earliest ACTIVE version's start: a day's target is computed from the version
+ * covering it, and an archived version never ran a day). Bounds the history
+ * range. Returns null when the client has no logs and no version.
  */
 async function getEarliestNutritionActivityDate(clientId: string): Promise<string | null> {
-  const [logRes, eventRes] = await Promise.all([
+  const [logRes, versionRes] = await Promise.all([
     supabaseAdmin
       .from("nutrition_logs")
       .select("date")
@@ -62,17 +64,18 @@ async function getEarliestNutritionActivityDate(clientId: string): Promise<strin
       .limit(1)
       .maybeSingle(),
     supabaseAdmin
-      .from("nutrition_events")
-      .select("date")
+      .from("nutrition_plans")
+      .select("effective_from")
       .eq("client_id", clientId)
-      .order("date", { ascending: true })
+      .eq("status", "active")
+      .order("effective_from", { ascending: true })
       .limit(1)
       .maybeSingle(),
   ]);
 
   const candidates: string[] = [];
   if (logRes.data?.date) candidates.push(logRes.data.date.substring(0, 10));
-  if (eventRes.data?.date) candidates.push(eventRes.data.date.substring(0, 10));
+  if (versionRes.data?.effective_from) candidates.push(versionRes.data.effective_from.substring(0, 10));
   if (candidates.length === 0) return null;
   return candidates.sort()[0];
 }
@@ -101,8 +104,8 @@ export async function GET(
 
     const { limit, offset } = pagination;
 
-    // The history range starts at the client's earliest nutrition_log /
-    // nutrition_event, giving an event-based day-by-day summary (real `date`
+    // The history range starts at the client's earliest nutrition_log or
+    // earliest prescribed day, giving a day-by-day summary (real `date`
     // throughout) instead of a logged-days-only nutrition_logs read.
     const rangeStart = await getEarliestNutritionActivityDate(clientId);
 

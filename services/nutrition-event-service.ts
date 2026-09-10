@@ -1,48 +1,17 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { NutritionEvent, NutritionEventStatus, DietType } from "@/types/check-in";
-import type { NutritionEventRow, NutritionEventInsert } from "@/lib/database-helpers";
+import type { NutritionEventInsert } from "@/lib/database-helpers";
 import type { TrainingPlan } from "@/types/training";
-import {
-  addDaysToDateString,
-  expandDateRange,
-  DAY_NUM,
-} from "@/lib/date-helpers";
+import { addDaysToDateString, expandDateRange } from "@/lib/date-helpers";
 import { getClientTodayString } from "@/services/today-service";
-import {
-  getActiveNutritionPlanVersionsOverlapping,
-  versionCoversDate,
-} from "@/services/nutrition-plan-service";
+import { getActiveNutritionPlanVersionsOverlapping } from "@/services/nutrition-plan-service";
 import { getEventsForDateRange } from "@/services/training-event-service";
-import { calculateDailyMacros } from "@/utils/nutrition-helpers";
-import type { DayOfWeek } from "@/utils/nutrition-helpers";
+import {
+  nutritionDayOfWeek,
+  resolveNutritionDay,
+  type NutritionDayGridRow,
+} from "@/services/nutrition-day-resolver";
 import { captureApiError } from "@/lib/error-handler";
 import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
-
-// --- Row mapper ---
-
-function mapNutritionEventRow(row: NutritionEventRow): NutritionEvent {
-  return {
-    id: row.id,
-    clientId: row.client_id,
-    nutritionPlanId: row.nutrition_plan_id,
-    date: row.date,
-    dayOfWeek: row.day_of_week,
-    baselineCalories: row.baseline_calories,
-    trainingBurnCalories: row.training_burn_calories,
-    proteinG: Number(row.protein_g),
-    carbG: Number(row.carb_g),
-    fatG: Number(row.fat_g),
-    dietType: row.diet_type,
-    isTrainingDay: row.is_training_day,
-    calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,
-    isModified: row.is_modified,
-    note: row.note ?? null,
-    coachNote: row.coach_note ?? null,
-    status: row.status as NutritionEventStatus,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
 
 // --- Plan metadata for event generation ---
 
@@ -67,6 +36,11 @@ type StoredDailyTarget = {
  * Generate nutrition events for a plan within a date range.
  * Creates one event row per date with baseline macros + burn fields.
  * Uses upsert with overwrite on conflict (new plan values always win).
+ *
+ * Every number on a row comes from `resolveNutritionDay` — the same function
+ * every reader now computes a day from — so what this writes and what a reader
+ * shows agree by construction. The day table is read by nothing any more; this
+ * writer survives only until its callers are removed.
  */
 export async function generateNutritionEvents(
   clientId: string,
@@ -99,77 +73,49 @@ export async function generateNutritionEvents(
     trainingEventsByDate.set(dateKey, existing);
   }
 
-  // Build day-of-week → stored daily target map
-  const targetsByDay = new Map(
-    (dailyTargetRows || []).map((dt) => [dt.day_of_week, dt])
+  // Build day-of-week → grid row map, in the resolver's shape.
+  const gridRowByDay = new Map<string, NutritionDayGridRow>(
+    (dailyTargetRows || []).map((dt) => [
+      dt.day_of_week,
+      {
+        calories: dt.calories,
+        proteinG: Number(dt.protein_g),
+        carbG: Number(dt.carb_g),
+        fatG: Number(dt.fat_g),
+      },
+    ])
   );
 
-  // Iterate dates and build insert rows
+  // Iterate dates: resolve each day, then map the DTO back to the insert row.
+  // The generator never writes an edited day (they are filtered below), so the
+  // resolver is handed no edit; the stamped coach note is re-supplied below
+  // from the existing row, not resolved here.
   const rows: NutritionEventInsert[] = [];
 
   for (const dateStr of orderedDates) {
-    const dayNum = new Date(dateStr + "T00:00:00").getDay();
-
-    // Find the day name (lowercase) from DAY_NUM reverse lookup
-    let dayName: DayOfWeek = "monday";
-    for (const [name, num] of Object.entries(DAY_NUM)) {
-      if (num === dayNum) {
-        dayName = name as DayOfWeek;
-        break;
-      }
-    }
-
-    const dayTrainingEvents = trainingEventsByDate.get(dateStr) ?? [];
-    const isTrainingDay = dayTrainingEvents.length > 0;
-
-    // Baseline from stored daily target row (handles custom macros + custom day distribution)
-    const stored = targetsByDay.get(dayName);
-    const baselineCalories = stored?.calories ?? plan.baselineCalories;
-
-    // New percentage model: use surplus % from training event's session
-    // Legacy fallback: sum estimatedCalories as flat burn
-    const firstEvent = dayTrainingEvents[0];
-    const surplusPercentage = firstEvent?.calorieSurplusPercentage ?? null;
-    let trainingBurnCalories = 0;
-    if (surplusPercentage != null) {
-      trainingBurnCalories = Math.round(baselineCalories * surplusPercentage / 100);
-    } else {
-      trainingBurnCalories = dayTrainingEvents.reduce(
-        (sum, e) => sum + (e.estimatedCalories ?? 0),
-        0
-      );
-    }
-
-    // Baseline macros: use the stored daily-target macros VERBATIM — they already
-    // carry custom macros, custom day-distribution, and the auto diet-split.
-    // Whatever the coach set is what lands on the event (no re-deriving the
-    // carb/fat split). Only compute a split when there's no stored target.
-    const macros = stored
-      ? {
-          proteinG: Number(stored.protein_g),
-          carbsG: Number(stored.carb_g),
-          fatG: Number(stored.fat_g),
-        }
-      : calculateDailyMacros(
-          baselineCalories,
-          plan.proteinTargetG,
-          isTrainingDay,
-          plan.dietType as DietType
-        );
+    const day = resolveNutritionDay({
+      clientId,
+      date: dateStr,
+      version: { id: planId, ...plan },
+      gridRow: gridRowByDay.get(nutritionDayOfWeek(dateStr)) ?? null,
+      trainingEvents: trainingEventsByDate.get(dateStr) ?? [],
+      edit: null,
+      coachNote: null,
+    });
 
     rows.push({
-      client_id: clientId,
-      nutrition_plan_id: planId,
-      date: dateStr,
-      day_of_week: dayName,
-      baseline_calories: baselineCalories,
-      training_burn_calories: trainingBurnCalories,
-      protein_g: macros.proteinG,
-      carb_g: macros.carbsG,
-      fat_g: macros.fatG,
-      diet_type: plan.dietType,
-      is_training_day: isTrainingDay,
-      calorie_surplus_percentage: surplusPercentage,
+      client_id: day.clientId,
+      nutrition_plan_id: day.nutritionPlanId,
+      date: day.date,
+      day_of_week: day.dayOfWeek,
+      baseline_calories: day.baselineCalories,
+      training_burn_calories: day.trainingBurnCalories,
+      protein_g: day.proteinG,
+      carb_g: day.carbG,
+      fat_g: day.fatG,
+      diet_type: day.dietType,
+      is_training_day: day.isTrainingDay,
+      calorie_surplus_percentage: day.calorieSurplusPercentage,
       status: "scheduled",
     });
   }
@@ -538,45 +484,3 @@ export async function sweepUncoveredNutritionDays(
     if (error) throw error;
   }
 }
-
-// --- Query functions ---
-
-/**
- * Get all events for a client within a date range, ordered by date ascending.
- */
-export async function getNutritionEventsForDateRange(
-  clientId: string,
-  startDate: string,
-  endDate: string
-): Promise<NutritionEvent[]> {
-  const { data, error } = await supabaseAdmin
-    .from("nutrition_events")
-    .select("*")
-    .eq("client_id", clientId)
-    .gte("date", startDate)
-    .lte("date", endDate)
-    .order("date", { ascending: true });
-
-  if (error) throw error;
-  return (data ?? []).map(mapNutritionEventRow);
-}
-
-/**
- * Get a single event for a client on a specific date.
- * Returns null if no event exists.
- */
-export async function getNutritionEventForDate(
-  clientId: string,
-  date: string
-): Promise<NutritionEvent | null> {
-  const { data, error } = await supabaseAdmin
-    .from("nutrition_events")
-    .select("*")
-    .eq("client_id", clientId)
-    .eq("date", date)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ? mapNutritionEventRow(data) : null;
-}
-
