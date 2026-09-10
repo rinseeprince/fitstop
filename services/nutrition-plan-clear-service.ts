@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { addDaysToDateString } from "@/lib/date-helpers";
+import { deleteNutritionDayEditsInRanges } from "./nutrition-day-edits-service";
 
 /**
  * "Delete nutrition plan": end the versions the client is on — the nutrition
@@ -24,14 +25,24 @@ import { addDaysToDateString } from "@/lib/date-helpers";
  * block's end is either ended whole or left whole; there is no day range for
  * a bound to get wrong.
  *
+ * The one thing stored per day is the coach's hand edit, and the days this
+ * uncovers take their edits with them (owner decision 2026-09-10): the edits
+ * dated from today inside the ended versions' windows, in one statement, so a
+ * surviving version's days — a crossing plan's, a later block's — and every
+ * past day keep theirs. Left behind, an edit on an uncovered day would be
+ * invisible (no day to see or revert it on) and would answer again under
+ * whatever version next covered the date.
+ *
  * One act, two callers: the nutrition calendar's own delete (every running or
  * queued version) and the block delete's "and its plans" (only the versions
  * laid inside the block). There is no delete-the-days-but-keep-the-plan
  * variant (owner, 2026-09-08): a version left standing covers its days, so the
  * two cannot be separated.
  *
- * Two statements, one per outcome, whatever the count. A mid-flight failure
- * leaves every version a retry finds again.
+ * Three statements, whatever the count: the edits first, then one per
+ * version outcome. The edits go FIRST so a mid-flight failure leaves every
+ * version whole for the retry to find; the other order would end the versions
+ * and strand their edits, which a retry can no longer reach.
  */
 export async function clearNutritionPlansForClient(
   clientId: string,
@@ -49,11 +60,11 @@ export async function clearNutritionPlansForClient(
    * they can see what they are removing.
    */
   window?: { from: string; to: string }
-): Promise<{ versionsCleared: number; versionIds: string[] }> {
+): Promise<{ versionsCleared: number; versionIds: string[]; editsCleared: number }> {
   // Only versions with a day still ahead: a finished one is untouched history.
   const versionsQuery = supabaseAdmin
     .from("nutrition_plans")
-    .select("id, effective_from")
+    .select("id, effective_from, effective_until")
     .eq("client_id", clientId)
     .eq("status", "active")
     .gte("effective_until", clientToday)
@@ -66,7 +77,18 @@ export async function clearNutritionPlansForClient(
   }
 
   const versionIds = (versions ?? []).map((version) => version.id);
-  if (versionIds.length === 0) return { versionsCleared: 0, versionIds: [] };
+  if (versionIds.length === 0) return { versionsCleared: 0, versionIds: [], editsCleared: 0 };
+
+  // The days these versions answer for from today, read before anything
+  // moves: a running version's from today, a queued one's whole window. Past
+  // days are never in range — they keep their version and their edits.
+  const editsCleared = await deleteNutritionDayEditsInRanges(
+    clientId,
+    (versions ?? []).map((version) => ({
+      from: version.effective_from > clientToday ? version.effective_from : clientToday,
+      to: version.effective_until,
+    }))
+  );
 
   const now = new Date().toISOString();
   const running = (versions ?? [])
@@ -96,5 +118,5 @@ export async function clearNutritionPlansForClient(
     }
   }
 
-  return { versionsCleared: versionIds.length, versionIds };
+  return { versionsCleared: versionIds.length, versionIds, editsCleared };
 }

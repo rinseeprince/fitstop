@@ -7,6 +7,7 @@ vi.mock("./supabase-admin", () => ({
 
 import {
   deleteNutritionDayEdits,
+  deleteNutritionDayEditsInRanges,
   getNutritionDayEditsForRange,
   upsertNutritionDayEdits,
 } from "./nutrition-day-edits-service";
@@ -16,7 +17,7 @@ type Response = { data?: unknown; error?: { message: string } | null; count?: nu
 // Chainable builder: every method self-returns, awaiting resolves the response.
 function makeChain(response: Response) {
   const chain: Record<string, unknown> = {};
-  for (const method of ["select", "eq", "gte", "lte", "in", "order", "range", "upsert", "delete"]) {
+  for (const method of ["select", "eq", "gte", "lte", "in", "or", "order", "range", "upsert", "delete"]) {
     chain[method] = vi.fn(() => chain);
   }
   chain.then = (resolve: (value: Response) => unknown) =>
@@ -156,5 +157,51 @@ describe("deleteNutritionDayEdits", () => {
     fromMock.mockReturnValue(makeChain({ error: { message: "boom" } }));
 
     await expect(deleteNutritionDayEdits(CLIENT, ["2026-11-03"])).rejects.toThrow(/boom/);
+  });
+});
+
+describe("deleteNutritionDayEditsInRanges", () => {
+  it("removes the edits inside every range in ONE statement — an `or` of per-range `and`s, so days between the ranges are never touched", async () => {
+    const chain = makeChain({ count: 3 });
+    fromMock.mockReturnValue(chain);
+
+    const removed = await deleteNutritionDayEditsInRanges(CLIENT, [
+      { from: "2026-07-02", to: "2026-08-31" },
+      { from: "2026-09-14", to: "2026-09-30" },
+    ]);
+
+    expect(removed).toBe(3);
+    expect(fromMock).toHaveBeenCalledTimes(1);
+    expect(fromMock).toHaveBeenCalledWith("nutrition_day_edits");
+    expect(spy(chain, "delete")).toHaveBeenCalledWith({ count: "exact" });
+    expect(spy(chain, "eq")).toHaveBeenCalledWith("client_id", CLIENT);
+    expect(spy(chain, "or")).toHaveBeenCalledWith(
+      "and(date.gte.2026-07-02,date.lte.2026-08-31),and(date.gte.2026-09-14,date.lte.2026-09-30)"
+    );
+    // A range is inclusive at both ends and never spelled as a plain gte/lte
+    // pair, which would join the ranges into one span.
+    expect(spy(chain, "gte")).not.toHaveBeenCalled();
+    expect(spy(chain, "lte")).not.toHaveBeenCalled();
+  });
+
+  it("drops an inverted range and removes nothing when none is left", async () => {
+    expect(await deleteNutritionDayEditsInRanges(CLIENT, [{ from: "2026-09-12", to: "2026-09-11" }])).toBe(0);
+    expect(await deleteNutritionDayEditsInRanges(CLIENT, [])).toBe(0);
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a bound that is not a date before touching the table — the belt on the filter string", async () => {
+    await expect(
+      deleteNutritionDayEditsInRanges(CLIENT, [{ from: "2026-09-12", to: "2026-09-30)" }])
+    ).rejects.toThrow(/Invalid date range/);
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it("throws on a delete error", async () => {
+    fromMock.mockReturnValue(makeChain({ error: { message: "boom" } }));
+
+    await expect(
+      deleteNutritionDayEditsInRanges(CLIENT, [{ from: "2026-09-12", to: "2026-09-30" }])
+    ).rejects.toThrow(/boom/);
   });
 });

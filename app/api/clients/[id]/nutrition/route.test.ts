@@ -329,7 +329,7 @@ describe('Nutrition Route DELETE', () => {
     vi.mocked(getClientById).mockResolvedValue(mockClient as never)
     vi.mocked(getClientTodayString).mockResolvedValue('2026-01-15')
     vi.mocked(clearNutritionPlansForClient).mockResolvedValue({
-      versionsCleared: 1,
+      versionsCleared: 1, editsCleared: 0,
       versionIds: ['plan-1'],
     })
   })
@@ -370,7 +370,7 @@ describe('Nutrition Route DELETE', () => {
   })
 
   it('returns 404 when no version has days left to retire', async () => {
-    vi.mocked(clearNutritionPlansForClient).mockResolvedValue({ versionsCleared: 0, versionIds: [] })
+    vi.mocked(clearNutritionPlansForClient).mockResolvedValue({ versionsCleared: 0, editsCleared: 0, versionIds: [] })
 
     const response = await DELETE(makeDeleteRequest(), {
       params: Promise.resolve({ id: 'client-1' }),

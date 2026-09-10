@@ -4,6 +4,7 @@ import { inclusiveDays } from "@/lib/blocks/block-chain";
 import { expandProgramToWindow, generateProgramEvents } from "./program-event-walk";
 import { getNextPlanStartCap } from "./training-event-service";
 import { getNextNutritionVersionStartCap } from "./nutrition-plan-service";
+import { deleteNutritionDayEditsInRanges } from "./nutrition-day-edits-service";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { orchestrateNutritionPlanCreation } from "./nutrition-plan-orchestrator";
 import type { ClientBlock } from "@/types/client-blocks";
@@ -143,7 +144,10 @@ export async function clearScheduledEvents(params: {
  * back to that end IS removing those days; a queued version that now starts
  * in the cleared stretch is retired with them. A version crossing into the
  * NEXT block is pulled back too; the days it leaves behind there belong to
- * that block's own setup.
+ * that block's own setup. The coach's hand edits on the days this uncovers
+ * go with them (owner decision 2026-09-10) — the same one-statement delete
+ * the plan delete issues, read off the versions before they move and run
+ * before they do, so a failure leaves the versions whole for the retry.
  */
 export async function clearEventsOutsideBlock(params: {
   clientId: string;
@@ -161,6 +165,29 @@ export async function clearEventsOutsideBlock(params: {
         to: ceiling,
       })
     : { trainingCleared: 0 };
+
+  // The versions this cuts, read BEFORE they move: one reaching past the new
+  // end loses the days past it, one queued in the cleared stretch loses its
+  // whole window — exactly the two predicates the cap and the retirement below
+  // apply. Their hand edits on those days go first.
+  const { data: cut, error: cutError } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id, effective_from, effective_until")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .gt("effective_until", blockEndsOn)
+    .lte("effective_from", ceiling ?? blockEndsOn);
+  if (cutError) throw cutError;
+  await deleteNutritionDayEditsInRanges(
+    clientId,
+    (cut ?? []).map((version) => ({
+      from:
+        version.effective_from > blockEndsOn
+          ? version.effective_from
+          : addDaysToDateString(blockEndsOn, 1),
+      to: version.effective_until,
+    }))
+  );
 
   const now = new Date().toISOString();
   const { error: capError } = await supabaseAdmin

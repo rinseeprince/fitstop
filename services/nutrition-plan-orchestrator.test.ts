@@ -135,7 +135,7 @@ beforeEach(() => {
   vi.mocked(createNutritionPlan).mockResolvedValue("plan-1" as never);
   vi.mocked(resolveNutritionPlacementEnd).mockResolvedValue("2026-08-27");
   vi.mocked(clearNutritionPlansForClient).mockResolvedValue({
-    versionsCleared: 1,
+    versionsCleared: 1, editsCleared: 0,
     versionIds: ["plan-1"],
   });
   vi.mocked(recordPlanSaveNote).mockResolvedValue(undefined);
@@ -258,7 +258,7 @@ describe("orchestrateNutritionPlanCreation — the coach note (migration 147)", 
 describe("orchestrateNutritionPlanDeletion — one act, the clear service's (migration 166)", () => {
   it("retires the versions the client is on, with the client's today, and names the earliest for the audit", async () => {
     vi.mocked(clearNutritionPlansForClient).mockResolvedValue({
-      versionsCleared: 2,
+      versionsCleared: 2, editsCleared: 0,
       versionIds: ["plan-1", "q1"],
     });
 
@@ -281,7 +281,7 @@ describe("orchestrateNutritionPlanDeletion — one act, the clear service's (mig
   });
 
   it("rejects 404 when nothing is left to retire — a same-day second delete is a clean 404, not a silent success", async () => {
-    vi.mocked(clearNutritionPlansForClient).mockResolvedValue({ versionsCleared: 0, versionIds: [] });
+    vi.mocked(clearNutritionPlansForClient).mockResolvedValue({ versionsCleared: 0, editsCleared: 0, versionIds: [] });
 
     await expect(orchestrateNutritionPlanDeletion(clientId, coachId)).rejects.toMatchObject({
       name: "NutritionPlanError",

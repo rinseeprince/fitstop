@@ -119,3 +119,47 @@ export async function deleteNutritionDayEdits(
   }
   return count ?? 0;
 }
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Remove every edit dated inside any of `ranges` — the days a plan delete or a
+ * block shorten has just uncovered — in ONE statement, returning how many rows
+ * went. An edit is a fact about a date, and a date no version covers has no
+ * day for the coach to see or revert it on, so an edit left behind would sit
+ * dormant and answer again under whatever version next covers the date (owner
+ * decision 2026-09-10: the act that uncovers a day removes the coach's edit on
+ * it; edits on past days are never in a range, because they are part of what
+ * the client saw).
+ *
+ * The ranges are the windows of the versions being ended or cut, from today,
+ * spelled as one `or` of per-range `and`s so a surviving version's days in
+ * between are never touched. Every bound is a DATE the caller read off a
+ * version row or resolved as the client's today; the shape check is the belt
+ * that keeps anything else out of a filter string.
+ */
+export async function deleteNutritionDayEditsInRanges(
+  clientId: string,
+  /** Inclusive date spans, YYYY-MM-DD at both ends. */
+  ranges: Array<{ from: string; to: string }>
+): Promise<number> {
+  const live = ranges.filter((range) => range.from <= range.to);
+  if (live.length === 0) return 0;
+
+  for (const { from, to } of live) {
+    if (!ISO_DATE.test(from) || !ISO_DATE.test(to)) {
+      throw new Error(`Invalid date range for the nutrition day edits: ${from}..${to}`);
+    }
+  }
+
+  const { count, error } = await supabaseAdmin
+    .from("nutrition_day_edits")
+    .delete({ count: "exact" })
+    .eq("client_id", clientId)
+    .or(live.map(({ from, to }) => `and(date.gte.${from},date.lte.${to})`).join(","));
+
+  if (error) {
+    throw new Error(`Failed to remove the uncovered nutrition day edits: ${error.message}`);
+  }
+  return count ?? 0;
+}

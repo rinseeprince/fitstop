@@ -39,7 +39,7 @@ vi.mock("@/services/training-plan-clear-service", () => ({
 }));
 
 vi.mock("@/services/nutrition-plan-clear-service", () => ({
-  clearNutritionPlansForClient: vi.fn().mockResolvedValue({ versionsCleared: 0, versionIds: [] }),
+  clearNutritionPlansForClient: vi.fn().mockResolvedValue({ versionsCleared: 0, editsCleared: 0, versionIds: [] }),
 }));
 
 vi.mock("@/services/client-blocks-service", () => {

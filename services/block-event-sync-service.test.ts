@@ -396,8 +396,10 @@ describe("fillNutritionAcrossBlock", () => {
 
 describe("clearEventsOutsideBlock", () => {
   /** from() per table, in call order: the next-block probe, the last-session
-   *  probe when there is no next block, the session removal, then the
-   *  version cap and the version retirement on each track. */
+   *  probe when there is no next block, the session removal, then on the
+   *  nutrition track the read of the versions being cut and the delete of
+   *  their hand edits, then the version cap and the version retirement on
+   *  each track. */
   function wireTables(byTable: Record<string, ReturnType<typeof query>[]>) {
     mockFrom.mockImplementation(((table: string) => {
       const next = byTable[table]?.shift();
@@ -406,7 +408,15 @@ describe("clearEventsOutsideBlock", () => {
     }) as never);
   }
 
-  it("pulls a version reaching past the new end back to it, and retires one starting in the cleared stretch (migration 166)", async () => {
+  it("pulls a version reaching past the new end back to it, retires one starting in the cleared stretch, and removes the hand edits on the days both lose (migration 166)", async () => {
+    const cutQuery = query({
+      data: [
+        { id: "v-cap", effective_from: "2026-09-01", effective_until: "2026-12-13" },
+        { id: "v-queued", effective_from: "2026-10-12", effective_until: "2026-10-31" },
+      ],
+      error: null,
+    });
+    const editsQuery = query({ data: null, error: null });
     const capQuery = query({ data: null, error: null });
     const retireQuery = query({ data: null, error: null });
     const trainingCapQuery = query({ data: null, error: null });
@@ -414,7 +424,8 @@ describe("clearEventsOutsideBlock", () => {
     wireTables({
       client_phases: [query({ data: { starts_on: "2026-11-01" }, error: null })],
       training_events: [query({ data: [], error: null })],
-      nutrition_plans: [capQuery, retireQuery],
+      nutrition_plans: [cutQuery, capQuery, retireQuery],
+      nutrition_day_edits: [editsQuery],
       training_plans: [trainingCapQuery, trainingRetireQuery],
     });
 
@@ -422,6 +433,22 @@ describe("clearEventsOutsideBlock", () => {
       clientId: "c1", clientToday: TODAY, blockEndsOn: "2026-10-05",
     });
 
+    // The versions being cut are read before they move — the same two
+    // predicates the cap and the retirement apply, in one select.
+    expect(cutQuery.eq).toHaveBeenCalledWith("status", "active");
+    expect(cutQuery.gt).toHaveBeenCalledWith("effective_until", "2026-10-05");
+    expect(cutQuery.lte).toHaveBeenCalledWith("effective_from", "2026-10-31");
+    // Their hand edits on the days they lose go FIRST: the pulled-back version's
+    // days past the new end, the retired version's whole window — one range
+    // each, never the day before the new end, and never a day a surviving
+    // version covers.
+    expect(editsQuery.delete).toHaveBeenCalledWith({ count: "exact" });
+    expect(editsQuery.eq).toHaveBeenCalledWith("client_id", "c1");
+    expect(editsQuery.or).toHaveBeenCalledWith(
+      "and(date.gte.2026-10-06,date.lte.2026-12-13),and(date.gte.2026-10-12,date.lte.2026-10-31)"
+    );
+    const tables = mockFrom.mock.calls.map((call) => String(call[0]));
+    expect(tables.indexOf("nutrition_day_edits")).toBeLessThan(tables.lastIndexOf("nutrition_plans"));
     // Its days are computed from its window, so pulling the end back IS
     // removing the days past it.
     expect(capQuery.update).toHaveBeenCalledWith(
@@ -454,13 +481,14 @@ describe("clearEventsOutsideBlock", () => {
     expect(trainingRetireQuery.lte).toHaveBeenCalledWith("effective_from", "2026-10-31");
   });
 
-  it("with nothing past the block, still pulls the versions back and retires none", async () => {
+  it("with nothing past the block, still pulls the versions back, retires none, and touches no edit when no version is cut", async () => {
+    const cutQuery = query({ data: [], error: null });
     const capQuery = query({ data: null, error: null });
     const trainingCapQuery = query({ data: null, error: null });
     wireTables({
       client_phases: [query({ data: null, error: null })],
       training_events: [query({ data: null, error: null })],
-      nutrition_plans: [capQuery],
+      nutrition_plans: [cutQuery, capQuery],
       training_plans: [trainingCapQuery],
     });
 
@@ -475,9 +503,12 @@ describe("clearEventsOutsideBlock", () => {
     expect(trainingCapQuery.update).toHaveBeenCalledWith(
       expect.objectContaining({ effective_until: "2026-10-05" })
     );
-    // No ceiling → no session removal and no retirement: the two probes + one
-    // cap per track.
-    expect(mockFrom).toHaveBeenCalledTimes(4);
+    // No ceiling → the cut read is bounded at the block's end, and no session
+    // removal, no retirement and no edits statement: the two probes, the cut
+    // read, one cap per track.
+    expect(cutQuery.lte).toHaveBeenCalledWith("effective_from", "2026-10-05");
+    expect(mockFrom.mock.calls.map((call) => call[0])).not.toContain("nutrition_day_edits");
+    expect(mockFrom).toHaveBeenCalledTimes(5);
   });
 });
 
