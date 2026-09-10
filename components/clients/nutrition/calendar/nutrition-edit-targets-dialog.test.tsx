@@ -62,7 +62,12 @@ describe("NutritionEditTargetsDialog — one edit, the balancer", () => {
       <NutritionEditTargetsDialog open onOpenChange={vi.fn()} days={days} isSaving={false} onApply={vi.fn()} />
     );
 
-    expect(screen.getByRole("dialog", { name: "Edit targets" })).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Edit targets" });
+    expect(dialog).toBeInTheDocument();
+    // No edge border on the card: composited over white it painted a white
+    // hairline around the dark hero (owner smoke, 2026-09-10).
+    expect(dialog.className).not.toMatch(/(^|\s)border(\s|$)/);
+    expect(dialog.className).not.toContain("border-[rgba(13,148,136,0.08)]");
     expect(screen.getByText("2 days selected")).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Carbs and fat boundary" })).toBeInTheDocument();
     expect(screen.getByLabelText<HTMLInputElement>("Calories").value).toBe("2000");
