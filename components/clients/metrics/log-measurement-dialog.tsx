@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2 } from "lucide-react";
+import { Loader2, Pin, Ruler, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -168,16 +168,37 @@ export function LogMeasurementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Log measurement</DialogTitle>
-          <DialogDescription>
-            Logging a date that already has an entry for this metric replaces
-            it.
-          </DialogDescription>
+      {/* The nutrition day editor's shell: content-sized, p-0 + overflow-hidden
+          so the hero takes the card's rounded top edge. */}
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
+      >
+        {/* The day editor's hero: the dark band, the teal icon square, the
+            title scale and its own close, since the built-in one is off. */}
+        <DialogHeader className="shrink-0 flex-row items-center gap-3 bg-[#0f2027] px-6 pb-5 pt-5 text-left">
+          <div className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[6px] bg-[rgba(13,148,136,0.15)]">
+            <Ruler className="h-[15px] w-[15px] text-[#0d9488]" strokeWidth={1.5} />
+          </div>
+          <DialogTitle className="min-w-0 flex-1 text-[16px] font-bold leading-tight tracking-normal text-white">
+            Log measurement
+          </DialogTitle>
+          <DialogClose className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[6px] bg-[rgba(255,255,255,0.06)] transition-colors hover:bg-[rgba(255,255,255,0.1)]">
+            <X className="h-4 w-4 text-[rgba(255,255,255,0.5)]" strokeWidth={1.5} />
+            <span className="sr-only">Close</span>
+          </DialogClose>
         </DialogHeader>
 
-        <div className="space-y-4 py-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-5 pb-4">
+          {/* The day editor's pinned box, and the dialog's accessible
+              description in one. */}
+          <div className="flex items-start gap-2 rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[rgba(13,148,136,0.05)] px-3 py-2">
+            <Pin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0d9488]" strokeWidth={1.5} />
+            <DialogDescription className="text-xs text-[#5a7d82]">
+              Logging a date that already has an entry for this metric replaces it.
+            </DialogDescription>
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="log-metric">Metric</Label>
             <Select value={metricId} onValueChange={setMetricId}>
@@ -254,14 +275,15 @@ export function LogMeasurementDialog({
               maxLength={500}
               value={note}
               onChange={(e) => setNote(e.target.value)}
+              placeholder="Optional · shown to the client"
             />
-            <p className="text-[11px] text-[#93b0b4]">
-              Optional · shown to the client
-            </p>
           </div>
         </div>
 
-        <DialogFooter>
+        {/* No rule and no band under the fields: the buttons sit one gap (16px)
+            below the note and one gap above the card's edge — the body's bottom
+            padding above them, this row's own below. */}
+        <div className="flex shrink-0 items-center justify-end gap-2 px-6 pb-4">
           <Button
             variant="ghost"
             onClick={() => onOpenChange(false)}
@@ -277,7 +299,7 @@ export function LogMeasurementDialog({
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
             Log entry
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

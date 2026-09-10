@@ -160,3 +160,31 @@ describe("LogMeasurementDialog", () => {
     });
   });
 });
+
+// The nutrition day editor's shell (owner, 2026-09-10): the dark hero with its
+// own close, the "replaces it" sentence in the pinned box rather than under the
+// title, and the note's guidance in its placeholder rather than under the field.
+describe("LogMeasurementDialog — the day editor's shell", () => {
+  it("carries the hero's one labelled close, the pinned sentence and the note's placeholder", () => {
+    render(
+      <LogMeasurementDialog
+        open
+        onOpenChange={vi.fn()}
+        metrics={METRICS}
+        initialMetricId="weight"
+        onSubmit={submitSpy()}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Log measurement" });
+    expect(dialog).toBeInTheDocument();
+    expect(dialog.className).not.toMatch(/(^|\s)border(\s|$)/);
+    expect(screen.getAllByRole("button", { name: "Close" })).toHaveLength(1);
+    expect(
+      screen.getByText("Logging a date that already has an entry for this metric replaces it."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Note")).toHaveAttribute("placeholder", "Optional · shown to the client");
+    // Placeholder only — nothing under the field says it.
+    expect(screen.queryByText(/shown to the client/)).toBeNull();
+  });
+});
