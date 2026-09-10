@@ -34,7 +34,9 @@ type UseNutritionCalendarEditingArgs = {
  * (Session 4 ◆2). Selection is a Set of dates toggled by clicking — single,
  * scattered, or contiguous are all built the same way. Mutations post a `dates[]`
  * payload (plain same-origin fetch; CSRF is origin-based) so a scattered
- * selection edits exactly the chosen days and leaves the gaps untouched.
+ * selection edits exactly the chosen days and leaves the gaps untouched. The
+ * edit is the sheet's macro balancer: one target, the same four numbers for
+ * every selected day.
  */
 export function useNutritionCalendarEditing({
   clientId,
@@ -219,15 +221,6 @@ export function useNutritionCalendarEditing({
 }
 
 /** One short sans fragment for the success toast, naming what was applied. */
-function describeEdit(payload: RangeEditPayload): string | undefined {
-  if (payload.mode === "absolute") {
-    return `Set to ${payload.calories.toLocaleString()} kcal`;
-  }
-  if (payload.percent != null) {
-    return `Adjusted by ${payload.percent > 0 ? "+" : ""}${payload.percent}%`;
-  }
-  if (payload.calorieDelta != null) {
-    return `Adjusted by ${payload.calorieDelta > 0 ? "+" : ""}${payload.calorieDelta} kcal`;
-  }
-  return undefined;
+function describeEdit(payload: RangeEditPayload): string {
+  return `Set to ${payload.calories.toLocaleString()} kcal`;
 }

@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Pin, SlidersHorizontal } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import {
   LABEL_CLASS,
   MONO,
@@ -22,9 +21,8 @@ import {
   CHIP_NEUTRAL_CLASS,
   FOCUS_RING,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { useEditTargetsForm, type EditTargetsTab } from "./use-edit-targets-form";
+import { useEditTargetsForm } from "./use-edit-targets-form";
 import { NutritionSetTargetsTab } from "./nutrition-set-targets-tab";
-import { NutritionAdjustByTab } from "./nutrition-adjust-by-tab";
 import type {
   ResolvedSelectedDay,
   RangeEditPayload,
@@ -43,7 +41,8 @@ type NutritionEditTargetsSheetProps = {
 };
 
 /** "Edit targets" right sheet — the training placed-session editor's 780px
- * structure, hosting the Set targets / Adjust by tabs. */
+ * structure, hosting the macro balancer over the selection: one calorie
+ * target and split, the same four numbers for every selected day. */
 export function NutritionEditTargetsSheet({
   open,
   onOpenChange,
@@ -121,21 +120,7 @@ export function NutritionEditTargetsSheet({
             </p>
           </div>
 
-          <SegmentedControl
-            fullWidth
-            options={[
-              { value: "set", label: "Set targets" },
-              { value: "adjust", label: "Adjust by" },
-            ]}
-            value={form.tab}
-            onChange={(v) => form.setTab(v as EditTargetsTab)}
-          />
-
-          {form.tab === "set" ? (
-            <NutritionSetTargetsTab form={form} />
-          ) : (
-            <NutritionAdjustByTab form={form} />
-          )}
+          <NutritionSetTargetsTab form={form} />
         </div>
 
         <div className="flex flex-col gap-3 border-t border-[rgba(13,148,136,0.08)] px-5 py-3">

@@ -4,28 +4,24 @@ import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helper
 import type { MacroGrams } from "@/lib/nutrition/macro-balance";
 
 /**
- * Pure model for the Edit-targets sheet (no React). Selection resolution, the
- * absolute seed, and the client-side delta math live here so they are
- * unit-testable and shared between the form hook and the preview.
+ * Pure model for the Edit-targets sheet (no React). Selection resolution and
+ * the seed live here so they are unit-testable and shared between the form
+ * hook and the selection bar.
  */
 
-/** The edit payload sent to PATCH …/nutrition/events/range.
- * Absolute always carries all four numbers — the Set targets tab is the macro
- * balancer, whose grams derive from its calories — and every selected day
- * gets the same four (owner decision 2026-09-10).
- * `note`: omitted = preserve existing notes; "" = clear; string = set (D-B).
- * `holdProtein`: delta only; omitted/true = server holds protein and
- * rebalances carbs/fat (legacy path); false = all three macros scale onto the
- * new total preserving the day's stored split. */
-export type RangeEditPayload =
-  | { mode: "absolute"; calories: number; proteinG: number; carbG: number; fatG: number; note?: string }
-  | { mode: "delta"; percent?: number; calorieDelta?: number; holdProtein?: boolean; note?: string };
-
-export function toInt(value: string): number | null {
-  if (value.trim() === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? Math.round(n) : null;
-}
+/** The edit payload sent to PATCH …/nutrition/events/range. The sheet is the
+ * macro balancer, so it always carries the calories and the three grams its
+ * split derives, and every selected day gets the same four (owner decision
+ * 2026-09-10). `note`: omitted = preserve existing notes; "" = clear; string =
+ * set (D-B). */
+export type RangeEditPayload = {
+  mode: "absolute";
+  calories: number;
+  proteinG: number;
+  carbG: number;
+  fatG: number;
+  note?: string;
+};
 
 export type ResolvedSelectedDay = {
   date: string;
@@ -80,17 +76,6 @@ export function computeAbsoluteSeed(days: ResolvedSelectedDay[]): AbsoluteSeed {
     grams: first ? { proteinG: first.proteinG, carbG: first.carbsG, fatG: first.fatG } : null,
     calorieRange: values.length > 1 && min !== max ? { min, max } : null,
   };
-}
-
-/** Mirror of the server's delta resolution: scale by percent, then add the
- * kcal delta, one rounding, floored at zero (a wild delta must never preview —
- * or write — negative calories). The sheet sends exactly one of the two. */
-export function applyCalorieDelta(
-  base: number,
-  delta: { percent?: number; calorieDelta?: number }
-): number {
-  const scaled = delta.percent != null ? base * (1 + delta.percent / 100) : base;
-  return Math.max(0, Math.round(scaled + (delta.calorieDelta ?? 0)));
 }
 
 /** Average of the selected days' DISPLAYED calories, or null when nothing resolves. */

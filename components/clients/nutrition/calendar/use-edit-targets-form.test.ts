@@ -44,7 +44,6 @@ describe("useEditTargetsForm — Set targets is the balancer", () => {
     const days = resolve([ev("2026-06-01"), ev("2026-06-02", { baselineCalories: 2200 })]);
     const { result } = renderHook(() => useEditTargetsForm(true, days));
 
-    expect(result.current.tab).toBe("set");
     expect(result.current.balance).toEqual({
       calories: 2000,
       split: gramsToSplit({ proteinG: 150, carbG: 200, fatG: 60 }),
@@ -117,44 +116,5 @@ describe("useEditTargetsForm — the note (D-B), unchanged", () => {
     expect(result.current.buildPayload()).not.toHaveProperty("note");
     act(() => result.current.setNote("Big week"));
     expect(result.current.buildPayload()).toMatchObject({ note: "Big week" });
-  });
-});
-
-describe("useEditTargetsForm — Adjust by, unchanged", () => {
-  it("sends one of percent / calorieDelta, and holdProtein only when off", () => {
-    const days = resolve([ev("2026-06-01"), ev("2026-06-02", { calorieSurplusPercentage: 10 })]);
-    const { result } = renderHook(() => useEditTargetsForm(true, days));
-
-    act(() => result.current.setTab("adjust"));
-    expect(result.current.valid).toBe(false);
-
-    act(() => result.current.setDeltaValue("-200"));
-    expect(result.current.buildPayload()).toEqual({ mode: "delta", calorieDelta: -200 });
-    // The preview reads the surplus-stacked displayed calories per day.
-    expect(result.current.previewRows.map((r) => [r.base, r.next])).toEqual([
-      [2000, 1800],
-      [2200, 2000],
-    ]);
-
-    act(() => result.current.setHoldProtein(false));
-    expect(result.current.buildPayload()).toEqual({
-      mode: "delta",
-      calorieDelta: -200,
-      holdProtein: false,
-    });
-
-    act(() => result.current.switchDeltaMode("percent"));
-    expect(result.current.deltaValue).toBe("");
-    act(() => result.current.setDeltaValue("-10"));
-    expect(result.current.buildPayload()).toEqual({ mode: "delta", percent: -10, holdProtein: false });
-  });
-
-  it("steps the amount by the caller's step from the current value", () => {
-    const days = resolve([ev("2026-06-01")]);
-    const { result } = renderHook(() => useEditTargetsForm(true, days));
-    act(() => result.current.setTab("adjust"));
-    act(() => result.current.stepDelta(-50));
-    act(() => result.current.stepDelta(-50));
-    expect(result.current.deltaValue).toBe("-100");
   });
 });

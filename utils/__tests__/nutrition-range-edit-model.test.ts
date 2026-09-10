@@ -1,10 +1,8 @@
 import { describe, it, expect } from "vitest";
 import type { NutritionEvent } from "@/types/check-in";
-import { getDeltaBaseCalories } from "@/utils/nutrition-event-helpers";
 import {
   resolveSelectedEvents,
   computeAbsoluteSeed,
-  applyCalorieDelta,
   averageDisplayedCalories,
 } from "@/utils/nutrition-range-edit-model";
 
@@ -92,26 +90,6 @@ describe("nutrition-range-edit-model", () => {
 
     it("nothing selected seeds nothing", () => {
       expect(computeAbsoluteSeed([])).toEqual({ calories: null, grams: null, calorieRange: null });
-    });
-  });
-
-  describe("delta math mirrors the server", () => {
-    it("getDeltaBaseCalories stacks the surplus regardless of the burn toggle", () => {
-      expect(getDeltaBaseCalories(ev("d", { calorieSurplusPercentage: 10 }))).toBe(2200);
-      expect(getDeltaBaseCalories(ev("d", { trainingBurnCalories: 300 }))).toBe(2300);
-      expect(getDeltaBaseCalories(ev("d"))).toBe(2000);
-    });
-
-    it("applyCalorieDelta matches the server's single-round formula", () => {
-      expect(applyCalorieDelta(2200, { percent: -50 })).toBe(1100);
-      expect(applyCalorieDelta(2200, { percent: -10 })).toBe(1980);
-      expect(applyCalorieDelta(2200, { calorieDelta: -200 })).toBe(2000);
-      expect(applyCalorieDelta(2946, { calorieDelta: -200 })).toBe(2746);
-    });
-
-    it("floors at zero — a wild negative delta never previews negative calories", () => {
-      expect(applyCalorieDelta(2200, { calorieDelta: -5000 })).toBe(0);
-      expect(applyCalorieDelta(2200, { percent: -200 })).toBe(0);
     });
   });
 

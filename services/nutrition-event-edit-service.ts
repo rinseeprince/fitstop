@@ -10,12 +10,14 @@ import type { DietType, NutritionEvent } from "@/types/check-in";
 /**
  * Coach per-day nutrition edits, on the edits table (migration 169).
  *
- * A range edit resolves the coach's numbers for each selected day against
- * the day AS COMPUTED — the plan's baseline, the session's surplus, an edit
- * already standing — and writes one edit row per day. A computed day with an
- * edit takes those numbers verbatim, carries the note, and takes no training
- * surplus (`services/nutrition-day-resolver.ts`). A reset removes the rows,
- * and the plan's own numbers answer again; nothing regenerates.
+ * A range edit writes the coach's target onto each selected day as one edit
+ * row — the same four numbers for every day, the sheet being the macro
+ * balancer — reading the days AS COMPUTED only for what an edit inherits: the
+ * standing note, and the protein and diet type a macro-less payload holds
+ * and rebalances around. A computed day with an edit takes those numbers
+ * verbatim, carries the note, and takes no training surplus
+ * (`services/nutrition-day-resolver.ts`). A reset removes the rows, and the
+ * plan's own numbers answer again; nothing regenerates.
  *
  * Both paths are today-forward only — past days are immutable. The routes
  * reject an all-past selection; the service additionally floors the list at
@@ -26,66 +28,36 @@ import type { DietType, NutritionEvent } from "@/types/check-in";
 // `note` semantics (D-B): undefined = preserve any existing note; "" (or
 // whitespace) = clear it; a string = set it. The dialog sends a value only for
 // the day(s) the coach actually typed on, so a macro-only edit never wipes notes.
-export type RangeEdit =
-  | { mode: "absolute"; calories: number; proteinG?: number; carbG?: number; fatG?: number; note?: string | null }
-  | { mode: "delta"; percent?: number; calorieDelta?: number; holdProtein?: boolean; note?: string | null };
-
-/** The calorie number a coach currently sees for a day (mirrors
- * `buildNutritionSummary`): surplus stacks on the baseline when set, otherwise
- * the legacy training-burn add-on applies. An edited day has neither, so its
- * base is the edit's own calories. */
-function currentDisplayedCalories(day: NutritionEvent): number {
-  if (day.calorieSurplusPercentage != null) {
-    return Math.round(day.baselineCalories * (1 + day.calorieSurplusPercentage / 100));
-  }
-  return day.baselineCalories + day.trainingBurnCalories;
-}
+export type RangeEdit = {
+  calories: number;
+  proteinG?: number;
+  carbG?: number;
+  fatG?: number;
+  note?: string | null;
+};
 
 /** The edit row a coach's instruction resolves to over one computed day. */
 function resolveEdit(day: NutritionEvent, edit: RangeEdit): NutritionDayEdit {
-  // Resolve the day's new calorie total.
-  let calories: number;
-  if (edit.mode === "absolute") {
-    calories = edit.calories;
-  } else {
-    const base = currentDisplayedCalories(day);
-    const scaled = edit.percent != null ? base * (1 + edit.percent / 100) : base;
-    // Floor at zero: an oversized negative delta must never materialize
-    // negative calories/macros onto the client's calendar.
-    calories = Math.max(0, Math.round(scaled + (edit.calorieDelta ?? 0)));
-  }
+  const { calories } = edit;
 
-  // Macros: explicit macros win; otherwise hold protein and rebalance carbs/fat
-  // to the new calorie total (D4 "macros auto-rebalance, protein fixed").
+  // Macros: the sheet sends all three (the balancer's grams) and they are
+  // taken verbatim. A payload without them — a raw API caller's — holds
+  // protein (its own, else the day's) and rebalances carbs and fat to the
+  // total by the version's diet type.
   let proteinG: number;
   let carbG: number;
   let fatG: number;
-  if (edit.mode === "absolute" && edit.proteinG != null && edit.carbG != null && edit.fatG != null) {
+  if (edit.proteinG != null && edit.carbG != null && edit.fatG != null) {
     proteinG = edit.proteinG;
     carbG = edit.carbG;
     fatG = edit.fatG;
-  } else if (edit.mode === "delta" && edit.holdProtein === false) {
-    // Scale the day's macro SPLIT onto the new total (protein not held).
-    // Ratio-of-new-total, not old-total scaling: on a surplus day the macros
-    // sum to the baseline while the delta base is the stacked total, so
-    // old-ratio scaling would not sum to the new calories.
-    const p4 = day.proteinG * 4;
-    const c4 = day.carbG * 4;
-    const f9 = day.fatG * 9;
-    const macroCals = p4 + c4 + f9;
-    if (macroCals > 0) {
-      proteinG = Math.round((calories * (p4 / macroCals)) / 4);
-      carbG = Math.round((calories * (c4 / macroCals)) / 4);
-      fatG = Math.round((calories * (f9 / macroCals)) / 9);
-    } else {
-      const macros = calculateDailyMacros(calories, day.proteinG, false, (day.dietType as DietType) || "balanced");
-      proteinG = macros.proteinG;
-      carbG = macros.carbsG;
-      fatG = macros.fatG;
-    }
   } else {
-    const fixedProtein = edit.mode === "absolute" && edit.proteinG != null ? edit.proteinG : day.proteinG;
-    const macros = calculateDailyMacros(calories, fixedProtein, false, (day.dietType as DietType) || "balanced");
+    const macros = calculateDailyMacros(
+      calories,
+      edit.proteinG ?? day.proteinG,
+      false,
+      (day.dietType as DietType) || "balanced"
+    );
     proteinG = macros.proteinG;
     carbG = macros.carbsG;
     fatG = macros.fatG;

@@ -77,39 +77,29 @@ export const nutritionPlanSchema = z.object({
 // Coach per-day edit (events-as-SOT, Session 3 D4 / Session 4). Operates on an
 // explicit date LIST (any arrangement — single, scattered, or contiguous), not a
 // [start,end] range, so a scattered selection edits exactly the chosen days and
-// leaves the gaps untouched. Absolute sets the calorie target outright (optional
-// explicit macros); delta scales each day's current total by a percent and/or a
-// flat amount. Materialized onto the events.
+// leaves the gaps untouched. The Edit-targets sheet is the macro balancer, so
+// it sends the calories and the three grams its split derives — the same four
+// for every selected day; a payload without the macros (a raw API caller's)
+// holds protein and rebalances carbs and fat. Written as nutrition_day_edits
+// rows.
 const editableDates = z
   .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"))
   .min(1, "At least one date is required")
   .max(366, "Too many dates (max 366)");
 
-export const nutritionRangeEditSchema = z
-  .object({
-    dates: editableDates,
-    mode: z.enum(["absolute", "delta"]),
-    calories: z.number().int().positive().optional(),
-    proteinG: z.number().nonnegative().optional(),
-    carbG: z.number().nonnegative().optional(),
-    fatG: z.number().nonnegative().optional(),
-    percent: z.number().optional(),
-    calorieDelta: z.number().optional(),
-    // Delta only. Omitted/true = hold protein, rebalance carbs/fat (legacy
-    // path, byte-identical); false = scale all three macros onto the new total.
-    holdProtein: z.boolean().optional(),
-    // Optional coach per-day note. Kept .optional() with NO default so the route
-    // can distinguish "omitted" (preserve) from "" (clear) — see RangeEdit D-B.
-    note: z.string().max(500).optional(),
-  })
-  .refine((d) => d.mode !== "absolute" || (d.calories != null && d.calories > 0), {
-    message: "absolute mode requires a positive calories value",
-    path: ["calories"],
-  })
-  .refine((d) => d.mode !== "delta" || d.percent != null || d.calorieDelta != null, {
-    message: "delta mode requires percent or calorieDelta",
-    path: ["percent"],
-  });
+export const nutritionRangeEditSchema = z.object({
+  dates: editableDates,
+  // The one edit there is: a calorie target, set outright. A literal rather
+  // than an enum so the wire says what it does and anything else is a 400.
+  mode: z.literal("absolute"),
+  calories: z.number().int().positive(),
+  proteinG: z.number().nonnegative().optional(),
+  carbG: z.number().nonnegative().optional(),
+  fatG: z.number().nonnegative().optional(),
+  // Optional coach per-day note. Kept .optional() with NO default so the route
+  // can distinguish "omitted" (preserve) from "" (clear) — see RangeEdit D-B.
+  note: z.string().max(500).optional(),
+});
 
 // Coach multi-day reset (Session 4): clear is_modified on a date list and
 // regenerate them from the plan in one call.

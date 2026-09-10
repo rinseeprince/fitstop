@@ -64,12 +64,12 @@ describe("nutrition-event-edit-service", () => {
   });
 
   describe("materializeNutritionEventDays", () => {
-    it("absolute: writes the calories with the day's macros rebalanced, as the coach's edit row", async () => {
+    it("a calories-only payload: holds the day's protein and rebalances the rest, as the coach's edit row", async () => {
       const { updated } = await materializeNutritionEventDays({
         clientId,
         coachId,
         dates: ["2026-02-01"],
-        edit: { mode: "absolute", calories: 1800 },
+        edit: { calories: 1800 },
         clientToday: TODAY,
       });
 
@@ -95,7 +95,7 @@ describe("nutrition-event-edit-service", () => {
         clientId,
         coachId,
         dates: ["2026-02-07", "2026-02-02", "2026-02-04"],
-        edit: { mode: "absolute", calories: 1800 },
+        edit: { calories: 1800 },
         clientToday: TODAY,
       });
 
@@ -105,112 +105,12 @@ describe("nutrition-event-edit-service", () => {
       expect(updated).toBe(3);
     });
 
-    it("delta: scales the surplus-stacked displayed calories, and the edit takes no surplus of its own", async () => {
-      // displayed = round(2000 * 1.1) = 2200; * 0.5 = 1100
-      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
-        day({ calorieSurplusPercentage: 10, isTrainingDay: true }),
-      ]);
-
-      await materializeNutritionEventDays({
-        clientId,
-        coachId,
-        dates: ["2026-02-01"],
-        edit: { mode: "delta", percent: -50 },
-        clientToday: TODAY,
-      });
-
-      expect(writtenRows()[0]).toMatchObject({ calories: 1100 });
-      expect(writtenRows()[0]).not.toHaveProperty("calorieSurplusPercentage");
-    });
-
-    it("delta on an already-edited day scales the edit's own calories — no surplus, no burn stack", async () => {
-      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
-        day({ baselineCalories: 1500, isModified: true, note: "Deload week" }),
-      ]);
-
-      await materializeNutritionEventDays({
-        clientId,
-        coachId,
-        dates: ["2026-02-01"],
-        edit: { mode: "delta", percent: 10 },
-        clientToday: TODAY,
-      });
-
-      expect(writtenRows()[0]).toMatchObject({ calories: 1650, note: "Deload week" });
-    });
-
-    it("delta: the legacy flat burn is part of the base when no surplus is set", async () => {
-      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
-        day({ trainingBurnCalories: 300 }),
-      ]);
-
-      await materializeNutritionEventDays({
-        clientId,
-        coachId,
-        dates: ["2026-02-01"],
-        edit: { mode: "delta", calorieDelta: -100 },
-        clientToday: TODAY,
-      });
-
-      expect(writtenRows()[0]).toMatchObject({ calories: 2200 });
-    });
-
-    it("delta: floors the resolved calories at zero for oversized negative deltas", async () => {
-      await materializeNutritionEventDays({
-        clientId,
-        coachId,
-        dates: ["2026-02-01"],
-        edit: { mode: "delta", calorieDelta: -5000 },
-        clientToday: TODAY,
-      });
-
-      expect(writtenRows()[0]).toMatchObject({ calories: 0 });
-    });
-
-    it("delta holdProtein=false: scales the day's macro split onto the new total", async () => {
-      // Surplus day: base = round(2000 * 1.1) = 2200; -50% -> 1100 kcal.
-      // Split kcal: p 150*4=600, c 200*4=800, f 60*9=540 (sum 1940).
-      // Shares of 1100: p round(1100*600/1940/4)=85, c round(...800.../4)=113,
-      // f round(...540.../9)=34 -> sums to 1098 ~ 1100.
-      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
-        day({ calorieSurplusPercentage: 10 }),
-      ]);
-
-      await materializeNutritionEventDays({
-        clientId,
-        coachId,
-        dates: ["2026-02-01"],
-        edit: { mode: "delta", percent: -50, holdProtein: false },
-        clientToday: TODAY,
-      });
-
-      expect(writtenRows()[0]).toMatchObject({ calories: 1100, proteinG: 85, carbG: 113, fatG: 34 });
-      expect(calculateDailyMacros).not.toHaveBeenCalled();
-    });
-
-    it("delta holdProtein=false with zero stored macros: falls back to the diet split", async () => {
-      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue([
-        day({ proteinG: 0, carbG: 0, fatG: 0 }),
-      ]);
-
-      await materializeNutritionEventDays({
-        clientId,
-        coachId,
-        dates: ["2026-02-01"],
-        edit: { mode: "delta", percent: -10, holdProtein: false },
-        clientToday: TODAY,
-      });
-
-      expect(calculateDailyMacros).toHaveBeenCalledWith(1800, 0, false, "balanced");
-      expect(writtenRows()[0]).toMatchObject({ proteinG: 150, carbG: 200, fatG: 60 });
-    });
-
     it("absolute with explicit macros: writes them verbatim", async () => {
       await materializeNutritionEventDays({
         clientId,
         coachId,
         dates: ["2026-02-01"],
-        edit: { mode: "absolute", calories: 1900, proteinG: 170, carbG: 190, fatG: 55 },
+        edit: { calories: 1900, proteinG: 170, carbG: 190, fatG: 55 },
         clientToday: TODAY,
       });
 
@@ -223,7 +123,7 @@ describe("nutrition-event-edit-service", () => {
         clientId,
         coachId,
         dates: ["2026-02-01"],
-        edit: { mode: "absolute", calories: 1900, proteinG: 170 },
+        edit: { calories: 1900, proteinG: 170 },
         clientToday: TODAY,
       });
 
@@ -235,7 +135,7 @@ describe("nutrition-event-edit-service", () => {
         clientId,
         coachId,
         dates: ["2026-01-01", "2026-02-01"],
-        edit: { mode: "absolute", calories: 1800 },
+        edit: { calories: 1800 },
         clientToday: TODAY,
       });
 
@@ -248,7 +148,7 @@ describe("nutrition-event-edit-service", () => {
         clientId,
         coachId,
         dates: ["2026-01-01", "2026-01-10"],
-        edit: { mode: "absolute", calories: 1800 },
+        edit: { calories: 1800 },
         clientToday: TODAY,
       });
 
@@ -264,7 +164,7 @@ describe("nutrition-event-edit-service", () => {
         clientId,
         coachId,
         dates: ["2026-02-01"],
-        edit: { mode: "absolute", calories: 1800 },
+        edit: { calories: 1800 },
         clientToday: TODAY,
       });
 
@@ -278,7 +178,7 @@ describe("nutrition-event-edit-service", () => {
         clientId,
         coachId,
         dates: ["2026-02-01"],
-        edit: { mode: "absolute", calories: 1800, note: "  Deload week  " },
+        edit: { calories: 1800, note: "  Deload week  " },
         clientToday: TODAY,
       });
       expect(writtenRows()[0]).toMatchObject({ note: "Deload week" });
@@ -292,7 +192,7 @@ describe("nutrition-event-edit-service", () => {
         clientId,
         coachId,
         dates: ["2026-02-01"],
-        edit: { mode: "absolute", calories: 1800, note: "" },
+        edit: { calories: 1800, note: "" },
         clientToday: TODAY,
       });
       expect(writtenRows()[0]).toMatchObject({ note: null });
@@ -306,7 +206,7 @@ describe("nutrition-event-edit-service", () => {
         clientId,
         coachId,
         dates: ["2026-02-01"],
-        edit: { mode: "absolute", calories: 1800 },
+        edit: { calories: 1800 },
         clientToday: TODAY,
       });
       expect(writtenRows()[0]).toMatchObject({ note: "Old note" });

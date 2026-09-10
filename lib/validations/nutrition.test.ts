@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nutritionPlanSchema } from "./nutrition";
+import { nutritionPlanSchema, nutritionRangeEditSchema } from "./nutrition";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 
 // The route's belt on a custom-macro save, ahead of the orchestrator's: a
@@ -39,5 +39,44 @@ describe("nutritionPlanSchema — the custom-macros belt", () => {
     expect(
       nutritionPlanSchema.safeParse({ proteinTargetGPerKg: 2.0, dietType: "keto" }).success
     ).toBe(true);
+  });
+});
+
+// The per-day edit has one mode. "Adjust by" (a percent or kcal delta scaled
+// per day) was removed on 2026-09-10; a delta body is a 400, not a silent
+// fall-through to some other arithmetic.
+describe("nutritionRangeEditSchema — absolute is the only edit", () => {
+  const dates = ["2026-06-01", "2026-06-02"];
+
+  it("accepts the sheet's payload: the calories and the three grams, one target for every day", () => {
+    const parsed = nutritionRangeEditSchema.safeParse({
+      dates,
+      mode: "absolute",
+      calories: 2400,
+      proteinG: 180,
+      carbG: 269,
+      fatG: 67,
+      note: "Big week",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("refuses a delta body — even one that carries a calorie target, so the mode itself is the gate", () => {
+    const withTarget = nutritionRangeEditSchema.safeParse({
+      dates,
+      mode: "delta",
+      calories: 2000,
+      calorieDelta: -200,
+    });
+    expect(withTarget.success).toBe(false);
+    if (!withTarget.success) expect(withTarget.error.issues[0].path).toEqual(["mode"]);
+    expect(
+      nutritionRangeEditSchema.safeParse({ dates, mode: "delta", percent: -10, holdProtein: false }).success
+    ).toBe(false);
+  });
+
+  it("requires a positive calorie target", () => {
+    expect(nutritionRangeEditSchema.safeParse({ dates, mode: "absolute" }).success).toBe(false);
+    expect(nutritionRangeEditSchema.safeParse({ dates, mode: "absolute", calories: 0 }).success).toBe(false);
   });
 });

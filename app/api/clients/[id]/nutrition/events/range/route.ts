@@ -11,8 +11,9 @@ import {
 } from "@/services/nutrition-event-edit-service";
 
 /**
- * PATCH - Write a coach edit (absolute or %/amount delta) onto every selected
- * future day (`nutrition_day_edits`). Today-forward only.
+ * PATCH - Write a coach edit — a calorie target with its macros, the same for
+ * every selected day — onto every selected future day (`nutrition_day_edits`).
+ * Today-forward only.
  */
 export async function PATCH(
   request: NextRequest,
@@ -58,31 +59,13 @@ export async function PATCH(
       );
     }
 
-    let edit: RangeEdit;
-    if (data.mode === "absolute") {
-      if (data.calories == null) {
-        return NextResponse.json(
-          { success: false, error: "absolute mode requires a calories value" },
-          { status: 400 }
-        );
-      }
-      edit = {
-        mode: "absolute",
-        calories: data.calories,
-        proteinG: data.proteinG,
-        carbG: data.carbG,
-        fatG: data.fatG,
-        note: data.note,
-      };
-    } else {
-      edit = {
-        mode: "delta",
-        percent: data.percent,
-        calorieDelta: data.calorieDelta,
-        holdProtein: data.holdProtein,
-        note: data.note,
-      };
-    }
+    const edit: RangeEdit = {
+      calories: data.calories,
+      proteinG: data.proteinG,
+      carbG: data.carbG,
+      fatG: data.fatG,
+      note: data.note,
+    };
 
     const { updated } = await materializeNutritionEventDays({
       clientId,
