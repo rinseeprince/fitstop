@@ -68,6 +68,27 @@ describe("NutritionEditTargetsSheet — one edit, the balancer", () => {
     expect(screen.queryByText("Adjust by")).toBeNull();
     expect(screen.queryByText("Set targets")).toBeNull();
     expect(screen.queryByText(/Hold protein steady/)).toBeNull();
+    // The generator drawer's shell: the built-in close is hidden and the dark
+    // hero carries exactly one labelled close of its own.
+    expect(screen.getAllByRole("button", { name: "Close" })).toHaveLength(1);
+  });
+
+  it("the close on the hero dismisses the sheet, but not while a save is in flight", () => {
+    const days = resolve([ev("2026-06-01")]);
+    const onOpenChange = vi.fn();
+    const { unmount } = render(
+      <NutritionEditTargetsSheet open onOpenChange={onOpenChange} days={days} isSaving={false} onApply={vi.fn()} />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    unmount();
+
+    const blocked = vi.fn();
+    render(
+      <NutritionEditTargetsSheet open onOpenChange={blocked} days={days} isSaving onApply={vi.fn()} />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(blocked).not.toHaveBeenCalled();
   });
 
   it("Apply sends the target and the grams its split derives — one payload for every selected day", () => {

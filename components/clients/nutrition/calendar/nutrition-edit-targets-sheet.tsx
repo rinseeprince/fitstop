@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
@@ -10,14 +11,12 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Pin, SlidersHorizontal } from "lucide-react";
+import { Loader2, Pin, SlidersHorizontal, X } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
   LABEL_CLASS,
   MONO,
-  MONO_LABEL_CLASS,
-  THUMB_CLASS,
   CHIP_NEUTRAL_CLASS,
   FOCUS_RING,
 } from "@/components/clients/training/program-builder/builder-tokens";
@@ -40,9 +39,10 @@ type NutritionEditTargetsSheetProps = {
   onApply: (payload: RangeEditPayload) => void;
 };
 
-/** "Edit targets" right sheet — the training placed-session editor's 780px
- * structure, hosting the macro balancer over the selection: one calorie
- * target and split, the same four numbers for every selected day. */
+/** "Edit targets" right sheet — the plan generator's drawer shell (the same
+ * width, page-tint body, overlay and slide, and the same dark hero band),
+ * hosting the macro balancer over the selection: one calorie target and
+ * split, the same four numbers for every selected day. */
 export function NutritionEditTargetsSheet({
   open,
   onOpenChange,
@@ -80,23 +80,33 @@ export function NutritionEditTargetsSheet({
     >
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 bg-white p-0 sm:w-[780px] sm:max-w-full"
+        hideClose
+        overlayClassName="bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]"
+        className="w-[420px] bg-[#f4f7f6] p-0 gap-0 flex flex-col inset-y-0 right-0 h-full data-[state=open]:animate-none data-[state=closed]:animate-none data-[state=open]:slide-in-from-right-0 animate-drawer-slide-in data-[state=closed]:slide-out-to-right data-[state=closed]:duration-300"
       >
-        <SheetHeader className="flex-row items-center gap-3 space-y-0 border-b border-[rgba(13,148,136,0.08)] px-5 py-3.5">
-          <span className={cn(THUMB_CLASS, "h-8 w-8")}>
-            <SlidersHorizontal className="h-4 w-4" strokeWidth={1.5} />
-          </span>
-          <div className="min-w-0">
-            <SheetTitle className="text-[15px] font-semibold tracking-[-0.01em] text-[#0c1a1e]">
+        {/* The generator's hero: the dark band, the teal icon square, the title
+            scale and its own close, since the built-in one is hidden. */}
+        <SheetHeader className="shrink-0 flex-row items-start gap-3 bg-[#0f2027] px-6 pb-5 pt-5">
+          <div className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[6px] bg-[rgba(13,148,136,0.15)]">
+            <SlidersHorizontal className="h-[15px] w-[15px] text-[#0d9488]" strokeWidth={1.5} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <SheetTitle className="text-[16px] font-bold leading-tight text-white">
               Edit targets
             </SheetTitle>
-            <SheetDescription className={MONO_LABEL_CLASS}>
+            <SheetDescription
+              className={cn(MONO, "mt-1 text-[12px] leading-[1.4] text-[rgba(255,255,255,0.4)]")}
+            >
               {dayCount} day{dayCount === 1 ? "" : "s"} selected
             </SheetDescription>
           </div>
+          <SheetClose className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[6px] bg-[rgba(255,255,255,0.06)] transition-colors hover:bg-[rgba(255,255,255,0.1)]">
+            <X className="h-4 w-4 text-[rgba(255,255,255,0.5)]" strokeWidth={1.5} />
+            <span className="sr-only">Close</span>
+          </SheetClose>
         </SheetHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
           {/* Which days this edit touches */}
           <div className="flex flex-wrap gap-1.5">
             {dayChips.map((d) => (
@@ -123,7 +133,7 @@ export function NutritionEditTargetsSheet({
           <NutritionSetTargetsTab form={form} />
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-[rgba(13,148,136,0.08)] px-5 py-3">
+        <div className="flex flex-col gap-3 border-t border-[rgba(13,148,136,0.08)] px-6 py-3">
           <div className="space-y-1.5">
             <label htmlFor="et-note" className={LABEL_CLASS}>
               Note <span className="normal-case tracking-normal">· Optional · shown to the client</span>
@@ -139,7 +149,7 @@ export function NutritionEditTargetsSheet({
                   ? "e.g. Deload week — go easy"
                   : "Applies one note to every selected day"
               }
-              className={cn(FOCUS_RING, "resize-none text-sm")}
+              className={cn(FOCUS_RING, "resize-none bg-white text-sm")}
             />
           </div>
           <div className="flex items-center justify-end gap-2">
