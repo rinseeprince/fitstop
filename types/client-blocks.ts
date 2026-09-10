@@ -2,8 +2,6 @@
 // routes, types and UI is "block" — a deliberate divergence recorded on the
 // table comment (migration 145). Do not consistency-rename either half.
 
-import type { NutritionPlanNote } from "@/types/nutrition-plan-notes";
-
 export type BlockState = "past" | "current" | "future";
 
 /** A stored block. Weights are canonical kilograms (CONVENTIONS §20); dates
@@ -83,6 +81,10 @@ export interface BlockNutritionFact {
   startsOn: string;
   calories: number;
   deficitPerDay: number | null;
+  /** The version's save note (`nutrition_plans.coach_note`, migration 172) —
+   *  the latest save's, empty included — or null. Rendered nested under the
+   *  version's entry on the block timeline. */
+  note: string | null;
 }
 
 /** Per-block server facts. An empty `nutrition` list = no active version
@@ -91,15 +93,4 @@ export interface BlockFacts {
   blockId: string;
   training: BlockTrainingFact[];
   nutrition: BlockNutritionFact[];
-  /**
-   * The coach's plan-save notes whose effective date falls inside the block,
-   * oldest first (`nutrition_plan_notes`, migration 147).
-   *
-   * The COACH timeline renders every one of these, forever. The client's
-   * Program tab renders the same notes only while their block is current — a
-   * deliberate asymmetry, enforced on the client's wire rather than in its
-   * renderer (see `currentBlockNotes` in `types/client-journey.ts`). All
-   * coach-facing copy about this note is worded against that difference.
-   */
-  notes: NutritionPlanNote[];
 }

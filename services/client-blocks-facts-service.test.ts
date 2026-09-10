@@ -45,21 +45,16 @@ function createMockQuery(result: MockResult) {
   return query;
 }
 
-// Table-routed from(): one result for nutrition_plans, a QUEUE of page
-// results for nutrition_plan_notes and training_events (fetchAllPages issues
-// one from() per page for each). Nothing per day is read for nutrition: the
-// versions ARE the block's nutrition days.
+// Table-routed from(): one result for nutrition_plans (the versions, each
+// carrying its save note), a QUEUE of page results for training_events
+// (fetchAllPages issues one from() per page). Nothing per day is read for
+// nutrition: the versions ARE the block's nutrition days.
 let versionsResult: MockResult;
-let notePages: MockResult[];
 let trainingDayPages: MockResult[];
 
 function installFromMock() {
   vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
     if (table === "nutrition_plans") return createMockQuery(versionsResult);
-    if (table === "nutrition_plan_notes") {
-      const page = notePages.shift() ?? { data: [], error: null };
-      return createMockQuery(page);
-    }
     if (table === "training_events") {
       const page = trainingDayPages.shift() ?? { data: [], error: null };
       return createMockQuery(page);
@@ -81,7 +76,8 @@ const version = (
   effective_until: string,
   tdee: number | null,
   baseline_calories = 2000,
-  custom: { enabled?: boolean; calories?: number | null } = {}
+  custom: { enabled?: boolean; calories?: number | null } = {},
+  coach_note: string | null = null
 ) => ({
   id,
   effective_from,
@@ -90,6 +86,7 @@ const version = (
   baseline_calories,
   custom_macros_enabled: custom.enabled ?? false,
   custom_calories: custom.calories ?? null,
+  coach_note,
 });
 
 /** n sequential training-event dates from `start` — the "has days" gate's input. */
@@ -101,7 +98,6 @@ describe("getBlockFacts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     versionsResult = { data: [], error: null };
-    notePages = [{ data: [], error: null }];
     // Both gates default to SATISFIED, wide enough to cover every fixture
     // block, so the "a block shows only what is on its days" rule is exercised
     // by its own cases rather than silently by every other one. A constant
@@ -177,7 +173,7 @@ describe("getBlockFacts", () => {
     // computed from the version covering it — so those days HAVE targets, and
     // the block says so with the version's own start, as a crossing program.
     expect(untouched.nutrition).toEqual([
-      { id: "v52", startsOn: "2026-08-01", calories: 2150, deficitPerDay: 550 },
+      { id: "v52", startsOn: "2026-08-01", calories: 2150, deficitPerDay: 550, note: null },
     ]);
   });
 
@@ -261,7 +257,7 @@ describe("getBlockFacts", () => {
 
       const [fact] = await getBlockFacts(CLIENT_ID);
       expect(fact.nutrition).toEqual([
-        { id: "vA", startsOn: "2026-05-01", calories: 2400, deficitPerDay: 400 },
+        { id: "vA", startsOn: "2026-05-01", calories: 2400, deficitPerDay: 400, note: null },
       ]);
     });
 
@@ -281,8 +277,8 @@ describe("getBlockFacts", () => {
 
       const [fact] = await getBlockFacts(CLIENT_ID);
       expect(fact.nutrition).toEqual([
-        { id: "now", startsOn: "2026-07-01", calories: 2100, deficitPerDay: 500 },
-        { id: "queued", startsOn: "2026-08-12", calories: 1700, deficitPerDay: 900 },
+        { id: "now", startsOn: "2026-07-01", calories: 2100, deficitPerDay: 500, note: null },
+        { id: "queued", startsOn: "2026-08-12", calories: 1700, deficitPerDay: 900, note: null },
       ]);
     });
 
@@ -306,7 +302,7 @@ describe("getBlockFacts", () => {
 
       const [fact] = await getBlockFacts(CLIENT_ID);
       expect(fact.nutrition).toEqual([
-        { id: "v", startsOn: "2026-08-01", calories: 1850, deficitPerDay: 750 },
+        { id: "v", startsOn: "2026-08-01", calories: 1850, deficitPerDay: 750, note: null },
       ]);
     });
 
@@ -316,7 +312,7 @@ describe("getBlockFacts", () => {
 
       const [fact] = await getBlockFacts(CLIENT_ID);
       expect(fact.nutrition).toEqual([
-        { id: "v", startsOn: "2026-06-01", calories: 1700, deficitPerDay: null },
+        { id: "v", startsOn: "2026-06-01", calories: 1700, deficitPerDay: null, note: null },
       ]);
     });
 
@@ -436,77 +432,37 @@ describe("getBlockFacts", () => {
 
   // The notes read is the fourth parallel read, partitioned per block in
   // memory — one read for the whole journey span, never one per block.
-  describe("coach notes (migration 147)", () => {
-    const noteRow = (id: string, effective_on: string, body: string) => ({
-      id,
-      effective_on,
-      body,
+  describe("coach notes (migration 172) — a version's note rides its fact", () => {
+    it("carries each version's own note, null when the save had none", async () => {
+      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-28")]);
+      versionsResult = {
+        data: [
+          version("v1", "2026-06-01", "2026-06-14", 2600, 2000, {}, "Starting your cut."),
+          version("v2", "2026-06-15", "2026-06-28", 2600, 1900),
+        ],
+        error: null,
+      };
+
+      const [fact] = await getBlockFacts(CLIENT_ID);
+
+      expect(fact.nutrition.map((n) => [n.id, n.note])).toEqual([
+        ["v1", "Starting your cut."],
+        ["v2", null],
+      ]);
     });
 
-    it("partitions notes to the block whose window contains their effective date", async () => {
-      vi.mocked(listBlocks).mockResolvedValue([
-        block("a", "2026-06-01", "2026-06-28"),
-        block("b", "2026-06-29", "2026-07-26"),
-      ]);
-      notePages = [
-        {
-          data: [
-            noteRow("n1", "2026-06-05", "Starting your cut."),
-            noteRow("n2", "2026-06-28", "Last day of the cut."),
-            noteRow("n3", "2026-06-29", "Into maintenance."),
-          ],
-          error: null,
-        },
-      ];
-
-      const facts = await getBlockFacts(CLIENT_ID);
-
-      // Inclusive on BOTH ends — a note dated on the final day belongs to the
-      // block that ends that day, not the one starting the next.
-      expect(facts[0].notes.map((n) => n.id)).toEqual(["n1", "n2"]);
-      expect(facts[1].notes.map((n) => n.id)).toEqual(["n3"]);
-      expect(facts[0].notes[0]).toEqual({
-        id: "n1",
-        effectiveOn: "2026-06-05",
-        body: "Starting your cut.",
-      });
-    });
-
-    it("reads the span ONCE, not once per block", async () => {
-      vi.mocked(listBlocks).mockResolvedValue([
-        block("a", "2026-06-01", "2026-06-28"),
-        block("b", "2026-06-29", "2026-07-26"),
-        block("c", "2026-07-27", "2026-08-23"),
-      ]);
+    it("reads no notes table — the note is a column on the version, so an archived version takes it out of the facts by construction", async () => {
+      // The residue this closes: a block drawn over a deleted plan listed the
+      // deleted plan's notes, because a date-anchored notes read did not ask
+      // whether the version still stood. The versions read is already active-only.
+      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-28")]);
+      versionsResult = { data: [version("v1", "2026-06-01", "2026-06-28", 2600, 2000, {}, "Note.")], error: null };
 
       await getBlockFacts(CLIENT_ID);
 
-      // String() rather than a cast: `from`'s parameter type narrows to the
-      // first table in the generated union, so a direct === comparison is a
-      // TS2367 "no overlap" error even though the call is real at runtime.
-      const noteReads = vi
-        .mocked(supabaseAdmin.from)
-        .mock.calls.map((c) => String(c[0]))
-        .filter((table) => table === "nutrition_plan_notes");
-      expect(noteReads).toHaveLength(1);
-    });
-
-    it("keeps a FUTURE block's notes — a queued plan the coach already explained", async () => {
-      // Notes are not clamped to today either, like the nutrition versions. Hiding the
-      // coach's own reasoning from them until the date arrives would be wrong.
-      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-09-01", "2026-09-28")]);
-      notePages = [
-        { data: [noteRow("n9", "2026-09-01", "Next block's plan.")], error: null },
-      ];
-
-      const [fact] = await getBlockFacts(CLIENT_ID);
-      expect(fact.notes.map((n) => n.id)).toEqual(["n9"]);
-    });
-
-    it("gives every block an empty array when the client has no notes", async () => {
-      vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-28")]);
-      const [fact] = await getBlockFacts(CLIENT_ID);
-      expect(fact.notes).toEqual([]);
+      const tables = vi.mocked(supabaseAdmin.from).mock.calls.map((call) => String(call[0]));
+      expect(tables).not.toContain("nutrition_plan_notes");
+      expect(tables.filter((table) => table === "nutrition_plans")).toHaveLength(1);
     });
   });
 });

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import type { NutritionPlanNote } from "@/types/nutrition-plan-notes";
 import { coversDate } from "./training-plan-window";
 import { getBlockBoundForDate } from "./client-blocks-service";
 import { getFurthestLiveProgramEnd } from "./training-service";
@@ -39,16 +40,20 @@ type NullableRpcArgKeys =
   | "p_effective_from";
 
 /**
- * The payload this service must send: all 25 of migration 166's parameters,
- * present, with NULL admitted on the nine above. `Required<>` makes the two the
- * SQL gives defaults (`p_effective_from`, `p_today`) mandatory here — the RPC's
- * past-date belt reads `p_today`, so dropping it is a bug on this side even
- * though the function itself would accept the call. `p_effective_until` has no
- * default: a version without an end is the model migration 166 retired.
+ * The payload this service must send: the 25 parameters migration 166 requires
+ * present, with NULL admitted on the nine above, plus migration 172's
+ * `p_coach_note`, sent only when the save carries a note — the RPC's DEFAULT
+ * NULL is the empty case, never an explicit null. `Required<>` makes the two
+ * the SQL gives defaults (`p_effective_from`, `p_today`) mandatory here — the
+ * RPC's past-date belt reads `p_today`, so dropping it is a bug on this side
+ * even though the function itself would accept the call. `p_effective_until`
+ * has no default: a version without an end is the model migration 166 retired.
  */
-type CreateNutritionPlanRpcPayload = Required<Omit<CreatePlanRpcArgs, NullableRpcArgKeys>> & {
+type CreateNutritionPlanRpcPayload = Required<
+  Omit<CreatePlanRpcArgs, NullableRpcArgKeys | "p_coach_note">
+> & {
   [K in NullableRpcArgKeys]: CreatePlanRpcArgs[K] | null;
-};
+} & Pick<CreatePlanRpcArgs, "p_coach_note">;
 
 type CreateNutritionPlanParams = {
   clientId: string;
@@ -88,6 +93,13 @@ type CreateNutritionPlanParams = {
    * is the window every day inside it is computed from.
    */
   effectiveUntil: string;
+  /**
+   * The coach's note for this save — one of the RPC's arguments, so it lands in
+   * the version's transaction (migration 172). Omitted when the save carries
+   * none, which on a same-day re-save clears the version's note: the note is
+   * the latest save's, empty included.
+   */
+  coachNote?: string;
 };
 
 /**
@@ -169,8 +181,9 @@ export async function createNutritionPlan(params: CreateNutritionPlanParams): Pr
       p_effective_until: params.effectiveUntil,
       p_effective_from: params.effectiveFrom || null,
       p_today: params.clientToday,
-      // `satisfies` checks this payload against migration 166's 25-parameter
-      // signature: an added, dropped or renamed key is a compile error HERE,
+      ...(params.coachNote ? { p_coach_note: params.coachNote } : {}),
+      // `satisfies` checks this payload against migration 172's signature (166's
+      // 25 parameters plus the optional note): an added, dropped or renamed key is a compile error HERE,
       // rather than a PGRST202 at runtime where PostgREST cannot resolve the
       // overload, rpcError is set below, this returns null, and EVERY plan save
       // fails with "Failed to create nutrition plan" while tsc, eslint and
@@ -296,6 +309,9 @@ type NutritionVersionPrescription = NutritionPlanVersionWindow & {
   baselineCalories: number;
   proteinTargetG: number;
   dietType: string;
+  /** The save's note (migration 172) — the computed day carries it on the
+   *  version's start date. */
+  coachNote: string | null;
 };
 
 /**
@@ -311,7 +327,7 @@ export async function getNutritionPrescriptionsForRange(
   const { data, error } = await overlappingActiveVersions(
     supabaseAdmin
       .from("nutrition_plans")
-      .select("id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type"),
+      .select("id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note"),
     clientId,
     rangeStart,
     rangeEnd
@@ -327,7 +343,41 @@ export async function getNutritionPrescriptionsForRange(
     baselineCalories: row.baseline_calories,
     proteinTargetG: Number(row.protein_target_g),
     dietType: row.diet_type,
+    coachNote: row.coach_note,
   }));
+}
+
+/**
+ * The save notes of the versions that START inside [startDate, endDate], oldest
+ * first — the client Program tab's read for its current block. A note is a
+ * column on its version (migration 172), so an archived version takes its note
+ * with it and a version that began before the range keeps its note out of it.
+ * The wire shape is the note's: `id` is the version's id, `effectiveOn` the
+ * day it took effect.
+ */
+export async function listNutritionPlanNotesInRange(
+  clientId: string,
+  startDate: string,
+  endDate: string
+): Promise<NutritionPlanNote[]> {
+  const { data, error } = await supabaseAdmin
+    .from("nutrition_plans")
+    .select("id, effective_from, coach_note")
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .not("coach_note", "is", null)
+    .gte("effective_from", startDate)
+    .lte("effective_from", endDate)
+    .order("effective_from", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch nutrition plan notes: ${error.message}`);
+  }
+  return (data ?? []).flatMap((row) =>
+    row.coach_note
+      ? [{ id: row.id, effectiveOn: row.effective_from, body: row.coach_note }]
+      : []
+  );
 }
 
 /** One weekday row of a version's grid — the coach's numbers for that weekday. */

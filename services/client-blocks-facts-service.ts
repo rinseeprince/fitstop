@@ -4,7 +4,6 @@ import {
   getTrainingPlansOverlapping,
   type TrainingPlanWindowSummary,
 } from "./training-service";
-import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
 import { fetchAllPages } from "@/lib/paged-fetch";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import type {
@@ -17,7 +16,7 @@ import type {
 // The chain routes stay pure CRUD; this service decorates each block with the
 // training and nutrition story of its window. Everything is fetched ONCE for
 // the whole journey span and partitioned per block in memory — round trips
-// are constant (blocks + 4 parallel reads), never per-block. Nothing per day is
+// are constant (blocks + 3 parallel reads), never per-block. Nothing per day is
 // read for nutrition: a day's target is computed from the version covering it,
 // so the versions ARE the block's nutrition days.
 
@@ -64,11 +63,14 @@ type VersionTdeeWindow = {
   baselineCalories: number;
   customMacrosEnabled: boolean;
   customCalories: number | null;
+  coachNote: string | null;
 };
 
 /**
  * Active versions overlapping the span, with the PRESCRIPTION fields
- * (baseline/custom calories + tdee). Deliberately NOT
+ * (baseline/custom calories + tdee) and the save note (migration 172 — a
+ * column on the version, so an archived version takes its note out of the
+ * facts by construction). Deliberately NOT
  * `getNutritionPrescriptionsForRange`: that read carries the three fields a
  * computed day is priced from and none of these — widening the day reader's
  * version read for a read-only facts column couples the two. Same overlap
@@ -82,7 +84,7 @@ async function fetchVersionTdeeWindows(
   const { data, error } = await supabaseAdmin
     .from("nutrition_plans")
     .select(
-      "id, effective_from, effective_until, tdee, baseline_calories, custom_macros_enabled, custom_calories"
+      "id, effective_from, effective_until, tdee, baseline_calories, custom_macros_enabled, custom_calories, coach_note"
     )
     .eq("client_id", clientId)
     .eq("status", "active")
@@ -103,13 +105,14 @@ async function fetchVersionTdeeWindows(
     baselineCalories: row.baseline_calories,
     customMacrosEnabled: row.custom_macros_enabled,
     customCalories: row.custom_calories,
+    coachNote: row.coach_note,
   }));
 }
 
 /**
  * The block's nutrition facts — the same shape as its training facts (owner,
  * 2026-09-10): every active version whose window overlaps the block, in start
- * order, each carrying its OWN row's numbers and its own start. A queued
+ * order, each carrying its OWN row's numbers, its own start and its save note. A queued
  * version inside a current block is listed exactly as a queued program is; a
  * version that began before the block keeps its real start, as a crossing
  * program's `startsOn` does; a re-save with the same numbers is its own entry,
@@ -137,6 +140,7 @@ function deriveNutritionFacts(
       startsOn: version.effectiveFrom,
       calories,
       deficitPerDay: version.tdee != null ? version.tdee - calories : null,
+      note: version.coachNote,
     });
   }
   return facts;
@@ -226,12 +230,11 @@ export async function getBlockFacts(clientId: string): Promise<BlockFacts[]> {
   const spanStart = blocks[0].startsOn;
   const spanEnd = blocks[blocks.length - 1].endsOn;
 
-  const [plans, versions, notes, trainingDays] = await Promise.all([
+  const [plans, versions, trainingDays] = await Promise.all([
     getTrainingPlansOverlapping(clientId, spanStart, spanEnd),
     fetchVersionTdeeWindows(clientId, spanStart, spanEnd),
-    listNutritionPlanNotesInRange(clientId, spanStart, spanEnd),
-    // Fourth parallel read, partitioned per block in memory like the other
-    // three — round trips stay constant in the number of blocks, never per-block.
+    // Third parallel read, partitioned per block in memory like the other
+    // two — round trips stay constant in the number of blocks, never per-block.
     fetchTrainingEventDates(clientId, spanStart, spanEnd),
   ]);
 
@@ -264,12 +267,6 @@ export async function getBlockFacts(clientId: string): Promise<BlockFacts[]> {
       blockId: block.id,
       training,
       nutrition: deriveNutritionFacts(versions, block),
-      // Inclusive on both ends: a note dated inside a future block is a plan
-      // the coach has already queued and explained, and hiding it until the
-      // date arrives would hide their own reasoning from them.
-      notes: notes.filter(
-        (note) => note.effectiveOn >= block.startsOn && note.effectiveOn <= block.endsOn
-      ),
     };
   });
 }

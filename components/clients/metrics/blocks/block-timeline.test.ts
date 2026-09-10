@@ -3,13 +3,14 @@ import { deriveTimelineEntries } from "./block-timeline";
 import type { BlockNutritionFact } from "@/types/client-blocks";
 
 const nutrition = (
-  versions: { from: string; calories: number; deficitPerDay: number | null }[]
+  versions: { from: string; calories: number; deficitPerDay: number | null; note?: string }[]
 ): BlockNutritionFact[] =>
   versions.map((version, index) => ({
     id: `v${index + 1}`,
     startsOn: version.from,
     calories: version.calories,
     deficitPerDay: version.deficitPerDay,
+    note: version.note ?? null,
   }));
 
 const BLOCK = {
@@ -132,106 +133,47 @@ describe("deriveTimelineEntries", () => {
     expect(entries.map((e) => e.label)).toEqual(["Base started"]);
   });
 
-  // Notes NEST under the nutrition entry they explain — they are evidence for a
-  // prescription change, not separate events, so they never add a bullet.
-  describe("coach notes (migration 147)", () => {
-    const note = (id: string, effectiveOn: string, body: string) => ({
-      id,
-      effectiveOn,
-      body,
-    });
-
-    it("nests a same-date note under its nutrition entry, adding no entry", () => {
+  // A version's save note NESTS under its own entry — evidence for the change
+  // above it, never a bullet of its own (migration 172: the note is a column
+  // on the version, so there is nothing to attach and nothing to orphan).
+  describe("coach notes (migration 172)", () => {
+    it("nests a version's note under its entry, adding no entry", () => {
       const entries = deriveTimelineEntries(
         { ...BLOCK, state: "current" },
         [],
-        nutrition([{ from: "2026-06-15", calories: 3200, deficitPerDay: 900 }]),
-        [note("n1", "2026-06-15", "Dropping calories 200.")]
-      );
-
-      // One era is index 0, so it labels "Nutrition set" wherever it starts.
-      expect(entries.map((e) => e.label)).toEqual(["Block started", "Nutrition set"]);
-      expect(entries[1].notes).toEqual([note("n1", "2026-06-15", "Dropping calories 200.")]);
-    });
-
-    it("hangs a dedup-ORPHANED note off the preceding era rather than dropping it", () => {
-      // deriveEras omits an era whose numbers match the previous one, so a
-      // re-save that carried a note but changed no numbers has no same-date
-      // host. Under an exact-date match this note would silently vanish — the
-      // "the note just doesn't appear sometimes" failure.
-      const entries = deriveTimelineEntries(
-        { ...BLOCK, state: "current" },
-        [],
-        nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }]),
-        [note("n2", "2026-06-20", "Holding here — adherence is the focus.")]
+        nutrition([{ from: "2026-06-15", calories: 3200, deficitPerDay: 900, note: "Dropping calories 200." }])
       );
 
       expect(entries.map((e) => e.label)).toEqual(["Block started", "Nutrition set"]);
-      expect(entries[1].notes?.map((n) => n.id)).toEqual(["n2"]);
+      expect(entries[1].note).toBe("Dropping calories 200.");
+      expect(entries[0].note).toBeUndefined();
     });
 
-    it("attaches to the LATEST era at or before the note, not the first", () => {
-      const entries = deriveTimelineEntries(
-        { ...BLOCK, state: "current" },
-        [],
-        nutrition([
-          { from: "2026-06-01", calories: 3471, deficitPerDay: 629 },
-          { from: "2026-06-15", calories: 3200, deficitPerDay: 900 },
-        ]),
-        [note("n3", "2026-06-20", "Two weeks in.")]
-      );
-
-      const changed = entries.find((e) => e.label === "Nutrition changed");
-      const set = entries.find((e) => e.label === "Nutrition set");
-      expect(changed?.notes?.map((n) => n.id)).toEqual(["n3"]);
-      expect(set?.notes).toBeUndefined();
-    });
-
-    it("gives a note its OWN entry when the block has no era to host it", () => {
-      // No covering version means `nutrition` is null and there is no host.
-      // A client-visible note that silently fails to render is the one outcome
-      // this feature cannot afford, so it becomes a dated entry of its own.
-      const entries = deriveTimelineEntries(
-        { ...BLOCK, state: "current" },
-        [],
-        [],
-        [note("n4", "2026-06-10", "Switching approach.")]
-      );
-
-      expect(entries.map((e) => [e.date, e.label])).toEqual([
-        ["2026-06-01", "Block started"],
-        ["2026-06-10", "Note"],
-      ]);
-      expect(entries[1].notes?.map((n) => n.id)).toEqual(["n4"]);
-    });
-
-    it("keeps multiple notes on one host, in the order given (oldest first)", () => {
-      const entries = deriveTimelineEntries(
-        { ...BLOCK, state: "current" },
-        [],
-        nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }]),
-        [note("n5", "2026-06-01", "first"), note("n6", "2026-06-01", "second")]
-      );
-
-      // Two notes on one effective date is the append-only property the old
-      // coach_notes column could not hold; both must survive to the render.
-      expect(entries[1].notes?.map((n) => n.body)).toEqual(["first", "second"]);
-    });
-
-    it("no notes leaves the entries byte-identical to before", () => {
-      const withArg = deriveTimelineEntries(
+    it("a version without a note carries none, and the entries are otherwise the same", () => {
+      const withNote = deriveTimelineEntries(
         { ...BLOCK, state: "past" },
         [plan("p1", "Base", "2026-06-03")],
-        nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }]),
-        []
+        nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629, note: "first" }])
       );
-      const withoutArg = deriveTimelineEntries(
+      const without = deriveTimelineEntries(
         { ...BLOCK, state: "past" },
         [plan("p1", "Base", "2026-06-03")],
         nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }])
       );
-      expect(withArg).toEqual(withoutArg);
-      expect(withArg.every((e) => e.notes === undefined)).toBe(true);
+
+      expect(without.every((e) => e.note === undefined)).toBe(true);
+      expect(without.map((e) => [e.date, e.label])).toEqual(withNote.map((e) => [e.date, e.label]));
+    });
+
+    it("a version that began before the block has no entry, so its note stays with it", () => {
+      const entries = deriveTimelineEntries(
+        { ...BLOCK, state: "current" },
+        [],
+        nutrition([{ from: "2026-05-20", calories: 3000, deficitPerDay: 400, note: "Earlier note." }])
+      );
+
+      expect(entries.map((e) => e.label)).toEqual(["Block started"]);
+      expect(entries.some((e) => e.note)).toBe(false);
     });
   });
 });

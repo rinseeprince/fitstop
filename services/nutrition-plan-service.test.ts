@@ -39,6 +39,7 @@ import {
   getNutritionPlanGrids,
   getNextNutritionVersionStartCap,
   getNutritionWindowsForClients,
+  listNutritionPlanNotesInRange,
   resolveNutritionPlacementEnd,
 } from './nutrition-plan-service'
 
@@ -59,6 +60,7 @@ function createResolverQuery(result: { data: unknown; error: { message: string }
     or: vi.fn().mockReturnThis(),
     gt: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
+    not: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
@@ -171,7 +173,9 @@ describe('Nutrition Plan Service', () => {
     // against a changed database drags the payload along with it, and an arity
     // change then has to be re-pinned here deliberately instead of riding in
     // unnoticed. It moved from 24 to 25 with migration 166 (`p_effective_until`,
-    // the placement's end) — the first arity change since 139. A mismatch
+    // the placement's end) — the first arity change since 139; migration 172
+    // added `p_coach_note`, optional and OMITTED when the save carries none, so
+    // the no-note payload stays at 25 and a note makes it 26. A mismatch
     // either belt misses is a PGRST202: PostgREST cannot resolve the overload,
     // createNutritionPlan returns null, and every plan save fails while tsc,
     // eslint and vitest all stay green.
@@ -195,7 +199,61 @@ describe('Nutrition Plan Service', () => {
       ])
       expect(sentKeys).toHaveLength(25)
       expect(sentKeys).not.toContain('p_coach_notes')
+      expect(sentKeys).not.toContain('p_coach_note')
       expect(sentKeys).not.toContain('p_recalc_snapshots')
+    })
+
+    it("sends p_coach_note only when the save carries a note — the RPC's DEFAULT NULL is the empty case (migration 172)", async () => {
+      // Never an explicit null: the RPC's default does the rest, and on a
+      // same-day re-save an omitted note clears the version's — the note is the
+      // latest save's, empty included.
+      vi.mocked(supabaseAdmin.rpc).mockResolvedValue({ data: 'plan-123', error: null } as any)
+
+      await createNutritionPlan({ ...baseParams, coachNote: 'Aggressive' })
+
+      const sent = vi.mocked(supabaseAdmin.rpc).mock.calls[0][1] as Record<string, unknown>
+      expect(sent.p_coach_note).toBe('Aggressive')
+      expect(Object.keys(sent)).toHaveLength(26)
+    })
+  })
+
+  describe("listNutritionPlanNotesInRange — the client Program tab's notes are its versions' (migration 172)", () => {
+    it('reads the ACTIVE versions starting inside the range that carry a note, oldest first, on the wire shape', async () => {
+      const query = createResolverQuery({
+        data: [
+          { id: 'v1', effective_from: '2026-08-05', coach_note: 'Dropping calories 200.' },
+          { id: 'v2', effective_from: '2026-08-19', coach_note: 'Holding here.' },
+        ],
+        error: null,
+      })
+      vi.mocked(supabaseAdmin.from).mockReturnValue(query as never)
+
+      const notes = await listNutritionPlanNotesInRange('client-123', '2026-08-01', '2026-08-31')
+
+      expect(supabaseAdmin.from).toHaveBeenCalledWith('nutrition_plans')
+      expect(query.eq).toHaveBeenCalledWith('client_id', 'client-123')
+      // An archived version takes its note with it — the residue a block drawn
+      // over a deleted plan used to list.
+      expect(query.eq).toHaveBeenCalledWith('status', 'active')
+      expect(query.not).toHaveBeenCalledWith('coach_note', 'is', null)
+      // STARTING inside the range: a version that began before the block keeps
+      // its note out of it, as the date-anchored read did.
+      expect(query.gte).toHaveBeenCalledWith('effective_from', '2026-08-01')
+      expect(query.lte).toHaveBeenCalledWith('effective_from', '2026-08-31')
+      expect(query.order).toHaveBeenCalledWith('effective_from', { ascending: true })
+      expect(notes).toEqual([
+        { id: 'v1', effectiveOn: '2026-08-05', body: 'Dropping calories 200.' },
+        { id: 'v2', effectiveOn: '2026-08-19', body: 'Holding here.' },
+      ])
+    })
+
+    it('throws on a read error rather than answering with no notes', async () => {
+      vi.mocked(supabaseAdmin.from).mockReturnValue(
+        createResolverQuery({ data: null, error: { message: 'boom' } }) as never
+      )
+      await expect(
+        listNutritionPlanNotesInRange('client-123', '2026-08-01', '2026-08-31')
+      ).rejects.toThrow(/boom/)
     })
   })
 
@@ -320,11 +378,11 @@ describe('Nutrition Plan Service', () => {
   })
 
   describe('getNutritionPrescriptionsForRange — the day reader\'s version read', () => {
-    it('applies the same overlap predicate and carries the three prescription fields', async () => {
+    it('applies the same overlap predicate and carries the three prescription fields and the save note', async () => {
       const query = createResolverQuery({
         data: [
-          { id: 'v1', effective_from: '2026-06-01', effective_until: '2026-07-19', baseline_calories: 1875, protein_target_g: 152, diet_type: 'balanced' },
-          { id: 'v2', effective_from: '2026-07-20', effective_until: '2026-09-13', baseline_calories: 2025, protein_target_g: 158, diet_type: 'high_carb' },
+          { id: 'v1', effective_from: '2026-06-01', effective_until: '2026-07-19', baseline_calories: 1875, protein_target_g: 152, diet_type: 'balanced', coach_note: 'Starting the cut.' },
+          { id: 'v2', effective_from: '2026-07-20', effective_until: '2026-09-13', baseline_calories: 2025, protein_target_g: 158, diet_type: 'high_carb', coach_note: null },
         ],
         error: null,
       })
@@ -333,7 +391,7 @@ describe('Nutrition Plan Service', () => {
       const versions = await getNutritionPrescriptionsForRange('client-123', '2026-07-01', '2026-08-01')
 
       expect(query.select).toHaveBeenCalledWith(
-        'id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type'
+        'id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note'
       )
       expect(query.eq).toHaveBeenCalledWith('client_id', 'client-123')
       expect(query.eq).toHaveBeenCalledWith('status', 'active')
@@ -342,8 +400,8 @@ describe('Nutrition Plan Service', () => {
       expect(query.or).not.toHaveBeenCalled()
       expect(query.order).toHaveBeenCalledWith('effective_from', { ascending: true })
       expect(versions).toEqual([
-        { id: 'v1', effectiveFrom: '2026-06-01', effectiveUntil: '2026-07-19', baselineCalories: 1875, proteinTargetG: 152, dietType: 'balanced' },
-        { id: 'v2', effectiveFrom: '2026-07-20', effectiveUntil: '2026-09-13', baselineCalories: 2025, proteinTargetG: 158, dietType: 'high_carb' },
+        { id: 'v1', effectiveFrom: '2026-06-01', effectiveUntil: '2026-07-19', baselineCalories: 1875, proteinTargetG: 152, dietType: 'balanced', coachNote: 'Starting the cut.' },
+        { id: 'v2', effectiveFrom: '2026-07-20', effectiveUntil: '2026-09-13', baselineCalories: 2025, proteinTargetG: 158, dietType: 'high_carb', coachNote: null },
       ])
     })
 

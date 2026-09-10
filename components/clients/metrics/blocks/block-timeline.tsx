@@ -8,12 +8,11 @@ import {
 import { formatBlockDate, formatNutritionEra } from "@/lib/blocks/block-format";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import type { BlockNutritionFact, BlockTrainingFact } from "@/types/client-blocks";
-import type { NutritionPlanNote } from "@/types/nutrition-plan-notes";
 
 // "What happened" — the expanded block card's vertical timeline. Sources: block
-// boundaries (derived), training placements in the window, the nutrition
-// versions that start in the window, and the coach's plan-save notes — all from
-// the facts read. Plan amendments are invisible by design (audit_logs has no readers).
+// boundaries (derived), training placements in the window, and the nutrition
+// versions that start in the window, each carrying its save note — all from the
+// facts read. Plan amendments are invisible by design (audit_logs has no readers).
 
 interface BlockTimelineEntry {
   key: string;
@@ -23,53 +22,16 @@ interface BlockTimelineEntry {
    *  word-only and sans, so the two registers do not blur (design system:
    *  split the branches when the states are distinguishable). */
   detail?: string;
-  /** The coach's notes explaining this entry, rendered NESTED underneath it —
-   *  no dot, no date of their own unless it differs from the host's. A note is
-   *  evidence for a prescription change, not a separate event. */
-  notes?: NutritionPlanNote[];
-}
-
-/**
- * Attach each note to the LATEST nutrition entry dated at or before it.
- *
- * Not an exact-date match, which is the tempting rule and is wrong: a version
- * that began before the block has no entry inside it, so a note dated inside
- * the block about those targets has no same-date host, and under exact-match it
- * would silently not appear. Hanging it off the preceding prescription keeps it
- * visible and reads correctly — the note accumulates under the targets it
- * discusses — and the nested row shows its own date whenever it differs from
- * its host's, so nothing is lost.
- *
- * A note with no nutrition entry at all to hang from (a block whose only
- * targets began before it, or none at all) is returned in `orphans` and gets
- * its own dated entry. Rare, but a client-visible note that silently
- * fails to render is the one outcome this feature cannot afford.
- */
-function attachNotesToHosts(
-  entries: BlockTimelineEntry[],
-  notes: NutritionPlanNote[]
-): { orphans: NutritionPlanNote[] } {
-  const orphans: NutritionPlanNote[] = [];
-  for (const note of notes) {
-    let host: BlockTimelineEntry | null = null;
-    for (const entry of entries) {
-      if (entry.date > note.effectiveOn) continue;
-      if (!host || entry.date >= host.date) host = entry;
-    }
-    if (!host) {
-      orphans.push(note);
-      continue;
-    }
-    host.notes = [...(host.notes ?? []), note];
-  }
-  return { orphans };
+  /** The version's save note, rendered NESTED underneath its entry — no dot
+   *  and no date of its own: it explains the change above it and is dated with
+   *  it (migration 172). */
+  note?: string;
 }
 
 export function deriveTimelineEntries(
   block: Pick<ClientBlockView, "id" | "startsOn" | "endsOn" | "state">,
   training: BlockTrainingFact[],
-  nutrition: BlockNutritionFact[],
-  notes: NutritionPlanNote[] = []
+  nutrition: BlockNutritionFact[]
 ): BlockTimelineEntry[] {
   const entries: BlockTimelineEntry[] = [];
   if (block.state !== "future") {
@@ -94,32 +56,20 @@ export function deriveTimelineEntries(
   // happened. A version queued inside the block is listed as "Nutrition set" the
   // way a queued program is listed as started, whether the block has begun or
   // not; a version that began before the block has no entry, as a crossing
-  // program has none.
-  const nutritionEntries: BlockTimelineEntry[] = [];
+  // program has none — and its note, dated at its start, stays with it. The
+  // note rides its own entry: it explains that prescription change and nothing
+  // else, so a "Block started" or "Programme started" row is never its host.
   nutrition
     .filter((fact) => fact.startsOn >= block.startsOn && fact.startsOn <= block.endsOn)
     .forEach((fact, index) => {
-      const entry: BlockTimelineEntry = {
+      entries.push({
         key: `nutrition-${fact.id}`,
         date: fact.startsOn,
         label: index === 0 ? "Nutrition set" : "Nutrition changed",
         detail: formatNutritionEra({ calories: fact.calories, deficitPerDay: fact.deficitPerDay }),
-      };
-      nutritionEntries.push(entry);
-      entries.push(entry);
+        ...(fact.note ? { note: fact.note } : {}),
+      });
     });
-
-  // Notes hang off the NUTRITION entries only — they explain a prescription
-  // change, so a "Block started" or "Programme started" row is the wrong host.
-  const { orphans } = attachNotesToHosts(nutritionEntries, notes);
-  for (const note of orphans) {
-    entries.push({
-      key: `note-${note.id}`,
-      date: note.effectiveOn,
-      label: "Note",
-      notes: [note],
-    });
-  }
 
   if (block.state === "past") {
     entries.push({
@@ -137,36 +87,19 @@ type BlockTimelineProps = {
 };
 
 /**
- * A note, nested under the entry it explains. No dot and no bullet: the
- * hierarchy is the point — a note is evidence for the change above it, not a
- * separate thing that happened.
- *
- * The date renders only when it differs from the host entry's, which is the
- * ordinary case avoided (a note is usually dated exactly on the prescription
- * change it describes) and the dedup-orphan case served (a re-save that changed
- * no numbers hangs off an earlier era and needs to say when it was written).
+ * A version's note, nested under the entry it explains. No dot and no bullet:
+ * the hierarchy is the point — a note is evidence for the change above it, not
+ * a separate thing that happened — and no date of its own, because it is dated
+ * with the change.
  *
  * Body styling follows the established coach note shape from the nutrition
  * calendar's note popover: whitespace preserved, 12.5px, 1.45 leading.
  */
-function TimelineNote({
-  note,
-  hostDate,
-}: {
-  note: NutritionPlanNote;
-  hostDate: string;
-}) {
+function TimelineNote({ body }: { body: string }) {
   return (
-    <div className="space-y-0.5">
-      {note.effectiveOn !== hostDate && (
-        <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-          {formatBlockDate(note.effectiveOn)}
-        </p>
-      )}
-      <p className="whitespace-pre-wrap text-[12.5px] leading-[1.45] text-[#0c1a1e]">
-        {note.body}
-      </p>
-    </div>
+    <p className="whitespace-pre-wrap text-[12.5px] leading-[1.45] text-[#0c1a1e]">
+      {body}
+    </p>
   );
 }
 
@@ -196,11 +129,9 @@ export function BlockTimeline({ entries, color }: BlockTimelineProps) {
           </div>
           {/* Indented to the label column, so a note reads as belonging to the
               row above it rather than as its own dateless event. */}
-          {entry.notes && entry.notes.length > 0 && (
-            <div className="mt-1.5 space-y-2 pl-[52px]">
-              {entry.notes.map((note) => (
-                <TimelineNote key={note.id} note={note} hostDate={entry.date} />
-              ))}
+          {entry.note && (
+            <div className="mt-1.5 pl-[52px]">
+              <TimelineNote body={entry.note} />
             </div>
           )}
         </li>

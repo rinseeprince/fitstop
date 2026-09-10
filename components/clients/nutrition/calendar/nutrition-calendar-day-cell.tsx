@@ -164,9 +164,9 @@ function NoteButton({
 }) {
   const [open, setOpen] = useState(false);
 
-  // "Your note" was renamed to "Plan change": since migration 147 that note's
-  // text is mirrored into nutrition_plan_notes, which the client reads, so
-  // calling it the coach's own note was actively false. The label states the
+  // "Plan change", not "Your note": this is the version's save note
+  // (nutrition_plans.coach_note), which the client reads on their Program tab,
+  // so calling it the coach's own note would be false. The label states the
   // KIND and stops there — a visibility claim on this one cannot be made
   // truthfully in a word, because the client sees it only while the journey
   // block containing it is current.

@@ -26,7 +26,6 @@ import {
 } from "./perf-baseline-wrapper";
 import { PERF_CLIENT_ID } from "./perf-fixtures";
 import { getBlockFacts } from "@/services/client-blocks-facts-service";
-import { listNutritionPlanNotesInRange } from "@/services/nutrition-plan-notes-service";
 import { getClientJourney } from "@/services/client-journey-service";
 
 import {
@@ -130,15 +129,7 @@ async function main() {
     "services/client-blocks-facts-service.ts",
     `getBlockFacts(PERF_CLIENT_ID)`,
     () => getBlockFacts(PERF_CLIENT_ID),
-    "Four parallel reads over the whole journey span, partitioned per block in memory — round trips are constant in the number of blocks, never per-block.",
-  ));
-
-  baselines.push(await measure(
-    "listNutritionPlanNotesInRange (365d)",
-    "services/nutrition-plan-notes-service.ts",
-    `listNutritionPlanNotesInRange(PERF_CLIENT_ID, today-365, today)`,
-    () => listNutritionPlanNotesInRange(PERF_CLIENT_ID, getDateDaysAgo(365), getTodayDateString()),
-    "Paged (fetchAllPages). One page per 1000 rows; the query count below IS the page count.",
+    "Three parallel reads over the whole journey span, partitioned per block in memory — round trips are constant in the number of blocks, never per-block.",
   ));
 
   baselines.push(await measure(
@@ -273,7 +264,6 @@ type FixtureCounts = {
   daily_habit_logs: number;
   client_measurements: number;
   client_phases: number;
-  nutrition_plan_notes: number;
 };
 
 async function fetchFixtureCounts(): Promise<FixtureCounts> {
@@ -287,7 +277,6 @@ async function fetchFixtureCounts(): Promise<FixtureCounts> {
     daily_habit_logs: 0,
     client_measurements: 0,
     client_phases: 0,
-    nutrition_plan_notes: 0,
   };
   const c = String(PERF_CLIENT_ID);
 
@@ -300,7 +289,6 @@ async function fetchFixtureCounts(): Promise<FixtureCounts> {
     ["daily_habit_logs", supabaseAdmin.from("daily_habit_logs").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["client_measurements", supabaseAdmin.from("client_measurements_live").select("id", { count: "exact", head: true }).eq("client_id", c)],
     ["client_phases", supabaseAdmin.from("client_phases").select("id", { count: "exact", head: true }).eq("client_id", c)],
-    ["nutrition_plan_notes", supabaseAdmin.from("nutrition_plan_notes").select("id", { count: "exact", head: true }).eq("client_id", c)],
   ] as const;
 
   for (const [name, q] of queries) {
@@ -351,9 +339,8 @@ function buildMarkdown(baselines: FunctionBaseline[], fixtures: FixtureCounts): 
   lines.push(`| daily_habit_logs | ${fixtures.daily_habit_logs} |`);
   lines.push(`| client_measurements | ${fixtures.client_measurements} |`);
   lines.push(`| client_phases (journey blocks) | ${fixtures.client_phases} |`);
-  lines.push(`| nutrition_plan_notes | ${fixtures.nutrition_plan_notes} |`);
   lines.push("");
-  lines.push(`Reproduce: \`npx tsx scripts/seed-scale-client.ts\` then \`npx tsx scripts/perf-baseline.ts\`. Note volume is \`--notes <n>\` (default 52 = roughly weekly saves over the year of tenure); raise it past 1000 to exercise the paged read's second page.`);
+  lines.push(`Reproduce: \`npx tsx scripts/seed-scale-client.ts\` then \`npx tsx scripts/perf-baseline.ts\`.`);
   lines.push("");
   lines.push(`Cold = first call after a Supabase connection-warmup query (so cold reflects query/page-cache cold, not TCP/TLS handshake). p50 / p95 use the 5 warm runs only (p95 = max-of-5).`);
   lines.push("");

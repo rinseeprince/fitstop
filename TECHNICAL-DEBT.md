@@ -4,25 +4,6 @@
 
 `unloggedDates` (`hooks/use-check-in-detail-data.ts`) asks the plan for a target on every period day with no `daily_logs_full` row, and `buildFullWeekTarget` sums the snapshotted target of every row it does have. A day the client logged wellness and no food has a row with a null target, so it is neither asked for a plan target nor counted: the full-week target the Nutrition card's kcal total and verdict divide against is short by that day. Spine presence stands in for "has a nutrition target" — the same confusion commit 5 of the measurement-log plan removed from the logged-day readers (`lib/logged-days.ts`), left here because it is a nutrition question, not the engagement one (owner decision 2026-09-03). Fix shape: the dates needing a plan target are the period days whose row carries no `targetCalories`, and the sum reads only the rows that do — a one-line change plus a test in `use-check-in-detail-data.test.ts`.
 
-## `blocks/facts` payload is no longer bounded by the block count — it grows with note volume
-
-Logged: 2026-08-13 (**measured**, not inferred — `docs/perf-baseline.md`, Session 6).
-
-Session 3.2 established that `GET /api/clients/[id]/blocks/facts` returns "≤20 fact rows regardless of span", which made its wire payload bounded by the *result* rather than by history. Session 6 attached the block's plan-save notes to each fact row, so that property is now weaker: the row count is still ≤20, but each row carries every note whose `effective_on` falls in its window.
-
-Measured against the year-scale fixture (`PERF_CLIENT_ID`, 4 blocks, 365 days):
-
-| notes | queries | warm p50 | payload |
-|---:|---:|---:|---:|
-| 52 (realistic — weekly saves) | 5 | ~80–95 ms | ~10 KB |
-| 1,200 (pathological) | 6 | 149 ms | ~208 KB |
-
-**Not urgent, and here is why:** 52 notes is a coach saving a plan every week for a year, and 1,200 is over three saves a day for a year — well past anything a human does. The read itself stays complete and correct at both (the extra query at 1,200 is `fetchAllPages` taking its second page, exactly as designed). **The client path is unaffected at any volume** — `getClientJourney` reads only the current block's window and measured flat at 84 ms / 5 queries with 1,200 notes on the client.
-
-If it ever does bite, the fix is a per-block cap with a "show all" affordance, not paging the facts endpoint — a coach reading a block timeline wants the recent notes, and the endpoint already returns per-block groups to hang a cap on.
-
----
-
 ## Computed nutrition days — residue after migration 170
 
 Logged: 2026-09-10 (block-as-program N3). A nutrition day is computed from the version covering it (`docs/ARCHITECTURE.md` → "The window is the row"); the day table is gone. What the switch left behind, none of it a defect:

@@ -407,11 +407,12 @@ export type NutritionEvent = {
   // The edit's per-day note, SHOWN TO THE CLIENT. Part of the edit — gone with
   // it on reset. Authored in the calendar's Edit-targets sheet.
   note: string | null;
-  // The plan-save note dated this day (`nutrition_plan_notes`, mig 147), the
-  // newest when a date holds two. Never returned by /api/client/** — every
-  // client route that reaches a day builds a new object literal rather than
-  // spreading one, which is the only thing keeping it off that wire; the
-  // client reads the notes table through GET /api/client/journey instead.
+  // The covering version's save note (`nutrition_plans.coach_note`, mig 172),
+  // on the day the version took effect and null on its other days. Never
+  // returned by /api/client/** — every client route that reaches a day builds
+  // a new object literal rather than spreading one, which is the only thing
+  // keeping it off that wire; the client reads it through
+  // GET /api/client/journey instead.
   coachNote: string | null;
   // Always "scheduled": a computed day has no lifecycle. Kept because the
   // coach calendar's edit gates read it.

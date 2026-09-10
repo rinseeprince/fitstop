@@ -11,8 +11,6 @@ import {
 } from "@/services/nutrition-plan-service";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
-import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
-import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
 import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { formatDateOnlyShort } from "@/lib/date-helpers";
@@ -37,46 +35,13 @@ interface NutritionPlanResult {
 }
 
 /**
- * Record the coach's note about this change.
- *
- * Called from BOTH plan handlers. They each own their own
- * createNutritionPlan -> note -> return sequence and return directly out of
- * the dispatch, so there is no seam after them to hook — inlining it twice is
- * how one branch silently ends up without it.
- *
- * This USED to be `stampCoachNote`, which wrote one mutable column and sent any
- * failure to Sentry behind a 200. That silence is no longer acceptable: since
- * migration 147 the note is client-visible, and losing coach-authored content
- * the client was meant to read is not a background error (CONVENTIONS §2 item
- * 12).
- *
- * WHY A RETRY IS SAFE, and it is not obvious: this throws AFTER the plan row
- * has committed, so the coach re-saves and the whole save re-runs, RPC
- * included. That does not mint a second plan version because a version
- * starting on the same day is REPLACED IN PLACE by the RPC (migration 166), so
- * a same-effective-date re-save collapses into the existing row and keeps its
- * id — and the insert that failed wrote nothing, so the retry inserts exactly
- * once. The guarantee is scoped to the same effective date; a save on a LATER
- * day is a new placement, which is correct behaviour rather than a retry
- * hazard.
+ * The coach's note for a save, as the RPC takes it (migration 172): trimmed, and
+ * absent when blank. It is one of the save's arguments, so it lands with the
+ * version or not at all — and a same-day re-save's note replaces the version's,
+ * empty included: the note is the latest save's.
  */
-async function recordCoachNoteOrThrow(
-  clientId: string,
-  coachId: string,
-  planId: string,
-  effectiveOn: string,
-  note: string | undefined
-): Promise<void> {
-  try {
-    await recordPlanSaveNote({ clientId, coachId, planId, effectiveOn, body: note });
-  } catch (err) {
-    captureApiError(err, { action: "record-plan-save-note", clientId, planId });
-    throw new NutritionPlanError(
-      "Plan targets were saved, but your note was not. Save again to add it.",
-      500
-    );
-  }
-}
+const coachNoteOf = (validatedData: { coachNotes?: string }): string | undefined =>
+  validatedData.coachNotes?.trim() || undefined;
 
 /**
  * Delete the client's nutrition plan: a save of nothing from today. The
@@ -264,6 +229,7 @@ async function handleCustomMacros(
     customCarbG: body.customCarbG,
     customFatG: body.customFatG,
     regenerationReason: "custom_macros",
+    coachNote: coachNoteOf(validatedData),
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     effectiveFrom: body.effectiveFrom,
     effectiveUntil,
@@ -274,17 +240,9 @@ async function handleCustomMacros(
   }
 
   // The RPC capped the predecessor (or replaced a same-day version in place)
-  // and returned the version now governing [effectiveDate, effectiveUntil].
-  // Its days are computed from the row from here on; days before
-  // effectiveDate belong to earlier versions and are untouched.
-  const effectiveDate = body.effectiveFrom ?? clientToday;
-  await recordCoachNoteOrThrow(
-    clientId,
-    coachId,
-    newPlanId,
-    effectiveDate,
-    validatedData.coachNotes
-  );
+  // and returned the version now governing the window, its note included. Its
+  // days are computed from the row from here on; days before the start belong
+  // to earlier versions and are untouched.
 
   return {
     success: true,
@@ -376,6 +334,7 @@ async function handleCalculatedPlan(
     customCarbG: null,
     customFatG: null,
     regenerationReason,
+    coachNote: coachNoteOf(validatedData),
     trainingPlan: null, // vestigial param (createNutritionPlan ignores it)
     effectiveFrom: body.effectiveFrom,
     effectiveUntil,
@@ -386,16 +345,9 @@ async function handleCalculatedPlan(
   }
 
   // The RPC capped the predecessor (or replaced a same-day version in place)
-  // and returned the version now governing [effectiveDate, effectiveUntil].
-  // Its days are computed from the row from here on; days before
+  // and returned the version now governing [effectiveDate, effectiveUntil], its
+  // note included. Its days are computed from the row from here on; days before
   // effectiveDate belong to earlier versions and are untouched.
-  await recordCoachNoteOrThrow(
-    clientId,
-    coachId,
-    newPlanId,
-    effectiveDate,
-    validatedData.coachNotes
-  );
 
   return {
     success: true,

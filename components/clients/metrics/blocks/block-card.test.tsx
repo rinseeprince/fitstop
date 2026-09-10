@@ -31,7 +31,6 @@ const EMPTY_FACTS: BlockFacts = {
   blockId: "blk-1",
   training: [],
   nutrition: [],
-  notes: [],
 };
 
 function renderCard(block: ClientBlockView, handlers: {
@@ -113,7 +112,7 @@ describe("BlockCard — the round-trip empty states", () => {
     renderCard(makeBlock({ state: "future" }), {
       facts: {
         ...EMPTY_FACTS,
-        nutrition: [{ id: "v1", startsOn: "2026-10-08", calories: 1732, deficitPerDay: 214 }],
+        nutrition: [{ id: "v1", startsOn: "2026-10-08", calories: 1732, deficitPerDay: 214, note: null }],
       },
     });
     expect(screen.getByText(/from 8 Oct/)).toBeDefined();

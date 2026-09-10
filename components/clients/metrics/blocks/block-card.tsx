@@ -367,8 +367,7 @@ export function BlockCard(props: BlockCardProps) {
               entries={deriveTimelineEntries(
                 block,
                 facts?.training ?? [],
-                facts?.nutrition ?? [],
-                facts?.notes ?? []
+                facts?.nutrition ?? []
               )}
               color={color}
             />

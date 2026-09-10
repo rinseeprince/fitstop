@@ -17,9 +17,8 @@ Client: `5ca1ec1e-0000-4000-8000-000000000001`
 | daily_habit_logs | 1800 |
 | body_metrics | 12 |
 | client_phases (journey blocks) | 4 |
-| nutrition_plan_notes | 52 |
 
-Reproduce: `npx tsx scripts/seed-scale-client.ts` then `npx tsx scripts/perf-baseline.ts`. Note volume is `--notes <n>` (default 52 = roughly weekly saves over the year of tenure); raise it past 1000 to exercise the paged read's second page.
+Reproduce: `npx tsx scripts/seed-scale-client.ts` then `npx tsx scripts/perf-baseline.ts`.
 
 Cold = first call after a Supabase connection-warmup query (so cold reflects query/page-cache cold, not TCP/TLS handshake). p50 / p95 use the 5 warm runs only (p95 = max-of-5).
 
@@ -182,28 +181,11 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 
 > Query 5's table was dropped in migration 170 (2026-09-10): the facts read now takes its nutrition days from the day reader (`services/nutrition-days-service.ts`, five reads of its own). Re-measure before citing this breakdown.
 
+> Query 3's table was dropped in migration 172 (2026-09-10): the note is a column on the version and rides query 4, so the facts read is three parallel reads. Re-measure before quoting.
+
 ## listNutritionPlanNotesInRange (365d)
 
-**File:** `services/nutrition-plan-notes-service.ts` · **Call:** `listNutritionPlanNotesInRange(PERF_CLIENT_ID, today-365, today)`
-
-*Paged (fetchAllPages). One page per 1000 rows; the query count below IS the page count.*
-
-| run | wall ms | total rows fetched | payload bytes |
-|-----|--------:|-------------------:|--------------:|
-| cold | 33.1 | 52 | 8884 |
-| warm-1 | 36.4 | 52 | 8884 |
-| warm-2 | 47.9 | 52 | 8884 |
-| warm-3 | 36.6 | 52 | 8884 |
-| warm-4 | 47.5 | 52 | 8884 |
-| warm-5 | 34.9 | 52 | 8884 |
-
-**Warm p50:** 36.6 ms · **Warm p95 (max of 5):** 47.9 ms
-
-**Query breakdown** (warm run 5):
-
-| query | table | rows | bytes | ms |
-|------:|-------|-----:|------:|---:|
-| 1 | nutrition_plan_notes | 52 | 8936 | 34.7 |
+> Dropped in migration 172 (2026-09-10): the notes table is gone and the note is a column on the version. The client journey's read is a versions read now (`services/nutrition-plan-service.ts`), unpaged — single-digit versions per client. The table read's measurements were removed with it.
 
 ## getClientJourney
 
@@ -231,6 +213,8 @@ Cold = first call after a Supabase connection-warmup query (so cold reflects que
 | 3 | nutrition_plan_notes | 13 | 2237 | 41.0 |
 | 4 | check_ins | 51 | 11213 | 45.2 |
 | 5 | client_metric_entries | 1 | 314 | 50.7 |
+
+> Query 3's table was dropped in migration 172 (2026-09-10): the current block's notes come off `nutrition_plans` now. Re-measure before quoting.
 
 ## getHabitLogs
 

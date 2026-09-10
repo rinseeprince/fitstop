@@ -29,7 +29,8 @@ import { calculateDailyMacros } from "@/utils/nutrition-helpers";
  *     calories (a plan placed before the percentage model);
  *   - the macros are the grid row's, verbatim, else the diet split over the
  *     baseline with protein held at the version's target;
- *   - the coach note is the plan-save note dated this day, newest first.
+ *   - the coach note is the covering version's save note, carried on the day
+ *     the version took effect (the reader decides the day; this carries it).
  *
  * The DTO shape is `NutritionEvent`, the day-row shape every consumer already
  * reads: `id` is the date (unique per client, and the edit routes address

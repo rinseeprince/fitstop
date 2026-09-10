@@ -12,7 +12,6 @@
  *   --months <n>            (default 12)
  *   --sessions-per-week <n> (default 4)
  *   --seed <n>              (default 42; xorshift32 PRNG seed)
- *   --notes <n>             (default 52; nutrition_plan_notes rows)
  *   --full-reset            also delete the seeded coach + client rows
  */
 import "./env-bootstrap";
@@ -49,7 +48,6 @@ type Args = {
   months: number;
   sessionsPerWeek: number;
   seed: number;
-  notes: number;
   fullReset: boolean;
 };
 
@@ -58,9 +56,6 @@ function parseArgs(argv: string[]): Args {
     months: 12,
     sessionsPerWeek: 4,
     seed: 42,
-    // One plan-save note per week of tenure — heavy but plausible coach usage.
-    // Raise it to stress the paged read past PostgREST's ~1000-row cap.
-    notes: 52,
     fullReset: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -69,10 +64,6 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--months") out.months = Number(argv[++i]);
     else if (a === "--sessions-per-week") out.sessionsPerWeek = Number(argv[++i]);
     else if (a === "--seed") out.seed = Number(argv[++i]);
-    else if (a === "--notes") out.notes = Number(argv[++i]);
-  }
-  if (!Number.isFinite(out.notes) || out.notes < 0 || out.notes > 5000) {
-    throw new Error(`--notes must be 0-5000, got ${out.notes}`);
   }
   if (!Number.isFinite(out.months) || out.months < 1 || out.months > 24) {
     throw new Error(`--months must be 1-24, got ${out.months}`);
@@ -190,7 +181,7 @@ async function main() {
   const checkInRows = await insertCheckIns(args.months, rng);
   await insertMeasurements(checkInRows, getDateDaysAgo(args.months * 30));
   await insertTrainingEvents(sessionIds, args.months);
-  await insertJourneyBlocksAndNotes(args.notes);
+  await insertJourneyBlocks();
 
   const elapsedMs = Date.now() - t0;
   console.log("");
@@ -220,7 +211,6 @@ async function cleanExistingFixtures(fullReset: boolean) {
   await del("daily_logs (→ wellness/nutrition/training children)", supabaseAdmin.from("daily_logs").delete().eq("client_id", c));
   await del("nutrition_plans (→ daily_targets)", supabaseAdmin.from("nutrition_plans").delete().eq("client_id", c));
   await del("client_goals", supabaseAdmin.from("client_goals").delete().eq("client_id", c));
-  await del("nutrition_plan_notes", supabaseAdmin.from("nutrition_plan_notes").delete().eq("client_id", c));
   await del("client_phases (journey blocks)", supabaseAdmin.from("client_phases").delete().eq("client_id", c));
   // The client's check-in form (migration 157). check_in_answers went with the
   // check_ins delete above (CASCADE); this is the form row and, through its own
@@ -434,6 +424,7 @@ async function insertNutritionPlan() {
     {
       ...shared,
       id: PERF_NUTRITION_PLAN_V1_ID,
+      coach_note: "Perf seed note: the first block's targets, priced off the intake weight.",
       effective_from: v1From,
       effective_until: v1Until,
       baseline_calories: 2300,
@@ -441,6 +432,7 @@ async function insertNutritionPlan() {
     {
       ...shared,
       id: PERF_NUTRITION_PLAN_ID,
+      coach_note: "Perf seed note: adjusting targets because the last block's average landed above plan.",
       effective_from: v2From,
       // The version's window (migration 166: a version always carries its
       // end); every day inside it is computed from this row and its grid.
@@ -1067,24 +1059,24 @@ function weekIsMissed(weekStart: string, seed: number): boolean {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Journey blocks + plan-save notes (migrations 145 / 147)
+// Journey blocks (migration 145)
 // ---------------------------------------------------------------------------
 
 /**
- * Four contiguous blocks tiling the client's 365-day tenure, plus the coach's
- * plan-save notes spread across them.
+ * Four contiguous blocks tiling the client's 365-day tenure.
  *
  * Blocks were previously NOT seeded — the fixture carried three left over from
  * a manual Session 3 smoke, so any getBlockFacts measurement was unreproducible
- * and would drift the moment someone re-seeded. The chain here is derived the
- * way the real one is (ends in, starts out): each block starts the day after
- * the previous ends, so overlaps and gaps stay unexpressible.
+ * and would drift the moment someone re-seeded. Each block starts the day after
+ * the previous ends.
  *
  * The last block CONTAINS today, so the current/past/future derivation and the
- * client journey's `currentBlockNotes` both have something real to resolve.
+ * client journey's `currentBlockNotes` — the save notes of the versions starting
+ * in the current block, seeded on the version rows (migration 172) — both have
+ * something real to resolve.
  */
-async function insertJourneyBlocksAndNotes(noteCount: number) {
-  console.log(`Inserting journey blocks + ${noteCount} plan-save notes...`);
+async function insertJourneyBlocks() {
+  console.log("Inserting journey blocks...");
 
   const BLOCKS = 4;
   const spanDays = 365;
@@ -1120,35 +1112,6 @@ async function insertJourneyBlocksAndNotes(noteCount: number) {
     .insert(blockRows);
   if (blockErr) throw new Error(`client_phases insert failed: ${blockErr.message}`);
   console.log(`  inserted ${blockRows.length} blocks`);
-
-  if (noteCount === 0) return;
-
-  // Notes spread evenly across the tenure. Deliberately NOT one per distinct
-  // date once noteCount climbs: the append-only property means a date can carry
-  // several, and the read's (effective_on, created_at, id) ordering exists
-  // precisely for that case, so the fixture must exercise it.
-  const noteRows = Array.from({ length: noteCount }, (_, i) => {
-    const daysAgo = Math.max(0, spanDays - Math.floor((i * spanDays) / noteCount));
-    return {
-      client_id: PERF_CLIENT_ID,
-      coach_id: PERF_COACH_ID,
-      nutrition_plan_id:
-        daysAgo > 90 ? PERF_NUTRITION_PLAN_V1_ID : PERF_NUTRITION_PLAN_ID,
-      effective_on: getDateDaysAgo(daysAgo),
-      body: `Perf seed note ${i + 1}: adjusting targets because the last block's average landed above plan.`,
-    };
-  });
-
-  // Chunked: a single insert of a few thousand rows can exceed the request
-  // body limit, and this fixture is deliberately runnable at --notes 5000.
-  const CHUNK = 500;
-  for (let i = 0; i < noteRows.length; i += CHUNK) {
-    const { error } = await supabaseAdmin
-      .from("nutrition_plan_notes")
-      .insert(noteRows.slice(i, i + CHUNK));
-    if (error) throw new Error(`nutrition_plan_notes insert failed: ${error.message}`);
-  }
-  console.log(`  inserted ${noteRows.length} notes`);
 }
 
 main().catch((err) => {

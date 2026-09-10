@@ -41,14 +41,6 @@ vi.mock("@/services/nutrition-plan-clear-service", () => ({
   clearNutritionPlansForClient: vi.fn(),
 }));
 
-vi.mock("@/services/nutrition-plan-notes-service", () => ({
-  recordPlanSaveNote: vi.fn(),
-}));
-
-vi.mock("@/lib/error-handler", () => ({
-  captureApiError: vi.fn(),
-}));
-
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientById } from "@/services/client-service";
 import { generateNutritionPlan } from "@/services/nutrition-service";
@@ -57,14 +49,11 @@ import {
   resolveNutritionPlacementEnd,
 } from "@/services/nutrition-plan-service";
 import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
-import { captureApiError } from "@/lib/error-handler";
-import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import {
   orchestrateNutritionPlanCreation,
   orchestrateNutritionPlanDeletion,
-  NutritionPlanError,
 } from "./nutrition-plan-orchestrator";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 
@@ -138,7 +127,6 @@ beforeEach(() => {
     versionsCleared: 1, editsCleared: 0,
     versionIds: ["plan-1"],
   });
-  vi.mocked(recordPlanSaveNote).mockResolvedValue(undefined);
   mockNoExistingPlan();
 });
 
@@ -179,79 +167,35 @@ describe("orchestrateNutritionPlanCreation — the save is the RPC and the note,
   });
 });
 
-describe("orchestrateNutritionPlanCreation — the coach note (migration 147)", () => {
+describe("orchestrateNutritionPlanCreation — the coach note rides the RPC (migration 172)", () => {
   const NOTE = "Dropping calories 200 while we hold training volume.";
 
-  it("records the note AFTER the RPC, on the effective date", async () => {
+  it("hands the note to the save itself, so it lands with the version or not at all", async () => {
+    await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, { coachNotes: NOTE });
+
+    expect(createNutritionPlan).toHaveBeenCalledWith(expect.objectContaining({ coachNote: NOTE }));
+    // No second statement after the RPC: the note is one of its arguments.
+    expect(vi.mocked(supabaseAdmin.from).mock.calls.map((c) => String(c[0]))).not.toContain(
+      "nutrition_plan_notes"
+    );
+  });
+
+  it("trims the note, and a blank one is no note — omitted, so the RPC's default clears a same-day re-save's", async () => {
     await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {
-      coachNotes: NOTE,
+      coachNotes: "  Aggressive  ",
     });
-
-    expect(recordPlanSaveNote).toHaveBeenCalledWith({
-      clientId,
-      coachId,
-      planId: "plan-1",
-      effectiveOn: "2026-07-02",
-      body: NOTE,
-    });
-    // After the row commits, so a failed save never leaves a note describing
-    // a version that was not stored.
-    expect(vi.mocked(recordPlanSaveNote).mock.invocationCallOrder[0]).toBeGreaterThan(
-      vi.mocked(createNutritionPlan).mock.invocationCallOrder[0]
+    expect(createNutritionPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ coachNote: "Aggressive" })
     );
+
+    await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, { coachNotes: "   " });
+    const last = vi.mocked(createNutritionPlan).mock.calls.at(-1)?.[0];
+    expect(last?.coachNote).toBeUndefined();
   });
 
-  it("anchors the note on effectiveFrom, the same date the events used", async () => {
-    await orchestrateNutritionPlanCreation(
-      clientId,
-      coachId,
-      { ...calculatedBody, effectiveFrom: "2026-07-10" },
-      { coachNotes: NOTE }
-    );
-    expect(recordPlanSaveNote).toHaveBeenCalledWith(
-      expect.objectContaining({ effectiveOn: "2026-07-10" })
-    );
-  });
-
-  it("SURFACES a note failure instead of swallowing it (CONVENTIONS §2 item 12)", async () => {
-    // The predecessor, stampCoachNote, sent this to Sentry behind a 200. That
-    // silence is what made the old note invisible AND lossy; now that the note
-    // is client-visible, losing it must reach the coach.
-    const noteError = new Error("insert exploded");
-    vi.mocked(recordPlanSaveNote).mockRejectedValue(noteError);
-
-    await expect(
-      orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, { coachNotes: NOTE })
-    ).rejects.toMatchObject({
-      name: "NutritionPlanError",
-      statusCode: 500,
-      message: "Plan targets were saved, but your note was not. Save again to add it.",
-    });
-    expect(captureApiError).toHaveBeenCalledWith(noteError, {
-      action: "record-plan-save-note",
-      clientId,
-      planId: "plan-1",
-    });
-  });
-
-  it("custom-macros branch records the note too — both handlers, not one", async () => {
-    // The two handlers each own their own create -> note -> return sequence
-    // and return straight out of the dispatch, so there is no seam after them
-    // to hook. One branch silently losing the note is the failure mode this
-    // pins.
-    await orchestrateNutritionPlanCreation(clientId, coachId, customBody, {
-      coachNotes: NOTE,
-    });
-    expect(recordPlanSaveNote).toHaveBeenCalledWith(
-      expect.objectContaining({ planId: "plan-1", body: NOTE })
-    );
-  });
-
-  it("custom-macros branch surfaces a note failure as well", async () => {
-    vi.mocked(recordPlanSaveNote).mockRejectedValue(new Error("insert exploded"));
-    await expect(
-      orchestrateNutritionPlanCreation(clientId, coachId, customBody, { coachNotes: NOTE })
-    ).rejects.toBeInstanceOf(NutritionPlanError);
+  it("custom-macros branch hands the note too — both handlers, not one", async () => {
+    await orchestrateNutritionPlanCreation(clientId, coachId, customBody, { coachNotes: NOTE });
+    expect(createNutritionPlan).toHaveBeenCalledWith(expect.objectContaining({ coachNote: NOTE }));
   });
 });
 
@@ -268,16 +212,6 @@ describe("orchestrateNutritionPlanDeletion — one act, the clear service's (mig
     // day removal and the archive are the clear service's.
     expect(clearNutritionPlansForClient).toHaveBeenCalledWith(clientId, "2026-07-02");
     expect(result).toEqual({ planId: "plan-1" });
-  });
-
-  it("never touches nutrition_plan_notes — a plan delete leaves every note standing", async () => {
-    // Notes are a client-scoped table with ON DELETE SET NULL precisely so they
-    // outlive the versions they describe. This pins the app half: no code path
-    // here reaches the notes table.
-    await orchestrateNutritionPlanDeletion(clientId, coachId);
-
-    const tables = vi.mocked(supabaseAdmin.from).mock.calls.map((c) => c[0]);
-    expect(tables).not.toContain("nutrition_plan_notes");
   });
 
   it("rejects 404 when nothing is left to retire — a same-day second delete is a clean 404, not a silent success", async () => {

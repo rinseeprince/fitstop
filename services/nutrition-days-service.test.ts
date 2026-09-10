@@ -17,7 +17,6 @@ vi.mock("./nutrition-plan-service", async (importOriginal) => {
 });
 vi.mock("./training-event-service", () => ({ getEventsForDateRange: vi.fn() }));
 vi.mock("./nutrition-day-edits-service", () => ({ getNutritionDayEditsForRange: vi.fn() }));
-vi.mock("./nutrition-plan-notes-service", () => ({ listNutritionPlanNotesInRange: vi.fn() }));
 
 import {
   getNutritionPlanGrids,
@@ -25,7 +24,6 @@ import {
 } from "./nutrition-plan-service";
 import { getEventsForDateRange } from "./training-event-service";
 import { getNutritionDayEditsForRange } from "./nutrition-day-edits-service";
-import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
 import {
   getNutritionEventForDate,
   getNutritionEventsForDateRange,
@@ -40,6 +38,7 @@ const V1 = {
   baselineCalories: 1800,
   proteinTargetG: 150,
   dietType: "balanced",
+  coachNote: null,
 };
 const V2 = {
   id: "v2",
@@ -48,6 +47,7 @@ const V2 = {
   baselineCalories: 2200,
   proteinTargetG: 170,
   dietType: "high_carb",
+  coachNote: null,
 };
 
 const gridRow = (planId: string, dayOfWeek: string, calories: number) => ({
@@ -73,11 +73,10 @@ beforeEach(() => {
   vi.mocked(getNutritionPlanGrids).mockResolvedValue([]);
   vi.mocked(getEventsForDateRange).mockResolvedValue([]);
   vi.mocked(getNutritionDayEditsForRange).mockResolvedValue([]);
-  vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([]);
 });
 
 describe("getNutritionEventsForDateRange — batched, never per day", () => {
-  it("costs five reads for a 31-day month: one per source, none per day", async () => {
+  it("costs four reads for a 31-day month: one per source, none per day", async () => {
     const days = await getNutritionEventsForDateRange(CLIENT, "2026-10-01", "2026-10-31");
 
     expect(days).toHaveLength(21); // v1's 10 days + v2's 11, none in the gap
@@ -89,11 +88,9 @@ describe("getNutritionEventsForDateRange — batched, never per day", () => {
     expect(getEventsForDateRange).toHaveBeenCalledWith(CLIENT, "2026-10-01", "2026-10-31");
     expect(getNutritionDayEditsForRange).toHaveBeenCalledTimes(1);
     expect(getNutritionDayEditsForRange).toHaveBeenCalledWith(CLIENT, "2026-10-01", "2026-10-31");
-    expect(listNutritionPlanNotesInRange).toHaveBeenCalledTimes(1);
-    expect(listNutritionPlanNotesInRange).toHaveBeenCalledWith(CLIENT, "2026-10-01", "2026-10-31");
   });
 
-  it("a single day costs the same five reads", async () => {
+  it("a single day costs the same four reads", async () => {
     await getNutritionEventsForDateRange(CLIENT, "2026-10-05", "2026-10-05");
 
     for (const read of [
@@ -101,7 +98,6 @@ describe("getNutritionEventsForDateRange — batched, never per day", () => {
       getNutritionPlanGrids,
       getEventsForDateRange,
       getNutritionDayEditsForRange,
-      listNutritionPlanNotesInRange,
     ]) {
       expect(read).toHaveBeenCalledTimes(1);
     }
@@ -116,7 +112,6 @@ describe("getNutritionEventsForDateRange — batched, never per day", () => {
     expect(getNutritionPlanGrids).not.toHaveBeenCalled();
     expect(getEventsForDateRange).not.toHaveBeenCalled();
     expect(getNutritionDayEditsForRange).not.toHaveBeenCalled();
-    expect(listNutritionPlanNotesInRange).not.toHaveBeenCalled();
   });
 
   it("an inverted range reads nothing at all", async () => {
@@ -173,13 +168,15 @@ describe("getNutritionEventsForDateRange — batched, never per day", () => {
     expect(byDate.get("2026-10-22")).toMatchObject({ isTrainingDay: true, trainingBurnCalories: 275 });
   });
 
-  it("an edit lands on its date; the newest note on a date wins", async () => {
+  it("an edit lands on its date; a version's note shows on the day it took effect and no other", async () => {
     vi.mocked(getNutritionDayEditsForRange).mockResolvedValue([
       { date: "2026-10-07", calories: 1500, proteinG: 140, carbG: 150, fatG: 50, note: "Rest week" },
     ]);
-    vi.mocked(listNutritionPlanNotesInRange).mockResolvedValue([
-      { id: "n1", effectiveOn: "2026-10-21", body: "First save" },
-      { id: "n2", effectiveOn: "2026-10-21", body: "Corrected save" },
+    // The note is a column on the version (migration 172): the latest save's,
+    // carried by the computed day on the version's start date only.
+    vi.mocked(getNutritionPrescriptionsForRange).mockResolvedValue([
+      V1,
+      { ...V2, coachNote: "Corrected save" },
     ]);
 
     const days = await getNutritionEventsForDateRange(CLIENT, "2026-10-01", "2026-10-31");
@@ -194,6 +191,8 @@ describe("getNutritionEventsForDateRange — batched, never per day", () => {
     expect(byDate.get("2026-10-08")?.isModified).toBe(false);
     expect(byDate.get("2026-10-21")?.coachNote).toBe("Corrected save");
     expect(byDate.get("2026-10-22")?.coachNote).toBeNull();
+    // V1 saved without a note: nothing on its start date either.
+    expect(byDate.get("2026-10-01")?.coachNote).toBeNull();
   });
 
   it("an edit on a date no version covers yields no day — the version decides existence", async () => {

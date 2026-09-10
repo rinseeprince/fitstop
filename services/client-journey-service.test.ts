@@ -3,14 +3,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("./client-blocks-service", () => ({ listBlocks: vi.fn() }));
 vi.mock("./client-goals-service", () => ({ getCurrentGoals: vi.fn() }));
 vi.mock("./measurements-service", () => ({ getMeasurementSeries: vi.fn() }));
-vi.mock("./nutrition-plan-notes-service", () => ({
+vi.mock("./nutrition-plan-service", () => ({
   listNutritionPlanNotesInRange: vi.fn(),
 }));
 
 import { listBlocks } from "./client-blocks-service";
 import { getCurrentGoals } from "./client-goals-service";
 import { getMeasurementSeries } from "./measurements-service";
-import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
+import { listNutritionPlanNotesInRange } from "./nutrition-plan-service";
 import { getClientJourney } from "./client-journey-service";
 import type { ClientBlock } from "@/types/client-blocks";
 import type { DayValue } from "@/lib/measurements/day-values";

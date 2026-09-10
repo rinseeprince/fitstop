@@ -1,7 +1,7 @@
 import { listBlocks } from "./client-blocks-service";
 import { getCurrentGoals } from "./client-goals-service";
 import { getMeasurementSeries } from "./measurements-service";
-import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
+import { listNutritionPlanNotesInRange } from "./nutrition-plan-service";
 import { decorateBlocks } from "@/lib/blocks/block-derivations";
 import { deriveBlockWeightFacts } from "@/lib/blocks/block-weight";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
