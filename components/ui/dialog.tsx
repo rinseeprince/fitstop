@@ -68,7 +68,16 @@ function DialogContent({
           // per-day nutrition editor). The shadow already separates the card
           // from the overlay; a dialog that genuinely wants an edge asks for
           // it at the call site, in the system colour.
-          'bg-white text-[#0c1a1e] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-[6px] p-6 shadow-[0_10px_40px_rgba(13,148,136,0.10)] duration-200 sm:max-w-lg',
+          //
+          // Centred by auto margins (inset-0 m-auto h-fit), never by a
+          // transform. translate(-50%, -50%) lands the card on a half-pixel
+          // whenever its height is odd, and that anti-aliased top row shows
+          // the card's white through a dark hero as a light hairline — there
+          // against the page's dark band, gone against the light page, back
+          // when the content changes height. Layout positions are snapped to
+          // whole pixels; the zoom animation is a scale about the centre and
+          // leaves no transform behind.
+          'bg-white text-[#0c1a1e] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed inset-0 z-50 m-auto grid h-fit w-full max-w-[calc(100%-2rem)] gap-4 rounded-[6px] p-6 shadow-[0_10px_40px_rgba(13,148,136,0.10)] duration-200 sm:max-w-lg',
           className,
         )}
         {...props}

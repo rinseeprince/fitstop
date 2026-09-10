@@ -68,6 +68,10 @@ describe("NutritionEditTargetsDialog — one edit, the balancer", () => {
     // hairline around the dark hero (owner smoke, 2026-09-10).
     expect(dialog.className).not.toMatch(/(^|\s)border(\s|$)/);
     expect(dialog.className).not.toContain("border-[rgba(13,148,136,0.08)]");
+    // Centred by auto margins, not a transform: a half-pixel translate showed
+    // the card's white through the hero's top row (owner smoke, 2026-09-10).
+    expect(dialog.className).toContain("m-auto");
+    expect(dialog.className).not.toMatch(/translate-[xy]-\[-50%\]/);
     expect(screen.getByText("2 days selected")).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Carbs and fat boundary" })).toBeInTheDocument();
     expect(screen.getByLabelText<HTMLInputElement>("Calories").value).toBe("2000");

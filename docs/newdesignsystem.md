@@ -491,7 +491,7 @@ Filter chips (toggle): `h-8 rounded-[6px] px-3 text-[12.5px] capitalize`; active
 
 ### Dialog
 
-Base `DialogContent` is already Teal-Summit: `bg-white rounded-[6px] p-6 gap-4 shadow-[0_10px_40px_rgba(13,148,136,0.10)] sm:max-w-lg` — **no edge border**, like the Sheet: the shadow separates the card from the overlay, and the 8%-teal hairline composited over white reads as a white ring around a dark hero pressed to the edge (the per-day nutrition editor); overlay `bg-black/40`; title `text-lg font-semibold tracking-tight text-[#0c1a1e]` (18px); description `text-[#5a7d82] text-sm`; close X `absolute top-4 right-4 text-[#93b0b4] hover:text-[#5a7d82]`. Body rhythm `space-y-4 py-1`; field group `space-y-1.5` with a `<Label>`; footer `<DialogFooter>` right-aligns Cancel (ghost) + primary CTA.
+Base `DialogContent` is already Teal-Summit: `bg-white rounded-[6px] p-6 gap-4 shadow-[0_10px_40px_rgba(13,148,136,0.10)] sm:max-w-lg` — **no edge border**, like the Sheet: the shadow separates the card from the overlay, and the 8%-teal hairline composited over white reads as a white ring around a dark hero pressed to the edge (the per-day nutrition editor); **centred by auto margins** (`inset-0 m-auto h-fit`), never a transform — `translate(-50%, -50%)` lands the card on a half-pixel whenever its height is odd, and that row shows the card's white through a dark hero as a hairline; overlay `bg-black/40`; title `text-lg font-semibold tracking-tight text-[#0c1a1e]` (18px); description `text-[#5a7d82] text-sm`; close X `absolute top-4 right-4 text-[#93b0b4] hover:text-[#5a7d82]`. Body rhythm `space-y-4 py-1`; field group `space-y-1.5` with a `<Label>`; footer `<DialogFooter>` right-aligns Cancel (ghost) + primary CTA.
 
 ### Sheet / slide-over (780px pattern)
 
