@@ -170,9 +170,12 @@ export function LogMeasurementDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* The nutrition day editor's shell: content-sized, p-0 + overflow-hidden
           so the hero takes the card's rounded top edge. */}
+      {/* bg-transparent: each band paints its own colour, so the rounded clip
+          composites the hero's dark straight over the backdrop — a white card
+          under it fringes the top corners with white. */}
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
+        className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 overflow-hidden bg-transparent p-0 sm:max-w-md"
       >
         {/* The day editor's hero: the dark band, the teal icon square, the
             title scale and its own close, since the built-in one is off. */}
@@ -189,7 +192,7 @@ export function LogMeasurementDialog({
           </DialogClose>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-5 pb-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-6 pt-5 pb-4">
           {/* The day editor's pinned box, and the dialog's accessible
               description in one. */}
           <div className="flex items-start gap-2 rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[rgba(13,148,136,0.05)] px-3 py-2">
@@ -283,7 +286,7 @@ export function LogMeasurementDialog({
         {/* No rule and no band under the fields: the buttons sit one gap (16px)
             below the note and one gap above the card's edge — the body's bottom
             padding above them, this row's own below. */}
-        <div className="flex shrink-0 items-center justify-end gap-2 px-6 pb-4">
+        <div className="flex shrink-0 items-center justify-end gap-2 bg-white px-6 pb-4">
           <Button
             variant="ghost"
             onClick={() => onOpenChange(false)}

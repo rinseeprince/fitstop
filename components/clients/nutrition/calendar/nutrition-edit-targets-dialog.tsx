@@ -83,9 +83,12 @@ export function NutritionEditTargetsDialog({
           shorter than it scrolls the body inside. p-0 + overflow-hidden so the
           hero takes the card's rounded top edge. Landscape: wide enough for
           the balancer beside the note. */}
+      {/* bg-transparent: each band paints its own colour, so the rounded clip
+          composites the hero's dark straight over the backdrop — a white card
+          under it fringes the top corners with white. */}
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 overflow-hidden bg-transparent p-0 sm:max-w-3xl"
       >
         {/* The generator's hero: the dark band, the teal icon square, the title
             scale and its own close, since the built-in one is off. */}
@@ -109,7 +112,7 @@ export function NutritionEditTargetsDialog({
           </DialogClose>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-5 pb-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-6 pt-5 pb-4">
           {/* Which days this edit touches */}
           <div className="flex flex-wrap gap-1.5">
             {dayChips.map((d) => (
@@ -158,7 +161,7 @@ export function NutritionEditTargetsDialog({
             below the note and the macro card and one gap above the card's edge —
             the body's bottom padding above them, this row's own below. Still a
             row of its own, so a short viewport scrolls the body and not them. */}
-        <div className="flex shrink-0 items-center justify-end gap-2 px-6 pb-4">
+        <div className="flex shrink-0 items-center justify-end gap-2 bg-white px-6 pb-4">
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
