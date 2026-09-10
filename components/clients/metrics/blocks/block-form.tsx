@@ -282,8 +282,12 @@ export function BlockForm({
     });
   });
 
+  // noValidate: without it the browser runs its own constraint validation on
+  // the bounded date inputs before React Hook Form gets control, and its bubble
+  // stands in for the zod belts' sentences under the fields.
   return (
     <form
+      noValidate
       onSubmit={(event) => void submit(event)}
       className="space-y-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[#f4f7f6] p-4"
     >
