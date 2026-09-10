@@ -88,7 +88,8 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
       void clearClientOverview(clientId);
       void clearAttentionFeed();
       setShowClearConfirm(false);
-      // Deleting training sessions cascade-rewrites nutrition_events.
+      // The nutrition month view is computed from the sessions this removed
+      // and is SWR-cached, so it must refetch.
       void invalidateNutritionCalendar(clientId);
       await builder.fetchPlan();
     } catch (error) {

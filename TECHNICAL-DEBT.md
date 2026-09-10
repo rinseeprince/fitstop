@@ -110,11 +110,10 @@ Do not confuse it with `client_intake.primary_goal`, which is a live discriminat
 
 ---
 
-## Nutrition write-path gaps: the `is_modified` race and the unshared 8-week horizon
+## Nutrition write-path gaps
 
 Logged: 2026-08-13 (migrated out of the goals/blocks plan doc; **both counts re-derived** — the doc's "eight occurrences across five files" was stale).
 
-- **The `is_modified` protection is a read-then-filter across a two-round-trip gap.** `regenerateFutureNutritionEvents` reads the protected days (`services/nutrition-event-service.ts:200`) and writes the upsert (`:226`) in separate round trips. A coach edit landing in that gap is clobbered. Only a transaction or an RPC closes it.
 - ~~**The 8-week nutrition window uses server-local `Date` arithmetic**~~ **CLOSED 2026-09-09 (migration 166).** The fallback is now the last step of `resolveNutritionPlacementEnd` (`services/nutrition-plan-service.ts`), spelled `addDaysToDateString(start, NUTRITION_PLACEMENT_FALLBACK_DAYS)` — UTC-safe — and `calculateNutritionEndDate` is gone with `resolveNutritionHorizon`: a version's end is resolved once at save and stored on the row, so nothing derives a window per call any more.
 - **Two columns on `nutrition_plans` are inert.** `name` is never written at all (no `p_name` in the migration-144 RPC, and no service writes it). `regeneration_reason` **is** written (`nutrition-plan-service.ts:156` via `p_regeneration_reason`) but never read — so it is write-only rather than dead, a different thing.
 
@@ -184,76 +183,9 @@ writer that could never trigger a remount.
 
 Logged: 2026-07-02 (class-wide SWR invalidation pass; see CONVENTIONS.md §7 "Nutrition calendar cache invalidation").
 
-The routes below rewrite `nutrition_events` server-side but currently have **no web client caller**, so no success handler calls `useInvalidateNutritionCalendar`. If any of these gains a caller (web or RN), that caller MUST adopt the invalidator:
+The routes below change what a client's computed nutrition days are priced from — the sessions on their dates — but currently have **no web client caller**, so no success handler calls `useInvalidateNutritionCalendar`. If any of these gains a caller (web or RN), that caller MUST adopt the invalidator:
 
-- `DELETE /api/clients/[id]/training/[planId]` (archive plan; cascades via `cascadeNutritionAfterTrainingChange`)
-
----
-
-## Nutrition cascade — five defects recorded by the S1.1 narrow-scope re-land (two since closed by S1B.2)
-
-Logged: 2026-08-11 (goals/blocks execution plan, Session 1 Task 1.1); updated same day by
-Session 1B Task 1b.2 (nutrition plan versioning, migration 144), which closed defects 3
-and 5 and partially resolved defect 2. The session-level *decisions* live in that plan
-doc's §8 STATUS blocks; **this file is the durable record of the defects**, because the
-plan doc is deleted when its workstream lands (its own §1 rule) and a defect filed only
-there survives solely in git history.
-
-- ~~**Stale training-surplus tail after a plan deletion.**~~ **CLOSED 2026-09-04** (the
-  nutrition generation horizon, MEASUREMENT-LOG-PLAN commit 8cc). The recipe `3abbfa5`
-  worked out is now shipped: `cancelFutureEventsForPlan` returns the max deleted date
-  from `.delete().select("date")` (same round trip), the two plan-clear routes thread it
-  as the scope's `to`, and the cascade's gap sweep reaches it — never shortening its range.
-  Since migration 166 a version never writes past its own stored end, so `to` widens only
-  the sweep, which removes the stale surplus days rather than rebuilding them. It had to be
-  closed rather than deferred again,
-  because the horizon that commit introduced lets nutrition rows reach a whole program's
-  length: a clear archives every plan BEFORE it cascades, so the horizon collapses to the
-  fixed 8-week window while the rows reach much further, which would have made the tail
-  longer than it had ever been. Since migration 167 `training_plans.effective_until` IS a
-  program's end, decided at placement and read off the row; nothing derives it from the
-  active day-row count any more.
-- **The cascade swallows PER-VERSION regeneration failures** (partially resolved by
-  S1B.2). The lookup half is FIXED: the version query's error is destructured, logged,
-  and Sentried, so a failed read can no longer impersonate "client has no plan" — the
-  loud break the versioned model would otherwise have tripped on its first chain. What
-  REMAINS: each version's `regenerateFutureNutritionEvents` call is still caught into
-  `captureApiError` (deliberate — the calling route's primary write already committed),
-  so a route can return success over a stale slice of the calendar (CONVENTIONS §12
-  tension, recorded). One visible cost: the coach hero derives `hasCurrentTargets` from
-  the covering version (1b.3), so a swallowed regen failure shows a hero reporting the
-  prescription while the client's day view shows the event hole — the divergence points
-  at this entry. Fix shape: surface per-version failures to the caller (the
-  orchestrator's `regenerateEventsOrThrow` shows the loud pattern).
-- ~~**The client-scoped upsert can silently rewrite a foreign plan's event.**~~
-  **CLOSED by S1B.2 (migration 144 versioning).** The from-arm DELETE is now
-  client-scoped AND clamped to the version's own window, matching the upsert's
-  `(client_id, date)` conflict key — the delete/upsert scoping asymmetry is gone. A row
-  inside a version's window carrying another version's id (or NULL) being re-stamped to
-  the covering version is now CORRECT behaviour, not corruption: the covering version
-  owns its window by construction (gist-constraint-backed).
-- ~~**A cascade flips a `logged` day back to `scheduled`.**~~
-  **CLOSED 2026-08-26 — the premise was false and the behaviour is affirmed.** Nothing in
-  the product writes `nutrition_events.status = 'logged'` (no service, RPC or trigger; a
-  live probe of dev found every product row `scheduled` and only one seeded fixture year
-  `logged`), so there was never a status to revert. What the cascade does do — rewrite a
-  logged day's event targets — is the intended behaviour (owner decision):
-  `upsertNutritionLog` re-snapshots the target from the current event on every food save,
-  so a session moved onto or off a day changes what the client sees at their next save.
-  Freezing logged days was designed and rejected: a frozen event would re-snapshot a
-  training surplus onto a day whose session had left. ARCHITECTURE → "Training →
-  Nutrition cascade" and the `status` bullet now say so.
-- ~~**Baseline leak onto pre-`effective_from` days after a future-dated regenerate.**~~
-  **CLOSED by S1B.2 (migration 144 versioning) — fixed by construction.** The premise
-  ("there is no stored source for the old numbers") died with versioning: a save caps the
-  outgoing version at `new_start − 1` and inserts a new one, so the old prescription's
-  template survives as the capped version's own daily-targets grid. The
-  cascade fetches every active version overlapping its scope and hands each the same
-  scope; `regenerateFutureNutritionEvents` clamps to the version's window, so a
-  training edit inside the pre-window era rebuilds those days from THAT era's grid —
-  never from the next prescription's. Pinned by the segmentation tests in
-  `services/nutrition-event-service.test.ts` and the owner's original-leak browser
-  smoke (Session 1B checklist item 1).
+- `DELETE /api/clients/[id]/training/[planId]` (ends the plan and removes its upcoming sessions, so those days re-price as rest days)
 
 ---
 

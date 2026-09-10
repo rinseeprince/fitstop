@@ -74,11 +74,10 @@ type VersionTdeeWindow = {
 /**
  * Active versions overlapping the span, with the PRESCRIPTION fields
  * (baseline/custom calories + tdee). Deliberately NOT
- * `getActiveNutritionPlanVersionsOverlapping`: that helper is the cascade's
- * segmentation primitive and its window type carries none of these —
- * widening a write-path primitive for a read-only facts column couples the
- * two. Same overlap predicate and status filter; single-digit rows per
- * client, unpaged.
+ * `getNutritionPrescriptionsForRange`: that read carries the three fields a
+ * computed day is priced from and none of these — widening the day reader's
+ * version read for a read-only facts column couples the two. Same overlap
+ * predicate and status filter; single-digit rows per client, unpaged.
  */
 async function fetchVersionTdeeWindows(
   clientId: string,

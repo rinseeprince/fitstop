@@ -18,10 +18,6 @@ vi.mock("@/services/plan-amendment-service", () => {
   };
 });
 
-vi.mock("@/services/nutrition-event-service", () => ({
-  cascadeNutritionAfterTrainingChange: vi.fn(),
-}));
-
 vi.mock("@/services/audit-log-service", () => ({
   recordAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
@@ -45,7 +41,6 @@ import {
   AmendmentConflictError,
   AmendmentEmptyFutureError,
 } from "@/services/plan-amendment-service";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -152,7 +147,6 @@ describe("PUT /api/clients/[id]/training/[planId]/amendment", () => {
     vi.mocked(getClientById).mockResolvedValue({ id: clientId, coachId: "coach-1" } as never);
     vi.mocked(requireCSRFProtection).mockResolvedValue(null as never);
     vi.mocked(amendPlacedPlanFuture).mockResolvedValue(amendResult);
-    vi.mocked(cascadeNutritionAfterTrainingChange).mockResolvedValue(undefined);
   });
 
   it("runs the CSRF check", async () => {
@@ -206,15 +200,6 @@ describe("PUT /api/clients/[id]/training/[planId]/amendment", () => {
     );
   });
 
-  it("cascades nutrition open-ended from the amendment floor", async () => {
-    await PUT(makePut(validBody), routeParams);
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
-      clientId,
-      { kind: "from", from: "2026-07-22" },
-      "cascade-nutrition-from-plan-amendment",
-    );
-  });
-
   it("records the audit event", async () => {
     await PUT(makePut(validBody), routeParams);
     expect(recordAuditEvent).toHaveBeenCalledWith(
@@ -237,7 +222,6 @@ describe("PUT /api/clients/[id]/training/[planId]/amendment", () => {
     const data = await res.json();
     expect(res.status).toBe(409);
     expect(data.error).toBe("This plan changed while you were editing");
-    expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
     expect(recordAuditEvent).not.toHaveBeenCalled();
   });
 

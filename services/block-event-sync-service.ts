@@ -3,7 +3,6 @@ import { addDaysToDateString } from "@/lib/date-helpers";
 import { inclusiveDays } from "@/lib/blocks/block-chain";
 import { expandProgramToWindow, generateProgramEvents } from "./program-event-walk";
 import { getNextPlanStartCap } from "./training-event-service";
-import { regenerateFutureNutritionEvents } from "./nutrition-event-service";
 import { getNextNutritionVersionStartCap } from "./nutrition-plan-service";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { orchestrateNutritionPlanCreation } from "./nutrition-plan-orchestrator";
@@ -32,8 +31,9 @@ import type { TablesInsert } from "@/types/database";
 
 /**
  * Where a FILL starts: the block's start, or the client's today if it is
- * already under way. A fill REPLACES rather than empties, so it needs no floor
- * — today's targets are rewritten with the numbers today already had.
+ * already under way. A fill moves a version's stored end, and the days are
+ * computed from the version, so it needs no floor — today's target is priced
+ * by the same version either way.
  */
 const fillFloor = (blockStart: string, clientToday: string) =>
   blockStart > clientToday ? blockStart : clientToday;
@@ -68,34 +68,24 @@ async function clearCeiling(
   // block does not own — the coach asked about THIS block's days.
   if (nextBlock?.starts_on) return addDaysToDateString(nextBlock.starts_on, -1);
 
-  const [{ data: lastTraining }, { data: lastNutrition }] = await Promise.all([
-    supabaseAdmin
-      .from("training_events")
-      .select("date")
-      .eq("client_id", clientId)
-      .gt("date", blockEndsOn)
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabaseAdmin
-      .from("nutrition_events")
-      .select("date")
-      .eq("client_id", clientId)
-      .gt("date", blockEndsOn)
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  // Else the last session past the block. Nutrition has no row past a block
+  // to reach: its days are computed from the versions, and the caps below pull
+  // those back to the block's end on their own.
+  const { data: lastTraining } = await supabaseAdmin
+    .from("training_events")
+    .select("date")
+    .eq("client_id", clientId)
+    .gt("date", blockEndsOn)
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  const dates = [lastTraining?.date, lastNutrition?.date].filter(
-    (date): date is string => typeof date === "string"
-  );
-  return dates.length > 0 ? dates.sort().at(-1) ?? null : null;
+  return lastTraining?.date ?? null;
 }
 
 /**
- * Remove the scheduled events in [from, to] on both tracks, and deactivate the
- * training slot rows behind them.
+ * Remove the scheduled training sessions in [from, to], and deactivate the
+ * slot rows behind them.
  *
  * The slots matter as much as the events: a placed plan's END is derived from
  * its active row count, so leaving them behind would keep the client's app and
@@ -111,11 +101,11 @@ export async function clearScheduledEvents(params: {
   clientToday: string;
   from: string;
   to: string;
-}): Promise<{ trainingCleared: number; nutritionCleared: number }> {
+}): Promise<{ trainingCleared: number }> {
   const { clientId, clientToday, to } = params;
   const floor = await resolveEventDeletionFloor(clientId, clientToday);
   const from = params.from > floor ? params.from : floor;
-  if (to < from) return { trainingCleared: 0, nutritionCleared: 0 };
+  if (to < from) return { trainingCleared: 0 };
 
   const { data: removedTraining, error: trainingError } = await supabaseAdmin
     .from("training_events")
@@ -139,44 +129,27 @@ export async function clearScheduledEvents(params: {
     if (slotError) throw slotError;
   }
 
-  // No "skip the days they logged" filter here, deliberately: the floor above
-  // has already excluded the only day a client can have logged. Adding one
-  // would defend a state that cannot occur, and a nutrition event's own status
-  // could not express it anyway — it never leaves 'scheduled'.
-  const { data: removedNutrition, error: nutritionError } = await supabaseAdmin
-    .from("nutrition_events")
-    .delete()
-    .eq("client_id", clientId)
-    .gte("date", from)
-    .lte("date", to)
-    .eq("status", "scheduled")
-    .select("date");
-  if (nutritionError) throw nutritionError;
-
-  return {
-    trainingCleared: removedTraining?.length ?? 0,
-    nutritionCleared: removedNutrition?.length ?? 0,
-  };
+  return { trainingCleared: removedTraining?.length ?? 0 };
 }
 
 /**
- * The shorten arm: clear the days that have LEFT the block — everything after
- * its new end, bounded so the clear can never reach a window this block does not
- * own.
+ * The shorten arm: clear the sessions that have LEFT the block — everything
+ * after its new end, bounded so the clear can never reach a window this block
+ * does not own.
  *
- * The nutrition VERSIONS follow the days (migration 166), and so do the
- * training PROGRAMS (migration 167). A version's end is
- * stored, so one reaching past the block's new end is pulled back to it — its
- * window ends where its days end, or the next cascade would regenerate the very
- * days this clear removed — and a queued version that now starts in the cleared
- * stretch is retired with them. A version crossing into the NEXT block is pulled
- * back too; the days it leaves behind there belong to that block's own setup.
+ * The nutrition VERSIONS follow the block (migration 166), and so do the
+ * training PROGRAMS (migration 167). A version's end is stored and its days
+ * are computed from it, so pulling one that reaches past the block's new end
+ * back to that end IS removing those days; a queued version that now starts
+ * in the cleared stretch is retired with them. A version crossing into the
+ * NEXT block is pulled back too; the days it leaves behind there belong to
+ * that block's own setup.
  */
 export async function clearEventsOutsideBlock(params: {
   clientId: string;
   clientToday: string;
   blockEndsOn: string;
-}): Promise<{ trainingCleared: number; nutritionCleared: number }> {
+}): Promise<{ trainingCleared: number }> {
   const { clientId, clientToday, blockEndsOn } = params;
 
   const ceiling = await clearCeiling(clientId, blockEndsOn);
@@ -187,7 +160,7 @@ export async function clearEventsOutsideBlock(params: {
         from: addDaysToDateString(blockEndsOn, 1),
         to: ceiling,
       })
-    : { trainingCleared: 0, nutritionCleared: 0 };
+    : { trainingCleared: 0 };
 
   const now = new Date().toISOString();
   const { error: capError } = await supabaseAdmin
@@ -379,20 +352,20 @@ export async function extendTrainingToBlockEnd(params: {
 /**
  * Cover the block's days with nutrition targets.
  *
- * `keep` extends the version laid in the block to the block's end and
- * regenerates its days — no recalculation and no new version, so a client eight
- * weeks into a cut keeps the numbers they are working to. `regenerate` is the
- * caller's job to have done first: that save resolves its end against the
- * already re-dated block and GENERATES ITS OWN DAYS to it, so by the time this
- * runs the new era is on the calendar and this is a no-op over it.
+ * `keep` extends the version laid in the block to the block's end — no
+ * recalculation and no new version, so a client eight weeks into a cut keeps
+ * the numbers they are working to. A version's end is STORED (migration 166)
+ * and its days are computed from it, so moving the end IS the fill: the new
+ * days answer with this version's numbers the moment the row is written.
+ * `regenerate` is the caller's job to have done first: that save resolves its
+ * end against the already re-dated block, so by the time this runs the new
+ * version already reaches the block's end and this leaves it alone.
  *
- * A version's end is STORED (migration 166), so a block extension has to move
- * it or the next regenerate stops at the old end while the block runs on. The
- * version is the latest one laid INSIDE the block — one that merely crosses the
- * block belongs to no block and is left alone — and its new end takes the same
- * cap every placement takes, the next queued version. Returns null when the
- * block holds no version: the coach is told to set targets rather than handed a
- * guessed prescription, the training extension's posture.
+ * The version is the latest one laid INSIDE the block — one that merely
+ * crosses the block belongs to no block and is left alone — and its new end
+ * takes the same cap every placement takes, the next queued version. Returns
+ * null when the block holds no version: the coach is told to set targets
+ * rather than handed a guessed prescription, the training extension's posture.
  */
 export async function fillNutritionAcrossBlock(params: {
   clientId: string;
@@ -430,7 +403,6 @@ export async function fillNutritionAcrossBlock(params: {
     }
   }
 
-  await regenerateFutureNutritionEvents(clientId, version.id, { kind: "from", from });
   return { from };
 }
 

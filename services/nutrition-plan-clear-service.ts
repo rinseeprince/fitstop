@@ -1,10 +1,9 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { addDaysToDateString } from "@/lib/date-helpers";
 
 /**
- * "Delete nutrition plan": end the versions the client is on and remove their
- * upcoming targets — the nutrition twin of `clearTrainingPlansForClient`.
+ * "Delete nutrition plan": end the versions the client is on — the nutrition
+ * twin of `clearTrainingPlansForClient`.
  *
  * A delete is a save of nothing from today (owner decision 2026-09-10). The
  * RUNNING version — started before today, still reaching it — is capped at
@@ -12,21 +11,27 @@ import { addDaysToDateString } from "@/lib/date-helpers";
  * block it ran in, and every "now" read finds nothing from today. A QUEUED
  * version — starting today or later — never ran a day of its own and is
  * ARCHIVED. A FINISHED version — ended before today — is history and is not
- * touched. Yesterday rather than the deletion floor, deliberately: the floor
- * spares a today the client has already logged, and a version closed AT that
- * day kept covering it, so the hero went on saying "Active since" after the
- * delete. Yesterday is never a day the client can still touch; the logged
- * today keeps its event (the floor) and the sweep's floor keeps it standing.
+ * touched. Yesterday rather than the shared deletion floor, deliberately: the
+ * floor spares a today the client has already logged, and a version closed AT
+ * that day kept covering it, so the hero went on saying "Active since" after
+ * the delete. Yesterday is never a day the client can still touch.
+ *
+ * A day's target is COMPUTED from the version covering it (owner decision
+ * 2026-09-10), so this issues NO day statement: ending the versions IS
+ * removing the days, and nothing can be left standing on the calendar for a
+ * version this did not select. That is what makes the block-scoped delete
+ * safe — a version saved before the block was drawn and reaching past the
+ * block's end is either ended whole or left whole; there is no day range for
+ * a bound to get wrong.
  *
  * One act, two callers: the nutrition calendar's own delete (every running or
  * queued version) and the block delete's "and its plans" (only the versions
  * laid inside the block). There is no delete-the-days-but-keep-the-plan
- * variant (owner, 2026-09-08): a version left standing with no days is
- * restored by the next cascade, so the two always travel together.
+ * variant (owner, 2026-09-08): a version left standing covers its days, so the
+ * two cannot be separated.
  *
- * Days first, so a mid-flight failure leaves a state a retry completes: with
- * the versions still whole a re-run finds them again, and until then the next
- * cascade puts the days back — the delete has simply not happened yet.
+ * Two statements, one per outcome, whatever the count. A mid-flight failure
+ * leaves every version a retry finds again.
  */
 export async function clearNutritionPlansForClient(
   clientId: string,
@@ -45,8 +50,6 @@ export async function clearNutritionPlansForClient(
    */
   window?: { from: string; to: string }
 ): Promise<{ versionsCleared: number; versionIds: string[] }> {
-  const deleteFrom = await resolveEventDeletionFloor(clientId, clientToday);
-
   // Only versions with a day still ahead: a finished one is untouched history.
   const versionsQuery = supabaseAdmin
     .from("nutrition_plans")
@@ -64,27 +67,6 @@ export async function clearNutritionPlansForClient(
 
   const versionIds = (versions ?? []).map((version) => version.id);
   if (versionIds.length === 0) return { versionsCleared: 0, versionIds: [] };
-
-  // Client-scoped and date-bounded, never by plan id: a day inside a version's
-  // window may still carry a prior version's id, or none. Floored at the shared
-  // deletion floor — a day the client has touched is never in range, so no
-  // second "skip the day they logged" filter exists here. Edited days go too:
-  // the dialog says everything upcoming goes.
-  const from = window && window.from > deleteFrom ? window.from : deleteFrom;
-  if (!window || from <= window.to) {
-    const eventsQuery = supabaseAdmin
-      .from("nutrition_events")
-      .delete()
-      .eq("client_id", clientId)
-      .gte("date", from)
-      .eq("status", "scheduled");
-    const { error: eventsError } = window
-      ? await eventsQuery.lte("date", window.to)
-      : await eventsQuery;
-    if (eventsError) {
-      throw new Error(`Failed to clear the upcoming nutrition days: ${eventsError.message}`);
-    }
-  }
 
   const now = new Date().toISOString();
   const running = (versions ?? [])

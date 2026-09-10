@@ -84,8 +84,8 @@ type CreateNutritionPlanParams = {
   effectiveFrom?: string;
   /**
    * The placement's last day — `resolveNutritionPlacementEnd`'s answer for the
-   * effective date, resolved once by the orchestrator so the row the RPC
-   * writes and the days the regenerate covers describe one window.
+   * effective date, resolved once by the orchestrator. The row the RPC writes
+   * is the window every day inside it is computed from.
    */
   effectiveUntil: string;
 };
@@ -274,52 +274,21 @@ type OverlapFilterable<T> = {
 /**
  * The ONE spelling of "the client's ACTIVE versions overlapping a range,
  * earliest first": `effective_until >= rangeStart AND effective_from <=
- * rangeEnd` — or, with no `rangeEnd`, every version reaching `rangeStart` or
- * later. Every version has an end (migration 166), so there is no open-row
- * arm. Both readers below apply it; only their column lists differ.
+ * rangeEnd`. Every version has an end (migration 166), so there is no open-row
+ * arm. Kept apart from its one reader so the predicate reads as a sentence.
  */
 function overlappingActiveVersions<T extends OverlapFilterable<T>>(
   query: T,
   clientId: string,
   rangeStart: string,
-  rangeEnd?: string
+  rangeEnd: string
 ): T {
-  const reaching = query
+  return query
     .eq("client_id", clientId)
     .eq("status", "active")
     .gte("effective_until", rangeStart)
+    .lte("effective_from", rangeEnd)
     .order("effective_from", { ascending: true });
-  return rangeEnd ? reaching.lte("effective_from", rangeEnd) : reaching;
-}
-
-/**
- * Every ACTIVE version whose window overlaps [rangeStart, rangeEnd], earliest
- * first — or, with no `rangeEnd`, every one whose window reaches `rangeStart`
- * or later. The version-segmentation primitive: the training cascade maps each
- * date in its scope to the version covering it (the schedule-data windowed
- * query shape). Windows only — the day reader takes the sibling below, which
- * carries the prescription too.
- */
-export async function getActiveNutritionPlanVersionsOverlapping(
-  clientId: string,
-  rangeStart: string,
-  rangeEnd?: string
-): Promise<NutritionPlanVersionWindow[]> {
-  const { data, error } = await overlappingActiveVersions(
-    supabaseAdmin.from("nutrition_plans").select("id, effective_from, effective_until"),
-    clientId,
-    rangeStart,
-    rangeEnd
-  );
-
-  if (error) {
-    throw new Error(`Failed to fetch nutrition plan versions: ${error.message}`);
-  }
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    effectiveFrom: row.effective_from,
-    effectiveUntil: row.effective_until,
-  }));
 }
 
 /** A version's window plus the plan-level prescription a computed day derives from. */
@@ -332,9 +301,7 @@ type NutritionVersionPrescription = NutritionPlanVersionWindow & {
 /**
  * The day reader's version read: every ACTIVE version overlapping
  * [rangeStart, rangeEnd], earliest first, with the three plan fields the
- * resolver prices a day from. The same predicate as the segmentation
- * primitive above, kept a sibling rather than a widening of it so the
- * cascade's callers keep their window-only shape.
+ * resolver prices a day from.
  */
 export async function getNutritionPrescriptionsForRange(
   clientId: string,
@@ -545,9 +512,9 @@ export async function getNextNutritionVersionStartCap(
  * change runs until that change rather than replacing it.
  *
  * Resolved ONCE, at save, and stored on the row (migration 166): the window is
- * the record, and every regenerate reads it there. Past it there are
- * deliberately no days, and the client's food log is refused — the coach draws
- * the next bound when they are ready.
+ * the record, and every day inside it is computed from the row. Past it there
+ * are deliberately no days, and the client's food log is refused — the coach
+ * draws the next bound when they are ready.
  */
 export async function resolveNutritionPlacementEnd(
   clientId: string,

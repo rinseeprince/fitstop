@@ -114,8 +114,9 @@ export function BlocksSubtab({
   // makes them wrong — and they render a definite answer, so a stale entry
   // states something false rather than merely being late.
   const clearBlockFacts = useClearBlockFacts();
-  // The block sync rewrites training_events and nutrition_events, so this screen
-  // owes both calendar areas their invalidator as well as its own.
+  // The block sync rewrites training_events and moves the nutrition versions'
+  // ends, which the computed nutrition month view is priced from, so this
+  // screen owes both calendar areas their invalidator as well as its own.
   const invalidateTrainingData = useInvalidateTrainingData();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearClientOverview = useClearClientOverview();

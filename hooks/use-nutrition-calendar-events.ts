@@ -26,9 +26,11 @@ function buildNutritionEventsKey(
 
 /**
  * Invalidates every cached month window of a client's nutrition calendar.
- * MUST be called from any success handler whose server route rewrites
- * nutrition_events (plan regenerate, training cascades) —
- * the calendar has no other way to learn its cache is stale.
+ * MUST be called from any success handler whose server route changes what a
+ * day is computed from — a nutrition version's window or grid, a session on
+ * a date or its surplus, a per-day edit — because the month view is computed
+ * on the server but SWR-cached here, and the calendar has no other way to
+ * learn its cache is stale.
  *
  * Plain no-data mutate: mounted windows revalidate in place (no loading
  * flash); unmounted cached windows refetch on next mount via revalidateIfStale.
@@ -47,7 +49,7 @@ export function useInvalidateNutritionCalendar() {
 }
 
 /**
- * Fetches and memoizes a client's nutrition_events for a date range (coach
+ * Fetches and memoizes a client's computed nutrition days for a date range (coach
  * calendar). Nutrition is one-event-per-date (UNIQUE(client_id,date)), so events
  * are keyed by date string for O(1) cell lookup — a flat Map, not an array map.
  */

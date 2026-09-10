@@ -7,10 +7,6 @@ vi.mock("./program-event-walk", async (importOriginal) => {
   // continued pass resumes, which is what these tests are about.
   return { ...actual, generateProgramEvents: vi.fn().mockResolvedValue(0) };
 });
-vi.mock("./nutrition-event-service", () => ({
-  cascadeNutritionAfterTrainingChange: vi.fn(),
-  regenerateFutureNutritionEvents: vi.fn(),
-}));
 vi.mock("./nutrition-plan-service", () => ({ getNextNutritionVersionStartCap: vi.fn() }));
 vi.mock("./training-event-service", () => ({ getNextPlanStartCap: vi.fn().mockResolvedValue(null) }));
 vi.mock("./event-deletion-floor", () => ({ resolveEventDeletionFloor: vi.fn() }));
@@ -20,7 +16,6 @@ vi.mock("./nutrition-plan-orchestrator", () => ({
 
 import { supabaseAdmin } from "./supabase-admin";
 import { generateProgramEvents } from "./program-event-walk";
-import { regenerateFutureNutritionEvents } from "./nutrition-event-service";
 import { getNextNutritionVersionStartCap } from "./nutrition-plan-service";
 import { getNextPlanStartCap } from "./training-event-service";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
@@ -57,16 +52,15 @@ beforeEach(() => {
 });
 
 describe("clearScheduledEvents", () => {
-  it("removes scheduled days on both tracks and deactivates the slots behind them", async () => {
+  it("removes the scheduled sessions and deactivates the slots behind them; nutrition has no day to remove", async () => {
     // The slots matter as much as the events: a plan's END is its active row
     // count, so orphans would keep the app saying it runs to the old date.
     const training = query({ data: [{ training_session_id: "s1" }], error: null });
     const slots = query({ data: null, error: null });
-    const nutrition = query({ data: [{ date: "2026-10-05" }], error: null });
     let call = 0;
     mockFrom.mockImplementation((() => {
       call += 1;
-      return call === 1 ? training : call === 2 ? slots : nutrition;
+      return call === 1 ? training : slots;
     }) as never);
 
     const result = await clearScheduledEvents({
@@ -80,14 +74,18 @@ describe("clearScheduledEvents", () => {
       expect.objectContaining({ is_active: false })
     );
     expect(slots.in).toHaveBeenCalledWith("id", ["s1"]);
-    expect(result).toEqual({ trainingCleared: 1, nutritionCleared: 1 });
+    expect(result).toEqual({ trainingCleared: 1 });
+    // A nutrition day is computed from the version covering it; the versions
+    // are pulled back by the caller, and no day table is touched here.
+    expect(mockFrom.mock.calls.map((call) => call[0])).toEqual([
+      "training_events",
+      "training_sessions",
+    ]);
   });
 
   it("floors at the SHARED deletion floor so the past is never cleared", async () => {
     const training = query({ data: [], error: null });
-    const nutrition = query({ data: [], error: null });
-    let call = 0;
-    mockFrom.mockImplementation((() => (call += 1) === 1 ? training : nutrition) as never);
+    mockFrom.mockImplementation((() => training) as never);
 
     await clearScheduledEvents({
       clientId: "c1", clientToday: TODAY, from: "2026-07-13", to: "2026-10-26",
@@ -102,16 +100,13 @@ describe("clearScheduledEvents", () => {
     // reached today after they logged would empty a day they are living in.
     vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-09-05");
     const training = query({ data: [], error: null });
-    const nutrition = query({ data: [], error: null });
-    let call = 0;
-    mockFrom.mockImplementation((() => (call += 1) === 1 ? training : nutrition) as never);
+    mockFrom.mockImplementation((() => training) as never);
 
     await clearScheduledEvents({
       clientId: "c1", clientToday: TODAY, from: "2026-08-17", to: "2026-11-09",
     });
 
     expect(training.gte).toHaveBeenCalledWith("date", "2026-09-05");
-    expect(nutrition.gte).toHaveBeenCalledWith("date", "2026-09-05");
   });
 
   it("does nothing when the range has already gone by", async () => {
@@ -119,7 +114,7 @@ describe("clearScheduledEvents", () => {
       clientId: "c1", clientToday: TODAY, from: "2026-06-01", to: "2026-08-24",
     });
 
-    expect(result).toEqual({ trainingCleared: 0, nutritionCleared: 0 });
+    expect(result).toEqual({ trainingCleared: 0 });
     expect(mockFrom).not.toHaveBeenCalled();
   });
 });
@@ -312,7 +307,7 @@ describe("fillNutritionAcrossBlock", () => {
     vi.mocked(getNextNutritionVersionStartCap).mockResolvedValue(null);
   });
 
-  it("regenerates from the block's start when it is still ahead, from the version laid INSIDE the block", async () => {
+  it("takes the version laid INSIDE the block and leaves one already reaching the block's end alone", async () => {
     const { readQuery, updateQuery } = wireVersion({
       id: "v1", effective_from: "2026-09-21", effective_until: "2026-12-13",
     });
@@ -329,12 +324,10 @@ describe("fillNutritionAcrossBlock", () => {
     expect(readQuery.gte).toHaveBeenCalledWith("effective_from", "2026-09-21");
     expect(readQuery.lte).toHaveBeenCalledWith("effective_from", "2026-12-13");
     expect(readQuery.order).toHaveBeenNthCalledWith(1, "effective_from", { ascending: false });
-    // Already reaching the end: nothing to extend.
+    // Already reaching the end: nothing to extend, and nothing else to write —
+    // the days are computed from the row.
     expect(updateQuery.update).not.toHaveBeenCalled();
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith("c1", "v1", {
-      kind: "from",
-      from: "2026-09-21",
-    });
+    expect(mockFrom).toHaveBeenCalledTimes(1);
   });
 
   it("floors at the client's today for a block already under way", async () => {
@@ -348,9 +341,9 @@ describe("fillNutritionAcrossBlock", () => {
     expect(result).toEqual({ from: TODAY });
   });
 
-  it("EXTENDS the version's stored end to the block's new end BEFORE regenerating (migration 166)", async () => {
-    // The end is stored, so a longer block has to move it or the regenerate
-    // stops at the old end while the block runs on.
+  it("EXTENDS the version's stored end to the block's new end — that IS the fill (migration 166)", async () => {
+    // The end is stored and the days are computed from it, so a longer block
+    // has to move it or the new days answer with nothing while the block runs on.
     const { updateQuery } = wireVersion({
       id: "v3", effective_from: "2026-09-21", effective_until: "2026-11-15",
     });
@@ -364,9 +357,11 @@ describe("fillNutritionAcrossBlock", () => {
       expect.objectContaining({ effective_until: "2026-12-13" })
     );
     expect(updateQuery.eq).toHaveBeenCalledWith("id", "v3");
-    expect(updateQuery.update.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(regenerateFutureNutritionEvents).mock.invocationCallOrder[0]
-    );
+    // One read, one write, nothing on a day table.
+    expect(mockFrom.mock.calls.map((call) => call[0])).toEqual([
+      "nutrition_plans",
+      "nutrition_plans",
+    ]);
   });
 
   it("caps the extension at the day before the next queued version — the same cap every placement takes", async () => {
@@ -395,14 +390,14 @@ describe("fillNutritionAcrossBlock", () => {
         blockStartsOn: "2026-09-21", blockEndsOn: "2026-12-13",
       })
     ).toBeNull();
-    expect(regenerateFutureNutritionEvents).not.toHaveBeenCalled();
+    expect(mockFrom).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("clearEventsOutsideBlock", () => {
-  /** from() per table, in call order: the next-block probe, the two
-   *  last-event probes when there is no next block, the two day removals,
-   *  then the version cap and the version retirement. */
+  /** from() per table, in call order: the next-block probe, the last-session
+   *  probe when there is no next block, the session removal, then the
+   *  version cap and the version retirement on each track. */
   function wireTables(byTable: Record<string, ReturnType<typeof query>[]>) {
     mockFrom.mockImplementation(((table: string) => {
       const next = byTable[table]?.shift();
@@ -419,7 +414,6 @@ describe("clearEventsOutsideBlock", () => {
     wireTables({
       client_phases: [query({ data: { starts_on: "2026-11-01" }, error: null })],
       training_events: [query({ data: [], error: null })],
-      nutrition_events: [query({ data: [], error: null })],
       nutrition_plans: [capQuery, retireQuery],
       training_plans: [trainingCapQuery, trainingRetireQuery],
     });
@@ -428,8 +422,8 @@ describe("clearEventsOutsideBlock", () => {
       clientId: "c1", clientToday: TODAY, blockEndsOn: "2026-10-05",
     });
 
-    // Its window ends where its days end, or the next cascade regenerates the
-    // days this clear removed.
+    // Its days are computed from its window, so pulling the end back IS
+    // removing the days past it.
     expect(capQuery.update).toHaveBeenCalledWith(
       expect.objectContaining({ effective_until: "2026-10-05" })
     );
@@ -466,7 +460,6 @@ describe("clearEventsOutsideBlock", () => {
     wireTables({
       client_phases: [query({ data: null, error: null })],
       training_events: [query({ data: null, error: null })],
-      nutrition_events: [query({ data: null, error: null })],
       nutrition_plans: [capQuery],
       training_plans: [trainingCapQuery],
     });
@@ -475,15 +468,16 @@ describe("clearEventsOutsideBlock", () => {
       clientId: "c1", clientToday: TODAY, blockEndsOn: "2026-10-05",
     });
 
-    expect(cleared).toEqual({ trainingCleared: 0, nutritionCleared: 0 });
+    expect(cleared).toEqual({ trainingCleared: 0 });
     expect(capQuery.update).toHaveBeenCalledWith(
       expect.objectContaining({ effective_until: "2026-10-05" })
     );
     expect(trainingCapQuery.update).toHaveBeenCalledWith(
       expect.objectContaining({ effective_until: "2026-10-05" })
     );
-    // No ceiling → no day removal and no retirement: probes + one cap per track.
-    expect(mockFrom).toHaveBeenCalledTimes(5);
+    // No ceiling → no session removal and no retirement: the two probes + one
+    // cap per track.
+    expect(mockFrom).toHaveBeenCalledTimes(4);
   });
 });
 

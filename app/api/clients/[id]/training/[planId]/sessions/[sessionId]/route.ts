@@ -6,7 +6,6 @@ import {
   getSessionEventLinks,
   SessionLoggedError,
 } from "@/services/training-event-occupancy";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -68,7 +67,8 @@ export async function GET(
 // list incl. setSpecs/videoUrl), the tray's "All occurrences" save. Renames
 // land on this session's future scheduled events — normally just this day (one
 // session row per placed day), more only after a duplicate; past keeps its
-// snapshots. A surplus change additionally triggers the nutrition cascade.
+// snapshots. A surplus change re-prices those days' computed nutrition targets
+// by itself — the day reads the surplus off the event.
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; planId: string; sessionId: string }> }
@@ -137,17 +137,6 @@ export async function PUT(
       fromDate: today,
       input: { ...validation.data, exercises },
     });
-
-    // The affected days are this session's future scheduled events — a scattered
-    // set, not a range — so the service reports them and the cascade rewrites
-    // exactly those. `surplusAffectedDates` is empty unless the surplus changed.
-    if (result.surplusAffectedDates.length > 0) {
-      await cascadeNutritionAfterTrainingChange(
-        clientId,
-        { kind: "dates", dates: result.surplusAffectedDates },
-        "cascade-nutrition-from-session-full-edit",
-      );
-    }
 
     return NextResponse.json(
       {

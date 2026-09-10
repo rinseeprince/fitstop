@@ -12,9 +12,6 @@ vi.mock("./supabase-admin", () => ({
 vi.mock("./daily-log-permissions-service", () => ({
   getLogWindow: vi.fn(),
 }));
-vi.mock("./nutrition-event-service", () => ({
-  cascadeNutritionAfterTrainingChange: vi.fn().mockResolvedValue(undefined),
-}));
 
 // Inline query-builder mock (mirrors services/training-event-service.test.ts).
 function createMockQuery<T = unknown>(result: {
@@ -40,7 +37,6 @@ function createMockQuery<T = unknown>(result: {
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getLogWindow } from "./daily-log-permissions-service";
-import { cascadeNutritionAfterTrainingChange } from "./nutrition-event-service";
 import { DateOccupiedError } from "./training-event-occupancy";
 import {
   applyClientLayout,
@@ -111,7 +107,7 @@ describe("applyClientLayout", () => {
     mockRpc.mockResolvedValue({ data: null, error: null } as any);
   });
 
-  it("applies a swap through the RPC in caller order and cascades once over every touched day", async () => {
+  it("applies a swap through the RPC in caller order", async () => {
     wire({
       events: [
         { id: "ev-wed", date: WED, status: "scheduled" },
@@ -136,16 +132,10 @@ describe("applyClientLayout", () => {
         { event_id: "ev-thu", from_date: THU, to_date: WED },
       ],
     });
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledTimes(1);
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
-      "client-1",
-      { kind: "dates", dates: [WED, THU] },
-      "cascade-nutrition-events-from-client-layout",
-    );
     expect(result.moved).toHaveLength(2);
   });
 
-  it("writes and cascades nothing when every move is a no-op", async () => {
+  it("writes nothing when every move is a no-op", async () => {
     const result = await applyClientLayout("client-1", [
       { eventId: "ev-wed", fromDate: WED, toDate: WED },
     ]);
@@ -153,7 +143,6 @@ describe("applyClientLayout", () => {
     expect(result).toEqual({ moved: [] });
     expect(mockFrom).not.toHaveBeenCalled();
     expect(mockRpc).not.toHaveBeenCalled();
-    expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
   });
 
   it("refuses to move a session that has been logged", async () => {
@@ -272,8 +261,6 @@ describe("applyClientLayout", () => {
     await expect(attempt("not_scheduled: event ev-thu has left the scheduled state")).rejects.toBeInstanceOf(
       LayoutPolicyError,
     );
-    // A failed RPC never cascades.
-    expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
   });
 
   it("translates the index backstop (a raw 23505) into the same sentence as the pre-check", async () => {

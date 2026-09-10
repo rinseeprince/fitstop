@@ -36,12 +36,8 @@ vi.mock('@/services/client-goals-service', () => ({
 }))
 
 vi.mock('@/services/training-event-service', () => ({
-  cancelFutureEventsForPlan: vi.fn().mockResolvedValue(null),
-  cancelFutureEventsForPlans: vi.fn().mockResolvedValue(null),
-}))
-
-vi.mock('@/services/nutrition-event-service', () => ({
-  cascadeNutritionAfterTrainingChange: vi.fn().mockResolvedValue(undefined),
+  cancelFutureEventsForPlan: vi.fn().mockResolvedValue(undefined),
+  cancelFutureEventsForPlans: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/services/event-deletion-floor', () => ({
@@ -72,7 +68,6 @@ import {
 } from '@/services/training-service'
 import { supabaseAdmin } from '@/services/supabase-admin'
 import { cancelFutureEventsForPlans } from '@/services/training-event-service'
-import { cascadeNutritionAfterTrainingChange } from '@/services/nutrition-event-service'
 import { resolveEventDeletionFloor } from '@/services/event-deletion-floor'
 import { GET, DELETE } from './route'
 
@@ -268,19 +263,5 @@ describe('Training Route DELETE - the shared deletion floor', () => {
     expect(resolveEventDeletionFloor).toHaveBeenCalledTimes(1)
     expect(cancelFutureEventsForPlans).toHaveBeenCalledTimes(1)
     expect(cancelFutureEventsForPlans).toHaveBeenCalledWith(['plan-63', 'plan-64', 'plan-65'], '2026-01-16')
-  })
-
-  it('still cascades nutrition from TODAY — a regenerate replaces, it never empties', async () => {
-    // Only removals need the floor. Nutrition on the floored-out day is
-    // rewritten with the same numbers, which is why it is safe.
-    wirePlans(['plan-88'])
-
-    await call()
-
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
-      'client-1',
-      expect.objectContaining({ kind: 'from', from: '2026-01-15' }),
-      expect.any(String)
-    )
   })
 })

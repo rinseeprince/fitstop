@@ -45,7 +45,7 @@ export const WEEKDAY_NAMES = [
   "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
 ] as const;
 
-/** Lowercase English weekday — the casing `nutrition_events.day_of_week` expects. */
+/** Lowercase English weekday — the casing `clients.check_in_day` and the weekday grids use. */
 export function dayOfWeekName(iso: string): string {
   return WEEKDAY_NAMES[parseDay(iso).getUTCDay()];
 }

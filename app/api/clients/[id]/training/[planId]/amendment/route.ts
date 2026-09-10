@@ -6,7 +6,6 @@ import {
   AmendmentConflictError,
   AmendmentValidationError,
 } from "@/services/plan-amendment-service";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
@@ -105,16 +104,6 @@ export async function PUT(
       planPatch: validation.data.plan,
       expectedToken: validation.data.expectedToken,
     });
-
-    // The rewritten window's surpluses changed under the nutrition calendar —
-    // re-derive from the floor (the first date the amendment touched).
-    // Open-ended forward: the amendment re-lays events across its whole window,
-    // so survivors past the horizon are not stale the way a deleted plan's are.
-    await cascadeNutritionAfterTrainingChange(
-      clientId,
-      { kind: "from", from: result.floor },
-      "cascade-nutrition-from-plan-amendment",
-    );
 
     void recordAuditEvent({
       actorId: coachId,

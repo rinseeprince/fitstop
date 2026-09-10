@@ -135,17 +135,9 @@ export async function generateTrainingEvents(
  * and the scheduled rows are still there for the retry the coach's error
  * prompts. The reverse order risks the one outcome this exists to prevent.
  *
- * Returns the LAST date it deleted, or null if it deleted nothing. The plan-clear
- * routes hand that to the nutrition cascade as its scope's `to`: this delete
- * cancels the plan's ENTIRE forward ray, which reaches past the nutrition
- * horizon whenever the program is longer than the bound the horizon resolves to
- * — and after a clear there is no live program left to raise that bound. Without
- * it, every nutrition day beyond the horizon keeps a training surplus for a
- * workout that no longer exists, and nothing ever revisits it (recorded in
- * TECHNICAL-DEBT.md → nutrition cascade, stale tail).
- *
- * `.select("date")` rides the DELETE itself, so the max costs no extra round
- * trip and cannot disagree with what was actually removed.
+ * Nutrition needs nothing from this: a day's target is computed from the
+ * session on it, so every day this clears is a rest day the moment the
+ * delete lands, however far the program reached.
  *
  * The live callers now pass the shared deletion floor (`resolveEventDeletionFloor`),
  * which already excludes a today the client has touched — so on those paths the
@@ -158,10 +150,10 @@ export async function generateTrainingEvents(
 export async function cancelFutureEventsForPlan(
   planId: string,
   effectiveFrom?: string
-): Promise<string | null> {
+): Promise<void> {
   // UTC fallback only: no clientId in scope to resolve a client-local today,
   // and the live callers pass an explicit (client-local) date.
-  return cancelFutureEventsForPlans([planId], effectiveFrom ?? getTodayDateString());
+  await cancelFutureEventsForPlans([planId], effectiveFrom ?? getTodayDateString());
 }
 
 /**
@@ -171,13 +163,12 @@ export async function cancelFutureEventsForPlan(
  * program of the client from its start day (migration 167), and a client
  * re-placed monthly for a year has a dozen of them — two round trips per plan
  * would make placement scale with the client's history (CONVENTIONS §2,
- * performance 7). Returns the furthest date deleted across the set, or null.
+ * performance 7).
  */
 export async function cancelFutureEventsForPlans(
   planIds: string[],
   fromDate: string
-): Promise<string | null> {
-  let furthest: string | null = null;
+): Promise<void> {
   for (const chunk of chunkIds(planIds)) {
     const { error: detachError } = await supabaseAdmin
       .from("training_events")
@@ -188,21 +179,15 @@ export async function cancelFutureEventsForPlans(
 
     if (detachError) throw detachError;
 
-    const { data: deleted, error: deleteError } = await supabaseAdmin
+    const { error: deleteError } = await supabaseAdmin
       .from("training_events")
       .delete()
       .in("training_plan_id", chunk)
       .gte("date", fromDate)
-      .eq("status", "scheduled")
-      .select("date");
+      .eq("status", "scheduled");
 
     if (deleteError) throw deleteError;
-
-    for (const row of deleted ?? []) {
-      if (furthest === null || row.date > furthest) furthest = row.date;
-    }
   }
-  return furthest;
 }
 
 // --- Regenerate future events ---

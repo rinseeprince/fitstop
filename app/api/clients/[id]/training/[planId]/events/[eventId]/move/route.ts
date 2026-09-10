@@ -6,7 +6,6 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { moveEvent } from "@/services/training-event-calendar-service";
 import { DateOccupiedError } from "@/services/training-event-occupancy";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { z } from "zod";
 
 const moveEventSchema = z.object({
@@ -59,16 +58,7 @@ export async function POST(
 
     const { targetDate } = validation.data;
 
-    const result = await moveEvent(eventId, targetDate, clientId, planId);
-
-    // Cascade: a move changes exactly two days — the one it left (now a rest day)
-    // and the one it landed on. Passing both, rather than min(source, target) as a
-    // floor, stops a three-day move from rewriting eight weeks of nutrition.
-    await cascadeNutritionAfterTrainingChange(
-      clientId,
-      { kind: "dates", dates: [result.sourceDate, targetDate] },
-      "cascade-nutrition-events-from-move"
-    );
+    await moveEvent(eventId, targetDate, clientId, planId);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

@@ -5,7 +5,6 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { deleteEvent } from "@/services/training-event-calendar-service";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 
 // DELETE - Delete a single scheduled training event
 export async function DELETE(
@@ -36,16 +35,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Plan not found" }, { status: 404 });
     }
 
-    // Cascade: a delete changes exactly the day the event sat on — which the
-    // service now reports, so this no longer has to anchor at today and rewrite
-    // the whole horizon to cover one deleted day.
-    const { date: deletedDate } = await deleteEvent(eventId, clientId, planId);
-
-    await cascadeNutritionAfterTrainingChange(
-      clientId,
-      { kind: "dates", dates: [deletedDate] },
-      "cascade-nutrition-events-from-delete"
-    );
+    await deleteEvent(eventId, clientId, planId);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

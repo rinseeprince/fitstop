@@ -1,6 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientWeekAnchor } from "./check-in-week-service";
-import { cascadeNutritionAfterTrainingChange } from "./nutrition-event-service";
 import {
   DateOccupiedError,
   occupiedMessage,
@@ -57,16 +56,15 @@ export const LAYOUT_DRIFT_MESSAGE = "Your week changed since you opened it — r
  * from-date under row locks, so a coach move racing this call surfaces as
  * `drift`, never as a half-applied week.
  *
- * Nutrition follows the session (owner decision 2026-08-26): one cascade over
- * every day touched, after the RPC commits. The cascade is not in the RPC's
- * transaction — the same seam every coach-side move has — so a cascade failure
- * leaves the calendar moved and nutrition stale until the next cascade.
+ * Nutrition follows the session (owner decision 2026-08-26) with no write of
+ * its own: a day's target is computed from the session on it, so the day the
+ * session left and the day it landed on re-price the moment the RPC commits.
  */
 export async function applyClientLayout(
   clientId: string,
   moves: LayoutMove[]
 ): Promise<AppliedLayout> {
-  // A move to its own day writes nothing and cascades nothing.
+  // A move to its own day writes nothing.
   const real = moves.filter((m) => m.fromDate !== m.toDate);
   if (real.length === 0) return { moved: [] };
 
@@ -137,13 +135,6 @@ export async function applyClientLayout(
     })),
   });
   if (rpcError) throw translateRpcError(rpcError);
-
-  const dates = [...new Set(real.flatMap((m) => [m.fromDate, m.toDate]))].sort();
-  await cascadeNutritionAfterTrainingChange(
-    clientId,
-    { kind: "dates", dates },
-    "cascade-nutrition-events-from-client-layout"
-  );
 
   return { moved: real };
 }

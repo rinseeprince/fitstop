@@ -128,9 +128,9 @@ export function TrainingCalendarView({
   // amendment GET, and a bound `mutate` cannot reach it.
   const invalidateTrainingData = useInvalidateTrainingData();
 
-  // Training mutations cascade-rewrite nutrition_events server-side
-  // (calorie targets track the training layout), so every success path below
-  // must also invalidate the nutrition calendar's cache.
+  // A nutrition day is computed from the session on it (calorie targets track
+  // the training layout) and the month view is SWR-cached, so every success
+  // path below must also invalidate the nutrition calendar's cache.
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
   const clearClientOverview = useClearClientOverview();

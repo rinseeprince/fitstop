@@ -35,7 +35,6 @@ import {
   getNutritionPlanIdForDate,
   getNextFutureNutritionPlan,
   getLatestNutritionPlan,
-  getActiveNutritionPlanVersionsOverlapping,
   getNutritionPrescriptionsForRange,
   getNutritionPlanGrids,
   getNextNutritionVersionStartCap,
@@ -317,48 +316,6 @@ describe('Nutrition Plan Service', () => {
         createResolverQuery({ data: null, error: { message: 'boom' } }) as any
       )
       await expect(getLatestNutritionPlan('client-123')).rejects.toThrow(/boom/)
-    })
-  })
-
-  describe('getActiveNutritionPlanVersionsOverlapping — the segmentation primitive', () => {
-    const ROWS = [
-      { id: 'v1', effective_from: '2026-06-01', effective_until: '2026-07-19' },
-      { id: 'v2', effective_from: '2026-07-20', effective_until: '2026-09-13' },
-    ]
-
-    it('bounds both ends of a range: effective_until >= start AND effective_from <= end, earliest first', async () => {
-      const query = createResolverQuery({ data: ROWS, error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(query as any)
-
-      const versions = await getActiveNutritionPlanVersionsOverlapping('client-123', '2026-07-01', '2026-08-01')
-
-      expect(query.eq).toHaveBeenCalledWith('status', 'active')
-      expect(query.gte).toHaveBeenCalledWith('effective_until', '2026-07-01')
-      expect(query.lte).toHaveBeenCalledWith('effective_from', '2026-08-01')
-      // Every version has an end: no `is.null` arm anywhere in the predicate.
-      expect(query.or).not.toHaveBeenCalled()
-      expect(query.order).toHaveBeenCalledWith('effective_from', { ascending: true })
-      expect(versions).toEqual([
-        { id: 'v1', effectiveFrom: '2026-06-01', effectiveUntil: '2026-07-19' },
-        { id: 'v2', effectiveFrom: '2026-07-20', effectiveUntil: '2026-09-13' },
-      ])
-    })
-
-    it('with no end, takes every version reaching the start or later — no upper bound', async () => {
-      const query = createResolverQuery({ data: ROWS, error: null })
-      vi.mocked(supabaseAdmin.from).mockReturnValue(query as any)
-
-      await getActiveNutritionPlanVersionsOverlapping('client-123', '2026-07-01')
-
-      expect(query.gte).toHaveBeenCalledWith('effective_until', '2026-07-01')
-      expect(query.lte).not.toHaveBeenCalled()
-    })
-
-    it('throws on a query error', async () => {
-      vi.mocked(supabaseAdmin.from).mockReturnValue(
-        createResolverQuery({ data: null, error: { message: 'boom' } }) as any
-      )
-      await expect(getActiveNutritionPlanVersionsOverlapping('client-123', '2026-07-01')).rejects.toThrow(/boom/)
     })
   })
 

@@ -19,7 +19,7 @@ vi.mock("./training-service", () => ({
 
 vi.mock("./training-event-service", () => ({
   getNextPlanStartCap: vi.fn(),
-  cancelFutureEventsForPlans: vi.fn().mockResolvedValue(null),
+  cancelFutureEventsForPlans: vi.fn().mockResolvedValue(undefined),
 }));
 
 // The block covering the start date is now the placement window's length knob.
@@ -1049,18 +1049,16 @@ describe("library-placement-service: the placement supersedes the earlier progra
     mockGetBlockBound.mockResolvedValue(null);
     mockGetSavedPlanById.mockResolvedValue(makeSavedPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
-    vi.mocked(cancelFutureEventsForPlans).mockResolvedValue(null);
+    vi.mocked(cancelFutureEventsForPlans).mockResolvedValue(undefined);
   });
 
-  it("cancels the earlier programs' forward rays from the start day AFTER the events land, and returns the furthest day", async () => {
+  it("cancels the earlier programs' forward rays from the start day AFTER the events land", async () => {
     const { plansQuery, eventUpsertQuery } = wire();
-    vi.mocked(cancelFutureEventsForPlans).mockResolvedValue("2026-06-30");
 
-    const result = await placePlanOnCalendar({
+    await placePlanOnCalendar({
       savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15",
     });
 
-    expect(result.supersededThrough).toBe("2026-06-30");
     // The snapshot read: every live program starting on or before the start.
     expect(plansQuery.lte).toHaveBeenCalledWith("effective_from", "2026-04-15");
     expect(plansQuery.neq).toHaveBeenCalledWith("status", "archived");

@@ -113,12 +113,10 @@ describe("training-event-calendar-service", () => {
         return deleteQuery as any; // delete
       });
 
-      const result = await deleteEvent("event-1", "client-1", "plan-1");
+      await deleteEvent("event-1", "client-1", "plan-1");
 
       expect(deleteQuery.delete).toHaveBeenCalled();
       expect(deleteQuery.eq).toHaveBeenCalledWith("id", "event-1");
-      // The deleted day, so the route can cascade nutrition over exactly it.
-      expect(result).toEqual({ date: "2026-04-20" });
     });
 
     it("rejects completed events", async () => {
@@ -177,7 +175,7 @@ describe("training-event-calendar-service", () => {
       vi.useRealTimers();
     });
 
-    it("returns the original event date as sourceDate and the newDate as targetDate", async () => {
+    it("re-dates the event and marks it modified", async () => {
       const existingEvent = {
         id: "event-1",
         client_id: clientId,
@@ -192,6 +190,7 @@ describe("training-event-calendar-service", () => {
       };
 
       let fromCallIndex = 0;
+      const updateQuery = createMockQuery({ data: null, error: null });
 
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_plans") {
@@ -204,14 +203,17 @@ describe("training-event-calendar-service", () => {
             return createMockQuery({ data: existingEvent, error: null }) as any;
           }
           // Update call.
-          return createMockQuery({ data: null, error: null }) as any;
+          return updateQuery as any;
         }
         return createMockQuery({ data: null, error: null }) as any;
       });
 
-      const result = await moveEvent("event-1", "2026-04-30", clientId, planId);
+      await expect(moveEvent("event-1", "2026-04-30", clientId, planId)).resolves.toBeUndefined();
 
-      expect(result).toEqual({ sourceDate: "2026-04-27", targetDate: "2026-04-30" });
+      expect(updateQuery.update).toHaveBeenCalledWith(
+        expect.objectContaining({ date: "2026-04-30", is_modified: true }),
+      );
+      expect(updateQuery.eq).toHaveBeenCalledWith("id", "event-1");
     });
 
     it("refuses a move onto a day that already holds a session", async () => {
@@ -287,9 +289,8 @@ describe("training-event-calendar-service", () => {
         return createMockQuery({ data: null, error: null }) as any;
       });
 
-      const result = await moveEvent("event-1", "2026-06-09", clientId, planId);
+      await expect(moveEvent("event-1", "2026-06-09", clientId, planId)).resolves.toBeUndefined();
 
-      expect(result).toEqual({ sourceDate: "2026-06-12", targetDate: "2026-06-09" });
       expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
     });
 
@@ -355,9 +356,7 @@ describe("training-event-calendar-service", () => {
         return createMockQuery({ data: null, error: null }) as any;
       });
 
-      await expect(deleteEvent("event-1", clientId, planId)).resolves.toEqual({
-        date: "2026-06-09",
-      });
+      await expect(deleteEvent("event-1", clientId, planId)).resolves.toBeUndefined();
       expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
     });
 

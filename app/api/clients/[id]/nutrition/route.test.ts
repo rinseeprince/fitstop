@@ -18,17 +18,6 @@ vi.mock('@/services/training-service', () => ({
   getNextFutureTrainingPlan: vi.fn().mockResolvedValue(null),
 }))
 
-// The orchestrator PROPAGATES event-rewrite failures (previously swallowed),
-// so the success-path tests must mock the rewrite as succeeding. The GET's old
-// todayEvent probe is retired — the covering VERSION answers "is anything
-// running", so this factory no longer declares it.
-vi.mock('@/services/nutrition-event-service', () => ({
-  regenerateFutureNutritionEvents: vi.fn().mockResolvedValue(undefined),
-  // The save sweeps the superseded tail after the regenerate; its statement
-  // semantics are pinned in nutrition-event-service.test.ts.
-  sweepUncoveredNutritionDays: vi.fn().mockResolvedValue(undefined),
-}))
-
 // The DELETE hands the whole act to the clear service (migration 166); its
 // statement semantics are pinned in nutrition-plan-clear-service.test.ts.
 vi.mock('@/services/nutrition-plan-clear-service', () => ({
@@ -84,7 +73,6 @@ vi.mock('@/services/nutrition-plan-service', () => ({
   getLatestNutritionPlan: vi.fn().mockResolvedValue(null),
   getNextFutureNutritionPlan: vi.fn().mockResolvedValue(null),
   resolveNutritionPlacementEnd: vi.fn().mockResolvedValue('2026-03-11'),
-  getActiveNutritionPlanVersionsOverlapping: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('@/services/client-goals-service', () => ({

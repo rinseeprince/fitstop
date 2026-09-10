@@ -150,15 +150,11 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
     );
   });
 
-  it("scopes both plan deletes to THIS block's window, nutrition first", async () => {
+  it("scopes both plan deletes to THIS block's window", async () => {
     // A block delete is about one block's date range. Both tracks answer
     // "does this plan belong here?" from dates — a program is truncated to the
     // block it is placed in, a version's end is resolved to the block its start
     // falls in — so a LATER block keeps its own program and its own targets.
-    //
-    // NUTRITION FIRST is load-bearing: its clear archives the block's versions
-    // and removes their days, so the training clear's own cascade then finds no
-    // active version governing those days and rebuilds nothing.
     vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
     vi.mocked(listBlocks).mockResolvedValue([
       {
@@ -183,12 +179,11 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
       from: "2026-08-11",
       to: "2026-09-07",
     });
+    // Both BEFORE the row goes: losing the label while the prescription
+    // survives is the one outcome the UI cannot undo.
     expect(
       vi.mocked(clearNutritionPlansForClient).mock.invocationCallOrder[0]
-    ).toBeLessThan(
-      vi.mocked(clearTrainingPlansForClient).mock.invocationCallOrder[0]
-    );
-    // Both BEFORE the row goes.
+    ).toBeLessThan(vi.mocked(deleteBlock).mock.invocationCallOrder[0]);
     expect(
       vi.mocked(clearTrainingPlansForClient).mock.invocationCallOrder[0]
     ).toBeLessThan(vi.mocked(deleteBlock).mock.invocationCallOrder[0]);

@@ -270,40 +270,6 @@ describe("training-event-service", () => {
   // =========================================================================
 
   describe("cancelFutureEventsForPlan", () => {
-    // The nutrition cascade's `to`. This delete cancels the plan's ENTIRE
-    // forward ray, and the routes archive the plan first — so the horizon can no
-    // longer see it and the cascade has to be told how far the prescription
-    // reached, or every nutrition day past the horizon keeps a training surplus
-    // for a workout that no longer exists.
-    it("returns the furthest date it deleted", async () => {
-      const detachQuery = createMockQuery({ data: null, error: null });
-      const deleteQuery = createMockQuery({
-        // Deliberately unsorted: the max cannot be read off the last row.
-        data: [{ date: "2026-10-07" }, { date: "2026-12-16" }, { date: "2026-11-25" }],
-        error: null,
-      });
-      mockFrom
-        .mockReturnValueOnce(detachQuery as any)
-        .mockReturnValueOnce(deleteQuery as any);
-
-      const furthest = await cancelFutureEventsForPlan("plan-9", "2026-09-04");
-
-      expect(furthest).toBe("2026-12-16");
-      // Rides the DELETE itself — no second round trip, and it cannot disagree
-      // with what was actually removed.
-      expect(deleteQuery.select).toHaveBeenCalledWith("date");
-    });
-
-    it("returns null when it deleted nothing", async () => {
-      const detachQuery = createMockQuery({ data: null, error: null });
-      const deleteQuery = createMockQuery({ data: [], error: null });
-      mockFrom
-        .mockReturnValueOnce(detachQuery as any)
-        .mockReturnValueOnce(deleteQuery as any);
-
-      expect(await cancelFutureEventsForPlan("plan-10", "2026-09-04")).toBeNull();
-    });
-
     it("detaches logged future days from the plan before deleting the scheduled ones", async () => {
       const detachQuery = createMockQuery({ data: null, error: null });
       const deleteQuery = createMockQuery({ data: null, error: null });
@@ -464,19 +430,19 @@ describe("cancelFutureEventsForPlans — the set form a placement supersedes wit
     vi.clearAllMocks();
   });
 
-  it("issues one detach and one delete per chunk of 100 ids, and returns the furthest date across chunks", async () => {
+  it("issues one detach and one delete per chunk of 100 ids", async () => {
     const ids = Array.from({ length: 150 }, (_, i) => `plan-${i}`);
     const detach1 = createMockQuery({ data: null, error: null });
-    const delete1 = createMockQuery({ data: [{ date: "2026-10-07" }], error: null });
+    const delete1 = createMockQuery({ data: null, error: null });
     const detach2 = createMockQuery({ data: null, error: null });
-    const delete2 = createMockQuery({ data: [{ date: "2026-12-16" }, { date: "2026-11-25" }], error: null });
+    const delete2 = createMockQuery({ data: null, error: null });
     mockFrom
       .mockReturnValueOnce(detach1 as any)
       .mockReturnValueOnce(delete1 as any)
       .mockReturnValueOnce(detach2 as any)
       .mockReturnValueOnce(delete2 as any);
 
-    expect(await cancelFutureEventsForPlans(ids, "2026-09-11")).toBe("2026-12-16");
+    await expect(cancelFutureEventsForPlans(ids, "2026-09-11")).resolves.toBeUndefined();
 
     expect(mockFrom).toHaveBeenCalledTimes(4);
     expect(detach1.in).toHaveBeenCalledWith("training_plan_id", ids.slice(0, 100));
@@ -487,8 +453,8 @@ describe("cancelFutureEventsForPlans — the set form a placement supersedes wit
     expect(delete1.eq).toHaveBeenCalledWith("status", "scheduled");
   });
 
-  it("issues nothing for an empty set and returns null", async () => {
-    expect(await cancelFutureEventsForPlans([], "2026-09-11")).toBeNull();
+  it("issues nothing for an empty set", async () => {
+    await expect(cancelFutureEventsForPlans([], "2026-09-11")).resolves.toBeUndefined();
     expect(mockFrom).not.toHaveBeenCalled();
   });
 });

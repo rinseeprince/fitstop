@@ -4,7 +4,6 @@ import { getTrainingPlanById, updateTrainingPlan } from "@/services/training-ser
 import { cancelFutureEventsForPlan } from "@/services/training-event-service";
 import { retireTrainingPlans } from "@/services/training-plan-clear-service";
 import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { apiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
@@ -128,8 +127,7 @@ export async function DELETE(
     // anchored to the client's day, not the server's UTC clock.
     const today = await getClientTodayString(clientId);
     // The shared deletion floor: today, or tomorrow if the client has already
-    // touched today. The cascade below still runs from today — a regenerate
-    // REPLACES a day's targets rather than emptying them, so it needs no floor.
+    // touched today.
     const deleteFrom = await resolveEventDeletionFloor(clientId, today);
 
     // The same rule the client-level clear applies to every program: the
@@ -144,18 +142,7 @@ export async function DELETE(
       ],
       today
     );
-    const clearedThrough = await cancelFutureEventsForPlan(planId, deleteFrom);
-
-    // Cascade: nutrition burn estimates depend on training events. Open-ended
-    // forward to the client's own horizon, EXTENDED to the last day this clear
-    // deleted an event on: the plan is archived by the line above, so the
-    // horizon no longer sees it, and every day it prescribed past the horizon
-    // would otherwise keep a surplus for a workout that is gone.
-    await cascadeNutritionAfterTrainingChange(
-      clientId,
-      { kind: "from", from: today, to: clearedThrough ?? undefined },
-      "cascade-nutrition-events-from-clear-plan"
-    );
+    await cancelFutureEventsForPlan(planId, deleteFrom);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

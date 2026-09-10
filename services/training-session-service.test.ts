@@ -31,24 +31,20 @@ describe("updateSurplusForFutureEvents", () => {
   });
 
   it("updates only scheduled events for the given session from fromDate onward", async () => {
-    // Chain mock: from().update().eq().gte().eq().select() returns data
-    const selectFn = vi.fn().mockResolvedValue({
-      data: [{ date: "2026-04-23" }, { date: "2026-04-25" }],
-      error: null,
-    });
-    const innerEq = vi.fn().mockReturnValue({ select: selectFn });
+    // Chain mock: from().update().eq().gte().eq() resolves the write's result.
+    // Nothing is selected back — a day's nutrition target reads the surplus
+    // off the event, so the caller has no dates to hand anyone.
+    const innerEq = vi.fn().mockResolvedValue({ error: null });
     const gte = vi.fn().mockReturnValue({ eq: innerEq });
     const outerEq = vi.fn().mockReturnValue({ gte });
     const update = vi.fn().mockReturnValue({ eq: outerEq });
 
     mockFrom.mockReturnValue({ update } as unknown as ReturnType<typeof mockFrom>);
 
-    const dates = await updateSurplusForFutureEvents("session-1", 20, "2026-04-22");
+    await expect(
+      updateSurplusForFutureEvents("session-1", 20, "2026-04-22"),
+    ).resolves.toBeUndefined();
 
-    // The DATES of the touched events, so the caller can cascade over exactly
-    // them; `.length` is the old count.
-    expect(dates).toEqual(["2026-04-23", "2026-04-25"]);
-    expect(selectFn).toHaveBeenCalledWith("date");
     expect(mockFrom).toHaveBeenCalledWith("training_events");
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -62,28 +58,22 @@ describe("updateSurplusForFutureEvents", () => {
   });
 
   it("accepts null surplus (clears the value)", async () => {
-    const selectFn = vi.fn().mockResolvedValue({ data: [], error: null });
-    const innerEq = vi.fn().mockReturnValue({ select: selectFn });
+    const innerEq = vi.fn().mockResolvedValue({ error: null });
     const gte = vi.fn().mockReturnValue({ eq: innerEq });
     const outerEq = vi.fn().mockReturnValue({ gte });
     const update = vi.fn().mockReturnValue({ eq: outerEq });
 
     mockFrom.mockReturnValue({ update } as unknown as ReturnType<typeof mockFrom>);
 
-    const dates = await updateSurplusForFutureEvents("session-1", null, "2026-04-22");
+    await updateSurplusForFutureEvents("session-1", null, "2026-04-22");
 
-    expect(dates).toEqual([]);
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ calorie_surplus_percentage: null }),
     );
   });
 
   it("throws on db error with a descriptive message", async () => {
-    const selectFn = vi.fn().mockResolvedValue({
-      data: null,
-      error: { message: "permission denied" },
-    });
-    const innerEq = vi.fn().mockReturnValue({ select: selectFn });
+    const innerEq = vi.fn().mockResolvedValue({ error: { message: "permission denied" } });
     const gte = vi.fn().mockReturnValue({ eq: innerEq });
     const outerEq = vi.fn().mockReturnValue({ gte });
     const update = vi.fn().mockReturnValue({ eq: outerEq });

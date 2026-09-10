@@ -22,33 +22,21 @@ function mapNoteRow(row: NoteRow): NutritionPlanNote {
 }
 
 /**
- * Record the coach's note about a plan change, in BOTH of its homes.
+ * Record the coach's note about a plan change.
  *
- * Deliberately one function rather than two calls the orchestrator sequences,
- * because the ORDER is load-bearing and a caller cannot be trusted to preserve
- * it across a future edit:
+ * One store. The `nutrition_plan_notes` INSERT is append-only by design (no
+ * unique constraint on `(client_id, effective_on)` — two notes on one date is
+ * the history the timeline needs), dated the day the change takes effect: the
+ * note describes the CHANGE, and the calendar reads it on that one date
+ * through the computed day (`services/nutrition-days-service.ts`), not from a
+ * stamp of its own.
  *
- *   1. The `nutrition_events.coach_note` stamp is an idempotent UPDATE. Running
- *      it twice is a no-op.
- *   2. The `nutrition_plan_notes` INSERT is append-only by design (no unique
- *      constraint on `(client_id, effective_on)` — two notes on one date is the
- *      history the timeline needs). Running it twice leaves TWO rows.
- *
- * So the idempotent write goes FIRST and the duplicating write goes LAST. Both
- * throw, and the caller surfaces that as a failed save whose retry is safe: the
- * retry re-stamps harmlessly and inserts exactly once, because the insert that
- * failed wrote nothing. Reverse the order and a stamp failure after a
- * successful insert makes the retry mint a duplicate note.
- *
- * Neither write is swallowed (CONVENTIONS §2 item 12). The note is
+ * The write is not swallowed (CONVENTIONS §2 item 12). The note is
  * coach-authored content the CLIENT will read; a green toast over a lost note
  * is a silent divergence, and it is exactly the silence the column this
- * replaces was built on.
- *
- * §2 item 13 — what is left inconsistent if the second write fails: the
- * calendar carries a note the timeline does not. Nothing is corrupted and a
- * retry closes it. There is no state where the durable record exists without
- * the caller having been told the save succeeded.
+ * replaces was built on. The caller surfaces a failure as a failed save whose
+ * retry is safe: the insert that failed wrote nothing, so the retry inserts
+ * exactly once.
  */
 export async function recordPlanSaveNote(params: {
   clientId: string;
@@ -59,23 +47,6 @@ export async function recordPlanSaveNote(params: {
 }): Promise<void> {
   const trimmed = params.body?.trim();
   if (!trimmed) return;
-
-  // Lands the note on the DATE the change takes effect, where the coach looks
-  // on the calendar. ONE date, not the whole regenerated window: the note
-  // describes the CHANGE, and 57 identical markers would be noise.
-  //
-  // A zero-row match is NOT an error. A note dated past the dense event horizon
-  // has no event row to stamp, and the durable record below must
-  // still land — the calendar marker is the optional half of this pair.
-  const { error: stampError } = await supabaseAdmin
-    .from("nutrition_events")
-    .update({ coach_note: trimmed })
-    .eq("client_id", params.clientId)
-    .eq("date", params.effectiveOn);
-
-  if (stampError) {
-    throw new Error(`Failed to stamp the plan note on its date: ${stampError.message}`);
-  }
 
   const { error: insertError } = await supabaseAdmin
     .from("nutrition_plan_notes")

@@ -20,13 +20,11 @@ import "./env-bootstrap";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { computeEnergyPair } from "@/services/client-energy-calc";
 import { generateTrainingEvents } from "@/services/training-event-service";
-import { generateNutritionEvents } from "@/services/nutrition-event-service";
 import {
   getTodayDateString,
   getDateString,
   getDateDaysAgo,
   getDateDaysFrom,
-  expandDateRange,
 } from "@/lib/date-helpers";
 import {
   PERF_COACH_ID,
@@ -182,7 +180,7 @@ async function main() {
   await ensureClientAuthUser();
   const exerciseIds = await pickGlobalExercises();
   await insertClientGoal();
-  const nutritionDailyTargets = await insertNutritionPlan();
+  await insertNutritionPlan();
   const { sessionIds, exerciseRowsBySession, hotExerciseId } = await insertTrainingPlan(exerciseIds, rng);
   await insertHabits();
   const dailyLogIdsByDate = await insertDailyLogsSpine(args.months);
@@ -192,9 +190,6 @@ async function main() {
   const checkInRows = await insertCheckIns(args.months, rng);
   await insertMeasurements(checkInRows, getDateDaysAgo(args.months * 30));
   await insertTrainingEvents(sessionIds, args.months);
-  // After training events (the surplus source) so generated nutrition events
-  // pick up the training-day surplus.
-  await insertNutritionEvents(args.months, nutritionDailyTargets);
   await insertJourneyBlocksAndNotes(args.notes);
 
   const elapsedMs = Date.now() - t0;
@@ -223,9 +218,6 @@ async function cleanExistingFixtures(fullReset: boolean) {
   await del("session_logs (→ exercise_logs → set_logs)", supabaseAdmin.from("session_logs").delete().eq("client_id", c));
   await del("training_plans (→ sessions, exercises)", supabaseAdmin.from("training_plans").delete().eq("client_id", c));
   await del("daily_logs (→ wellness/nutrition/training children)", supabaseAdmin.from("daily_logs").delete().eq("client_id", c));
-  // nutrition_events FK is ON DELETE SET NULL, so the plan delete below won't
-  // cascade them — clear them explicitly or they orphan + survive a reseed.
-  await del("nutrition_events", supabaseAdmin.from("nutrition_events").delete().eq("client_id", c));
   await del("nutrition_plans (→ daily_targets)", supabaseAdmin.from("nutrition_plans").delete().eq("client_id", c));
   await del("client_goals", supabaseAdmin.from("client_goals").delete().eq("client_id", c));
   await del("nutrition_plan_notes", supabaseAdmin.from("nutrition_plan_notes").delete().eq("client_id", c));
@@ -450,8 +442,8 @@ async function insertNutritionPlan() {
       ...shared,
       id: PERF_NUTRITION_PLAN_ID,
       effective_from: v2From,
-      // Ends where insertNutritionEvents stops generating (migration 166: a
-      // version always carries its end).
+      // The version's window (migration 166: a version always carries its
+      // end); every day inside it is computed from this row and its grid.
       effective_until: getDateDaysFrom(new Date(), 8 * 7),
       baseline_calories: 2400,
     },
@@ -469,61 +461,12 @@ async function insertNutritionPlan() {
       fat_g: 70,
       is_training_day: ["monday", "tuesday", "thursday", "saturday"].includes(dow),
     }));
-  const dailyTargets = gridFor(PERF_NUTRITION_PLAN_ID, 2400);
+  // Every day of both eras is computed from these grids at read time; there is
+  // no day table to fill.
   const { error: tgtErr } = await supabaseAdmin
     .from("nutrition_plan_daily_targets")
-    .insert([...gridFor(PERF_NUTRITION_PLAN_V1_ID, 2300), ...dailyTargets]);
+    .insert([...gridFor(PERF_NUTRITION_PLAN_V1_ID, 2300), ...gridFor(PERF_NUTRITION_PLAN_ID, 2400)]);
   if (tgtErr) throw new Error(`nutrition_plan_daily_targets insert: ${tgtErr.message}`);
-
-  // The OPEN version's grid — event generation fills the forward window from
-  // the current prescription (v1's era already has its own generated rows).
-  return dailyTargets;
-}
-
-// ---------------------------------------------------------------------------
-// Dense nutrition_events — one row per date over the window, mirroring the
-// training-events window so the current week is dense. generateNutritionEvents
-// reads the training events for surplus/training-day detection, so this must
-// run AFTER insertTrainingEvents.
-// ---------------------------------------------------------------------------
-
-async function insertNutritionEvents(
-  months: number,
-  dailyTargets: Array<{
-    day_of_week: string;
-    calories: number;
-    protein_g: number;
-    carb_g: number;
-    fat_g: number;
-    is_training_day: boolean;
-  }>
-) {
-  console.log("Inserting dense nutrition_events via generateNutritionEvents()...");
-  // Versioned model (migration 144): each era's events carry its OWN
-  // version's id and prescription — v1's closed window first, then the open
-  // version from its start through the forward horizon. The tenure window may
-  // start after v1's era began; clamp so a short seed still splits correctly.
-  const tenureStart = getDateDaysAgo(months * 30);
-  const v1Until = getDateDaysAgo(91);
-  const v2From = getDateDaysAgo(90);
-  if (tenureStart <= v1Until) {
-    await generateNutritionEvents(
-      PERF_CLIENT_ID,
-      PERF_NUTRITION_PLAN_V1_ID,
-      { baselineCalories: 2300, proteinTargetG: 170, dietType: "balanced" },
-      dailyTargets.map((t) => ({ ...t, calories: t.calories - 100 })),
-      null, // trainingPlan — generateNutritionEvents fetches training events by date range
-      expandDateRange(tenureStart, v1Until)
-    );
-  }
-  await generateNutritionEvents(
-    PERF_CLIENT_ID,
-    PERF_NUTRITION_PLAN_ID,
-    { baselineCalories: 2400, proteinTargetG: 170, dietType: "balanced" },
-    dailyTargets,
-    null,
-    expandDateRange(v2From, getDateDaysFrom(new Date(), 8 * 7))
-  );
 }
 
 // ---------------------------------------------------------------------------

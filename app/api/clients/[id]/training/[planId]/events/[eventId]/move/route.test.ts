@@ -31,14 +31,9 @@ vi.mock("@/services/training-event-calendar-service", () => ({
   moveEvent: vi.fn(),
 }));
 
-vi.mock("@/services/nutrition-event-service", () => ({
-  cascadeNutritionAfterTrainingChange: vi.fn().mockResolvedValue(undefined),
-}));
-
 import { getClientById } from "@/services/client-service";
 import { getTrainingPlanById } from "@/services/training-service";
 import { moveEvent } from "@/services/training-event-calendar-service";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { POST } from "./route";
 
 const clientId = "client-1";
@@ -62,7 +57,7 @@ async function callRoute(body: Record<string, unknown>) {
   });
 }
 
-describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutrition cascade", () => {
+describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getClientById).mockResolvedValue({
@@ -73,39 +68,15 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
       id: planId,
       clientId,
     } as never);
+    vi.mocked(moveEvent).mockResolvedValue(undefined);
   });
 
-  it("forward-in-time single move cascades over exactly the source and target days", async () => {
-    vi.mocked(moveEvent).mockResolvedValue({
-      sourceDate: "2026-04-27",
-      targetDate: "2026-04-30",
-    });
-
+  it("moves the event and answers 200 — the day's nutrition target follows the session by computation, so the move is the whole write", async () => {
     const res = await callRoute({ targetDate: "2026-04-30" });
 
     expect(res.status).toBe(200);
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledTimes(1);
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
-      clientId,
-      { kind: "dates", dates: ["2026-04-27", "2026-04-30"] },
-      "cascade-nutrition-events-from-move"
-    );
-  });
-
-  it("backward-in-time single move cascades over both days too — never a floor", async () => {
-    vi.mocked(moveEvent).mockResolvedValue({
-      sourceDate: "2026-04-30",
-      targetDate: "2026-04-27",
-    });
-
-    const res = await callRoute({ targetDate: "2026-04-27" });
-
-    expect(res.status).toBe(200);
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
-      clientId,
-      { kind: "dates", dates: ["2026-04-30", "2026-04-27"] },
-      "cascade-nutrition-events-from-move"
-    );
+    expect(moveEvent).toHaveBeenCalledTimes(1);
+    expect(moveEvent).toHaveBeenCalledWith(eventId, "2026-04-30", clientId, planId);
   });
 
   it("ignores a retired `scope` field rather than rejecting the request", async () => {
@@ -114,19 +85,16 @@ describe("POST /api/clients/[id]/training/[planId]/events/[eventId]/move nutriti
     // coach's optimistic move with an error they cannot act on. zod strips
     // unrecognised keys, so the drag still lands as the single move it always
     // was — this test is what stops someone "tidying up" by adding .strict().
-    vi.mocked(moveEvent).mockResolvedValue({
-      sourceDate: "2026-04-27",
-      targetDate: "2026-04-29",
-    });
-
     const res = await callRoute({ targetDate: "2026-04-29", scope: "all_future" });
 
     expect(res.status).toBe(200);
     expect(moveEvent).toHaveBeenCalledWith(eventId, "2026-04-29", clientId, planId);
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
-      clientId,
-      { kind: "dates", dates: ["2026-04-27", "2026-04-29"] },
-      "cascade-nutrition-events-from-move"
-    );
+  });
+
+  it("400s a malformed target date without touching the service", async () => {
+    const res = await callRoute({ targetDate: "30/04/2026" });
+
+    expect(res.status).toBe(400);
+    expect(moveEvent).not.toHaveBeenCalled();
   });
 });

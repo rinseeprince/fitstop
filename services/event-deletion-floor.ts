@@ -3,21 +3,21 @@ import { addDaysToDateString } from "@/lib/date-helpers";
 import { captureApiError } from "@/lib/error-handler";
 
 /**
- * From which day may this client's calendar events be REMOVED?
+ * From which day may this client's training sessions be REMOVED, and from
+ * which day may a plan on either track START?
  *
  * Their today — unless they have already touched today, in which case tomorrow.
  *
  * Replacing today is always fine: a placement overwrites the day in the same
- * breath it clears it, and a cascade rewrites the target the client's next food
- * save re-snapshots. EMPTYING today is the harm — the client loses their target
- * for the rest of the day, and every save after that stores a blank one. So only
- * REMOVALS ask this; regenerations still run from today.
+ * breath it clears it. EMPTYING today is the harm — the client loses their
+ * session for the rest of the day — and so is re-prescribing a day they have
+ * already lived. So the training removals ask this, and so does every plan
+ * start on both tracks; nutrition days are computed from the versions and are
+ * never removed by anything, so nothing on that side asks it but the start.
  *
  * "Touched" is one question with two answers, because the two tracks record it
  * differently:
- *   - nutrition: a `nutrition_logs` row for the date. The event's own status
- *     cannot answer it — a nutrition event never leaves `scheduled`, so a
- *     status filter protects a logged TRAINING day and nothing on this side.
+ *   - nutrition: a `nutrition_logs` row for the date.
  *   - training: an event on the date that has left `scheduled`.
  *
  * Every removal path asks this and nothing does its own arithmetic. A removal

@@ -18,20 +18,18 @@ import { assertSessionUnlogged } from "./training-event-occupancy";
  * (migration 121), so "every future occurrence" is normally ONE event; a
  * per-event duplicate is the only way it becomes more.
  *
- * Also sets is_modified=true so the regeneration pathway doesn't overwrite
- * the coach's deliberate edit.
+ * Also sets is_modified=true so the amendment's re-lay doesn't overwrite the
+ * coach's deliberate edit.
  *
- * Returns the DATES of the event rows updated. The caller needs the dates, not a
- * count: the affected days (normally one; scattered only after duplicates) let
- * the nutrition cascade rewrite exactly them instead of anchoring at today
- * and rewriting every day to the horizon. `.length` is still the count.
+ * Nutrition follows on its own: a day's target reads the surplus off the
+ * event, so the days this touches re-price the moment the update lands.
  */
 export async function updateSurplusForFutureEvents(
   sessionId: string,
   surplus: number | null,
   fromDate: string,
-): Promise<string[]> {
-  const { data, error } = await supabaseAdmin
+): Promise<void> {
+  const { error } = await supabaseAdmin
     .from("training_events")
     .update({
       calorie_surplus_percentage: surplus,
@@ -40,12 +38,9 @@ export async function updateSurplusForFutureEvents(
     })
     .eq("training_session_id", sessionId)
     .gte("date", fromDate)
-    .eq("status", "scheduled")
-    .select("date");
+    .eq("status", "scheduled");
 
   if (error) throw new Error(`Failed to update future event surpluses: ${error.message}`);
-
-  return (data ?? []).map((e) => e.date);
 }
 
 // Get session with exercises by ID

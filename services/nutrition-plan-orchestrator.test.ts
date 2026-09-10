@@ -33,12 +33,6 @@ vi.mock("@/services/nutrition-service", () => ({
 vi.mock("@/services/nutrition-plan-service", () => ({
   createNutritionPlan: vi.fn(),
   resolveNutritionPlacementEnd: vi.fn(),
-  getActiveNutritionPlanVersionsOverlapping: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock("@/services/nutrition-event-service", () => ({
-  regenerateFutureNutritionEvents: vi.fn(),
-  sweepUncoveredNutritionDays: vi.fn().mockResolvedValue(undefined),
 }));
 
 // The delete is one act, owned by the clear service (migration 166); its
@@ -60,13 +54,8 @@ import { getClientById } from "@/services/client-service";
 import { generateNutritionPlan } from "@/services/nutrition-service";
 import {
   createNutritionPlan,
-  getActiveNutritionPlanVersionsOverlapping,
   resolveNutritionPlacementEnd,
 } from "@/services/nutrition-plan-service";
-import {
-  regenerateFutureNutritionEvents,
-  sweepUncoveredNutritionDays,
-} from "@/services/nutrition-event-service";
 import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
 import { captureApiError } from "@/lib/error-handler";
 import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
@@ -144,9 +133,6 @@ beforeEach(() => {
   vi.mocked(getClientById).mockResolvedValue(client as never);
   vi.mocked(generateNutritionPlan).mockReturnValue(calculatedPlan as never);
   vi.mocked(createNutritionPlan).mockResolvedValue("plan-1" as never);
-  vi.mocked(regenerateFutureNutritionEvents).mockResolvedValue(undefined);
-  vi.mocked(sweepUncoveredNutritionDays).mockResolvedValue(undefined);
-  vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue([]);
   vi.mocked(resolveNutritionPlacementEnd).mockResolvedValue("2026-08-27");
   vi.mocked(clearNutritionPlansForClient).mockResolvedValue({
     versionsCleared: 1,
@@ -156,110 +142,47 @@ beforeEach(() => {
   mockNoExistingPlan();
 });
 
-describe("orchestrateNutritionPlanCreation — event-rewrite error propagation", () => {
-  it("calculated branch: resolves success when the event rewrite succeeds", async () => {
+describe("orchestrateNutritionPlanCreation — the save is the RPC and the note, nothing else", () => {
+  // A day's target is computed from the version the RPC stores (owner
+  // decision 2026-09-10): no day row is written, deleted or swept here, so
+  // there is no calendar write left to fail after the row has committed.
+  const tablesTouched = () => vi.mocked(supabaseAdmin.from).mock.calls.map((call) => call[0]);
+
+  it("calculated branch: resolves success once the RPC has stored the version, and writes no day", async () => {
     const result = await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
+
     expect(result.success).toBe(true);
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(clientId, "plan-1", { kind: "from", from: "2026-07-02" });
+    expect(createNutritionPlan).toHaveBeenCalledTimes(1);
+    // The one direct read this branch makes is the existing-plan lookup that
+    // labels the save "initial" or "regenerated".
+    expect(tablesTouched()).toEqual(["nutrition_plans"]);
   });
 
-  it("calculated branch: rejects with NutritionPlanError when the event rewrite fails", async () => {
-    const dbError = new Error("upsert exploded");
-    vi.mocked(regenerateFutureNutritionEvents).mockRejectedValue(dbError);
-
-    await expect(
-      orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {})
-    ).rejects.toMatchObject({
-      name: "NutritionPlanError",
-      statusCode: 500,
-      message:
-        "Plan targets were saved, but calendar events failed to update. Regenerate the plan to retry.",
-    });
-  });
-
-  it("calculated branch: still reports the underlying failure to Sentry", async () => {
-    const dbError = new Error("upsert exploded");
-    vi.mocked(regenerateFutureNutritionEvents).mockRejectedValue(dbError);
-
-    await expect(
-      orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {})
-    ).rejects.toBeInstanceOf(NutritionPlanError);
-    expect(captureApiError).toHaveBeenCalledWith(dbError, {
-      action: "generate-nutrition-events",
-      planId: "plan-1",
-    });
-  });
-
-  it("custom-macros branch: resolves success when the event rewrite succeeds", async () => {
+  it("custom-macros branch: resolves success once the RPC has stored the version, and touches no table directly", async () => {
     const result = await orchestrateNutritionPlanCreation(clientId, coachId, customBody, {});
+
     expect(result.success).toBe(true);
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(clientId, "plan-1", { kind: "from", from: "2026-07-02" });
+    expect(createNutritionPlan).toHaveBeenCalledTimes(1);
+    expect(tablesTouched()).toEqual([]);
   });
 
-  it("custom-macros branch: rejects with NutritionPlanError when the event rewrite fails", async () => {
-    vi.mocked(regenerateFutureNutritionEvents).mockRejectedValue(new Error("delete exploded"));
-
-    await expect(
-      orchestrateNutritionPlanCreation(clientId, coachId, customBody, {})
-    ).rejects.toMatchObject({
-      name: "NutritionPlanError",
-      statusCode: 500,
-      message:
-        "Plan targets were saved, but calendar events failed to update. Regenerate the plan to retry.",
-    });
-    expect(captureApiError).toHaveBeenCalled();
-  });
-
-  it("anchors the rewrite on effectiveFrom when provided", async () => {
+  it("hands the RPC the effective date when one is provided", async () => {
     await orchestrateNutritionPlanCreation(
       clientId,
       coachId,
       { ...calculatedBody, effectiveFrom: "2026-07-10" },
       {}
     );
-    expect(regenerateFutureNutritionEvents).toHaveBeenCalledWith(clientId, "plan-1", { kind: "from", from: "2026-07-10" });
+    expect(createNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ effectiveFrom: "2026-07-10" })
+    );
   });
 });
 
 describe("orchestrateNutritionPlanCreation — the coach note (migration 147)", () => {
   const NOTE = "Dropping calories 200 while we hold training volume.";
 
-  it("sweeps the superseded tail AFTER the events land and BEFORE the note", async () => {
-    // The RPC capped the predecessor at the day before this version starts; the
-    // predecessor's days past this version's end are governed by nothing and
-    // would otherwise reappear the day after the block ended.
-    const versions = [{ id: "plan-1", effectiveFrom: "2026-07-02", effectiveUntil: "2026-08-27" }];
-    vi.mocked(getActiveNutritionPlanVersionsOverlapping).mockResolvedValue(versions);
-
-    await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {
-      coachNotes: NOTE,
-    });
-
-    expect(getActiveNutritionPlanVersionsOverlapping).toHaveBeenCalledWith(clientId, "2026-07-02");
-    expect(sweepUncoveredNutritionDays).toHaveBeenCalledWith(clientId, "2026-07-02", versions);
-    const order = (fn: unknown) => vi.mocked(fn as () => unknown).mock.invocationCallOrder[0];
-    expect(order(sweepUncoveredNutritionDays)).toBeGreaterThan(order(regenerateFutureNutritionEvents));
-    expect(order(recordPlanSaveNote)).toBeGreaterThan(order(sweepUncoveredNutritionDays));
-  });
-
-  it("a failed sweep fails the save with the calendar sentence and records no note", async () => {
-    vi.mocked(sweepUncoveredNutritionDays).mockRejectedValue(new Error("boom"));
-
-    await expect(
-      orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, { coachNotes: NOTE })
-    ).rejects.toMatchObject({
-      name: "NutritionPlanError",
-      statusCode: 500,
-      message:
-        "Plan targets were saved, but calendar events failed to update. Regenerate the plan to retry.",
-    });
-    // The retry re-saves the same day, which replaces the version in place and
-    // runs the sweep again; a note written now would describe a calendar the
-    // coach has not accepted.
-    expect(recordPlanSaveNote).not.toHaveBeenCalled();
-  });
-
-  it("records the note AFTER the events are rewritten, on the effective date", async () => {
+  it("records the note AFTER the RPC, on the effective date", async () => {
     await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {
       coachNotes: NOTE,
     });
@@ -271,10 +194,10 @@ describe("orchestrateNutritionPlanCreation — the coach note (migration 147)", 
       effectiveOn: "2026-07-02",
       body: NOTE,
     });
-    // After the rewrite, so a failed regenerate never leaves a note describing
-    // a calendar that was not written.
+    // After the row commits, so a failed save never leaves a note describing
+    // a version that was not stored.
     expect(vi.mocked(recordPlanSaveNote).mock.invocationCallOrder[0]).toBeGreaterThan(
-      vi.mocked(regenerateFutureNutritionEvents).mock.invocationCallOrder[0]
+      vi.mocked(createNutritionPlan).mock.invocationCallOrder[0]
     );
   });
 
@@ -302,7 +225,7 @@ describe("orchestrateNutritionPlanCreation — the coach note (migration 147)", 
     ).rejects.toMatchObject({
       name: "NutritionPlanError",
       statusCode: 500,
-      message: "Plan targets and calendar were saved, but your note was not. Save again to add it.",
+      message: "Plan targets were saved, but your note was not. Save again to add it.",
     });
     expect(captureApiError).toHaveBeenCalledWith(noteError, {
       action: "record-plan-save-note",
@@ -312,10 +235,10 @@ describe("orchestrateNutritionPlanCreation — the coach note (migration 147)", 
   });
 
   it("custom-macros branch records the note too — both handlers, not one", async () => {
-    // The two handlers each own their own create -> regenerate -> return
-    // sequence and return straight out of the dispatch, so there is no seam
-    // after them to hook. One branch silently losing the note is the failure
-    // mode this pins.
+    // The two handlers each own their own create -> note -> return sequence
+    // and return straight out of the dispatch, so there is no seam after them
+    // to hook. One branch silently losing the note is the failure mode this
+    // pins.
     await orchestrateNutritionPlanCreation(clientId, coachId, customBody, {
       coachNotes: NOTE,
     });

@@ -21,13 +21,6 @@ type ReplaceSessionResult = {
   session: TrainingSession;
   surplusChanged: boolean;
   identityChanged: boolean;
-
-  /**
-   * The dates whose surplus actually changed — the nutrition-relevant set. Empty
-   * when the surplus was unchanged (a rename alone does not move calories). The
-   * caller cascades over exactly these instead of anchoring at today.
-   */
-  surplusAffectedDates: string[];
 };
 
 /**
@@ -118,9 +111,8 @@ export async function replaceSessionFull(params: {
     }
   }
 
-  let surplusAffectedDates: string[] = [];
   if (surplusChanged) {
-    surplusAffectedDates = await updateSurplusForFutureEvents(sessionId, nextSurplus, fromDate);
+    await updateSurplusForFutureEvents(sessionId, nextSurplus, fromDate);
   }
 
   const { data: exerciseRows, error: exercisesError } = await supabaseAdmin
@@ -138,6 +130,5 @@ export async function replaceSessionFull(params: {
     session: mapSessionRow(updatedRow, (exerciseRows ?? []).map(mapExerciseRow)),
     surplusChanged,
     identityChanged,
-    surplusAffectedDates,
   };
 }

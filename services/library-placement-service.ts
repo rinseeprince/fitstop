@@ -30,14 +30,11 @@ const INSERT_CHUNK = 500;
  */
 export class PlacementSupersedeError extends Error {}
 
-/** The result every placement returns. `supersededThrough` is the furthest
- *  day an earlier program's session was removed on, for the nutrition
- *  cascade's `to`; null when nothing lay past the new window. */
+/** The result every placement returns. */
 type PlacementResult = {
   planId: string;
   sessionsCreated: number;
   eventsCreated: number;
-  supersededThrough: string | null;
 };
 
 /** The rows the placement RPC rewrites besides the new one: every live plan
@@ -573,7 +570,7 @@ async function placePlaceablePlanOnCalendar(params: {
   //    stale tail a block carved out of a longer program used to leave. Logged
   //    days are detached, not deleted. The placement is committed by now, so a
   //    failure here is reported as such and never compensated.
-  const supersededThrough = await cancelFutureEventsForPlans(
+  await cancelFutureEventsForPlans(
     earlierPlans.map((plan) => plan.id),
     startDate,
   ).catch((err: unknown) => {
@@ -587,7 +584,6 @@ async function placePlaceablePlanOnCalendar(params: {
     planId: newPlanId,
     sessionsCreated: clonedSlots.filter((s) => !s.isRest).length,
     eventsCreated,
-    supersededThrough,
   };
   } catch (err) {
     // A supersede failure is not a failed placement: the plan is committed and

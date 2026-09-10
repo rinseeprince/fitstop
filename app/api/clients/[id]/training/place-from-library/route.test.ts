@@ -46,10 +46,6 @@ vi.mock("@/services/event-deletion-floor", () => ({
   resolveEventDeletionFloor: vi.fn(),
 }));
 
-vi.mock("@/services/nutrition-event-service", () => ({
-  cascadeNutritionAfterTrainingChange: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock("@/services/audit-log-service", () => ({
   recordAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
@@ -61,7 +57,6 @@ import {
 } from "@/services/library-placement-service";
 import { getClientTodayString } from "@/services/today-service";
 import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { PlacementSupersedeError } from "@/services/library-placement-service";
 import { POST } from "./route";
 
@@ -115,7 +110,6 @@ describe("POST /api/clients/[id]/training/place-from-library start-date guard", 
       planId: "plan-1",
       sessionsCreated: 3,
       eventsCreated: 12,
-      supersededThrough: null,
     });
   });
 
@@ -217,13 +211,11 @@ describe("POST /api/clients/[id]/training/place-from-library inline", () => {
       planId: "plan-1",
       sessionsCreated: 3,
       eventsCreated: 12,
-      supersededThrough: null,
     });
     vi.mocked(placeInlineEditedPlanOnCalendar).mockResolvedValue({
       planId: "inline-plan-1",
       sessionsCreated: 1,
       eventsCreated: 5,
-      supersededThrough: null,
     });
   });
 
@@ -281,24 +273,6 @@ describe("the placement supersedes the earlier programs (migration 167)", () => 
     vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-01-15");
   });
 
-  it("threads the furthest superseded day into the nutrition cascade as `to` (migration 167)", async () => {
-    vi.mocked(placePlanOnCalendar).mockResolvedValue({
-      planId: "plan-1",
-      sessionsCreated: 3,
-      eventsCreated: 12,
-      supersededThrough: "2026-03-29",
-    });
-
-    const res = await callRoute({ type: "plan", savedPlanId, startDate: "2026-01-15" });
-
-    expect(res.status).toBe(200);
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
-      clientId,
-      { kind: "from", from: "2026-01-15", to: "2026-03-29" },
-      expect.any(String)
-    );
-  });
-
   it("a supersede failure is a 500 carrying the service's own sentence — the program IS on the calendar", async () => {
     vi.mocked(placePlanOnCalendar).mockRejectedValue(
       new PlacementSupersedeError(
@@ -311,6 +285,5 @@ describe("the placement supersedes the earlier programs (migration 167)", () => 
 
     expect(res.status).toBe(500);
     expect(data.error).toMatch(/^The program is on the calendar/);
-    expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
   });
 });

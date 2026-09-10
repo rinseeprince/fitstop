@@ -1,6 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { cancelFutureEventsForPlans } from "./training-event-service";
-import { cascadeNutritionAfterTrainingChange } from "./nutrition-event-service";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { addDaysToDateString } from "@/lib/date-helpers";
 
@@ -66,12 +65,12 @@ export async function retireTrainingPlans(
  * One act, two callers — the training calendar's own delete (every program
  * with a day still ahead) and the block delete's "and its plans" (only the
  * ones placed inside it). There is no delete-the-days-but-keep-the-plan
- * variant on either track (owner, 2026-09-08): a plan left standing with no
- * days is restored by the next cascade, so the two always travel together.
+ * variant on either track (owner, 2026-09-08): the plan and its upcoming
+ * sessions always travel together.
  *
- * The nutrition cascade runs FROM the client's today, not from the deletion
- * floor: a regenerate REPLACES a day's targets rather than emptying them, so it
- * needs no floor. Only the event removal does.
+ * The nutrition days need no statement of their own: a day's target is
+ * computed from the version covering it and the session on it, so the
+ * sessions this removes re-price their days the moment they are gone.
  */
 export async function clearTrainingPlansForClient(
   clientId: string,
@@ -108,22 +107,10 @@ export async function clearTrainingPlansForClient(
   const rows = plans ?? [];
   await retireTrainingPlans(rows, clientToday);
 
-  // The furthest day ANY of these programs had a session on. The nutrition
-  // bound can no longer see them, and the cascade has to be told how far their
-  // prescription reached or it leaves a stale training surplus on every day
-  // past the bound.
-  const clearedThrough = await cancelFutureEventsForPlans(
+  // Every retired program's forward ray from the floor, in one call.
+  await cancelFutureEventsForPlans(
     rows.map((plan) => plan.id),
     deleteFrom
-  );
-
-  // Cascade once: nutrition burn estimates depend on training events. Open-ended
-  // forward to the client's own bound, extended to cover every day the removal
-  // above just cleared.
-  await cascadeNutritionAfterTrainingChange(
-    clientId,
-    { kind: "from", from: clientToday, to: clearedThrough ?? undefined },
-    "cascade-nutrition-events-from-clear-all-training"
   );
 
   return { plansCleared: rows.length };

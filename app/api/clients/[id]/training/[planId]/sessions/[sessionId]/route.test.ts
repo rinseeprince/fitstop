@@ -37,10 +37,6 @@ vi.mock("@/services/training-event-occupancy", () => ({
   SessionLoggedError,
 }));
 
-vi.mock("@/services/nutrition-event-service", () => ({
-  cascadeNutritionAfterTrainingChange: vi.fn(),
-}));
-
 vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
@@ -51,7 +47,6 @@ import { getClientById } from "@/services/client-service";
 import { getTrainingPlanById } from "@/services/training-service";
 import { replaceSessionFull } from "@/services/training-session-replace-service";
 import { getSessionEventLinks } from "@/services/training-event-occupancy";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { getClientTodayString } from "@/services/today-service";
 
 const COACH_ID = "coach-1";
@@ -98,7 +93,6 @@ const replaceResult = {
   session: { id: SESSION_ID, name: "Push Day A", exercises: [] },
   surplusChanged: false,
   identityChanged: true,
-  surplusAffectedDates: [],
 } as unknown as Awaited<ReturnType<typeof replaceSessionFull>>;
 
 function makeParams() {
@@ -168,7 +162,7 @@ describe("GET /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
 });
 
 describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
-  it("replaces the session with the client-local today floor and skips the cascade when surplus is unchanged", async () => {
+  it("replaces the session with the client-local today floor and reports what changed", async () => {
     vi.mocked(replaceSessionFull).mockResolvedValue(replaceResult);
 
     const response = await PUT(makePutRequest(validBody), makeParams());
@@ -200,25 +194,20 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
         videoUrl: "https://example.com/bench.mp4",
       }),
     );
-
-    expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
   });
 
-  it("fires the nutrition cascade over exactly the affected days when the surplus changed", async () => {
+  it("reports a surplus change on the wire — the day's computed nutrition target reads it off the event, so the route writes nothing more", async () => {
     vi.mocked(replaceSessionFull).mockResolvedValue({
       ...(replaceResult as object),
       surplusChanged: true,
-      surplusAffectedDates: ["2026-04-23", "2026-04-25"],
     } as unknown as Awaited<ReturnType<typeof replaceSessionFull>>);
 
     const response = await PUT(makePutRequest(validBody), makeParams());
+    const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
-      CLIENT_ID,
-      { kind: "dates", dates: ["2026-04-23", "2026-04-25"] },
-      "cascade-nutrition-from-session-full-edit",
-    );
+    expect(data.surplusChanged).toBe(true);
+    expect(replaceSessionFull).toHaveBeenCalledTimes(1);
   });
 
   it("400s an invalid body without touching the service", async () => {
@@ -270,7 +259,6 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
     expect(data.error).toBe(
       "The client logged this session on Fri, Aug 14, so it can no longer be edited",
     );
-    expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
   });
 
   it("maps the service's rest-day rejection to a 400", async () => {
@@ -283,6 +271,5 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
 
     expect(response.status).toBe(400);
     expect(data.error).toBe("Rest days cannot be edited");
-    expect(cascadeNutritionAfterTrainingChange).not.toHaveBeenCalled();
   });
 });

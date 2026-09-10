@@ -267,7 +267,7 @@ describe("replaceSessionFull", () => {
       .mockReturnValueOnce(links.chain)
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(exercisesRead.chain);
-    mockSurplusUpdate.mockResolvedValue(["2026-04-23", "2026-04-25", "2026-04-28"]);
+    mockSurplusUpdate.mockResolvedValue(undefined);
 
     const result = await replaceSessionFull(
       baseParams(makeInput({ calorieSurplusPercentage: 20 })),
@@ -282,9 +282,6 @@ describe("replaceSessionFull", () => {
     expect(links.fns.update).not.toHaveBeenCalled();
     expect(result.surplusChanged).toBe(true);
     expect(result.identityChanged).toBe(false);
-
-    // The route cascades nutrition over exactly these days.
-    expect(result.surplusAffectedDates).toEqual(["2026-04-23", "2026-04-25", "2026-04-28"]);
   });
 
   it("REFUSES a session the client has logged, before any write", async () => {
@@ -336,7 +333,7 @@ describe("replaceSessionFull", () => {
       .mockReturnValueOnce(links.chain)
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(exercisesRead.chain);
-    mockSurplusUpdate.mockResolvedValue(["2026-04-23"]);
+    mockSurplusUpdate.mockResolvedValue(undefined);
 
     const result = await replaceSessionFull(
       baseParams(makeInput({ calorieSurplusPercentage: null })),

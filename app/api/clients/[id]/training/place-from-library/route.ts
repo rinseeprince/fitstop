@@ -14,7 +14,6 @@ import {
 import { getClientTodayString } from "@/services/today-service";
 import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { formatDateOnlyShort } from "@/lib/date-helpers";
-import { cascadeNutritionAfterTrainingChange, type NutritionRegenScope } from "@/services/nutrition-event-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { inlinePlanBodySchema } from "@/lib/validations/training";
@@ -141,15 +140,6 @@ export async function POST(
         startDate: data.startDate,
       });
 
-      // Nutrition cascade: a whole-program placement is open-ended forward,
-      // widened to the last day a superseded program's session was removed on
-      // — the same `to` the plan-clear routes thread.
-      await cascadeNutritionEvents(clientId, {
-        kind: "from",
-        from: data.startDate,
-        to: result.supersededThrough ?? undefined,
-      });
-
       void recordAuditEvent({
         actorId: coachId,
         actorRole: "trainer",
@@ -183,13 +173,6 @@ export async function POST(
         coachId,
         clientId,
         startDate: data.startDate,
-      });
-
-      // Nutrition cascade: same scope as the plan branch above.
-      await cascadeNutritionEvents(clientId, {
-        kind: "from",
-        from: data.startDate,
-        to: result.supersededThrough ?? undefined,
       });
 
       void recordAuditEvent({
@@ -227,9 +210,6 @@ export async function POST(
       planId: data.planId,
       targetDate: data.targetDate,
     });
-
-    // Nutrition cascade: one dropped session changes exactly its target day.
-    await cascadeNutritionEvents(clientId, { kind: "dates", dates: [data.targetDate] });
 
     void recordAuditEvent({
       actorId: coachId,
@@ -272,20 +252,4 @@ export async function POST(
     console.error("Error placing from library:", error);
     return NextResponse.json({ error: "Failed to place from library" }, { status: 500 });
   }
-}
-
-// --- Nutrition cascade ---
-// Thin wrapper so each placement call site keeps threading its own scope onto the
-// shared cascade helper. A whole-program placement is open-ended forward from its
-// start date; dropping ONE saved session touches exactly its target day.
-
-async function cascadeNutritionEvents(
-  clientId: string,
-  scope: NutritionRegenScope
-) {
-  await cascadeNutritionAfterTrainingChange(
-    clientId,
-    scope,
-    "cascade-nutrition-events-from-library-placement"
-  );
 }

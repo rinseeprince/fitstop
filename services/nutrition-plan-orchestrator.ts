@@ -7,15 +7,10 @@ import {
 } from "@/services/nutrition-calc-inputs";
 import {
   createNutritionPlan,
-  getActiveNutritionPlanVersionsOverlapping,
   resolveNutritionPlacementEnd,
 } from "@/services/nutrition-plan-service";
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
-import {
-  regenerateFutureNutritionEvents,
-  sweepUncoveredNutritionDays,
-} from "@/services/nutrition-event-service";
 import { recordPlanSaveNote } from "@/services/nutrition-plan-notes-service";
 import { captureApiError } from "@/lib/error-handler";
 import { getClientTodayString } from "@/services/today-service";
@@ -36,64 +31,32 @@ export class NutritionPlanError extends Error {
   }
 }
 
-/**
- * The events ARE the product of a regenerate — a failed rewrite must not
- * return success, or the coach sees a green toast over a stale/gapped
- * calendar. The plan row has already committed by this point, so the message
- * says so; a retry re-POST is idempotent (upsert on client_id,date; coach
- * edits protected by is_modified; the same-day version replaced in place) and
- * repairs any partial state.
- *
- * A save supersedes the old version from its start onward: the RPC capped the
- * predecessor at the day before, and the predecessor's days past this
- * version's end — and past every queued version — are governed by nothing, so
- * they are swept once this version's own days are on the calendar. Without
- * the sweep a block carved out of a longer plan got the block filled and the
- * OLD targets reappearing the day after it ended.
- */
-async function regenerateEventsOrThrow(
-  clientId: string,
-  planId: string,
-  fromDate: string
-): Promise<void> {
-  try {
-    await regenerateFutureNutritionEvents(clientId, planId, { kind: "from", from: fromDate });
-    const versions = await getActiveNutritionPlanVersionsOverlapping(clientId, fromDate);
-    await sweepUncoveredNutritionDays(clientId, fromDate, versions);
-  } catch (err) {
-    captureApiError(err, { action: "generate-nutrition-events", planId });
-    throw new NutritionPlanError(
-      "Plan targets were saved, but calendar events failed to update. Regenerate the plan to retry.",
-      500
-    );
-  }
-}
-
 interface NutritionPlanResult {
   success: true;
   plan: Record<string, unknown>;
 }
 
 /**
- * Record the coach's note about this change, in both of its homes.
+ * Record the coach's note about this change.
  *
  * Called from BOTH plan handlers. They each own their own
- * createNutritionPlan -> regenerate -> return sequence and return directly out
- * of the dispatch, so there is no seam after them to hook — inlining it twice
- * is how one branch silently ends up without it.
+ * createNutritionPlan -> note -> return sequence and return directly out of
+ * the dispatch, so there is no seam after them to hook — inlining it twice is
+ * how one branch silently ends up without it.
  *
  * This USED to be `stampCoachNote`, which wrote one mutable column and sent any
  * failure to Sentry behind a 200. That silence is no longer acceptable: since
  * migration 147 the note is client-visible, and losing coach-authored content
  * the client was meant to read is not a background error (CONVENTIONS §2 item
- * 12). The write ordering that makes this retryable lives in the service.
+ * 12).
  *
  * WHY A RETRY IS SAFE, and it is not obvious: this throws AFTER the plan row
  * has committed, so the coach re-saves and the whole save re-runs, RPC
  * included. That does not mint a second plan version because a version
  * starting on the same day is REPLACED IN PLACE by the RPC (migration 166), so
  * a same-effective-date re-save collapses into the existing row and keeps its
- * id. The guarantee is scoped to the same effective date; a save on a LATER
+ * id — and the insert that failed wrote nothing, so the retry inserts exactly
+ * once. The guarantee is scoped to the same effective date; a save on a LATER
  * day is a new placement, which is correct behaviour rather than a retry
  * hazard.
  */
@@ -109,7 +72,7 @@ async function recordCoachNoteOrThrow(
   } catch (err) {
     captureApiError(err, { action: "record-plan-save-note", clientId, planId });
     throw new NutritionPlanError(
-      "Plan targets and calendar were saved, but your note was not. Save again to add it.",
+      "Plan targets were saved, but your note was not. Save again to add it.",
       500
     );
   }
@@ -118,14 +81,13 @@ async function recordCoachNoteOrThrow(
 /**
  * Delete the client's nutrition plan: a save of nothing from today. The
  * running version ends yesterday and keeps its past, queued versions are
- * archived, finished ones are untouched, and the upcoming days go from the
- * shared deletion floor — the training clear's shape
- * (`clearNutritionPlansForClient`, migration 167). Past days keep their
- * version, on the calendar and on every block it ran in; today's target stays
- * once the client has logged against it; coach-edited FUTURE days go too,
- * deliberately — a deleted plan leaves no forward prescription. From today
- * nothing covers a day: the hero, the Overview and the client's Program tab
- * all read "no plan" the moment it lands.
+ * archived, finished ones are untouched — the training clear's shape
+ * (`clearNutritionPlansForClient`, migration 167). A day's target is computed
+ * from the version covering it, so ending the versions IS removing the days:
+ * past days keep their version, on the calendar and on every block it ran in,
+ * and from today nothing covers a day — the hero, the Overview and the
+ * client's Program tab all read "no plan" the moment it lands, and the
+ * client's food log is refused there.
  *
  * Throws NutritionPlanError for ownership / not-found failures, and 404 when
  * nothing is running or queued — which also makes a same-day second delete a
@@ -224,8 +186,8 @@ export async function orchestrateNutritionPlanCreation(
   // program's is at placement — the block covering the start, else the furthest
   // live program's end, else the fixed fallback — capped at the next queued
   // version (migration 166). Both handlers hand it to the RPC, which stores it
-  // on the row; the regenerate then reads the window there, so the row and the
-  // days it materialises describe one window by construction.
+  // on the row; every day inside the window is then computed from the row, so
+  // the window and the days it answers for are one thing by construction.
   const effectiveUntil = await resolveNutritionPlacementEnd(clientId, effectiveDate);
 
   // Handle custom macros
@@ -312,12 +274,10 @@ async function handleCustomMacros(
   }
 
   // The RPC capped the predecessor (or replaced a same-day version in place)
-  // and returned the version now governing [effectiveDate, effectiveUntil] —
-  // regenerate that window's events from its prescription; the regenerate
-  // reads the window off the row. Days before effectiveDate belong to earlier
-  // versions and are untouched.
+  // and returned the version now governing [effectiveDate, effectiveUntil].
+  // Its days are computed from the row from here on; days before
+  // effectiveDate belong to earlier versions and are untouched.
   const effectiveDate = body.effectiveFrom ?? clientToday;
-  await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
   await recordCoachNoteOrThrow(
     clientId,
     coachId,
@@ -426,11 +386,9 @@ async function handleCalculatedPlan(
   }
 
   // The RPC capped the predecessor (or replaced a same-day version in place)
-  // and returned the version now governing [effectiveDate, effectiveUntil] —
-  // regenerate that window's events from its prescription; the regenerate
-  // reads the window off the row. Days before effectiveDate belong to earlier
-  // versions and are untouched.
-  await regenerateEventsOrThrow(clientId, newPlanId, effectiveDate);
+  // and returned the version now governing [effectiveDate, effectiveUntil].
+  // Its days are computed from the row from here on; days before
+  // effectiveDate belong to earlier versions and are untouched.
   await recordCoachNoteOrThrow(
     clientId,
     coachId,

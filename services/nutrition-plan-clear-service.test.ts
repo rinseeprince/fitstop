@@ -1,23 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
-vi.mock("./event-deletion-floor", () => ({
-  // The one shared answer to "from which day may events be removed?" — its own
-  // rules are proved in services/event-deletion-floor.test.ts.
-  resolveEventDeletionFloor: vi.fn(),
-}));
 
 import { supabaseAdmin } from "./supabase-admin";
-import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { clearNutritionPlansForClient } from "./nutrition-plan-clear-service";
 
 type ChainResult = { data?: unknown; error?: { message: string } | null };
 
 /**
  * Each supabaseAdmin.from() call gets its own self-returning, THENABLE chain
- * bound to the next queued result, in from()-call order: the versions read, the
- * day removal, the cap of the running version, the archive of the queued ones.
- * Returned for per-statement assertions.
+ * bound to the next queued result, in from()-call order: the versions read,
+ * the cap of the running versions, the archive of the queued ones. Returned
+ * for per-statement assertions.
  */
 function mockFromSequence(results: ChainResult[]) {
   const chains: Array<Record<string, ReturnType<typeof vi.fn>>> = [];
@@ -35,6 +29,9 @@ function mockFromSequence(results: ChainResult[]) {
   return chains;
 }
 
+/** The tables every statement of a call touched, in order. */
+const tablesTouched = () => vi.mocked(supabaseAdmin.from).mock.calls.map((call) => call[0]);
+
 const CLIENT = "client-41";
 const TODAY = "2026-07-02";
 const YESTERDAY = "2026-07-01";
@@ -45,15 +42,12 @@ const startedToday = { id: "v-today", effective_from: TODAY };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default: the client has not touched today, so the floor IS their today.
-  vi.mocked(resolveEventDeletionFloor).mockResolvedValue(TODAY);
 });
 
 describe("clearNutritionPlansForClient — the calendar's own delete (no window)", () => {
-  it("ends the running version at YESTERDAY, archives the queued one, and clears the days from the floor", async () => {
+  it("ends the running version at YESTERDAY, archives the queued one, and issues no day statement", async () => {
     const chains = mockFromSequence([
       { data: [running, queued], error: null },
-      { error: null },
       { error: null },
       { error: null },
     ]);
@@ -66,57 +60,44 @@ describe("clearNutritionPlansForClient — the calendar's own delete (no window)
     // applied to both tracks).
     expect(chains[0].eq).toHaveBeenCalledWith("status", "active");
     expect(chains[0].gte).toHaveBeenCalledWith("effective_until", TODAY);
-    // The days: client-scoped, from the floor, scheduled only, no upper bound.
-    expect(chains[1].delete).toHaveBeenCalled();
-    expect(chains[1].eq).toHaveBeenCalledWith("client_id", CLIENT);
-    expect(chains[1].gte).toHaveBeenCalledWith("date", TODAY);
-    expect(chains[1].eq).toHaveBeenCalledWith("status", "scheduled");
-    expect(chains[1].lte).not.toHaveBeenCalled();
     // The running version's window closes on yesterday: its past days keep
     // their version, on the calendar and on every block it ran in, and from
     // today nothing covers a day.
-    expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ effective_until: YESTERDAY }));
-    expect(chains[2].in).toHaveBeenCalledWith("id", ["v-run"]);
+    expect(chains[1].update).toHaveBeenCalledWith(expect.objectContaining({ effective_until: YESTERDAY }));
+    expect(chains[1].in).toHaveBeenCalledWith("id", ["v-run"]);
     // The queued version never ran a day of its own: archived.
-    expect(chains[3].update).toHaveBeenCalledWith(expect.objectContaining({ status: "archived" }));
-    expect(chains[3].in).toHaveBeenCalledWith("id", ["v-queued"]);
-  });
-
-  it("a client who logged today keeps today's target: the day removal starts tomorrow, the version still ends YESTERDAY", async () => {
-    // Yesterday, not the floor: a version closed AT a logged today kept
-    // covering it and the hero went on saying "Active since" (owner, 2026-09-09).
-    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-07-03");
-    const chains = mockFromSequence([{ data: [running], error: null }, { error: null }, { error: null }]);
-
-    await clearNutritionPlansForClient(CLIENT, TODAY);
-
-    expect(chains[1].gte).toHaveBeenCalledWith("date", "2026-07-03");
-    expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ effective_until: YESTERDAY }));
+    expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ status: "archived" }));
+    expect(chains[2].in).toHaveBeenCalledWith("id", ["v-queued"]);
+    // A day's target is computed from the version covering it, so ending the
+    // versions IS removing the days: every statement is on the versions, none
+    // on a day table, and nothing reads the client's logs to floor a removal.
+    expect(tablesTouched()).toEqual(["nutrition_plans", "nutrition_plans", "nutrition_plans"]);
+    for (const chain of chains) expect(chain.delete).not.toHaveBeenCalled();
   });
 
   it("a version that started TODAY has no yesterday to end on and is archived", async () => {
-    const chains = mockFromSequence([{ data: [startedToday], error: null }, { error: null }, { error: null }]);
+    const chains = mockFromSequence([{ data: [startedToday], error: null }, { error: null }]);
 
     await clearNutritionPlansForClient(CLIENT, TODAY);
 
-    expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ status: "archived" }));
-    expect(chains).toHaveLength(3);
+    expect(chains[1].update).toHaveBeenCalledWith(expect.objectContaining({ status: "archived" }));
+    expect(chains).toHaveLength(2);
   });
 
   it("nothing running or queued: one read, no writes, zero", async () => {
     mockFromSequence([{ data: [], error: null }]);
 
     expect(await clearNutritionPlansForClient(CLIENT, TODAY)).toEqual({ versionsCleared: 0, versionIds: [] });
-    expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(1);
+    expect(tablesTouched()).toEqual(["nutrition_plans"]);
   });
 
-  it("days first: a day-removal failure leaves every version whole, so a retry finds them again", async () => {
-    mockFromSequence([{ data: [running], error: null }, { error: { message: "boom" } }]);
+  it("a failed cap surfaces and the archive never runs, so a retry finds every version whole", async () => {
+    mockFromSequence([{ data: [running, queued], error: null }, { error: { message: "boom" } }]);
 
     await expect(clearNutritionPlansForClient(CLIENT, TODAY)).rejects.toThrow(
-      "Failed to clear the upcoming nutrition days: boom"
+      "Failed to end the running nutrition version: boom"
     );
-    expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(2);
+    expect(tablesTouched()).toHaveLength(2);
   });
 
   it("surfaces a failed versions read rather than reporting nothing to delete", async () => {
@@ -129,48 +110,44 @@ describe("clearNutritionPlansForClient — the calendar's own delete (no window)
 });
 
 describe("clearNutritionPlansForClient — the block delete's 'and its plans' (a window)", () => {
-  const WINDOW = { from: "2026-07-01", to: "2026-07-28" };
+  // The block drawn 10–23 Sep over targets saved 11 Sep–5 Nov, the day the
+  // owner found the residue: the version's START is inside the block, its end
+  // is not.
+  const WINDOW = { from: "2026-09-10", to: "2026-09-23" };
+  const SEP_TODAY = "2026-09-12";
+  const laidInside = { id: "v-inside", effective_from: "2026-09-11" };
 
-  it("takes only the versions LAID INSIDE the block that still have a day ahead, and bounds the day removal at both ends", async () => {
-    const chains = mockFromSequence([{ data: [running], error: null }, { error: null }, { error: null }]);
+  it("the residue scenario: a version whose start is inside the block is ended WHOLE, one whose start is outside is never selected, and no day statement is issued", async () => {
+    const chains = mockFromSequence([{ data: [laidInside], error: null }, { error: null }]);
 
-    await clearNutritionPlansForClient(CLIENT, TODAY, WINDOW);
+    const result = await clearNutritionPlansForClient(CLIENT, SEP_TODAY, WINDOW);
 
-    expect(chains[0].gte).toHaveBeenCalledWith("effective_until", TODAY);
+    expect(result).toEqual({ versionsCleared: 1, versionIds: ["v-inside"] });
+    // The selection is the START, bounded at both ends of the block, on top of
+    // "still has a day ahead" — a version starting outside the block belongs to
+    // no block and is not in the list this acts on.
+    expect(chains[0].gte).toHaveBeenCalledWith("effective_until", SEP_TODAY);
     expect(chains[0].gte).toHaveBeenCalledWith("effective_from", WINDOW.from);
     expect(chains[0].lte).toHaveBeenCalledWith("effective_from", WINDOW.to);
-    expect(chains[1].gte).toHaveBeenCalledWith("date", TODAY);
-    expect(chains[1].lte).toHaveBeenCalledWith("date", WINDOW.to);
-  });
-
-  it("the floor wins over the block's start once the block is under way", async () => {
-    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-07-10");
-    const chains = mockFromSequence([{ data: [running], error: null }, { error: null }, { error: null }]);
-
-    await clearNutritionPlansForClient(CLIENT, TODAY, WINDOW);
-
-    expect(chains[1].gte).toHaveBeenCalledWith("date", "2026-07-10");
-  });
-
-  it("a block entirely behind the floor clears no days but still ends its versions", async () => {
-    vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-08-03");
-    const chains = mockFromSequence([{ data: [running], error: null }, { error: null }]);
-
-    await clearNutritionPlansForClient(CLIENT, TODAY, WINDOW);
-
-    // Read, then straight to the cap: no day removal for a window the floor
-    // has passed.
-    expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(2);
-    expect(chains[1].update).toHaveBeenCalledWith(expect.objectContaining({ effective_until: YESTERDAY }));
+    // The version ends at yesterday — the whole version, not the part of it
+    // inside the block. Its days to 5 Nov were computed from it, so they go
+    // with it; the old day delete stopped at the block's end and left 24 Sep
+    // to 5 Nov standing under "no active nutrition plan".
+    expect(chains[1].update).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_until: "2026-09-11" })
+    );
+    expect(chains[1].in).toHaveBeenCalledWith("id", ["v-inside"]);
+    expect(tablesTouched()).toEqual(["nutrition_plans", "nutrition_plans"]);
+    for (const chain of chains) expect(chain.delete).not.toHaveBeenCalled();
   });
 
   it("does nothing at all for a block that holds no versions", async () => {
     mockFromSequence([{ data: [], error: null }]);
 
-    expect(await clearNutritionPlansForClient(CLIENT, TODAY, WINDOW)).toEqual({
+    expect(await clearNutritionPlansForClient(CLIENT, SEP_TODAY, WINDOW)).toEqual({
       versionsCleared: 0,
       versionIds: [],
     });
-    expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(1);
+    expect(tablesTouched()).toEqual(["nutrition_plans"]);
   });
 });

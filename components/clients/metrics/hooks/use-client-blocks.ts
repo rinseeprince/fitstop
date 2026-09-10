@@ -105,10 +105,10 @@ export function useBlockFacts(clientId: string) {
  *
  * NOT sufficient on its own for the two writes that reach the calendar — the
  * events sync and a delete carrying `clearPlans` rewrite `training_events` and
- * `nutrition_events` too, so those call sites also invoke
- * `useInvalidateTrainingData` and `useInvalidateNutritionCalendar`
- * (CONVENTIONS §7). Only the chain PUT, PATCH and a plain delete are
- * client_phases-only.
+ * the nutrition versions' windows, which the computed nutrition month view is
+ * priced from, so those call sites also invoke `useInvalidateTrainingData`
+ * and `useInvalidateNutritionCalendar` (CONVENTIONS §7). Only the chain PUT,
+ * PATCH and a plain delete are client_phases-only.
  */
 export function useInvalidateClientBlocks() {
   const { mutate } = useSWRConfig();

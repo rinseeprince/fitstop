@@ -33,9 +33,10 @@ import { AUDIT_ACTIONS } from "@/lib/constants";
 // which plans "belong to" a block is how a pointer architecture arrives by the
 // back door, and blocks carry DATES, never an id anything else points at.
 //
-// Clearing the block's own days and leaving the plans standing was an earlier
-// behaviour and did not survive contact: the plans regenerate the days on the
-// next cascade, so the delete undid itself.
+// Clearing the block's own days and leaving the plans standing is not a thing
+// this can do: a nutrition day is computed from the version covering it, so a
+// version left standing still answers for every day in its window, and a
+// program's upcoming sessions travel with the program.
 //
 // Both deletes are SCOPED TO THIS BLOCK's window. A later block keeps its own
 // program and its own targets — the coach asked about one block's date range,
@@ -61,10 +62,9 @@ export async function DELETE(
     const clearPlans =
       new URL(request.url).searchParams.get("clearPlans") === "true";
 
-    // Nutrition FIRST. Its clear archives the block's versions and removes
-    // their days, so the training clear's own cascade then finds no active
-    // version governing those days and rebuilds nothing. The other order works
-    // too but writes days it is about to remove.
+    // Nutrition, then training, then the block. The two clears are
+    // independent now — each ends its own plans and writes nothing the other
+    // reads — so the order is the dialog's, not a dependency.
     let cleared:
       | { nutritionVersionsCleared: number; trainingPlansCleared: number }
       | null = null;

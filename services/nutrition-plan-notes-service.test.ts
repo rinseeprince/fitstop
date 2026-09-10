@@ -34,36 +34,13 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("recordPlanSaveNote — write ordering", () => {
-  it("stamps the event BEFORE inserting the durable note", async () => {
-    const stampChain = makeChain({});
+describe("recordPlanSaveNote — one store", () => {
+  it("inserts the trimmed note, scoped to the client, the version and the date, and writes nothing else", async () => {
     const insertChain = makeChain({});
-    fromMock.mockReturnValueOnce(stampChain).mockReturnValueOnce(insertChain);
-
-    await recordPlanSaveNote(PARAMS);
-
-    // The order is the whole retry-safety story: the idempotent UPDATE must run
-    // first so a failure of the append-only INSERT can be retried without
-    // minting a duplicate note. Reversing these two calls silently breaks that.
-    expect(fromMock).toHaveBeenNthCalledWith(1, "nutrition_events");
-    expect(fromMock).toHaveBeenNthCalledWith(2, "nutrition_plan_notes");
-    expect(
-      (stampChain.update as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
-    ).toBeLessThan(
-      (insertChain.insert as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
-    );
-  });
-
-  it("writes the trimmed note to both stores, scoped to the client and the date", async () => {
-    const stampChain = makeChain({});
-    const insertChain = makeChain({});
-    fromMock.mockReturnValueOnce(stampChain).mockReturnValueOnce(insertChain);
+    fromMock.mockReturnValueOnce(insertChain);
 
     await recordPlanSaveNote({ ...PARAMS, body: `  ${PARAMS.body}  ` });
 
-    expect(stampChain.update).toHaveBeenCalledWith({ coach_note: PARAMS.body });
-    expect(stampChain.eq).toHaveBeenCalledWith("client_id", "client-1");
-    expect(stampChain.eq).toHaveBeenCalledWith("date", "2026-09-14");
     expect(insertChain.insert).toHaveBeenCalledWith({
       client_id: "client-1",
       coach_id: "coach-1",
@@ -71,6 +48,11 @@ describe("recordPlanSaveNote — write ordering", () => {
       effective_on: "2026-09-14",
       body: PARAMS.body,
     });
+    // The calendar reads the note on its date through the computed day; there
+    // is no stamp on a day row to keep in step with this insert.
+    expect(fromMock).toHaveBeenCalledTimes(1);
+    expect(fromMock).toHaveBeenCalledWith("nutrition_plan_notes");
+    expect(insertChain.update).not.toHaveBeenCalled();
   });
 
   it("writes nothing when the note is empty or whitespace", async () => {
@@ -84,9 +66,7 @@ describe("recordPlanSaveNote — write ordering", () => {
     // bucket nulled the previous note, so the second save destroyed the first.
     // There is no unique constraint on (client_id, effective_on) and no upsert
     // here, so each save is its own row.
-    for (let i = 0; i < 2; i++) {
-      fromMock.mockReturnValueOnce(makeChain({})).mockReturnValueOnce(makeChain({}));
-    }
+    fromMock.mockReturnValueOnce(makeChain({})).mockReturnValueOnce(makeChain({}));
 
     await recordPlanSaveNote({ ...PARAMS, body: "first" });
     await recordPlanSaveNote({ ...PARAMS, body: "second" });
@@ -95,32 +75,8 @@ describe("recordPlanSaveNote — write ordering", () => {
     expect(inserts).toHaveLength(2);
   });
 
-  it("a zero-row stamp is NOT an error — the durable note still lands", async () => {
-    // A note dated past the dense 8-week event horizon has no event row to
-    // stamp. The calendar marker is the optional half of the pair; losing the
-    // durable record because of it would be the bug this table exists to fix.
-    const stampChain = makeChain({});
-    const insertChain = makeChain({});
-    fromMock.mockReturnValueOnce(stampChain).mockReturnValueOnce(insertChain);
-
-    await expect(recordPlanSaveNote(PARAMS)).resolves.toBeUndefined();
-    expect(insertChain.insert).toHaveBeenCalled();
-  });
-});
-
-describe("recordPlanSaveNote — neither failure is swallowed", () => {
-  it("throws when the stamp fails, and does not reach the insert", async () => {
-    fromMock.mockReturnValueOnce(makeChain({ error: { message: "stamp boom" } }));
-
-    await expect(recordPlanSaveNote(PARAMS)).rejects.toThrow(/stamp boom/);
-    expect(fromMock).toHaveBeenCalledTimes(1);
-    expect(fromMock).not.toHaveBeenCalledWith("nutrition_plan_notes");
-  });
-
-  it("throws when the insert fails", async () => {
-    fromMock
-      .mockReturnValueOnce(makeChain({}))
-      .mockReturnValueOnce(makeChain({ error: { message: "insert boom" } }));
+  it("throws when the insert fails — the note is client-visible and a lost one must reach the coach", async () => {
+    fromMock.mockReturnValueOnce(makeChain({ error: { message: "insert boom" } }));
 
     await expect(recordPlanSaveNote(PARAMS)).rejects.toThrow(/insert boom/);
   });

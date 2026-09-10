@@ -6,7 +6,6 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { duplicateEvent } from "@/services/training-event-calendar-service";
 import { DateOccupiedError } from "@/services/training-event-occupancy";
-import { cascadeNutritionAfterTrainingChange } from "@/services/nutrition-event-service";
 import { z } from "zod";
 
 const duplicateEventSchema = z.object({
@@ -52,13 +51,6 @@ export async function POST(
 
     const { targetDate } = validation.data;
     const newEventId = await duplicateEvent(eventId, targetDate, clientId, planId);
-
-    // Cascade: a duplicate adds a training day on exactly one date.
-    await cascadeNutritionAfterTrainingChange(
-      clientId,
-      { kind: "dates", dates: [targetDate] },
-      "cascade-nutrition-events-from-duplicate"
-    );
 
     return NextResponse.json({ success: true, eventId: newEventId }, { status: 200 });
   } catch (error) {

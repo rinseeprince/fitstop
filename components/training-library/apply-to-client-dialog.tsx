@@ -199,8 +199,9 @@ export function ApplyToClientDialog({
         description: `Created ${data.sessionsCreated} sessions and ${data.eventsCreated} events`,
       });
 
-      // Placement cascade-rewrites nutrition_events; refresh the nutrition
-      // calendar cache here so every host of this dialog is covered once.
+      // The nutrition month view is computed from the sessions placement just
+      // laid and is SWR-cached; refresh it here so every host of this dialog
+      // is covered once.
       void invalidateNutritionCalendar(clientId);
       // And the Journey block cards, which are DERIVED from the rows this just
       // wrote — the area that owes an invalidator is the one that READS what

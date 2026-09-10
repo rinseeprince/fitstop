@@ -6,13 +6,9 @@
  * built everything up front, which is >1GB of JS objects at this volume) and
  * gives natural progress granularity.
  *
- * The write order below is the dependency order established in Phase 0. Two
- * places in it are not obvious:
+ * The write order below is the dependency order established in Phase 0. One
+ * place in it is not obvious:
  *
- *  - `nutrition_events` MUST follow `training_events`: `is_training_day` and
- *    `calorie_surplus_percentage` are read off the day's training event, and a
- *    dropped surplus silently falls nutrition back to rest-day calories while
- *    the TRAIN badge still renders.
  *  - `training_events` <-> `session_logs` is a cycle (both FKs nullable). Events
  *    go in first with `session_log_id` NULL, then session_logs carrying
  *    `training_event_id`, then a second pass upserts the back-link. That pass is
@@ -153,7 +149,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   const events: Record<string, unknown>[] = [];
   const nPlans: Record<string, unknown>[] = [];
   const nTargets: Record<string, unknown>[] = [];
-  const nEvents: Record<string, unknown>[] = [];
   const dailyLogs: Record<string, unknown>[] = [];
   const wellness: Record<string, unknown>[] = [];
   const nutritionLogs: Record<string, unknown>[] = [];
@@ -629,29 +624,10 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
         eventRowById.set(eventId, eventRow);
       }
 
-      // --- nutrition event (dense prescription, one per client-day) —
-      // stamped with the version whose window covers this date (migration 144)
+      // The version whose window covers this date stamps the day's food log.
+      // The day's TARGET is computed from that version at read time (the
+      // versions and their grids above are the whole prescription).
       const eraPlanId = splitVersions && iso < v2FromIso ? nPlanV1Id : nPlanId;
-      const eraBaseCals = splitVersions && iso < v2FromIso ? Math.max(1200, baseCals - 100) : baseCals;
-      nEvents.push({
-        id: seedUuid("nevent", coachIdx, c, dayIdx),
-        client_id: clientId,
-        nutrition_plan_id: eraPlanId,
-        date: iso,
-        day_of_week: dayOfWeekName(iso),
-        baseline_calories: eraBaseCals,
-        training_burn_calories: isTrainingDay ? logRng.int(250, 550) : 0,
-        protein_g: proteinG,
-        carb_g: isTrainingDay ? Math.round(carbG * 1.2) : carbG,
-        fat_g: fatG,
-        diet_type: dietType,
-        is_training_day: isTrainingDay,
-        calorie_surplus_percentage: surplus,
-        status: "scheduled",
-        is_modified: false,
-        created_at: timestampAt(iso, 6, logRng),
-        updated_at: timestampAt(iso, 6, logRng),
-      });
 
       // --- actuals: only on days the client actually engaged
       const logs = logsOnDay(archetype, dayIdx, tenureDays, iso, breaks, logRng);
@@ -911,9 +887,8 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
     void checkInsWritten;
   }
 
-  // Dependency order. nutrition_events after training_events; the event
-  // back-link after session_logs; check_ins dead last because of its two
-  // AFTER INSERT triggers.
+  // Dependency order. The event back-link after session_logs; check_ins dead
+  // last because of its two AFTER INSERT triggers.
   push("clients", clients);
   push("client_invitations", invitations);
   push("client_goals", goals);
@@ -924,7 +899,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   push("training_events", events);
   push("nutrition_plans", nPlans);
   push("nutrition_plan_daily_targets", nTargets);
-  push("nutrition_events", nEvents);
   push("daily_logs", dailyLogs);
   push("wellness_logs", wellness);
   push("nutrition_logs", nutritionLogs);

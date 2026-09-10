@@ -7,16 +7,12 @@ vi.mock("./event-deletion-floor", () => ({
   resolveEventDeletionFloor: vi.fn(),
 }));
 vi.mock("./training-event-service", () => ({
-  cancelFutureEventsForPlans: vi.fn().mockResolvedValue(null),
-}));
-vi.mock("./nutrition-event-service", () => ({
-  cascadeNutritionAfterTrainingChange: vi.fn().mockResolvedValue(undefined),
+  cancelFutureEventsForPlans: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { cancelFutureEventsForPlans } from "./training-event-service";
-import { cascadeNutritionAfterTrainingChange } from "./nutrition-event-service";
 import { clearTrainingPlansForClient, retireTrainingPlans } from "./training-plan-clear-service";
 
 type ChainResult = { data?: unknown; error?: { message: string } | null };
@@ -54,7 +50,7 @@ const finished = { id: "p-done", effective_from: "2026-03-01", effective_until: 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(resolveEventDeletionFloor).mockResolvedValue(TODAY);
-  vi.mocked(cancelFutureEventsForPlans).mockResolvedValue(null);
+  vi.mocked(cancelFutureEventsForPlans).mockResolvedValue(undefined);
 });
 
 describe("retireTrainingPlans — a delete is a save of nothing from today", () => {
@@ -101,13 +97,12 @@ describe("retireTrainingPlans — a delete is a save of nothing from today", () 
 });
 
 describe("clearTrainingPlansForClient — the calendar's own delete (no window)", () => {
-  it("reads only programs with a day still ahead, retires them, removes their days from the floor and cascades once", async () => {
+  it("reads only programs with a day still ahead, retires them and removes their days from the floor", async () => {
     const chains = mockFromSequence([
       { data: [running, queued], error: null },
       { error: null },
       { error: null },
     ]);
-    vi.mocked(cancelFutureEventsForPlans).mockResolvedValue("2026-09-13");
 
     const result = await clearTrainingPlansForClient(CLIENT, TODAY);
 
@@ -122,12 +117,9 @@ describe("clearTrainingPlansForClient — the calendar's own delete (no window)"
     expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ status: "archived" }));
     // The days: every retired program's forward ray from the floor, one call.
     expect(cancelFutureEventsForPlans).toHaveBeenCalledWith(["p-run", "p-queued"], TODAY);
-    // The cascade: from today, widened to the last day a session was removed on.
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledWith(
-      CLIENT,
-      { kind: "from", from: TODAY, to: "2026-09-13" },
-      "cascade-nutrition-events-from-clear-all-training"
-    );
+    // Nothing else: a nutrition day is computed from the session on it, so the
+    // removed sessions re-price their days with no statement here.
+    expect(chains).toHaveLength(3);
   });
 
   it("a client who logged today keeps today's session: the day removal starts tomorrow, the program still ends yesterday", async () => {
@@ -140,13 +132,12 @@ describe("clearTrainingPlansForClient — the calendar's own delete (no window)"
     expect(cancelFutureEventsForPlans).toHaveBeenCalledWith(["p-run"], "2026-07-03");
   });
 
-  it("nothing running or queued: one read, no retire statements, zero, and the cascade still runs", async () => {
+  it("nothing running or queued: one read, no retire statements, zero", async () => {
     mockFromSequence([{ data: [], error: null }]);
 
     expect(await clearTrainingPlansForClient(CLIENT, TODAY)).toEqual({ plansCleared: 0 });
     expect(vi.mocked(supabaseAdmin.from).mock.calls).toHaveLength(1);
     expect(cancelFutureEventsForPlans).toHaveBeenCalledWith([], TODAY);
-    expect(cascadeNutritionAfterTrainingChange).toHaveBeenCalledTimes(1);
   });
 });
 
