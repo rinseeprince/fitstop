@@ -154,7 +154,8 @@ export function NutritionEditTargetsDialog({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[rgba(13,148,136,0.08)] px-6 py-3">
+        {/* The pin box's wash instead of a hairline: a footer band, not a rule. */}
+        <div className="flex shrink-0 items-center justify-end gap-2 bg-[rgba(13,148,136,0.05)] px-6 py-3">
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
