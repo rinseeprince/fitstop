@@ -70,6 +70,8 @@ describe("NutritionEditTargetsDialog — one edit, the balancer", () => {
     expect(screen.queryByText("Adjust by")).toBeNull();
     expect(screen.queryByText("Set targets")).toBeNull();
     expect(screen.queryByText(/Hold protein steady/)).toBeNull();
+    // The note sits beside the balancer, one field for the whole selection.
+    expect(screen.getByLabelText(/^Note/)).toHaveAttribute("placeholder", "Applies one note to every selected day");
     // The generator's hero: the built-in close is off and the dark band
     // carries exactly one labelled close of its own.
     expect(screen.getAllByRole("button", { name: "Close" })).toHaveLength(1);

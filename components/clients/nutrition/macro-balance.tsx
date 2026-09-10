@@ -71,18 +71,15 @@ export function MacroBalance({ value, onChange }: MacroBalanceProps) {
         <label htmlFor={caloriesId} className={LABEL_CLASS}>
           Calories
         </label>
-        <div className="flex items-center gap-2">
-          <Input
-            id={caloriesId}
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={calories ?? ""}
-            onChange={(e) => onChange({ ...value, calories: parseWhole(e.target.value) })}
-            className={cn(MONO_INPUT_CLASS, "h-9 text-[15px] font-semibold")}
-          />
-          <span className="text-[11px] text-[#93b0b4]">kcal</span>
-        </div>
+        <Input
+          id={caloriesId}
+          type="number"
+          inputMode="numeric"
+          min={0}
+          value={calories ?? ""}
+          onChange={(e) => onChange({ ...value, calories: parseWhole(e.target.value) })}
+          className={cn(MONO_INPUT_CLASS, "h-9 text-[15px] font-semibold")}
+        />
       </div>
 
       <div className="space-y-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3.5">

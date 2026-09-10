@@ -39,10 +39,11 @@ type NutritionEditTargetsDialogProps = {
   onApply: (payload: RangeEditPayload) => void;
 };
 
-/** "Edit targets" modal — centred and sized to its content, carrying the plan
- * generator's hero (the dark band, the teal icon square, the title scale, its
- * own close) over the macro balancer: one calorie target and split, the same
- * four numbers for every selected day. */
+/** "Edit targets" modal — centred, landscape and sized to its content,
+ * carrying the plan generator's hero (the dark band, the teal icon square,
+ * the title scale, its own close). The macro balancer sits left — one calorie
+ * target and split, the same four numbers for every selected day — and the
+ * note sits beside it on the right, stretched to the balancer's height. */
 export function NutritionEditTargetsDialog({
   open,
   onOpenChange,
@@ -80,10 +81,11 @@ export function NutritionEditTargetsDialog({
     >
       {/* Content-sized: the card is as tall as the form, and only a viewport
           shorter than it scrolls the body inside. p-0 + overflow-hidden so the
-          hero takes the card's rounded top edge. */}
+          hero takes the card's rounded top edge. Landscape: wide enough for
+          the balancer beside the note. */}
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
+        className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
       >
         {/* The generator's hero: the dark band, the teal icon square, the title
             scale and its own close, since the built-in one is off. */}
@@ -131,41 +133,43 @@ export function NutritionEditTargetsDialog({
             </p>
           </div>
 
-          <NutritionSetTargetsTab form={form} />
+          {/* The balancer left, the note right at the same height: the grid
+              stretches both columns to the taller one, and the textarea fills
+              its column under the label. */}
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-[minmax(0,1fr)_280px]">
+            <NutritionSetTargetsTab form={form} />
+            <div className="flex min-h-0 flex-col gap-1.5">
+              <label htmlFor="et-note" className={LABEL_CLASS}>
+                Note <span className="normal-case tracking-normal">· Optional · shown to the client</span>
+              </label>
+              <Textarea
+                id="et-note"
+                maxLength={500}
+                value={form.note}
+                onChange={(e) => form.setNote(e.target.value)}
+                placeholder={
+                  form.singleDay
+                    ? "e.g. Deload week — go easy"
+                    : "Applies one note to every selected day"
+                }
+                className={cn(FOCUS_RING, "min-h-0 flex-1 resize-none text-sm")}
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="flex shrink-0 flex-col gap-3 border-t border-[rgba(13,148,136,0.08)] px-6 py-3">
-          <div className="space-y-1.5">
-            <label htmlFor="et-note" className={LABEL_CLASS}>
-              Note <span className="normal-case tracking-normal">· Optional · shown to the client</span>
-            </label>
-            <Textarea
-              id="et-note"
-              rows={2}
-              maxLength={500}
-              value={form.note}
-              onChange={(e) => form.setNote(e.target.value)}
-              placeholder={
-                form.singleDay
-                  ? "e.g. Deload week — go easy"
-                  : "Applies one note to every selected day"
-              }
-              className={cn(FOCUS_RING, "resize-none text-sm")}
-            />
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
-              onClick={handleApply}
-              disabled={!form.valid || isSaving || dayCount === 0}
-            >
-              {isSaving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              Apply to {dayCount} day{dayCount === 1 ? "" : "s"}
-            </Button>
-          </div>
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[rgba(13,148,136,0.08)] px-6 py-3">
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button
+            className="bg-[#0d9488] text-white hover:bg-[#0b7f75]"
+            onClick={handleApply}
+            disabled={!form.valid || isSaving || dayCount === 0}
+          >
+            {isSaving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+            Apply to {dayCount} day{dayCount === 1 ? "" : "s"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -71,6 +71,8 @@ describe("MacroBalance — what it shows", () => {
     render(<Harness initial={{ calories: 2400, split: START }} />);
 
     expect(caloriesInput().value).toBe("2400");
+    // The heading says what the field is; no unit trails it (owner, 2026-09-10).
+    expect(screen.queryByText("kcal")).toBeNull();
     // 2,400 at 45 / 25 / 30: protein 180 g; fat 600 kcal = 66.7 → 67 g; carbs
     // take the remainder, 1,077 kcal → 269 g.
     expect(gramsInput("Protein").value).toBe("180");
