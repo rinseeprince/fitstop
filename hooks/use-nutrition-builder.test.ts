@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useNutritionBuilder } from "./use-nutrition-builder";
 import { generateNutritionPlan } from "@/services/nutrition-service";
+import { splitToGrams } from "@/lib/nutrition/macro-balance";
 import type { NutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import type { Client } from "@/types/check-in";
 
@@ -246,5 +247,64 @@ describe("useNutritionBuilder — the start floor", () => {
     const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
     act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
     expect(result.current.effectiveFrom).toBe(THREE_WEEKS_OUT);
+  });
+});
+
+// N4: the manual entry is the macro balancer. Generate posts the coach's typed
+// calorie target with the grams the split derives from it — the custom-macro
+// override the server already stores. There is no re-totalled figure: the two
+// are within one carb rounding of each other by construction.
+describe("useNutritionBuilder — the manual save carries the balancer's numbers", () => {
+  const SPLIT = { carbs: 45, fat: 25, protein: 30 };
+
+  beforeEach(() => {
+    planState.nutritionData = {
+      calcInputs: CALC_INPUTS,
+      hasPlan: false,
+      includeActivityBurn: true,
+      scheduledFor: null,
+    };
+    planState.refetchNutrition.mockReset();
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("posts the typed calories and the derived grams as the custom-macro override", async () => {
+    const fetchSpy = mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const auto = result.current.autoTargets;
+    if (!auto) throw new Error("expected a preview");
+    act(() => result.current.enableManualTargets(auto));
+    act(() => result.current.setManualBalance({ calories: 2400, split: SPLIT }));
+
+    await act(async () => {
+      await result.current.generatePlan(true);
+    });
+
+    const grams = splitToGrams(2400, SPLIT);
+    expect(postedBody(fetchSpy)).toMatchObject({
+      customMacrosEnabled: true,
+      customCalories: 2400,
+      customProteinG: grams.proteinG,
+      customCarbG: grams.carbG,
+      customFatG: grams.fatG,
+    });
+  });
+
+  it("refuses to post an override with no calorie target", async () => {
+    const fetchSpy = mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    const auto = result.current.autoTargets;
+    if (!auto) throw new Error("expected a preview");
+    act(() => result.current.enableManualTargets(auto));
+    act(() => result.current.setManualBalance({ calories: null, split: SPLIT }));
+
+    let saved: boolean | undefined;
+    await act(async () => {
+      saved = await result.current.generatePlan(true);
+    });
+
+    expect(saved).toBe(false);
+    expect(fetchSpy.mock.calls.find(([, init]) => init?.method === "POST")).toBeUndefined();
   });
 });

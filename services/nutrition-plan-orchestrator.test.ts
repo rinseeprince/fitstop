@@ -56,6 +56,7 @@ import {
   orchestrateNutritionPlanDeletion,
 } from "./nutrition-plan-orchestrator";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
+import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 
 const clientId = "client-1";
 const coachId = "coach-1";
@@ -394,5 +395,60 @@ describe("orchestrateNutritionPlanCreation — the deficit runs from the day the
         effectiveFrom: THREE_WEEKS_OUT,
       })
     );
+  });
+});
+
+// =============================================================================
+// The custom-macros belt. Both coach entries are the macro balancer, whose
+// grams derive from the calories, so a save from the app is inside one carb
+// rounding by construction; this belt is against a raw API caller, and it is
+// deliberately tight — a stated target that contradicts its own macro bars
+// must not reach the client.
+// =============================================================================
+describe("orchestrateNutritionPlanCreation — the custom-macros belt", () => {
+  // customBody's macros total 1940 kcal (150*4 + 200*4 + 60*9).
+  const withCalories = (customCalories: number): GenerateNutritionPlanRequest =>
+    ({ ...customBody, customCalories }) as GenerateNutritionPlanRequest;
+
+  it("refuses a stated target 40 kcal from its macros with a 400 naming the tolerance, and saves nothing", async () => {
+    await expect(
+      orchestrateNutritionPlanCreation(clientId, coachId, withCalories(1980), {})
+    ).rejects.toMatchObject({
+      name: "NutritionPlanError",
+      statusCode: 400,
+      message: expect.stringContaining(`±${CUSTOM_MACRO_CALORIE_TOLERANCE} calories`),
+    });
+    await expect(
+      orchestrateNutritionPlanCreation(clientId, coachId, withCalories(1980), {})
+    ).rejects.toThrow("calculated: 1940 cal");
+    expect(createNutritionPlan).not.toHaveBeenCalled();
+  });
+
+  it("the tolerance is 10 kcal: a gap on the belt saves, one past it does not", async () => {
+    expect(CUSTOM_MACRO_CALORIE_TOLERANCE).toBe(10);
+
+    const onTheBelt = await orchestrateNutritionPlanCreation(clientId, coachId, withCalories(1950), {});
+    expect(onTheBelt.success).toBe(true);
+    expect(createNutritionPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customCalories: 1950, baselineCalories: 1950 })
+    );
+
+    await expect(
+      orchestrateNutritionPlanCreation(clientId, coachId, withCalories(1951), {})
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("a balancer save — the typed target within one carb rounding of its grams — passes", async () => {
+    // 2,400 kcal at 45 / 25 / 30 derives 180 / 269 / 67 g = 2,399 kcal.
+    const body = {
+      ...customBody,
+      customCalories: 2400,
+      customProteinG: 180,
+      customCarbG: 269,
+      customFatG: 67,
+    } as GenerateNutritionPlanRequest;
+    const result = await orchestrateNutritionPlanCreation(clientId, coachId, body, {});
+    expect(result.success).toBe(true);
+    expect(result.plan).toMatchObject({ calorieTarget: 2400, proteinTargetG: 180, carbTargetG: 269, fatTargetG: 67 });
   });
 });

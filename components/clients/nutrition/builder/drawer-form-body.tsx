@@ -110,16 +110,13 @@ export function DrawerFormBody() {
         <Divider />
 
         <NutritionTargetsBlock
-          draft={builder.displayDraft}
           autoPlan={builder.autoPlan}
           autoTargets={builder.autoTargets}
           manualEnabled={builder.manualEnabled}
           onEnableManual={builder.enableManualTargets}
           onRevertToAuto={builder.revertToAuto}
-          onFieldChange={builder.setManualField}
-          macroTotal={builder.manualMacroTotal}
-          caloriesMismatch={builder.manualCaloriesMismatch}
-          onMatchMacros={builder.matchMacrosToCalories}
+          balance={builder.manualBalance}
+          onBalanceChange={builder.setManualBalance}
           missing={
             builder.calcInputs?.status === "incomplete" ? builder.calcInputs.missing : []
           }

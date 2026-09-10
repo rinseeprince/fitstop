@@ -192,7 +192,7 @@ async function handleCustomMacros(
 
   if (difference > CUSTOM_MACRO_CALORIE_TOLERANCE) {
     throw new NutritionPlanError(
-      `Custom calories must be within ±50 calories of macro totals (calculated: ${calculatedCalories} cal)`,
+      `Custom calories must be within ±${CUSTOM_MACRO_CALORIE_TOLERANCE} calories of macro totals (calculated: ${calculatedCalories} cal)`,
       400
     );
   }

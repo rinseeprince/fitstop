@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { NutritionTargetsBlock } from "./nutrition-targets-block";
+import { gramsToSplit } from "@/lib/nutrition/macro-balance";
 import type { NutritionPlan } from "@/services/nutrition-service";
 
 // Required, not optional: units-context imports auth-context, which constructs
@@ -9,6 +10,17 @@ const units = vi.hoisted(() => ({ preference: "metric" as "metric" | "imperial" 
 vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: units.preference, isLoading: false, error: null }),
 }));
+
+// jsdom doesn't implement the APIs the balancer's Radix Slider needs to render.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+(globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver =
+  ResizeObserverStub;
+
+const AUTO = { calories: 2200, proteinG: 180, carbG: 200, fatG: 70 };
 
 const autoPlan = (
   weeklyWeightChangeKg: number,
@@ -28,20 +40,17 @@ const autoPlan = (
 
 function renderBlock(
   weeklyWeightChangeKg: number,
-  opts: { requiredDailyDeficit?: number; hasGoalTarget?: boolean } = {},
+  opts: { requiredDailyDeficit?: number; hasGoalTarget?: boolean; manualEnabled?: boolean } = {},
 ) {
   return render(
     <NutritionTargetsBlock
-      draft={{ calories: 2200, proteinG: 180, carbG: 200, fatG: 70 }}
       autoPlan={autoPlan(weeklyWeightChangeKg, opts.requiredDailyDeficit)}
-      autoTargets={{ calories: 2200, proteinG: 180, carbG: 200, fatG: 70 }}
-      manualEnabled={false}
+      autoTargets={AUTO}
+      manualEnabled={opts.manualEnabled ?? false}
       onEnableManual={vi.fn()}
       onRevertToAuto={vi.fn()}
-      onFieldChange={vi.fn()}
-      macroTotal={2200}
-      caloriesMismatch={false}
-      onMatchMacros={vi.fn()}
+      balance={{ calories: AUTO.calories, split: gramsToSplit(AUTO) }}
+      onBalanceChange={vi.fn()}
       missing={[]}
       hasGoalTarget={opts.hasGoalTarget ?? true}
     />,
@@ -111,5 +120,40 @@ describe("NutritionTargetsBlock — the maintenance state is explained, not sile
     renderBlock(-0.5, { requiredDailyDeficit: 400 });
 
     expect(screen.queryByText(/maintenance/i)).toBeNull();
+  });
+});
+
+// N4: "Edit manually" IS the macro balancer. The grams derive from the split,
+// so there is no macro total to reconcile and no button to reconcile it with.
+describe("NutritionTargetsBlock — the manual entry is the balancer", () => {
+  beforeEach(() => {
+    cleanup();
+    units.preference = "metric";
+  });
+
+  it("auto mode shows the calculated four numbers read-only, and no slider", () => {
+    const { container } = renderBlock(-0.5);
+    const fields = Array.from(container.querySelectorAll<HTMLInputElement>("input[readonly]"));
+    expect(fields.map((f) => f.value)).toEqual(["2200", "180", "200", "70"]);
+    expect(screen.queryByRole("slider")).toBeNull();
+  });
+
+  it("manual mode mounts the balancer over the coach's target and split, with the revert line", () => {
+    renderBlock(-0.5, { manualEnabled: true });
+
+    expect(screen.getByRole("slider", { name: "Carbs and fat boundary" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Fat and protein boundary" })).toBeInTheDocument();
+    expect(screen.getByLabelText<HTMLInputElement>("Calories").value).toBe("2200");
+    expect(screen.getByRole("button", { name: /Revert to auto/ })).toBeInTheDocument();
+    expect(screen.getByText(/Auto suggests/)).toBeInTheDocument();
+  });
+
+  it("has no match button and no macro total to reconcile, in either mode", () => {
+    renderBlock(-0.5, { manualEnabled: true });
+    expect(screen.queryByText(/Match macros/i)).toBeNull();
+    expect(screen.queryByText(/Macros total/i)).toBeNull();
+    cleanup();
+    renderBlock(-0.5);
+    expect(screen.queryByText(/Match macros/i)).toBeNull();
   });
 });

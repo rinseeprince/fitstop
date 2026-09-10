@@ -37,7 +37,7 @@ Apply these by default on every surface — they are the difference between "rig
 - [ ] **Uppercase micro-labels** get letter-spacing (`tracking-[0.06em]`–`0.14em`) and a muted colour.
 - [ ] **Page background is `#f4f7f6`** (cool-green tint), dark surfaces are `#0f2027` (deep teal-black) — never neutral slate.
 - [ ] **Every pane/period/filter switcher is `<SegmentedControl>`.** One component, one size, one weight — `12.5px` `font-medium` in BOTH states, the active segment carried by the white pill + shadow + darker ink and never by a heavier font. **Never hand-roll the track**; `npm run check:labels` (clause 3) fails on the markup. See "Segmented control".
-- [ ] **Never correct a `ui/` primitive at the call site** — `Input`/`Textarea`/`Label`/`Select`/`Switch`/`Dialog`/`Table` are Teal-Summit; a radius, border, ink or focus ring pasted onto one is a bug report about the primitive. `check:labels` clause 4 enforces the focus half.
+- [ ] **Never correct a `ui/` primitive at the call site** — `Input`/`Textarea`/`Label`/`Select`/`Switch`/`Slider`/`Dialog`/`Table` are Teal-Summit; a radius, border, ink or focus ring pasted onto one is a bug report about the primitive. `check:labels` clause 4 enforces the focus half.
 - [ ] **Search = `<LibrarySearchInput>`, toolbar sort = `<LibrarySortSelect>`.** Never hand-roll either.
 - [ ] **Reuse the shared components/tokens** (see index) before writing new class strings.
 - [ ] **Primary CTA colour pair everywhere:** `bg-[#0d9488] text-white hover:bg-[#0b7f75]`; Cancel/dismiss = `variant="ghost"`.
@@ -243,7 +243,7 @@ Import it as `FOCUS_RING` (see system tokens) rather than retyping.
 
 ### The `ui/` primitives are Teal-Summit — HARD RULE
 
-**Never correct a shared primitive at the call site.** `Input`, `Textarea`, `Label`, `Select` (trigger *and* panel), `Switch`, `Dialog` and `Table` already carry the radius, the teal border, the ink, the placeholder tone and the focus ring. A `rounded-xs`, a `border-[rgba(13,148,136,0.08)]`, a `text-[13px]` or a `focus:` ring pasted onto one of them is not a style — it is a bug report about that primitive, and the fix belongs in `components/ui/**`.
+**Never correct a shared primitive at the call site.** `Input`, `Textarea`, `Label`, `Select` (trigger *and* panel), `Switch`, `Slider`, `Dialog` and `Table` already carry the radius, the teal border, the ink, the placeholder tone and the focus ring. A `rounded-xs`, a `border-[rgba(13,148,136,0.08)]`, a `text-[13px]` or a `focus:` ring pasted onto one of them is not a style — it is a bug report about that primitive, and the fix belongs in `components/ui/**`.
 
 A call site may only add what is genuinely local: a **size tier** (`h-8`/`h-9`), a **width**, `bg-white` where the field sits on a tint, `resize-none`, or `font-medium`.
 
@@ -403,6 +403,7 @@ To turn a mono label to normal case (e.g. a meta line), append `normal-case trac
 | Toolbar sort select | `@/components/programs/shared/library-sort-select` → `<LibrarySortSelect options value onChange />` |
 | Relative "updated" formatting | `@/components/programs/shared/format-relative` → `formatRelativeUpdated()` |
 | Per-item on/off toggle | `@/components/ui/switch` → `<Switch checked onCheckedChange aria-label />` — see "Switch" |
+| Slider, single or two-thumb | `@/components/ui/slider` → `<Slider thumbLabels trackContent />` — the `h-1.5` rounded track in the `0.08` tint with a teal range, a 16px white thumb on a teal hairline with `FOCUS_RING`. `thumbLabels` names each thumb (a two-thumb pair otherwise reads "Minimum" / "Maximum", wrong for boundaries); `trackContent` replaces the range fill with a track that is itself the information. The macro balancer (`components/clients/nutrition/macro-balance.tsx`) is the reference |
 | Dialog / Sheet / Popover / Button / Badge / Input / Select / Table | `@/components/ui/*` (already Teal-Summit-styled — see Overlays) |
 
 ---

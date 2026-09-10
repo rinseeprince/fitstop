@@ -4,7 +4,6 @@ import { getDeltaBaseCalories } from "@/utils/nutrition-event-helpers";
 import {
   resolveSelectedEvents,
   computeAbsoluteSeed,
-  classifyAbsoluteMacros,
   applyCalorieDelta,
   averageDisplayedCalories,
 } from "@/utils/nutrition-range-edit-model";
@@ -53,19 +52,20 @@ describe("nutrition-range-edit-model", () => {
     });
   });
 
+  // The balancer opens on the FIRST selected day's numbers and applies one
+  // target to every selected day (owner decision 2026-09-10).
   describe("computeAbsoluteSeed", () => {
-    it("uniform values seed the fields; nothing is mixed", () => {
+    it("seeds the calories and grams from the first selected day; equal days expose no range", () => {
       const map = mapOf([ev("2026-06-01"), ev("2026-06-02")]);
       const seed = computeAbsoluteSeed(
         resolveSelectedEvents(["2026-06-01", "2026-06-02"], map, true, false)
       );
-      expect(seed.calories).toEqual({ value: "2000", mixed: false });
-      expect(seed.protein).toEqual({ value: "150", mixed: false });
-      expect(seed.dietType).toBe("balanced");
+      expect(seed.calories).toBe(2000);
+      expect(seed.grams).toEqual({ proteinG: 150, carbG: 200, fatG: 60 });
       expect(seed.calorieRange).toBeNull();
     });
 
-    it("mixed calories blank the field and expose the displayed min–max range", () => {
+    it("days that differ still seed from the first, and expose the displayed min–max range", () => {
       // Surplus stacks into the displayed value: 2000 vs round(2000 * 1.1) = 2200.
       const map = mapOf([
         ev("2026-06-01"),
@@ -74,28 +74,24 @@ describe("nutrition-range-edit-model", () => {
       const seed = computeAbsoluteSeed(
         resolveSelectedEvents(["2026-06-01", "2026-06-02"], map, true, false)
       );
-      expect(seed.calories.mixed).toBe(true);
-      expect(seed.calories.value).toBe("");
+      expect(seed.calories).toBe(2000);
       expect(seed.calorieRange).toEqual({ min: 2000, max: 2200 });
     });
 
-    it("mixed diet types disable the uniform dietType", () => {
-      const map = mapOf([ev("2026-06-01"), ev("2026-06-02", { dietType: "keto" })]);
+    it("the first day is the first by DATE, whatever order the selection was made in", () => {
+      const map = mapOf([
+        ev("2026-06-01", { baselineCalories: 1800 }),
+        ev("2026-06-02", { baselineCalories: 2200 }),
+      ]);
       const seed = computeAbsoluteSeed(
-        resolveSelectedEvents(["2026-06-01", "2026-06-02"], map, true, false)
+        resolveSelectedEvents(["2026-06-02", "2026-06-01"], map, true, false)
       );
-      expect(seed.dietType).toBeNull();
+      expect(seed.calories).toBe(1800);
+      expect(seed.calorieRange).toEqual({ min: 1800, max: 2200 });
     });
-  });
 
-  describe("classifyAbsoluteMacros", () => {
-    it("maps blank/filled combinations to the server's materialize semantics", () => {
-      expect(classifyAbsoluteMacros("150", "200", "60")).toBe("verbatim");
-      expect(classifyAbsoluteMacros("150", "", "")).toBe("protein-only");
-      expect(classifyAbsoluteMacros("", "", "")).toBe("auto");
-      // A lone carbs or fat value would be silently ignored server-side.
-      expect(classifyAbsoluteMacros("", "200", "")).toBe("invalid");
-      expect(classifyAbsoluteMacros("150", "", "60")).toBe("invalid");
+    it("nothing selected seeds nothing", () => {
+      expect(computeAbsoluteSeed([])).toEqual({ calories: null, grams: null, calorieRange: null });
     });
   });
 

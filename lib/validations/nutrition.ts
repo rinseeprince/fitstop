@@ -69,7 +69,7 @@ export const nutritionPlanSchema = z.object({
     return true;
   },
   {
-    message: "Custom calories must be within ±50 calories of macro totals (Protein×4 + Carbs×4 + Fat×9)",
+    message: `Custom calories must be within ±${CUSTOM_MACRO_CALORIE_TOLERANCE} calories of macro totals (Protein×4 + Carbs×4 + Fat×9)`,
     path: ["customCalories"],
   }
 );

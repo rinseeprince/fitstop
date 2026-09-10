@@ -51,17 +51,26 @@ export type DailyNutritionTargets = {
 };
 
 /**
+ * The carb:fat share of the calories left after protein, per diet type. The
+ * ONE table: `calculateDailyMacros` splits the calculated plan by it, and the
+ * macro balancer's presets (`lib/nutrition/macro-balance.ts`) read the same
+ * ratios, so a preset in the balancer is exactly the diet type in the
+ * calculator. `custom` is no ratio of its own — the balanced split stands in
+ * for the calculator; the balancer reads it as "no preset".
+ */
+export const DIET_TYPE_SPLITS: Record<DietType, { carb: number; fat: number }> = {
+  balanced: { carb: 0.5, fat: 0.5 },
+  high_carb: { carb: 0.65, fat: 0.35 },
+  low_carb: { carb: 0.25, fat: 0.75 },
+  keto: { carb: 0.1, fat: 0.9 },
+  custom: { carb: 0.5, fat: 0.5 },
+};
+
+/**
  * Get base carb/fat split ratios for a diet type
  */
 function getDietTypeSplit(dietType: DietType): { carb: number; fat: number } {
-  const dietSplits: Record<DietType, { carb: number; fat: number }> = {
-    balanced: { carb: 0.5, fat: 0.5 },
-    high_carb: { carb: 0.65, fat: 0.35 },
-    low_carb: { carb: 0.25, fat: 0.75 },
-    keto: { carb: 0.1, fat: 0.9 },
-    custom: { carb: 0.5, fat: 0.5 },
-  };
-  return dietSplits[dietType] || dietSplits.balanced;
+  return DIET_TYPE_SPLITS[dietType] || DIET_TYPE_SPLITS.balanced;
 }
 
 /**

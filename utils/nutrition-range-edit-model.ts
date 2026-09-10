@@ -1,26 +1,25 @@
-import type { NutritionEvent, DietType } from "@/types/check-in";
+import type { NutritionEvent } from "@/types/check-in";
 import type { DailyNutritionTargets } from "@/utils/nutrition-helpers";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
+import type { MacroGrams } from "@/lib/nutrition/macro-balance";
 
 /**
- * Pure model for the Edit-targets sheet (no React). Selection resolution,
- * uniform-vs-mixed seeding, the absolute-payload validity matrix, and the
- * client-side delta math live here so they are unit-testable and shared
- * between the form hook and the preview.
+ * Pure model for the Edit-targets sheet (no React). Selection resolution, the
+ * absolute seed, and the client-side delta math live here so they are
+ * unit-testable and shared between the form hook and the preview.
  */
 
-/** The materialized-edit payload sent to PATCH …/nutrition/events/range.
+/** The edit payload sent to PATCH …/nutrition/events/range.
+ * Absolute always carries all four numbers — the Set targets tab is the macro
+ * balancer, whose grams derive from its calories — and every selected day
+ * gets the same four (owner decision 2026-09-10).
  * `note`: omitted = preserve existing notes; "" = clear; string = set (D-B).
  * `holdProtein`: delta only; omitted/true = server holds protein and
  * rebalances carbs/fat (legacy path); false = all three macros scale onto the
  * new total preserving the day's stored split. */
 export type RangeEditPayload =
-  | { mode: "absolute"; calories: number; proteinG?: number; carbG?: number; fatG?: number; note?: string }
+  | { mode: "absolute"; calories: number; proteinG: number; carbG: number; fatG: number; note?: string }
   | { mode: "delta"; percent?: number; calorieDelta?: number; holdProtein?: boolean; note?: string };
-
-// Macros must sum to within this many kcal of the calorie target before an
-// exact-macro edit applies.
-export const CALORIE_MATCH_TOLERANCE = 15;
 
 export function toInt(value: string): number | null {
   if (value.trim() === "") return null;
@@ -60,61 +59,27 @@ export function resolveSelectedEvents(
   return out;
 }
 
-type AbsoluteSeedField = { value: string; mixed: boolean };
 type AbsoluteSeed = {
-  calories: AbsoluteSeedField;
-  protein: AbsoluteSeedField;
-  carbs: AbsoluteSeedField;
-  fat: AbsoluteSeedField;
-  /** Uniform diet type across the selection, or null when mixed/empty —
-   * the carb/fat auto-rebalance on calorie typing needs a single diet. */
-  dietType: DietType | null;
-  /** Min–max of displayed calories; present only when calories are mixed. */
+  /** The FIRST selected day's displayed calories — what the balancer opens on.
+   * Null when nothing is selected or the day shows no calories. */
+  calories: number | null;
+  /** That day's grams, the split the balancer opens on. */
+  grams: MacroGrams | null;
+  /** Min–max of the selection's displayed calories; present only when the
+   * selected days differ, so the sheet can say what the one target replaces. */
   calorieRange: { min: number; max: number } | null;
 };
 
-function seedField(values: number[]): AbsoluteSeedField {
-  if (values.length === 0) return { value: "", mixed: false };
-  const first = values[0];
-  const uniform = values.every((v) => v === first);
-  if (!uniform) return { value: "", mixed: true };
-  return { value: first > 0 ? String(first) : "", mixed: false };
-}
-
 export function computeAbsoluteSeed(days: ResolvedSelectedDay[]): AbsoluteSeed {
-  const calories = seedField(days.map((d) => d.target.calories));
-  const protein = seedField(days.map((d) => d.target.proteinG));
-  const carbs = seedField(days.map((d) => d.target.carbsG));
-  const fat = seedField(days.map((d) => d.target.fatG));
-
-  const firstDiet = (days[0]?.event.dietType as DietType) || null;
-  const dietUniform = days.length > 0 && days.every((d) => (d.event.dietType || null) === firstDiet);
-
-  let calorieRange: AbsoluteSeed["calorieRange"] = null;
-  if (calories.mixed) {
-    const values = days.map((d) => d.target.calories);
-    calorieRange = { min: Math.min(...values), max: Math.max(...values) };
-  }
-
-  return { calories, protein, carbs, fat, dietType: dietUniform ? firstDiet : null, calorieRange };
-}
-
-/**
- * Which macro shape an absolute apply would send. The server's materialize
- * takes macros verbatim only when ALL THREE are present; a lone protein is
- * held with carbs/fat rebalanced per day; a lone carbs or fat value would be
- * silently ignored server-side, so the form must refuse it.
- */
-type AbsoluteMacroState = "verbatim" | "protein-only" | "auto" | "invalid";
-
-export function classifyAbsoluteMacros(protein: string, carbs: string, fat: string): AbsoluteMacroState {
-  const p = protein.trim() !== "";
-  const c = carbs.trim() !== "";
-  const f = fat.trim() !== "";
-  if (p && c && f) return "verbatim";
-  if (!p && !c && !f) return "auto";
-  if (p && !c && !f) return "protein-only";
-  return "invalid";
+  const first = days[0]?.target ?? null;
+  const values = days.map((d) => d.target.calories);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  return {
+    calories: first && first.calories > 0 ? first.calories : null,
+    grams: first ? { proteinG: first.proteinG, carbG: first.carbsG, fatG: first.fatG } : null,
+    calorieRange: values.length > 1 && min !== max ? { min, max } : null,
+  };
 }
 
 /** Mirror of the server's delta resolution: scale by percent, then add the

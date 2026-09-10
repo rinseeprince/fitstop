@@ -38,8 +38,16 @@ export const UNREVIEWED_CHECK_IN_STATUSES = [
   "ai_processed",
 ] as const satisfies readonly CheckInStatus[];
 
-// Custom macros validation
-export const CUSTOM_MACRO_CALORIE_TOLERANCE = 50; // Max allowed difference between stated calories and macro totals
+// How far a custom-macro save's stated calories may sit from its macros'
+// 4P + 4C + 9F. A belt against a RAW API CALLER: both coach entries — the
+// builder's "Edit manually" and the per-day editor's Set targets — are the
+// macro balancer (lib/nutrition/macro-balance.ts), whose grams derive from the
+// calories, so a save from the app is inside one carb rounding by
+// construction. Rounding slack only, never a rule the drawer can trip; a
+// stated target that contradicts its own macro bars must not reach the client.
+// Read by the plan schema's refine (lib/validations/nutrition.ts) and the
+// orchestrator's custom branch, both of which derive their message from it.
+export const CUSTOM_MACRO_CALORIE_TOLERANCE = 10;
 
 // How far a nutrition version runs when the client has neither a block nor a
 // live training program to bound it: eight weeks from its start. The last step

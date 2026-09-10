@@ -9,25 +9,24 @@ import {
   MONO,
   SECTION_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import type { MacroTargets, ManualDraft } from "@/hooks/use-manual-targets";
+import { MacroBalance } from "@/components/clients/nutrition/macro-balance";
+import type { MacroBalanceValue } from "@/lib/nutrition/macro-balance";
+import type { MacroTargets } from "@/hooks/use-manual-targets";
 import type { NutritionPlan } from "@/services/nutrition-service";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 
 type NutritionTargetsBlockProps = {
-  /** What the fields show. Values may be null while the coach is mid-edit. */
-  draft: ManualDraft | null;
-  /** The live auto result, kept available in manual mode for the hint line. */
+  /** The live auto result — what auto mode shows, and what "Edit manually"
+   *  seeds the balancer from. */
   autoPlan: NutritionPlan | null;
   autoTargets: MacroTargets | null;
   manualEnabled: boolean;
   onEnableManual: (from: MacroTargets) => void;
   onRevertToAuto: () => void;
-  onFieldChange: (key: keyof ManualDraft, value: number | null) => void;
-  /** 4/4/9 over the entered macros, or null while incomplete. */
-  macroTotal: number | null;
-  caloriesMismatch: boolean;
-  onMatchMacros: () => void;
+  /** The coach's calorie target and split once they have taken over. */
+  balance: MacroBalanceValue;
+  onBalanceChange: (next: MacroBalanceValue) => void;
   /** `validateClientForNutrition` messages when the client lacks the data the
    *  calculator needs. Non-empty means nothing can be previewed at all. */
   missing: string[];
@@ -40,42 +39,29 @@ type NutritionTargetsBlockProps = {
 const FIELD_CLASS =
   "w-full rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white px-2 py-1.5 text-center text-[15px] font-semibold text-[#0c1a1e] transition-all read-only:bg-[#f7faf9] read-only:text-[#5a7d82] hover:border-[rgba(13,148,136,0.25)] read-only:hover:border-[rgba(13,148,136,0.08)]";
 
-/** "" is EMPTY, not 0 — conflating them is what made these fields unwritable. */
-function parseField(value: string): number | null {
-  if (value.trim() === "") return null;
-  const n = parseInt(value, 10);
-  return Number.isFinite(n) ? n : null;
-}
-
 /**
  * The calorie + macro targets, live.
  *
- * Replaces the old Auto/Custom tab pair. Those were a false choice: the Auto
- * tab showed the pickers but never what they produced (the calculation was
- * server-side, so the numbers only appeared after saving), and the Custom tab
- * showed editable numbers but hid the pickers — while still posting them. The
- * coach had to choose between seeing the controls and seeing the result.
- *
- * Now the pickers are always visible above this block and these fields update
- * as they move. "Edit manually" hands the numbers over without hiding anything.
+ * Auto shows the four numbers the pickers above produce, as they move. "Edit
+ * manually" hands them to the macro balancer — one calorie target over a
+ * two-thumb split (`components/clients/nutrition/macro-balance.tsx`), seeded
+ * from the auto numbers so the coach starts from the calculation and nudges.
+ * The grams derive from the split, so nothing here can disagree with itself
+ * and there is nothing to reconcile.
  */
 export function NutritionTargetsBlock({
-  draft,
   autoPlan,
   autoTargets,
   manualEnabled,
   onEnableManual,
   onRevertToAuto,
-  onFieldChange,
-  macroTotal,
-  caloriesMismatch,
-  onMatchMacros,
+  balance,
+  onBalanceChange,
   missing,
   hasGoalTarget,
 }: NutritionTargetsBlockProps) {
   // The coach's own unit. This block is "use client" and already inside the
-  // builder tree, so no prop thread is needed — the doc's "missing prop at
-  // drawer-form-body.tsx" is only true if the preference has to travel.
+  // builder tree, so no prop thread is needed.
   const { preference } = useUnits();
 
   // A weekly rate of body-weight change: formatWeight, which converts freely.
@@ -108,7 +94,6 @@ export function NutritionTargetsBlock({
     );
   }
 
-  const readOnly = !manualEnabled;
   // Exactly the condition that suppresses both explanatory spans below.
   const isMaintenance =
     autoPlan != null &&
@@ -138,16 +123,16 @@ export function NutritionTargetsBlock({
         />
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
-        <Field label="kcal" value={draft?.calories ?? null} readOnly={readOnly}
-          onChange={(v) => onFieldChange("calories", v)} />
-        <Field label="Protein" suffix="g" value={draft?.proteinG ?? null} readOnly={readOnly}
-          onChange={(v) => onFieldChange("proteinG", v)} />
-        <Field label="Carbs" suffix="g" value={draft?.carbG ?? null} readOnly={readOnly}
-          onChange={(v) => onFieldChange("carbG", v)} />
-        <Field label="Fat" suffix="g" value={draft?.fatG ?? null} readOnly={readOnly}
-          onChange={(v) => onFieldChange("fatG", v)} />
-      </div>
+      {manualEnabled ? (
+        <MacroBalance value={balance} onChange={onBalanceChange} />
+      ) : (
+        <div className="grid grid-cols-4 gap-2">
+          <Field label="kcal" value={autoTargets?.calories ?? null} />
+          <Field label="Protein" suffix="g" value={autoTargets?.proteinG ?? null} />
+          <Field label="Carbs" suffix="g" value={autoTargets?.carbG ?? null} />
+          <Field label="Fat" suffix="g" value={autoTargets?.fatG ?? null} />
+        </div>
+      )}
 
       {/* What the calculation is doing, so the number is explicable rather than
           arbitrary. Numerals in mono; the words around them stay sans. */}
@@ -193,7 +178,7 @@ export function NutritionTargetsBlock({
       )}
 
       {/* Manual wins: a picker change recalculates in the background and is
-          offered here, never written into the coach's typed numbers. */}
+          offered here, never written into the coach's numbers. */}
       {manualEnabled && autoTargets && (
         <p className="text-[11px] leading-[1.4] text-[#93b0b4]">
           Auto suggests{" "}
@@ -213,61 +198,19 @@ export function NutritionTargetsBlock({
           </button>
         </p>
       )}
-
-      {/* Passive coherence readout. NOT a block — the coach types freely and the
-          gate is at Generate. When the macros disagree with the entered calorie
-          target by more than the server tolerates, say so and offer the fix,
-          rather than silently rewriting fields as they type. */}
-      {manualEnabled && macroTotal !== null && (
-        <p className="text-[11px] leading-[1.4] text-[#93b0b4]">
-          Macros total{" "}
-          <span className={cn(MONO, caloriesMismatch ? "text-[#d97706]" : "text-[#5a7d82]")}>
-            {macroTotal.toLocaleString()}
-          </span>{" "}
-          kcal
-          {caloriesMismatch && (
-            <>
-              {" · "}
-              <button
-                type="button"
-                onClick={onMatchMacros}
-                className={cn(
-                  FOCUS_RING,
-                  "rounded-[4px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7f75]"
-                )}
-              >
-                Match macros to calories
-              </button>
-            </>
-          )}
-        </p>
-      )}
     </div>
   );
 }
 
-function Field({
-  label,
-  suffix,
-  value,
-  readOnly,
-  onChange,
-}: {
-  label: string;
-  suffix?: string;
-  value: number | null;
-  readOnly: boolean;
-  onChange: (value: number | null) => void;
-}) {
+/** A read-only cell of the auto result. */
+function Field({ label, suffix, value }: { label: string; suffix?: string; value: number | null }) {
   return (
     <div className="space-y-1">
       <input
         type="number"
-        inputMode="numeric"
-        readOnly={readOnly}
-        tabIndex={readOnly ? -1 : undefined}
+        readOnly
+        tabIndex={-1}
         value={value ?? ""}
-        onChange={(e) => onChange(parseField(e.target.value))}
         className={cn(MONO, FIELD_CLASS, FOCUS_RING)}
       />
       <p className={cn(LABEL_CLASS, "text-center")}>

@@ -1,8 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { applySurplusSplit, calculateDailyMacros } from "@/utils/nutrition-helpers";
-import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
+import {
+  DEFAULT_SPLIT,
+  applyPreset,
+  gramsToSplit,
+  setGrams,
+  splitToGrams,
+  type MacroBalanceValue,
+} from "@/lib/nutrition/macro-balance";
 import type { DietType } from "@/types/check-in";
 
 /** A complete set of targets — what the calculator emits and what gets saved. */
@@ -12,22 +18,6 @@ export type MacroTargets = {
   carbG: number;
   fatG: number;
 };
-
-/**
- * What the coach is typing. `null` means the field is EMPTY, which is a real,
- * distinct state from 0 — conflating the two is what made the fields
- * unwritable: clearing carbs read as "carbs = 0", which re-derived the calorie
- * field, and thereafter every keystroke in the calorie field produced an
- * intermediate value below the protein floor and snapped straight back.
- */
-export type ManualDraft = {
-  calories: number | null;
-  proteinG: number | null;
-  carbG: number | null;
-  fatG: number | null;
-};
-
-type ManualField = keyof ManualDraft;
 
 /** The plan fields that tell us a stored manual override exists. */
 type ManualSeed =
@@ -41,47 +31,27 @@ type ManualSeed =
   | null
   | undefined;
 
-/** Macro calories, 4/4/9. */
-export function macroCalories(t: { proteinG: number; carbG: number; fatG: number }): number {
-  return Math.round(t.proteinG * 4 + t.carbG * 4 + t.fatG * 9);
-}
-
-/** Narrow a draft to a complete set, or null if anything is missing/zero. */
-export function completeTargets(d: ManualDraft): MacroTargets | null {
-  if (!d.calories || !d.proteinG || !d.carbG || !d.fatG) return null;
-  return {
-    calories: d.calories,
-    proteinG: d.proteinG,
-    carbG: d.carbG,
-    fatG: d.fatG,
-  };
-}
-
 /**
- * Manual override of the calorie/macro targets, in grams.
+ * Manual override of the calorie/macro targets — the macro balancer's state
+ * (owner decision 2026-09-10: MyFitnessPal's goal setter is the reference):
+ * a calorie target and a whole-percent split, the grams DERIVED from them at
+ * 4 / 4 / 9 kcal per gram, so the four numbers cannot disagree.
  *
- * **Typing never mutates another field.** The previous version re-derived the
- * calorie total on every macro keystroke and re-split the macros on every
- * calorie keystroke, which meant partially-entered state was continuously fed
- * back through the arithmetic — so a coach clearing one field found the others
- * rewritten, and could not then type a calorie target at all.
- *
- * Coherence is still required (the server rejects macros that disagree with the
- * stated calories by more than the tolerance), but it is now something the
- * coach is TOLD about and can fix with one click, not something enforced by
- * fighting their keyboard. The gate is at Generate, per owner direction.
+ * The calories are held whatever the thumbs do, so there is nothing to reconcile and no gate but "is there a calorie
+ * target": the coherence the old four typed fields had to be TOLD about is
+ * true by construction. The server keeps a tolerance belt of its own for raw
+ * API callers.
  */
 export function useManualTargets(seed: ManualSeed) {
   const [enabled, setEnabled] = useState(false);
-  const [draft, setDraft] = useState<ManualDraft>({
+  const [balance, setBalance] = useState<MacroBalanceValue>({
     calories: null,
-    proteinG: null,
-    carbG: null,
-    fatG: null,
+    split: DEFAULT_SPLIT,
   });
 
   // Opening the drawer on a plan that already carries a manual override starts
-  // in manual mode showing those numbers. Seeded once per distinct plan so a
+  // in manual mode on its numbers — the calories exactly, the split read off
+  // the stored grams in whole percents. Seeded once per distinct plan so a
   // background refetch cannot clobber an in-progress edit.
   const seedKey =
     seed?.customMacrosEnabled && seed.customCalories
@@ -90,11 +60,13 @@ export function useManualTargets(seed: ManualSeed) {
   const seededRef = useRef<string | null>(null);
   useEffect(() => {
     if (!seedKey || !seed || seededRef.current === seedKey) return;
-    setDraft({
+    setBalance({
       calories: seed.customCalories ?? null,
-      proteinG: seed.customProteinG ?? null,
-      carbG: seed.customCarbG ?? null,
-      fatG: seed.customFatG ?? null,
+      split: gramsToSplit({
+        proteinG: seed.customProteinG ?? 0,
+        carbG: seed.customCarbG ?? 0,
+        fatG: seed.customFatG ?? 0,
+      }),
     });
     setEnabled(true);
     seededRef.current = seedKey;
@@ -102,7 +74,7 @@ export function useManualTargets(seed: ManualSeed) {
 
   /** Turn manual mode on, seeding from whatever auto currently shows. */
   const enable = useCallback((from: MacroTargets) => {
-    setDraft({ ...from });
+    setBalance({ calories: from.calories, split: gramsToSplit(from) });
     setEnabled(true);
   }, []);
 
@@ -111,100 +83,51 @@ export function useManualTargets(seed: ManualSeed) {
     seededRef.current = null;
   }, []);
 
-  /** Sets ONLY the field being edited. No cross-field derivation. */
-  const setField = useCallback((key: ManualField, value: number | null) => {
-    setDraft((prev) => ({
-      ...prev,
-      [key]: value == null ? null : Math.max(0, Math.round(value)),
-    }));
-  }, []);
-
   /**
-   * Explicitly rebalance carbs + fat so the macros match the entered calories,
-   * holding protein AND the current carb:fat ratio. Offered as an action
-   * rather than applied automatically — it is destructive to two fields, so
-   * the coach asks for it.
-   */
-  const matchMacrosToCalories = useCallback(() => {
-    setDraft((prev) => {
-      if (!prev.calories || !prev.proteinG) return prev;
-      // A degenerate 0:0 carb:fat ratio would make the split meaningless, so
-      // fall back to an even carb:fat calorie split in that case.
-      const { carbsG, fatG } = applySurplusSplit(
-        prev.calories,
-        prev.proteinG,
-        prev.carbG || 1,
-        prev.fatG || 1,
-        false
-      );
-      return { ...prev, carbG: Math.max(0, carbsG), fatG: Math.max(0, fatG) };
-    });
-  }, []);
-
-  /**
-   * Recompose the macros from a PICKER change, holding the coach's CALORIE
-   * target (the whole point of a manual override). The pickers above the boxes
-   * have no editable box of their own — diet type is only a carb:fat split,
-   * protein-per-kg is only a protein figure — so in manual mode they were
-   * otherwise inert: a coach changing "Low Carb" or the protein target never
-   * saw the boxes follow. `proteinG` (supplied on a protein-per-kg change)
-   * replaces the protein box; otherwise the current protein is held. Carbs and
-   * fat are always re-split by `dietType`.
+   * Recompose the split from a PICKER change, holding the coach's CALORIE
+   * target (the whole point of a manual override). The pickers above the
+   * balancer have no control of their own on it — diet type is only a
+   * carb:fat ratio, protein-per-kg is only a protein figure — so in manual
+   * mode they were otherwise inert. `proteinG` (supplied on a protein-per-kg
+   * change) moves the protein share; the diet type then re-splits the rest.
    *
    * Fired ONLY on a deliberate picker change (a discrete action, never a
-   * keystroke), so it does NOT reintroduce the per-keystroke derivation the
-   * "typing never mutates another field" invariant above exists to prevent. A
-   * no-op while calories or the resolved protein is mid-edit (null).
+   * keystroke). A no-op while the calorie field is empty.
    */
   const recomposeMacros = useCallback(
     ({ proteinG, dietType }: { proteinG?: number; dietType: DietType }) => {
-      setDraft((prev) => {
-        const protein = proteinG ?? prev.proteinG;
-        if (!prev.calories || !protein) return prev;
-        const { carbsG, fatG } = calculateDailyMacros(prev.calories, protein, false, dietType);
-        return {
-          ...prev,
-          proteinG: protein,
-          carbG: Math.max(0, carbsG),
-          fatG: Math.max(0, fatG),
-        };
+      setBalance((prev) => {
+        if (!prev.calories) return prev;
+        let split =
+          proteinG != null ? setGrams(prev.split, prev.calories, "protein", proteinG) : prev.split;
+        // "custom" is no ratio — the coach's own split stands.
+        if (dietType !== "custom") split = applyPreset(split, dietType);
+        return { ...prev, split };
       });
     },
     []
   );
 
-  const complete = completeTargets(draft);
-  const macroTotal = complete ? macroCalories(complete) : null;
-  const caloriesMismatch =
-    complete !== null && macroTotal !== null
-      ? Math.abs(complete.calories - macroTotal) > CUSTOM_MACRO_CALORIE_TOLERANCE
-      : false;
+  /** Complete targets, or null while there is no calorie target. What Generate posts. */
+  const manualTargets: MacroTargets | null =
+    balance.calories != null && balance.calories > 0
+      ? { calories: balance.calories, ...splitToGrams(balance.calories, balance.split) }
+      : null;
 
   /**
-   * Why this set of targets cannot be saved — evaluated continuously but
-   * SURFACED only when the coach presses Generate (see the drawer footer).
-   * Typing is never blocked.
+   * Why this set of targets cannot be saved — SURFACED only when the coach
+   * presses Generate (see the drawer footer). Typing is never blocked.
    */
-  const manualBlockingError = !enabled
-    ? null
-    : complete === null
-      ? "Enter calories, protein, carbs and fat — all four are required"
-      : caloriesMismatch
-        ? `Macros total ${macroTotal!.toLocaleString()} kcal, which does not match the ${complete.calories.toLocaleString()} kcal target`
-        : null;
+  const manualBlockingError = !enabled ? null : manualTargets ? null : "Enter a calorie target";
 
   return {
     manualEnabled: enabled,
-    manualDraft: draft,
-    /** Complete + coherent targets, or null. What Generate posts. */
-    manualTargets: caloriesMismatch ? null : complete,
-    manualMacroTotal: macroTotal,
-    manualCaloriesMismatch: caloriesMismatch,
+    manualBalance: balance,
+    manualTargets,
     manualBlockingError,
     enableManualTargets: enable,
     revertToAuto,
-    setManualField: setField,
-    matchMacrosToCalories,
+    setManualBalance: setBalance,
     recomposeManualMacros: recomposeMacros,
   };
 }

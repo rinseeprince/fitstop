@@ -17,7 +17,7 @@ import type {
   NutritionWarning,
 } from "@/types/check-in";
 import { validateClientForNutrition } from "@/lib/validations/nutrition";
-import { useManualTargets, macroCalories, type MacroTargets, type ManualDraft } from "@/hooks/use-manual-targets";
+import { useManualTargets, type MacroTargets } from "@/hooks/use-manual-targets";
 // A PURE module (types + one arithmetic helper, no DB imports), so the browser
 // runs the identical calculator the server does. That is what makes the preview
 // authoritative rather than an approximation.
@@ -143,12 +143,6 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   );
 
   const manual = useManualTargets(nutritionPlan.nutritionData);
-
-  /** What the four fields display. In manual mode this is the coach's draft,
-   *  whose values may be null mid-edit; in auto it is the live calculation. */
-  const displayDraft: ManualDraft | null = manual.manualEnabled
-    ? manual.manualDraft
-    : autoTargets;
 
   // Activity burn toggle
   const [includeActivityBurn, setIncludeActivityBurn] = useState(client.includeActivityBurn);
@@ -287,18 +281,19 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
         };
 
         if (useManual) {
-          // Null here means incomplete or incoherent input. The footer gates on
-          // the same condition before calling, so this is a belt: never post a
-          // half-entered override.
+          // Null here means no calorie target yet. The footer gates on the
+          // same condition before calling, so this is a belt: never post an
+          // empty override.
           const t = manual.manualTargets;
-          if (!t) throw new Error(manual.manualBlockingError ?? "Enter all four targets");
+          if (!t) throw new Error(manual.manualBlockingError ?? "Enter a calorie target");
           body.customMacrosEnabled = true;
           body.customProteinG = t.proteinG;
           body.customCarbG = t.carbG;
           body.customFatG = t.fatG;
-          // The re-totaled 4/4/9 figure, never a separately-typed number, so
-          // the server's ±50 kcal tolerance cannot trip on rounding.
-          body.customCalories = macroCalories(t);
+          // The coach's typed target, with the grams the balancer derives from
+          // it — within one carb rounding of each other by construction, so
+          // the server's tolerance belt cannot trip on a save from here.
+          body.customCalories = t.calories;
         }
 
         const res = await fetch(`/api/clients/${client.id}/nutrition`, {
@@ -381,14 +376,13 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     startFloor,
     handleEffectiveFromChange,
 
-    // Live preview + manual override. `displayTargets` is the single thing the
-    // UI renders and Generate posts — manual when the coach has taken over,
-    // otherwise the live auto result. `autoTargets` stays available alongside
-    // it so the manual mode can show what auto would have suggested WITHOUT
-    // overwriting the typed numbers.
+    // Live preview + manual override. `autoTargets` is what auto mode shows and
+    // what "Edit manually" seeds the balancer from; `manualBalance` (spread from
+    // the hook below) is the coach's target and split once they have taken over.
+    // `autoTargets` stays available alongside it so manual mode can show what
+    // auto would have suggested WITHOUT overwriting the coach's numbers.
     autoPlan,
     autoTargets,
-    displayDraft,
     /** null while the resolver could not run — the UI renders `missing`. */
     calcInputs,
     ...manual,

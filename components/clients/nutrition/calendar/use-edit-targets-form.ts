@@ -2,17 +2,20 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { format } from "date-fns";
-import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import { getDeltaBaseCalories } from "@/utils/nutrition-event-helpers";
 import {
   computeAbsoluteSeed,
-  classifyAbsoluteMacros,
   applyCalorieDelta,
   toInt,
-  CALORIE_MATCH_TOLERANCE,
   type ResolvedSelectedDay,
   type RangeEditPayload,
 } from "@/utils/nutrition-range-edit-model";
+import {
+  DEFAULT_SPLIT,
+  gramsToSplit,
+  splitToGrams,
+  type MacroBalanceValue,
+} from "@/lib/nutrition/macro-balance";
 
 export type EditTargetsTab = "set" | "adjust";
 export type DeltaMode = "kcal" | "percent";
@@ -28,16 +31,18 @@ type PreviewRow = {
 
 /**
  * All transient form state for the Edit-targets sheet, seeded from the
- * resolved selection on the open rising edge. Derivations (mixed detection,
- * reconcile, preview) come from the pure model in
- * utils/nutrition-range-edit-model.ts.
+ * resolved selection on the open rising edge. Derivations (the seed, the
+ * delta preview) come from the pure model in utils/nutrition-range-edit-model.ts;
+ * the Set targets tab's arithmetic is the macro balancer's kernel.
  */
 export function useEditTargetsForm(open: boolean, days: ResolvedSelectedDay[]) {
   const [tab, setTab] = useState<EditTargetsTab>("set");
-  const [calories, setCalories] = useState("");
-  const [protein, setProtein] = useState("");
-  const [carbs, setCarbs] = useState("");
-  const [fat, setFat] = useState("");
+  // Set targets IS the macro balancer: one calorie target and one split, the
+  // grams derived — and every selected day gets the same four numbers.
+  const [balance, setBalance] = useState<MacroBalanceValue>({
+    calories: null,
+    split: DEFAULT_SPLIT,
+  });
   const [deltaMode, setDeltaMode] = useState<DeltaMode>("kcal");
   const [deltaValue, setDeltaValue] = useState("");
   const [holdProtein, setHoldProtein] = useState(true);
@@ -49,9 +54,9 @@ export function useEditTargetsForm(open: boolean, days: ResolvedSelectedDay[]) {
   // Seed ONCE per open, on the rising edge (selection is final by then: grid
   // clicks are behind the overlay; the week-rail path replaces the selection
   // first). The ref guard matters: `days`/`seed` change identity on any SWR
-  // revalidation (reconnect, a training cascade's fire-and-forget invalidate),
-  // and re-seeding mid-edit would silently wipe the coach's typed values —
-  // same guard as the placed-session editor's seededForRef.
+  // revalidation (reconnect, a training writer's fire-and-forget invalidate),
+  // and re-seeding mid-edit would silently wipe the coach's values — same
+  // guard as the placed-session editor's seededForRef.
   const seededRef = useRef(false);
   useEffect(() => {
     if (!open) {
@@ -61,10 +66,10 @@ export function useEditTargetsForm(open: boolean, days: ResolvedSelectedDay[]) {
     if (seededRef.current) return;
     seededRef.current = true;
     setTab("set");
-    setCalories(seed.calories.value);
-    setProtein(seed.protein.value);
-    setCarbs(seed.carbs.value);
-    setFat(seed.fat.value);
+    setBalance({
+      calories: seed.calories,
+      split: seed.grams ? gramsToSplit(seed.grams) : DEFAULT_SPLIT,
+    });
     setDeltaMode("kcal");
     setDeltaValue("");
     setHoldProtein(true);
@@ -72,43 +77,7 @@ export function useEditTargetsForm(open: boolean, days: ResolvedSelectedDay[]) {
   }, [open, seed, singleDay, days]);
 
   // ---- Set targets derivations ----
-  const cal = toInt(calories);
-  const p = toInt(protein);
-  const c = toInt(carbs);
-  const f = toInt(fat);
-  const macroState = classifyAbsoluteMacros(protein, carbs, fat);
-  const macroCals = (p ?? 0) * 4 + (c ?? 0) * 4 + (f ?? 0) * 9;
-  const diff = macroCals - (cal ?? 0);
-  const matched = cal != null && cal > 0 && Math.abs(diff) <= CALORIE_MATCH_TOLERANCE;
-
-  const absoluteValid =
-    cal != null &&
-    cal > 0 &&
-    macroState !== "invalid" &&
-    (macroState !== "verbatim" || matched);
-
-  /** Typing calories auto-rebalances carbs/fat only when the trio is fully
-   * populated AND the selection shares one diet type (mixed diets can't share
-   * one rebalance). */
-  function onCaloriesChange(value: string) {
-    setCalories(value);
-    const target = toInt(value) ?? 0;
-    if (
-      target > 0 &&
-      seed.dietType != null &&
-      classifyAbsoluteMacros(protein, carbs, fat) === "verbatim"
-    ) {
-      const m = calculateDailyMacros(target, toInt(protein) ?? 0, false, seed.dietType);
-      setCarbs(String(m.carbsG));
-      setFat(String(m.fatG));
-    }
-  }
-
-  /** The reconcile line's one-tap fix: snap calories to the macro sum
-   * (deliberately NOT through onCaloriesChange — the typed macros stay). */
-  function setCaloriesToMacros() {
-    setCalories(String(macroCals));
-  }
+  const absoluteValid = balance.calories != null && balance.calories > 0;
 
   // ---- Adjust by derivations ----
   const deltaInt = toInt(deltaValue);
@@ -153,14 +122,15 @@ export function useEditTargetsForm(open: boolean, days: ResolvedSelectedDay[]) {
   function buildPayload(): RangeEditPayload | null {
     if (!valid) return null;
     if (tab === "set") {
-      const payload: RangeEditPayload = { mode: "absolute", calories: cal! };
-      if (macroState === "verbatim") {
-        payload.proteinG = p!;
-        payload.carbG = c!;
-        payload.fatG = f!;
-      } else if (macroState === "protein-only") {
-        payload.proteinG = p!;
-      }
+      const calories = balance.calories!;
+      const grams = splitToGrams(calories, balance.split);
+      const payload: RangeEditPayload = {
+        mode: "absolute",
+        calories,
+        proteinG: grams.proteinG,
+        carbG: grams.carbG,
+        fatG: grams.fatG,
+      };
       if (noteValue !== undefined) payload.note = noteValue;
       return payload;
     }
@@ -177,24 +147,9 @@ export function useEditTargetsForm(open: boolean, days: ResolvedSelectedDay[]) {
     tab,
     setTab,
     // Set targets
-    calories,
-    protein,
-    carbs,
-    fat,
-    onCaloriesChange,
-    setProtein,
-    setCarbs,
-    setFat,
+    balance,
+    setBalance,
     seed,
-    macroState,
-    macroCals,
-    diff,
-    matched,
-    p,
-    c,
-    f,
-    cal,
-    setCaloriesToMacros,
     // Adjust by
     deltaMode,
     switchDeltaMode,
