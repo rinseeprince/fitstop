@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Calendar } from "lucide-react";
 import useSWR from "swr";
 import {
@@ -31,7 +31,11 @@ import {
   useClearBlockFacts,
   useClientBlocks,
 } from "@/components/clients/metrics/hooks/use-client-blocks";
-import { useRoundTripBlockStart } from "@/components/clients/metrics/hooks/use-round-trip-block";
+import { BlockStartPicker } from "@/components/clients/metrics/blocks/block-start-picker";
+import {
+  buildBlockStartOptions,
+  selectBlockStartOption,
+} from "@/lib/blocks/block-start-options";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { format } from "date-fns";
 import {
@@ -58,6 +62,11 @@ type ApplyToClientDialogProps = {
   clientTimezone?: string;
   /** Name of the preselected client, for the sentence under the date field. */
   clientName?: string;
+  /** The Journey block the coach came from ("place one" on its card), or
+   *  null — preselected in the Block field, never a binding. Captured on
+   *  arrival by the host's `useJourneyRoundTrip` and threaded down, because
+   *  the URL is stripped of the trip in the same effect. */
+  preselectedBlockId?: string | null;
   onSuccess?: (clientId: string) => void;
 };
 
@@ -75,6 +84,7 @@ export function ApplyToClientDialog({
   preselectedClientId,
   clientTimezone,
   clientName,
+  preselectedBlockId = null,
   onSuccess,
 }: ApplyToClientDialogProps) {
   const { toast } = useToast();
@@ -84,11 +94,14 @@ export function ApplyToClientDialog({
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
-  // The coach's own pick, null until they touch the field. The date the field
-  // shows is DERIVED from it below — the pick, else a seed built from the
-  // floor and the round-trip block — so the default follows the floor as the
-  // payload lands instead of being reset by an effect (the nutrition
-  // builder's shape). An emptied field means the seed again.
+  // The coach's own picks, null until they touch a field. The Block field's
+  // value and the date the field shows are DERIVED from them below — the block
+  // pick, else the block the coach came from, else No block; the date pick,
+  // else the selected block's first available day — so the defaults follow the
+  // floor and the blocks as the payload lands instead of being reset by an
+  // effect (the nutrition builder's shape). An emptied date means the seed
+  // again.
+  const [blockPick, setBlockPick] = useState<string | null>(null);
   const [startDatePick, setStartDatePick] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -104,6 +117,7 @@ export function ApplyToClientDialog({
   useEffect(() => {
     if (open) {
       setClientId(preselectedClientId ?? "");
+      setBlockPick(null);
       setStartDatePick(null);
     }
   }, [open, preselectedClientId]);
@@ -135,21 +149,24 @@ export function ApplyToClientDialog({
   // The earliest day a program may START: the shared deletion floor — the
   // client's today, or tomorrow once they have logged anything today. A server
   // answer (it reads the client's logs), so it rides the blocks payload beside
-  // the client's today, the same read the round-trip seed already makes; an
-  // empty client id fetches nothing. Until it lands the timezone-derived today
-  // stands in, and the server refuses a start before the floor either way.
-  const { clientToday: payloadToday, planStartFloor } = useClientBlocks(clientId);
+  // the client's today and the blocks themselves; an empty client id fetches
+  // nothing. Until it lands the timezone-derived today stands in, and the
+  // server refuses a start before the floor either way.
+  const { blocks, clientToday: payloadToday, planStartFloor } = useClientBlocks(clientId);
   const startFloor = planStartFloor ?? clientLocalToday ?? deviceToday;
-  // Seeded from the block the coach came from, when they came from one: the
-  // whole point of "place one" is that they have already said which days they
-  // mean. The block id rides the URL under the round-trip contract, and the
-  // chain is in SWR's cache because they were just looking at it. A block
-  // already under way seeds the floor, not the day it began; with no round
-  // trip the floor itself is the seed — a coach placing a program almost
-  // always means now.
-  const blockStart = useRoundTripBlockStart(preselectedClientId, "apply");
-  const seedStartDate = blockStart && blockStart > startFloor ? blockStart : startFloor;
-  const startDate = startDatePick ?? seedStartDate;
+  // The Block field over the date: the client's blocks whose end is on or after
+  // the floor, then No block. The coach's pick wins; with none, the block they
+  // came from is preselected — the whole point of "place one" is that they
+  // have already said which days they mean; else No block. The selected
+  // option's window bounds the date field AND seeds the start: a block already
+  // under way seeds the floor, not the day it began, and No block seeds the
+  // floor itself — a coach placing a program almost always means now.
+  const blockOptions = useMemo(
+    () => buildBlockStartOptions(blocks, startFloor),
+    [blocks, startFloor]
+  );
+  const selectedBlock = selectBlockStartOption(blockOptions, blockPick, preselectedBlockId);
+  const startDate = startDatePick ?? selectedBlock.window.min;
   // Why today is greyed out, when it is — said only once the payload says so.
   const loggedLine =
     planStartFloor && payloadToday && planStartFloor > payloadToday
@@ -258,15 +275,37 @@ export function ApplyToClientDialog({
             </div>
           )}
 
-          {/* Start date. `min` is the floor; the server refuses a start before
-              it, and the sentence under the field says why today is greyed. */}
+          {/* Block. Choosing one sets the start and bounds the picker under it
+              to the block's window — `min` and `max` natively, so a day outside
+              the block is greyed rather than offered and refused. The placement
+              resolves its own window from the block covering the start; this
+              only picks a valid start inside the block the coach means. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="start-block">Block</Label>
+            <BlockStartPicker
+              id="start-block"
+              options={blockOptions}
+              value={selectedBlock.value}
+              onValueChange={(value) => {
+                setBlockPick(value);
+                // Choosing a block SETS the start: the date re-seeds from the
+                // block's window, and the coach moves it inside from there.
+                setStartDatePick(null);
+              }}
+            />
+          </div>
+
+          {/* Start date. `min` / `max` are the selected block's window — the
+              floor alone for No block; the server refuses a start before the
+              floor, and the sentence under the field says why today is greyed. */}
           <div className="space-y-1.5">
             <Label htmlFor="start-date">Start Date</Label>
             <Input
               id="start-date"
               type="date"
               value={startDate}
-              min={startFloor}
+              min={selectedBlock.window.min}
+              max={selectedBlock.window.max ?? undefined}
               onChange={(e) => setStartDatePick(e.target.value || null)}
             />
             {loggedLine && (

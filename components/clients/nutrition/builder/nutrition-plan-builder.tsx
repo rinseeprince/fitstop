@@ -41,7 +41,9 @@ export function NutritionPlanBuilder({
   // The plan drawer, plus the Journey round trip that can open it (7.4). The
   // hook consumes ?edit=1 & the return target ON ARRIVAL and strips them, and
   // drops the target on any close without a save — so an abandoned trip cannot
-  // bounce a later, unrelated save back to Journey.
+  // bounce a later, unrelated save back to Journey. The block it names is also
+  // the one the drawer's Block field preselects, so it is handed to the
+  // provider below rather than re-read off a URL that no longer carries it.
   const {
     open: drawerOpen,
     setOpen: setDrawerOpen,
@@ -65,7 +67,11 @@ export function NutritionPlanBuilder({
 
   return (
     <ErrorBoundary>
-      <NutritionBuilderProvider client={client} onUpdate={onUpdate}>
+      <NutritionBuilderProvider
+        client={client}
+        onUpdate={onUpdate}
+        roundTripBlockId={returnBlockId}
+      >
         {/* Top content bar */}
         <TopContentBar subtab={subtab} setSubtab={setSubtab} />
 

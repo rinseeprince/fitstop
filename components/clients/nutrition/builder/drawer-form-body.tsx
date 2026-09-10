@@ -94,6 +94,10 @@ export function DrawerFormBody() {
             proteinTargetGPerKg={builder.settings.proteinTargetGPerKg}
             dietType={builder.settings.dietType}
             onSettingsChange={builder.handleSettingsChange}
+            blockOptions={builder.blockOptions}
+            blockValue={builder.blockValue}
+            onBlockChange={builder.handleBlockChange}
+            startWindow={builder.startWindow}
             effectiveFrom={builder.effectiveFrom}
             clientToday={builder.clientToday}
             startFloor={builder.startFloor}

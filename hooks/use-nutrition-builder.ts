@@ -10,7 +10,11 @@ import {
 } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
-import { useRoundTripBlockStart } from "@/components/clients/metrics/hooks/use-round-trip-block";
+import {
+  buildBlockStartOptions,
+  selectBlockStartOption,
+  NO_BLOCK_OPTION,
+} from "@/lib/blocks/block-start-options";
 import type {
   Client,
   DietType,
@@ -26,6 +30,11 @@ import { generateNutritionPlan } from "@/services/nutrition-service";
 type UseNutritionBuilderProps = {
   client: Client;
   onUpdate?: () => void;
+  /** The Journey block the coach came from ("set targets" on its card), or
+   *  null. Captured on arrival by the host's `useJourneyRoundTrip` — the URL
+   *  is stripped of the trip in the same effect — and preselected in the Block
+   *  field below; never a binding. */
+  roundTripBlockId?: string | null;
 };
 
 type NutritionSettings = {
@@ -33,7 +42,11 @@ type NutritionSettings = {
   dietType: DietType;
 };
 
-export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderProps) {
+export function useNutritionBuilder({
+  client,
+  onUpdate,
+  roundTripBlockId = null,
+}: UseNutritionBuilderProps) {
   const { toast } = useToast();
   const nutritionPlan = useNutritionPlan({ client });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
@@ -95,29 +108,34 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   const clientToday = calcInputs?.today ?? null;
   // The earliest day targets may START: the shared deletion floor — the
   // client's today, or tomorrow once they have logged anything today. A server
-  // answer, so it rides the blocks payload the round-trip seed below already
-  // reads. Null until the resolved inputs have loaded, like everything here;
-  // today until the payload lands, and never before today whatever it says.
-  // The server's own belt refuses a start before it either way.
-  const { planStartFloor } = useClientBlocks(client.id);
+  // answer, so it rides the blocks payload beside the blocks themselves. Null
+  // until the resolved inputs have loaded, like everything here; today until
+  // the payload lands, and never before today whatever it says. The server's
+  // own belt refuses a start before it either way.
+  const { blocks, planStartFloor } = useClientBlocks(client.id);
   const startFloor = clientToday
     ? planStartFloor && planStartFloor > clientToday
       ? planStartFloor
       : clientToday
     : null;
-  // Seeded from the block the coach came from, when they came from one — a
-  // derivation, never a second piece of state, so their own pick still wins and
-  // there is nothing to keep in sync. Floored at the floor above: a block
-  // already under way seeds today, or tomorrow once today is logged, not the
-  // day it began.
-  const blockStart = useRoundTripBlockStart(client.id, "edit");
-  const blockSeed =
-    blockStart && startFloor
-      ? blockStart > startFloor
-        ? blockStart
-        : startFloor
+  // The Block field over the date: the client's blocks whose end is on or after
+  // the floor, then No block. The coach's own pick wins; with none, the block
+  // they came from is preselected; else No block. The selected option's window
+  // bounds the date field AND seeds the start — a derivation, never a second
+  // copy of the date, so the two cannot disagree; a block already under way
+  // seeds the floor, not the day it began. Empty, and so no window, until the
+  // floor is known.
+  const blockOptions = useMemo(
+    () => (startFloor ? buildBlockStartOptions(blocks, startFloor) : []),
+    [blocks, startFloor]
+  );
+  const [blockPick, setBlockPick] = useState<string | null>(null);
+  const selectedBlock =
+    blockOptions.length > 0
+      ? selectBlockStartOption(blockOptions, blockPick, roundTripBlockId)
       : null;
-  const effectiveFrom = effectiveFromPick ?? blockSeed ?? startFloor;
+  const startWindow = selectedBlock?.window ?? null;
+  const effectiveFrom = effectiveFromPick ?? startWindow?.min ?? null;
 
   const autoPlan = useMemo(
     () =>
@@ -246,8 +264,17 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
   );
 
   const handleEffectiveFromChange = useCallback((date: string) => {
-    // An emptied picker means today again, not an empty string.
+    // An emptied picker means the block's first available day again, not an
+    // empty string.
     setEffectiveFromPick(date || null);
+    setSettingsChanged(true);
+  }, []);
+
+  const handleBlockChange = useCallback((value: string) => {
+    setBlockPick(value);
+    // Choosing a block SETS the start: the date re-seeds from the block's
+    // window, and the coach moves it inside the window from there.
+    setEffectiveFromPick(null);
     setSettingsChanged(true);
   }, []);
 
@@ -312,8 +339,10 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
           });
           setSettingsChanged(false);
           setCoachNotes("");
-          // The next save defaults to today again (D27).
+          // The next save defaults to today again (D27) — and to No block,
+          // unless a round trip is still preselecting one.
           setEffectiveFromPick(null);
+          setBlockPick(null);
           onUpdate?.();
           nutritionPlan.refetchNutrition();
           // The calendar renders from its own SWR events cache — revalidate it
@@ -368,13 +397,21 @@ export function useNutritionBuilder({ client, onUpdate }: UseNutritionBuilderPro
     settingsChanged,
     handleSettingsChange,
 
-    // The day the plan takes effect: the coach's pick, else the floor — the
-    // client's today, or tomorrow once they have logged today. Null until the
-    // resolved inputs have loaded.
+    // The day the plan takes effect: the coach's pick, else the selected
+    // block's first available day — the floor (the client's today, or tomorrow
+    // once they have logged today) for No block or a block under way, a future
+    // block's start otherwise. Null until the resolved inputs have loaded.
     effectiveFrom,
     clientToday,
     startFloor,
     handleEffectiveFromChange,
+
+    // The Block field: its options, the selected value, and the window that
+    // bounds the date field — `min`/`max` on the input.
+    blockOptions,
+    blockValue: selectedBlock?.value ?? NO_BLOCK_OPTION,
+    startWindow,
+    handleBlockChange,
 
     // Live preview + manual override. `autoTargets` is what auto mode shows and
     // what "Edit manually" seeds the balancer from; `manualBalance` (spread from

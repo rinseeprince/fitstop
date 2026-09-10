@@ -11,13 +11,17 @@ vi.mock("@/hooks/use-nutrition-calendar-events", () => ({
   useInvalidateNutritionCalendar: () => vi.fn().mockResolvedValue(undefined),
 }));
 
-// The blocks payload, which carries the plan-start floor (the shared deletion
-// floor: today, or tomorrow once the client has logged today). Held where the
-// module mock can reach it; null = the payload has not landed.
-const blocksState = vi.hoisted(() => ({ planStartFloor: null as string | null }));
+// The blocks payload, which carries the client's blocks and the plan-start
+// floor (the shared deletion floor: today, or tomorrow once the client has
+// logged today). Held where the module mock can reach it; null = the payload
+// has not landed.
+const blocksState = vi.hoisted(() => ({
+  planStartFloor: null as string | null,
+  blocks: [] as Array<{ id: string; name: string; startsOn: string; endsOn: string }>,
+}));
 vi.mock("@/components/clients/metrics/hooks/use-client-blocks", () => ({
   useClientBlocks: () => ({
-    blocks: [],
+    blocks: blocksState.blocks,
     clientToday: null,
     planStartFloor: blocksState.planStartFloor,
     isLoading: false,
@@ -247,6 +251,142 @@ describe("useNutritionBuilder — the start floor", () => {
     const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
     act(() => result.current.handleEffectiveFromChange(THREE_WEEKS_OUT));
     expect(result.current.effectiveFrom).toBe(THREE_WEEKS_OUT);
+  });
+});
+
+// The Block field (D): the client's blocks whose end is on or after the floor,
+// then No block. The block the coach came from — the Journey round trip's,
+// captured on arrival by the host and handed in — is preselected; choosing a
+// block sets the start to its first available day and bounds the date to its
+// window. Purely UX: the save resolves its own window from the block covering
+// the start, so this only picks a valid start inside the block the coach means.
+describe("useNutritionBuilder — the Block field", () => {
+  const TOMORROW = "2026-07-03";
+  // Under way at the client's today; the next one; one that ended before it.
+  const CUT = { id: "b-cut", name: "Cut", startsOn: "2026-06-20", endsOn: "2026-07-17" };
+  const BUILD = { id: "b-build", name: "Build", startsOn: "2026-07-18", endsOn: "2026-08-14" };
+  const OLD = { id: "b-old", name: "Base", startsOn: "2026-05-01", endsOn: "2026-05-31" };
+
+  beforeEach(() => {
+    planState.nutritionData = {
+      calcInputs: CALC_INPUTS,
+      hasPlan: false,
+      includeActivityBurn: true,
+      scheduledFor: null,
+    };
+    planState.refetchNutrition.mockReset();
+    blocksState.planStartFloor = null;
+    blocksState.blocks = [OLD, CUT, BUILD];
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    blocksState.planStartFloor = null;
+    blocksState.blocks = [];
+  });
+
+  it("lists the blocks whose end is on or after the floor, then No block, and defaults to No block", () => {
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    expect(result.current.blockOptions.map((option) => option.value)).toEqual([
+      CUT.id,
+      BUILD.id,
+      "none",
+    ]);
+    expect(result.current.blockValue).toBe("none");
+    expect(result.current.startWindow).toEqual({ min: CLIENT_TODAY, max: null });
+    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
+  });
+
+  it("preselects the block the coach came from: a future block seeds its own start and bounds the date to it", () => {
+    const { result } = renderHook(() =>
+      useNutritionBuilder({ client: CLIENT, roundTripBlockId: BUILD.id })
+    );
+    expect(result.current.blockValue).toBe(BUILD.id);
+    expect(result.current.effectiveFrom).toBe(BUILD.startsOn);
+    expect(result.current.startWindow).toEqual({ min: BUILD.startsOn, max: BUILD.endsOn });
+  });
+
+  it("a block already under way seeds the floor, not the day it began", () => {
+    const { result } = renderHook(() =>
+      useNutritionBuilder({ client: CLIENT, roundTripBlockId: CUT.id })
+    );
+    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
+    expect(result.current.startWindow).toEqual({ min: CLIENT_TODAY, max: CUT.endsOn });
+
+    blocksState.planStartFloor = TOMORROW;
+    const logged = renderHook(() =>
+      useNutritionBuilder({ client: CLIENT, roundTripBlockId: CUT.id })
+    );
+    expect(logged.result.current.effectiveFrom).toBe(TOMORROW);
+    expect(logged.result.current.startWindow).toEqual({ min: TOMORROW, max: CUT.endsOn });
+  });
+
+  it("a round trip from a block no longer listed falls to No block", () => {
+    const { result } = renderHook(() =>
+      useNutritionBuilder({ client: CLIENT, roundTripBlockId: OLD.id })
+    );
+    expect(result.current.blockValue).toBe("none");
+    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
+  });
+
+  it("picking a block sets the date and its bounds; picking No block clears the ceiling", () => {
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+
+    act(() => result.current.handleBlockChange(BUILD.id));
+    expect(result.current.blockValue).toBe(BUILD.id);
+    expect(result.current.effectiveFrom).toBe(BUILD.startsOn);
+    expect(result.current.startWindow).toEqual({ min: BUILD.startsOn, max: BUILD.endsOn });
+
+    act(() => result.current.handleBlockChange("none"));
+    expect(result.current.blockValue).toBe("none");
+    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
+    expect(result.current.startWindow).toEqual({ min: CLIENT_TODAY, max: null });
+  });
+
+  it("the coach's own date wins inside the window, and a block change re-seeds it", () => {
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    act(() => result.current.handleBlockChange(BUILD.id));
+    act(() => result.current.handleEffectiveFromChange("2026-07-25"));
+    expect(result.current.effectiveFrom).toBe("2026-07-25");
+
+    act(() => result.current.handleBlockChange(CUT.id));
+    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
+  });
+
+  it("the request carries the block's first available day when a block is picked", async () => {
+    const fetchSpy = mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    act(() => result.current.handleBlockChange(BUILD.id));
+
+    await act(async () => {
+      await result.current.generatePlan();
+    });
+
+    expect(postedBody(fetchSpy).effectiveFrom).toBe(BUILD.startsOn);
+  });
+
+  it("a saved plan resets the block pick as it resets the date", async () => {
+    mockFetch();
+    const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
+    act(() => result.current.handleBlockChange(BUILD.id));
+
+    await act(async () => {
+      await result.current.generatePlan();
+    });
+
+    expect(result.current.blockValue).toBe("none");
+    expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
+  });
+
+  it("no options and no window until the resolved inputs have loaded", () => {
+    planState.nutritionData = null;
+    const { result } = renderHook(() =>
+      useNutritionBuilder({ client: CLIENT, roundTripBlockId: BUILD.id })
+    );
+    expect(result.current.blockOptions).toEqual([]);
+    expect(result.current.blockValue).toBe("none");
+    expect(result.current.startWindow).toBeNull();
+    expect(result.current.effectiveFrom).toBeNull();
   });
 });
 

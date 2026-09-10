@@ -35,7 +35,9 @@ export function TrainingPlanBuilder({
   // The apply tray, plus the Journey round trip that can open it (7.3). The
   // hook consumes ?apply=1 & the return target ON ARRIVAL and strips them, and
   // drops the target on any close without an apply — so an abandoned trip
-  // cannot bounce a later, unrelated apply back to Journey.
+  // cannot bounce a later, unrelated apply back to Journey. The block it names
+  // is also the one the apply dialog's Block field preselects, so it is handed
+  // down the overlay rather than re-read off a URL that no longer carries it.
   const {
     open: drawerOpen,
     setOpen: setDrawerOpen,
@@ -85,6 +87,7 @@ export function TrainingPlanBuilder({
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
           clientName={client.name}
+          preselectedBlockId={returnBlockId}
           onApplied={() => {
             // returnBlockId is read from THIS render's closure, so the
             // overlay's own close (which clears it) cannot race the trip.

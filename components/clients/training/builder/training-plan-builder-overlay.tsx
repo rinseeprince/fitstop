@@ -34,6 +34,10 @@ type TrainingPlanBuilderOverlayProps = {
   // reports the fact; the PARENT decides what happens next (Session 7.3's
   // return trip to the Journey block the coach came from).
   onApplied?: () => void;
+  // That same block, preselected in the apply dialog's Block field. The parent
+  // captured it on arrival — the URL is stripped of the trip in the same
+  // effect — so it is threaded down rather than re-read.
+  preselectedBlockId?: string | null;
 };
 
 export function TrainingPlanBuilderOverlay({
@@ -41,6 +45,7 @@ export function TrainingPlanBuilderOverlay({
   onOpenChange,
   clientName,
   onApplied,
+  preselectedBlockId,
 }: TrainingPlanBuilderOverlayProps) {
   const builder = useTrainingBuilderContext();
   const hasDraft = !!builder.savedPlanId;
@@ -126,6 +131,7 @@ export function TrainingPlanBuilderOverlay({
               clientId={builder.clientId}
               clientName={clientName}
               clientTimezone={builder.clientTimezone}
+              preselectedBlockId={preselectedBlockId ?? undefined}
               onApplied={() => {
                 // The plan landed on the client's calendar — refresh the
                 // client's plan view and return to it by CLOSING the drawer

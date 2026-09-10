@@ -36,8 +36,7 @@ describe("useClientBlocks", () => {
   });
 
   it("fetches nothing for an empty client id, and reads as nothing yet", () => {
-    // The apply dialog holds this until a client is picked, and the round-trip
-    // seed calls it with no client outside a client page.
+    // The apply dialog holds this until a client is picked on the library path.
     const { result } = renderHook(() => useClientBlocks(""));
 
     expect(mockUseSWR).toHaveBeenCalledWith(null);

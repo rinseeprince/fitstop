@@ -66,9 +66,9 @@ const SWR_CONFIG = {
  *  date derivation (pace fraction, delete-shift preview) uses it, never the
  *  coach's device day. */
 export function useClientBlocks(clientId: string) {
-  // No client, no read: the apply dialog holds this until a client is picked,
-  // and the round-trip seed calls it with no client at all outside a client
-  // page. A key built from an empty id would fetch a URL naming no client.
+  // No client, no read: the apply dialog holds this until a client is picked
+  // on the library path. A key built from an empty id would fetch a URL naming
+  // no client.
   const { data, error, isLoading } = useSWR<BlocksResponse>(
     clientId ? clientBlocksKey(clientId) : null,
     swrFetcher,
