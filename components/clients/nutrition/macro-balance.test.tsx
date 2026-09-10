@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MacroBalance } from "./macro-balance";
 import {
   gramsToCalories,
@@ -68,7 +67,7 @@ beforeEach(() => cleanup());
 afterEach(() => vi.restoreAllMocks());
 
 describe("MacroBalance — what it shows", () => {
-  it("renders the split's percents, the grams the calories derive, and the preset the split matches", () => {
+  it("renders the split's percents and the grams the calories derive", () => {
     render(<Harness initial={{ calories: 2400, split: START }} />);
 
     expect(caloriesInput().value).toBe("2400");
@@ -78,16 +77,17 @@ describe("MacroBalance — what it shows", () => {
     expect(gramsInput("Fat").value).toBe("67");
     expect(gramsInput("Carbs").value).toBe("269");
     expect(percents()).toEqual(["45%", "25%", "30%"]);
-    // 45 / 25 is no diet type's ratio at 30% protein.
-    expect(screen.getByRole("button", { name: /Custom/ })).toBeInTheDocument();
     // Two thumbs, named as the boundaries they are, at carbs and carbs + fat.
     expect(thumb("Carbs and fat boundary")).toHaveAttribute("aria-valuenow", "45");
     expect(thumb("Fat and protein boundary")).toHaveAttribute("aria-valuenow", "70");
   });
 
-  it("names a matching preset: balanced at 30% protein reads Balanced", () => {
+  it("offers no preset and no diet type — a manual edit is the coach's hand alone", () => {
     render(<Harness initial={{ calories: 2000, split: { carbs: 35, fat: 35, protein: 30 } }} />);
-    expect(screen.getByRole("button", { name: /Balanced/ })).toBeInTheDocument();
+    // Two thumbs, four inputs, and nothing else to press.
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByText(/Balanced|High carb|Low carb|Keto|Custom/)).toBeNull();
   });
 
   it("an empty calorie field disables the gram inputs and shows no grams", () => {
@@ -181,21 +181,5 @@ describe("MacroBalance — the calories are held whatever the thumbs do", () => 
     expect(gramsInput("Protein").value).toBe("225");
     expect(gramsInput("Fat").value).toBe("83");
     expect(gramsInput("Carbs").value).toBe(String(splitToGrams(3000, START).carbG));
-  });
-
-  it("a preset sets the thumbs, holding the protein share", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(<Harness initial={{ calories: 2400, split: START }} onChange={onChange} />);
-
-    await user.click(screen.getByRole("button", { name: /Custom/ }));
-    await user.click(await screen.findByRole("menuitem", { name: "Keto" }));
-
-    // Keto is 10 / 90 of the 70 left after protein → 7 / 63 / 30.
-    expect(percents()).toEqual(["7%", "63%", "30%"]);
-    expect(thumb("Carbs and fat boundary")).toHaveAttribute("aria-valuenow", "7");
-    expect(thumb("Fat and protein boundary")).toHaveAttribute("aria-valuenow", "70");
-    expect(screen.getByRole("button", { name: /Keto/ })).toBeInTheDocument();
-    expect(caloriesInput().value).toBe("2400");
   });
 });

@@ -2,11 +2,9 @@ import { describe, it, expect } from "vitest";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import {
   DEFAULT_SPLIT,
-  MACRO_PRESETS,
   applyPreset,
   gramsToCalories,
   gramsToSplit,
-  presetOf,
   setGrams,
   splitToGrams,
   splitToThumbs,
@@ -154,9 +152,11 @@ describe("macro-balance — setGrams holds the calories", () => {
   });
 });
 
-describe("macro-balance — presets are the calculator's diet types", () => {
-  it("applying a preset holds protein and re-splits the rest exactly as calculateDailyMacros does", () => {
-    for (const preset of MACRO_PRESETS) {
+describe("macro-balance — a diet type as a re-split is the calculator's own ratio", () => {
+  const DIET_TYPES = ["balanced", "high_carb", "low_carb", "keto"] as const;
+
+  it("applying a diet type holds protein and re-splits the rest exactly as calculateDailyMacros does", () => {
+    for (const preset of DIET_TYPES) {
       for (const calories of [1600, 2000, 2400, 3000]) {
         const proteinG = Math.round((calories * 0.3) / 4); // 30% protein
         const split = applyPreset({ carbs: 50, fat: 20, protein: 30 }, preset);
@@ -170,13 +170,6 @@ describe("macro-balance — presets are the calculator's diet types", () => {
         expect(Math.abs(grams.fatG - calc.fatG) * 9).toBeLessThanOrEqual(calories / 100 + 5);
       }
     }
-  });
-
-  it("names the preset a split matches, and custom when none does", () => {
-    expect(presetOf(applyPreset({ carbs: 0, fat: 0, protein: 30 }, "keto"))).toBe("keto");
-    expect(presetOf({ carbs: 35, fat: 35, protein: 30 })).toBe("balanced");
-    expect(presetOf({ carbs: 45, fat: 25, protein: 30 })).toBe("custom");
-    expect(presetOf({ carbs: 50, fat: 20, protein: 30 })).toBe("custom");
   });
 
   it("keto at 30% protein is 7 / 63 / 30", () => {

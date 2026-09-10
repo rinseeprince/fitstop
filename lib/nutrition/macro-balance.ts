@@ -43,21 +43,14 @@ export const MACRO_ORDER: readonly Macro[] = ["carbs", "fat", "protein"];
 export const DEFAULT_SPLIT: MacroSplit = { carbs: 35, fat: 35, protein: 30 };
 
 /**
- * The four diet types, as presets. A preset is a carb:fat ratio over the
- * calories left after protein — exactly what the diet type is to the
- * calculator (`calculateDailyMacros`) — so applying one holds the protein
- * share and re-splits the rest. `custom` is not a preset: it is what the
- * dropdown reads when the split matches none of the four.
+ * A diet type as a re-split: a carb:fat ratio over the calories left after
+ * protein — exactly what the diet type is to the calculator
+ * (`calculateDailyMacros`). The balancer itself offers no presets — a manual
+ * edit is the coach's hand alone (owner, 2026-09-10); `applyPreset` serves
+ * the builder when a picker changes while manual mode is on. `custom` is no
+ * ratio.
  */
 type MacroPreset = Exclude<DietType, "custom">;
-export const MACRO_PRESETS: readonly MacroPreset[] = ["balanced", "high_carb", "low_carb", "keto"];
-export const MACRO_PRESET_LABELS: Record<MacroPreset | "custom", string> = {
-  balanced: "Balanced",
-  high_carb: "High carb",
-  low_carb: "Low carb",
-  keto: "Keto",
-  custom: "Custom",
-};
 
 const clampPct = (n: number): number => Math.min(100, Math.max(0, Math.round(n)));
 
@@ -129,11 +122,6 @@ export function applyPreset(split: MacroSplit, preset: MacroPreset): MacroSplit 
   return { carbs, fat: rest - carbs, protein: split.protein };
 }
 
-/** The preset a split matches at its own protein share, else "custom". */
-export function presetOf(split: MacroSplit): MacroPreset | "custom" {
-  return MACRO_PRESETS.find((preset) => sameSplit(applyPreset(split, preset), split)) ?? "custom";
-}
-
 /** The two thumbs: the boundaries carbs | fat and fat | protein. */
 export function splitToThumbs(split: MacroSplit): [number, number] {
   return [split.carbs, split.carbs + split.fat];
@@ -144,10 +132,6 @@ export function thumbsToSplit(thumbs: readonly number[]): MacroSplit {
   const carbs = clampPct(thumbs[0] ?? 0);
   const second = clampPct(Math.max(carbs, thumbs[1] ?? carbs));
   return { carbs, fat: second - carbs, protein: 100 - second };
-}
-
-function sameSplit(a: MacroSplit, b: MacroSplit): boolean {
-  return a.carbs === b.carbs && a.fat === b.fat && a.protein === b.protein;
 }
 
 /**

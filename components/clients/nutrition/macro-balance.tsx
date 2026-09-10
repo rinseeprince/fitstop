@@ -1,28 +1,16 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  FOCUS_RING,
   LABEL_CLASS,
   MONO,
   MONO_INPUT_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import {
   MACRO_ORDER,
-  MACRO_PRESETS,
-  MACRO_PRESET_LABELS,
-  applyPreset,
-  presetOf,
   setGrams,
   splitToGrams,
   splitToThumbs,
@@ -63,6 +51,9 @@ function parseWhole(text: string): number | null {
  * "Edit manually" and the per-day editor's Set targets tab, so the four
  * numbers either one saves cannot disagree.
  *
+ * A manual edit is the coach's hand alone: no presets, no diet type. The diet
+ * type belongs to the calculated path (owner, 2026-09-10).
+ *
  * Controlled: the parent owns the value. The three gram inputs are the one
  * place a draft lives — while a coach is typing "180" the field shows the
  * keystrokes and the thumbs follow each one, and on blur the field reads the
@@ -73,7 +64,6 @@ export function MacroBalance({ value, onChange }: MacroBalanceProps) {
   const { calories, split } = value;
   const hasCalories = calories != null && calories > 0;
   const grams = splitToGrams(calories ?? 0, split);
-  const preset = presetOf(split);
 
   return (
     <div className="space-y-3">
@@ -96,40 +86,7 @@ export function MacroBalance({ value, onChange }: MacroBalanceProps) {
       </div>
 
       <div className="space-y-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3.5">
-        <div className="flex items-center justify-between gap-3">
-          <span className={LABEL_CLASS}>Macro split</span>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  FOCUS_RING,
-                  "inline-flex items-center gap-1 rounded-[4px] px-2 py-1 text-[11px] font-medium text-[#93b0b4] transition-colors hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0d9488] data-[state=open]:bg-[rgba(13,148,136,0.05)] data-[state=open]:text-[#0d9488]"
-                )}
-              >
-                {MACRO_PRESET_LABELS[preset]}
-                <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.5} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={6} className="w-40">
-              {MACRO_PRESETS.map((option) => {
-                const isActive = option === preset;
-                return (
-                  <DropdownMenuItem
-                    key={option}
-                    onSelect={() => onChange({ ...value, split: applyPreset(split, option) })}
-                    className={cn("justify-between", isActive && "font-medium text-[#0c1a1e]")}
-                  >
-                    {MACRO_PRESET_LABELS[option]}
-                    {isActive && (
-                      <Check className="h-3.5 w-3.5 shrink-0 text-[#0d9488]" strokeWidth={1.5} />
-                    )}
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <span className={LABEL_CLASS}>Macro split</span>
 
         {/* The track IS the split: three colour bands whose boundaries are the
             thumbs, in MFP's order. 1% steps; the thumbs may touch but never
