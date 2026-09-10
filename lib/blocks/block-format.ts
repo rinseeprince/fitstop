@@ -23,9 +23,23 @@ export function formatBlockDate(iso: string): string {
  * the calories moved. Shared so the block card's nutrition column and its
  * timeline cannot disagree about that inversion.
  */
-export function formatDeficitPerDay(deficitPerDay: number): string {
+function formatDeficitPerDay(deficitPerDay: number): string {
+  const { value, unit } = splitDeficitPerDay(deficitPerDay);
+  return `${value} ${unit}`;
+}
+
+/**
+ * The same figure in two halves — "+2,433" and "kcal/day" — for a surface that
+ * sets the number in the target's own weight and the unit in the unit's, as
+ * the block card's nutrition column does beside "5,000 kcal". One sign rule
+ * (above) and one thousands separator for both halves of the line.
+ */
+export function splitDeficitPerDay(deficitPerDay: number): { value: string; unit: string } {
   const sign = deficitPerDay > 0 ? "−" : deficitPerDay < 0 ? "+" : "±";
-  return `${sign}${Math.round(Math.abs(deficitPerDay))} kcal/day`;
+  return {
+    value: `${sign}${Math.round(Math.abs(deficitPerDay)).toLocaleString()}`,
+    unit: "kcal/day",
+  };
 }
 
 /** "3,471 kcal · −629 kcal/day" — one era, as a standalone data string. */

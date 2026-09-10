@@ -3,15 +3,14 @@ import { deriveTimelineEntries } from "./block-timeline";
 import type { BlockNutritionFact } from "@/types/client-blocks";
 
 const nutrition = (
-  eras: BlockNutritionFact["eras"]
-): BlockNutritionFact => ({
-  startsOn: eras[0]?.from ?? "2026-06-01",
-  calories: 2200,
-  deficitPerDay: 400,
-  changeCount: 0,
-  lastChangedOn: null,
-  eras,
-});
+  versions: { from: string; calories: number; deficitPerDay: number | null }[]
+): BlockNutritionFact[] =>
+  versions.map((version, index) => ({
+    id: `v${index + 1}`,
+    startsOn: version.from,
+    calories: version.calories,
+    deficitPerDay: version.deficitPerDay,
+  }));
 
 const BLOCK = {
   id: "a",
@@ -36,7 +35,7 @@ describe("deriveTimelineEntries", () => {
         // belongs to the block whose window contains its start.
         plan("p0", "Prep", "2026-05-20"),
       ],
-      null
+      []
     );
     expect(entries.map((e) => e.label)).toEqual([
       "Block started",
@@ -51,12 +50,12 @@ describe("deriveTimelineEntries", () => {
   });
 
   it("past block: appends the end entry", () => {
-    const entries = deriveTimelineEntries({ ...BLOCK, state: "past" }, [], null);
+    const entries = deriveTimelineEntries({ ...BLOCK, state: "past" }, [], []);
     expect(entries.map((e) => e.label)).toEqual(["Block started", "Block ended"]);
   });
 
   it("future block with nothing placed: empty — the renderer says \"Nothing yet.\"", () => {
-    expect(deriveTimelineEntries({ ...BLOCK, state: "future" }, [], null)).toEqual([]);
+    expect(deriveTimelineEntries({ ...BLOCK, state: "future" }, [], [])).toEqual([]);
   });
 
   // The coach's first question reviewing a block: what were they eating, and
@@ -105,8 +104,8 @@ describe("deriveTimelineEntries", () => {
       expect(entries[2].detail).toBe("2,800 kcal");
     });
 
-    it("no nutrition fact: the timeline is unchanged", () => {
-      const entries = deriveTimelineEntries({ ...BLOCK, state: "current" }, [], null);
+    it("no nutrition version: the timeline is unchanged", () => {
+      const entries = deriveTimelineEntries({ ...BLOCK, state: "current" }, [], []);
       expect(entries.map((e) => e.label)).toEqual(["Block started"]);
     });
 
@@ -128,7 +127,7 @@ describe("deriveTimelineEntries", () => {
     const entries = deriveTimelineEntries(
       { ...BLOCK, state: "future" },
       [plan("p1", "Base", "2026-06-03")],
-      null
+      []
     );
     expect(entries.map((e) => e.label)).toEqual(["Base started"]);
   });
@@ -195,7 +194,7 @@ describe("deriveTimelineEntries", () => {
       const entries = deriveTimelineEntries(
         { ...BLOCK, state: "current" },
         [],
-        null,
+        [],
         [note("n4", "2026-06-10", "Switching approach.")]
       );
 

@@ -128,8 +128,8 @@ async function main() {
   baselines.push(await measure(
     "getBlockFacts (4-way fan-out)",
     "services/client-blocks-facts-service.ts",
-    `getBlockFacts(PERF_CLIENT_ID, today)`,
-    () => getBlockFacts(PERF_CLIENT_ID, getTodayDateString()),
+    `getBlockFacts(PERF_CLIENT_ID)`,
+    () => getBlockFacts(PERF_CLIENT_ID),
     "Four parallel reads over the whole journey span, partitioned per block in memory — round trips are constant in the number of blocks, never per-block.",
   ));
 

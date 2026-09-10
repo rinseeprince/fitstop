@@ -4,15 +4,11 @@ import {
   getTrainingPlansOverlapping,
   type TrainingPlanWindowSummary,
 } from "./training-service";
-import { versionCoversDate } from "./nutrition-plan-service";
 import { listNutritionPlanNotesInRange } from "./nutrition-plan-notes-service";
-import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { fetchAllPages } from "@/lib/paged-fetch";
 import { addDaysToDateString } from "@/lib/date-helpers";
-import type { NutritionEvent } from "@/types/check-in";
 import type {
   BlockFacts,
-  BlockNutritionEra,
   BlockNutritionFact,
   ClientBlock,
 } from "@/types/client-blocks";
@@ -21,10 +17,9 @@ import type {
 // The chain routes stay pure CRUD; this service decorates each block with the
 // training and nutrition story of its window. Everything is fetched ONCE for
 // the whole journey span and partitioned per block in memory — round trips
-// are constant (blocks + 5 parallel reads, one of them the day reader's own
-// batch), never per-block. The span's nutrition days come from the day reader
-// (services/nutrition-days-service.ts): one computed day per date a version
-// covers, complete by construction — there is no day table to page.
+// are constant (blocks + 4 parallel reads), never per-block. Nothing per day is
+// read for nutrition: a day's target is computed from the version covering it,
+// so the versions ARE the block's nutrition days.
 
 /**
  * The dates the client has a TRAINING event on, across the span. Narrow (one
@@ -112,69 +107,39 @@ async function fetchVersionTdeeWindows(
 }
 
 /**
- * The block's nutrition fact — owner-specified semantics (Session 3.7
- * follow-up, superseding the 3.2 dominant-era modal, which sourced its
- * headline from events and became blind the moment hand-edits dominated a
- * window): show the PRESCRIPTION, i.e. the plan VERSION's own daily calories
- * and deficit, with per-day hand edits and training surpluses ignored by
- * construction (the plan row never contains either).
+ * The block's nutrition facts — the same shape as its training facts (owner,
+ * 2026-09-10): every active version whose window overlaps the block, in start
+ * order, each carrying its OWN row's numbers and its own start. A queued
+ * version inside a current block is listed exactly as a queued program is; a
+ * version that began before the block keeps its real start, as a crossing
+ * program's `startsOn` does; a re-save with the same numbers is its own entry,
+ * as a program placed twice is. There is no reference date and no headline —
+ * the list is the answer, and an empty list is "Not set".
  *
- * The reference date picks WHICH era's prescription: a current block reads
- * the version covering TODAY ("what are they on now"), a past block the
- * version covering its final day ("what they finished on"), a future block
- * the version covering its first day (the queued prescription). Version
- * windows cannot overlap (the gist exclusion), so at most one covers any
- * date; no covering version → null ("Not set"), which is also what a retired
- * version leaves behind — a delete archives it (migration 166). Calories
- * honour a custom-macros override; deficit = that version's tdee − calories
- * (positive = deficit), null without a tdee.
- *
- * The "Changed" marker keeps its day-based detection: baseline transitions
- * across consecutive UNMODIFIED lived days, read off the computed days —
- * while hand-edited stretches can neither flag nor mask one. No rounding
- * here; display rounding belongs to the renderer.
+ * Version windows never overlap (the gist exclusion) and may leave gaps, so
+ * this is a plain intersection with the block window — no resolution rule,
+ * unlike training's latest-start-wins segments. Query order is
+ * `effective_from ASC`, so the list is chronological. Calories honour a
+ * custom-macros override; deficit = tdee − calories (positive = deficit), null
+ * without a tdee. No rounding here; display rounding belongs to the renderer.
  */
-function deriveNutritionFact(
-  events: NutritionEvent[],
+function deriveNutritionFacts(
   versions: VersionTdeeWindow[],
-  block: ClientBlock,
-  clientToday: string
-): BlockNutritionFact | null {
-  const isCurrent = block.startsOn <= clientToday && clientToday <= block.endsOn;
-  const windowEnd = isCurrent ? clientToday : block.endsOn;
-  const referenceDate =
-    block.startsOn > clientToday
-      ? block.startsOn
-      : block.endsOn < clientToday
-        ? block.endsOn
-        : clientToday;
-
-  const version =
-    versions.find((v) => versionCoversDate(v, referenceDate)) ?? null;
-  if (!version) return null;
-
-  let changeCount = 0;
-  let lastChangedOn: string | null = null;
-  let previous: number | null = null;
-  for (const event of events) {
-    if (event.isModified) continue;
-    if (event.date < block.startsOn || event.date > windowEnd) continue;
-    if (previous !== null && event.baselineCalories !== previous) {
-      changeCount += 1;
-      lastChangedOn = event.date;
-    }
-    previous = event.baselineCalories;
+  block: ClientBlock
+): BlockNutritionFact[] {
+  const facts: BlockNutritionFact[] = [];
+  for (const version of versions) {
+    if (version.effectiveFrom > block.endsOn) continue;
+    if (version.effectiveUntil < block.startsOn) continue;
+    const calories = versionCalories(version);
+    facts.push({
+      id: version.id,
+      startsOn: version.effectiveFrom,
+      calories,
+      deficitPerDay: version.tdee != null ? version.tdee - calories : null,
+    });
   }
-
-  const calories = versionCalories(version);
-  return {
-    startsOn: version.effectiveFrom,
-    calories,
-    deficitPerDay: version.tdee != null ? version.tdee - calories : null,
-    changeCount,
-    lastChangedOn,
-    eras: deriveEras(versions, block.startsOn, windowEnd),
-  };
+  return facts;
 }
 
 /** A version's own daily target, custom-macros override honoured. */
@@ -182,58 +147,6 @@ function versionCalories(version: VersionTdeeWindow): number {
   return version.customMacrosEnabled && version.customCalories != null
     ? version.customCalories
     : version.baselineCalories;
-}
-
-/**
- * The prescription era by era, for the block's "what happened" timeline.
- *
- * The version rows ARE the era log: `[effective_from, effective_until]` windows
- * never overlap (the gist exclusion), so this is a plain intersection with the
- * block window — no resolution rule, unlike training. Gaps between them are
- * real (migration 166: a version ends where it was placed to end, and a
- * retired one is archived out of this read), and a gap simply has no era.
- *
- * Each era carries the numbers off its OWN row. The block headline reads the
- * reference-date version instead, which is right for "what are they on now" and
- * wrong for a dated history entry: those numbers change on every plan save, so a
- * past entry sourced from them would silently rewrite itself.
- *
- * `windowEnd` is the caller's — today for a current block — so a queued version
- * dated in the future never appears in a log of what happened.
- */
-function deriveEras(
-  versions: VersionTdeeWindow[],
-  blockStart: string,
-  windowEnd: string
-): BlockNutritionEra[] {
-  const eras: BlockNutritionEra[] = [];
-  // Query order is `effective_from ASC`, and windows cannot overlap, so this
-  // walk is already chronological.
-  for (const version of versions) {
-    if (version.effectiveFrom > windowEnd) continue;
-    if (version.effectiveUntil < blockStart) continue;
-
-    const calories = versionCalories(version);
-    const deficitPerDay = version.tdee != null ? version.tdee - calories : null;
-
-    // A save that left the numbers where they were did not change anything the
-    // coach would recognise, so it earns no entry.
-    const previous = eras[eras.length - 1];
-    if (
-      previous &&
-      previous.calories === calories &&
-      previous.deficitPerDay === deficitPerDay
-    ) {
-      continue;
-    }
-
-    eras.push({
-      from: version.effectiveFrom > blockStart ? version.effectiveFrom : blockStart,
-      calories,
-      deficitPerDay,
-    });
-  }
-  return eras;
 }
 
 /** The plan that GOVERNS `date` under the resolution rule: latest
@@ -306,43 +219,36 @@ export function reduceToGoverningSegments(
 }
 
 /** Per-block server facts for the whole chain, in chain order. */
-export async function getBlockFacts(
-  clientId: string,
-  clientToday: string
-): Promise<BlockFacts[]> {
+export async function getBlockFacts(clientId: string): Promise<BlockFacts[]> {
   const blocks = await listBlocks(clientId);
   if (blocks.length === 0) return [];
 
   const spanStart = blocks[0].startsOn;
   const spanEnd = blocks[blocks.length - 1].endsOn;
 
-  const [plans, versions, events, notes, trainingDays] = await Promise.all([
+  const [plans, versions, notes, trainingDays] = await Promise.all([
     getTrainingPlansOverlapping(clientId, spanStart, spanEnd),
     fetchVersionTdeeWindows(clientId, spanStart, spanEnd),
-    getNutritionEventsForDateRange(clientId, spanStart, spanEnd),
     listNutritionPlanNotesInRange(clientId, spanStart, spanEnd),
-    // Fifth parallel read, partitioned per block in memory like the other four
-    // — round trips stay constant in the number of blocks, never per-block.
+    // Fourth parallel read, partitioned per block in memory like the other
+    // three — round trips stay constant in the number of blocks, never per-block.
     fetchTrainingEventDates(clientId, spanStart, spanEnd),
   ]);
 
   const segments = reduceToGoverningSegments(plans, spanStart, spanEnd);
 
   return blocks.map((block) => {
-    // ★ A BLOCK SHOWS WHAT IS SET ONLY IF IT ACTUALLY HAS DAYS ON THE CALENDAR.
+    // ★ A BLOCK SHOWS WHAT IS SET ONLY IF IT ACTUALLY HAS DAYS INSIDE IT.
     //
-    // Both columns resolve by WINDOW, and both windows end (migrations 166 and
-    // 167), but the gate stays one rule for both tracks: a window says where a
-    // plan was placed to run, the events say which days it actually put on the
+    // On training the gate is the events: a window says where a program was
+    // placed to run, the events say which days it actually put on the
     // calendar, and a block the coach has drawn but not set up must not claim a
-    // program whose rows merely reach into it. The events are the truth for a
-    // date.
-    //
-    // Per track, because the two are set up separately: a block can have
-    // workouts and no targets, or the reverse, and each column should say only
-    // what is true of its own.
+    // program whose rows merely reach into it. On nutrition a day's target is
+    // computed from the version covering it, so a version overlapping the block
+    // IS a day inside it — the versions read answers the gate on its own, and
+    // an empty list is "Not set". Per track, because the two are set up
+    // separately: a block can have workouts and no targets, or the reverse.
     const hasTrainingDays = hasDayInBlock(trainingDays, block);
-    const hasNutritionDays = hasDayInBlock(events, block);
 
     const training: BlockFacts["training"] = [];
     for (const segment of hasTrainingDays ? segments : []) {
@@ -357,13 +263,10 @@ export async function getBlockFacts(
     return {
       blockId: block.id,
       training,
-      nutrition: hasNutritionDays
-        ? deriveNutritionFact(events, versions, block, clientToday)
-        : null,
-      // Inclusive on both ends and NOT clamped to today, unlike the nutrition
-      // eras: a note dated inside a future block is a plan the coach has
-      // already queued and explained, and hiding it until the date arrives
-      // would hide their own reasoning from them.
+      nutrition: deriveNutritionFacts(versions, block),
+      // Inclusive on both ends: a note dated inside a future block is a plan
+      // the coach has already queued and explained, and hiding it until the
+      // date arrives would hide their own reasoning from them.
       notes: notes.filter(
         (note) => note.effectiveOn >= block.startsOn && note.effectiveOn <= block.endsOn
       ),

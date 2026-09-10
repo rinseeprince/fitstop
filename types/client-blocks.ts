@@ -65,67 +65,32 @@ export interface BlockTrainingFact {
 }
 
 /**
- * The block's nutrition story — the PRESCRIPTION, owner-specified: `calories`
- * is the plan VERSION's own daily target (custom-macros override honoured;
- * per-day hand edits and training surpluses excluded by construction — the
- * plan row contains neither), and `deficitPerDay` = that version's
- * `tdee − calories` (positive = deficit; null without a tdee). The version is
- * the one covering the block's reference date: TODAY for a current block
- * ("what are they on now"), the final day for a past block, the first day for
- * a future one. No covering version → the whole fact is null ("Not set").
- *
- * `changeCount`/`lastChangedOn` stay EVENT-derived: baseline transitions
- * across consecutive unmodified lived days — catching every prescription
- * change that regenerated events, including pre-versioning history no plan
- * row remembers, while hand-edited stretches can neither flag nor mask one.
+ * A nutrition-plan VERSION whose window overlaps the block — the nutrition twin
+ * of a training fact. `calories` is the version's own daily target
+ * (custom-macros override honoured; per-day hand edits and training surpluses
+ * excluded by construction, since the plan row contains neither) and
+ * `deficitPerDay` is that version's `tdee − calories` (positive = deficit;
+ * null without a tdee). Every active version overlapping the block is listed,
+ * queued ones included, in start order, each carrying the numbers off its OWN
+ * row — a closed window is immutable, so an entry dated in the past never
+ * rewrites itself on a later save.
  */
-/**
- * One nutrition-plan VERSION as it governed a slice of a block, carrying **its
- * own** numbers rather than the block headline's.
- *
- * That distinction is the whole point. The headline `calories`/`deficitPerDay`
- * below describe the version covering the block's REFERENCE date — today for a
- * current block — so they move every time the coach saves a new plan. Pinning
- * those numbers to a historical date would make a past timeline entry rewrite
- * itself on the next edit. An era instead reads the row whose window actually
- * contains its own dates, and a closed window is immutable (the RPC refuses
- * `effective_from < p_today`), so a finished era can never change.
- */
-export interface BlockNutritionEra {
-  /** First day of this era INSIDE the block — a version already running when
-   *  the block began starts at the block's own start, not the version's. */
-  from: string;
-  calories: number;
-  deficitPerDay: number | null;
-}
-
 export interface BlockNutritionFact {
-  /** The day the version covering the reference date took (or takes) effect —
-   *  the counterpart of a training fact's `startsOn`, so a queued prescription
-   *  says when it starts. Earlier than the block's start for a version that was
-   *  already running when the block began, as a crossing program's is. */
+  id: string;
+  /** The version's `effective_from` — when its targets took (or take) effect;
+   *  earlier than the block's start for a version already running when the
+   *  block began, as a crossing program's `startsOn` is. */
   startsOn: string;
   calories: number;
   deficitPerDay: number | null;
-  changeCount: number;
-  lastChangedOn: string | null;
-  /**
-   * Every era that governed the block, in date order, up to today. Derived from
-   * the `[effective_from, effective_until]` windows that tile the timeline by
-   * construction (migration 144: the gist exclusion forbids overlaps,
-   * close-and-insert forbids gaps), so no resolution rule is needed — just an
-   * intersection. An era whose numbers match the previous one is omitted: a
-   * re-save that changed nothing is not something that happened.
-   */
-  eras: BlockNutritionEra[];
 }
 
-/** Per-block server facts. `nutrition` null = no events in the window
- *  ("Not set"). */
+/** Per-block server facts. An empty `nutrition` list = no active version
+ *  overlaps the block ("Not set"). */
 export interface BlockFacts {
   blockId: string;
   training: BlockTrainingFact[];
-  nutrition: BlockNutritionFact | null;
+  nutrition: BlockNutritionFact[];
   /**
    * The coach's plan-save notes whose effective date falls inside the block,
    * oldest first (`nutrition_plan_notes`, migration 147).

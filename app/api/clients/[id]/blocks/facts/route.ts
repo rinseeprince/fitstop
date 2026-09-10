@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getBlockFacts } from "@/services/client-blocks-facts-service";
-import { getClientTodayString } from "@/services/today-service";
 
 // Read-only decoration for the Journey tab's expanded block cards: which
 // training programs ran during each block and what the nutrition targets were
@@ -24,8 +23,7 @@ export async function GET(
     const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
-    const clientToday = await getClientTodayString(clientId);
-    const facts = await getBlockFacts(clientId, clientToday);
+    const facts = await getBlockFacts(clientId);
 
     return NextResponse.json(
       { success: true, data: { facts } },

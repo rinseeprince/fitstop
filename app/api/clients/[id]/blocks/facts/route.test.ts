@@ -55,19 +55,12 @@ describe("GET /api/clients/[id]/blocks/facts", () => {
     expect(getClientTodayString).not.toHaveBeenCalled();
   });
 
-  it("returns the facts with no-store caching, threading the client's today", async () => {
+  it("returns the facts with no-store caching", async () => {
     const facts = [
       {
         blockId: "a",
         training: [{ id: "p1", name: "Base", startsOn: "2026-06-01" }],
-        nutrition: {
-          startsOn: "2026-06-01",
-          calories: 2000,
-          deficitPerDay: 500,
-          changeCount: 0,
-          lastChangedOn: null,
-          eras: [{ from: "2026-06-01", calories: 2200, deficitPerDay: 500 }],
-        },
+        nutrition: [{ id: "v1", startsOn: "2026-06-01", calories: 2200, deficitPerDay: 500 }],
         notes: [
           { id: "n1", effectiveOn: "2026-06-01", body: "Starting your cut here." },
         ],
@@ -80,7 +73,7 @@ describe("GET /api/clients/[id]/blocks/facts", () => {
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = await res.json();
     expect(body).toEqual({ success: true, data: { facts } });
-    expect(getBlockFacts).toHaveBeenCalledWith("client-1", TODAY);
+    expect(getBlockFacts).toHaveBeenCalledWith("client-1");
   });
 
   it("500s with a generic message — never the raw error", async () => {

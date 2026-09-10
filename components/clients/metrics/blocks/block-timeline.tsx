@@ -12,8 +12,8 @@ import type { NutritionPlanNote } from "@/types/nutrition-plan-notes";
 
 // "What happened" — the expanded block card's vertical timeline. Sources: block
 // boundaries (derived), training placements in the window, the nutrition
-// prescription era by era, and the coach's plan-save notes — all from the facts
-// read. Plan amendments are invisible by design (audit_logs has no readers).
+// versions that start in the window, and the coach's plan-save notes — all from
+// the facts read. Plan amendments are invisible by design (audit_logs has no readers).
 
 interface BlockTimelineEntry {
   key: string;
@@ -32,17 +32,17 @@ interface BlockTimelineEntry {
 /**
  * Attach each note to the LATEST nutrition entry dated at or before it.
  *
- * Not an exact-date match, which is the tempting rule and is wrong: `deriveEras`
- * omits an era whose numbers equal the previous one, so a re-save that carried a
- * note but changed no numbers has no same-date host, and under exact-match the
- * note would silently not appear. Hanging it off the preceding prescription
- * keeps it visible and reads correctly — the note accumulates under the targets
- * it discusses — and the nested row shows its own date whenever it differs from
+ * Not an exact-date match, which is the tempting rule and is wrong: a version
+ * that began before the block has no entry inside it, so a note dated inside
+ * the block about those targets has no same-date host, and under exact-match it
+ * would silently not appear. Hanging it off the preceding prescription keeps it
+ * visible and reads correctly — the note accumulates under the targets it
+ * discusses — and the nested row shows its own date whenever it differs from
  * its host's, so nothing is lost.
  *
- * A note with no nutrition entry at all to hang from (a block where no version
- * covers the reference date, so `nutrition` is null) is returned in `orphans`
- * and gets its own dated entry. Rare, but a client-visible note that silently
+ * A note with no nutrition entry at all to hang from (a block whose only
+ * targets began before it, or none at all) is returned in `orphans` and gets
+ * its own dated entry. Rare, but a client-visible note that silently
  * fails to render is the one outcome this feature cannot afford.
  */
 function attachNotesToHosts(
@@ -68,7 +68,7 @@ function attachNotesToHosts(
 export function deriveTimelineEntries(
   block: Pick<ClientBlockView, "id" | "startsOn" | "endsOn" | "state">,
   training: BlockTrainingFact[],
-  nutrition: BlockNutritionFact | null,
+  nutrition: BlockNutritionFact[],
   notes: NutritionPlanNote[] = []
 ): BlockTimelineEntry[] {
   const entries: BlockTimelineEntry[] = [];
@@ -88,25 +88,26 @@ export function deriveTimelineEntries(
       });
     }
   }
-  // What the client was actually eating, and when it changed — the question a
-  // coach reviewing a finished block asks first. Each era carries the numbers
-  // off its own plan version, so a later plan save cannot rewrite an entry that
-  // has already happened. A future block lists its queued prescription as
-  // "Nutrition set" the way it lists a queued program as started: the card of a
-  // block that has not begun describes what is planned for it.
+  // What the client was eating, and when it changed — the question a coach
+  // reviewing a finished block asks first. Each version carries the numbers off
+  // its own row, so a later plan save cannot rewrite an entry that has already
+  // happened. A version queued inside the block is listed as "Nutrition set" the
+  // way a queued program is listed as started, whether the block has begun or
+  // not; a version that began before the block has no entry, as a crossing
+  // program has none.
   const nutritionEntries: BlockTimelineEntry[] = [];
-  if (nutrition) {
-    nutrition.eras.forEach((era, index) => {
+  nutrition
+    .filter((fact) => fact.startsOn >= block.startsOn && fact.startsOn <= block.endsOn)
+    .forEach((fact, index) => {
       const entry: BlockTimelineEntry = {
-        key: `nutrition-${block.id}-${era.from}`,
-        date: era.from,
+        key: `nutrition-${fact.id}`,
+        date: fact.startsOn,
         label: index === 0 ? "Nutrition set" : "Nutrition changed",
-        detail: formatNutritionEra(era),
+        detail: formatNutritionEra({ calories: fact.calories, deficitPerDay: fact.deficitPerDay }),
       };
       nutritionEntries.push(entry);
       entries.push(entry);
     });
-  }
 
   // Notes hang off the NUTRITION entries only — they explain a prescription
   // change, so a "Block started" or "Programme started" row is the wrong host.

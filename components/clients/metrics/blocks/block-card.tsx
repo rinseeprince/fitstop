@@ -15,7 +15,7 @@ import {
   TEXT_SECONDARY,
   TRAINING_CARD_BORDER,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { formatBlockDate, formatDeficitPerDay } from "@/lib/blocks/block-format";
+import { formatBlockDate, splitDeficitPerDay } from "@/lib/blocks/block-format";
 import { BlockTimeline, deriveTimelineEntries } from "./block-timeline";
 import type { BlockWeightFacts } from "@/lib/blocks/block-weight";
 import type { BlockPace, ClientBlockView } from "@/lib/blocks/block-derivations";
@@ -153,8 +153,7 @@ function NutritionColumn({
   if (!facts) {
     return factsLoading ? <p className="text-xs text-[#93b0b4]">Loading…</p> : null;
   }
-  const fact = facts.nutrition;
-  if (!fact) {
+  if (facts.nutrition.length === 0) {
     return onSetNutrition && blockAcceptsSetup(block) ? (
       <SetupPrompt
         missing="Not set"
@@ -165,31 +164,39 @@ function NutritionColumn({
       <p className="text-xs text-[#93b0b4]">Not set</p>
     );
   }
-  const deficit = fact.deficitPerDay;
+  // One entry per version overlapping the block, the training column's shape:
+  // a queued version lists under the running one with its own start.
   return (
-    <div className="space-y-0.5">
-      <p>
-        <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
-          {Math.round(fact.calories).toLocaleString()}
-        </span>{" "}
-        <span className={cn(MONO_META_CLASS, "text-[10px]")}>kcal</span>
-      </p>
-      {deficit != null && (
-        <p className={cn(MONO_META_CLASS, "text-[11px]")}>
-          {formatDeficitPerDay(deficit)}
-        </p>
-      )}
-      <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-        from {formatBlockDate(fact.startsOn)}
-      </p>
-      {fact.changeCount > 0 && (
-        <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-          {fact.changeCount === 1 && fact.lastChangedOn
-            ? `Changed ${formatBlockDate(fact.lastChangedOn)}`
-            : `Changed ${fact.changeCount}×`}
-        </p>
-      )}
-    </div>
+    <ul className="space-y-1">
+      {facts.nutrition.map((fact) => (
+        <li key={fact.id} className="space-y-0.5">
+          {/* Target and surplus/deficit on one line, both in the target's
+              weight; the units in the unit's. The date sits under it, the
+              training column's title-then-date grammar. */}
+          <p className="flex flex-wrap items-baseline gap-x-3">
+            <span>
+              <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
+                {Math.round(fact.calories).toLocaleString()}
+              </span>{" "}
+              <span className={cn(MONO_META_CLASS, "text-[10px]")}>kcal</span>
+            </span>
+            {fact.deficitPerDay != null && (
+              <span>
+                <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
+                  {splitDeficitPerDay(fact.deficitPerDay).value}
+                </span>{" "}
+                <span className={cn(MONO_META_CLASS, "text-[10px]")}>
+                  {splitDeficitPerDay(fact.deficitPerDay).unit}
+                </span>
+              </span>
+            )}
+          </p>
+          <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+            from {formatBlockDate(fact.startsOn)}
+          </p>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -360,7 +367,7 @@ export function BlockCard(props: BlockCardProps) {
               entries={deriveTimelineEntries(
                 block,
                 facts?.training ?? [],
-                facts?.nutrition ?? null,
+                facts?.nutrition ?? [],
                 facts?.notes ?? []
               )}
               color={color}

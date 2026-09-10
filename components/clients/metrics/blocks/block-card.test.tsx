@@ -30,7 +30,7 @@ function makeBlock(overrides: Partial<ClientBlockView> = {}): ClientBlockView {
 const EMPTY_FACTS: BlockFacts = {
   blockId: "blk-1",
   training: [],
-  nutrition: null,
+  nutrition: [],
   notes: [],
 };
 
@@ -113,14 +113,7 @@ describe("BlockCard — the round-trip empty states", () => {
     renderCard(makeBlock({ state: "future" }), {
       facts: {
         ...EMPTY_FACTS,
-        nutrition: {
-          startsOn: "2026-10-08",
-          calories: 1732,
-          deficitPerDay: 214,
-          changeCount: 0,
-          lastChangedOn: null,
-          eras: [],
-        },
+        nutrition: [{ id: "v1", startsOn: "2026-10-08", calories: 1732, deficitPerDay: 214 }],
       },
     });
     expect(screen.getByText(/from 8 Oct/)).toBeDefined();
