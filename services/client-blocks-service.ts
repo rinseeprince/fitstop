@@ -1,8 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { captureApiError } from "@/lib/error-handler";
-import { addDaysToDateString } from "@/lib/date-helpers";
 import { inclusiveDays, DAYS_PER_BLOCK_WEEK } from "@/lib/blocks/block-chain";
-import { BLOCK_WEEKS_MAX } from "@/lib/constants";
+import { BLOCK_EXTENSION_REFUSED, BLOCK_WEEKS_MAX } from "@/lib/constants";
 import type { TablesInsert } from "@/types/database";
 import type { ClientBlock, ReplaceBlockChainInput } from "@/types/client-blocks";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
@@ -18,14 +17,13 @@ import type { ClientBlockWindow } from "@/lib/prescription-triggers";
  * never derives time itself (the migration-144 clientToday-threading
  * precedent).
  *
- * Ends in, starts out: the caller sends the chain anchor plus each editable
- * block's END date; every start is derived by the walk
- * (lib/blocks/block-chain.ts), so date pairs never cross the wire and
- * overlaps and gaps stay unexpressible. Elapsed blocks (ends_on < clientToday)
+ * Every block owns its own window (migration 164): the caller sends BOTH
+ * dates for each current or future block, gaps are allowed and overlaps are
+ * refused here and by the database. Elapsed blocks (ends_on < clientToday)
  * keep their DATES as read-only history — their name/focus/target stay
- * editable (3.6-C) — and the symmetric window floor keeps every edit from
- * re-labelling lived days (only DELETE re-attributes them, and only by ending
- * a block at today).
+ * editable (3.6-C) — the symmetric window floor keeps every edit from
+ * re-labelling lived days, and a stored block's end moves EARLIER or not at
+ * all: more time is a new block after it, never a later end on this one.
  */
 
 /** 422: the block (or its elapsed prefix) is read-only history. */
@@ -177,7 +175,9 @@ const isCurrent = (block: ClientBlock, today: string): boolean =>
 /**
  * Replace the client's whole set of blocks. Every block carries its OWN window
  * (migration 164): a coach picks both dates, GAPS are allowed and mean nothing
- * is planned, and OVERLAPS are refused here and by a database constraint.
+ * is planned, and OVERLAPS are refused here and by a database constraint. A
+ * stored block's end moves earlier or not at all — more time is a new block
+ * after it (below).
  *
  * Removal is NOT expressible here — an existing non-elapsed id missing from the
  * payload is a 422, because DELETE owns removal.
@@ -321,6 +321,15 @@ export const replaceBlockChain = async (
       throw new BlockWindowError(
         "A scheduled block can't be moved entirely into the past."
       );
+    }
+    // A stored block's end moves EARLIER or not at all (owner decision
+    // 2026-09-10). More time is a NEW block after it — a dated, named record
+    // of the decision, with its own program and targets — so a later end is
+    // refused for current and future blocks alike, dates-only included. The
+    // form caps its Ends field at the stored end; this is the belt behind it.
+    // An earlier end is the shorten, which stays.
+    if (window.endsOn > storedBlock.endsOn) {
+      throw new BlockWindowError(BLOCK_EXTENSION_REFUSED);
     }
   });
 

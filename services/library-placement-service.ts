@@ -422,24 +422,9 @@ async function placePlaceablePlanOnCalendar(params: {
     savedPlanId: savedPlanId ?? undefined,
   });
 
-  // How long ONE pass of the authored program is, recorded so a later block
-  // extension can resume the repetition mid-pass rather than restarting it
-  // (migration 165). Written here rather than through the RPC: the atomic
-  // signature is 22 hand-maintained args behind an `as never` cast, and a 23rd
-  // buys a whole class of silent placement failure for one integer. Inside the
-  // try below, so a failure is compensated with everything else.
-  //
   // Everything below runs OUTSIDE the RPC's committed transaction. On any
   // failure, undo the partial plan and restore the pre-RPC window snapshot (H3).
   try {
-  const { error: slotCountError } = await supabaseAdmin
-    .from("training_plans")
-    .update({ authored_slot_count: programSlots.length })
-    .eq("id", newPlanId);
-  if (slotCountError) {
-    throw new Error(`Failed to record the program's pass length: ${slotCountError.message}`);
-  }
-
   // 4. Clone EVERY slot (training + rest) in program order so the placed plan is
   //    self-describing about rest. Rest rows carry is_rest = true, no exercises,
   //    and null surplus. `clonedSlots` is the ordered program the event walk maps

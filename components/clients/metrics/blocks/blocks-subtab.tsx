@@ -44,7 +44,6 @@ import {
   BlockEventsDialog,
   type BlockEventsChoice,
   type BlockEventsPrompt,
-  type BlockEventsStep,
 } from "./block-events-dialog";
 import {
   DeleteBlockDialog,
@@ -60,18 +59,8 @@ import type { MetricSummary } from "../metrics-view-types";
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 /** The one description line the completed save carries, if it needs one. */
-function calendarOutcome(
-  choice: BlockEventsChoice,
-  trainingExtended: boolean
-): string | undefined {
-  if (choice.calendar === "none") return undefined;
-  if (choice.calendar === "clear") return "The days that left are clear.";
-  // The training half can decline: a block with no program in it, or one placed
-  // before its pass length was recorded, cannot be continued — and a guessed
-  // program is worse than none.
-  return trainingExtended
-    ? "The new days are filled."
-    : "Targets only — there's no program in this block to carry on. Place one from the Training tab.";
+function calendarOutcome(choice: BlockEventsChoice): string | undefined {
+  return choice.calendar === "clear" ? "The days that left are clear." : undefined;
 }
 
 const ROW_ICON_BUTTON =
@@ -138,37 +127,16 @@ export function BlocksSubtab({
     [facts]
   );
 
-  // Raised INSTEAD of a save whose dates moved. Nothing is stored until the
-  // coach picks: every arm of the dialog completes the save, and dismissing it
-  // abandons the edit with the form still open behind it, so a coach can never
-  // end up with new dates and a question they walked away from.
+  // Raised INSTEAD of a save whose end moved earlier. Nothing is stored until
+  // the coach picks: both arms of the dialog complete the save, and dismissing
+  // it abandons the edit with the form still open behind it, so a coach can
+  // never end up with new dates and a question they walked away from.
   const [pendingEdit, setPendingEdit] = useState<{
     block: ClientBlockView;
     values: BlockFormValues;
     prompt: BlockEventsPrompt;
-    /** Which question is on screen. Owned here so dismissing resets it. */
-    step: BlockEventsStep;
   } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-
-  /**
-   * Step 1's yes. The pricing question only follows when there is a nutrition
-   * prescription to price — a block we KNOW has none has nothing to ask, so the
-   * save completes straight away with the training extension and a no-op fill.
-   * While the facts are loading or failed we ask anyway: a pointless question
-   * costs a click, a skipped one silently denies the coach the choice.
-   */
-  const handleExtend = () => {
-    if (!pendingEdit) return;
-    const facts = factsById.get(pendingEdit.block.id);
-    const mightHaveNutrition =
-      factsLoading || factsError || facts == null || facts.nutrition != null;
-    if (mightHaveNutrition) {
-      setPendingEdit((prev) => (prev ? { ...prev, step: "price" } : prev));
-      return;
-    }
-    void completeEdit({ calendar: "fill", nutrition: "keep" });
-  };
 
   /**
    * The coach's answer completes the save: the dates first, the calendar
@@ -200,19 +168,9 @@ export function BlocksSubtab({
     // The dates are stored from here on. Anything that fails below leaves them
     // saved, and the coach is told which half landed.
     try {
-      const result =
-        choice.calendar === "none"
-          ? null
-          : await syncBlockEvents(
-              clientId,
-              block.id,
-              choice.calendar === "clear"
-                ? { mode: "clear" }
-                : { mode: "fill", nutrition: choice.nutrition }
-            );
-
-      if (choice.calendar !== "none") {
-        // The sync rewrites both calendars, so both areas are owed their
+      if (choice.calendar === "clear") {
+        await syncBlockEvents(clientId, block.id);
+        // The clear rewrites both calendars, so both areas are owed their
         // invalidator (CONVENTIONS §7) — the blocks area alone leaves the
         // Training and Nutrition tabs showing yesterday's days with no error.
         void invalidateTrainingData(clientId);
@@ -225,7 +183,7 @@ export function BlocksSubtab({
       void seedBlocks(clientId, saved);
       toast({
         title: `"${values.name}" updated`,
-        description: calendarOutcome(choice, result?.trainingExtended ?? false),
+        description: calendarOutcome(choice),
       });
       setPendingEdit(null);
       setEditingId(null);
@@ -361,22 +319,23 @@ export function BlocksSubtab({
 
   const handleEdit = async (block: ClientBlockView, values: BlockFormValues) => {
     // Only a moved END changes which days the block owns going forward; a start
-    // that moved has already been floored at today by the service.
+    // that moved has already been floored at today by the service. An end later
+    // than stored never reaches the dialog — the form caps its Ends field at the
+    // stored end and the chain PUT refuses it — so a changed end is a SHORTER
+    // one, and the only question is what happens to the days that left.
     const nextEnd = values.endsOn ?? block.endsOn;
 
-    // Dates moved: ask FIRST. The save happens inside whichever arm the coach
-    // picks, so the X leaves them with their edit still in the form and nothing
-    // stored — rather than dates saved and a question they never answered.
-    if (nextEnd !== block.endsOn) {
+    // The end moved earlier: ask FIRST. The save happens inside whichever arm
+    // the coach picks, so the X leaves them with their edit still in the form
+    // and nothing stored — rather than dates saved and a question they never
+    // answered.
+    if (nextEnd < block.endsOn) {
       setPendingEdit({
         block,
         values,
-        step: "ask",
         prompt: {
           blockName: values.name,
-          direction: nextEnd > block.endsOn ? "extended" : "shortened",
           newEndLabel: formatBlockDate(nextEnd),
-          previousEndLabel: formatBlockDate(block.endsOn),
         },
       });
       return;
@@ -664,13 +623,8 @@ export function BlocksSubtab({
 
       <BlockEventsDialog
         prompt={pendingEdit?.prompt ?? null}
-        step={pendingEdit?.step ?? "ask"}
         isWorking={isSyncing}
         onCancel={() => setPendingEdit(null)}
-        onBack={() =>
-          setPendingEdit((prev) => (prev ? { ...prev, step: "ask" } : prev))
-        }
-        onExtend={handleExtend}
         onChoose={(choice) => void completeEdit(choice)}
       />
 

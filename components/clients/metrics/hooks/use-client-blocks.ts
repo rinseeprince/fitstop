@@ -239,27 +239,20 @@ export async function patchBlockArchived(
 }
 
 /**
- * Bring the calendar in line with a block whose dates just changed — the coach's
- * answer to the confirm dialog, never automatic.
- *
- * `fill` covers the block (nutrition either keeping the targets in force or
- * re-priced against the client's current numbers, and the training continuing
- * its program into the new days); `clear` removes the scheduled days that have
- * left it. Returns what the fill could NOT do, so the caller can say so.
+ * Bring the calendar in line with a block the coach has just SHORTENED — their
+ * answer to the confirm dialog, never automatic. The one mode is `clear`: the
+ * scheduled days that have left the block go, and both tracks' windows are
+ * pulled back to it. Callers invalidate the training and nutrition areas as
+ * well as the blocks area on success (CONVENTIONS §7).
  */
 export async function syncBlockEvents(
   clientId: string,
-  blockId: string,
-  body: { mode: "fill"; nutrition: "keep" | "regenerate" } | { mode: "clear" }
-): Promise<{ trainingExtended: boolean }> {
+  blockId: string
+): Promise<void> {
   const res = await fetch(`${clientBlocksKey(clientId)}/${blockId}/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ mode: "clear" }),
   });
-  const parsed = await parseOrThrow<{
-    success?: boolean;
-    data: { training?: { slotsAdded: number } | null };
-  }>(res, "Failed to update the calendar");
-  return { trainingExtended: Boolean(parsed.data.training) };
+  await parseOrThrow<{ success?: boolean }>(res, "Failed to update the calendar");
 }

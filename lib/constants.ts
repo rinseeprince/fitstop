@@ -111,6 +111,11 @@ export const BLOCK_WEEKS_MAX = 52;
 export const BLOCKS_PER_CLIENT_MAX = 20;
 export const BLOCK_NAME_MAX = 80;
 export const BLOCK_FOCUS_MAX = 500;
+/** The chain PUT's refusal of a stored block's end moving later, and the line
+ *  under the block form's Ends field — one spelling for both surfaces. A
+ *  block's end moves earlier or the block is deleted; more time is a new block
+ *  after it, with its own program and targets (owner decision 2026-09-10). */
+export const BLOCK_EXTENSION_REFUSED = "A block can't be extended. Add a block after it.";
 
 // Pagination
 export const CLIENT_CHECKINS_PAGE_SIZE = 20; // "Load older" page size for the coach per-client check-ins tab

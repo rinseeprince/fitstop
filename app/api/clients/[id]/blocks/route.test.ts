@@ -258,6 +258,7 @@ describe("/api/clients/[id]/blocks", () => {
     it.each<[string, Error]>([
       ["elapsed immutability", new ElapsedBlockImmutableError("Past blocks can't be edited.")],
       ["window floor", new BlockWindowError("The block in progress must still cover today.")],
+      ["extension", new BlockWindowError("A block can't be extended. Add a block after it.")],
       ["payload shape", new BlockPayloadError("Unknown block id in payload.")],
     ])("maps a %s rejection to 422 with the service message", async (_label, error) => {
       vi.mocked(replaceBlockChain).mockRejectedValue(error);

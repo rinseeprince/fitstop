@@ -11,6 +11,7 @@ import {
   BlockWindowError,
   UnknownBlockIdError,
 } from "./client-blocks-service";
+import { BLOCK_EXTENSION_REFUSED } from "@/lib/constants";
 
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: {
@@ -341,6 +342,70 @@ describe("replaceBlockChain", () => {
         blocks: [{ id: "f", name: "Block f", startsOn: "2026-05-01", endsOn: "2026-05-28" }],
       })
     ).rejects.toBeInstanceOf(BlockWindowError);
+  });
+
+  it("refuses a CURRENT block's end moving later, with the sentence — a block is never extended", async () => {
+    // More time is a NEW block after it (owner decision 2026-09-10), with its
+    // own program and targets; the end of this one moves earlier or not at all.
+    queueResults({ data: [CURRENT], error: null });
+
+    const attempt = replaceBlockChain(CLIENT_ID, TODAY, {
+      blocks: [{ id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-30" }],
+    });
+
+    await expect(attempt).rejects.toBeInstanceOf(BlockWindowError);
+    await expect(attempt).rejects.toThrow(BLOCK_EXTENSION_REFUSED);
+  });
+
+  it("refuses a FUTURE block's end moving later too — dates-only included", async () => {
+    // Not even the dates: a block that has not begun still may not grow. The
+    // coach adds a block after it instead.
+    const future = row("f", "2026-08-20", "2026-09-16");
+    queueResults({ data: [future], error: null });
+
+    const attempt = replaceBlockChain(CLIENT_ID, TODAY, {
+      blocks: [{ id: "f", name: "Block f", startsOn: "2026-08-20", endsOn: "2026-09-30" }],
+    });
+
+    await expect(attempt).rejects.toBeInstanceOf(BlockWindowError);
+    await expect(attempt).rejects.toThrow(BLOCK_EXTENSION_REFUSED);
+  });
+
+  it("still allows a current block's end moving EARLIER — the shorten", async () => {
+    queueResults(
+      { data: [CURRENT], error: null },
+      { error: null }, // upsert
+      { data: [], error: null } // re-read
+    );
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        // 2026-08-12 still covers today and is earlier than the stored end.
+        blocks: [{ id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-12" }],
+      })
+    ).resolves.toEqual([]);
+  });
+
+  it("leaves a NEW block unconstrained beside a stored one shortened — more time is a block after it", async () => {
+    // The rule compares a STORED block's end with its own stored value; a row
+    // without an id has nothing to be extended from, so it may run as long as
+    // the coach likes.
+    const future = row("f", "2026-08-20", "2026-09-16");
+    queueResults(
+      { data: [future], error: null },
+      { error: null }, // upsert (f shortened)
+      { error: null }, // insert (the new block)
+      { data: [], error: null } // re-read
+    );
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        blocks: [
+          { id: "f", name: "Block f", startsOn: "2026-08-20", endsOn: "2026-09-09" },
+          { name: "Cut", startsOn: "2026-09-10", endsOn: "2026-12-20" },
+        ],
+      })
+    ).resolves.toEqual([]);
   });
 
   it("allows moving the current block's start back when it still covers today", async () => {

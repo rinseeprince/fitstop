@@ -2533,7 +2533,6 @@ export type Database = {
       training_plans: {
         Row: {
           ai_response_raw: string | null
-          authored_slot_count: number | null
           avg_energy: number | null
           avg_mood: number | null
           avg_sleep: number | null
@@ -2562,7 +2561,6 @@ export type Database = {
         }
         Insert: {
           ai_response_raw?: string | null
-          authored_slot_count?: number | null
           avg_energy?: number | null
           avg_mood?: number | null
           avg_sleep?: number | null
@@ -2591,7 +2589,6 @@ export type Database = {
         }
         Update: {
           ai_response_raw?: string | null
-          authored_slot_count?: number | null
           avg_energy?: number | null
           avg_mood?: number | null
           avg_sleep?: number | null

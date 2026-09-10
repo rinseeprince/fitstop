@@ -21,6 +21,7 @@ import { addDaysToDateString, getTodayDateString } from "@/lib/date-helpers";
 import { DAYS_PER_BLOCK_WEEK } from "@/lib/blocks/block-chain";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import {
+  BLOCK_EXTENSION_REFUSED,
   BLOCK_FOCUS_MAX,
   BLOCK_NAME_MAX,
   BLOCK_WEEKS_MAX,
@@ -32,7 +33,8 @@ import { formatBlockDate } from "@/lib/blocks/block-format";
 // One inline form for both adding and editing a block (the habits
 // manage-drawer swap precedent for the SHELL only — its raw-useState
 // internals predate the react-hook-form rule). Both dates are the coach's;
-// elapsed edits are fields-only, their dates rendered as fixed text. Target
+// a stored block's end can move earlier but never later (the Ends field's
+// max); elapsed edits are fields-only, their dates rendered as fixed text. Target
 // weight collects in the VIEWER's unit through useCanonicalInput and commits
 // canonical kg; the RHF field holds the canonical number so zodResolver
 // validates what will actually be stored (the add-client-manual-form pattern).
@@ -71,6 +73,11 @@ type SchemaOptions = {
    *  past, because a past-dated block generates nothing. Belt behind the
    *  input's `min`, which only greys the picker. */
   minStart: string | null;
+  /** A stored block's end — the ceiling on the Ends field, because a block is
+   *  never extended: its end moves earlier or not at all, and more time is a
+   *  new block after it. Belt behind the input's `max`, which only greys the
+   *  picker. Null on an add. */
+  maxEnd: string | null;
 };
 
 // Cross-field checks live in the schema: a zodResolver replaces RHF
@@ -119,6 +126,12 @@ function makeBlockSchema(opts: SchemaOptions) {
           floor === opts.minEnd
             ? "The block in progress can't end before today"
             : "Ends before the block starts",
+      });
+    } else if (opts.maxEnd && data.endsOn > opts.maxEnd) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endsOn"],
+        message: BLOCK_EXTENSION_REFUSED,
       });
     } else if (
       data.endsOn >
@@ -185,6 +198,9 @@ export function BlockForm({
   const needsStartField = mode.kind === "add" || mode.startEditable;
   const fixedStart = needsStartField ? null : (editing as ClientBlockView).startsOn;
   const minEnd = mode.kind === "edit" ? mode.minEnd : null;
+  // A block is never extended: a stored current or future block's end is the
+  // ceiling on its Ends field. More time is a new block after it.
+  const storedEnd = editing && !isElapsedEdit ? editing.endsOn : null;
 
   const weightInput = useCanonicalInput(
     preference,
@@ -200,8 +216,9 @@ export function BlockForm({
         fixedStart,
         minEnd,
         minStart,
+        maxEnd: storedEnd,
       }),
-    [needsStartField, isElapsedEdit, fixedStart, minEnd, minStart]
+    [needsStartField, isElapsedEdit, fixedStart, minEnd, minStart, storedEnd]
   );
   const {
     register,
@@ -249,9 +266,11 @@ export function BlockForm({
   const nextStart =
     fixedStart ??
     (startsOnValue && DATE_RE.test(startsOnValue) ? startsOnValue : null);
-  const maxEnd = nextStart
-    ? addDaysToDateString(nextStart, BLOCK_WEEKS_MAX * DAYS_PER_BLOCK_WEEK - 1)
-    : undefined;
+  const maxEnd =
+    storedEnd ??
+    (nextStart
+      ? addDaysToDateString(nextStart, BLOCK_WEEKS_MAX * DAYS_PER_BLOCK_WEEK - 1)
+      : undefined);
   const submit = handleSubmit(async (values) => {
     if (weightInput.hasParseError) return;
     await onSubmit({
@@ -326,9 +345,15 @@ export function BlockForm({
               className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-[150px] text-xs")}
               {...register("endsOn")}
             />
-            {errors.endsOn && (
+            {errors.endsOn ? (
               <p className="text-[11px] text-[#c06060]">{errors.endsOn.message}</p>
-            )}
+            ) : storedEnd ? (
+              // The greyed days past the stored end need a reason (the floor
+              // line's pattern): a block is never extended.
+              <p className="text-[11px] leading-[1.4] text-[#5a7d82]">
+                {BLOCK_EXTENSION_REFUSED}
+              </p>
+            ) : null}
           </div>
         )}
 
