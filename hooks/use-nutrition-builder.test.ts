@@ -254,12 +254,13 @@ describe("useNutritionBuilder — the start floor", () => {
   });
 });
 
-// The Block field (D): the client's blocks whose end is on or after the floor,
-// then No block. The block the coach came from — the Journey round trip's,
-// captured on arrival by the host and handed in — is preselected; choosing a
-// block sets the start to its first available day and bounds the date to its
-// window. Purely UX: the save resolves its own window from the block covering
-// the start, so this only picks a valid start inside the block the coach means.
+// The Block field (D): the dash — the empty state — then the client's blocks
+// whose end is on or after the floor. The block the coach came from — the
+// Journey round trip's, captured on arrival by the host and handed in — is
+// preselected; a chosen block FIXES the start on its first available day and
+// the form greys the date; the dash hands the date back to the coach. Purely
+// UX: the save resolves its own window from the block covering the start, so
+// this only starts the version where the block the coach means begins.
 describe("useNutritionBuilder — the Block field", () => {
   const TOMORROW = "2026-07-03";
   // Under way at the client's today; the next one; one that ended before it.
@@ -285,75 +286,78 @@ describe("useNutritionBuilder — the Block field", () => {
     blocksState.blocks = [];
   });
 
-  it("lists the blocks whose end is on or after the floor, then No block, and defaults to No block", () => {
+  it("leads with the dash, then the blocks whose end is on or after the floor, and defaults to the dash", () => {
     const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
     expect(result.current.blockOptions.map((option) => option.value)).toEqual([
+      "none",
       CUT.id,
       BUILD.id,
-      "none",
     ]);
     expect(result.current.blockValue).toBe("none");
-    expect(result.current.startWindow).toEqual({ min: CLIENT_TODAY, max: null });
+    expect(result.current.blockSelected).toBe(false);
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
   });
 
-  it("preselects the block the coach came from: a future block seeds its own start and bounds the date to it", () => {
+  it("preselects the block the coach came from: a future block fixes the start on its own first day", () => {
     const { result } = renderHook(() =>
       useNutritionBuilder({ client: CLIENT, roundTripBlockId: BUILD.id })
     );
     expect(result.current.blockValue).toBe(BUILD.id);
+    expect(result.current.blockSelected).toBe(true);
     expect(result.current.effectiveFrom).toBe(BUILD.startsOn);
-    expect(result.current.startWindow).toEqual({ min: BUILD.startsOn, max: BUILD.endsOn });
   });
 
-  it("a block already under way seeds the floor, not the day it began", () => {
+  it("a block already under way fixes the start at the floor, not the day it began", () => {
     const { result } = renderHook(() =>
       useNutritionBuilder({ client: CLIENT, roundTripBlockId: CUT.id })
     );
+    expect(result.current.blockSelected).toBe(true);
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
-    expect(result.current.startWindow).toEqual({ min: CLIENT_TODAY, max: CUT.endsOn });
 
     blocksState.planStartFloor = TOMORROW;
     const logged = renderHook(() =>
       useNutritionBuilder({ client: CLIENT, roundTripBlockId: CUT.id })
     );
     expect(logged.result.current.effectiveFrom).toBe(TOMORROW);
-    expect(logged.result.current.startWindow).toEqual({ min: TOMORROW, max: CUT.endsOn });
+    expect(logged.result.current.startFloor).toBe(TOMORROW);
   });
 
-  it("a round trip from a block no longer listed falls to No block", () => {
+  it("a round trip from a block no longer listed falls to the dash", () => {
     const { result } = renderHook(() =>
       useNutritionBuilder({ client: CLIENT, roundTripBlockId: OLD.id })
     );
     expect(result.current.blockValue).toBe("none");
+    expect(result.current.blockSelected).toBe(false);
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
   });
 
-  it("picking a block sets the date and its bounds; picking No block clears the ceiling", () => {
+  it("picking a block fixes the start; picking the dash hands the date back at the floor", () => {
     const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
 
     act(() => result.current.handleBlockChange(BUILD.id));
     expect(result.current.blockValue).toBe(BUILD.id);
+    expect(result.current.blockSelected).toBe(true);
     expect(result.current.effectiveFrom).toBe(BUILD.startsOn);
-    expect(result.current.startWindow).toEqual({ min: BUILD.startsOn, max: BUILD.endsOn });
 
     act(() => result.current.handleBlockChange("none"));
     expect(result.current.blockValue).toBe("none");
+    expect(result.current.blockSelected).toBe(false);
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
-    expect(result.current.startWindow).toEqual({ min: CLIENT_TODAY, max: null });
   });
 
-  it("the coach's own date wins inside the window, and a block change re-seeds it", () => {
+  it("the coach's own date applies with the dash only, and a block change discards it", () => {
     const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
-    act(() => result.current.handleBlockChange(BUILD.id));
     act(() => result.current.handleEffectiveFromChange("2026-07-25"));
     expect(result.current.effectiveFrom).toBe("2026-07-25");
 
-    act(() => result.current.handleBlockChange(CUT.id));
+    act(() => result.current.handleBlockChange(BUILD.id));
+    expect(result.current.effectiveFrom).toBe(BUILD.startsOn);
+
+    act(() => result.current.handleBlockChange("none"));
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
   });
 
-  it("the request carries the block's first available day when a block is picked", async () => {
+  it("the request carries the chosen block's first available day", async () => {
     const fetchSpy = mockFetch();
     const { result } = renderHook(() => useNutritionBuilder({ client: CLIENT }));
     act(() => result.current.handleBlockChange(BUILD.id));
@@ -378,14 +382,14 @@ describe("useNutritionBuilder — the Block field", () => {
     expect(result.current.effectiveFrom).toBe(CLIENT_TODAY);
   });
 
-  it("no options and no window until the resolved inputs have loaded", () => {
+  it("no options and nothing fixed until the resolved inputs have loaded", () => {
     planState.nutritionData = null;
     const { result } = renderHook(() =>
       useNutritionBuilder({ client: CLIENT, roundTripBlockId: BUILD.id })
     );
     expect(result.current.blockOptions).toEqual([]);
     expect(result.current.blockValue).toBe("none");
-    expect(result.current.startWindow).toBeNull();
+    expect(result.current.blockSelected).toBe(false);
     expect(result.current.effectiveFrom).toBeNull();
   });
 });

@@ -69,7 +69,7 @@ function renderForm(overrides: FormOverrides = {}) {
       blockOptions={OPTIONS}
       blockValue={NO_BLOCK_OPTION}
       onBlockChange={onBlockChange}
-      startWindow={{ min: CLIENT_TODAY, max: null }}
+      blockSelected={false}
       effectiveFrom={CLIENT_TODAY}
       clientToday={CLIENT_TODAY}
       startFloor={CLIENT_TODAY}
@@ -103,11 +103,7 @@ describe("NutritionSettingsForm — Starts on", () => {
     const TOMORROW = "2026-07-03";
 
     it("floors at the deletion floor and says who logged which day, and when targets can start", () => {
-      renderForm({
-        startFloor: TOMORROW,
-        startWindow: { min: TOMORROW, max: null },
-        effectiveFrom: TOMORROW,
-      });
+      renderForm({ startFloor: TOMORROW, effectiveFrom: TOMORROW });
       expect(startsOn()).toHaveAttribute("min", TOMORROW);
       // en-AU spells July in full (June/July/Sept are the four-letter months).
       expect(screen.getByText(/has already logged/)).toHaveTextContent(
@@ -132,18 +128,17 @@ describe("NutritionSettingsForm — Starts on", () => {
     expect(onEffectiveFromChange).toHaveBeenCalledWith("2026-07-23");
   });
 
-  it("renders empty, with no bounds, until the resolved inputs have loaded", () => {
+  it("renders empty, with no floor, until the resolved inputs have loaded", () => {
     renderForm({
       effectiveFrom: null,
       clientToday: null,
       startFloor: null,
-      startWindow: null,
       blockOptions: [],
     });
     const field = startsOn();
     expect(field).toHaveValue("");
     expect(field).not.toHaveAttribute("min");
-    expect(field).not.toHaveAttribute("max");
+    expect(field).toBeEnabled();
   });
 
   // The queued-change line (migration 166): a save dated BEFORE a queued
@@ -179,39 +174,37 @@ describe("NutritionSettingsForm — Starts on", () => {
   });
 });
 
-// The Block field (D): the client's current and future blocks with their
-// ranges, then No block, ABOVE the date. Choosing a block sets the start and
-// bounds the field to the block's window; the hook owns both.
+// The Block field (D): the dash — the empty state — then the client's current
+// and future blocks with their ranges, ABOVE the date. A chosen block fixes the
+// start and greys the date; the dash hands it back. The hook owns both.
 describe("NutritionSettingsForm — the Block field", () => {
   beforeEach(cleanup);
 
-  it("sits above Starts on and lists the blocks with their ranges, then No block", () => {
+  it("sits above Starts on and lists the dash, then the blocks with their ranges", () => {
     renderForm();
     const field = blockField();
     expect(
       field.compareDocumentPosition(startsOn()) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(Array.from(field.querySelectorAll("option")).map((o) => o.textContent)).toEqual([
+      "—",
       "Cut · 20 June – 17 July",
       "Build · 18 July – 14 Aug",
-      "No block — pick a date",
     ]);
     expect(field).toHaveValue(NO_BLOCK_OPTION);
   });
 
-  it("a selected block bounds the date to its window — min and max on the input", () => {
-    renderForm({
-      blockValue: BUILD.id,
-      startWindow: { min: BUILD.startsOn, max: BUILD.endsOn },
-      effectiveFrom: BUILD.startsOn,
-    });
+  it("a chosen block greys the date, which shows the block's first available day", () => {
+    renderForm({ blockValue: BUILD.id, blockSelected: true, effectiveFrom: BUILD.startsOn });
     expect(blockField()).toHaveValue(BUILD.id);
-    expect(startsOn()).toHaveAttribute("min", BUILD.startsOn);
-    expect(startsOn()).toHaveAttribute("max", BUILD.endsOn);
+    expect(startsOn()).toBeDisabled();
+    expect(startsOn()).toHaveValue(BUILD.startsOn);
+    expect(startsOn()).not.toHaveAttribute("max");
   });
 
-  it("No block floors the date at the floor with no ceiling", () => {
+  it("the dash leaves the date the coach's own, floored at the floor with no ceiling", () => {
     renderForm();
+    expect(startsOn()).toBeEnabled();
     expect(startsOn()).toHaveAttribute("min", CLIENT_TODAY);
     expect(startsOn()).not.toHaveAttribute("max");
   });

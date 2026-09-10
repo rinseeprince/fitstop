@@ -55,18 +55,18 @@ describe("BlockStartPicker", () => {
     expect(screen.getByLabelText("Block")).toHaveTextContent("Build · 30 Mar – 26 Apr");
   });
 
-  it("shows No block when that is the selection", () => {
+  it("shows the dash when no block is chosen — the empty state", () => {
     renderPicker(NO_BLOCK_OPTION);
-    expect(screen.getByLabelText("Block")).toHaveTextContent("No block — pick a date");
+    expect(screen.getByLabelText("Block")).toHaveTextContent("—");
   });
 
-  it("lists every option in order, the blocks first and No block last", async () => {
+  it("lists every option in order, the dash first and then the blocks", async () => {
     renderPicker(NO_BLOCK_OPTION);
     const items = await openList();
     expect(items.map((item) => item.textContent)).toEqual([
+      "—",
       "Cut · 2 Mar – 29 Mar",
       "Build · 30 Mar – 26 Apr",
-      "No block — pick a date",
     ]);
   });
 
@@ -79,12 +79,10 @@ describe("BlockStartPicker", () => {
     expect(onValueChange).toHaveBeenCalledWith(BUILD.id);
   });
 
-  it("picking No block hands its value up", async () => {
+  it("picking the dash hands its value up", async () => {
     const { onValueChange } = renderPicker(BUILD.id);
     await openList();
-    fireEvent.keyDown(screen.getByRole("option", { name: "No block — pick a date" }), {
-      key: "Enter",
-    });
+    fireEvent.keyDown(screen.getByRole("option", { name: "—" }), { key: "Enter" });
     expect(onValueChange).toHaveBeenCalledWith(NO_BLOCK_OPTION);
   });
 });

@@ -97,7 +97,7 @@ export function DrawerFormBody() {
             blockOptions={builder.blockOptions}
             blockValue={builder.blockValue}
             onBlockChange={builder.handleBlockChange}
-            startWindow={builder.startWindow}
+            blockSelected={builder.blockSelected}
             effectiveFrom={builder.effectiveFrom}
             clientToday={builder.clientToday}
             startFloor={builder.startFloor}

@@ -20,7 +20,7 @@ import { useUnits } from "@/contexts/units-context";
 import { KG_PER_LB } from "@/utils/unit-conversions";
 import { formatDateOnlyShort } from "@/components/clients/overview/overview-format";
 import { BlockStartPicker } from "@/components/clients/metrics/blocks/block-start-picker";
-import type { BlockStartOption, StartWindow } from "@/lib/blocks/block-start-options";
+import type { BlockStartOption } from "@/lib/blocks/block-start-options";
 
 /**
  * FULLY CONTROLLED, deliberately. This form used to own a second copy of the
@@ -40,19 +40,18 @@ type NutritionSettingsFormProps = {
     proteinTargetGPerKg: number;
     dietType: DietType;
   }) => void;
-  /** The Block field: the client's blocks whose end is on or after the floor,
-   *  each with its range, then No block; and the selected one. Empty until
-   *  the resolved inputs have loaded. */
+  /** The Block field: the dash (no block), then the client's blocks whose end
+   *  is on or after the floor, each with its range; and the selected one.
+   *  Empty until the resolved inputs have loaded. */
   blockOptions: readonly BlockStartOption[];
   blockValue: string;
   onBlockChange: (value: string) => void;
-  /** The bounds the selected block puts on the date: from the later of the
-   *  floor and the block's start to the block's last day; the floor alone,
-   *  with no ceiling, for No block. Null until the resolved inputs have
+  /** True while a block is chosen: the start is fixed on the block's first
+   *  available day and the date field is disabled. */
+  blockSelected: boolean;
+  /** The day the plan takes effect — a chosen block's first available day,
+   *  else the coach's pick, else the floor. Null until the resolved inputs have
    *  loaded. */
-  startWindow: StartWindow | null;
-  /** The day the plan takes effect — the coach's pick, else the selected
-   *  block's first available day. Null until the resolved inputs have loaded. */
   effectiveFrom: string | null;
   /** The client's today: on the client's calendar, the same day the server's
    *  past-date belt judges. */
@@ -85,7 +84,7 @@ export function NutritionSettingsForm({
   blockOptions,
   blockValue,
   onBlockChange,
-  startWindow,
+  blockSelected,
   effectiveFrom,
   clientToday,
   startFloor,
@@ -194,11 +193,11 @@ export function NutritionSettingsForm({
         </p>
       </div>
 
-      {/* Block. Choosing one sets the start and bounds the field under it to
-          the block's window — `min` and `max` natively, so a day outside the
-          block is greyed rather than offered and refused. The save resolves
-          its own window from the block covering the start; this only picks a
-          valid start inside the block the coach means. */}
+      {/* Block. A chosen block fixes the start on its first available day and
+          greys the date field under it; the dash hands the date back to the
+          coach. The save resolves its own window from the block covering the
+          start; this only starts the version where the block the coach means
+          begins. */}
       <div className="space-y-1.5">
         <label htmlFor="start-block" className={SECTION_LABEL_CLASS}>
           Block
@@ -215,9 +214,9 @@ export function NutritionSettingsForm({
 
       {/* Starts on. The window the deficit is spread over begins here, in the
           preview and in the save alike (docs/MEASUREMENT-LOG-PLAN.md commit
-          8bb). `min` / `max` are the selected block's window — the floor alone
-          for No block; the server refuses a start before the floor, and the
-          sentence under the field says why today is greyed. */}
+          8bb). Fixed and disabled while a block is chosen; the coach's own with
+          the dash, floored at the deletion floor — the server refuses a start
+          before it, and the sentence under the field says why today is greyed. */}
       <div className="space-y-1.5">
         <label htmlFor="starts-on" className={SECTION_LABEL_CLASS}>
           Starts on
@@ -226,8 +225,8 @@ export function NutritionSettingsForm({
           id="starts-on"
           type="date"
           value={effectiveFrom ?? ""}
-          min={startWindow?.min ?? undefined}
-          max={startWindow?.max ?? undefined}
+          min={startFloor ?? undefined}
+          disabled={blockSelected}
           onChange={(e) => onEffectiveFromChange(e.target.value)}
           className={cn(MONO, FOCUS_RING, "h-10 bg-white")}
         />

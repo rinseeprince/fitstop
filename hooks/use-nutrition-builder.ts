@@ -118,13 +118,14 @@ export function useNutritionBuilder({
       ? planStartFloor
       : clientToday
     : null;
-  // The Block field over the date: the client's blocks whose end is on or after
-  // the floor, then No block. The coach's own pick wins; with none, the block
-  // they came from is preselected; else No block. The selected option's window
-  // bounds the date field AND seeds the start — a derivation, never a second
-  // copy of the date, so the two cannot disagree; a block already under way
-  // seeds the floor, not the day it began. Empty, and so no window, until the
-  // floor is known.
+  // The Block field over the date: the dash (no block) first, then the client's
+  // blocks whose end is on or after the floor. The coach's own pick wins; with
+  // none, the block they came from is preselected; else the dash. A chosen
+  // block FIXES the start on its first available day (the floor for a block
+  // already under way, never the day it began) and the form disables the date;
+  // with the dash the date is the coach's own, seeded at the floor. A
+  // derivation, never a second copy of the date, so the two cannot disagree.
+  // No options, and so nothing fixed, until the floor is known.
   const blockOptions = useMemo(
     () => (startFloor ? buildBlockStartOptions(blocks, startFloor) : []),
     [blocks, startFloor]
@@ -134,8 +135,9 @@ export function useNutritionBuilder({
     blockOptions.length > 0
       ? selectBlockStartOption(blockOptions, blockPick, roundTripBlockId)
       : null;
-  const startWindow = selectedBlock?.window ?? null;
-  const effectiveFrom = effectiveFromPick ?? startWindow?.min ?? null;
+  const fixedStart =
+    selectedBlock && selectedBlock.value !== NO_BLOCK_OPTION ? selectedBlock.startsOn : null;
+  const effectiveFrom = fixedStart ?? effectiveFromPick ?? startFloor;
 
   const autoPlan = useMemo(
     () =>
@@ -272,8 +274,8 @@ export function useNutritionBuilder({
 
   const handleBlockChange = useCallback((value: string) => {
     setBlockPick(value);
-    // Choosing a block SETS the start: the date re-seeds from the block's
-    // window, and the coach moves it inside the window from there.
+    // A block change discards a typed date: the dash then reads the floor
+    // again, not a day picked for a different block.
     setEffectiveFromPick(null);
     setSettingsChanged(true);
   }, []);
@@ -339,8 +341,8 @@ export function useNutritionBuilder({
           });
           setSettingsChanged(false);
           setCoachNotes("");
-          // The next save defaults to today again (D27) — and to No block,
-          // unless a round trip is still preselecting one.
+          // The next save defaults to today again (D27) — and to the dash,
+          // unless a round trip is still preselecting a block.
           setEffectiveFromPick(null);
           setBlockPick(null);
           onUpdate?.();
@@ -397,20 +399,20 @@ export function useNutritionBuilder({
     settingsChanged,
     handleSettingsChange,
 
-    // The day the plan takes effect: the coach's pick, else the selected
-    // block's first available day — the floor (the client's today, or tomorrow
-    // once they have logged today) for No block or a block under way, a future
-    // block's start otherwise. Null until the resolved inputs have loaded.
+    // The day the plan takes effect: a chosen block's first available day —
+    // the floor (the client's today, or tomorrow once they have logged today)
+    // for a block under way, a future block's own start — else the coach's
+    // pick, else the floor. Null until the resolved inputs have loaded.
     effectiveFrom,
     clientToday,
     startFloor,
     handleEffectiveFromChange,
 
-    // The Block field: its options, the selected value, and the window that
-    // bounds the date field — `min`/`max` on the input.
+    // The Block field: its options, the selected value, and whether a block is
+    // chosen — the form disables the date field while one is.
     blockOptions,
     blockValue: selectedBlock?.value ?? NO_BLOCK_OPTION,
-    startWindow,
+    blockSelected: fixedStart != null,
     handleBlockChange,
 
     // Live preview + manual override. `autoTargets` is what auto mode shows and

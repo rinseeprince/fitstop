@@ -351,9 +351,9 @@ rejected afterwards — a coach should never be able to select a day the app wil
 
 Shipped references: `components/clients/nutrition/builder/nutrition-settings-form.tsx` and
 `components/training-library/apply-to-client-dialog.tsx` (the two setup surfaces — "Starts on" /
-"Start Date" under a Block field: `min` = the later of the deletion floor and the chosen block's
-start, `max` = that block's end, the floor alone with no `max` for "No block"; one shared picker,
-`components/clients/metrics/blocks/block-start-picker.tsx`), `components/clients/metrics/blocks/block-form.tsx` (blocks — composes two bounds
+"Start Date" under a Block field: `min` = the deletion floor; with a block chosen the field is
+DISABLED on the block's first available day rather than bounded, and the field's empty state is a
+bare dash; one shared picker, `components/clients/metrics/blocks/block-start-picker.tsx`), `components/clients/metrics/blocks/block-form.tsx` (blocks — composes two bounds
 into one `min`, plus a `max`), `components/clients/metrics/log-measurement-dialog.tsx`
 (`max={today}` — a measurement cannot be logged in the future), and the Overview status card's
 goal deadline.

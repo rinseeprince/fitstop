@@ -102,6 +102,14 @@ const blockField = () => screen.getByLabelText("Block");
 const blockLabels = () =>
   Array.from(blockField().querySelectorAll("option")).map((o) => o.textContent);
 
+function mockPlacement() {
+  return vi.spyOn(globalThis, "fetch").mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve({ success: true, sessionsCreated: 3, eventsCreated: 12 }),
+  } as unknown as Response);
+}
+
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -149,12 +157,12 @@ describe("ApplyToClientDialog — the start floor", () => {
 
     expect(dateField()).toHaveAttribute("min", getTodayDateString());
     expect(dateField()).toHaveValue(getTodayDateString());
-    expect(dateField()).not.toHaveAttribute("max");
-    expect(blockLabels()).toEqual(["No block — pick a date"]);
+    expect(dateField()).toBeEnabled();
+    expect(blockLabels()).toEqual(["—"]);
     expect(screen.queryByText(/has already logged/)).toBeNull();
   });
 
-  it("the coach's own pick wins, and an emptied field returns to the seed", () => {
+  it("the coach's own pick wins, and an emptied field returns to the floor", () => {
     state.planStartFloor = TOMORROW;
     renderDialog();
 
@@ -167,11 +175,7 @@ describe("ApplyToClientDialog — the start floor", () => {
 
   it("submits the derived date and carries no override flag", async () => {
     state.planStartFloor = TOMORROW;
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ success: true, sessionsCreated: 3, eventsCreated: 12 }),
-    } as unknown as Response);
+    const fetchSpy = mockPlacement();
     renderDialog();
 
     fireEvent.click(screen.getByRole("button", { name: /Apply Plan/ }));
@@ -186,86 +190,83 @@ describe("ApplyToClientDialog — the start floor", () => {
   });
 });
 
-// D: a Block field above the start date. It lists the client's blocks whose end
-// is on or after the floor with their ranges, then No block; choosing one sets
-// the start and BOUNDS the picker to the block's window (min/max natively — the
-// server keeps its own checks); the block the coach came from is preselected.
+// D: a Block field above the start date. It leads with the dash — the empty
+// state — then the client's blocks whose end is on or after the floor, with
+// their ranges. A chosen block FIXES the start on its first available day and
+// greys the date field; the dash hands the date back to the coach, floored at
+// the deletion floor. The block the coach came from is preselected.
 describe("ApplyToClientDialog — the Block field", () => {
-  it("sits above Start Date, lists the current and future blocks with their ranges, then No block", () => {
+  it("sits above Start Date and lists the dash, then the current and future blocks with their ranges", () => {
     renderDialog();
     const field = blockField();
     expect(
       field.compareDocumentPosition(dateField()) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
-    expect(blockLabels()).toEqual([
-      "Cut · 1 Feb – 22 Feb",
-      "Build · 23 Feb – 22 Mar",
-      "No block — pick a date",
-    ]);
+    expect(blockLabels()).toEqual(["—", "Cut · 1 Feb – 22 Feb", "Build · 23 Feb – 22 Mar"]);
     // A block that ended before the floor is not on offer.
     expect(blockLabels().join()).not.toMatch(/Base/);
     expect(field).toHaveValue("none");
+    expect(dateField()).toBeEnabled();
   });
 
-  it("the block the coach came from is preselected: a future block seeds its start and bounds the date to it", () => {
+  it("the block the coach came from is preselected: a future block fixes the start on its first day and greys the date", () => {
     renderDialog({ preselectedBlockId: BUILD.id });
 
     expect(blockField()).toHaveValue(BUILD.id);
     expect(dateField()).toHaveValue(BUILD.startsOn);
-    expect(dateField()).toHaveAttribute("min", BUILD.startsOn);
-    expect(dateField()).toHaveAttribute("max", BUILD.endsOn);
+    expect(dateField()).toBeDisabled();
+    expect(dateField()).toHaveAttribute("min", TODAY);
+    expect(dateField()).not.toHaveAttribute("max");
   });
 
-  it("a block already under way seeds the floor, not the day it began", () => {
+  it("a block already under way fixes the start at the floor, not the day it began, and still says why", () => {
     state.planStartFloor = TOMORROW;
     renderDialog({ preselectedBlockId: CUT.id });
 
     expect(blockField()).toHaveValue(CUT.id);
     expect(dateField()).toHaveValue(TOMORROW);
-    expect(dateField()).toHaveAttribute("min", TOMORROW);
-    expect(dateField()).toHaveAttribute("max", CUT.endsOn);
+    expect(dateField()).toBeDisabled();
+    expect(screen.getByText(/has already logged/)).toHaveTextContent(
+      "Chloe has already logged 9 Feb. A plan can start from 10 Feb."
+    );
   });
 
-  it("a round trip from a block no longer listed falls to No block", () => {
+  it("a round trip from a block no longer listed falls to the dash, and the date stays the coach's", () => {
     renderDialog({ preselectedBlockId: OLD.id });
 
     expect(blockField()).toHaveValue("none");
     expect(dateField()).toHaveValue(TODAY);
-    expect(dateField()).not.toHaveAttribute("max");
+    expect(dateField()).toBeEnabled();
   });
 
-  it("picking a block sets the date and its bounds; picking No block clears the ceiling", () => {
+  it("picking a block fixes and greys the date; picking the dash hands it back at the floor", () => {
     renderDialog();
 
     fireEvent.change(blockField(), { target: { value: BUILD.id } });
     expect(dateField()).toHaveValue(BUILD.startsOn);
-    expect(dateField()).toHaveAttribute("min", BUILD.startsOn);
-    expect(dateField()).toHaveAttribute("max", BUILD.endsOn);
+    expect(dateField()).toBeDisabled();
 
     fireEvent.change(blockField(), { target: { value: "none" } });
     expect(dateField()).toHaveValue(TODAY);
+    expect(dateField()).toBeEnabled();
     expect(dateField()).toHaveAttribute("min", TODAY);
-    expect(dateField()).not.toHaveAttribute("max");
   });
 
-  it("the coach's own date wins inside the window, and a block change re-seeds it", () => {
+  it("the coach's own date applies with the dash only, and a block change discards it", () => {
     renderDialog();
 
-    fireEvent.change(blockField(), { target: { value: BUILD.id } });
-    fireEvent.change(dateField(), { target: { value: "2026-03-02" } });
-    expect(dateField()).toHaveValue("2026-03-02");
+    fireEvent.change(dateField(), { target: { value: "2026-02-16" } });
+    expect(dateField()).toHaveValue("2026-02-16");
 
-    fireEvent.change(blockField(), { target: { value: CUT.id } });
+    fireEvent.change(blockField(), { target: { value: BUILD.id } });
+    expect(dateField()).toHaveValue(BUILD.startsOn);
+
+    fireEvent.change(blockField(), { target: { value: "none" } });
     expect(dateField()).toHaveValue(TODAY);
-    expect(dateField()).toHaveAttribute("max", CUT.endsOn);
   });
 
-  it("submits the selected block's first available day as the start", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ success: true, sessionsCreated: 3, eventsCreated: 12 }),
-    } as unknown as Response);
+  it("submits the chosen block's first available day as the start", async () => {
+    const fetchSpy = mockPlacement();
     renderDialog({ preselectedBlockId: BUILD.id });
 
     fireEvent.click(screen.getByRole("button", { name: /Apply Plan/ }));

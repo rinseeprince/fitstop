@@ -13,9 +13,9 @@ import type { BlockStartOption } from "@/lib/blocks/block-start-options";
  * The Block field a setup surface mounts above its start date — the
  * apply-to-client dialog and the nutrition drawer's settings form, one
  * component so the two cannot list blocks differently. Controlled: the host
- * owns the pick and derives the date field's `min` / `max` from the selected
- * option's window (`buildBlockStartOptions`), so choosing a block here sets the
- * start and bounds the picker under it in the same render.
+ * owns the pick; a chosen block fixes the date field under it on the option's
+ * `startsOn` and disables it, and the dash (`buildBlockStartOptions`' first
+ * option) hands the date back to the coach — all in the same render.
  *
  * Renders the `Select` alone; each host renders the label in its own form's
  * grammar and passes its sibling controls' classes so the field reads like the

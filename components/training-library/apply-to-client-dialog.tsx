@@ -35,6 +35,7 @@ import { BlockStartPicker } from "@/components/clients/metrics/blocks/block-star
 import {
   buildBlockStartOptions,
   selectBlockStartOption,
+  NO_BLOCK_OPTION,
 } from "@/lib/blocks/block-start-options";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { format } from "date-fns";
@@ -96,11 +97,11 @@ export function ApplyToClientDialog({
   const [clientId, setClientId] = useState(preselectedClientId ?? "");
   // The coach's own picks, null until they touch a field. The Block field's
   // value and the date the field shows are DERIVED from them below — the block
-  // pick, else the block the coach came from, else No block; the date pick,
-  // else the selected block's first available day — so the defaults follow the
-  // floor and the blocks as the payload lands instead of being reset by an
-  // effect (the nutrition builder's shape). An emptied date means the seed
-  // again.
+  // pick, else the block the coach came from, else the dash; a chosen block's
+  // first available day, else the date pick, else the floor — so the defaults
+  // follow the floor and the blocks as the payload lands instead of being reset
+  // by an effect (the nutrition builder's shape). An emptied date means the
+  // floor again.
   const [blockPick, setBlockPick] = useState<string | null>(null);
   const [startDatePick, setStartDatePick] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -154,19 +155,23 @@ export function ApplyToClientDialog({
   // server refuses a start before the floor either way.
   const { blocks, clientToday: payloadToday, planStartFloor } = useClientBlocks(clientId);
   const startFloor = planStartFloor ?? clientLocalToday ?? deviceToday;
-  // The Block field over the date: the client's blocks whose end is on or after
-  // the floor, then No block. The coach's pick wins; with none, the block they
-  // came from is preselected — the whole point of "place one" is that they
-  // have already said which days they mean; else No block. The selected
-  // option's window bounds the date field AND seeds the start: a block already
-  // under way seeds the floor, not the day it began, and No block seeds the
-  // floor itself — a coach placing a program almost always means now.
+  // The Block field over the date: the dash (no block) first, then the client's
+  // blocks whose end is on or after the floor. The coach's pick wins; with
+  // none, the block they came from is preselected — the whole point of "place
+  // one" is that they have already said which days they mean; else the dash.
+  // A chosen block FIXES the start on its first available day (the floor for a
+  // block already under way, never the day it began) and the date field is
+  // disabled: a plan placed in a block begins where the block does. With the
+  // dash the date is the coach's own, seeded at the floor — a coach placing a
+  // program almost always means now.
   const blockOptions = useMemo(
     () => buildBlockStartOptions(blocks, startFloor),
     [blocks, startFloor]
   );
   const selectedBlock = selectBlockStartOption(blockOptions, blockPick, preselectedBlockId);
-  const startDate = startDatePick ?? selectedBlock.window.min;
+  const fixedStart =
+    selectedBlock.value !== NO_BLOCK_OPTION ? selectedBlock.startsOn : null;
+  const startDate = fixedStart ?? startDatePick ?? startFloor;
   // Why today is greyed out, when it is — said only once the payload says so.
   const loggedLine =
     planStartFloor && payloadToday && planStartFloor > payloadToday
@@ -275,11 +280,11 @@ export function ApplyToClientDialog({
             </div>
           )}
 
-          {/* Block. Choosing one sets the start and bounds the picker under it
-              to the block's window — `min` and `max` natively, so a day outside
-              the block is greyed rather than offered and refused. The placement
-              resolves its own window from the block covering the start; this
-              only picks a valid start inside the block the coach means. */}
+          {/* Block. A chosen block fixes the start on its first available day
+              and greys the date field under it; the dash hands the date back to
+              the coach. The placement resolves its own window from the block
+              covering the start; this only starts the plan where the block the
+              coach means begins. */}
           <div className="space-y-1.5">
             <Label htmlFor="start-block">Block</Label>
             <BlockStartPicker
@@ -288,24 +293,25 @@ export function ApplyToClientDialog({
               value={selectedBlock.value}
               onValueChange={(value) => {
                 setBlockPick(value);
-                // Choosing a block SETS the start: the date re-seeds from the
-                // block's window, and the coach moves it inside from there.
+                // A block change discards a typed date: the dash then reads
+                // the floor again, not a day picked for a different block.
                 setStartDatePick(null);
               }}
             />
           </div>
 
-          {/* Start date. `min` / `max` are the selected block's window — the
-              floor alone for No block; the server refuses a start before the
-              floor, and the sentence under the field says why today is greyed. */}
+          {/* Start date. Fixed and disabled while a block is chosen; the coach's
+              own with the dash, floored at the deletion floor — the server
+              refuses a start before it, and the sentence under the field says
+              why today is greyed. */}
           <div className="space-y-1.5">
             <Label htmlFor="start-date">Start Date</Label>
             <Input
               id="start-date"
               type="date"
               value={startDate}
-              min={selectedBlock.window.min}
-              max={selectedBlock.window.max ?? undefined}
+              min={startFloor}
+              disabled={fixedStart != null}
               onChange={(e) => setStartDatePick(e.target.value || null)}
             />
             {loggedLine && (
