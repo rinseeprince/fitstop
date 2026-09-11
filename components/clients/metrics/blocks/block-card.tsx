@@ -19,7 +19,7 @@ import { formatBlockDate, splitDeficitPerDay } from "@/lib/blocks/block-format";
 import { BlockTimeline, deriveTimelineEntries } from "./block-timeline";
 import type { BlockWeightFacts } from "@/lib/blocks/block-weight";
 import type { BlockPace, ClientBlockView } from "@/lib/blocks/block-derivations";
-import type { BlockFacts } from "@/types/client-blocks";
+import type { BlockFacts, BlockNutritionFact } from "@/types/client-blocks";
 
 // One block in the Journey list. Collapsed: identity + dates + weight change.
 // Expanded: the Training / Nutrition / Weight fact columns + the timeline.
@@ -46,10 +46,10 @@ type BlockCardProps = {
   /** The Journey round trip (7.3/7.4, H): the Training / Nutrition facts are
    *  the way into the apply and plan flows — the empty state's "place one" /
    *  "set targets", and the set state's "update plan" / "update targets"
-   *  under the value, which place a NEW plan from the block's first available
-   *  day and supersede the standing one from there (never the amendment, which
-   *  edits a placed program in place). One handler per track serves both
-   *  states, in one register. Undefined, or a block that fails
+   *  beside the value on its own line, which place a NEW plan from the block's
+   *  first available day and supersede the standing one from there (never the
+   *  amendment, which edits a placed program in place). One handler per track
+   *  serves both states, in one grammar. Undefined, or a block that fails
    *  blockAcceptsSetup, leaves the empty state as plain text and the set state
    *  without its action. */
   onPlaceProgram?: () => void;
@@ -71,22 +71,25 @@ function blockAcceptsSetup(block: ClientBlockView): boolean {
 }
 
 /**
- * The way in, in ONE register (Session 7.3/7.4, H): the empty state names what
- * is unset and offers the gesture that fixes it ("No program placed — place
- * one"); the set state offers the gesture alone under the value ("update
- * plan"), the same word treatment with no prefix — the value above it is the
- * state. The action word stays visible rather than hover-revealed — a coach
+ * The way in, in ONE grammar and ONE position (Session 7.3/7.4, H): the state
+ * of the fact, then a dash, then the teal gesture to its right on the same
+ * line. Unset: "No program placed — place one". Set: the value IS the state —
+ * "Push Pull Legs — update plan", the numbers "— update targets" — so the word
+ * sits exactly where the empty state's does (owner, 2026-09-11: "the same as
+ * place one and set targets, which means it sits in the same position too, to
+ * the right"). The whole line is the button, as in the empty state; only the
+ * word turns on hover. It stays visible rather than hover-revealed — a coach
  * who has to hover to discover the door is exactly the problem this session
- * exists to fix — and it is never set in the label register: a small-caps word
- * beside the column label reads as a title, not a door (owner, 2026-09-11).
+ * exists to fix — and it is never set in the label register, where it reads
+ * as a title, and never on a line of its own under the value.
  */
 function SetupPrompt({
-  missing,
+  state,
   action,
   onClick,
 }: {
-  /** What is unset; omitted on the set state, where the value says it. */
-  missing?: string;
+  /** What is unset (muted, inherited) or the value in its own styling. */
+  state: React.ReactNode;
   action: string;
   onClick: () => void;
 }) {
@@ -99,11 +102,36 @@ function SetupPrompt({
         FOCUS_RING
       )}
     >
-      {missing && <>{missing} &mdash;{" "}</>}
+      {state} &mdash;{" "}
       <span className="font-medium text-[#0d9488] group-hover:text-[#0b7f75]">
         {action}
       </span>
     </button>
+  );
+}
+
+/** A version's target and deficit on one line, both in the target's weight,
+ *  the units in the unit's — inline, so it can sit inside the way-in line. */
+function NutritionValue({ fact }: { fact: BlockNutritionFact }) {
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-3">
+      <span>
+        <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
+          {Math.round(fact.calories).toLocaleString()}
+        </span>{" "}
+        <span className={cn(MONO_META_CLASS, "text-[10px]")}>kcal</span>
+      </span>
+      {fact.deficitPerDay != null && (
+        <span>
+          <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
+            {splitDeficitPerDay(fact.deficitPerDay).value}
+          </span>{" "}
+          <span className={cn(MONO_META_CLASS, "text-[10px]")}>
+            {splitDeficitPerDay(fact.deficitPerDay).unit}
+          </span>
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -133,7 +161,7 @@ function TrainingColumn({
   if (facts.training.length === 0) {
     return setUp ? (
       <SetupPrompt
-        missing="No program placed"
+        state="No program placed"
         action="place one"
         onClick={setUp}
       />
@@ -141,20 +169,30 @@ function TrainingColumn({
       <p className="text-xs text-[#93b0b4]">No program placed</p>
     );
   }
+  // The way in rides the FIRST entry's line — the column's headline, the
+  // position the empty state's line holds — once, however many are listed.
   return (
-    <div className="space-y-1">
-      <ul className="space-y-1">
-        {facts.training.map((plan) => (
+    <ul className="space-y-1">
+      {facts.training.map((plan, index) => {
+        const name = (
+          <span className={cn("text-xs font-medium", TEXT_PRIMARY)}>{plan.name}</span>
+        );
+        return (
           <li key={plan.id}>
-            <p className={cn("text-xs font-medium", TEXT_PRIMARY)}>{plan.name}</p>
+            <p className="text-xs">
+              {setUp && index === 0 ? (
+                <SetupPrompt state={name} action="update plan" onClick={setUp} />
+              ) : (
+                name
+              )}
+            </p>
             <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
               from {formatBlockDate(plan.startsOn)}
             </p>
           </li>
-        ))}
-      </ul>
-      {setUp && <SetupPrompt action="update plan" onClick={setUp} />}
-    </div>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -179,7 +217,7 @@ function NutritionColumn({
   if (facts.nutrition.length === 0) {
     return setUp ? (
       <SetupPrompt
-        missing="Not set"
+        state="Not set"
         action="set targets"
         onClick={setUp}
       />
@@ -188,41 +226,30 @@ function NutritionColumn({
     );
   }
   // One entry per version overlapping the block, the training column's shape:
-  // a queued version lists under the running one with its own start.
+  // a queued version lists under the running one with its own start. The date
+  // sits under the numbers, the training column's title-then-date grammar,
+  // and the way in rides the first entry's line as it does there.
   return (
-    <div className="space-y-1">
-      <ul className="space-y-1">
-        {facts.nutrition.map((fact) => (
-          <li key={fact.id} className="space-y-0.5">
-            {/* Target and surplus/deficit on one line, both in the target's
-                weight; the units in the unit's. The date sits under it, the
-                training column's title-then-date grammar. */}
-            <p className="flex flex-wrap items-baseline gap-x-3">
-              <span>
-                <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
-                  {Math.round(fact.calories).toLocaleString()}
-                </span>{" "}
-                <span className={cn(MONO_META_CLASS, "text-[10px]")}>kcal</span>
-              </span>
-              {fact.deficitPerDay != null && (
-                <span>
-                  <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
-                    {splitDeficitPerDay(fact.deficitPerDay).value}
-                  </span>{" "}
-                  <span className={cn(MONO_META_CLASS, "text-[10px]")}>
-                    {splitDeficitPerDay(fact.deficitPerDay).unit}
-                  </span>
-                </span>
-              )}
-            </p>
-            <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-              from {formatBlockDate(fact.startsOn)}
-            </p>
-          </li>
-        ))}
-      </ul>
-      {setUp && <SetupPrompt action="update targets" onClick={setUp} />}
-    </div>
+    <ul className="space-y-1">
+      {facts.nutrition.map((fact, index) => (
+        <li key={fact.id} className="space-y-0.5">
+          <p className="text-xs">
+            {setUp && index === 0 ? (
+              <SetupPrompt
+                state={<NutritionValue fact={fact} />}
+                action="update targets"
+                onClick={setUp}
+              />
+            ) : (
+              <NutritionValue fact={fact} />
+            )}
+          </p>
+          <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+            from {formatBlockDate(fact.startsOn)}
+          </p>
+        </li>
+      ))}
+    </ul>
   );
 }
 
