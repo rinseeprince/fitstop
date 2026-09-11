@@ -408,6 +408,7 @@ To turn a mono label to normal case (e.g. a meta line), append `normal-case trac
 | Per-item on/off toggle | `@/components/ui/switch` → `<Switch checked onCheckedChange aria-label />` — see "Switch" |
 | Slider, single or two-thumb | `@/components/ui/slider` → `<Slider thumbLabels trackContent />` — the `h-1.5` rounded track in the `0.08` tint with a teal range, a 16px white thumb on a teal hairline with `FOCUS_RING`. `thumbLabels` names each thumb (a two-thumb pair otherwise reads "Minimum" / "Maximum", wrong for boundaries); `trackContent` replaces the range fill with a track that is itself the information. The macro balancer (`components/clients/nutrition/macro-balance.tsx`) is the reference |
 | Dialog / Sheet / Popover / Button / Badge / Input / Select / Table | `@/components/ui/*` (already Teal-Summit-styled — see Overlays) |
+| Toast | `import { toast } from "sonner"` → `toast.success(title, { description })` / `toast.error(…)` / plain `toast(title)`. The one toaster is `@/components/ui/sonner` → `<Toaster />`, mounted by `app/layout.tsx` alone — see Toasts |
 
 ---
 
@@ -540,12 +541,18 @@ Reference: the placed-session tray's save-scope dialog. `sm:max-w-md`; a one-sen
 
 ### Toasts
 
-Always `const { toast } = useToast()` — never a bespoke notification surface.
+**Exactly one toaster, mounted by the root layout** — `components/ui/sonner.tsx`, the app's `Toaster` over Sonner's, in `app/layout.tsx`. A call site does `import { toast } from "sonner"` and calls it directly; there is no hook, no wrapper and never a second toaster or a bespoke notification surface.
 
+- Success: `toast.success("Session saved")` — a consequence, when there is one, as `{ description }`.
+- Failure: `toast.error("Save failed", { description: reason })` — the reason as the description, in plain words.
+- A confirmation with no verdict (`Nothing to clear`): plain `toast("Nothing to clear")` — no icon.
 - Title: a short sans fragment stating the outcome — `Session saved`, `Week cleared`, `"{name}" updated`. Quote user-named things with `"…"`.
 - Description (optional): one plain sans sentence of consequence — `Programs that already use a copy of this session are unchanged.`
-- Failures: `variant: "destructive"` with `title: "Save failed"` (or similar) + the reason as description.
 - Never: markup, mono spans, raw error strings, IDs, or dates set in mono. Toast text obeys the prose rule above in full.
+
+**The card** (Sonner's own look is switched off; `richColors` stays off): white, `rounded-[6px]`, `p-4`, `shadow-[0_6px_20px_rgba(13,148,136,0.10)]`, a border tinted by type — `rgba(13,148,136,0.08)` plain, `rgba(13,148,136,0.20)` success, `rgba(185,28,28,0.20)` error, `rgba(245,158,11,0.20)` warning. Title `text-sm font-semibold text-[#0c1a1e]`; description `text-sm` at 90% ink. Sonner's own success and error glyphs stay, tinted `#0d9488` / `#c06060` (`#d97706` warning). An always-visible close X in the icon-action grammar — `text-[#93b0b4] hover:text-[#5a7d82]`, `FOCUS_RING`, a Lucide `X` at `h-4 w-4`. Bottom-right, 5 s, hovering holds it. The look lives in the primitive alone — never restyle a toast at a call site.
+
+**A toast is never an outside click.** The toaster sits above every overlay and a toast keeps its pointer events under a modal, so it can be hovered and closed over an open drawer — and the `Dialog` and `Sheet` primitives ignore a pointer-down or interaction whose target is inside the toaster (`lib/toast-interaction.ts`), so closing the toast leaves the drawer open.
 
 ---
 

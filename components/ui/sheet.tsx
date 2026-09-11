@@ -5,6 +5,7 @@ import * as SheetPrimitive from '@radix-ui/react-dialog'
 import { XIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { ignoringToasts } from '@/lib/toast-interaction'
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -50,6 +51,8 @@ function SheetContent({
   side = 'right',
   overlayClassName,
   hideClose = false,
+  onPointerDownOutside,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left'
@@ -70,6 +73,11 @@ function SheetContent({
       <SheetOverlay className={overlayClassName} />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        // A toast is never an outside click: pressing one over this sheet
+        // neither dismisses it nor reaches the call site's handler
+        // (lib/toast-interaction.ts).
+        onPointerDownOutside={ignoringToasts(onPointerDownOutside)}
+        onInteractOutside={ignoringToasts(onInteractOutside)}
         className={cn(
           // No edge border on any side. The template shipped one per variant in the
           // OKLCH `border` grey, which is off-system (the Teal-Summit border is
