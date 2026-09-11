@@ -3,8 +3,8 @@ import { addDaysToDateString } from "@/lib/date-helpers";
 import { deleteNutritionDayEditsInRanges } from "./nutrition-day-edits-service";
 
 /**
- * "Delete nutrition plan": end the versions the client is on — the nutrition
- * twin of `clearTrainingPlansForClient`.
+ * "Delete nutrition plan": end the versions a delete names — the nutrition
+ * twin of `clearTrainingPlansForClient` / `retireTrainingPlans`.
  *
  * A delete is a save of nothing from today (owner decision 2026-09-10). The
  * RUNNING version — started before today, still reaching it — is capped at
@@ -35,50 +35,39 @@ import { deleteNutritionDayEditsInRanges } from "./nutrition-day-edits-service";
  * invisible (no day to see or revert it on) and would answer again under
  * whatever version next covered the date.
  *
- * One act, two callers: the nutrition calendar's own delete (every running or
- * queued version) and the block delete's "and its plans" (only the versions
- * laid inside the block). There is no delete-the-days-but-keep-the-plan
- * variant (owner, 2026-09-08): a version left standing covers its days, so the
- * two cannot be separated.
+ * ONE act, three selections: the nutrition calendar's own delete (every
+ * running or queued version), the block delete's "and its plans" (only the
+ * versions laid inside the block) and the block card's per-plan delete (one
+ * version by id). Every selection hands its rows to the same retire path —
+ * the statements are spelled once. There is no delete-the-days-but-keep-the-
+ * plan variant (owner, 2026-09-08): a version left standing covers its days,
+ * so the two cannot be separated. Deleting one version never touches another
+ * (owner, 2026-09-11): a queued version's dates go empty and the coach fills
+ * them; nothing regrows.
  *
  * Three statements, whatever the count: the edits first, then one per
  * version outcome. The edits go FIRST so a mid-flight failure leaves every
  * version whole for the retry to find; the other order would end the versions
  * and strand their edits, which a retry can no longer reach.
  */
-export async function clearNutritionPlansForClient(
+
+/** The three columns the retire rule reads. */
+type RetirableVersion = { id: string; effective_from: string; effective_until: string };
+
+type RetireResult = { versionsCleared: number; versionIds: string[]; editsCleared: number };
+
+const VERSION_COLUMNS = "id, effective_from, effective_until";
+
+/**
+ * The retire path — the statements, spelled once. Takes the rows a selection
+ * has already proved are the client's, active, and still reaching today.
+ */
+async function retireNutritionVersions(
   clientId: string,
   clientToday: string,
-  /**
-   * Optional block window. Given, only the versions LAID INSIDE it go — a
-   * version belongs to a block when its start falls in the block's days, which
-   * is a question dates answer on their own because a version's end is
-   * resolved to the block covering its start (see resolveNutritionPlacementEnd).
-   * Omitted, every running or queued version goes: that is the nutrition
-   * calendar's own delete, and it is the training calendar's shape.
-   *
-   * A version that merely CROSSES the block (saved before it existed) belongs
-   * to no block and survives — the coach removes it from the calendar, where
-   * they can see what they are removing.
-   */
-  window?: { from: string; to: string }
-): Promise<{ versionsCleared: number; versionIds: string[]; editsCleared: number }> {
-  // Only versions with a day still ahead: a finished one is untouched history.
-  const versionsQuery = supabaseAdmin
-    .from("nutrition_plans")
-    .select("id, effective_from, effective_until")
-    .eq("client_id", clientId)
-    .eq("status", "active")
-    .gte("effective_until", clientToday)
-    .order("effective_from", { ascending: true });
-  const { data: versions, error } = window
-    ? await versionsQuery.gte("effective_from", window.from).lte("effective_from", window.to)
-    : await versionsQuery;
-  if (error) {
-    throw new Error(`Failed to resolve the nutrition versions to clear: ${error.message}`);
-  }
-
-  const versionIds = (versions ?? []).map((version) => version.id);
+  versions: RetirableVersion[]
+): Promise<RetireResult> {
+  const versionIds = versions.map((version) => version.id);
   if (versionIds.length === 0) return { versionsCleared: 0, versionIds: [], editsCleared: 0 };
 
   // The days these versions answer for from today, read before anything
@@ -86,17 +75,17 @@ export async function clearNutritionPlansForClient(
   // days are never in range — they keep their version and their edits.
   const editsCleared = await deleteNutritionDayEditsInRanges(
     clientId,
-    (versions ?? []).map((version) => ({
+    versions.map((version) => ({
       from: version.effective_from > clientToday ? version.effective_from : clientToday,
       to: version.effective_until,
     }))
   );
 
   const now = new Date().toISOString();
-  const running = (versions ?? [])
+  const running = versions
     .filter((version) => version.effective_from < clientToday)
     .map((version) => version.id);
-  const queued = (versions ?? [])
+  const queued = versions
     .filter((version) => version.effective_from >= clientToday)
     .map((version) => version.id);
 
@@ -121,4 +110,77 @@ export async function clearNutritionPlansForClient(
   }
 
   return { versionsCleared: versionIds.length, versionIds, editsCleared };
+}
+
+/** Every version of the client with a day still ahead — a finished one is untouched history. */
+function versionsStillAhead(clientId: string, clientToday: string) {
+  return supabaseAdmin
+    .from("nutrition_plans")
+    .select(VERSION_COLUMNS)
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .gte("effective_until", clientToday);
+}
+
+export async function clearNutritionPlansForClient(
+  clientId: string,
+  clientToday: string,
+  /**
+   * Optional block window. Given, only the versions LAID INSIDE it go — a
+   * version belongs to a block when its start falls in the block's days, which
+   * is a question dates answer on their own because a version's end is
+   * resolved to the block covering its start (see resolveNutritionPlacementEnd).
+   * Omitted, every running or queued version goes: that is the nutrition
+   * calendar's own delete, and it is the training calendar's shape.
+   *
+   * A version that merely CROSSES the block (saved before it existed) belongs
+   * to no block and survives — the coach removes it from the calendar, where
+   * they can see what they are removing.
+   */
+  window?: { from: string; to: string }
+): Promise<RetireResult> {
+  const versionsQuery = versionsStillAhead(clientId, clientToday).order("effective_from", {
+    ascending: true,
+  });
+  const { data: versions, error } = window
+    ? await versionsQuery.gte("effective_from", window.from).lte("effective_from", window.to)
+    : await versionsQuery;
+  if (error) {
+    throw new Error(`Failed to resolve the nutrition versions to clear: ${error.message}`);
+  }
+
+  return retireNutritionVersions(clientId, clientToday, versions ?? []);
+}
+
+type NutritionVersionDeleteOutcome = {
+  /** `ended` for a running version capped at yesterday; `archived` for a queued one. */
+  outcome: "ended" | "archived";
+  editsCleared: number;
+};
+
+/**
+ * The block card's per-plan delete: ONE version by id, and nothing else. The
+ * row must belong to the client, be active and still reach today — a foreign
+ * id, an archived version or a finished one answers null, and the route says
+ * not found. The running version beside it and the queued version after it
+ * are left exactly where they are.
+ */
+export async function clearNutritionPlanById(
+  clientId: string,
+  clientToday: string,
+  versionId: string
+): Promise<NutritionVersionDeleteOutcome | null> {
+  const { data: version, error } = await versionsStillAhead(clientId, clientToday)
+    .eq("id", versionId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Failed to resolve the nutrition version to delete: ${error.message}`);
+  }
+  if (!version) return null;
+
+  const { editsCleared } = await retireNutritionVersions(clientId, clientToday, [version]);
+  return {
+    outcome: version.effective_from < clientToday ? "ended" : "archived",
+    editsCleared,
+  };
 }

@@ -3,7 +3,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 
 import { supabaseAdmin } from "./supabase-admin";
-import { clearNutritionPlansForClient } from "./nutrition-plan-clear-service";
+import {
+  clearNutritionPlanById,
+  clearNutritionPlansForClient,
+} from "./nutrition-plan-clear-service";
 
 type ChainResult = { data?: unknown; error?: { message: string } | null; count?: number | null };
 
@@ -22,6 +25,7 @@ function mockFromSequence(results: ChainResult[]) {
     for (const m of ["select", "eq", "gte", "lte", "in", "or", "update", "delete", "order"]) {
       chain[m] = vi.fn().mockReturnValue(chain);
     }
+    chain.maybeSingle = vi.fn().mockResolvedValue(result);
     chain.then = (resolve: (v: ChainResult) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject);
     chains.push(chain as Record<string, ReturnType<typeof vi.fn>>);
@@ -197,5 +201,82 @@ describe("clearNutritionPlansForClient — the block delete's 'and its plans' (a
       editsCleared: 0,
     });
     expect(tablesTouched()).toEqual(["nutrition_plans"]);
+  });
+});
+
+// The block card's per-plan delete (C3): ONE version by id, through the same
+// retire path as the two clears above — the statements are spelled once.
+// Deleting a version never touches another: the running version beside it
+// and the queued version after it stand, and nothing regrows.
+describe("clearNutritionPlanById — the block card's per-plan delete (one version by id)", () => {
+  it("a running version: proved the client's, capped at YESTERDAY, its edits from today gone — and no other version touched", async () => {
+    const chains = mockFromSequence([
+      { data: running, error: null },
+      { count: 1, error: null },
+      { error: null },
+    ]);
+
+    const result = await clearNutritionPlanById(CLIENT, TODAY, "v-run");
+
+    expect(result).toEqual({ outcome: "ended", editsCleared: 1 });
+    // The selection is the id AND the client AND active AND still ahead: a
+    // foreign id, an archived version or a finished one is simply not found.
+    expect(chains[0].eq).toHaveBeenCalledWith("client_id", CLIENT);
+    expect(chains[0].eq).toHaveBeenCalledWith("status", "active");
+    expect(chains[0].gte).toHaveBeenCalledWith("effective_until", TODAY);
+    expect(chains[0].eq).toHaveBeenCalledWith("id", "v-run");
+    expect(chains[0].maybeSingle).toHaveBeenCalled();
+    // The edits from today to the version's own end — never a day before today.
+    expect(chains[1].or).toHaveBeenCalledWith("and(date.gte.2026-07-02,date.lte.2026-08-31)");
+    // The window closes on yesterday, for this one id alone.
+    expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ effective_until: YESTERDAY }));
+    expect(chains[2].in).toHaveBeenCalledWith("id", ["v-run"]);
+    expect(tablesTouched()).toEqual(["nutrition_plans", "nutrition_day_edits", "nutrition_plans"]);
+  });
+
+  it("a queued version: archived, its whole window's edits gone — the running one before it stands", async () => {
+    const chains = mockFromSequence([
+      { data: queued, error: null },
+      { count: 0, error: null },
+      { error: null },
+    ]);
+
+    const result = await clearNutritionPlanById(CLIENT, TODAY, "v-queued");
+
+    expect(result).toEqual({ outcome: "archived", editsCleared: 0 });
+    expect(chains[1].or).toHaveBeenCalledWith("and(date.gte.2026-07-20,date.lte.2026-09-30)");
+    expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ status: "archived" }));
+    expect(chains[2].in).toHaveBeenCalledWith("id", ["v-queued"]);
+    // No cap statement ran: nothing else's window moved.
+    expect(chains).toHaveLength(3);
+  });
+
+  it("a version that started today has no yesterday to end on and is archived", async () => {
+    const chains = mockFromSequence([
+      { data: startedToday, error: null },
+      { count: 0, error: null },
+      { error: null },
+    ]);
+
+    expect(await clearNutritionPlanById(CLIENT, TODAY, "v-today")).toEqual({
+      outcome: "archived",
+      editsCleared: 0,
+    });
+    expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ status: "archived" }));
+  });
+
+  it("not the client's, archived, or finished: null after ONE read, and nothing moves", async () => {
+    mockFromSequence([{ data: null, error: null }]);
+
+    expect(await clearNutritionPlanById(CLIENT, TODAY, "v-someone-elses")).toBeNull();
+    expect(tablesTouched()).toEqual(["nutrition_plans"]);
+  });
+
+  it("surfaces a failed read rather than reporting not found", async () => {
+    mockFromSequence([{ data: null, error: { message: "boom" } }]);
+
+    await expect(clearNutritionPlanById(CLIENT, TODAY, "v-run")).rejects.toThrow(
+      "Failed to resolve the nutrition version to delete: boom"
+    );
   });
 });

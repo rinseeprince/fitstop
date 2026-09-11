@@ -221,6 +221,28 @@ export async function deleteBlockRequest(
   return body.data;
 }
 
+/**
+ * DELETE one plan from a block card's timeline — a running one ends
+ * yesterday, a queued one is removed — on its own track's route: the
+ * training per-plan DELETE, or the nutrition per-version DELETE. Deleting a
+ * plan never touches another, and nothing regrows. Callers invalidate the
+ * training and nutrition areas, the facts, the Overview and the feed on
+ * success (CONVENTIONS §7).
+ */
+export async function deletePlanRequest(
+  clientId: string,
+  track: "training" | "nutrition",
+  planId: string
+): Promise<void> {
+  const res = await fetch(`/api/clients/${clientId}/${track}/${planId}`, {
+    method: "DELETE",
+  });
+  await parseOrThrow<{ success?: boolean }>(
+    res,
+    track === "training" ? "Failed to delete the plan" : "Failed to delete the targets"
+  );
+}
+
 /** PATCH archive (true) / restore (false) an elapsed block — a coach view
  *  preference. Callers invalidate the blocks area on success. */
 export async function patchBlockArchived(

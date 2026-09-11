@@ -21,6 +21,7 @@ import { formatWeight } from "@/utils/unit-conversions";
 import { derivePace, type ClientBlockView } from "@/lib/blocks/block-derivations";
 import {
   deleteBlockRequest,
+  deletePlanRequest,
   patchBlockArchived,
   putBlockChain,
   syncBlockEvents,
@@ -49,6 +50,8 @@ import {
   DeleteBlockDialog,
   type BlockDeleteChoice,
 } from "./delete-block-dialog";
+import { DeletePlanDialog } from "./delete-plan-dialog";
+import type { BlockPlanDeleteTarget } from "./block-timeline";
 import type { MetricSummary } from "../metrics-view-types";
 
 // The Journey tab's Blocks pane: the chain (decorated server-side in the
@@ -61,6 +64,12 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 /** The one description line the completed save carries, if it needs one. */
 function calendarOutcome(choice: BlockEventsChoice): string | undefined {
   return choice.calendar === "clear" ? "The days that left are clear." : undefined;
+}
+
+/** The per-plan delete's outcome, in the dialog's own verb. */
+function planDeleteOutcome(plan: BlockPlanDeleteTarget): string {
+  const verb = plan.state === "active" ? "ended" : "removed";
+  return plan.track === "training" ? `"${plan.name}" ${verb}` : `Targets ${verb}`;
 }
 
 const ROW_ICON_BUTTON =
@@ -122,6 +131,10 @@ export function BlocksSubtab({
   // Which delete is running, not merely that one is: the spinner belongs on
   // the button that was pressed.
   const [deleting, setDeleting] = useState<BlockDeleteChoice | null>(null);
+  // The per-plan delete (C3): the timeline row the coach picked, behind the
+  // destructive confirm.
+  const [deletePlanTarget, setDeletePlanTarget] = useState<BlockPlanDeleteTarget | null>(null);
+  const [isDeletingPlan, setIsDeletingPlan] = useState(false);
 
   const factsById = useMemo(
     () => new Map(facts.map((fact) => [fact.blockId, fact])),
@@ -233,6 +246,42 @@ export function BlocksSubtab({
       });
     } finally {
       setDeleting(null);
+    }
+  };
+
+  /**
+   * End or remove ONE plan from a block card's timeline — the training
+   * per-plan DELETE or the nutrition per-version DELETE, each ending a running
+   * plan at yesterday and removing a queued one. Deleting a plan never touches
+   * another, and nothing regrows: a queued plan's dates go empty and the coach
+   * fills them from the card or the calendar.
+   */
+  const handleDeletePlanConfirm = async (plan: BlockPlanDeleteTarget) => {
+    setIsDeletingPlan(true);
+    try {
+      await deletePlanRequest(clientId, plan.track, plan.id);
+      setDeletePlanTarget(null);
+      // The delete rewrote a calendar — the upcoming sessions, or a version's
+      // window the nutrition days are computed from — so both calendar areas
+      // are owed their invalidator, and the facts, the Overview and the feed
+      // are derived from the plan tables (CONVENTIONS §7).
+      void invalidateTrainingData(clientId);
+      void invalidateNutritionCalendar(clientId);
+      void clearBlockFacts(clientId);
+      void clearClientOverview(clientId);
+      void clearAttentionFeed();
+      toast.success(planDeleteOutcome(plan));
+    } catch (error) {
+      toast.error("Delete failed", {
+        description:
+          error instanceof Error
+            ? error.message
+            : plan.track === "training"
+              ? "Could not delete the plan"
+              : "Could not delete the targets",
+      });
+    } finally {
+      setIsDeletingPlan(false);
     }
   };
 
@@ -546,6 +595,7 @@ export function BlocksSubtab({
                         })
                     : undefined
                 }
+                onDeletePlan={setDeletePlanTarget}
                 rowAction={
                   <>
                     <button
@@ -611,6 +661,13 @@ export function BlocksSubtab({
         deleting={deleting}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={(block, clearPlans) => void handleDeleteConfirm(block, clearPlans)}
+      />
+
+      <DeletePlanDialog
+        plan={deletePlanTarget}
+        isDeleting={isDeletingPlan}
+        onCancel={() => setDeletePlanTarget(null)}
+        onConfirm={(plan) => void handleDeletePlanConfirm(plan)}
       />
     </div>
   );

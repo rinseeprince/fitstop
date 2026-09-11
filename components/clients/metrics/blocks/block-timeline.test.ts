@@ -274,3 +274,41 @@ describe("deriveTimelineEntries", () => {
     });
   });
 });
+
+// C3: every plan and version row carries the plan it stands for — what the
+// per-plan delete acts on; block boundaries stand for none.
+describe("the plan a row stands for (C3)", () => {
+  it("a program's row carries its track, id, name, state and range", () => {
+    const entries = deriveTimelineEntries(
+      { ...BLOCK, state: "current" },
+      [plan("p1", "Upper Lower", "2026-06-07", "active", "2026-06-20")],
+      []
+    );
+    expect(entries.find((e) => e.label === "Upper Lower")?.plan).toEqual({
+      track: "training",
+      id: "p1",
+      name: "Upper Lower",
+      state: "active",
+      startsOn: "2026-06-07",
+      endsOn: "2026-06-20",
+    });
+  });
+
+  it("a version's row carries the nutrition track with no name; a block boundary carries no plan", () => {
+    const entries = deriveTimelineEntries(
+      { ...BLOCK, state: "past" },
+      [],
+      [{ id: "v1", startsOn: "2026-06-07", endsOn: "2026-06-20", state: "ended", calories: 2200, deficitPerDay: 343, note: null }]
+    );
+    expect(entries.find((e) => e.label === "Nutrition")?.plan).toEqual({
+      track: "nutrition",
+      id: "v1",
+      name: null,
+      state: "ended",
+      startsOn: "2026-06-07",
+      endsOn: "2026-06-20",
+    });
+    expect(entries.find((e) => e.label === "Block started")?.plan).toBeUndefined();
+    expect(entries.find((e) => e.label === "Block ended")?.plan).toBeUndefined();
+  });
+});

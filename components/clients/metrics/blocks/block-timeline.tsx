@@ -1,7 +1,9 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  FOCUS_RING,
   MONO_LABEL_CLASS,
   TEXT_SECONDARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
@@ -23,6 +25,32 @@ import { PlanStateChip } from "./plan-state-chip";
 // track. Block boundaries are a single date. Plan amendments are invisible by
 // design (audit_logs has no readers).
 
+/**
+ * The plan a timeline row stands for — what the per-plan delete acts on
+ * (C3): its track decides the route, its state the verb (a running plan is
+ * ENDED at yesterday, a queued one REMOVED), its range the words. `name` is
+ * the program's; a nutrition version carries none, so its rows say "the
+ * nutrition targets" and name the range instead.
+ */
+export type BlockPlanDeleteTarget = {
+  track: "training" | "nutrition";
+  id: string;
+  name: string | null;
+  state: BlockPlanState;
+  startsOn: string;
+  endsOn: string;
+};
+
+/** The verb a plan's state earns: a running plan ends, a queued one is removed. */
+export function planDeleteVerb(plan: Pick<BlockPlanDeleteTarget, "state">): "End" | "Remove" {
+  return plan.state === "active" ? "End" : "Remove";
+}
+
+/** The icon's accessible name: "End Upper Lower", "Remove the nutrition targets". */
+function planDeleteLabel(plan: BlockPlanDeleteTarget): string {
+  return `${planDeleteVerb(plan)} ${plan.name ?? "the nutrition targets"}`;
+}
+
 interface BlockTimelineEntry {
   key: string;
   /** The entry's start — the sort key, and the one date a block boundary has. */
@@ -42,6 +70,8 @@ interface BlockTimelineEntry {
    *  and no date of its own: it explains the change above it and is dated with
    *  it (migration 172). */
   note?: string;
+  /** The plan the row stands for; a block boundary stands for none. */
+  plan?: BlockPlanDeleteTarget;
 }
 
 export function deriveTimelineEntries(
@@ -65,6 +95,14 @@ export function deriveTimelineEntries(
         endsOn: plan.endsOn,
         label: plan.name,
         state: plan.state,
+        plan: {
+          track: "training",
+          id: plan.id,
+          name: plan.name,
+          state: plan.state,
+          startsOn: plan.startsOn,
+          endsOn: plan.endsOn,
+        },
       });
     }
   }
@@ -89,6 +127,14 @@ export function deriveTimelineEntries(
         state: fact.state,
         detail: formatNutritionEra({ calories: fact.calories, deficitPerDay: fact.deficitPerDay }),
         ...(fact.note ? { note: fact.note } : {}),
+        plan: {
+          track: "nutrition",
+          id: fact.id,
+          name: null,
+          state: fact.state,
+          startsOn: fact.startsOn,
+          endsOn: fact.endsOn,
+        },
       });
     });
 
@@ -105,6 +151,13 @@ export function deriveTimelineEntries(
 type BlockTimelineProps = {
   entries: BlockTimelineEntry[];
   color: string;
+  /**
+   * The per-plan delete (C3): a hover-revealed destructive icon on the rows
+   * whose plan is active or upcoming — never an ended row, never a block
+   * boundary. The card hands it down for current and future blocks only
+   * (`blockAcceptsSetup`); absent, no row carries an icon.
+   */
+  onDeletePlan?: (plan: BlockPlanDeleteTarget) => void;
 };
 
 /**
@@ -124,7 +177,7 @@ function TimelineNote({ body }: { body: string }) {
   );
 }
 
-export function BlockTimeline({ entries, color }: BlockTimelineProps) {
+export function BlockTimeline({ entries, color, onDeletePlan }: BlockTimelineProps) {
   if (entries.length === 0) {
     return <p className="text-xs text-[#93b0b4]">Nothing yet.</p>;
   }
@@ -137,35 +190,64 @@ export function BlockTimeline({ entries, color }: BlockTimelineProps) {
   // matched a one-date column.
   return (
     <ul className="relative ml-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-2 border-l border-[rgba(13,148,136,0.08)] pl-3.5">
-      {entries.map((entry) => (
-        <li key={entry.key} className="relative col-span-2 grid grid-cols-subgrid items-baseline">
-          <span
-            className="absolute -left-[19.5px] top-[3px] h-2 w-2 rounded-full border-2 border-white"
-            style={{ backgroundColor: color }}
-          />
-          <span className={cn(MONO_LABEL_CLASS, "whitespace-nowrap normal-case tracking-normal")}>
-            {formatBlockRange(entry.date, entry.endsOn ?? entry.date)}
-          </span>
-          <div>
-            <div className="flex flex-wrap items-baseline gap-2.5">
-              <span className={cn("text-xs", TEXT_SECONDARY)}>{entry.label}</span>
-              {entry.state && <PlanStateChip state={entry.state} />}
-              {entry.detail && (
-                <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-                  {entry.detail}
-                </span>
+      {entries.map((entry) => {
+        // Only a plan still ahead can be ended or removed; an ended row and
+        // a block boundary carry no icon.
+        const deletable =
+          onDeletePlan &&
+          entry.plan &&
+          (entry.plan.state === "active" || entry.plan.state === "upcoming")
+            ? { plan: entry.plan, onDelete: onDeletePlan }
+            : null;
+        return (
+          <li
+            key={entry.key}
+            className="group/entry relative col-span-2 grid grid-cols-subgrid items-baseline"
+          >
+            <span
+              className="absolute -left-[19.5px] top-[3px] h-2 w-2 rounded-full border-2 border-white"
+              style={{ backgroundColor: color }}
+            />
+            <span className={cn(MONO_LABEL_CLASS, "whitespace-nowrap normal-case tracking-normal")}>
+              {formatBlockRange(entry.date, entry.endsOn ?? entry.date)}
+            </span>
+            <div>
+              <div className="flex flex-wrap items-baseline gap-2.5">
+                <span className={cn("text-xs", TEXT_SECONDARY)}>{entry.label}</span>
+                {entry.state && <PlanStateChip state={entry.state} />}
+                {entry.detail && (
+                  <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+                    {entry.detail}
+                  </span>
+                )}
+                {deletable && (
+                  // Destructive, rightmost, hover-revealed — the row-action
+                  // grammar the block rows above already use.
+                  <button
+                    type="button"
+                    aria-label={planDeleteLabel(deletable.plan)}
+                    title={planDeleteLabel(deletable.plan)}
+                    onClick={() => deletable.onDelete(deletable.plan)}
+                    className={cn(
+                      "ml-auto self-center rounded p-1 text-[#93b0b4] opacity-0 transition-colors hover:text-[#c06060] focus-visible:opacity-100 group-hover/entry:opacity-100",
+                      FOCUS_RING
+                    )}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                )}
+              </div>
+              {/* In the label column, so a note reads as belonging to the row
+                  above it rather than as its own dateless event. */}
+              {entry.note && (
+                <div className="mt-1.5">
+                  <TimelineNote body={entry.note} />
+                </div>
               )}
             </div>
-            {/* In the label column, so a note reads as belonging to the row
-                above it rather than as its own dateless event. */}
-            {entry.note && (
-              <div className="mt-1.5">
-                <TimelineNote body={entry.note} />
-              </div>
-            )}
-          </div>
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
   );
 }

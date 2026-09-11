@@ -176,6 +176,7 @@ export const AUDIT_ACTIONS = {
   INTAKE_SYNC_METRICS: "intake.sync_metrics",
   NUTRITION_PLAN_CREATE: "nutrition_plan.create",
   NUTRITION_PLAN_DELETE: "nutrition_plan.delete",
+  NUTRITION_PLAN_VERSION_DELETE: "nutrition_plan.version_delete",
   TRAINING_PLAN_PLACE: "training_plan.place",
   TRAINING_PLAN_CREATE: "training_plan.create",
   TRAINING_PLAN_AMEND: "training_plan.amend",

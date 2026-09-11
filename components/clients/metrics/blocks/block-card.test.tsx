@@ -492,3 +492,97 @@ describe("BlockCard — the set state's update affordance (H)", () => {
     expect(screen.queryByRole("button", { name: /update/ })).toBeNull();
   });
 });
+
+// C3: the per-plan delete. A hover-revealed destructive icon on the timeline
+// rows whose plan is active or upcoming — on current and future blocks only,
+// the same gate as the way in — carrying the row's plan to the handler. Ended
+// rows, block rows, elapsed and archived blocks carry none.
+describe("BlockCard — the per-plan delete (C3)", () => {
+  const DELETE_FACTS: BlockFacts = {
+    blockId: "blk-1",
+    training: [
+      { id: "p0", name: "Push Pull Legs", startsOn: "2026-08-01", endsOn: "2026-08-14", state: "ended" },
+      { id: "p1", name: "Upper Lower", startsOn: "2026-08-15", endsOn: "2026-09-13", state: "active" },
+      { id: "p2", name: "Glute Focused", startsOn: "2026-09-14", endsOn: "2026-09-30", state: "upcoming" },
+    ],
+    nutrition: [
+      { id: "v1", startsOn: "2026-08-03", endsOn: "2026-09-13", state: "active", calories: 2200, deficitPerDay: 343, note: null },
+      { id: "v2", startsOn: "2026-09-14", endsOn: "2026-09-30", state: "upcoming", calories: 2100, deficitPerDay: 443, note: null },
+    ],
+  };
+  const deleteButtons = () => screen.queryAllByRole("button", { name: /^(End|Remove) / });
+
+  it("offers the icon on the active and upcoming rows of a CURRENT block, never on an ended row or a block row", () => {
+    renderCard(makeBlock({ state: "current" }), { facts: DELETE_FACTS, onDeletePlan: vi.fn() } as never);
+
+    expect(deleteButtons().map((button) => button.getAttribute("aria-label"))).toEqual([
+      "End the nutrition targets",
+      "End Upper Lower",
+      "Remove Glute Focused",
+      "Remove the nutrition targets",
+    ]);
+    expect(screen.queryByRole("button", { name: /Push Pull Legs/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Block started/ })).toBeNull();
+  });
+
+  it("hands the handler the row's plan — its track, id, name, state and range", () => {
+    const onDeletePlan = vi.fn();
+    renderCard(makeBlock({ state: "current" }), { facts: DELETE_FACTS, onDeletePlan } as never);
+
+    screen.getByRole("button", { name: "Remove Glute Focused" }).click();
+    expect(onDeletePlan).toHaveBeenCalledWith({
+      track: "training",
+      id: "p2",
+      name: "Glute Focused",
+      state: "upcoming",
+      startsOn: "2026-09-14",
+      endsOn: "2026-09-30",
+    });
+
+    screen.getByRole("button", { name: "End the nutrition targets" }).click();
+    expect(onDeletePlan).toHaveBeenLastCalledWith({
+      track: "nutrition",
+      id: "v1",
+      name: null,
+      state: "active",
+      startsOn: "2026-08-03",
+      endsOn: "2026-09-13",
+    });
+  });
+
+  it("offers the icon on a FUTURE block's queued rows", () => {
+    renderCard(makeBlock({ state: "future" }), {
+      facts: {
+        ...EMPTY_FACTS,
+        training: [{ id: "p2", name: "Glute Focused", startsOn: "2026-08-05", endsOn: "2026-09-30", state: "upcoming" }],
+      },
+      onDeletePlan: vi.fn(),
+    } as never);
+
+    expect(deleteButtons()).toHaveLength(1);
+  });
+
+  it("offers no icon on an ELAPSED block, an ARCHIVED block, or without a handler", () => {
+    const { unmount } = renderCard(makeBlock({ state: "past" }), { facts: DELETE_FACTS, onDeletePlan: vi.fn() } as never);
+    expect(deleteButtons()).toHaveLength(0);
+    unmount();
+
+    const archived = renderCard(
+      makeBlock({ state: "current", archivedAt: "2026-08-20T00:00:00Z" }),
+      { facts: DELETE_FACTS, onDeletePlan: vi.fn() } as never
+    );
+    expect(deleteButtons()).toHaveLength(0);
+    archived.unmount();
+
+    renderCard(makeBlock({ state: "current" }), { facts: DELETE_FACTS });
+    expect(deleteButtons()).toHaveLength(0);
+  });
+
+  it("the icon is hover-revealed and destructive on hover — the block rows' own grammar", () => {
+    renderCard(makeBlock({ state: "current" }), { facts: DELETE_FACTS, onDeletePlan: vi.fn() } as never);
+    const icon = screen.getByRole("button", { name: "End Upper Lower" });
+    expect(icon.className).toMatch(/opacity-0/);
+    expect(icon.className).toMatch(/group-hover\/entry:opacity-100/);
+    expect(icon.className).toMatch(/hover:text-\[#c06060\]/);
+  });
+});

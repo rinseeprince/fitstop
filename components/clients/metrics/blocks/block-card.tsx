@@ -17,7 +17,11 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { formatBlockDate, formatBlockRange, splitDeficitPerDay } from "@/lib/blocks/block-format";
 import { selectHeadlineFact } from "@/lib/blocks/block-headline";
-import { BlockTimeline, deriveTimelineEntries } from "./block-timeline";
+import {
+  BlockTimeline,
+  deriveTimelineEntries,
+  type BlockPlanDeleteTarget,
+} from "./block-timeline";
 import { PlanStateChip } from "./plan-state-chip";
 import type { BlockWeightFacts } from "@/lib/blocks/block-weight";
 import type { BlockPace, ClientBlockView } from "@/lib/blocks/block-derivations";
@@ -56,6 +60,11 @@ type BlockCardProps = {
    *  without its action. */
   onPlaceProgram?: () => void;
   onSetNutrition?: () => void;
+  /** The per-plan delete (C3): a hover-revealed destructive icon on the
+   *  timeline's active and upcoming rows, on the same gate as the way in
+   *  (`blockAcceptsSetup` — current and future blocks only). Ended rows, block
+   *  rows, elapsed and archived blocks carry none. Undefined = no icons. */
+  onDeletePlan?: (plan: BlockPlanDeleteTarget) => void;
 };
 
 const signed = (n: number) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
@@ -332,9 +341,12 @@ function WeightColumn({
 }
 
 export function BlockCard(props: BlockCardProps) {
-  const { block, color, facts, weight, defaultOpen, rowAction } = props;
+  const { block, color, facts, weight, defaultOpen, rowAction, onDeletePlan } = props;
   const [open, setOpen] = useState(defaultOpen);
   const muted = block.state !== "current";
+  // The same one gate the way in consults: a finished or archived block's
+  // plans are history, and nothing on its timeline can be ended or removed.
+  const deletePlan = onDeletePlan && blockAcceptsSetup(block) ? onDeletePlan : undefined;
 
   return (
     <div className={cn("group/row rounded-[6px] bg-white", TRAINING_CARD_BORDER)}>
@@ -423,6 +435,7 @@ export function BlockCard(props: BlockCardProps) {
                 facts?.nutrition ?? []
               )}
               color={color}
+              onDeletePlan={deletePlan}
             />
           </div>
         </div>
