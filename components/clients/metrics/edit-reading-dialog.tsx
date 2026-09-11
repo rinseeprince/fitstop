@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useUnits } from "@/contexts/units-context";
 import { useCanonicalInput } from "@/hooks/use-unit-inputs";
 import { cn } from "@/lib/utils";
@@ -46,7 +46,6 @@ type EditReadingDialogProps = {
  * is untouched — an edit that changes nothing is not an edit.
  */
 export function EditReadingDialog({ row, onOpenChange, onConfirm }: EditReadingDialogProps) {
-  const { toast } = useToast();
   const { preference } = useUnits();
   const [isSaving, setIsSaving] = useState(false);
 
@@ -81,16 +80,13 @@ export function EditReadingDialog({ row, onOpenChange, onConfirm }: EditReadingD
     try {
       await onConfirm(row, commit);
       onOpenChange(false);
-      toast({
-        title: `${row.metricName} corrected`,
+      toast.success(`${row.metricName} corrected`, {
         // Echoed in what the coach typed, not what was stored.
         description: `Now ${input.value.trim()} ${row.unit} for ${formatLogDate(row.date)}.`,
       });
     } catch (error) {
-      toast({
-        title: "Correction failed",
+      toast.error("Correction failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
       });
     } finally {
       setIsSaving(false);

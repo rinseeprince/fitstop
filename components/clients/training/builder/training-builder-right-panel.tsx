@@ -13,7 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
@@ -49,7 +49,6 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
 }: TrainingBuilderRightPanelProps) {
   const builder = useTrainingBuilderContext();
   const { editMode, setEditMode } = builder;
-  const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
   const clearClientOverview = useClearClientOverview();
@@ -79,7 +78,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
       if (!res.ok || !data.success) {
         throw new Error(data.error ?? "Failed to clear plan");
       }
-      toast({ title: "Training plan deleted" });
+      toast.success("Training plan deleted");
       // The Journey block cards are DERIVED from these rows, so they now claim a
       // program that is gone. Cleared rather than revalidated: they render a
       // definite answer, and SWR serves the stale one for the whole refetch
@@ -94,7 +93,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
       await builder.fetchPlan();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to clear plan";
-      toast({ title: "Error", description: message, variant: "destructive" });
+      toast.error("Error", { description: message });
     } finally {
       setIsClearing(false);
     }

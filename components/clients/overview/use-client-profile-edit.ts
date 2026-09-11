@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useUnits } from "@/contexts/units-context";
 import { useCanonicalInput, useHeightInput } from "@/hooks/use-unit-inputs";
 import { formatWeight } from "@/utils/unit-conversions";
@@ -126,7 +126,6 @@ export function useClientProfileEdit(
   onSaved: () => void,
   goal: ClientGoal | null
 ) {
-  const { toast } = useToast();
   const { preference } = useUnits();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -270,18 +269,14 @@ export function useClientProfileEdit(
 
   const submit = async (values: ProfileFormValues) => {
     if (height.hasParseError) {
-      toast({
-        title: "Save failed",
+      toast.error("Save failed", {
         description: "Enter a height above 0, or clear the field.",
-        variant: "destructive",
       });
       return;
     }
     if (customTdeeBelowBmr) {
-      toast({
-        title: "Save failed",
+      toast.error("Save failed", {
         description: `TDEE can't be below BMR (${autoEnergyReady?.bmr} cal/day).`,
-        variant: "destructive",
       });
       return;
     }
@@ -289,20 +284,16 @@ export function useClientProfileEdit(
     // `.optional()` and NOT `.nullable()`, so there is no payload that clears it.
     // Emptying the box silently doing nothing would be the worse answer.
     if (!goalWeight.isPristine && goalWeight.commit == null) {
-      toast({
-        title: "Save failed",
+      toast.error("Save failed", {
         description: goalWeight.hasParseError
           ? "Enter a goal weight above 0, or put the previous value back."
           : "A goal weight can't be removed — change it instead.",
-        variant: "destructive",
       });
       return;
     }
     if (clearedMeasurement) {
-      toast({
-        title: "Save failed",
+      toast.error("Save failed", {
         description: `A ${clearedMeasurement} can't be left blank — change it instead.`,
-        variant: "destructive",
       });
       return;
     }
@@ -408,18 +399,16 @@ export function useClientProfileEdit(
 
       onSaved();
       setIsEditing(false);
-      toast({ title: "Client updated" });
+      toast.success("Client updated");
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Something went wrong";
-      toast({
-        // Four sequential writes, no transaction. Reporting a bare "Save failed"
-        // after the client details already committed tells the coach to redo an
-        // edit that is already stored.
-        title: committed ? "Partly saved" : "Save failed",
+      // Four sequential writes, no transaction. Reporting a bare "Save failed"
+      // after the client details already committed tells the coach to redo an
+      // edit that is already stored.
+      toast.error(committed ? "Partly saved" : "Save failed", {
         description: committed
           ? `The client details were saved, but the rest was not: ${reason}`
           : reason,
-        variant: "destructive",
       });
     } finally {
       setIsSaving(false);

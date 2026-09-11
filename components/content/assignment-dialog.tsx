@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AlertCircle, Users, UserCheck } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import type { ContentItem } from "@/types/content";
 import { LibrarySearchInput } from "@/components/programs/shared/library-search-input";
 
@@ -45,7 +45,6 @@ export function AssignmentDialog({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const { toast } = useToast();
 
   useEffect(() => {
     if (open) {
@@ -182,8 +181,7 @@ export function AssignmentDialog({
         throw new Error(`Some assignments failed: ${errorMessages.join(", ")}`);
       }
 
-      toast({
-        title: "Assignments updated",
+      toast.success("Assignments updated", {
         description: `Successfully updated assignments for "${content.title}"`,
       });
       
@@ -193,10 +191,8 @@ export function AssignmentDialog({
       const errorMessage = error instanceof Error ? error.message : "Failed to update assignments";
       setError(errorMessage);
       
-      toast({
-        title: "Assignment failed",
+      toast.error("Assignment failed", {
         description: errorMessage,
-        variant: "destructive",
       });
       
       console.error("Error updating assignments:", {

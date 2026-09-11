@@ -6,7 +6,7 @@ import { Dumbbell, GripVertical, Pencil, Plus, Search, Trash2 } from "lucide-rea
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useExerciseCatalog } from "@/hooks/use-exercise-catalog";
 import { filterExercisesByQuery } from "@/lib/exercise-search";
 import { ExerciseFormDialog } from "@/components/programs/exercise-form-dialog";
@@ -100,7 +100,6 @@ function LibraryExerciseCard({
 }
 
 export function LibraryExerciseList({ editable }: { editable: boolean }) {
-  const { toast } = useToast();
   const { exercises, isLoading, mutate } = useExerciseCatalog();
   const [query, setQuery] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -113,13 +112,11 @@ export function LibraryExerciseList({ editable }: { editable: boolean }) {
         method: "DELETE",
       });
       if (!res.ok) throw new Error();
-      toast({ title: "Exercise deleted" });
+      toast.success("Exercise deleted");
       await mutate();
     } catch {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: "Failed to delete exercise",
-        variant: "destructive",
       });
     }
   };

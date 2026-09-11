@@ -6,13 +6,12 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { ArrowLeft, Loader2, Mail } from "lucide-react";
 
 export default function ForgotPasswordPage() {
   const { resetPassword } = useAuth();
-  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [email, setEmail] = useState("");
@@ -24,15 +23,12 @@ export default function ForgotPasswordPage() {
     try {
       await resetPassword(email);
       setEmailSent(true);
-      toast({
-        title: "Email sent!",
+      toast.success("Email sent!", {
         description: "Check your inbox for a password reset link.",
       });
     } catch (error: any) {
-      toast({
-        title: "Failed to send email",
+      toast.error("Failed to send email", {
         description: error.message || "Please try again",
-        variant: "destructive",
       });
     } finally {
       setLoading(false);

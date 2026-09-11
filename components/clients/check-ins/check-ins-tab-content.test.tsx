@@ -27,7 +27,7 @@ vi.mock("@/hooks/use-check-in-data", () => ({
   useInvalidateCheckInsQueue: () => mockInvalidateQueue,
   useInvalidateClientCheckIns: () => mockInvalidateClientCheckIns,
 }));
-// The real sheet pulls in three SWR hooks and useToast; the tab's contract with
+// The real sheet pulls in three SWR hooks and Sonner's toast; the tab's contract with
 // it is "open" / "closed" (CONVENTIONS §2, don't break the mock contract).
 vi.mock("./check-in-form-sheet", () => ({
   CheckInFormSheet: ({ open }: { open: boolean }) =>

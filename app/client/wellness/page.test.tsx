@@ -31,7 +31,6 @@ if (!Element.prototype.scrollIntoView) {
 }
 
 const pushMock = vi.fn();
-const toastMock = vi.fn();
 const mutateMock = vi.fn();
 const globalMutateMock = vi.fn();
 const swrCall = vi.fn();
@@ -64,9 +63,10 @@ vi.mock("@/hooks/use-client-profile", () => ({
   }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: toastMock }),
+const { toastMock } = vi.hoisted(() => ({
+  toastMock: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
+vi.mock("sonner", () => ({ toast: toastMock }));
 
 type WellnessFields = {
   mood: number | null;
@@ -130,7 +130,8 @@ const PAST = "2020-01-01";
 describe("Wellness log page", () => {
   beforeEach(() => {
     pushMock.mockReset();
-    toastMock.mockReset();
+    toastMock.success.mockReset();
+    toastMock.error.mockReset();
     mutateMock.mockReset();
     globalMutateMock.mockReset();
     swrCall.mockReset();
@@ -186,7 +187,7 @@ describe("Wellness log page", () => {
     expect(JSON.parse(init?.body as string)).toEqual({ mood: 3, energy: 6, soreness: 4 });
 
     await waitFor(() =>
-      expect(toastMock).toHaveBeenCalledWith({ title: "Wellness saved" }),
+      expect(toastMock.success).toHaveBeenCalledWith("Wellness saved"),
     );
     // Returns home and refreshes the day-summary so the home card updates.
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -236,13 +237,9 @@ describe("Wellness log page", () => {
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() =>
-      expect(toastMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Couldn't save wellness",
-          description: "DB blew up",
-          variant: "destructive",
-        }),
-      ),
+      expect(toastMock.error).toHaveBeenCalledWith("Couldn't save wellness", {
+        description: "DB blew up",
+      }),
     );
     expect(pushMock).not.toHaveBeenCalled();
   });

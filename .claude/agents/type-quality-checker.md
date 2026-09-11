@@ -92,7 +92,7 @@ Each layer has a specific error handling pattern:
 |---|---|---|
 | **Services** (`services/`) | Throw errors with descriptive messages | `throw new Error("A client with this email already exists")` |
 | **API routes** (`app/api/`) | Try-catch, return typed JSON responses | `return NextResponse.json({ success: false, error: "..." }, { status: 400 })` |
-| **Hooks** (`hooks/`) | Catch, toast, re-throw | `toast({ title: "Failed", variant: "destructive" }); throw error;` |
+| **Hooks** (`hooks/`) | Catch, toast, re-throw | `toast.error("Failed"); throw error;` |
 | **SWR hooks** | `onError` callback for logging | `onError: (err) => console.error('fetch error:', err)` |
 
 **Standard API response shape:**
@@ -270,8 +270,8 @@ Issue: Catch clause accesses `error.message` without checking `error instanceof 
 Fix: Use `error instanceof Error ? error.message : "Unknown error"` pattern
 
 [CIRCULAR IMPORT] hooks/use-example-builder.ts:3
-Issue: Imports from services/example-service.ts which imports from hooks/use-toast.ts
-Fix: Remove the hooks dependency from the service — pass toast as a callback instead
+Issue: Imports from services/example-service.ts, which imports hooks/use-example-builder.ts back
+Fix: Remove the hooks dependency from the service — pass the callback in instead
 
 [LOOSE TYPE] components/clients/training/training-plan-card.tsx:22
 Issue: `status: string` prop should use `TrainingPlanStatus` from types/training.ts

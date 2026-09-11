@@ -6,7 +6,7 @@ import { Dumbbell, GripVertical, Pencil, Plus, Search, Trash2 } from "lucide-rea
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useStandaloneSessions } from "@/hooks/use-standalone-sessions";
 import { StandaloneSessionEditor } from "@/components/programs/standalone-session-editor";
 import type { SessionEditorState } from "@/components/programs/use-standalone-session-editor";
@@ -103,7 +103,6 @@ function LibrarySessionCard({
 }
 
 export function LibrarySessionList({ editable }: { editable: boolean }) {
-  const { toast } = useToast();
   const { sessions, isLoading, mutate } = useStandaloneSessions();
   const [query, setQuery] = useState("");
   const [editorState, setEditorState] = useState<SessionEditorState | null>(null);
@@ -115,13 +114,11 @@ export function LibrarySessionList({ editable }: { editable: boolean }) {
         method: "DELETE",
       });
       if (!res.ok) throw new Error();
-      toast({ title: "Session deleted" });
+      toast.success("Session deleted");
       await mutate();
     } catch {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: "Failed to delete session",
-        variant: "destructive",
       });
     }
   };

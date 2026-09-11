@@ -14,7 +14,7 @@ const {
   mockInvalidateForm: vi.fn(),
   mockInvalidateBank: vi.fn(),
   mockInvalidateTemplates: vi.fn(),
-  mockToast: vi.fn(),
+  mockToast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 
 vi.mock("@/hooks/use-check-in-form-config", () => ({
@@ -24,7 +24,7 @@ vi.mock("@/hooks/use-check-in-form-config", () => ({
   useInvalidateCheckInQuestions: () => mockInvalidateBank,
   useInvalidateCheckInFormTemplates: () => mockInvalidateTemplates,
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
+vi.mock("sonner", () => ({ toast: mockToast }));
 
 import { useCheckInFormEditor } from "./use-check-in-form-editor";
 
@@ -183,9 +183,9 @@ describe("useCheckInFormEditor", () => {
     });
 
     expect(onClose).not.toHaveBeenCalled();
-    expect(mockToast).toHaveBeenCalledWith(
-      expect.objectContaining({ variant: "destructive" })
-    );
+    expect(mockToast.error).toHaveBeenCalledWith("Save failed", {
+      description: "A question is not yours",
+    });
     vi.unstubAllGlobals();
   });
 

@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { MONO_CELL_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
 import { useSavedPlansPage } from "@/hooks/use-saved-plans-page"
@@ -44,7 +44,6 @@ function refreshSummary() {
 
 export function ProgramsTable() {
   const router = useRouter()
-  const { toast } = useToast()
 
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -87,14 +86,12 @@ export function ProgramsTable() {
         method: "POST",
       })
       if (!res.ok) throw new Error("Failed to duplicate")
-      toast({ title: "Program duplicated" })
+      toast.success("Program duplicated")
       await mutate()
       refreshSummary()
     } catch {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: "Failed to duplicate program",
-        variant: "destructive",
       })
     }
   }
@@ -105,14 +102,12 @@ export function ProgramsTable() {
         method: "DELETE",
       })
       if (!res.ok) throw new Error("Failed to delete")
-      toast({ title: "Program deleted" })
+      toast.success("Program deleted")
       await mutate()
       refreshSummary()
     } catch {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: "Failed to delete program",
-        variant: "destructive",
       })
     }
   }

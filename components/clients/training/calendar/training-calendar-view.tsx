@@ -16,7 +16,7 @@ import { ClearWeekDialog, DeleteEventDialog } from "./delete-event-dialog";
 import { PlacedSessionEditor } from "./placed-session-editor";
 import { LibraryPanel } from "./library-panel";
 import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
 import { getTodayDateString, getTodayDateStringInTimezone, getDateString } from "@/lib/date-helpers";
 import { Loader2, X } from "lucide-react";
@@ -79,7 +79,6 @@ export function TrainingCalendarView({
   onEditModeChange,
   onDeleteFuture,
 }: TrainingCalendarViewProps) {
-  const { toast } = useToast();
   const todayDate = getTodayDateString();
   // Gating (can I drag/delete this event?) is judged on the CLIENT's calendar so
   // it agrees with the 7.82 server guards; the visual today ring stays on the
@@ -154,10 +153,8 @@ export function TrainingCalendarView({
       // future coexisting plan) is deferred; the event still lands on the date.
       void (async () => {
         if (!plan) {
-          toast({
-            title: "No active plan",
+          toast.error("No active plan", {
             description: "Generate a plan before dropping sessions from the library.",
-            variant: "destructive",
           });
           return;
         }
@@ -176,7 +173,7 @@ export function TrainingCalendarView({
             const data = await res.json().catch(() => ({}));
             throw new Error(data.error || "Failed to place session");
           }
-          toast({ title: "Session placed" });
+          toast.success("Session placed");
           await invalidateTrainingData(clientId);
           void invalidateNutritionCalendar(clientId);
           void clearClientOverview(clientId);
@@ -186,10 +183,8 @@ export function TrainingCalendarView({
           // what you wrote, not the one you wrote).
           void clearBlockFacts(clientId);
         } catch (error) {
-          toast({
-            title: "Placement failed",
+          toast.error("Placement failed", {
             description: error instanceof Error ? error.message : "Failed to place session",
-            variant: "destructive",
           });
         }
       })();
@@ -222,21 +217,19 @@ export function TrainingCalendarView({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to duplicate");
       }
-      toast({ title: "Session duplicated" });
+      toast.success("Session duplicated");
       await invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
           void clearClientOverview(clientId);
           void clearAttentionFeed();
     } catch (error) {
-      toast({
-        title: "Duplicate failed",
+      toast.error("Duplicate failed", {
         description: error instanceof Error ? error.message : "Failed to duplicate event",
-        variant: "destructive",
       });
     } finally {
       setPendingDuplicate(null);
     }
-  }, [pendingDuplicate, clientId, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, toast]);
+  }, [pendingDuplicate, clientId, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed]);
 
   // Resolve the single plan a week row belongs to, or null if mixed/empty.
   const weekRowPlanId = useCallback(
@@ -288,13 +281,11 @@ export function TrainingCalendarView({
         }
       }
       if (firstFailure !== null) {
-        toast({
-          title: "Some sessions could not be removed",
+        toast.error("Some sessions could not be removed", {
           description: firstFailure,
-          variant: "destructive",
         });
       } else {
-        toast({ title: "Week cleared" });
+        toast.success("Week cleared");
       }
       await invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
@@ -304,7 +295,7 @@ export function TrainingCalendarView({
       setIsWeekActionLoading(false);
       setPendingClearWeek(null);
     }
-  }, [clientId, clientToday, eventsByDate, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, toast]);
+  }, [clientId, clientToday, eventsByDate, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed]);
 
   // Per-event delete executor — runs only after the DeleteEventDialog confirm.
   const executeDeleteEvent = useCallback(async (event: TrainingEvent) => {
@@ -316,21 +307,21 @@ export function TrainingCalendarView({
       );
       if (!res.ok) {
         const data = await res.json();
-        toast({ title: "Error", description: data.error || "Failed to delete event", variant: "destructive" });
+        toast.error("Error", { description: data.error || "Failed to delete event" });
         return;
       }
       await invalidateTrainingData(clientId);
       void invalidateNutritionCalendar(clientId);
           void clearClientOverview(clientId);
           void clearAttentionFeed();
-      toast({ title: "Session removed" });
+      toast.success("Session removed");
       setDeleteTarget(null);
     } catch {
-      toast({ title: "Error", description: "Failed to delete event", variant: "destructive" });
+      toast.error("Error", { description: "Failed to delete event" });
     } finally {
       setIsDeletingEvent(false);
     }
-  }, [clientId, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, toast]);
+  }, [clientId, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed]);
 
   // Week action handler. `WeekAction` is down to its one surviving member, so
   // the action itself is not read — the parameter stays to keep the row → view
@@ -347,10 +338,8 @@ export function TrainingCalendarView({
     }
     const rowPlanId = weekRowPlanId(weekDays);
     if (!rowPlanId) {
-      toast({
-        title: "Mixed plans",
+      toast.error("Mixed plans", {
         description: "Week-level actions require a single plan in this row.",
-        variant: "destructive",
       });
       return;
     }
@@ -361,11 +350,11 @@ export function TrainingCalendarView({
         (eventsByDate.get(date) ?? []).some((e) => e.status === "scheduled")
     );
     if (!hasClearable) {
-      toast({ title: "Nothing to clear", description: "This week has no upcoming sessions." });
+      toast("Nothing to clear", { description: "This week has no upcoming sessions." });
       return;
     }
     setPendingClearWeek(weekStartDate);
-  }, [clientToday, eventsByDate, toast, weekRowPlanId]);
+  }, [clientToday, eventsByDate, weekRowPlanId]);
 
   const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
 

@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClientProfile } from "@/hooks/use-client-profile";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { canEditDay } from "@/lib/daily-log-permissions";
 import { getTodayDateString, parseDateParamOrToday } from "@/lib/date-helpers";
 import { swrFetcher } from "@/lib/swr-fetcher";
@@ -104,7 +104,6 @@ function NutritionLogInner() {
   const searchParams = useSearchParams();
   const date = parseDateParamOrToday(searchParams?.get("date") ?? null);
 
-  const { toast } = useToast();
   const { client } = useClientProfile();
   const timezone = client?.timezone ?? "UTC";
 
@@ -169,10 +168,8 @@ function NutritionLogInner() {
         | null;
 
       if (!res.ok || !json?.success) {
-        toast({
-          title: "Couldn't save nutrition",
+        toast.error("Couldn't save nutrition", {
           description: json?.error ?? "Please try again.",
-          variant: "destructive",
         });
         if (res.status === 403) {
           // The day locked underneath us — refresh to reflect the true state.
@@ -182,7 +179,7 @@ function NutritionLogInner() {
         return;
       }
 
-      toast({ title: "Nutrition saved" });
+      toast.success("Nutrition saved");
       // Drop the stale detail cache so re-entering the page refetches the saved values — the
       // once-per-mount form seed would otherwise show the pre-save snapshot. Then refresh the
       // home day-summary so its nutrition card reflects the new log, and return home.
@@ -193,10 +190,8 @@ function NutritionLogInner() {
       router.push(date === getTodayDateString() ? "/client" : `/client?date=${date}`);
     } catch (err) {
       console.error("[nutrition-log] save failed:", err);
-      toast({
-        title: "Couldn't save nutrition",
+      toast.error("Couldn't save nutrition", {
         description: "Network error. Please try again.",
-        variant: "destructive",
       });
     } finally {
       setSaving(false);

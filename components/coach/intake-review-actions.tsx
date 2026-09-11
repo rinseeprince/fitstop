@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { Check, ArrowRight, RefreshCw, Pin } from "lucide-react"
 import { useSWRConfig } from "swr"
@@ -24,7 +24,6 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
   const [syncing, setSyncing] = useState(false)
   const [marking, setMarking] = useState(false)
   const [synced, setSynced] = useState(false)
-  const { toast } = useToast()
   const router = useRouter()
   const { mutate } = useSWRConfig()
   const { openPanel, openMinimized, updateIntake, panel } = useIntakePanel()
@@ -49,8 +48,7 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
       const result = await postIntakeAction(clientId, "sync-metrics")
       const fields: string[] = result.data?.syncedFields ?? []
       setSynced(true)
-      toast({
-        title: "Metrics synced",
+      toast.success("Metrics synced", {
         description: fields.length > 0
           ? `Synced: ${fields.join(", ")}`
           : "No new fields to sync",
@@ -62,7 +60,7 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
       router.push(`/clients/${clientId}`)
     } catch (err) {
       console.error("Failed to sync metrics:", err)
-      toast({ title: "Sync failed", description: "Could not sync metrics to client profile.", variant: "destructive" })
+      toast.error("Sync failed", { description: "Could not sync metrics to client profile." })
     } finally {
       setSyncing(false)
     }
@@ -72,7 +70,7 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
     setMarking(true)
     try {
       await postIntakeAction(clientId, "review")
-      toast({ title: "Intake reviewed", description: "This intake has been marked as reviewed." })
+      toast.success("Intake reviewed", { description: "This intake has been marked as reviewed." })
       // Keep the pinned panel in sync if this client's intake is pinned
       if (intake && panel?.clientId === clientId) {
         updateIntake({ ...intake, status: "reviewed" })
@@ -81,7 +79,7 @@ export function IntakeReviewActions({ clientId, intakeStatus, intake, clientName
       mutate("/api/coach/pending-intakes")
     } catch (err) {
       console.error("Failed to mark intake as reviewed:", err)
-      toast({ title: "Failed", description: "Could not mark intake as reviewed.", variant: "destructive" })
+      toast.error("Failed", { description: "Could not mark intake as reviewed." })
     } finally {
       setMarking(false)
     }

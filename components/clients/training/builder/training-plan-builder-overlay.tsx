@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { BookOpen, X, Trash2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import type { SavedPlan } from "@/types/training";
 
 // The client-attached training drawer (Phase 5). From-scratch authoring
@@ -198,7 +198,6 @@ function LibraryHeader({ onClose }: { onClose: () => void }) {
 
 function SavedPlansList() {
   const builder = useTrainingBuilderContext();
-  const { toast } = useToast();
   const { plans, isLoading, mutate } = useSavedPlans();
   const [planToDelete, setPlanToDelete] = useState<SavedPlan | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -213,15 +212,12 @@ function SavedPlansList() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to delete template");
       }
-      toast({ title: "Template deleted" });
+      toast.success("Template deleted");
       setPlanToDelete(null);
       await mutate();
     } catch (error) {
-      toast({
-        title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to delete template",
-        variant: "destructive",
+      toast.error("Error", {
+        description: error instanceof Error ? error.message : "Failed to delete template",
       });
     } finally {
       setIsDeleting(false);

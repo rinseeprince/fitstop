@@ -20,7 +20,7 @@ import {
   FOCUS_RING,
   MONO_INPUT_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
 import { addDaysToDateString, getTodayDateString } from "@/lib/date-helpers"
 import { getFirstName } from "@/lib/client-name"
@@ -82,7 +82,6 @@ export function ClientActivationDialog({
   // check-in a full-week denominator it never earned. The field stays editable
   // for the coach who actually started them last Monday.
   const [startDate, setStartDate] = useState<string>(getTodayDateString)
-  const { toast } = useToast()
 
   useEffect(() => {
     if (open) {
@@ -115,25 +114,20 @@ export function ClientActivationDialog({
       const data = await response.json()
 
       if (data.success) {
-        toast({
-          title: `${client.name} is now active`,
+        toast.success(`${client.name} is now active`, {
           description: "They have been emailed and can see their plans.",
         })
         onActivated?.()
         setOpen(false)
       } else {
-        toast({
-          title: "Activation failed",
+        toast.error("Activation failed", {
           description: data.error || "Something went wrong",
-          variant: "destructive",
         })
       }
     } catch (error) {
       console.error("Error activating client:", error)
-      toast({
-        title: "Activation failed",
+      toast.error("Activation failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
       })
     } finally {
       setSubmitting(false)

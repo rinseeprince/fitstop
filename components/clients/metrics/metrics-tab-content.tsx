@@ -13,7 +13,7 @@ import { RemoveReadingDialog } from "./remove-reading-dialog";
 import { useMergedMetrics } from "./hooks/use-merged-metrics";
 import { useReadingActions } from "./hooks/use-reading-actions";
 import { useClientBlocks } from "./hooks/use-client-blocks";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { BlocksSubtab } from "./blocks/blocks-subtab";
 import { shapeBlockBandIdentity } from "./blocks/block-chart-bands";
 // The Training pane's analytics live under clients/training/ and are MOUNTED
@@ -95,7 +95,6 @@ export const MetricsTabContent = ({
   // The log's three row actions: Edit and Remove open a dialog, Restore is one
   // click (the removed row already says what it is). The dialogs toast their
   // own outcome; the click's toast lives here.
-  const { toast } = useToast();
   const readingActions = useReadingActions(client.id, onClientUpdated);
   const [editingReading, setEditingReading] = useState<LogRow | null>(null);
   const [removingReading, setRemovingReading] = useState<LogRow | null>(null);
@@ -105,12 +104,10 @@ export const MetricsTabContent = ({
     setRestoringId(row.id);
     try {
       await readingActions.restore(row);
-      toast({ title: "Reading restored" });
+      toast.success("Reading restored");
     } catch (error) {
-      toast({
-        title: "Restore failed",
+      toast.error("Restore failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
       });
     } finally {
       setRestoringId(null);

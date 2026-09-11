@@ -12,7 +12,7 @@ const preference = { current: "metric" as UnitSystem };
 vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: preference.current, isLoading: false, error: undefined }),
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
 function row(overrides: Partial<LogRow> = {}): LogRow {
   return {

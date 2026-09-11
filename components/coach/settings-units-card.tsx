@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useInvalidateUnitPreference, useUnits } from "@/contexts/units-context";
 import type { UnitSystem } from "@/utils/unit-conversions";
 
@@ -26,7 +26,6 @@ const UNIT_OPTIONS = [
 ] as const;
 
 export function SettingsUnitsCard() {
-  const { toast } = useToast();
   const { preference, isLoading, error } = useUnits();
   const invalidateUnitPreference = useInvalidateUnitPreference();
 
@@ -64,12 +63,10 @@ export function SettingsUnitsCard() {
       // useAuth().coach stale with nothing erroring.
       await invalidateUnitPreference();
       setSelected(null);
-      toast({ title: "Units saved" });
+      toast.success("Units saved");
     } catch (err) {
-      toast({
-        title: "Couldn't save units",
+      toast.error("Couldn't save units", {
         description: err instanceof Error ? err.message : "Please try again.",
-        variant: "destructive",
       });
     } finally {
       setIsSaving(false);

@@ -15,7 +15,7 @@ import { journeyTripParams, type ClientTab } from "@/lib/client-tabs";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
 import { derivePace, type ClientBlockView } from "@/lib/blocks/block-derivations";
@@ -93,7 +93,6 @@ export function BlocksSubtab({
     isError: factsError,
   } = useBlockFacts(clientId);
   const { preference } = useUnits();
-  const { toast } = useToast();
   const invalidateBlocks = useInvalidateClientBlocks();
   // Every write returns the chain it just produced. Seeding it lands the new
   // list and the closing form in ONE render, which is the only way the frame
@@ -155,11 +154,8 @@ export function BlocksSubtab({
     try {
       saved = await saveBlockDates(block, values);
     } catch (error) {
-      toast({
-        title: "Save failed",
-        description:
-          error instanceof Error ? error.message : "Could not save the block",
-        variant: "destructive",
+      toast.error("Save failed", {
+        description: error instanceof Error ? error.message : "Could not save the block",
       });
       setIsSyncing(false);
       return;
@@ -181,8 +177,7 @@ export function BlocksSubtab({
       // Seeded before the form and the dialog go, in the same tick, so the row
       // underneath never shows the old dates under a closed form.
       void seedBlocks(clientId, saved);
-      toast({
-        title: `"${values.name}" updated`,
+      toast.success(`"${values.name}" updated`, {
         description: calendarOutcome(choice),
       });
       setPendingEdit(null);
@@ -191,11 +186,8 @@ export function BlocksSubtab({
       // The dialog deliberately stays OPEN: it is now the retry. The chain PUT
       // is idempotent (same dates) and the sync reconciles rather than replaying
       // a diff, so picking again is safe and finishes the half that failed.
-      toast({
-        title: "The dates are saved, but the calendar wasn't updated",
-        description:
-          error instanceof Error ? error.message : "Nothing on the calendar changed",
-        variant: "destructive",
+      toast.error("The dates are saved, but the calendar wasn't updated", {
+        description: error instanceof Error ? error.message : "Nothing on the calendar changed",
       });
     } finally {
       // The success path has already awaited it; this catches the failure path,
@@ -227,20 +219,15 @@ export function BlocksSubtab({
         void invalidateNutritionCalendar(clientId);
         void clearBlockFacts(clientId);
       }
-      toast({
-        title: clearPlans
+      toast.success(clearPlans
           ? `"${block.name}" and their plans are gone`
-          : `"${block.name}" deleted`,
-      });
+          : `"${block.name}" deleted`);
       void invalidateBlocks(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
     } catch (error) {
-      toast({
-        title: "Delete failed",
-        description:
-          error instanceof Error ? error.message : "Could not delete the block",
-        variant: "destructive",
+      toast.error("Delete failed", {
+        description: error instanceof Error ? error.message : "Could not delete the block",
       });
     } finally {
       setDeleting(null);
@@ -266,16 +253,13 @@ export function BlocksSubtab({
       // only one of the two has changed shows something wrong.
       void seedBlocks(clientId, saved);
       setShowAddForm(false);
-      toast({ title: `"${values.name}" added` });
+      toast.success(`"${values.name}" added`);
       void invalidateBlocks(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
     } catch (error) {
-      toast({
-        title: "Save failed",
-        description:
-          error instanceof Error ? error.message : "Could not save the block",
-        variant: "destructive",
+      toast.error("Save failed", {
+        description: error instanceof Error ? error.message : "Could not save the block",
       });
     }
   };
@@ -289,15 +273,10 @@ export function BlocksSubtab({
       void invalidateBlocks(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
-      toast({
-        title: archived ? `"${block.name}" archived` : `"${block.name}" restored`,
-      });
+      toast.success(archived ? `"${block.name}" archived` : `"${block.name}" restored`);
     } catch (error) {
-      toast({
-        title: archived ? "Archive failed" : "Restore failed",
-        description:
-          error instanceof Error ? error.message : "Could not update the block",
-        variant: "destructive",
+      toast.error(archived ? "Archive failed" : "Restore failed", {
+        description: error instanceof Error ? error.message : "Could not update the block",
       });
     }
   };
@@ -347,16 +326,13 @@ export function BlocksSubtab({
       // frame under a form that has already gone.
       void seedBlocks(clientId, saved);
       setEditingId(null);
-      toast({ title: `"${values.name}" updated` });
+      toast.success(`"${values.name}" updated`);
       void invalidateBlocks(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
     } catch (error) {
-      toast({
-        title: "Save failed",
-        description:
-          error instanceof Error ? error.message : "Could not save the block",
-        variant: "destructive",
+      toast.error("Save failed", {
+        description: error instanceof Error ? error.message : "Could not save the block",
       });
     }
   };

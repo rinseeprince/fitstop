@@ -14,7 +14,6 @@ class ResizeObserverMock {
 }
 globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
 
-const toastMock = vi.fn();
 const swrCall = vi.fn();
 const mutateMock = vi.fn();
 const invalidateUnitPreferenceMock = vi.fn();
@@ -24,9 +23,10 @@ vi.mock("swr", () => ({
   default: (key: unknown, _fetcher: unknown, _opts: unknown) => swrCall(key),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: toastMock }),
+const { toastMock } = vi.hoisted(() => ({
+  toastMock: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
+vi.mock("sonner", () => ({ toast: toastMock }));
 
 // units-context reaches auth-context, which constructs the browser Supabase
 // client and throws without env vars — the same mock ~20 other suites carry
@@ -86,7 +86,8 @@ function mockFetchOnce(response: {
 
 describe("SettingsPage", () => {
   beforeEach(() => {
-    toastMock.mockReset();
+    toastMock.success.mockReset();
+    toastMock.error.mockReset();
     swrCall.mockReset();
     mutateMock.mockReset();
     invalidateUnitPreferenceMock.mockReset();
@@ -150,7 +151,7 @@ describe("SettingsPage", () => {
         { revalidate: false },
       ),
     );
-    expect(toastMock).toHaveBeenCalledWith({ title: "Settings saved" });
+    expect(toastMock.success).toHaveBeenCalledWith("Settings saved");
   });
 
   it("invalidates the unit-preference cache after a successful unit change", async () => {
@@ -183,7 +184,7 @@ describe("SettingsPage", () => {
     await user.click(screen.getByLabelText(/metric/i));
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
-    await waitFor(() => expect(toastMock).toHaveBeenCalled());
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalled());
     expect(invalidateUnitPreferenceMock).not.toHaveBeenCalled();
   });
 
@@ -225,13 +226,9 @@ describe("SettingsPage", () => {
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() =>
-      expect(toastMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Couldn't save settings",
-          description: "DB blew up",
-          variant: "destructive",
-        }),
-      ),
+      expect(toastMock.error).toHaveBeenCalledWith("Couldn't save settings", {
+        description: "DB blew up",
+      }),
     );
     expect(mutateMock).not.toHaveBeenCalled();
   });

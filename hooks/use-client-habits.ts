@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import useSWR from "swr";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import type { DailyHabit, DailyHabitInput } from "@/types/daily-habit";
 import type { HabitStats } from "@/services/daily-habits-stats";
 
@@ -19,7 +19,6 @@ const fetcher = async (url: string) => {
 };
 
 export function useClientHabits(clientId: string | null, includeInactive = false) {
-  const { toast } = useToast();
   const [habitsWithStats, setHabitsWithStats] = useState<HabitWithStats[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
 
@@ -97,8 +96,7 @@ export function useClientHabits(clientId: string | null, includeInactive = false
         // Refetch the habits list
         await mutateHabits();
 
-        toast({
-          title: "Habit created",
+        toast.success("Habit created", {
           description: `"${data.name}" has been added successfully.`,
         });
 
@@ -111,17 +109,15 @@ export function useClientHabits(clientId: string | null, includeInactive = false
           errorMessage.toLowerCase().includes("unique constraint") ||
           errorMessage.toLowerCase().includes("already exists");
         
-        toast({
-          title: "Failed to create habit",
+        toast.error("Failed to create habit", {
           description: isDuplicateError 
             ? "A habit with this name already exists"
             : errorMessage,
-          variant: "destructive",
         });
         throw error;
       }
     },
-    [clientId, mutateHabits, toast]
+    [clientId, mutateHabits]
   );
 
   // Update habit
@@ -148,22 +144,19 @@ export function useClientHabits(clientId: string | null, includeInactive = false
         // Refetch the habits list
         await mutateHabits();
 
-        toast({
-          title: "Habit updated",
+        toast.success("Habit updated", {
           description: "The habit has been updated successfully.",
         });
 
         return result.data as DailyHabit;
       } catch (error) {
-        toast({
-          title: "Failed to update habit",
+        toast.error("Failed to update habit", {
           description: error instanceof Error ? error.message : "An error occurred",
-          variant: "destructive",
         });
         throw error;
       }
     },
-    [clientId, mutateHabits, toast]
+    [clientId, mutateHabits]
   );
 
   // Delete (deactivate) habit
@@ -184,20 +177,17 @@ export function useClientHabits(clientId: string | null, includeInactive = false
         // Refetch the habits list
         await mutateHabits();
 
-        toast({
-          title: "Habit deleted",
+        toast.success("Habit deleted", {
           description: "The habit has been removed successfully.",
         });
       } catch (error) {
-        toast({
-          title: "Failed to delete habit",
+        toast.error("Failed to delete habit", {
           description: error instanceof Error ? error.message : "An error occurred",
-          variant: "destructive",
         });
         throw error;
       }
     },
-    [clientId, mutateHabits, toast]
+    [clientId, mutateHabits]
   );
 
   // Reactivate habit
@@ -224,22 +214,19 @@ export function useClientHabits(clientId: string | null, includeInactive = false
         // Refetch the habits list
         await mutateHabits();
 
-        toast({
-          title: "Habit reactivated",
+        toast.success("Habit reactivated", {
           description: "The habit has been reactivated successfully.",
         });
 
         return result.data as DailyHabit;
       } catch (error) {
-        toast({
-          title: "Failed to reactivate habit",
+        toast.error("Failed to reactivate habit", {
           description: error instanceof Error ? error.message : "An error occurred",
-          variant: "destructive",
         });
         throw error;
       }
     },
-    [clientId, mutateHabits, toast]
+    [clientId, mutateHabits]
   );
 
   // Reorder habits
@@ -264,20 +251,17 @@ export function useClientHabits(clientId: string | null, includeInactive = false
         // Refetch the habits list
         await mutateHabits();
 
-        toast({
-          title: "Habits reordered",
+        toast.success("Habits reordered", {
           description: "The habit order has been updated successfully.",
         });
       } catch (error) {
-        toast({
-          title: "Failed to reorder habits",
+        toast.error("Failed to reorder habits", {
           description: error instanceof Error ? error.message : "An error occurred",
-          variant: "destructive",
         });
         throw error;
       }
     },
-    [clientId, mutateHabits, toast]
+    [clientId, mutateHabits]
   );
 
   return {

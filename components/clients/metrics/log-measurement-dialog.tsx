@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Pin, Ruler, X } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   FOCUS_RING,
@@ -72,7 +72,6 @@ export function LogMeasurementDialog({
   initialMetricId,
   onSubmit,
 }: LogMeasurementDialogProps) {
-  const { toast } = useToast();
   const { preference } = useUnits();
   const [metricId, setMetricId] = useState(initialMetricId);
   const [value, setValue] = useState("");
@@ -148,18 +147,14 @@ export function LogMeasurementDialog({
         note: trimmedNote || undefined,
       });
       onOpenChange(false);
-      toast({
-        // Echoed back in what the coach typed, not what was stored — the
-        // confirmation is about their action, not about the column.
-        title: `${selected.name} logged`,
+      // Echoed back in what the coach typed, not what was stored — the
+      // confirmation is about their action, not about the column.
+      toast.success(`${selected.name} logged`, {
         description: `Recorded ${proseValue(parsed, selected.unit)} for ${formatShortDate(date)}.`,
       });
     } catch (error) {
-      toast({
-        title: "Log failed",
-        description:
-          error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
+      toast.error("Log failed", {
+        description: error instanceof Error ? error.message : "Something went wrong",
       });
     } finally {
       setIsSubmitting(false);

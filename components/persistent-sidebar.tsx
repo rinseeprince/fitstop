@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 
 /**
  * The full 80px coach rail. Mounted by AppLayout — the shell decides that a
@@ -25,21 +25,17 @@ import { useToast } from "@/hooks/use-toast"
 export function PersistentSidebar() {
   const { coach, logout, loading } = useAuth()
   const router = useRouter()
-  const { toast } = useToast()
 
   const handleLogout = async () => {
     try {
       await logout()
-      toast({
-        title: "Logged out successfully",
+      toast.success("Logged out successfully", {
         description: "See you next time!",
       })
       router.push("/login")
     } catch {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: "Failed to log out",
-        variant: "destructive",
       })
     }
   }

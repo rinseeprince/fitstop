@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { Ban, Loader2, Pencil, Save, Trash2 } from "lucide-react";
 import { PageLoading } from "@/components/page-loading";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
 import { NotificationsDropdown } from "@/components/navbar/notifications-dropdown";
@@ -72,7 +72,6 @@ function windowCapNotice(cap: WindowCap): string {
 
 export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   const router = useRouter();
-  const { toast } = useToast();
   const {
     savedPlanId,
     target,
@@ -202,13 +201,11 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         method: "DELETE",
       });
       if (!res.ok) throw new Error();
-      toast({ title: successTitle });
+      toast.success(successTitle);
       exit();
     } catch {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: "Failed to delete program",
-        variant: "destructive",
       });
     }
   };

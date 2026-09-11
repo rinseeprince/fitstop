@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useNutritionPlan } from "@/hooks/use-nutrition-plan";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import {
@@ -47,7 +47,6 @@ export function useNutritionBuilder({
   onUpdate,
   roundTripBlockId = null,
 }: UseNutritionBuilderProps) {
-  const { toast } = useToast();
   const nutritionPlan = useNutritionPlan({ client });
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
@@ -181,17 +180,15 @@ export function useNutritionBuilder({
         if (!res.ok) throw new Error("Failed to update");
         onUpdate?.();
       } catch {
-        toast({
-          title: "Error",
+        toast.error("Error", {
           description: "Failed to update activity burn setting",
-          variant: "destructive",
         });
         setIncludeActivityBurn(!value);
       } finally {
         setIsSavingBurnToggle(false);
       }
     },
-    [client.id, onUpdate, toast]
+    [client.id, onUpdate]
   );
 
   // Surplus distribution toggle (mig 117): false = keep the plan's carb:fat ratio
@@ -212,17 +209,15 @@ export function useNutritionBuilder({
         if (!res.ok) throw new Error("Failed to update");
         onUpdate?.();
       } catch {
-        toast({
-          title: "Error",
+        toast.error("Error", {
           description: "Failed to update surplus setting",
-          variant: "destructive",
         });
         setSurplusAsCarbs(!value);
       } finally {
         setIsSavingSurplusToggle(false);
       }
     },
-    [client.id, onUpdate, toast]
+    [client.id, onUpdate]
   );
 
   const [coachNotes, setCoachNotes] = useState("");
@@ -287,10 +282,8 @@ export function useNutritionBuilder({
     async (useManual = false) => {
       const validation = validateClientForNutrition(client);
       if (!validation.valid) {
-        toast({
-          title: "Missing required data",
+        toast.error("Missing required data", {
           description: validation.errors.join(", "),
-          variant: "destructive",
         });
         return false;
       }
@@ -335,8 +328,7 @@ export function useNutritionBuilder({
 
         if (data.success && data.plan) {
           setWarnings(data.plan.warnings || []);
-          toast({
-            title: "Nutrition plan generated",
+          toast.success("Nutrition plan generated", {
             description: `${data.plan.calorieTarget} cal/day with ${data.plan.proteinTargetG}g protein`,
           });
           setSettingsChanged(false);
@@ -363,10 +355,8 @@ export function useNutritionBuilder({
           throw new Error(data.error || "Failed to generate plan");
         }
       } catch (error) {
-        toast({
-          title: "Error",
+        toast.error("Error", {
           description: error instanceof Error ? error.message : "Failed to generate plan",
-          variant: "destructive",
         });
         return false;
       } finally {
@@ -381,7 +371,6 @@ export function useNutritionBuilder({
       manual.manualBlockingError,
       coachNotes,
       onUpdate,
-      toast,
       nutritionPlan,
       invalidateNutritionCalendar,
       clearBlockFacts,

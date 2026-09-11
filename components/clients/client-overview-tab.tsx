@@ -33,7 +33,7 @@ import { useClientNotes } from "@/hooks/use-client-notes";
 import { useOverviewBrief } from "@/hooks/use-overview-brief";
 import { useOverviewPlanSummary } from "@/hooks/use-overview-plan-summary";
 import { useWellnessData } from "@/hooks/use-wellness-data";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   resolveEffectiveGoal,
   toClientGoalInput,
@@ -104,7 +104,6 @@ export function ClientOverviewTab({
   const { series, isLoading: seriesLoading } = useMeasurementSeries(client.id);
 
   const wellnessDates = useMemo(() => trailingDates(WELLNESS_WINDOW_DAYS), []);
-  const { toast } = useToast();
 
   // The goal the client is on RIGHT NOW, resolved from `client_goals` through
   // the one shared resolver (invariant 16). The status card used to read the
@@ -179,15 +178,13 @@ export function ClientOverviewTab({
           }
           await mutateBrief();
         } catch (error) {
-          toast({
-            title: "Could not dismiss",
+          toast.error("Could not dismiss", {
             description: error instanceof Error ? error.message : "Something went wrong",
-            variant: "destructive",
           });
         }
       })();
     },
-    [client.id, mutateBrief, toast]
+    [client.id, mutateBrief]
   );
 
   const handleTogglePin = useCallback(

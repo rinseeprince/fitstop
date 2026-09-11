@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
@@ -88,7 +88,6 @@ export function ApplyToClientDialog({
   preselectedBlockId = null,
   onSuccess,
 }: ApplyToClientDialogProps) {
-  const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const invalidateTrainingData = useInvalidateTrainingData();
   const clearBlockFacts = useClearBlockFacts();
@@ -180,7 +179,7 @@ export function ApplyToClientDialog({
 
   const handleSubmit = async () => {
     if (!clientId) {
-      toast({ title: "Select a client", variant: "destructive" });
+      toast.error("Select a client");
       return;
     }
 
@@ -202,10 +201,8 @@ export function ApplyToClientDialog({
       const data = await res.json();
 
       if (!res.ok) {
-        toast({
-          title: "Failed to apply plan",
+        toast.error("Failed to apply plan", {
           description: data.error || "Something went wrong",
-          variant: "destructive",
         });
         // A placement can fail AFTER it has committed — the program is on the
         // calendar and only the earlier program's later sessions survived
@@ -216,8 +213,7 @@ export function ApplyToClientDialog({
         return;
       }
 
-      toast({
-        title: "Plan applied",
+      toast.success("Plan applied", {
         description: `Created ${data.sessionsCreated} sessions and ${data.eventsCreated} events`,
       });
 
@@ -237,10 +233,8 @@ export function ApplyToClientDialog({
       onOpenChange(false);
       onSuccess?.(clientId);
     } catch {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: "Failed to apply plan to client",
-        variant: "destructive",
       });
     } finally {
       setIsSubmitting(false);

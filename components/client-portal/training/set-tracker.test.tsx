@@ -55,10 +55,10 @@ vi.mock("swr", () => ({
   useSWRConfig: () => ({ mutate: mockGlobalMutate }),
 }));
 
-const mockToast = vi.fn();
-vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: mockToast }),
+const { mockToast } = vi.hoisted(() => ({
+  mockToast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
+vi.mock("sonner", () => ({ toast: mockToast }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -192,7 +192,8 @@ describe("SetTracker", () => {
     mockMe.mockReset();
     mockSession.mockReset();
     mockSession.mockReturnValue({ data: undefined, error: undefined, isLoading: false });
-    mockToast.mockReset();
+    mockToast.success.mockReset();
+    mockToast.error.mockReset();
     mockGlobalMutate.mockReset();
     setMe("lbs");
     global.fetch = vi.fn().mockResolvedValue({
@@ -495,10 +496,10 @@ describe("SetTracker", () => {
     const user = userEvent.setup();
     render(<SetTracker eventId="evt-1" />);
     await user.click(screen.getByTestId("save-button"));
-    await waitFor(() => expect(mockToast).toHaveBeenCalled());
-    const lastCall = mockToast.mock.calls[mockToast.mock.calls.length - 1][0];
-    expect(lastCall.variant).toBe("destructive");
-    expect(String(lastCall.description)).toContain("server boom");
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+    const [title, options] = mockToast.error.mock.calls[mockToast.error.mock.calls.length - 1];
+    expect(title).toBe("Couldn't save workout");
+    expect(String(options?.description)).toContain("server boom");
   });
 
   // ---- 10. Copy previous set ----------------------------------------------

@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import type { Exercise } from "@/types/training"
 
 // One dialog for both create (exercise undefined — first UI caller of the
@@ -30,7 +30,6 @@ export function ExerciseFormDialog({
   exercise?: Exercise | null
   onSaved: () => void
 }) {
-  const { toast } = useToast()
   const isEdit = exercise != null
   const [name, setName] = useState("")
   const [muscleGroup, setMuscleGroup] = useState("")
@@ -68,14 +67,12 @@ export function ExerciseFormDialog({
         },
       )
       if (!res.ok) throw new Error("Failed to save")
-      toast({ title: isEdit ? "Exercise updated" : "Exercise created" })
+      toast.success(isEdit ? "Exercise updated" : "Exercise created")
       onSaved()
       onOpenChange(false)
     } catch {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: isEdit ? "Failed to update exercise" : "Failed to create exercise",
-        variant: "destructive",
       })
     } finally {
       setIsSaving(false)

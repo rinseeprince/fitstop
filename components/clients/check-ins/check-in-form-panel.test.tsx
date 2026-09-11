@@ -12,7 +12,7 @@ import type { Client } from "@/types/check-in";
  * seam between the two, and a mocked hook cannot see it.
  */
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
 const client = { id: "client-1", name: "Sam Kalepa" } as Client;
 

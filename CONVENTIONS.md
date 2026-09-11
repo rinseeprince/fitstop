@@ -180,9 +180,11 @@
   - Forms use React Hook Form with `zodResolver(schema)` and `defaultValues`
 
   ### Toast notifications
-  - Success: `toast({ title: "Action successful" })`
-  - Error: `toast({ title: "Error", description: "What went wrong", variant: "destructive" })`
-  - Import via `const { toast } = useToast()`
+  - `import { toast } from "sonner"` and call it directly — there is no hook.
+  - Success: `toast.success("Session saved")`; a consequence, when there is one, as `{ description }`.
+  - Failure: `toast.error("Save failed", { description: "What went wrong" })`.
+  - A confirmation with no verdict: plain `toast("Nothing to clear")` (no icon).
+  - Exactly one toaster — `components/ui/sonner.tsx`, mounted by `app/layout.tsx`. Never mount a second, never restyle a toast at a call site; `components/toaster-ownership.test.ts` scans for both. Copy rules: `docs/newdesignsystem.md` → Toasts.
 
   ## 4. File Size Limits
   - Components: Max 250 lines (split at 300)

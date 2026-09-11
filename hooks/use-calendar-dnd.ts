@@ -10,7 +10,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
@@ -44,7 +44,6 @@ export function useCalendarDnd({
   onLibraryPlanDrop,
   onLibrarySessionDrop,
 }: UseCalendarDndProps) {
-  const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const invalidateTrainingData = useInvalidateTrainingData();
   const clearClientOverview = useClearClientOverview();
@@ -113,7 +112,7 @@ export function useCalendarDnd({
           throw new Error(data.error || "Failed to move event");
         }
 
-        toast({ title: "Session moved" });
+        toast.success("Session moved");
         await invalidateTrainingData(clientId);
         void invalidateNutritionCalendar(clientId);
         void clearClientOverview(clientId);
@@ -123,14 +122,12 @@ export function useCalendarDnd({
         // the dialog gone, drags are no longer serialized behind a confirm, and
         // a stale snapshot would undo a second move that had already succeeded.
         await mutate();
-        toast({
-          title: "Move failed",
+        toast.error("Move failed", {
           description: error instanceof Error ? error.message : "Failed to move event",
-          variant: "destructive",
         });
       }
     },
-    [clientId, mutate, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, toast]
+    [clientId, mutate, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed]
   );
 
   /**
@@ -154,7 +151,7 @@ export function useCalendarDnd({
       const dataType = active.data.current?.type as string | undefined;
       if (dataType === "library-plan") {
         if (targetDate < clientToday) {
-          toast({ title: "Cannot place in the past", variant: "destructive" });
+          toast.error("Cannot place in the past");
           return;
         }
         onLibraryPlanDrop?.(active.data.current?.id as string, targetDate);
@@ -162,7 +159,7 @@ export function useCalendarDnd({
       }
       if (dataType === "library-session") {
         if (targetDate < clientToday) {
-          toast({ title: "Cannot place in the past", variant: "destructive" });
+          toast.error("Cannot place in the past");
           return;
         }
         onLibrarySessionDrop?.(active.data.current?.id as string, targetDate);
@@ -178,17 +175,15 @@ export function useCalendarDnd({
 
       // Only allow moving to future dates
       if (targetDate < clientToday) {
-        toast({
-          title: "Cannot move to past",
+        toast.error("Cannot move to past", {
           description: "Events can only be moved to today or future dates.",
-          variant: "destructive",
         });
         return;
       }
 
       void performMove(draggedEvent, targetDate);
     },
-    [events, clientToday, toast, onLibraryPlanDrop, onLibrarySessionDrop, performMove]
+    [events, clientToday, onLibraryPlanDrop, onLibrarySessionDrop, performMove]
   );
 
   return {

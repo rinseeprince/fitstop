@@ -25,7 +25,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 vi.mock("./hooks/use-reading-actions", () => ({
   useReadingActions: () => ({ correct: vi.fn(), remove: vi.fn(), restore: vi.fn() }),
 }));

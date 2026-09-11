@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import type { ClientNote } from "@/types/coach-overview";
 
 type DeleteNoteDialogProps = {
@@ -27,7 +27,6 @@ type DeleteNoteDialogProps = {
  */
 export function DeleteNoteDialog({ note, onOpenChange, onConfirm }: DeleteNoteDialogProps) {
   const [isDeleting, setIsDeleting] = useState(false);
-  const { toast } = useToast();
 
   const handleConfirm = async () => {
     if (!note) return;
@@ -35,12 +34,10 @@ export function DeleteNoteDialog({ note, onOpenChange, onConfirm }: DeleteNoteDi
     try {
       await onConfirm(note.id);
       onOpenChange(false);
-      toast({ title: "Note deleted" });
+      toast.success("Note deleted");
     } catch (error) {
-      toast({
-        title: "Delete failed",
+      toast.error("Delete failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
       });
     } finally {
       setIsDeleting(false);

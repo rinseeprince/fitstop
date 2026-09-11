@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
@@ -48,7 +48,6 @@ export function useNutritionCalendarEditing({
   surplusAsCarbs,
   onUpdate,
 }: UseNutritionCalendarEditingArgs) {
-  const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
@@ -134,8 +133,7 @@ export function useNutritionCalendarEditing({
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Failed to edit days");
         const n = data.updated ?? dates.length;
-        toast({
-          title: `Updated ${n} day${n === 1 ? "" : "s"}`,
+        toast.success(`Updated ${n} day${n === 1 ? "" : "s"}`, {
           description: describeEdit(payload),
         });
         setEditorOpen(false);
@@ -145,16 +143,14 @@ export function useNutritionCalendarEditing({
         void clearAttentionFeed();
         onUpdate();
       } catch (e) {
-        toast({
-          title: "Edit failed",
+        toast.error("Edit failed", {
           description: e instanceof Error ? e.message : "Failed to edit days",
-          variant: "destructive",
         });
       } finally {
         setIsSaving(false);
       }
     },
-    [resolvedSelected, clientId, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, onUpdate, toast]
+    [resolvedSelected, clientId, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, onUpdate]
   );
 
   const resetDates = useCallback(
@@ -170,7 +166,7 @@ export function useNutritionCalendarEditing({
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Failed to reset days");
         const n = data.reset ?? dates.length;
-        toast({ title: `Reset ${n} day${n === 1 ? "" : "s"}` });
+        toast.success(`Reset ${n} day${n === 1 ? "" : "s"}`);
         // Deselect only the reset dates so a hand-picked selection elsewhere
         // survives (week-rail reset / Revert to auto leave the rest standing).
         const affected = new Set(dates);
@@ -180,16 +176,14 @@ export function useNutritionCalendarEditing({
         void clearAttentionFeed();
         onUpdate();
       } catch (e) {
-        toast({
-          title: "Reset failed",
+        toast.error("Reset failed", {
           description: e instanceof Error ? e.message : "Failed to reset days",
-          variant: "destructive",
         });
       } finally {
         setIsSaving(false);
       }
     },
-    [clientId, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, onUpdate, toast]
+    [clientId, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, onUpdate]
   );
 
   /** Selection bar "Revert to auto": reset only the frozen days in the selection. */

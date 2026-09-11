@@ -6,14 +6,13 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Loader2, Check } from "lucide-react";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
   const { updatePassword } = useAuth();
-  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     password: "",
@@ -24,19 +23,15 @@ export default function ResetPasswordPage() {
     e.preventDefault();
 
     if (formData.password !== formData.confirmPassword) {
-      toast({
-        title: "Passwords don't match",
+      toast.error("Passwords don't match", {
         description: "Please make sure both passwords are the same",
-        variant: "destructive",
       });
       return;
     }
 
     if (formData.password.length < 8) {
-      toast({
-        title: "Password too short",
+      toast.error("Password too short", {
         description: "Password must be at least 8 characters",
-        variant: "destructive",
       });
       return;
     }
@@ -45,18 +40,15 @@ export default function ResetPasswordPage() {
 
     try {
       await updatePassword(formData.password);
-      toast({
-        title: "Password updated!",
+      toast.success("Password updated!", {
         description: "You can now sign in with your new password.",
       });
       setTimeout(() => {
         router.push("/login");
       }, 2000);
     } catch (error: any) {
-      toast({
-        title: "Failed to update password",
+      toast.error("Failed to update password", {
         description: error.message || "Please try again",
-        variant: "destructive",
       });
     } finally {
       setLoading(false);

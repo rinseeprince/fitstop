@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   useCheckInFormTemplates,
   useCheckInQuestions,
@@ -70,7 +70,6 @@ export function useCheckInFormEditor({
   initialForm: CheckInFormEditorConfig;
   onClose: () => void;
 }) {
-  const { toast } = useToast();
   const { questions: bank, isError: isBankError } = useCheckInQuestions();
   const { templates, isError: isTemplatesError } = useCheckInFormTemplates();
   const invalidateForm = useInvalidateClientCheckInForm();
@@ -220,18 +219,16 @@ export function useCheckInFormEditor({
     try {
       await writeJson(`/api/clients/${clientId}/check-in-form`, "PUT", payload());
       await invalidateForm(clientId);
-      toast({ title: "Check-in form saved" });
+      toast.success("Check-in form saved");
       onClose();
     } catch (error) {
-      toast({
-        title: "Save failed",
+      toast.error("Save failed", {
         description: error instanceof Error ? error.message : "Could not save the form",
-        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
     }
-  }, [clientId, invalidateForm, onClose, payload, toast]);
+  }, [clientId, invalidateForm, onClose, payload]);
 
   /**
    * Save the editor's CURRENT state as a template — unsaved edits included.
@@ -245,20 +242,17 @@ export function useCheckInFormEditor({
       try {
         await writeJson("/api/check-ins/forms", "POST", { name, ...payload() });
         await invalidateTemplates();
-        toast({ title: `"${name}" saved to your templates` });
+        toast.success(`"${name}" saved to your templates`);
       } catch (error) {
-        toast({
-          title: "Save failed",
-          description:
-            error instanceof Error ? error.message : "Could not save the template",
-          variant: "destructive",
+        toast.error("Save failed", {
+          description: error instanceof Error ? error.message : "Could not save the template",
         });
         throw error;
       } finally {
         setIsSaving(false);
       }
     },
-    [invalidateTemplates, payload, toast]
+    [invalidateTemplates, payload]
   );
 
   return {

@@ -16,7 +16,7 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { getTodayDateString } from "@/lib/date-helpers";
 import { canEditDay } from "@/lib/daily-log-permissions";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { logTrainingEventSchema } from "@/lib/validations/training";
 import type { Client } from "@/types/check-in";
 import type {
@@ -94,7 +94,6 @@ function EventModeTracker({
   const [pickError, setPickError] = useState<string | null>(null);
   const [pickBusy, setPickBusy] = useState(false);
   const router = useRouter();
-  const { toast } = useToast();
   const applyLayout = useApplyClientLayout();
 
   const {
@@ -170,7 +169,7 @@ function EventModeTracker({
         setPickBusy(true);
         try {
           await applyLayout(resolution.moves);
-          toast({ title: "Sessions swapped" });
+          toast.success("Sessions swapped");
           router.replace(
             `/client/training?eventId=${resolution.openEventId}&date=${date ?? eventDate}`,
           );
@@ -264,7 +263,6 @@ function TrainingLogForm({
   onChangeSession?: () => void;
   onResetSwap?: () => void;
 }) {
-  const { toast } = useToast();
   const { preference } = useUnits();
   const router = useRouter();
   // Open by default: the ticks ARE the log now. A collapsed list plus one
@@ -330,10 +328,8 @@ function TrainingLogForm({
     );
     const parsed = logTrainingEventSchema.safeParse(base);
     if (!parsed.success) {
-      toast({
-        title: "Couldn't save workout",
+      toast.error("Couldn't save workout", {
         description: "Some inputs are invalid. Please review and try again.",
-        variant: "destructive",
       });
       return;
     }
@@ -355,14 +351,12 @@ function TrainingLogForm({
         const errBody = (await res.json().catch(() => null)) as
           | { error?: string }
           | null;
-        toast({
-          title: "Couldn't save workout",
+        toast.error("Couldn't save workout", {
           description: errBody?.error ?? "Please try again in a moment.",
-          variant: "destructive",
         });
         return;
       }
-      toast({ title: "Workout logged" });
+      toast.success("Workout logged");
       // Drop the stale event-detail cache so re-entering refetches logged
       // sets/status (the form seeds defaultValues once per mount). Event mode
       // only — there's no event-detail cache in event-less mode.
@@ -380,10 +374,8 @@ function TrainingLogForm({
           : `/client?date=${loggedDate}`,
       );
     } catch {
-      toast({
-        title: "Couldn't save workout",
+      toast.error("Couldn't save workout", {
         description: "Network error. Please try again.",
-        variant: "destructive",
       });
     }
   };

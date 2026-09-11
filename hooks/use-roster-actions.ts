@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import type { SendReminderResponse } from "@/types/check-in"
 
 /**
@@ -24,7 +24,6 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
 }
 
 export function useRosterActions(onRosterChanged: () => void) {
-  const { toast } = useToast()
   const [pendingId, setPendingId] = useState<string | null>(null)
 
   const reactivate = useCallback(
@@ -44,16 +43,13 @@ export function useRosterActions(onRosterChanged: () => void) {
             ),
           )
         }
-        toast({ title: "Client reactivated" })
+        toast.success("Client reactivated")
         reactivated = true
       } catch (error) {
-        toast({
-          title: "Error",
-          description:
-            error instanceof Error
+        toast.error("Error", {
+          description: error instanceof Error
               ? error.message
               : "Could not reactivate this client. Please try again.",
-          variant: "destructive",
         })
       } finally {
         setPendingId(null)
@@ -62,7 +58,7 @@ export function useRosterActions(onRosterChanged: () => void) {
       // reporting it as one would contradict the toast above it.
       if (reactivated) onRosterChanged()
     },
-    [toast, onRosterChanged],
+    [onRosterChanged],
   )
 
   const sendReminder = useCallback(
@@ -80,24 +76,20 @@ export function useRosterActions(onRosterChanged: () => void) {
         const data = (await res.json()) as SendReminderResponse
         if (!data.success) throw new Error(data.errorMessage ?? fallback)
 
-        toast({
-          title: "Reminder sent",
+        toast.success("Reminder sent", {
           description: `${clientName} has been asked to check in.`,
         })
       } catch (error) {
-        toast({
-          title: "Error",
-          description:
-            error instanceof Error
+        toast.error("Error", {
+          description: error instanceof Error
               ? error.message
               : "Could not send the reminder. Please try again.",
-          variant: "destructive",
         })
       } finally {
         setPendingId(null)
       }
     },
-    [toast],
+    [],
   )
 
   return { pendingId, reactivate, sendReminder }

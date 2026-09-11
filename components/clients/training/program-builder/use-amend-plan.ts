@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { draftToAmendBody } from "./placed-serialize";
 import type { ProgramDraft } from "./program-builder-types";
 
@@ -48,7 +48,6 @@ export function useAmendPlan({
   refreshToken,
   onAmended,
 }: UseAmendPlanParams): AmendPlanApi {
-  const { toast } = useToast();
   const [isAmending, setIsAmending] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [driftOpen, setDriftOpen] = useState(false);
@@ -92,7 +91,7 @@ export function useAmendPlan({
       }
       setConfirmOpen(false);
       if (markSaved(revision)) {
-        toast({ title: "Plan updated" });
+        toast.success("Plan updated");
         // Our own save just bumped the token server-side, so the shared
         // amendment-GET cache is now stale. Revalidate it (fire-and-forget)
         // or the next editor open would seed the pre-save snapshot and
@@ -100,18 +99,14 @@ export function useAmendPlan({
         void refreshToken();
         onAmended?.();
       } else {
-        toast({
-          title: "You made edits while saving",
+        toast("You made edits while saving", {
           description: "Save again to include them.",
         });
         await refreshToken();
       }
     } catch (err) {
-      toast({
-        title: "Save failed",
-        description:
-          err instanceof Error ? err.message : "Failed to save plan changes",
-        variant: "destructive",
+      toast.error("Save failed", {
+        description: err instanceof Error ? err.message : "Failed to save plan changes",
       });
     } finally {
       setIsAmending(false);
@@ -126,7 +121,6 @@ export function useAmendPlan({
     amendmentToken,
     refreshToken,
     onAmended,
-    toast,
   ]);
 
   const reloadAndDiscard = useCallback(async () => {

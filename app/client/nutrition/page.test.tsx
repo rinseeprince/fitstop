@@ -6,7 +6,6 @@ import NutritionLogPage from "./page";
 import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 
 const pushMock = vi.fn();
-const toastMock = vi.fn();
 const mutateMock = vi.fn();
 const globalMutateMock = vi.fn();
 const swrCall = vi.fn();
@@ -39,9 +38,10 @@ vi.mock("@/hooks/use-client-profile", () => ({
   }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: toastMock }),
+const { toastMock } = vi.hoisted(() => ({
+  toastMock: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
+vi.mock("sonner", () => ({ toast: toastMock }));
 
 type NutrientValues = {
   calories: number | null;
@@ -101,7 +101,8 @@ const PAST = "2020-01-01";
 describe("Nutrition log page", () => {
   beforeEach(() => {
     pushMock.mockReset();
-    toastMock.mockReset();
+    toastMock.success.mockReset();
+    toastMock.error.mockReset();
     mutateMock.mockReset();
     globalMutateMock.mockReset();
     swrCall.mockReset();
@@ -156,7 +157,7 @@ describe("Nutrition log page", () => {
       fatG: 70,
     });
     await waitFor(() =>
-      expect(toastMock).toHaveBeenCalledWith({ title: "Nutrition saved" }),
+      expect(toastMock.success).toHaveBeenCalledWith("Nutrition saved"),
     );
     // Returns to home and refreshes the day-summary so the home card updates.
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -203,13 +204,9 @@ describe("Nutrition log page", () => {
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() =>
-      expect(toastMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Couldn't save nutrition",
-          description: "DB blew up",
-          variant: "destructive",
-        }),
-      ),
+      expect(toastMock.error).toHaveBeenCalledWith("Couldn't save nutrition", {
+        description: "DB blew up",
+      }),
     );
     expect(pushMock).not.toHaveBeenCalled();
   });

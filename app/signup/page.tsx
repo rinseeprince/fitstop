@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Chrome, Loader2 } from "lucide-react";
 import { signupSchema, type SignupFormData } from "@/lib/validations/auth";
@@ -17,7 +17,6 @@ import { signupSchema, type SignupFormData } from "@/lib/validations/auth";
 export default function SignupPage() {
   const router = useRouter();
   const { signup, loginWithGoogle } = useAuth();
-  const { toast } = useToast();
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const {
@@ -31,17 +30,14 @@ export default function SignupPage() {
   const onSubmit = async (data: SignupFormData) => {
     try {
       await signup(data.email, data.password, data.name);
-      toast({
-        title: "Welcome to CoachHub!",
+      toast.success("Welcome to CoachHub!", {
         description: "Your account has been created successfully.",
       });
       router.push("/dashboard");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Could not create account";
-      toast({
-        title: "Signup failed",
+      toast.error("Signup failed", {
         description: message,
-        variant: "destructive",
       });
     }
   };
@@ -53,10 +49,8 @@ export default function SignupPage() {
       // Redirect will be handled by Supabase
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Could not sign up with Google";
-      toast({
-        title: "Signup failed",
+      toast.error("Signup failed", {
         description: message,
-        variant: "destructive",
       });
       setGoogleLoading(false);
     }

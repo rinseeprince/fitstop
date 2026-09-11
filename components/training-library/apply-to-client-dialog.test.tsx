@@ -4,7 +4,7 @@ import type { ComponentProps } from "react";
 import type { SavedPlan } from "@/types/training";
 import type { BlockStartOption } from "@/lib/blocks/block-start-options";
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 vi.mock("@/hooks/use-nutrition-calendar-events", () => ({
   useInvalidateNutritionCalendar: () => vi.fn(),
 }));

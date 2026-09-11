@@ -6,7 +6,7 @@ import { splitToGrams } from "@/lib/nutrition/macro-balance";
 import type { NutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import type { Client } from "@/types/check-in";
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 vi.mock("@/hooks/use-nutrition-calendar-events", () => ({
   useInvalidateNutritionCalendar: () => vi.fn().mockResolvedValue(undefined),
 }));

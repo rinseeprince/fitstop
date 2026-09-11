@@ -6,7 +6,6 @@ import HabitsLogPage from "./page";
 import { getTodayDateStringInTimezone } from "@/lib/date-helpers";
 import type { DailyHabit } from "@/types/daily-habit";
 
-const toastMock = vi.fn();
 const habitsMutate = vi.fn();
 const logsMutate = vi.fn();
 const globalMutateMock = vi.fn();
@@ -41,9 +40,10 @@ vi.mock("@/hooks/use-client-profile", () => ({
   }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: toastMock }),
+const { toastMock } = vi.hoisted(() => ({
+  toastMock: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
+vi.mock("sonner", () => ({ toast: toastMock }));
 
 const TODAY = getTodayDateStringInTimezone("UTC");
 const PAST = "2020-01-01";
@@ -95,7 +95,8 @@ function mockFetchOnce(response: { ok?: boolean; status?: number; body?: unknown
 
 describe("Habits log page", () => {
   beforeEach(() => {
-    toastMock.mockReset();
+    toastMock.success.mockReset();
+    toastMock.error.mockReset();
     habitsMutate.mockReset();
     logsMutate.mockReset();
     globalMutateMock.mockReset();

@@ -6,8 +6,7 @@ import { AuthProvider } from "@/contexts/auth-context"
 import { MotionPreferencesProvider } from "@/contexts/motion-preferences"
 import { IntakePanelProvider } from "@/contexts/intake-panel-context"
 import { UnitsProvider } from "@/contexts/units-context"
-import { Toaster } from "@/components/ui/toaster"
-import { Toaster as SonnerToaster } from "@/components/ui/sonner"
+import { Toaster } from "@/components/ui/sonner"
 import { FloatingIntakePanel } from "@/components/coach/floating-intake-panel"
 
 const instrumentSans = Instrument_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"] })
@@ -57,7 +56,6 @@ export default function RootLayout({
                 {children}
                 <FloatingIntakePanel />
                 <Toaster />
-                <SonnerToaster />
               </IntakePanelProvider>
             </UnitsProvider>
           </AuthProvider>

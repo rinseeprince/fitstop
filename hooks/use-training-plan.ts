@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import type { TrainingPlan } from "@/types/training";
 import { parseGetPlanResponse } from "@/lib/validations/training";
 
@@ -16,7 +16,6 @@ type UseTrainingPlanProps = {
  * and a plan reaches a client's calendar through placement, not through here.
  */
 export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
-  const { toast } = useToast();
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   // Set only when `plan` is a program that has not started yet. Without it the
   // hero cannot tell a running program from a queued one and reports both as
@@ -50,15 +49,13 @@ export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load training plan";
       console.error("Failed to fetch training plan:", error);
       setLoadError(errorMessage);
-      toast({
-        title: "Error loading plan",
+      toast.error("Error loading plan", {
         description: errorMessage,
-        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
-  }, [clientId, toast]);
+  }, [clientId]);
 
   useEffect(() => {
     fetchPlan();

@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   ClientLayoutError,
   useApplyClientLayout,
@@ -48,7 +48,6 @@ type Refusal = { message: string; status: number | null };
 export function TrainingWeekLayout() {
   const { data, isLoading, error: loadError, mutate } = useClientTrainingWeek(getTodayDateString());
   const applyLayout = useApplyClientLayout();
-  const { toast } = useToast();
 
   const [placements, setPlacements] = useState<WeekPlacements>({});
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -106,7 +105,7 @@ export function TrainingWeekLayout() {
       // chips settle on their saved days once the pending state is gone.
       setPlacements({});
       setSelectedEventId(null);
-      toast({ title: "Week updated" });
+      toast.success("Week updated");
     } catch (error) {
       setRefusal({
         message: error instanceof Error ? error.message : "Failed to move sessions",

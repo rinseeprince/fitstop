@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Chrome, Loader2 } from "lucide-react";
 import { loginSchema, type LoginFormData } from "@/lib/validations/auth";
@@ -17,7 +17,6 @@ import { loginSchema, type LoginFormData } from "@/lib/validations/auth";
 export default function LoginPage() {
   const router = useRouter();
   const { login, loginWithGoogle } = useAuth();
-  const { toast } = useToast();
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const {
@@ -37,10 +36,8 @@ export default function LoginPage() {
       router.push(redirectTo);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Invalid email or password";
-      toast({
-        title: "Login failed",
+      toast.error("Login failed", {
         description: message,
-        variant: "destructive",
       });
     }
   };
@@ -52,10 +49,8 @@ export default function LoginPage() {
       // Redirect will be handled by Supabase
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Could not sign in with Google";
-      toast({
-        title: "Login failed",
+      toast.error("Login failed", {
         description: message,
-        variant: "destructive",
       });
       setGoogleLoading(false);
     }

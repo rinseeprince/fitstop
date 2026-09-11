@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { ClipboardList, Loader2 } from "lucide-react"
 import { useIntakePanel } from "@/contexts/intake-panel-context"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import type { OnboardingStatus, ClientIntake } from "@/types/client-intake"
 
 type PinIntakeButtonProps = {
@@ -21,7 +21,6 @@ const STATUSES_WITH_INTAKE: OnboardingStatus[] = [
 export function PinIntakeButton({ clientId, clientName, onboardingStatus }: PinIntakeButtonProps) {
   const [loading, setLoading] = useState(false)
   const { openPanel, panel, expandPanel } = useIntakePanel()
-  const { toast } = useToast()
 
   // Only show when the client has a completed intake
   if (!onboardingStatus || !STATUSES_WITH_INTAKE.includes(onboardingStatus)) {
@@ -46,10 +45,8 @@ export function PinIntakeButton({ clientId, clientName, onboardingStatus }: PinI
       openPanel(clientId, clientName, result.data)
     } catch (err) {
       console.error("Failed to pin intake:", err)
-      toast({
-        title: "Could not load intake",
+      toast.error("Could not load intake", {
         description: "Failed to fetch intake data for this client.",
-        variant: "destructive",
       })
     } finally {
       setLoading(false)

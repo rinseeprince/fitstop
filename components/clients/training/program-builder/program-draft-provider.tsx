@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useSavedPlan } from "@/hooks/use-saved-plan";
 import type { SavedPlan } from "@/types/training";
 import type {
@@ -136,7 +136,6 @@ export function ProgramDraftProvider({
   onAmended,
   children,
 }: ProgramDraftProviderProps) {
-  const { toast } = useToast();
   const isPlaced = target === "placed-plan";
   const { plan, isLoading: isPlanLoading, mutate: mutatePlan } = useSavedPlan(
     isPlaced ? null : savedPlanId ?? null,
@@ -222,15 +221,14 @@ export function ProgramDraftProvider({
         return "saved";
       }
       // Edits landed mid-save — stay so the coach can re-save (don't navigate).
-      toast({
-        title: "You made edits while saving",
+      toast("You made edits while saving", {
         description: "Save again to include them.",
       });
       return "kept-draft";
     }
     // "kept-draft" / "error": stay in edit mode with the draft intact.
     return result;
-  }, [draft, target, getRevision, save, markSaved, toast]);
+  }, [draft, target, getRevision, save, markSaved]);
 
   const discardChanges = useCallback(() => {
     if (isPlaced) {

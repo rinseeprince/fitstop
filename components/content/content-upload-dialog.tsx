@@ -34,7 +34,7 @@ import {
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import type { ContentType, ContentFolder } from "@/types/content";
 
 interface ContentUploadDialogProps {
@@ -79,7 +79,6 @@ export function ContentUploadDialog({
   const [urlMetadata, setUrlMetadata] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const { toast } = useToast();
 
   const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
     // Handle rejected files
@@ -94,10 +93,8 @@ export function ContentUploadDialog({
       }
       
       setError(errorMessage);
-      toast({
-        title: "File rejected",
+      toast.error("File rejected", {
         description: errorMessage,
-        variant: "destructive",
       });
       return;
     }
@@ -116,7 +113,7 @@ export function ContentUploadDialog({
       const fileName = newFiles[0].file.name.replace(/\.[^/.]+$/, "");
       setTitle(fileName);
     }
-  }, [title, toast]);
+  }, [title]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -282,8 +279,7 @@ export function ContentUploadDialog({
       setSelectedFolder(undefined);
       setIsLibrary(true);
       
-      toast({
-        title: "Content uploaded",
+      toast.success("Content uploaded", {
         description: uploadType === "file" ? 
           `Successfully uploaded ${files.length} file${files.length !== 1 ? "s" : ""}` :
           "Successfully added link",
@@ -295,10 +291,8 @@ export function ContentUploadDialog({
       const errorMessage = error instanceof Error ? error.message : "Failed to upload content. Please try again.";
       setError(errorMessage);
       
-      toast({
-        title: "Upload failed", 
+      toast.error("Upload failed", {
         description: errorMessage,
-        variant: "destructive",
       });
     } finally {
       setLoading(false);

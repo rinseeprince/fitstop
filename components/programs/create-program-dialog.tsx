@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { DAYS_PER_WEEK } from "@/components/clients/training/program-builder/program-builder-types"
 
 // Create-program modal: collects the program's identity up front (name, an
@@ -32,7 +32,6 @@ export function CreateProgramDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const router = useRouter()
-  const { toast } = useToast()
   const [name, setName] = useState("")
   const [focus, setFocus] = useState("")
   const [surplus, setSurplus] = useState("")
@@ -82,10 +81,8 @@ export function CreateProgramDialog({
       // route change (the builder replaces this view).
       router.push(`/dashboard/programs/${data.planId}`)
     } catch {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: "Failed to create program",
-        variant: "destructive",
       })
       setIsCreating(false)
     }

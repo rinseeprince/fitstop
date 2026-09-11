@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { User, LogOut } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { useClientAttentionCount } from "@/hooks/use-client-attention"
 import { MONO } from "@/components/clients/training/program-builder/builder-tokens"
 import { navigation } from "@/lib/navigation"
@@ -23,7 +23,6 @@ export function CollapsedIconStrip() {
   const pathname = usePathname()
   const router = useRouter()
   const { coach, logout, loading } = useAuth()
-  const { toast } = useToast()
   const [optimisticHref, setOptimisticHref] = useState<string | null>(null)
   const attentionCount = useClientAttentionCount()
 
@@ -36,16 +35,13 @@ export function CollapsedIconStrip() {
   const handleLogout = async () => {
     try {
       await logout()
-      toast({
-        title: "Logged out successfully",
+      toast.success("Logged out successfully", {
         description: "See you next time!",
       })
       router.push("/login")
     } catch {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: "Failed to log out",
-        variant: "destructive",
       })
     }
   }

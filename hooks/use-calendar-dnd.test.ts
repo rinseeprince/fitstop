@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 
-const { mockToast } = vi.hoisted(() => ({ mockToast: vi.fn() }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
+const { mockToast } = vi.hoisted(() => ({
+  mockToast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+}));
+vi.mock("sonner", () => ({ toast: mockToast }));
 vi.mock("@/hooks/use-nutrition-calendar-events", () => ({
   useInvalidateNutritionCalendar: () => vi.fn(),
 }));
@@ -94,9 +96,9 @@ describe("useCalendarDnd", () => {
       const { result, mutate } = setup([event()]);
       act(() => result.current.handleDragEnd(dragEnd("ev-1", "2026-07-26")));
       expect(mutate).not.toHaveBeenCalled();
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({ variant: "destructive" }),
-      );
+      expect(mockToast.error).toHaveBeenCalledWith("Cannot move to past", {
+        description: "Events can only be moved to today or future dates.",
+      });
     });
 
     it("allows a move onto the client's today", () => {
@@ -109,7 +111,8 @@ describe("useCalendarDnd", () => {
       const { result, mutate } = setup([event({ date: "2026-07-28" })]);
       act(() => result.current.handleDragEnd(dragEnd("ev-1", "2026-07-28")));
       expect(mutate).not.toHaveBeenCalled();
-      expect(mockToast).not.toHaveBeenCalled();
+      expect(mockToast.error).not.toHaveBeenCalled();
+      expect(mockToast.success).not.toHaveBeenCalled();
     });
 
     it("refuses a library PLAN drop into the client's past", () => {

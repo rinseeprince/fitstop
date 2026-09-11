@@ -10,7 +10,7 @@ import { X, Minimize2, Maximize2, ClipboardList, ExternalLink, Check, CheckCircl
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import useSWR, { useSWRConfig } from "swr"
 import { swrFetcher } from "@/lib/swr-fetcher"
 import { REQUIRED_ITEMS, type Readiness } from "@/lib/activation-readiness-items"
@@ -28,7 +28,6 @@ export function FloatingIntakePanel() {
   const { panel, isExpanded, minimizePanel, expandPanel, closePanel, updateIntake } = useIntakePanel()
   const [marking, setMarking] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const { toast } = useToast()
   const { mutate } = useSWRConfig()
 
   // Always fetch activation readiness when panel is open
@@ -51,19 +50,15 @@ export function FloatingIntakePanel() {
     try {
       const result = await postIntakeAction(panel.clientId, "sync-metrics")
       const fields = result.data?.syncedFields ?? []
-      toast({
-        title: "Metrics synced",
-        description:
-          fields.length > 0 ? `Synced: ${fields.join(", ")}` : "No new fields to sync",
+      toast.success("Metrics synced", {
+        description: fields.length > 0 ? `Synced: ${fields.join(", ")}` : "No new fields to sync",
       })
       void mutate(`/api/clients/${panel.clientId}`)
       void mutate(`/api/clients/${panel.clientId}/activation-readiness`)
     } catch (err) {
       console.error("Failed to sync metrics:", err)
-      toast({
-        title: "Sync failed",
+      toast.error("Sync failed", {
         description: "Could not sync metrics to client profile.",
-        variant: "destructive",
       })
     } finally {
       setSyncing(false)
@@ -87,7 +82,7 @@ export function FloatingIntakePanel() {
         body: JSON.stringify({ action: "review" }),
       })
       if (!res.ok) throw new Error("Failed to mark as reviewed")
-      toast({ title: "Intake reviewed", description: "This intake has been marked as reviewed." })
+      toast.success("Intake reviewed", { description: "This intake has been marked as reviewed." })
       updateIntake({ ...panel.intake, status: "reviewed" })
       void mutate(`/api/clients/${panel.clientId}/intake`)
       void mutate(`/api/clients/${panel.clientId}`)
@@ -97,7 +92,7 @@ export function FloatingIntakePanel() {
       window.location.href = `/clients/${panel.clientId}?tab=overview`
     } catch (err) {
       console.error("Failed to mark intake as reviewed:", err)
-      toast({ title: "Failed", description: "Could not mark intake as reviewed.", variant: "destructive" })
+      toast.error("Failed", { description: "Could not mark intake as reviewed." })
     } finally {
       setMarking(false)
     }

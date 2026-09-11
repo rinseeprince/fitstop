@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
@@ -62,7 +62,6 @@ export function usePlacedSessionEditor(
     onSelectSession?: (sessionId: string, eventId: string) => void;
   },
 ) {
-  const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const invalidateTrainingData = useInvalidateTrainingData();
   const clearClientOverview = useClearClientOverview();
@@ -149,12 +148,10 @@ export function usePlacedSessionEditor(
       const parsed = replaceSessionSchema.safeParse(payload);
       if (!parsed.success) {
         const issue = parsed.error.issues[0];
-        toast({
-          title: "Can't save session",
+        toast.error("Can't save session", {
           description: issue
             ? `${issue.message}${issue.path.length ? ` (${issue.path.join(".")})` : ""}`
             : "Invalid session",
-          variant: "destructive",
         });
         return;
       }
@@ -196,11 +193,7 @@ export function usePlacedSessionEditor(
         throw new Error(resData.error ?? "Failed to save session");
       }
 
-      toast(
-        scope === "day"
-          ? { title: "Saved for this day only" }
-          : { title: "Session saved" },
-      );
+      toast.success(scope === "day" ? "Saved for this day only" : "Session saved");
       await opts.mutateCalendar();
       // The whole training area, not just the calendar. A "this day only" save
       // CLONES the session and repoints the event at the clone, so a plan
@@ -218,11 +211,8 @@ export function usePlacedSessionEditor(
       }
       opts.onClose();
     } catch (error) {
-      toast({
-        title: "Save failed",
-        description:
-          error instanceof Error ? error.message : "Failed to save session",
-        variant: "destructive",
+      toast.error("Save failed", {
+        description: error instanceof Error ? error.message : "Failed to save session",
       });
     } finally {
       inFlightRef.current = false;
@@ -249,17 +239,13 @@ export function usePlacedSessionEditor(
         const resData = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(resData.error ?? "Failed to save");
       }
-      toast({
-        title: "Saved to library",
+      toast.success("Saved to library", {
         description: `"${trimmed}" saved as a standalone session`,
       });
       return true;
     } catch (error) {
-      toast({
-        title: "Save failed",
-        description:
-          error instanceof Error ? error.message : "Failed to save session",
-        variant: "destructive",
+      toast.error("Save failed", {
+        description: error instanceof Error ? error.message : "Failed to save session",
       });
       return false;
     } finally {

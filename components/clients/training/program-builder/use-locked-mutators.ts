@@ -1,6 +1,6 @@
 "use client";
 
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   PAST_LOCKED,
   canDeleteWeek,
@@ -41,7 +41,6 @@ export function useLockedMutators({
   state,
   editSetSpec,
 }: UseLockedMutatorsParams) {
-  const { toast } = useToast();
 
   if (!enabled) {
     return {
@@ -62,7 +61,7 @@ export function useLockedMutators({
   }
 
   const refuse = () => {
-    toast({ title: "Day locked", description: PAST_LOCKED, variant: "destructive" });
+    toast.error("Day locked", { description: PAST_LOCKED });
   };
   const slotLocked = (slotUid: string) => lockedSlotUids.has(slotUid);
   const sessionLocked = (sessionUid: string) => {

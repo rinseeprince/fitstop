@@ -3,7 +3,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 
 const { mockUseSWR, mockToast, mockMutate } = vi.hoisted(() => ({
   mockUseSWR: vi.fn(),
-  mockToast: vi.fn(),
+  mockToast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
   mockMutate: vi.fn(),
 }));
 vi.mock("swr", () => ({
@@ -11,7 +11,7 @@ vi.mock("swr", () => ({
   useSWRConfig: () => ({ mutate: vi.fn() }),
 }));
 vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
+vi.mock("sonner", () => ({ toast: mockToast }));
 
 import { TrainingWeekLayout } from "./training-week-layout";
 import type { ClientTrainingWeekSession } from "@/types/client-training-week";
@@ -110,7 +110,7 @@ describe("TrainingWeekLayout", () => {
     expect(saveButton()).toBeEnabled();
 
     fireEvent.click(saveButton());
-    await waitFor(() => expect(mockToast).toHaveBeenCalledWith({ title: "Week updated" }));
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith("Week updated"));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];

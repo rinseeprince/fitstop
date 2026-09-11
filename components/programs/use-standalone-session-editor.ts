@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSWRConfig } from "swr";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { createStandaloneSessionSchema } from "@/lib/validations/training";
 import type { SavedSession } from "@/types/training";
 import {
@@ -77,7 +77,6 @@ export function useStandaloneSessionEditor(
   state: SessionEditorState | null,
   onClose: () => void,
 ) {
-  const { toast } = useToast();
   const { mutate: globalMutate } = useSWRConfig();
   const builder = useProgramBuilderState();
   const editSetSpec = useSetSpecMutations(builder.updateExercise);
@@ -127,12 +126,10 @@ export function useStandaloneSessionEditor(
       const parsed = createStandaloneSessionSchema.safeParse(payload);
       if (!parsed.success) {
         const issue = parsed.error.issues[0];
-        toast({
-          title: "Can't save session",
+        toast.error("Can't save session", {
           description: issue
             ? `${issue.message}${issue.path.length ? ` (${issue.path.join(".")})` : ""}`
             : "Invalid session",
-          variant: "destructive",
         });
         return;
       }
@@ -152,25 +149,17 @@ export function useStandaloneSessionEditor(
       // One shared key refreshes the table, stat band, builder drawer,
       // popover, and calendar panel.
       await globalMutate("/api/training/saved-sessions");
-      toast(
-        state.mode === "edit"
-          ? {
-              title: `"${session.name}" updated`,
-              description:
-                "Programs that already use a copy of this session are unchanged.",
-            }
-          : {
-              title: `"${session.name}" saved`,
-              description: "Added to your session library.",
-            },
-      );
+      if (state.mode === "edit") {
+        toast.success(`"${session.name}" updated`, {
+          description: "Programs that already use a copy of this session are unchanged.",
+        });
+      } else {
+        toast.success(`"${session.name}" saved`, { description: "Added to your session library." });
+      }
       onClose();
     } catch (error) {
-      toast({
-        title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to save session",
-        variant: "destructive",
+      toast.error("Error", {
+        description: error instanceof Error ? error.message : "Failed to save session",
       });
     } finally {
       inFlightRef.current = false;

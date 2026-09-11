@@ -4,7 +4,7 @@ import { Controller, useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import useSWR, { type SWRResponse } from "swr";
 
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { useInvalidateUnitPreference } from "@/contexts/units-context";
 import {
@@ -71,7 +71,6 @@ function SettingsForm({
   client: Client;
   mutate: SWRResponse<MeResponse>["mutate"];
 }) {
-  const { toast } = useToast();
   const invalidateUnitPreference = useInvalidateUnitPreference();
 
   const form = useForm<UpdateSettingsInput>({
@@ -101,10 +100,8 @@ function SettingsForm({
         body: JSON.stringify(body),
       });
     } catch {
-      toast({
-        title: "Couldn't save settings",
+      toast.error("Couldn't save settings", {
         description: "Network error. Please try again.",
-        variant: "destructive",
       });
       return;
     }
@@ -114,10 +111,8 @@ function SettingsForm({
       | null;
 
     if (!res.ok || !json?.success || !json.data) {
-      toast({
-        title: "Couldn't save settings",
+      toast.error("Couldn't save settings", {
         description: json?.error ?? "Please try again.",
-        variant: "destructive",
       });
       return;
     }
@@ -132,17 +127,15 @@ function SettingsForm({
     if (dirty.unitPreference) await invalidateUnitPreference();
 
     form.reset(values);
-    toast({ title: "Settings saved" });
+    toast.success("Settings saved");
   };
 
   // Surfaces validation errors that would otherwise be swallowed by handleSubmit.
   // Without this, a Zod failure on submit results in no toast, no fetch, no fix path.
   const onInvalid = (errors: FieldErrors<UpdateSettingsInput>) => {
     console.error("Settings form validation failed:", errors);
-    toast({
-      title: "Couldn't save settings",
+    toast.error("Couldn't save settings", {
       description: "Please check the form values and try again.",
-      variant: "destructive",
     });
   };
 

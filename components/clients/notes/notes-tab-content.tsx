@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SectionLabel } from "@/components/programs/shared/section-label";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useClientNotes } from "@/hooks/use-client-notes";
 import { formatShortDate } from "@/components/clients/metrics/metrics-format";
 import {
@@ -83,7 +83,6 @@ export function NotesTabContent({ client }: NotesTabContentProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [pendingPinId, setPendingPinId] = useState<string | null>(null);
   const [notePendingDelete, setNotePendingDelete] = useState<ClientNote | null>(null);
-  const { toast } = useToast();
 
   const handleSave = async () => {
     const body = draft.trim();
@@ -93,12 +92,10 @@ export function NotesTabContent({ client }: NotesTabContentProps) {
     try {
       await addNote(body);
       setDraft("");
-      toast({ title: "Note saved" });
+      toast.success("Note saved");
     } catch (error) {
-      toast({
-        title: "Save failed",
+      toast.error("Save failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
@@ -109,12 +106,10 @@ export function NotesTabContent({ client }: NotesTabContentProps) {
     setPendingPinId(note.id);
     try {
       await setPinned(note.id, !note.isPinned);
-      toast({ title: note.isPinned ? "Note unpinned" : "Note pinned" });
+      toast.success(note.isPinned ? "Note unpinned" : "Note pinned");
     } catch (error) {
-      toast({
-        title: "Update failed",
+      toast.error("Update failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
       });
     } finally {
       setPendingPinId(null);

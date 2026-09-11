@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import type { SetType } from "@/utils/exercise-set-specs";
 import {
   applySetSpecEdit,
@@ -39,18 +39,17 @@ export function useSetSpecMutations(
     fn: (e: ExerciseDraft) => ExerciseDraft,
   ) => void,
 ) {
-  const { toast } = useToast();
 
   return useCallback(
     (sessionUid: string, exercise: ExerciseDraft, edit: SetSpecEdit) => {
       const result = applySetSpecEdit(exercise, edit);
       if (!result.ok) {
-        toast({ title: result.reason, variant: "destructive" });
+        toast.error(result.reason);
         return;
       }
       if (result.exercise === exercise) return; // no-op: don't dirty
       updateExercise(sessionUid, exercise.uid, () => result.exercise);
     },
-    [updateExercise, toast],
+    [updateExercise],
   );
 }

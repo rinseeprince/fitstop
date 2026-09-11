@@ -5,7 +5,7 @@ import { Loader2, Pin, PinOff, StickyNote, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { RowActions } from "@/components/programs/shared/row-actions";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { formatShortDate } from "@/components/clients/metrics/metrics-format";
@@ -92,7 +92,6 @@ export function CoachNotesCard({
   const [draft, setDraft] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [pendingPinId, setPendingPinId] = useState<string | null>(null);
-  const { toast } = useToast();
 
   const pinned = notes.find((note) => note.isPinned) ?? null;
   const latestUnpinned = notes.find((note) => !note.isPinned) ?? null;
@@ -109,12 +108,10 @@ export function CoachNotesCard({
     try {
       await onAddNote(body);
       setDraft("");
-      toast({ title: "Note saved" });
+      toast.success("Note saved");
     } catch (error) {
-      toast({
-        title: "Save failed",
+      toast.error("Save failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
@@ -125,12 +122,10 @@ export function CoachNotesCard({
     setPendingPinId(note.id);
     try {
       await onTogglePin(note);
-      toast({ title: note.isPinned ? "Note unpinned" : "Note pinned" });
+      toast.success(note.isPinned ? "Note unpinned" : "Note pinned");
     } catch (error) {
-      toast({
-        title: "Update failed",
+      toast.error("Update failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
       });
     } finally {
       setPendingPinId(null);

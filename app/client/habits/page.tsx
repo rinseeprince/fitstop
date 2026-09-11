@@ -9,7 +9,7 @@ import { HabitToggleRow } from "@/components/client-portal/habits/habit-toggle-r
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClientProfile } from "@/hooks/use-client-profile";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { canEditDay } from "@/lib/daily-log-permissions";
 import { parseDateParamOrToday } from "@/lib/date-helpers";
 import { swrFetcher } from "@/lib/swr-fetcher";
@@ -44,7 +44,6 @@ function HabitLogInner() {
   const searchParams = useSearchParams();
   const date = parseDateParamOrToday(searchParams?.get("date") ?? null);
 
-  const { toast } = useToast();
   const { client } = useClientProfile();
   const timezone = client?.timezone ?? "UTC";
   // The day rule answers once for the whole day. Habits used to derive a lock
@@ -125,17 +124,13 @@ function HabitLogInner() {
             if (res.status === 403) {
               // The habit locked underneath us (e.g. recorded in another tab). Refetch so
               // the row flips to its true locked state.
-              toast({
-                title: "This day is locked",
+              toast.error("This day is locked", {
                 description: json?.error ?? "This habit can no longer be edited.",
-                variant: "destructive",
               });
               void logsRes.mutate();
             } else {
-              toast({
-                title: "Couldn't update habit",
+              toast.error("Couldn't update habit", {
                 description: json?.error ?? "Please try again.",
-                variant: "destructive",
               });
             }
             throw new Error(json?.error ?? "save-failed");

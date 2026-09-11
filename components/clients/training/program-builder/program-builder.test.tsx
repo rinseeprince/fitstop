@@ -14,10 +14,10 @@ vi.mock("next/navigation", () => ({
 }));
 
 // Toast spy so the save-as-workout flow can assert the deduped-name copy.
-const { toastSpy } = vi.hoisted(() => ({ toastSpy: vi.fn() }));
-vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: toastSpy }),
+const { toastSpy } = vi.hoisted(() => ({
+  toastSpy: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
+vi.mock("sonner", () => ({ toast: toastSpy }));
 
 // The library header band's bell is SWR-backed and unrelated to the builder.
 vi.mock("@/components/navbar/notifications-dropdown", () => ({
@@ -218,7 +218,8 @@ describe("ProgramBuilder save flow", () => {
     planFixture = makeDraftPlan();
     mutateMock.mockClear();
     pushMock.mockClear();
-    toastSpy.mockClear();
+    toastSpy.success.mockClear();
+    toastSpy.error.mockClear();
   });
 
   const savedSessionPost = () =>
@@ -489,11 +490,9 @@ describe("ProgramBuilder save flow", () => {
       exercises: [],
     });
     await waitFor(() =>
-      expect(toastSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: expect.stringContaining("Push (copy)"),
-        }),
-      ),
+      expect(toastSpy.success).toHaveBeenCalledWith(expect.stringContaining("Push (copy)"), {
+        description: "Find it under Programs → Sessions.",
+      }),
     );
   });
 
@@ -511,11 +510,9 @@ describe("ProgramBuilder save flow", () => {
     await waitFor(() => expect(savedSessionPost()).toHaveLength(1));
     // Give any stray second request a chance to land before asserting.
     await waitFor(() =>
-      expect(toastSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: expect.stringContaining("Push (copy)"),
-        }),
-      ),
+      expect(toastSpy.success).toHaveBeenCalledWith(expect.stringContaining("Push (copy)"), {
+        description: "Find it under Programs → Sessions.",
+      }),
     );
     expect(savedSessionPost()).toHaveLength(1);
   });
@@ -754,7 +751,8 @@ describe("ProgramBuilder placed-plan target", () => {
     amendStatus = 200;
     planFixture = null; // useSavedPlan is disabled for this target
     placedPlanFixture = makePlacedRead();
-    toastSpy.mockClear();
+    toastSpy.success.mockClear();
+    toastSpy.error.mockClear();
     placedMutateMock.mockClear();
   });
 
@@ -822,9 +820,7 @@ describe("ProgramBuilder placed-plan target", () => {
       expect(s.weekIndex).toBe(Math.floor(i / 7));
     });
     await waitFor(() =>
-      expect(toastSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Plan updated" }),
-      ),
+      expect(toastSpy.success).toHaveBeenCalledWith("Plan updated"),
     );
     // A clean save revalidates the shared amendment-GET cache so the next
     // editor open can't seed the pre-save snapshot and self-409.

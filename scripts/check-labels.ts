@@ -13,13 +13,13 @@
  *      (LABEL_CLASS / MONO_LABEL_CLASS / SECTION_LABEL_CLASS /
  *      STAT_LABEL_DARK_CLASS / HEADER_EYEBROW_CLASS).
  *   4. No hand-rolled focus treatment — there is exactly ONE focus ring in this
- *      system (FOCUS_RING). A class string that names the brand colour inside a
- *      `focus:`/`focus-visible:` ring or border is spelling it by hand. Added
- *      2026-08-22 after a sweep found FOUR different treatments for the same
- *      control: `focus:ring-1 ring-[#0d9488]/20`, `focus-visible:ring-[#0d9488]`
- *      with neither width nor opacity, `focus:shadow-[0_0_0_3px_...]` with
- *      `focus:ring-0` disabling the shared one, and the correct literal simply
- *      retyped instead of imported.
+ *      system (FOCUS_RING), and no module is exempt. A class string that names
+ *      the brand colour inside a `focus:`/`focus-visible:` ring or border is
+ *      spelling it by hand. Added 2026-08-22 after a sweep found FOUR different
+ *      treatments for the same control: `focus:ring-1 ring-[#0d9488]/20`,
+ *      `focus-visible:ring-[#0d9488]` with neither width nor opacity,
+ *      `focus:shadow-[0_0_0_3px_...]` with `focus:ring-0` disabling the shared
+ *      one, and the correct literal simply retyped instead of imported.
  *
  *   3. No hand-rolled segmented control — the pill-track markup (the brand
  *      `0.05` tint plus the 2px inset that makes the track) belongs only to
@@ -54,13 +54,6 @@ export const TOKEN_MODULES: readonly string[] = [
 /** The one module allowed to spell the segmented-control track (clause 3). */
 export const SEGMENTED_CONTROL_MODULE =
   "components/programs/shared/segmented-control.tsx";
-
-/**
- * Modules exempt from clause 4. The toast's focus ring is genuinely a different
- * treatment — it carries a ring-offset and a per-variant colour (destructive,
- * success, warning) that FOCUS_RING does not model.
- */
-export const FOCUS_RING_EXEMPT: readonly string[] = ["components/ui/toast.tsx"];
 
 /** Directories the gate scans (repo-relative). */
 export const SCAN_ROOTS: readonly string[] = ["app", "components"];
@@ -118,19 +111,17 @@ export function findLabelViolations(
   // Clause 4: one focus ring. Matches a `focus:`/`focus-visible:` ring or
   // border naming the brand colour. Selection and "today" indicators are
   // `ring-1 ring-[#0d9488]` with NO focus prefix, so they do not match.
-  if (!FOCUS_RING_EXEMPT.includes(file)) {
-    lines.forEach((text, i) => {
-      if (/focus(-visible)?:(ring|border)-\[#0d9488\]/.test(text)) {
-        violations.push({
-          file,
-          line: i + 1,
-          clause: "4 (hand-rolled focus treatment)",
-          detail:
-            "focus ring spelled by hand — import FOCUS_RING from builder-tokens",
-        });
-      }
-    });
-  }
+  lines.forEach((text, i) => {
+    if (/focus(-visible)?:(ring|border)-\[#0d9488\]/.test(text)) {
+      violations.push({
+        file,
+        line: i + 1,
+        clause: "4 (hand-rolled focus treatment)",
+        detail:
+          "focus ring spelled by hand — import FOCUS_RING from builder-tokens",
+      });
+    }
+  });
 
   lines.forEach((text, i) => {
     // The CSS-variable form `var(--font-mono-display)` is legitimate outside

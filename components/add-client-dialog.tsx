@@ -13,7 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { createClientSchema, type CreateClientInput } from "@/lib/validations/client";
 import { cn } from "@/lib/utils";
 import {
@@ -48,7 +48,6 @@ const SETUP_MODES = [
 export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps) => {
   const [open, setOpen] = useState(false);
   const [setupMode, setSetupMode] = useState<SetupMode>(null);
-  const { toast } = useToast();
 
   const form = useForm<CreateClientInput>({
     resolver: zodResolver(createClientSchema),
@@ -105,17 +104,18 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
         throw new Error(result.error || "Failed to create client");
       }
 
-      const message = setupMode === "intake"
-        ? result.inviteSent
-          ? `Intake questionnaire sent to ${data.email}.`
-          : `${data.name} added but invite email failed — send manually from their profile.`
-        : `${data.name} has been added to your client list.`;
-
-      toast({
-        title: "Client added",
-        description: message,
-        variant: setupMode === "intake" && !result.inviteSent ? "destructive" : undefined,
-      });
+      if (setupMode === "intake" && !result.inviteSent) {
+        toast.error("Client added", {
+          description: `${data.name} added but invite email failed — send manually from their profile.`,
+        });
+      } else {
+        toast.success("Client added", {
+          description:
+            setupMode === "intake"
+              ? `Intake questionnaire sent to ${data.email}.`
+              : `${data.name} has been added to your client list.`,
+        });
+      }
 
       form.reset();
       setSetupMode(null);
@@ -123,10 +123,8 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
 
       onClientAdded?.();
     } catch (error) {
-      toast({
-        title: "Failed to add client",
+      toast.error("Failed to add client", {
         description: error instanceof Error ? error.message : "An error occurred",
-        variant: "destructive",
       });
     }
   };

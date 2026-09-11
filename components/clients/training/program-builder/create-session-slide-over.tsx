@@ -12,7 +12,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { createStandaloneSessionSchema } from "@/lib/validations/training";
 import { useProgramDraft } from "./program-draft-provider";
 import { sessionDraftToStandalonePayload } from "./program-builder-serialize";
@@ -31,7 +31,6 @@ import { MONO_LABEL_CLASS } from "./builder-tokens";
 export function CreateSessionSlideOver() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { toast } = useToast();
   const { mutate: globalMutate } = useSWRConfig();
   const {
     draft,
@@ -147,12 +146,10 @@ export function CreateSessionSlideOver() {
       const parsed = createStandaloneSessionSchema.safeParse(payload);
       if (!parsed.success) {
         const issue = parsed.error.issues[0];
-        toast({
-          title: "Can't save session",
+        toast.error("Can't save session", {
           description: issue
             ? `${issue.message}${issue.path.length ? ` (${issue.path.join(".")})` : ""}`
             : "Invalid session",
-          variant: "destructive",
         });
         return;
       }
@@ -174,23 +171,18 @@ export function CreateSessionSlideOver() {
         // optimistic card may already be discarded, but the session did
         // reach the library. Never claim it landed on the day, and never
         // fire a second router.back().
-        toast({
-          title: `"${session.name}" saved`,
+        toast.success(`"${session.name}" saved`, {
           description: "Added to your session library.",
         });
       } else {
-        toast({
-          title: `"${session.name}" saved`,
+        toast.success(`"${session.name}" saved`, {
           description: `Added to Week ${w + 1} · Day ${d + 1} and your session library.`,
         });
         close();
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to save session",
-        variant: "destructive",
+      toast.error("Error", {
+        description: error instanceof Error ? error.message : "Failed to save session",
       });
     } finally {
       setIsSaving(false);

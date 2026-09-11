@@ -11,7 +11,6 @@ import type { Coach } from "@/types/check-in";
 // Supabase client and throws without env vars).
 
 const mutateMock = vi.fn();
-const toastMock = vi.fn();
 
 vi.mock("swr", () => ({
   __esModule: true,
@@ -26,9 +25,10 @@ vi.mock("swr", () => ({
 
 vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
 
-vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: toastMock }),
+const { toastMock } = vi.hoisted(() => ({
+  toastMock: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
+vi.mock("sonner", () => ({ toast: toastMock }));
 
 // isMeKey is part of this mock DELIBERATELY, because units-context imports it
 // and calls `mutate(isMeKey)`. Verified by mutation 2026-08-06: deleting it
@@ -82,7 +82,8 @@ function mockFetchOnce(response: { ok?: boolean; body?: unknown }) {
 describe("SettingsUnitsCard", () => {
   beforeEach(() => {
     mutateMock.mockReset();
-    toastMock.mockReset();
+    toastMock.success.mockReset();
+    toastMock.error.mockReset();
     authState.user = { id: "user-1" };
     authState.coach = makeCoach("metric");
     authState.loading = false;
@@ -172,13 +173,9 @@ describe("SettingsUnitsCard", () => {
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
     await waitFor(() =>
-      expect(toastMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Couldn't save units",
-          description: "DB blew up",
-          variant: "destructive",
-        }),
-      ),
+      expect(toastMock.error).toHaveBeenCalledWith("Couldn't save units", {
+        description: "DB blew up",
+      }),
     );
     expect(mutateMock).not.toHaveBeenCalled();
   });

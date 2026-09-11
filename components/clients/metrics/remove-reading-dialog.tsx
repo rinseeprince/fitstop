@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { formatLogDate } from "./metrics-format";
 import type { LogRow } from "./metrics-view-types";
 
@@ -54,7 +54,6 @@ export function RemoveReadingDialog({
   onConfirm,
 }: RemoveReadingDialogProps) {
   const [isRemoving, setIsRemoving] = useState(false);
-  const { toast } = useToast();
 
   const handleConfirm = async () => {
     if (!row) return;
@@ -62,12 +61,10 @@ export function RemoveReadingDialog({
     try {
       await onConfirm(row);
       onOpenChange(false);
-      toast({ title: "Reading removed" });
+      toast.success("Reading removed");
     } catch (error) {
-      toast({
-        title: "Remove failed",
+      toast.error("Remove failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
       });
     } finally {
       setIsRemoving(false);

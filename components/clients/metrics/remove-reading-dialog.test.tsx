@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { RemoveReadingDialog } from "./remove-reading-dialog";
 import type { LogRow } from "./metrics-view-types";
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
 function row(overrides: Partial<LogRow> = {}): LogRow {
   return {

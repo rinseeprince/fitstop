@@ -1726,14 +1726,12 @@ all-on → the form still saves a row, and a client with no row still gets all 1
    the coach's field-group headings. §2.4 suggested "Measurements / Photos" for the coach; using
    the wizard's own words instead avoids a second map that could drift, and costs the coach
    nothing. Pinned by a completeness test.
-5. **`useToast`, not `sonner`.** The adjacent C4 rail uses sonner; the design SOT and the sibling
-   Notes tab say `useToast()`. The SOT wins for a new coach file. Recorded rather than silent.
-6. **The metrics step opens EXPANDED when weight and body fat are both off** but girths are on —
+5. **The metrics step opens EXPANDED when weight and body fat are both off** but girths are on —
    otherwise the step opens on nothing but an "Add Measurements" button.
-7. **The fields card carries an all-off hint** ("still gets a two-step check-in confirming their
+6. **The fields card carries an all-off hint** ("still gets a two-step check-in confirming their
    week"). Not in the plan; it answers the question the kernel's own docstring anticipates, in
    one line, at the moment a coach would ask it.
-8. Plan/doc cites re-derived this session: `CLIENT-PORTAL-REDESIGN.md:82` **exact**;
+7. Plan/doc cites re-derived this session: `CLIENT-PORTAL-REDESIGN.md:82` **exact**;
    `ARCHITECTURE.md:710` and `:1084` **exact**; Session 2.7's "Do NOT" line is `:1000` (the plan
    gave no number). None had drifted.
 
@@ -1761,7 +1759,7 @@ no-`form`-key, and both strip cases), `client-notes-section.test.tsx` (the one-b
 and its colours), `form-fields.test.ts` (label completeness).
 
 **One `vi.mock` export list had to grow**: `check-ins-tab-content.test.tsx` gains
-`vi.mock("./check-in-form-sheet")` — the real sheet pulls in three SWR hooks and `useToast`. The
+`vi.mock("./check-in-form-sheet")` — the real sheet pulls in three SWR hooks and Sonner's `toast`. The
 wizard page test needed no new module mock: `stepsForFields` and `applyCheckInForm` are pure and
 run for real.
 
@@ -1863,8 +1861,8 @@ things. Three were mine; the fourth is older and is commit B.
 *Deviations, and why.*
 1. **The header X is no longer disabled during a save.** It is the only exit from a slow or
    failed load, and Escape and the overlay can close the sheet regardless — a disabled X beside
-   two working exits is theatre. Cancel and both commits still disable. `use-toast` keeps its
-   state in a module store, so a save that lands after an unmount still reports its outcome.
+   two working exits is theatre. Cancel and both commits still disable. Sonner's `toast` is a
+   module-level store, so a save that lands after an unmount still reports its outcome.
 2. **The reorder kernel is `reorderQuestion(activeId, overId)`**, not `moveQuestion(id, ±1)` —
    the `onReorderExercise` shape, so one gesture has one spelling.
 3. `CheckInFormEditor`'s `isLoading` / `isError` are gone from its return: loading and failure

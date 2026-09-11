@@ -10,7 +10,7 @@ import { NutritionCalendarView } from "../calendar/nutrition-calendar-view";
 import { DeleteNutritionPlanDialog } from "../calendar/delete-nutrition-plan-dialog";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
@@ -138,7 +138,6 @@ function TopContentBar({
  */
 function NutritionCalendarMount() {
   const builder = useNutritionBuilderContext();
-  const { toast } = useToast();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
   const clearClientOverview = useClearClientOverview();
@@ -160,7 +159,7 @@ function NutritionCalendarMount() {
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Failed to delete nutrition plan");
       }
-      toast({ title: "Nutrition plan deleted" });
+      toast.success("Nutrition plan deleted");
       setDeleteOpen(false);
       await invalidateNutritionCalendar(clientId);
       // The Journey block cards read the plan VERSIONS, so they are wrong the
@@ -170,11 +169,8 @@ function NutritionCalendarMount() {
       void clearAttentionFeed();
       builder.refetchNutrition();
     } catch (error) {
-      toast({
-        title: "Delete failed",
-        description:
-          error instanceof Error ? error.message : "Failed to delete nutrition plan",
-        variant: "destructive",
+      toast.error("Delete failed", {
+        description: error instanceof Error ? error.message : "Failed to delete nutrition plan",
       });
     } finally {
       setIsDeleting(false);

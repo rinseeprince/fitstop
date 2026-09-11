@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useSWRConfig } from "swr";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { createStandaloneSessionSchema } from "@/lib/validations/training";
 import type { ProgramDraft } from "./program-builder-types";
 import { findSession } from "./program-builder-model";
@@ -14,7 +14,6 @@ import { sessionDraftToStandalonePayload } from "./program-builder-serialize";
 // " (copy N)" — the coach never typed it here — and returns the final name
 // for the toast.
 export function useSaveDayAsWorkout(draft: ProgramDraft | null) {
-  const { toast } = useToast();
   const { mutate: globalMutate } = useSWRConfig();
   const [isSavingWorkout, setIsSavingWorkout] = useState(false);
   // setState is async — a double-click inside one tick could double-fire
@@ -33,12 +32,10 @@ export function useSaveDayAsWorkout(draft: ProgramDraft | null) {
       const parsed = createStandaloneSessionSchema.safeParse(payload);
       if (!parsed.success) {
         const issue = parsed.error.issues[0];
-        toast({
-          title: "Can't save workout",
+        toast.error("Can't save workout", {
           description: issue
             ? `${issue.message}${issue.path.length ? ` (${issue.path.join(".")})` : ""}`
             : "Invalid session",
-          variant: "destructive",
         });
         return;
       }
@@ -55,16 +52,12 @@ export function useSaveDayAsWorkout(draft: ProgramDraft | null) {
       // Refresh the session library everywhere (drawer, popover, Sessions
       // page, calendar panel — shared SWR key).
       await globalMutate("/api/training/saved-sessions");
-      toast({
-        title: `Saved to your library as "${data.name ?? payload.name}"`,
+      toast.success(`Saved to your library as "${data.name ?? payload.name}"`, {
         description: "Find it under Programs → Sessions.",
       });
     } catch (error) {
-      toast({
-        title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to save workout",
-        variant: "destructive",
+      toast.error("Error", {
+        description: error instanceof Error ? error.message : "Failed to save workout",
       });
     } finally {
       inFlightRef.current = false;
