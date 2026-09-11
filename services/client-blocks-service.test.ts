@@ -68,7 +68,6 @@ const row = (
   id,
   name: `Block ${id}`,
   focus: null,
-  target_weight: null,
   starts_on,
   ends_on,
   archived_at: null,
@@ -100,7 +99,12 @@ describe("listBlocks", () => {
     expect(query.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
     expect(query.order).toHaveBeenCalledWith("starts_on", { ascending: true });
     expect(blocks.map((b) => b.id)).toEqual(["e", "a"]);
-    expect(blocks[0].targetWeightKg).toBeNull();
+    // The select string is the one read tsc cannot check: a stale column name
+    // there is a PostgREST 400 at runtime.
+    expect(query.select).toHaveBeenCalledWith(
+      "id, name, focus, starts_on, ends_on, archived_at"
+    );
+    expect(blocks[0]).not.toHaveProperty("targetWeightKg");
   });
 });
 
@@ -115,7 +119,7 @@ describe("replaceBlockChain", () => {
     await replaceBlockChain(CLIENT_ID, TODAY, {
       blocks: [
         { name: "Build", startsOn: "2026-08-11", endsOn: "2026-09-07" },
-        { name: "Cut", startsOn: "2026-09-08", endsOn: "2026-10-19", targetWeightKg: 85 },
+        { name: "Cut", startsOn: "2026-09-08", endsOn: "2026-10-19" },
       ],
     });
 
@@ -127,19 +131,18 @@ describe("replaceBlockChain", () => {
         name: "Build",
         starts_on: "2026-08-11",
         ends_on: "2026-09-07",
-        target_weight: null,
       }),
       expect.objectContaining({
         client_id: CLIENT_ID,
         name: "Cut",
         starts_on: "2026-09-08",
         ends_on: "2026-10-19",
-        target_weight: 85,
       }),
     ]);
     for (const insertedRow of inserted) {
       expect(insertedRow).not.toHaveProperty("id");
       expect(insertedRow).not.toHaveProperty("created_at");
+      expect(insertedRow).not.toHaveProperty("target_weight");
       expect(typeof insertedRow.updated_at).toBe("string");
     }
     expect(insertQuery.upsert).not.toHaveBeenCalled();
@@ -195,7 +198,7 @@ describe("replaceBlockChain", () => {
 
     await replaceBlockChain(CLIENT_ID, TODAY, {
       blocks: [
-        { id: "e", name: "Renamed", focus: "looking back", targetWeightKg: 90 },
+        { id: "e", name: "Renamed", focus: "looking back" },
         { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
       ],
     });
@@ -206,13 +209,13 @@ describe("replaceBlockChain", () => {
         id: "e",
         name: "Renamed",
         focus: "looking back",
-        target_weight: 90,
         // The pin that remains: elapsed DATES come from storage.
         starts_on: "2026-06-01",
         ends_on: "2026-07-05",
       }),
       expect.objectContaining({ id: "a", starts_on: "2026-07-06" }),
     ]);
+    expect(rows[0]).not.toHaveProperty("target_weight");
   });
 
   it("rejects an elapsed block's date change (the pin that remains)", async () => {

@@ -95,7 +95,6 @@ export const getClientJourney = async (
       id: block.id,
       name: block.name,
       focus: block.focus,
-      targetWeightKg: block.targetWeightKg,
       startsOn: block.startsOn,
       endsOn: block.endsOn,
       weeks: block.weeks,

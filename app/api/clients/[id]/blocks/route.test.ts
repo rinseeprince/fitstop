@@ -76,7 +76,6 @@ const CURRENT_BLOCK = {
   id: "a",
   name: "Build",
   focus: null,
-  targetWeightKg: null,
   startsOn: "2026-08-11",
   endsOn: "2026-09-07",
   archivedAt: null,
@@ -85,7 +84,6 @@ const FUTURE_BLOCK = {
   id: "b",
   name: "Cut",
   focus: "steady deficit",
-  targetWeightKg: 85,
   startsOn: "2026-09-08",
   endsOn: "2026-10-19",
   archivedAt: null,
@@ -101,7 +99,7 @@ const VALID_PUT_BODY = {
       startsOn: "2026-08-11",
       endsOn: "2026-09-07",
     },
-    { name: "Cut", startsOn: "2026-09-08", endsOn: "2026-10-19", targetWeightKg: 85 },
+    { name: "Cut", startsOn: "2026-09-08", endsOn: "2026-10-19" },
   ],
 };
 
@@ -160,9 +158,6 @@ describe("/api/clients/[id]/blocks", () => {
         },
         { ...FUTURE_BLOCK, weeks: 6, state: "future", weekOfTotal: null },
       ]);
-      // No pace field on the wire: pace is a client-side derivation fed by
-      // the merged series (plan doc Task 3.2 — "no new API").
-      expect(payload.data.blocks[0]).not.toHaveProperty("pace");
       // clientToday rides the payload (Session 3.4) so the delete-preview
       // runs computeDeleteShift with the SAME today the DELETE executes with.
       expect(payload.data.clientToday).toBe(TODAY);
@@ -244,6 +239,29 @@ describe("/api/clients/[id]/blocks", () => {
           clientId: "client-1",
         })
       );
+    });
+
+    it("strips a targetWeightKg a stale caller still sends — never refuses it", async () => {
+      // A block carries no target. The schema has no such field, so the key
+      // is dropped before the service sees the payload.
+      vi.mocked(replaceBlockChain).mockResolvedValue([CURRENT_BLOCK]);
+
+      const response = await PUT(
+        createMockRequest("PUT", {
+          blocks: [
+            { name: "Cut", startsOn: "2026-09-08", endsOn: "2026-10-19", targetWeightKg: 85 },
+          ],
+        }),
+        mockParams
+      );
+
+      expect(response.status).toBe(200);
+      const [, , input] = vi.mocked(replaceBlockChain).mock.calls[0];
+      expect(input.blocks[0]).toEqual({
+        name: "Cut",
+        startsOn: "2026-09-08",
+        endsOn: "2026-10-19",
+      });
     });
 
     it("NEVER touches the goal layer (invariant 7)", async () => {

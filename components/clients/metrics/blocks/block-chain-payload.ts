@@ -12,7 +12,7 @@ import type {
 //
 // The echo discipline is the service's elapsed-pin contract: elapsed rows are
 // pinned and OMIT their dates (those come from storage, never from the payload);
-// current and future rows carry both dates verbatim. Name, focus and target echo
+// current and future rows carry both dates verbatim. Name and focus echo
 // verbatim, nulls included, because the service echo-checks them.
 
 /** Echo one stored block back unchanged. */
@@ -22,7 +22,6 @@ function echo(view: ClientBlockView): BlockChainEntryInput {
     name: view.name,
     ...(view.state !== "past" ? { startsOn: view.startsOn, endsOn: view.endsOn } : {}),
     focus: view.focus,
-    targetWeightKg: view.targetWeightKg,
   };
 }
 
@@ -31,7 +30,6 @@ interface NewBlockEntry {
   startsOn: string;
   endsOn: string;
   focus: string | null;
-  targetWeightKg: number | null;
 }
 
 /** The add-block PUT: the stored set echoed, with the new row appended. */
@@ -47,7 +45,6 @@ export function buildAppendPayload(
         startsOn: entry.startsOn,
         endsOn: entry.endsOn,
         focus: entry.focus,
-        targetWeightKg: entry.targetWeightKg,
       },
     ],
   };
@@ -58,7 +55,6 @@ export function buildAppendPayload(
 interface BlockEdit {
   name: string;
   focus: string | null;
-  targetWeightKg: number | null;
   startsOn?: string;
   endsOn?: string;
 }
@@ -93,7 +89,6 @@ export function buildEditPayload(
           name: edit.name,
           ...(editable ? { startsOn, endsOn } : {}),
           focus: edit.focus,
-          targetWeightKg: edit.targetWeightKg,
         }
       : echo(view)
   );

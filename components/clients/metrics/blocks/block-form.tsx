@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -14,9 +14,6 @@ import {
   MONO_INPUT_CLASS,
   MONO_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { useUnits } from "@/contexts/units-context";
-import { useCanonicalInput } from "@/hooks/use-unit-inputs";
-import { formatWeight } from "@/utils/unit-conversions";
 import { addDaysToDateString, getTodayDateString } from "@/lib/date-helpers";
 import { DAYS_PER_BLOCK_WEEK } from "@/lib/blocks/block-chain";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
@@ -25,8 +22,6 @@ import {
   BLOCK_FOCUS_MAX,
   BLOCK_NAME_MAX,
   BLOCK_WEEKS_MAX,
-  WEIGHT_KG_MAX,
-  WEIGHT_KG_MIN,
 } from "@/lib/constants";
 import { formatBlockDate } from "@/lib/blocks/block-format";
 
@@ -34,10 +29,7 @@ import { formatBlockDate } from "@/lib/blocks/block-format";
 // manage-drawer swap precedent for the SHELL only — its raw-useState
 // internals predate the react-hook-form rule). Both dates are the coach's;
 // a stored block's end can move earlier but never later (the Ends field's
-// max); elapsed edits are fields-only, their dates rendered as fixed text. Target
-// weight collects in the VIEWER's unit through useCanonicalInput and commits
-// canonical kg; the RHF field holds the canonical number so zodResolver
-// validates what will actually be stored (the add-client-manual-form pattern).
+// max); elapsed edits are fields-only, their dates rendered as fixed text.
 //
 // No live summary sentence: the two date fields already say when the block
 // starts and ends, and a journey total is the rail's job, not the form's.
@@ -55,11 +47,6 @@ const baseSchema = z.object({
     })
     .optional(),
   focus: z.string().trim().max(BLOCK_FOCUS_MAX).optional(),
-  targetWeightKg: z
-    .number()
-    .min(WEIGHT_KG_MIN, "Too low")
-    .max(WEIGHT_KG_MAX, "Too high")
-    .optional(),
 });
 
 type SchemaOptions = {
@@ -153,7 +140,6 @@ export interface BlockFormValues {
   name: string;
   endsOn?: string;
   focus: string | null;
-  targetWeightKg: number | null;
   startsOn?: string;
 }
 
@@ -186,9 +172,6 @@ export function BlockForm({
   onSubmit,
   onCancel,
 }: BlockFormProps) {
-  const { preference } = useUnits();
-  const weightUnit = formatWeight(0, preference).unit;
-
   const editing = mode.kind === "edit" ? mode.block : null;
   const isElapsedEdit = editing?.state === "past";
   // A block owns its own window (migration 164), so the coach picks its start
@@ -201,12 +184,6 @@ export function BlockForm({
   // A block is never extended: a stored current or future block's end is the
   // ceiling on its Ends field. More time is a new block after it.
   const storedEnd = editing && !isElapsedEdit ? editing.endsOn : null;
-
-  const weightInput = useCanonicalInput(
-    preference,
-    editing?.targetWeightKg ?? null,
-    "weight"
-  );
 
   const schema = useMemo(
     () =>
@@ -224,7 +201,6 @@ export function BlockForm({
     register,
     handleSubmit,
     watch,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<SchemaValues>({
     resolver: zodResolver(schema),
@@ -254,14 +230,6 @@ export function BlockForm({
     },
   });
 
-  // The RHF field holds the canonical kg the box currently means, so the
-  // schema bounds validate storage, not the typed display string.
-  useEffect(() => {
-    setValue("targetWeightKg", weightInput.commit ?? undefined, {
-      shouldValidate: !weightInput.isPristine,
-    });
-  }, [weightInput.commit, weightInput.isPristine, setValue]);
-
   const startsOnValue = watch("startsOn");
   const nextStart =
     fixedStart ??
@@ -272,12 +240,10 @@ export function BlockForm({
       ? addDaysToDateString(nextStart, BLOCK_WEEKS_MAX * DAYS_PER_BLOCK_WEEK - 1)
       : undefined);
   const submit = handleSubmit(async (values) => {
-    if (weightInput.hasParseError) return;
     await onSubmit({
       name: values.name.trim(),
       ...(isElapsedEdit ? {} : { endsOn: values.endsOn }),
       focus: values.focus?.trim() ? values.focus.trim() : null,
-      targetWeightKg: values.targetWeightKg ?? null,
       ...(needsStartField ? { startsOn: values.startsOn } : {}),
     });
   });
@@ -360,31 +326,6 @@ export function BlockForm({
             ) : null}
           </div>
         )}
-
-        <div className="space-y-1.5">
-          <Label htmlFor="block-target" className={FIELD_LABEL}>
-            Target weight (optional)
-          </Label>
-          <div className="flex items-center gap-1.5">
-            <Input
-              id="block-target"
-              inputMode="decimal"
-              className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-24 text-xs")}
-              value={weightInput.value}
-              onChange={(event) => weightInput.setValue(event.target.value)}
-            />
-            <span className="text-[11px] text-[#93b0b4]">{weightUnit}</span>
-          </div>
-          {weightInput.hasParseError ? (
-            <p className="text-[11px] text-[#c06060]">
-              Enter a number in {weightUnit}
-            </p>
-          ) : errors.targetWeightKg ? (
-            <p className="text-[11px] text-[#c06060]">
-              {errors.targetWeightKg.message}
-            </p>
-          ) : null}
-        </div>
       </div>
 
       <div className="space-y-1.5">

@@ -18,7 +18,6 @@ const block = (
   id: "block-1",
   name: "Build",
   focus: "Six weeks of volume",
-  targetWeightKg: 89,
   startsOn: "2026-08-02",
   endsOn: "2026-08-22",
   weeks: 3,
@@ -48,7 +47,7 @@ beforeEach(() => {
 });
 
 describe("JourneySection", () => {
-  it("renders the current block: name, focus, week line, time-progress bar, both target lines", () => {
+  it("renders the current block: name, focus, week line, time-progress bar, the goal line — never a block target", () => {
     const { container } = render(<JourneySection journey={journey()} />);
 
     expect(screen.getByText("Build")).toBeInTheDocument();
@@ -59,27 +58,22 @@ describe("JourneySection", () => {
     const fill = container.querySelector("div[style]") as HTMLElement;
     expect(fill.style.width).toBe("50%");
 
-    expect(screen.getByText("This block:")).toBeInTheDocument();
-    expect(
-      screen.getByText(/89\.0 kg by 22 Aug, 0\.9 kg to go/)
-    ).toBeInTheDocument();
     expect(screen.getByText("Your goal:")).toBeInTheDocument();
     expect(
       screen.getByText(/85\.0 kg by 1 Dec, 4\.9 kg to go/)
     ).toBeInTheDocument();
+    // A block carries no target: the goal is the client's, and the only line.
+    expect(screen.queryByText("This block:")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/to go/)).toHaveLength(1);
   });
 
-  it("omits the goal line on maintenance and the block line without a target", () => {
+  it("omits the goal line on maintenance", () => {
     render(
       <JourneySection
-        journey={journey({
-          blocks: [block({ targetWeightKg: null })],
-          goal: { weightKg: null, deadline: null },
-        })}
+        journey={journey({ goal: { weightKg: null, deadline: null } })}
       />
     );
 
-    expect(screen.queryByText("This block:")).not.toBeInTheDocument();
     expect(screen.queryByText("Your goal:")).not.toBeInTheDocument();
   });
 
@@ -93,7 +87,6 @@ describe("JourneySection", () => {
       />
     );
 
-    expect(screen.getByText("89.0 kg by 22 Aug")).toBeInTheDocument();
     expect(screen.getByText("85.0 kg")).toBeInTheDocument();
     expect(screen.queryByText(/to go/)).not.toBeInTheDocument();
   });
@@ -150,10 +143,7 @@ describe("JourneySection", () => {
 
     render(<JourneySection journey={journey()} />);
 
-    // 89 kg → 196.2 lbs; current 89.9 kg → 198.2 lbs; goal 85 kg → 187.4 lbs.
-    expect(
-      screen.getByText(/196\.2 lbs by 22 Aug, 2\.0 lbs to go/)
-    ).toBeInTheDocument();
+    // current 89.9 kg → 198.2 lbs; goal 85 kg → 187.4 lbs.
     expect(
       screen.getByText(/187\.4 lbs by 1 Dec, 10\.8 lbs to go/)
     ).toBeInTheDocument();

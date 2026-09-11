@@ -23,7 +23,6 @@ const block = (overrides: Partial<ClientBlock> = {}): ClientBlock => ({
   id: "block-1",
   name: "Build",
   focus: null,
-  targetWeightKg: null,
   startsOn: "2026-08-01",
   endsOn: "2026-08-28",
   archivedAt: null,
@@ -147,6 +146,14 @@ describe("getClientJourney", () => {
     const journey = await getClientJourney(CLIENT_ID, TODAY);
 
     expect(journey.blocks.map((b) => b.id)).toEqual(["kept"]);
+  });
+
+  it("no block carries a target — a block is a label on time, and the goal is the client's", async () => {
+    vi.mocked(listBlocks).mockResolvedValue([block()]);
+
+    const journey = await getClientJourney(CLIENT_ID, TODAY);
+
+    expect(journey.blocks[0]).not.toHaveProperty("targetWeightKg");
   });
 
   it("short-circuits with no series reads when every block is archived or none exist", async () => {

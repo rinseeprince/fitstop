@@ -941,7 +941,6 @@ export type Database = {
           id: string
           name: string
           starts_on: string
-          target_weight: number | null
           updated_at: string
         }
         Insert: {
@@ -953,7 +952,6 @@ export type Database = {
           id?: string
           name: string
           starts_on: string
-          target_weight?: number | null
           updated_at?: string
         }
         Update: {
@@ -965,7 +963,6 @@ export type Database = {
           id?: string
           name?: string
           starts_on?: string
-          target_weight?: number | null
           updated_at?: string
         }
         Relationships: [

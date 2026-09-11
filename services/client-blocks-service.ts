@@ -20,7 +20,7 @@ import type { ClientBlockWindow } from "@/lib/prescription-triggers";
  * Every block owns its own window (migration 164): the caller sends BOTH
  * dates for each current or future block, gaps are allowed and overlaps are
  * refused here and by the database. Elapsed blocks (ends_on < clientToday)
- * keep their DATES as read-only history — their name/focus/target stay
+ * keep their DATES as read-only history — their name and focus stay
  * editable (3.6-C) — the symmetric window floor keeps every edit from
  * re-labelling lived days, and a stored block's end moves EARLIER or not at
  * all: more time is a new block after it, never a later end on this one.
@@ -39,21 +39,19 @@ type BlockRow = {
   id: string;
   name: string;
   focus: string | null;
-  target_weight: number | null;
   starts_on: string;
   ends_on: string;
   archived_at: string | null;
 };
 
 const BLOCK_COLUMNS =
-  "id, name, focus, target_weight, starts_on, ends_on, archived_at";
+  "id, name, focus, starts_on, ends_on, archived_at";
 
 function mapBlockRow(row: BlockRow): ClientBlock {
   return {
     id: row.id,
     name: row.name,
     focus: row.focus,
-    targetWeightKg: row.target_weight,
     startsOn: row.starts_on,
     endsOn: row.ends_on,
     archivedAt: row.archived_at,
@@ -196,7 +194,7 @@ export const replaceBlockChain = async (
   const elapsed = stored.filter((block) => block.endsOn < clientToday);
 
   // The elapsed prefix's DATES are immutable: the payload must lead with it —
-  // same ids, same order, dates from STORAGE. Its name/focus/target are
+  // same ids, same order, dates from STORAGE. Its name and focus are
   // editable (Session 3.6-C): the pin protects lived-day ATTRIBUTION, not
   // typos in a finished block's label.
   const elapsedEdits: { echo: (typeof input.blocks)[number]; storedBlock: ClientBlock }[] = [];
@@ -215,8 +213,7 @@ export const replaceBlockChain = async (
     }
     if (
       echo.name !== storedBlock.name ||
-      (echo.focus ?? null) !== storedBlock.focus ||
-      (echo.targetWeightKg ?? null) !== storedBlock.targetWeightKg
+      (echo.focus ?? null) !== storedBlock.focus
     ) {
       elapsedEdits.push({ echo, storedBlock });
     }
@@ -344,7 +341,6 @@ export const replaceBlockChain = async (
       client_id: clientId,
       name: echo.name,
       focus: echo.focus ?? null,
-      target_weight: echo.targetWeightKg ?? null,
       starts_on: storedBlock.startsOn,
       ends_on: storedBlock.endsOn,
       updated_at: now,
@@ -355,7 +351,6 @@ export const replaceBlockChain = async (
       client_id: clientId,
       name: entry.name,
       focus: entry.focus ?? null,
-      target_weight: entry.targetWeightKg ?? null,
       starts_on: windows[i].startsOn,
       ends_on: windows[i].endsOn,
       updated_at: now,

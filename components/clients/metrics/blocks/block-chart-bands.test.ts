@@ -17,7 +17,6 @@ const view = (
   id,
   name: `Block ${id}`,
   focus: null,
-  targetWeightKg: null,
   startsOn,
   endsOn,
   archivedAt: null,

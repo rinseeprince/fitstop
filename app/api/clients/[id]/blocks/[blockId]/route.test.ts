@@ -83,7 +83,6 @@ const REMAINING_BLOCK = {
   id: "a",
   name: "Build",
   focus: null,
-  targetWeightKg: null,
   startsOn: "2026-08-01",
   endsOn: "2026-08-10", // truncated at yesterday
   archivedAt: null,
@@ -161,7 +160,6 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
         id: "block-b",
         name: "Cut",
         focus: null,
-        targetWeightKg: null,
         startsOn: "2026-08-11",
         endsOn: "2026-09-07",
         archivedAt: null,
@@ -204,7 +202,7 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
     // be undone from the UI: the label is gone and the prescription is not.
     vi.mocked(listBlocks).mockResolvedValue([
       {
-        id: "block-b", name: "Cut", focus: null, targetWeightKg: null,
+        id: "block-b", name: "Cut", focus: null,
         startsOn: "2026-08-11", endsOn: "2026-09-07", archivedAt: null,
       },
     ]);

@@ -18,26 +18,19 @@ export interface ClientBlock {
   id: string;
   name: string;
   focus: string | null;
-  targetWeightKg: number | null;
   startsOn: string;
   endsOn: string;
   archivedAt: string | null;
 }
 
-/**
- * One entry in the PUT payload. `endsOn` sets the block's END for current and
- * future rows (day-granular — Session 3.6-B, owner-directed); its START is
- * always derived (the previous end + 1, or the chain anchor), so date PAIRS
- * still never cross the wire. Elapsed rows omit it — their dates are pinned
- * from storage.
- */
+/** One entry in the PUT payload. Elapsed rows omit their dates — those are
+ *  pinned from storage. */
 export interface BlockChainEntryInput {
   id?: string;
   name: string;
   startsOn?: string;
   endsOn?: string;
   focus?: string | null;
-  targetWeightKg?: number | null;
 }
 
 /** The PUT body: every block the client has, each carrying its OWN window.

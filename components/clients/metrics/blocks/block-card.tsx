@@ -24,7 +24,7 @@ import {
 } from "./block-timeline";
 import { PlanStateChip } from "./plan-state-chip";
 import type { BlockWeightFacts } from "@/lib/blocks/block-weight";
-import type { BlockPace, ClientBlockView } from "@/lib/blocks/block-derivations";
+import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import type { BlockFacts, BlockNutritionFact } from "@/types/client-blocks";
 
 // One block in the Journey list. Collapsed: identity + dates + weight change.
@@ -41,9 +41,6 @@ type BlockCardProps = {
   factsLoading: boolean;
   factsError: boolean;
   weight: BlockWeightFacts;
-  pace: BlockPace | null;
-  /** Block target converted to the viewer's unit; null = no target. */
-  targetDisplay: number | null;
   weightUnit: string;
   defaultOpen: boolean;
   /** 3.4's delete affordance mounts here, inside the row but outside the
@@ -262,81 +259,23 @@ function NutritionColumn({
   );
 }
 
+/** The block's weight change and nothing else: the reading at its start, then
+ *  the latest, then the unit — or a dash when either is missing. A block
+ *  carries no target and no goal, so nothing here is judged. */
 function WeightColumn({
-  block,
   weight,
-  pace,
-  targetDisplay,
   weightUnit,
-}: Pick<
-  BlockCardProps,
-  "block" | "weight" | "pace" | "targetDisplay" | "weightUnit"
->) {
-  const hasRange = weight.start != null && weight.end != null;
-  const noData = !hasRange && targetDisplay == null;
-  if (noData) {
+}: Pick<BlockCardProps, "weight" | "weightUnit">) {
+  if (weight.start == null || weight.end == null) {
     return <p className="text-xs text-[#93b0b4]">—</p>;
   }
-
-  // Direction of travel decides the ahead/behind wording (goal-state.ts's
-  // lesson): a negative delta is "ahead" in a cut, "behind" in a gain.
-  const cutting =
-    targetDisplay != null && weight.start != null
-      ? targetDisplay < weight.start.value
-      : null;
-  const onPace = pace != null && Math.abs(pace.delta) < 0.05;
-  const ahead =
-    pace != null && cutting != null
-      ? (cutting && pace.delta < 0) || (!cutting && pace.delta > 0)
-      : null;
-
   return (
-    <div className="space-y-0.5">
-      {hasRange && (
-        <p>
-          <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
-            {weight.start!.value.toFixed(1)} → {weight.end!.value.toFixed(1)}
-          </span>{" "}
-          <span className={cn(MONO_META_CLASS, "text-[10px]")}>{weightUnit}</span>
-        </p>
-      )}
-      {targetDisplay != null && (
-        <p className={cn(MONO_META_CLASS, "text-[11px]")}>
-          Target {targetDisplay.toFixed(1)} {weightUnit}
-        </p>
-      )}
-      {pace != null && block.state === "current" && (
-        <>
-          <p className={cn(MONO_META_CLASS, "text-[11px]")}>
-            {Math.abs(pace.remaining).toFixed(1)} {weightUnit}{" "}
-            {pace.remaining > 0 ? "above" : "below"} target ·{" "}
-            {pace.weeksLeft.toFixed(1)} wk left
-          </p>
-          {onPace ? (
-            <p className="text-[11px] text-[#5a7d82]">On pace</p>
-          ) : (
-            <p className={cn(MONO_META_CLASS, "text-[11px]")}>
-              {Math.abs(pace.delta).toFixed(1)} {weightUnit}{" "}
-              {ahead ? "ahead" : "behind"}
-            </p>
-          )}
-        </>
-      )}
-      {pace != null && block.state === "past" && (
-        <p className={cn(MONO_META_CLASS, "text-[11px]")}>
-          {pace.remaining === 0
-            ? "Finished on target"
-            : `Finished ${Math.abs(pace.remaining).toFixed(1)} ${weightUnit} ${
-                pace.remaining > 0 ? "above" : "below"
-              } target`}
-        </p>
-      )}
-      {pace == null && targetDisplay != null && block.state !== "future" && (
-        <p className="text-[11px] text-[#93b0b4]">
-          No weight logged before this block
-        </p>
-      )}
-    </div>
+    <p>
+      <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
+        {weight.start.value.toFixed(1)} → {weight.end.value.toFixed(1)}
+      </span>{" "}
+      <span className={cn(MONO_META_CLASS, "text-[10px]")}>{weightUnit}</span>
+    </p>
   );
 }
 

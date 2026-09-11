@@ -19,7 +19,6 @@ function makeBlock(overrides: Partial<ClientBlockView> = {}): ClientBlockView {
     id: "blk-1",
     name: "Cut 2",
     focus: null,
-    targetWeightKg: null,
     startsOn: "2026-08-01",
     endsOn: "2026-09-30",
     archivedAt: null,
@@ -71,8 +70,6 @@ function renderEmpty() {
       factsLoading={false}
       factsError={false}
       weight={{ start: null, end: null, change: null }}
-      pace={null}
-      targetDisplay={null}
       weightUnit="kg"
       defaultOpen
       onPlaceProgram={vi.fn()}
@@ -103,8 +100,6 @@ function renderCard(block: ClientBlockView, handlers: {
       factsLoading={false}
       factsError={false}
       weight={{ start: null, end: null, change: null }}
-      pace={null}
-      targetDisplay={null}
       weightUnit="kg"
       defaultOpen
       {...rest}
@@ -461,8 +456,6 @@ describe("BlockCard — the set state's update affordance (H)", () => {
         factsLoading
         factsError={false}
         weight={{ start: null, end: null, change: null }}
-        pace={null}
-        targetDisplay={null}
         weightUnit="kg"
         defaultOpen
         onPlaceProgram={vi.fn()}
@@ -480,8 +473,6 @@ describe("BlockCard — the set state's update affordance (H)", () => {
         factsLoading={false}
         factsError
         weight={{ start: null, end: null, change: null }}
-        pace={null}
-        targetDisplay={null}
         weightUnit="kg"
         defaultOpen
         onPlaceProgram={vi.fn()}
@@ -584,5 +575,49 @@ describe("BlockCard — the per-plan delete (C3)", () => {
     expect(icon.className).toMatch(/opacity-0/);
     expect(icon.className).toMatch(/group-hover\/entry:opacity-100/);
     expect(icon.className).toMatch(/hover:text-\[#c06060\]/);
+  });
+});
+
+// The Weight column is the block's weight change and nothing else: the reading
+// at its start, then the latest, then the unit — or a dash when either is
+// missing. A block carries no target and no goal, so nothing here is judged.
+describe("BlockCard — the Weight column", () => {
+  const weightColumn = () =>
+    screen.getByText("Weight", { selector: "p" }).parentElement as HTMLElement;
+
+  it("reads the two readings and the unit, and nothing else", () => {
+    render(
+      <BlockCard
+        block={makeBlock({ state: "current" })}
+        color="#0d9488"
+        facts={EMPTY_FACTS}
+        factsLoading={false}
+        factsError={false}
+        weight={{
+          start: { value: 88, date: "2026-08-01" },
+          end: { value: 85.5, date: "2026-09-10" },
+          change: -2.5,
+        }}
+        weightUnit="kg"
+        defaultOpen
+      />
+    );
+    expect(weightColumn().textContent).toBe("Weight88.0 → 85.5 kg");
+  });
+
+  it("shows a dash when either reading is missing", () => {
+    render(
+      <BlockCard
+        block={makeBlock({ state: "current" })}
+        color="#0d9488"
+        facts={EMPTY_FACTS}
+        factsLoading={false}
+        factsError={false}
+        weight={{ start: null, end: { value: 85.5, date: "2026-09-10" }, change: null }}
+        weightUnit="kg"
+        defaultOpen
+      />
+    );
+    expect(weightColumn().textContent).toBe("Weight—");
   });
 });

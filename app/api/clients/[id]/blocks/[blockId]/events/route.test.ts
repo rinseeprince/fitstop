@@ -47,7 +47,6 @@ const BLOCK = {
   id: "block-b",
   name: "Build",
   focus: null,
-  targetWeightKg: null,
   startsOn: "2026-08-01",
   endsOn: "2026-09-27",
   archivedAt: null,

@@ -17,8 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
 import { toast } from "sonner";
 import { useUnits } from "@/contexts/units-context";
-import { formatWeight } from "@/utils/unit-conversions";
-import { derivePace, type ClientBlockView } from "@/lib/blocks/block-derivations";
+import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import {
   deleteBlockRequest,
   deletePlanRequest,
@@ -58,8 +57,6 @@ import type { MetricSummary } from "../metrics-view-types";
 // CLIENT's timezone — state is never re-derived here) + per-block facts +
 // the weight story from the SAME merged series as the chart and log beside
 // it, so the numbers cannot disagree. Add, edit and delete all mount here.
-
-const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 /** The one description line the completed save carries, if it needs one. */
 function calendarOutcome(choice: BlockEventsChoice): string | undefined {
@@ -295,7 +292,6 @@ export function BlocksSubtab({
           startsOn: values.startsOn as string,
           endsOn: values.endsOn as string,
           focus: values.focus,
-          targetWeightKg: values.targetWeightKg,
         })
       );
       // Seed + close in the same tick: React batches them, so the coach goes
@@ -340,7 +336,6 @@ export function BlocksSubtab({
     const { payload } = buildEditPayload(blocks, block.id, {
       name: values.name,
       focus: values.focus,
-      targetWeightKg: values.targetWeightKg,
       endsOn: values.endsOn,
       startsOn: values.startsOn,
     });
@@ -545,23 +540,6 @@ export function BlocksSubtab({
               );
             }
             const weight = deriveBlockWeightFacts(weightPoints, block);
-            const targetDisplay =
-              block.targetWeightKg != null
-                ? round1(formatWeight(block.targetWeightKg, preference).value)
-                : null;
-            // The wire's client-tz today drives the pace fraction too — no
-            // block math ever runs on the coach's device day.
-            const pace =
-              targetDisplay != null && clientToday != null
-                ? derivePace({
-                    startsOn: block.startsOn,
-                    endsOn: block.endsOn,
-                    targetWeight: targetDisplay,
-                    startWeight: weight.start?.value ?? null,
-                    currentWeight: weight.end?.value ?? null,
-                    today: clientToday,
-                  })
-                : null;
             return (
               <BlockCard
                 key={block.id}
@@ -571,8 +549,6 @@ export function BlocksSubtab({
                 factsLoading={factsLoading}
                 factsError={factsError}
                 weight={weight}
-                pace={pace}
-                targetDisplay={targetDisplay}
                 weightUnit={weightUnit}
                 defaultOpen={
                   focusBlockId ? block.id === focusBlockId : block.state === "current"

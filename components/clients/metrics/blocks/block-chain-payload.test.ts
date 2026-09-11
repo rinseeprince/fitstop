@@ -10,7 +10,6 @@ const view = (
   id,
   name: `Block ${id}`,
   focus: null,
-  targetWeightKg: null,
   startsOn: "2026-06-01",
   endsOn: "2026-06-28",
   archivedAt: null,
@@ -25,7 +24,6 @@ const ENTRY = {
   startsOn: "2026-10-05",
   endsOn: "2026-11-01",
   focus: null,
-  targetWeightKg: null,
 };
 
 describe("buildAppendPayload", () => {
@@ -37,7 +35,6 @@ describe("buildAppendPayload", () => {
           startsOn: "2026-10-05",
           endsOn: "2026-11-01",
           focus: null,
-          targetWeightKg: null,
         },
       ],
     });
@@ -58,8 +55,8 @@ describe("buildAppendPayload", () => {
       id: "past",
       name: "Block past",
       focus: null,
-      targetWeightKg: null,
     });
+    expect(payload.blocks[0]).not.toHaveProperty("targetWeightKg");
     expect(payload.blocks[1]).toMatchObject({
       id: "now",
       startsOn: "2026-06-01",
@@ -96,7 +93,6 @@ describe("buildEditPayload", () => {
     const { payload } = buildEditPayload(chain, "b", {
       name: "Renamed",
       focus: "hypertrophy",
-      targetWeightKg: 81,
       startsOn: "2026-07-13",
       endsOn: "2026-08-23",
     });
@@ -107,7 +103,6 @@ describe("buildEditPayload", () => {
       startsOn: "2026-07-13",
       endsOn: "2026-08-23",
       focus: "hypertrophy",
-      targetWeightKg: 81,
     });
     expect(payload.blocks[0]).toMatchObject({ startsOn: "2026-06-01", endsOn: "2026-06-28" });
     expect(payload.blocks[2]).toMatchObject({ startsOn: "2026-08-10", endsOn: "2026-09-06" });
@@ -117,14 +112,13 @@ describe("buildEditPayload", () => {
     const { payload } = buildEditPayload(
       [view("past", "past", { startsOn: "2026-04-06", endsOn: "2026-05-03" })],
       "past",
-      { name: "Base", focus: null, targetWeightKg: null, startsOn: "2026-01-05", endsOn: "2026-02-01" }
+      { name: "Base", focus: null, startsOn: "2026-01-05", endsOn: "2026-02-01" }
     );
 
     expect(payload.blocks[0]).toEqual({
       id: "past",
       name: "Base",
       focus: null,
-      targetWeightKg: null,
     });
   });
 
@@ -132,7 +126,6 @@ describe("buildEditPayload", () => {
     const { payload } = buildEditPayload(chain, "c", {
       name: "Deload",
       focus: null,
-      targetWeightKg: null,
     });
 
     expect(payload.blocks[2]).toMatchObject({
@@ -147,7 +140,6 @@ describe("buildEditPayload", () => {
     const { journeyWeeks } = buildEditPayload(chain, "b", {
       name: "Block b",
       focus: null,
-      targetWeightKg: null,
     });
 
     expect(journeyWeeks).toBe(12);
@@ -155,7 +147,7 @@ describe("buildEditPayload", () => {
 
   it("throws on an unknown id rather than silently echoing the set", () => {
     expect(() =>
-      buildEditPayload(chain, "missing", { name: "x", focus: null, targetWeightKg: null })
+      buildEditPayload(chain, "missing", { name: "x", focus: null })
     ).toThrow("Unknown block id");
   });
 });

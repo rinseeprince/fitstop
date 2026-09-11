@@ -7,7 +7,7 @@ import { daysBetween } from "@/utils/metric-points";
 import type { ClientJourney, ClientJourneyBlock } from "@/types/client-journey";
 
 // The client's journey view on the Program tab: the current block (name,
-// focus, week-of-total, time progress, block target + long-term goal) and the
+// focus, week-of-total, time progress, the long-term goal) and the
 // finished blocks with their weight change — the same wording as the coach's
 // Journey list, rendered in the client's own unit.
 //
@@ -105,7 +105,7 @@ function CurrentBlockCard({
   preference: UnitSystem;
   unit: string;
 }) {
-  // The same clamped elapsed fraction derivePace uses, anchored on the wire's
+  // The elapsed fraction, clamped to [0, 1] and anchored on the wire's
   // clientToday — never the device day.
   const totalDays = daysBetween(block.startsOn, block.endsOn);
   const elapsedDays = daysBetween(block.startsOn, journey.clientToday);
@@ -130,18 +130,6 @@ function CurrentBlockCard({
         />
       </div>
       <div className="mt-3 space-y-1">
-        {block.targetWeightKg != null && (
-          <TargetLine
-            label="This block:"
-            phrase={targetPhrase(
-              block.targetWeightKg,
-              block.endsOn,
-              journey.currentWeightKg,
-              preference,
-              unit
-            )}
-          />
-        )}
         {journey.goal.weightKg != null && (
           <TargetLine
             label="Your goal:"

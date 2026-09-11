@@ -23,7 +23,6 @@ export interface ClientJourneyBlock {
   name: string;
   /** The coach's "what's this block for?" sentence; render verbatim. */
   focus: string | null;
-  targetWeightKg: number | null;
   startsOn: string;
   endsOn: string;
   weeks: number;

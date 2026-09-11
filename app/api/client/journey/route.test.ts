@@ -41,7 +41,6 @@ const JOURNEY: ClientJourney = {
       id: "block-1",
       name: "Build",
       focus: "Six weeks of volume",
-      targetWeightKg: 89,
       startsOn: "2026-08-01",
       endsOn: "2026-09-06",
       weeks: 6,

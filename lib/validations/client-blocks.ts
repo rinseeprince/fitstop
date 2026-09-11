@@ -3,8 +3,6 @@ import {
   BLOCK_FOCUS_MAX,
   BLOCK_NAME_MAX,
   BLOCKS_PER_CLIENT_MAX,
-  WEIGHT_KG_MAX,
-  WEIGHT_KG_MIN,
 } from "@/lib/constants";
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -27,10 +25,6 @@ const dateString = z
  * window length (BLOCK_WEEKS_MAX weeks in days), refuses a new block starting
  * in the past, and refuses any overlap — all of which need the client's stored
  * rows and their today, which only the service has.
- * `targetWeightKg` is canonical kilograms on the wire (CONVENTIONS §20) — the
- * form converts from the viewer's unit before sending; bounds describe
- * storage. Explicit null clears; omitted means null for a new row and must
- * echo null for an elapsed one.
  */
 const blockEntrySchema = z.object({
   id: z.string().uuid().optional(),
@@ -42,12 +36,6 @@ const blockEntrySchema = z.object({
     .trim()
     .max(BLOCK_FOCUS_MAX)
     .transform((value) => (value.length === 0 ? null : value))
-    .nullable()
-    .optional(),
-  targetWeightKg: z
-    .number()
-    .min(WEIGHT_KG_MIN)
-    .max(WEIGHT_KG_MAX)
     .nullable()
     .optional(),
 });

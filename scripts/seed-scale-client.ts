@@ -1097,7 +1097,6 @@ async function insertJourneyBlocks() {
       client_id: PERF_CLIENT_ID,
       name: names[i],
       focus: focuses[i],
-      target_weight: 84 - i,
       starts_on: startsOn,
       ends_on: endsOn,
     };
