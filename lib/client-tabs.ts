@@ -123,9 +123,9 @@ export function paneParamSearch(
 // The Journey ⇄ setup-surface round trip (Session 7.3 / 7.4)
 //
 // A Journey block's Training or Nutrition fact IS the way in — unset ("place
-// one" / "set targets") or set ("Change program" / "Change targets", which
-// place a NEW plan from the block's first available day and supersede the
-// standing one from there): one click lands on the owning tab with its setup
+// one" / "set targets") or set ("update plan" / "update targets", which place
+// a NEW plan from the block's first available day and supersede the standing
+// one from there): one click lands on the owning tab with its setup
 // surface already open, and a successful save lands back on the block it came
 // from, expanded.
 //

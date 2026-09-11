@@ -9,9 +9,10 @@ import type { BlockFacts } from "@/types/client-blocks";
 // Elapsed and archived keep plain text: a plan cannot start before the deletion
 // floor, so a finished block is not listed by the setup surfaces' Block field,
 // and it matches the read-only posture elapsed blocks already have.
-// H: a SET fact carries the same way in — "Change program" / "Change targets"
-// in the column heading — on the same gate and through the same handler, so a
-// coach changes a block's programming from the card rather than the calendars.
+// H: a SET fact carries the same way in — "update plan" / "update targets"
+// under the value, in the empty state's own register — on the same gate and
+// through the same handler, so a coach changes a block's programming from the
+// card rather than the calendars.
 
 function makeBlock(overrides: Partial<ClientBlockView> = {}): ClientBlockView {
   return {
@@ -44,6 +45,29 @@ const SET_FACTS: BlockFacts = {
     { id: "v1", startsOn: "2026-08-03", calories: 2140, deficitPerDay: 310, note: null },
   ],
 };
+
+/** The empty state on a current block, in its own container, for a
+ *  same-test comparison against a set state already on screen. */
+function renderEmpty() {
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  return render(
+    <BlockCard
+      block={makeBlock({ state: "current" })}
+      color="#0d9488"
+      facts={EMPTY_FACTS}
+      factsLoading={false}
+      factsError={false}
+      weight={{ start: null, end: null, change: null }}
+      pace={null}
+      targetDisplay={null}
+      weightUnit="kg"
+      defaultOpen
+      onPlaceProgram={vi.fn()}
+    />,
+    { container: host }
+  );
+}
 
 function renderCard(block: ClientBlockView, handlers: {
   onPlaceProgram?: () => void;
@@ -157,23 +181,33 @@ describe("BlockCard — the round-trip empty states", () => {
   });
 });
 
-describe("BlockCard — the set state's change affordance (H)", () => {
-  it("offers Change program on a set CURRENT block, in place of the empty state", () => {
+describe("BlockCard — the set state's update affordance (H)", () => {
+  it("offers update plan on a set CURRENT block, under the value, in place of the empty state", () => {
     renderCard(makeBlock({ state: "current" }), {
       facts: SET_FACTS,
       onPlaceProgram: vi.fn(),
     });
-    expect(screen.getByRole("button", { name: "Change program" })).toBeDefined();
+    const update = screen.getByRole("button", { name: "update plan" });
     expect(screen.getByText("Push Pull Legs")).toBeDefined();
     expect(screen.queryByRole("button", { name: /No program placed/ })).toBeNull();
+    // ONE register for the way in: the set state's word is the empty state's
+    // word — the same button classes, the same teal span — never the label
+    // register (a small-caps word beside the column label reads as a title).
+    const empty = renderEmpty();
+    const placeOne = empty.getByRole("button", { name: /No program placed/ });
+    expect(update.className).toBe(placeOne.className);
+    expect(update.querySelector("span")?.className).toBe(
+      placeOne.querySelector("span")?.className
+    );
+    expect(update.className).not.toMatch(/uppercase/);
   });
 
-  it("offers Change program on a set FUTURE block", () => {
+  it("offers update plan on a set FUTURE block", () => {
     renderCard(makeBlock({ state: "future" }), {
       facts: SET_FACTS,
       onPlaceProgram: vi.fn(),
     });
-    expect(screen.getByRole("button", { name: "Change program" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "update plan" })).toBeDefined();
   });
 
   it("keeps a set ELAPSED block's program as plain text", () => {
@@ -182,7 +216,7 @@ describe("BlockCard — the set state's change affordance (H)", () => {
       onPlaceProgram: vi.fn(),
     });
     expect(screen.getByText("Push Pull Legs")).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Change program" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "update plan" })).toBeNull();
   });
 
   it("keeps a set ARCHIVED block's program as plain text, even while current", () => {
@@ -191,16 +225,16 @@ describe("BlockCard — the set state's change affordance (H)", () => {
       { facts: SET_FACTS, onPlaceProgram: vi.fn() }
     );
     expect(screen.getByText("Push Pull Legs")).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Change program" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "update plan" })).toBeNull();
   });
 
   // The Nutrition column is gated by the same one rule.
-  it("offers Change targets on a set CURRENT block and not on an ELAPSED one", () => {
+  it("offers update targets on a set CURRENT block and not on an ELAPSED one", () => {
     const { unmount } = renderCard(makeBlock({ state: "current" }), {
       facts: SET_FACTS,
       onSetNutrition: vi.fn(),
     });
-    expect(screen.getByRole("button", { name: "Change targets" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "update targets" })).toBeDefined();
     expect(screen.queryByRole("button", { name: /Not set/ })).toBeNull();
     unmount();
 
@@ -209,13 +243,13 @@ describe("BlockCard — the set state's change affordance (H)", () => {
       onSetNutrition: vi.fn(),
     });
     expect(screen.getByText("2,140")).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Change targets" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "update targets" })).toBeNull();
   });
 
   // The change action IS the empty state's round trip: the same handler, so it
   // lands on the same surface with the same block preselected. Each track's
   // action fires its own handler and never the other's.
-  it("Change program fires the apply round trip, not the nutrition one", () => {
+  it("update plan fires the apply round trip, not the nutrition one", () => {
     const onPlaceProgram = vi.fn();
     const onSetNutrition = vi.fn();
     renderCard(makeBlock({ state: "current" }), {
@@ -223,12 +257,12 @@ describe("BlockCard — the set state's change affordance (H)", () => {
       onPlaceProgram,
       onSetNutrition,
     });
-    screen.getByRole("button", { name: "Change program" }).click();
+    screen.getByRole("button", { name: "update plan" }).click();
     expect(onPlaceProgram).toHaveBeenCalledTimes(1);
     expect(onSetNutrition).not.toHaveBeenCalled();
   });
 
-  it("Change targets fires the plan round trip, not the apply one", () => {
+  it("update targets fires the plan round trip, not the apply one", () => {
     const onPlaceProgram = vi.fn();
     const onSetNutrition = vi.fn();
     renderCard(makeBlock({ state: "future" }), {
@@ -236,7 +270,7 @@ describe("BlockCard — the set state's change affordance (H)", () => {
       onPlaceProgram,
       onSetNutrition,
     });
-    screen.getByRole("button", { name: "Change targets" }).click();
+    screen.getByRole("button", { name: "update targets" }).click();
     expect(onSetNutrition).toHaveBeenCalledTimes(1);
     expect(onPlaceProgram).not.toHaveBeenCalled();
   });
@@ -244,8 +278,8 @@ describe("BlockCard — the set state's change affordance (H)", () => {
   it("renders no change action without a handler", () => {
     renderCard(makeBlock({ state: "current" }), { facts: SET_FACTS });
     expect(screen.getByText("Push Pull Legs")).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Change program" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Change targets" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "update plan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "update targets" })).toBeNull();
   });
 
   // A fact that has not resolved is not set: nothing to change yet, and nothing
@@ -267,7 +301,7 @@ describe("BlockCard — the set state's change affordance (H)", () => {
         onSetNutrition={vi.fn()}
       />
     );
-    expect(screen.queryByRole("button", { name: /Change/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /update/ })).toBeNull();
     unmount();
 
     render(
@@ -287,6 +321,6 @@ describe("BlockCard — the set state's change affordance (H)", () => {
       />
     );
     expect(screen.getAllByText("Unavailable").length).toBe(2);
-    expect(screen.queryByRole("button", { name: /Change/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /update/ })).toBeNull();
   });
 });

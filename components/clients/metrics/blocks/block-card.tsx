@@ -45,12 +45,13 @@ type BlockCardProps = {
   rowAction?: React.ReactNode;
   /** The Journey round trip (7.3/7.4, H): the Training / Nutrition facts are
    *  the way into the apply and plan flows — the empty state's "place one" /
-   *  "set targets", and the set state's "Change program" / "Change targets",
-   *  which place a NEW plan from the block's first available day and supersede
-   *  the standing one from there (never the amendment, which edits a placed
-   *  program in place). One handler per track serves both states. Undefined,
-   *  or a block that fails blockAcceptsSetup, leaves the empty state as plain
-   *  text and the set state without its action. */
+   *  "set targets", and the set state's "update plan" / "update targets"
+   *  under the value, which place a NEW plan from the block's first available
+   *  day and supersede the standing one from there (never the amendment, which
+   *  edits a placed program in place). One handler per track serves both
+   *  states, in one register. Undefined, or a block that fails
+   *  blockAcceptsSetup, leaves the empty state as plain text and the set state
+   *  without its action. */
   onPlaceProgram?: () => void;
   onSetNutrition?: () => void;
 };
@@ -70,17 +71,22 @@ function blockAcceptsSetup(block: ClientBlockView): boolean {
 }
 
 /**
- * The empty state IS the way in (Session 7.3/7.4): one target that names what
- * is unset and offers the gesture that fixes it. The action word stays visible
- * rather than hover-revealed — a coach who has to hover to discover the door
- * is exactly the problem this session exists to fix.
+ * The way in, in ONE register (Session 7.3/7.4, H): the empty state names what
+ * is unset and offers the gesture that fixes it ("No program placed — place
+ * one"); the set state offers the gesture alone under the value ("update
+ * plan"), the same word treatment with no prefix — the value above it is the
+ * state. The action word stays visible rather than hover-revealed — a coach
+ * who has to hover to discover the door is exactly the problem this session
+ * exists to fix — and it is never set in the label register: a small-caps word
+ * beside the column label reads as a title, not a door (owner, 2026-09-11).
  */
 function SetupPrompt({
   missing,
   action,
   onClick,
 }: {
-  missing: string;
+  /** What is unset; omitted on the set state, where the value says it. */
+  missing?: string;
   action: string;
   onClick: () => void;
 }) {
@@ -93,7 +99,7 @@ function SetupPrompt({
         FOCUS_RING
       )}
     >
-      {missing} &mdash;{" "}
+      {missing && <>{missing} &mdash;{" "}</>}
       <span className="font-medium text-[#0d9488] group-hover:text-[#0b7f75]">
         {action}
       </span>
@@ -102,80 +108,22 @@ function SetupPrompt({
 }
 
 /**
- * A fact column's heading: the label, with the SET state's action in the right
- * slot — the divider grammar (left = identity, right = actions), so "Change
- * program" / "Change targets" sits beside the fact it changes rather than
- * competing with the value under it. The action takes the label register with
- * a teal hover — the shape of the drop-set editor's "Add drop", the calendar's
- * Today jump and the Overview's "Mark seen" (`docs/newdesignsystem.md` →
- * SectionLabel: a word-only interactive rail action) — visible at rest, never
- * hover-revealed, for the same reason SetupPrompt's word is.
- */
-function ColumnHeading({
-  label,
-  action,
-}: {
-  label: string;
-  action?: { label: string; onClick: () => void };
-}) {
-  return (
-    <div className="mb-1.5 flex items-center justify-between gap-2">
-      <p className={LABEL_CLASS}>{label}</p>
-      {action && (
-        <button
-          type="button"
-          onClick={action.onClick}
-          className={cn(
-            "shrink-0 rounded transition-colors",
-            LABEL_CLASS,
-            "hover:text-[#0d9488]",
-            FOCUS_RING
-          )}
-        >
-          {action.label}
-        </button>
-      )}
-    </div>
-  );
-}
-
-/**
  * ONE gate per track, consulted once: the handler reaches the empty state's
- * "place one" and the set state's "Change program" together, or neither — so
- * the two affordances cannot drift apart on which blocks offer them.
+ * "place one" and the set state's "update plan" together, or neither — so the
+ * two affordances cannot drift apart on which blocks offer them.
  */
-function TrainingColumn(
-  props: Pick<
-    BlockCardProps,
-    "block" | "facts" | "factsLoading" | "factsError" | "onPlaceProgram"
-  >
-) {
-  const { block, facts, factsError, onPlaceProgram } = props;
-  const setUp =
-    onPlaceProgram && blockAcceptsSetup(block) ? onPlaceProgram : undefined;
-  const placed = !factsError && facts != null && facts.training.length > 0;
-  return (
-    <div>
-      <ColumnHeading
-        label="Training"
-        action={
-          setUp && placed ? { label: "Change program", onClick: setUp } : undefined
-        }
-      />
-      <TrainingFacts {...props} onPlaceProgram={setUp} />
-    </div>
-  );
-}
-
-function TrainingFacts({
+function TrainingColumn({
+  block,
   facts,
   factsLoading,
   factsError,
   onPlaceProgram,
 }: Pick<
   BlockCardProps,
-  "facts" | "factsLoading" | "factsError" | "onPlaceProgram"
+  "block" | "facts" | "factsLoading" | "factsError" | "onPlaceProgram"
 >) {
+  const setUp =
+    onPlaceProgram && blockAcceptsSetup(block) ? onPlaceProgram : undefined;
   if (factsError) {
     return <p className="text-xs text-[#93b0b4]">Unavailable</p>;
   }
@@ -183,62 +131,45 @@ function TrainingFacts({
     return factsLoading ? <p className="text-xs text-[#93b0b4]">Loading…</p> : null;
   }
   if (facts.training.length === 0) {
-    return onPlaceProgram ? (
+    return setUp ? (
       <SetupPrompt
         missing="No program placed"
         action="place one"
-        onClick={onPlaceProgram}
+        onClick={setUp}
       />
     ) : (
       <p className="text-xs text-[#93b0b4]">No program placed</p>
     );
   }
   return (
-    <ul className="space-y-1">
-      {facts.training.map((plan) => (
-        <li key={plan.id}>
-          <p className={cn("text-xs font-medium", TEXT_PRIMARY)}>{plan.name}</p>
-          <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-            from {formatBlockDate(plan.startsOn)}
-          </p>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function NutritionColumn(
-  props: Pick<
-    BlockCardProps,
-    "block" | "facts" | "factsLoading" | "factsError" | "onSetNutrition"
-  >
-) {
-  const { block, facts, factsError, onSetNutrition } = props;
-  const setUp =
-    onSetNutrition && blockAcceptsSetup(block) ? onSetNutrition : undefined;
-  const set = !factsError && facts != null && facts.nutrition.length > 0;
-  return (
-    <div>
-      <ColumnHeading
-        label="Nutrition"
-        action={
-          setUp && set ? { label: "Change targets", onClick: setUp } : undefined
-        }
-      />
-      <NutritionFacts {...props} onSetNutrition={setUp} />
+    <div className="space-y-1">
+      <ul className="space-y-1">
+        {facts.training.map((plan) => (
+          <li key={plan.id}>
+            <p className={cn("text-xs font-medium", TEXT_PRIMARY)}>{plan.name}</p>
+            <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+              from {formatBlockDate(plan.startsOn)}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {setUp && <SetupPrompt action="update plan" onClick={setUp} />}
     </div>
   );
 }
 
-function NutritionFacts({
+function NutritionColumn({
+  block,
   facts,
   factsLoading,
   factsError,
   onSetNutrition,
 }: Pick<
   BlockCardProps,
-  "facts" | "factsLoading" | "factsError" | "onSetNutrition"
+  "block" | "facts" | "factsLoading" | "factsError" | "onSetNutrition"
 >) {
+  const setUp =
+    onSetNutrition && blockAcceptsSetup(block) ? onSetNutrition : undefined;
   if (factsError) {
     return <p className="text-xs text-[#93b0b4]">Unavailable</p>;
   }
@@ -246,11 +177,11 @@ function NutritionFacts({
     return factsLoading ? <p className="text-xs text-[#93b0b4]">Loading…</p> : null;
   }
   if (facts.nutrition.length === 0) {
-    return onSetNutrition ? (
+    return setUp ? (
       <SetupPrompt
         missing="Not set"
         action="set targets"
-        onClick={onSetNutrition}
+        onClick={setUp}
       />
     ) : (
       <p className="text-xs text-[#93b0b4]">Not set</p>
@@ -259,54 +190,43 @@ function NutritionFacts({
   // One entry per version overlapping the block, the training column's shape:
   // a queued version lists under the running one with its own start.
   return (
-    <ul className="space-y-1">
-      {facts.nutrition.map((fact) => (
-        <li key={fact.id} className="space-y-0.5">
-          {/* Target and surplus/deficit on one line, both in the target's
-              weight; the units in the unit's. The date sits under it, the
-              training column's title-then-date grammar. */}
-          <p className="flex flex-wrap items-baseline gap-x-3">
-            <span>
-              <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
-                {Math.round(fact.calories).toLocaleString()}
-              </span>{" "}
-              <span className={cn(MONO_META_CLASS, "text-[10px]")}>kcal</span>
-            </span>
-            {fact.deficitPerDay != null && (
+    <div className="space-y-1">
+      <ul className="space-y-1">
+        {facts.nutrition.map((fact) => (
+          <li key={fact.id} className="space-y-0.5">
+            {/* Target and surplus/deficit on one line, both in the target's
+                weight; the units in the unit's. The date sits under it, the
+                training column's title-then-date grammar. */}
+            <p className="flex flex-wrap items-baseline gap-x-3">
               <span>
                 <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
-                  {splitDeficitPerDay(fact.deficitPerDay).value}
+                  {Math.round(fact.calories).toLocaleString()}
                 </span>{" "}
-                <span className={cn(MONO_META_CLASS, "text-[10px]")}>
-                  {splitDeficitPerDay(fact.deficitPerDay).unit}
-                </span>
+                <span className={cn(MONO_META_CLASS, "text-[10px]")}>kcal</span>
               </span>
-            )}
-          </p>
-          <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-            from {formatBlockDate(fact.startsOn)}
-          </p>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function WeightColumn(
-  props: Pick<
-    BlockCardProps,
-    "block" | "weight" | "pace" | "targetDisplay" | "weightUnit"
-  >
-) {
-  return (
-    <div>
-      <ColumnHeading label="Weight" />
-      <WeightFacts {...props} />
+              {fact.deficitPerDay != null && (
+                <span>
+                  <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
+                    {splitDeficitPerDay(fact.deficitPerDay).value}
+                  </span>{" "}
+                  <span className={cn(MONO_META_CLASS, "text-[10px]")}>
+                    {splitDeficitPerDay(fact.deficitPerDay).unit}
+                  </span>
+                </span>
+              )}
+            </p>
+            <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+              from {formatBlockDate(fact.startsOn)}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {setUp && <SetupPrompt action="update targets" onClick={setUp} />}
     </div>
   );
 }
 
-function WeightFacts({
+function WeightColumn({
   block,
   weight,
   pace,
@@ -454,9 +374,18 @@ export function BlockCard(props: BlockCardProps) {
       {open && (
         <div className={cn(HAIRLINE, "space-y-3 px-[11px] py-3")}>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <TrainingColumn {...props} />
-            <NutritionColumn {...props} />
-            <WeightColumn {...props} />
+            <div>
+              <p className={cn(LABEL_CLASS, "mb-1.5")}>Training</p>
+              <TrainingColumn {...props} />
+            </div>
+            <div>
+              <p className={cn(LABEL_CLASS, "mb-1.5")}>Nutrition</p>
+              <NutritionColumn {...props} />
+            </div>
+            <div>
+              <p className={cn(LABEL_CLASS, "mb-1.5")}>Weight</p>
+              <WeightColumn {...props} />
+            </div>
           </div>
           <div className={cn(HAIRLINE, "pt-3")}>
             <p className={cn(LABEL_CLASS, "mb-2")}>What happened</p>

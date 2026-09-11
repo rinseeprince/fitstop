@@ -72,7 +72,7 @@ type BlocksSubtabProps = {
    *  while metrics load / when nothing is logged. */
   weightMetric: MetricSummary | null;
   /** The round trip out of a fact, unset or set (7.3/7.4, H): "place one" /
-   *  "set targets" and "Change program" / "Change targets" all go the same way.
+   *  "set targets" and "update plan" / "update targets" all go the same way.
    *  Cross-tab navigation must run through the client page's handler —
    *  activeTab is state seeded from ?tab= at mount only. Absent = the empty
    *  states stay plain text and the set states carry no action. */
