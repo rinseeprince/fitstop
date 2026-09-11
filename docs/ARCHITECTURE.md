@@ -243,11 +243,11 @@ Daily tracking data is split into a spine table and domain-specific child tables
 ```
 daily_logs (spine)         -- id, client_id, date, notes
   ├── wellness_logs        -- mood, energy, sleep, stress, soreness (1:1 via daily_log_id FK)
-  ├── nutrition_logs       -- what the client ate (1:1 via daily_log_id FK); the day's target and verdict are computed at read time (migration 173 dropped the stored copy)
+  ├── nutrition_logs       -- what the client ate (1:1 via daily_log_id FK); the day's target and verdict are computed at read time (migration 173)
   ├── training_logs        -- trained, training_session_id, training_data JSONB (legacy/orphaned) (1:1 via daily_log_id FK)
   └── daily_habit_logs     -- per-habit completion (1:many, FK to daily_habits)
 ```
-- **Writes**: per-card independent writes. Each per-card endpoint (`PATCH /api/client/daily-logs/[date]/nutrition`, `/wellness`, and similar) ensures the day's `daily_logs` spine row exists and upserts only its own child table. (The old monolithic `/api/client/daily-logs` POST and its `today`/`streak`/`nutrition-target`/`week` siblings were removed in Session 5.1; the `upsert_daily_log_atomic()` RPC remains in the DB as an unused function — its removal is separate schema work — and must not be used for new writes; since migration 173 its body names food-log columns that no longer exist, so it cannot run at all.)
+- **Writes**: per-card independent writes. Each per-card endpoint (`PATCH /api/client/daily-logs/[date]/nutrition`, `/wellness`, and similar) ensures the day's `daily_logs` spine row exists and upserts only its own child table. (The `upsert_daily_log_atomic()` RPC remains in the DB as an unused function — its removal is separate schema work — and must not be used for new writes; since migration 173 its body names food-log columns that no longer exist, so it cannot run at all.)
 - **Domain-specific reads** query child tables directly (e.g. wellness history queries `wellness_logs`, not the view)
 - **Cross-domain reads** use the `daily_logs_full` view (e.g. attention feed, AI summary generation)
 - Each child table has `client_id` and `date` columns for direct querying without joining the spine
@@ -1433,9 +1433,7 @@ target is in no ratio, and a period with none reads "No targets set", never
 per-day averages all from the same run, each over its named day set. Habits
 divide by eligible days, from `periodAdherence.dates` — never a day count
 derived in the renderer, which resolves differently on a legacy row. The KPI
-ribbon's **Nutrition** cell is that fraction (it was "Calories", a daily
-average over the days a client happened to log, which read HIT for three
-logged days out of seven); the Nutrition card renders the same summary and
+ribbon's **Nutrition** cell is that fraction; the Nutrition card renders the same summary and
 computes nothing — it takes no log rows (`nutrition-section.test.tsx` scans
 for it). Habits come from `perHabit`, built from the HABIT list, so a
 habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
@@ -1464,9 +1462,7 @@ review card names it ("1 logged day had no target and is not counted"). The
 wellness means are unchanged: each metric divides by its OWN logged days
 (stress and mood can be logged on different days), because an unlogged day is
 **unknown, not zero** — dividing by days with no data does not make an average
-smaller, it makes it wrong (two stress entries averaging 6.5 once rendered as
-1.9, "relaxed", beside an AI summary that correctly called the week
-high-stress).
+smaller, it makes it wrong.
 
 **The stored figures** — `check_ins.nutrition_days_on_target` and
 `adherence_percentage` — are the kernel's `onTarget` (over the targeted days;
@@ -1475,12 +1471,7 @@ targeted days the client logged, over the targets of every targeted day),
 written by `submitCheckIn` from the ONE kernel run that also freezes
 `period_snapshot`, so the count, the frozen rows and the client's card cannot
 disagree. The client wire carries `nutritionTargetedDays`, counted from the
-frozen rows, as the count's denominator. Rows written before 2026-08-30 carry
-the older logged-days-only meaning and were **not** backfilled: reconstructing
-each historical week's targets would invent numbers, because plans get
-replaced and events get edited; `comparison-service` reports the change
-between consecutive check-ins, so the first check-in after that switch shows a
-drop against a predecessor measured the old way. It is RN-visible
+frozen rows, as the count's denominator, and both figures are RN-visible
 (`CLIENT-APP-REFERENCE.md` → Adherence Calculations).
 
 **The client-id guard.** The detail is fetched by check-in id but the context by the page's client
