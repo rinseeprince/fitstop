@@ -161,10 +161,11 @@ describe("BlockCard — the round-trip empty states", () => {
     expect(onPlaceProgram).toHaveBeenCalledTimes(1);
   });
 
-  // A set block says when its targets start, as the training column says when
-  // its program starts — a queued prescription on a future block would
-  // otherwise show numbers with no date (migration 166).
-  it("says when the targets start beside the numbers", () => {
+  // A set block says when its targets run, as the training column says when
+  // its program runs — the version's own range under the numbers, in the
+  // grammar the card's header spells the block's (C1); a queued prescription
+  // on a future block would otherwise show numbers with no dates.
+  it("says when the targets run, as a range under the numbers", () => {
     renderCard(makeBlock({ state: "future" }), {
       facts: {
         ...EMPTY_FACTS,
@@ -173,7 +174,8 @@ describe("BlockCard — the round-trip empty states", () => {
         ],
       },
     });
-    expect(screen.getByText(/from 8 Oct/)).toBeDefined();
+    expect(column("Nutrition").getByText("8 Oct – 4 Nov")).toBeDefined();
+    expect(screen.queryByText(/from 8 Oct/)).toBeNull();
     expect(screen.getByText("1,732")).toBeDefined();
   });
 
@@ -200,6 +202,58 @@ describe("BlockCard — the round-trip empty states", () => {
     );
     expect(screen.getByText("Not set")).toBeDefined();
     expect(screen.queryByRole("button", { name: /Not set/ })).toBeNull();
+  });
+});
+
+// C1: every plan and version shows its RANGE — the headline's under its value
+// on both columns, the timeline's in its date column — "24 Aug – 6 Sep", the
+// block header's own grammar; a plan that ran a single day shows one date, and
+// the block boundaries keep their single dates. Never "from <date>".
+describe("BlockCard — every plan shows its range (C1)", () => {
+  const RANGED_FACTS: BlockFacts = {
+    blockId: "blk-1",
+    training: [
+      { id: "p0", name: "Push Pull Legs", startsOn: "2026-08-01", endsOn: "2026-08-14", state: "ended" },
+      { id: "p1", name: "Upper Lower", startsOn: "2026-08-15", endsOn: "2026-09-30", state: "active" },
+    ],
+    nutrition: [
+      { id: "v1", startsOn: "2026-08-03", endsOn: "2026-09-30", state: "active", calories: 2140, deficitPerDay: 310, note: "Dropping 100 kcal." },
+    ],
+  };
+
+  it("the headline's meta line is the plan's range on both columns, not 'from <date>'", () => {
+    renderCard(makeBlock({ state: "current" }), { facts: RANGED_FACTS });
+    expect(column("Training").getByText("15 Aug – 30 Sep")).toBeDefined();
+    expect(column("Nutrition").getByText("3 Aug – 30 Sep")).toBeDefined();
+    expect(screen.queryByText(/^from /)).toBeNull();
+  });
+
+  it("the timeline lists each plan and version with its range; block boundaries keep one date", () => {
+    renderCard(makeBlock({ state: "past", startsOn: "2026-08-01", endsOn: "2026-09-30" }), {
+      facts: RANGED_FACTS,
+    });
+    const timeline = within(screen.getByRole("list"));
+    const rows = timeline.getAllByRole("listitem").map((row) => row.textContent);
+    expect(rows[0]).toMatch(/^1 AugBlock started$/);
+    expect(rows[1]).toMatch(/^1 Aug – 14 AugPush Pull LegsEnded$/);
+    expect(rows[2]).toMatch(/^3 Aug – 30 SepNutritionActive2,140 kcal · −310 kcal\/dayDropping 100 kcal\.$/);
+    expect(rows[3]).toMatch(/^15 Aug – 30 SepUpper LowerActive$/);
+    expect(rows[4]).toMatch(/^30 SepBlock ended$/);
+  });
+
+  it("a plan that ran a single day shows one date, not a range of itself", () => {
+    renderCard(makeBlock({ state: "current" }), {
+      facts: {
+        ...EMPTY_FACTS,
+        training: [
+          { id: "p1", name: "Test Day", startsOn: "2026-08-05", endsOn: "2026-08-05", state: "ended" },
+        ],
+      },
+    });
+    expect(column("Training").getByText("5 Aug")).toBeDefined();
+    const rows = within(screen.getByRole("list")).getAllByRole("listitem").map((r) => r.textContent);
+    expect(rows).toContain("5 AugTest DayEnded");
+    expect(screen.queryByText(/5 Aug – 5 Aug/)).toBeNull();
   });
 });
 

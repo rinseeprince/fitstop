@@ -15,7 +15,7 @@ import {
   TEXT_SECONDARY,
   TRAINING_CARD_BORDER,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { formatBlockDate, splitDeficitPerDay } from "@/lib/blocks/block-format";
+import { formatBlockDate, formatBlockRange, splitDeficitPerDay } from "@/lib/blocks/block-format";
 import { selectHeadlineFact } from "@/lib/blocks/block-headline";
 import { BlockTimeline, deriveTimelineEntries } from "./block-timeline";
 import { PlanStateChip } from "./plan-state-chip";
@@ -167,7 +167,8 @@ function TrainingColumn({
   // timeline below. The way in rides the headline's line — the position the
   // empty state's line holds — and the state chip sits after the value only
   // when the headline is not in force: a running block's header already says
-  // it is running.
+  // it is running. Under the value, the plan's own range, in the grammar the
+  // card's header spells the block's.
   const shown = selectHeadlineFact(facts.training);
   if (!shown) {
     return setUp ? (
@@ -194,7 +195,7 @@ function TrainingColumn({
         )}
       </p>
       <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-        from {formatBlockDate(shown.startsOn)}
+        {formatBlockRange(shown.startsOn, shown.endsOn)}
       </p>
     </div>
   );
@@ -246,7 +247,7 @@ function NutritionColumn({
         )}
       </p>
       <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-        from {formatBlockDate(shown.startsOn)}
+        {formatBlockRange(shown.startsOn, shown.endsOn)}
       </p>
     </div>
   );

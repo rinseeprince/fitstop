@@ -33,12 +33,13 @@ const plan = (
   id: string,
   name: string,
   startsOn: string,
-  state: BlockPlanState = "active"
+  state: BlockPlanState = "active",
+  endsOn = "2027-12-31"
 ) => ({
   id,
   name,
   startsOn,
-  endsOn: "2027-12-31",
+  endsOn,
   state,
 });
 
@@ -168,6 +169,65 @@ describe("deriveTimelineEntries", () => {
       ["Peak", "active"],
       ["Nutrition", "upcoming"],
     ]);
+  });
+
+  // Every plan and version row carries its RANGE — the row's own window, start
+  // to end — so the date column reads "24 Aug – 6 Sep"; a block boundary is a
+  // single date and carries no end. The start stays the sort key.
+  describe("ranges (C1)", () => {
+    it("a plan's row carries its start as the date and its own end", () => {
+      const entries = deriveTimelineEntries(
+        { ...BLOCK, state: "current" },
+        [plan("p1", "Push Pull Legs", "2026-06-03", "ended", "2026-06-16")],
+        []
+      );
+      const row = entries.find((e) => e.label === "Push Pull Legs");
+      expect(row).toMatchObject({ date: "2026-06-03", endsOn: "2026-06-16" });
+    });
+
+    it("a version's row carries its own end too, beside its numbers", () => {
+      const entries = deriveTimelineEntries(
+        { ...BLOCK, state: "current" },
+        [],
+        [
+          {
+            id: "v1",
+            startsOn: "2026-06-07",
+            endsOn: "2026-06-20",
+            state: "active",
+            calories: 2200,
+            deficitPerDay: 343,
+            note: null,
+          },
+        ]
+      );
+      const row = entries.find((e) => e.label === "Nutrition");
+      expect(row).toMatchObject({
+        date: "2026-06-07",
+        endsOn: "2026-06-20",
+        detail: "2,200 kcal · −343 kcal/day",
+      });
+    });
+
+    it("block boundaries carry no end — one date each", () => {
+      const entries = deriveTimelineEntries({ ...BLOCK, state: "past" }, [], []);
+      expect(entries.map((e) => [e.label, e.date, e.endsOn])).toEqual([
+        ["Block started", "2026-06-01", undefined],
+        ["Block ended", "2026-06-28", undefined],
+      ]);
+    });
+
+    it("rows still sort by their START, whatever their ends", () => {
+      const entries = deriveTimelineEntries(
+        { ...BLOCK, state: "current" },
+        [
+          plan("p2", "Later", "2026-06-15", "upcoming", "2026-06-20"),
+          plan("p1", "Earlier", "2026-06-03", "ended", "2026-06-28"),
+        ],
+        []
+      );
+      expect(entries.map((e) => e.label)).toEqual(["Block started", "Earlier", "Later"]);
+    });
   });
 
   // A version's save note NESTS under its own entry — evidence for the change

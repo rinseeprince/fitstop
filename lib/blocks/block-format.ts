@@ -16,6 +16,17 @@ export function formatBlockDate(iso: string): string {
 }
 
 /**
+ * "24 Aug – 4 Oct" — a window as the block card's header spells a block's, so
+ * a plan's range on the card and its timeline read in the block's own grammar.
+ * A window of one day is one date: "7 Sep", never "7 Sep – 7 Sep".
+ */
+export function formatBlockRange(startsOn: string, endsOn: string): string {
+  return startsOn === endsOn
+    ? formatBlockDate(startsOn)
+    : `${formatBlockDate(startsOn)} – ${formatBlockDate(endsOn)}`;
+}
+
+/**
  * "−629 kcal/day", "+120 kcal/day", "±0 kcal/day".
  *
  * Positive `deficitPerDay` is a DEFICIT and renders with a minus: the number

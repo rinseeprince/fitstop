@@ -5,7 +5,7 @@ import {
   MONO_LABEL_CLASS,
   TEXT_SECONDARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import { formatBlockDate, formatNutritionEra } from "@/lib/blocks/block-format";
+import { formatBlockRange, formatNutritionEra } from "@/lib/blocks/block-format";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import type {
   BlockNutritionFact,
@@ -17,14 +17,19 @@ import { PlanStateChip } from "./plan-state-chip";
 // "What happened" — the expanded block card's vertical timeline. Sources: block
 // boundaries (derived), training placements in the window, and the nutrition
 // versions that start in the window, each carrying its save note — all from the
-// facts read. Every plan and version starting in the block is listed, each on
-// its start date with the state the wire stamped (Active / Planned / Ended),
-// while the columns above headline one entry per track. Plan amendments are
-// invisible by design (audit_logs has no readers).
+// facts read. Every plan and version starting in the block is listed with its
+// RANGE — the row's own window, start to end — and the state the wire stamped
+// (Active / Planned / Ended), while the columns above headline one entry per
+// track. Block boundaries are a single date. Plan amendments are invisible by
+// design (audit_logs has no readers).
 
 interface BlockTimelineEntry {
   key: string;
+  /** The entry's start — the sort key, and the one date a block boundary has. */
   date: string;
+  /** A plan's or version's last day (the row's `effective_until`), so the date
+   *  column reads as a range; a block boundary carries none. */
+  endsOn?: string;
   label: string;
   /** Number-bearing data rendered beside the label, in mono. The label stays
    *  word-only and sans, so the two registers do not blur (design system:
@@ -57,6 +62,7 @@ export function deriveTimelineEntries(
       entries.push({
         key: `plan-${plan.id}`,
         date: plan.startsOn,
+        endsOn: plan.endsOn,
         label: plan.name,
         state: plan.state,
       });
@@ -78,6 +84,7 @@ export function deriveTimelineEntries(
       entries.push({
         key: `nutrition-${fact.id}`,
         date: fact.startsOn,
+        endsOn: fact.endsOn,
         label: "Nutrition",
         state: fact.state,
         detail: formatNutritionEra({ calories: fact.calories, deficitPerDay: fact.deficitPerDay }),
@@ -122,33 +129,41 @@ export function BlockTimeline({ entries, color }: BlockTimelineProps) {
     return <p className="text-xs text-[#93b0b4]">Nothing yet.</p>;
   }
 
+  // Two columns for the whole list — the date column sized to its widest
+  // entry, the rest beside it — with every row a subgrid over them, so a
+  // plan's range and a boundary's single date share one column and the labels
+  // line up down the list. A note sits in the label column by construction,
+  // under its own entry, rather than at a hand-measured indent that only ever
+  // matched a one-date column.
   return (
-    <ul className="relative ml-1 space-y-2 border-l border-[rgba(13,148,136,0.08)] pl-3.5">
+    <ul className="relative ml-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-2 border-l border-[rgba(13,148,136,0.08)] pl-3.5">
       {entries.map((entry) => (
-        <li key={entry.key} className="relative">
-          <div className="flex items-baseline gap-2.5">
-            <span
-              className="absolute -left-[19.5px] top-[3px] h-2 w-2 rounded-full border-2 border-white"
-              style={{ backgroundColor: color }}
-            />
-            <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal shrink-0")}>
-              {formatBlockDate(entry.date)}
-            </span>
-            <span className={cn("text-xs", TEXT_SECONDARY)}>{entry.label}</span>
-            {entry.state && <PlanStateChip state={entry.state} />}
-            {entry.detail && (
-              <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-                {entry.detail}
-              </span>
+        <li key={entry.key} className="relative col-span-2 grid grid-cols-subgrid items-baseline">
+          <span
+            className="absolute -left-[19.5px] top-[3px] h-2 w-2 rounded-full border-2 border-white"
+            style={{ backgroundColor: color }}
+          />
+          <span className={cn(MONO_LABEL_CLASS, "whitespace-nowrap normal-case tracking-normal")}>
+            {formatBlockRange(entry.date, entry.endsOn ?? entry.date)}
+          </span>
+          <div>
+            <div className="flex flex-wrap items-baseline gap-2.5">
+              <span className={cn("text-xs", TEXT_SECONDARY)}>{entry.label}</span>
+              {entry.state && <PlanStateChip state={entry.state} />}
+              {entry.detail && (
+                <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+                  {entry.detail}
+                </span>
+              )}
+            </div>
+            {/* In the label column, so a note reads as belonging to the row
+                above it rather than as its own dateless event. */}
+            {entry.note && (
+              <div className="mt-1.5">
+                <TimelineNote body={entry.note} />
+              </div>
             )}
           </div>
-          {/* Indented to the label column, so a note reads as belonging to the
-              row above it rather than as its own dateless event. */}
-          {entry.note && (
-            <div className="mt-1.5 pl-[52px]">
-              <TimelineNote body={entry.note} />
-            </div>
-          )}
         </li>
       ))}
     </ul>
