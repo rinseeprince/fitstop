@@ -274,7 +274,7 @@ export function BlockForm({
         </div>
 
         {needsStartField && (
-          <div className="space-y-1.5">
+          <div className="w-[150px] space-y-1.5">
             <Label htmlFor="block-starts" className={FIELD_LABEL}>
               Starts
             </Label>
@@ -282,7 +282,7 @@ export function BlockForm({
               id="block-starts"
               type="date"
               min={minStart ?? undefined}
-              className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-[150px] text-xs")}
+              className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-full text-xs")}
               {...register("startsOn")}
             />
             {errors.startsOn && (
@@ -303,7 +303,9 @@ export function BlockForm({
             </p>
           </div>
         ) : (
-          <div className="space-y-1.5">
+          // The column is the date box's width, so the sentence under Ends
+          // wraps beneath it rather than widening the column past the box.
+          <div className="w-[150px] space-y-1.5">
             <Label htmlFor="block-ends" className={FIELD_LABEL}>
               Ends
             </Label>
@@ -312,7 +314,7 @@ export function BlockForm({
               type="date"
               min={minEnd && nextStart && minEnd > nextStart ? minEnd : nextStart ?? undefined}
               max={maxEnd}
-              className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-[150px] text-xs")}
+              className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-full text-xs")}
               {...register("endsOn")}
             />
             {errors.endsOn ? (
