@@ -6,7 +6,7 @@ import { applySurplusSplit } from "@/utils/nutrition-helpers";
  * Get total calories for a nutrition event, respecting the activity burn toggle.
  * New model: percentage surplus. Legacy model: flat burn addition.
  */
-export function getTotalCalories(
+function getTotalCalories(
   event: NutritionEvent,
   includeActivityBurn: boolean
 ): number {

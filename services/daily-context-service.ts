@@ -6,58 +6,26 @@
 
 import { supabaseAdmin } from "./supabase-admin";
 import { getEventForDate } from "./training-event-service";
-import { getNutritionEventForDate } from "./nutrition-days-service";
+import {
+  getNutritionTargetsForDateRange,
+  type NutritionDayTarget,
+} from "./nutrition-days-service";
 import { getNutritionPlanIdForDate } from "./nutrition-plan-service";
 import { getActiveTrainingPlanId } from "./training-service";
-import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 
 /**
  * The client's target on a specific date, from the day as COMPUTED (the version
- * covering the date, its grid row, the session on the date, the coach's edit).
- * Returns null when no version covers the date — a gap between plans.
- * Optional includeActivityBurn / surplusAsCarbs avoid repeated clients table queries when called in a loop.
+ * covering the date, its grid row, the session on the date, the coach's edit),
+ * through the client's display switches — the day reader's target over one
+ * day. Returns null when no version covers the date — a gap between plans.
+ * The food log stores no target: this is the answer for a logged day too.
  */
-type PlanDayTarget = {
-  calories: number;
-  proteinG: number;
-  carbsG: number;
-  fatG: number;
-  isTrainingDay: boolean;
-  note: string | null;
-};
-
 export const getPlanTargetForDate = async (
   clientId: string,
-  date: string,
-  includeActivityBurn?: boolean,
-  surplusAsCarbs?: boolean
-): Promise<PlanDayTarget | null> => {
-  // Resolve the display prefs once if not passed by caller (single query).
-  let burnFlag = includeActivityBurn;
-  let splitFlag = surplusAsCarbs;
-  if (burnFlag === undefined || splitFlag === undefined) {
-    const { data: clientRow } = await supabaseAdmin
-      .from("clients").select("include_activity_burn, surplus_as_carbs").eq("id", clientId).single();
-    if (burnFlag === undefined) burnFlag = clientRow?.include_activity_burn !== false;
-    if (splitFlag === undefined) splitFlag = clientRow?.surplus_as_carbs ?? false;
-  }
-
-  const event = await getNutritionEventForDate(clientId, date);
-  if (!event) return null;
-
-  // Reuse the calendar mapper so the per-day lane (and the weekly denominators
-  // it feeds) split a training surplus the same way the program card + calendar
-  // do — protein held; surplusAsCarbs decides carbs-only vs keep-split. Calories
-  // are unchanged by the split, so adherence is unaffected.
-  const target = mapNutritionEventToDisplayTarget(event, burnFlag, splitFlag);
-  return {
-    calories: target.calories,
-    proteinG: target.proteinG,
-    carbsG: target.carbsG,
-    fatG: target.fatG,
-    isTrainingDay: target.isTrainingDay,
-    note: event.note ?? null,
-  };
+  date: string
+): Promise<NutritionDayTarget | null> => {
+  const targets = await getNutritionTargetsForDateRange(clientId, date, date);
+  return targets.get(date) ?? null;
 };
 
 // ---------------------------------------------------------------------------
@@ -178,32 +146,49 @@ export const assertHasActivePlan = (
 
 type NutritionForDate = {
   consumed: { calories: number | null; proteinG: number | null; carbsG: number | null; fatG: number | null } | null;
-  // `note` is the coach's per-day note (event source only — a logged day reads
-  // the frozen nutrition_logs snapshot, which has no note column).
+  // `note` is the coach's per-day note, carried by the computed day.
   target: { calories: number; proteinG: number | null; carbsG: number | null; fatG: number | null; note?: string | null } | null;
   source: "log" | "event" | null;
 };
 
 /**
- * Resolve the nutrition card for a date by the read priority:
- *   1. Logged day → the snapshot in `nutrition_logs` (authoritative).
- *   2. Unlogged day a version covers → the computed day (via getPlanTargetForDate).
- *   3. Unlogged day no version covers → null: no target exists that day.
- * A `nutrition_logs` row existing = "logged" regardless of values (distinguishes absent vs
- * empty, which the daily_logs_full view cannot).
+ * Resolve the nutrition card for a date. What the client ATE is the
+ * `nutrition_logs` row, when one exists — a row existing = "logged" regardless
+ * of values (distinguishes absent vs empty, which the daily_logs_full view
+ * cannot) — and the TARGET for EVERY day, logged or not, is the computed day
+ * (`getPlanTargetForDate`): the log stores no target, so a coach's change to
+ * today and a session landing on a logged day reach this read at once.
+ *   `source: "log"`   — a row exists; the target is the computed day or null
+ *                        (a gap: the meals were logged with no target to judge).
+ *   `source: "event"` — no row, a version covers the date: the target alone.
+ *   `source: null`    — no row and no version: nothing on that day.
  */
 export const getNutritionForDate = async (
   clientId: string,
   date: string
 ): Promise<NutritionForDate> => {
-  const { data: logRow } = await supabaseAdmin
-    .from("nutrition_logs")
-    .select(
-      "calories_consumed, protein_g, carbs_g, fat_g, target_calories, target_protein_g, target_carbs_g, target_fat_g"
-    )
-    .eq("client_id", clientId)
-    .eq("date", date)
-    .maybeSingle();
+  const [{ data: logRow, error }, planTarget] = await Promise.all([
+    supabaseAdmin
+      .from("nutrition_logs")
+      .select("calories_consumed, protein_g, carbs_g, fat_g")
+      .eq("client_id", clientId)
+      .eq("date", date)
+      .maybeSingle(),
+    getPlanTargetForDate(clientId, date),
+  ]);
+  if (error) {
+    throw new Error(`Failed to read the nutrition log: ${error.message}`);
+  }
+
+  const target = planTarget
+    ? {
+        calories: planTarget.calories,
+        proteinG: planTarget.proteinG,
+        carbsG: planTarget.carbsG,
+        fatG: planTarget.fatG,
+        note: planTarget.note,
+      }
+    : null;
 
   if (logRow) {
     return {
@@ -213,33 +198,10 @@ export const getNutritionForDate = async (
         carbsG: logRow.carbs_g,
         fatG: logRow.fat_g,
       },
-      target:
-        logRow.target_calories != null
-          ? {
-              calories: logRow.target_calories,
-              proteinG: logRow.target_protein_g,
-              carbsG: logRow.target_carbs_g,
-              fatG: logRow.target_fat_g,
-            }
-          : null,
+      target,
       source: "log",
     };
   }
 
-  const planTarget = await getPlanTargetForDate(clientId, date);
-  if (planTarget) {
-    return {
-      consumed: null,
-      target: {
-        calories: planTarget.calories,
-        proteinG: planTarget.proteinG,
-        carbsG: planTarget.carbsG,
-        fatG: planTarget.fatG,
-        note: planTarget.note,
-      },
-      source: "event",
-    };
-  }
-
-  return { consumed: null, target: null, source: null };
+  return { consumed: null, target, source: target ? "event" : null };
 };

@@ -25,8 +25,28 @@ vi.mock('./today-service', () => ({
   getClientTodayString: vi.fn().mockResolvedValue('2026-04-08'),
 }));
 
+// The day's target is the computed day: the readers look it up beside the
+// view read and derive the DailyLog target fields from it.
+vi.mock('./nutrition-days-service', () => ({
+  getNutritionTargetsForDateRange: vi.fn().mockResolvedValue(new Map()),
+}));
+
 import { supabaseAdmin } from './supabase-admin';
 import { getClientTodayString } from './today-service';
+import {
+  getNutritionTargetsForDateRange,
+  type NutritionDayTarget,
+} from './nutrition-days-service';
+
+const computedTarget = (date: string, calories: number): NutritionDayTarget => ({
+  date,
+  calories,
+  proteinG: 160,
+  carbsG: 210,
+  fatG: 65,
+  isTrainingDay: false,
+  note: null,
+});
 
 function createMockQuery(result: { data: unknown; error: unknown }) {
   const mockQuery = {
@@ -192,38 +212,42 @@ describe('Daily Logs Service - Pure Functions', () => {
 describe('Daily Logs Service - Database Functions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getNutritionTargetsForDateRange).mockResolvedValue(new Map());
   });
 
   describe('mapRowToDailyLog', () => {
-    it('maps a daily_logs_full row to camelCase and null → undefined', () => {
-      const row = {
-        id: 'log-1',
-        client_id: 'c-1',
-        date: '2026-05-21',
-        notes: null,
-        created_at: '2026-05-21T10:00:00Z',
-        updated_at: '2026-05-21T11:00:00Z',
-        mood: 4,
-        energy: null,
-        sleep: 7,
-        stress: null,
-        soreness: 6,
-        calories_consumed: 2000,
-        protein_g: 150,
-        carbs_g: null,
-        fat_g: 60,
-        target_calories: 2100,
-        target_protein_g: 160,
-        target_carbs_g: null,
-        target_fat_g: null,
-        nutrition_adherence: 'partial',
-        calorie_surplus_deficit: -100,
-        trained: true,
-        training_session_id: 'sess-1',
-        training_data: null,
-      };
+    // A row of what the client ate. The stale target columns it still carries
+    // (until migration 173 drops them) are never read: the target is the
+    // computed day handed in, and the verdict is derived from the pair.
+    const row = {
+      id: 'log-1',
+      client_id: 'c-1',
+      date: '2026-05-21',
+      notes: null,
+      created_at: '2026-05-21T10:00:00Z',
+      updated_at: '2026-05-21T11:00:00Z',
+      mood: 4,
+      energy: null,
+      sleep: 7,
+      stress: null,
+      soreness: 6,
+      calories_consumed: 2000,
+      protein_g: 150,
+      carbs_g: null,
+      fat_g: 60,
+      target_calories: 9999,
+      target_protein_g: 1,
+      target_carbs_g: 1,
+      target_fat_g: 1,
+      nutrition_adherence: 'hit',
+      calorie_surplus_deficit: 0,
+      trained: true,
+      training_session_id: 'sess-1',
+      training_data: null,
+    };
 
-      const log = mapRowToDailyLog(row as never);
+    it('maps a daily_logs_full row to camelCase and null → undefined, deriving the target fields from the computed day', () => {
+      const log = mapRowToDailyLog(row as never, computedTarget('2026-05-21', 2100));
 
       expect(log.id).toBe('log-1');
       expect(log.clientId).toBe('c-1');
@@ -235,7 +259,10 @@ describe('Daily Logs Service - Database Functions', () => {
       expect(log.caloriesConsumed).toBe(2000);
       expect(log.carbsG).toBeUndefined();
       expect(log.targetCalories).toBe(2100);
-      expect(log.targetCarbsG).toBeUndefined();
+      expect(log.targetProteinG).toBe(160);
+      expect(log.targetCarbsG).toBe(210);
+      expect(log.targetFatG).toBe(65);
+      // |2000 − 2100| = 100 → partial, −100: the row's own 'hit' / 0 are not read.
       expect(log.nutritionAdherence).toBe('partial');
       expect(log.calorieSurplusDeficit).toBe(-100);
       expect(log.trained).toBe(true);
@@ -244,16 +271,28 @@ describe('Daily Logs Service - Database Functions', () => {
       expect(log.createdAt).toBe('2026-05-21T10:00:00Z');
       expect(log.updatedAt).toBe('2026-05-21T11:00:00Z');
     });
+
+    it('a day with no computed target carries no target and no verdict', () => {
+      const log = mapRowToDailyLog(row as never, null);
+
+      expect(log.caloriesConsumed).toBe(2000);
+      expect(log.targetCalories).toBeUndefined();
+      expect(log.targetProteinG).toBeUndefined();
+      expect(log.nutritionAdherence).toBeUndefined();
+      expect(log.calorieSurplusDeficit).toBeUndefined();
+    });
   });
 
   describe('getDailyLogs', () => {
-    it('fetches logs in date range', async () => {
+    it('fetches logs in date range and looks their targets up in one batched read over the same range', async () => {
       const mockData = [
         {
           id: 'log-1',
           client_id: 'client-123',
           date: '2024-01-15',
           mood: 4,
+          calories_consumed: 2000,
+          target_calories: 9999,
           created_at: '2024-01-15T10:00:00Z',
           updated_at: '2024-01-15T10:00:00Z',
         },
@@ -261,37 +300,51 @@ describe('Daily Logs Service - Database Functions', () => {
 
       const mockQuery = createMockQuery({ data: mockData, error: null });
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any);
+      vi.mocked(getNutritionTargetsForDateRange).mockResolvedValue(
+        new Map([['2024-01-15', computedTarget('2024-01-15', 2100)]])
+      );
 
       const result = await getDailyLogs('client-123', '2024-01-01', '2024-01-31');
-      
+
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('log-1');
+      expect(result[0].targetCalories).toBe(2100);
+      expect(result[0].nutritionAdherence).toBe('partial');
       expect(mockQuery.gte).toHaveBeenCalledWith('date', '2024-01-01');
       expect(mockQuery.lte).toHaveBeenCalledWith('date', '2024-01-31');
+      expect(getNutritionTargetsForDateRange).toHaveBeenCalledTimes(1);
+      expect(getNutritionTargetsForDateRange).toHaveBeenCalledWith('client-123', '2024-01-01', '2024-01-31');
     });
   });
 
   describe('getTodayLog', () => {
-    it("returns today's log when exists, querying the client-local today", async () => {
+    it("returns today's log when exists, querying the client-local today, with the day's computed target", async () => {
       const mockData = {
         id: 'log-today',
         client_id: 'client-123',
         date: '2026-04-08', // the mocked client-local today
         mood: 5,
+        calories_consumed: 2100,
         created_at: '2024-01-15T10:00:00Z',
         updated_at: '2024-01-15T10:00:00Z',
       };
 
       const mockQuery = createMockQuery({ data: mockData, error: null });
       vi.mocked(supabaseAdmin.from).mockReturnValue(mockQuery as any);
+      vi.mocked(getNutritionTargetsForDateRange).mockResolvedValue(
+        new Map([['2026-04-08', computedTarget('2026-04-08', 2100)]])
+      );
 
       const result = await getTodayLog('client-123');
 
       expect(result?.id).toBe('log-today');
       expect(result?.mood).toBe(5);
+      expect(result?.targetCalories).toBe(2100);
+      expect(result?.nutritionAdherence).toBe('hit');
       // The default date is the CLIENT's local today, not the host clock.
       expect(getClientTodayString).toHaveBeenCalledWith('client-123');
       expect(mockQuery.eq).toHaveBeenCalledWith('date', '2026-04-08');
+      expect(getNutritionTargetsForDateRange).toHaveBeenCalledWith('client-123', '2026-04-08', '2026-04-08');
     });
 
     it('returns null when no log today', async () => {

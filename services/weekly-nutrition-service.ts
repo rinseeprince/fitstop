@@ -5,13 +5,15 @@ import {
   type FullWeekTargets,
 } from "@/utils/weekly-nutrition-helpers";
 import { mapNutritionRowToDailyLog, type NutritionRow } from "@/utils/weekly-nutrition-mappers";
-import { fetchNutritionDataForPeriod } from "./schedule-data-service";
-import { getNutritionEventsForDateRange } from "./nutrition-days-service";
-import { buildNutritionSummary } from "@/utils/nutrition-period-summary";
-import { addDaysToDateString } from "@/lib/date-helpers";
+import {
+  getNutritionTargetsForDateRange,
+  type NutritionDayTarget,
+} from "./nutrition-days-service";
+import { expandDateRange } from "@/lib/date-helpers";
 
+/** What the client ate — the log stores no target and no verdict. */
 const NUTRITION_LOG_SELECT =
-  "id, client_id, date, calories_consumed, protein_g, carbs_g, fat_g, target_calories, target_protein_g, target_carbs_g, target_fat_g, created_at, updated_at";
+  "id, client_id, date, calories_consumed, protein_g, carbs_g, fat_g, created_at, updated_at";
 
 /**
  * What the client was SUPPOSED to eat across the whole period — every day of
@@ -22,40 +24,27 @@ const NUTRITION_LOG_SELECT =
  * the three days they skipped contribute to neither side of the ratio, so the
  * week they mostly ignored scores the same as a week they nailed.
  *
- * `buildNutritionSummary` already resolves each day's target with the right
- * precedence — a logged day's frozen target (it includes the activity burn
- * computed at log time), else that date's nutrition event, else the plan's
- * weekday template — so this is a sum over its output, not a fourth spelling
- * of the same resolution. `null` when the period has no targets at all: the
- * caller then falls back to the logged-days total, which is what it did for
- * every call before this.
+ * Every day's target is the COMPUTED day — the version covering the date, its
+ * grid row, the session on the date, the coach's edit — logged or not; a day
+ * no version covers contributes nothing. `null` when the period has no
+ * targets at all: the caller then falls back to the logged-days total, which
+ * is what it did for every call before this.
  */
-async function buildFullWeekTargets(
-  clientId: string,
-  startDate: string,
-  endDate: string
-): Promise<FullWeekTargets | null> {
-  const dates: string[] = [];
-  for (let date = startDate; date <= endDate; date = addDaysToDateString(date, 1)) {
-    dates.push(date);
-  }
-
-  const [{ plans, nutritionLogs }, events] = await Promise.all([
-    fetchNutritionDataForPeriod(clientId, startDate, endDate),
-    getNutritionEventsForDateRange(clientId, startDate, endDate),
-  ]);
-
-  const days = buildNutritionSummary(dates, plans, nutritionLogs, events);
-
+function sumFullWeekTargets(
+  dates: readonly string[],
+  targets: ReadonlyMap<string, NutritionDayTarget>
+): FullWeekTargets | null {
   let calories = 0;
   let proteinG = 0;
   let carbsG = 0;
   let fatG = 0;
-  for (const day of days) {
-    calories += day.targetCalories ?? 0;
-    proteinG += day.targetProteinG ?? 0;
-    carbsG += day.targetCarbsG ?? 0;
-    fatG += day.targetFatG ?? 0;
+  for (const date of dates) {
+    const target = targets.get(date);
+    if (!target) continue;
+    calories += target.calories;
+    proteinG += target.proteinG;
+    carbsG += target.carbsG;
+    fatG += target.fatG;
   }
 
   if (calories <= 0) return null;
@@ -93,15 +82,17 @@ export async function getNutritionSummaryForPeriod(
 
   if (!rows || rows.length === 0) return null;
 
-  const logs = rows.map(mapNutritionRowToDailyLog);
+  // One target lookup over the period serves both halves: the logged days'
+  // own targets (their verdicts) and the whole-period denominator.
+  const targets = await getNutritionTargetsForDateRange(clientId, startDate, endDate);
+  const logs = rows.map((row) => mapNutritionRowToDailyLog(row, targets.get(row.date) ?? null));
 
-  const startMs = new Date(startDate + "T00:00:00").getTime();
-  const endMs = new Date(endDate + "T00:00:00").getTime();
-  const daysInPeriod = Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1;
+  const dates = expandDateRange(startDate, endDate);
+  const daysInPeriod = dates.length;
 
   // Whole-period targets, not the logged days' own. `null` keeps the previous
   // logged-days-only behaviour rather than inventing a target from nothing.
-  const fullWeekTargets = await buildFullWeekTargets(clientId, startDate, endDate);
+  const fullWeekTargets = sumFullWeekTargets(dates, targets);
 
   const summary = calculateWeeklySummaryFromLogs(
     logs,

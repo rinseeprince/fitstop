@@ -113,8 +113,8 @@ export const KPIRibbon = ({
   // happened to log. Three logged days at target used to read "HIT" against a
   // daily average, which is a statement about three days dressed as a statement
   // about the week. The 50 / 150 kcal literals that produced it went with it;
-  // "on target" is the persisted per-day `nutrition_adherence`, one definition
-  // shared with the Overview rails.
+  // "on target" is the per-day verdict derived from what was eaten against the
+  // day's computed target, one definition shared with the Overview rails.
   const onTarget = nutrition?.onTarget ?? 0;
   const nutritionDenominator = periodDays ?? 0;
   const hasNutrition = nutrition !== null && nutritionDenominator > 0;

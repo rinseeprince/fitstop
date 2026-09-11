@@ -2,8 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock("./today-service", () => ({ getClientTodayString: vi.fn() }));
+// The day's target is the computed day, read in one batched lookup beside the
+// logs; the verdict is derived here from what was eaten against it.
+vi.mock("./nutrition-days-service", () => ({ getNutritionTargetsForDateRange: vi.fn() }));
 
 import { supabaseAdmin } from "./supabase-admin";
+import { getNutritionTargetsForDateRange } from "./nutrition-days-service";
 import {
   buildAdherenceSummary,
   classifyTrainingDay,
@@ -14,14 +18,16 @@ import {
 } from "./client-adherence-service";
 
 /** A nutrition row that carries a consumed value — a logged day by itself. */
-const nut = (date: string, nutrition_adherence: string | null) => ({
+const nut = (date: string, calories_consumed = 2000) => ({
   date,
-  nutrition_adherence,
-  calories_consumed: 2000,
+  calories_consumed,
   protein_g: null,
   carbs_g: null,
   fat_g: null,
 });
+
+/** The day's computed target calories. */
+const target = (date: string, calories: number) => ({ date, calories });
 
 describe("classifyTrainingDay", () => {
   it("follows the classification table for single-event days", () => {
@@ -42,7 +48,7 @@ describe("classifyTrainingDay", () => {
 });
 
 describe("classifyNutritionDay", () => {
-  it("maps the persisted adherence values and treats absence as no_log", () => {
+  it("maps the derived adherence values and treats absence as no_log", () => {
     expect(classifyNutritionDay("hit")).toBe("complete");
     expect(classifyNutritionDay("partial")).toBe("partial");
     expect(classifyNutritionDay("missed")).toBe("missed");
@@ -79,10 +85,15 @@ describe("buildAdherenceSummary", () => {
       { date: "2026-07-23", status: "scheduled" },
     ],
     nutritionLogs: [
-      nut("2026-07-20", "hit"),
-      nut("2026-07-21", "partial"),
-      nut("2026-07-22", null),
+      nut("2026-07-20", 2000), // against 2000 → hit
+      nut("2026-07-21", 2000), // against 2100 → partial
+      nut("2026-07-22", 2000), // no target that day → no verdict
       // no row on the 23rd
+    ],
+    nutritionTargets: [
+      target("2026-07-20", 2000),
+      target("2026-07-21", 2100),
+      target("2026-07-23", 2000),
     ],
     habits: [
       { id: "h1", name: "Water", effective_date: "2026-07-01" },
@@ -179,11 +190,33 @@ describe("buildAdherenceSummary", () => {
     expect(summary.habits.daysBelow50).toBe(2);
   });
 
+  // The verdict comes from what was eaten against the COMPUTED target — a
+  // stale verdict or target still on the row (until migration 173 drops the
+  // columns) is never read.
+  it("derives every nutrition verdict from the computed target, never from a value on the row", () => {
+    const stale: (AdherenceSourceRows["nutritionLogs"][number] & {
+      nutrition_adherence: string;
+      target_calories: number;
+    })[] = [
+      { ...nut("2026-07-20", 2000), nutrition_adherence: "missed", target_calories: 9999 },
+      { ...nut("2026-07-21", 2400), nutrition_adherence: "hit", target_calories: 2400 },
+    ];
+    const summary = buildAdherenceSummary({
+      ...fixture,
+      nutritionLogs: stale,
+      nutritionTargets: [target("2026-07-20", 2000), target("2026-07-21", 2000)],
+    });
+
+    // 2000 vs 2000 → complete; 2400 vs 2000 → missed. The rows said the reverse.
+    expect(summary.nutrition.rail).toEqual(["complete", "missed", "no_log", "no_log"]);
+  });
+
   it("returns null percentages when a rail has no signal", () => {
     const empty = buildAdherenceSummary({
       dates,
       trainingEvents: [],
       nutritionLogs: [],
+      nutritionTargets: [],
       habits: [],
       habitLogs: [],
       wellnessLogs: [],
@@ -266,7 +299,8 @@ describe("the nutrition denominator", () => {
     const summary = buildAdherenceSummary({
       dates: ["d1", "d2", "d3", "d4", "d5", "d6", "d7"],
       trainingEvents: [],
-      nutritionLogs: [nut("d1", "hit"), nut("d2", "hit"), nut("d3", "hit")],
+      nutritionLogs: [nut("d1"), nut("d2"), nut("d3")],
+      nutritionTargets: [target("d1", 2000), target("d2", 2000), target("d3", 2000)],
       habits: [],
       habitLogs: [],
       wellnessLogs: [],
@@ -284,7 +318,8 @@ describe("the nutrition denominator", () => {
     const summary = buildAdherenceSummary({
       dates: ["d1", "d2", "d3"],
       trainingEvents: [],
-      nutritionLogs: [nut("d1", "hit"), nut("d2", "hit"), nut("d3", "hit")],
+      nutritionLogs: [nut("d1"), nut("d2"), nut("d3")],
+      nutritionTargets: [target("d1", 2000), target("d2", 2000), target("d3", 2000)],
       habits: [],
       habitLogs: [],
       wellnessLogs: [],
@@ -323,6 +358,7 @@ describe("getClientAdherenceForRange — the reads", () => {
       calls.set(table, calls.get(table) ?? []);
       return builder(table);
     }) as never);
+    vi.mocked(getNutritionTargetsForDateRange).mockClear().mockResolvedValue(new Map());
   });
 
   it("reads the five client sources and never the daily_logs spine", async () => {
@@ -339,6 +375,15 @@ describe("getClientAdherenceForRange — the reads", () => {
       ].sort()
     );
     expect(calls.has("daily_logs")).toBe(false);
+  });
+
+  it("reads the log for what was eaten and the targets in ONE batched lookup over the window — never a verdict off the row", async () => {
+    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23");
+
+    const selected = calls.get("nutrition_logs")!.find(([method]) => method === "select")?.[1] as string;
+    expect(selected).toBe("date, calories_consumed, protein_g, carbs_g, fat_g");
+    expect(getNutritionTargetsForDateRange).toHaveBeenCalledTimes(1);
+    expect(getNutritionTargetsForDateRange).toHaveBeenCalledWith("client-1", "2026-07-20", "2026-07-23");
   });
 
   it("counts only the measurements the client logged themselves", async () => {

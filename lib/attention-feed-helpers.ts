@@ -35,21 +35,26 @@ import {
   isTrainingLogStatus,
   loggedDays,
 } from "@/lib/logged-days"
+import {
+  calculateCalorieSurplusDeficit,
+  calculateNutritionAdherence,
+} from "@/services/daily-logs-service"
+import type { ClientNutritionDayTarget } from "@/services/nutrition-days-service"
 import type { DayOfWeek } from "@/types/check-in"
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"]
 type ClientInfo = Pick<ClientRow, 'id' | 'name' | 'avatar_url'>
 type ClientInfoWithCheckIn = ClientInfo & Pick<ClientRow, 'next_check_in_due' | 'start_date'>
 
-// View row shape - daily_logs_full joins spine + wellness + nutrition + training
+// View row shape - daily_logs_full joins spine + wellness + nutrition + training.
+// The nutrition columns are what the client ATE; a day's target and its
+// verdict come from the computed day (`dayTargets` below), never off the row.
 export type DailyLogRow = {
   id: string; client_id: string; date: string; notes: string | null;
   created_at: string; updated_at: string;
   mood: number | null; energy: number | null; sleep: number | null; stress: number | null;
   soreness: number | null;
   calories_consumed: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null;
-  target_calories: number | null; target_protein_g: number | null; target_carbs_g: number | null; target_fat_g: number | null;
-  nutrition_adherence: string | null; calorie_surplus_deficit: number | null;
   trained: boolean | null; training_session_id: string | null; training_data: unknown;
 }
 
@@ -89,7 +94,16 @@ type ClientData = {
   startDate: string | null
 }
 
-/** Groups raw query results into a per-client map of domain objects */
+/**
+ * Groups raw query results into a per-client map of domain objects.
+ *
+ * `dayTargets` is every client's computed target per date over the window
+ * (`getNutritionTargetsForClients`, one pass for the roster): each log row
+ * takes its day's target from it and its verdict is derived from what was
+ * eaten against that target — the food log stores neither. A degraded read
+ * (null) leaves every log target-less, which silences the nutrition
+ * triggers for the request rather than judging a day against nothing.
+ */
 export function groupClientData(
   clients: ClientInfoWithCheckIn[],
   allLogs: DailyLogRow[] | null,
@@ -100,8 +114,14 @@ export function groupClientData(
   nutritionWindows: ClientPlanWindow[] | null = null,
   trainingWindows: ClientPlanWindow[] | null = null,
   blocks: ClientBlockWindow[] | null = null,
+  dayTargets: ClientNutritionDayTarget[] | null = null,
 ): Map<string, ClientData> {
   const clientDataMap = new Map<string, ClientData>()
+
+  const targetByClientDate = new Map<string, ClientNutritionDayTarget>()
+  for (const target of dayTargets ?? []) {
+    targetByClientDate.set(`${target.clientId}:${target.date}`, target)
+  }
 
   // Initialize map with clients
   clients.forEach(client => {
@@ -126,6 +146,8 @@ export function groupClientData(
     allLogs.forEach((logRow: DailyLogRow) => {
       const clientData = clientDataMap.get(logRow.client_id)
       if (clientData) {
+        const target = targetByClientDate.get(`${logRow.client_id}:${logRow.date}`)
+        const consumed = logRow.calories_consumed ?? undefined
         const log: DailyLog = {
           id: logRow.id,
           clientId: logRow.client_id,
@@ -139,16 +161,16 @@ export function groupClientData(
           trained: logRow.trained ?? undefined,
           trainingSessionId: logRow.training_session_id ?? undefined,
           trainingData: logRow.training_data as DailyLog['trainingData'],
-          caloriesConsumed: logRow.calories_consumed ?? undefined,
+          caloriesConsumed: consumed,
           proteinG: logRow.protein_g ?? undefined,
           carbsG: logRow.carbs_g ?? undefined,
           fatG: logRow.fat_g ?? undefined,
-          targetCalories: logRow.target_calories ?? undefined,
-          targetProteinG: logRow.target_protein_g ?? undefined,
-          targetCarbsG: logRow.target_carbs_g ?? undefined,
-          targetFatG: logRow.target_fat_g ?? undefined,
-          nutritionAdherence: logRow.nutrition_adherence as DailyLog['nutritionAdherence'],
-          calorieSurplusDeficit: logRow.calorie_surplus_deficit ?? undefined,
+          targetCalories: target?.calories,
+          targetProteinG: target?.proteinG,
+          targetCarbsG: target?.carbsG,
+          targetFatG: target?.fatG,
+          nutritionAdherence: calculateNutritionAdherence(consumed, target?.calories) ?? undefined,
+          calorieSurplusDeficit: calculateCalorieSurplusDeficit(consumed, target?.calories) ?? undefined,
           createdAt: logRow.created_at,
           updatedAt: logRow.updated_at,
         }

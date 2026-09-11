@@ -508,9 +508,11 @@ describe("attention-feed-service", () => {
       // Promise.allSettled, so their chunks interleave — assert on the union,
       // not on a positional slice.)
       expect(new Set(inCalls.flat()).size).toBe(250)
-      // Each read covers all 250 ids across 3 chunks (100/100/50), 8 reads: the
-      // five window reads, the two plan-window reads and the blocks read.
-      expect(inCalls.length).toBe(24)
+      // Each read covers all 250 ids across 3 chunks (100/100/50), 9 reads: the
+      // five window reads, the two plan-window reads, the blocks read and the
+      // day reader's versions read (its per-day sources are read for the
+      // clients a version covers, none here).
+      expect(inCalls.length).toBe(27)
     })
 
     it("reads only the measurements the client logged themselves, from the live view", async () => {
@@ -585,8 +587,13 @@ describe("attention-feed-service", () => {
 
       await evaluateAllClientTriggers("coach-1")
 
-      expect(calls["nutrition_plans"].select).toEqual([["id, client_id, effective_from, effective_until"]])
-      expect(calls["nutrition_plans"].eq).toEqual([["status", "active"]])
+      // Two reads on the versions, both live-only: the windows read, and the
+      // day reader's cross-client read that prices every logged day's target.
+      expect(calls["nutrition_plans"].select).toEqual([
+        ["id, client_id, effective_from, effective_until"],
+        ["id, client_id, effective_from, effective_until, baseline_calories, protein_target_g, diet_type, coach_note"],
+      ])
+      expect(calls["nutrition_plans"].eq).toEqual([["status", "active"], ["status", "active"]])
       // The window is the row (migration 167): a plain select, no embedded
       // count and no filter on it.
       expect(calls["training_plans"].select).toEqual([["client_id, effective_from, effective_until"]])
@@ -700,5 +707,88 @@ describe("attention-feed-service", () => {
       ]
       expect(filterDismissedAlerts(clients, utcStamped)).toHaveLength(1)
     })
+  })
+})
+
+// The food log stores what the client ate and nothing else (owner,
+// 2026-09-11): each log row's target is the computed day, read for every
+// client in one pass, and its verdict is derived from the pair — the
+// nutrition-miss and activity-mismatch triggers read those derived fields.
+describe("groupClientData — a logged day's target and verdict come from the computed days", () => {
+  const baseClient = {
+    id: "c1",
+    name: "Test Client",
+    avatar_url: null,
+    next_check_in_due: null,
+    start_date: null,
+  }
+  // A row still carrying stale stored values (until migration 173 drops the
+  // columns): none of them may be read.
+  const logRow = (client_id: string, date: string, calories_consumed: number) =>
+    ({
+      id: `dl-${client_id}-${date}`,
+      client_id,
+      date,
+      notes: null,
+      created_at: "",
+      updated_at: "",
+      mood: null, energy: null, sleep: null, stress: null, soreness: null,
+      calories_consumed,
+      protein_g: null, carbs_g: null, fat_g: null,
+      target_calories: 9999,
+      target_protein_g: 1,
+      nutrition_adherence: "hit",
+      calorie_surplus_deficit: 0,
+      trained: null, training_session_id: null, training_data: null,
+    }) as never
+  const dayTarget = (clientId: string, date: string, calories: number) => ({
+    clientId, date, calories, proteinG: 160, carbsG: 210, fatG: 65, isTrainingDay: false, note: null,
+  })
+
+  it("derives each log's target and verdict from its client's computed day, never from the row", () => {
+    const map = groupClientData(
+      [baseClient, { ...baseClient, id: "c2", name: "Client 2" }],
+      [logRow("c1", "2026-04-01", 2000), logRow("c1", "2026-04-02", 2000), logRow("c2", "2026-04-01", 2000)],
+      null, null, null, null, null, null, null,
+      [dayTarget("c1", "2026-04-01", 2000), dayTarget("c1", "2026-04-02", 2400), dayTarget("c2", "2026-04-01", 2100)],
+    )
+    const c1 = map.get("c1")!.logs
+    expect(c1.map((log) => [log.date, log.targetCalories, log.nutritionAdherence, log.calorieSurplusDeficit])).toEqual([
+      ["2026-04-01", 2000, "hit", 0],
+      ["2026-04-02", 2400, "missed", -400],
+    ])
+    expect(c1[0].targetProteinG).toBe(160)
+    const c2 = map.get("c2")!.logs
+    expect(c2[0]).toMatchObject({ targetCalories: 2100, nutritionAdherence: "partial", calorieSurplusDeficit: -100 })
+  })
+
+  it("a day with no computed target — or a degraded target read — carries no target and no verdict", () => {
+    const withGap = groupClientData(
+      [baseClient], [logRow("c1", "2026-04-01", 2000)],
+      null, null, null, null, null, null, null,
+      [dayTarget("c1", "2026-04-03", 2000)],
+    )
+    expect(withGap.get("c1")!.logs[0]).toMatchObject({
+      targetCalories: undefined, nutritionAdherence: undefined, calorieSurplusDeficit: undefined,
+    })
+
+    const degraded = groupClientData(
+      [baseClient], [logRow("c1", "2026-04-01", 2000)],
+      null, null, null, null, null, null, null, null,
+    )
+    expect(degraded.get("c1")!.logs[0].nutritionAdherence).toBeUndefined()
+  })
+
+  it("the nutrition-miss trigger fires on the derived verdicts", () => {
+    const dates = ["2026-04-01", "2026-04-02", "2026-04-03", "2026-04-04"]
+    const map = groupClientData(
+      [baseClient],
+      dates.map((date) => logRow("c1", date, 1500)),
+      null, null, null, null, null, null, null,
+      dates.map((date) => dayTarget("c1", date, 2200)),
+    )
+    const alerts = evaluateAndSortTriggers(map, { start: "2026-04-01", end: "2026-04-04" })
+      .find((c) => c.clientId === "c1")?.alerts.map((a) => a.type) ?? []
+    expect(alerts).toContain("nutrition_missed")
   })
 })

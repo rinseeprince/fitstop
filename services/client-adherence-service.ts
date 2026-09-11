@@ -1,5 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
+import { calculateNutritionAdherence } from "./daily-logs-service";
+import { getNutritionTargetsForDateRange } from "./nutrition-days-service";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import { HABIT_DROPOFF_THRESHOLD_PERCENT } from "@/lib/constants";
 import {
@@ -14,9 +16,11 @@ import type { AdherenceSummary, DotState } from "@/types/coach-overview";
 /**
  * The Overview's three-rail adherence card (AdherenceSummary contract).
  * Reuses shipped semantics only — training from training_events.status,
- * nutrition from the persisted nutrition_logs.nutrition_adherence, habits from
- * the weekly-service eligibility rule (active habits with effective_date ≤ the
- * day) — no new adherence math is invented here.
+ * nutrition from what the client ate against the day's COMPUTED target (the
+ * food log stores no verdict; `calculateNutritionAdherence` is the one
+ * definition of hit / partial / missed), habits from the weekly-service
+ * eligibility rule (active habits with effective_date ≤ the day) — no new
+ * adherence math is invented here.
  */
 
 /**
@@ -61,14 +65,17 @@ export function classifyHabitDay(input: {
 export type AdherenceSourceRows = {
   dates: string[];
   trainingEvents: { date: string; status: string }[];
+  /** What the client ate — the log carries no target and no verdict. */
   nutritionLogs: {
     date: string;
-    nutrition_adherence: string | null;
     calories_consumed: number | null;
     protein_g: number | null;
     carbs_g: number | null;
     fat_g: number | null;
   }[];
+  /** Each day's computed target calories — one batched day lookup, never a
+   *  read per day. A date with no entry has no target and no verdict. */
+  nutritionTargets: { date: string; calories: number }[];
   habits: { id: string; name: string; effective_date: string }[];
   habitLogs: { date: string; daily_habit_id: string; completed: boolean }[];
   wellnessLogs: {
@@ -126,10 +133,15 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
   // the dot but not in the numerator (deliberate).
   const trainingPct = planned > 0 ? Math.round((completed / planned) * 100) : null;
 
-  // Nutrition
+  // Nutrition: the verdict is derived, per day, from what was eaten against
+  // the computed target — the same rule every other reader applies.
+  const targetByDate = new Map(rows.nutritionTargets.map((target) => [target.date, target.calories]));
   const adherenceByDate = new Map<string, string | null>();
   for (const log of rows.nutritionLogs) {
-    adherenceByDate.set(log.date, log.nutrition_adherence);
+    adherenceByDate.set(
+      log.date,
+      calculateNutritionAdherence(log.calories_consumed ?? undefined, targetByDate.get(log.date))
+    );
   }
   const nutritionRail = dates.map((date) => classifyNutritionDay(adherenceByDate.get(date)));
   // Days with a nutrition classification — the rail's own, narrower count,
@@ -223,7 +235,8 @@ export const getClientAdherenceForRange = async (
     dates.push(date);
   }
 
-  const [events, nutritionLogs, habits, habitLogs, wellnessLogs, clientLogs] = await Promise.all([
+  const [events, nutritionLogs, habits, habitLogs, wellnessLogs, clientLogs, nutritionTargets] =
+    await Promise.all([
     supabaseAdmin
       .from("training_events")
       .select("date, status")
@@ -232,7 +245,7 @@ export const getClientAdherenceForRange = async (
       .lte("date", endDate),
     supabaseAdmin
       .from("nutrition_logs")
-      .select("date, nutrition_adherence, calories_consumed, protein_g, carbs_g, fat_g")
+      .select("date, calories_consumed, protein_g, carbs_g, fat_g")
       .eq("client_id", clientId)
       .gte("date", startDate)
       .lte("date", endDate),
@@ -263,6 +276,10 @@ export const getClientAdherenceForRange = async (
       .eq("source", CLIENT_MEASUREMENT_SOURCE)
       .gte("recorded_on", startDate)
       .lte("recorded_on", endDate),
+    // Every day's target as computed, in ONE batched lookup beside the logs
+    // read — the food log stores no target, so this is the only source of
+    // the verdict on a logged day.
+    getNutritionTargetsForDateRange(clientId, startDate, endDate),
   ]);
 
   for (const result of [events, nutritionLogs, habits, habitLogs, wellnessLogs, clientLogs]) {
@@ -276,6 +293,10 @@ export const getClientAdherenceForRange = async (
     dates,
     trainingEvents: events.data ?? [],
     nutritionLogs: nutritionLogs.data ?? [],
+    nutritionTargets: [...nutritionTargets.values()].map((target) => ({
+      date: target.date,
+      calories: target.calories,
+    })),
     habits: habits.data ?? [],
     habitLogs: habitLogs.data ?? [],
     wellnessLogs: wellnessLogs.data ?? [],

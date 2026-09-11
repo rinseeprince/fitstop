@@ -1,7 +1,11 @@
 import type { DailyLog } from "@/types/daily-log";
-import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
+import type { NutritionDayTarget } from "@/services/nutrition-days-service";
+import {
+  calculateCalorieSurplusDeficit,
+  calculateNutritionAdherence,
+} from "@/services/daily-logs-service";
 
-/** Shape of a row from the nutrition_logs table (select subset). */
+/** Shape of a row from the nutrition_logs table (select subset): what the client ate. */
 export type NutritionRow = {
   id: string;
   client_id: string;
@@ -10,29 +14,35 @@ export type NutritionRow = {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
-  target_calories: number | null;
-  target_protein_g: number | null;
-  target_carbs_g: number | null;
-  target_fat_g: number | null;
   created_at: string;
   updated_at: string;
 };
 
-/** Maps a raw nutrition_logs row to a DailyLog domain object. */
-export function mapNutritionRowToDailyLog(r: NutritionRow): DailyLog {
+/**
+ * Maps a raw nutrition_logs row to a DailyLog domain object. The row supplies
+ * what the client ate; the day's target is the COMPUTED day the caller looked
+ * up for the date (`getNutritionTargetsForDateRange`), and the verdict is
+ * derived from the two here — the log stores no target and no verdict.
+ */
+export function mapNutritionRowToDailyLog(
+  r: NutritionRow,
+  target: NutritionDayTarget | null
+): DailyLog {
+  const consumed = r.calories_consumed ?? undefined;
   return {
     id: r.id,
     clientId: r.client_id,
     date: r.date,
-    caloriesConsumed: r.calories_consumed ?? undefined,
+    caloriesConsumed: consumed,
     proteinG: r.protein_g ?? undefined,
     carbsG: r.carbs_g ?? undefined,
     fatG: r.fat_g ?? undefined,
-    targetCalories: r.target_calories ?? undefined,
-    targetProteinG: r.target_protein_g ?? undefined,
-    targetCarbsG: r.target_carbs_g ?? undefined,
-    targetFatG: r.target_fat_g ?? undefined,
-    nutritionAdherence: undefined,
+    targetCalories: target?.calories,
+    targetProteinG: target?.proteinG,
+    targetCarbsG: target?.carbsG,
+    targetFatG: target?.fatG,
+    nutritionAdherence: calculateNutritionAdherence(consumed, target?.calories) ?? undefined,
+    calorieSurplusDeficit: calculateCalorieSurplusDeficit(consumed, target?.calories) ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

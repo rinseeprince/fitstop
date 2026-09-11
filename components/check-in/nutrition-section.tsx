@@ -63,8 +63,9 @@ export const NutritionSection = ({
       }
       // Each macro's target is summed over the days that macro was LOGGED, so
       // the bar compares an average with the target that applied on the very
-      // days it averages. Summing targets over all seven while the actual
-      // covered three compared two different weeks on one bar.
+      // days it averages — the computed day's, derived onto the log row by the
+      // server. Summing targets over all seven while the actual covered three
+      // compared two different weeks on one bar.
       if (log.proteinG != null) {
         acc.protein += log.proteinG;
         acc.targetProtein += log.targetProteinG ?? 0;

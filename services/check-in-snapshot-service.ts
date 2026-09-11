@@ -2,35 +2,20 @@
  * Check-In Snapshot Service
  * Generates and freezes a period snapshot at check-in submission time.
  * The snapshot captures the day-by-day training schedule and nutrition summary
- * so historical check-ins survive future plan changes.
+ * so historical check-ins survive future plan changes. It is the ONE freeze of
+ * a period's nutrition targets: the food log stores what the client ate and
+ * nothing else, and every day's target here is the computed day at the
+ * instant of submission.
  */
 
 import { supabaseAdmin } from "./supabase-admin";
-import { fetchNutritionDataForPeriod } from "./schedule-data-service";
+import { fetchNutritionLogsForPeriod } from "./schedule-data-service";
 import { getEventsForDateRange } from "./training-event-service";
-import { getNutritionEventsForDateRange } from "./nutrition-days-service";
+import { getNutritionTargetsForDateRange } from "./nutrition-days-service";
 import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
 import { buildNutritionSummary } from "@/utils/nutrition-period-summary";
+import { expandDateRange } from "@/lib/date-helpers";
 import type { PeriodSnapshot } from "@/types/schedule";
-
-/**
- * Generate date array from start to end (inclusive).
- */
-function generateDateRange(start: string, end: string): string[] {
-  const dates: string[] = [];
-  const cursor = new Date(start + "T00:00:00");
-  const endDate = new Date(end + "T00:00:00");
-
-  while (cursor <= endDate) {
-    const year = cursor.getFullYear();
-    const month = String(cursor.getMonth() + 1).padStart(2, "0");
-    const day = String(cursor.getDate()).padStart(2, "0");
-    dates.push(`${year}-${month}-${day}`);
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return dates;
-}
 
 export async function generateAndSaveCheckInSnapshot(
   checkInId: string,
@@ -38,24 +23,19 @@ export async function generateAndSaveCheckInSnapshot(
   periodStart: string,
   periodEnd: string
 ): Promise<void> {
-  const dates = generateDateRange(periodStart, periodEnd);
+  const dates = expandDateRange(periodStart, periodEnd);
 
   // Fetch all data in parallel
-  const [events, nutritionData, nutritionEvents] = await Promise.all([
+  const [events, nutritionLogs, targets] = await Promise.all([
     getEventsForDateRange(clientId, periodStart, periodEnd),
-    fetchNutritionDataForPeriod(clientId, periodStart, periodEnd),
-    getNutritionEventsForDateRange(clientId, periodStart, periodEnd),
+    fetchNutritionLogsForPeriod(clientId, periodStart, periodEnd),
+    getNutritionTargetsForDateRange(clientId, periodStart, periodEnd),
   ]);
 
   // Build training schedule from events
   const training = mapEventsToScheduleDays(dates, events);
 
-  const nutrition = buildNutritionSummary(
-    dates,
-    nutritionData.plans,
-    nutritionData.nutritionLogs,
-    nutritionEvents
-  );
+  const nutrition = buildNutritionSummary(dates, nutritionLogs, targets);
 
   const snapshot: PeriodSnapshot = {
     generatedAt: new Date().toISOString(),

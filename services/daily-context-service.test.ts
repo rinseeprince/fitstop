@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./supabase-admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
-vi.mock("./nutrition-days-service", () => ({ getNutritionEventForDate: vi.fn() }));
+vi.mock("./nutrition-days-service", () => ({ getNutritionTargetsForDateRange: vi.fn() }));
 vi.mock("./training-event-service", () => ({ getEventForDate: vi.fn() }));
 vi.mock("./nutrition-plan-service", () => ({
   getNutritionPlanIdForDate: vi.fn(),
@@ -9,18 +9,39 @@ vi.mock("./nutrition-plan-service", () => ({
 vi.mock("./training-service", () => ({ getActiveTrainingPlanId: vi.fn() }));
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getNutritionEventForDate } from "./nutrition-days-service";
+import {
+  getNutritionTargetsForDateRange,
+  type NutritionDayTarget,
+} from "./nutrition-days-service";
 import { getEventForDate } from "./training-event-service";
 import { getNutritionPlanIdForDate } from "./nutrition-plan-service";
 import { getActiveTrainingPlanId } from "./training-service";
 import {
   resolvePlanContextForDate,
   getNutritionForDate,
+  getPlanTargetForDate,
   assertHasActivePlan,
   NoActivePlanError,
 } from "./daily-context-service";
 
 beforeEach(() => vi.clearAllMocks());
+
+const computedTarget = (date: string, calories: number): NutritionDayTarget => ({
+  date,
+  calories,
+  proteinG: 160,
+  carbsG: 210,
+  fatG: 65,
+  isTrainingDay: false,
+  note: null,
+});
+
+/** The day reader's answer for a range: the computed target, or nothing. */
+function wireTargets(target: NutritionDayTarget | null) {
+  vi.mocked(getNutritionTargetsForDateRange).mockResolvedValue(
+    new Map(target ? [[target.date, target]] : [])
+  );
+}
 
 /** The standing food log for the day, as the resolver reads it. */
 function wireStandingLog(row: { nutrition_plan_id: string | null } | null) {
@@ -46,7 +67,7 @@ describe("resolvePlanContextForDate", () => {
     // The per-date pin: a backdated log stamps its own day's era.
     expect(getNutritionPlanIdForDate).toHaveBeenCalledWith("c1", "2026-05-21");
     // A computed day derives from that same version, so no day is read for it.
-    expect(getNutritionEventForDate).not.toHaveBeenCalled();
+    expect(getNutritionTargetsForDateRange).not.toHaveBeenCalled();
     expect(ctx).toEqual({ nutritionPlanId: "np-covering", trainingPlanId: "tp-1" });
     // Date-accurate training event present → no active-plan fallback.
     expect(getActiveTrainingPlanId).not.toHaveBeenCalled();
@@ -145,77 +166,82 @@ describe("assertHasActivePlan", () => {
 
 });
 
-describe("getNutritionForDate", () => {
-  const nutritionLogsRow = (row: Record<string, unknown> | null) => ({
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: row, error: null }),
-  });
-  const clientsRow = (surplusAsCarbs = false) => ({
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    single: vi.fn().mockResolvedValue({
-      data: { include_activity_burn: true, surplus_as_carbs: surplusAsCarbs },
-      error: null,
-    }),
-  });
-  const fromImpl = (logRow: Record<string, unknown> | null, surplusAsCarbs = false) =>
-    vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) =>
-      table === "nutrition_logs" ? nutritionLogsRow(logRow) : clientsRow(surplusAsCarbs)) as never);
+describe("getPlanTargetForDate", () => {
+  it("is the day reader's target over one day", async () => {
+    wireTargets(computedTarget("2026-05-21", 2100));
 
-  it("level 1: returns the logged snapshot (source 'log')", async () => {
-    fromImpl({
-      calories_consumed: 2000, protein_g: 150, carbs_g: 200, fat_g: 60,
-      target_calories: 2100, target_protein_g: 160, target_carbs_g: 210, target_fat_g: 65,
+    const target = await getPlanTargetForDate("c1", "2026-05-21");
+
+    expect(getNutritionTargetsForDateRange).toHaveBeenCalledWith("c1", "2026-05-21", "2026-05-21");
+    expect(target).toMatchObject({ calories: 2100, proteinG: 160, carbsG: 210, fatG: 65 });
+  });
+
+  it("is null on a day no version covers", async () => {
+    wireTargets(null);
+    expect(await getPlanTargetForDate("c1", "2026-05-21")).toBeNull();
+  });
+});
+
+// The food log stores what the client ate and nothing else (owner,
+// 2026-09-11): the target for EVERY day is the computed day, logged or not.
+describe("getNutritionForDate", () => {
+  const logsTable = (row: Record<string, unknown> | null) => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: row, error: null }),
+    };
+    vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+      if (table === "nutrition_logs") return query;
+      throw new Error(`Unexpected table: ${table}`);
+    }) as never);
+    return query;
+  };
+
+  it("a logged day: the row supplies what was eaten, the computed day supplies the target (source 'log')", async () => {
+    // The row still carries a stale target from before the copy was removed;
+    // it must never be the answer.
+    const query = logsTable({
+      calories_consumed: 2000, protein_g: 150, carbs_g: 200, fat_g: 60, target_calories: 9999,
     });
+    wireTargets(computedTarget("2026-05-21", 2100));
 
     const result = await getNutritionForDate("c1", "2026-05-21");
 
+    expect(query.select).toHaveBeenCalledWith("calories_consumed, protein_g, carbs_g, fat_g");
     expect(result.source).toBe("log");
     expect(result.consumed).toEqual({ calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 });
-    expect(result.target).toEqual({ calories: 2100, proteinG: 160, carbsG: 210, fatG: 65 });
-    expect(getNutritionEventForDate).not.toHaveBeenCalled();
+    expect(result.target).toEqual({ calories: 2100, proteinG: 160, carbsG: 210, fatG: 65, note: null });
+    expect(getNutritionTargetsForDateRange).toHaveBeenCalledWith("c1", "2026-05-21", "2026-05-21");
   });
 
-  it("level 2: no log but a computed day → its target (source 'event')", async () => {
-    fromImpl(null);
-    vi.mocked(getNutritionEventForDate).mockResolvedValue({
-      dayOfWeek: "thursday", baselineCalories: 2000, trainingBurnCalories: 0,
-      proteinG: 150, carbG: 200, fatG: 60, isTrainingDay: false, isModified: false,
-      calorieSurplusPercentage: null,
-    } as never);
+  it("a logged day no version covers keeps its meals and has no target", async () => {
+    logsTable({ calories_consumed: 2000, protein_g: 150, carbs_g: 200, fat_g: 60 });
+    wireTargets(null);
+
+    const result = await getNutritionForDate("c1", "2026-05-21");
+
+    expect(result).toEqual({
+      consumed: { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+      target: null,
+      source: "log",
+    });
+  });
+
+  it("an unlogged day a version covers: the computed target alone (source 'event'), note included", async () => {
+    logsTable(null);
+    wireTargets({ ...computedTarget("2026-05-21", 2100), note: "Deload week" });
 
     const result = await getNutritionForDate("c1", "2026-05-21");
 
     expect(result.source).toBe("event");
     expect(result.consumed).toBeNull();
-    expect(result.target?.proteinG).toBe(150);
+    expect(result.target).toEqual({ calories: 2100, proteinG: 160, carbsG: 210, fatG: 65, note: "Deload week" });
   });
 
-  it("level 2: a training-day surplus is split by surplus_as_carbs (per-day lane matches the calendar)", async () => {
-    // baseline 2000, protein 150, carb 100, fat 50, +10% surplus → total 2200.
-    const event = {
-      dayOfWeek: "monday", baselineCalories: 2000, trainingBurnCalories: 0,
-      proteinG: 150, carbG: 100, fatG: 50, isTrainingDay: true, isModified: false,
-      calorieSurplusPercentage: 10,
-    };
-
-    // keep-split (default): carbs+fat scale preserving the stored ratio.
-    fromImpl(null, false);
-    vi.mocked(getNutritionEventForDate).mockResolvedValue(event as never);
-    let result = await getNutritionForDate("c1", "2026-06-08");
-    expect(result.target).toEqual({ calories: 2200, proteinG: 150, carbsG: 188, fatG: 94, note: null });
-
-    // carbs-only: fat held, the surplus goes to carbs.
-    fromImpl(null, true);
-    vi.mocked(getNutritionEventForDate).mockResolvedValue(event as never);
-    result = await getNutritionForDate("c1", "2026-06-08");
-    expect(result.target).toEqual({ calories: 2200, proteinG: 150, carbsG: 288, fatG: 50, note: null });
-  });
-
-  it("level 3: no log and no version covering the date → null", async () => {
-    fromImpl(null);
-    vi.mocked(getNutritionEventForDate).mockResolvedValue(null);
+  it("no log and no version covering the date → nothing", async () => {
+    logsTable(null);
+    wireTargets(null);
 
     const result = await getNutritionForDate("c1", "2026-05-21");
 

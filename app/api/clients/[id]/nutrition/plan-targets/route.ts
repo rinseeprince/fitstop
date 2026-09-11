@@ -2,17 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { getClientById } from "@/services/client-service";
-import { getNutritionEventsForDateRange } from "@/services/nutrition-days-service";
-import { getTotalCalories } from "@/utils/nutrition-event-helpers";
-import { supabaseAdmin } from "@/services/supabase-admin";
+import { getNutritionTargetsForDateRange } from "@/services/nutrition-days-service";
 
 const MAX_DATES = 31;
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * GET: Retrieve plan-based daily targets for specific dates.
- * Used by check-in review to compute full-week targets for unlogged days.
- * Query param: dates=YYYY-MM-DD,YYYY-MM-DD,...
+ * GET: the computed target for specific dates, as the client is shown it —
+ * the day reader's target through the client's display switches, the same
+ * number every other reader judges a day against. Used by the check-in review
+ * for every day of a check-in's period. A date no version covers answers
+ * zeros. Query param: dates=YYYY-MM-DD,YYYY-MM-DD,...
  */
 export async function GET(
   request: NextRequest,
@@ -60,25 +60,19 @@ export async function GET(
     const minDate = sortedDates[0];
     const maxDate = sortedDates[sortedDates.length - 1];
 
-    // Batch fetch: events + activity burn flag in parallel
-    const [events, { data: clientRow }] = await Promise.all([
-      getNutritionEventsForDateRange(clientId, minDate, maxDate),
-      supabaseAdmin.from("clients").select("include_activity_burn").eq("id", clientId).single(),
-    ]);
-    const includeActivityBurn = clientRow?.include_activity_burn !== false;
-
-    const eventsByDate = new Map(events.map((e) => [e.date.split("T")[0], e]));
+    // One batched lookup over the span; the number of dates decides nothing.
+    const byDate = await getNutritionTargetsForDateRange(clientId, minDate, maxDate);
 
     const targets = dates.map((date) => {
-      const event = eventsByDate.get(date);
-      if (event) {
+      const target = byDate.get(date);
+      if (target) {
         return {
           date,
-          calories: getTotalCalories(event, includeActivityBurn),
-          proteinG: event.proteinG,
-          carbsG: event.carbG,
-          fatG: event.fatG,
-          isTrainingDay: event.isTrainingDay,
+          calories: target.calories,
+          proteinG: target.proteinG,
+          carbsG: target.carbsG,
+          fatG: target.fatG,
+          isTrainingDay: target.isTrainingDay,
         };
       }
       return { date, calories: 0, proteinG: 0, carbsG: 0, fatG: 0, isTrainingDay: false };

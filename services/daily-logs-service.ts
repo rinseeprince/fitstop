@@ -3,10 +3,16 @@ import type { DailyLog, NutritionAdherenceStatus } from "@/types/daily-log";
 
 import { getDateString, getDateDaysFrom, dateStringToDayNumber } from "@/lib/date-helpers";
 import { getClientTodayString } from "./today-service";
+import {
+  getNutritionTargetsForDateRange,
+  type NutritionDayTarget,
+} from "./nutrition-days-service";
 import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
 
 // Shape returned by the daily_logs_full view (mirrors Views.daily_logs_full.Row
-// in types/database.ts; kept hand-typed for the narrowing casts below)
+// in types/database.ts; kept hand-typed for the narrowing casts below). The
+// nutrition columns are what the client ATE: a day's target and its verdict
+// are derived from the computed day, never read off a row.
 type DailyLogFullRow = {
   id: string;
   client_id: string;
@@ -23,12 +29,6 @@ type DailyLogFullRow = {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
-  target_calories: number | null;
-  target_protein_g: number | null;
-  target_carbs_g: number | null;
-  target_fat_g: number | null;
-  nutrition_adherence: string | null;
-  calorie_surplus_deficit: number | null;
   trained: boolean | null;
   training_session_id: string | null;
   training_data: unknown;
@@ -105,7 +105,16 @@ export const calculateStreakFromLogs = (
   return { currentStreak, longestStreak };
 };
 
-export const mapRowToDailyLog = (row: DailyLogFullRow): DailyLog => ({
+/**
+ * A row of the day-form plus the day's target as COMPUTED — the three target
+ * fields, the verdict and the surplus on `DailyLog` are derived here from what
+ * the client ate against that target. A day with no computed target (a gap
+ * between plans) carries no target and no verdict.
+ */
+export const mapRowToDailyLog = (
+  row: DailyLogFullRow,
+  target: NutritionDayTarget | null = null
+): DailyLog => ({
   id: row.id,
   clientId: row.client_id,
   date: row.date,
@@ -122,51 +131,64 @@ export const mapRowToDailyLog = (row: DailyLogFullRow): DailyLog => ({
   proteinG: row.protein_g ?? undefined,
   carbsG: row.carbs_g ?? undefined,
   fatG: row.fat_g ?? undefined,
-  targetCalories: row.target_calories ?? undefined,
-  targetProteinG: row.target_protein_g ?? undefined,
-  targetCarbsG: row.target_carbs_g ?? undefined,
-  targetFatG: row.target_fat_g ?? undefined,
-  nutritionAdherence: (row.nutrition_adherence as NutritionAdherenceStatus | null) ?? undefined,
-  calorieSurplusDeficit: row.calorie_surplus_deficit ?? undefined,
+  targetCalories: target?.calories,
+  targetProteinG: target?.proteinG,
+  targetCarbsG: target?.carbsG,
+  targetFatG: target?.fatG,
+  nutritionAdherence:
+    calculateNutritionAdherence(row.calories_consumed ?? undefined, target?.calories) ?? undefined,
+  calorieSurplusDeficit:
+    calculateCalorieSurplusDeficit(row.calories_consumed ?? undefined, target?.calories) ?? undefined,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
 
+/**
+ * The day-form rows over a range with each day's computed target — the view
+ * read and the target lookup issued together, the number of days deciding
+ * nothing.
+ */
 export const getDailyLogs = async (
   clientId: string,
   startDate: string,
   endDate: string
 ): Promise<DailyLog[]> => {
-  const { data, error } = (await supabaseAdmin
-    .from("daily_logs_full")
-    .select("*")
-    .eq("client_id", clientId)
-    .gte("date", startDate)
-    .lte("date", endDate)
-    .order("date", { ascending: true })) as unknown as { data: DailyLogFullRow[] | null; error: { message: string } | null };
+  const [{ data, error }, targets] = await Promise.all([
+    supabaseAdmin
+      .from("daily_logs_full")
+      .select("*")
+      .eq("client_id", clientId)
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .order("date", { ascending: true }) as unknown as PromiseLike<{ data: DailyLogFullRow[] | null; error: { message: string } | null }>,
+    getNutritionTargetsForDateRange(clientId, startDate, endDate),
+  ]);
 
   if (error) {
     throw new Error(`Failed to fetch daily logs: ${error.message}`);
   }
 
-  return (data || []).map(mapRowToDailyLog);
+  return (data || []).map((row) => mapRowToDailyLog(row, targets.get(row.date) ?? null));
 };
 
 export const getTodayLog = async (clientId: string, date?: string): Promise<DailyLog | null> => {
   const targetDate = date || (await getClientTodayString(clientId));
 
-  const { data, error } = (await supabaseAdmin
-    .from("daily_logs_full")
-    .select("*")
-    .eq("client_id", clientId)
-    .eq("date", targetDate)
-    .single()) as unknown as { data: DailyLogFullRow | null; error: { message: string } | null };
+  const [{ data, error }, targets] = await Promise.all([
+    supabaseAdmin
+      .from("daily_logs_full")
+      .select("*")
+      .eq("client_id", clientId)
+      .eq("date", targetDate)
+      .single() as unknown as PromiseLike<{ data: DailyLogFullRow | null; error: { message: string } | null }>,
+    getNutritionTargetsForDateRange(clientId, targetDate, targetDate),
+  ]);
 
   if (error || !data) {
     return null;
   }
 
-  return mapRowToDailyLog(data);
+  return mapRowToDailyLog(data, targets.get(targetDate) ?? null);
 };
 
 // No product caller: `get_client_streaks` (migration 095) is read only by the perf

@@ -7,7 +7,6 @@ import { expandDateRange, getDateString } from "@/lib/date-helpers";
 import { useWellnessData, type DailyLogRange } from "@/hooks/use-wellness-data";
 import type { CheckInWithDetails, GetCheckInComparisonResponse } from "@/types/check-in";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
-import type { DailyLog } from "@/types/daily-log";
 
 type FullWeekTarget = {
   calories: number;
@@ -122,28 +121,14 @@ export function resolveCheckInDetailWindow(
   return { start, end };
 }
 
-/** The window's dates with no daily log — the ones whose target must come from the plan. */
-export function unloggedDates(range: DailyLogRange, logs: DailyLog[]): string[] {
-  const logged = new Set(logs.map((log) => log.date));
-  return expandDateRange(range.startDate, range.endDate).filter((date) => !logged.has(date));
-}
-
 /**
- * The week's nutrition target: every logged day's own snapshotted target plus
- * the plan target for each unlogged day, so a half-logged week is measured
- * against its whole window rather than the days that happen to have a log.
+ * The week's nutrition target: the plan target of EVERY period day, logged or
+ * not — the food log stores no target, so a logged day's is the computed day
+ * too — summed so a half-logged week is measured against its whole window
+ * rather than the days that happen to have a log.
  */
-export function buildFullWeekTarget(
-  logs: DailyLog[],
-  planTargets: PlanTarget[]
-): FullWeekTarget {
+export function buildFullWeekTarget(planTargets: PlanTarget[]): FullWeekTarget {
   const total = { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 };
-  for (const log of logs) {
-    total.calories += log.targetCalories ?? 0;
-    total.proteinG += log.targetProteinG ?? 0;
-    total.carbsG += log.targetCarbsG ?? 0;
-    total.fatG += log.targetFatG ?? 0;
-  }
   for (const target of planTargets) {
     total.calories += target.calories ?? 0;
     total.proteinG += target.proteinG ?? 0;
@@ -160,9 +145,8 @@ type UseCheckInDetailDataProps = {
 
 /**
  * Everything the review surface renders for one check-in: the detail and its
- * comparison (parallel), then the window's daily + habit logs (parallel), then
- * the plan targets for the window's unlogged days — the same three stages the
- * raw-fetch version ran, now cached and deduped by SWR.
+ * comparison (parallel), then the window's daily logs and the plan targets for
+ * every period day (parallel) — cached and deduped by SWR.
  */
 export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDataProps) {
   const detail = useCheckInDetail(checkInId);
@@ -197,12 +181,14 @@ export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDa
     withHabitLogs: false,
   });
 
-  const datesNeedingPlanTarget = useMemo(
-    () => (range && !logsLoading ? unloggedDates(range, dailyLogs) : []),
-    [range, logsLoading, dailyLogs]
+  // Every period day, not the unlogged ones: a logged day's target is the
+  // computed day too, and the logs carry no target of their own to fold in.
+  const periodDates = useMemo(
+    () => (range ? expandDateRange(range.startDate, range.endDate) : []),
+    [range]
   );
   const { data: planTargets, isLoading: planTargetsLoading } = useSWR<PlanTargetsResponse>(
-    datesNeedingPlanTarget.length > 0 ? planTargetsKey(clientId, datesNeedingPlanTarget) : null,
+    periodDates.length > 0 ? planTargetsKey(clientId, periodDates) : null,
     swrFetcher,
     {
       ...SWR_OPTS,
@@ -211,12 +197,10 @@ export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDa
   );
 
   const fullWeekTarget = useMemo<FullWeekTarget | null>(() => {
-    if (!range || logsLoading) return null;
-    if (datesNeedingPlanTarget.length === 0) return buildFullWeekTarget(dailyLogs, []);
     // Still loading, or failed: null hands the ribbon its logged-days fallback.
-    if (!planTargets) return null;
-    return buildFullWeekTarget(dailyLogs, planTargets.targets ?? []);
-  }, [range, logsLoading, datesNeedingPlanTarget, dailyLogs, planTargets]);
+    if (!range || !planTargets) return null;
+    return buildFullWeekTarget(planTargets.targets ?? []);
+  }, [range, planTargets]);
 
   const { mutate: mutateDetail } = detail;
   // After Regenerate the rail asks for the fresh review; the bound mutate

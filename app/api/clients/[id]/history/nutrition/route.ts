@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { parsePaginationParams } from "@/lib/api-utils";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
-import { fetchNutritionDataForPeriod } from "@/services/schedule-data-service";
+import { fetchNutritionLogsForPeriod } from "@/services/schedule-data-service";
 import { buildNutritionSummary } from "@/utils/nutrition-period-summary";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import { getCoachTodayString } from "@/services/today-service";
 import type { NutritionHistoryRow } from "@/types/history";
 import type { NutritionDay } from "@/types/schedule";
-import { getNutritionEventsForDateRange } from "@/services/nutrition-days-service";
+import { getNutritionTargetsForDateRange } from "@/services/nutrition-days-service";
 
 function generateDateRange(start: string, end: string): string[] {
   const dates: string[] = [];
@@ -24,10 +24,15 @@ function generateDateRange(start: string, end: string): string[] {
   return dates;
 }
 
+/**
+ * One table row: what the client ate against the day's COMPUTED target, the
+ * verdict and the surplus derived from the pair. `is_logged` is the row's
+ * existence — a logged day with no target (a gap) shows its meals over a dash.
+ */
 function mapNutritionDayToRow(day: NutritionDay): NutritionHistoryRow {
-  const isLogged = day.status !== "not_logged";
-  const surplus = isLogged && day.actualCalories != null && day.targetCalories != null
-    ? day.actualCalories - day.targetCalories
+  const isLogged = day.actualCalories != null;
+  const surplus = isLogged && day.targetCalories != null
+    ? day.actualCalories! - day.targetCalories
     : null;
 
   return {
@@ -119,11 +124,13 @@ export async function GET(
     const dates = generateDateRange(rangeStart, today);
     const total = dates.length;
 
-    const [nutritionData, nutritionEvents] = await Promise.all([
-      fetchNutritionDataForPeriod(clientId, rangeStart, today),
-      getNutritionEventsForDateRange(clientId, rangeStart, today),
+    // What the client ate, and every day's target as computed — the log
+    // stores no target, so a logged day's target is the computed day too.
+    const [nutritionLogs, targets] = await Promise.all([
+      fetchNutritionLogsForPeriod(clientId, rangeStart, today),
+      getNutritionTargetsForDateRange(clientId, rangeStart, today),
     ]);
-    const summary = buildNutritionSummary(dates, nutritionData.plans, nutritionData.nutritionLogs, nutritionEvents);
+    const summary = buildNutritionSummary(dates, nutritionLogs, targets);
 
     // Reverse for newest-first, then paginate
     const reversed = summary.reverse();

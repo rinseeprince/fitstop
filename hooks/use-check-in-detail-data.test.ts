@@ -15,7 +15,6 @@ import {
   buildFullWeekTarget,
   checkInDetailKey,
   resolveCheckInDetailWindow,
-  unloggedDates,
   useCheckInDetailData,
   useInvalidateCheckInDetail,
 } from "./use-check-in-detail-data";
@@ -46,29 +45,19 @@ describe("resolveCheckInDetailWindow", () => {
   });
 });
 
-describe("unloggedDates", () => {
-  it("lists the window's dates that have no daily log", () => {
-    const range = { startDate: "2026-08-22", endDate: "2026-08-25" };
-    expect(unloggedDates(range, [log("2026-08-22"), log("2026-08-24")])).toEqual([
-      "2026-08-23",
-      "2026-08-25",
-    ]);
-  });
-});
-
 describe("buildFullWeekTarget", () => {
-  it("sums the logged days' own targets plus the plan targets handed to it", () => {
-    const logs = [
-      log("2026-08-22", { targetCalories: 2000, targetProteinG: 150, targetCarbsG: 200, targetFatG: 60 }),
-      log("2026-08-23", { targetCalories: 2100, targetProteinG: 150, targetCarbsG: 220, targetFatG: 65 }),
-    ];
+  it("sums the plan targets of every period day handed to it", () => {
     expect(
-      buildFullWeekTarget(logs, [{ calories: 1900, proteinG: 140, carbsG: 180, fatG: 55 }])
+      buildFullWeekTarget([
+        { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+        { calories: 2100, proteinG: 150, carbsG: 220, fatG: 65 },
+        { calories: 1900, proteinG: 140, carbsG: 180, fatG: 55 },
+      ])
     ).toEqual({ calories: 6000, proteinG: 440, carbsG: 600, fatG: 180 });
   });
 
   it("counts a missing target as zero rather than NaN", () => {
-    expect(buildFullWeekTarget([log("2026-08-22")], [{ calories: null }])).toEqual({
+    expect(buildFullWeekTarget([{ calories: null }])).toEqual({
       calories: 0,
       proteinG: 0,
       carbsG: 0,
@@ -170,20 +159,19 @@ describe("useCheckInDetailData", () => {
     expect(planTargetKeys).toEqual([]);
   });
 
-  it("asks the plan only for the unlogged dates and folds them into the week target", () => {
+  // The food log stores no target: the week's target is the plan target of
+  // EVERY period day, logged or not, and a target a log row might carry is
+  // never folded in.
+  it("asks the plan for every period day and sums those targets alone into the week target", () => {
     const logs = [
-      log("2026-08-22", { targetCalories: 2000, targetProteinG: 150, targetCarbsG: 200, targetFatG: 60 }),
-      log("2026-08-23", { targetCalories: 2000, targetProteinG: 150, targetCarbsG: 200, targetFatG: 60 }),
-      log("2026-08-24", { targetCalories: 2000, targetProteinG: 150, targetCarbsG: 200, targetFatG: 60 }),
-      log("2026-08-25", { targetCalories: 2000, targetProteinG: 150, targetCarbsG: 200, targetFatG: 60 }),
-      log("2026-08-26", { targetCalories: 2000, targetProteinG: 150, targetCarbsG: 200, targetFatG: 60 }),
+      log("2026-08-22", { targetCalories: 9999, targetProteinG: 1, targetCarbsG: 1, targetFatG: 1 }),
+      log("2026-08-23", { targetCalories: 9999, targetProteinG: 1, targetCarbsG: 1, targetFatG: 1 }),
     ];
     mockUseWellnessData.mockReturnValue({ logs, habitLogs: [], isLoading: false });
     wireSWR({
-      targets: [
-        { calories: 1800, proteinG: 140, carbsG: 170, fatG: 50 },
-        { calories: 1800, proteinG: 140, carbsG: 170, fatG: 50 },
-      ],
+      targets: Array.from({ length: 7 }, () => ({
+        calories: 1800, proteinG: 140, carbsG: 170, fatG: 50,
+      })),
     });
     const { result } = renderHook(() =>
       useCheckInDetailData({ checkInId: "ci-1", clientId: "c1" })
@@ -191,22 +179,26 @@ describe("useCheckInDetailData", () => {
 
     const keys = mockUseSWR.mock.calls.map((c) => c[0]);
     expect(keys).toContain(
-      "/api/clients/c1/nutrition/plan-targets?dates=2026-08-27,2026-08-28"
+      "/api/clients/c1/nutrition/plan-targets?dates=2026-08-22,2026-08-23,2026-08-24,2026-08-25,2026-08-26,2026-08-27,2026-08-28"
     );
     expect(result.current.fullWeekTarget).toEqual({
-      calories: 13600,
-      proteinG: 1030,
-      carbsG: 1340,
-      fatG: 400,
+      calories: 12600,
+      proteinG: 980,
+      carbsG: 1190,
+      fatG: 350,
     });
   });
 
-  it("needs no plan read when every day is logged", () => {
+  it("asks the plan for every period day even when every day is logged", () => {
     const logs = [
       "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28",
-    ].map((d) => log(d, { targetCalories: 2000, targetProteinG: 150, targetCarbsG: 200, targetFatG: 60 }));
+    ].map((d) => log(d, { targetCalories: 2000 }));
     mockUseWellnessData.mockReturnValue({ logs, habitLogs: [], isLoading: false });
-    wireSWR();
+    wireSWR({
+      targets: Array.from({ length: 7 }, () => ({
+        calories: 2000, proteinG: 150, carbsG: 200, fatG: 60,
+      })),
+    });
     const { result } = renderHook(() =>
       useCheckInDetailData({ checkInId: "ci-1", clientId: "c1" })
     );
@@ -214,7 +206,7 @@ describe("useCheckInDetailData", () => {
     const planTargetKeys = mockUseSWR.mock.calls
       .map((c) => c[0])
       .filter((k) => typeof k === "string" && k.includes("plan-targets"));
-    expect(planTargetKeys).toEqual([]);
+    expect(planTargetKeys).toHaveLength(1);
     expect(result.current.fullWeekTarget).toEqual({
       calories: 14000,
       proteinG: 1050,
@@ -223,7 +215,7 @@ describe("useCheckInDetailData", () => {
     });
   });
 
-  it("reports the context as loading only once a window exists", () => {
+  it("reports the context as loading only once a window exists, and no week target until the plan read lands", () => {
     wireSWR();
     mockUseWellnessData.mockReturnValue({ logs: [], habitLogs: [], isLoading: true });
     const { result } = renderHook(() =>
