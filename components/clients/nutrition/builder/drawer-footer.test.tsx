@@ -23,8 +23,6 @@ const builder = {
   // at save time — nothing stands between the button and the save.
   effectiveFrom: CLIENT_TODAY as string | null,
   clientToday: CLIENT_TODAY as string | null,
-  // The field's floor: today, or tomorrow once the client has logged today.
-  startFloor: CLIENT_TODAY as string | null,
   generatePlan,
 };
 
@@ -36,7 +34,6 @@ beforeEach(() => {
   cleanup();
   generatePlan.mockReset();
   builder.effectiveFrom = CLIENT_TODAY;
-  builder.startFloor = CLIENT_TODAY;
 });
 
 function clickGenerate() {
@@ -83,15 +80,15 @@ describe("DrawerFooter — Generate saves directly from the drawer's settings", 
     expect(generatePlan).not.toHaveBeenCalled();
   });
 
-  it("refuses a typed date on a day the client has already logged — not past, but before the floor — and saves nothing", () => {
-    builder.startFloor = "2026-07-03";
+  // Owner, 2026-09-11: today is the coach's to replace whatever the client has
+  // logged; the save re-records a logged today onto their log. The past is the
+  // footer's only bound — there is no floor line and no floor refusal.
+  it("saves a start on today whatever the client has logged — the past is the only bound", async () => {
+    generatePlan.mockResolvedValue(true);
     builder.effectiveFrom = CLIENT_TODAY;
     render(<DrawerFooter />);
     clickGenerate();
-    // en-AU spells July in full (June/July/Sept are the four-letter months).
-    expect(
-      screen.getByText("Alex Doe has already logged 2 July. Targets can start from 3 July.")
-    ).toBeInTheDocument();
-    expect(generatePlan).not.toHaveBeenCalled();
+    await waitFor(() => expect(generatePlan).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/has already logged/)).toBeNull();
   });
 });

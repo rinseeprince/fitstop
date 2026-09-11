@@ -24,17 +24,17 @@ function query(result: { data: { id: string } | null; error: unknown }) {
   return q as Record<string, ReturnType<typeof vi.fn>>;
 }
 
-/** Wire the two reads the floor makes, by table. */
+/**
+ * Wire the tables the floor might read. The training read is the ONE read it
+ * makes; a nutrition_logs row is wired too, so a floor that went back to
+ * asking about meals would find one and fail the tests below.
+ */
 function wire(rows: {
   nutritionLog?: { id: string } | null;
   trainingEvent?: { id: string } | null;
-  nutritionError?: unknown;
   trainingError?: unknown;
 }) {
-  const nutrition = query({
-    data: rows.nutritionLog ?? null,
-    error: rows.nutritionError ?? null,
-  });
+  const nutrition = query({ data: rows.nutritionLog ?? null, error: null });
   const training = query({
     data: rows.trainingEvent ?? null,
     error: rows.trainingError ?? null,
@@ -50,16 +50,9 @@ function wire(rows: {
 beforeEach(() => vi.clearAllMocks());
 
 describe("resolveEventDeletionFloor", () => {
-  it("is the client's today when they have not touched it", async () => {
+  it("is the client's today when they have not trained today", async () => {
     wire({});
     expect(await resolveEventDeletionFloor("client-31", TODAY)).toBe(TODAY);
-  });
-
-  it("moves to tomorrow when they have logged food today", async () => {
-    // Emptying the day would cost them their target for the rest of it, and
-    // every save after that would store a blank one.
-    wire({ nutritionLog: { id: "log-52" } });
-    expect(await resolveEventDeletionFloor("client-31", TODAY)).toBe(TOMORROW);
   });
 
   it("moves to tomorrow when today's training event has left 'scheduled'", async () => {
@@ -67,38 +60,37 @@ describe("resolveEventDeletionFloor", () => {
     expect(await resolveEventDeletionFloor("client-31", TODAY)).toBe(TOMORROW);
   });
 
-  it("asks BOTH tracks — a nutrition event's status can never answer this", async () => {
-    // A nutrition event never leaves 'scheduled', so the nutrition half has to
-    // be a nutrition_logs read; the training half has to be the status.
-    const { nutrition, training } = wire({});
-    await resolveEventDeletionFloor("client-31", TODAY);
+  // Owner, 2026-09-11: today's targets are the coach's to replace whatever the
+  // client has eaten, and a logged today is re-recorded onto their log when
+  // they do. A meal therefore moves nothing — neither a program's start nor a
+  // removal — and the floor does not even ask about one.
+  it("a meal logged today moves nothing: the floor stays today and reads no nutrition table", async () => {
+    const { training } = wire({ nutritionLog: { id: "log-52" } });
 
-    expect(mockFrom).toHaveBeenCalledWith("nutrition_logs");
+    expect(await resolveEventDeletionFloor("client-31", TODAY)).toBe(TODAY);
+    expect(mockFrom).toHaveBeenCalledTimes(1);
     expect(mockFrom).toHaveBeenCalledWith("training_events");
-    expect(nutrition.eq).toHaveBeenCalledWith("date", TODAY);
+    expect(mockFrom).not.toHaveBeenCalledWith("nutrition_logs");
     expect(training.neq).toHaveBeenCalledWith("status", "scheduled");
+    expect(training.eq).toHaveBeenCalledWith("date", TODAY);
   });
 
-  it("scopes both reads to the client", async () => {
-    const { nutrition, training } = wire({});
+  it("scopes the read to the client", async () => {
+    const { training } = wire({});
     await resolveEventDeletionFloor("client-94", TODAY);
 
-    expect(nutrition.eq).toHaveBeenCalledWith("client_id", "client-94");
     expect(training.eq).toHaveBeenCalledWith("client_id", "client-94");
   });
 
-  it("fails CLOSED to tomorrow when a read errors", async () => {
+  it("fails CLOSED to tomorrow when the read errors", async () => {
     // Unable to prove today is untouched. A day skipped is a stale row the next
     // removal clears; a day emptied cannot be undone.
-    wire({ nutritionError: new Error("read failed") });
-    expect(await resolveEventDeletionFloor("client-31", TODAY)).toBe(TOMORROW);
-
     wire({ trainingError: new Error("read failed") });
     expect(await resolveEventDeletionFloor("client-31", TODAY)).toBe(TOMORROW);
   });
 
   it("crosses a month boundary correctly", async () => {
-    wire({ nutritionLog: { id: "log-18" } });
+    wire({ trainingEvent: { id: "event-18" } });
     expect(await resolveEventDeletionFloor("client-31", "2026-11-30")).toBe(
       "2026-12-01"
     );

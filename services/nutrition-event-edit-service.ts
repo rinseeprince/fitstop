@@ -4,6 +4,7 @@ import {
   upsertNutritionDayEdits,
   type NutritionDayEdit,
 } from "./nutrition-day-edits-service";
+import { rerecordNutritionLogTarget } from "./daily-log-card-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
 import type { DietType, NutritionEvent } from "@/types/check-in";
 
@@ -23,6 +24,14 @@ import type { DietType, NutritionEvent } from "@/types/check-in";
  * reject an all-past selection; the service additionally floors the list at
  * clientToday. A selected day no version covers has no computed day and is
  * skipped: there is no target to edit.
+ *
+ * An edit or reset of a TODAY the client has already logged is re-recorded
+ * onto their log at once (owner, 2026-09-11) — the same snapshot their own
+ * save writes — so the coach's number reaches every reader of that log
+ * without waiting for the client's next save. Only today: a past day is never
+ * in the list, and a future day has no log yet. A failed re-record surfaces as
+ * `NutritionLogRerecordError` after the edit has landed; the routes report
+ * exactly that.
  */
 
 // `note` semantics (D-B): undefined = preserve any existing note; "" (or
@@ -112,6 +121,10 @@ export async function materializeNutritionEventDays({
   const edits = days.map((day) => resolveEdit(day, edit));
   await upsertNutritionDayEdits(clientId, coachId, edits);
 
+  if (edits.some((row) => row.date === clientToday)) {
+    await rerecordNutritionLogTarget(clientId, clientToday);
+  }
+
   return { updated: edits.length };
 }
 
@@ -135,5 +148,10 @@ export async function resetNutritionEventDays({
   if (eligibleDates.length === 0) return { reset: 0 };
 
   const reset = await deleteNutritionDayEdits(clientId, eligibleDates);
+
+  if (eligibleDates.includes(clientToday)) {
+    await rerecordNutritionLogTarget(clientId, clientToday);
+  }
+
   return { reset };
 }

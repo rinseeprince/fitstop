@@ -83,10 +83,18 @@ vi.mock('@/services/today-service', () => ({
   getClientTodayString: vi.fn().mockResolvedValue('2026-01-15'),
 }))
 
+// The deletion floor is TRAINING's (owner, 2026-09-11): nutrition asks no
+// floor. Mocked to answer TOMORROW so a belt that consulted it again would
+// refuse a save from today and fail the test below.
 vi.mock('@/services/event-deletion-floor', () => ({
-  // The one shared answer to "from which day may events be removed?" — its own
-  // rules are proved in services/event-deletion-floor.test.ts.
-  resolveEventDeletionFloor: vi.fn().mockResolvedValue('2026-01-15'),
+  resolveEventDeletionFloor: vi.fn().mockResolvedValue('2099-01-03'),
+}))
+
+// Replacing today re-records today's log; the snapshot itself is proved in
+// services/daily-log-card-service.test.ts.
+vi.mock('@/services/daily-log-card-service', () => ({
+  rerecordNutritionLogTarget: vi.fn().mockResolvedValue(false),
+  NutritionLogRerecordError: class NutritionLogRerecordError extends Error {},
 }))
 
 import { getClientById } from '@/services/client-service'
@@ -282,37 +290,27 @@ describe('Nutrition Route POST - effectiveFrom judged against client-local today
     expect(data.error).toBe('Effective date cannot be in the past')
   })
 
-  // The shared deletion floor, both directions: a day the client has touched
-  // can be neither emptied nor re-prescribed. Here the client logged today, so
-  // the floor is tomorrow.
-  it('refuses effectiveFrom on a day the client has already logged, naming them and the first day targets can start', async () => {
-    vi.mocked(resolveEventDeletionFloor).mockResolvedValue('2099-01-03')
+  // Nutrition asks no floor (owner, 2026-09-11): today's targets are the
+  // coach's to replace whatever the client has logged. The floor here answers
+  // tomorrow — a workout logged today — and a save from today still lands.
+  it('accepts a start on today whatever the client has logged — the deletion floor is not consulted', async () => {
     const request = makeRequest({ ...mockBody, effectiveFrom: '2099-01-02' })
-    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
-    const data = await response.json()
-
-    expect(response.status).toBe(400)
-    expect(data.error).toBe('Test Client has already logged 2 Jan. Targets can start from 3 Jan.')
-    // Judged with the CLIENT's today, the same anchor as the past-date belt.
-    expect(resolveEventDeletionFloor).toHaveBeenCalledWith('client-1', '2099-01-02')
-    expect(createNutritionPlan).not.toHaveBeenCalled()
-  })
-
-  it('judges the default start (no effectiveFrom = today) against the floor too', async () => {
-    vi.mocked(resolveEventDeletionFloor).mockResolvedValue('2099-01-03')
-    const request = makeRequest(mockBody)
-    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
-
-    expect(response.status).toBe(400)
-    expect(createNutritionPlan).not.toHaveBeenCalled()
-  })
-
-  it('accepts effectiveFrom on the floor itself', async () => {
-    vi.mocked(resolveEventDeletionFloor).mockResolvedValue('2099-01-03')
-    const request = makeRequest({ ...mockBody, effectiveFrom: '2099-01-03' })
     const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
 
     expect(response.status).toBe(200)
+    expect(resolveEventDeletionFloor).not.toHaveBeenCalled()
+    expect(createNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ effectiveFrom: '2099-01-02' })
+    )
+  })
+
+  it('the default start (no effectiveFrom = today) lands the same way', async () => {
+    const request = makeRequest(mockBody)
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+
+    expect(response.status).toBe(200)
+    expect(resolveEventDeletionFloor).not.toHaveBeenCalled()
+    expect(createNutritionPlan).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -15,13 +15,13 @@ type RetirablePlan = { id: string; effective_from: string; effective_until: stri
  *   every block it ran in, and every "now" read finds nothing from today.
  * - A QUEUED program — starting today or later — never ran a day of its own
  *   and is ARCHIVED. One that started today has no yesterday to end on and is
- *   archived too; the floor keeps a logged today's event for the client.
+ *   archived too; the floor keeps a trained today's event for the client.
  * - A FINISHED program — ended before today — is history and is not touched.
  *
  * Yesterday rather than the deletion floor, deliberately: the floor spares a
- * today the client has already logged, and a program closed AT that day would
- * keep covering it, so the hero would go on naming a deleted program until
- * midnight. Yesterday is never a day the client can still touch.
+ * today the client has already trained on, and a program closed AT that day
+ * would keep covering it, so the hero would go on naming a deleted program
+ * until midnight. Yesterday is never a day the client can still touch.
  *
  * Two statements, one per outcome, whatever the count. The per-plan DELETE
  * route hands one row; the client-level clear below hands every live program

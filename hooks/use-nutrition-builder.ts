@@ -105,29 +105,26 @@ export function useNutritionBuilder({
   // never from the coach's browser clock.
   const [effectiveFromPick, setEffectiveFromPick] = useState<string | null>(null);
   const clientToday = calcInputs?.today ?? null;
-  // The earliest day targets may START: the shared deletion floor — the
-  // client's today, or tomorrow once they have logged anything today. A server
-  // answer, so it rides the blocks payload beside the blocks themselves. Null
-  // until the resolved inputs have loaded, like everything here; today until
-  // the payload lands, and never before today whatever it says. The server's
-  // own belt refuses a start before it either way.
-  const { blocks, planStartFloor } = useClientBlocks(client.id);
-  const startFloor = clientToday
-    ? planStartFloor && planStartFloor > clientToday
-      ? planStartFloor
-      : clientToday
-    : null;
+  // The earliest day targets may START is the client's own today (owner,
+  // 2026-09-11): today is the coach's to replace whatever the client has
+  // eaten — a today they have already logged is re-recorded onto their log by
+  // the save — so nothing on this track asks the deletion floor, which is
+  // training's (a workout logged today moves a program's start, never the
+  // targets'). The blocks payload is read for its blocks alone. Null until the
+  // resolved inputs have loaded, like everything here; the server's own belt
+  // refuses a past start either way.
+  const { blocks } = useClientBlocks(client.id);
   // The Block field over the date: the dash (no block) first, then the client's
-  // blocks whose end is on or after the floor. The coach's own pick wins; with
+  // blocks whose end is on or after today. The coach's own pick wins; with
   // none, the block they came from is preselected; else the dash. A chosen
-  // block FIXES the start on its first available day (the floor for a block
+  // block FIXES the start on its first available day (today for a block
   // already under way, never the day it began) and the form disables the date;
-  // with the dash the date is the coach's own, seeded at the floor. A
-  // derivation, never a second copy of the date, so the two cannot disagree.
-  // No options, and so nothing fixed, until the floor is known.
+  // with the dash the date is the coach's own, seeded at today. A derivation,
+  // never a second copy of the date, so the two cannot disagree. No options,
+  // and so nothing fixed, until the client's today is known.
   const blockOptions = useMemo(
-    () => (startFloor ? buildBlockStartOptions(blocks, startFloor) : []),
-    [blocks, startFloor]
+    () => (clientToday ? buildBlockStartOptions(blocks, clientToday) : []),
+    [blocks, clientToday]
   );
   const [blockPick, setBlockPick] = useState<string | null>(null);
   const selectedBlock =
@@ -136,7 +133,7 @@ export function useNutritionBuilder({
       : null;
   const fixedStart =
     selectedBlock && selectedBlock.value !== NO_BLOCK_OPTION ? selectedBlock.startsOn : null;
-  const effectiveFrom = fixedStart ?? effectiveFromPick ?? startFloor;
+  const effectiveFrom = fixedStart ?? effectiveFromPick ?? clientToday;
 
   const autoPlan = useMemo(
     () =>
@@ -261,16 +258,15 @@ export function useNutritionBuilder({
   );
 
   const handleEffectiveFromChange = useCallback((date: string) => {
-    // An emptied picker means the block's first available day again, not an
-    // empty string.
+    // An emptied picker means the client's today again, not an empty string.
     setEffectiveFromPick(date || null);
     setSettingsChanged(true);
   }, []);
 
   const handleBlockChange = useCallback((value: string) => {
     setBlockPick(value);
-    // A block change discards a typed date: the dash then reads the floor
-    // again, not a day picked for a different block.
+    // A block change discards a typed date: the dash then reads the client's
+    // today again, not a day picked for a different block.
     setEffectiveFromPick(null);
     setSettingsChanged(true);
   }, []);
@@ -389,12 +385,11 @@ export function useNutritionBuilder({
     handleSettingsChange,
 
     // The day the plan takes effect: a chosen block's first available day —
-    // the floor (the client's today, or tomorrow once they have logged today)
-    // for a block under way, a future block's own start — else the coach's
-    // pick, else the floor. Null until the resolved inputs have loaded.
+    // the client's today for a block under way, a future block's own start —
+    // else the coach's pick, else the client's today. Null until the resolved
+    // inputs have loaded.
     effectiveFrom,
     clientToday,
-    startFloor,
     handleEffectiveFromChange,
 
     // The Block field: its options, the selected value, and whether a block is

@@ -24,7 +24,9 @@ import {
  * 31-day month and four for a single day, with the number of days deciding
  * nothing. Every date is then handed to the resolver with the version covering
  * it. A date no version covers yields NO day, exactly as "no row" did: a gap
- * between plans is a real state, and the client's food log is refused there.
+ * between plans is a real state, and a first food log is refused there (a day
+ * the client has already begun stays open, under the target it was logged
+ * under).
  *
  * The two function names are the ones every reader already calls; the day
  * table's readers were deleted so the compiler listed every caller.

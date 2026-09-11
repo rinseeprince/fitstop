@@ -22,6 +22,20 @@ import {
 
 beforeEach(() => vi.clearAllMocks());
 
+/** The standing food log for the day, as the resolver reads it. */
+function wireStandingLog(row: { nutrition_plan_id: string | null } | null) {
+  const query = {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: row, error: null }),
+  };
+  vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+    if (table === "nutrition_logs") return query;
+    throw new Error(`Unexpected table: ${table}`);
+  }) as never);
+  return query;
+}
+
 describe("resolvePlanContextForDate", () => {
   it("stamps nutrition from the version covering the LOG's date — a computed day has no row to prefer", async () => {
     vi.mocked(getNutritionPlanIdForDate).mockResolvedValue("np-covering");
@@ -36,6 +50,26 @@ describe("resolvePlanContextForDate", () => {
     expect(ctx).toEqual({ nutritionPlanId: "np-covering", trainingPlanId: "tp-1" });
     // Date-accurate training event present → no active-plan fallback.
     expect(getActiveTrainingPlanId).not.toHaveBeenCalled();
+    // A covered day never reads the standing log: the version is the stamp.
+    expect(supabaseAdmin.from).not.toHaveBeenCalledWith("nutrition_logs");
+  });
+
+  // Owner, 2026-09-11: a started day stays open. The coach ended or replaced
+  // the plan after the client began the day, so no version covers it — the
+  // day takes the stamp its own log carries, the guard passes, and the writer
+  // keeps the target the day was logged under.
+  it("a day no version covers but the client has begun keeps the stamp its log carries", async () => {
+    vi.mocked(getNutritionPlanIdForDate).mockResolvedValue(null);
+    vi.mocked(getEventForDate).mockResolvedValue(null);
+    vi.mocked(getActiveTrainingPlanId).mockResolvedValue(null);
+    const query = wireStandingLog({ nutrition_plan_id: "np-logged-under" });
+
+    const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
+
+    expect(query.eq).toHaveBeenCalledWith("client_id", "c1");
+    expect(query.eq).toHaveBeenCalledWith("date", "2026-05-21");
+    expect(ctx.nutritionPlanId).toBe("np-logged-under");
+    expect(() => assertHasActivePlan(ctx, "nutrition")).not.toThrow();
   });
 
   it("training falls back to the active plan on a no-event day", async () => {
@@ -49,23 +83,27 @@ describe("resolvePlanContextForDate", () => {
     expect(ctx).toEqual({ nutritionPlanId: "np-covering", trainingPlanId: "tp-active" });
   });
 
-  it("a pre-start day (queued-first-plan client) gets a NULL nutrition stamp — no covering version", async () => {
+  it("a pre-start day (queued-first-plan client) gets a NULL nutrition stamp — no covering version, nothing logged", async () => {
     vi.mocked(getEventForDate).mockResolvedValue(null);
     // No version covers this date — only a future one is queued, which
     // resolvePlanContextForDate deliberately does NOT consult: a queued plan is
-    // not a target for today, so the stamp stays null and the guard rejects.
+    // not a target for today — and the client has not begun the day, so the
+    // stamp stays null and the guard rejects.
     vi.mocked(getNutritionPlanIdForDate).mockResolvedValue(null);
     vi.mocked(getActiveTrainingPlanId).mockResolvedValue(null);
+    wireStandingLog(null);
 
     const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
 
     expect(ctx).toEqual({ nutritionPlanId: null, trainingPlanId: null });
+    expect(() => assertHasActivePlan(ctx, "nutrition")).toThrow(NoActivePlanError);
   });
 
   it("returns all-null when there is no plan at all", async () => {
     vi.mocked(getEventForDate).mockResolvedValue(null);
     vi.mocked(getNutritionPlanIdForDate).mockResolvedValue(null);
     vi.mocked(getActiveTrainingPlanId).mockResolvedValue(null);
+    wireStandingLog(null);
 
     const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
 

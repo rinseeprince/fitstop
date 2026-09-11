@@ -6,6 +6,7 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { getClientTodayString } from "@/services/today-service";
 import { nutritionResetDaysSchema } from "@/lib/validations/nutrition";
 import { resetNutritionEventDays } from "@/services/nutrition-event-edit-service";
+import { NutritionLogRerecordError } from "@/services/daily-log-card-service";
 
 /**
  * PATCH - Reset a LIST of coach-edited days back to the plan in one call: the
@@ -61,6 +62,11 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, reset }, { status: 200 });
   } catch (error) {
+    // The reset landed; only today's log snapshot is behind (owner,
+    // 2026-09-11). Say exactly that rather than "failed to reset".
+    if (error instanceof NutritionLogRerecordError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
     console.error(
       "Error resetting nutrition days:",
       error instanceof Error ? error.message : "Unknown error"

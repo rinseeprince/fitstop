@@ -12,10 +12,24 @@ vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn().mockResolvedValue("2026-07-02"),
 }));
 
-// The start floor. Today unless a test says the client has logged today; its
-// own rules are proved in services/event-deletion-floor.test.ts.
+// The deletion floor is TRAINING's (owner, 2026-09-11): a version starts on
+// any day from the client's today whatever they have logged. It stays mocked
+// here — answering TOMORROW — so a belt that consulted it again would refuse a
+// save from today and fail the test that proves it is not asked.
 vi.mock("@/services/event-deletion-floor", () => ({
-  resolveEventDeletionFloor: vi.fn().mockResolvedValue("2026-07-02"),
+  resolveEventDeletionFloor: vi.fn().mockResolvedValue("2026-07-03"),
+}));
+
+// Replacing today re-records today's log: the one snapshot helper the client's
+// own save writes through, proved in services/daily-log-card-service.test.ts.
+vi.mock("@/services/daily-log-card-service", () => ({
+  rerecordNutritionLogTarget: vi.fn().mockResolvedValue(true),
+  NutritionLogRerecordError: class NutritionLogRerecordError extends Error {
+    constructor() {
+      super("The change is saved, but today's food log still shows the previous target.");
+      this.name = "NutritionLogRerecordError";
+    }
+  },
 }));
 
 vi.mock("@/lib/validations/nutrition", () => ({
@@ -49,6 +63,11 @@ import {
   resolveNutritionPlacementEnd,
 } from "@/services/nutrition-plan-service";
 import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
+import {
+  NutritionLogRerecordError,
+  rerecordNutritionLogTarget,
+} from "@/services/daily-log-card-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import {
@@ -128,7 +147,105 @@ beforeEach(() => {
     versionsCleared: 1, editsCleared: 0,
     versionIds: ["plan-1"],
   });
+  vi.mocked(rerecordNutritionLogTarget).mockResolvedValue(true);
   mockNoExistingPlan();
+});
+
+// =============================================================================
+// The touched-day rules (owner, 2026-09-11): today is the coach's to change or
+// to end, whatever the client logged; the client's logs are never lost.
+// =============================================================================
+describe("orchestrateNutritionPlanCreation — the touched-day rules (C2)", () => {
+  const CLIENT_TODAY = "2026-07-02";
+
+  it("a save from today is accepted whatever the client has logged — nutrition asks no floor", async () => {
+    // The floor says tomorrow (a workout logged today). A program's start
+    // would move; the targets' start does not, and the floor is not even read.
+    const result = await orchestrateNutritionPlanCreation(
+      clientId,
+      coachId,
+      { ...calculatedBody, effectiveFrom: CLIENT_TODAY },
+      {}
+    );
+
+    expect(result.success).toBe(true);
+    expect(resolveEventDeletionFloor).not.toHaveBeenCalled();
+    expect(createNutritionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ effectiveFrom: CLIENT_TODAY })
+    );
+  });
+
+  it("the default start — today — is accepted the same way", async () => {
+    const result = await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
+
+    expect(result.success).toBe(true);
+    expect(resolveEventDeletionFloor).not.toHaveBeenCalled();
+    expect(createNutritionPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("a past start is still refused, before any write and any re-record", async () => {
+    await expect(
+      orchestrateNutritionPlanCreation(
+        clientId,
+        coachId,
+        { ...calculatedBody, effectiveFrom: "2026-07-01" },
+        {}
+      )
+    ).rejects.toMatchObject({
+      name: "NutritionPlanError",
+      statusCode: 400,
+      message: "Effective date cannot be in the past",
+    });
+    expect(createNutritionPlan).not.toHaveBeenCalled();
+    expect(rerecordNutritionLogTarget).not.toHaveBeenCalled();
+  });
+
+  // Replacing today re-records today's log: after the RPC has stored a
+  // version whose window covers the client's today, a logged today is
+  // re-snapshotted with the client's TODAY — never yesterday, never a queued
+  // day — so the table, the calendar, their day and the check-in week read the
+  // new target with the logged meals on top.
+  it("a save whose window covers today re-records today's log AFTER the RPC, with the client's today", async () => {
+    await orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {});
+
+    expect(rerecordNutritionLogTarget).toHaveBeenCalledTimes(1);
+    expect(rerecordNutritionLogTarget).toHaveBeenCalledWith(clientId, CLIENT_TODAY);
+    expect(vi.mocked(rerecordNutritionLogTarget).mock.invocationCallOrder[0]).toBeGreaterThan(
+      vi.mocked(createNutritionPlan).mock.invocationCallOrder[0]
+    );
+  });
+
+  it("the custom-macros branch re-records too — both handlers, not one", async () => {
+    await orchestrateNutritionPlanCreation(clientId, coachId, customBody, {});
+
+    expect(rerecordNutritionLogTarget).toHaveBeenCalledWith(clientId, CLIENT_TODAY);
+  });
+
+  it("a queued save leaves today's log alone: the window does not cover today", async () => {
+    await orchestrateNutritionPlanCreation(
+      clientId,
+      coachId,
+      { ...calculatedBody, effectiveFrom: "2026-07-10" },
+      {}
+    );
+
+    expect(createNutritionPlan).toHaveBeenCalledTimes(1);
+    expect(rerecordNutritionLogTarget).not.toHaveBeenCalled();
+  });
+
+  it("a failed re-record is a 500 saying the targets are saved and the log is behind — never 'failed to save'", async () => {
+    vi.mocked(rerecordNutritionLogTarget).mockRejectedValue(new NutritionLogRerecordError());
+
+    await expect(
+      orchestrateNutritionPlanCreation(clientId, coachId, calculatedBody, {})
+    ).rejects.toMatchObject({
+      name: "NutritionPlanError",
+      statusCode: 500,
+      message: "The change is saved, but today's food log still shows the previous target.",
+    });
+    // The version landed before the re-record ran.
+    expect(createNutritionPlan).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("orchestrateNutritionPlanCreation — the save is the RPC and the note, nothing else", () => {

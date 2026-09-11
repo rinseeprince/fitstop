@@ -139,8 +139,8 @@ export async function generateTrainingEvents(
  * session on it, so every day this clears is a rest day the moment the
  * delete lands, however far the program reached.
  *
- * The live callers now pass the shared deletion floor (`resolveEventDeletionFloor`),
- * which already excludes a today the client has touched — so on those paths the
+ * The live callers now pass the deletion floor (`resolveEventDeletionFloor`),
+ * which already excludes a today the client has trained on — so on those paths the
  * detach below has nothing left to catch. It stays: this function's own default
  * is a UTC today, and the detach is what makes an earlier `effectiveFrom` safe
  * for any future caller.

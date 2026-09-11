@@ -63,12 +63,14 @@ export async function GET(
     // exactly the preview-vs-execution drift the shared pure helper forbids.
     //
     // planStartFloor rides beside it for the same reason: the earliest day a
-    // plan may START on this calendar (the shared deletion floor — today, or
-    // tomorrow once the client has logged anything today) depends on the
-    // client's logs, so only the server can answer it. Both setup surfaces
-    // floor their date pickers on it; a block itself is not constrained by it.
-    // Every handler that echoes this payload carries it, because the seed
-    // helper writes a mutation's response straight into the chain cache.
+    // PROGRAM may start on this calendar (the deletion floor — today, or
+    // tomorrow once the client has logged a workout today) depends on the
+    // client's training log, so only the server can answer it. The apply
+    // dialog floors its date picker on it; the nutrition drawer floors on the
+    // client's today (targets ask no floor) and reads this payload for its
+    // blocks alone; a block itself is not constrained by it. Every handler
+    // that echoes this payload carries it, because the seed helper writes a
+    // mutation's response straight into the chain cache.
     return NextResponse.json(
       {
         success: true,

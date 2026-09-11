@@ -22,9 +22,19 @@ vi.mock("@/services/today-service", () => ({
 vi.mock("@/services/nutrition-event-edit-service", () => ({
   resetNutritionEventDays: vi.fn(),
 }));
+// The route maps this error to its own sentence; the class is all it imports.
+vi.mock("@/services/daily-log-card-service", () => ({
+  NutritionLogRerecordError: class NutritionLogRerecordError extends Error {
+    constructor() {
+      super("The change is saved, but today's food log still shows the previous target.");
+      this.name = "NutritionLogRerecordError";
+    }
+  },
+}));
 
 import { getClientById } from "@/services/client-service";
 import { resetNutritionEventDays } from "@/services/nutrition-event-edit-service";
+import { NutritionLogRerecordError } from "@/services/daily-log-card-service";
 import { PATCH } from "./route";
 
 const CLIENT = { id: "client-1", coachId: "coach-1" };
@@ -88,6 +98,21 @@ describe("PATCH /nutrition/events/reset", () => {
 
     expect(response.status).toBe(403);
     expect(resetNutritionEventDays).not.toHaveBeenCalled();
+  });
+
+  // The reset landed; only today's log snapshot is behind. The route says
+  // exactly that rather than "failed to reset" (owner, 2026-09-11).
+  it("a failed re-record of today's log is a 500 carrying its own sentence, never 'failed to reset'", async () => {
+    vi.mocked(resetNutritionEventDays).mockRejectedValue(new NutritionLogRerecordError());
+
+    const response = await PATCH(makeRequest(["2026-04-10"]), params);
+    const data = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(data).toEqual({
+      success: false,
+      error: "The change is saved, but today's food log still shows the previous target.",
+    });
   });
 
   it("403s a client the coach does not own", async () => {

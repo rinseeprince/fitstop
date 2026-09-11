@@ -51,6 +51,9 @@ export async function GET(
 /**
  * PATCH nutrition (kcal + macros). Guards the date-edit rule via assertCanEdit (403 when
  * locked), resolves plan context, then writes nutrition_logs. Targets are server-resolved.
+ * A day the client has already started stays open (owner, 2026-09-11): the context's
+ * stamp is the covering version's, else the standing log's own, so a coach ending or
+ * replacing today's plan never locks the client out of a day they began.
  *
  * Always 200. The old 201-on-first-log branch needed a nutrition_logs existence
  * read, which the day rule used to do for free and no longer does; the code was

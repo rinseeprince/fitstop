@@ -12,10 +12,12 @@ import { deleteNutritionDayEditsInRanges } from "./nutrition-day-edits-service";
  * block it ran in, and every "now" read finds nothing from today. A QUEUED
  * version — starting today or later — never ran a day of its own and is
  * ARCHIVED. A FINISHED version — ended before today — is history and is not
- * touched. Yesterday rather than the shared deletion floor, deliberately: the
- * floor spares a today the client has already logged, and a version closed AT
- * that day kept covering it, so the hero went on saying "Active since" after
- * the delete. Yesterday is never a day the client can still touch.
+ * touched. Yesterday, never today, deliberately: a version closed AT today
+ * would keep covering it, so the hero would go on saying "Active since" after
+ * the delete. Today is the coach's to end whatever the client has eaten
+ * (owner, 2026-09-11) — nutrition asks no floor — and a today they have
+ * already logged keeps its own snapshot and stays open to their food log
+ * under the target it was logged under.
  *
  * A day's target is COMPUTED from the version covering it (owner decision
  * 2026-09-10), so this issues NO day statement: ending the versions IS

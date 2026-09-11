@@ -31,11 +31,13 @@ type BlocksResponse = {
   data: {
     blocks: ClientBlockView[];
     clientToday: string;
-    /** The earliest day a plan may START on this client's calendar: their
-     *  today, or tomorrow once they have logged anything today — the shared
-     *  deletion floor (`resolveEventDeletionFloor`), read server-side because
-     *  it depends on the client's logs. Both setup surfaces' date pickers
-     *  floor on it; a block itself is not constrained by it. */
+    /** The earliest day a PROGRAM may start on this client's calendar: their
+     *  today, or tomorrow once they have logged a workout today — the deletion
+     *  floor (`resolveEventDeletionFloor`), read server-side because it depends
+     *  on the client's training log. The apply dialog's date picker floors on
+     *  it; the nutrition drawer's floors on the client's today (targets ask no
+     *  floor) and takes only the blocks from this payload. A block itself is
+     *  not constrained by it. */
     planStartFloor: string;
   };
 };

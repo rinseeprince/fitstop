@@ -48,14 +48,16 @@ const placeFromLibrarySchema = z.discriminatedUnion("type", [
 ]);
 
 /**
- * A program may not start before the shared deletion floor: the client's
- * today, or tomorrow once they have logged anything today.
+ * A program may not start before the deletion floor: the client's today, or
+ * tomorrow once they have logged a WORKOUT today. A meal moves nothing —
+ * today's targets are the coach's to replace, and nutrition asks no floor
+ * (owner, 2026-09-11).
  *
  * "Past" is judged against the client's local today (the placement RPC's own
  * p_today anchor), never the coach's device or server UTC. The floor is the
- * one the plan clears remove days from — ONE function, both directions, so a
- * day the client has touched can be neither emptied nor re-prescribed. There
- * is no override: placing onto a logged day used to be a warn-and-override,
+ * one the training removals remove days from — ONE function, both directions,
+ * so a day the client has trained can be neither emptied nor re-prescribed.
+ * There is no override: placing onto a trained day used to be a warn-and-override,
  * and the override wrote the program's first session BESIDE the completed one
  * (the walk's upsert arbitrates on (client_id, training_session_id, date) and
  * the completed event belongs to another session row), which the check-in

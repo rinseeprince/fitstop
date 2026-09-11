@@ -146,12 +146,13 @@ export function ApplyToClientDialog({
       ? getTodayDateStringInTimezone(selectedClientTimezone)
       : null;
 
-  // The earliest day a program may START: the shared deletion floor — the
-  // client's today, or tomorrow once they have logged anything today. A server
-  // answer (it reads the client's logs), so it rides the blocks payload beside
-  // the client's today and the blocks themselves; an empty client id fetches
-  // nothing. Until it lands the timezone-derived today stands in, and the
-  // server refuses a start before the floor either way.
+  // The earliest day a program may START: the deletion floor — the client's
+  // today, or tomorrow once they have logged a WORKOUT today (a meal moves
+  // nothing; owner, 2026-09-11). A server answer (it reads the client's
+  // training log), so it rides the blocks payload beside the client's today
+  // and the blocks themselves; an empty client id fetches nothing. Until it
+  // lands the timezone-derived today stands in, and the server refuses a
+  // start before the floor either way.
   const { blocks, clientToday: payloadToday, planStartFloor } = useClientBlocks(clientId);
   const startFloor = planStartFloor ?? clientLocalToday ?? deviceToday;
   // The Block field over the date: the dash (no block) first, then the client's

@@ -16,8 +16,8 @@ import { resolveEventDeletionFloor } from "./event-deletion-floor";
  * than replaying a diff, so it needs no memory of the old window and
  * re-running it is idempotent.
  *
- * The past and everything logged are left alone, the same way every other
- * clear in the product does it: removals start at the shared deletion floor,
+ * The past and everything trained are left alone, the same way every other
+ * training clear in the product does it: removals start at the deletion floor,
  * never a completed or missed row.
  */
 
@@ -62,9 +62,9 @@ async function clearCeiling(
  * the plan's active rows in date-walk order, so rows left active past the end
  * would put days on its grid that the window no longer has.
  *
- * Floored at the SHARED deletion floor and scoped to `status = 'scheduled'`, so
- * the past and everything logged survive — the same two guards every other
- * removal in the product uses.
+ * Floored at the deletion floor and scoped to `status = 'scheduled'`, so the
+ * past and everything trained survive — the same two guards every other
+ * training removal in the product uses.
  */
 export async function clearScheduledEvents(params: {
   clientId: string;

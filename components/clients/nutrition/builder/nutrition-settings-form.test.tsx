@@ -72,8 +72,6 @@ function renderForm(overrides: FormOverrides = {}) {
       blockSelected={false}
       effectiveFrom={CLIENT_TODAY}
       clientToday={CLIENT_TODAY}
-      startFloor={CLIENT_TODAY}
-      clientName="Alex Doe"
       queuedChangeDate={null}
       onEffectiveFromChange={onEffectiveFromChange}
       {...overrides}
@@ -91,30 +89,20 @@ const blockField = () => screen.getByLabelText("Block");
 describe("NutritionSettingsForm — Starts on", () => {
   beforeEach(cleanup);
 
-  it("floors the field at the start floor — the server's belt, as an affordance", () => {
+  it("floors the field at the client's today — the server's past-date belt, as an affordance", () => {
     renderForm();
     expect(startsOn()).toHaveAttribute("min", CLIENT_TODAY);
   });
 
-  // The floor is the shared deletion floor (commit B): today, or tomorrow once
-  // the client has logged today. A greyed-out today with no explanation is
-  // worse than an error, so the field says why.
-  describe("the logged-today line", () => {
-    const TOMORROW = "2026-07-03";
-
-    it("floors at the deletion floor and says who logged which day, and when targets can start", () => {
-      renderForm({ startFloor: TOMORROW, effectiveFrom: TOMORROW });
-      expect(startsOn()).toHaveAttribute("min", TOMORROW);
-      // en-AU spells July in full (June/July/Sept are the four-letter months).
-      expect(screen.getByText(/has already logged/)).toHaveTextContent(
-        "Alex Doe has already logged 2 July. Targets can start from 3 July."
-      );
-    });
-
-    it("says nothing while the floor is today", () => {
-      renderForm();
-      expect(screen.queryByText(/has already logged/)).toBeNull();
-    });
+  // Owner, 2026-09-11: today is the coach's to replace whatever the client has
+  // logged — a logged today is re-recorded onto their log by the save — so the
+  // field carries no floor line and greys nothing past today. The deletion
+  // floor is training's; it never reaches this form.
+  it("says nothing about the client's logs, and never greys today", () => {
+    renderForm({ effectiveFrom: CLIENT_TODAY });
+    expect(startsOn()).toHaveAttribute("min", CLIENT_TODAY);
+    expect(screen.queryByText(/has already logged/)).toBeNull();
+    expect(screen.queryByText(/can start from/)).toBeNull();
   });
 
   it("shows the day it was given — the client's today until the coach picks", () => {
@@ -132,7 +120,6 @@ describe("NutritionSettingsForm — Starts on", () => {
     renderForm({
       effectiveFrom: null,
       clientToday: null,
-      startFloor: null,
       blockOptions: [],
     });
     const field = startsOn();
@@ -202,7 +189,7 @@ describe("NutritionSettingsForm — the Block field", () => {
     expect(startsOn()).not.toHaveAttribute("max");
   });
 
-  it("the dash leaves the date the coach's own, floored at the floor with no ceiling", () => {
+  it("the dash leaves the date the coach's own, floored at today with no ceiling", () => {
     renderForm();
     expect(startsOn()).toBeEnabled();
     expect(startsOn()).toHaveAttribute("min", CLIENT_TODAY);

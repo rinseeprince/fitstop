@@ -126,8 +126,8 @@ export async function DELETE(
     // Client-local today: "future" events on the client's calendar are
     // anchored to the client's day, not the server's UTC clock.
     const today = await getClientTodayString(clientId);
-    // The shared deletion floor: today, or tomorrow if the client has already
-    // touched today.
+    // The deletion floor: today, or tomorrow once the client has logged a
+    // workout today.
     const deleteFrom = await resolveEventDeletionFloor(clientId, today);
 
     // The same rule the client-level clear applies to every program: the

@@ -14,12 +14,20 @@ vi.mock("@/utils/nutrition-helpers", () => ({
   calculateDailyMacros: vi.fn().mockReturnValue({ proteinG: 150, carbsG: 200, fatG: 60 }),
 }));
 
+// Replacing today re-records today's log (owner, 2026-09-11): the one snapshot
+// helper the client's own save writes through, proved in
+// services/daily-log-card-service.test.ts.
+vi.mock("./daily-log-card-service", () => ({
+  rerecordNutritionLogTarget: vi.fn().mockResolvedValue(true),
+}));
+
 import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import {
   deleteNutritionDayEdits,
   upsertNutritionDayEdits,
 } from "./nutrition-day-edits-service";
 import { calculateDailyMacros } from "@/utils/nutrition-helpers";
+import { rerecordNutritionLogTarget } from "./daily-log-card-service";
 import {
   materializeNutritionEventDays,
   resetNutritionEventDays,
@@ -210,6 +218,113 @@ describe("nutrition-event-edit-service", () => {
         clientToday: TODAY,
       });
       expect(writtenRows()[0]).toMatchObject({ note: "Old note" });
+    });
+  });
+
+  // An edit or reset of a TODAY the client has already logged is re-recorded
+  // onto their log at once, with the client's today — never yesterday (a past
+  // day is not in the list), never a future day (it has no log yet).
+  describe("re-recording a logged today (C2)", () => {
+    const TOMORROW = "2026-01-16";
+    const YESTERDAY = "2026-01-14";
+    const computed = (dates: string[]) =>
+      vi.mocked(getNutritionEventsForDateRange).mockResolvedValue(dates.map((date) => day({ id: date, date })));
+
+    it("an edit that includes today re-records today's log, once, after the edit has landed", async () => {
+      computed([TODAY, TOMORROW]);
+
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: [TOMORROW, TODAY],
+        edit: { calories: 1800 },
+        clientToday: TODAY,
+      });
+
+      expect(rerecordNutritionLogTarget).toHaveBeenCalledTimes(1);
+      expect(rerecordNutritionLogTarget).toHaveBeenCalledWith(clientId, TODAY);
+      expect(vi.mocked(rerecordNutritionLogTarget).mock.invocationCallOrder[0]).toBeGreaterThan(
+        vi.mocked(upsertNutritionDayEdits).mock.invocationCallOrder[0]
+      );
+    });
+
+    it("an edit of future days alone re-records nothing", async () => {
+      computed([TOMORROW]);
+
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: [TOMORROW],
+        edit: { calories: 1800 },
+        clientToday: TODAY,
+      });
+
+      expect(rerecordNutritionLogTarget).not.toHaveBeenCalled();
+    });
+
+    it("never yesterday: a past day in the selection is dropped, not re-recorded", async () => {
+      computed([TOMORROW]);
+
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: [YESTERDAY, TOMORROW],
+        edit: { calories: 1800 },
+        clientToday: TODAY,
+      });
+
+      expect(rerecordNutritionLogTarget).not.toHaveBeenCalled();
+    });
+
+    it("a today no version covers was not written, so it is not re-recorded either", async () => {
+      computed([TOMORROW]);
+
+      await materializeNutritionEventDays({
+        clientId,
+        coachId,
+        dates: [TODAY, TOMORROW],
+        edit: { calories: 1800 },
+        clientToday: TODAY,
+      });
+
+      expect(rerecordNutritionLogTarget).not.toHaveBeenCalled();
+    });
+
+    it("a reset that includes today re-records today's log after the delete", async () => {
+      vi.mocked(deleteNutritionDayEdits).mockResolvedValue(1);
+
+      await resetNutritionEventDays({ clientId, dates: [TOMORROW, TODAY], clientToday: TODAY });
+
+      expect(rerecordNutritionLogTarget).toHaveBeenCalledTimes(1);
+      expect(rerecordNutritionLogTarget).toHaveBeenCalledWith(clientId, TODAY);
+      expect(vi.mocked(rerecordNutritionLogTarget).mock.invocationCallOrder[0]).toBeGreaterThan(
+        vi.mocked(deleteNutritionDayEdits).mock.invocationCallOrder[0]
+      );
+    });
+
+    it("a reset of future days alone, or of a past day, re-records nothing", async () => {
+      vi.mocked(deleteNutritionDayEdits).mockResolvedValue(1);
+
+      await resetNutritionEventDays({ clientId, dates: [TOMORROW], clientToday: TODAY });
+      await resetNutritionEventDays({ clientId, dates: [YESTERDAY], clientToday: TODAY });
+
+      expect(rerecordNutritionLogTarget).not.toHaveBeenCalled();
+    });
+
+    it("a failed re-record propagates after the edit has landed — the route says exactly that", async () => {
+      computed([TODAY]);
+      vi.mocked(rerecordNutritionLogTarget).mockRejectedValueOnce(new Error("behind"));
+
+      await expect(
+        materializeNutritionEventDays({
+          clientId,
+          coachId,
+          dates: [TODAY],
+          edit: { calories: 1800 },
+          clientToday: TODAY,
+        })
+      ).rejects.toThrow("behind");
+      expect(upsertNutritionDayEdits).toHaveBeenCalledTimes(1);
     });
   });
 

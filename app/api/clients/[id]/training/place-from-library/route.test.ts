@@ -40,8 +40,8 @@ vi.mock("@/services/today-service", () => ({
   getClientTodayString: vi.fn(),
 }));
 
-// The one shared answer to "from which day may a plan start?" — its own rules
-// are proved in services/event-deletion-floor.test.ts.
+// The one answer to "from which day may a program start?" — keyed on a logged
+// WORKOUT alone; its own rules are proved in services/event-deletion-floor.test.ts.
 vi.mock("@/services/event-deletion-floor", () => ({
   resolveEventDeletionFloor: vi.fn(),
 }));
@@ -148,7 +148,7 @@ describe("POST /api/clients/[id]/training/place-from-library start-date guard", 
   });
 
   it("refuses a start on a day the client has already logged, naming them and the first day a plan can start", async () => {
-    // The floor moved to tomorrow: the client logged today. The old
+    // The floor moved to tomorrow: the client logged a workout today. The old
     // warn-and-override wrote the program's first session beside the
     // completed one, and the check-in counted the pair as a missed session.
     vi.mocked(resolveEventDeletionFloor).mockResolvedValue("2026-01-16");

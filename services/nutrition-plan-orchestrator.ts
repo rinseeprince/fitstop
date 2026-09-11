@@ -12,9 +12,11 @@ import {
 import { CUSTOM_MACRO_CALORIE_TOLERANCE } from "@/lib/constants";
 import type { GenerateNutritionPlanRequest } from "@/types/check-in";
 import { getClientTodayString } from "@/services/today-service";
-import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
-import { formatDateOnlyShort } from "@/lib/date-helpers";
 import { clearNutritionPlansForClient } from "@/services/nutrition-plan-clear-service";
+import {
+  NutritionLogRerecordError,
+  rerecordNutritionLogTarget,
+} from "@/services/daily-log-card-service";
 
 /** The resolver's success arm — both plan handlers require complete inputs. */
 type ReadyCalcInputs = Extract<NutritionCalcInputs, { status: "ready" }>;
@@ -51,8 +53,9 @@ const coachNoteOf = (validatedData: { coachNotes?: string }): string | undefined
  * from the version covering it, so ending the versions IS removing the days:
  * past days keep their version, on the calendar and on every block it ran in,
  * and from today nothing covers a day — the hero, the Overview and the
- * client's Program tab all read "no plan" the moment it lands, and the
- * client's food log is refused there.
+ * client's Program tab all read "no plan" the moment it lands, and a day the
+ * client has not begun refuses their food log (a today they have already
+ * logged stays open under the target it was logged under).
  *
  * Throws NutritionPlanError for ownership / not-found failures, and 404 when
  * nothing is running or queued — which also makes a same-day second delete a
@@ -111,26 +114,15 @@ export async function orchestrateNutritionPlanCreation(
   // spurious "past date" rejection.
   const clientToday = await getClientTodayString(clientId);
 
-  // The day the version takes effect: the coach's pick, else today.
+  // The day the version takes effect: the coach's pick, else today. The past
+  // is refused — here and again by the RPC's own belt — and nothing else
+  // bounds the start (owner, 2026-09-11): today is the coach's to replace
+  // whatever the client has eaten, so a version starts on any day from their
+  // today, and a today they have already logged is re-recorded below. The
+  // deletion floor is training's alone.
   const effectiveDate = body.effectiveFrom ?? clientToday;
   if (effectiveDate < clientToday) {
     throw new NutritionPlanError("Effective date cannot be in the past", 400);
-  }
-
-  // Nor may it start on a day the client has already logged: the shared
-  // deletion floor — the client's today, or tomorrow once they have logged
-  // anything today — the same line the training placement and both plan
-  // clears keep to. On this track alone a replaced target would be harmless
-  // (the next food save re-snapshots it); the rule is taken whole so the two
-  // tracks and the two directions cannot drift. So a same-day re-save is
-  // possible only while today is unlogged; afterwards the earliest start is
-  // tomorrow, and the RPC caps the running version at today.
-  const startFloor = await resolveEventDeletionFloor(clientId, clientToday);
-  if (effectiveDate < startFloor) {
-    throw new NutritionPlanError(
-      `${client.name} has already logged ${formatDateOnlyShort(clientToday)}. Targets can start from ${formatDateOnlyShort(startFloor)}.`,
-      400
-    );
   }
 
   // One resolver, shared with the coach GET, so the numbers the builder
@@ -155,21 +147,37 @@ export async function orchestrateNutritionPlanCreation(
   // the window and the days it answers for are one thing by construction.
   const effectiveUntil = await resolveNutritionPlacementEnd(clientId, effectiveDate);
 
-  // Handle custom macros
-  if (body.customMacrosEnabled) {
-    return handleCustomMacros(clientId, coachId, body, calcInputs, validatedData, effectiveUntil);
+  const result = body.customMacrosEnabled
+    ? await handleCustomMacros(clientId, coachId, body, calcInputs, validatedData, effectiveUntil)
+    : await handleCalculatedPlan(
+        clientId,
+        coachId,
+        body,
+        client,
+        calcInputs,
+        validatedData,
+        effectiveUntil
+      );
+
+  // Replacing today re-records today's log (owner, 2026-09-11): when the
+  // version's window covers the client's today, a today they have already
+  // logged is re-snapshotted onto their log at once, the way their own save
+  // does it, so the history table, the calendar, their day and the check-in
+  // week read the new target with the logged meals on top. Never a past day
+  // — a past start is refused above. The version is stored by now either way;
+  // a failure here says exactly that rather than "failed to save".
+  if (effectiveDate <= clientToday && effectiveUntil >= clientToday) {
+    try {
+      await rerecordNutritionLogTarget(clientId, clientToday);
+    } catch (error) {
+      if (error instanceof NutritionLogRerecordError) {
+        throw new NutritionPlanError(error.message, 500);
+      }
+      throw error;
+    }
   }
 
-  // Generate calculated nutrition plan
-  return handleCalculatedPlan(
-    clientId,
-    coachId,
-    body,
-    client,
-    calcInputs,
-    validatedData,
-    effectiveUntil
-  );
+  return result;
 }
 
 async function handleCustomMacros(

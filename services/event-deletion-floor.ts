@@ -4,25 +4,30 @@ import { captureApiError } from "@/lib/error-handler";
 
 /**
  * From which day may this client's training sessions be REMOVED, and from
- * which day may a plan on either track START?
+ * which day may a training PROGRAM start?
  *
- * Their today — unless they have already touched today, in which case tomorrow.
+ * Their today — unless they have already trained today, in which case
+ * tomorrow.
  *
  * Replacing today is always fine: a placement overwrites the day in the same
  * breath it clears it. EMPTYING today is the harm — the client loses their
- * session for the rest of the day — and so is re-prescribing a day they have
- * already lived. So the training removals ask this, and so does every plan
- * start on both tracks; nutrition days are computed from the versions and are
- * never removed by anything, so nothing on that side asks it but the start.
+ * session for the rest of the day — and so is placing a program's first
+ * session beside a workout they have already logged (the walk's upsert
+ * arbitrates on the session row, so the completed event and the new one
+ * stand side by side and the check-in counts a missed session). So the
+ * training removals ask this, and so does the program start.
  *
- * "Touched" is one question with two answers, because the two tracks record it
- * differently:
- *   - nutrition: a `nutrition_logs` row for the date.
- *   - training: an event on the date that has left `scheduled`.
+ * The training log ALONE answers it (owner, 2026-09-11): an event on the date
+ * that has left `scheduled`. A meal logged today moves nothing — today's
+ * targets are the coach's to replace, and a logged today is re-recorded onto
+ * the client's log when they do (`rerecordNutritionLogTarget`). Nutrition
+ * asks no floor: a version starts on any day from the client's today, and a
+ * day the client has begun stays open to their food log whatever the coach
+ * changes. Do not put a `nutrition_logs` read back here.
  *
  * Every removal path asks this and nothing does its own arithmetic. A removal
- * that starts here needs NO second "skip the day they logged" filter — with this
- * floor that day is never in range.
+ * that starts here needs NO second "skip the day they trained" filter — with
+ * this floor that day is never in range.
  */
 export async function resolveEventDeletionFloor(
   clientId: string,
@@ -30,34 +35,24 @@ export async function resolveEventDeletionFloor(
 ): Promise<string> {
   const tomorrow = addDaysToDateString(clientToday, 1);
 
-  const [nutrition, training] = await Promise.all([
-    supabaseAdmin
-      .from("nutrition_logs")
-      .select("id")
-      .eq("client_id", clientId)
-      .eq("date", clientToday)
-      .limit(1)
-      .maybeSingle(),
-    supabaseAdmin
-      .from("training_events")
-      .select("id")
-      .eq("client_id", clientId)
-      .eq("date", clientToday)
-      .neq("status", "scheduled")
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  const { data: trained, error } = await supabaseAdmin
+    .from("training_events")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("date", clientToday)
+    .neq("status", "scheduled")
+    .limit(1)
+    .maybeSingle();
 
-  // Fail CLOSED. Either read failing leaves us unable to prove today is
-  // untouched, and the two wrong answers are not symmetric: skipping a day we
-  // could have removed is a stale row the next removal clears, while emptying a
-  // day the client logged cannot be undone.
-  const readError = nutrition.error ?? training.error;
-  if (readError) {
-    console.error("Failed to resolve the event deletion floor:", readError);
-    captureApiError(readError, { action: "event-deletion-floor", clientId });
+  // Fail CLOSED. A failed read leaves us unable to prove today is untouched,
+  // and the two wrong answers are not symmetric: skipping a day we could have
+  // removed is a stale row the next removal clears, while emptying a day the
+  // client trained cannot be undone.
+  if (error) {
+    console.error("Failed to resolve the event deletion floor:", error);
+    captureApiError(error, { action: "event-deletion-floor", clientId });
     return tomorrow;
   }
 
-  return nutrition.data || training.data ? tomorrow : clientToday;
+  return trained ? tomorrow : clientToday;
 }

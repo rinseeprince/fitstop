@@ -5,9 +5,11 @@ import type { ClientBlock } from "@/types/client-blocks";
 // nutrition drawer — picks the block a plan starts in. A chosen block FIXES the
 // start: the plan begins on the block's first available day and the date field
 // under it is disabled. With no block chosen (the dash) the date field is the
-// coach's own, floored at the shared deletion floor. Pure: the options and the
-// day each one fixes are derived here from the chain payload and the floor,
-// and nothing else spells either rule.
+// coach's own, floored at the surface's floor — the deletion floor on the apply
+// dialog (a workout logged today moves it to tomorrow), the client's today on
+// the nutrition drawer (targets ask no floor; owner, 2026-09-11). Pure: the
+// options and the day each one fixes are derived here from the chain payload
+// and the floor, and nothing else spells either rule.
 //
 // Purely UX, the same on both tracks: each placement resolves its own window
 // from the block covering its START (ARCHITECTURE → "The window is the row" /
@@ -25,11 +27,11 @@ export interface BlockStartOption {
   value: string;
   /** "Cut · 6 Oct – 2 Nov", or the dash. */
   label: string;
-  /** The day a plan starts with this option chosen: the later of the deletion
+  /** The day a plan starts with this option chosen: the later of the surface's
    *  floor and the block's start — a block already under way starts the plan
-   *  at the floor, never on the day it began, because the placement and the
-   *  nutrition save both refuse a start before it. For the dash, the floor
-   *  itself: the earliest day the coach may pick. */
+   *  at the floor, never on the day it began (the placement refuses a start
+   *  before its floor; a version starts no earlier than the client's today).
+   *  For the dash, the floor itself: the earliest day the coach may pick. */
   startsOn: string;
 }
 

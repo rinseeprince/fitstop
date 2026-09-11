@@ -19,8 +19,8 @@ vi.mock("@/hooks/use-attention-feed", () => ({
 }));
 
 // The blocks payload carries the client's blocks, their today and the
-// plan-start floor (the shared deletion floor: today, or tomorrow once the
-// client has logged today). Held where the module mock can reach it; null =
+// plan-start floor (the deletion floor: today, or tomorrow once the client has
+// logged a workout today). Held where the module mock can reach it; null =
 // not landed.
 const state = vi.hoisted(() => ({
   clientToday: null as string | null,
@@ -120,10 +120,11 @@ beforeEach(() => {
 
 afterEach(() => vi.restoreAllMocks());
 
-// Commit B: a plan cannot start on a day the client has already logged. The
-// picker's `min` is the shared deletion floor, the dialog opens on a usable
-// date, and a greyed-out today is explained under the field. The server is
-// the belt; this is the affordance.
+// Commit B: a program cannot start on a day the client has already trained —
+// the floor is keyed on a logged WORKOUT alone (C2; a meal moves nothing). The
+// picker's `min` is the deletion floor, the dialog opens on a usable date, and
+// a greyed-out today is explained under the field. The server is the belt;
+// this is the affordance.
 describe("ApplyToClientDialog — the start floor", () => {
   it("floors the picker at the server's floor, opens on it, and says why today is greyed", () => {
     state.planStartFloor = TOMORROW;

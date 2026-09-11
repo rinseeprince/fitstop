@@ -41,8 +41,8 @@ type NutritionSettingsFormProps = {
     dietType: DietType;
   }) => void;
   /** The Block field: the dash (no block), then the client's blocks whose end
-   *  is on or after the floor, each with its range; and the selected one.
-   *  Empty until the resolved inputs have loaded. */
+   *  is on or after the client's today, each with its range; and the selected
+   *  one. Empty until the resolved inputs have loaded. */
   blockOptions: readonly BlockStartOption[];
   blockValue: string;
   onBlockChange: (value: string) => void;
@@ -50,18 +50,13 @@ type NutritionSettingsFormProps = {
    *  available day and the date field is disabled. */
   blockSelected: boolean;
   /** The day the plan takes effect — a chosen block's first available day,
-   *  else the coach's pick, else the floor. Null until the resolved inputs have
-   *  loaded. */
+   *  else the coach's pick, else the client's today. Null until the resolved
+   *  inputs have loaded. */
   effectiveFrom: string | null;
   /** The client's today: on the client's calendar, the same day the server's
-   *  past-date belt judges. */
+   *  past-date belt judges — and the field's floor, the earliest day targets
+   *  may start, whatever the client has logged (owner, 2026-09-11). */
   clientToday: string | null;
-  /** The field's floor — the earliest day targets may start: the client's
-   *  today, or tomorrow once they have logged anything today (the shared
-   *  deletion floor). Explained under the field when it is past today. */
-  startFloor: string | null;
-  /** For that sentence. */
-  clientName: string;
   /** The earliest queued version's start (the GET's `scheduledFor`). A pick
    *  BEFORE it runs until the day before it; a pick ON it replaces it
    *  (migration 166) — one sentence says which, then the save does what was
@@ -87,8 +82,6 @@ export function NutritionSettingsForm({
   blockSelected,
   effectiveFrom,
   clientToday,
-  startFloor,
-  clientName,
   queuedChangeDate,
   onEffectiveFromChange,
 }: NutritionSettingsFormProps) {
@@ -215,8 +208,9 @@ export function NutritionSettingsForm({
       {/* Starts on. The window the deficit is spread over begins here, in the
           preview and in the save alike (docs/MEASUREMENT-LOG-PLAN.md commit
           8bb). Fixed and disabled while a block is chosen; the coach's own with
-          the dash, floored at the deletion floor — the server refuses a start
-          before it, and the sentence under the field says why today is greyed. */}
+          the dash, floored at the client's today — the server refuses a past
+          start, and nothing else bounds it: a today the client has already
+          logged is the coach's to replace, and the save re-records their log. */}
       <div className="space-y-1.5">
         <label htmlFor="starts-on" className={SECTION_LABEL_CLASS}>
           Starts on
@@ -225,17 +219,11 @@ export function NutritionSettingsForm({
           id="starts-on"
           type="date"
           value={effectiveFrom ?? ""}
-          min={startFloor ?? undefined}
+          min={clientToday ?? undefined}
           disabled={blockSelected}
           onChange={(e) => onEffectiveFromChange(e.target.value)}
           className={cn(MONO, FOCUS_RING, "h-10 bg-white")}
         />
-        {startFloor && clientToday && startFloor > clientToday && (
-          <p className="text-[11px] leading-[1.4] text-[#5a7d82]">
-            {clientName} has already logged {formatDateOnlyShort(clientToday)}. Targets can
-            start from {formatDateOnlyShort(startFloor)}.
-          </p>
-        )}
         {queuedChangeDate && effectiveFrom && effectiveFrom < queuedChangeDate && (
           <p className="text-[11px] leading-[1.4] text-[#5a7d82]">
             Targets are already queued for {formatDateOnlyShort(queuedChangeDate)}. These run
