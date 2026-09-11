@@ -133,3 +133,58 @@ page's training figure counts full and partial completions
 (`summariseSessions`), the adherence kernel counts full only, and the stored
 `workouts_completed` counts full only. The nutrition kernel is the shape to
 follow: one function over the events, every surface renders it.
+
+## Found on the client's check-in detail — 2026-09-11 smoke (bugs, not yet fixed)
+
+### 5. Wellness figures are fabricated when nothing was logged
+
+The client logged no wellness in the week, and their check-in detail read Mood
+3/5, Energy 5/10, Sleep Quality 5/10, Stress Level 5/10.
+
+Evidence: `calculateMetricAverages` (`utils/daily-logs-aggregation.ts`) returns
+`{ mood: 3, energy: 5, sleep: 5, stress: 5 }` when the period has no wellness
+log, and each per-metric fallback does the same (`: 3`, `: 5`). `submitCheckIn`
+(`services/check-in-service.ts`) stores those into `check_ins.mood`, `energy`,
+`sleep` and `stress`. From there the client's detail page
+(`app/client/check-in/[id]/page.tsx`) renders them as readings, the AI prompt
+reads the same columns as "Subjective Metrics" (`utils/ai-prompt-builder.ts`) —
+so the model is told about a week the client never described — and
+`comparison-service` diffs them between consecutive check-ins. Soreness alone
+was fixed to stay NULL when unlogged (the wellness soreness workstream); its
+four siblings kept the fabricated defaults.
+
+Recommendation: no fabricated default anywhere. A metric never logged in the
+period is `undefined`, NULL in the row, absent from the card, the prompt and
+the comparison — exactly as soreness already behaves. One change in
+`calculateMetricAverages`; the tests that pin the `3` / `5` fallbacks flip.
+
+### 6. The client's card labels the nutrition percentage "Training Adherence"
+
+The previous check-in, with every day logged and the targets running to
+yesterday, read "Workouts Completed 3" beside "Training Adherence 100%".
+
+Evidence: `check_ins.adherence_percentage` is the NUTRITION calorie adherence —
+intake on the targeted days over every targeted day's target, 100 % in that
+week. The client's detail page prints it under the label "Training Adherence"
+(`app/client/check-in/[id]/page.tsx`); the client's list card prints
+"Adherence: 100%" with no subject (`components/client-portal/check-in/check-in-card.tsx`).
+A client who missed one of four sessions was told 100 % training adherence.
+The coach's review never reads this column.
+
+Recommendation: never a training label on a nutrition column. Either name it
+for what it is ("Calorie adherence") or, with the figure's removal in §1, drop
+it from the client surfaces. The training figure a client can trust is
+completed over planned, which the wire does not carry today (next item).
+
+### 7. Two smaller things on the same page
+
+- **"Workouts Completed 3" has no denominator.** The stored column counts full
+  completions and nothing on the client wire carries the planned count; the
+  coach's review derives 3/4 from the events. `period_snapshot.training`
+  already freezes every planned day with its status, so both numbers can come
+  from the frozen rows — or the bare count goes.
+- **The Physique card renders its header over nothing** when the check-in
+  carried no reading: every row is guarded on truthiness, so a card with no
+  readings is an empty box. Hide the card, or say "No readings".
+- The same truthiness guards hide a legitimate zero (0 workouts, 0 days on
+  target) on both client surfaces.
