@@ -3,7 +3,6 @@ import { getCurrentGoals } from "./client-goals-service";
 import { getMeasurementSeries } from "./measurements-service";
 import { listNutritionPlanNotesInRange } from "./nutrition-plan-service";
 import { decorateBlocks } from "@/lib/blocks/block-derivations";
-import { deriveBlockWeightFacts } from "@/lib/blocks/block-weight";
 import { resolveEffectiveGoal } from "@/lib/goals/resolve-effective-goal";
 import { dayValuesToMetricPoints } from "@/utils/metric-points";
 import type { MetricPoint } from "@/utils/metric-points";
@@ -11,17 +10,16 @@ import type { ClientJourney, ClientJourneyBlock } from "@/types/client-journey";
 
 /**
  * The client-facing journey read (Session 4): the client's unarchived blocks,
- * decorated exactly like the coach GET, with the SAME weight facts the coach's
- * block card shows — "the client app simply shows the client what the coach
- * sees" (owner, 2026-08-12).
+ * decorated exactly like the coach GET — "the client app simply shows the
+ * client what the coach sees" (owner, 2026-08-12) — plus the goal and the
+ * newest weight for the "to go" line.
  *
- * Parity is by construction, not by convention: the series is the measurement
- * log's weight day-values (rule 2, the same read the coach Journey and the
- * Overview chart make), the facts walk is the same function
- * (`deriveBlockWeightFacts`), and both audiences anchor on the client's
- * calendar day. Everything here is canonical kilograms (CONVENTIONS §20); the
- * renderer converts. Archived blocks are excluded — the archive curates the
- * presented journey for both audiences (chart bands alone render everything).
+ * The weight is the measurement log's day-values (rule 2, the same read the
+ * coach Journey and the Overview chart make), and both audiences anchor on
+ * the client's calendar day. Everything here is canonical kilograms
+ * (CONVENTIONS §20); the renderer converts. Archived blocks are excluded —
+ * the archive curates the presented journey for both audiences (chart bands
+ * alone render everything).
  *
  * Shape B: the route verifies the caller IS this client and threads the
  * client's today in; every query filters on the passed clientId.
@@ -89,21 +87,16 @@ export const getClientJourney = async (
       : Promise.resolve(null),
   ]);
 
-  const journeyBlocks: ClientJourneyBlock[] = decorated.map((block) => {
-    const facts = deriveBlockWeightFacts(points, block);
-    return {
-      id: block.id,
-      name: block.name,
-      focus: block.focus,
-      startsOn: block.startsOn,
-      endsOn: block.endsOn,
-      weeks: block.weeks,
-      state: block.state,
-      weekOfTotal: block.weekOfTotal,
-      startWeightKg: facts.start?.value ?? null,
-      endWeightKg: facts.end?.value ?? null,
-    };
-  });
+  const journeyBlocks: ClientJourneyBlock[] = decorated.map((block) => ({
+    id: block.id,
+    name: block.name,
+    focus: block.focus,
+    startsOn: block.startsOn,
+    endsOn: block.endsOn,
+    weeks: block.weeks,
+    state: block.state,
+    weekOfTotal: block.weekOfTotal,
+  }));
 
   return {
     clientToday,

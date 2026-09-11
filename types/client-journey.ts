@@ -4,20 +4,12 @@ import type { NutritionPlanNote } from "@/types/nutrition-plan-notes";
 
 // Wire types for GET /api/client/journey — the client-facing journey read
 // (Session 4). Weights are canonical kilograms with no unit tags and no
-// rounding (CONVENTIONS §20; the renderer converts to the viewer's unit).
-//
-// Display parity rule for deltas: there is deliberately NO changeKg field.
-// The coach card computes a block's change from points already rounded to
-// one decimal in the viewer's unit (end − start AFTER rounding), and
-// round(end − start) can differ from round(end) − round(start) by 0.1 — so
-// the wire ships both endpoints raw and the renderer converts each, rounds,
-// THEN subtracts. The same discipline applies to the "to go" lines.
+// rounding (CONVENTIONS §20; the renderer converts to the viewer's unit,
+// rounds, then subtracts for the "to go" line).
 
-/** One block, decorated exactly like the coach GET (decorateBlocks) plus the
- *  weight facts the coach card derives (deriveBlockWeightFacts) — same
- *  functions, same merged series, so the two audiences read the same numbers
- *  by construction. Archived blocks are excluded server-side: the archive
- *  curates the presented journey for both audiences (Session 4 decision). */
+/** One block, decorated exactly like the coach GET (decorateBlocks). Archived
+ *  blocks are excluded server-side: the archive curates the presented journey
+ *  for both audiences (Session 4 decision). */
 export interface ClientJourneyBlock {
   id: string;
   name: string;
@@ -28,11 +20,6 @@ export interface ClientJourneyBlock {
   weeks: number;
   state: BlockState;
   weekOfTotal: BlockWeekOfTotal | null;
-  /** Latest merged-series weight (kg) at or before startsOn. */
-  startWeightKg: number | null;
-  /** Past blocks: latest weight (kg) inside the window. Current: latest
-   *  overall. Future: null. */
-  endWeightKg: number | null;
 }
 
 /** The client's long-term goal, resolved through resolveEffectiveGoal over

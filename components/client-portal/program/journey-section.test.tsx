@@ -23,8 +23,6 @@ const block = (
   weeks: 3,
   state: "current",
   weekOfTotal: { current: 2, total: 3 },
-  startWeightKg: 90.2,
-  endWeightKg: 89.9,
   ...overrides,
 });
 
@@ -91,14 +89,11 @@ describe("JourneySection", () => {
     expect(screen.queryByText(/to go/)).not.toBeInTheDocument();
   });
 
-  it("finished blocks: coach-row wording with the change computed round-then-subtract", () => {
+  it("finished blocks: name, dates and weeks — no weight figure", () => {
     render(
       <JourneySection
         journey={journey({
           blocks: [
-            // 90.06 → 89.94 displays as 90.1 → 89.9: the change is −0.2 like
-            // the coach card (subtracting pre-rounded points), NOT the −0.1 a
-            // raw round(end − start) would print.
             block({
               id: "past-1",
               name: "Base",
@@ -107,8 +102,6 @@ describe("JourneySection", () => {
               startsOn: "2026-06-01",
               endsOn: "2026-06-28",
               weeks: 4,
-              startWeightKg: 90.06,
-              endWeightKg: 89.94,
             }),
             block({
               id: "past-2",
@@ -118,8 +111,6 @@ describe("JourneySection", () => {
               startsOn: "2026-05-01",
               endsOn: "2026-05-21",
               weeks: 3,
-              startWeightKg: null,
-              endWeightKg: null,
             }),
           ],
         })}
@@ -129,9 +120,9 @@ describe("JourneySection", () => {
     expect(screen.getByText("Finished blocks")).toBeInTheDocument();
     expect(screen.getByText("Base")).toBeInTheDocument();
     expect(screen.getByText(/1 Jun – 28 Jun · 4 weeks/)).toBeInTheDocument();
-    expect(screen.getByText("-0.2 kg")).toBeInTheDocument();
-    // No weights → the muted dash, never a fabricated zero.
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByText("Intro")).toBeInTheDocument();
+    // No current block, so no goal line either: nothing on the section is a weight.
+    expect(screen.queryByText(/kg/)).not.toBeInTheDocument();
   });
 
   it("renders weights in the viewer's unit (imperial)", () => {
@@ -159,8 +150,6 @@ describe("JourneySection", () => {
               weekOfTotal: null,
               startsOn: "2026-09-01",
               endsOn: "2026-09-28",
-              startWeightKg: null,
-              endWeightKg: null,
             }),
           ],
           currentWeightKg: null,

@@ -8,31 +8,13 @@ import type { ClientJourney, ClientJourneyBlock } from "@/types/client-journey";
 
 // The client's journey view on the Program tab: the current block (name,
 // focus, week-of-total, time progress, the long-term goal) and the
-// finished blocks with their weight change — the same wording as the coach's
-// Journey list, rendered in the client's own unit.
-//
-// Display parity discipline (see types/client-journey.ts): every delta is
-// computed AFTER converting and rounding each endpoint to one decimal in the
-// viewer's unit — the coach card subtracts pre-rounded points, and
-// round(end − start) can differ from round(end) − round(start) by 0.1.
+// finished blocks — the same wording as the coach's Journey list, rendered
+// in the client's own unit.
 
-const signed = (n: number) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
-
-/** Converted to the viewer's unit and rounded to 1dp — the coach series'
- *  point precision, so deltas subtract the same numbers the coach's do. */
+/** Converted to the viewer's unit and rounded to 1dp, so the "to go" line
+ *  subtracts two displayed numbers. */
 function displayWeight(kg: number, preference: UnitSystem): number {
   return Number(formatWeight(kg, preference).value.toFixed(1));
-}
-
-function blockChange(
-  block: ClientJourneyBlock,
-  preference: UnitSystem
-): number | null {
-  if (block.startWeightKg == null || block.endWeightKg == null) return null;
-  return (
-    displayWeight(block.endWeightKg, preference) -
-    displayWeight(block.startWeightKg, preference)
-  );
 }
 
 /** "89.0 kg by 6 Sep, 0.9 kg to go" — the target-line tail after its label. */
@@ -148,29 +130,15 @@ function CurrentBlockCard({
   );
 }
 
-function FinishedBlockRow({
-  block,
-  preference,
-  unit,
-}: {
-  block: ClientJourneyBlock;
-  preference: UnitSystem;
-  unit: string;
-}) {
-  const change = blockChange(block, preference);
+function FinishedBlockRow({ block }: { block: ClientJourneyBlock }) {
   return (
-    <div className="flex items-center gap-3 rounded-md border border-border bg-card p-3">
-      <div className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-foreground">
-          {block.name}
-        </span>
-        <span className="font-mono-display text-xs text-muted-foreground">
-          {formatBlockDate(block.startsOn)} – {formatBlockDate(block.endsOn)} ·{" "}
-          {block.weeks} {block.weeks === 1 ? "week" : "weeks"}
-        </span>
-      </div>
-      <span className="shrink-0 font-mono-display text-xs text-muted-foreground">
-        {change != null ? `${signed(change)} ${unit}` : "—"}
+    <div className="rounded-md border border-border bg-card p-3">
+      <span className="block truncate text-sm font-medium text-foreground">
+        {block.name}
+      </span>
+      <span className="font-mono-display text-xs text-muted-foreground">
+        {formatBlockDate(block.startsOn)} – {formatBlockDate(block.endsOn)} ·{" "}
+        {block.weeks} {block.weeks === 1 ? "week" : "weeks"}
       </span>
     </div>
   );
@@ -203,8 +171,6 @@ export function JourneySection({ journey }: { journey: ClientJourney }) {
             <FinishedBlockRow
               key={block.id}
               block={block}
-              preference={preference}
-              unit={unit}
             />
           ))}
         </div>

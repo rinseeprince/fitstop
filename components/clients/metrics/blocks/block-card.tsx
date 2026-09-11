@@ -23,12 +23,11 @@ import {
   type BlockPlanDeleteTarget,
 } from "./block-timeline";
 import { PlanStateChip } from "./plan-state-chip";
-import type { BlockWeightFacts } from "@/lib/blocks/block-weight";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import type { BlockFacts, BlockNutritionFact } from "@/types/client-blocks";
 
-// One block in the Journey list. Collapsed: identity + dates + weight change.
-// Expanded: the Training / Nutrition / Weight fact columns + the timeline.
+// One block in the Journey list. Collapsed: identity + dates.
+// Expanded: the Training / Nutrition fact columns + the timeline.
 // Block names are SANS even when they contain digits ("Cut 2") — the digits
 // belong to the name; dates, weeks and weights are mono via the tokens.
 
@@ -40,8 +39,6 @@ type BlockCardProps = {
   facts: BlockFacts | undefined;
   factsLoading: boolean;
   factsError: boolean;
-  weight: BlockWeightFacts;
-  weightUnit: string;
   defaultOpen: boolean;
   /** 3.4's delete affordance mounts here, inside the row but outside the
    *  expand toggle (buttons cannot nest). */
@@ -63,8 +60,6 @@ type BlockCardProps = {
    *  rows, elapsed and archived blocks carry none. Undefined = no icons. */
   onDeletePlan?: (plan: BlockPlanDeleteTarget) => void;
 };
-
-const signed = (n: number) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
 
 /**
  * Which blocks get a round-trip affordance on a fact, unset or set: CURRENT
@@ -259,28 +254,8 @@ function NutritionColumn({
   );
 }
 
-/** The block's weight change and nothing else: the reading at its start, then
- *  the latest, then the unit — or a dash when either is missing. A block
- *  carries no target and no goal, so nothing here is judged. */
-function WeightColumn({
-  weight,
-  weightUnit,
-}: Pick<BlockCardProps, "weight" | "weightUnit">) {
-  if (weight.start == null || weight.end == null) {
-    return <p className="text-xs text-[#93b0b4]">—</p>;
-  }
-  return (
-    <p>
-      <span className={cn(MONO, "text-[13px] font-semibold", TEXT_PRIMARY)}>
-        {weight.start.value.toFixed(1)} → {weight.end.value.toFixed(1)}
-      </span>{" "}
-      <span className={cn(MONO_META_CLASS, "text-[10px]")}>{weightUnit}</span>
-    </p>
-  );
-}
-
 export function BlockCard(props: BlockCardProps) {
-  const { block, color, facts, weight, defaultOpen, rowAction, onDeletePlan } = props;
+  const { block, color, facts, defaultOpen, rowAction, onDeletePlan } = props;
   const [open, setOpen] = useState(defaultOpen);
   const muted = block.state !== "current";
   // The same one gate the way in consults: a finished or archived block's
@@ -329,15 +304,6 @@ export function BlockCard(props: BlockCardProps) {
             {formatBlockDate(block.startsOn)} – {formatBlockDate(block.endsOn)} ·{" "}
             {block.weeks} {block.weeks === 1 ? "week" : "weeks"}
           </span>
-          <span
-            className={cn(
-              MONO,
-              "w-16 shrink-0 text-right text-[12px]",
-              weight.change != null ? TEXT_SECONDARY : "text-[#c2d0cc]"
-            )}
-          >
-            {weight.change != null ? `${signed(weight.change)} ${props.weightUnit}` : "—"}
-          </span>
           <ChevronDown
             className={cn(
               "h-3.5 w-3.5 shrink-0 text-[#93b0b4] transition-transform duration-200",
@@ -351,7 +317,7 @@ export function BlockCard(props: BlockCardProps) {
 
       {open && (
         <div className={cn(HAIRLINE, "space-y-3 px-[11px] py-3")}>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <p className={cn(LABEL_CLASS, "mb-1.5")}>Training</p>
               <TrainingColumn {...props} />
@@ -359,10 +325,6 @@ export function BlockCard(props: BlockCardProps) {
             <div>
               <p className={cn(LABEL_CLASS, "mb-1.5")}>Nutrition</p>
               <NutritionColumn {...props} />
-            </div>
-            <div>
-              <p className={cn(LABEL_CLASS, "mb-1.5")}>Weight</p>
-              <WeightColumn {...props} />
             </div>
           </div>
           <div className={cn(HAIRLINE, "pt-3")}>

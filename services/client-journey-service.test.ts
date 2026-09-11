@@ -64,7 +64,7 @@ beforeEach(() => {
 });
 
 describe("getClientJourney", () => {
-  it("decorates blocks with the client's today and derives per-state weight facts from the day-values", async () => {
+  it("decorates blocks with the client's today; the newest weight is the last day-value", async () => {
     vi.mocked(listBlocks).mockResolvedValue([
       block({ id: "past", name: "Base", startsOn: "2026-06-01", endsOn: "2026-06-28" }),
       block({ id: "current", name: "Build", startsOn: "2026-06-29", endsOn: "2026-08-23" }),
@@ -72,8 +72,6 @@ describe("getClientJourney", () => {
     ]);
     mockWeightSeries([
       dayValue("m-0", "2026-05-20", 84.0),
-      dayValue("m-1", "2026-06-01", 83.2), // exactly on the past block's start
-      dayValue("m-2", "2026-06-27", 81.9),
       dayValue("m-3", "2026-07-15", 81.0),
     ]);
 
@@ -81,24 +79,15 @@ describe("getClientJourney", () => {
 
     expect(journey.clientToday).toBe(TODAY);
     const [past, current, future] = journey.blocks;
-    expect(past).toMatchObject({
-      state: "past",
-      weeks: 4,
-      weekOfTotal: null,
-      startWeightKg: 83.2, // at-or-before includes the start date itself
-      endWeightKg: 81.9, // latest inside the window, not latest overall
-    });
-    expect(current).toMatchObject({
-      state: "current",
-      startWeightKg: 81.9,
-      endWeightKg: 81.0, // latest overall
-    });
+    expect(past).toMatchObject({ state: "past", weeks: 4, weekOfTotal: null });
+    expect(current).toMatchObject({ state: "current" });
     expect(current.weekOfTotal).toEqual({ current: 7, total: 8 });
-    expect(future).toMatchObject({
-      state: "future",
-      startWeightKg: null,
-      endWeightKg: null,
-    });
+    expect(future).toMatchObject({ state: "future" });
+    // A block carries no weight of its own.
+    for (const b of journey.blocks) {
+      expect(b).not.toHaveProperty("startWeightKg");
+      expect(b).not.toHaveProperty("endWeightKg");
+    }
     // The last day-value, the series being ascending.
     expect(journey.currentWeightKg).toBe(81.0);
   });
@@ -114,8 +103,6 @@ describe("getClientJourney", () => {
     expect(getMeasurementSeries).toHaveBeenCalledWith(CLIENT_ID, { metricKeys: ["weight"] });
     // Raw kg pass-through, unrounded — the renderer rounds.
     expect(journey.currentWeightKg).toBe(82.25);
-    expect(journey.blocks[0].startWeightKg).toBeNull(); // nothing at or before 2026-08-01
-    expect(journey.blocks[0].endWeightKg).toBe(82.25);
   });
 
   it("parity: a day-value of any source is in the series — a coach entry counts like a check-in", async () => {
@@ -128,7 +115,6 @@ describe("getClientJourney", () => {
 
     const journey = await getClientJourney(CLIENT_ID, TODAY);
 
-    expect(journey.blocks[0].startWeightKg).toBe(89.8);
     expect(journey.currentWeightKg).toBe(89.8);
   });
 

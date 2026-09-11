@@ -46,8 +46,6 @@ const JOURNEY: ClientJourney = {
       weeks: 6,
       state: "current",
       weekOfTotal: { current: 2, total: 6 },
-      startWeightKg: 88.1,
-      endWeightKg: 88.6,
     },
   ],
   goal: { weightKg: 85, deadline: "2026-12-01" },

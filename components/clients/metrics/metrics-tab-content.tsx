@@ -132,9 +132,6 @@ export const MetricsTabContent = ({
       {pane === "blocks" ? (
         <BlocksSubtab
           clientId={client.id}
-          weightMetric={
-            metricsByTab.body.find((metric) => metric.id === "weight") ?? null
-          }
           onTabChange={onTabChange}
         />
       ) : pane === "training" ? (

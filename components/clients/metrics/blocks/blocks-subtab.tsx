@@ -16,7 +16,6 @@ import { SectionLabel } from "@/components/programs/shared/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
 import { toast } from "sonner";
-import { useUnits } from "@/contexts/units-context";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import {
   deleteBlockRequest,
@@ -36,7 +35,6 @@ import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-e
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { blockColor } from "./block-colors";
-import { deriveBlockWeightFacts } from "@/lib/blocks/block-weight";
 import { BlockCard } from "./block-card";
 import { BlockForm, type BlockFormValues } from "./block-form";
 import { buildAppendPayload, buildEditPayload } from "./block-chain-payload";
@@ -51,12 +49,10 @@ import {
 } from "./delete-block-dialog";
 import { DeletePlanDialog } from "./delete-plan-dialog";
 import type { BlockPlanDeleteTarget } from "./block-timeline";
-import type { MetricSummary } from "../metrics-view-types";
 
 // The Journey tab's Blocks pane: the chain (decorated server-side in the
-// CLIENT's timezone — state is never re-derived here) + per-block facts +
-// the weight story from the SAME merged series as the chart and log beside
-// it, so the numbers cannot disagree. Add, edit and delete all mount here.
+// CLIENT's timezone — state is never re-derived here) + per-block facts.
+// Add, edit and delete all mount here.
 
 /** The one description line the completed save carries, if it needs one. */
 function calendarOutcome(choice: BlockEventsChoice): string | undefined {
@@ -74,9 +70,6 @@ const ROW_ICON_BUTTON =
 
 type BlocksSubtabProps = {
   clientId: string;
-  /** The weight MetricSummary from useMergedMetrics (viewer units), or null
-   *  while metrics load / when nothing is logged. */
-  weightMetric: MetricSummary | null;
   /** The round trip out of a fact, unset or set (7.3/7.4, H): "place one" /
    *  "set targets" and "update plan" / "update targets" all go the same way.
    *  Cross-tab navigation must run through the client page's handler —
@@ -87,7 +80,6 @@ type BlocksSubtabProps = {
 
 export function BlocksSubtab({
   clientId,
-  weightMetric,
   onTabChange,
 }: BlocksSubtabProps) {
   const { blocks, clientToday, isLoading, isError } = useClientBlocks(clientId);
@@ -100,7 +92,6 @@ export function BlocksSubtab({
     isLoading: factsLoading,
     isError: factsError,
   } = useBlockFacts(clientId);
-  const { preference } = useUnits();
   const invalidateBlocks = useInvalidateClientBlocks();
   // Every write returns the chain it just produced. Seeding it lands the new
   // list and the closing form in ONE render, which is the only way the frame
@@ -383,10 +374,6 @@ export function BlocksSubtab({
     }
   };
 
-  const weightPoints = weightMetric?.points ?? [];
-  const weightUnit =
-    weightMetric?.unit ?? (preference === "imperial" ? "lbs" : "kg");
-
   // The rail meta describes the JOURNEY: archived phases belong to closed
   // eras and count for nothing here; the archive view carries no meta at all.
   const unarchived = blocks.filter((block) => block.archivedAt == null);
@@ -497,8 +484,7 @@ export function BlocksSubtab({
             <p className="mt-2 text-sm text-[#5a7d82]">No blocks yet</p>
             <p className="mt-1 text-xs text-[#93b0b4]">
               Blocks are named stretches of this client&apos;s journey — a cut,
-              a build, a deload — with the training, nutrition and weight story
-              of each.
+              a build, a deload — with the training and nutrition of each.
             </p>
             <button
               type="button"
@@ -539,7 +525,6 @@ export function BlocksSubtab({
                 />
               );
             }
-            const weight = deriveBlockWeightFacts(weightPoints, block);
             return (
               <BlockCard
                 key={block.id}
@@ -548,8 +533,6 @@ export function BlocksSubtab({
                 facts={factsById.get(block.id)}
                 factsLoading={factsLoading}
                 factsError={factsError}
-                weight={weight}
-                weightUnit={weightUnit}
                 defaultOpen={
                   focusBlockId ? block.id === focusBlockId : block.state === "current"
                 }
