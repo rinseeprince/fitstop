@@ -1872,7 +1872,6 @@ export type Database = {
       }
       nutrition_logs: {
         Row: {
-          calorie_surplus_deficit: number | null
           calories_consumed: number | null
           carbs_g: number | null
           client_id: string
@@ -1881,17 +1880,11 @@ export type Database = {
           date: string
           fat_g: number | null
           id: string
-          nutrition_adherence: string | null
           nutrition_plan_id: string | null
           protein_g: number | null
-          target_calories: number | null
-          target_carbs_g: number | null
-          target_fat_g: number | null
-          target_protein_g: number | null
           updated_at: string
         }
         Insert: {
-          calorie_surplus_deficit?: number | null
           calories_consumed?: number | null
           carbs_g?: number | null
           client_id: string
@@ -1900,17 +1893,11 @@ export type Database = {
           date: string
           fat_g?: number | null
           id?: string
-          nutrition_adherence?: string | null
           nutrition_plan_id?: string | null
           protein_g?: number | null
-          target_calories?: number | null
-          target_carbs_g?: number | null
-          target_fat_g?: number | null
-          target_protein_g?: number | null
           updated_at?: string
         }
         Update: {
-          calorie_surplus_deficit?: number | null
           calories_consumed?: number | null
           carbs_g?: number | null
           client_id?: string
@@ -1919,13 +1906,8 @@ export type Database = {
           date?: string
           fat_g?: number | null
           id?: string
-          nutrition_adherence?: string | null
           nutrition_plan_id?: string | null
           protein_g?: number | null
-          target_calories?: number | null
-          target_carbs_g?: number | null
-          target_fat_g?: number | null
-          target_protein_g?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -2865,7 +2847,6 @@ export type Database = {
       }
       daily_logs_full: {
         Row: {
-          calorie_surplus_deficit: number | null
           calories_consumed: number | null
           carbs_g: number | null
           client_id: string | null
@@ -2876,15 +2857,10 @@ export type Database = {
           id: string | null
           mood: number | null
           notes: string | null
-          nutrition_adherence: string | null
           protein_g: number | null
           sleep: number | null
           soreness: number | null
           stress: number | null
-          target_calories: number | null
-          target_carbs_g: number | null
-          target_fat_g: number | null
-          target_protein_g: number | null
           trained: boolean | null
           training_data: Json | null
           training_session_id: string | null

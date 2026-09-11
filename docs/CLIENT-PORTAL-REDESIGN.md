@@ -327,7 +327,7 @@ No `useClientDay` hook. `useSWR` is called directly in the page. Only create a w
 - `services/client-portal-training.ts:markSessionComplete` and now-unused exports.
 - `components/clients/training/history-chart-dialog.tsx`.
 
-`upsert_daily_log_atomic()` stays in the DB as an unused RPC; removing it is a separate schema change.
+`upsert_daily_log_atomic()` stays in the DB as an unused RPC; removing it is a separate schema change (since migration 173 its body names food-log columns that no longer exist, so it cannot run).
 
 ---
 

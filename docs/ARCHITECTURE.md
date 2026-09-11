@@ -50,7 +50,7 @@ coaches
         │
         ├── daily_logs (spine)        -- one per client per day
         │     ├── wellness_logs
-        │     ├── nutrition_logs
+        │     ├── nutrition_logs         -- what the client ate; the target is computed (see "A logged day carries no target")
         │     ├── training_logs
         │     │     └── session_logs
         │     │           └── exercise_logs
@@ -243,11 +243,11 @@ Daily tracking data is split into a spine table and domain-specific child tables
 ```
 daily_logs (spine)         -- id, client_id, date, notes
   ├── wellness_logs        -- mood, energy, sleep, stress, soreness (1:1 via daily_log_id FK)
-  ├── nutrition_logs       -- consumed, targets, adherence (1:1 via daily_log_id FK)
+  ├── nutrition_logs       -- what the client ate (1:1 via daily_log_id FK); the day's target and verdict are computed at read time (migration 173 dropped the stored copy)
   ├── training_logs        -- trained, training_session_id, training_data JSONB (legacy/orphaned) (1:1 via daily_log_id FK)
   └── daily_habit_logs     -- per-habit completion (1:many, FK to daily_habits)
 ```
-- **Writes**: per-card independent writes. Each per-card endpoint (`PATCH /api/client/daily-logs/[date]/nutrition`, `/wellness`, and similar) ensures the day's `daily_logs` spine row exists and upserts only its own child table. (The old monolithic `/api/client/daily-logs` POST and its `today`/`streak`/`nutrition-target`/`week` siblings were removed in Session 5.1; the `upsert_daily_log_atomic()` RPC remains in the DB as an unused function — its removal is separate schema work — and must not be used for new writes.)
+- **Writes**: per-card independent writes. Each per-card endpoint (`PATCH /api/client/daily-logs/[date]/nutrition`, `/wellness`, and similar) ensures the day's `daily_logs` spine row exists and upserts only its own child table. (The old monolithic `/api/client/daily-logs` POST and its `today`/`streak`/`nutrition-target`/`week` siblings were removed in Session 5.1; the `upsert_daily_log_atomic()` RPC remains in the DB as an unused function — its removal is separate schema work — and must not be used for new writes; since migration 173 its body names food-log columns that no longer exist, so it cannot run at all.)
 - **Domain-specific reads** query child tables directly (e.g. wellness history queries `wellness_logs`, not the view)
 - **Cross-domain reads** use the `daily_logs_full` view (e.g. attention feed, AI summary generation)
 - Each child table has `client_id` and `date` columns for direct querying without joining the spine
