@@ -38,8 +38,8 @@ vi.mock("@/services/daily-habits-service", () => ({
   getHabitLogs: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("@/services/weekly-nutrition-service", () => ({
-  getNutritionSummaryForPeriod: vi.fn().mockResolvedValue(null),
+vi.mock("@/services/nutrition-period-service", () => ({
+  getCheckInNutritionSummary: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@/services/check-in-context-service", () => ({

@@ -30,8 +30,8 @@ vi.mock('./daily-habits-service', () => ({
   getHabitLogs: vi.fn(),
 }))
 
-vi.mock('./weekly-nutrition-service', () => ({
-  getNutritionSummaryForPeriod: vi.fn(),
+vi.mock('./nutrition-period-service', () => ({
+  getCheckInNutritionSummary: vi.fn(),
 }))
 
 vi.mock('@/services/check-in-context-service', () => ({
@@ -57,7 +57,7 @@ import {
 } from './check-in-service'
 import { getDailyLogs } from './daily-logs-service'
 import { getHabitLogs } from './daily-habits-service'
-import { getNutritionSummaryForPeriod } from './weekly-nutrition-service'
+import { getCheckInNutritionSummary } from './nutrition-period-service'
 import { getTrainingEventDetailsForPeriod, getExerciseSummariesForPeriod } from '@/services/check-in-context-service'
 import { getClientById } from './client-service'
 
@@ -107,7 +107,7 @@ describe('Client Check-in Service', () => {
       vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
-      vi.mocked(getNutritionSummaryForPeriod).mockResolvedValue(null)
+      vi.mocked(getCheckInNutritionSummary).mockResolvedValue(null as never)
       vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([])
       vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map())
 
@@ -174,7 +174,7 @@ describe('Client Check-in Service', () => {
       vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
-      vi.mocked(getNutritionSummaryForPeriod).mockResolvedValue(null)
+      vi.mocked(getCheckInNutritionSummary).mockResolvedValue(null as never)
       vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([])
       vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map())
 
@@ -208,7 +208,7 @@ describe('Client Check-in Service', () => {
       } as any)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
-      vi.mocked(getNutritionSummaryForPeriod).mockResolvedValue(null)
+      vi.mocked(getCheckInNutritionSummary).mockResolvedValue(null as never)
       vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([])
       vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map())
       vi.mocked(generateCheckInSummary).mockRejectedValue(mockError)
@@ -247,7 +247,7 @@ describe('Client Check-in Service', () => {
       vi.mocked(updateCheckInAISummary).mockResolvedValue(undefined)
       vi.mocked(getDailyLogs).mockResolvedValue([])
       vi.mocked(getHabitLogs).mockResolvedValue([])
-      vi.mocked(getNutritionSummaryForPeriod).mockResolvedValue(null)
+      vi.mocked(getCheckInNutritionSummary).mockResolvedValue(null as never)
       vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([])
       vi.mocked(getExerciseSummariesForPeriod).mockResolvedValue(new Map())
 

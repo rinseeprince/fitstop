@@ -287,7 +287,10 @@ export default function CheckInDetailPage() {
               {checkIn.nutritionDaysOnTarget && (
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Nutrition On Target</span>
-                  <span className="font-medium">{checkIn.nutritionDaysOnTarget}/7 days</span>
+                  <span className="font-medium">
+                    {checkIn.nutritionDaysOnTarget}
+                    {checkIn.nutritionTargetedDays != null ? `/${checkIn.nutritionTargetedDays}` : ""} days
+                  </span>
                 </div>
               )}
 

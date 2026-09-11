@@ -22,28 +22,46 @@ function renderTraining(summary: Record<string, number>) {
       comparisonData={null}
       adherence={summary as never}
       nutrition={nutrition()}
-      periodDays={7}
     />,
   );
 }
 
+/** The kernel's figures; only the ones the cell reads vary per case. */
 function nutrition(
   overrides: Partial<CheckInPeriodAdherence["nutrition"]> = {},
 ): CheckInPeriodAdherence["nutrition"] {
-  return { rail: [], onTarget: 3, loggedDays: 3, pct: 43, ...overrides };
+  return {
+    rail: [],
+    periodDays: 7,
+    loggedDays: 3,
+    targetedDays: 7,
+    judgedDays: 3,
+    loggedNoTargetDays: 0,
+    onTarget: 3,
+    over: 0,
+    under: 0,
+    daysOnTargetPct: 43,
+    targetTotals: { calories: 14000, proteinG: 1050, carbsG: 1400, fatG: 420 },
+    consumedOnTargetedDays: { calories: 6000, proteinG: 450, carbsG: 600, fatG: 180 },
+    calorieAdherencePct: 42.9,
+    periodVerdict: "missed",
+    perJudgedDay: {
+      consumed: { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+      target: { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+    },
+    intakePerLoggedDay: { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+    netCaloriesOnJudgedDays: 0,
+    ...overrides,
+  };
 }
 
-function renderRibbon(
-  nutritionValue: CheckInPeriodAdherence["nutrition"] | null,
-  periodDays: number | null,
-) {
+function renderRibbon(nutritionValue: CheckInPeriodAdherence["nutrition"] | null) {
   return render(
     <KPIRibbon
       checkIn={checkIn}
       comparisonData={null}
       adherence={adherence}
       nutrition={nutritionValue}
-      periodDays={periodDays}
     />,
   );
 }
@@ -51,10 +69,10 @@ function renderRibbon(
 afterEach(cleanup);
 
 describe("the nutrition cell", () => {
-  it("counts days ON TARGET over the whole period", () => {
-    // Three logged days all on target used to read "HIT" against a daily
-    // average — a statement about three days dressed as one about the week.
-    renderRibbon(nutrition(), 7);
+  it("counts days ON TARGET over the days a target was prescribed — a skipped targeted day is a miss", () => {
+    // Three logged days all on target out of seven prescribed: 3/7, never
+    // 3/3 and never "HIT" against a daily average.
+    renderRibbon(nutrition());
 
     expect(screen.getByText("Nutrition")).toBeInTheDocument();
     expect(screen.getByText("3/7")).toBeInTheDocument();
@@ -62,8 +80,27 @@ describe("the nutrition cell", () => {
     expect(screen.getByText("days on target")).toBeInTheDocument();
   });
 
+  it("leaves a logged day with no target out of the ratio", () => {
+    // The smoke week (owner, 2026-09-11): six of six prescribed days on
+    // target, and today logged with nothing to hit. 6/6, never 6/7.
+    renderRibbon(nutrition({ loggedDays: 7, targetedDays: 6, judgedDays: 6, loggedNoTargetDays: 1, onTarget: 6, daysOnTargetPct: 100 }));
+
+    expect(screen.getByText("6/6")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.queryByText("6/7")).not.toBeInTheDocument();
+  });
+
+  it("says No targets set, never 0/7 in red, when the coach prescribed nothing", () => {
+    renderRibbon(nutrition({ loggedDays: 1, targetedDays: 0, judgedDays: 0, loggedNoTargetDays: 1, onTarget: 0, daysOnTargetPct: null }));
+
+    expect(screen.getByText("--")).toBeInTheDocument();
+    expect(screen.getByText("No targets set")).toBeInTheDocument();
+    expect(screen.queryByText("0/7")).not.toBeInTheDocument();
+    expect(screen.queryByText("0/0")).not.toBeInTheDocument();
+  });
+
   it("is no longer labelled Calories, and shows no daily average", () => {
-    renderRibbon(nutrition(), 7);
+    renderRibbon(nutrition());
 
     expect(screen.queryByText("Calories")).not.toBeInTheDocument();
     expect(screen.queryByText(/avg\/day/)).not.toBeInTheDocument();
@@ -74,7 +111,7 @@ describe("the nutrition cell", () => {
 
   it("uses the period's OWN length on a short first week", () => {
     // D5.1: three of three, never three of seven.
-    renderRibbon(nutrition({ onTarget: 3, pct: 100 }), 3);
+    renderRibbon(nutrition({ periodDays: 3, targetedDays: 3, onTarget: 3, daysOnTargetPct: 100 }));
 
     expect(screen.getByText("3/3")).toBeInTheDocument();
   });
@@ -82,7 +119,7 @@ describe("the nutrition cell", () => {
   it("reads its empty state when the period cannot be resolved", () => {
     // A legacy row with no resolvable period renders nothing rather than
     // falling back to a second, client-side definition of the figure.
-    renderRibbon(null, null);
+    renderRibbon(null);
 
     expect(screen.getByText("--")).toBeInTheDocument();
     expect(screen.getByText("No nutrition logs")).toBeInTheDocument();
@@ -91,7 +128,7 @@ describe("the nutrition cell", () => {
   it("leaves the training cell's fraction alone", () => {
     // Training is deliberately NOT on the new wire: the page's figure counts
     // full AND partial completions, the kernel's counts full only.
-    renderRibbon(nutrition(), 7);
+    renderRibbon(nutrition());
 
     expect(screen.getByText("Training")).toBeInTheDocument();
     expect(screen.getByText("3/4")).toBeInTheDocument();

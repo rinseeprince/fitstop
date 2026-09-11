@@ -151,19 +151,6 @@ export const getDateDaysFrom = (fromDate: Date, days: number): string => {
 };
 
 /**
- * Returns the Sunday of the week containing the given date
- * @param {string} dateString - Date in YYYY-MM-DD format
- * @returns {string} Sunday's date in YYYY-MM-DD format
- */
-export const getWeekEnd = (dateString: string): string => {
-  const date = new Date(dateString + 'T00:00:00');
-  const day = date.getDay();
-  const diff = date.getDate() - day + 7;
-  date.setDate(diff);
-  return getDateString(date);
-};
-
-/**
  * Day name to JS getDay() number mapping
  */
 export const DAY_NUM: Record<DayOfWeek | string, number> = {

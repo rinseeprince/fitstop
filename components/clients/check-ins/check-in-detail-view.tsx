@@ -82,7 +82,6 @@ export const CheckInDetailView = ({
     dailyContextLoading,
     contextStartDate,
     contextEndDate,
-    fullWeekTarget,
     refreshDetail,
   } = useCheckInDetailData({ checkInId, clientId: client.id });
 
@@ -134,9 +133,6 @@ export const CheckInDetailView = ({
             comparisonData={comparisonData}
             adherence={adherence}
             nutrition={periodAdherence?.nutrition ?? null}
-            // The denominator is the server's own date list, never the local
-            // day count — the two resolve differently on a legacy row.
-            periodDays={periodAdherence?.dates.length ?? null}
           />
 
           {/* Flex, not a 2-col grid: either section returns null on an empty
@@ -146,14 +142,10 @@ export const CheckInDetailView = ({
           <div className="flex flex-col gap-5 lg:flex-row">
             <TrainingSection checkIn={data.checkIn} />
 
-            <NutritionSection
-              dailyLogs={dailyLogs}
-              contextStartDate={contextStartDate}
-              contextEndDate={contextEndDate}
-              fullWeekTarget={fullWeekTarget}
-              nutrition={periodAdherence?.nutrition ?? null}
-              periodDays={periodAdherence?.dates.length ?? null}
-            />
+            {/* The kernel's figures off the detail wire — the card counts
+                nothing from the logs, so a day with no target can never be
+                priced differently here and on the ribbon. */}
+            <NutritionSection nutrition={periodAdherence?.nutrition ?? null} />
           </div>
 
           <WellnessSection

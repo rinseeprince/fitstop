@@ -6,6 +6,7 @@ import {
   getCheckInTrainingPeriodStats,
   getTrainingEventDetailsForPeriod,
 } from "@/services/check-in-context-service";
+import { getNutritionPeriod } from "@/services/nutrition-period-service";
 import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { supabaseAdmin } from "@/services/supabase-admin";
@@ -101,7 +102,7 @@ export async function GET(request: NextRequest) {
     // serial round-trip. (Runs only after gating, so a gated request never reaches
     // getCheckInNutritionContext and its plan-promotion side effect.)
     // supabaseAdmin required: no client-facing SELECT RLS policy exists on coaches table
-    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats, dailyLogs, trainingEventDetails, form, lastSubmittedPeriodEnd] = await Promise.all([
+    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats, dailyLogs, trainingEventDetails, form, lastSubmittedPeriodEnd, nutritionPeriod] = await Promise.all([
       supabaseAdmin
         .from("coaches")
         .select("name")
@@ -122,6 +123,9 @@ export async function GET(request: NextRequest) {
       // the same function `/api/client/me` uses, so the two wires cannot
       // disagree about which days are open.
       getLastSubmittedPeriodEnd(client.id),
+      // The period's nutrition figures from the ONE kernel, so the wizard
+      // renders what the coach's review will show and recounts nothing.
+      getNutritionPeriod(client.id, periodStart, periodEnd),
     ]);
 
     const coach = coachResult.data;
@@ -146,6 +150,7 @@ export async function GET(request: NextRequest) {
       nutritionContext,
       trainingPeriodStats,
       dailyLogs,
+      nutritionSummary: nutritionPeriod.summary,
       trainingEventDetails,
       periodStart,
       periodEnd,

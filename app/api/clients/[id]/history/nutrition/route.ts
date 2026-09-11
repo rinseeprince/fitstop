@@ -46,7 +46,8 @@ function mapNutritionDayToRow(day: NutritionDay): NutritionHistoryRow {
     fat_g: day.actualFatG,
     target_fat_g: day.targetFatG,
     calorie_surplus_deficit: surplus,
-    nutrition_adherence: day.status === "not_logged" ? null : day.status,
+    nutrition_adherence:
+      day.status === "hit" || day.status === "partial" || day.status === "missed" ? day.status : null,
     is_logged: isLogged,
   };
 }

@@ -12,24 +12,23 @@ describe("aggregateDailyLogs", () => {
     expect(result.avgStress).toBe(0);
     expect(result.sessionsCompleted).toBe(0);
     expect(result.totalPlannedSessions).toBe(0);
-    expect(result.nutritionHitDays).toBe(0);
-    expect(result.nutritionLoggedDays).toBe(0);
     expect(result.totalLoggedDays).toBe(0);
   });
 
-  it("counts nutritionLoggedDays (calories present) separately from nutritionHitDays (on target)", () => {
+  // The food log carries no target, so no nutrition figure can be counted
+  // from these rows: the wizard renders the kernel's figures off the wire.
+  it("carries NO nutrition figure — those come from the kernel, never from the rows", () => {
     const logs: Partial<DailyLog>[] = [
-      { id: "1", date: "2024-01-01", caloriesConsumed: 2400, nutritionAdherence: "hit" },
-      { id: "2", date: "2024-01-02", caloriesConsumed: 2900, nutritionAdherence: "missed" },
-      { id: "3", date: "2024-01-03", caloriesConsumed: 2380, nutritionAdherence: "hit" },
-      { id: "4", date: "2024-01-04" }, // logged the day, no nutrition entered
+      { id: "1", date: "2024-01-01", caloriesConsumed: 2400 },
+      { id: "4", date: "2024-01-04" },
     ];
 
     const result = aggregateDailyLogs(logs as DailyLog[]);
 
-    expect(result.nutritionLoggedDays).toBe(3); // days with calories logged
-    expect(result.nutritionHitDays).toBe(2);    // days on target — must differ from "logged"
-    expect(result.totalLoggedDays).toBe(4);
+    expect(result.totalLoggedDays).toBe(2);
+    for (const key of ["nutritionHitDays", "nutritionLoggedDays", "avgCalories", "avgTargetCalories", "totalSurplusDeficit"]) {
+      expect(key in result).toBe(false);
+    }
   });
 
   it("correctly aggregates wellness metrics with mixed data", () => {
@@ -158,50 +157,6 @@ describe("aggregateDailyLogs", () => {
     expect(result.totalPlannedActivities).toBe(3);
     expect(result.plannedActivitiesCompleted).toBe(2); // Only 2 have completed: true
     expect(result.unplannedActivitiesCount).toBe(1);
-  });
-
-  it("correctly counts nutrition adherence", () => {
-    const logs: Partial<DailyLog>[] = [
-      {
-        id: "1",
-        date: "2024-01-01",
-        nutritionAdherence: "hit",
-        caloriesConsumed: 2000,
-        targetCalories: 2100,
-        calorieSurplusDeficit: -100,
-      },
-      {
-        id: "2",
-        date: "2024-01-02",
-        nutritionAdherence: "partial",
-        caloriesConsumed: 2200,
-        targetCalories: 2100,
-        calorieSurplusDeficit: 100,
-      },
-      {
-        id: "3",
-        date: "2024-01-03",
-        nutritionAdherence: "hit",
-        caloriesConsumed: 2050,
-        targetCalories: 2100,
-        calorieSurplusDeficit: -50,
-      },
-      {
-        id: "4",
-        date: "2024-01-04",
-        nutritionAdherence: "missed",
-        caloriesConsumed: 2800,
-        targetCalories: 2100,
-        calorieSurplusDeficit: 700,
-      },
-    ];
-
-    const result = aggregateDailyLogs(logs as DailyLog[]);
-    
-    expect(result.nutritionHitDays).toBe(2); // Only "hit" days count
-    expect(result.avgCalories).toBe(2263); // (2000 + 2200 + 2050 + 2800) / 4, rounded
-    expect(result.avgTargetCalories).toBe(2100);
-    expect(result.totalSurplusDeficit).toBe(650); // -100 + 100 + -50 + 700
   });
 
   it("handles logs with null and undefined values correctly", () => {

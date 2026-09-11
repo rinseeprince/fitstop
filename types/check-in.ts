@@ -1,3 +1,4 @@
+import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import type { DailyLog } from "./daily-log";
 import type { OnboardingStatus } from "./client-intake";
 import type { TrainingEventStatus } from "@/types/training";
@@ -305,6 +306,9 @@ export type CheckIn = {
 
   // Enhanced nutrition tracking
   nutritionDaysOnTarget?: number;
+  /** The days `nutritionDaysOnTarget` was counted over — the frozen rows that
+   *  carried a target. Absent on a row with no snapshot. */
+  nutritionTargetedDays?: number;
   nutritionNotes?: string;
 
   // AI fields
@@ -627,6 +631,14 @@ export type CheckInContextResponse = {
   periodEnd?: string;
   periodDays?: number;
   trainingPeriodStats?: { sessionsCompleted: number; sessionsPlanned: number };
+  /**
+   * Additive (2026-09-11): the period's nutrition figures from the ONE kernel
+   * (`utils/nutrition-period-summary.ts`) — days logged over the period, days
+   * on target over the days a target was PRESCRIBED, intake and target
+   * averages. Render these; never recount them from `dailyLogs`, which carry
+   * no target.
+   */
+  nutritionSummary?: NutritionPeriodSummary;
   /** Additive (Session 6.2): per-event training detail from `training_events`. */
   trainingEventDetails?: CheckInTrainingEventDetail[];
   /**

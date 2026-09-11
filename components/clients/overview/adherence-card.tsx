@@ -202,10 +202,14 @@ export function AdherenceCard({
             subline={
               nutrition.loggedDays === 0
                 ? "No days logged in this window"
-                : `${nutrition.onTarget} on target · ${pluralize(nutrition.loggedDays, "day")} logged`
+                : nutrition.targetedDays === 0
+                  ? `No targets set · ${pluralize(nutrition.loggedDays, "day")} logged`
+                  : `${nutrition.onTarget} on target · ${pluralize(nutrition.loggedDays, "day")} logged`
             }
             sublineIsNumeric={nutrition.loggedDays > 0}
-            pct={nutrition.pct}
+            // On target over the days a target was PRESCRIBED — a day with no
+            // target is in no ratio, and a window with none has no figure.
+            pct={nutrition.daysOnTargetPct}
             dates={dates}
             rail={nutrition.rail}
             linkLabel="Open Nutrition"

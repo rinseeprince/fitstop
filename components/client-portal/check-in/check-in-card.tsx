@@ -102,7 +102,8 @@ export function CheckInCard({ checkIn }: { checkIn: CheckIn }) {
                 )}
                 {checkIn.nutritionDaysOnTarget && (
                   <span className="bg-muted/50 px-2 py-1 rounded text-xs">
-                    Nutrition: {checkIn.nutritionDaysOnTarget}/7 days
+                    Nutrition: {checkIn.nutritionDaysOnTarget}
+                    {checkIn.nutritionTargetedDays != null ? `/${checkIn.nutritionTargetedDays}` : ""} days
                   </span>
                 )}
               </div>

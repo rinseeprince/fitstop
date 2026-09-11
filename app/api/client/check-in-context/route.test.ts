@@ -20,6 +20,12 @@ vi.mock('@/services/daily-logs-service', () => ({
   getDailyLogs: vi.fn(),
 }));
 
+// The period's nutrition figures come from the ONE kernel, on the wire; the
+// route carries them and counts nothing.
+vi.mock('@/services/nutrition-period-service', () => ({
+  getNutritionPeriod: vi.fn(),
+}));
+
 // The day-rule boundary the checklist locks its rows on. Its derivation is
 // proved in lib/daily-log-permissions.test.ts; the route only carries it.
 vi.mock('@/services/daily-log-permissions-service', () => ({
@@ -55,6 +61,7 @@ import {
   getTrainingEventDetailsForPeriod,
 } from '@/services/check-in-context-service';
 import { getDailyLogs } from '@/services/daily-logs-service';
+import { getNutritionPeriod } from '@/services/nutrition-period-service';
 import { getClientCheckInForm } from '@/services/check-in-form-service';
 import { getLastSubmittedPeriodEnd } from '@/services/daily-log-permissions-service';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
@@ -79,6 +86,16 @@ function mockServerSupabase(lastCheckIn: unknown) {
   } as any);
 }
 
+/** One week, nothing logged, a target on every day — as the kernel states it. */
+const NUTRITION_SUMMARY = {
+  periodDays: 7, loggedDays: 0, targetedDays: 7, judgedDays: 0, loggedNoTargetDays: 0,
+  onTarget: 0, over: 0, under: 0, daysOnTargetPct: 0,
+  targetTotals: { calories: 14000, proteinG: 1050, carbsG: 1400, fatG: 420 },
+  consumedOnTargetedDays: { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+  calorieAdherencePct: 0, periodVerdict: 'missed', perJudgedDay: null, intakePerLoggedDay: null,
+  netCaloriesOnJudgedDays: null,
+};
+
 const baseClient = {
   id: 'client-123',
   coachId: 'coach-1',
@@ -96,6 +113,7 @@ describe('GET /api/client/check-in-context', () => {
     vi.mocked(getCheckInTrainingPeriodStats).mockResolvedValue({ sessionsCompleted: 1, sessionsPlanned: 3 } as any);
     vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([] as any);
     vi.mocked(getDailyLogs).mockResolvedValue([] as any);
+    vi.mocked(getNutritionPeriod).mockResolvedValue({ days: [], summary: NUTRITION_SUMMARY } as any);
     vi.mocked(getLastSubmittedPeriodEnd).mockResolvedValue(null);
     vi.mocked(getClientCheckInForm).mockResolvedValue({
       fields: [...DEFAULT_CHECK_IN_FORM_FIELDS],
@@ -133,6 +151,8 @@ describe('GET /api/client/check-in-context', () => {
         // additive optional keys; removals and renames are not allowed.
         'form',
         'nutritionContext',
+        // Additive (2026-09-11) — the kernel's figures; the wizard renders them.
+        'nutritionSummary',
         'periodDays',
         'periodEnd',
         'periodStart',
@@ -141,6 +161,10 @@ describe('GET /api/client/check-in-context', () => {
         'trainingPeriodStats',
       ].sort(),
     );
+    // The kernel's figures, over the SAME window the wire names, so the
+    // wizard shows what the coach's review will.
+    expect(getNutritionPeriod).toHaveBeenCalledWith('client-123', body.data.periodStart, body.data.periodEnd);
+    expect(body.data.nutritionSummary).toEqual(NUTRITION_SUMMARY);
     // A client with no form row gets the full form — the whole reason this
     // feature needs no backfill, and why every existing client is unaffected.
     expect(body.data.form.fields).toHaveLength(14);

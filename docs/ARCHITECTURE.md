@@ -403,7 +403,7 @@ The DTO is `NutritionEvent` (`types/check-in.ts`): `id` is the date (stable and 
 
 **What keeps a derived past stable: a version's grid is never edited in place once its first day has passed.** Ended plans keep their windows, past sessions cannot move, edits before today are refused, and the same-day replace-in-place can only touch a version starting today. The orchestrator's past-date belt is the pin; a future "adjust the running plan's numbers" feature must mint a version, as every save does today.
 
-**A logged day carries no target** (owner decision 2026-09-11): the food log holds what the client ate and nothing else — the spine link, the four consumed columns, the covering version's stamp when known — so the target for any day is the computed day, and the coach's change to today and a session landing on a logged day reach every reader at once. The history table, the calendar, the client's day, the check-in week, the Overview rail and the dashboard feed all take the target from the day reader and derive the verdict — hit / partial / missed, the surplus or deficit — from what was eaten against it (`calculateNutritionAdherence` / `calculateCalorieSurplusDeficit`, `services/daily-logs-service.ts`). The check-in submit is the one freeze (`period_snapshot`, `nutrition_days_on_target`). Every client wire keeps its shape — `{ consumed, target, source }` on the day GET; `targetCalories` / `nutritionAdherence` / `calorieSurplusDeficit` on `DailyLog` — now derived; the browser and React Native compute nothing.
+**A logged day carries no target** (owner decision 2026-09-11): the food log holds what the client ate and nothing else — the spine link, the four consumed columns, the covering version's stamp when known — so the target for any day is the computed day, and the coach's change to today and a session landing on a logged day reach every reader at once. The history table, the calendar, the client's day, the check-in week, the Overview rail and the dashboard feed all take the target from the day reader and derive the verdict — hit / partial / missed, the surplus or deficit — from what was eaten against it (`calculateNutritionAdherence` / `calculateCalorieSurplusDeficit`, `lib/nutrition-verdict.ts` — pure, re-exported by `services/daily-logs-service.ts`). The check-in's figures are the nutrition kernel (`utils/nutrition-period-summary.ts`) over those days — a logged day with no target is counted as logged and is in no ratio — and the check-in submit is the one freeze (`period_snapshot`, `nutrition_days_on_target`). Every client wire keeps its shape — `{ consumed, target, source }` on the day GET; `targetCalories` / `nutritionAdherence` / `calorieSurplusDeficit` on `DailyLog` — now derived; the browser and React Native compute nothing.
 
 ### Read priority for nutrition targets
 
@@ -1186,6 +1186,13 @@ a client who backfilled a day after submitting moved the review while their own 
 The same index that enforces one check-in per period serves the boundary read
 (`getLastSubmittedPeriodEnd`), so the close costs one indexed lookup.
 
+The freeze is one INSERT: `submitCheckIn` derives the columns and builds `period_snapshot` from
+the same kernel run (`getNutritionPeriod` → `buildPeriodSnapshot`, `lib/check-in/period-snapshot.ts`),
+and the AI prompt's nutrition block — on the client-submit path and on the coach's Regenerate — is
+the kernel over those frozen rows (`getCheckInNutritionSummary`). The coach's review page still
+reads the period live, so a plan the coach changes after submit moves the review's targets while
+the client's card keeps the frozen count; that gap is the open item in `docs/CHECK-IN-FINDINGS.md`.
+
 ### The customisable form (migration 157)
 
 A coach chooses which of the check-in's built-in fields a client is asked, and
@@ -1409,24 +1416,28 @@ question from data already in hand.
 `…/comparison` read in parallel behind `checkInDetailKey` + `useInvalidateCheckInDetail` (the area
 is the detail and everything under it). The window's daily and habit logs come through
 `useWellnessData`'s explicit `range` — the same reader the Overview's wellness cards use, so those
-two keys have one builder. `…/nutrition/plan-targets?dates=` reads the computed target of every period day — the log carries
-none — summed into the full-week nutrition target. The window is the stored
-`period_start`/`period_end`, else the six days up to `created_at` (pre-Session-6.4 rows). Two
-stages — the detail and its comparison, then the window's logs and the plan targets together; SWR
-dedupes re-opens.
+two keys have one builder. The window is the stored `period_start`/`period_end`, else the six
+days up to `created_at` (pre-Session-6.4 rows). Two stages — the detail and its comparison, then
+the window's logs; SWR dedupes re-opens. The nutrition figures ride the detail wire from the
+kernel; the browser folds no target and no figure of its own.
 
 **The figures, and what they divide by.** The review's nutrition and habit
 numbers are computed SERVER-side over the check-in's own reporting period and
 arrive on `GET /api/check-in/[id]` as `periodAdherence`
 (`getCheckInPeriodAdherence` → the shared Overview kernel's
-`getClientAdherenceForRange`). Both denominators are **the whole period**, from
-`periodAdherence.dates.length` — never a day count derived in the renderer,
-which resolves differently on a legacy row. The KPI ribbon's **Nutrition** cell
-is days on target over that period (it was "Calories", a daily average over the
-days a client happened to log, which read HIT for three logged days out of
-seven); the Nutrition card's pill is on-target over period days, beside a weekly
-HIT/PARTIAL/MISSED verdict that stays locally derived because it asks a
-different question. Habits come from `perHabit`, built from the HABIT list, so a
+`getClientAdherenceForRange`). Nutrition is the nutrition kernel's summary
+(`utils/nutrition-period-summary.ts`) plus the rail: days on target over the
+days a TARGET WAS PRESCRIBED — a skipped targeted day is a miss, a day with no
+target is in no ratio, and a period with none reads "No targets set", never
+0/7 — with the calorie total, the period HIT/PARTIAL/MISSED verdict and the
+per-day averages all from the same run, each over its named day set. Habits
+divide by eligible days, from `periodAdherence.dates` — never a day count
+derived in the renderer, which resolves differently on a legacy row. The KPI
+ribbon's **Nutrition** cell is that fraction (it was "Calories", a daily
+average over the days a client happened to log, which read HIT for three
+logged days out of seven); the Nutrition card renders the same summary and
+computes nothing — it takes no log rows (`nutrition-section.test.tsx` scans
+for it). Habits come from `perHabit`, built from the HABIT list, so a
 habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
 writes a row only when they act, and the old grid read `/habits/logs`. **Training
 is deliberately NOT on that wire**: this surface counts full AND partial
@@ -1441,33 +1452,34 @@ deferred debt (CONVENTIONS §8). `periodAdherence` is `null` when a legacy row's
 be resolved (pre-038 and no schedule to anchor a week to), and the cells render
 their empty states rather than fall back to a second definition.
 
-**Adherence figures and averages take DIFFERENT denominators, on purpose.** An
-adherence figure asks *did you do what you were supposed to*, so an unlogged day
-counts against it and the denominator is the whole period — the KPI's Nutrition
-cell, the pill's on-target fraction, the kcal total and its bar. An average asks
-*what was it typically*, and an unlogged day is **unknown, not zero**: dividing
-by days with no data does not make the average smaller, it makes it wrong. So
-the wellness means divide by each metric's OWN logged days (per metric — stress
-and mood can be logged on different days), and the nutrition card's kcal and
-macro averages divide by logged days, each macro against the target that applied
-on those same days. Both were calendar-day divisions until 2026-08-30 and both
-were badly misleading: two stress entries averaging 6.5 rendered as 1.9 —
-"relaxed" — beside an AI summary that correctly called the week high-stress
-(`calculateMetricAverages`, which writes the stored snapshot the prompt reads,
-had always divided by its per-metric count; the card was the only place that did
-not), and three logged days at ~161g of protein rendered as 69g against a 159g
-target, a collapse that never happened.
+**Three day sets, and every figure names its own** (owner decision
+2026-09-11). LOGGED days are coverage, over the period. TARGETED days — the
+days a target was prescribed — are the adherence denominator: an unlogged
+targeted day counts against the client, exactly as a skipped session does on
+the training side. JUDGED days — logged and targeted — are the only days
+intake can be compared with a target, so every average of intake against
+target divides by them, and a card compares calories and macros over the same
+days. A logged day with no target is counted as logged and nothing else; the
+review card names it ("1 logged day had no target and is not counted"). The
+wellness means are unchanged: each metric divides by its OWN logged days
+(stress and mood can be logged on different days), because an unlogged day is
+**unknown, not zero** — dividing by days with no data does not make an average
+smaller, it makes it wrong (two stress entries averaging 6.5 once rendered as
+1.9, "relaxed", beside an AI summary that correctly called the week
+high-stress).
 
-**The stored figure changed meaning** (2026-08-30, D5.2). `check_ins.adherence_percentage`
-and `nutrition_days_on_target` — and the AI prompt's "Weekly adherence" — divide
-by the WHOLE period's targets, resolved through the day reader
-(`getNutritionTargetsForDateRange`: every date's computed day; a day no version
-covers has no target). All three writers go through `getNutritionSummaryForPeriod`, so they
-move together. Rows written before that date carry the old logged-days-only
-meaning and were **not** backfilled: reconstructing each historical week's
-targets would invent numbers, because plans get replaced and events get edited.
-The visible consequence is one-off — `comparison-service` reports the change
-between consecutive check-ins, so the first check-in after the switch shows a
+**The stored figures** — `check_ins.nutrition_days_on_target` and
+`adherence_percentage` — are the kernel's `onTarget` (over the targeted days;
+NULL when no day had a target) and its `calorieAdherencePct` (intake on the
+targeted days the client logged, over the targets of every targeted day),
+written by `submitCheckIn` from the ONE kernel run that also freezes
+`period_snapshot`, so the count, the frozen rows and the client's card cannot
+disagree. The client wire carries `nutritionTargetedDays`, counted from the
+frozen rows, as the count's denominator. Rows written before 2026-08-30 carry
+the older logged-days-only meaning and were **not** backfilled: reconstructing
+each historical week's targets would invent numbers, because plans get
+replaced and events get edited; `comparison-service` reports the change
+between consecutive check-ins, so the first check-in after that switch shows a
 drop against a predecessor measured the old way. It is RN-visible
 (`CLIENT-APP-REFERENCE.md` → Adherence Calculations).
 

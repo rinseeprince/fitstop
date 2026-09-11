@@ -12,7 +12,6 @@ vi.mock("@/lib/swr-fetcher", () => ({ swrFetcher: vi.fn() }));
 vi.mock("@/hooks/use-wellness-data", () => ({ useWellnessData: mockUseWellnessData }));
 
 import {
-  buildFullWeekTarget,
   checkInDetailKey,
   resolveCheckInDetailWindow,
   useCheckInDetailData,
@@ -42,27 +41,6 @@ describe("resolveCheckInDetailWindow", () => {
     const expectedStart = new Date(createdAt);
     expectedStart.setDate(expectedStart.getDate() - 6);
     expect(getDateString(start)).toBe(getDateString(expectedStart));
-  });
-});
-
-describe("buildFullWeekTarget", () => {
-  it("sums the plan targets of every period day handed to it", () => {
-    expect(
-      buildFullWeekTarget([
-        { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
-        { calories: 2100, proteinG: 150, carbsG: 220, fatG: 65 },
-        { calories: 1900, proteinG: 140, carbsG: 180, fatG: 55 },
-      ])
-    ).toEqual({ calories: 6000, proteinG: 440, carbsG: 600, fatG: 180 });
-  });
-
-  it("counts a missing target as zero rather than NaN", () => {
-    expect(buildFullWeekTarget([{ calories: null }])).toEqual({
-      calories: 0,
-      proteinG: 0,
-      carbsG: 0,
-      fatG: 0,
-    });
   });
 });
 
@@ -101,12 +79,11 @@ describe("useCheckInDetailData", () => {
   const idle = { data: undefined, error: undefined, isLoading: false, mutate: vi.fn() };
 
   /** Answer each SWR key by shape; unmatched keys (null) stay idle. */
-  function wireSWR(planTargets?: unknown) {
+  function wireSWR() {
     mockUseSWR.mockImplementation((key: string | null) => {
       if (key === null) return idle;
       if (key.endsWith("/comparison")) return { ...idle, data: { comparison: {} } };
       if (key.startsWith("/api/check-in/")) return { ...idle, data: detail };
-      if (key.includes("plan-targets")) return { ...idle, data: planTargets };
       throw new Error(`unexpected key ${key}`);
     });
   }
@@ -159,69 +136,30 @@ describe("useCheckInDetailData", () => {
     expect(planTargetKeys).toEqual([]);
   });
 
-  // The food log stores no target: the week's target is the plan target of
-  // EVERY period day, logged or not, and a target a log row might carry is
-  // never folded in.
-  it("asks the plan for every period day and sums those targets alone into the week target", () => {
+  // The figures come on the detail wire from the ONE kernel: the hook reads
+  // no plan targets and folds no week target of its own.
+  it("reads no plan targets and computes no week target", () => {
     const logs = [
-      log("2026-08-22", { targetCalories: 9999, targetProteinG: 1, targetCarbsG: 1, targetFatG: 1 }),
-      log("2026-08-23", { targetCalories: 9999, targetProteinG: 1, targetCarbsG: 1, targetFatG: 1 }),
+      log("2026-08-22", { targetCalories: 9999 }),
+      log("2026-08-23", { targetCalories: 9999 }),
     ];
     mockUseWellnessData.mockReturnValue({ logs, habitLogs: [], isLoading: false });
-    wireSWR({
-      targets: Array.from({ length: 7 }, () => ({
-        calories: 1800, proteinG: 140, carbsG: 170, fatG: 50,
-      })),
-    });
+    wireSWR();
     const { result } = renderHook(() =>
       useCheckInDetailData({ checkInId: "ci-1", clientId: "c1" })
     );
 
     const keys = mockUseSWR.mock.calls.map((c) => c[0]);
-    expect(keys).toContain(
-      "/api/clients/c1/nutrition/plan-targets?dates=2026-08-22,2026-08-23,2026-08-24,2026-08-25,2026-08-26,2026-08-27,2026-08-28"
-    );
-    expect(result.current.fullWeekTarget).toEqual({
-      calories: 12600,
-      proteinG: 980,
-      carbsG: 1190,
-      fatG: 350,
-    });
+    expect(keys.filter((k) => typeof k === "string" && k.includes("plan-targets"))).toEqual([]);
+    expect("fullWeekTarget" in result.current).toBe(false);
   });
 
-  it("asks the plan for every period day even when every day is logged", () => {
-    const logs = [
-      "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28",
-    ].map((d) => log(d, { targetCalories: 2000 }));
-    mockUseWellnessData.mockReturnValue({ logs, habitLogs: [], isLoading: false });
-    wireSWR({
-      targets: Array.from({ length: 7 }, () => ({
-        calories: 2000, proteinG: 150, carbsG: 200, fatG: 60,
-      })),
-    });
-    const { result } = renderHook(() =>
-      useCheckInDetailData({ checkInId: "ci-1", clientId: "c1" })
-    );
-
-    const planTargetKeys = mockUseSWR.mock.calls
-      .map((c) => c[0])
-      .filter((k) => typeof k === "string" && k.includes("plan-targets"));
-    expect(planTargetKeys).toHaveLength(1);
-    expect(result.current.fullWeekTarget).toEqual({
-      calories: 14000,
-      proteinG: 1050,
-      carbsG: 1400,
-      fatG: 420,
-    });
-  });
-
-  it("reports the context as loading only once a window exists, and no week target until the plan read lands", () => {
+  it("reports the context as loading only once a window exists", () => {
     wireSWR();
     mockUseWellnessData.mockReturnValue({ logs: [], habitLogs: [], isLoading: true });
     const { result } = renderHook(() =>
       useCheckInDetailData({ checkInId: "ci-1", clientId: "c1" })
     );
     expect(result.current.dailyContextLoading).toBe(true);
-    expect(result.current.fullWeekTarget).toBeNull();
   });
 });

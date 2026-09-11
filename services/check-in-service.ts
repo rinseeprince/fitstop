@@ -10,6 +10,7 @@ import type { CheckInRow } from "@/lib/database-helpers";
 import type { MeasurementValues } from "@/lib/measurements/keys";
 import {
   addDays,
+  expandDateRange,
   formatDateISO,
   getTodayDateStringInTimezone,
   getTodayInTimezone,
@@ -25,8 +26,12 @@ import {
   insertExerciseHighlights,
 } from "./check-in-details-service";
 import { getCheckInTrainingPeriodStats } from "./check-in-context-service";
-import { getNutritionSummaryForPeriod } from "./weekly-nutrition-service";
+import { getNutritionPeriod } from "./nutrition-period-service";
+import { getEventsForDateRange } from "./training-event-service";
 import { getDailyLogs } from "./daily-logs-service";
+import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
+import { buildPeriodSnapshot } from "@/lib/check-in/period-snapshot";
+import type { PeriodSnapshot } from "@/types/schedule";
 import { calculateMetricAverages } from "@/utils/daily-logs-aggregation";
 import { getClientById } from "./client-service";
 
@@ -69,9 +74,11 @@ export async function foldCheckInMeasurements(rows: CheckInRow[]): Promise<Check
 //
 // Session 6.4: daily logs are the single source of truth. The check-in's weekly
 // snapshot columns (workouts_completed, nutrition_days_on_target,
-// adherence_percentage, mood/energy/sleep/stress) are DERIVED server-side from
-// the spine for the check-in's period — never read from the form body. These
-// columns stay populated so the AI's previous-check-in trend
+// adherence_percentage, mood/energy/sleep/stress) and its period_snapshot are
+// DERIVED server-side from the spine for the check-in's period — never read
+// from the form body — in ONE computation: the nutrition columns and the
+// frozen nutrition rows come from the same kernel run, so they cannot
+// disagree. The columns stay populated so the AI's previous-check-in trend
 // (utils/ai-prompt-builder.ts) keeps working. The form no longer sends
 // sessionCompletions / nutritionAdherence / mood…stress; any such fields on
 // formData are ignored.
@@ -95,13 +102,16 @@ export const submitCheckIn = async (
     client?.startDate
   );
 
-  // Derive snapshot columns from the spine for the period. Pin 1: reuse
-  // getNutritionSummaryForPeriod so submit-path and AI-path numbers match. Pin 2:
+  // Derive the stored columns AND the frozen snapshot from the spine for the
+  // period. Pin 1: the nutrition figures and the nutrition rows are one kernel
+  // run (`getNutritionPeriod`), so the stored count, the frozen rows the
+  // review and the AI read back, and the client's card cannot disagree. Pin 2:
   // read wellness rows from the consolidated daily_logs_full (mood/energy/sleep/
   // stress live in wellness_logs, not the bare daily_logs spine).
   let workoutsCompleted: number | undefined;
   let nutritionDaysOnTarget: number | undefined;
   let adherencePercentage: number | undefined;
+  let periodSnapshot: PeriodSnapshot | undefined;
   let mood: number | undefined;
   let energy: number | undefined;
   let sleep: number | undefined;
@@ -109,21 +119,33 @@ export const submitCheckIn = async (
   let soreness: number | undefined;
 
   if (periodStart && periodEnd) {
-    const [trainingStats, nutritionSummary, wellnessLogs] = await Promise.all([
+    const [trainingStats, nutrition, wellnessLogs, events] = await Promise.all([
       getCheckInTrainingPeriodStats(clientId, periodStart, periodEnd),
-      getNutritionSummaryForPeriod(clientId, periodStart, periodEnd),
+      getNutritionPeriod(clientId, periodStart, periodEnd),
       getDailyLogs(clientId, periodStart, periodEnd),
+      getEventsForDateRange(clientId, periodStart, periodEnd),
     ]);
 
     workoutsCompleted = trainingStats.sessionsCompleted;
 
-    if (nutritionSummary) {
-      nutritionDaysOnTarget = nutritionSummary.daysOnTarget;
-      adherencePercentage =
-        nutritionSummary.adherencePercentage != null
-          ? Math.max(0, Math.min(100, Math.round(nutritionSummary.adherencePercentage)))
-          : undefined;
+    // On target over the TARGETED days: a period the coach prescribed nothing
+    // for has no count to store — a day with no target is in no ratio.
+    if (nutrition.summary.targetedDays > 0) {
+      nutritionDaysOnTarget = nutrition.summary.onTarget;
     }
+    adherencePercentage =
+      nutrition.summary.calorieAdherencePct != null
+        ? Math.max(0, Math.min(100, Math.round(nutrition.summary.calorieAdherencePct)))
+        : undefined;
+
+    // The frozen rows: the training schedule and the SAME nutrition rows the
+    // figures above were counted from. Written in the INSERT below, so a
+    // check-in never exists without its snapshot and no second read of the
+    // period — or of the stored window — is needed to freeze it.
+    periodSnapshot = buildPeriodSnapshot(
+      mapEventsToScheduleDays(expandDateRange(periodStart, periodEnd), events),
+      nutrition.days
+    );
 
     if (wellnessLogs.length > 0) {
       const averages = calculateMetricAverages(wellnessLogs);
@@ -167,6 +189,8 @@ export const submitCheckIn = async (
       // Persist the resolved period so detail readers derive the exact window.
       period_start: periodStart ?? null,
       period_end: periodEnd ?? null,
+      // The frozen rows — never updated after creation.
+      period_snapshot: periodSnapshot ? JSON.parse(JSON.stringify(periodSnapshot)) : null,
     })
     .select("id")
     .single();

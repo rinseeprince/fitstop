@@ -1,7 +1,14 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
-import { calculateNutritionAdherence } from "./daily-logs-service";
-import { getNutritionTargetsForDateRange } from "./nutrition-days-service";
+import {
+  getNutritionTargetsForDateRange,
+  type NutritionDayTarget,
+} from "./nutrition-days-service";
+import {
+  buildNutritionSummary,
+  summarizeNutritionPeriod,
+} from "@/utils/nutrition-period-summary";
+import type { NutritionDayStatus } from "@/types/schedule";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import { HABIT_DROPOFF_THRESHOLD_PERCENT } from "@/lib/constants";
 import {
@@ -16,11 +23,10 @@ import type { AdherenceSummary, DotState } from "@/types/coach-overview";
 /**
  * The Overview's three-rail adherence card (AdherenceSummary contract).
  * Reuses shipped semantics only — training from training_events.status,
- * nutrition from what the client ate against the day's COMPUTED target (the
- * food log stores no verdict; `calculateNutritionAdherence` is the one
- * definition of hit / partial / missed), habits from the weekly-service
- * eligibility rule (active habits with effective_date ≤ the day) — no new
- * adherence math is invented here.
+ * nutrition from the ONE kernel (`utils/nutrition-period-summary.ts`: what the
+ * client ate against each day's COMPUTED target, the food log stores no
+ * verdict), habits from the weekly-service eligibility rule (active habits
+ * with effective_date ≤ the day) — no adherence math is invented here.
  */
 
 /**
@@ -37,10 +43,16 @@ export function classifyTrainingDay(statuses: string[]): DotState {
   return "no_log";
 }
 
-export function classifyNutritionDay(adherence: string | null | undefined): DotState {
-  if (adherence === "hit") return "complete";
-  if (adherence === "partial") return "partial";
-  if (adherence === "missed") return "missed";
+/**
+ * One dot per date from the kernel's standing for it. A day with no target
+ * is a dash — nothing to judge, logged or not — exactly as a training day
+ * with no session planned; it is in no ratio, so it wears no dot.
+ */
+export function classifyNutritionDay(status: NutritionDayStatus): DotState {
+  if (status === "hit") return "complete";
+  if (status === "partial") return "partial";
+  if (status === "missed") return "missed";
+  if (status === "no_target") return "none";
   return "no_log";
 }
 
@@ -73,9 +85,9 @@ export type AdherenceSourceRows = {
     carbs_g: number | null;
     fat_g: number | null;
   }[];
-  /** Each day's computed target calories — one batched day lookup, never a
-   *  read per day. A date with no entry has no target and no verdict. */
-  nutritionTargets: { date: string; calories: number }[];
+  /** Each day's computed target — one batched day lookup, never a read per
+   *  day. A date with no entry has no target and is in no ratio. */
+  nutritionTargets: NutritionDayTarget[];
   habits: { id: string; name: string; effective_date: string }[];
   habitLogs: { date: string; daily_habit_id: string; completed: boolean }[];
   wellnessLogs: {
@@ -133,22 +145,22 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
   // the dot but not in the numerator (deliberate).
   const trainingPct = planned > 0 ? Math.round((completed / planned) * 100) : null;
 
-  // Nutrition: the verdict is derived, per day, from what was eaten against
-  // the computed target — the same rule every other reader applies.
-  const targetByDate = new Map(rows.nutritionTargets.map((target) => [target.date, target.calories]));
-  const adherenceByDate = new Map<string, string | null>();
-  for (const log of rows.nutritionLogs) {
-    adherenceByDate.set(
-      log.date,
-      calculateNutritionAdherence(log.calories_consumed ?? undefined, targetByDate.get(log.date))
-    );
-  }
-  const nutritionRail = dates.map((date) => classifyNutritionDay(adherenceByDate.get(date)));
-  // Days with a nutrition classification — the rail's own, narrower count,
-  // not the logged-day set above.
-  const nutritionLoggedDays = nutritionRail.filter((dot) => dot !== "no_log").length;
-  const onTarget = nutritionRail.filter((dot) => dot === "complete").length;
-  const nutritionPct = nutritionLoggedDays > 0 ? Math.round((onTarget / dates.length) * 100) : null;
+  // Nutrition: the kernel over the same rows every other surface runs it
+  // over — the rows first, then the figures and the rail from the rows. The
+  // figures' day sets (logged, targeted, judged) are the kernel's; nothing
+  // is counted here.
+  const nutritionDays = buildNutritionSummary(
+    dates,
+    rows.nutritionLogs.map((log) => ({
+      date: log.date,
+      caloriesConsumed: log.calories_consumed,
+      proteinG: log.protein_g,
+      carbsG: log.carbs_g,
+      fatG: log.fat_g,
+    })),
+    new Map(rows.nutritionTargets.map((target) => [target.date, target]))
+  );
+  const nutritionRail = nutritionDays.map((day) => classifyNutritionDay(day.status));
 
   // Habits
   const knownHabitIds = new Set(rows.habits.map((habit) => habit.id));
@@ -209,7 +221,7 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
     dates,
     loggedDates,
     training: { rail: trainingRail, completed, planned, pct: trainingPct },
-    nutrition: { rail: nutritionRail, onTarget, loggedDays: nutritionLoggedDays, pct: nutritionPct },
+    nutrition: { rail: nutritionRail, ...summarizeNutritionPeriod(nutritionDays) },
     habits: { rail: habitsRail, avgPct, daysBelow50, perHabit },
   };
 }
@@ -293,10 +305,7 @@ export const getClientAdherenceForRange = async (
     dates,
     trainingEvents: events.data ?? [],
     nutritionLogs: nutritionLogs.data ?? [],
-    nutritionTargets: [...nutritionTargets.values()].map((target) => ({
-      date: target.date,
-      calories: target.calories,
-    })),
+    nutritionTargets: [...nutritionTargets.values()],
     habits: habits.data ?? [],
     habitLogs: habitLogs.data ?? [],
     wellnessLogs: wellnessLogs.data ?? [],

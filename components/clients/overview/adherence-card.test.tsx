@@ -30,9 +30,25 @@ const SUMMARY: AdherenceSummary = {
   },
   nutrition: {
     rail: rail("complete", "complete", "partial", "missed", "no_log", "complete", "no_log"),
-    onTarget: 3,
+    periodDays: 7,
     loggedDays: 5,
-    pct: 43,
+    targetedDays: 7,
+    judgedDays: 5,
+    loggedNoTargetDays: 0,
+    onTarget: 3,
+    over: 1,
+    under: 1,
+    daysOnTargetPct: 43,
+    targetTotals: { calories: 14000, proteinG: 1050, carbsG: 1400, fatG: 420 },
+    consumedOnTargetedDays: { calories: 10000, proteinG: 750, carbsG: 1000, fatG: 300 },
+    calorieAdherencePct: 71.4,
+    periodVerdict: "missed",
+    perJudgedDay: {
+      consumed: { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+      target: { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+    },
+    intakePerLoggedDay: { calories: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+    netCaloriesOnJudgedDays: 0,
   },
   habits: {
     rail: rail("complete", "partial", "partial", "missed", "no_log", "complete", "complete"),
@@ -116,5 +132,36 @@ describe("AdherenceCard", () => {
   it("states the window length in the section meta", () => {
     render(<AdherenceCard adherence={SUMMARY} onTabChange={vi.fn()} {...PROPS} />);
     expect(screen.getByText("Last 14 days")).toBeInTheDocument();
+  });
+});
+
+describe("the nutrition row's denominator", () => {
+  it("prints on target over the logged count, with the percentage over the TARGETED days", () => {
+    render(<AdherenceCard adherence={SUMMARY} onTabChange={vi.fn()} {...PROPS} />);
+    expect(screen.getByText("3 on target · 5 days logged")).toBeInTheDocument();
+  });
+
+  it("says No targets set when nothing was prescribed, and shows no percentage", () => {
+    render(
+      <AdherenceCard
+        adherence={{
+          ...SUMMARY,
+          nutrition: {
+            ...SUMMARY.nutrition,
+            rail: rail("none", "none", "none", "none", "none", "none", "none"),
+            targetedDays: 0,
+            judgedDays: 0,
+            onTarget: 0,
+            loggedDays: 3,
+            loggedNoTargetDays: 3,
+            daysOnTargetPct: null,
+          },
+        }}
+        onTabChange={vi.fn()}
+        {...PROPS}
+      />
+    );
+    expect(screen.getByText("No targets set · 3 days logged")).toBeInTheDocument();
+    expect(screen.queryByText("0 on target · 3 days logged")).not.toBeInTheDocument();
   });
 });

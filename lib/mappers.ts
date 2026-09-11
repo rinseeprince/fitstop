@@ -1,3 +1,4 @@
+import { countTargetedDays } from "@/lib/check-in/period-snapshot";
 import type { ActivityLevel, CheckIn, Client, Coach, AIInsight, AIRecommendation, EnhancedAIData, ReminderPreferences } from "@/types/check-in";
 import type { ClientIntake, ClientIntakeRow, OnboardingStatus } from "@/types/client-intake";
 import type { MeasurementValues } from "@/lib/measurements/keys";
@@ -44,6 +45,8 @@ export function mapCheckInRow(row: CheckInRow, measurements: MeasurementValues =
     prs: row.prs ?? undefined,
     challenges: row.challenges ?? undefined,
     nutritionDaysOnTarget: row.nutrition_days_on_target ?? undefined,
+    // The days that count was taken over — the frozen rows with a target.
+    nutritionTargetedDays: countTargetedDays(row.period_snapshot) ?? undefined,
     nutritionNotes: row.nutrition_notes ?? undefined,
     aiSummary: row.ai_summary ?? undefined,
     aiInsights: (row.ai_insights ?? undefined) as AIInsight[] | EnhancedAIData | undefined,
@@ -203,7 +206,7 @@ const CLIENT_FACING_CHECKIN_KEYS = [
   "thighs",
   "photoFront", "photoSide", "photoBack",
   "workoutsCompleted", "adherencePercentage", "prs", "challenges",
-  "nutritionDaysOnTarget", "nutritionNotes",
+  "nutritionDaysOnTarget", "nutritionTargetedDays", "nutritionNotes",
   "coachResponse", "coachReviewedAt", "responseSentAt",
   "periodStart", "periodEnd", "periodSnapshot",
   "createdAt", "updatedAt",

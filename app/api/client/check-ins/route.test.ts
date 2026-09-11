@@ -25,7 +25,6 @@ vi.mock('@/services/client-check-in-service', () => ({
   triggerAISummaryGeneration: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@/services/check-in-adherence-service', () => ({ updateClientAdherenceStats: vi.fn() }));
-vi.mock('@/services/check-in-snapshot-service', () => ({ generateAndSaveCheckInSnapshot: vi.fn() }));
 
 import { GET, POST } from './route';
 import { requireClientAuth } from '@/lib/require-client-auth';
@@ -34,7 +33,6 @@ import { getClientById } from '@/services/client-service';
 import { triggerAISummaryGeneration } from '@/services/client-check-in-service';
 import { getClientCheckInForm } from '@/services/check-in-form-service';
 import { DEFAULT_CHECK_IN_FORM_FIELDS } from '@/lib/check-in/form-fields';
-import { supabaseAdmin } from '@/services/supabase-admin';
 import { uploadProgressPhotoFromBase64 } from '@/services/storage-service';
 import { encodeCursor } from '@/lib/cursor';
 
@@ -158,13 +156,6 @@ describe('POST /api/client/check-ins — the write path gates too', () => {
     vi.mocked(getClientCheckInForm).mockResolvedValue({
       fields: [...DEFAULT_CHECK_IN_FORM_FIELDS],
       questions: [],
-    } as never);
-    // The post-submit snapshot read. Its period is returned as null so the
-    // snapshot generator is skipped — this suite is about the gate.
-    vi.mocked(supabaseAdmin.from).mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: null }),
     } as never);
   });
 

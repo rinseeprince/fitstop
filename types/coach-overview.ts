@@ -6,6 +6,7 @@
  * live in `types/coach-brief.ts`.
  */
 
+import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import type { MeasurementKey, MeasurementSource } from "@/lib/measurements/keys";
 import type { WellnessKey } from "@/lib/wellness/keys";
 
@@ -82,7 +83,7 @@ export type OverviewPlanSummary = {
   };
 };
 
-/** 'none' = no session planned (training rail only) → faint dash */
+/** 'none' = nothing to judge that day — no session planned (training), no target prescribed (nutrition) → faint dash */
 export type DotState = "complete" | "partial" | "missed" | "no_log" | "none";
 
 /**
@@ -142,7 +143,12 @@ export type AdherenceSummary = {
    */
   loggedDates: string[];
   training: { rail: DotState[]; completed: number; planned: number; pct: number | null };
-  nutrition: { rail: DotState[]; onTarget: number; loggedDays: number; pct: number | null };
+  /**
+   * The nutrition kernel's figures for the window (`utils/nutrition-period-summary.ts`)
+   * plus the rail: one dot per date from that day's standing. `daysOnTargetPct`
+   * is on target over TARGETED days — a day with no target is in no ratio.
+   */
+  nutrition: { rail: DotState[] } & NutritionPeriodSummary;
   habits: {
     rail: DotState[];
     avgPct: number | null;

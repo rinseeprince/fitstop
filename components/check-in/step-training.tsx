@@ -13,6 +13,7 @@ import type {
   SessionCompletionQuality,
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
+import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 
 type TrainingPeriodStats = {
   sessionsCompleted: number;
@@ -34,7 +35,8 @@ type StepTrainingProps = {
     payload: { completionQuality: SessionCompletionQuality; notes?: string }
   ) => Promise<void>;
   trainingPeriodStats?: TrainingPeriodStats;
-  periodDays?: number;
+  /** The period's nutrition figures from the kernel, off the context wire. */
+  nutritionSummary?: NutritionPeriodSummary | null;
   dailyLogs?: DailyLog[];
   /** The coach's enabled field keys for this client (C6b). */
   fields: readonly string[];
@@ -49,7 +51,7 @@ export const StepTraining = ({
   logsOpenFrom = null,
   onLogEvent,
   trainingPeriodStats,
-  periodDays,
+  nutritionSummary = null,
   dailyLogs = [],
   fields,
 }: StepTrainingProps) => {
@@ -81,7 +83,7 @@ export const StepTraining = ({
       <DailyLogsTrainingSummary
         dailyLogs={dailyLogs}
         trainingPeriodStats={trainingPeriodStats}
-        periodDays={periodDays}
+        nutritionSummary={nutritionSummary}
       />
 
       <Separator />

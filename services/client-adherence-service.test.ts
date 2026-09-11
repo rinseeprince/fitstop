@@ -26,8 +26,16 @@ const nut = (date: string, calories_consumed = 2000) => ({
   fat_g: null,
 });
 
-/** The day's computed target calories. */
-const target = (date: string, calories: number) => ({ date, calories });
+/** The day's computed target. */
+const target = (date: string, calories: number) => ({
+  date,
+  calories,
+  proteinG: 150,
+  carbsG: 200,
+  fatG: 60,
+  isTrainingDay: false,
+  note: null,
+});
 
 describe("classifyTrainingDay", () => {
   it("follows the classification table for single-event days", () => {
@@ -48,12 +56,12 @@ describe("classifyTrainingDay", () => {
 });
 
 describe("classifyNutritionDay", () => {
-  it("maps the derived adherence values and treats absence as no_log", () => {
+  it("maps the kernel's standing to a dot — and a day with no target to a dash, not a missed dot", () => {
     expect(classifyNutritionDay("hit")).toBe("complete");
     expect(classifyNutritionDay("partial")).toBe("partial");
     expect(classifyNutritionDay("missed")).toBe("missed");
-    expect(classifyNutritionDay(null)).toBe("no_log");
-    expect(classifyNutritionDay(undefined)).toBe("no_log");
+    expect(classifyNutritionDay("not_logged")).toBe("no_log");
+    expect(classifyNutritionDay("no_target")).toBe("none");
   });
 });
 
@@ -87,7 +95,7 @@ describe("buildAdherenceSummary", () => {
     nutritionLogs: [
       nut("2026-07-20", 2000), // against 2000 → hit
       nut("2026-07-21", 2000), // against 2100 → partial
-      nut("2026-07-22", 2000), // no target that day → no verdict
+      nut("2026-07-22", 2000), // no target that day → in no ratio
       // no row on the 23rd
     ],
     nutritionTargets: [
@@ -115,7 +123,9 @@ describe("buildAdherenceSummary", () => {
 
     expect(summary.dates).toEqual(dates);
     expect(summary.training.rail).toEqual(["complete", "missed", "none", "no_log"]);
-    expect(summary.nutrition.rail).toEqual(["complete", "partial", "no_log", "no_log"]);
+    // The 22nd is logged with no target: a dash, not a no-log dot. The
+    // 23rd has a target and no log: a miss the client owns.
+    expect(summary.nutrition.rail).toEqual(["complete", "partial", "none", "no_log"]);
     // 20th: 1/1 complete · 21st: 0/1 on a logged day → missed ·
     // 22nd: 1/2 → partial · 23rd: 0/2 with no log of any kind → no_log
     expect(summary.habits.rail).toEqual(["complete", "missed", "partial", "no_log"]);
@@ -177,10 +187,18 @@ describe("buildAdherenceSummary", () => {
     expect(summary.training).toMatchObject({ completed: 1, planned: 3, pct: 33 });
   });
 
-  it("computes nutrition pct as onTarget over the whole window", () => {
+  it("computes the nutrition figures with the kernel: on target over the TARGETED days", () => {
     const summary = buildAdherenceSummary(fixture);
-    // 1 hit over 4 window days = 25%; loggedDays counts classified days only
-    expect(summary.nutrition).toMatchObject({ onTarget: 1, loggedDays: 2, pct: 25 });
+    // Targets on the 20th, 21st and 23rd; 1 hit over those 3 = 33%. The 22nd
+    // is logged and in no ratio; loggedDays counts it all the same.
+    expect(summary.nutrition).toMatchObject({
+      onTarget: 1,
+      loggedDays: 3,
+      targetedDays: 3,
+      judgedDays: 2,
+      loggedNoTargetDays: 1,
+      daysOnTargetPct: 33,
+    });
   });
 
   it("computes habit avgPct over eligible days and daysBelow50 via the shipped threshold", () => {
@@ -207,8 +225,9 @@ describe("buildAdherenceSummary", () => {
       nutritionTargets: [target("2026-07-20", 2000), target("2026-07-21", 2000)],
     });
 
-    // 2000 vs 2000 → complete; 2400 vs 2000 → missed. The rows said the reverse.
-    expect(summary.nutrition.rail).toEqual(["complete", "missed", "no_log", "no_log"]);
+    // 2000 vs 2000 → complete; 2400 vs 2000 → missed. The rows said the
+    // reverse. No target on the 22nd or 23rd: dashes.
+    expect(summary.nutrition.rail).toEqual(["complete", "missed", "none", "none"]);
   });
 
   it("returns null percentages when a rail has no signal", () => {
@@ -223,7 +242,8 @@ describe("buildAdherenceSummary", () => {
       clientLogDates: [],
     });
     expect(empty.training.pct).toBeNull();
-    expect(empty.nutrition.pct).toBeNull();
+    expect(empty.nutrition.daysOnTargetPct).toBeNull();
+    expect(empty.nutrition.rail).toEqual(["none", "none", "none", "none"]);
     expect(empty.habits.avgPct).toBeNull();
     expect(empty.training.rail).toEqual(["none", "none", "none", "none"]);
     expect(empty.loggedDates).toEqual([]);
@@ -292,41 +312,65 @@ describe("buildAdherenceSummary", () => {
 });
 
 describe("the nutrition denominator", () => {
-  it("is the whole window, not the days the client logged", () => {
-    // #5 in one assertion: three logged days all on target is 3/7 and 43%,
-    // never 100%. `loggedDays` stays available for anyone who wants it, but it
-    // is not what the percentage divides by.
-    const summary = buildAdherenceSummary({
-      dates: ["d1", "d2", "d3", "d4", "d5", "d6", "d7"],
-      trainingEvents: [],
-      nutritionLogs: [nut("d1"), nut("d2"), nut("d3")],
-      nutritionTargets: [target("d1", 2000), target("d2", 2000), target("d3", 2000)],
-      habits: [],
-      habitLogs: [],
-      wellnessLogs: [],
-      clientLogDates: [],
-    });
+  const rows = (
+    dates: string[],
+    nutritionLogs: AdherenceSourceRows["nutritionLogs"],
+    nutritionTargets: AdherenceSourceRows["nutritionTargets"]
+  ): AdherenceSourceRows => ({
+    dates,
+    trainingEvents: [],
+    nutritionLogs,
+    nutritionTargets,
+    habits: [],
+    habitLogs: [],
+    wellnessLogs: [],
+    clientLogDates: [],
+  });
+  const week = ["d1", "d2", "d3", "d4", "d5", "d6", "d7"];
 
-    expect(summary.nutrition.onTarget).toBe(3);
-    expect(summary.nutrition.loggedDays).toBe(3);
-    expect(summary.nutrition.pct).toBe(43);
+  it("is the days a target was prescribed: a skipped targeted day is a miss", () => {
+    // Three logged days all on target out of seven prescribed is 3/7 and 43%,
+    // never 100%. `loggedDays` is coverage, not what the ratio divides by.
+    const summary = buildAdherenceSummary(
+      rows(week, [nut("d1"), nut("d2"), nut("d3")], week.map((d) => target(d, 2000)))
+    );
+
+    expect(summary.nutrition).toMatchObject({ onTarget: 3, loggedDays: 3, targetedDays: 7, daysOnTargetPct: 43 });
+  });
+
+  it("leaves a logged day with no target out of the ratio", () => {
+    // The smoke week (owner, 2026-09-11): the plan deleted from today, six
+    // days on target and today logged with nothing to hit. 6/6, not 6/7,
+    // and today is a dash on the rail — not a missed dot, not a no-log dot.
+    const summary = buildAdherenceSummary(
+      rows(week, week.map((d) => nut(d)), week.slice(0, 6).map((d) => target(d, 2000)))
+    );
+
+    expect(summary.nutrition).toMatchObject({
+      onTarget: 6,
+      loggedDays: 7,
+      targetedDays: 6,
+      loggedNoTargetDays: 1,
+      daysOnTargetPct: 100,
+    });
+    expect(summary.nutrition.rail[6]).toBe("none");
+  });
+
+  it("has no figure at all when nothing was prescribed — logged days or not", () => {
+    const summary = buildAdherenceSummary(rows(week, [nut("d1"), nut("d2"), nut("d3")], []));
+
+    expect(summary.nutrition).toMatchObject({ onTarget: 0, loggedDays: 3, targetedDays: 0, daysOnTargetPct: null });
+    expect(summary.nutrition.rail).toEqual(["none", "none", "none", "none", "none", "none", "none"]);
   });
 
   it("is the period's OWN length on a short first week", () => {
     // D5.1: a three-day first period is 3/3, not 3/7. `dates` carries the
     // window, so a partial week cannot be scored against a full one.
-    const summary = buildAdherenceSummary({
-      dates: ["d1", "d2", "d3"],
-      trainingEvents: [],
-      nutritionLogs: [nut("d1"), nut("d2"), nut("d3")],
-      nutritionTargets: [target("d1", 2000), target("d2", 2000), target("d3", 2000)],
-      habits: [],
-      habitLogs: [],
-      wellnessLogs: [],
-      clientLogDates: [],
-    });
+    const summary = buildAdherenceSummary(
+      rows(["d1", "d2", "d3"], [nut("d1"), nut("d2"), nut("d3")], ["d1", "d2", "d3"].map((d) => target(d, 2000)))
+    );
 
-    expect(summary.nutrition.pct).toBe(100);
+    expect(summary.nutrition.daysOnTargetPct).toBe(100);
   });
 });
 

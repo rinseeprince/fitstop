@@ -1,3 +1,4 @@
+import { countTargetedDays } from "@/lib/check-in/period-snapshot";
 import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
@@ -97,6 +98,9 @@ export async function GET(
         prs: checkIn.prs,
         challenges: checkIn.challenges,
         nutritionDaysOnTarget: checkIn.nutrition_days_on_target,
+        // The days that count was taken over — the frozen rows with a target.
+        // Null on a row with no snapshot: a count with no denominator.
+        nutritionTargetedDays: countTargetedDays(checkIn.period_snapshot),
         nutritionNotes: checkIn.nutrition_notes,
         // AI fields (ai_summary/insights/recommendations/response_draft) are
         // coach-only analysis — deliberately NOT returned to the client (M6).

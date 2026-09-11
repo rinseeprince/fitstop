@@ -1,7 +1,10 @@
 import type { DailyLog } from "@/types/daily-log";
 
 /**
- * Aggregates daily logs data for check-in summary
+ * Aggregates daily logs for the check-in wizard's training and wellness
+ * summaries. Nutrition is NOT here: the food log carries no target, so no
+ * nutrition figure can be counted from these rows — the wizard renders the
+ * kernel's figures off the context wire (`nutritionSummary`).
  */
 export function aggregateDailyLogs(logs: DailyLog[]) {
   if (!logs || logs.length === 0) {
@@ -13,12 +16,7 @@ export function aggregateDailyLogs(logs: DailyLog[]) {
       avgSoreness: 0,
       sessionsCompleted: 0,
       totalPlannedSessions: 0,
-      nutritionHitDays: 0,
-      nutritionLoggedDays: 0,
       totalLoggedDays: 0,
-      avgCalories: 0,
-      avgTargetCalories: 0,
-      totalSurplusDeficit: 0,
       plannedActivitiesCompleted: 0,
       totalPlannedActivities: 0,
       unplannedActivitiesCount: 0,
@@ -38,12 +36,6 @@ export function aggregateDailyLogs(logs: DailyLog[]) {
   let plannedActivitiesCompleted = 0;
   let totalPlannedActivities = 0;
   let unplannedActivitiesCount = 0;
-
-  // Count nutrition metrics
-  let nutritionHitDays = 0;
-  let caloriesSum = 0, caloriesCount = 0;
-  let targetCaloriesSum = 0, targetCaloriesCount = 0;
-  let totalSurplusDeficit = 0;
 
   for (const log of logs) {
     // Aggregate wellness metrics
@@ -92,24 +84,6 @@ export function aggregateDailyLogs(logs: DailyLog[]) {
     if (log.trainingData?.unplannedActivities) {
       unplannedActivitiesCount += log.trainingData.unplannedActivities.length;
     }
-
-    // Count nutrition adherence
-    if (log.nutritionAdherence === "hit") {
-      nutritionHitDays++;
-    }
-
-    // Aggregate nutrition metrics
-    if (log.caloriesConsumed !== undefined && log.caloriesConsumed !== null) {
-      caloriesSum += log.caloriesConsumed;
-      caloriesCount++;
-    }
-    if (log.targetCalories !== undefined && log.targetCalories !== null) {
-      targetCaloriesSum += log.targetCalories;
-      targetCaloriesCount++;
-    }
-    if (log.calorieSurplusDeficit !== undefined && log.calorieSurplusDeficit !== null) {
-      totalSurplusDeficit += log.calorieSurplusDeficit;
-    }
   }
 
   return {
@@ -120,12 +94,7 @@ export function aggregateDailyLogs(logs: DailyLog[]) {
     avgSoreness: sorenessCount > 0 ? Math.round((sorenessSum / sorenessCount) * 10) / 10 : 0,
     sessionsCompleted,
     totalPlannedSessions,
-    nutritionHitDays,
-    nutritionLoggedDays: caloriesCount,
     totalLoggedDays: logs.length,
-    avgCalories: caloriesCount > 0 ? Math.round(caloriesSum / caloriesCount) : 0,
-    avgTargetCalories: targetCaloriesCount > 0 ? Math.round(targetCaloriesSum / targetCaloriesCount) : 0,
-    totalSurplusDeficit: Math.round(totalSurplusDeficit),
     plannedActivitiesCompleted,
     totalPlannedActivities,
     unplannedActivitiesCount,

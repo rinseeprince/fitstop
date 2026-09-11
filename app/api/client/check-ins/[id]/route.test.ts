@@ -221,3 +221,49 @@ describe("GET /api/client/check-ins/[id]", () => {
   });
 });
 
+describe("the stored on-target count's denominator", () => {
+  const row = (period_snapshot: unknown) => ({
+    id: "ci-1",
+    client_id: "client-1",
+    status: "pending",
+    created_at: "2026-05-14T12:00:00Z",
+    nutrition_days_on_target: 2,
+    period_snapshot,
+  });
+
+  beforeEach(() => {
+    vi.mocked(requireClientAuth).mockResolvedValue({ ok: true, clientId: "client-1" } as any);
+    vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([]);
+    vi.mocked(getCheckInAnswers).mockResolvedValue([]);
+    vi.mocked(getMeasurementsForCheckIns).mockResolvedValue(new Map());
+    vi.mocked(deriveSessionCompletionsForCheckIn).mockResolvedValue([]);
+  });
+
+  it("is the frozen rows that carried a target — a day with no target is in no ratio", async () => {
+    mockCheckInRow({
+      data: row({
+        generatedAt: "2026-05-14T12:00:00Z",
+        training: [],
+        nutrition: [
+          { date: "2026-05-08", targetCalories: 2000, actualCalories: 2000 },
+          { date: "2026-05-09", targetCalories: 2000, actualCalories: null },
+          { date: "2026-05-10", targetCalories: null, actualCalories: 1800 },
+        ],
+      }),
+      error: null,
+    });
+
+    const body = await (await GET(req(), params("ci-1"))).json();
+
+    expect(body.data.nutritionDaysOnTarget).toBe(2);
+    expect(body.data.nutritionTargetedDays).toBe(2);
+  });
+
+  it("is null on a row with no snapshot — a count with no denominator", async () => {
+    mockCheckInRow({ data: row(null), error: null });
+
+    const body = await (await GET(req(), params("ci-1"))).json();
+
+    expect(body.data.nutritionTargetedDays).toBeNull();
+  });
+});

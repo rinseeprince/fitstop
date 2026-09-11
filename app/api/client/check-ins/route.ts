@@ -11,10 +11,7 @@ import { submitCheckInSchema } from "@/lib/validations/check-in";
 import { applyCheckInForm } from "@/lib/check-in/form-fields";
 import { getClientCheckInForm } from "@/services/check-in-form-service";
 import { decodeCursor, encodeCursor } from "@/lib/cursor";
-import { supabaseAdmin } from "@/services/supabase-admin";
 import { toClientFacingCheckIn } from "@/lib/mappers";
-import { generateAndSaveCheckInSnapshot } from "@/services/check-in-snapshot-service";
-import { captureApiError } from "@/lib/error-handler";
 import type { SubmitCheckInResponse } from "@/types/check-in";
 
 /**
@@ -311,23 +308,9 @@ export async function POST(request: NextRequest) {
       customAnswers: shaped.customAnswers,
     });
 
-    // Freeze the period snapshot over the period submitCheckIn STORED
-    // (client-local, activation-clamped). Do not recompute the window here:
-    // an earlier version re-derived it from the server clock with
-    // calculateCheckInPeriod and UPDATE'd the row, silently overwriting the
-    // client-local period — which broke the "completed" gate right after
-    // submitting (duplicate same-week check-ins at the midnight boundary) and
-    // froze the snapshot over the wrong week.
-    const { data: storedPeriod } = await supabaseAdmin
-      .from("check_ins")
-      .select("period_start, period_end")
-      .eq("id", checkInId)
-      .single();
-    if (storedPeriod?.period_start && storedPeriod.period_end) {
-      // Awaited so AI can use it
-      await generateAndSaveCheckInSnapshot(checkInId, clientId, storedPeriod.period_start, storedPeriod.period_end)
-        .catch((err) => captureApiError(err, { action: "check-in-snapshot-generation", checkInId, clientId }));
-    }
+    // The period snapshot is frozen inside submitCheckIn's INSERT, from the
+    // same kernel run its stored nutrition columns come from — no second read
+    // of the period here, and no window to recompute.
 
     // Update client metadata. The readings themselves were stamped into the
     // measurement log by submitCheckIn, which is also where the energy pair

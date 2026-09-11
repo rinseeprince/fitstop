@@ -3,17 +3,10 @@
 import { useCallback, useMemo } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import { expandDateRange, getDateString } from "@/lib/date-helpers";
+import { getDateString } from "@/lib/date-helpers";
 import { useWellnessData, type DailyLogRange } from "@/hooks/use-wellness-data";
 import type { CheckInWithDetails, GetCheckInComparisonResponse } from "@/types/check-in";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
-
-type FullWeekTarget = {
-  calories: number;
-  proteinG: number;
-  carbsG: number;
-  fatG: number;
-};
 
 // GET /api/check-in/[id] answers this bare pair — a pre-existing deviation from
 // the { success, data } envelope, carried rather than codified.
@@ -35,14 +28,6 @@ type CheckInWithClient = {
   periodAdherence: CheckInPeriodAdherence | null;
 };
 
-type PlanTarget = {
-  calories?: number | null;
-  proteinG?: number | null;
-  carbsG?: number | null;
-  fatG?: number | null;
-};
-type PlanTargetsResponse = { targets: PlanTarget[] };
-
 const SWR_OPTS = {
   revalidateOnFocus: false,
   errorRetryCount: 3,
@@ -54,9 +39,6 @@ const SWR_OPTS = {
 export const checkInDetailKey = (checkInId: string) => `/api/check-in/${checkInId}`;
 const checkInComparisonKey = (checkInId: string) =>
   `${checkInDetailKey(checkInId)}/comparison`;
-// The review is this endpoint's only reader, so its key lives here too.
-const planTargetsKey = (clientId: string, dates: string[]) =>
-  `/api/clients/${clientId}/nutrition/plan-targets?dates=${dates.join(",")}`;
 
 /**
  * Revalidates every cached read of one check-in (detail + comparison) from
@@ -121,32 +103,17 @@ export function resolveCheckInDetailWindow(
   return { start, end };
 }
 
-/**
- * The week's nutrition target: the plan target of EVERY period day, logged or
- * not — the food log stores no target, so a logged day's is the computed day
- * too — summed so a half-logged week is measured against its whole window
- * rather than the days that happen to have a log.
- */
-export function buildFullWeekTarget(planTargets: PlanTarget[]): FullWeekTarget {
-  const total = { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 };
-  for (const target of planTargets) {
-    total.calories += target.calories ?? 0;
-    total.proteinG += target.proteinG ?? 0;
-    total.carbsG += target.carbsG ?? 0;
-    total.fatG += target.fatG ?? 0;
-  }
-  return total;
-}
-
 type UseCheckInDetailDataProps = {
   checkInId: string | null;
   clientId: string;
 };
 
 /**
- * Everything the review surface renders for one check-in: the detail and its
- * comparison (parallel), then the window's daily logs and the plan targets for
- * every period day (parallel) — cached and deduped by SWR.
+ * Everything the review surface renders for one check-in: the detail (which
+ * carries the period's nutrition and habit figures, server-computed) and its
+ * comparison in parallel, then the window's daily logs for the wellness
+ * section — cached and deduped by SWR. No nutrition figure is computed here:
+ * the browser renders the kernel's numbers and counts nothing.
  */
 export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDataProps) {
   const detail = useCheckInDetail(checkInId);
@@ -181,27 +148,6 @@ export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDa
     withHabitLogs: false,
   });
 
-  // Every period day, not the unlogged ones: a logged day's target is the
-  // computed day too, and the logs carry no target of their own to fold in.
-  const periodDates = useMemo(
-    () => (range ? expandDateRange(range.startDate, range.endDate) : []),
-    [range]
-  );
-  const { data: planTargets, isLoading: planTargetsLoading } = useSWR<PlanTargetsResponse>(
-    periodDates.length > 0 ? planTargetsKey(clientId, periodDates) : null,
-    swrFetcher,
-    {
-      ...SWR_OPTS,
-      onError: (err) => console.error("Failed to fetch plan targets:", err),
-    }
-  );
-
-  const fullWeekTarget = useMemo<FullWeekTarget | null>(() => {
-    // Still loading, or failed: null hands the ribbon its logged-days fallback.
-    if (!range || !planTargets) return null;
-    return buildFullWeekTarget(planTargets.targets ?? []);
-  }, [range, planTargets]);
-
   const { mutate: mutateDetail } = detail;
   // After Regenerate the rail asks for the fresh review; the bound mutate
   // revalidates exactly this detail in place.
@@ -218,10 +164,9 @@ export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDa
     isLoadingComparison: comparison.isLoading,
     dailyLogs,
     periodAdherence: detail.data?.periodAdherence ?? null,
-    dailyContextLoading: period !== null && (logsLoading || planTargetsLoading),
+    dailyContextLoading: period !== null && logsLoading,
     contextStartDate: period?.start ?? null,
     contextEndDate: period?.end ?? null,
-    fullWeekTarget,
     refreshDetail,
   };
 }

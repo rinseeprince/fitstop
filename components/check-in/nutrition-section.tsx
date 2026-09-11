@@ -7,130 +7,52 @@ import {
   MONO_META_CLASS,
   TEXT_PRIMARY,
 } from "@/components/clients/training/program-builder/builder-tokens";
-import type { DailyLog } from "@/types/daily-log";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
-import {
-  WEEKLY_NUTRITION_HIT_PER_DAY,
-  WEEKLY_NUTRITION_PARTIAL_PER_DAY,
-} from "@/lib/constants";
-
-type FullWeekTarget = {
-  calories: number;
-  proteinG: number;
-  carbsG: number;
-  fatG: number;
-};
 
 type NutritionSectionProps = {
-  dailyLogs: DailyLog[];
-  contextStartDate: Date;
-  contextEndDate: Date;
-  fullWeekTarget?: FullWeekTarget | null;
   /**
-   * Server-computed nutrition figures for the period. The pill's fraction is
-   * days ON TARGET; the weekly HIT/PARTIAL/MISSED verdict beside it stays
-   * locally derived from the kcal totals, because it answers a different
-   * question (did the WEEK land near its target) and is already target-based.
+   * The period's nutrition figures, server-computed by the ONE kernel
+   * (`utils/nutrition-period-summary.ts`) and carried on the detail wire. The
+   * card renders them and counts nothing of its own — it takes no log rows,
+   * so a day can never be priced one way here and another on the ribbon.
+   * `null` on a legacy row whose period cannot be resolved: the card renders
+   * nothing rather than a second definition.
    */
   nutrition: CheckInPeriodAdherence["nutrition"] | null;
-  /** The period's day count — the DENOMINATOR. Never a locally derived one. */
-  periodDays: number | null;
 };
 
-export const NutritionSection = ({
-  dailyLogs,
-  contextStartDate,
-  contextEndDate,
-  fullWeekTarget,
-  nutrition,
-  periodDays,
-}: NutritionSectionProps) => {
-  // The server's own date count wins: it is what the rails and the on-target
-  // figure are indexed against, and it resolves differently from a locally
-  // derived one on a legacy row. The local span is the fallback for exactly
-  // those rows, where there is no server number to prefer.
-  const localDays = Math.floor(
-    (contextEndDate.getTime() - contextStartDate.getTime()) / (1000 * 60 * 60 * 24)
-  ) + 1;
-  const daysInPeriod = periodDays ?? localDays;
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-  const stats = dailyLogs.reduce(
-    (acc, log) => {
-      if (log.caloriesConsumed !== undefined && log.targetCalories) {
-        acc.totalCals += log.caloriesConsumed;
-        acc.targetCals += log.targetCalories;
-        acc.daysLogged++;
-      }
-      // Each macro's target is summed over the days that macro was LOGGED, so
-      // the bar compares an average with the target that applied on the very
-      // days it averages — the computed day's, derived onto the log row by the
-      // server. Summing targets over all seven while the actual covered three
-      // compared two different weeks on one bar.
-      if (log.proteinG != null) {
-        acc.protein += log.proteinG;
-        acc.targetProtein += log.targetProteinG ?? 0;
-        acc.proteinDays++;
-      }
-      if (log.carbsG != null) {
-        acc.carbs += log.carbsG;
-        acc.targetCarbs += log.targetCarbsG ?? 0;
-        acc.carbsDays++;
-      }
-      if (log.fatG != null) {
-        acc.fat += log.fatG;
-        acc.targetFat += log.targetFatG ?? 0;
-        acc.fatDays++;
-      }
-      return acc;
-    },
-    {
-      totalCals: 0, targetCals: 0, daysLogged: 0,
-      protein: 0, carbs: 0, fat: 0,
-      proteinDays: 0, carbsDays: 0, fatDays: 0,
-      targetProtein: 0, targetCarbs: 0, targetFat: 0,
-    }
-  );
+export const NutritionSection = ({ nutrition }: NutritionSectionProps) => {
+  if (!nutrition || nutrition.loggedDays === 0) return null;
 
-  if (stats.daysLogged === 0) return null;
+  // Every figure on this card is over ONE day set, named by the kernel. The
+  // total and the pill are the adherence question — intake on the targeted
+  // days against every targeted day's target, a skipped day counting against
+  // — and the averages are per JUDGED day, so an intake average and the
+  // target beside it cover the same days. A logged day with no target is in
+  // neither: it is named on the card so the coach can see where it went, and
+  // it moves no number.
+  const { targetTotals, consumedOnTargetedDays, perJudgedDay, intakePerLoggedDay } = nutrition;
+  const verdict = nutrition.periodVerdict?.toUpperCase() ?? null;
+  const fillPct =
+    targetTotals && consumedOnTargetedDays && targetTotals.calories > 0
+      ? Math.min((consumedOnTargetedDays.calories / targetTotals.calories) * 100, 100)
+      : 0;
+  const noTargetNote =
+    nutrition.loggedNoTargetDays > 0
+      ? `${plural(nutrition.loggedNoTargetDays, "logged day")} had no target and ${
+          nutrition.loggedNoTargetDays === 1 ? "is" : "are"
+        } not counted`
+      : null;
 
-  // The TOTAL is the whole period's target: it answers "did they eat what they
-  // were supposed to", and a day they skipped is a day they failed to.
-  const effectiveTargetCals = fullWeekTarget ? fullWeekTarget.calories : stats.targetCals;
-
-  const weeklyDiff = Math.abs(stats.totalCals - effectiveTargetCals);
-  const hitThreshold = WEEKLY_NUTRITION_HIT_PER_DAY * daysInPeriod;
-  const partialThreshold = WEEKLY_NUTRITION_PARTIAL_PER_DAY * daysInPeriod;
-  const adherence =
-    weeklyDiff <= hitThreshold ? "HIT" :
-    weeklyDiff <= partialThreshold ? "PARTIAL" : "MISSED";
-
-  const fillPct = effectiveTargetCals > 0 ? Math.min((stats.totalCals / effectiveTargetCals) * 100, 100) : 0;
-
-  // The AVERAGES are over LOGGED days, and that is not an inconsistency with
-  // the total above it — the two answer different questions. An adherence
-  // figure asks "did you do what you were supposed to", so an unlogged day
-  // counts against it. An average asks "what was it typically", and an unlogged
-  // day is UNKNOWN, not zero: dividing by days with no data does not make the
-  // average smaller, it makes it wrong. Three logged days at ~161g of protein
-  // used to render as 69g against a 159g target — a client who was almost
-  // exactly on target, shown as having collapsed.
-  const avgCal = Math.round(stats.totalCals / stats.daysLogged);
-  const perLoggedDay = (total: number, days: number) =>
-    days > 0 ? Math.round(total / days) : 0;
-
-  const avgProtein = perLoggedDay(stats.protein, stats.proteinDays);
-  const avgCarbs = perLoggedDay(stats.carbs, stats.carbsDays);
-  const avgFat = perLoggedDay(stats.fat, stats.fatDays);
-
-  const avgTargetProtein = perLoggedDay(stats.targetProtein, stats.proteinDays);
-  const avgTargetCarbs = perLoggedDay(stats.targetCarbs, stats.carbsDays);
-  const avgTargetFat = perLoggedDay(stats.targetFat, stats.fatDays);
-
-  const macros = [
-    { label: "Protein", actual: avgProtein, target: avgTargetProtein, colorClass: "bg-protein" },
-    { label: "Carbs", actual: avgCarbs, target: avgTargetCarbs, colorClass: "bg-carbs" },
-    { label: "Fats", actual: avgFat, target: avgTargetFat, colorClass: "bg-fat" },
-  ];
+  const macros = perJudgedDay
+    ? [
+        { label: "Protein", actual: perJudgedDay.consumed.proteinG, target: perJudgedDay.target.proteinG, colorClass: "bg-protein" },
+        { label: "Carbs", actual: perJudgedDay.consumed.carbsG, target: perJudgedDay.target.carbsG, colorClass: "bg-carbs" },
+        { label: "Fats", actual: perJudgedDay.consumed.fatG, target: perJudgedDay.target.fatG, colorClass: "bg-fat" },
+      ]
+    : [];
 
   return (
     // A flex ITEM, not a grid cell: the page puts this beside its sibling, and
@@ -138,73 +60,87 @@ export const NutritionSection = ({
     // node, so the survivor takes the full row without the page having to know
     // which one rendered. `min-w-0` stops the mono numerals setting the basis.
     <div className="flex min-w-0 flex-1 flex-col">
-      {/* No count on the rail (owner, 2026-09-04): the header's chip states
-          the week's logged days once, and the pill below states days on
-          target — coverage and adherence are different questions, and neither
-          slot carries the other's number. */}
+      {/* No coverage count here (owner, 2026-09-04): the header's chip states
+          the week's logged days once, and the pill states days on target —
+          coverage and adherence are different questions. */}
       <SectionLabel label="Nutrition" />
       <div className="flex-1 rounded-[6px] bg-white p-5">
         <div className="flex flex-col gap-4">
-          {/* Calories */}
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-between items-baseline">
-              <div>
-                <div className={cn("text-[28px] font-bold tracking-tight", MONO, TEXT_PRIMARY)}>
-                  {stats.totalCals.toLocaleString()}
+          {targetTotals && consumedOnTargetedDays ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-between items-baseline">
+                <div>
+                  <div className={cn("text-[28px] font-bold tracking-tight", MONO, TEXT_PRIMARY)}>
+                    {consumedOnTargetedDays.calories.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-[#93b0b4]">
+                    of {targetTotals.calories.toLocaleString()} kcal target
+                  </div>
                 </div>
-                <div className="text-xs text-[#93b0b4]">
-                  of {effectiveTargetCals.toLocaleString()} kcal target
-                </div>
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-[4px]",
+                    MONO,
+                    verdict === "HIT"
+                      ? "bg-[rgba(13,148,136,0.08)] text-[#0d9488]"
+                      : "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
+                  )}
+                >
+                  {verdict}
+                  {` · ${nutrition.onTarget}/${nutrition.targetedDays} on target`}
+                </span>
               </div>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-[4px]",
-                  MONO,
-                  adherence === "HIT"
-                    ? "bg-[rgba(13,148,136,0.08)] text-[#0d9488]"
-                    : "bg-[rgba(245,158,11,0.07)] text-[#d97706]"
-                )}
-              >
-                {adherence}
-                {nutrition ? ` · ${nutrition.onTarget}/${daysInPeriod} on target` : ""}
-              </span>
+              <div className="h-2 bg-[rgba(13,148,136,0.06)] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#0d9488] rounded-full transition-all duration-500"
+                  style={{ width: `${fillPct}%` }}
+                />
+              </div>
+              <div className="text-[11px] text-[#93b0b4] italic">
+                {perJudgedDay
+                  ? `Avg ${perJudgedDay.consumed.calories.toLocaleString()} kcal / day`
+                  : "Nothing logged on a day with a target"}
+                {noTargetNote ? ` · ${noTargetNote}` : ""}
+              </div>
             </div>
-            <div className="h-2 bg-[rgba(13,148,136,0.06)] rounded-full overflow-hidden">
-              <div
-                className="h-full bg-[#0d9488] rounded-full transition-all duration-500"
-                style={{ width: `${fillPct}%` }}
-              />
-            </div>
-            <div className="text-[11px] text-[#93b0b4] italic">
-              Avg {avgCal.toLocaleString()} kcal / logged day
-            </div>
-          </div>
+          ) : (
+            // The coach prescribed nothing on any day of the period: there is
+            // no target to compare with, so no total, no pill and no bar —
+            // never 0 of 0, never a MISSED over nothing to hit.
+            <p className="text-sm text-[#5a7d82]">
+              No target was set on any day of this period. {plural(nutrition.loggedDays, "day")} logged
+              {intakePerLoggedDay ? `, avg ${intakePerLoggedDay.calories.toLocaleString()} kcal / day` : ""}.
+            </p>
+          )}
 
-          {/* Macros, under the calories they break down */}
-          <div className="flex flex-col gap-2.5">
-            <div className="text-xs font-medium text-[#5a7d82] mb-0.5">
-              Avg macros / logged day
+          {/* Macros, under the calories they break down — per judged day on
+              both sides of every bar. */}
+          {perJudgedDay && (
+            <div className="flex flex-col gap-2.5">
+              <div className="text-xs font-medium text-[#5a7d82] mb-0.5">
+                Avg macros / day
+              </div>
+              {macros.map((macro) => {
+                const pct = macro.target > 0 ? Math.min((macro.actual / macro.target) * 100, 100) : 0;
+                return (
+                  <div key={macro.label} className="flex items-center gap-2.5">
+                    <div className="text-xs font-medium text-[#5a7d82] w-14 shrink-0">
+                      {macro.label}
+                    </div>
+                    <div className="flex-1 h-1.5 bg-[rgba(13,148,136,0.06)] rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${macro.colorClass}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className={cn(MONO_META_CLASS, "text-xs w-20 text-right shrink-0")}>
+                      {macro.actual}g / {macro.target}g
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            {macros.map((macro) => {
-              const pct = macro.target > 0 ? Math.min((macro.actual / macro.target) * 100, 100) : 0;
-              return (
-                <div key={macro.label} className="flex items-center gap-2.5">
-                  <div className="text-xs font-medium text-[#5a7d82] w-14 shrink-0">
-                    {macro.label}
-                  </div>
-                  <div className="flex-1 h-1.5 bg-[rgba(13,148,136,0.06)] rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${macro.colorClass}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className={cn(MONO_META_CLASS, "text-xs w-20 text-right shrink-0")}>
-                    {macro.actual}g / {macro.target}g
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          )}
         </div>
       </div>
     </div>

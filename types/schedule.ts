@@ -31,7 +31,12 @@ export type ScheduleDay = {
 
 // --- Nutrition summary types ---
 
-export type NutritionDayStatus = "hit" | "partial" | "missed" | "not_logged";
+/**
+ * A day's standing in the nutrition kernel (`utils/nutrition-period-summary.ts`).
+ * `no_target` outranks the rest: a day the coach prescribed nothing for has
+ * nothing to judge, logged or not — it is in no ratio.
+ */
+export type NutritionDayStatus = "hit" | "partial" | "missed" | "not_logged" | "no_target";
 
 export type NutritionDay = {
   date: string;                    // YYYY-MM-DD

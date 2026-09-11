@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { DailyLog, NutritionAdherenceStatus } from "@/types/daily-log";
+import { calculateNutritionAdherence, calculateCalorieSurplusDeficit } from "@/lib/nutrition-verdict";
+import type { DailyLog } from "@/types/daily-log";
 
 import { getDateString, getDateDaysFrom, dateStringToDayNumber } from "@/lib/date-helpers";
 import { getClientTodayString } from "./today-service";
@@ -7,7 +8,6 @@ import {
   getNutritionTargetsForDateRange,
   type NutritionDayTarget,
 } from "./nutrition-days-service";
-import { NUTRITION_ADHERENCE_HIT_THRESHOLD, NUTRITION_ADHERENCE_PARTIAL_THRESHOLD } from "@/lib/constants";
 
 // Shape returned by the daily_logs_full view (mirrors Views.daily_logs_full.Row
 // in types/database.ts; kept hand-typed for the narrowing casts below). The
@@ -39,26 +39,10 @@ type StreakResult = {
   longestStreak: number;
 };
 
-export const calculateNutritionAdherence = (
-  caloriesConsumed?: number,
-  targetCalories?: number
-): NutritionAdherenceStatus | null => {
-  if (!caloriesConsumed || !targetCalories) return null;
-
-  const difference = Math.abs(caloriesConsumed - targetCalories);
-
-  if (difference <= NUTRITION_ADHERENCE_HIT_THRESHOLD) return "hit";
-  if (difference <= NUTRITION_ADHERENCE_PARTIAL_THRESHOLD) return "partial";
-  return "missed";
-};
-
-export const calculateCalorieSurplusDeficit = (
-  caloriesConsumed?: number,
-  targetCalories?: number
-): number | null => {
-  if (!caloriesConsumed || !targetCalories) return null;
-  return caloriesConsumed - targetCalories;
-};
+// The per-day verdict lives in the pure module so the kernel and every rail
+// share it without this service's database client in their import chain;
+// re-exported here for the readers that always took it from this service.
+export { calculateNutritionAdherence, calculateCalorieSurplusDeficit } from "@/lib/nutrition-verdict";
 
 /**
  * Reference implementation of the streak semantics, kept as the unit-test oracle

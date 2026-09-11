@@ -7,7 +7,7 @@ import type {
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
-import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
+import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import type { PeriodSnapshot } from "@/types/schedule";
 import { AI_SYSTEM_PROMPT, buildCheckInAnalysisPrompt } from "@/utils/ai-prompt-builder";
 import { parseCheckInReview } from "@/lib/validations/check-in-review";
@@ -25,7 +25,7 @@ export const generateCheckInSummary = async (
   habitLogs?: HabitLogWithDetails[],
   startDate?: Date,
   endDate?: Date,
-  weeklySummary?: WeeklyNutritionSummary | null,
+  nutritionSummary?: NutritionPeriodSummary | null,
   periodSnapshot?: PeriodSnapshot | null,
   trainingEventDetails?: CheckInTrainingEventDetail[],
   exerciseSummaries?: Map<string, string[]>,
@@ -41,7 +41,7 @@ export const generateCheckInSummary = async (
       habitLogs,
       startDate,
       endDate,
-      weeklySummary,
+      nutritionSummary,
       periodSnapshot,
       trainingEventDetails,
       exerciseSummaries,
@@ -76,7 +76,7 @@ export const regenerateAISummary = async (
   habitLogs?: HabitLogWithDetails[],
   startDate?: Date,
   endDate?: Date,
-  weeklySummary?: WeeklyNutritionSummary | null,
+  nutritionSummary?: NutritionPeriodSummary | null,
   trainingEventDetails?: CheckInTrainingEventDetail[],
   exerciseSummaries?: Map<string, string[]>,
   /** The COACH's unit system — they read the summary. */
@@ -92,7 +92,7 @@ export const regenerateAISummary = async (
     const instruction = focus ? focusInstructions[focus] : "";
     const prompt = buildCheckInAnalysisPrompt(
       checkIn, previousCheckIns, clientName,
-      dailyLogs, habitLogs, startDate, endDate, weeklySummary,
+      dailyLogs, habitLogs, startDate, endDate, nutritionSummary,
       undefined, trainingEventDetails, exerciseSummaries, viewer
     );
     const modifiedPrompt = instruction ? `${instruction}\n\n${prompt}` : prompt;

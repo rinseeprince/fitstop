@@ -12,13 +12,13 @@ import {
 import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
-import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
+import { getCheckInNutritionSummary } from "@/services/nutrition-period-service";
 import {
   getExerciseSummariesForPeriod,
   getTrainingEventDetailsForPeriod,
 } from "@/services/check-in-context-service";
 import { calculateCheckInPeriod, getDateString } from "@/lib/date-helpers";
-import type { PeriodSnapshot } from "@/types/schedule";
+import { readPeriodSnapshot } from "@/lib/check-in/period-snapshot";
 import { getCoachUnitPreference } from "@/lib/viewer-preferences";
 import { checkInWeekday } from "@/lib/check-in-week";
 
@@ -83,7 +83,7 @@ export async function triggerAISummaryGeneration(
     // Fetch daily tracking context, weekly nutrition summary, and per-event
     // training detail for the period. trainingEventDetails defaults to [] on
     // failure so the AI training block degrades to the legacy workout count.
-    let dailyLogs, habitLogs, weeklySummary;
+    let dailyLogs, habitLogs, nutritionSummary;
     let trainingEventDetails: Awaited<ReturnType<typeof getTrainingEventDetailsForPeriod>> = [];
     // Session 6.3: per-exercise top-set lines, keyed by session_log_id. Derived
     // from the logged events' session_log ids; defaults to an empty Map so the
@@ -93,12 +93,14 @@ export async function triggerAISummaryGeneration(
       const [logs, habits, periodSummary, eventDetails] = await Promise.all([
         getDailyLogs(clientId, startDateStr, endDateStr),
         getHabitLogs(clientId, startDateStr, endDateStr),
-        getNutritionSummaryForPeriod(clientId, startDateStr, endDateStr),
+        // The kernel over the rows this check-in FROZE at submit, so the
+        // prompt reads the same numbers as the review and the client's card.
+        getCheckInNutritionSummary(currentCheckIn, startDateStr, endDateStr),
         getTrainingEventDetailsForPeriod(clientId, startDateStr, endDateStr),
       ]);
       dailyLogs = logs;
       habitLogs = habits;
-      weeklySummary = periodSummary;
+      nutritionSummary = periodSummary;
       trainingEventDetails = eventDetails;
 
       const loggedSessionLogIds = eventDetails
@@ -111,13 +113,13 @@ export async function triggerAISummaryGeneration(
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
       dailyLogs = undefined;
       habitLogs = undefined;
-      weeklySummary = null;
+      nutritionSummary = null;
       trainingEventDetails = [];
       exerciseSummaries = new Map();
     }
 
     // Read period snapshot if it was generated during submission
-    const periodSnapshot = currentCheckIn.periodSnapshot as PeriodSnapshot | null ?? null;
+    const periodSnapshot = readPeriodSnapshot(currentCheckIn.periodSnapshot);
 
     // This path is CLIENT-authenticated (the client just submitted), but the
     // coach is who reads the summary — so resolve the owning coach's unit, not
@@ -134,7 +136,7 @@ export async function triggerAISummaryGeneration(
       habitLogs,
       startDate,
       endDate,
-      weeklySummary,
+      nutritionSummary,
       periodSnapshot,
       trainingEventDetails,
       exerciseSummaries,

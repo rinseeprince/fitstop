@@ -259,7 +259,7 @@ export default function ClientCheckInPage() {
                   logsOpenFrom={contextData.clientInfo.logsOpenFrom ?? null}
                   onLogEvent={logTrainingEvent}
                   trainingPeriodStats={contextData.trainingPeriodStats}
-                  periodDays={contextData.periodDays}
+                  nutritionSummary={contextData.nutritionSummary ?? null}
                   dailyLogs={contextData.dailyLogs}
                   fields={fields}
                 />

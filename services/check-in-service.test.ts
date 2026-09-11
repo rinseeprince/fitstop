@@ -15,7 +15,8 @@ vi.mock('./supabase-admin', () => ({
 // the session-completions writer was deleted with its dropped table).
 const getClientByIdMock = vi.fn()
 const getCheckInTrainingPeriodStatsMock = vi.fn()
-const getNutritionSummaryForPeriodMock = vi.fn()
+const getNutritionPeriodMock = vi.fn()
+const getEventsForDateRangeMock = vi.fn()
 const getDailyLogsMock = vi.fn()
 const insertExerciseHighlightsMock = vi.fn()
 const insertCheckInAnswersMock = vi.fn()
@@ -37,8 +38,11 @@ vi.mock('./client-service', () => ({
 vi.mock('./check-in-context-service', () => ({
   getCheckInTrainingPeriodStats: (...args: unknown[]) => getCheckInTrainingPeriodStatsMock(...args),
 }))
-vi.mock('./weekly-nutrition-service', () => ({
-  getNutritionSummaryForPeriod: (...args: unknown[]) => getNutritionSummaryForPeriodMock(...args),
+vi.mock('./nutrition-period-service', () => ({
+  getNutritionPeriod: (...args: unknown[]) => getNutritionPeriodMock(...args),
+}))
+vi.mock('./training-event-service', () => ({
+  getEventsForDateRange: (...args: unknown[]) => getEventsForDateRangeMock(...args),
 }))
 vi.mock('./daily-logs-service', () => ({
   getDailyLogs: (...args: unknown[]) => getDailyLogsMock(...args),
@@ -56,6 +60,17 @@ vi.mock('./check-in-details-service', () => ({
 }))
 
 import { supabaseAdmin } from './supabase-admin'
+
+/** A kernel run: two frozen rows and the figures the submit stores. */
+function nutritionPeriod(summary: { onTarget: number; targetedDays: number; calorieAdherencePct: number | null }) {
+  return {
+    days: [
+      { date: '2026-05-08', dayOfWeek: 'friday', status: 'hit', targetCalories: 2000, targetProteinG: 150, targetCarbsG: 200, targetFatG: 60, actualCalories: 2000, actualProteinG: 150, actualCarbsG: 200, actualFatG: 60 },
+      { date: '2026-05-09', dayOfWeek: 'saturday', status: 'not_logged', targetCalories: 2000, targetProteinG: 150, targetCarbsG: 200, targetFatG: 60, actualCalories: null, actualProteinG: null, actualCarbsG: null, actualFatG: null },
+    ],
+    summary: { periodDays: 7, loggedDays: 1, judgedDays: 1, loggedNoTargetDays: 0, over: 0, under: 0, daysOnTargetPct: null, targetTotals: null, consumedOnTargetedDays: null, periodVerdict: null, perJudgedDay: null, intakePerLoggedDay: null, netCaloriesOnJudgedDays: null, ...summary },
+  }
+}
 
 // We mock the whole date-helpers module elsewhere is risky (the service uses
 // several helpers), so instead we spy on calculateCheckInPeriod via partial mock.
@@ -138,7 +153,9 @@ describe('Check-in Service', () => {
     beforeEach(() => {
       getClientByIdMock.mockReset()
       getCheckInTrainingPeriodStatsMock.mockReset()
-      getNutritionSummaryForPeriodMock.mockReset()
+      getNutritionPeriodMock.mockReset()
+      getEventsForDateRangeMock.mockReset()
+      getEventsForDateRangeMock.mockResolvedValue([])
       getDailyLogsMock.mockReset()
       insertExerciseHighlightsMock.mockReset()
       insertCheckInAnswersMock.mockReset()
@@ -148,7 +165,7 @@ describe('Check-in Service', () => {
       getClientByIdMock.mockResolvedValue({ nextCheckInDue: '2026-06-14', startDate: '2026-01-01' }) // a Sunday
       resolveCheckInWindowMock.mockReturnValue({ periodStart: '2026-05-08', periodEnd: '2026-05-14' })
       getCheckInTrainingPeriodStatsMock.mockResolvedValue({ sessionsCompleted: 0, sessionsPlanned: 0 })
-      getNutritionSummaryForPeriodMock.mockResolvedValue(null)
+      getNutritionPeriodMock.mockResolvedValue(nutritionPeriod({ targetedDays: 0, onTarget: 0, calorieAdherencePct: null }))
       getDailyLogsMock.mockResolvedValue([])
     })
 
@@ -427,7 +444,7 @@ describe('Check-in Service', () => {
 
     it('DERIVES snapshot columns from the spine, not the form body', async () => {
       getCheckInTrainingPeriodStatsMock.mockResolvedValue({ sessionsCompleted: 4, sessionsPlanned: 5 })
-      getNutritionSummaryForPeriodMock.mockResolvedValue({ daysOnTarget: 5, adherencePercentage: 71.4 })
+      getNutritionPeriodMock.mockResolvedValue(nutritionPeriod({ onTarget: 5, targetedDays: 7, calorieAdherencePct: 71.4 }))
       getDailyLogsMock.mockResolvedValue([
         { date: '2026-05-08', mood: 4, energy: 8, sleep: 7, stress: 3, soreness: 6 },
         { date: '2026-05-09', mood: 2, energy: 6, sleep: 5, stress: 5, soreness: 2 },
@@ -464,14 +481,44 @@ describe('Check-in Service', () => {
       // Period persisted.
       expect(inserted.period_start).toBe('2026-05-08')
       expect(inserted.period_end).toBe('2026-05-14')
-      // Reuses getNutritionSummaryForPeriod (Pin 1) and getDailyLogs (Pin 2).
-      expect(getNutritionSummaryForPeriodMock).toHaveBeenCalledWith('client-123', '2026-05-08', '2026-05-14')
+      // The ONE kernel run (Pin 1) and getDailyLogs (Pin 2), over the stored period.
+      expect(getNutritionPeriodMock).toHaveBeenCalledWith('client-123', '2026-05-08', '2026-05-14')
       expect(getDailyLogsMock).toHaveBeenCalledWith('client-123', '2026-05-08', '2026-05-14')
+    })
+
+    it('freezes the period snapshot in the INSERT, from the SAME kernel run as the columns', async () => {
+      const period = nutritionPeriod({ onTarget: 5, targetedDays: 7, calorieAdherencePct: 71.4 })
+      getNutritionPeriodMock.mockResolvedValue(period)
+      const q = mockInsert({ data: { id: 'ci' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await submitCheckIn('client-123', {})
+
+      const inserted = q.insert.mock.calls[0][0]
+      // The frozen nutrition rows ARE the rows the count above was taken from.
+      expect(inserted.period_snapshot.nutrition).toEqual(period.days)
+      // The training schedule covers every day of the stored period.
+      expect(inserted.period_snapshot.training).toHaveLength(7)
+      expect(inserted.period_snapshot.training[0]).toMatchObject({ date: '2026-05-08', status: 'rest' })
+      expect(typeof inserted.period_snapshot.generatedAt).toBe('string')
+      expect(getEventsForDateRangeMock).toHaveBeenCalledWith('client-123', '2026-05-08', '2026-05-14')
+    })
+
+    it('stores NO on-target count when no day of the period had a target — a day with no target is in no ratio', async () => {
+      getNutritionPeriodMock.mockResolvedValue(nutritionPeriod({ onTarget: 0, targetedDays: 0, calorieAdherencePct: null }))
+      const q = mockInsert({ data: { id: 'ci' }, error: null })
+
+      const { submitCheckIn } = await import('./check-in-service')
+      await submitCheckIn('client-123', {})
+
+      const inserted = q.insert.mock.calls[0][0]
+      expect(inserted.nutrition_days_on_target).toBeUndefined()
+      expect(inserted.adherence_percentage).toBeUndefined()
     })
 
     it('inserts NO soreness snapshot when the period logged none (decision C: no fabricated default)', async () => {
       getCheckInTrainingPeriodStatsMock.mockResolvedValue({ sessionsCompleted: 4, sessionsPlanned: 5 })
-      getNutritionSummaryForPeriodMock.mockResolvedValue({ daysOnTarget: 5, adherencePercentage: 71.4 })
+      getNutritionPeriodMock.mockResolvedValue(nutritionPeriod({ onTarget: 5, targetedDays: 7, calorieAdherencePct: 71.4 }))
       getDailyLogsMock.mockResolvedValue([
         { date: '2026-05-08', mood: 4, energy: 8, sleep: 7, stress: 3 },
       ])
@@ -489,7 +536,7 @@ describe('Check-in Service', () => {
     })
 
     it('caps adherence_percentage at 100', async () => {
-      getNutritionSummaryForPeriodMock.mockResolvedValue({ daysOnTarget: 7, adherencePercentage: 142 })
+      getNutritionPeriodMock.mockResolvedValue(nutritionPeriod({ onTarget: 7, targetedDays: 7, calorieAdherencePct: 142 }))
       const q = mockInsert({ data: { id: 'ci' }, error: null })
 
       const { submitCheckIn } = await import('./check-in-service')

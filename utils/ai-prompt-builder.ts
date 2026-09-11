@@ -6,7 +6,7 @@ import type {
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
-import type { WeeklyNutritionSummary } from "@/types/weekly-nutrition";
+import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import type { PeriodSnapshot } from "@/types/schedule";
 import { buildDailyContextForAI } from "@/utils/ai-daily-context-builder";
 import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
@@ -29,7 +29,7 @@ export function buildCheckInAnalysisPrompt(
   habitLogs?: HabitLogWithDetails[],
   startDate?: Date,
   endDate?: Date,
-  weeklySummary?: WeeklyNutritionSummary | null,
+  nutritionSummary?: NutritionPeriodSummary | null,
   periodSnapshot?: PeriodSnapshot | null,
   trainingEventDetails?: CheckInTrainingEventDetail[],
   exerciseSummaries?: Map<string, string[]>,
@@ -162,57 +162,58 @@ export function buildCheckInAnalysisPrompt(
     });
   }
 
-  // Nutrition.
+  // Nutrition — the kernel's figures (utils/nutrition-period-summary.ts): the
+  // same numbers the review and the client's card show, over the rows a
+  // submitted check-in froze.
   //
-  // The block leads with INTAKE on the days the client actually logged, and
-  // names the whole-period figure as COVERAGE. Both numbers are correct and they
-  // answer different questions; presenting only the second one, under a "frame
-  // nutrition weekly" instruction, made the model report a client who hit target
-  // to the calorie on both days they logged as severely under-eating and warn
-  // about their energy and recovery. An unlogged day is unknown, not a zero, and
-  // the prompt has to say so — the model cannot infer it from a percentage.
-  if (weeklySummary) {
-    const s = weeklySummary;
-    prompt += `\n**NUTRITION - ${s.daysLogged} of ${s.daysInWeek} days logged:**\n`;
+  // Three day sets, each named: the days LOGGED (coverage), the days a target
+  // was PRESCRIBED (adherence — a skipped targeted day is a miss, a day with
+  // no target is in no ratio) and the days with BOTH (the only intake that can
+  // be compared with a target). Presenting a coverage-shaped figure alone,
+  // under a "frame nutrition weekly" instruction, made the model report a
+  // client who hit target to the calorie on both days they logged as severely
+  // under-eating; an unlogged day is unknown, not a zero, and the prompt has
+  // to say so — the model cannot infer it from a percentage.
+  if (nutritionSummary) {
+    const s = nutritionSummary;
+    prompt += `\n**NUTRITION - ${s.loggedDays} of ${s.periodDays} days logged, ${s.targetedDays} with a target:**\n`;
 
-    if (s.daysLogged > 0 && s.loggedDayMeanConsumed != null) {
-      // Calories are whole numbers to a coach; the stored mean keeps its decimal.
-      const target =
-        s.loggedDayMeanTarget != null
-          ? ` against a ${Math.round(s.loggedDayMeanTarget)} cal/day target`
-          : "";
-      const pct =
-        s.loggedDayAdherencePercentage != null
-          ? ` (${s.loggedDayAdherencePercentage}% of target)`
-          : "";
-      prompt += `- Intake on the days they logged: ${Math.round(s.loggedDayMeanConsumed)} cal/day${target}${pct}\n`;
-      prompt += `- Of those ${s.daysLogged} logged days: ${s.daysOnTarget} on target, ${s.daysOver} over, ${s.daysUnder} under\n`;
+    if (s.intakePerLoggedDay) {
+      prompt += `- Intake on the ${s.loggedDays} day${s.loggedDays === 1 ? "" : "s"} they logged: ${s.intakePerLoggedDay.calories} cal/day\n`;
+      if (s.perJudgedDay) {
+        prompt += `- On the ${s.judgedDays} logged day${s.judgedDays === 1 ? "" : "s"} that had a target: ${s.perJudgedDay.consumed.calories} cal/day against ${s.perJudgedDay.target.calories} cal/day - ${s.onTarget} on target, ${s.over} over, ${s.under} under\n`;
+      }
+      if (s.loggedNoTargetDays > 0) {
+        prompt += `- ${s.loggedNoTargetDays} logged day${s.loggedNoTargetDays === 1 ? " had" : "s had"} no target: nothing was prescribed, so ${s.loggedNoTargetDays === 1 ? "it is" : "they are"} judged neither way.\n`;
+      }
     } else {
       prompt += "- No days were logged, so their intake cannot be assessed at all.\n";
     }
 
-    if (s.totalCaloriesConsumed != null && s.totalTargetCalories > 0) {
-      prompt += `- Logging coverage: ${s.totalCaloriesConsumed} of ${s.totalTargetCalories} cal targeted across the ${s.daysInWeek}-day period (${s.adherencePercentage?.toFixed(1) ?? "?"}%)\n`;
+    if (s.targetTotals && s.consumedOnTargetedDays) {
+      prompt += `- Adherence over the ${s.targetedDays} targeted day${s.targetedDays === 1 ? "" : "s"}: ${s.consumedOnTargetedDays.calories} of ${s.targetTotals.calories} cal (${s.calorieAdherencePct?.toFixed(1) ?? "?"}%), ${s.onTarget}/${s.targetedDays} days on target\n`;
     } else {
-      prompt += `- Whole-period target: ${s.totalTargetCalories} cal\n`;
+      prompt += "- No target was prescribed on any day of the period, so adherence cannot be measured.\n";
     }
 
-    const unlogged = s.daysInWeek - s.daysLogged;
-    if (unlogged > 0) {
-      prompt += `- The ${unlogged} unlogged day${unlogged === 1 ? "" : "s"} hold NO data. They are unknown, not zero.\n`;
-      prompt += "- Describe their intake ONLY from the logged-day figures above, and say how many days those rest on. Never infer under-eating, low energy availability or poor recovery from the coverage figure - it measures logging, not eating.\n";
+    const unloggedTargeted = s.targetedDays - s.judgedDays;
+    if (unloggedTargeted > 0) {
+      prompt += `- The ${unloggedTargeted} targeted day${unloggedTargeted === 1 ? "" : "s"} with no log hold NO data. They are unknown, not zero: they count against adherence because logging was expected, and against nothing else.\n`;
+      prompt += "- Describe their intake ONLY from the logged-day figures above, and say how many days those rest on. Never infer under-eating, low energy availability or poor recovery from the adherence figure - it measures logging as much as eating.\n";
     }
   } else {
     prompt += "\nNutrition:\n";
     if (current.nutritionDaysOnTarget !== undefined) {
-      // The period's own length, not a hardcoded week: a first check-in reports
-      // on a partial period, and telling the model 3/7 when the period was
-      // three days long invites it to describe a shortfall that never existed.
+      // The stored count over the days it was counted on — the frozen rows
+      // with a target — else the period's own length, never a hardcoded week:
+      // a first check-in reports on a partial period, and telling the model
+      // 3/7 when the period was three days long invites it to describe a
+      // shortfall that never existed.
       const periodDays =
         startDate && endDate
           ? Math.round((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1
           : 7;
-      prompt += `- Days on target: ${current.nutritionDaysOnTarget}/${periodDays}\n`;
+      prompt += `- Days on target: ${current.nutritionDaysOnTarget}/${current.nutritionTargetedDays ?? periodDays}\n`;
       if (current.nutritionNotes) prompt += `- Notes: ${sanitizeForAIPrompt(current.nutritionNotes)}\n`;
     } else if (current.adherencePercentage !== undefined) {
       prompt += `- Adherence: ${current.adherencePercentage}%\n`;

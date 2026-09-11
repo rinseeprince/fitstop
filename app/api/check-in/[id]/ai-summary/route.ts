@@ -7,7 +7,7 @@ import { getClientById } from "@/services/client-service";
 import { generateCheckInSummary, regenerateAISummary } from "@/services/ai-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
 import { getHabitLogs } from "@/services/daily-habits-service";
-import { getNutritionSummaryForPeriod } from "@/services/weekly-nutrition-service";
+import { getCheckInNutritionSummary } from "@/services/nutrition-period-service";
 import {
   getExerciseSummariesForPeriod,
   getTrainingEventDetailsForPeriod,
@@ -90,7 +90,7 @@ export async function POST(
     // Fetch daily tracking context, weekly nutrition summary, and per-event
     // training detail for the period. trainingEventDetails defaults to [] on
     // failure so the AI training block degrades to the legacy workout count.
-    let dailyLogs, habitLogs, weeklySummary;
+    let dailyLogs, habitLogs, nutritionSummary;
     let trainingEventDetails: Awaited<ReturnType<typeof getTrainingEventDetailsForPeriod>> = [];
     // Session 6.3: per-exercise top-set lines, keyed by session_log_id (see the
     // submit path in client-check-in-service for the contract). Empty Map on any
@@ -100,12 +100,15 @@ export async function POST(
       const [logs, habits, periodSummary, eventDetails] = await Promise.all([
         getDailyLogs(currentCheckIn.clientId, startDateStr, endDateStr),
         getHabitLogs(currentCheckIn.clientId, startDateStr, endDateStr),
-        getNutritionSummaryForPeriod(currentCheckIn.clientId, startDateStr, endDateStr),
+        // The kernel over the rows the check-in FROZE at submit: a regenerated
+        // review of an old check-in reads the week as it stood, whatever the
+        // coach has changed on the plan since.
+        getCheckInNutritionSummary(currentCheckIn, startDateStr, endDateStr),
         getTrainingEventDetailsForPeriod(currentCheckIn.clientId, startDateStr, endDateStr),
       ]);
       dailyLogs = logs;
       habitLogs = habits;
-      weeklySummary = periodSummary;
+      nutritionSummary = periodSummary;
       trainingEventDetails = eventDetails;
 
       const loggedSessionLogIds = eventDetails
@@ -118,7 +121,7 @@ export async function POST(
       console.error('Error fetching daily tracking data:', error instanceof Error ? error.message : 'Unknown error');
       dailyLogs = undefined;
       habitLogs = undefined;
-      weeklySummary = null;
+      nutritionSummary = null;
       trainingEventDetails = [];
       exerciseSummaries = new Map();
     }
@@ -139,7 +142,7 @@ export async function POST(
           habitLogs,
           startDate,
           endDate,
-          weeklySummary,
+          nutritionSummary,
           trainingEventDetails,
           exerciseSummaries,
           viewer
@@ -152,7 +155,7 @@ export async function POST(
           habitLogs,
           startDate,
           endDate,
-          weeklySummary,
+          nutritionSummary,
           undefined,
           trainingEventDetails,
           exerciseSummaries,

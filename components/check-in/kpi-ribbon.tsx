@@ -29,8 +29,6 @@ type KPIRibbonProps = {
    * state rather than falling back to a second, client-side definition.
    */
   nutrition: CheckInPeriodAdherence["nutrition"] | null;
-  /** The period's day count — the DENOMINATOR. Never a locally derived one. */
-  periodDays: number | null;
 };
 
 type Accent = "success" | "warning" | "destructive" | "neutral";
@@ -77,7 +75,6 @@ export const KPIRibbon = ({
 
   comparisonData,
   nutrition,
-  periodDays,
   adherence,
 }: KPIRibbonProps) => {
   const { preference } = useUnits();
@@ -109,16 +106,15 @@ export const KPIRibbon = ({
     return null;
   };
 
-  // Days ON TARGET over the whole period — not an average of the days they
-  // happened to log. Three logged days at target used to read "HIT" against a
-  // daily average, which is a statement about three days dressed as a statement
-  // about the week. The 50 / 150 kcal literals that produced it went with it;
-  // "on target" is the per-day verdict derived from what was eaten against the
-  // day's computed target, one definition shared with the Overview rails.
+  // Days ON TARGET over the days a target was PRESCRIBED — the kernel's own
+  // denominator, one definition shared with the Overview rail and the card
+  // below. A skipped targeted day is a miss; a day with no target is in no
+  // ratio, so a week the coach prescribed nothing for has no fraction to show
+  // and says so, rather than printing 0/7 over nothing to hit.
   const onTarget = nutrition?.onTarget ?? 0;
-  const nutritionDenominator = periodDays ?? 0;
+  const nutritionDenominator = nutrition?.targetedDays ?? 0;
   const hasNutrition = nutrition !== null && nutritionDenominator > 0;
-  const nutritionPct = nutrition?.pct ?? null;
+  const nutritionPct = nutrition?.daysOnTargetPct ?? null;
   const nutritionAccent: Accent =
     !hasNutrition || nutritionPct === null ? "neutral" :
     nutritionPct >= 80 ? "success" :
@@ -200,7 +196,7 @@ export const KPIRibbon = ({
         text: `${nutritionPct}%`,
         type: nutritionPct >= 80 ? "positive" : nutritionPct >= 50 ? "neutral" : "negative",
       } : undefined,
-      subText: hasNutrition ? "days on target" : "No nutrition logs",
+      subText: hasNutrition ? "days on target" : nutrition !== null ? "No targets set" : "No nutrition logs",
       accent: nutritionAccent,
     },
     {

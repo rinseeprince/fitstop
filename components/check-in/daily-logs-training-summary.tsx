@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { CheckCircle2, Activity, Utensils, Flame, TrendingUp, TrendingDown } from "lucide-react";
 import type { DailyLog } from "@/types/daily-log";
+import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import { aggregateDailyLogs } from "@/utils/daily-logs-aggregation";
 
 type TrainingPeriodStats = {
@@ -13,10 +14,20 @@ type TrainingPeriodStats = {
 type DailyLogsTrainingSummaryProps = {
   dailyLogs: DailyLog[];
   trainingPeriodStats?: TrainingPeriodStats;
-  periodDays?: number;
+  /**
+   * The period's nutrition figures from the ONE kernel, off the context wire.
+   * Rendered as they come: the food log carries no target, so nothing about
+   * nutrition can be counted from `dailyLogs` here. Absent on a wire that
+   * predates the key — the block is then not shown at all.
+   */
+  nutritionSummary?: NutritionPeriodSummary | null;
 };
 
-export const DailyLogsTrainingSummary = ({ dailyLogs, trainingPeriodStats, periodDays }: DailyLogsTrainingSummaryProps) => {
+export const DailyLogsTrainingSummary = ({
+  dailyLogs,
+  trainingPeriodStats,
+  nutritionSummary = null,
+}: DailyLogsTrainingSummaryProps) => {
   const aggregated = useMemo(() => aggregateDailyLogs(dailyLogs), [dailyLogs]);
 
   // Use session_logs-based stats when available (same source as coach-side hero),
@@ -52,6 +63,8 @@ export const DailyLogsTrainingSummary = ({ dailyLogs, trainingPeriodStats, perio
     return <CheckCircle2 className="h-3 w-3" />;
   };
 
+  const net = nutritionSummary?.netCaloriesOnJudgedDays ?? null;
+
   return (
     <div className="space-y-4">
       {/* Training Sessions Summary */}
@@ -60,7 +73,7 @@ export const DailyLogsTrainingSummary = ({ dailyLogs, trainingPeriodStats, perio
           <Activity className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">Training Summary</span>
         </div>
-        
+
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Sessions Completed</span>
@@ -89,61 +102,71 @@ export const DailyLogsTrainingSummary = ({ dailyLogs, trainingPeriodStats, perio
         </div>
       </div>
 
-      {/* Nutrition Summary */}
-      <div className="p-4 rounded-lg bg-muted/50 space-y-3">
-        <div className="flex items-center gap-2">
-          <Utensils className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Nutrition Summary</span>
-        </div>
-        
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Days Logged</span>
-            <span className="text-sm font-semibold">
-              {aggregated.nutritionLoggedDays}/{periodDays ?? 7} days
-            </span>
+      {/* Nutrition Summary — the kernel's figures, each over its own day set:
+          days logged over the period, days on target over the days a target
+          was prescribed, the intake average over the logged days and the
+          target average over the days that had one. A day with no target is
+          in no ratio, so a period with none reads "No targets set", never
+          0 of 7 in red. */}
+      {nutritionSummary && (
+        <div className="p-4 rounded-lg bg-muted/50 space-y-3">
+          <div className="flex items-center gap-2">
+            <Utensils className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Nutrition Summary</span>
           </div>
 
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Days On Target</span>
-            <span className={`text-sm font-semibold ${getNutritionColor(aggregated.nutritionHitDays, periodDays ?? 7)}`}>
-              {aggregated.nutritionHitDays}/{periodDays ?? 7} days
-            </span>
-          </div>
-
-          {aggregated.avgCalories > 0 && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Average Daily Intake</span>
-                <span className="text-sm font-semibold flex items-center gap-1">
-                  <Flame className="h-3 w-3" />
-                  {aggregated.avgCalories} cal
-                </span>
-              </div>
-              
-              {aggregated.avgTargetCalories > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Average Target</span>
-                  <span className="text-sm text-muted-foreground">
-                    {aggregated.avgTargetCalories} cal
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {aggregated.totalSurplusDeficit !== 0 && (
-            <div className="flex items-center justify-between pt-2 border-t">
-              <span className="text-sm text-muted-foreground">Weekly Net</span>
-              <span className={`text-sm font-semibold flex items-center gap-1 ${getSurplusDeficitColor(aggregated.totalSurplusDeficit)}`}>
-                {getNetCalorieIcon(aggregated.totalSurplusDeficit)}
-                {aggregated.totalSurplusDeficit > 0 ? '+' : ''}{aggregated.totalSurplusDeficit} cal
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Days Logged</span>
+              <span className="text-sm font-semibold">
+                {nutritionSummary.loggedDays}/{nutritionSummary.periodDays} days
               </span>
             </div>
-          )}
-        </div>
-      </div>
 
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Days On Target</span>
+              {nutritionSummary.targetedDays > 0 ? (
+                <span className={`text-sm font-semibold ${getNutritionColor(nutritionSummary.onTarget, nutritionSummary.targetedDays)}`}>
+                  {nutritionSummary.onTarget}/{nutritionSummary.targetedDays} days
+                </span>
+              ) : (
+                <span className="text-sm text-muted-foreground">No targets set</span>
+              )}
+            </div>
+
+            {nutritionSummary.intakePerLoggedDay && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Average Daily Intake</span>
+                  <span className="text-sm font-semibold flex items-center gap-1">
+                    <Flame className="h-3 w-3" />
+                    {nutritionSummary.intakePerLoggedDay.calories} cal
+                  </span>
+                </div>
+
+                {nutritionSummary.perJudgedDay && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Average Target</span>
+                    <span className="text-sm text-muted-foreground">
+                      {nutritionSummary.perJudgedDay.target.calories} cal
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {net !== null && net !== 0 && (
+              <div className="flex items-center justify-between pt-2 border-t">
+                <span className="text-sm text-muted-foreground">Weekly Net</span>
+                <span className={`text-sm font-semibold flex items-center gap-1 ${getSurplusDeficitColor(net)}`}>
+                  {getNetCalorieIcon(net)}
+                  {net > 0 ? '+' : ''}{net} cal
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

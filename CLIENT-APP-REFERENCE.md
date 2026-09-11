@@ -230,6 +230,17 @@ All client API endpoints require authentication except where noted.
 - `GET /api/client/check-ins/{id}` - Get specific check-in
 - `GET /api/client/check-in-context` - Get context for check-in form
 
+**The nutrition summary.** `check-in-context` carries `nutritionSummary`
+(additive, 2026-09-11) — the period's nutrition figures from the server's one
+kernel: `loggedDays` / `periodDays` (coverage), `onTarget` / `targetedDays`
+(adherence, over the days a target was PRESCRIBED — a day with no target is in
+no ratio, and `targetedDays: 0` means "No targets set", never 0/7),
+`intakePerLoggedDay`, `perJudgedDay` (intake against target on the days that
+had both), `netCaloriesOnJudgedDays`. Render these; never recount them from
+`dailyLogs`, which carry no target. `GET /api/client/check-ins/{id}` and the
+history list carry `nutritionTargetedDays` beside `nutritionDaysOnTarget` —
+the days the stored count was taken over (null on a row with no snapshot).
+
 **The customisable form.** `check-in-context` carries
 `form: { fields: string[], questions: [{ id, prompt }] }` — which of the 14
 built-in check-in fields this client's coach asks, and their custom questions in
@@ -541,16 +552,20 @@ adjustedCalories = baselineCalories + trainingCalories + activityCalories
 **Nutrition Adherence**:
 - "hit" = within **50 kcal** of target (`NUTRITION_ADHERENCE_HIT_THRESHOLD`)
 - "partial" = within **200 kcal** (`NUTRITION_ADHERENCE_PARTIAL_THRESHOLD`)
-- "missed" = beyond 200 kcal, or not logged
+- "missed" = beyond 200 kcal
+- no verdict at all on a day with no target, or with nothing logged — such a
+  day is in no ratio
 
 These are **absolute calorie deltas from `lib/constants.ts`, not percentages.**
 
 **Weekly nutrition adherence** (`CheckIn.adherencePercentage`, stored at submit):
-- Total consumed ÷ total target **across every day of the check-in period**, not
-  just the days the client logged
-- So three logged days at target out of seven reads ~43%, not 100%
-- Changed 2026-08-30; check-ins submitted before that date carry the older
-  logged-days-only figure and were not backfilled
+- Intake on the targeted days the client logged ÷ the targets of **every
+  targeted day** of the period — an unlogged targeted day counts against the
+  client; a day with no target is on neither side
+- So three logged days at target out of seven prescribed reads ~43%, not 100%
+- `nutritionDaysOnTarget` is over `nutritionTargetedDays`, the same denominator
+- Changed 2026-08-30 (the whole period) and 2026-09-11 (the targeted days);
+  check-ins submitted before carry the older figures and were not backfilled
 
 **Training Adherence**:
 - Based on sessions completed / sessions planned

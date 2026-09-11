@@ -90,10 +90,10 @@ describe("GET /api/check-in/[id] (coach)", () => {
     const periodAdherence = {
       dates: ["2026-05-08", "2026-05-09"],
       loggedDates: ["2026-05-08"],
-      nutrition: { rail: [], onTarget: 1, loggedDays: 1, pct: 50 },
+      nutrition: { rail: [], onTarget: 1, loggedDays: 1, targetedDays: 2, daysOnTargetPct: 50 },
       habits: { rail: [], avgPct: 50, daysBelow50: 0, perHabit: [] },
     };
-    vi.mocked(getCheckInPeriodAdherence).mockResolvedValue(periodAdherence);
+    vi.mocked(getCheckInPeriodAdherence).mockResolvedValue(periodAdherence as never);
     mockCheckInRow({
       data: {
         id: "ci-1",
