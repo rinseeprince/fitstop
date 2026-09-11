@@ -29,7 +29,7 @@ import {
   addDays, dayOfWeekName, mondayOf, timestampAt,
   wellnessHour, nutritionHour, sessionHour, checkInHour,
   coachNote, checkInResponse, aiReviewText, aiInsightsV3, aiRecommendations,
-  nutritionAdherenceStatus, DIET_TYPES,
+  DIET_TYPES,
   SPLIT_TYPES, SESSION_NAMES, HABIT_NAMES, TIMEZONES, EXERCISE_POOL,
   type Archetype, type CoachTier,
 } from "./model";
@@ -661,6 +661,9 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
         });
 
         if (logRng.bool(0.8)) {
+          // What the client ate, around the day's target — the log stores no
+          // target and no verdict; every reader derives them from the
+          // computed day at read time.
           const targetCals = isTrainingDay ? Math.round(baseCals * 1.08) : baseCals;
           const consumed = Math.round(targetCals * logRng.gauss(1.0, 0.12, 0.6, 1.4));
           nutritionLogs.push({
@@ -673,17 +676,6 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
             protein_g: Math.round(proteinG * logRng.float(0.7, 1.15)),
             carbs_g: Math.round(carbG * logRng.float(0.6, 1.3)),
             fat_g: Math.round(fatG * logRng.float(0.6, 1.3)),
-            // These are materialised derivations of the day's plan/event, not
-            // free values — the adherence rails read them directly.
-            target_calories: targetCals,
-            target_protein_g: proteinG,
-            target_carbs_g: isTrainingDay ? Math.round(carbG * 1.2) : carbG,
-            target_fat_g: fatG,
-            // A STATUS enum (hit/partial/missed), not a 0-100 percentage. The
-            // column is plain text with no CHECK, so a number would insert
-            // silently as "87" and poison every adherence read.
-            nutrition_adherence: nutritionAdherenceStatus(consumed, targetCals),
-            calorie_surplus_deficit: consumed - targetCals,
             created_at: timestampAt(iso, nutritionHour(logRng), logRng),
             updated_at: timestampAt(iso, nutritionHour(logRng), logRng),
           });

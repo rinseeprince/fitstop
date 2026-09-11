@@ -656,6 +656,8 @@ async function insertDailyChildren(
       soreness: rng.int(2, 6),
     });
 
+    // What the client ate, around the plan's 2,400 — the log stores no
+    // target and no verdict; the readers derive them from the computed day.
     const targetCal = 2400;
     const consumed = targetCal + rng.int(-200, 200);
     nutrition.push({
@@ -666,12 +668,6 @@ async function insertDailyChildren(
       protein_g: 170 + rng.int(-20, 20),
       carbs_g: 280 + rng.int(-30, 30),
       fat_g: 70 + rng.int(-10, 10),
-      target_calories: targetCal,
-      target_protein_g: 170,
-      target_carbs_g: 280,
-      target_fat_g: 70,
-      nutrition_adherence: rng.next() < 0.9 ? "hit" : "partial",
-      calorie_surplus_deficit: consumed - targetCal,
       nutrition_plan_id: PERF_NUTRITION_PLAN_ID,
     });
 

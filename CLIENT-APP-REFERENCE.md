@@ -70,7 +70,7 @@ There is **no combined day save**: wellness, nutrition, habits and training each
 **Location**: `/client/nutrition`
 
 - View daily calorie and macro targets
-- Targets adjust based on training (training day vs rest day) — including after the client moves a session: the day's target follows the session (a day's target is computed from the session on it, so the next read re-prices it), and a day the client has already logged shows the refreshed target from their **next food save**, which re-snapshots it. **Onboarding copy owed (RN):** tell the client that swapping a training day changes that day's calorie target.
+- Targets adjust based on training (training day vs rest day) — including after the client moves a session: the day's target follows the session (a day's target is computed from the session on it, so the next read re-prices it), and a day the client has already logged shows the refreshed target at once — the log stores what they ate, never a target. **Onboarding copy owed (RN):** tell the client that swapping a training day changes that day's calorie target.
 - Visual macro breakdown
 - Integration with Daily Pulse for logging
 
@@ -218,7 +218,7 @@ All client API endpoints require authentication except where noted.
   }
   ```
 
-  > **RN contract — `dailyTargets` is a per-date window, not a 2-slot template (events-as-SOT, shipped Sessions 4-5).** The legacy `trainingDayCalories` / `restDayCalories` 2-slot shape is **gone**. `dailyTargets` is a **7-entry array, one per weekday of the current client-local week**, computed per date for that week — the version covering each day, the session on it and the coach's per-day edit — so an edit (`isModified`) and its `note` show through, and the macro split honors `clients.surplus_as_carbs`. RN may still index by weekday, but **treat the values as date-specific to the current week**, not a generic weekly template. A coach edit to a **future** week surfaces on the per-date day-view (`GET /api/client/daily-logs/{date}/nutrition`), not this card, until that week becomes current. Logged past days read their frozen `nutrition_logs` snapshot (no `note`), never the computed day. Full field list: `DailyNutritionTargets` (`utils/nutrition-helpers.ts`).
+  > **RN contract — `dailyTargets` is a per-date window, not a 2-slot template (events-as-SOT, shipped Sessions 4-5).** The legacy `trainingDayCalories` / `restDayCalories` 2-slot shape is **gone**. `dailyTargets` is a **7-entry array, one per weekday of the current client-local week**, computed per date for that week — the version covering each day, the session on it and the coach's per-day edit — so an edit (`isModified`) and its `note` show through, and the macro split honors `clients.surplus_as_carbs`. RN may still index by weekday, but **treat the values as date-specific to the current week**, not a generic weekly template. A coach edit to a **future** week surfaces on the per-date day-view (`GET /api/client/daily-logs/{date}/nutrition`), not this card, until that week becomes current. A logged day reads the computed day like any other — the log stores what the client ate, never a target. Full field list: `DailyNutritionTargets` (`utils/nutrition-helpers.ts`).
 
 ### Progress
 - `GET /api/client/progress?days={30|60|90}` - Get progress data

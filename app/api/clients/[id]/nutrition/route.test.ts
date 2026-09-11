@@ -90,13 +90,6 @@ vi.mock('@/services/event-deletion-floor', () => ({
   resolveEventDeletionFloor: vi.fn().mockResolvedValue('2099-01-03'),
 }))
 
-// Replacing today re-records today's log; the snapshot itself is proved in
-// services/daily-log-card-service.test.ts.
-vi.mock('@/services/daily-log-card-service', () => ({
-  rerecordNutritionLogTarget: vi.fn().mockResolvedValue(false),
-  NutritionLogRerecordError: class NutritionLogRerecordError extends Error {},
-}))
-
 import { getClientById } from '@/services/client-service'
 import { generateNutritionPlan } from '@/services/nutrition-service'
 import {

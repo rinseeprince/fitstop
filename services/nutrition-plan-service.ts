@@ -244,7 +244,7 @@ export async function getNutritionPlanForDate(
 
 /**
  * Id-only twin of `getNutritionPlanForDate` for hot per-write paths (the
- * daily-log stamp fallback) that must not pay for the full row.
+ * food log's version stamp) that must not pay for the full row.
  * `.maybeSingle()` so no covering version resolves to null, never a throw.
  */
 export async function getNutritionPlanIdForDate(
@@ -563,9 +563,8 @@ export async function getNextNutritionVersionStartCap(
  *
  * Resolved ONCE, at save, and stored on the row (migration 166): the window is
  * the record, and every day inside it is computed from the row. Past it there
- * are deliberately no days, and a first food log is refused (a day the client
- * has already begun stays open under the target it was logged under) — the
- * coach draws the next bound when they are ready.
+ * are deliberately no days — the client's meals still save, with no target to
+ * judge them — until the coach draws the next bound.
  */
 export async function resolveNutritionPlacementEnd(
   clientId: string,

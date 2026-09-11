@@ -15,29 +15,10 @@ vi.mock("@/lib/csrf-protection", () => ({
 vi.mock("@/lib/auth-helpers", () => ({
   getAuthenticatedClientId: vi.fn(),
 }));
-vi.mock("@/services/daily-context-service", () => {
-  type Resource = "nutrition" | "wellness" | "training";
-  class NoActivePlanError extends Error {
-    readonly resource: Resource;
-    constructor(resource: Resource) {
-      super(`No active plan for ${resource}`);
-      this.name = "NoActivePlanError";
-      this.resource = resource;
-    }
-  }
-  return {
-    getNutritionForDate: vi.fn(),
-    resolvePlanContextForDate: vi.fn(),
-    NoActivePlanError,
-    assertHasActivePlan: (
-      ctx: { nutritionPlanId: string | null; trainingPlanId: string | null },
-      resource: Resource
-    ) => {
-      const id = resource === "nutrition" ? ctx.nutritionPlanId : ctx.trainingPlanId;
-      if (id == null) throw new NoActivePlanError(resource);
-    },
-  };
-});
+vi.mock("@/services/daily-context-service", () => ({
+  getNutritionForDate: vi.fn(),
+  resolvePlanContextForDate: vi.fn(),
+}));
 vi.mock("@/services/daily-log-permissions-service", () => ({
   getDayEditState: vi.fn(),
   assertCanEdit: vi.fn(),
@@ -159,18 +140,27 @@ describe("PATCH /api/client/daily-logs/[date]/nutrition", () => {
     expect(res.status).toBe(401);
   });
 
-  it("422 when no active nutrition plan (orphan log guard)", async () => {
+  // A meal is refused only by the day rule (owner, 2026-09-11): a day no
+  // version covers — a gap between plans, the stretch a delete opened, a
+  // client with no plan at all — saves with no stamp.
+  it("200 on a day no version covers: the meals save with no stamp, nothing is refused", async () => {
     vi.mocked(assertCanEdit).mockResolvedValue(undefined);
     vi.mocked(resolvePlanContextForDate).mockResolvedValue({
       nutritionPlanId: null,
       trainingPlanId: null,
     } as never);
+    vi.mocked(upsertNutritionLog).mockResolvedValue({ id: "log-1" } as never);
 
     const res = await PATCH(patchReq({ caloriesConsumed: 2000 }), params("2026-05-21"));
     const json = await res.json();
-    expect(res.status).toBe(422);
-    expect(json).toEqual({ success: false, error: "No active plan for nutrition" });
-    expect(upsertNutritionLog).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(json).toEqual({ success: true, data: { id: "log-1" } });
+    expect(upsertNutritionLog).toHaveBeenCalledWith(
+      "client-1",
+      "2026-05-21",
+      { caloriesConsumed: 2000 },
+      { nutritionPlanId: null }
+    );
   });
 
   it("500 when the writer throws a non-lock error", async () => {

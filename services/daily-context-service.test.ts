@@ -20,8 +20,6 @@ import {
   resolvePlanContextForDate,
   getNutritionForDate,
   getPlanTargetForDate,
-  assertHasActivePlan,
-  NoActivePlanError,
 } from "./daily-context-service";
 
 beforeEach(() => vi.clearAllMocks());
@@ -43,20 +41,6 @@ function wireTargets(target: NutritionDayTarget | null) {
   );
 }
 
-/** The standing food log for the day, as the resolver reads it. */
-function wireStandingLog(row: { nutrition_plan_id: string | null } | null) {
-  const query = {
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: row, error: null }),
-  };
-  vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
-    if (table === "nutrition_logs") return query;
-    throw new Error(`Unexpected table: ${table}`);
-  }) as never);
-  return query;
-}
-
 describe("resolvePlanContextForDate", () => {
   it("stamps nutrition from the version covering the LOG's date — a computed day has no row to prefer", async () => {
     vi.mocked(getNutritionPlanIdForDate).mockResolvedValue("np-covering");
@@ -71,26 +55,8 @@ describe("resolvePlanContextForDate", () => {
     expect(ctx).toEqual({ nutritionPlanId: "np-covering", trainingPlanId: "tp-1" });
     // Date-accurate training event present → no active-plan fallback.
     expect(getActiveTrainingPlanId).not.toHaveBeenCalled();
-    // A covered day never reads the standing log: the version is the stamp.
-    expect(supabaseAdmin.from).not.toHaveBeenCalledWith("nutrition_logs");
-  });
-
-  // Owner, 2026-09-11: a started day stays open. The coach ended or replaced
-  // the plan after the client began the day, so no version covers it — the
-  // day takes the stamp its own log carries, the guard passes, and the writer
-  // keeps the target the day was logged under.
-  it("a day no version covers but the client has begun keeps the stamp its log carries", async () => {
-    vi.mocked(getNutritionPlanIdForDate).mockResolvedValue(null);
-    vi.mocked(getEventForDate).mockResolvedValue(null);
-    vi.mocked(getActiveTrainingPlanId).mockResolvedValue(null);
-    const query = wireStandingLog({ nutrition_plan_id: "np-logged-under" });
-
-    const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
-
-    expect(query.eq).toHaveBeenCalledWith("client_id", "c1");
-    expect(query.eq).toHaveBeenCalledWith("date", "2026-05-21");
-    expect(ctx.nutritionPlanId).toBe("np-logged-under");
-    expect(() => assertHasActivePlan(ctx, "nutrition")).not.toThrow();
+    // The version is the stamp; the log is never read for one.
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
   });
 
   it("training falls back to the active plan on a no-event day", async () => {
@@ -104,66 +70,21 @@ describe("resolvePlanContextForDate", () => {
     expect(ctx).toEqual({ nutritionPlanId: "np-covering", trainingPlanId: "tp-active" });
   });
 
-  it("a pre-start day (queued-first-plan client) gets a NULL nutrition stamp — no covering version, nothing logged", async () => {
+  // A day no version covers — a pre-start day for a queued-first-plan client,
+  // a gap after a delete — has no stamp, and the meal still saves without
+  // one (owner, 2026-09-11): the log is never read for a stamp of its own.
+  it("a day no version covers gets a NULL nutrition stamp, and the log is not read for one", async () => {
     vi.mocked(getEventForDate).mockResolvedValue(null);
-    // No version covers this date — only a future one is queued, which
-    // resolvePlanContextForDate deliberately does NOT consult: a queued plan is
-    // not a target for today — and the client has not begun the day, so the
-    // stamp stays null and the guard rejects.
+    // Only a future version is queued, which resolvePlanContextForDate
+    // deliberately does NOT consult: a queued plan is not a target for today.
     vi.mocked(getNutritionPlanIdForDate).mockResolvedValue(null);
     vi.mocked(getActiveTrainingPlanId).mockResolvedValue(null);
-    wireStandingLog(null);
 
     const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
 
     expect(ctx).toEqual({ nutritionPlanId: null, trainingPlanId: null });
-    expect(() => assertHasActivePlan(ctx, "nutrition")).toThrow(NoActivePlanError);
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
   });
-
-  it("returns all-null when there is no plan at all", async () => {
-    vi.mocked(getEventForDate).mockResolvedValue(null);
-    vi.mocked(getNutritionPlanIdForDate).mockResolvedValue(null);
-    vi.mocked(getActiveTrainingPlanId).mockResolvedValue(null);
-    wireStandingLog(null);
-
-    const ctx = await resolvePlanContextForDate("c1", "2026-05-21");
-
-    expect(ctx).toEqual({ nutritionPlanId: null, trainingPlanId: null });
-  });
-});
-
-describe("assertHasActivePlan", () => {
-  const ctx = (overrides: Partial<Parameters<typeof assertHasActivePlan>[0]> = {}) => ({
-    nutritionPlanId: "np-1" as string | null,
-    trainingPlanId: "tp-1" as string | null,
-    ...overrides,
-  });
-
-  it("nutrition: throws when the stamp is null (pre-start / no covering version), no-ops when populated", () => {
-    expect(() => assertHasActivePlan(ctx({ nutritionPlanId: null }), "nutrition")).toThrow(
-      NoActivePlanError
-    );
-    expect(() => assertHasActivePlan(ctx(), "nutrition")).not.toThrow();
-  });
-
-  it("training: throws when trainingPlanId is null, no-ops when populated", () => {
-    expect(() => assertHasActivePlan(ctx({ trainingPlanId: null }), "training")).toThrow(
-      NoActivePlanError
-    );
-    expect(() => assertHasActivePlan(ctx(), "training")).not.toThrow();
-  });
-
-  it("the thrown error carries the resource discriminator", () => {
-    try {
-      assertHasActivePlan(ctx({ nutritionPlanId: null }), "nutrition");
-      throw new Error("expected throw");
-    } catch (err) {
-      expect(err).toBeInstanceOf(NoActivePlanError);
-      expect((err as NoActivePlanError).resource).toBe("nutrition");
-      expect((err as NoActivePlanError).message).toBe("No active plan for nutrition");
-    }
-  });
-
 });
 
 describe("getPlanTargetForDate", () => {

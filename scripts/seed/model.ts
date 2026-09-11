@@ -13,10 +13,6 @@
  * Nothing here reads the wall clock — the anchor date is always passed in.
  */
 
-import {
-  NUTRITION_ADHERENCE_HIT_THRESHOLD,
-  NUTRITION_ADHERENCE_PARTIAL_THRESHOLD,
-} from "@/lib/constants";
 import type { Rng } from "./rng";
 
 // ---------------------------------------------------------------- dates
@@ -395,23 +391,6 @@ export function aiRecommendations(rng: Rng): Record<string, unknown>[] {
     priority: rng.weighted([["high", 2], ["medium", 4], ["low", 3]] as const),
     text: rng.pick(ACTION_TEXTS),
   }));
-}
-
-/**
- * `nutrition_logs.nutrition_adherence` is a STATUS string, not a percentage.
- *
- * The column is plain text with no CHECK, so a numeric percentage inserts
- * silently as "87" and poisons every read path. Live values are only
- * hit/partial/missed. The thresholds are imported rather than restated because
- * they are ABSOLUTE CALORIES (50 / 200), not the percentages they look like —
- * a locally-guessed percentage would classify most rows differently and the
- * database would not object.
- */
-export function nutritionAdherenceStatus(consumed: number, target: number): "hit" | "partial" | "missed" {
-  const difference = Math.abs(consumed - target);
-  if (difference <= NUTRITION_ADHERENCE_HIT_THRESHOLD) return "hit";
-  if (difference <= NUTRITION_ADHERENCE_PARTIAL_THRESHOLD) return "partial";
-  return "missed";
 }
 
 // ---------------------------------------------------------------- catalogue

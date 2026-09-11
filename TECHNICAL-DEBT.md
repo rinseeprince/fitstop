@@ -1,9 +1,5 @@
 # Technical Debt Tracker
 
-## The check-in review's full-week nutrition target reads a day-form row as a nutrition log
-
-`unloggedDates` (`hooks/use-check-in-detail-data.ts`) asks the plan for a target on every period day with no `daily_logs_full` row, and `buildFullWeekTarget` sums the snapshotted target of every row it does have. A day the client logged wellness and no food has a row with a null target, so it is neither asked for a plan target nor counted: the full-week target the Nutrition card's kcal total and verdict divide against is short by that day. Spine presence stands in for "has a nutrition target" — the same confusion commit 5 of the measurement-log plan removed from the logged-day readers (`lib/logged-days.ts`), left here because it is a nutrition question, not the engagement one (owner decision 2026-09-03). Fix shape: the dates needing a plan target are the period days whose row carries no `targetCalories`, and the sum reads only the rows that do — a one-line change plus a test in `use-check-in-detail-data.test.ts`.
-
 ## Computed nutrition days — residue after migration 170
 
 Logged: 2026-09-10 (block-as-program N3). A nutrition day is computed from the version covering it (`docs/ARCHITECTURE.md` → "The window is the row"); the day table is gone. What the switch left behind, none of it a defect:

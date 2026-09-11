@@ -4,16 +4,14 @@ import { isValidDateParam, nutritionCardSchema } from "@/lib/validations/daily-l
 import {
   getNutritionForDate,
   resolvePlanContextForDate,
-  assertHasActivePlan,
-  NoActivePlanError,
 } from "@/services/daily-context-service";
 import { getDayEditState, assertCanEdit } from "@/services/daily-log-permissions-service";
 import { upsertNutritionLog } from "@/services/daily-log-card-service";
 import { DayLockedError } from "@/lib/daily-log-permissions";
 
 /**
- * GET nutrition for a date: consumed + target via the three-level priority
- * (log snapshot → event → null), plus `editable` for the UI lock state.
+ * GET nutrition for a date: what the client ate from the log, the day's target
+ * from the computed day, plus `editable` for the UI lock state.
  */
 export async function GET(
   request: NextRequest,
@@ -50,10 +48,10 @@ export async function GET(
 
 /**
  * PATCH nutrition (kcal + macros). Guards the date-edit rule via assertCanEdit (403 when
- * locked), resolves plan context, then writes nutrition_logs. Targets are server-resolved.
- * A day the client has already started stays open (owner, 2026-09-11): the context's
- * stamp is the covering version's, else the standing log's own, so a coach ending or
- * replacing today's plan never locks the client out of a day they began.
+ * locked), resolves the covering version for the row's stamp, then writes what the
+ * client ate — the log stores no target. A meal is refused only by the day rule
+ * (owner, 2026-09-11): a day no version covers saves with no stamp, and its meals
+ * carry no target and no verdict until a version covers it.
  *
  * Always 200. The old 201-on-first-log branch needed a nutrition_logs existence
  * read, which the day rule used to do for free and no longer does; the code was
@@ -90,7 +88,6 @@ export async function PATCH(
       resourceType: "nutrition",
     });
     const ctx = await resolvePlanContextForDate(auth.clientId, date);
-    assertHasActivePlan(ctx, "nutrition");
     const dailyLog = await upsertNutritionLog(auth.clientId, date, result.data, {
       nutritionPlanId: ctx.nutritionPlanId,
     });
@@ -100,12 +97,6 @@ export async function PATCH(
       return NextResponse.json(
         { success: false, error: error.message },
         { status: 403 }
-      );
-    }
-    if (error instanceof NoActivePlanError) {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 422 }
       );
     }
     console.error("Error saving nutrition log:", error);

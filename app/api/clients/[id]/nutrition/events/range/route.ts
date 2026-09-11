@@ -9,7 +9,6 @@ import {
   materializeNutritionEventDays,
   type RangeEdit,
 } from "@/services/nutrition-event-edit-service";
-import { NutritionLogRerecordError } from "@/services/daily-log-card-service";
 
 /**
  * PATCH - Write a coach edit — a calorie target with its macros, the same for
@@ -78,11 +77,6 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, updated }, { status: 200 });
   } catch (error) {
-    // The edit landed; only today's log snapshot is behind (owner,
-    // 2026-09-11). Say exactly that rather than "failed to edit".
-    if (error instanceof NutritionLogRerecordError) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-    }
     console.error(
       "Error editing nutrition range:",
       error instanceof Error ? error.message : "Unknown error"

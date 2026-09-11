@@ -15,9 +15,9 @@ import { deleteNutritionDayEditsInRanges } from "./nutrition-day-edits-service";
  * touched. Yesterday, never today, deliberately: a version closed AT today
  * would keep covering it, so the hero would go on saying "Active since" after
  * the delete. Today is the coach's to end whatever the client has eaten
- * (owner, 2026-09-11) — nutrition asks no floor — and a today they have
- * already logged keeps its own snapshot and stays open to their food log
- * under the target it was logged under.
+ * (owner, 2026-09-11) — nutrition asks no floor — and the client's meals
+ * still save on the days this uncovers, with no target to judge them: the
+ * food log holds what they ate and nothing else.
  *
  * A day's target is COMPUTED from the version covering it (owner decision
  * 2026-09-10), so this issues NO day statement: ending the versions IS

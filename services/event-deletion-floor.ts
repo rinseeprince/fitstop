@@ -19,10 +19,10 @@ import { captureApiError } from "@/lib/error-handler";
  *
  * The training log ALONE answers it (owner, 2026-09-11): an event on the date
  * that has left `scheduled`. A meal logged today moves nothing — today's
- * targets are the coach's to replace, and a logged today is re-recorded onto
- * the client's log when they do (`rerecordNutritionLogTarget`). Nutrition
- * asks no floor: a version starts on any day from the client's today, and a
- * day the client has begun stays open to their food log whatever the coach
+ * targets are the coach's to replace, and a logged today reads the new
+ * target the moment they do, because a day's target is computed and the
+ * food log stores none. Nutrition asks no floor: a version starts on any day
+ * from the client's today, and the client's meals save whatever the coach
  * changes. Do not put a `nutrition_logs` read back here.
  *
  * Every removal path asks this and nothing does its own arithmetic. A removal
