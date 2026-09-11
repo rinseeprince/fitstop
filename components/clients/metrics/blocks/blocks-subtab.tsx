@@ -71,9 +71,11 @@ type BlocksSubtabProps = {
   /** The weight MetricSummary from useMergedMetrics (viewer units), or null
    *  while metrics load / when nothing is logged. */
   weightMetric: MetricSummary | null;
-  /** The round trip out of an unset fact (7.3/7.4). Cross-tab navigation must
-   *  run through the client page's handler — activeTab is state seeded from
-   *  ?tab= at mount only. Absent = the empty states stay plain text. */
+  /** The round trip out of a fact, unset or set (7.3/7.4, H): "place one" /
+   *  "set targets" and "Change program" / "Change targets" all go the same way.
+   *  Cross-tab navigation must run through the client page's handler —
+   *  activeTab is state seeded from ?tab= at mount only. Absent = the empty
+   *  states stay plain text and the set states carry no action. */
   onTabChange?: (tab: ClientTab, extraParams?: Record<string, string>) => void;
 };
 

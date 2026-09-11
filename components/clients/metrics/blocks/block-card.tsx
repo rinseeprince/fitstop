@@ -43,9 +43,14 @@ type BlockCardProps = {
   /** 3.4's delete affordance mounts here, inside the row but outside the
    *  expand toggle (buttons cannot nest). */
   rowAction?: React.ReactNode;
-  /** The Journey round trip (7.3/7.4): the unset Training / Nutrition facts
-   *  become the way into the apply and plan flows. Undefined, or a block that
-   *  fails blockAcceptsSetup, leaves the empty state as plain text. */
+  /** The Journey round trip (7.3/7.4, H): the Training / Nutrition facts are
+   *  the way into the apply and plan flows — the empty state's "place one" /
+   *  "set targets", and the set state's "Change program" / "Change targets",
+   *  which place a NEW plan from the block's first available day and supersede
+   *  the standing one from there (never the amendment, which edits a placed
+   *  program in place). One handler per track serves both states. Undefined,
+   *  or a block that fails blockAcceptsSetup, leaves the empty state as plain
+   *  text and the set state without its action. */
   onPlaceProgram?: () => void;
   onSetNutrition?: () => void;
 };
@@ -53,12 +58,12 @@ type BlockCardProps = {
 const signed = (n: number) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
 
 /**
- * Which blocks get a round-trip affordance on an unset fact: CURRENT and
- * FUTURE only (owner decision 2026-08-21). Elapsed and archived keep plain
- * text — placement writes from a chosen start date, not the block's window, so
- * a click on a finished block leads somewhere confusing, and it matches the
- * read-only posture elapsed blocks already have everywhere else (no delete
- * offered, dates pinned from storage).
+ * Which blocks get a round-trip affordance on a fact, unset or set: CURRENT
+ * and FUTURE only (owner decision 2026-08-21). Elapsed and archived keep plain
+ * text — a plan cannot start before the deletion floor, so a finished block is
+ * not even listed by the setup surfaces' Block field and the trip would land on
+ * the dash; and it matches the read-only posture elapsed blocks already have
+ * everywhere else (no delete offered, dates pinned from storage).
  */
 function blockAcceptsSetup(block: ClientBlockView): boolean {
   return block.state !== "past" && block.archivedAt == null;
@@ -96,15 +101,80 @@ function SetupPrompt({
   );
 }
 
-function TrainingColumn({
-  block,
+/**
+ * A fact column's heading: the label, with the SET state's action in the right
+ * slot — the divider grammar (left = identity, right = actions), so "Change
+ * program" / "Change targets" sits beside the fact it changes rather than
+ * competing with the value under it. The action takes the label register with
+ * a teal hover — the shape of the drop-set editor's "Add drop", the calendar's
+ * Today jump and the Overview's "Mark seen" (`docs/newdesignsystem.md` →
+ * SectionLabel: a word-only interactive rail action) — visible at rest, never
+ * hover-revealed, for the same reason SetupPrompt's word is.
+ */
+function ColumnHeading({
+  label,
+  action,
+}: {
+  label: string;
+  action?: { label: string; onClick: () => void };
+}) {
+  return (
+    <div className="mb-1.5 flex items-center justify-between gap-2">
+      <p className={LABEL_CLASS}>{label}</p>
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className={cn(
+            "shrink-0 rounded transition-colors",
+            LABEL_CLASS,
+            "hover:text-[#0d9488]",
+            FOCUS_RING
+          )}
+        >
+          {action.label}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * ONE gate per track, consulted once: the handler reaches the empty state's
+ * "place one" and the set state's "Change program" together, or neither — so
+ * the two affordances cannot drift apart on which blocks offer them.
+ */
+function TrainingColumn(
+  props: Pick<
+    BlockCardProps,
+    "block" | "facts" | "factsLoading" | "factsError" | "onPlaceProgram"
+  >
+) {
+  const { block, facts, factsError, onPlaceProgram } = props;
+  const setUp =
+    onPlaceProgram && blockAcceptsSetup(block) ? onPlaceProgram : undefined;
+  const placed = !factsError && facts != null && facts.training.length > 0;
+  return (
+    <div>
+      <ColumnHeading
+        label="Training"
+        action={
+          setUp && placed ? { label: "Change program", onClick: setUp } : undefined
+        }
+      />
+      <TrainingFacts {...props} onPlaceProgram={setUp} />
+    </div>
+  );
+}
+
+function TrainingFacts({
   facts,
   factsLoading,
   factsError,
   onPlaceProgram,
 }: Pick<
   BlockCardProps,
-  "block" | "facts" | "factsLoading" | "factsError" | "onPlaceProgram"
+  "facts" | "factsLoading" | "factsError" | "onPlaceProgram"
 >) {
   if (factsError) {
     return <p className="text-xs text-[#93b0b4]">Unavailable</p>;
@@ -113,7 +183,7 @@ function TrainingColumn({
     return factsLoading ? <p className="text-xs text-[#93b0b4]">Loading…</p> : null;
   }
   if (facts.training.length === 0) {
-    return onPlaceProgram && blockAcceptsSetup(block) ? (
+    return onPlaceProgram ? (
       <SetupPrompt
         missing="No program placed"
         action="place one"
@@ -137,15 +207,37 @@ function TrainingColumn({
   );
 }
 
-function NutritionColumn({
-  block,
+function NutritionColumn(
+  props: Pick<
+    BlockCardProps,
+    "block" | "facts" | "factsLoading" | "factsError" | "onSetNutrition"
+  >
+) {
+  const { block, facts, factsError, onSetNutrition } = props;
+  const setUp =
+    onSetNutrition && blockAcceptsSetup(block) ? onSetNutrition : undefined;
+  const set = !factsError && facts != null && facts.nutrition.length > 0;
+  return (
+    <div>
+      <ColumnHeading
+        label="Nutrition"
+        action={
+          setUp && set ? { label: "Change targets", onClick: setUp } : undefined
+        }
+      />
+      <NutritionFacts {...props} onSetNutrition={setUp} />
+    </div>
+  );
+}
+
+function NutritionFacts({
   facts,
   factsLoading,
   factsError,
   onSetNutrition,
 }: Pick<
   BlockCardProps,
-  "block" | "facts" | "factsLoading" | "factsError" | "onSetNutrition"
+  "facts" | "factsLoading" | "factsError" | "onSetNutrition"
 >) {
   if (factsError) {
     return <p className="text-xs text-[#93b0b4]">Unavailable</p>;
@@ -154,7 +246,7 @@ function NutritionColumn({
     return factsLoading ? <p className="text-xs text-[#93b0b4]">Loading…</p> : null;
   }
   if (facts.nutrition.length === 0) {
-    return onSetNutrition && blockAcceptsSetup(block) ? (
+    return onSetNutrition ? (
       <SetupPrompt
         missing="Not set"
         action="set targets"
@@ -200,7 +292,21 @@ function NutritionColumn({
   );
 }
 
-function WeightColumn({
+function WeightColumn(
+  props: Pick<
+    BlockCardProps,
+    "block" | "weight" | "pace" | "targetDisplay" | "weightUnit"
+  >
+) {
+  return (
+    <div>
+      <ColumnHeading label="Weight" />
+      <WeightFacts {...props} />
+    </div>
+  );
+}
+
+function WeightFacts({
   block,
   weight,
   pace,
@@ -348,18 +454,9 @@ export function BlockCard(props: BlockCardProps) {
       {open && (
         <div className={cn(HAIRLINE, "space-y-3 px-[11px] py-3")}>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <p className={cn(LABEL_CLASS, "mb-1.5")}>Training</p>
-              <TrainingColumn {...props} />
-            </div>
-            <div>
-              <p className={cn(LABEL_CLASS, "mb-1.5")}>Nutrition</p>
-              <NutritionColumn {...props} />
-            </div>
-            <div>
-              <p className={cn(LABEL_CLASS, "mb-1.5")}>Weight</p>
-              <WeightColumn {...props} />
-            </div>
+            <TrainingColumn {...props} />
+            <NutritionColumn {...props} />
+            <WeightColumn {...props} />
           </div>
           <div className={cn(HAIRLINE, "pt-3")}>
             <p className={cn(LABEL_CLASS, "mb-2")}>What happened</p>

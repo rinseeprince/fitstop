@@ -6,9 +6,12 @@ import type { BlockFacts } from "@/types/client-blocks";
 
 // Session 7.3/7.4: an unset Training or Nutrition fact becomes the way into the
 // setup flow — on CURRENT and FUTURE blocks ONLY (owner decision 2026-08-21).
-// Elapsed and archived keep plain text: placement writes from a chosen start
-// date, not the block's window, so a click on a finished block leads somewhere
-// confusing, and it matches the read-only posture elapsed blocks already have.
+// Elapsed and archived keep plain text: a plan cannot start before the deletion
+// floor, so a finished block is not listed by the setup surfaces' Block field,
+// and it matches the read-only posture elapsed blocks already have.
+// H: a SET fact carries the same way in — "Change program" / "Change targets"
+// in the column heading — on the same gate and through the same handler, so a
+// coach changes a block's programming from the card rather than the calendars.
 
 function makeBlock(overrides: Partial<ClientBlockView> = {}): ClientBlockView {
   return {
@@ -31,6 +34,15 @@ const EMPTY_FACTS: BlockFacts = {
   blockId: "blk-1",
   training: [],
   nutrition: [],
+};
+
+// A program placed and targets set inside the block — both set states render.
+const SET_FACTS: BlockFacts = {
+  blockId: "blk-1",
+  training: [{ id: "p1", name: "Push Pull Legs", startsOn: "2026-08-03" }],
+  nutrition: [
+    { id: "v1", startsOn: "2026-08-03", calories: 2140, deficitPerDay: 310, note: null },
+  ],
 };
 
 function renderCard(block: ClientBlockView, handlers: {
@@ -142,5 +154,139 @@ describe("BlockCard — the round-trip empty states", () => {
     );
     expect(screen.getByText("Not set")).toBeDefined();
     expect(screen.queryByRole("button", { name: /Not set/ })).toBeNull();
+  });
+});
+
+describe("BlockCard — the set state's change affordance (H)", () => {
+  it("offers Change program on a set CURRENT block, in place of the empty state", () => {
+    renderCard(makeBlock({ state: "current" }), {
+      facts: SET_FACTS,
+      onPlaceProgram: vi.fn(),
+    });
+    expect(screen.getByRole("button", { name: "Change program" })).toBeDefined();
+    expect(screen.getByText("Push Pull Legs")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /No program placed/ })).toBeNull();
+  });
+
+  it("offers Change program on a set FUTURE block", () => {
+    renderCard(makeBlock({ state: "future" }), {
+      facts: SET_FACTS,
+      onPlaceProgram: vi.fn(),
+    });
+    expect(screen.getByRole("button", { name: "Change program" })).toBeDefined();
+  });
+
+  it("keeps a set ELAPSED block's program as plain text", () => {
+    renderCard(makeBlock({ state: "past" }), {
+      facts: SET_FACTS,
+      onPlaceProgram: vi.fn(),
+    });
+    expect(screen.getByText("Push Pull Legs")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Change program" })).toBeNull();
+  });
+
+  it("keeps a set ARCHIVED block's program as plain text, even while current", () => {
+    renderCard(
+      makeBlock({ state: "current", archivedAt: "2026-08-20T00:00:00Z" }),
+      { facts: SET_FACTS, onPlaceProgram: vi.fn() }
+    );
+    expect(screen.getByText("Push Pull Legs")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Change program" })).toBeNull();
+  });
+
+  // The Nutrition column is gated by the same one rule.
+  it("offers Change targets on a set CURRENT block and not on an ELAPSED one", () => {
+    const { unmount } = renderCard(makeBlock({ state: "current" }), {
+      facts: SET_FACTS,
+      onSetNutrition: vi.fn(),
+    });
+    expect(screen.getByRole("button", { name: "Change targets" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Not set/ })).toBeNull();
+    unmount();
+
+    renderCard(makeBlock({ state: "past" }), {
+      facts: SET_FACTS,
+      onSetNutrition: vi.fn(),
+    });
+    expect(screen.getByText("2,140")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Change targets" })).toBeNull();
+  });
+
+  // The change action IS the empty state's round trip: the same handler, so it
+  // lands on the same surface with the same block preselected. Each track's
+  // action fires its own handler and never the other's.
+  it("Change program fires the apply round trip, not the nutrition one", () => {
+    const onPlaceProgram = vi.fn();
+    const onSetNutrition = vi.fn();
+    renderCard(makeBlock({ state: "current" }), {
+      facts: SET_FACTS,
+      onPlaceProgram,
+      onSetNutrition,
+    });
+    screen.getByRole("button", { name: "Change program" }).click();
+    expect(onPlaceProgram).toHaveBeenCalledTimes(1);
+    expect(onSetNutrition).not.toHaveBeenCalled();
+  });
+
+  it("Change targets fires the plan round trip, not the apply one", () => {
+    const onPlaceProgram = vi.fn();
+    const onSetNutrition = vi.fn();
+    renderCard(makeBlock({ state: "future" }), {
+      facts: SET_FACTS,
+      onPlaceProgram,
+      onSetNutrition,
+    });
+    screen.getByRole("button", { name: "Change targets" }).click();
+    expect(onSetNutrition).toHaveBeenCalledTimes(1);
+    expect(onPlaceProgram).not.toHaveBeenCalled();
+  });
+
+  it("renders no change action without a handler", () => {
+    renderCard(makeBlock({ state: "current" }), { facts: SET_FACTS });
+    expect(screen.getByText("Push Pull Legs")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Change program" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Change targets" })).toBeNull();
+  });
+
+  // A fact that has not resolved is not set: nothing to change yet, and nothing
+  // claimed either way.
+  it("renders no change action while the facts are loading or unavailable", () => {
+    const { unmount } = render(
+      <BlockCard
+        block={makeBlock({ state: "current" })}
+        color="#0d9488"
+        facts={undefined}
+        factsLoading
+        factsError={false}
+        weight={{ start: null, end: null, change: null }}
+        pace={null}
+        targetDisplay={null}
+        weightUnit="kg"
+        defaultOpen
+        onPlaceProgram={vi.fn()}
+        onSetNutrition={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /Change/ })).toBeNull();
+    unmount();
+
+    render(
+      <BlockCard
+        block={makeBlock({ state: "current" })}
+        color="#0d9488"
+        facts={SET_FACTS}
+        factsLoading={false}
+        factsError
+        weight={{ start: null, end: null, change: null }}
+        pace={null}
+        targetDisplay={null}
+        weightUnit="kg"
+        defaultOpen
+        onPlaceProgram={vi.fn()}
+        onSetNutrition={vi.fn()}
+      />
+    );
+    expect(screen.getAllByText("Unavailable").length).toBe(2);
+    expect(screen.queryByRole("button", { name: /Change/ })).toBeNull();
   });
 });
