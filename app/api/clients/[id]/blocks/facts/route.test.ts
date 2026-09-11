@@ -59,9 +59,19 @@ describe("GET /api/clients/[id]/blocks/facts", () => {
     const facts = [
       {
         blockId: "a",
-        training: [{ id: "p1", name: "Base", startsOn: "2026-06-01" }],
+        training: [
+          { id: "p1", name: "Base", startsOn: "2026-06-01", endsOn: "2026-06-28", state: "ended" as const },
+        ],
         nutrition: [
-          { id: "v1", startsOn: "2026-06-01", calories: 2200, deficitPerDay: 500, note: "Starting your cut here." },
+          {
+            id: "v1",
+            startsOn: "2026-06-01",
+            endsOn: "2026-06-28",
+            state: "ended" as const,
+            calories: 2200,
+            deficitPerDay: 500,
+            note: "Starting your cut here.",
+          },
         ],
       },
     ];
@@ -72,7 +82,9 @@ describe("GET /api/clients/[id]/blocks/facts", () => {
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = await res.json();
     expect(body).toEqual({ success: true, data: { facts } });
-    expect(getBlockFacts).toHaveBeenCalledWith("client-1");
+    // The CLIENT's day, resolved here and handed to the service, which
+    // stamps every entry's state against it.
+    expect(getBlockFacts).toHaveBeenCalledWith("client-1", TODAY);
   });
 
   it("500s with a generic message — never the raw error", async () => {

@@ -4,6 +4,7 @@ import {
   deriveBlockState,
   deriveWeekOfTotal,
   derivePace,
+  derivePlanState,
 } from "./block-derivations";
 
 // Pure string/UTC math — exact assertions hold under any server timezone.
@@ -175,5 +176,23 @@ describe("deriveBlockEnding", () => {
       endsOn: "2026-08-21",
       nextName: null,
     });
+  });
+});
+
+// A plan's state is the block's date rule in the plan vocabulary — one
+// derivation, so a plan can never be "active" inside a block that reads
+// "future" for the same day, and the boundaries agree with `coversDate`:
+// the start day and the end day are both active.
+describe("derivePlanState", () => {
+  const window = { startsOn: "2026-08-03", endsOn: "2026-09-30" };
+
+  it("is upcoming before the start, active from the start day", () => {
+    expect(derivePlanState(window, "2026-08-02")).toBe("upcoming");
+    expect(derivePlanState(window, "2026-08-03")).toBe("active");
+  });
+
+  it("is active through the end day, ended the day after", () => {
+    expect(derivePlanState(window, "2026-09-30")).toBe("active");
+    expect(derivePlanState(window, "2026-10-01")).toBe("ended");
   });
 });

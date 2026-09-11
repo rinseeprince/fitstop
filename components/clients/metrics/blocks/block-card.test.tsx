@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { BlockCard } from "./block-card";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import type { BlockFacts } from "@/types/client-blocks";
@@ -37,12 +37,24 @@ const EMPTY_FACTS: BlockFacts = {
   nutrition: [],
 };
 
-// A program placed and targets set inside the block — both set states render.
+// A program placed and targets set inside the block, both in force — both
+// set states render. States are the WIRE's (stamped server-side against the
+// client's day); the card never derives one.
 const SET_FACTS: BlockFacts = {
   blockId: "blk-1",
-  training: [{ id: "p1", name: "Push Pull Legs", startsOn: "2026-08-03" }],
+  training: [
+    { id: "p1", name: "Push Pull Legs", startsOn: "2026-08-03", endsOn: "2026-09-30", state: "active" },
+  ],
   nutrition: [
-    { id: "v1", startsOn: "2026-08-03", calories: 2140, deficitPerDay: 310, note: null },
+    {
+      id: "v1",
+      startsOn: "2026-08-03",
+      endsOn: "2026-09-30",
+      state: "active",
+      calories: 2140,
+      deficitPerDay: 310,
+      note: null,
+    },
   ],
 };
 
@@ -67,6 +79,14 @@ function renderEmpty() {
     />,
     { container: host }
   );
+}
+
+/** Queries scoped to one fact column. The timeline below the columns lists
+ *  every plan by name with its state chip, so an unscoped query for a plan's
+ *  name or a state word finds two elements — the column's headline and the
+ *  timeline's entry — and the two are asserted separately on purpose. */
+function column(label: "Training" | "Nutrition") {
+  return within(screen.getByText(label, { selector: "p" }).parentElement as HTMLElement);
 }
 
 function renderCard(block: ClientBlockView, handlers: {
@@ -148,7 +168,9 @@ describe("BlockCard — the round-trip empty states", () => {
     renderCard(makeBlock({ state: "future" }), {
       facts: {
         ...EMPTY_FACTS,
-        nutrition: [{ id: "v1", startsOn: "2026-10-08", calories: 1732, deficitPerDay: 214, note: null }],
+        nutrition: [
+          { id: "v1", startsOn: "2026-10-08", endsOn: "2026-11-04", state: "upcoming", calories: 1732, deficitPerDay: 214, note: null },
+        ],
       },
     });
     expect(screen.getByText(/from 8 Oct/)).toBeDefined();
@@ -188,7 +210,7 @@ describe("BlockCard — the set state's update affordance (H)", () => {
       onPlaceProgram: vi.fn(),
     });
     const update = screen.getByRole("button", { name: /update plan/ });
-    expect(screen.getByText("Push Pull Legs")).toBeDefined();
+    expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
     expect(screen.queryByRole("button", { name: /No program placed/ })).toBeNull();
     // ONE grammar and ONE position for the way in: the value, a dash, then the
     // word — the plan's name is INSIDE the same line as the word, to its left,
@@ -206,16 +228,19 @@ describe("BlockCard — the set state's update affordance (H)", () => {
     expect(update.className).not.toMatch(/uppercase/);
   });
 
-  // However many plans the column lists, the way in rides the FIRST entry's
-  // line — the headline position — once. Two doors that do the same thing are
-  // noise, and the second entry's line carries the plan alone.
-  it("offers update plan once, on the first listed plan, when several are listed", () => {
+  // ONE entry per track — the headline. The plan in force today shows; one
+  // queued later in the block does not (the timeline lists it), and the day it
+  // takes over it becomes the headline, because its state does. The door rides
+  // the headline's line, once.
+  it("headlines the plan in force and hides one queued later in the block", () => {
     renderCard(makeBlock({ state: "current" }), {
       facts: {
         ...SET_FACTS,
         training: [
           ...SET_FACTS.training,
-          { id: "p2", name: "Glute Focused", startsOn: "2026-08-24" },
+          // Queued INSIDE the block (starts before its end), so the timeline
+          // lists it while the column does not.
+          { id: "p2", name: "Glute Focused", startsOn: "2026-09-14", endsOn: "2026-10-28", state: "upcoming" },
         ],
       },
       onPlaceProgram: vi.fn(),
@@ -223,7 +248,69 @@ describe("BlockCard — the set state's update affordance (H)", () => {
     const doors = screen.getAllByRole("button", { name: /update plan/ });
     expect(doors).toHaveLength(1);
     expect(doors[0].textContent).toBe("Push Pull Legs — update plan");
+    const training = column("Training");
+    expect(training.queryByText("Glute Focused")).toBeNull();
+    expect(training.queryByText("Active")).toBeNull();
+    // The timeline keeps the whole story: both plans, each with its state —
+    // and the targets in force, so two entries read Active.
     expect(screen.getByText("Glute Focused")).toBeDefined();
+    expect(screen.getByText("Planned")).toBeDefined();
+    expect(screen.getAllByText("Active")).toHaveLength(2);
+  });
+
+  // Owner, 2026-09-11: a program that ended early with nothing queued after it
+  // still headlines its block — as ended, with the door beside it — rather than
+  // the block falling back to "No program placed".
+  it("headlines a program that ended early with nothing after it, as Ended, with the door", () => {
+    renderCard(makeBlock({ state: "current" }), {
+      facts: {
+        ...SET_FACTS,
+        training: [
+          { id: "p1", name: "Push Pull Legs", startsOn: "2026-08-03", endsOn: "2026-08-20", state: "ended" },
+        ],
+      },
+      onPlaceProgram: vi.fn(),
+    });
+    const door = screen.getByRole("button", { name: /update plan/ });
+    expect(door.textContent).toBe("Push Pull LegsEnded — update plan");
+    expect(column("Training").getByText("Ended")).toBeDefined();
+    expect(screen.queryByText(/No program placed/)).toBeNull();
+  });
+
+  it("with nothing in force, headlines the first queued plan as Planned", () => {
+    renderCard(makeBlock({ state: "current" }), {
+      facts: {
+        ...SET_FACTS,
+        training: [
+          { id: "p0", name: "Base", startsOn: "2026-07-01", endsOn: "2026-08-10", state: "ended" },
+          { id: "p2", name: "Glute Focused", startsOn: "2026-08-12", endsOn: "2026-09-30", state: "upcoming" },
+          { id: "p3", name: "Peak", startsOn: "2026-10-01", endsOn: "2026-10-28", state: "upcoming" },
+        ],
+      },
+    });
+    const training = column("Training");
+    expect(training.getByText("Glute Focused")).toBeDefined();
+    expect(training.getByText("Planned")).toBeDefined();
+    expect(training.queryByText("Base")).toBeNull();
+    expect(training.queryByText("Peak")).toBeNull();
+  });
+
+  it("nutrition headlines by the same rule — an early-ended version reads Ended with the door", () => {
+    renderCard(makeBlock({ state: "current" }), {
+      facts: {
+        ...SET_FACTS,
+        // In start order, the wire's contract: the earlier version first.
+        nutrition: [
+          { id: "v0", startsOn: "2026-07-01", endsOn: "2026-08-02", state: "ended", calories: 2600, deficitPerDay: 100, note: null },
+          { ...SET_FACTS.nutrition[0], endsOn: "2026-08-20", state: "ended" },
+        ],
+      },
+      onSetNutrition: vi.fn(),
+    });
+    const door = screen.getByRole("button", { name: /update targets/ });
+    expect(door.textContent).toContain("2,140");
+    expect(door.textContent).toContain("Ended");
+    expect(column("Nutrition").queryByText("2,600")).toBeNull();
   });
 
   it("offers update plan on a set FUTURE block", () => {
@@ -239,7 +326,7 @@ describe("BlockCard — the set state's update affordance (H)", () => {
       facts: SET_FACTS,
       onPlaceProgram: vi.fn(),
     });
-    expect(screen.getByText("Push Pull Legs")).toBeDefined();
+    expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
     expect(screen.queryByRole("button", { name: /update plan/ })).toBeNull();
   });
 
@@ -248,7 +335,7 @@ describe("BlockCard — the set state's update affordance (H)", () => {
       makeBlock({ state: "current", archivedAt: "2026-08-20T00:00:00Z" }),
       { facts: SET_FACTS, onPlaceProgram: vi.fn() }
     );
-    expect(screen.getByText("Push Pull Legs")).toBeDefined();
+    expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
     expect(screen.queryByRole("button", { name: /update plan/ })).toBeNull();
   });
 
@@ -304,7 +391,7 @@ describe("BlockCard — the set state's update affordance (H)", () => {
 
   it("renders no change action without a handler", () => {
     renderCard(makeBlock({ state: "current" }), { facts: SET_FACTS });
-    expect(screen.getByText("Push Pull Legs")).toBeDefined();
+    expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
     expect(screen.queryByRole("button", { name: /update plan/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /update targets/ })).toBeNull();
   });

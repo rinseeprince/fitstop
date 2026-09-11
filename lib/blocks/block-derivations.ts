@@ -1,7 +1,7 @@
 import { daysBetween } from "@/utils/metric-points";
 import { weeksSpanned } from "@/lib/blocks/block-chain";
 import { PLAN_ENDING_LEAD_DAYS } from "@/lib/constants";
-import type { BlockState, ClientBlock } from "@/types/client-blocks";
+import type { BlockPlanState, BlockState, ClientBlock } from "@/types/client-blocks";
 
 // The three derived reads for journey blocks (Session 2 Task 2.3) — pure,
 // client-safe, all from dates. Nothing here is stored: current/past/future,
@@ -19,6 +19,20 @@ export function deriveBlockState(block: BlockDates, today: string): BlockState {
   if (block.endsOn < today) return "past";
   if (block.startsOn > today) return "future";
   return "current";
+}
+
+/**
+ * A PLAN's standing against the client's today — the same date rule as a
+ * block's, in the platform's plan vocabulary: a window covering today is
+ * `active`, one starting later `upcoming`, one closed before today `ended`.
+ * The pure twin of the services' `coversDate` predicate, so the block card's
+ * "active" is the hero's "active" on the same rows. Stamped server-side onto
+ * every block fact (the facts route resolves the client's day as the chain
+ * route does); the browser never re-derives it.
+ */
+export function derivePlanState(window: BlockDates, today: string): BlockPlanState {
+  const state = deriveBlockState(window, today);
+  return state === "current" ? "active" : state === "future" ? "upcoming" : "ended";
 }
 
 export interface BlockWeekOfTotal {

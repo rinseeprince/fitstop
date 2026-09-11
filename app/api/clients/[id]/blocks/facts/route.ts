@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getBlockFacts } from "@/services/client-blocks-facts-service";
+import { getClientTodayString } from "@/services/today-service";
 
 // Read-only decoration for the Journey tab's expanded block cards: which
 // training programs ran during each block and what the nutrition targets were
@@ -23,7 +24,11 @@ export async function GET(
     const auth = await requireCoachOwnsClient(clientId, request);
     if (!auth.authorized) return auth.response;
 
-    const facts = await getBlockFacts(clientId);
+    // The client's day, as the chain route resolves it: every entry's state
+    // is stamped against it here, so the card never derives one from a day
+    // it obtained elsewhere.
+    const clientToday = await getClientTodayString(clientId);
+    const facts = await getBlockFacts(clientId, clientToday);
 
     return NextResponse.json(
       { success: true, data: { facts } },

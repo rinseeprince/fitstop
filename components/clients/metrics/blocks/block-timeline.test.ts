@@ -1,13 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { deriveTimelineEntries } from "./block-timeline";
-import type { BlockNutritionFact } from "@/types/client-blocks";
+import type { BlockNutritionFact, BlockPlanState } from "@/types/client-blocks";
 
+// States are the WIRE's — the facts service stamps them against the client's
+// day — so the fixtures carry one and the timeline copies it onto the entry.
 const nutrition = (
-  versions: { from: string; calories: number; deficitPerDay: number | null; note?: string }[]
+  versions: {
+    from: string;
+    calories: number;
+    deficitPerDay: number | null;
+    note?: string;
+    state?: BlockPlanState;
+  }[]
 ): BlockNutritionFact[] =>
   versions.map((version, index) => ({
     id: `v${index + 1}`,
     startsOn: version.from,
+    endsOn: "2027-12-31",
+    state: version.state ?? "active",
     calories: version.calories,
     deficitPerDay: version.deficitPerDay,
     note: version.note ?? null,
@@ -19,10 +29,17 @@ const BLOCK = {
   endsOn: "2026-06-28",
 };
 
-const plan = (id: string, name: string, startsOn: string) => ({
+const plan = (
+  id: string,
+  name: string,
+  startsOn: string,
+  state: BlockPlanState = "active"
+) => ({
   id,
   name,
   startsOn,
+  endsOn: "2027-12-31",
+  state,
 });
 
 describe("deriveTimelineEntries", () => {
@@ -38,11 +55,7 @@ describe("deriveTimelineEntries", () => {
       ],
       []
     );
-    expect(entries.map((e) => e.label)).toEqual([
-      "Block started",
-      "Base started",
-      "Peak started",
-    ]);
+    expect(entries.map((e) => e.label)).toEqual(["Block started", "Base", "Peak"]);
     expect(entries.map((e) => e.date)).toEqual([
       "2026-06-01",
       "2026-06-03",
@@ -63,14 +76,14 @@ describe("deriveTimelineEntries", () => {
   // when did it change. Each era carries its OWN version's numbers, so a later
   // plan save cannot rewrite an entry that has already happened.
   describe("nutrition eras", () => {
-    it("one era: 'Nutrition set' at the block start, with its numbers", () => {
+    it("one era: 'Nutrition' at the block start, with its numbers", () => {
       const entries = deriveTimelineEntries(
         { ...BLOCK, state: "current" },
         [],
         nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }])
       );
 
-      expect(entries.map((e) => e.label)).toEqual(["Block started", "Nutrition set"]);
+      expect(entries.map((e) => e.label)).toEqual(["Block started", "Nutrition"]);
       expect(entries[1].detail).toBe("3,471 kcal · −629 kcal/day");
     });
 
@@ -86,8 +99,8 @@ describe("deriveTimelineEntries", () => {
 
       expect(entries.map((e) => [e.date, e.label, e.detail])).toEqual([
         ["2026-06-01", "Block started", undefined],
-        ["2026-06-01", "Nutrition set", "3,471 kcal · −629 kcal/day"],
-        ["2026-06-15", "Nutrition changed", "3,200 kcal · −900 kcal/day"],
+        ["2026-06-01", "Nutrition", "3,471 kcal · −629 kcal/day"],
+        ["2026-06-15", "Nutrition", "3,200 kcal · −900 kcal/day"],
       ]);
     });
 
@@ -111,15 +124,17 @@ describe("deriveTimelineEntries", () => {
     });
 
     // A block that has not begun describes what is planned for it: a queued
-    // prescription lists as "Nutrition set", as a queued program lists as
-    // started. Only the block's own "started" entry waits for the day.
-    it("future block: a queued prescription lists as 'Nutrition set' with its numbers", () => {
+    // prescription lists with its numbers and its state, as a queued program
+    // does. Only the block's own "started" entry waits for the day.
+    it("future block: a queued prescription lists as 'Nutrition', planned, with its numbers", () => {
       const entries = deriveTimelineEntries(
         { ...BLOCK, state: "future" },
         [],
-        nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629 }])
+        nutrition([{ from: "2026-06-01", calories: 3471, deficitPerDay: 629, state: "upcoming" }])
       );
-      expect(entries.map((e) => [e.date, e.label])).toEqual([["2026-06-01", "Nutrition set"]]);
+      expect(entries.map((e) => [e.date, e.label, e.state])).toEqual([
+        ["2026-06-01", "Nutrition", "upcoming"],
+      ]);
       expect(entries[0].detail).toBe("3,471 kcal · −629 kcal/day");
     });
   });
@@ -130,7 +145,29 @@ describe("deriveTimelineEntries", () => {
       [plan("p1", "Base", "2026-06-03")],
       []
     );
-    expect(entries.map((e) => e.label)).toEqual(["Base started"]);
+    expect(entries.map((e) => e.label)).toEqual(["Base"]);
+  });
+
+  // Every plan and version in the block is listed with the state the wire
+  // stamped — active, planned (upcoming) or ended — so the timeline reads the
+  // whole story while the columns above headline one entry. Block boundaries
+  // carry no state.
+  it("each plan and version entry carries its wire state; block boundaries carry none", () => {
+    const entries = deriveTimelineEntries(
+      { ...BLOCK, state: "current" },
+      [plan("p1", "Base", "2026-06-03", "ended"), plan("p2", "Peak", "2026-06-15", "active")],
+      nutrition([
+        { from: "2026-06-01", calories: 3471, deficitPerDay: 629, state: "ended" },
+        { from: "2026-06-20", calories: 3200, deficitPerDay: 900, state: "upcoming" },
+      ])
+    );
+    expect(entries.map((e) => [e.label, e.state])).toEqual([
+      ["Block started", undefined],
+      ["Nutrition", "ended"],
+      ["Base", "ended"],
+      ["Peak", "active"],
+      ["Nutrition", "upcoming"],
+    ]);
   });
 
   // A version's save note NESTS under its own entry — evidence for the change
@@ -144,7 +181,7 @@ describe("deriveTimelineEntries", () => {
         nutrition([{ from: "2026-06-15", calories: 3200, deficitPerDay: 900, note: "Dropping calories 200." }])
       );
 
-      expect(entries.map((e) => e.label)).toEqual(["Block started", "Nutrition set"]);
+      expect(entries.map((e) => e.label)).toEqual(["Block started", "Nutrition"]);
       expect(entries[1].note).toBe("Dropping calories 200.");
       expect(entries[0].note).toBeUndefined();
     });

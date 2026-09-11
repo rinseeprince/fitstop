@@ -26,6 +26,7 @@ import {
 } from "./perf-baseline-wrapper";
 import { PERF_CLIENT_ID } from "./perf-fixtures";
 import { getBlockFacts } from "@/services/client-blocks-facts-service";
+import { getClientTodayString } from "@/services/today-service";
 import { getClientJourney } from "@/services/client-journey-service";
 
 import {
@@ -124,11 +125,15 @@ async function main() {
   // Session 6: the block-facts fan-out and the paged plan-notes read. Both are
   // whole-span reads whose cost must be bounded by the RESULT, not by how long
   // the client has been coached.
+  // The route resolves the client's day before the service runs; resolved
+  // here the same way, outside the timed call, so the measurement is the
+  // fan-out alone.
+  const perfClientToday = await getClientTodayString(PERF_CLIENT_ID);
   baselines.push(await measure(
     "getBlockFacts (4-way fan-out)",
     "services/client-blocks-facts-service.ts",
-    `getBlockFacts(PERF_CLIENT_ID)`,
-    () => getBlockFacts(PERF_CLIENT_ID),
+    `getBlockFacts(PERF_CLIENT_ID, clientToday)`,
+    () => getBlockFacts(PERF_CLIENT_ID, perfClientToday),
     "Three parallel reads over the whole journey span, partitioned per block in memory — round trips are constant in the number of blocks, never per-block.",
   ));
 

@@ -54,12 +54,25 @@ export interface ReplaceBlockChainInput {
 // Read-only decoration; the chain routes stay pure CRUD.
 // ---------------------------------------------------------------------------
 
-/** A training program whose window overlapped the block. `startsOn` is the
- *  plan's `effective_from` — when it started on the calendar. */
+/**
+ * A plan's standing against the CLIENT's today, stamped server-side by the
+ * block's own date rule (`derivePlanState`) so the card never re-derives it:
+ * `active` = the window covers today, `upcoming` = it starts later, `ended` =
+ * it closed before today. The platform's plan vocabulary (the client
+ * training-plan read, the Overview's `upcomingTraining`); the card's chip
+ * renders `upcoming` as "Planned", as a block's `future` renders "Not started".
+ */
+export type BlockPlanState = "active" | "upcoming" | "ended";
+
+/** A training program whose window overlapped the block. `startsOn` /
+ *  `endsOn` are the plan's own `effective_from` / `effective_until` — when it
+ *  started on the calendar and the last day of its window (migration 167). */
 export interface BlockTrainingFact {
   id: string;
   name: string;
   startsOn: string;
+  endsOn: string;
+  state: BlockPlanState;
 }
 
 /**
@@ -79,6 +92,9 @@ export interface BlockNutritionFact {
    *  earlier than the block's start for a version already running when the
    *  block began, as a crossing program's `startsOn` is. */
   startsOn: string;
+  /** The version's `effective_until` — the last day it answers for. */
+  endsOn: string;
+  state: BlockPlanState;
   calories: number;
   deficitPerDay: number | null;
   /** The version's save note (`nutrition_plans.coach_note`, migration 172) —
@@ -87,8 +103,11 @@ export interface BlockNutritionFact {
   note: string | null;
 }
 
-/** Per-block server facts. An empty `nutrition` list = no active version
- *  overlaps the block ("Not set"). */
+/** Per-block server facts: the WHOLE list per track, in start order, each
+ *  entry carrying its window and state. The timeline reads the list entire;
+ *  the card headlines ONE entry per track by precedence over the states
+ *  (`selectHeadlineFact`, `lib/blocks/block-headline.ts`). An empty list =
+ *  nothing set on that track ("No program placed" / "Not set"). */
 export interface BlockFacts {
   blockId: string;
   training: BlockTrainingFact[];

@@ -7,12 +7,20 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { formatBlockDate, formatNutritionEra } from "@/lib/blocks/block-format";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
-import type { BlockNutritionFact, BlockTrainingFact } from "@/types/client-blocks";
+import type {
+  BlockNutritionFact,
+  BlockPlanState,
+  BlockTrainingFact,
+} from "@/types/client-blocks";
+import { PlanStateChip } from "./plan-state-chip";
 
 // "What happened" — the expanded block card's vertical timeline. Sources: block
 // boundaries (derived), training placements in the window, and the nutrition
 // versions that start in the window, each carrying its save note — all from the
-// facts read. Plan amendments are invisible by design (audit_logs has no readers).
+// facts read. Every plan and version starting in the block is listed, each on
+// its start date with the state the wire stamped (Active / Planned / Ended),
+// while the columns above headline one entry per track. Plan amendments are
+// invisible by design (audit_logs has no readers).
 
 interface BlockTimelineEntry {
   key: string;
@@ -22,6 +30,9 @@ interface BlockTimelineEntry {
    *  word-only and sans, so the two registers do not blur (design system:
    *  split the branches when the states are distinguishable). */
   detail?: string;
+  /** A plan's or version's standing, as the wire stamped it — rendered as the
+   *  chip after the label. Block boundaries carry none. */
+  state?: BlockPlanState;
   /** The version's save note, rendered NESTED underneath its entry — no dot
    *  and no date of its own: it explains the change above it and is dated with
    *  it (migration 172). */
@@ -46,26 +57,29 @@ export function deriveTimelineEntries(
       entries.push({
         key: `plan-${plan.id}`,
         date: plan.startsOn,
-        label: `${plan.name} started`,
+        label: plan.name,
+        state: plan.state,
       });
     }
   }
   // What the client was eating, and when it changed — the question a coach
   // reviewing a finished block asks first. Each version carries the numbers off
   // its own row, so a later plan save cannot rewrite an entry that has already
-  // happened. A version queued inside the block is listed as "Nutrition set" the
-  // way a queued program is listed as started, whether the block has begun or
-  // not; a version that began before the block has no entry, as a crossing
-  // program has none — and its note, dated at its start, stays with it. The
-  // note rides its own entry: it explains that prescription change and nothing
-  // else, so a "Block started" or "Programme started" row is never its host.
+  // happened. A version queued inside the block is listed the way a queued
+  // program is, whether the block has begun or not, its state saying so; a
+  // second version's date already says the targets changed. A version that
+  // began before the block has no entry, as a crossing program has none — and
+  // its note, dated at its start, stays with it. The note rides its own entry:
+  // it explains that prescription change and nothing else, so a "Block
+  // started" or a program's row is never its host.
   nutrition
     .filter((fact) => fact.startsOn >= block.startsOn && fact.startsOn <= block.endsOn)
-    .forEach((fact, index) => {
+    .forEach((fact) => {
       entries.push({
         key: `nutrition-${fact.id}`,
         date: fact.startsOn,
-        label: index === 0 ? "Nutrition set" : "Nutrition changed",
+        label: "Nutrition",
+        state: fact.state,
         detail: formatNutritionEra({ calories: fact.calories, deficitPerDay: fact.deficitPerDay }),
         ...(fact.note ? { note: fact.note } : {}),
       });
@@ -121,6 +135,7 @@ export function BlockTimeline({ entries, color }: BlockTimelineProps) {
               {formatBlockDate(entry.date)}
             </span>
             <span className={cn("text-xs", TEXT_SECONDARY)}>{entry.label}</span>
+            {entry.state && <PlanStateChip state={entry.state} />}
             {entry.detail && (
               <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
                 {entry.detail}

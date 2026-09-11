@@ -16,7 +16,9 @@ import {
   TRAINING_CARD_BORDER,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { formatBlockDate, splitDeficitPerDay } from "@/lib/blocks/block-format";
+import { selectHeadlineFact } from "@/lib/blocks/block-headline";
 import { BlockTimeline, deriveTimelineEntries } from "./block-timeline";
+import { PlanStateChip } from "./plan-state-chip";
 import type { BlockWeightFacts } from "@/lib/blocks/block-weight";
 import type { BlockPace, ClientBlockView } from "@/lib/blocks/block-derivations";
 import type { BlockFacts, BlockNutritionFact } from "@/types/client-blocks";
@@ -158,41 +160,43 @@ function TrainingColumn({
   if (!facts) {
     return factsLoading ? <p className="text-xs text-[#93b0b4]">Loading…</p> : null;
   }
-  if (facts.training.length === 0) {
+  // ONE entry — the headline: the plan in force today, else the next one
+  // queued in the block, else the last one that ran, so a program that ended
+  // early with nothing after it still headlines its block, as ended, with the
+  // door beside it (owner, 2026-09-11). The wire's whole list feeds the
+  // timeline below. The way in rides the headline's line — the position the
+  // empty state's line holds — and the state chip sits after the value only
+  // when the headline is not in force: a running block's header already says
+  // it is running.
+  const shown = selectHeadlineFact(facts.training);
+  if (!shown) {
     return setUp ? (
-      <SetupPrompt
-        state="No program placed"
-        action="place one"
-        onClick={setUp}
-      />
+      <SetupPrompt state="No program placed" action="place one" onClick={setUp} />
     ) : (
       <p className="text-xs text-[#93b0b4]">No program placed</p>
     );
   }
-  // The way in rides the FIRST entry's line — the column's headline, the
-  // position the empty state's line holds — once, however many are listed.
+  const value = (
+    <span className={cn("text-xs font-medium", TEXT_PRIMARY)}>
+      {shown.name}
+      {shown.state !== "active" && (
+        <PlanStateChip state={shown.state} className="ml-1.5" />
+      )}
+    </span>
+  );
   return (
-    <ul className="space-y-1">
-      {facts.training.map((plan, index) => {
-        const name = (
-          <span className={cn("text-xs font-medium", TEXT_PRIMARY)}>{plan.name}</span>
-        );
-        return (
-          <li key={plan.id}>
-            <p className="text-xs">
-              {setUp && index === 0 ? (
-                <SetupPrompt state={name} action="update plan" onClick={setUp} />
-              ) : (
-                name
-              )}
-            </p>
-            <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-              from {formatBlockDate(plan.startsOn)}
-            </p>
-          </li>
-        );
-      })}
-    </ul>
+    <div>
+      <p className="text-xs">
+        {setUp ? (
+          <SetupPrompt state={value} action="update plan" onClick={setUp} />
+        ) : (
+          value
+        )}
+      </p>
+      <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+        from {formatBlockDate(shown.startsOn)}
+      </p>
+    </div>
   );
 }
 
@@ -214,42 +218,37 @@ function NutritionColumn({
   if (!facts) {
     return factsLoading ? <p className="text-xs text-[#93b0b4]">Loading…</p> : null;
   }
-  if (facts.nutrition.length === 0) {
+  // The training column's rule, entry for entry: one headline version by the
+  // same precedence, the date under the numbers, the way in on its line.
+  const shown = selectHeadlineFact(facts.nutrition);
+  if (!shown) {
     return setUp ? (
-      <SetupPrompt
-        state="Not set"
-        action="set targets"
-        onClick={setUp}
-      />
+      <SetupPrompt state="Not set" action="set targets" onClick={setUp} />
     ) : (
       <p className="text-xs text-[#93b0b4]">Not set</p>
     );
   }
-  // One entry per version overlapping the block, the training column's shape:
-  // a queued version lists under the running one with its own start. The date
-  // sits under the numbers, the training column's title-then-date grammar,
-  // and the way in rides the first entry's line as it does there.
+  const value = (
+    <>
+      <NutritionValue fact={shown} />
+      {shown.state !== "active" && (
+        <PlanStateChip state={shown.state} className="ml-1.5" />
+      )}
+    </>
+  );
   return (
-    <ul className="space-y-1">
-      {facts.nutrition.map((fact, index) => (
-        <li key={fact.id} className="space-y-0.5">
-          <p className="text-xs">
-            {setUp && index === 0 ? (
-              <SetupPrompt
-                state={<NutritionValue fact={fact} />}
-                action="update targets"
-                onClick={setUp}
-              />
-            ) : (
-              <NutritionValue fact={fact} />
-            )}
-          </p>
-          <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-            from {formatBlockDate(fact.startsOn)}
-          </p>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-0.5">
+      <p className="text-xs">
+        {setUp ? (
+          <SetupPrompt state={value} action="update targets" onClick={setUp} />
+        ) : (
+          value
+        )}
+      </p>
+      <p className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
+        from {formatBlockDate(shown.startsOn)}
+      </p>
+    </div>
   );
 }
 

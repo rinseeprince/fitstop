@@ -109,7 +109,7 @@ describe("getBlockFacts", () => {
 
   it("returns [] with no blocks and reads nothing else", async () => {
     vi.mocked(listBlocks).mockResolvedValue([]);
-    expect(await getBlockFacts(CLIENT_ID)).toEqual([]);
+    expect(await getBlockFacts(CLIENT_ID, TODAY)).toEqual([]);
     expect(supabaseAdmin.from).not.toHaveBeenCalled();
     expect(getTrainingPlansOverlapping).not.toHaveBeenCalled();
   });
@@ -126,15 +126,19 @@ describe("getBlockFacts", () => {
       { id: "p2", name: "Peak", effectiveFrom: "2026-07-01", effectiveUntil: "2027-12-31" },
     ]);
 
-    const facts = await getBlockFacts(CLIENT_ID);
+    const facts = await getBlockFacts(CLIENT_ID, TODAY);
     expect(facts.map((f) => f.training.map((t) => t.id))).toEqual([
       ["p1"],
       ["p2"],
     ]);
+    // The plan's OWN window rides the fact, with its state against TODAY —
+    // stamped here, never derived by the card.
     expect(facts[1].training[0]).toEqual({
       id: "p2",
       name: "Peak",
       startsOn: "2026-07-01",
+      endsOn: "2027-12-31",
+      state: "active",
     });
   });
 
@@ -163,7 +167,7 @@ describe("getBlockFacts", () => {
     // Days exist only in the first block.
     trainingDayPages = [{ data: trainingDays("2026-08-01", 28), error: null }];
 
-    const [live, untouched] = await getBlockFacts(CLIENT_ID);
+    const [live, untouched] = await getBlockFacts(CLIENT_ID, TODAY);
 
     expect(live.training.map((t) => t.id)).toEqual(["p31"]);
     expect(live.nutrition.map((n) => n.calories)).toEqual([2150]);
@@ -173,7 +177,7 @@ describe("getBlockFacts", () => {
     // computed from the version covering it — so those days HAVE targets, and
     // the block says so with the version's own start, as a crossing program.
     expect(untouched.nutrition).toEqual([
-      { id: "v52", startsOn: "2026-08-01", calories: 2150, deficitPerDay: 550, note: null },
+      { id: "v52", startsOn: "2026-08-01", endsOn: "2027-12-31", state: "active", calories: 2150, deficitPerDay: 550, note: null },
     ]);
   });
 
@@ -197,7 +201,7 @@ describe("getBlockFacts", () => {
     };
     trainingDayPages = [{ data: trainingDays("2026-08-03", 28), error: null }];
 
-    const [empty, setup] = await getBlockFacts(CLIENT_ID);
+    const [empty, setup] = await getBlockFacts(CLIENT_ID, TODAY);
 
     expect(empty.training).toEqual([]);
     // The version covers the first block's days too, so its targets are set
@@ -217,7 +221,7 @@ describe("getBlockFacts", () => {
     versionsResult = { data: [], error: null };
     trainingDayPages = [{ data: trainingDays("2026-09-07", 28), error: null }];
 
-    const [fact] = await getBlockFacts(CLIENT_ID);
+    const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
 
     expect(fact.training.map((t) => t.id)).toEqual(["p47"]);
     expect(fact.nutrition).toEqual([]);
@@ -235,7 +239,7 @@ describe("getBlockFacts", () => {
       { data: trainingDays(addDaysToDateString(TODAY, 1), 14), error: null },
     ];
 
-    const [fact] = await getBlockFacts(CLIENT_ID);
+    const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
 
     expect(fact.training.map((t) => t.id)).toEqual(["p88"]);
   });
@@ -255,9 +259,9 @@ describe("getBlockFacts", () => {
         error: null,
       };
 
-      const [fact] = await getBlockFacts(CLIENT_ID);
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
       expect(fact.nutrition).toEqual([
-        { id: "vA", startsOn: "2026-05-01", calories: 2400, deficitPerDay: 400, note: null },
+        { id: "vA", startsOn: "2026-05-01", endsOn: "2026-06-10", state: "ended", calories: 2400, deficitPerDay: 400, note: null },
       ]);
     });
 
@@ -275,10 +279,12 @@ describe("getBlockFacts", () => {
         error: null,
       };
 
-      const [fact] = await getBlockFacts(CLIENT_ID);
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
       expect(fact.nutrition).toEqual([
-        { id: "now", startsOn: "2026-07-01", calories: 2100, deficitPerDay: 500, note: null },
-        { id: "queued", startsOn: "2026-08-12", calories: 1700, deficitPerDay: 900, note: null },
+        // The running version ends ON today and is still active — the end day
+        // is its own (`coversDate`); the queued one starts tomorrow: upcoming.
+        { id: "now", startsOn: "2026-07-01", endsOn: "2026-08-11", state: "active", calories: 2100, deficitPerDay: 500, note: null },
+        { id: "queued", startsOn: "2026-08-12", endsOn: "2027-12-31", state: "upcoming", calories: 1700, deficitPerDay: 900, note: null },
       ]);
     });
 
@@ -289,7 +295,7 @@ describe("getBlockFacts", () => {
         error: null,
       };
 
-      const [fact] = await getBlockFacts(CLIENT_ID);
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
       expect(fact.nutrition.map((n) => n.startsOn)).toEqual(["2026-08-12"]);
     });
 
@@ -300,9 +306,9 @@ describe("getBlockFacts", () => {
         error: null,
       };
 
-      const [fact] = await getBlockFacts(CLIENT_ID);
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
       expect(fact.nutrition).toEqual([
-        { id: "v", startsOn: "2026-08-01", calories: 1850, deficitPerDay: 750, note: null },
+        { id: "v", startsOn: "2026-08-01", endsOn: "2027-12-31", state: "active", calories: 1850, deficitPerDay: 750, note: null },
       ]);
     });
 
@@ -310,9 +316,9 @@ describe("getBlockFacts", () => {
       vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-28")]);
       versionsResult = { data: [version("v", "2026-06-01", "2027-12-31", null, 1700)], error: null };
 
-      const [fact] = await getBlockFacts(CLIENT_ID);
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
       expect(fact.nutrition).toEqual([
-        { id: "v", startsOn: "2026-06-01", calories: 1700, deficitPerDay: null, note: null },
+        { id: "v", startsOn: "2026-06-01", endsOn: "2027-12-31", state: "active", calories: 1700, deficitPerDay: null, note: null },
       ]);
     });
 
@@ -326,7 +332,7 @@ describe("getBlockFacts", () => {
         error: null,
       };
 
-      const [fact] = await getBlockFacts(CLIENT_ID);
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
       expect(fact.nutrition.map((n) => [n.id, n.startsOn])).toEqual([
         ["v1", "2026-05-01"],
         ["v2", "2026-07-01"],
@@ -344,7 +350,7 @@ describe("getBlockFacts", () => {
         error: null,
       };
 
-      const [fact] = await getBlockFacts(CLIENT_ID);
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
       expect(fact.nutrition.map((n) => n.id)).toEqual(["during"]);
     });
 
@@ -355,7 +361,7 @@ describe("getBlockFacts", () => {
       ]);
       versionsResult = { data: [version("v", "2026-06-15", "2027-12-31", 2500, 2000)], error: null };
 
-      const facts = await getBlockFacts(CLIENT_ID);
+      const facts = await getBlockFacts(CLIENT_ID, TODAY);
       expect(facts[0].nutrition).toEqual([]);
       expect(facts[1].nutrition.map((n) => n.calories)).toEqual([2000]);
     });
@@ -364,7 +370,7 @@ describe("getBlockFacts", () => {
       vi.mocked(listBlocks).mockResolvedValue([block("a", "2022-01-03", "2026-08-01")]);
       versionsResult = { data: [version("v", "2020-01-01", "2027-12-31", 2400, 1800)], error: null };
 
-      const [fact] = await getBlockFacts(CLIENT_ID);
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
       expect(fact.nutrition).toHaveLength(1);
       const tables = vi.mocked(supabaseAdmin.from).mock.calls.map((call) => String(call[0]));
       expect(tables.filter((table) => table === "nutrition_plans")).toHaveLength(1);
@@ -386,7 +392,7 @@ describe("getBlockFacts", () => {
       { id: "p2", name: "Peak", effectiveFrom: "2026-03-01", effectiveUntil: "2026-12-31" },
     ]);
 
-    const facts = await getBlockFacts(CLIENT_ID);
+    const facts = await getBlockFacts(CLIENT_ID, TODAY);
     expect(facts[0].training.map((t) => t.id)).toEqual(["p1"]);
     expect(facts[1].training.map((t) => t.id)).toEqual(["p2"]);
   });
@@ -399,7 +405,7 @@ describe("getBlockFacts", () => {
       { id: "p1", name: "Base", effectiveFrom: "2026-01-05", effectiveUntil: "2026-03-15" },
     ]);
 
-    const facts = await getBlockFacts(CLIENT_ID);
+    const facts = await getBlockFacts(CLIENT_ID, TODAY);
     expect(facts[0].training.map((t) => t.id)).toEqual(["p1"]);
   });
 
@@ -413,7 +419,7 @@ describe("getBlockFacts", () => {
       { id: "p2", name: "Bridge", effectiveFrom: "2026-02-01", effectiveUntil: "2026-02-28" },
     ]);
 
-    const facts = await getBlockFacts(CLIENT_ID);
+    const facts = await getBlockFacts(CLIENT_ID, TODAY);
     expect(facts[0].training).toEqual([]);
   });
 
@@ -426,7 +432,7 @@ describe("getBlockFacts", () => {
       { id: "p1", name: "Mistake", effectiveFrom: "2026-06-01", effectiveUntil: "2026-06-28" },
     ]);
 
-    const facts = await getBlockFacts(CLIENT_ID);
+    const facts = await getBlockFacts(CLIENT_ID, TODAY);
     expect(facts[0].training.map((t) => t.id)).toEqual(["p2"]);
   });
 
@@ -443,7 +449,7 @@ describe("getBlockFacts", () => {
         error: null,
       };
 
-      const [fact] = await getBlockFacts(CLIENT_ID);
+      const [fact] = await getBlockFacts(CLIENT_ID, TODAY);
 
       expect(fact.nutrition.map((n) => [n.id, n.note])).toEqual([
         ["v1", "Starting your cut."],
@@ -458,7 +464,7 @@ describe("getBlockFacts", () => {
       vi.mocked(listBlocks).mockResolvedValue([block("a", "2026-06-01", "2026-06-28")]);
       versionsResult = { data: [version("v1", "2026-06-01", "2026-06-28", 2600, 2000, {}, "Note.")], error: null };
 
-      await getBlockFacts(CLIENT_ID);
+      await getBlockFacts(CLIENT_ID, TODAY);
 
       const tables = vi.mocked(supabaseAdmin.from).mock.calls.map((call) => String(call[0]));
       expect(tables).not.toContain("nutrition_plan_notes");

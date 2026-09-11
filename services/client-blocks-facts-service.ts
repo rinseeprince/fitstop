@@ -6,6 +6,7 @@ import {
 } from "./training-service";
 import { fetchAllPages } from "@/lib/paged-fetch";
 import { addDaysToDateString } from "@/lib/date-helpers";
+import { derivePlanState } from "@/lib/blocks/block-derivations";
 import type {
   BlockFacts,
   BlockNutritionFact,
@@ -112,12 +113,14 @@ async function fetchVersionTdeeWindows(
 /**
  * The block's nutrition facts — the same shape as its training facts (owner,
  * 2026-09-10): every active version whose window overlaps the block, in start
- * order, each carrying its OWN row's numbers, its own start and its save note. A queued
- * version inside a current block is listed exactly as a queued program is; a
- * version that began before the block keeps its real start, as a crossing
- * program's `startsOn` does; a re-save with the same numbers is its own entry,
- * as a program placed twice is. There is no reference date and no headline —
- * the list is the answer, and an empty list is "Not set".
+ * order, each carrying its OWN row's numbers, its own window, its state against
+ * the client's today and its save note. A queued version inside a current
+ * block is listed exactly as a queued program is; a version that began before
+ * the block keeps its real start, as a crossing program's `startsOn` does; a
+ * re-save with the same numbers is its own entry, as a program placed twice
+ * is. The wire is the WHOLE list — the timeline reads it entire, and the card
+ * headlines one entry by precedence over the states (`selectHeadlineFact`);
+ * an empty list is "Not set".
  *
  * Version windows never overlap (the gist exclusion) and may leave gaps, so
  * this is a plain intersection with the block window — no resolution rule,
@@ -128,16 +131,19 @@ async function fetchVersionTdeeWindows(
  */
 function deriveNutritionFacts(
   versions: VersionTdeeWindow[],
-  block: ClientBlock
+  block: ClientBlock,
+  clientToday: string
 ): BlockNutritionFact[] {
   const facts: BlockNutritionFact[] = [];
   for (const version of versions) {
     if (version.effectiveFrom > block.endsOn) continue;
     if (version.effectiveUntil < block.startsOn) continue;
     const calories = versionCalories(version);
+    const window = { startsOn: version.effectiveFrom, endsOn: version.effectiveUntil };
     facts.push({
       id: version.id,
-      startsOn: version.effectiveFrom,
+      ...window,
+      state: derivePlanState(window, clientToday),
       calories,
       deficitPerDay: version.tdee != null ? version.tdee - calories : null,
       note: version.coachNote,
@@ -222,8 +228,15 @@ export function reduceToGoverningSegments(
   return segments;
 }
 
-/** Per-block server facts for the whole chain, in chain order. */
-export async function getBlockFacts(clientId: string): Promise<BlockFacts[]> {
+/**
+ * Per-block server facts for the whole chain, in chain order. `clientToday` is
+ * the CLIENT's calendar day (the route resolves it as the chain route does),
+ * the day every entry's state is stamped against — never the coach's.
+ */
+export async function getBlockFacts(
+  clientId: string,
+  clientToday: string
+): Promise<BlockFacts[]> {
   const blocks = await listBlocks(clientId);
   if (blocks.length === 0) return [];
 
@@ -257,16 +270,23 @@ export async function getBlockFacts(clientId: string): Promise<BlockFacts[]> {
     for (const segment of hasTrainingDays ? segments : []) {
       if (segment.from > block.endsOn || segment.to < block.startsOn) continue;
       if (training.some((fact) => fact.id === segment.plan.id)) continue;
+      // The plan's OWN window, not the segment it governed — the segment is
+      // the gate's business; the card and timeline describe the plan.
+      const window = {
+        startsOn: segment.plan.effectiveFrom,
+        endsOn: segment.plan.effectiveUntil,
+      };
       training.push({
         id: segment.plan.id,
         name: segment.plan.name,
-        startsOn: segment.plan.effectiveFrom,
+        ...window,
+        state: derivePlanState(window, clientToday),
       });
     }
     return {
       blockId: block.id,
       training,
-      nutrition: deriveNutritionFacts(versions, block),
+      nutrition: deriveNutritionFacts(versions, block, clientToday),
     };
   });
 }
