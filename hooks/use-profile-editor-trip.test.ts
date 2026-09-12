@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
-const { replace, mockParams, mockPathname } = vi.hoisted(() => ({
+const { replace, push, mockParams, mockPathname } = vi.hoisted(() => ({
   replace: vi.fn(),
+  push: vi.fn(),
   mockParams: { current: new URLSearchParams() },
   mockPathname: { current: "/clients/c1" },
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace }),
+  useRouter: () => ({ replace, push }),
   usePathname: () => mockPathname.current,
   useSearchParams: () => mockParams.current,
 }));
@@ -42,6 +43,8 @@ describe("useProfileEditorTrip", () => {
     expect(replace).toHaveBeenCalledWith("/clients/c1?tab=overview&journey=blocks", {
       scroll: false,
     });
+    // A replace, never a push: history never holds an address that re-opens the sheet.
+    expect(push).not.toHaveBeenCalled();
   });
 
   it("does nothing when the param is absent", () => {

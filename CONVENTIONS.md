@@ -365,11 +365,17 @@
   - **Navigation is atomic.** Every param a click affects — the tab AND the record it opens — goes
     into ONE router update, so they land on the same render frame. A component reading a param on
     arrival then always sees the value intended for it.
+  - **A place pushes, a refinement replaces.** A tab, a pane, an opened record and a roster view push
+    a history entry, so browser Back returns one step; the metric, a filter, a sort and a one-shot
+    strip replace. Every back arrow is the browser's Back when a coach page precedes the entry, else
+    its parent (`lib/coach-history.ts`). The classification of every writer is in
+    `docs/ARCHITECTURE.md` → "Client page tab structure".
 
   ```tsx
-  // The whole pattern.
+  // The whole pattern: a pane is a place, so its setter pushes; the metric
+  // inside it is a refinement, so its setter replaces.
   const pane = isValidPane(searchParams.get("journey")) ? searchParams.get("journey") : "body"
-  const setPane = (next: Pane) => router.replace(buildUrl(next), { scroll: false })
+  const setPane = (next: Pane) => router.push(buildUrl(next), { scroll: false })
   ```
 
   Reference implementations: `app/(coach)/clients/[id]/page.tsx` (`?tab=`) and

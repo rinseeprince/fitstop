@@ -32,12 +32,13 @@ function Divider() {
  * plan; it now lives on the Overview status card, where the goal is displayed
  * (Task 0b.4). One writer, per invariant 16.
  *
- * **No link, deliberately.** The client page seeds its active tab from `?tab=`
- * as React state at mount, so an in-app `<Link>` would change the URL without
- * switching tabs, and a plain `<a>` would full-reload — discarding whatever
- * unsaved plan the coach has open in this very drawer. Threading a tab callback
- * down four components to avoid that is the prop-drilling §4 warns about. A
- * sentence naming the destination costs the coach one click and risks nothing.
+ * **No link, deliberately.** A tab URL is assembled by the client page's
+ * handler alone (the carried single-owner params, the stripped `?subtab=`), so
+ * a bare `<Link>` would land on the tab with the pane params dropped, and a
+ * plain `<a>` would full-reload — discarding whatever unsaved plan the coach
+ * has open in this very drawer. Threading a tab callback down four components
+ * to avoid that is the prop-drilling §4 warns about. A sentence naming the
+ * destination costs the coach one click and risks nothing.
  */
 function GoalSummary({ goal }: { goal: ClientGoal | null }) {
   const { preference } = useUnits();

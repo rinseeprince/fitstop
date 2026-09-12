@@ -18,10 +18,11 @@ import type { Client } from "@/types/check-in";
 
 type TrainingPlanBuilderProps = {
   client: Client;
-  // Cross-tab navigation must run through the client page's handler: activeTab
-  // is state seeded from ?tab= at mount only, so a bare router.replace changes
-  // the URL without switching the tab. The history table's exercise drill-down
-  // needs it now that Exercise Data lives on the Journey tab (Session 7.1).
+  // Cross-tab navigation runs through the client page's handler: it is the one
+  // builder of a tab URL (the carried single-owner params, the stripped
+  // ?subtab=) and it pushes a history entry for the tab change. The history
+  // table's exercise drill-down needs it now that Exercise Data lives on the
+  // Journey tab (Session 7.1).
   onTabChange?: (
     tab: ClientTab,
     extraParams?: Record<string, string | null>
@@ -52,8 +53,9 @@ export function TrainingPlanBuilder({
   // resolvePaneParam owns both halves; see its doc for why they differ.
   const rawSubtab = resolvePaneParam(searchParams, "training");
   const subtab: "data" | "plans" = rawSubtab === "plans" ? "plans" : "data";
+  // A pane is a PLACE: it pushes, so Back returns to the pane the coach left.
   const setSubtab = (tab: "data" | "plans") => {
-    router.replace(
+    router.push(
       `?${paneParamSearch(searchParams.toString(), "training", tab)}`,
       { scroll: false }
     );

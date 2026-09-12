@@ -25,7 +25,7 @@ function formatSubmittedDate(dateStr: string): string {
 }
 
 type CheckInReviewHeaderProps = {
-  /** Clears `?checkIn=` through the tab handler. */
+  /** Back the way the coach came, or the list when nothing precedes (the tab decides). */
   onBack: () => void;
   /**
    * The week this check-in reports on. `null` while the detail loads, on a
@@ -59,18 +59,18 @@ type CheckInReviewHeaderProps = {
 export const CheckInReviewHeader = ({ onBack, meta }: CheckInReviewHeaderProps) => (
   <div className="min-w-0">
     {/* The sidebar back-row grammar: the arrow is the affordance, the label
-        names the destination. */}
+        names the act — the destination is wherever the coach came from. */}
     <button
       type="button"
       onClick={onBack}
-      aria-label="Back to check-ins"
+      aria-label="Back"
       className="group flex items-center gap-2.5"
     >
       <ArrowLeft
         className="h-4 w-4 text-[#93b0b4] transition-colors group-hover:text-[#5a7d82]"
         strokeWidth={1.5}
       />
-      <span className="text-[13.5px] font-semibold text-[#0c1a1e]">Check-ins</span>
+      <span className="text-[13.5px] font-semibold text-[#0c1a1e]">Back</span>
     </button>
     {meta && (
       <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-[#93b0b4]">

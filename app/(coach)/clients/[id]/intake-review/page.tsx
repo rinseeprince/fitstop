@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/page-header"
 import { IntakeReviewPage } from "@/components/coach/intake-review-page"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
-import Link from "next/link"
+import { BackLink } from "@/components/coach/back-link"
 import type { ClientIntake } from "@/types/client-intake"
 import { useClient } from "@/hooks/use-check-in-data"
 
@@ -39,12 +39,12 @@ export default function IntakeReviewRoute({
     <AppLayout
       pageHeader={pageHeader}
       headerActions={
-        <Link href={`/clients/${clientId}`}>
+        <BackLink href={`/clients/${clientId}`}>
           <Button variant="outline" size="sm">
             <ArrowLeft className="w-4 h-4" />
-            Back to Client
+            Back
           </Button>
-        </Link>
+        </BackLink>
       }
     >
       <div className="max-w-7xl mx-auto">

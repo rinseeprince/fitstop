@@ -8,6 +8,7 @@ import { IntakeContentSections } from "./intake-content-sections"
 import { Button } from "@/components/ui/button"
 import { X, Minimize2, Maximize2, ClipboardList, ExternalLink, Check, CheckCircle2, RefreshCw, XCircle } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { LABEL_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
 import { toast } from "sonner"
@@ -29,6 +30,7 @@ export function FloatingIntakePanel() {
   const [marking, setMarking] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const { mutate } = useSWRConfig()
+  const router = useRouter()
 
   // Always fetch activation readiness when panel is open
   const { data: readinessData, mutate: refetchReadiness } = useSWR<{ success: boolean; data: Readiness }>(
@@ -88,8 +90,9 @@ export function FloatingIntakePanel() {
       void mutate(`/api/clients/${panel.clientId}`)
       void mutate("/api/coach/pending-intakes")
       minimizePanel()
-      // Full navigation ensures the client page reads the fresh tab param and refetches data
-      window.location.href = `/clients/${panel.clientId}?tab=overview`
+      // A place: the client page derives its tab from the address and its
+      // reads were invalidated above, so the router takes the coach there.
+      router.push(`/clients/${panel.clientId}?tab=overview`)
     } catch (err) {
       console.error("Failed to mark intake as reviewed:", err)
       toast.error("Failed", { description: "Could not mark intake as reviewed." })

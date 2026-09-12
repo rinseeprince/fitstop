@@ -2,7 +2,7 @@
 
 import { useCallback } from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
-import Link from "next/link"
+import { BackLink } from "@/components/coach/back-link"
 import { ClientDetailLayout } from "@/components/clients/client-detail-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -48,13 +48,14 @@ export default function ClientProfilePage() {
     // other tab's pane guard and opens the wrong pane. See buildClientTabUrl.
     // extraParams ADDRESS a pane on arrival (the Overview's block-ending row
     // sends { journey: "blocks" }).
-    // scroll: a genuine TAB change scrolls to top — landing on Training at
-    // the Overview's old scroll offset reads as a broken page. Same-tab calls
-    // (a pane param changing in place) keep the position, which is what
-    // scroll: false was for.
-    router.replace(buildClientTabUrl(clientId, tab, searchParams.toString(), extraParams), {
-      scroll: tab !== activeTab,
-    })
+    // A tab change is a PLACE: it pushes a history entry, so Back returns to
+    // the tab the coach left, and it scrolls to top — landing on Training at
+    // the Overview's old scroll offset reads as a broken page. A same-tab call
+    // addresses the tab the coach is already on (the review's return to its
+    // list) and replaces in place, keeping the position.
+    const url = buildClientTabUrl(clientId, tab, searchParams.toString(), extraParams)
+    if (tab !== activeTab) router.push(url)
+    else router.replace(url, { scroll: false })
   }, [clientId, router, searchParams, activeTab])
 
 
@@ -79,7 +80,7 @@ export default function ClientProfilePage() {
                 </p>
               </div>
               <Button asChild>
-                <Link href="/clients">Back to Clients</Link>
+                <BackLink href="/clients">Back</BackLink>
               </Button>
             </div>
           </CardContent>

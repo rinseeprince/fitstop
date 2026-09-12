@@ -20,6 +20,10 @@ vi.mock("@/components/navbar/notifications-dropdown", () => ({
 vi.mock("@/components/collapsed-icon-strip", () => ({
   CollapsedIconStrip: () => <aside data-testid="rail" />,
 }));
+// The sidebar's arrow reads the router at click time; the frame is the question here.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ back: vi.fn() }),
+}));
 
 const CLIENT = { id: "c-1", name: "Sam Doe", email: "sam@example.com" };
 /** What the page passes before the record lands (`client ?? {…name: ""}`). */
@@ -63,7 +67,7 @@ describe("ClientDetailLayout", () => {
     for (const tab of CLIENT_TABS) {
       expect(screen.getByRole("button", { name: tab.label })).toBeInTheDocument();
     }
-    expect(screen.getByLabelText("Back to clients")).toBeInTheDocument();
+    expect(screen.getByLabelText("Back")).toBeInTheDocument();
   });
 
   it("names what it is waiting for instead of showing an empty column", () => {

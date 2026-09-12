@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProgramDraft } from "@/components/clients/training/program-builder/program-draft-provider";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { isPlainLeftClick } from "@/lib/pointer-navigation";
 
 // Soft-navigation guard for the client editor (Phase 5 follow-up).
 //
@@ -36,9 +37,7 @@ export function ClientDraftLeaveGuard({
     const onClickCapture = (e: MouseEvent) => {
       // Let modified clicks (new tab / window / download) through — they don't
       // unmount the SPA, so the draft survives.
-      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
-        return;
-      }
+      if (!isPlainLeftClick(e)) return;
       const el = e.target instanceof Element ? e.target : null;
       const anchor = el?.closest<HTMLAnchorElement>("a[href]");
       if (!anchor) return;

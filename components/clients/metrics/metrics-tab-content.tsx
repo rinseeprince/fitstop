@@ -60,7 +60,9 @@ export const MetricsTabContent = ({
     // The metric is the pane's subject: a pane switch drops it in the same
     // navigation, so the URL never asserts a metric the new pane cannot show.
     params.delete("metric");
-    router.replace(`?${params.toString()}`, { scroll: false });
+    // A pane is a PLACE: it pushes, so Back returns to the pane the coach
+    // left. The position is kept — a pane switch is not a page change.
+    router.push(`?${params.toString()}`, { scroll: false });
   };
   // The metric-keyed derivations below want a MetricTab; the panes that key
   // nothing (Training, Blocks) idle on "body". The mapping is a whitelist in
@@ -77,6 +79,8 @@ export const MetricsTabContent = ({
   const setMetric = (id: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("metric", id);
+    // A refinement of the pane, not a place: it replaces, so Back leaves the
+    // pane in one step however many metrics were viewed.
     router.replace(`?${params.toString()}`, { scroll: false });
   };
 

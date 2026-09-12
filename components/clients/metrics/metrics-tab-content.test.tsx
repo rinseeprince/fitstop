@@ -12,11 +12,14 @@ import type { Client } from "@/types/check-in";
 // and the real pane bar and reads the page the way a coach would. A rerender
 // after a write is the router's own re-render.
 let search = new URLSearchParams("journey=body");
-const replace = vi.fn((url: string) => {
+const navigate = (url: string) => {
   search = new URLSearchParams(url.replace(/^\?/, ""));
-});
+};
+// A pane switch pushes (a place); the metric switch replaces (a refinement).
+const replace = vi.fn(navigate);
+const push = vi.fn(navigate);
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace, push: vi.fn() }),
+  useRouter: () => ({ replace, push }),
   useSearchParams: () => search,
 }));
 
@@ -131,6 +134,7 @@ const switcher = (name: string) => screen.getByRole("button", { name: `Metric ${
 beforeEach(() => {
   cleanup();
   replace.mockClear();
+  push.mockClear();
   search = new URLSearchParams("journey=body");
 });
 
@@ -169,20 +173,23 @@ describe("MetricsTabContent — the selected metric lives in the URL", () => {
 
     expect(replace).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith("?journey=body&metric=waist", { scroll: false });
+    // A refinement never pushes: Back leaves the pane in one step.
+    expect(push).not.toHaveBeenCalled();
     rerender(<MetricsTabContent client={client} />);
     expect(switcher("Waist")).toBeInTheDocument();
     expect(screen.getByText("Showing 3 of 3 waist entries")).toBeInTheDocument();
   });
 
-  it("a pane switch drops the metric in the same navigation", async () => {
+  it("a pane switch pushes — a place — and drops the metric in the same navigation", async () => {
     const user = userEvent.setup();
     search = new URLSearchParams("journey=body&metric=waist");
     const { rerender } = render(<MetricsTabContent client={client} />);
 
     await user.click(screen.getByRole("button", { name: "Wellness" }));
 
-    expect(replace).toHaveBeenCalledTimes(1);
-    expect(replace).toHaveBeenCalledWith("?journey=wellness", { scroll: false });
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith("?journey=wellness", { scroll: false });
+    expect(replace).not.toHaveBeenCalled();
     rerender(<MetricsTabContent client={client} />);
     expect(switcher("Sleep")).toBeInTheDocument();
   });

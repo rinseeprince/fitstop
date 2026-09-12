@@ -4,16 +4,22 @@ import userEvent from "@testing-library/user-event";
 import { CheckInsTabContent } from "./check-ins-tab-content";
 import type { Client, CheckIn } from "@/types/check-in";
 
-const { mockHook, mockInvalidateQueue, mockInvalidateClientCheckIns, search } = vi.hoisted(
-  () => ({
+const { mockHook, mockInvalidateQueue, mockInvalidateClientCheckIns, search, back, coachHistory } =
+  vi.hoisted(() => ({
     mockHook: vi.fn(),
     mockInvalidateQueue: vi.fn(),
     mockInvalidateClientCheckIns: vi.fn(),
     search: { current: new URLSearchParams("tab=check-ins") },
-  })
-);
+    back: vi.fn(),
+    // Whether a coach page precedes the review's entry — what its way back reads.
+    coachHistory: { current: false },
+  }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => search.current,
+  useRouter: () => ({ back }),
+}));
+vi.mock("@/lib/coach-history", () => ({
+  hasCoachHistory: () => coachHistory.current,
 }));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -90,6 +96,7 @@ describe("CheckInsTabContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     search.current = new URLSearchParams("tab=check-ins");
+    coachHistory.current = false;
   });
 
   it("holds the list's shape with skeletons while loading", () => {
@@ -176,7 +183,20 @@ describe("CheckInsTabContent", () => {
     expect(container.querySelector(".animate-spin")).toBeNull();
   });
 
-  it("the back row clears the param through the tab handler", async () => {
+  it("the back row goes back when a coach page precedes the review", async () => {
+    const user = userEvent.setup();
+    search.current = new URLSearchParams("tab=check-ins&checkIn=ci-9");
+    coachHistory.current = true;
+    setHook();
+    const onTabChange = renderTab();
+
+    await user.click(screen.getByRole("button", { name: "back" }));
+
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(onTabChange).not.toHaveBeenCalled();
+  });
+
+  it("the back row clears the param through the tab handler when nothing precedes it — a pasted address", async () => {
     const user = userEvent.setup();
     search.current = new URLSearchParams("tab=check-ins&checkIn=ci-9");
     setHook();
@@ -185,11 +205,13 @@ describe("CheckInsTabContent", () => {
     await user.click(screen.getByRole("button", { name: "back" }));
 
     expect(onTabChange).toHaveBeenCalledWith("check-ins", { checkIn: null });
+    expect(back).not.toHaveBeenCalled();
   });
 
-  it("a sent reply refreshes this list, the client's pages and the bell, then returns to the list", async () => {
+  it("a sent reply refreshes this list, the client's pages and the bell, then goes back the way the coach came", async () => {
     const user = userEvent.setup();
     search.current = new URLSearchParams("tab=check-ins&checkIn=ci-9");
+    coachHistory.current = true;
     const { mutate } = setHook();
     const onTabChange = renderTab();
 
@@ -198,7 +220,21 @@ describe("CheckInsTabContent", () => {
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(mockInvalidateClientCheckIns).toHaveBeenCalledWith("client-1");
     expect(mockInvalidateQueue).toHaveBeenCalledTimes(1);
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(onTabChange).not.toHaveBeenCalled();
+  });
+
+  it("a sent reply on a pasted address returns to the list through the handler", async () => {
+    const user = userEvent.setup();
+    search.current = new URLSearchParams("tab=check-ins&checkIn=ci-9");
+    const { mutate } = setHook();
+    const onTabChange = renderTab();
+
+    await user.click(screen.getByRole("button", { name: "done" }));
+
+    expect(mutate).toHaveBeenCalledTimes(1);
     expect(onTabChange).toHaveBeenCalledWith("check-ins", { checkIn: null });
+    expect(back).not.toHaveBeenCalled();
   });
 
   it("pages when Load older is clicked", async () => {

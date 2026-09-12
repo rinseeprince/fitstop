@@ -58,8 +58,9 @@ export function NutritionPlanBuilder({
   // resolvePaneParam owns both halves; see its doc for why they differ.
   const subtab =
     resolvePaneParam(searchParams, "nutrition") === "plans" ? "plans" : "data";
+  // A pane is a PLACE: it pushes, so Back returns to the pane the coach left.
   const setSubtab = (tab: "data" | "plans") => {
-    router.replace(
+    router.push(
       `?${paneParamSearch(searchParams.toString(), "nutrition", tab)}`,
       { scroll: false }
     );

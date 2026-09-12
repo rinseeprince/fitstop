@@ -9,15 +9,17 @@ import { useJourneyRoundTrip } from "./use-journey-round-trip";
 // hand-return to the tab, because Radix remounts TabsContent on each visit.
 
 const mockReplace = vi.fn();
+const mockPush = vi.fn();
 let search = new URLSearchParams();
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush }),
   useSearchParams: () => search,
 }));
 
 beforeEach(() => {
   mockReplace.mockClear();
+  mockPush.mockClear();
   search = new URLSearchParams();
 });
 
@@ -45,6 +47,10 @@ describe("useJourneyRoundTrip", () => {
     expect(url).not.toContain("returnBlock=");
     // The pane it was sent to survives — only the one-shot params go.
     expect(url).toContain("training=plans");
+    // The strip REPLACES the entry: history never holds an address that
+    // re-opens the tray, so Back and Forward cannot re-fire the trip.
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("consumes ONCE, so a re-render before the stripped URL commits cannot re-fire", () => {

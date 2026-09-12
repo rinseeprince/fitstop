@@ -12,6 +12,9 @@ vi.mock("@/contexts/auth-context", () => ({
 vi.mock("@/components/check-in-notification-listener", () => ({
   CheckInNotificationListener: () => <div data-testid="check-in-listener" />,
 }))
+vi.mock("@/components/coach/coach-history-tracker", () => ({
+  CoachHistoryTracker: () => <div data-testid="history-tracker" />,
+}))
 
 import CoachLayout from "./layout"
 
@@ -43,5 +46,16 @@ describe("CoachLayout", () => {
       </CoachLayout>
     )
     expect(timezoneSync).toHaveBeenCalledWith("coach", "Europe/London")
+  })
+
+  it("mounts the history tracker on every coach page", () => {
+    // The count every back arrow reads runs at the boundary, not in a shell:
+    // an arrow on a page whose shell forgot it would always go Up.
+    render(
+      <CoachLayout>
+        <p>page</p>
+      </CoachLayout>
+    )
+    expect(screen.getByTestId("history-tracker")).toBeInTheDocument()
   })
 })

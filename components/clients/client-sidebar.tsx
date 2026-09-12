@@ -7,6 +7,7 @@ import {
   SectionSidebarNav,
   SectionSidebarTab,
 } from "@/components/section-sidebar"
+import { BackLink } from "@/components/coach/back-link"
 import { CLIENT_TABS, type ClientTab } from "@/lib/client-tabs"
 import type { OnboardingStatus } from "@/types/client-intake"
 
@@ -34,13 +35,13 @@ export function ClientSidebar({ client, activeTab, onTabChange }: ClientSidebarP
     <SectionSidebar
       header={
         <>
-          <Link
+          <BackLink
             href="/clients"
-            aria-label="Back to clients"
+            aria-label="Back"
             className="text-[#93b0b4] transition-colors hover:text-[#5a7d82]"
           >
             <ArrowLeft className="h-4 w-4" />
-          </Link>
+          </BackLink>
           {client.name ? (
             <>
               <div

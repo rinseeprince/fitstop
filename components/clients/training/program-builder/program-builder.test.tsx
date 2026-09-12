@@ -9,8 +9,14 @@ import type { SetSpec } from "@/utils/exercise-set-specs";
 // -- mocks --------------------------------------------------------------------
 
 const pushMock = vi.fn();
+const backMock = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, back: backMock }),
+}));
+// Whether a coach page precedes the builder's entry — what its exit reads.
+const { coachHistory } = vi.hoisted(() => ({ coachHistory: { current: false } }));
+vi.mock("@/lib/coach-history", () => ({
+  hasCoachHistory: () => coachHistory.current,
 }));
 
 // Toast spy so the save-as-workout flow can assert the deduped-name copy.
@@ -218,6 +224,8 @@ describe("ProgramBuilder save flow", () => {
     planFixture = makeDraftPlan();
     mutateMock.mockClear();
     pushMock.mockClear();
+    backMock.mockClear();
+    coachHistory.current = false;
     toastSpy.success.mockClear();
     toastSpy.error.mockClear();
   });
@@ -270,6 +278,8 @@ describe("ProgramBuilder save flow", () => {
     unmount();
 
     pushMock.mockClear();
+    backMock.mockClear();
+    coachHistory.current = false;
     render(
       <ProgramDraftProvider savedPlanId="plan-1" target="library">
         <ProgramBuilder />
@@ -282,6 +292,29 @@ describe("ProgramBuilder save flow", () => {
     fireEvent.click(screen.getByRole("link", { name: /All programs/ }));
     // Previously the panel link navigated away from a dirty draft silently.
     expect(screen.getByText("Discard unsaved changes?")).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("goes BACK from the panel arrow, and after a clean save, when a coach page precedes the builder", async () => {
+    coachHistory.current = true;
+    const { unmount } = render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    fireEvent.click(screen.getByRole("link", { name: /All programs/ }));
+    expect(backMock).toHaveBeenCalledTimes(1);
+    expect(pushMock).not.toHaveBeenCalled();
+    unmount();
+
+    backMock.mockClear();
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+    fireEvent.click(screen.getByLabelText("Save program"));
+    await waitFor(() => expect(backMock).toHaveBeenCalledTimes(1));
     expect(pushMock).not.toHaveBeenCalled();
   });
 
@@ -540,6 +573,8 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
     planFixture = { ...makeDraftPlan(), status: "saved" };
     mutateMock.mockClear();
     pushMock.mockClear();
+    backMock.mockClear();
+    coachHistory.current = false;
     applyDialogSpy.mockClear();
   });
 

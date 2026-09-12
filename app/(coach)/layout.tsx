@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { CheckInNotificationListener } from "@/components/check-in-notification-listener"
 import { CoachTimezoneSync } from "@/components/coach/coach-timezone-sync"
+import { CoachHistoryTracker } from "@/components/coach/coach-history-tracker"
 
 /**
  * The coach application boundary. Everything under app/(coach)/ is trainer
@@ -20,6 +21,7 @@ export default function CoachLayout({ children }: { children: ReactNode }) {
       {children}
       <CheckInNotificationListener />
       <CoachTimezoneSync />
+      <CoachHistoryTracker />
     </>
   )
 }

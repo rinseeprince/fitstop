@@ -4,6 +4,7 @@ import { useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isPlainLeftClick } from "@/lib/pointer-navigation";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
 import { LibrarySessionList } from "./library-session-list";
 import { LibraryExerciseList } from "./library-exercise-list";
@@ -59,7 +60,7 @@ export function BuilderLibraryPanel({
   // so leave those to the browser and keep the href meaningful. A plain click
   // routes through the builder's guarded exit instead of navigating.
   const handleBackLinkClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+    if (!isPlainLeftClick(event)) return;
     event.preventDefault();
     onBack();
   };
