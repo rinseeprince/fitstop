@@ -44,6 +44,17 @@ describe("buildClientTabUrl", () => {
     expect(url).toContain("journey=wellness");
   });
 
+  it("drops the Training tab's two editors on a tab change — places, not panes", () => {
+    const url = buildClientTabUrl(
+      "c1",
+      "metrics",
+      "tab=training&training=plans&editor=sp-1&amend=p-1"
+    );
+    expect(url).not.toContain("editor");
+    expect(url).not.toContain("amend");
+    expect(url).toContain("training=plans");
+  });
+
   it("extraParams address a pane on arrival, overriding a carried value", () => {
     const url = buildClientTabUrl("c1", "metrics", "tab=overview&journey=wellness", {
       journey: "blocks",

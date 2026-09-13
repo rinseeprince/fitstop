@@ -52,6 +52,11 @@ export function buildClientTabUrl(
 ): string {
   const params = new URLSearchParams(currentSearch)
   params.delete("subtab")
+  // The Training tab's two editors (`?editor=`, `?amend=`) are places of their
+  // own, not panes: carried across a tab change they would re-open an editor
+  // on every return to the tab, so they go the way the one-shot params do.
+  params.delete("editor")
+  params.delete("amend")
   params.set("tab", tab)
   for (const [key, value] of Object.entries(extraParams ?? {})) {
     if (value === null) params.delete(key)

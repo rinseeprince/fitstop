@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, cleanup } from "@testing-library/react"
 
-// The page's header action is the client page's arrow: Back when a coach
-// page precedes this entry, the client page when none does.
-const { back, coachHistory } = vi.hoisted(() => ({
-  back: vi.fn(),
+// The page's header action is a page arrow: it leaves the page when a coach
+// page precedes it, and links to the client page when the page began the count.
+const { leave, coachHistory } = vi.hoisted(() => ({
+  leave: vi.fn(),
   coachHistory: { current: false },
 }))
-vi.mock("next/navigation", () => ({ useRouter: () => ({ back }) }))
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...rest}>
@@ -16,7 +15,8 @@ vi.mock("next/link", () => ({
   ),
 }))
 vi.mock("@/lib/coach-history", () => ({
-  hasCoachHistory: () => coachHistory.current,
+  hasEntryBeforePage: () => coachHistory.current,
+  leaveCoachPage: leave,
 }))
 // The shell reaches auth and the rail; the intake body reaches SWR. Markers —
 // the header action is what this file is about.
@@ -66,26 +66,26 @@ function clickAndRecord(element: HTMLElement): boolean | null {
 
 beforeEach(() => {
   cleanup()
-  back.mockClear()
+  leave.mockClear()
   coachHistory.current = false
 })
 
 describe("IntakeReviewRoute", () => {
-  it("links its Back action to the client page, and goes back when a coach page precedes it", () => {
+  it("links its Back action to the client page, and leaves the page when a coach page precedes it", () => {
     coachHistory.current = true
     render(<IntakeReviewRoute params={params} />)
 
     const link = screen.getByRole("link", { name: "Back" })
     expect(link).toHaveAttribute("href", "/clients/c-1")
     expect(clickAndRecord(link)).toBe(true)
-    expect(back).toHaveBeenCalledTimes(1)
+    expect(leave).toHaveBeenCalledTimes(1)
   })
 
-  it("lets the link open the client page when nothing in-app precedes it", () => {
+  it("lets the link open the client page when the page began the count", () => {
     render(<IntakeReviewRoute params={params} />)
 
     const link = screen.getByRole("link", { name: "Back" })
     expect(clickAndRecord(link)).toBe(false)
-    expect(back).not.toHaveBeenCalled()
+    expect(leave).not.toHaveBeenCalled()
   })
 })

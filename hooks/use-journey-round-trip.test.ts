@@ -77,6 +77,28 @@ describe("useJourneyRoundTrip", () => {
     expect(result.current.returnBlockId).toBe(null);
   });
 
+  it("a hand open starts a fresh flow: nothing rides on from a trip left by browser Back", () => {
+    search = new URLSearchParams("apply=1&returnTo=journey&returnBlock=blk-7");
+    const { result } = renderHook(() => useJourneyRoundTrip("apply"));
+    // The tray hands the trip to the editor, which the coach then leaves with Back.
+    act(() => result.current.hide());
+    expect(result.current.open).toBe(false);
+    expect(result.current.returnBlockId).toBe("blk-7");
+
+    act(() => result.current.setOpen(true));
+    expect(result.current.open).toBe(true);
+    expect(result.current.returnBlockId).toBe(null);
+  });
+
+  it("the editor's arrow shows the list with the trip alive", () => {
+    search = new URLSearchParams("apply=1&returnTo=journey&returnBlock=blk-7");
+    const { result } = renderHook(() => useJourneyRoundTrip("apply"));
+    act(() => result.current.hide());
+    act(() => result.current.show());
+    expect(result.current.open).toBe(true);
+    expect(result.current.returnBlockId).toBe("blk-7");
+  });
+
   it("opens WITHOUT a return target when returnTo names something else", () => {
     search = new URLSearchParams("apply=1&returnTo=elsewhere&returnBlock=blk-7");
     const { result } = renderHook(() => useJourneyRoundTrip("apply"));

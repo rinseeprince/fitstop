@@ -183,22 +183,10 @@ describe("CheckInsTabContent", () => {
     expect(container.querySelector(".animate-spin")).toBeNull();
   });
 
-  it("the back row goes back when a coach page precedes the review", async () => {
+  it("the back row closes the review to this list through the handler, whatever precedes it", async () => {
     const user = userEvent.setup();
     search.current = new URLSearchParams("tab=check-ins&checkIn=ci-9");
     coachHistory.current = true;
-    setHook();
-    const onTabChange = renderTab();
-
-    await user.click(screen.getByRole("button", { name: "back" }));
-
-    expect(back).toHaveBeenCalledTimes(1);
-    expect(onTabChange).not.toHaveBeenCalled();
-  });
-
-  it("the back row clears the param through the tab handler when nothing precedes it — a pasted address", async () => {
-    const user = userEvent.setup();
-    search.current = new URLSearchParams("tab=check-ins&checkIn=ci-9");
     setHook();
     const onTabChange = renderTab();
 

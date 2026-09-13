@@ -9,14 +9,20 @@ import type { SetSpec } from "@/utils/exercise-set-specs";
 // -- mocks --------------------------------------------------------------------
 
 const pushMock = vi.fn();
-const backMock = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: pushMock, back: backMock }),
+  useRouter: () => ({ push: pushMock }),
 }));
-// Whether a coach page precedes the builder's entry — what its exit reads.
-const { coachHistory } = vi.hoisted(() => ({ coachHistory: { current: false } }));
+// Whether a coach page precedes the builder's page — what its exit reads. The
+// exit LEAVES the page when one does and takes its fallback when none does.
+const { coachHistory, leaveMock } = vi.hoisted(() => ({
+  coachHistory: { current: false },
+  leaveMock: vi.fn(),
+}));
 vi.mock("@/lib/coach-history", () => ({
-  hasCoachHistory: () => coachHistory.current,
+  leaveCoachPage: (fallback?: () => void) => {
+    if (coachHistory.current) leaveMock();
+    else fallback?.();
+  },
 }));
 
 // Toast spy so the save-as-workout flow can assert the deduped-name copy.
@@ -224,7 +230,7 @@ describe("ProgramBuilder save flow", () => {
     planFixture = makeDraftPlan();
     mutateMock.mockClear();
     pushMock.mockClear();
-    backMock.mockClear();
+    leaveMock.mockClear();
     coachHistory.current = false;
     toastSpy.success.mockClear();
     toastSpy.error.mockClear();
@@ -278,7 +284,7 @@ describe("ProgramBuilder save flow", () => {
     unmount();
 
     pushMock.mockClear();
-    backMock.mockClear();
+    leaveMock.mockClear();
     coachHistory.current = false;
     render(
       <ProgramDraftProvider savedPlanId="plan-1" target="library">
@@ -295,7 +301,7 @@ describe("ProgramBuilder save flow", () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("goes BACK from the panel arrow, and after a clean save, when a coach page precedes the builder", async () => {
+  it("LEAVES the page from the panel arrow, and after a clean save, when a coach page precedes the builder", async () => {
     coachHistory.current = true;
     const { unmount } = render(
       <ProgramDraftProvider savedPlanId="plan-1" target="library">
@@ -303,18 +309,18 @@ describe("ProgramBuilder save flow", () => {
       </ProgramDraftProvider>,
     );
     fireEvent.click(screen.getByRole("link", { name: /All programs/ }));
-    expect(backMock).toHaveBeenCalledTimes(1);
+    expect(leaveMock).toHaveBeenCalledTimes(1);
     expect(pushMock).not.toHaveBeenCalled();
     unmount();
 
-    backMock.mockClear();
+    leaveMock.mockClear();
     render(
       <ProgramDraftProvider savedPlanId="plan-1" target="library">
         <ProgramBuilder />
       </ProgramDraftProvider>,
     );
     fireEvent.click(screen.getByLabelText("Save program"));
-    await waitFor(() => expect(backMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(leaveMock).toHaveBeenCalledTimes(1));
     expect(pushMock).not.toHaveBeenCalled();
   });
 
@@ -573,7 +579,7 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
     planFixture = { ...makeDraftPlan(), status: "saved" };
     mutateMock.mockClear();
     pushMock.mockClear();
-    backMock.mockClear();
+    leaveMock.mockClear();
     coachHistory.current = false;
     applyDialogSpy.mockClear();
   });

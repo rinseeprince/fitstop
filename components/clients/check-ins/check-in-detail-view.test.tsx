@@ -187,11 +187,11 @@ describe("CheckInDetailView", () => {
     });
   });
 
-  it("the back row asks the tab for the way back", async () => {
+  it("the back row closes the review to the list", async () => {
     const user = userEvent.setup();
     mockDetailData.mockReturnValue(loaded);
     const { onBack } = renderView();
-    await user.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(screen.getByRole("button", { name: /back to check-ins/i }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 

@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   hasCoachHistory,
+  hasEntryBeforePage,
+  leaveCoachPage,
   resetCoachHistoryForTests,
   trackCoachHistory,
 } from "./coach-history";
@@ -15,9 +17,13 @@ const settle = async () => {
   await tick();
   await tick();
 };
+const here = () => window.location.pathname + window.location.search;
 
 beforeEach(() => {
   resetCoachHistoryForTests();
+  // Every case starts from the root: a pathname left by the previous case
+  // would make its first push a same-page push.
+  window.history.replaceState({}, "", "/");
 });
 
 describe("the coach history count", () => {
@@ -59,24 +65,29 @@ describe("the coach history count", () => {
     // Back/Forward through Next: it spreads the restored entry's state, stamp
     // included, into its own replace.
     trackCoachHistory();
-    window.history.replaceState({ __NA: true, coachDepth: 3 }, "", "/clients");
+    window.history.pushState({}, "", "/clients");
+    // Landed here by a traverse: the replace carries the entry's own address.
+    window.history.replaceState({ __NA: true, coachDepth: 3, coachPage: 2 }, "", "/clients");
     expect(hasCoachHistory()).toBe(true);
-    expect(window.history.state.coachDepth).toBe(3);
+    expect(window.history.state).toMatchObject({ coachDepth: 3, coachPage: 2 });
   });
 
   it("keeps every key a navigation carried in its state", () => {
     trackCoachHistory();
     window.history.pushState({ __NA: true, tree: [1] }, "", "/clients");
-    expect(window.history.state).toEqual({ __NA: true, tree: [1], coachDepth: 1 });
+    expect(window.history.state).toEqual({ __NA: true, tree: [1], coachDepth: 1, coachPage: 1 });
   });
 
   it("starts again from the entry's own stamp — a reload keeps its place", () => {
     const stop = trackCoachHistory();
     window.history.pushState({}, "", "/clients");
+    window.history.pushState({}, "", "/clients/c-1?tab=overview");
+    window.history.pushState({}, "", "/clients/c-1?tab=metrics");
     stop();
 
     trackCoachHistory();
     expect(hasCoachHistory()).toBe(true);
+    expect(window.history.state).toMatchObject({ coachDepth: 3, coachPage: 2 });
   });
 
   it("a push while no coach page is mounted starts a fresh count", () => {
@@ -89,6 +100,75 @@ describe("the coach history count", () => {
     window.history.pushState({}, "", "/dashboard");
     trackCoachHistory();
     expect(hasCoachHistory()).toBe(false);
-    expect(window.history.state.coachDepth).toBe(0);
+    expect(window.history.state).toMatchObject({ coachDepth: 0, coachPage: 0 });
+  });
+});
+
+describe("the page a run of entries belongs to", () => {
+  it("a push to another pathname begins a page; one on the same pathname belongs to it", () => {
+    trackCoachHistory();
+    window.history.pushState({}, "", "/clients");
+    expect(window.history.state).toMatchObject({ coachDepth: 1, coachPage: 1 });
+    window.history.pushState({}, "", "/clients?view=overdue");
+    expect(window.history.state).toMatchObject({ coachDepth: 2, coachPage: 1 });
+    window.history.pushState({}, "", "/clients/c-1?tab=overview");
+    expect(window.history.state).toMatchObject({ coachDepth: 3, coachPage: 3 });
+    window.history.pushState({}, "", "/clients/c-1?tab=metrics&journey=blocks");
+    expect(window.history.state).toMatchObject({ coachDepth: 4, coachPage: 3 });
+  });
+
+  it("leaving the page goes back over every entry of it to the one before it began", async () => {
+    trackCoachHistory();
+    window.history.pushState({}, "", "/clients?view=overdue");
+    window.history.pushState({}, "", "/clients/c-1?tab=overview");
+    window.history.pushState({}, "", "/clients/c-1?tab=metrics");
+    window.history.pushState({}, "", "/clients/c-1?tab=metrics&journey=blocks");
+    expect(hasEntryBeforePage()).toBe(true);
+
+    const fallback = vi.fn();
+    leaveCoachPage(fallback);
+    await settle();
+
+    expect(fallback).not.toHaveBeenCalled();
+    expect(here()).toBe("/clients?view=overdue");
+    expect(window.history.state).toMatchObject({ coachDepth: 1, coachPage: 1 });
+    expect(hasEntryBeforePage()).toBe(true);
+  });
+
+  it("falls back to the parent when the page began the count — a pasted address", () => {
+    trackCoachHistory();
+    // Tabs and panes inside the page do not change that.
+    window.history.pushState({}, "", `${window.location.pathname}?tab=metrics`);
+    window.history.pushState({}, "", `${window.location.pathname}?tab=metrics&journey=blocks`);
+    expect(hasCoachHistory()).toBe(true);
+    expect(hasEntryBeforePage()).toBe(false);
+
+    const fallback = vi.fn();
+    leaveCoachPage(fallback);
+    expect(fallback).toHaveBeenCalledTimes(1);
+  });
+
+  it("a replace that changes the pathname begins a page", async () => {
+    trackCoachHistory();
+    window.history.pushState({}, "", "/clients");
+    window.history.pushState({}, "", "/clients?view=overdue");
+    window.history.replaceState({ __NA: true }, "", "/dashboard");
+    expect(window.history.state).toMatchObject({ coachDepth: 2, coachPage: 2 });
+
+    leaveCoachPage();
+    await settle();
+    expect(here()).toBe("/clients");
+  });
+
+  it("a reload keeps the page start with the count", () => {
+    const stop = trackCoachHistory();
+    window.history.pushState({}, "", "/clients");
+    window.history.pushState({}, "", "/clients/c-1?tab=overview");
+    window.history.pushState({}, "", "/clients/c-1?tab=metrics");
+    stop();
+
+    trackCoachHistory();
+    expect(hasEntryBeforePage()).toBe(true);
+    expect(window.history.state).toMatchObject({ coachDepth: 3, coachPage: 2 });
   });
 });

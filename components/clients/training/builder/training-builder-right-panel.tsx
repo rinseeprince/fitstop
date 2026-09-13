@@ -1,7 +1,9 @@
 "use client";
 
 import { memo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
+import { useCoachBack } from "@/hooks/use-coach-back";
 import { Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 import { PageLoading } from "@/components/page-loading";
 import {
@@ -55,7 +57,6 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   const clearAttentionFeed = useClearAttentionFeed();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
-  const [amendOpen, setAmendOpen] = useState(false);
 
   // The amendment GET (shared SWR key with the overlay, so opening the editor
   // never double-fetches) — here only for the fully-past gate on the entry
@@ -64,7 +65,26 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
   const planId = builder.plan?.id ?? null;
   const { placedPlan } = usePlacedPlan(clientId, planId);
   const isFullyPast = placedPlan?.isFullyPast ?? false;
-  const openAmend = planId ? () => setAmendOpen(true) : undefined;
+
+  // The amendment editor is a PLACE: `?amend=<planId>`, read unconditionally,
+  // pushed by "Edit plan" so browser Back closes it onto the calendar; its own
+  // arrow and a save pop the entry the same way, and a pasted address falls
+  // back to a replace.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const amendOpen = planId != null && searchParams.get("amend") === planId;
+  const openAmend = planId
+    ? () => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("amend", planId);
+        router.push(`?${params.toString()}`, { scroll: false });
+      }
+    : undefined;
+  const closeAmend = useCoachBack(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("amend");
+    router.replace(`?${params.toString()}`, { scroll: false });
+  });
 
   const handleClearPlan = async () => {
     if (!builder.plan) return;
@@ -156,7 +176,9 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
 
       <PlanAmendmentOverlay
         open={amendOpen}
-        onOpenChange={setAmendOpen}
+        onOpenChange={(next) => {
+          if (!next) closeAmend();
+        }}
         clientId={clientId}
         planId={planId}
         clientName={clientName}

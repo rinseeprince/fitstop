@@ -24,7 +24,6 @@ export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
   const [clientTimezone, setClientTimezone] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [savedPlanId, setSavedPlanId] = useState<string | null>(null);
 
   const fetchPlan = useCallback(async () => {
     setIsLoading(true);
@@ -68,8 +67,6 @@ export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
     clientTimezone,
     isLoading,
     loadError,
-    savedPlanId,
-    setSavedPlanId,
     fetchPlan,
   };
 }

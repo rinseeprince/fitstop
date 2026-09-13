@@ -2,13 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react"
 
 // The URL contract at the host, with the router mocked and the real sidebar
-// driven: a tab change pushes, a same-tab address replaces, and the arrow is
-// Back when a coach page precedes this entry and the clients list when none
-// does (ARCHITECTURE → "Client page tab structure").
-const { push, replace, back, search, coachHistory, clientState } = vi.hoisted(() => ({
+// driven: a tab change pushes, a same-tab address replaces, a tab change that
+// completes a flow replaces, and the arrow LEAVES the page — to the entry
+// before it began when a coach page precedes it, to the clients list when
+// the page began the count (ARCHITECTURE → "Client page tab structure").
+const { push, replace, leave, search, coachHistory, clientState } = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
-  back: vi.fn(),
+  leave: vi.fn(),
   search: { current: new URLSearchParams("tab=overview") },
   coachHistory: { current: false },
   clientState: {
@@ -24,7 +25,7 @@ const { push, replace, back, search, coachHistory, clientState } = vi.hoisted(()
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "c-1" }),
   useSearchParams: () => search.current,
-  useRouter: () => ({ push, replace, back }),
+  useRouter: () => ({ push, replace }),
 }))
 // jsdom cannot navigate; a plain anchor keeps the href observable.
 vi.mock("next/link", () => ({
@@ -35,7 +36,8 @@ vi.mock("next/link", () => ({
   ),
 }))
 vi.mock("@/lib/coach-history", () => ({
-  hasCoachHistory: () => coachHistory.current,
+  hasEntryBeforePage: () => coachHistory.current,
+  leaveCoachPage: leave,
 }))
 vi.mock("@/hooks/use-check-in-data", () => ({
   useClient: () => clientState.current,
@@ -43,7 +45,8 @@ vi.mock("@/hooks/use-check-in-data", () => ({
 
 // The tabs are the siblings under their own tests; this file is about the
 // page's navigation, so each is a marker. The Check-ins marker exposes the
-// same-tab return the real tab makes after a reply is sent.
+// same-tab return the real tab makes after a reply is sent, and the
+// flow-completing tab change the Training tab makes after an apply.
 vi.mock("@/components/clients/client-overview-tab", () => ({
   ClientOverviewTab: () => <div data-testid="tab-overview" />,
 }))
@@ -66,11 +69,23 @@ vi.mock("@/components/clients/check-ins/check-ins-tab-content", () => ({
   CheckInsTabContent: ({
     onTabChange,
   }: {
-    onTabChange: (tab: string, extra?: Record<string, string | null>) => void
+    onTabChange: (
+      tab: string,
+      extra?: Record<string, string | null>,
+      options?: { replace?: boolean }
+    ) => void
   }) => (
-    <button type="button" onClick={() => onTabChange("check-ins", { checkIn: null })}>
-      return to list
-    </button>
+    <>
+      <button type="button" onClick={() => onTabChange("check-ins", { checkIn: null })}>
+        return to list
+      </button>
+      <button
+        type="button"
+        onClick={() => onTabChange("metrics", { journey: "blocks" }, { replace: true })}
+      >
+        complete a flow
+      </button>
+    </>
   ),
 }))
 vi.mock("@/components/clients/notes/notes-tab-content", () => ({
@@ -106,7 +121,7 @@ beforeEach(() => {
   cleanup()
   push.mockClear()
   replace.mockClear()
-  back.mockClear()
+  leave.mockClear()
   search.current = new URLSearchParams("tab=overview")
   coachHistory.current = false
   clientState.current = {
@@ -140,21 +155,32 @@ describe("ClientProfilePage navigation", () => {
     expect(push).not.toHaveBeenCalled()
   })
 
-  it("the sidebar arrow goes back when a coach page precedes this entry", () => {
+  it("a tab change that completes a flow replaces, scrolled to top like any tab change", () => {
+    search.current = new URLSearchParams("tab=check-ins&training=plans")
+    render(<ClientProfilePage />)
+
+    fireEvent.click(screen.getByRole("button", { name: "complete a flow" }))
+
+    expect(replace).toHaveBeenCalledTimes(1)
+    expect(replace).toHaveBeenCalledWith("/clients/c-1?tab=metrics&training=plans&journey=blocks")
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it("the sidebar arrow leaves the page when a coach page precedes it", () => {
     coachHistory.current = true
     render(<ClientProfilePage />)
 
     expect(clickAndRecord(screen.getByLabelText("Back"))).toBe(true)
-    expect(back).toHaveBeenCalledTimes(1)
+    expect(leave).toHaveBeenCalledTimes(1)
   })
 
-  it("the sidebar arrow is a link to the clients list when nothing in-app precedes it", () => {
+  it("the sidebar arrow is a link to the clients list when the page began the count", () => {
     render(<ClientProfilePage />)
     const arrow = screen.getByLabelText("Back")
 
     expect(arrow).toHaveAttribute("href", "/clients")
     expect(clickAndRecord(arrow)).toBe(false)
-    expect(back).not.toHaveBeenCalled()
+    expect(leave).not.toHaveBeenCalled()
   })
 
   it("the failed-to-load card's way out is the same arrow", () => {
@@ -166,6 +192,6 @@ describe("ClientProfilePage navigation", () => {
     const link = within(card).getByRole("link", { name: "Back" })
     expect(link).toHaveAttribute("href", "/clients")
     expect(clickAndRecord(link)).toBe(true)
-    expect(back).toHaveBeenCalledTimes(1)
+    expect(leave).toHaveBeenCalledTimes(1)
   })
 })

@@ -45,6 +45,19 @@ const WRITERS: Writer[] = [
     to: "return (",
     method: "push",
   },
+  // The Training tab's two editors, full-screen places of their own
+  {
+    file: "components/clients/training/builder/training-plan-builder.tsx",
+    from: "const openEditor =",
+    to: "const closeEditor",
+    method: "push",
+  },
+  {
+    file: "components/clients/training/builder/training-builder-right-panel.tsx",
+    from: "const openAmend =",
+    to: "const closeAmend",
+    method: "push",
+  },
   // Refinements
   {
     file: "components/clients/metrics/metrics-tab-content.tsx",
@@ -56,6 +69,19 @@ const WRITERS: Writer[] = [
     file: "components/clients/training/exercise-data/exercise-data-view.tsx",
     from: "const handleExerciseSelect =",
     to: "const hasExercise",
+    method: "replace",
+  },
+  // An editor's exit on a pasted address: the entry is replaced away
+  {
+    file: "components/clients/training/builder/training-plan-builder.tsx",
+    from: "const closeEditor =",
+    to: "const exitEditorToList",
+    method: "replace",
+  },
+  {
+    file: "components/clients/training/builder/training-builder-right-panel.tsx",
+    from: "const closeAmend =",
+    to: "const handleClearPlan",
     method: "replace",
   },
   // One-shot strips
@@ -92,13 +118,14 @@ describe("every URL writer has the class its param needs", () => {
     });
   }
 
-  it("the client page's handler pushes a tab change and replaces a same-tab address", () => {
+  it("the client page's handler pushes a tab change, replaces a same-tab address and a flow's completion", () => {
     const body = segment(
       "app/(coach)/clients/[id]/page.tsx",
       "const handleTabChange",
       "const displayClient"
     );
-    expect(body).toContain("if (tab !== activeTab) router.push(url)");
-    expect(body).toContain("else router.replace(url, { scroll: false })");
+    expect(body).toContain("if (tab === activeTab) router.replace(url, { scroll: false })");
+    expect(body).toContain("else if (options?.replace) router.replace(url)");
+    expect(body).toContain("else router.push(url)");
   });
 });

@@ -14,6 +14,7 @@ import {
   type ClientTab,
 } from "@/lib/client-tabs";
 import { useJourneyRoundTrip } from "@/hooks/use-journey-round-trip";
+import { useCoachBack } from "@/hooks/use-coach-back";
 import type { Client } from "@/types/check-in";
 
 type TrainingPlanBuilderProps = {
@@ -25,7 +26,8 @@ type TrainingPlanBuilderProps = {
   // Journey tab (Session 7.1).
   onTabChange?: (
     tab: ClientTab,
-    extraParams?: Record<string, string | null>
+    extraParams?: Record<string, string | null>,
+    options?: { replace?: boolean }
   ) => void;
 };
 
@@ -42,10 +44,34 @@ export function TrainingPlanBuilder({
   const {
     open: drawerOpen,
     setOpen: setDrawerOpen,
+    hide: hideDrawer,
+    show: showDrawer,
     returnBlockId,
   } = useJourneyRoundTrip("apply");
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  // The client editor is a PLACE: `?editor=<savedPlanId>` is this tab's second
+  // single-owner param, read unconditionally. Picking a template in the tray
+  // hides the tray and pushes it, so browser Back closes the editor onto the
+  // calendar; the editor's own arrow shows the tray again and pops the entry,
+  // so it lands on the list; a pasted address falls back to a replace.
+  const editorPlanId = searchParams.get("editor");
+  const openEditor = (savedPlanId: string) => {
+    hideDrawer();
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("editor", savedPlanId);
+    router.push(`?${params.toString()}`, { scroll: false });
+  };
+  const closeEditor = useCoachBack(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("editor");
+    router.replace(`?${params.toString()}`, { scroll: false });
+  });
+  const exitEditorToList = () => {
+    showDrawer();
+    closeEditor();
+  };
 
   // ?training= is OURS alone (Session 7.2) — read unconditionally, so a deep
   // link into a pane resolves on the first render. The legacy shared ?subtab=
@@ -88,13 +114,23 @@ export function TrainingPlanBuilder({
         <TrainingPlanBuilderOverlay
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
+          editorPlanId={editorPlanId}
+          onPick={openEditor}
+          onExitEditor={exitEditorToList}
           clientName={client.name}
           preselectedBlockId={returnBlockId}
           onApplied={() => {
-            // returnBlockId is read from THIS render's closure, so the
-            // overlay's own close (which clears it) cannot race the trip.
+            // returnBlockId is read from THIS render's closure, so the tray's
+            // close (which clears it) cannot race the trip. The editor's entry
+            // is completed, never left behind Back: with a trip it BECOMES the
+            // Journey entry, without one it is popped onto the calendar.
+            setDrawerOpen(false);
             if (returnBlockId) {
-              onTabChange?.("metrics", journeyReturnParams(returnBlockId));
+              onTabChange?.("metrics", journeyReturnParams(returnBlockId), {
+                replace: true,
+              });
+            } else {
+              closeEditor();
             }
           }}
         />

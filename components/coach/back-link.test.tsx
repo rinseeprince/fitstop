@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
-const { back, coachHistory } = vi.hoisted(() => ({
-  back: vi.fn(),
+const { leave, coachHistory } = vi.hoisted(() => ({
+  leave: vi.fn(),
   coachHistory: { current: false },
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ back }) }));
 vi.mock("@/lib/coach-history", () => ({
-  hasCoachHistory: () => coachHistory.current,
+  hasEntryBeforePage: () => coachHistory.current,
+  leaveCoachPage: leave,
 }));
 // jsdom cannot navigate; a plain anchor keeps the href observable.
 vi.mock("next/link", () => ({
@@ -39,12 +39,12 @@ function clickAndRecord(element: HTMLElement, init?: MouseEventInit): boolean | 
 
 beforeEach(() => {
   cleanup();
-  back.mockClear();
+  leave.mockClear();
   coachHistory.current = false;
 });
 
 describe("BackLink", () => {
-  it("goes back on a plain click when a coach page precedes the entry", () => {
+  it("leaves the page on a plain click when a coach page precedes it", () => {
     coachHistory.current = true;
     render(
       <BackLink href="/clients" aria-label="Back">
@@ -52,10 +52,10 @@ describe("BackLink", () => {
       </BackLink>
     );
     expect(clickAndRecord(screen.getByLabelText("Back"))).toBe(true);
-    expect(back).toHaveBeenCalledTimes(1);
+    expect(leave).toHaveBeenCalledTimes(1);
   });
 
-  it("lets the link navigate to its parent when nothing in-app precedes it", () => {
+  it("lets the link navigate to its parent when the page began the count", () => {
     render(
       <BackLink href="/clients" aria-label="Back">
         arrow
@@ -64,7 +64,7 @@ describe("BackLink", () => {
     const link = screen.getByLabelText("Back");
     expect(link).toHaveAttribute("href", "/clients");
     expect(clickAndRecord(link)).toBe(false);
-    expect(back).not.toHaveBeenCalled();
+    expect(leave).not.toHaveBeenCalled();
   });
 
   it("leaves a modified click to the browser — a new tab opens the parent", () => {
@@ -75,6 +75,6 @@ describe("BackLink", () => {
       </BackLink>
     );
     expect(clickAndRecord(screen.getByLabelText("Back"), { metaKey: true })).toBe(false);
-    expect(back).not.toHaveBeenCalled();
+    expect(leave).not.toHaveBeenCalled();
   });
 });

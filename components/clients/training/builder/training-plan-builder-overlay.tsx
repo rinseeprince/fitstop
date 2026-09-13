@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { ProgramDraftProvider } from "@/components/clients/training/program-builder/program-draft-provider";
@@ -25,8 +25,15 @@ import type { SavedPlan } from "@/types/training";
 // Apply materializes the edited copy onto the client's calendar; the library
 // template is never mutated (see ProgramBuilder's client-draft branch).
 type TrainingPlanBuilderOverlayProps = {
+  /** The tray (the library list) — the parent's local flag. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The editor — the address's `?editor=<savedPlanId>`, a place of its own. */
+  editorPlanId: string | null;
+  /** A template picked in the tray: the parent hides the tray and pushes the editor. */
+  onPick: (savedPlanId: string) => void;
+  /** The editor's arrow: the parent shows the tray and pops the editor's entry. */
+  onExitEditor: () => void;
   // Titles the client editor's library panel ("Editing for {name}") so it reads
   // as the client editor, not the generic /dashboard/programs builder.
   clientName?: string;
@@ -43,43 +50,47 @@ type TrainingPlanBuilderOverlayProps = {
 export function TrainingPlanBuilderOverlay({
   open,
   onOpenChange,
+  editorPlanId,
+  onPick,
+  onExitEditor,
   clientName,
   onApplied,
   preselectedBlockId,
 }: TrainingPlanBuilderOverlayProps) {
   const builder = useTrainingBuilderContext();
-  const hasDraft = !!builder.savedPlanId;
-  const { setSavedPlanId } = builder;
-
-  // Each fresh open starts at the library list. After an apply-and-close (or any
-  // editor close) savedPlanId is deliberately LEFT set so the full-screen editor
-  // fades out cleanly instead of morphing into the 920px drawer mid-exit; reset
-  // it here on the next open so a stale editor never re-shows.
-  useEffect(() => {
-    if (open) setSavedPlanId(null);
-  }, [open, setSavedPlanId]);
+  // The editor is the address's; the tray is the parent's flag. The surface is
+  // open while either is: the tray shows under no editor, the editor over a
+  // hidden tray — so browser Back out of the editor (the tray hidden at the
+  // pick) lands on the calendar, and the editor's arrow (the tray shown again)
+  // lands on the list. The library browser is a 920px right drawer; the editor
+  // is full-screen (the 3-column builder needs the width).
+  const hasDraft = editorPlanId != null;
+  const isOpen = open || hasDraft;
+  // The look the exit animation keeps: Radix keeps the content mounted while
+  // it closes, and the editor is already gone from the address by then, so the
+  // last editor keeps rendering until the fade-out ends instead of morphing
+  // into the 920px drawer mid-exit.
+  const lastEditorRef = useRef<string | null>(null);
+  if (editorPlanId != null) lastEditorRef.current = editorPlanId;
+  const shownEditorId = editorPlanId ?? (isOpen ? null : lastEditorRef.current);
+  const fullScreen = shownEditorId != null;
 
   const title = hasDraft ? "Edit training program for client" : "Apply a program";
-
-  // The library browser is a 920px right drawer; opening a template for editing
-  // expands to a full-screen surface (the 3-column builder needs the width).
-  const backToLibrary = () => builder.setSavedPlanId(null);
 
   const handleClose = () => {
     // Closing the whole overlay from the library list. (While the editor is
     // open, the outer dialog's close is neutralized — see the Content guards —
     // so this only fires from the library browse state.)
-    if (hasDraft) builder.setSavedPlanId(null);
     onOpenChange(false);
   };
 
   return (
     <DialogPrimitive.Root
-      open={open}
+      open={isOpen}
       // Editor mode is non-modal so the app's 52px nav rail stays clickable
       // (the ClientDraftLeaveGuard below confirms before dropping a dirty
       // draft). The library drawer stays modal (dim + trap + click-out close).
-      modal={!hasDraft}
+      modal={!fullScreen}
       onOpenChange={(next) => (next ? onOpenChange(true) : handleClose())}
     >
       <DialogPrimitive.Portal>
@@ -90,14 +101,14 @@ export function TrainingPlanBuilderOverlay({
             // /dashboard/programs builder) — no dim/blur, and pointer-events-none
             // so the transparent overlay doesn't swallow clicks to the rail. The
             // library drawer keeps the normal modal backdrop.
-            hasDraft ? "pointer-events-none" : "bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]",
+            fullScreen ? "pointer-events-none" : "bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]",
           )}
         />
         <DialogPrimitive.Content
           className={cn(
             "fixed z-50 flex flex-col bg-[#f4f7f6] outline-none",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:duration-250 data-[state=closed]:duration-200",
-            hasDraft
+            fullScreen
               // Full-screen minus the fixed 52px app icon strip (lg+ only; the
               // strip is hidden below lg) so the editor sits beside the nav rail
               // exactly like the /dashboard/programs builder.
@@ -111,22 +122,22 @@ export function TrainingPlanBuilderOverlay({
           // in-memory client draft — the coach leaves via the builder's back
           // arrow, which confirms when there are unsaved edits. (Nested dialogs
           // — the session editor, confirm, apply — still handle Escape first.)
-          onEscapeKeyDown={hasDraft ? (e) => e.preventDefault() : undefined}
-          onPointerDownOutside={hasDraft ? (e) => e.preventDefault() : undefined}
-          onInteractOutside={hasDraft ? (e) => e.preventDefault() : undefined}
+          onEscapeKeyDown={fullScreen ? (e) => e.preventDefault() : undefined}
+          onPointerDownOutside={fullScreen ? (e) => e.preventDefault() : undefined}
+          onInteractOutside={fullScreen ? (e) => e.preventDefault() : undefined}
         >
           <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
             Browse your program library and apply a program to this client.
           </DialogPrimitive.Description>
 
-          {hasDraft ? (
+          {shownEditorId != null ? (
             <ProgramDraftProvider
               // Keyed so switching templates fully resets the working tree (the
               // /dashboard/programs [savedPlanId] layout remount does this there;
               // the drawer has no such layout, so the key is load-bearing).
-              key={builder.savedPlanId}
-              savedPlanId={builder.savedPlanId!}
+              key={shownEditorId}
+              savedPlanId={shownEditorId}
               target="client-draft"
               clientId={builder.clientId}
               clientName={clientName}
@@ -134,24 +145,21 @@ export function TrainingPlanBuilderOverlay({
               preselectedBlockId={preselectedBlockId ?? undefined}
               onApplied={() => {
                 // The plan landed on the client's calendar — refresh the
-                // client's plan view and return to it by CLOSING the drawer
+                // client's plan view; the parent completes the editor's entry
                 // (not the back arrow, so the confirm-leave guard never fires;
-                // there is nothing to discard once applied). savedPlanId stays
-                // set for a clean editor fade-out — the open-effect above resets
-                // it on the next open.
+                // there is nothing to discard once applied).
                 void builder.fetchPlan();
-                onOpenChange(false);
                 onApplied?.();
               }}
             >
               <ClientDraftLeaveGuard />
-              <ProgramBuilder onExit={backToLibrary} />
+              <ProgramBuilder onExit={onExitEditor} />
             </ProgramDraftProvider>
           ) : (
             <>
               <LibraryHeader onClose={handleClose} />
               <div className="flex-1 min-h-0 overflow-y-auto px-7 py-6">
-                <SavedPlansList />
+                <SavedPlansList onPick={onPick} />
               </div>
             </>
           )}
@@ -196,8 +204,7 @@ function LibraryHeader({ onClose }: { onClose: () => void }) {
 // Saved plans list (the library browse — click a plan to open the editor)
 // ═══════════════════════════════════════════════════════════════════════════
 
-function SavedPlansList() {
-  const builder = useTrainingBuilderContext();
+function SavedPlansList({ onPick }: { onPick: (savedPlanId: string) => void }) {
   const { plans, isLoading, mutate } = useSavedPlans();
   const [planToDelete, setPlanToDelete] = useState<SavedPlan | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -259,7 +266,7 @@ function SavedPlansList() {
           className="group relative bg-white border border-[rgba(13,148,136,0.08)] rounded-[6px] hover:border-[rgba(13,148,136,0.25)] hover:shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition-all"
         >
           <button
-            onClick={() => builder.setSavedPlanId(plan.id)}
+            onClick={() => onPick(plan.id)}
             className="w-full text-left px-4 py-3 pr-12"
           >
             <p className="text-[13.5px] font-semibold text-[#0c1a1e] truncate">

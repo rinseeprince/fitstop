@@ -5,7 +5,7 @@ import { addDaysToDateString, formatDateOnlyShort } from "@/lib/date-helpers";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { useCoachBack } from "@/hooks/use-coach-back";
+import { leaveCoachPage } from "@/lib/coach-history";
 import { Ban, Loader2, Pencil, Save, Trash2 } from "lucide-react";
 import { PageLoading } from "@/components/page-loading";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
@@ -179,10 +179,11 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   });
   const { isSavingWorkout, saveDayAsWorkout } = useSaveDayAsWorkout(draft);
 
-  // The library's exit: the browser's Back when a coach page precedes this
-  // one (the library, most often), else the library itself — a pasted address.
-  const backToPrograms = useCoachBack(() => router.push("/dashboard/programs"));
-  const exit = () => (onExit ? onExit() : backToPrograms());
+  // The library's exit LEAVES the page: back over every entry of the builder
+  // to the one before it (the library, most often), else the library itself
+  // — a pasted address.
+  const exit = () =>
+    onExit ? onExit() : leaveCoachPage(() => router.push("/dashboard/programs"));
 
   // The library panel's back arrow is the builder's ONLY exit on every target
   // (the hero no longer carries one), so the leave-confirm lives here. In

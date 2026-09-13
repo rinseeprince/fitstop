@@ -33,6 +33,10 @@ import {
 export function useJourneyRoundTrip(surface: JourneyTripSurface): {
   open: boolean;
   setOpen: (open: boolean) => void;
+  /** Hides the surface without abandoning the trip — the tray handing over to the editor. */
+  hide: () => void;
+  /** Shows it again with the trip alive — the editor's arrow back to the list. */
+  show: () => void;
   returnBlockId: string | null;
 } {
   const searchParams = useSearchParams();
@@ -58,10 +62,16 @@ export function useJourneyRoundTrip(surface: JourneyTripSurface): {
 
   const setOpen = useCallback((next: boolean) => {
     setOpenState(next);
-    // Closing without a save ABANDONS the trip. Nothing may ride on to the
-    // next one.
-    if (!next) setReturnBlockId(null);
+    // Closing without a save ABANDONS the trip, and a hand open starts a fresh
+    // one: either way nothing may ride on to the next save. A trip handed to
+    // the editor and then left with browser Back is therefore dead the moment
+    // the coach opens the tray again.
+    setReturnBlockId(null);
   }, []);
+  // The trip continues into the editor and back out to the list: the tray's
+  // visibility changes, the block it names does not.
+  const hide = useCallback(() => setOpenState(false), []);
+  const show = useCallback(() => setOpenState(true), []);
 
-  return { open, setOpen, returnBlockId };
+  return { open, setOpen, hide, show, returnBlockId };
 }

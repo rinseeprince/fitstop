@@ -41,7 +41,11 @@ export default function ClientProfilePage() {
 
   const { client, isLoading: clientLoading, isError: clientError, mutate: mutateClient } = useClient(clientId)
 
-  const handleTabChange = useCallback((tab: ClientTab, extraParams?: Record<string, string | null>) => {
+  const handleTabChange = useCallback((
+    tab: ClientTab,
+    extraParams?: Record<string, string | null>,
+    options?: { replace?: boolean }
+  ) => {
     // Single-owner params (Journey's ?journey=) survive the switch so that
     // pane restores on the return trip; the SHARED ?subtab= (written by both
     // Training and Nutrition) is dropped — carried across, it satisfies the
@@ -52,10 +56,14 @@ export default function ClientProfilePage() {
     // the tab the coach left, and it scrolls to top — landing on Training at
     // the Overview's old scroll offset reads as a broken page. A same-tab call
     // addresses the tab the coach is already on (the review's return to its
-    // list) and replaces in place, keeping the position.
+    // list) and replaces in place, keeping the position. A tab change that
+    // COMPLETES a flow — the Journey return after an apply from the client
+    // editor — replaces instead (`options.replace`), so the editor's entry
+    // never waits behind Back.
     const url = buildClientTabUrl(clientId, tab, searchParams.toString(), extraParams)
-    if (tab !== activeTab) router.push(url)
-    else router.replace(url, { scroll: false })
+    if (tab === activeTab) router.replace(url, { scroll: false })
+    else if (options?.replace) router.replace(url)
+    else router.push(url)
   }, [clientId, router, searchParams, activeTab])
 
 

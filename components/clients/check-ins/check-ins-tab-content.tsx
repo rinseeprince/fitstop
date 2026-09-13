@@ -28,8 +28,9 @@ type CheckInsTabContentProps = {
   client: Client;
   /**
    * The client page's tab handler (ARCHITECTURE → "Client page tab structure").
-   * The detail's back row and its post-Send return clear this tab's own
-   * `?checkIn=` through it when nothing in-app precedes the review.
+   * The detail's back row clears this tab's own `?checkIn=` through it — the
+   * review closes to this list; the post-Send return does so only when nothing
+   * in-app precedes the review.
    */
   onTabChange: (tab: ClientTab, extraParams?: Record<string, string | null>) => void;
 };
@@ -54,12 +55,12 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
   } = useClientCheckInsInfinite(client.id);
   const invalidateQueue = useInvalidateCheckInsQueue();
   const invalidateClientCheckIns = useInvalidateClientCheckIns();
-  // The review's way back: the browser's Back when a coach page precedes it —
-  // this list, the Overview's row, the dashboard — else, on a pasted address,
-  // the list, by clearing this tab's own param through the handler.
-  const returnFromReview = useCoachBack(() =>
-    onTabChange("check-ins", { checkIn: null })
-  );
+  // The review's row closes it to THIS list, whatever preceded it, by clearing
+  // this tab's own param through the handler; a sent reply goes back one step
+  // instead — the list when the coach came from it, else the dashboard or the
+  // Overview row that opened the review.
+  const closeReview = () => onTabChange("check-ins", { checkIn: null });
+  const returnAfterSend = useCoachBack(closeReview);
 
   if (checkInId) {
     return (
@@ -67,7 +68,7 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
         checkInId={checkInId}
         client={client}
         onTabChange={onTabChange}
-        onBack={returnFromReview}
+        onBack={closeReview}
         onDone={() => {
           // The review is done (status → reviewed). This list refreshes through
           // its own bound mutate — a filter mutate cannot reach an infinite
@@ -76,7 +77,7 @@ export const CheckInsTabContent = ({ client, onTabChange }: CheckInsTabContentPr
           void mutate();
           void invalidateClientCheckIns(client.id);
           void invalidateQueue();
-          returnFromReview();
+          returnAfterSend();
         }}
       />
     );

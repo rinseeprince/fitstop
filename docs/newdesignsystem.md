@@ -665,7 +665,7 @@ The client-detail title band, with `px-6` tracking the main column's own padding
 
 `sticky top-0 flex h-screen w-[296px] shrink-0 flex-col border-r border-[rgba(13,148,136,0.08)] bg-white`. Header `px-[18px] pt-[18px]`, then `mb-3.5 flex items-center gap-2.5` — the **same back-row grammar as the client-profile sidebar** (`components/clients/client-sidebar.tsx`), which is the reference for every sidebar header: `ArrowLeft h-4 w-4 text-[#93b0b4]` → `group-hover:text-[#5a7d82]`, label `text-[13.5px] font-semibold text-[#0c1a1e]`. Two shapes:
 
-- **Library** — arrow + `All programs` are one `<Link href="/dashboard/programs">` (it names a destination). A plain click is intercepted and routed through the builder's guarded exit, which goes back when a coach page precedes the entry and to `/dashboard/programs` when none does; modified clicks (new tab/window) are left to the browser so the href stays meaningful.
+- **Library** — arrow + `All programs` are one `<Link href="/dashboard/programs">` (it names a destination). A plain click is intercepted and routed through the builder's guarded exit, which leaves the page — back to the entry before the builder — when a coach page precedes it, and to `/dashboard/programs` when none does; modified clicks (new tab/window) are left to the browser so the href stays meaningful.
 - **Client-scoped** (`client-draft` / `placed-plan`) — only the arrow is interactive (an icon-only `<button>` carrying the `aria-label`); beside it an `Editing for` eyebrow (`LABEL_CLASS`) over the client's name. A client is context, not a destination — exactly like the client-profile sidebar, where the arrow links out and the name is plain text.
 
 Then `<SegmentedControl fullWidth>` Sessions/Exercises.
@@ -732,7 +732,7 @@ Follow the **Overlays** recipes: session editor & create-session are 780px right
 #### Centre: Client sidebar — 200px, white
 
 - Right border `1px solid rgba(13,148,136,0.08)`.
-- Top (padding `18px 16px 14px`): back arrow (`ArrowLeft h-4 w-4`, `#93b0b4` → hover `#5a7d82`) + avatar (26px, 6px radius, teal gradient) + name (13.5px, 600), one `gap-2.5` row. **This row is the reference for every sidebar header** — the Program Builder's library panel follows it (see that chapter). The arrow is the only interactive element — a `BackLink`, Back when a coach page precedes the entry, else `/clients`; the name is context, not a link.
+- Top (padding `18px 16px 14px`): back arrow (`ArrowLeft h-4 w-4`, `#93b0b4` → hover `#5a7d82`) + avatar (26px, 6px radius, teal gradient) + name (13.5px, 600), one `gap-2.5` row. **This row is the reference for every sidebar header** — the Program Builder's library panel follows it (see that chapter). The arrow is the only interactive element — a `BackLink` that leaves the client page, back to the entry before it began when a coach page precedes it, else `/clients`; the name is context, not a link.
 - Vertical tabs (13.5px): active = 3px teal left bar + `rgba(13,148,136,0.05)` bg + 600 + `#0c1a1e`; inactive = 400 + `#6b8a8e`, hover `rgba(0,0,0,0.02)`.
 - Bottom: Settings pinned, separated by `border-top rgba(13,148,136,0.08)`.
 
