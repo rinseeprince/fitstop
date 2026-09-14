@@ -207,13 +207,18 @@ export function NutritionCalendarView({
         onSelectRest={() => edit.replaceSelection(edit.groups.rest)}
         onRevert={() => void edit.revertModified()}
         onClear={edit.clearSelection}
-        onEditTargets={() => edit.setEditorOpen(true)}
+        onEditTargets={edit.openEditor}
       />
 
+      {/* The days are the editor's subject, owned by the editing hook: set by
+          the click that opens it, kept by a close (CONVENTIONS §7 → "No frame
+          disagrees"). */}
       <NutritionEditTargetsDialog
         open={edit.editorOpen}
-        onOpenChange={edit.setEditorOpen}
-        days={edit.resolvedSelected}
+        onOpenChange={(open) => {
+          if (!open) edit.closeEditor();
+        }}
+        days={edit.editorDays}
         isSaving={edit.isSaving}
         onApply={(payload) => void edit.applyEdit(payload)}
       />

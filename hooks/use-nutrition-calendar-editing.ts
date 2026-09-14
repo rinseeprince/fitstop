@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
+import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import {
@@ -14,6 +15,7 @@ import {
   resolveSelectedEvents,
   averageDisplayedCalories,
   type RangeEditPayload,
+  type ResolvedSelectedDay,
 } from "@/utils/nutrition-range-edit-model";
 import type { NutritionEvent } from "@/types/check-in";
 
@@ -53,7 +55,12 @@ export function useNutritionCalendarEditing({
   const clearAttentionFeed = useClearAttentionFeed();
   const [editMode, setEditMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [editorOpen, setEditorOpen] = useState(false);
+  // The editor's subject is the days it opened on, resolved at the open: the
+  // dialog shows them and an Apply writes them, so a refetch while it is open
+  // cannot make the two disagree. A close leaves them — a successful apply
+  // clears the selection in the commit that closes, and Radix re-renders the
+  // closing card from live props (CONVENTIONS §7 → "No frame disagrees").
+  const editor = useDialogSubject<ResolvedSelectedDay[]>();
   const [isSaving, setIsSaving] = useState(false);
 
   const toggleDay = useCallback((date: string) => {
@@ -92,20 +99,28 @@ export function useNutritionCalendarEditing({
   }, []);
 
   // Week-rail "Edit this week": replace the selection with the week's eligible
-  // days, then open the editor (menu semantics are "act on this week", not add-to).
-  const selectDatesAndEdit = useCallback((dates: string[]) => {
-    if (dates.length === 0) return;
-    setSelected(new Set(dates));
-    setEditorOpen(true);
-  }, []);
+  // days, then open the editor on them (menu semantics are "act on this week",
+  // not add-to) — one update.
+  const { show: showEditor, close: closeEditor } = editor;
+  const selectDatesAndEdit = useCallback(
+    (dates: string[]) => {
+      if (dates.length === 0) return;
+      setSelected(new Set(dates));
+      showEditor(resolveSelectedEvents(dates, eventsByDate, includeActivityBurn, surplusAsCarbs));
+    },
+    [showEditor, eventsByDate, includeActivityBurn, surplusAsCarbs]
+  );
 
   // The selection resolved against loaded events — what the bar average, the
-  // Revert affordance, and the editor's seeding all read from. Dates outside the
+  // Revert affordance, and the editor's opening all read from. Dates outside the
   // loaded window stay selected but contribute nothing.
   const resolvedSelected = useMemo(
     () => resolveSelectedEvents(selected, eventsByDate, includeActivityBurn, surplusAsCarbs),
     [selected, eventsByDate, includeActivityBurn, surplusAsCarbs]
   );
+  // The selection bar's "Edit targets": the editor opens on the selection as
+  // resolved now.
+  const openEditor = useCallback(() => showEditor(resolvedSelected), [showEditor, resolvedSelected]);
   const averageCalories = useMemo(
     () => averageDisplayedCalories(resolvedSelected),
     [resolvedSelected]
@@ -117,11 +132,11 @@ export function useNutritionCalendarEditing({
 
   const applyEdit = useCallback(
     async (payload: RangeEditPayload) => {
-      // Write ONLY the dates the editor could resolve and show. A selection can
-      // outlive its month window (nothing prunes it on nav), and writing an
-      // unresolvable date would apply values — and single-day note semantics —
-      // the coach never saw.
-      const dates = resolvedSelected.map((d) => d.date);
+      // Write ONLY the dates the editor resolved and shows — its subject. A
+      // selection can outlive its month window (nothing prunes it on nav), and
+      // writing an unresolvable date would apply values — and single-day note
+      // semantics — the coach never saw.
+      const dates = (editor.subject ?? []).map((d) => d.date);
       if (dates.length === 0) return;
       setIsSaving(true);
       try {
@@ -136,7 +151,7 @@ export function useNutritionCalendarEditing({
         toast.success(`Updated ${n} day${n === 1 ? "" : "s"}`, {
           description: describeEdit(payload),
         });
-        setEditorOpen(false);
+        closeEditor();
         setSelected(new Set());
         await invalidateNutritionCalendar(clientId);
         void clearClientOverview(clientId);
@@ -150,7 +165,7 @@ export function useNutritionCalendarEditing({
         setIsSaving(false);
       }
     },
-    [resolvedSelected, clientId, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, onUpdate]
+    [editor.subject, closeEditor, clientId, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, onUpdate]
   );
 
   const resetDates = useCallback(
@@ -205,8 +220,10 @@ export function useNutritionCalendarEditing({
     resolvedSelected,
     averageCalories,
     modifiedSelected,
-    editorOpen,
-    setEditorOpen,
+    editorOpen: editor.open,
+    editorDays: editor.subject ?? [],
+    openEditor,
+    closeEditor,
     isSaving,
     applyEdit,
     resetDates,

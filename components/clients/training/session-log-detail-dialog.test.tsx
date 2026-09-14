@@ -148,6 +148,29 @@ const rows = () => screen.getAllByTestId("logged-set-row");
 // ---------------------------------------------------------------------------
 
 describe("SessionLogDetailDialog", () => {
+  describe("the fetch", () => {
+    // A closing card is re-rendered from live props for its exit animation
+    // (CONVENTIONS §7 → "No frame disagrees"), so the close must not drop the key.
+    it("keys the fetch on the session log alone, so a closing dialog keeps its data", () => {
+      setupSWR({});
+      const url = "/api/clients/client-1/training/session-logs/sl-1";
+
+      const { rerender } = render(<SessionLogDetailDialog {...defaultProps} />);
+      expect(mockUseSWR.mock.lastCall?.[0]).toBe(url);
+
+      rerender(<SessionLogDetailDialog {...defaultProps} open={false} />);
+      expect(mockUseSWR.mock.lastCall?.[0]).toBe(url);
+    });
+
+    it("fetches nothing before the first session log is shown", () => {
+      setupSWR({});
+
+      render(<SessionLogDetailDialog {...defaultProps} sessionLogId={null} open={false} />);
+
+      expect(mockUseSWR.mock.lastCall?.[0]).toBeNull();
+    });
+  });
+
   describe("shell", () => {
     it("renders the quick-logged label when nothing was prescribed or logged", () => {
       setupSWR({

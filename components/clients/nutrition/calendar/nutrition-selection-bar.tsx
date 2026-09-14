@@ -61,7 +61,7 @@ export function NutritionSelectionBar({
   const [shown, setShown] = useState(false);
 
   // Latch the display content while the bar drops away so it never flashes
-  // "0 selected" mid-fade (the placed-session tray's displayDate pattern).
+  // "0 selected" mid-fade.
   const latch = useRef<BarContent>({ count, averageCalories, hasModified });
   useEffect(() => {
     if (visible) latch.current = { count, averageCalories, hasModified };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { useJourneyFocusBlock } from "@/hooks/use-journey-focus-block";
 import {
   Archive,
@@ -115,14 +116,29 @@ export function BlocksSubtab({
   // math, add-form anchor) always operate on the FULL chain.
   const [view, setView] = useState<"journey" | "archive">("journey");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<ClientBlockView | null>(null);
+  // Each confirm's subject outlives its close: Radix re-renders a closing card
+  // from live state, so the fading card still names what it named (CONVENTIONS
+  // §7 → "No frame disagrees").
+  const blockDeleteDialog = useDialogSubject<ClientBlockView>();
   // Which delete is running, not merely that one is: the spinner belongs on
   // the button that was pressed.
   const [deleting, setDeleting] = useState<BlockDeleteChoice | null>(null);
   // The per-plan delete (C3): the timeline row the coach picked, behind the
   // destructive confirm.
-  const [deletePlanTarget, setDeletePlanTarget] = useState<BlockPlanDeleteTarget | null>(null);
+  const planDeleteDialog = useDialogSubject<BlockPlanDeleteTarget>();
   const [isDeletingPlan, setIsDeletingPlan] = useState(false);
+
+  // A success closes a confirm with its in-flight flag still set, so the card
+  // fades out on the frame it closed on; the next open clears the flag in the
+  // same update that shows the new subject.
+  const openBlockDelete = (block: ClientBlockView) => {
+    setDeleting(null);
+    blockDeleteDialog.show(block);
+  };
+  const openPlanDelete = (plan: BlockPlanDeleteTarget) => {
+    setIsDeletingPlan(false);
+    planDeleteDialog.show(plan);
+  };
 
   const factsById = useMemo(
     () => new Map(facts.map((fact) => [fact.blockId, fact])),
@@ -213,7 +229,8 @@ export function BlocksSubtab({
       // the deleted row for a frame, and deleting the LAST block shows it and
       // then the empty state.
       void seedBlocks(clientId, remaining);
-      setDeleteTarget(null);
+      // `deleting` stays set: the open clears it (openBlockDelete).
+      blockDeleteDialog.close();
       if (clearPlans) {
         // Same rule as the sync: this removed rows from both calendars, so both
         // areas are owed their invalidator or the Training and Nutrition tabs
@@ -232,7 +249,7 @@ export function BlocksSubtab({
       toast.error("Delete failed", {
         description: error instanceof Error ? error.message : "Could not delete the block",
       });
-    } finally {
+      // The card stays open as the retry, so its buttons come back now.
       setDeleting(null);
     }
   };
@@ -248,7 +265,8 @@ export function BlocksSubtab({
     setIsDeletingPlan(true);
     try {
       await deletePlanRequest(clientId, plan.track, plan.id);
-      setDeletePlanTarget(null);
+      // `isDeletingPlan` stays set: the open clears it (openPlanDelete).
+      planDeleteDialog.close();
       // The delete rewrote a calendar — the upcoming sessions, or a version's
       // window the nutrition days are computed from — so both calendar areas
       // are owed their invalidator, and the facts, the Overview and the feed
@@ -268,7 +286,7 @@ export function BlocksSubtab({
               ? "Could not delete the plan"
               : "Could not delete the targets",
       });
-    } finally {
+      // The card stays open as the retry, so its buttons come back now.
       setIsDeletingPlan(false);
     }
   };
@@ -554,7 +572,7 @@ export function BlocksSubtab({
                         })
                     : undefined
                 }
-                onDeletePlan={setDeletePlanTarget}
+                onDeletePlan={openPlanDelete}
                 rowAction={
                   <>
                     <button
@@ -592,7 +610,7 @@ export function BlocksSubtab({
                         type="button"
                         aria-label={`Delete ${block.name}`}
                         title="Delete block"
-                        onClick={() => setDeleteTarget(block)}
+                        onClick={() => openBlockDelete(block)}
                         className={cn(ROW_ICON_BUTTON, "mr-2 hover:text-[#c06060]", FOCUS_RING)}
                       >
                         <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -616,16 +634,18 @@ export function BlocksSubtab({
       />
 
       <DeleteBlockDialog
-        block={deleteTarget}
+        open={blockDeleteDialog.open}
+        block={blockDeleteDialog.subject}
         deleting={deleting}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={blockDeleteDialog.close}
         onConfirm={(block, clearPlans) => void handleDeleteConfirm(block, clearPlans)}
       />
 
       <DeletePlanDialog
-        plan={deletePlanTarget}
+        open={planDeleteDialog.open}
+        plan={planDeleteDialog.subject}
         isDeleting={isDeletingPlan}
-        onCancel={() => setDeletePlanTarget(null)}
+        onCancel={planDeleteDialog.close}
         onConfirm={(plan) => void handleDeletePlanConfirm(plan)}
       />
     </div>

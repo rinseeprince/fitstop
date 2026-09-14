@@ -36,9 +36,12 @@ type AddClientManualFormProps = {
   form: UseFormReturn<CreateClientInput>;
   onSubmit: (data: CreateClientInput) => Promise<void>;
   onBack: () => void;
+  /** The dialog's create in flight — it outlives a successful close, so the
+   *  closing card keeps "Adding…" (components/add-client-dialog.tsx). */
+  pending: boolean;
 };
 
-export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualFormProps) {
+export function AddClientManualForm({ form, onSubmit, onBack, pending }: AddClientManualFormProps) {
   const { preference } = useUnits();
   const weightUnit = formatWeight(0, preference).unit;
   const lengthUnit = formatLength(0, preference).unit;
@@ -314,16 +317,16 @@ export function AddClientManualForm({ form, onSubmit, onBack }: AddClientManualF
             variant="outline"
             className="flex-1"
             onClick={onBack}
-            disabled={form.formState.isSubmitting}
+            disabled={pending}
           >
             Back
           </Button>
           <Button
             type="submit"
             className="flex-1"
-            disabled={form.formState.isSubmitting}
+            disabled={pending}
           >
-            {form.formState.isSubmitting ? (
+            {pending ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Adding...

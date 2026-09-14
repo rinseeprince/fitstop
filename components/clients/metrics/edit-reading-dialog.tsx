@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   Dialog,
@@ -32,7 +32,12 @@ import { formatLogDate, SOURCE_LABELS } from "./metrics-format";
 import type { LogRow } from "./metrics-view-types";
 
 type EditReadingDialogProps = {
-  /** The reading being edited; null closes the dialog. */
+  open: boolean;
+  /** The reading the card edits. It outlives the close: Radix re-renders a
+   *  closing card from live props, so the fading card keeps its reading
+   *  (CONVENTIONS §7 → "No frame disagrees"). Null only before the first open.
+   *  The host keys the card by the opening, so the field and the pending flag
+   *  start fresh on each open and are never reset by a close. */
   row: LogRow | null;
   onOpenChange: (open: boolean) => void;
   /** The new value, canonical: the hook converted it from the viewer's unit. */
@@ -45,7 +50,7 @@ type EditReadingDialogProps = {
  * writes nothing (`useCanonicalInput`'s pristine guard), and refused while it
  * is untouched — an edit that changes nothing is not an edit.
  */
-export function EditReadingDialog({ row, onOpenChange, onConfirm }: EditReadingDialogProps) {
+export function EditReadingDialog({ open, row, onOpenChange, onConfirm }: EditReadingDialogProps) {
   const { preference } = useUnits();
   const [isSaving, setIsSaving] = useState(false);
 
@@ -60,10 +65,6 @@ export function EditReadingDialog({ row, onOpenChange, onConfirm }: EditReadingD
     row?.canonicalValue ?? null,
     conversion ?? "weight"
   );
-  const { reset } = input;
-  useEffect(() => {
-    if (row) reset(row.canonicalValue);
-  }, [row, reset]);
 
   const range = row ? METRIC_VALUE_RANGES[row.metricId as MetricEntryKey] : null;
   const commit = input.commit;
@@ -79,6 +80,9 @@ export function EditReadingDialog({ row, onOpenChange, onConfirm }: EditReadingD
     setIsSaving(true);
     try {
       await onConfirm(row, commit);
+      // A success closes with the flag still set, so the closing card keeps its
+      // spinner; the host keys the card by the opening, so the next open mounts
+      // it fresh.
       onOpenChange(false);
       toast.success(`${row.metricName} corrected`, {
         // Echoed in what the coach typed, not what was stored.
@@ -88,13 +92,12 @@ export function EditReadingDialog({ row, onOpenChange, onConfirm }: EditReadingD
       toast.error("Correction failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
       });
-    } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <Dialog open={row !== null} onOpenChange={(open) => !isSaving && onOpenChange(open)}>
+    <Dialog open={open} onOpenChange={(next) => !isSaving && onOpenChange(next)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Edit reading</DialogTitle>

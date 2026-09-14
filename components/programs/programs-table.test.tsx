@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { ProgramsTable } from "./programs-table";
 import type { SavedPlanListItem } from "@/types/training";
 
@@ -28,6 +29,42 @@ vi.mock("@/hooks/use-saved-plans-page", () => ({
     };
   },
 }));
+
+// jsdom never paints and Radix Presence unmounts at once there, so the
+// confirm's exit frame is not observable. The shape that keeps it right is:
+// `open` apart from the subject, a close that leaves the subject, and a next
+// show that replaces it (CONVENTIONS §7 → "No frame disagrees", rule 5). The
+// stub exposes exactly those props; its action mirrors AlertDialogAction,
+// which runs onConfirm and then closes.
+vi.mock("@/components/ui/confirm-dialog", () => ({
+  ConfirmDialog: ({
+    open,
+    onOpenChange,
+    description,
+    onConfirm,
+  }: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    description: string;
+    onConfirm: () => void;
+  }): ReactNode => (
+    <div data-testid="confirm" data-open={String(open)} data-description={description}>
+      <button type="button" onClick={() => onOpenChange(false)}>
+        Cancel confirm
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          onConfirm();
+          onOpenChange(false);
+        }}
+      >
+        Confirm
+      </button>
+    </div>
+  ),
+}));
+const confirm = () => screen.getByTestId("confirm");
 
 function makeItem(overrides: Partial<SavedPlanListItem>): SavedPlanListItem {
   return {
@@ -110,6 +147,40 @@ describe("ProgramsTable", () => {
     });
     await waitFor(() => expect(mockMutate).toHaveBeenCalled());
     expect(mockPush).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("the delete confirm keeps naming its program through the close, and the next show replaces it", () => {
+    render(<ProgramsTable />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[0]);
+    expect(confirm()).toHaveAttribute("data-open", "true");
+    expect(confirm().getAttribute("data-description")).toContain('"PPL Program"');
+    expect(mockPush).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("Cancel confirm"));
+    expect(confirm()).toHaveAttribute("data-open", "false");
+    expect(confirm().getAttribute("data-description")).toContain('"PPL Program"');
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[1]);
+    expect(confirm()).toHaveAttribute("data-open", "true");
+    expect(confirm().getAttribute("data-description")).toContain('"Glute Focus"');
+  });
+
+  it("confirming deletes the subject and the closing card still names it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProgramsTable />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[1]);
+    fireEvent.click(screen.getByText("Confirm"));
+
+    expect(confirm()).toHaveAttribute("data-open", "false");
+    expect(confirm().getAttribute("data-description")).toContain('"Glute Focus"');
+    expect(fetchMock).toHaveBeenCalledWith("/api/training/saved-plans/plan-2", {
+      method: "DELETE",
+    });
+    await waitFor(() => expect(mockMutate).toHaveBeenCalled());
     vi.unstubAllGlobals();
   });
 

@@ -24,7 +24,10 @@ import { SessionHero } from "./session-hero";
 // borderless cards — a deliberate deviation from the white-bodied sheet recipe,
 // because spacing-not-borders outranks it here.
 type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session" | "chrome"> & {
-  session: SessionDraft | null; // null = closed
+  // Its own prop, never derived from `session`: a closing sheet keeps
+  // rendering the session it showed (CONVENTIONS §7 → "No frame disagrees").
+  open: boolean;
+  session: SessionDraft | null; // null before the first open, or once the draft drops it
   onClose: () => void;
   onSaveAsWorkout: (sessionUid: string) => void;
   isSavingWorkout: boolean;
@@ -34,6 +37,7 @@ type SessionEditorSheetProps = Omit<SessionEditorBodyProps, "session" | "chrome"
 };
 
 export function SessionEditorSheet({
+  open,
   session,
   mode,
   onClose,
@@ -47,7 +51,7 @@ export function SessionEditorSheet({
 
   return (
     <Sheet
-      open={session != null}
+      open={open}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}

@@ -48,6 +48,11 @@ const SETUP_MODES = [
 export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps) => {
   const [open, setOpen] = useState(false);
   const [setupMode, setSetupMode] = useState<SetupMode>(null);
+  // The create in flight, owned here rather than read off react-hook-form's
+  // isSubmitting, which clears the moment onSubmit resolves — in the commit
+  // that closes the card, so the fading card would drop "Adding…" and re-enable
+  // its buttons. A success leaves it set; a failure and the next open clear it.
+  const [adding, setAdding] = useState(false);
 
   const form = useForm<CreateClientInput>({
     resolver: zodResolver(createClientSchema),
@@ -89,6 +94,7 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
   };
 
   const onSubmit = async (data: CreateClientInput) => {
+    setAdding(true);
     try {
       // `data` already carries setupMode — chooseSetupMode put it there, which
       // is the only reason validation let us get this far.
@@ -117,24 +123,29 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
         });
       }
 
-      form.reset();
-      setSetupMode(null);
+      // Close only: the card fades out on the path and details it showed, and
+      // the next open clears them (handleOpenChange).
       setOpen(false);
 
       onClientAdded?.();
     } catch (error) {
+      setAdding(false);
       toast.error("Failed to add client", {
         description: error instanceof Error ? error.message : "An error occurred",
       });
     }
   };
 
+  // The path and the details outlive the close: Radix re-renders a closing
+  // card from live state, so the open that replaces them clears them, in the
+  // same update (CONVENTIONS §7 → "No frame disagrees", rule 5).
   const handleOpenChange = (newOpen: boolean) => {
-    setOpen(newOpen);
-    if (!newOpen) {
+    if (newOpen) {
       form.reset();
       setSetupMode(null);
+      setAdding(false);
     }
+    setOpen(newOpen);
   };
 
   return (
@@ -198,6 +209,7 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
           <AddClientIntakeForm
             form={form}
             onSubmit={onSubmit}
+            pending={adding || form.formState.isSubmitting}
             onBack={() => chooseSetupMode(null)}
           />
         )}
@@ -206,6 +218,7 @@ export const AddClientDialog = ({ trigger, onClientAdded }: AddClientDialogProps
           <AddClientManualForm
             form={form}
             onSubmit={onSubmit}
+            pending={adding || form.formState.isSubmitting}
             onBack={() => chooseSetupMode(null)}
           />
         )}

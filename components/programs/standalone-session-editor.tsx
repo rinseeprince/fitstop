@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   Sheet,
@@ -23,11 +22,15 @@ import {
 // (program-builder.tsx uses programs/shared/, programs-topbar links back) —
 // this adds no file-level cycle.
 type StandaloneSessionEditorProps = {
-  state: SessionEditorState | null; // null = closed
+  open: boolean;
+  // What the sheet edits. The close leaves it, so the sheet slides out still
+  // showing it; null only before the first open.
+  state: SessionEditorState | null;
   onClose: () => void;
 };
 
 export function StandaloneSessionEditor({
+  open,
   state,
   onClose,
 }: StandaloneSessionEditorProps) {
@@ -41,26 +44,19 @@ export function StandaloneSessionEditor({
     updateExercise,
     reorderExercise,
     editSetSpec,
-  } = useStandaloneSessionEditor(state, onClose);
+  } = useStandaloneSessionEditor(state, open, onClose);
 
-  // Latch the mode for rendering: `state` nulls synchronously on close but
-  // the Sheet stays mounted through its exit animation (and the hook retains
-  // the draft for the same reason) — deriving chrome from the live `state`
-  // would flip an edit sheet's title/footer to create-mode text mid-slide.
-  // Render-phase adjustment (not an effect) so the first open never flashes
-  // the previous mode.
-  const [displayMode, setDisplayMode] = useState<"create" | "edit">("create");
-  if (state && state.mode !== displayMode) {
-    setDisplayMode(state.mode);
-  }
-  const isEdit = displayMode === "edit";
+  // The chrome reads the subject, which outlives the close: Radix re-renders
+  // a closing sheet from live props, so an edit sheet slides out titled as
+  // one (CONVENTIONS §7 → "No frame disagrees").
+  const isEdit = state?.mode === "edit";
 
   return (
     <Sheet
-      open={state != null}
-      onOpenChange={(open) => {
+      open={open}
+      onOpenChange={(next) => {
         // Mid-save the flow is committed — dismissal must not race the POST.
-        if (!open && !isSaving) onClose();
+        if (!next && !isSaving) onClose();
       }}
     >
       <SheetContent

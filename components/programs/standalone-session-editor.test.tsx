@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { StrictMode } from "react";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import { StandaloneSessionEditor } from "./standalone-session-editor";
 import type { SavedSession } from "@/types/training";
+import type { SessionEditorState } from "./use-standalone-session-editor";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 
 // Required, not optional: units-context imports auth-context, which constructs
@@ -106,7 +108,7 @@ describe("StandaloneSessionEditor", () => {
 
   it("seeds create mode with an Untitled session and no exercises", () => {
     render(
-      <StandaloneSessionEditor state={{ mode: "create" }} onClose={vi.fn()} />,
+      <StandaloneSessionEditor open state={{ mode: "create" }} onClose={vi.fn()} />,
     );
     expect(screen.getByText("New session")).toBeDefined();
     expect(screen.getByDisplayValue("Untitled session")).toBeDefined();
@@ -116,7 +118,7 @@ describe("StandaloneSessionEditor", () => {
   it("create save POSTs the payload and closes", async () => {
     const onClose = vi.fn();
     render(
-      <StandaloneSessionEditor state={{ mode: "create" }} onClose={onClose} />,
+      <StandaloneSessionEditor open state={{ mode: "create" }} onClose={onClose} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Save session" }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
@@ -135,6 +137,7 @@ describe("StandaloneSessionEditor", () => {
     const onClose = vi.fn();
     render(
       <StandaloneSessionEditor
+        open
         state={{ mode: "edit", session: makeSavedSession() }}
         onClose={onClose}
       />,
@@ -159,6 +162,7 @@ describe("StandaloneSessionEditor", () => {
     const onClose = vi.fn();
     render(
       <StandaloneSessionEditor
+        open
         state={{ mode: "edit", session: makeSavedSession() }}
         onClose={onClose}
       />,
@@ -171,6 +175,7 @@ describe("StandaloneSessionEditor", () => {
   it("shows the clone-by-value notice in edit mode only", () => {
     const { unmount } = render(
       <StandaloneSessionEditor
+        open
         state={{ mode: "edit", session: makeSavedSession() }}
         onClose={vi.fn()}
       />,
@@ -178,7 +183,7 @@ describe("StandaloneSessionEditor", () => {
     expect(screen.getByText(/keep their own copy/)).toBeDefined();
     unmount();
     render(
-      <StandaloneSessionEditor state={{ mode: "create" }} onClose={vi.fn()} />,
+      <StandaloneSessionEditor open state={{ mode: "create" }} onClose={vi.fn()} />,
     );
     expect(screen.queryByText(/keep their own copy/)).toBeNull();
   });
@@ -191,7 +196,7 @@ describe("StandaloneSessionEditor", () => {
       });
     const onClose = vi.fn();
     render(
-      <StandaloneSessionEditor state={{ mode: "create" }} onClose={onClose} />,
+      <StandaloneSessionEditor open state={{ mode: "create" }} onClose={onClose} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Save session" }));
     await waitFor(() => expect(fetchCalls).toHaveLength(1));
@@ -208,7 +213,7 @@ describe("StandaloneSessionEditor", () => {
       Promise.resolve(jsonResponse(500, { error: "Failed to save session" }));
     const onClose = vi.fn();
     render(
-      <StandaloneSessionEditor state={{ mode: "create" }} onClose={onClose} />,
+      <StandaloneSessionEditor open state={{ mode: "create" }} onClose={onClose} />,
     );
     const save = screen.getByRole("button", { name: "Save session" });
     fireEvent.click(save);
@@ -217,28 +222,109 @@ describe("StandaloneSessionEditor", () => {
     expect(fetchCalls).toHaveLength(1);
   });
 
-  it("reseeds a fresh draft when reopened after editing", () => {
-    const { rerender } = render(
+  // A rejected draft never closes the sheet, so its flag resets where it
+  // rejects; only a success leaves the flag set, for the closing sheet.
+  it("stays open and re-enables Save when the client-side belt rejects the draft", () => {
+    const toastError = vi.spyOn(toast, "error");
+    const valid = makeSavedSession();
+    const rejected = makeSavedSession({
+      exercises: [{ ...valid.exercises[0], exerciseId: "not-a-uuid" }],
+    });
+    const onClose = vi.fn();
+    render(
       <StandaloneSessionEditor
+        open
+        state={{ mode: "edit", session: rejected }}
+        onClose={onClose}
+      />,
+    );
+    const save = screen.getByRole("button", { name: "Save changes" });
+    fireEvent.click(save);
+    expect(toastError).toHaveBeenCalledWith("Can't save session", expect.anything());
+    expect(save).not.toBeDisabled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(fetchCalls).toHaveLength(0);
+    toastError.mockRestore();
+  });
+
+  it("reseeds a fresh draft when reopened after editing", () => {
+    const edit: SessionEditorState = { mode: "edit", session: makeSavedSession() };
+    const { rerender } = render(
+      <StandaloneSessionEditor open state={edit} onClose={vi.fn()} />,
+    );
+    // Mutate the local draft, then close (the subject stays) and reopen in
+    // create mode.
+    const nameInput = screen.getByDisplayValue("Push Day A");
+    fireEvent.blur(nameInput, { target: { value: "Renamed locally" } });
+    rerender(<StandaloneSessionEditor open={false} state={edit} onClose={vi.fn()} />);
+    rerender(
+      <StandaloneSessionEditor open state={{ mode: "create" }} onClose={vi.fn()} />,
+    );
+    expect(screen.getByDisplayValue("Untitled session")).toBeDefined();
+    expect(screen.queryByDisplayValue("Renamed locally")).toBeNull();
+  });
+
+  it("reseeds the same session when it is reopened", () => {
+    const first: SessionEditorState = { mode: "edit", session: makeSavedSession() };
+    const { rerender } = render(
+      <StandaloneSessionEditor open state={first} onClose={vi.fn()} />,
+    );
+    fireEvent.blur(screen.getByDisplayValue("Push Day A"), {
+      target: { value: "Renamed locally" },
+    });
+    expect(screen.getByDisplayValue("Renamed locally")).toBeDefined();
+    rerender(<StandaloneSessionEditor open={false} state={first} onClose={vi.fn()} />);
+    // The next show replaces the subject with a new one for the same row.
+    rerender(
+      <StandaloneSessionEditor
+        open
         state={{ mode: "edit", session: makeSavedSession() }}
         onClose={vi.fn()}
       />,
     );
-    // Mutate the local draft, then close and reopen in create mode.
-    const nameInput = screen.getByDisplayValue("Push Day A");
-    fireEvent.blur(nameInput, { target: { value: "Renamed locally" } });
-    rerender(<StandaloneSessionEditor state={null} onClose={vi.fn()} />);
-    rerender(
-      <StandaloneSessionEditor state={{ mode: "create" }} onClose={vi.fn()} />,
-    );
-    expect(screen.getByDisplayValue("Untitled session")).toBeDefined();
+    expect(screen.getByDisplayValue("Push Day A")).toBeDefined();
     expect(screen.queryByDisplayValue("Renamed locally")).toBeNull();
+  });
+
+  // The subject outlives the close (CONVENTIONS §7 → "No frame disagrees"):
+  // the sheet is shut by its own `open`, never by losing its subject.
+  it("takes open as its own prop: a kept subject renders nothing while closed", () => {
+    const edit: SessionEditorState = { mode: "edit", session: makeSavedSession() };
+    const { rerender } = render(
+      <StandaloneSessionEditor open={false} state={edit} onClose={vi.fn()} />,
+    );
+    expect(screen.queryByText("Edit session")).toBeNull();
+    rerender(<StandaloneSessionEditor open state={edit} onClose={vi.fn()} />);
+    expect(screen.getByText("Edit session")).toBeDefined();
+    expect(screen.getByDisplayValue("Push Day A")).toBeDefined();
+  });
+
+  it("a successful save closes with its in-flight flag set, and the next open clears it", async () => {
+    const create: SessionEditorState = { mode: "create" };
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <StandaloneSessionEditor open state={create} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save session" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    // The frame the close lands on is the in-flight one: nothing re-enables
+    // under the closing sheet.
+    expect(screen.getByRole("button", { name: "Save session" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+
+    rerender(<StandaloneSessionEditor open={false} state={create} onClose={onClose} />);
+    rerender(
+      <StandaloneSessionEditor open state={{ mode: "create" }} onClose={onClose} />,
+    );
+    expect(screen.getByRole("button", { name: "Save session" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).not.toBeDisabled();
   });
 
   it("clamps a legacy >100-char name at seed so the input shows what a save persists", () => {
     const longName = "L".repeat(150);
     render(
       <StandaloneSessionEditor
+        open
         state={{ mode: "edit", session: makeSavedSession({ name: longName }) }}
         onClose={vi.fn()}
       />,
@@ -251,6 +337,7 @@ describe("StandaloneSessionEditor", () => {
     render(
       <StrictMode>
         <StandaloneSessionEditor
+          open
           state={{ mode: "edit", session: makeSavedSession() }}
           onClose={vi.fn()}
         />

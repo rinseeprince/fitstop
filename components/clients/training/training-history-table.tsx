@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
+import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { HistoryTable, type ColumnDef } from "@/components/clients/history-table/history-table";
 import { HistoryChartDialog } from "@/components/clients/history-table/history-chart-dialog";
 import { useHistoryData, HISTORY_PAGE_SIZE } from "@/hooks/use-history-data";
@@ -82,10 +83,10 @@ const QUALITY_VALUES: Record<string, number> = {
 
 type Props = {
   clientId: string;
-  // Exercise Data moved to the Journey tab (Session 7.1), so the drill-down is
-  // now a TAB change, not a pane change — and cross-tab navigation has to run
-  // through the client page's handler, because activeTab is state seeded from
-  // ?tab= at mount only. Without it the URL would change and the tab would not.
+  // Exercise Data lives on the Journey tab, so the drill-down is a TAB change,
+  // and cross-tab navigation runs through the client page's handler — the one
+  // builder of a tab URL (the carried single-owner params, the stripped
+  // ?subtab=).
   onTabChange?: (
     tab: ClientTab,
     extraParams?: Record<string, string | null>
@@ -94,12 +95,15 @@ type Props = {
 
 export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
   const [page, setPage] = useState(0);
-  const [chartColumn, setChartColumn] = useState<string | null>(null);
-  const [selectedSessionLogId, setSelectedSessionLogId] = useState<string | null>(null);
+  // Each subject outlives its close: Radix re-renders a closing card from live
+  // state (CONVENTIONS §7 → "No frame disagrees").
+  const chart = useDialogSubject<string>();
+  const sessionLog = useDialogSubject<string>();
+  const showSessionLog = sessionLog.show;
 
+  // No close beside the tab change: it unmounts this tab, dialog included (§7 rule 2).
   const handleExerciseDrillDown = useCallback(
     (exerciseId: string | null, exerciseName: string) => {
-      setSelectedSessionLogId(null);
       // exerciseId is null for a freehand or unmatched log, and the destination
       // prefers the id over the name — so a previous drill-down's id has to be
       // CLEARED, not merely left unset, or it wins and shows the wrong exercise.
@@ -116,15 +120,14 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
     `/api/clients/${clientId}/history/training`,
     page
   );
-  const handleColumnClick = useCallback((key: string) => {
-    setChartColumn(key);
-  }, []);
-
-  const handleRowClick = useCallback((row: TrainingHistoryRow) => {
-    if (row.session_log_id) {
-      setSelectedSessionLogId(row.session_log_id);
-    }
-  }, []);
+  const handleRowClick = useCallback(
+    (row: TrainingHistoryRow) => {
+      if (row.session_log_id) {
+        showSessionLog(row.session_log_id);
+      }
+    },
+    [showSessionLog],
+  );
 
   const isRowClickable = useCallback(
     (row: TrainingHistoryRow) => !!row.session_log_id,
@@ -132,14 +135,14 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
   );
 
   const chartData = useMemo(() => {
-    if (!chartColumn || rows.length === 0) return [];
+    if (!chart.subject || rows.length === 0) return [];
     return [...rows].reverse().map((row) => ({
       date: formatDate(row.date),
       value: row.completion_quality
         ? QUALITY_VALUES[row.completion_quality] ?? 0
         : 0,
     }));
-  }, [chartColumn, rows]);
+  }, [chart.subject, rows]);
 
   const columns: ColumnDef<TrainingHistoryRow>[] = useMemo(
     () => [
@@ -237,7 +240,7 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
           errorMessage="Could not load training history"
           onRetry={() => void mutate()}
           emptyMessage="No training sessions logged yet"
-          onColumnClick={handleColumnClick}
+          onColumnClick={chart.show}
           onRowClick={handleRowClick}
           isRowClickable={isRowClickable}
         />
@@ -245,17 +248,17 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
 
       <SessionLogDetailDialog
         clientId={clientId}
-        sessionLogId={selectedSessionLogId}
-        open={selectedSessionLogId !== null}
+        sessionLogId={sessionLog.subject}
+        open={sessionLog.open}
         onOpenChange={(open) => {
-          if (!open) setSelectedSessionLogId(null);
+          if (!open) sessionLog.close();
         }}
         onExerciseDrillDown={handleExerciseDrillDown}
       />
 
       <HistoryChartDialog
-        open={chartColumn !== null}
-        onClose={() => setChartColumn(null)}
+        open={chart.open}
+        onClose={chart.close}
         title="Training Completion Quality"
         chartType="bar"
         data={chartData}

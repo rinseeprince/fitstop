@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import {
   Dialog,
   DialogClose,
@@ -32,8 +31,9 @@ const MAX_DAY_CHIPS = 6;
 type NutritionEditTargetsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The selection resolved against loaded events — exactly the days an Apply
-   * will write (the hook's applyEdit sends the same resolved set). */
+  /** The host's subject: the selection resolved against loaded events,
+   * captured when it opens the dialog (the hook's applyEdit sends the same
+   * resolved set). A close leaves it, so the closing card still shows it. */
   days: ResolvedSelectedDay[];
   isSaving: boolean;
   onApply: (payload: RangeEditPayload) => void;
@@ -51,20 +51,12 @@ export function NutritionEditTargetsDialog({
   isSaving,
   onApply,
 }: NutritionEditTargetsDialogProps) {
-  // Latch the days while open: a successful apply clears the selection in the
-  // same commit that starts the exit animation, and the closing dialog must
-  // not flash "0 days selected" (the selection bar's exit latch, same reason).
-  const latchedDays = useRef(days);
-  useEffect(() => {
-    if (open) latchedDays.current = days;
-  });
-  const viewDays = open ? days : latchedDays.current;
-  const dayCount = viewDays.length;
+  const dayCount = days.length;
 
-  const form = useEditTargetsForm(open, viewDays);
+  const form = useEditTargetsForm(open, days);
 
-  const dayChips = viewDays.slice(0, MAX_DAY_CHIPS);
-  const overflow = viewDays.length - dayChips.length;
+  const dayChips = days.slice(0, MAX_DAY_CHIPS);
+  const overflow = days.length - dayChips.length;
 
   function handleApply() {
     const payload = form.buildPayload();

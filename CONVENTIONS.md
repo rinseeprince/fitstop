@@ -176,6 +176,7 @@
   - `DialogContent` > `DialogHeader` > body > `DialogFooter`
   - Submit buttons show `<Loader2 className="h-4 w-4 animate-spin" />` during loading
   - Close via `onOpenChange(false)`, not separate close state
+  - A dialog about a record takes `open` and the record apart (`useDialogSubject`, `hooks/use-dialog-subject.ts`): the close flips `open` and leaves the record, the next open replaces it, so the closing card still shows what it showed (§7 → "No frame disagrees", rule 5)
   - Forms use React Hook Form with `zodResolver(schema)` and `defaultValues`
 
   ### Toast notifications

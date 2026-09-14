@@ -18,9 +18,12 @@ type AddClientIntakeFormProps = {
   form: UseFormReturn<CreateClientInput>;
   onSubmit: (data: CreateClientInput) => Promise<void>;
   onBack: () => void;
+  /** The dialog's create in flight — it outlives a successful close, so the
+   *  closing card keeps "Adding…" (components/add-client-dialog.tsx). */
+  pending: boolean;
 };
 
-export function AddClientIntakeForm({ form, onSubmit, onBack }: AddClientIntakeFormProps) {
+export function AddClientIntakeForm({ form, onSubmit, onBack, pending }: AddClientIntakeFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -58,16 +61,16 @@ export function AddClientIntakeForm({ form, onSubmit, onBack }: AddClientIntakeF
             variant="outline"
             className="flex-1"
             onClick={onBack}
-            disabled={form.formState.isSubmitting}
+            disabled={pending}
           >
             Back
           </Button>
           <Button
             type="submit"
             className="flex-1"
-            disabled={form.formState.isSubmitting}
+            disabled={pending}
           >
-            {form.formState.isSubmitting ? (
+            {pending ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Adding...

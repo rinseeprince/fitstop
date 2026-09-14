@@ -51,6 +51,12 @@ type SessionGetResponse = {
 
 export type SaveScope = "day" | "all";
 
+/**
+ * `state` is the tray's SUBJECT, one object per opening (`useDialogSubject`
+ * hands out exactly that): the close leaves it in place, so the fetch, the
+ * seeded draft and the in-flight flag all hold through the exit, and the next
+ * open's fresh object is what re-seeds and clears them.
+ */
 export function usePlacedSessionEditor(
   state: PlacedSessionState | null,
   opts: {
@@ -59,7 +65,6 @@ export function usePlacedSessionEditor(
     onUpdate: () => void;
     /** The calendar's bound SWR mutate. */
     mutateCalendar: () => Promise<unknown>;
-    onSelectSession?: (sessionId: string, eventId: string) => void;
   },
 ) {
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
@@ -79,32 +84,34 @@ export function usePlacedSessionEditor(
     mutate: mutateSession,
   } = useSWR<SessionGetResponse>(sessionKey, swrFetcher, {
     revalidateOnFocus: false,
+    // The key outlives a close (the subject does), so every training write
+    // still revalidates it: a session deleted meanwhile must not retry forever
+    // (CONVENTIONS §7's SWR config).
+    errorRetryCount: 3,
+    errorRetryInterval: 1000,
   });
 
-  const identity = state ? `${state.sessionId}:${state.eventId}` : null;
-
-  // Seed once per identity, only after the fetch lands (no event-snapshot
+  // Seed once per opening, only after the fetch lands (no event-snapshot
   // pre-seed: a snapshot has no exercises, and seeding twice would clobber
-  // edits made while the full session was still loading). Reset on close so
-  // re-opening re-seeds fresh; guarded against StrictMode's double effect-run.
-  const seededForRef = useRef<string | null>(null);
+  // edits made while the full session was still loading). Keyed on the subject
+  // object, so re-opening the same day re-seeds fresh while a close — which
+  // leaves the subject — keeps the seeded body through the slide-out
+  // (CONVENTIONS §7 → "No frame disagrees"). Guarded against StrictMode's
+  // double effect-run.
+  const seededForRef = useRef<PlacedSessionState | null>(null);
   const { seed } = builder;
   useEffect(() => {
-    if (state == null || identity == null) {
-      seededForRef.current = null;
-      return;
-    }
-    if (seededForRef.current === identity) return;
+    if (state == null || seededForRef.current === state) return;
     if (!data?.session) return;
     const { draft } = trainingSessionToDraft(data.session);
     seed(makeStandaloneDraft(draft));
-    seededForRef.current = identity;
-  }, [state, identity, data, seed]);
+    seededForRef.current = state;
+  }, [state, data, seed]);
 
   const session = builder.draft?.weeks[0]?.days[0]?.session ?? null;
-  // Seeded for the CURRENT identity — before then the draft still holds the
-  // previous session (kept for the exit animation) and must not render.
-  const isSeeded = identity != null && seededForRef.current === identity;
+  // Seeded for THIS opening — until then the draft still holds the previous
+  // opening's session and must not render.
+  const isSeeded = state != null && seededForRef.current === state;
 
   // Scope dialog trigger: >1 FUTURE SCHEDULED occurrence means an "all" save
   // touches other days. Past/logged events keep their snapshots either way.
@@ -133,15 +140,19 @@ export function usePlacedSessionEditor(
     [data],
   );
 
-  const [savingScope, setSavingScope] = useState<SaveScope | null>(null);
-  const isSaving = savingScope !== null;
+  // The in-flight flag belongs to one opening. A successful save closes the
+  // tray with it still set, so the sliding-out footer keeps its pending
+  // frame, and the next open's fresh subject reads it as false. A failure
+  // clears it, because the tray stays open.
+  const [savingFor, setSavingFor] = useState<PlacedSessionState | null>(null);
+  const isSaving = state != null && savingFor === state;
   // setState is async — the ref is the authoritative double-fire gate.
   const inFlightRef = useRef(false);
 
   const handleSave = async (scope: SaveScope): Promise<void> => {
     if (!session || !state || inFlightRef.current) return;
     inFlightRef.current = true;
-    setSavingScope(scope);
+    setSavingFor(state);
     try {
       const payload = sessionDraftToPlacedPayload(session);
       // Client-side belt: readable message instead of a generic 400.
@@ -153,6 +164,7 @@ export function usePlacedSessionEditor(
             ? `${issue.message}${issue.path.length ? ` (${issue.path.join(".")})` : ""}`
             : "Invalid session",
         });
+        setSavingFor(null);
         return;
       }
 
@@ -206,17 +218,17 @@ export function usePlacedSessionEditor(
       void clearAttentionFeed();
       void mutateSession();
       opts.onUpdate();
-      if (scope === "day" && targetSessionId !== state.sessionId) {
-        opts.onSelectSession?.(targetSessionId, state.eventId);
-      }
+      // The close keeps this subject even after a "day" save repointed the
+      // event at the clone: the next open reads the clone off the refreshed
+      // calendar.
       opts.onClose();
     } catch (error) {
       toast.error("Save failed", {
         description: error instanceof Error ? error.message : "Failed to save session",
       });
+      setSavingFor(null);
     } finally {
       inFlightRef.current = false;
-      setSavingScope(null);
     }
   };
 
@@ -261,7 +273,6 @@ export function usePlacedSessionEditor(
     isDirty: builder.isDirty,
     futureScheduledCount,
     loggedEvent,
-    savingScope,
     isSaving,
     handleSave,
     isSavingToLibrary,

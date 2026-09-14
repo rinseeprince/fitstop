@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { act, render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { EditReadingDialog } from "./edit-reading-dialog";
@@ -38,6 +38,7 @@ function row(overrides: Partial<LogRow> = {}): LogRow {
 
 const field = () => screen.getByLabelText<HTMLInputElement>("Value");
 const save = () => screen.getByRole("button", { name: "Save reading" });
+const cancel = () => screen.getByRole("button", { name: "Cancel" });
 
 beforeEach(() => {
   cleanup();
@@ -45,8 +46,8 @@ beforeEach(() => {
 });
 
 describe("EditReadingDialog", () => {
-  it("renders nothing for no row", () => {
-    render(<EditReadingDialog row={null} onOpenChange={vi.fn()} onConfirm={vi.fn()} />);
+  it("renders nothing while closed, even holding a reading — open is its own prop", () => {
+    render(<EditReadingDialog open={false} row={row()} onOpenChange={vi.fn()} onConfirm={vi.fn()} />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
@@ -54,6 +55,7 @@ describe("EditReadingDialog", () => {
     preference.current = "imperial";
     render(
       <EditReadingDialog
+        open
         row={row({ value: 198.4, unit: "lbs", canonicalValue: 90 })}
         onOpenChange={vi.fn()}
         onConfirm={vi.fn()}
@@ -67,7 +69,7 @@ describe("EditReadingDialog", () => {
   });
 
   it("refuses an untouched field — a correction that changes nothing is not a correction", () => {
-    render(<EditReadingDialog row={row()} onOpenChange={vi.fn()} onConfirm={vi.fn()} />);
+    render(<EditReadingDialog open row={row()} onOpenChange={vi.fn()} onConfirm={vi.fn()} />);
 
     expect(save()).toBeDisabled();
   });
@@ -78,7 +80,7 @@ describe("EditReadingDialog", () => {
     const onConfirm = vi.fn().mockResolvedValue(undefined);
     const onOpenChange = vi.fn();
     const target = row({ value: 198.4, unit: "lbs", canonicalValue: 90 });
-    render(<EditReadingDialog row={target} onOpenChange={onOpenChange} onConfirm={onConfirm} />);
+    render(<EditReadingDialog open row={target} onOpenChange={onOpenChange} onConfirm={onConfirm} />);
 
     await user.clear(field());
     await user.type(field(), "200");
@@ -93,7 +95,7 @@ describe("EditReadingDialog", () => {
 
   it("holds a value outside the metric's STORAGE bounds, judged on the converted number", async () => {
     const user = userEvent.setup();
-    render(<EditReadingDialog row={row()} onOpenChange={vi.fn()} onConfirm={vi.fn()} />);
+    render(<EditReadingDialog open row={row()} onOpenChange={vi.fn()} onConfirm={vi.fn()} />);
 
     await user.clear(field());
     await user.type(field(), "300");
@@ -108,6 +110,7 @@ describe("EditReadingDialog", () => {
     const onConfirm = vi.fn().mockResolvedValue(undefined);
     render(
       <EditReadingDialog
+        open
         row={row({ metricId: "bodyFat", metricName: "Body Fat", value: 18.5, unit: "%", canonicalValue: 18.5 })}
         onOpenChange={vi.fn()}
         onConfirm={onConfirm}
@@ -120,5 +123,68 @@ describe("EditReadingDialog", () => {
     await user.click(save());
 
     await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(expect.anything(), 17));
+  });
+});
+
+// The reading outlives the close (CONVENTIONS §7 → "No frame disagrees"), so
+// the draft and the in-flight flag are cleared by the next open, never by the
+// close. jsdom unmounts a closing card at once, so these read the closing frame
+// with the card held open; reading-dialogs.closing-card.test.tsx reads it with
+// the card kept mounted through `open={false}`.
+describe("EditReadingDialog — reset on the open, never on the close", () => {
+  it("re-seeds the field on the next open, the same reading included", async () => {
+    const user = userEvent.setup();
+    const target = row();
+    const props = { onOpenChange: vi.fn(), onConfirm: vi.fn() };
+    const { rerender } = render(<EditReadingDialog key="open-1" open row={target} {...props} />);
+
+    await user.clear(field());
+    await user.type(field(), "95");
+    // The close keeps the card as it was; the host keys the next open anew.
+    rerender(<EditReadingDialog key="open-1" open={false} row={target} {...props} />);
+    rerender(<EditReadingDialog key="open-2" open row={target} {...props} />);
+
+    expect(field().value).toBe("90");
+    expect(save()).toBeDisabled();
+  });
+
+  it("a save that succeeds asks to close with its spinner still on; the next open clears it", async () => {
+    const user = userEvent.setup();
+    const target = row();
+    const props = { onOpenChange: vi.fn(), onConfirm: vi.fn().mockResolvedValue(undefined) };
+    const { rerender } = render(<EditReadingDialog key="open-1" open row={target} {...props} />);
+
+    await user.clear(field());
+    await user.type(field(), "91");
+    await user.click(save());
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
+    await act(async () => {});
+
+    expect(save()).toBeDisabled();
+    expect(cancel()).toBeDisabled();
+
+    rerender(<EditReadingDialog key="open-1" open={false} row={target} {...props} />);
+    rerender(<EditReadingDialog key="open-2" open row={target} {...props} />);
+    await user.clear(field());
+    await user.type(field(), "92");
+
+    expect(save()).toBeEnabled();
+    expect(cancel()).toBeEnabled();
+  });
+
+  it("a save that fails keeps the card and hands the flag back", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    const onConfirm = vi.fn().mockRejectedValue(new Error("nope"));
+    render(<EditReadingDialog open row={row()} onOpenChange={onOpenChange} onConfirm={onConfirm} />);
+
+    await user.clear(field());
+    await user.type(field(), "91");
+    await user.click(save());
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => expect(save()).toBeEnabled());
+    expect(cancel()).toBeEnabled();
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 });

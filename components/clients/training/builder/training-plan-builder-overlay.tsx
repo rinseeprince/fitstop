@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { ProgramDraftProvider } from "@/components/clients/training/program-builder/program-draft-provider";
 import { ProgramBuilder } from "@/components/clients/training/program-builder/program-builder";
 import { ClientDraftLeaveGuard } from "./client-draft-leave-guard";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
+import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import {
   LABEL_CLASS,
   MONO_LABEL_CLASS,
@@ -207,11 +207,12 @@ function LibraryHeader({ onClose }: { onClose: () => void }) {
 
 function SavedPlansList({ onPick }: { onPick: (savedPlanId: string) => void }) {
   const { plans, isLoading, mutate } = useSavedPlans();
-  const [planToDelete, setPlanToDelete] = useState<SavedPlan | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  // The subject outlives the close: Radix re-renders a closing card from live
+  // state, so the confirm keeps naming the template while it fades
+  // (CONVENTIONS §7 → "No frame disagrees").
+  const deleteDialog = useDialogSubject<SavedPlan>();
 
   const handleDelete = async (plan: SavedPlan) => {
-    setIsDeleting(true);
     try {
       const res = await fetch(`/api/training/saved-plans/${plan.id}`, {
         method: "DELETE",
@@ -221,14 +222,11 @@ function SavedPlansList({ onPick }: { onPick: (savedPlanId: string) => void }) {
         throw new Error(data.error || "Failed to delete template");
       }
       toast.success("Template deleted");
-      setPlanToDelete(null);
       await mutate();
     } catch (error) {
       toast.error("Error", {
         description: error instanceof Error ? error.message : "Failed to delete template",
       });
-    } finally {
-      setIsDeleting(false);
     }
   };
 
@@ -291,7 +289,7 @@ function SavedPlansList({ onPick }: { onPick: (savedPlanId: string) => void }) {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setPlanToDelete(plan);
+              deleteDialog.show(plan);
             }}
             className="absolute top-1/2 -translate-y-1/2 right-3 p-1.5 rounded-[4px] text-[#93b0b4] opacity-0 group-hover:opacity-100 hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060] transition-all focus:opacity-100"
             aria-label={`Delete ${plan.name}`}
@@ -301,15 +299,17 @@ function SavedPlansList({ onPick }: { onPick: (savedPlanId: string) => void }) {
         </div>
       ))}
 
+      {/* The action closes the confirm on click, so the delete runs behind a
+          closed card and its label never changes. */}
       <ConfirmDialog
-        open={!!planToDelete}
-        onOpenChange={(open) => !open && setPlanToDelete(null)}
-        title={`Delete "${planToDelete?.name ?? ""}"?`}
+        open={deleteDialog.open}
+        onOpenChange={(open) => !open && deleteDialog.close()}
+        title={`Delete "${deleteDialog.subject?.name ?? ""}"?`}
         description="This removes the template from your library. Clients who already have this plan applied keep their current schedule. This cannot be undone."
-        confirmLabel={isDeleting ? "Deleting..." : "Delete"}
+        confirmLabel="Delete"
         destructive
         onConfirm={() => {
-          if (planToDelete) void handleDelete(planToDelete);
+          if (deleteDialog.subject) void handleDelete(deleteDialog.subject);
         }}
       />
     </div>

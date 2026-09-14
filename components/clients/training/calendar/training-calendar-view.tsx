@@ -9,11 +9,13 @@ import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-clien
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import { useCalendarDnd } from "@/hooks/use-calendar-dnd";
+import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { CalendarGrid } from "./calendar-grid";
 import { CalendarToolbar } from "./calendar-toolbar";
 import { CalendarEventCard } from "./calendar-event-card";
 import { ClearWeekDialog, DeleteEventDialog } from "./delete-event-dialog";
 import { PlacedSessionEditor } from "./placed-session-editor";
+import type { PlacedSessionState } from "./use-placed-session-editor";
 import { LibraryPanel } from "./library-panel";
 import { ApplyToClientDialog } from "@/components/training-library/apply-to-client-dialog";
 import { toast } from "sonner";
@@ -96,12 +98,29 @@ export function TrainingCalendarView({
     return { year: today.getFullYear(), month: today.getMonth() };
   });
 
-  // State
-  const [selectedSession, setSelectedSession] = useState<{ sessionId: string; eventId: string; planId: string; date: string } | null>(null);
+  // State. Each overlay keeps its subject apart from `open`: a close flips
+  // `open` only, so a closing card still renders what it showed — Radix
+  // re-renders it from live state (CONVENTIONS §7 → "No frame disagrees").
+  const {
+    subject: selectedSession,
+    open: sessionTrayOpen,
+    show: showSessionTray,
+    close: closeSessionTray,
+  } = useDialogSubject<PlacedSessionState>();
   const [pendingDuplicate, setPendingDuplicate] = useState<TrainingEvent | null>(null);
   const [isWeekActionLoading, setIsWeekActionLoading] = useState(false);
-  const [pendingClearWeek, setPendingClearWeek] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<TrainingEvent | null>(null);
+  const {
+    subject: pendingClearWeek,
+    open: clearWeekOpen,
+    show: showClearWeek,
+    close: closeClearWeek,
+  } = useDialogSubject<string>();
+  const {
+    subject: deleteTarget,
+    open: deleteOpen,
+    show: showDelete,
+    close: closeDelete,
+  } = useDialogSubject<TrainingEvent>();
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [applyFromDrop, setApplyFromDrop] = useState<{ planId: string; startDate: string } | null>(null);
@@ -293,11 +312,14 @@ export function TrainingCalendarView({
           void clearAttentionFeed();
     } finally {
       setIsWeekActionLoading(false);
-      setPendingClearWeek(null);
+      closeClearWeek();
     }
-  }, [clientId, clientToday, eventsByDate, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed]);
+  }, [clientId, clientToday, eventsByDate, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, closeClearWeek]);
 
   // Per-event delete executor — runs only after the DeleteEventDialog confirm.
+  // A success closes with `isDeletingEvent` still set, so the fading card keeps
+  // its pending frame; the next open clears it (onDelete below). A failure
+  // clears it here, because the card stays open.
   const executeDeleteEvent = useCallback(async (event: TrainingEvent) => {
     setIsDeletingEvent(true);
     try {
@@ -308,6 +330,7 @@ export function TrainingCalendarView({
       if (!res.ok) {
         const data = await res.json();
         toast.error("Error", { description: data.error || "Failed to delete event" });
+        setIsDeletingEvent(false);
         return;
       }
       await invalidateTrainingData(clientId);
@@ -315,13 +338,12 @@ export function TrainingCalendarView({
           void clearClientOverview(clientId);
           void clearAttentionFeed();
       toast.success("Session removed");
-      setDeleteTarget(null);
+      closeDelete();
     } catch {
       toast.error("Error", { description: "Failed to delete event" });
-    } finally {
       setIsDeletingEvent(false);
     }
-  }, [clientId, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed]);
+  }, [clientId, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed, closeDelete]);
 
   // Week action handler. `WeekAction` is down to its one surviving member, so
   // the action itself is not read — the parameter stays to keep the row → view
@@ -353,8 +375,8 @@ export function TrainingCalendarView({
       toast("Nothing to clear", { description: "This week has no upcoming sessions." });
       return;
     }
-    setPendingClearWeek(weekStartDate);
-  }, [clientToday, eventsByDate, weekRowPlanId]);
+    showClearWeek(weekStartDate);
+  }, [clientToday, eventsByDate, weekRowPlanId, showClearWeek]);
 
   const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
 
@@ -433,7 +455,10 @@ export function TrainingCalendarView({
           onEventClick={(event) => {
             if (pendingDuplicate) return;
             if (event.trainingSessionId && event.trainingPlanId) {
-              setSelectedSession({
+              // A fresh subject per open: the tray seeds its draft once per
+              // subject, so re-opening the same day drops a discarded draft.
+              showSessionTray({
+                clientId,
                 sessionId: event.trainingSessionId,
                 eventId: event.id,
                 planId: event.trainingPlanId,
@@ -442,7 +467,11 @@ export function TrainingCalendarView({
             }
           }}
           onDuplicate={(event) => setPendingDuplicate(event)}
-          onDelete={(event) => setDeleteTarget(event)}
+          onDelete={(event) => {
+            // The open clears the pending flag a successful delete left set.
+            setIsDeletingEvent(false);
+            showDelete(event);
+          }}
         />
 
         {isWeekActionLoading && (
@@ -467,31 +496,29 @@ export function TrainingCalendarView({
 
       {/* Per-event delete confirm */}
       <DeleteEventDialog
+        open={deleteOpen}
         event={deleteTarget}
         isDeleting={isDeletingEvent}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={closeDelete}
         onConfirm={(event) => void executeDeleteEvent(event)}
       />
 
       {/* Clear-week confirm (previously unconfirmed) */}
       <ClearWeekDialog
+        open={clearWeekOpen}
         weekStartDate={pendingClearWeek}
         isClearing={isWeekActionLoading}
-        onCancel={() => setPendingClearWeek(null)}
+        onCancel={closeClearWeek}
         onConfirm={(weekStartDate) => void executeClearWeek(weekStartDate)}
       />
 
       {/* Placed-session tray */}
       <PlacedSessionEditor
-        state={selectedSession ? { clientId, ...selectedSession } : null}
-        onClose={() => setSelectedSession(null)}
+        open={sessionTrayOpen}
+        state={selectedSession}
+        onClose={closeSessionTray}
         onUpdate={onUpdate}
         mutateCalendar={mutate}
-        onSelectSession={(sessionId, eventId) =>
-          setSelectedSession((prev) =>
-            prev ? { ...prev, sessionId, eventId } : null
-          )
-        }
       />
 
 

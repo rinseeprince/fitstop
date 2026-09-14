@@ -34,13 +34,18 @@ const DANGER_CTA =
 export type BlockDeleteChoice = "block" | "plans";
 
 type DeleteBlockDialogProps = {
-  block: ClientBlockView | null; // null = closed
+  open: boolean;
+  /** What the card names. It outlives the close: Radix re-renders a closing
+   *  card from live props, so the fading card keeps the block's name
+   *  (CONVENTIONS §7 → "No frame disagrees"). Null only before the first open. */
+  block: ClientBlockView | null;
   deleting: BlockDeleteChoice | null;
   onCancel: () => void;
   onConfirm: (block: ClientBlockView, clearPlans: boolean) => void;
 };
 
 export function DeleteBlockDialog({
+  open,
   block,
   deleting,
   onCancel,
@@ -49,8 +54,8 @@ export function DeleteBlockDialog({
   const isDeleting = deleting !== null;
   return (
     <Dialog
-      open={block != null}
-      onOpenChange={(open) => !open && !isDeleting && onCancel()}
+      open={open}
+      onOpenChange={(next) => !next && !isDeleting && onCancel()}
     >
       {/* Deliberately NOT sm:max-w-md. DialogContent is a GRID, and a grid
           item's default `min-width: auto` means the column cannot shrink below

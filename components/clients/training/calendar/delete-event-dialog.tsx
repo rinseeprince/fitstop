@@ -16,6 +16,11 @@ import type { TrainingEvent } from "@/types/training";
 // session and clearing a week. Danger styling stays on the documented pair —
 // #c06060 text + rgba(192,96,96,0.08) washes — there is no filled
 // destructive button in the design system.
+//
+// Each takes `open` apart from its subject: the close flips `open` and leaves
+// the subject, because Radix re-renders a closing card from live props and the
+// fading card must still name what it named (CONVENTIONS §7 → "No frame
+// disagrees").
 const DANGER_CTA =
   "border border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]";
 
@@ -32,20 +37,22 @@ function formatDay(date: string): string {
 }
 
 type DeleteEventDialogProps = {
-  event: TrainingEvent | null; // null = closed
+  open: boolean;
+  event: TrainingEvent | null; // null only before the first open
   isDeleting: boolean;
   onCancel: () => void;
   onConfirm: (event: TrainingEvent) => void;
 };
 
 export function DeleteEventDialog({
+  open,
   event,
   isDeleting,
   onCancel,
   onConfirm,
 }: DeleteEventDialogProps) {
   return (
-    <Dialog open={event != null} onOpenChange={(open) => !open && !isDeleting && onCancel()}>
+    <Dialog open={open} onOpenChange={(next) => !next && !isDeleting && onCancel()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
@@ -79,13 +86,15 @@ export function DeleteEventDialog({
 }
 
 type ClearWeekDialogProps = {
-  weekStartDate: string | null; // null = closed
+  open: boolean;
+  weekStartDate: string | null; // null only before the first open
   isClearing: boolean;
   onCancel: () => void;
   onConfirm: (weekStartDate: string) => void;
 };
 
 export function ClearWeekDialog({
+  open,
   weekStartDate,
   isClearing,
   onCancel,
@@ -93,8 +102,8 @@ export function ClearWeekDialog({
 }: ClearWeekDialogProps) {
   return (
     <Dialog
-      open={weekStartDate != null}
-      onOpenChange={(open) => !open && !isClearing && onCancel()}
+      open={open}
+      onOpenChange={(next) => !next && !isClearing && onCancel()}
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>

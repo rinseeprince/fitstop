@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Loader2 } from "lucide-react"
 import {
   Dialog,
@@ -19,6 +19,11 @@ import type { Exercise } from "@/types/training"
 // One dialog for both create (exercise undefined — first UI caller of the
 // existing POST /api/training/exercises) and edit (coach-owned rows only;
 // PATCH). Fields mirror the catalog columns; category is a free string.
+//
+// The host keys it by the opening (`useDialogSubject`'s openKey), so each open
+// mounts it fresh on its exercise and a close leaves the closing card — its
+// fields and a finished save's pending flag — as it was (CONVENTIONS §7 →
+// "No frame disagrees").
 export function ExerciseFormDialog({
   open,
   onOpenChange,
@@ -31,21 +36,11 @@ export function ExerciseFormDialog({
   onSaved: () => void
 }) {
   const isEdit = exercise != null
-  const [name, setName] = useState("")
-  const [muscleGroup, setMuscleGroup] = useState("")
-  const [equipment, setEquipment] = useState("")
-  const [category, setCategory] = useState("")
+  const [name, setName] = useState(exercise?.name ?? "")
+  const [muscleGroup, setMuscleGroup] = useState(exercise?.muscleGroup ?? "")
+  const [equipment, setEquipment] = useState(exercise?.equipment ?? "")
+  const [category, setCategory] = useState(exercise?.category ?? "")
   const [isSaving, setIsSaving] = useState(false)
-
-  // Re-seed the fields whenever the dialog opens on a different target.
-  useEffect(() => {
-    if (open) {
-      setName(exercise?.name ?? "")
-      setMuscleGroup(exercise?.muscleGroup ?? "")
-      setEquipment(exercise?.equipment ?? "")
-      setCategory(exercise?.category ?? "")
-    }
-  }, [open, exercise])
 
   const handleSave = async () => {
     const trimmed = name.trim()
@@ -74,7 +69,6 @@ export function ExerciseFormDialog({
       toast.error("Error", {
         description: isEdit ? "Failed to update exercise" : "Failed to create exercise",
       })
-    } finally {
       setIsSaving(false)
     }
   }

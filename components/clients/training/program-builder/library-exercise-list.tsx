@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useExerciseCatalog } from "@/hooks/use-exercise-catalog";
+import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { filterExercisesByQuery } from "@/lib/exercise-search";
 import { ExerciseFormDialog } from "@/components/programs/exercise-form-dialog";
 import { RowActions } from "@/components/programs/shared/row-actions";
@@ -102,9 +103,12 @@ function LibraryExerciseCard({
 export function LibraryExerciseList({ editable }: { editable: boolean }) {
   const { exercises, isLoading, mutate } = useExerciseCatalog();
   const [query, setQuery] = useState("");
-  const [formOpen, setFormOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<Exercise | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Exercise | null>(null);
+  // The subject outlives the close: Radix re-renders a closing card from live
+  // state, so the form and the confirm keep what they showed while they fade
+  // (CONVENTIONS §7 → "No frame disagrees"). The form's subject is null for a
+  // new exercise, so "New exercise" replaces an edit target as it opens.
+  const formDialog = useDialogSubject<Exercise | null>();
+  const deleteDialog = useDialogSubject<Exercise>();
 
   const handleDelete = async (exercise: Exercise) => {
     try {
@@ -183,11 +187,8 @@ export function LibraryExerciseList({ editable }: { editable: boolean }) {
                 key={exercise.id}
                 exercise={exercise}
                 editable={editable}
-                onEdit={() => {
-                  setEditTarget(exercise);
-                  setFormOpen(true);
-                }}
-                onDelete={() => setDeleteTarget(exercise)}
+                onEdit={() => formDialog.show(exercise)}
+                onDelete={() => deleteDialog.show(exercise)}
               />
             ))}
             {moreCount > 0 && (
@@ -205,37 +206,33 @@ export function LibraryExerciseList({ editable }: { editable: boolean }) {
         <button
           type="button"
           className="flex h-8 w-full items-center justify-center gap-1.5 rounded-[6px] border border-dashed border-[rgba(13,148,136,0.25)] text-xs font-medium text-[#5a7d82] transition-colors hover:border-[#0d9488] hover:bg-[rgba(13,148,136,0.05)] hover:text-[#0a5c55]"
-          onClick={() => {
-            setEditTarget(null);
-            setFormOpen(true);
-          }}
+          onClick={() => formDialog.show(null)}
         >
           <Plus className="h-3.5 w-3.5" strokeWidth={1.5} /> New exercise
         </button>
       </div>
 
       <ExerciseFormDialog
-        open={formOpen}
+        key={`exercise-form-${formDialog.openKey}`}
+        open={formDialog.open}
         onOpenChange={(open) => {
-          setFormOpen(open);
-          if (!open) setEditTarget(null);
+          if (!open) formDialog.close();
         }}
-        exercise={editTarget}
+        exercise={formDialog.subject}
         onSaved={() => void mutate()}
       />
 
       <ConfirmDialog
-        open={deleteTarget !== null}
+        open={deleteDialog.open}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
+          if (!open) deleteDialog.close();
         }}
         title="Delete this exercise?"
-        description={`"${deleteTarget?.name ?? ""}" will be removed from your catalog. Prescriptions that reference it keep the name but lose the catalog link (and its analytics grouping).`}
+        description={`"${deleteDialog.subject?.name ?? ""}" will be removed from your catalog. Prescriptions that reference it keep the name but lose the catalog link (and its analytics grouping).`}
         confirmLabel="Delete exercise"
         destructive
         onConfirm={() => {
-          if (deleteTarget) void handleDelete(deleteTarget);
-          setDeleteTarget(null);
+          if (deleteDialog.subject) void handleDelete(deleteDialog.subject);
         }}
       />
     </div>

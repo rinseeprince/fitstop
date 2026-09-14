@@ -18,6 +18,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { MONO_CELL_CLASS } from "@/components/clients/training/program-builder/builder-tokens"
 import { useSavedPlansPage } from "@/hooks/use-saved-plans-page"
+import { useDialogSubject } from "@/hooks/use-dialog-subject"
 import type { SavedPlanListItem } from "@/types/training"
 import { LibrarySearchInput } from "./shared/library-search-input"
 import { LibrarySortSelect } from "./shared/library-sort-select"
@@ -50,7 +51,10 @@ export function ProgramsTable() {
   const [segment, setSegment] = useState("all")
   const [sort, setSort] = useState<SortKey>("updated")
   const [page, setPage] = useState(0)
-  const [deleteTarget, setDeleteTarget] = useState<SavedPlanListItem | null>(null)
+  // The subject outlives the close: Radix re-renders a closing card from live
+  // state, so the confirm keeps naming the program while it fades
+  // (CONVENTIONS §7 → "No frame disagrees").
+  const deleteDialog = useDialogSubject<SavedPlanListItem>()
   const [createOpen, setCreateOpen] = useState(false)
 
   // Debounce the search so typing doesn't fire a request per keystroke.
@@ -298,7 +302,7 @@ export function ProgramsTable() {
                         label: "Delete",
                         icon: Trash2,
                         danger: true,
-                        onClick: () => setDeleteTarget(plan),
+                        onClick: () => deleteDialog.show(plan),
                       },
                     ]}
                   />
@@ -310,17 +314,16 @@ export function ProgramsTable() {
       </LibraryTableShell>
 
       <ConfirmDialog
-        open={deleteTarget !== null}
+        open={deleteDialog.open}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null)
+          if (!open) deleteDialog.close()
         }}
         title="Delete this program?"
-        description={`"${deleteTarget?.name ?? ""}" and everything in it will be permanently removed from your library. Clients it was already applied to keep their calendars.`}
+        description={`"${deleteDialog.subject?.name ?? ""}" and everything in it will be permanently removed from your library. Clients it was already applied to keep their calendars.`}
         confirmLabel="Delete program"
         destructive
         onConfirm={() => {
-          if (deleteTarget) void handleDelete(deleteTarget)
-          setDeleteTarget(null)
+          if (deleteDialog.subject) void handleDelete(deleteDialog.subject)
         }}
       />
 

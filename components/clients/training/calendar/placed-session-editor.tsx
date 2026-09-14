@@ -44,12 +44,17 @@ import {
 // events, normally just this day)
 // against a local draft with explicit Save/Cancel. Replaces the legacy
 // session-detail-drawer.
+//
+// `open` is its own prop, never derived from `state`: the close flips `open`
+// and leaves the subject, because Radix re-renders the sliding-out tray from
+// live props and it must still show its session (CONVENTIONS §7 → "No frame
+// disagrees").
 type PlacedSessionEditorProps = {
-  state: PlacedSessionState | null; // null = closed
+  open: boolean;
+  state: PlacedSessionState | null; // null only before the first open
   onClose: () => void;
   onUpdate: () => void;
   mutateCalendar: () => Promise<unknown>;
-  onSelectSession?: (sessionId: string, eventId: string) => void;
 };
 
 const DANGER_OUTLINE_BUTTON =
@@ -70,11 +75,11 @@ const loggedLockMessage = (date: string) =>
   `The client logged this session on ${format(new Date(date + "T00:00:00"), "EEE, MMM d")}, so it can no longer be edited.`;
 
 export function PlacedSessionEditor({
+  open,
   state,
   onClose,
   onUpdate,
   mutateCalendar,
-  onSelectSession,
 }: PlacedSessionEditorProps) {
   const {
     session,
@@ -84,7 +89,6 @@ export function PlacedSessionEditor({
     isDirty,
     futureScheduledCount,
     loggedEvent,
-    savingScope,
     isSaving,
     handleSave,
     isSavingToLibrary,
@@ -99,21 +103,12 @@ export function PlacedSessionEditor({
     onClose,
     onUpdate,
     mutateCalendar,
-    onSelectSession,
   });
 
   const [scopeDialogOpen, setScopeDialogOpen] = useState(false);
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [libraryDialogOpen, setLibraryDialogOpen] = useState(false);
   const [libraryName, setLibraryName] = useState("");
-
-  // Latch the header meta: `state` nulls synchronously on close but the Sheet
-  // stays mounted through its exit animation — deriving from live `state`
-  // would blank the date mid-slide.
-  const [displayDate, setDisplayDate] = useState<string | null>(null);
-  if (state && state.date !== displayDate) {
-    setDisplayDate(state.date);
-  }
 
   const requestClose = () => {
     if (isSaving) return;
@@ -140,13 +135,13 @@ export function PlacedSessionEditor({
 
   const showBody = isSeeded && session != null;
   const isLocked = loggedEvent != null;
-  const dateLabel = displayDate
-    ? format(new Date(displayDate + "T00:00:00"), "EEE, MMM d")
+  const dateLabel = state
+    ? format(new Date(state.date + "T00:00:00"), "EEE, MMM d")
     : "";
 
   return (
     <>
-      <Sheet open={state != null} onOpenChange={(open) => !open && requestClose()}>
+      <Sheet open={open} onOpenChange={(next) => !next && requestClose()}>
         <SheetContent
           side="right"
           className="flex w-full flex-col gap-0 bg-white p-0 sm:w-[780px] sm:max-w-full"
@@ -260,7 +255,10 @@ export function PlacedSessionEditor({
         </SheetContent>
       </Sheet>
 
-      {/* Scope dialog — the session repeats on future days */}
+      {/* Scope dialog — the session repeats on future days. A choice closes it
+          in the same click that starts the save, so it never shows the save's
+          pending state: its card is static and still reads the same while it
+          fades (CONVENTIONS §7 → "No frame disagrees"). */}
       <Dialog open={scopeDialogOpen} onOpenChange={setScopeDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -274,13 +272,8 @@ export function PlacedSessionEditor({
             <button
               className="flex w-full cursor-pointer items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3 text-left transition-colors hover:bg-[rgba(13,148,136,0.03)]"
               onClick={() => saveWithScope("day")}
-              disabled={isSaving}
             >
-              {savingScope === "day" ? (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#0d9488]" />
-              ) : (
-                <div className="h-4 w-4 shrink-0 rounded-full border-2 border-[#0d9488]" />
-              )}
+              <div className="h-4 w-4 shrink-0 rounded-full border-2 border-[#0d9488]" />
               <div>
                 <p className="text-sm font-medium text-[#0c1a1e]">Just this day</p>
                 <p className="text-[11px] text-[#93b0b4]">
@@ -291,13 +284,8 @@ export function PlacedSessionEditor({
             <button
               className="flex w-full cursor-pointer items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3 text-left transition-colors hover:bg-[rgba(13,148,136,0.03)]"
               onClick={() => saveWithScope("all")}
-              disabled={isSaving}
             >
-              {savingScope === "all" ? (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#0d9488]" />
-              ) : (
-                <div className="h-4 w-4 shrink-0 rounded-full border-2 border-[#93b0b4]" />
-              )}
+              <div className="h-4 w-4 shrink-0 rounded-full border-2 border-[#93b0b4]" />
               <div>
                 <p className="text-sm font-medium text-[#0c1a1e]">All occurrences</p>
                 <p className="text-[11px] text-[#93b0b4]">
@@ -307,11 +295,7 @@ export function PlacedSessionEditor({
             </button>
           </div>
           <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setScopeDialogOpen(false)}
-              disabled={isSaving}
-            >
+            <Button variant="ghost" onClick={() => setScopeDialogOpen(false)}>
               Cancel
             </Button>
           </DialogFooter>

@@ -15,7 +15,10 @@ import { formatLogDate } from "./metrics-format";
 import type { LogRow } from "./metrics-view-types";
 
 type RemoveReadingDialogProps = {
-  /** The reading awaiting confirmation; null closes the dialog. */
+  open: boolean;
+  /** The reading the card names. It outlives the close: Radix re-renders a
+   *  closing card from live props, so the fading card still names it
+   *  (CONVENTIONS §7 → "No frame disagrees"). Null only before the first open. */
   row: LogRow | null;
   clientName: string;
   onOpenChange: (open: boolean) => void;
@@ -48,11 +51,15 @@ function roleSentence(row: LogRow): string | null {
  * that is the part a coach would not assume.
  */
 export function RemoveReadingDialog({
+  open,
   row,
   clientName,
   onOpenChange,
   onConfirm,
 }: RemoveReadingDialogProps) {
+  // A removal that succeeded closes with this still set, so the closing card
+  // keeps its spinner; the host keys the card by the opening, so the next
+  // open mounts it fresh.
   const [isRemoving, setIsRemoving] = useState(false);
 
   const handleConfirm = async () => {
@@ -66,7 +73,6 @@ export function RemoveReadingDialog({
       toast.error("Remove failed", {
         description: error instanceof Error ? error.message : "Something went wrong",
       });
-    } finally {
       setIsRemoving(false);
     }
   };
@@ -74,7 +80,7 @@ export function RemoveReadingDialog({
   const role = row ? roleSentence(row) : null;
 
   return (
-    <Dialog open={row !== null} onOpenChange={(open) => !isRemoving && onOpenChange(open)}>
+    <Dialog open={open} onOpenChange={(next) => !isRemoving && onOpenChange(next)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { leaveCoachPage } from "@/lib/coach-history";
+import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { Ban, Loader2, Pencil, Save, Trash2 } from "lucide-react";
 import { PageLoading } from "@/components/page-loading";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
@@ -133,7 +134,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   const apply = useClientApply({ draft, isDirty, clientId, plan });
 
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(new Set());
-  const [editingSessionUid, setEditingSessionUid] = useState<string | null>(null);
+  // The editor sheet's session uid. The subject outlives the close: Radix
+  // re-renders a closing sheet from live state (CONVENTIONS §7 → "No frame
+  // disagrees"), so the sheet slides out still showing its session.
+  const sessionSheet = useDialogSubject<string>();
   // Owned here, not in the dock: the session-editor sheet's footer button opens
   // the same panel, and the dock's fixed launcher hides while that sheet is up.
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -229,7 +233,9 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     );
   }
 
-  const editingSession = findSession(draft, editingSessionUid);
+  const editingSession = findSession(draft, sessionSheet.subject);
+  // A session the draft drops while its sheet is up (an assistant op) closes it.
+  const sessionSheetOpen = sessionSheet.open && editingSession != null;
   const progressionWeek =
     mode === "edit"
       ? (draft.weeks.find((w) => w.uid === progressionWeekUid) ?? null)
@@ -474,7 +480,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 onDuplicateWeekWithProgression={setProgressionWeekUid}
                 onDeleteWeek={deleteWeek}
                 onAddWeek={addWeek}
-                onOpenSession={setEditingSessionUid}
+                onOpenSession={sessionSheet.show}
                 onRequestAddSession={requestAddSession}
                 onClearSlot={clearSlot}
               />
@@ -535,6 +541,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
       </DndContext>
 
       <SessionEditorSheet
+        open={sessionSheetOpen}
         session={editingSession}
         // A locked (elapsed / already-logged) session opens read-only — its
         // day is history; the locked mutators would refuse edits anyway.
@@ -547,7 +554,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         }
         identityEditable={!isClientDraft}
         defaultSurplusPercentage={draft.defaultSurplusPercentage}
-        onClose={() => setEditingSessionUid(null)}
+        onClose={sessionSheet.close}
         onUpdateSession={updateSession}
         onAddExercise={addExercise}
         onRemoveExercise={removeExercise}
@@ -600,7 +607,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
               exercises: [],
             };
             placeSession(t.slotUid, blank);
-            setEditingSessionUid(blank.uid);
+            sessionSheet.show(blank.uid);
             return;
           }
           router.push(
@@ -672,7 +679,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onOpenChange={setAssistantOpen}
         // The fixed corner chip lands on top of the session sheet's own footer;
         // while that sheet is up, its Assistant button is the way in.
-        hideLauncher={editingSession != null}
+        hideLauncher={sessionSheetOpen}
       />
 
       {/* Placed-plan save flow (Job 2): confirm (with the moved-events

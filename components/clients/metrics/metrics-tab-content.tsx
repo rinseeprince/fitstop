@@ -13,6 +13,7 @@ import { RemoveReadingDialog } from "./remove-reading-dialog";
 import { useMergedMetrics } from "./hooks/use-merged-metrics";
 import { useReadingActions } from "./hooks/use-reading-actions";
 import { useClientBlocks } from "./hooks/use-client-blocks";
+import { useDialogSubject } from "@/hooks/use-dialog-subject";
 import { toast } from "sonner";
 import { BlocksSubtab } from "./blocks/blocks-subtab";
 import { shapeBlockBandIdentity } from "./blocks/block-chart-bands";
@@ -100,8 +101,10 @@ export const MetricsTabContent = ({
   // click (the removed row already says what it is). The dialogs toast their
   // own outcome; the click's toast lives here.
   const readingActions = useReadingActions(client.id, onClientUpdated);
-  const [editingReading, setEditingReading] = useState<LogRow | null>(null);
-  const [removingReading, setRemovingReading] = useState<LogRow | null>(null);
+  // Each dialog's reading outlives its close: Radix re-renders a closing card
+  // from live state (CONVENTIONS §7 → "No frame disagrees").
+  const editing = useDialogSubject<LogRow>();
+  const removing = useDialogSubject<LogRow>();
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
   const restoreReading = async (row: LogRow) => {
@@ -180,8 +183,8 @@ export const MetricsTabContent = ({
             key={focusedMetric.id}
             metric={focusedMetric}
             rows={logRowsByTab[tab]}
-            onEditReading={setEditingReading}
-            onRemoveReading={setRemovingReading}
+            onEditReading={editing.show}
+            onRemoveReading={removing.show}
             onRestoreReading={(row) => void restoreReading(row)}
             pendingRowId={restoringId}
           />
@@ -195,18 +198,24 @@ export const MetricsTabContent = ({
         initialMetricId={focusedMetric?.id ?? DEFAULT_FOCUS[tab]}
         onSubmit={logMeasurement}
       />
+      {/* Keyed by the opening: each open mounts the card fresh on its reading,
+          and a close leaves the closing card as it was. */}
       <EditReadingDialog
-        row={editingReading}
+        key={`edit-reading-${editing.openKey}`}
+        open={editing.open}
+        row={editing.subject}
         onOpenChange={(open) => {
-          if (!open) setEditingReading(null);
+          if (!open) editing.close();
         }}
         onConfirm={readingActions.update}
       />
       <RemoveReadingDialog
-        row={removingReading}
+        key={`remove-reading-${removing.openKey}`}
+        open={removing.open}
+        row={removing.subject}
         clientName={client.name}
         onOpenChange={(open) => {
-          if (!open) setRemovingReading(null);
+          if (!open) removing.close();
         }}
         onConfirm={readingActions.remove}
       />

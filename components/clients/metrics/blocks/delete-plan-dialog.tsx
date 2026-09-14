@@ -68,16 +68,20 @@ export function describePlanDelete(plan: BlockPlanDeleteTarget): PlanDeleteCopy 
 }
 
 type DeletePlanDialogProps = {
-  plan: BlockPlanDeleteTarget | null; // null = closed
+  open: boolean;
+  /** What the card says. It outlives the close: Radix re-renders a closing
+   *  card from live props, so the fading card still names its plan
+   *  (CONVENTIONS §7 → "No frame disagrees"). Null only before the first open. */
+  plan: BlockPlanDeleteTarget | null;
   isDeleting: boolean;
   onCancel: () => void;
   onConfirm: (plan: BlockPlanDeleteTarget) => void;
 };
 
-export function DeletePlanDialog({ plan, isDeleting, onCancel, onConfirm }: DeletePlanDialogProps) {
+export function DeletePlanDialog({ open, plan, isDeleting, onCancel, onConfirm }: DeletePlanDialogProps) {
   const copy = plan ? describePlanDelete(plan) : null;
   return (
-    <Dialog open={plan != null} onOpenChange={(open) => !open && !isDeleting && onCancel()}>
+    <Dialog open={open} onOpenChange={(next) => !next && !isDeleting && onCancel()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">

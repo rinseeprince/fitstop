@@ -151,8 +151,10 @@ export function SessionLogDetailDialog({
   onOpenChange,
   onExerciseDrillDown,
 }: SessionLogDetailDialogProps) {
+  // Keyed on the session log alone, never on `open`: a closing card keeps its
+  // data through the exit (CONVENTIONS §7 → "No frame disagrees", rule 5).
   const { data, isLoading, error } = useSWR<SessionLogDetailResponse>(
-    open && sessionLogId
+    sessionLogId
       ? `/api/clients/${clientId}/training/session-logs/${sessionLogId}`
       : null,
     swrFetcher,
@@ -161,7 +163,7 @@ export function SessionLogDetailDialog({
       errorRetryCount: 3,
       errorRetryInterval: 1000,
       dedupingInterval: 2000,
-      keepPreviousData: true,
+      // No keepPreviousData: the previous session's body would stand under a failed fetch.
       onError: (err) => console.error("Failed to load session log:", err),
     },
   );

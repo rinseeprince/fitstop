@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { PAST_LOCKED } from "./program-builder-lock-model";
@@ -109,6 +110,26 @@ vi.mock("@/components/training-library/apply-to-client-dialog", () => ({
 vi.mock("@/contexts/units-context", () => ({
   useUnits: () => ({ preference: "metric", isLoading: false, error: null }),
 }));
+
+// Pass-through: the real sheet still renders (the save-as-workout flows click
+// its footer), and a sibling marker exposes what the builder hands it. jsdom
+// unmounts a closing Radix node at once, so what a closing sheet renders from
+// is only observable as its props.
+vi.mock("./session-editor-sheet", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./session-editor-sheet")>();
+  return {
+    SessionEditorSheet: (props: ComponentProps<typeof actual.SessionEditorSheet>) => (
+      <>
+        <span
+          data-testid="session-sheet"
+          data-open={String(props.open)}
+          data-session={props.session?.name ?? ""}
+        />
+        <actual.SessionEditorSheet {...props} />
+      </>
+    ),
+  };
+});
 
 
 type FetchCall = { url: string; method: string; body: unknown };
@@ -571,6 +592,63 @@ describe("ProgramBuilder save flow", () => {
   });
 });
 
+describe("ProgramBuilder session sheet — the subject outlives the close", () => {
+  beforeEach(() => {
+    cleanup();
+    fetchCalls.length = 0;
+    planFixture = makeDraftPlan();
+  });
+
+  const renderLibrary = () =>
+    render(
+      <ProgramDraftProvider savedPlanId="plan-1" target="library">
+        <ProgramBuilder />
+      </ProgramDraftProvider>,
+    );
+  const sheet = () => screen.getByTestId("session-sheet");
+  const launcher = () => screen.queryByLabelText("Open the program assistant");
+
+  it("Done closes the sheet and keeps its session; the next open replaces it", () => {
+    const plan = makeDraftPlan();
+    plan.sessions[2] = makeSession({ id: "s-2", name: "Pull", isRest: false, orderIndex: 2 });
+    planFixture = plan;
+    renderLibrary();
+
+    fireEvent.click(screen.getByText("Push"));
+    expect(sheet()).toHaveAttribute("data-open", "true");
+    expect(sheet()).toHaveAttribute("data-session", "Push");
+    expect(screen.getByRole("dialog", { name: "Push" })).toBeInTheDocument();
+    // The corner launcher hides while the sheet's own footer carries it.
+    expect(launcher()).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    // Radix re-renders the closing sheet from these through its exit.
+    expect(sheet()).toHaveAttribute("data-open", "false");
+    expect(sheet()).toHaveAttribute("data-session", "Push");
+    // The real sheet closes on `open`, not on the session it still holds.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Back with the close, though the session is still held.
+    expect(launcher()).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Pull"));
+    expect(sheet()).toHaveAttribute("data-open", "true");
+    expect(sheet()).toHaveAttribute("data-session", "Pull");
+    expect(screen.getByRole("dialog", { name: "Pull" })).toBeInTheDocument();
+  });
+
+  it("a session dropped from the draft while its sheet is up closes the sheet", () => {
+    renderLibrary();
+    fireEvent.click(screen.getByText("Push"));
+    expect(sheet()).toHaveAttribute("data-open", "true");
+
+    // The grid's clear stands in for an assistant op removing the session.
+    fireEvent.click(screen.getByLabelText("Clear session (back to rest)"));
+    expect(sheet()).toHaveAttribute("data-open", "false");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(launcher()).toBeInTheDocument();
+  });
+});
+
 describe("ProgramBuilder client-draft mode (Phase 5)", () => {
   beforeEach(() => {
     cleanup();
@@ -706,6 +784,9 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
     // Placed in-memory; the routed create-blank slide-over is never navigated to.
     expect(pushMock).not.toHaveBeenCalled();
     expect(screen.getAllByText("Rest")).toHaveLength(5);
+    // The same click opens the new session in the editor sheet.
+    expect(screen.getByTestId("session-sheet")).toHaveAttribute("data-open", "true");
+    expect(screen.getByTestId("session-sheet")).toHaveAttribute("data-session", "Day 2");
   });
 });
 

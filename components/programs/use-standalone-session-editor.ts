@@ -75,6 +75,7 @@ export function makeStandaloneDraft(session: SessionDraft): ProgramDraft {
 
 export function useStandaloneSessionEditor(
   state: SessionEditorState | null,
+  open: boolean,
   onClose: () => void,
 ) {
   const { mutate: globalMutate } = useSWRConfig();
@@ -88,15 +89,18 @@ export function useStandaloneSessionEditor(
         ? `edit:${state.session.id}`
         : "create";
 
-  // Which open this draft was seeded for. Reset on close so re-opening the
-  // same identity re-seeds fresh (fresh uids remount the body's uncontrolled
-  // inputs); guarded so StrictMode's double effect-run seeds only once. The
-  // draft is deliberately NOT cleared on close — the Sheet's exit animation
-  // still shows it.
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Which open this draft was seeded for. Cleared while closed so the next
+  // open re-seeds fresh, even for the same identity (fresh uids remount the
+  // body's uncontrolled inputs); guarded so StrictMode's double effect-run
+  // seeds only once. The close leaves the draft and a successful save's
+  // in-flight flag alone — the Sheet's exit animation still shows both — so
+  // the open that re-seeds is the one that clears the flag.
   const seededForRef = useRef<string | null>(null);
   const { seed } = builder;
   useEffect(() => {
-    if (state == null || identity == null) {
+    if (!open || state == null || identity == null) {
       seededForRef.current = null;
       return;
     }
@@ -106,12 +110,12 @@ export function useStandaloneSessionEditor(
         ? clampName(savedSessionToDraft(state.session))
         : blankSessionDraft();
     seed(makeStandaloneDraft(session));
+    setIsSaving(false);
     seededForRef.current = identity;
-  }, [state, identity, seed]);
+  }, [open, state, identity, seed]);
 
   const session = builder.draft?.weeks[0]?.days[0]?.session ?? null;
 
-  const [isSaving, setIsSaving] = useState(false);
   // setState is async — the ref is the authoritative double-fire gate.
   const inFlightRef = useRef(false);
 
@@ -131,6 +135,7 @@ export function useStandaloneSessionEditor(
             ? `${issue.message}${issue.path.length ? ` (${issue.path.join(".")})` : ""}`
             : "Invalid session",
         });
+        setIsSaving(false);
         return;
       }
       const url =
@@ -156,14 +161,17 @@ export function useStandaloneSessionEditor(
       } else {
         toast.success(`"${session.name}" saved`, { description: "Added to your session library." });
       }
+      // Closes with isSaving still set, so the sheet slides out on the frame
+      // it closed on (CONVENTIONS §7 → "No frame disagrees"); the next open
+      // clears it as it re-seeds.
       onClose();
     } catch (error) {
       toast.error("Error", {
         description: error instanceof Error ? error.message : "Failed to save session",
       });
+      setIsSaving(false);
     } finally {
       inFlightRef.current = false;
-      setIsSaving(false);
     }
   };
 

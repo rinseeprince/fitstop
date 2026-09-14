@@ -17,7 +17,26 @@ const plan = (overrides: Partial<BlockPlanDeleteTarget>): BlockPlanDeleteTarget 
   ...overrides,
 });
 
-afterEach(cleanup);
+// jsdom computes no animation, so Radix unmounts a closing card at once. Radix
+// holds the card while its animation name changes, as the fade does in a
+// browser, so naming one keeps the closing frame on the page to be read.
+function holdExitAnimation() {
+  const computed = window.getComputedStyle.bind(window);
+  vi.spyOn(window, "getComputedStyle").mockImplementation((element, pseudo) => {
+    const styles = computed(element, pseudo);
+    if (element instanceof HTMLElement && element.dataset.slot === "dialog-content") {
+      Object.defineProperty(styles, "animationName", {
+        get: () => (element.dataset.state === "closed" ? "exit" : "enter"),
+      });
+    }
+    return styles;
+  });
+}
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("describePlanDelete — the four sentences", () => {
   const text = (copy: ReturnType<typeof describePlanDelete>) => {
@@ -75,7 +94,7 @@ describe("DeletePlanDialog", () => {
   it("renders the case's title, sentence and CTA, and confirms with the plan", () => {
     const onConfirm = vi.fn();
     const target = plan({});
-    render(<DeletePlanDialog plan={target} isDeleting={false} onCancel={vi.fn()} onConfirm={onConfirm} />);
+    render(<DeletePlanDialog open plan={target} isDeleting={false} onCancel={vi.fn()} onConfirm={onConfirm} />);
 
     expect(screen.getByRole("dialog")).toBeDefined();
     expect(screen.getByText("End plan?")).toBeDefined();
@@ -84,16 +103,31 @@ describe("DeletePlanDialog", () => {
     expect(onConfirm).toHaveBeenCalledWith(target);
   });
 
-  it("is inert mid-delete and closed with no plan", () => {
-    const onConfirm = vi.fn();
-    const { unmount } = render(
-      <DeletePlanDialog plan={plan({ state: "upcoming" })} isDeleting onCancel={vi.fn()} onConfirm={onConfirm} />
+  it("is inert mid-delete", () => {
+    render(
+      <DeletePlanDialog open plan={plan({ state: "upcoming" })} isDeleting onCancel={vi.fn()} onConfirm={vi.fn()} />
     );
     expect(screen.getByRole("button", { name: "Remove plan" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
-    unmount();
+  });
 
-    render(<DeletePlanDialog plan={null} isDeleting={false} onCancel={vi.fn()} onConfirm={onConfirm} />);
+  // The subject is not the open flag: a closing card keeps its plan, so only
+  // `open` decides whether the card is there (CONVENTIONS §7 → "No frame disagrees").
+  it("is closed whenever `open` is false, even with a plan to name", () => {
+    render(<DeletePlanDialog open={false} plan={plan({})} isDeleting={false} onCancel={vi.fn()} onConfirm={vi.fn()} />);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // A queued plan, so its title is not the one the card falls back to.
+  it("keeps its title and sentence while it fades out", () => {
+    holdExitAnimation();
+    const props = { plan: plan({ state: "upcoming" }), isDeleting: false, onCancel: vi.fn(), onConfirm: vi.fn() };
+    const { rerender } = render(<DeletePlanDialog open {...props} />);
+    rerender(<DeletePlanDialog open={false} {...props} />);
+
+    const closing = document.querySelector<HTMLElement>('[data-slot="dialog-content"][data-state="closed"]');
+    expect(closing).not.toBeNull();
+    expect(closing?.querySelector("h2")?.textContent).toBe("Remove plan?");
+    expect(closing?.querySelector("p")?.textContent).toBe("Removes Upper Lower, 7 Sep – 20 Sep.");
   });
 });

@@ -484,7 +484,7 @@ Filter chips (toggle): `h-8 rounded-[6px] px-3 text-[12.5px] capitalize`; active
 
 ## Overlays (dialog / sheet / popover / slide-over)
 
-One owner per overlay, and an overlay whose content derives from the address closes instantly (CONVENTIONS §7 → "No frame disagrees"): the Training tab's apply tray and its two full-screen editors are addresses, and the editors, being the program builder, do not animate in either direction; a dialog or sheet is local state.
+One owner per overlay, and an overlay whose content derives from the address closes instantly (CONVENTIONS §7 → "No frame disagrees"): the Training tab's apply tray and its two full-screen editors are addresses, and the editors, being the program builder, do not animate in either direction; a dialog or sheet is local state, and one about a record keeps the record through its close (`useDialogSubject`), so its exit shows what it showed.
 
 ### When to use which
 
@@ -539,7 +539,7 @@ Reference: `components/clients/training/calendar/delete-event-dialog.tsx`. Use t
 
 ### Scope / choice dialog (pick-one actions)
 
-Reference: the placed-session tray's save-scope dialog. `sm:max-w-md`; a one-sentence sans intro; then full-width option buttons: `flex w-full items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3 text-left hover:bg-[rgba(13,148,136,0.03)]` — leading `h-4 w-4` radio circle (`border-2 border-[#0d9488]` for the primary option, `border-[#93b0b4]` otherwise; swaps to a teal `Loader2` while that option saves), title `text-sm font-medium text-[#0c1a1e]`, subline `text-[11px] text-[#93b0b4]`. Footer: ghost Cancel only (choosing an option IS the confirm). A radio-input variant (a real `<input type="radio">` with `accent-[#0d9488]`, tinting the selected row `border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)]`) was used by the calendar's move-scope dialog; that dialog was deleted on 2026-07-27 and **no instance currently ships**. Prefer the option-button form above — choosing an option IS the confirm, which is one interaction rather than two.
+Reference: the placed-session tray's save-scope dialog. `sm:max-w-md`; a one-sentence sans intro; then full-width option buttons: `flex w-full items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3 text-left hover:bg-[rgba(13,148,136,0.03)]` — leading `h-4 w-4` radio circle (`border-2 border-[#0d9488]` for the primary option, `border-[#93b0b4]` otherwise; static — a choice closes the dialog in the same click that starts the work, so the work's pending state shows on the surface behind it, never on the fading card), title `text-sm font-medium text-[#0c1a1e]`, subline `text-[11px] text-[#93b0b4]`. Footer: ghost Cancel only (choosing an option IS the confirm). A radio-input variant (a real `<input type="radio">` with `accent-[#0d9488]`, tinting the selected row `border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)]`) was used by the calendar's move-scope dialog; that dialog was deleted on 2026-07-27 and **no instance currently ships**. Prefer the option-button form above — choosing an option IS the confirm, which is one interaction rather than two.
 
 ### Toasts
 
