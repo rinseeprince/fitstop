@@ -45,13 +45,14 @@ const WRITERS: Writer[] = [
     to: "return (",
     method: "push",
   },
-  // The Training tab's two editors, full-screen places of their own
+  // The Training tab's apply tray, a place of its own: Apply program pushes it
   {
     file: "components/clients/training/builder/training-plan-builder.tsx",
-    from: "const openEditor =",
-    to: "const closeEditor",
+    from: "const openTray =",
+    to: "const closeTrayEntry",
     method: "push",
   },
+  // The amendment editor, a full-screen place of its own
   {
     file: "components/clients/training/builder/training-builder-right-panel.tsx",
     from: "const openAmend =",
@@ -71,11 +72,31 @@ const WRITERS: Writer[] = [
     to: "const hasExercise",
     method: "replace",
   },
-  // An editor's exit on a pasted address: the entry is replaced away
+  // The client editor REPLACES the tray's entry (a pick), and its arrow
+  // replaces back to the list — so Back out of the editor lands on the calendar
+  {
+    file: "components/clients/training/builder/training-plan-builder.tsx",
+    from: "const openEditor =",
+    to: "const exitEditorToList",
+    method: "replace",
+  },
+  {
+    file: "components/clients/training/builder/training-plan-builder.tsx",
+    from: "const exitEditorToList =",
+    to: "const closeEditor",
+    method: "replace",
+  },
+  // A tray's or an editor's exit on a pasted address: the entry is replaced away
+  {
+    file: "components/clients/training/builder/training-plan-builder.tsx",
+    from: "const closeTrayEntry =",
+    to: "const closeTray =",
+    method: "replace",
+  },
   {
     file: "components/clients/training/builder/training-plan-builder.tsx",
     from: "const closeEditor =",
-    to: "const exitEditorToList",
+    to: "// ?training= is OURS",
     method: "replace",
   },
   {
@@ -89,6 +110,18 @@ const WRITERS: Writer[] = [
     file: "hooks/use-journey-round-trip.ts",
     from: "useEffect(() => {",
     to: "const setOpen",
+    method: "replace",
+  },
+  {
+    file: "hooks/use-journey-round-trip.ts",
+    from: "export function useJourneyReturnBlock",
+    to: "const clearReturnBlock",
+    method: "replace",
+  },
+  {
+    file: "hooks/use-journey-focus-block.ts",
+    from: "useEffect(() => {",
+    to: "return focusBlockId",
     method: "replace",
   },
   {

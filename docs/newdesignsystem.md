@@ -484,6 +484,8 @@ Filter chips (toggle): `h-8 rounded-[6px] px-3 text-[12.5px] capitalize`; active
 
 ## Overlays (dialog / sheet / popover / slide-over)
 
+One owner per overlay, and an overlay whose content derives from the address closes instantly (CONVENTIONS §7 → "No frame disagrees"): the Training tab's apply tray and its two full-screen editors are addresses; a dialog or sheet is local state.
+
 ### When to use which
 
 | Surface | Use for | Width |

@@ -44,12 +44,11 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
-    searchParams.get("exerciseId"),
-  );
-  const [selectedExerciseName, setSelectedExerciseName] = useState<
-    string | null
-  >(searchParams.get("exerciseName"));
+  // The selected exercise is the pane's subject and lives in the address
+  // alone (CONVENTIONS §7): derived every render, written by the pick below
+  // and by the history table's drill-down, carried across a tab change.
+  const selectedExerciseId = searchParams.get("exerciseId");
+  const selectedExerciseName = searchParams.get("exerciseName");
 
   const [selectedMetric, setSelectedMetric] = useState<ExerciseMetric>("weight");
   const [sessionCount, setSessionCount] = useState<number | "all">(12);
@@ -106,9 +105,8 @@ export function ExerciseDataView({ clientId }: ExerciseDataViewProps) {
     return computeKpis(selectedMetric, progressionData.data, preference);
   }, [selectedMetric, progressionData, preference]);
 
+  // A refinement of the pane, not a place: one replace and nothing else.
   const handleExerciseSelect = (exercise: ExerciseListItem) => {
-    setSelectedExerciseId(exercise.exerciseId);
-    setSelectedExerciseName(exercise.name);
     const params = new URLSearchParams(searchParams.toString());
     if (exercise.exerciseId) params.set("exerciseId", exercise.exerciseId);
     else params.delete("exerciseId");

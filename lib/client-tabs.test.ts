@@ -4,6 +4,8 @@ import {
   checkInReviewUrl,
   paneParamSearch,
   resolvePaneParam,
+  stripJourneyReturn,
+  stripJourneyTrip,
 } from "./client-tabs";
 
 // The pair that regressed when tab switches briefly preserved the SHARED
@@ -44,12 +46,13 @@ describe("buildClientTabUrl", () => {
     expect(url).toContain("journey=wellness");
   });
 
-  it("drops the Training tab's two editors on a tab change — places, not panes", () => {
+  it("drops the Training tab's apply tray and its two editors on a tab change — places, not panes", () => {
     const url = buildClientTabUrl(
       "c1",
       "metrics",
-      "tab=training&training=plans&editor=sp-1&amend=p-1"
+      "tab=training&training=plans&apply=1&editor=sp-1&amend=p-1"
     );
+    expect(url).not.toContain("apply");
     expect(url).not.toContain("editor");
     expect(url).not.toContain("amend");
     expect(url).toContain("training=plans");
@@ -166,6 +169,18 @@ describe("buildClientTabUrl + the single-owner pane params", () => {
     );
     expect(url).not.toContain("subtab");
     expect(url).toContain("training=plans");
+  });
+});
+
+describe("the round trip's strips", () => {
+  const trip = "tab=training&training=plans&apply=1&returnTo=journey&returnBlock=blk-7";
+
+  it("stripJourneyReturn removes the two return params and keeps the surface's address", () => {
+    expect(stripJourneyReturn(trip)).toBe("tab=training&training=plans&apply=1");
+  });
+
+  it("stripJourneyTrip removes the surface's one-shot as well", () => {
+    expect(stripJourneyTrip(trip, "apply")).toBe("tab=training&training=plans");
   });
 });
 

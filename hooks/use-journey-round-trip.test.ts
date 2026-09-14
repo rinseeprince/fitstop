@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { useJourneyRoundTrip } from "./use-journey-round-trip";
+import { useJourneyReturnBlock, useJourneyRoundTrip } from "./use-journey-round-trip";
 
 // The landmine this hook exists for: a returnTo that outlives its own flow.
 // The whole query rides across every tab change, so a return target left alive
@@ -77,28 +77,6 @@ describe("useJourneyRoundTrip", () => {
     expect(result.current.returnBlockId).toBe(null);
   });
 
-  it("a hand open starts a fresh flow: nothing rides on from a trip left by browser Back", () => {
-    search = new URLSearchParams("apply=1&returnTo=journey&returnBlock=blk-7");
-    const { result } = renderHook(() => useJourneyRoundTrip("apply"));
-    // The tray hands the trip to the editor, which the coach then leaves with Back.
-    act(() => result.current.hide());
-    expect(result.current.open).toBe(false);
-    expect(result.current.returnBlockId).toBe("blk-7");
-
-    act(() => result.current.setOpen(true));
-    expect(result.current.open).toBe(true);
-    expect(result.current.returnBlockId).toBe(null);
-  });
-
-  it("the editor's arrow shows the list with the trip alive", () => {
-    search = new URLSearchParams("apply=1&returnTo=journey&returnBlock=blk-7");
-    const { result } = renderHook(() => useJourneyRoundTrip("apply"));
-    act(() => result.current.hide());
-    act(() => result.current.show());
-    expect(result.current.open).toBe(true);
-    expect(result.current.returnBlockId).toBe("blk-7");
-  });
-
   it("opens WITHOUT a return target when returnTo names something else", () => {
     search = new URLSearchParams("apply=1&returnTo=elsewhere&returnBlock=blk-7");
     const { result } = renderHook(() => useJourneyRoundTrip("apply"));
@@ -110,6 +88,64 @@ describe("useJourneyRoundTrip", () => {
     search = new URLSearchParams("edit=1&returnTo=journey&returnBlock=blk-7");
     const { result } = renderHook(() => useJourneyRoundTrip("apply"));
     expect(result.current.open).toBe(false);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+});
+
+// The apply tray's half: its open state is the address (`?apply=1`), so only
+// the return target is one-shot — captured, then the two return params
+// stripped while `apply=1` stays.
+describe("useJourneyReturnBlock", () => {
+  it("captures the block on arrival and strips ONLY the return params", () => {
+    search = new URLSearchParams(
+      "tab=training&training=plans&apply=1&returnTo=journey&returnBlock=blk-7"
+    );
+    const { result } = renderHook(() => useJourneyReturnBlock("apply"));
+
+    expect(result.current.returnBlockId).toBe("blk-7");
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("?tab=training&training=plans&apply=1", {
+      scroll: false,
+    });
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("consumes ONCE, so a re-render before the stripped URL commits cannot re-fire", () => {
+    search = new URLSearchParams("apply=1&returnTo=journey&returnBlock=blk-7");
+    const { result, rerender } = renderHook(() => useJourneyReturnBlock("apply"));
+    rerender();
+    expect(result.current.returnBlockId).toBe("blk-7");
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the block across the address changes of the flow, and clears it on demand", () => {
+    search = new URLSearchParams("apply=1&returnTo=journey&returnBlock=blk-7");
+    const { result, rerender } = renderHook(() => useJourneyReturnBlock("apply"));
+    // The pick and the arrow replace the address; the state is untouched.
+    search = new URLSearchParams("editor=plan-1");
+    rerender();
+    expect(result.current.returnBlockId).toBe("blk-7");
+
+    act(() => result.current.clearReturnBlock());
+    expect(result.current.returnBlockId).toBe(null);
+  });
+
+  it("strips a return target naming something else, capturing nothing", () => {
+    search = new URLSearchParams("apply=1&returnTo=elsewhere&returnBlock=blk-7");
+    const { result } = renderHook(() => useJourneyReturnBlock("apply"));
+    expect(result.current.returnBlockId).toBe(null);
+    expect(mockReplace).toHaveBeenCalledWith("?apply=1", { scroll: false });
+  });
+
+  it("writes nothing on a plain tray address, and ignores the OTHER surface's trip", () => {
+    search = new URLSearchParams("tab=training&apply=1");
+    const plain = renderHook(() => useJourneyReturnBlock("apply"));
+    expect(plain.result.current.returnBlockId).toBe(null);
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    search = new URLSearchParams("edit=1&returnTo=journey&returnBlock=blk-7");
+    const other = renderHook(() => useJourneyReturnBlock("apply"));
+    expect(other.result.current.returnBlockId).toBe(null);
     expect(mockReplace).not.toHaveBeenCalled();
   });
 });

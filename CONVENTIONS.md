@@ -365,9 +365,9 @@
   - **Navigation is atomic.** Every param a click affects — the tab AND the record it opens — goes
     into ONE router update, so they land on the same render frame. A component reading a param on
     arrival then always sees the value intended for it.
-  - **A place pushes, a refinement replaces.** A tab, a pane, an opened record, a roster view and a
-    full-screen editor push a history entry, so browser Back returns one step; the metric, a filter,
-    a sort and a one-shot strip replace. A page's arrow leaves the page — back to the entry before it
+  - **A place pushes, a refinement replaces.** A tab, a pane, an opened record, a roster view, the
+    Training tab's apply tray and a full-screen editor push a history entry, so browser Back returns
+    one step; the metric, a filter, a sort and a one-shot strip replace. A page's arrow leaves the page — back to the entry before it
     began — when a coach page precedes it, else to its parent (`lib/coach-history.ts`). The
     classification of every writer is in `docs/ARCHITECTURE.md` → "Client page tab structure".
 
@@ -388,9 +388,14 @@
   a split source of truth rather than to solve a product problem — and it drifts the moment either
   half is edited.
 
-  **A transient glitch — a flash of the wrong pane, a detail view that opens empty — is the symptom
-  of a split source of truth, never of routing.** The fix is always to delete the local state and
-  derive from the URL. Never to add more synchronisation.
+  ### No frame disagrees
+
+  1. **One owner per surface.** A surface's open state and its content have one source: the address for anything navigable (a page, a tab, a pane, a record, a full-screen editor, the Training tab's apply tray), local state for a dialog or drawer that is not navigable. Never both.
+  2. **One click, one commit.** Every change a click makes lands in ONE router call or ONE state update, never one of each, so nothing renders between them.
+  3. **Derive, never remember.** No ref, state or effect exists to bridge a gap between two stores; a transient flash is a split source of truth by definition, and the fix is to delete the second store, never to hide the frame.
+  4. **The previous screen stays until the next is ready.** Nothing renders null or a fallback for an in-flight param; the structural half is "Gate content, not structure" below.
+  5. **Exit animations only on content the closing transition does not change.** A surface whose content derives from the address closes instantly: Radix re-renders a closing node from live state, and Framer's `AnimatePresence`, which freezes what leaves, is in the stack and not adopted for overlays (a later polish item). Enter animations and every existing dialog, sheet and drawer animation are unaffected.
+  6. **The frame test, in every plan.** For each transition the plan lists the sources the click changes and every frame between the click and the settled screen; two sources, or a frame showing anything the settled screen does not, is rejected at plan time.
 
   **Progressive optimism.** Clean architecture first; optimise on evidence, not on speculation.
 

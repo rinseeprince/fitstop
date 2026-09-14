@@ -52,9 +52,11 @@ export function buildClientTabUrl(
 ): string {
   const params = new URLSearchParams(currentSearch)
   params.delete("subtab")
-  // The Training tab's two editors (`?editor=`, `?amend=`) are places of their
-  // own, not panes: carried across a tab change they would re-open an editor
-  // on every return to the tab, so they go the way the one-shot params do.
+  // The Training tab's apply tray (`?apply=1`) and its two editors (`?editor=`,
+  // `?amend=`) are places of their own, not panes: carried across a tab change
+  // they would re-open on every return to the tab, so they go the way the
+  // one-shot params do.
+  params.delete("apply")
   params.delete("editor")
   params.delete("amend")
   params.set("tab", tab)
@@ -134,12 +136,12 @@ export function paneParamSearch(
 // surface already open, and a successful save lands back on the block it came
 // from, expanded.
 //
-// The three trip params are ONE-SHOT. The surface consumes them on arrival and
-// strips them (`useJourneyRoundTrip`), because the whole query is carried
-// across every tab change: a `returnTo` left riding would bounce a LATER,
-// unrelated save back to Journey, and a lingering open-param would re-open the
-// surface on every hand-return to the tab — Radix unmounts inactive
-// TabsContent, so each visit is a fresh mount that would re-fire it.
+// The return params are ONE-SHOT: the surface captures the block on arrival
+// and strips them (`useJourneyRoundTrip` on the nutrition drawer, which also
+// consumes its `?edit=1`; `useJourneyReturnBlock` on the apply tray, whose
+// `?apply=1` is the tray's address and stays), because the whole query is
+// carried across every tab change and a `returnTo` left riding would bounce a
+// LATER, unrelated save back to Journey.
 // ---------------------------------------------------------------------------
 
 /** Which surface the trip opens. The value IS the URL param name. */
@@ -186,8 +188,15 @@ export function stripJourneyTrip(
   currentSearch: string,
   surface: JourneyTripSurface
 ): string {
-  const params = new URLSearchParams(currentSearch)
+  const params = new URLSearchParams(stripJourneyReturn(currentSearch))
   params.delete(surface)
+  return params.toString()
+}
+
+/** The same query with the return params alone removed — the apply tray's
+ *  strip: `?apply=1` is the tray's address and stays. */
+export function stripJourneyReturn(currentSearch: string): string {
+  const params = new URLSearchParams(currentSearch)
   params.delete(RETURN_TO)
   params.delete(RETURN_BLOCK)
   return params.toString()

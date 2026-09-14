@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { ProgramDraftProvider } from "@/components/clients/training/program-builder/program-draft-provider";
@@ -24,15 +24,21 @@ import type { SavedPlan } from "@/types/training";
 // Program builder in client-draft mode (full-screen) as a per-client editor.
 // Apply materializes the edited copy onto the client's calendar; the library
 // template is never mutated (see ProgramBuilder's client-draft branch).
+//
+// Both surfaces are the ADDRESS's (CONVENTIONS §7 → "No frame disagrees"):
+// the tray is `?apply=1`, the editor `?editor=<savedPlanId>`. This component
+// holds no state of its own about either and derives every frame from the two
+// props, so nothing it draws can disagree with the address.
 type TrainingPlanBuilderOverlayProps = {
-  /** The tray (the library list) — the parent's local flag. */
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** The tray (the library list) — the address's `?apply=1`. */
+  trayOpen: boolean;
   /** The editor — the address's `?editor=<savedPlanId>`, a place of its own. */
   editorPlanId: string | null;
-  /** A template picked in the tray: the parent hides the tray and pushes the editor. */
+  /** The tray's X, Escape or outside click: the parent pops the tray's entry. */
+  onCloseTray: () => void;
+  /** A template picked in the tray: the parent replaces the tray's entry with the editor's. */
   onPick: (savedPlanId: string) => void;
-  /** The editor's arrow: the parent shows the tray and pops the editor's entry. */
+  /** The editor's arrow: the parent replaces the editor's entry with the tray's. */
   onExitEditor: () => void;
   // Titles the client editor's library panel ("Editing for {name}") so it reads
   // as the client editor, not the generic /dashboard/programs builder.
@@ -48,9 +54,9 @@ type TrainingPlanBuilderOverlayProps = {
 };
 
 export function TrainingPlanBuilderOverlay({
-  open,
-  onOpenChange,
+  trayOpen,
   editorPlanId,
+  onCloseTray,
   onPick,
   onExitEditor,
   clientName,
@@ -58,31 +64,11 @@ export function TrainingPlanBuilderOverlay({
   preselectedBlockId,
 }: TrainingPlanBuilderOverlayProps) {
   const builder = useTrainingBuilderContext();
-  // The editor is the address's; the tray is the parent's flag. The surface is
-  // open while either is: the tray shows under no editor, the editor over a
-  // hidden tray — so browser Back out of the editor (the tray hidden at the
-  // pick) lands on the calendar, and the editor's arrow (the tray shown again)
-  // lands on the list. The library browser is a 920px right drawer; the editor
-  // is full-screen (the 3-column builder needs the width).
-  const hasDraft = editorPlanId != null;
-  const isOpen = open || hasDraft;
-  // The look the exit animation keeps: Radix keeps the content mounted while
-  // it closes, and the editor is already gone from the address by then, so the
-  // last editor keeps rendering until the fade-out ends instead of morphing
-  // into the 920px drawer mid-exit.
-  const lastEditorRef = useRef<string | null>(null);
-  if (editorPlanId != null) lastEditorRef.current = editorPlanId;
-  const shownEditorId = editorPlanId ?? (isOpen ? null : lastEditorRef.current);
-  const fullScreen = shownEditorId != null;
-
-  const title = hasDraft ? "Edit training program for client" : "Apply a program";
-
-  const handleClose = () => {
-    // Closing the whole overlay from the library list. (While the editor is
-    // open, the outer dialog's close is neutralized — see the Content guards —
-    // so this only fires from the library browse state.)
-    onOpenChange(false);
-  };
+  // The surface is open while either address is: the tray shows under no
+  // editor, the editor over none. The library browser is a 920px right drawer;
+  // the editor is full-screen (the 3-column builder needs the width).
+  const fullScreen = editorPlanId != null;
+  const isOpen = trayOpen || fullScreen;
 
   return (
     <DialogPrimitive.Root
@@ -91,53 +77,58 @@ export function TrainingPlanBuilderOverlay({
       // (the ClientDraftLeaveGuard below confirms before dropping a dirty
       // draft). The library drawer stays modal (dim + trap + click-out close).
       modal={!fullScreen}
-      onOpenChange={(next) => (next ? onOpenChange(true) : handleClose())}
+      // Only the tray can close this way: while the editor is open the outer
+      // dialog's Escape / outside click are neutralized (the Content guards).
+      onOpenChange={(next) => {
+        if (!next) onCloseTray();
+      }}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay
-          className={cn(
-            "fixed inset-0 z-50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:duration-200 data-[state=closed]:duration-200",
-            // Editor mode keeps the app's 52px nav rail visible (matching the
-            // /dashboard/programs builder) — no dim/blur, and pointer-events-none
-            // so the transparent overlay doesn't swallow clicks to the rail. The
-            // library drawer keeps the normal modal backdrop.
-            fullScreen ? "pointer-events-none" : "bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px]",
-          )}
-        />
-        <DialogPrimitive.Content
-          className={cn(
-            "fixed z-50 flex flex-col bg-[#f4f7f6] outline-none",
-            "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:duration-250 data-[state=closed]:duration-200",
-            fullScreen
+        {/* Rendered by Radix under the modal tray alone — a non-modal Root
+            mounts no overlay — so this is the tray's dim and nothing else. */}
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:duration-200 data-[state=closed]:duration-200" />
+        {/* Two Content elements, keyed by the surface, never one restyled: a
+            pick or the arrow REMOUNTS the Content, which is what restarts its
+            enter animation, and a Back out of the editor mounts the tray's
+            Content already closed, so no closing frame can show the list.
+            Radix keeps a closing node mounted for its exit animation and
+            re-renders it from live state, so an exit may only run where the
+            content does not depend on what closes it: the tray's list (its
+            slide-out, kept) — never the editor, whose content IS the address
+            (no closed-state tokens; it closes in the same frame). */}
+        {fullScreen ? (
+          <DialogPrimitive.Content
+            key="editor"
+            className={cn(
+              "fixed z-50 flex flex-col bg-[#f4f7f6] outline-none",
               // Full-screen minus the fixed 52px app icon strip (lg+ only; the
               // strip is hidden below lg) so the editor sits beside the nav rail
               // exactly like the /dashboard/programs builder.
-              ? "inset-y-0 right-0 left-0 lg:left-[52px] data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0"
-              : "inset-y-0 right-0 w-[920px] max-w-[100vw] shadow-[-8px_0_24px_rgba(15,32,39,0.12)] data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right",
-          )}
-          // Two-close semantics while editing: exit-the-editor-back-to-the-list
-          // (the builder's own back arrow, guarded by its confirm-leave) vs.
-          // close-the-whole-overlay. Neutralize the outer dialog's Escape /
-          // outside-click so a stray key or click can NEVER silently drop the
-          // in-memory client draft — the coach leaves via the builder's back
-          // arrow, which confirms when there are unsaved edits. (Nested dialogs
-          // — the session editor, confirm, apply — still handle Escape first.)
-          onEscapeKeyDown={fullScreen ? (e) => e.preventDefault() : undefined}
-          onPointerDownOutside={fullScreen ? (e) => e.preventDefault() : undefined}
-          onInteractOutside={fullScreen ? (e) => e.preventDefault() : undefined}
-        >
-          <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
-          <DialogPrimitive.Description className="sr-only">
-            Browse your program library and apply a program to this client.
-          </DialogPrimitive.Description>
-
-          {shownEditorId != null ? (
+              "inset-y-0 right-0 left-0 lg:left-[52px] data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:fade-in-0",
+            )}
+            // Two-close semantics while editing: exit-the-editor-back-to-the-list
+            // (the builder's own back arrow, guarded by its confirm-leave) vs.
+            // close-the-whole-overlay. Neutralize the outer dialog's Escape /
+            // outside-click so a stray key or click can NEVER silently drop the
+            // in-memory client draft — the coach leaves via the builder's back
+            // arrow, which confirms when there are unsaved edits. (Nested dialogs
+            // — the session editor, confirm, apply — still handle Escape first.)
+            onEscapeKeyDown={(e) => e.preventDefault()}
+            onPointerDownOutside={(e) => e.preventDefault()}
+            onInteractOutside={(e) => e.preventDefault()}
+          >
+            <DialogPrimitive.Title className="sr-only">
+              Edit training program for client
+            </DialogPrimitive.Title>
+            <DialogPrimitive.Description className="sr-only">
+              Customize the program for this client, then apply it.
+            </DialogPrimitive.Description>
             <ProgramDraftProvider
               // Keyed so switching templates fully resets the working tree (the
               // /dashboard/programs [savedPlanId] layout remount does this there;
               // the drawer has no such layout, so the key is load-bearing).
-              key={shownEditorId}
-              savedPlanId={shownEditorId}
+              key={editorPlanId}
+              savedPlanId={editorPlanId}
               target="client-draft"
               clientId={builder.clientId}
               clientName={clientName}
@@ -155,15 +146,22 @@ export function TrainingPlanBuilderOverlay({
               <ClientDraftLeaveGuard />
               <ProgramBuilder onExit={onExitEditor} />
             </ProgramDraftProvider>
-          ) : (
-            <>
-              <LibraryHeader onClose={handleClose} />
-              <div className="flex-1 min-h-0 overflow-y-auto px-7 py-6">
-                <SavedPlansList onPick={onPick} />
-              </div>
-            </>
-          )}
-        </DialogPrimitive.Content>
+          </DialogPrimitive.Content>
+        ) : (
+          <DialogPrimitive.Content
+            key="tray"
+            className="fixed inset-y-0 right-0 z-50 flex w-[920px] max-w-[100vw] flex-col bg-[#f4f7f6] shadow-[-8px_0_24px_rgba(15,32,39,0.12)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:duration-250 data-[state=closed]:duration-200 data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right"
+          >
+            <DialogPrimitive.Title className="sr-only">Apply a program</DialogPrimitive.Title>
+            <DialogPrimitive.Description className="sr-only">
+              Browse your program library and apply a program to this client.
+            </DialogPrimitive.Description>
+            <LibraryHeader onClose={onCloseTray} />
+            <div className="flex-1 min-h-0 overflow-y-auto px-7 py-6">
+              <SavedPlansList onPick={onPick} />
+            </div>
+          </DialogPrimitive.Content>
+        )}
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
   );

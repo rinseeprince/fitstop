@@ -4,21 +4,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   readJourneyTrip,
+  stripJourneyReturn,
   stripJourneyTrip,
   type JourneyTripSurface,
 } from "@/lib/client-tabs";
 
 /**
- * A locally-owned open/close surface — the Training apply tray, the Nutrition
- * plan drawer — that a Journey block can deep-link OPEN, plus the trip back.
+ * A locally-owned open/close surface — the Nutrition plan drawer — that a
+ * Journey block can deep-link OPEN, plus the trip back.
  *
  * Two properties carry the whole design, and both are bugs if dropped:
  *
- * 1. **Consume on ARRIVAL, not at mount.** The trip params are not in the URL
- *    when this surface mounts: `handleTabChange` flips `activeTab` before
- *    `router.replace` lands, so the surface renders once against the previous
- *    tab's query and the params arrive a render later. A `useState`
- *    initializer would read the URL too early and see nothing.
+ * 1. **Consume in an effect, once.** The strip is a router write, so it cannot
+ *    run during render; the `consumed` ref keeps the effect from re-running
+ *    against the params it already handled before the stripped URL commits.
  *
  * 2. **Strip them, and clear the target on any close without a save.** The
  *    whole query rides across every tab change. A `returnTo` that outlives its
@@ -33,10 +32,6 @@ import {
 export function useJourneyRoundTrip(surface: JourneyTripSurface): {
   open: boolean;
   setOpen: (open: boolean) => void;
-  /** Hides the surface without abandoning the trip — the tray handing over to the editor. */
-  hide: () => void;
-  /** Shows it again with the trip alive — the editor's arrow back to the list. */
-  show: () => void;
   returnBlockId: string | null;
 } {
   const searchParams = useSearchParams();
@@ -63,15 +58,42 @@ export function useJourneyRoundTrip(surface: JourneyTripSurface): {
   const setOpen = useCallback((next: boolean) => {
     setOpenState(next);
     // Closing without a save ABANDONS the trip, and a hand open starts a fresh
-    // one: either way nothing may ride on to the next save. A trip handed to
-    // the editor and then left with browser Back is therefore dead the moment
-    // the coach opens the tray again.
+    // one: either way nothing may ride on to the next save.
     setReturnBlockId(null);
   }, []);
-  // The trip continues into the editor and back out to the list: the tray's
-  // visibility changes, the block it names does not.
-  const hide = useCallback(() => setOpenState(false), []);
-  const show = useCallback(() => setOpenState(true), []);
 
-  return { open, setOpen, hide, show, returnBlockId };
+  return { open, setOpen, returnBlockId };
+}
+
+/**
+ * The trip's other half for an ADDRESSED surface — the Training apply tray,
+ * whose open state is `?apply=1` and never local. Only the return target is
+ * one-shot here: on arrival with the trip the block is captured and the two
+ * return params are stripped, and `?apply=1` stays as the tray's address. The
+ * block survives the pick and the editor's arrow (both replace the address; the
+ * state is untouched) and the host clears it on the X and on a hand open, so a
+ * trip left behind cannot bounce a later, unrelated apply back to Journey.
+ */
+export function useJourneyReturnBlock(surface: JourneyTripSurface): {
+  returnBlockId: string | null;
+  clearReturnBlock: () => void;
+} {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [returnBlockId, setReturnBlockId] = useState<string | null>(null);
+  const consumed = useRef(false);
+
+  useEffect(() => {
+    if (consumed.current) return;
+    const trip = readJourneyTrip(searchParams, surface);
+    const stripped = stripJourneyReturn(searchParams.toString());
+    if (!trip.open || stripped === searchParams.toString()) return;
+    consumed.current = true;
+    setReturnBlockId(trip.returnBlockId);
+    router.replace(`?${stripped}`, { scroll: false });
+  }, [searchParams, router, surface]);
+
+  const clearReturnBlock = useCallback(() => setReturnBlockId(null), []);
+
+  return { returnBlockId, clearReturnBlock };
 }

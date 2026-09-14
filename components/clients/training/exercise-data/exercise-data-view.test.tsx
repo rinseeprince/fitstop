@@ -19,6 +19,8 @@ class ResizeObserverMock {
   disconnect() {}
 }
 globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+// cmdk scrolls the highlighted option into view
+Element.prototype.scrollIntoView = vi.fn();
 
 const mockReplace = vi.fn();
 const mockSearchParams = new URLSearchParams();
@@ -218,6 +220,31 @@ describe("ExerciseDataView", () => {
     expect(screen.queryByText("Progression")).not.toBeInTheDocument();
     // The lens row stays in the hero — it's the way back from PRs
     expect(screen.getByRole("button", { name: "Weight" })).toBeInTheDocument();
+  });
+
+  it("a pick writes the address and nothing else; the selection follows the URL, not the click", async () => {
+    const user = userEvent.setup();
+    setupSWR({ list: [makeListItem({ exerciseId: "ex-1", name: "Bench Press" })] });
+
+    const { rerender } = render(<ExerciseDataView clientId="client-1" />);
+    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByText("Bench Press"));
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("?exerciseId=ex-1&exerciseName=Bench+Press", {
+      scroll: false,
+    });
+    // One owner: nothing is selected until the address says so.
+    expect(
+      screen.getByText("Select an exercise to view progression data."),
+    ).toBeInTheDocument();
+
+    mockSearchParams.set("exerciseId", "ex-1");
+    mockSearchParams.set("exerciseName", "Bench Press");
+    rerender(<ExerciseDataView clientId="client-1" />);
+    expect(
+      screen.queryByText("Select an exercise to view progression data."),
+    ).not.toBeInTheDocument();
   });
 
   it("pre-selects exercise from exerciseId URL param", () => {

@@ -47,14 +47,15 @@ export function PlanAmendmentOverlay({
       }}
     >
       <DialogPrimitive.Portal>
-        {/* No dim and pointer-events-none: the transparent overlay must not
-            swallow clicks to the nav rail (ClientDraftLeaveGuard confirms
-            before a rail navigation drops a dirty draft). */}
-        <DialogPrimitive.Overlay className="pointer-events-none fixed inset-0 z-50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:duration-200 data-[state=closed]:duration-200" />
+        {/* No overlay element: a non-modal Root mounts none, and the nav rail
+            stays clickable (ClientDraftLeaveGuard confirms before a rail
+            navigation drops a dirty draft). No closed-state tokens either: a
+            full-screen editor is a place, and it closes in the same frame its
+            address goes (CONVENTIONS §7 → "No frame disagrees"). */}
         <DialogPrimitive.Content
           className={cn(
             "fixed inset-y-0 right-0 left-0 z-50 flex flex-col bg-[#f4f7f6] outline-none lg:left-[52px]",
-            "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:duration-250 data-[state=closed]:duration-200 data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
+            "data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:fade-in-0",
           )}
           onEscapeKeyDown={(e) => e.preventDefault()}
           onPointerDownOutside={(e) => e.preventDefault()}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useJourneyFocusBlock } from "@/hooks/use-journey-focus-block";
 import {
   Archive,
   ArchiveRestore,
@@ -83,10 +83,10 @@ export function BlocksSubtab({
   onTabChange,
 }: BlocksSubtabProps) {
   const { blocks, clientToday, isLoading, isError } = useClientBlocks(clientId);
-  const searchParams = useSearchParams();
   // The return trip lands on ?block=<id> and it WINS over the default (the
-  // current block): the coach came back to the one they were setting up.
-  const focusBlockId = searchParams.get("block");
+  // current block): the coach came back to the one they were setting up. The
+  // hook consumes the one-shot and strips it.
+  const focusBlockId = useJourneyFocusBlock();
   const {
     facts,
     isLoading: factsLoading,
