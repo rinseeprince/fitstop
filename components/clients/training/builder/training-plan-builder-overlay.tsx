@@ -88,14 +88,17 @@ export function TrainingPlanBuilderOverlay({
             mounts no overlay — so this is the tray's dim and nothing else. */}
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[rgba(15,32,39,0.35)] backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:duration-200 data-[state=closed]:duration-200" />
         {/* Two Content elements, keyed by the surface, never one restyled: a
-            pick or the arrow REMOUNTS the Content, which is what restarts its
-            enter animation, and a Back out of the editor mounts the tray's
+            pick or the arrow REMOUNTS the Content, which is what restarts the
+            tray's slide-in, and a Back out of the editor mounts the tray's
             Content already closed, so no closing frame can show the list.
             Radix keeps a closing node mounted for its exit animation and
             re-renders it from live state, so an exit may only run where the
             content does not depend on what closes it: the tray's list (its
-            slide-out, kept) — never the editor, whose content IS the address
-            (no closed-state tokens; it closes in the same frame). */}
+            slide-out, kept) — never the editor, whose content IS the address.
+            The editor carries no animation token at all: it is the program
+            builder, which does not animate (the design doc's animation
+            table), so it appears and goes in the frame its address does — on
+            a pick, on the arrow, on Back, on a pasted address, on a reload. */}
         {fullScreen ? (
           <DialogPrimitive.Content
             key="editor"
@@ -104,7 +107,7 @@ export function TrainingPlanBuilderOverlay({
               // Full-screen minus the fixed 52px app icon strip (lg+ only; the
               // strip is hidden below lg) so the editor sits beside the nav rail
               // exactly like the /dashboard/programs builder.
-              "inset-y-0 right-0 left-0 lg:left-[52px] data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:fade-in-0",
+              "inset-y-0 right-0 left-0 lg:left-[52px]",
             )}
             // Two-close semantics while editing: exit-the-editor-back-to-the-list
             // (the builder's own back arrow, guarded by its confirm-leave) vs.

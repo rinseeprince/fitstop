@@ -9,7 +9,6 @@ import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
-import { cn } from "@/lib/utils";
 
 // The plan-amendment surface (Job 2): the SHARED Program builder mounted
 // full-screen over a client's PLACED plan (target="placed-plan" — past slots
@@ -49,14 +48,12 @@ export function PlanAmendmentOverlay({
       <DialogPrimitive.Portal>
         {/* No overlay element: a non-modal Root mounts none, and the nav rail
             stays clickable (ClientDraftLeaveGuard confirms before a rail
-            navigation drops a dirty draft). No closed-state tokens either: a
-            full-screen editor is a place, and it closes in the same frame its
-            address goes (CONVENTIONS §7 → "No frame disagrees"). */}
+            navigation drops a dirty draft). No animation token either: a
+            full-screen editor is a place and the program builder does not
+            animate, so it appears and goes in the frame its address does
+            (CONVENTIONS §7 → "No frame disagrees"). */}
         <DialogPrimitive.Content
-          className={cn(
-            "fixed inset-y-0 right-0 left-0 z-50 flex flex-col bg-[#f4f7f6] outline-none lg:left-[52px]",
-            "data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:fade-in-0",
-          )}
+          className="fixed inset-y-0 right-0 left-0 z-50 flex flex-col bg-[#f4f7f6] outline-none lg:left-[52px]"
           onEscapeKeyDown={(e) => e.preventDefault()}
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}

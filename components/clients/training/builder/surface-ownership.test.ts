@@ -44,20 +44,24 @@ describe("the apply surface has one owner, the address", () => {
     expect(body).not.toMatch(hook("useEffect"));
   });
 
-  it("the two Content elements are keyed by surface, and only the tray keeps an exit animation", () => {
+  it("the two Content elements are keyed by surface; only the tray animates, in and out", () => {
     const source = read(
       "components/clients/training/builder/training-plan-builder-overlay.tsx"
     );
     const editor = segment(source, 'key="editor"', 'key="tray"');
     const tray = segment(source, 'key="tray"', "</DialogPrimitive.Portal>");
-    expect(editor).not.toContain("data-[state=closed]");
+    // The editor is the program builder, which does not animate: it appears
+    // and goes in the frame its address does.
+    expect(editor).not.toContain("data-[state=");
+    expect(editor).not.toContain("animate-");
     expect(tray).toContain("data-[state=closed]:slide-out-to-right");
     expect(tray).toContain("data-[state=open]:slide-in-from-right");
   });
 
-  it("the amendment editor closes in the same frame its address goes", () => {
+  it("the amendment editor appears and goes in the frame its address does", () => {
     const source = read("components/clients/training/builder/plan-amendment-overlay.tsx");
-    expect(source).not.toContain("data-[state=closed]");
+    expect(source).not.toContain("data-[state=");
+    expect(source).not.toContain("animate-");
     expect(source).not.toContain("DialogPrimitive.Overlay");
   });
 
