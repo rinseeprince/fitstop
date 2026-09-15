@@ -11,7 +11,7 @@ import {
   BlockWindowError,
   UnknownBlockIdError,
 } from "./client-blocks-service";
-import { BLOCK_EXTENSION_REFUSED } from "@/lib/constants";
+import { BLOCK_EXTENSION_REFUSED, BLOCK_START_FIXED } from "@/lib/constants";
 
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: {
@@ -263,11 +263,11 @@ describe("replaceBlockChain", () => {
   });
 
   it("lets a block sit apart from the elapsed one before it — a gap is a real state", async () => {
-    // ELAPSED ends 2026-07-05 and the current block used to have to open on the
-    // 6th. It may now open later: the client was between programs and nothing
-    // was planned for those days.
+    // ELAPSED ends 2026-07-05 and the current block opens on the 20th: the
+    // client was between programs and nothing was planned for those days.
+    const apart = row("a", "2026-07-20", "2026-08-16");
     queueResults(
-      { data: [ELAPSED, CURRENT], error: null },
+      { data: [ELAPSED, apart], error: null },
       { error: null }, // upsert
       { data: [], error: null } // re-read
     );
@@ -276,7 +276,7 @@ describe("replaceBlockChain", () => {
       replaceBlockChain(CLIENT_ID, TODAY, {
         blocks: [
           { ...elapsedEcho },
-          { id: "a", name: "Block a", startsOn: "2026-07-20", endsOn: "2026-08-16" },
+          { id: "a", name: "Renamed", startsOn: "2026-07-20", endsOn: "2026-08-16" },
         ],
       })
     ).resolves.toEqual([]);
@@ -326,25 +326,28 @@ describe("replaceBlockChain", () => {
     ).rejects.toBeInstanceOf(BlockWindowError);
   });
 
-  it("window floor: the current block cannot be pushed to start after today", async () => {
-    queueResults({ data: [CURRENT], error: null });
-
-    await expect(
-      replaceBlockChain(CLIENT_ID, TODAY, {
-        blocks: [{ id: "a", name: "Block a", startsOn: "2026-08-24", endsOn: "2026-09-30" }],
-      })
-    ).rejects.toBeInstanceOf(BlockWindowError);
-  });
-
-  it("window floor: a future block cannot be moved wholly into the past", async () => {
+  it("refuses a drawn block's start moving, current or future, earlier or later — with the sentence", async () => {
+    // A block's start is fixed once it is drawn: to start it on a different
+    // day, the coach deletes it and draws it again. Nothing is written.
     const future = row("f", "2026-08-20", "2026-09-16");
-    queueResults({ data: [future], error: null });
+    const moves = [
+      { stored: CURRENT, startsOn: "2026-07-13", endsOn: "2026-08-16" }, // later, still covering today
+      { stored: CURRENT, startsOn: "2026-06-29", endsOn: "2026-08-16" }, // earlier, into lived days
+      { stored: future, startsOn: "2026-08-27", endsOn: "2026-09-16" }, // later
+      { stored: future, startsOn: "2026-08-13", endsOn: "2026-09-16" }, // earlier
+    ];
 
-    await expect(
-      replaceBlockChain(CLIENT_ID, TODAY, {
-        blocks: [{ id: "f", name: "Block f", startsOn: "2026-05-01", endsOn: "2026-05-28" }],
-      })
-    ).rejects.toBeInstanceOf(BlockWindowError);
+    for (const { stored, startsOn, endsOn } of moves) {
+      queueResults({ data: [stored], error: null });
+      const attempt = replaceBlockChain(CLIENT_ID, TODAY, {
+        blocks: [{ id: stored.id, name: stored.name, startsOn, endsOn }],
+      });
+
+      await expect(attempt).rejects.toBeInstanceOf(BlockWindowError);
+      await expect(attempt).rejects.toThrow(BLOCK_START_FIXED);
+    }
+    // Only the chain reads ran: no upsert, no insert.
+    expect(supabaseAdmin.from).toHaveBeenCalledTimes(moves.length);
   });
 
   it("refuses a CURRENT block's end moving later, with the sentence — a block is never extended", async () => {
@@ -411,38 +414,31 @@ describe("replaceBlockChain", () => {
     ).resolves.toEqual([]);
   });
 
-  it("allows moving the current block's start back when it still covers today", async () => {
-    queueResults(
-      { data: [CURRENT], error: null },
-      { error: null }, // upsert
-      { data: [], error: null } // re-read
-    );
-
-    await expect(
-      replaceBlockChain(CLIENT_ID, TODAY, {
-        // Anchor moved a week earlier, same end kept: the window becomes
-        // 2026-06-29..2026-08-16 and still contains today — legal
-        // ("we actually started earlier").
-        blocks: [{ id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" }],
-      })
-    ).resolves.toEqual([]);
-  });
-
-  it("allows a future block to become current", async () => {
+  it("saves a drawn block's name, focus and earlier end over its stored start", async () => {
+    // Everything but the start stays the coach's: the name, the focus and a
+    // shorter end, with the start echoed as stored.
     const future = row("f", "2026-08-17", "2026-09-13");
-    queueResults(
+    const [, upsertQuery] = queueResults(
       { data: [future], error: null },
       { error: null }, // upsert
       { data: [], error: null } // re-read
     );
 
-    await expect(
-      replaceBlockChain(CLIENT_ID, TODAY, {
-        // 2026-08-04..2026-08-31 covers today: a stored future block may
-        // become current — only wholly-past is forbidden.
-        blocks: [{ id: "f", name: "Block f", startsOn: "2026-08-04", endsOn: "2026-08-31" }],
-      })
-    ).resolves.toEqual([]);
+    await replaceBlockChain(CLIENT_ID, TODAY, {
+      blocks: [
+        { id: "f", name: "Peak", focus: "Taper", startsOn: "2026-08-17", endsOn: "2026-09-06" },
+      ],
+    });
+
+    expect(upsertQuery.upsert.mock.calls[0][0]).toEqual([
+      expect.objectContaining({
+        id: "f",
+        name: "Peak",
+        focus: "Taper",
+        starts_on: "2026-08-17",
+        ends_on: "2026-09-06",
+      }),
+    ]);
   });
 
   it("rejects an end date before the block's own start", async () => {
@@ -486,18 +482,18 @@ describe("replaceBlockChain", () => {
 
   it("refuses a block backed onto an ELAPSED one", async () => {
     // The overlap check spans the whole set, elapsed rows included. ELAPSED runs
-    // to 2026-07-05; pulling the current block's start back to 2026-06-20 still
-    // covers today, so only the overlap rule stops it.
+    // to 2026-07-05, and a new block opening on 2026-07-01 shares its last days.
     queueResults({ data: [ELAPSED, CURRENT], error: null });
 
     await expect(
       replaceBlockChain(CLIENT_ID, TODAY, {
         blocks: [
           { ...elapsedEcho },
-          { id: "a", name: "Block a", startsOn: "2026-06-20", endsOn: "2026-08-16" },
+          { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
+          { name: "Backfill", startsOn: "2026-07-01", endsOn: "2026-07-03" },
         ],
       })
-    ).rejects.toThrow('overlaps "Block e"');
+    ).rejects.toThrow('"Backfill" overlaps "Block e"');
   });
 
   it("rejects an elapsed block's START change, not only its end", async () => {

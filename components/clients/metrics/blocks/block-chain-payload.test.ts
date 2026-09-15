@@ -93,15 +93,15 @@ describe("buildEditPayload", () => {
     const { payload } = buildEditPayload(chain, "b", {
       name: "Renamed",
       focus: "hypertrophy",
-      startsOn: "2026-07-13",
-      endsOn: "2026-08-23",
+      endsOn: "2026-07-26",
     });
 
     expect(payload.blocks[1]).toEqual({
       id: "b",
       name: "Renamed",
-      startsOn: "2026-07-13",
-      endsOn: "2026-08-23",
+      // A drawn block's start is fixed: the stored one goes back.
+      startsOn: "2026-07-06",
+      endsOn: "2026-07-26",
       focus: "hypertrophy",
     });
     expect(payload.blocks[0]).toMatchObject({ startsOn: "2026-06-01", endsOn: "2026-06-28" });
@@ -112,7 +112,7 @@ describe("buildEditPayload", () => {
     const { payload } = buildEditPayload(
       [view("past", "past", { startsOn: "2026-04-06", endsOn: "2026-05-03" })],
       "past",
-      { name: "Base", focus: null, startsOn: "2026-01-05", endsOn: "2026-02-01" }
+      { name: "Base", focus: null, endsOn: "2026-02-01" }
     );
 
     expect(payload.blocks[0]).toEqual({

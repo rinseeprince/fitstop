@@ -27,9 +27,11 @@ import { formatBlockDate } from "@/lib/blocks/block-format";
 
 // One inline form for both adding and editing a block (the habits
 // manage-drawer swap precedent for the SHELL only — its raw-useState
-// internals predate the react-hook-form rule). Both dates are the coach's;
-// a stored block's end can move earlier but never later (the Ends field's
-// max); elapsed edits are fields-only, their dates rendered as fixed text.
+// internals predate the react-hook-form rule). A new block's dates are both
+// the coach's. Once drawn, its start is fixed (the Starts field greyed — a new
+// start is a delete and a new block) and its end can move earlier but never
+// later (the Ends field's max); elapsed edits are fields-only, their dates
+// rendered as fixed text.
 //
 // No live summary sentence: the two date fields already say when the block
 // starts and ends, and a journey total is the rail's job, not the form's.
@@ -148,8 +150,6 @@ type BlockFormMode =
   | {
       kind: "edit";
       block: ClientBlockView;
-      /** True only for the chain's first block while nothing is lived. */
-      startEditable: boolean;
       /** The client's today when editing the CURRENT block; null otherwise. */
       minEnd: string | null;
     };
@@ -174,11 +174,11 @@ export function BlockForm({
 }: BlockFormProps) {
   const editing = mode.kind === "edit" ? mode.block : null;
   const isElapsedEdit = editing?.state === "past";
-  // A block owns its own window (migration 164), so the coach picks its start
-  // every time they can: always on an add, and on an edit while the block has
-  // not begun. A block already under way keeps its start — moving it would
-  // re-label days the client has lived — and an elapsed one is pinned history.
-  const needsStartField = mode.kind === "add" || mode.startEditable;
+  // The coach picks a block's start when drawing it, and only then: a drawn
+  // block's start is fixed, shown greyed on a current or future block, and an
+  // elapsed one is pinned history. To start a block on a different day, the
+  // coach deletes it and draws it again.
+  const needsStartField = mode.kind === "add";
   const fixedStart = needsStartField ? null : (editing as ClientBlockView).startsOn;
   const minEnd = mode.kind === "edit" ? mode.minEnd : null;
   // A block is never extended: a stored current or future block's end is the
@@ -209,14 +209,14 @@ export function BlockForm({
       // Seeded, not derived: an add defaults to the day after the block before
       // it so the common "next block follows this one" is still one click, and
       // the coach can move it anywhere from there — including leaving a gap.
-      startsOn: needsStartField
-        ? (editing?.startsOn ??
-          (mode.kind === "add" && mode.appendAfterEndsOn
-            ? addDaysToDateString(mode.appendAfterEndsOn, 1)
-            : null) ??
-          minStart ??
-          getTodayDateString())
-        : undefined,
+      startsOn:
+        mode.kind === "add"
+          ? ((mode.appendAfterEndsOn
+              ? addDaysToDateString(mode.appendAfterEndsOn, 1)
+              : null) ??
+            minStart ??
+            getTodayDateString())
+          : undefined,
       name: editing?.name ?? "",
       // Adds seed a 4-week block so the live line reads immediately.
       endsOn: isElapsedEdit
@@ -273,7 +273,7 @@ export function BlockForm({
           )}
         </div>
 
-        {needsStartField && (
+        {needsStartField ? (
           <div className="w-[150px] space-y-1.5">
             <Label htmlFor="block-starts" className={FIELD_LABEL}>
               Starts
@@ -291,7 +291,23 @@ export function BlockForm({
               </p>
             )}
           </div>
-        )}
+        ) : !isElapsedEdit ? (
+          // A drawn block's start, fixed: greyed and outside the form's values,
+          // so a save carries the stored start.
+          <div className="w-[150px] space-y-1.5">
+            <Label htmlFor="block-starts" className={FIELD_LABEL}>
+              Starts
+            </Label>
+            <Input
+              id="block-starts"
+              type="date"
+              value={fixedStart ?? ""}
+              disabled
+              readOnly
+              className={cn(FIELD_INPUT, MONO_INPUT_CLASS, "h-9 w-full text-xs")}
+            />
+          </div>
+        ) : null}
 
         {isElapsedEdit ? (
           <div className="space-y-1.5">

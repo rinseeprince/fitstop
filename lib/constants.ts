@@ -125,6 +125,11 @@ export const BLOCK_FOCUS_MAX = 500;
  *  after it, with its own program and targets (owner decision 2026-09-10). */
 export const BLOCK_EXTENSION_REFUSED = "A block can't be extended. Add a block after it.";
 
+/** A block's start is fixed once it is drawn: to start it on a different day,
+ *  the coach deletes it and draws it again. The form greys its Starts field;
+ *  the chain PUT refuses a moved start with this sentence. */
+export const BLOCK_START_FIXED = "A block's start can't be moved. Delete the block and draw it again.";
+
 // Pagination
 export const CLIENT_CHECKINS_PAGE_SIZE = 20; // "Load older" page size for the coach per-client check-ins tab
 

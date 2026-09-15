@@ -1,7 +1,11 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { captureApiError } from "@/lib/error-handler";
 import { inclusiveDays, DAYS_PER_BLOCK_WEEK } from "@/lib/blocks/block-chain";
-import { BLOCK_EXTENSION_REFUSED, BLOCK_WEEKS_MAX } from "@/lib/constants";
+import {
+  BLOCK_EXTENSION_REFUSED,
+  BLOCK_START_FIXED,
+  BLOCK_WEEKS_MAX,
+} from "@/lib/constants";
 import type { TablesInsert } from "@/types/database";
 import type { ClientBlock, ReplaceBlockChainInput } from "@/types/client-blocks";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
@@ -21,14 +25,14 @@ import type { ClientBlockWindow } from "@/lib/prescription-triggers";
  * dates for each current or future block, gaps are allowed and overlaps are
  * refused here and by the database. Elapsed blocks (ends_on < clientToday)
  * keep their DATES as read-only history — their name and focus stay
- * editable (3.6-C) — the symmetric window floor keeps every edit from
- * re-labelling lived days, and a stored block's end moves EARLIER or not at
- * all: more time is a new block after it, never a later end on this one.
+ * editable (3.6-C). A stored block's start is fixed — a new start is a delete
+ * and a new block — and its end moves EARLIER or not at all: more time is a
+ * new block after it, never a later end on this one.
  */
 
 /** 422: the block (or its elapsed prefix) is read-only history. */
 export class ElapsedBlockImmutableError extends Error {}
-/** 422: an edit would re-label lived days (symmetric window floor). */
+/** 422: a window the chain can't hold — a moved start, a lived day re-labelled, an overlap. */
 export class BlockWindowError extends Error {}
 /** 422: the payload is structurally wrong for the stored chain. */
 export class BlockPayloadError extends Error {}
@@ -172,10 +176,10 @@ const isCurrent = (block: ClientBlock, today: string): boolean =>
 
 /**
  * Replace the client's whole set of blocks. Every block carries its OWN window
- * (migration 164): a coach picks both dates, GAPS are allowed and mean nothing
- * is planned, and OVERLAPS are refused here and by a database constraint. A
- * stored block's end moves earlier or not at all — more time is a new block
- * after it (below).
+ * (migration 164): a coach picks both dates when drawing it, GAPS are allowed
+ * and mean nothing is planned, and OVERLAPS are refused here and by a database
+ * constraint. A stored block's start never moves, and its end moves earlier or
+ * not at all — more time is a new block after it (below).
  *
  * Removal is NOT expressible here — an existing non-elapsed id missing from the
  * payload is a 422, because DELETE owns removal.
@@ -221,8 +225,8 @@ export const replaceBlockChain = async (
 
   const suffix = input.blocks.slice(elapsed.length);
   for (const entry of suffix) {
+    const storedBlock = entry.id !== undefined ? storedById.get(entry.id) : undefined;
     if (entry.id !== undefined) {
-      const storedBlock = storedById.get(entry.id);
       if (!storedBlock) {
         throw new BlockPayloadError("Unknown block id in payload.");
       }
@@ -236,6 +240,12 @@ export const replaceBlockChain = async (
       throw new BlockPayloadError(
         "Current and future blocks need a start date and an end date."
       );
+    }
+    // A block's start is fixed once it is drawn: to start it on a different
+    // day, the coach deletes it and draws it again. The form greys the field;
+    // this is the belt behind it.
+    if (storedBlock && entry.startsOn !== storedBlock.startsOn) {
+      throw new BlockWindowError(BLOCK_START_FIXED);
     }
   }
 
@@ -295,8 +305,8 @@ export const replaceBlockChain = async (
   }
 
   // An edit never re-labels lived days. A stored current block must still
-  // contain today; a stored future block may become current but never wholly
-  // past; and a NEW block may not open in the past at all — a past-dated block
+  // contain today — its start is fixed, so only its end can take it into the
+  // past — and a NEW block may not open in the past at all — a past-dated block
   // generates nothing (both placement and the nutrition save refuse a past
   // date), so it would be a label over days it could never have prescribed.
   suffix.forEach((entry, i) => {
@@ -308,15 +318,9 @@ export const replaceBlockChain = async (
       return;
     }
     const storedBlock = storedById.get(entry.id) as ClientBlock;
-    if (isCurrent(storedBlock, clientToday)) {
-      if (window.startsOn > clientToday || window.endsOn < clientToday) {
-        throw new BlockWindowError(
-          "The block in progress must still cover today. To end it now, delete it."
-        );
-      }
-    } else if (window.endsOn < clientToday) {
+    if (isCurrent(storedBlock, clientToday) && window.endsOn < clientToday) {
       throw new BlockWindowError(
-        "A scheduled block can't be moved entirely into the past."
+        "The block in progress must still cover today. To end it now, delete it."
       );
     }
     // A stored block's end moves EARLIER or not at all (owner decision

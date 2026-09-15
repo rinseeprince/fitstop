@@ -351,17 +351,16 @@ export function BlocksSubtab({
       name: values.name,
       focus: values.focus,
       endsOn: values.endsOn,
-      startsOn: values.startsOn,
     });
     return putBlockChain(clientId, payload);
   };
 
   const handleEdit = async (block: ClientBlockView, values: BlockFormValues) => {
-    // Only a moved END changes which days the block owns going forward; a start
-    // that moved has already been floored at today by the service. An end later
-    // than stored never reaches the dialog — the form caps its Ends field at the
-    // stored end and the chain PUT refuses it — so a changed end is a SHORTER
-    // one, and the only question is what happens to the days that left.
+    // Only a moved END changes which days the block owns going forward: a drawn
+    // block's start is fixed. An end later than stored never reaches the dialog
+    // — the form caps its Ends field at the stored end and the chain PUT refuses
+    // it — so a changed end is a SHORTER one, and the only question is what
+    // happens to the days that left.
     const nextEnd = values.endsOn ?? block.endsOn;
 
     // The end moved earlier: ask FIRST. The save happens inside whichever arm
@@ -536,10 +535,6 @@ export function BlocksSubtab({
                   mode={{
                     kind: "edit",
                     block,
-                    // Every block owns its own window, so a future block's start
-                    // is always the coach's to move. A block already under way
-                    // keeps its start — moving it would re-label lived days.
-                    startEditable: block.state === "future",
                     minEnd: block.state === "current" ? clientToday : null,
                   }}
                   minStart={clientToday}

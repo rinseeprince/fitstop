@@ -7,6 +7,7 @@ import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import { fetchVisibleExerciseIds } from "./library-placement-service";
 import { eventByDay } from "./calendar-day-events";
 import { mapExerciseRow } from "./training-mappers";
+import { isDayUnchanged } from "./plan-edit-same-day";
 import { fetchAllPages, fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import { daysBetween } from "@/utils/metric-points";
@@ -23,8 +24,10 @@ import type { TrainingExerciseRow } from "@/lib/database-helpers";
 // The read lays the calendar out day by day from the plan's start (the day's
 // session, whatever the coach moved, deleted or edited "just this day", else
 // rest) and hands back a version: everything the editor was built from. The
-// save sends the version back, and edit_training_plan_atomic (migration 175)
+// save sends the version back, and edit_training_plan_atomic (migration 176)
 // refuses it in the same transaction as the write when any of it changed.
+// The save lays the days it writes the same way, so a day saved as it was laid
+// keeps its edited mark and a day the coach changed loses it.
 // =============================================================================
 
 type PlanEditSessionInput = z.infer<typeof savedSessionInputSchema>;
@@ -239,6 +242,19 @@ async function readSessionRows(clientId: string, ids: string[]): Promise<Session
   );
 }
 
+/** The calendar from `from` to `through`, the rows its days point at and their exercises. */
+async function readLaidCalendar(clientId: string, from: string, through: string) {
+  const events = await readCalendar(clientId, from, through);
+  const sessionIds = [
+    ...new Set(events.map((e) => e.training_session_id).filter((id): id is string => id != null)),
+  ];
+  const [rows, exercises] = await Promise.all([
+    readSessionRows(clientId, sessionIds),
+    readExercises(sessionIds),
+  ]);
+  return { events, rows, exercises };
+}
+
 async function readExercises(sessionIds: string[]): Promise<Map<string, TrainingExercise[]>> {
   const rows = await fetchAllByChunkedIds<TrainingExerciseRow, string>(
     sessionIds,
@@ -302,6 +318,24 @@ function layDays(input: {
   return days;
 }
 
+/** The days from `from` to `through` as the editor lays them; none when the range is empty. */
+async function readLaidDays(
+  clientId: string,
+  from: string,
+  through: string,
+): Promise<PlanEditDay[]> {
+  if (through < from) return [];
+  const { events, rows, exercises } = await readLaidCalendar(clientId, from, through);
+  return layDays({
+    from,
+    gridEnd: through,
+    layThrough: through,
+    events,
+    rows: new Map(rows.map((row) => [row.id, row])),
+    exercises,
+  });
+}
+
 /**
  * The plan as the editor opens it. Null = no live plan by that id for this
  * client; an ended plan throws PlanEndedError.
@@ -324,14 +358,11 @@ export async function getPlanForEditing(
   // plan's own days past its limit, which a save clears.
   const through = later(layThrough, plan.effective_until);
 
-  const events = await readCalendar(clientId, plan.effective_from, through);
-  const sessionIds = [
-    ...new Set(events.map((e) => e.training_session_id).filter((id): id is string => id != null)),
-  ];
-  const [rows, exercises] = await Promise.all([
-    readSessionRows(clientId, sessionIds),
-    readExercises(sessionIds),
-  ]);
+  const { events, rows, exercises } = await readLaidCalendar(
+    clientId,
+    plan.effective_from,
+    through,
+  );
   const rowsById = new Map(rows.map((row) => [row.id, row]));
 
   const seen = events.filter((e) => e.date >= firstEditableDate);
@@ -377,11 +408,24 @@ export async function getPlanForEditing(
   };
 }
 
-// One day of the save, in migration 175's columns. Exercises splat verbatim —
+// One day of the save, in migration 176's columns. Exercises splat verbatim —
 // the builder keeps each exercise's compact columns the projection of its
 // set specs, as placement does — with a catalog id the coach can't see nulled.
-function toSaveDay(date: string, input: PlanEditSessionInput, visible: Set<string>) {
+// `unchanged` says the day as written is the day as laid, so its event keeps
+// its edited mark; the function never reads it on a rest day.
+function toSaveDay(
+  date: string,
+  input: PlanEditSessionInput,
+  visible: Set<string>,
+  laid: PlanEditDay | undefined,
+) {
   if (input.isRest) return { date, is_rest: true };
+  const exercises = [...input.exercises]
+    .sort((a, b) => a.orderIndex - b.orderIndex)
+    .map((ex) => ({
+      ...ex,
+      exerciseId: ex.exerciseId && visible.has(ex.exerciseId) ? ex.exerciseId : null,
+    }));
   return {
     date,
     is_rest: false,
@@ -390,27 +434,26 @@ function toSaveDay(date: string, input: PlanEditSessionInput, visible: Set<strin
     notes: input.notes ?? null,
     estimated_duration_minutes: input.estimatedDurationMinutes ?? null,
     calorie_surplus_percentage: input.calorieSurplusPercentage ?? null,
-    exercises: [...input.exercises]
-      .sort((a, b) => a.orderIndex - b.orderIndex)
-      .map((ex) => ({
-        name: ex.name,
-        exercise_id: ex.exerciseId && visible.has(ex.exerciseId) ? ex.exerciseId : null,
-        order_index: ex.orderIndex,
-        sets: ex.sets,
-        reps_min: ex.repsMin ?? null,
-        reps_max: ex.repsMax ?? null,
-        reps_target: ex.repsTarget ?? null,
-        rpe_target: ex.rpeTarget ?? null,
-        percentage_1rm: ex.percentage1rm ?? null,
-        tempo: ex.tempo ?? null,
-        rest_seconds: ex.restSeconds ?? null,
-        notes: ex.notes ?? null,
-        superset_group: ex.supersetGroup ?? null,
-        is_warmup: ex.isWarmup ?? false,
-        set_specs: ex.setSpecs ?? null,
-        video_url: ex.videoUrl ?? null,
-        prescribed_fields: toPrescribedFields(ex.prescribedFields),
-      })),
+    unchanged: isDayUnchanged(laid, { ...input, exercises }),
+    exercises: exercises.map((ex) => ({
+      name: ex.name,
+      exercise_id: ex.exerciseId,
+      order_index: ex.orderIndex,
+      sets: ex.sets,
+      reps_min: ex.repsMin ?? null,
+      reps_max: ex.repsMax ?? null,
+      reps_target: ex.repsTarget ?? null,
+      rpe_target: ex.rpeTarget ?? null,
+      percentage_1rm: ex.percentage1rm ?? null,
+      tempo: ex.tempo ?? null,
+      rest_seconds: ex.restSeconds ?? null,
+      notes: ex.notes ?? null,
+      superset_group: ex.supersetGroup ?? null,
+      is_warmup: ex.isWarmup ?? false,
+      set_specs: ex.setSpecs ?? null,
+      video_url: ex.videoUrl ?? null,
+      prescribed_fields: toPrescribedFields(ex.prescribedFields),
+    })),
   };
 }
 
@@ -472,12 +515,18 @@ export async function savePlanEdit(params: {
   const lastPosition = daysBetween(plan.effective_from, lastDay);
 
   const written = sessions.slice(firstPosition, lastPosition + 1);
-  const visible = await fetchVisibleExerciseIds(
-    coachId,
-    written.flatMap((s) =>
-      s.exercises.map((e) => e.exerciseId).filter((id): id is string => Boolean(id)),
+  // The days as laid are read now, outside the transaction; the function's
+  // stale check refuses the save unless they are still the calendar the
+  // editor opened, so "unchanged" is judged against what the editor showed.
+  const [visible, laid] = await Promise.all([
+    fetchVisibleExerciseIds(
+      coachId,
+      written.flatMap((s) =>
+        s.exercises.map((e) => e.exerciseId).filter((id): id is string => Boolean(id)),
+      ),
     ),
-  );
+    readLaidDays(clientId, firstEditableDate, lastDay),
+  ]);
   const window = sessions.slice(0, lastPosition + 1);
 
   const { error } = await supabaseAdmin.rpc("edit_training_plan_atomic", {
@@ -490,7 +539,7 @@ export async function savePlanEdit(params: {
     p_program_duration_weeks: Math.ceil(window.length / DAYS_PER_WEEK),
     p_frequency_per_week: deriveFrequencyPerWeek(window),
     p_days: written.map((slot, i) =>
-      toSaveDay(addDaysToDateString(firstEditableDate, i), slot, visible),
+      toSaveDay(addDaysToDateString(firstEditableDate, i), slot, visible, laid[i]),
     ),
     p_version: version,
   });

@@ -179,21 +179,33 @@ describe("DayCell — the plan editor's locked, greyed and today days", () => {
     expect(handlers.onRequestAddSession).not.toHaveBeenCalled();
   });
 
-  it("rings today's cell, rest or session", () => {
+  // Inside the box, on both variants: Day 1's left edge sits under the sticky
+  // week column's opaque strip, which cut an outside ring off (the Edit plan
+  // smoke). jsdom paints nothing, so the class is what can be asserted here.
+  it("rings today's cell inside its box, rest or session", () => {
     renderCell({ isToday: true });
-    expect(screen.getByLabelText("Add session to day 1")).toHaveClass("ring-1", "ring-[#0d9488]");
+    expect(screen.getByLabelText("Add session to day 1")).toHaveClass(
+      "ring-1",
+      "ring-inset",
+      "ring-[#0d9488]",
+    );
     cleanup();
 
     renderCell({
       isToday: true,
       slot: makeSlot({ isRest: false, session: makeSession() }),
     });
-    expect(screen.getByLabelText("Open session Push")).toHaveClass("ring-1", "ring-[#0d9488]");
+    expect(screen.getByLabelText("Open session Push")).toHaveClass(
+      "ring-1",
+      "ring-inset",
+      "ring-[#0d9488]",
+    );
     cleanup();
 
     // Any other day carries no ring.
     renderCell({ slot: makeSlot({ isRest: false, session: makeSession() }) });
     expect(screen.getByLabelText("Open session Push")).not.toHaveClass("ring-1");
+    expect(screen.getByLabelText("Open session Push")).not.toHaveClass("ring-inset");
   });
 
   it("a locked session card STAYS clickable (opens the editor read-only)", () => {

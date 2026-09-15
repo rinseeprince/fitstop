@@ -34,7 +34,9 @@ type DayCellProps = {
   locked?: boolean;
   // A day past the plan's limit: greyed and empty — it can't hold a session.
   greyed?: boolean;
-  // The client's today, ringed so the coach knows where the client is.
+  // The client's today, ringed so the coach knows where the client is. The
+  // ring is drawn INSIDE the box: Day 1's left edge sits under the sticky week
+  // column's opaque strip, which hides anything drawn outside it.
   isToday?: boolean;
   collapsed: boolean;
   // Program-level default surplus — the value a session inherits when it has no
@@ -125,7 +127,7 @@ export function DayCell({
             heightClass,
             locked && "opacity-60",
             greyed && "bg-[rgba(147,176,180,0.12)]",
-            isToday && "ring-1 ring-[#0d9488]",
+            isToday && "ring-1 ring-inset ring-[#0d9488]",
             isOver && "border-[#0d9488] bg-[rgba(13,148,136,0.05)]",
             editable && cn("cursor-pointer hover:border-[rgba(13,148,136,0.25)] hover:bg-[rgba(13,148,136,0.03)]", FOCUS_RING),
           )}
@@ -172,7 +174,7 @@ export function DayCell({
           TRAINING_CARD_BORDER,
           heightClass,
           locked && "opacity-60",
-          isToday && "ring-1 ring-[#0d9488]",
+          isToday && "ring-1 ring-inset ring-[#0d9488]",
           isOver && "border-[#0d9488]",
           isDragging && "opacity-40",
           !collapsed && !locked &&

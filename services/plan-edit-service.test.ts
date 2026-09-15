@@ -27,6 +27,13 @@ import {
   type PlanEditDay,
   type PlanForEditing,
 } from "./plan-edit-service";
+import {
+  draftToPlanEditBody,
+  planForEditingToDraft,
+} from "@/components/clients/training/program-builder/placed-serialize";
+import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
+import type { ProgramDraft } from "@/components/clients/training/program-builder/program-builder-types";
+import { planEditSaveSchema } from "@/lib/validations/training";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockRpc = vi.mocked(supabaseAdmin.rpc);
@@ -1076,6 +1083,8 @@ describe("savePlanEdit", () => {
         notes: "Brace",
         estimated_duration_minutes: 50,
         calorie_surplus_percentage: 12.5,
+        // The calendar holds nothing here: a session on a rest day is a change.
+        unchanged: false,
         // In the grid's order, however the list arrived.
         exercises: [
           writtenExercise({ name: "Pull-up", order_index: 0, sets: 3 }),
@@ -1110,6 +1119,7 @@ describe("savePlanEdit", () => {
         notes: null,
         estimated_duration_minutes: null,
         calorie_surplus_percentage: null,
+        unchanged: false,
         exercises: [],
       });
       // Asked of the written days only: history's exercises are not sent.
@@ -1146,6 +1156,175 @@ describe("savePlanEdit", () => {
         p_first_day: opened.firstEditableDate,
         p_version: decode(opened.version),
       });
+    });
+  });
+
+  describe("the edited mark", () => {
+    // A day the editor saves as it was laid keeps its edited mark; a day the
+    // coach changed loses it. The save says which with `unchanged`, judged
+    // against the calendar it reads over the days it writes.
+    const UPPER_A = rowId(1);
+    const LOWER_A = rowId(2);
+    const UPPER_B = rowId(3);
+    const specs = [
+      // Numbered from 2 and keyed out of order, as a stored list can be.
+      { load_value: 40, set_type: "warmup", set_number: 2, reps_min: 10, reps_max: 10, load_type: "absolute" },
+      { load_value: 80, set_type: "working", set_number: 5, reps_min: 6, reps_max: 8, load_type: "absolute" },
+    ];
+    const calendar = () => ({
+      sessions: [
+        sessionRow(UPPER_A, "Upper A", { focus: "Chest and back", estimated_duration_minutes: 60 }),
+        sessionRow(LOWER_A, "Lower A", { focus: "Legs", notes: "Brace", estimated_duration_minutes: 50 }),
+        sessionRow(UPPER_B, "Upper B"),
+      ],
+      events: [
+        event(eventId(1), 3, UPPER_A),
+        event(eventId(2), 5, LOWER_A, { calorie_surplus_percentage: 12.5 }),
+        event(eventId(3), 9, UPPER_B),
+      ],
+      exercises: [
+        // Stored order numbers with gaps: the list's order is what counts.
+        exerciseRow("ex-1", UPPER_A, "Bench press", 0),
+        exerciseRow("ex-2", UPPER_A, "Row", 2, { set_specs: specs }),
+        exerciseRow("ex-3", UPPER_A, "Fly", 5, {
+          set_specs: [],
+          video_url: "  https://example.com/fly  ",
+          prescribed_fields: [],
+        }),
+        exerciseRow("ex-4", LOWER_A, "Squat", 0, {
+          reps_target: "6-8",
+          rpe_target: 7.5,
+          percentage_1rm: 70,
+          tempo: "3010",
+          rest_seconds: 120,
+          notes: "Pause",
+          superset_group: "A",
+          prescribed_fields: ["reps", "load"],
+        }),
+        exerciseRow("ex-5", UPPER_B, "Press", 0),
+      ],
+    });
+
+    /** Open the editor, change nothing or what `edit` changes, save through its own code. */
+    async function saveThroughEditor(edit: (draft: ProgramDraft) => ProgramDraft = (d) => d) {
+      const opened = await open();
+      const seeded = normalizeDraft(planForEditingToDraft(opened).draft);
+      const body = planEditSaveSchema.parse(
+        draftToPlanEditBody(normalizeDraft(edit(seeded)), opened.version),
+      );
+      await savePlanEdit({
+        clientId: CLIENT_ID,
+        coachId: COACH_ID,
+        planId: PLAN_ID,
+        sessions: body.sessions,
+        name: body.plan.name,
+        splitType: body.plan.splitType ?? null,
+        version: body.version,
+      });
+    }
+
+    const marks = () =>
+      rpcDays()
+        .filter((day) => !day.is_rest)
+        .map((day) => [day.date, day.unchanged]);
+
+    /** The draft with one slot's session replaced (week, day). */
+    function withSlot(
+      draft: ProgramDraft,
+      week: number,
+      day: number,
+      change: (slot: ProgramDraft["weeks"][number]["days"][number]) => ProgramDraft["weeks"][number]["days"][number],
+    ): ProgramDraft {
+      return {
+        ...draft,
+        weeks: draft.weeks.map((w, wi) =>
+          wi !== week ? w : { ...w, days: w.days.map((s, di) => (di === day ? change(s) : s)) },
+        ),
+      };
+    }
+
+    it("says every day the coach left alone is unchanged, through the editor's own load and save", async () => {
+      mockTables(calendar());
+
+      await saveThroughEditor();
+
+      expect(marks()).toEqual([
+        [TODAY, true],
+        [dayAt(5), true],
+        [dayAt(9), true],
+      ]);
+    });
+
+    it("says a day the coach changed is not, and leaves the rest unchanged", async () => {
+      mockTables(calendar());
+
+      // Lower A (Saturday, week 1) goes from 50 minutes to 45.
+      await saveThroughEditor((draft) =>
+        withSlot(draft, 0, 5, (slot) => ({
+          ...slot,
+          session: slot.session && { ...slot.session, estimatedDurationMinutes: 45 },
+        })),
+      );
+
+      expect(marks()).toEqual([
+        [TODAY, true],
+        [dayAt(5), false],
+        [dayAt(9), true],
+      ]);
+    });
+
+    it("says a session moved onto a day laid as rest is not unchanged", async () => {
+      mockTables(calendar());
+
+      // Upper B moves from Wednesday of week 2 to Thursday.
+      await saveThroughEditor((draft) => {
+        const upperB = draft.weeks[1].days[2].session;
+        const cleared = withSlot(draft, 1, 2, (slot) => ({ ...slot, isRest: true, session: null }));
+        return withSlot(cleared, 1, 3, (slot) => ({ ...slot, isRest: false, session: upperB }));
+      });
+
+      expect(marks()).toEqual([
+        [TODAY, true],
+        [dayAt(5), true],
+        [dayAt(10), false],
+      ]);
+      expect(rpcDays().find((day) => day.date === dayAt(9))).toEqual({
+        date: dayAt(9),
+        is_rest: true,
+      });
+    });
+
+    it("says a day the save unlinks from a catalog exercise the coach can't see is not unchanged", async () => {
+      // The save writes that exercise without its catalog id, so the day as
+      // written is not the day as laid.
+      vi.mocked(fetchVisibleExerciseIds).mockResolvedValue(new Set());
+      const fixture = calendar();
+      mockTables({
+        ...fixture,
+        exercises: fixture.exercises.map((row) =>
+          row.id === "ex-5" ? { ...row, exercise_id: "e2000000-0000-4000-8000-000000000002" } : row,
+        ),
+      });
+
+      await saveThroughEditor();
+
+      expect(marks()).toEqual([
+        [TODAY, true],
+        [dayAt(5), true],
+        [dayAt(9), false],
+      ]);
+    });
+
+    it("reads the calendar over exactly the days it writes", async () => {
+      const reads = mockTables(calendar());
+
+      await saveThroughEditor();
+
+      // The first read is the editor's own open; the second is the save's.
+      const saveRead = reads.training_events[1];
+      expect(saveRead.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
+      expect(saveRead.gte).toHaveBeenCalledWith("date", TODAY);
+      expect(saveRead.lte).toHaveBeenCalledWith("date", "2026-09-20");
     });
   });
 

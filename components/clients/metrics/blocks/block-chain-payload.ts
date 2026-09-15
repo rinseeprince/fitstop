@@ -50,12 +50,12 @@ export function buildAppendPayload(
   };
 }
 
-/** An edit-form submission. Dates are present only for current/future blocks —
- *  an elapsed edit is fields-only, because its window is pinned history. */
+/** An edit-form submission. A drawn block's start is fixed, so it is echoed
+ *  from storage; the end is present only for current/future blocks — an
+ *  elapsed edit is fields-only, because its window is pinned history. */
 interface BlockEdit {
   name: string;
   focus: string | null;
-  startsOn?: string;
   endsOn?: string;
 }
 
@@ -79,7 +79,7 @@ export function buildEditPayload(
   }
 
   const editable = target.state !== "past";
-  const startsOn = editable ? edit.startsOn ?? target.startsOn : target.startsOn;
+  const startsOn = target.startsOn;
   const endsOn = editable ? edit.endsOn ?? target.endsOn : target.endsOn;
 
   const blocks: BlockChainEntryInput[] = views.map((view) =>
