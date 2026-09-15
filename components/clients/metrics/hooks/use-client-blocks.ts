@@ -6,6 +6,7 @@ import { swrFetcher } from "@/lib/swr-fetcher";
 import type { ClientBlockView } from "@/lib/blocks/block-derivations";
 import type {
   BlockFacts,
+  BlockPlanTrim,
   ReplaceBlockChainInput,
 } from "@/types/client-blocks";
 
@@ -105,12 +106,12 @@ export function useBlockFacts(clientId: string) {
 /**
  * Invalidates every cached read under the blocks area (chain + facts).
  *
- * NOT sufficient on its own for the two writes that reach the calendar — the
- * events sync and a delete carrying `clearPlans` rewrite `training_events` and
- * the nutrition versions' windows, which the computed nutrition month view is
+ * NOT sufficient on its own for the writes that reach the calendar — a save
+ * that trims plans and every delete rewrite `training_events` and the
+ * nutrition versions' windows, which the computed nutrition month view is
  * priced from, so those call sites also invoke `useInvalidateTrainingData`
- * and `useInvalidateNutritionCalendar` (CONVENTIONS §7). Only the chain PUT,
- * PATCH and a plain delete are client_phases-only.
+ * and `useInvalidateNutritionCalendar` (CONVENTIONS §7). Only a chain PUT that
+ * trims nothing, and the PATCH, are client_phases-only.
  */
 export function useInvalidateClientBlocks() {
   const { mutate } = useSWRConfig();
@@ -186,34 +187,40 @@ async function parseOrThrow<T extends { success?: boolean }>(
   return body;
 }
 
-/** PUT the whole chain. Callers invalidate the blocks area on success. */
+/** What a chain PUT came back with: the saved chain, or — when the save
+ *  would trim plans already on the calendar and carried no `confirmTrims` —
+ *  the trims, for the one question. */
+type BlockChainSave =
+  | { saved: BlocksResponse["data"] }
+  | { trims: BlockPlanTrim[] };
+
+/** PUT the whole chain. Callers invalidate the blocks area on a save. */
 export async function putBlockChain(
   clientId: string,
   payload: ReplaceBlockChainInput
-): Promise<BlocksResponse["data"]> {
+): Promise<BlockChainSave> {
   const res = await fetch(clientBlocksKey(clientId), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  if (res.status === 409) {
+    const refusal = (await res.json()) as { data?: { trims?: BlockPlanTrim[] } };
+    if (refusal.data?.trims) return { trims: refusal.data.trims };
+  }
   const body = await parseOrThrow<BlocksResponse>(res, "Failed to save blocks");
-  return body.data;
+  return { saved: body.data };
 }
 
-/** DELETE one block. Callers invalidate the blocks area on success. */
+/** DELETE one block and its plans. Callers invalidate the blocks area, both
+ *  calendar areas, the facts, the Overview and the feed on success. */
 export async function deleteBlockRequest(
   clientId: string,
-  blockId: string,
-  /** The coach's answer to the confirm dialog. Never a default: without it the
-   *  block's plans and days stay exactly where they are. With it, the client's
-   *  nutrition plan and training plans are deleted alongside the block — the
-   *  same two acts the calendars offer, fired together. */
-  clearPlans = false
+  blockId: string
 ): Promise<DeleteBlockResponse["data"]> {
-  const res = await fetch(
-    `${clientBlocksKey(clientId)}/${blockId}${clearPlans ? "?clearPlans=true" : ""}`,
-    { method: "DELETE" }
-  );
+  const res = await fetch(`${clientBlocksKey(clientId)}/${blockId}`, {
+    method: "DELETE",
+  });
   const body = await parseOrThrow<DeleteBlockResponse>(
     res,
     "Failed to delete block"
@@ -262,21 +269,3 @@ export async function patchBlockArchived(
   return body.data;
 }
 
-/**
- * Bring the calendar in line with a block the coach has just SHORTENED — their
- * answer to the confirm dialog, never automatic. The one mode is `clear`: the
- * scheduled days that have left the block go, and both tracks' windows are
- * pulled back to it. Callers invalidate the training and nutrition areas as
- * well as the blocks area on success (CONVENTIONS §7).
- */
-export async function syncBlockEvents(
-  clientId: string,
-  blockId: string
-): Promise<void> {
-  const res = await fetch(`${clientBlocksKey(clientId)}/${blockId}/events`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "clear" }),
-  });
-  await parseOrThrow<{ success?: boolean }>(res, "Failed to update the calendar");
-}

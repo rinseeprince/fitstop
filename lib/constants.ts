@@ -130,6 +130,11 @@ export const BLOCK_EXTENSION_REFUSED = "A block can't be extended. Add a block a
  *  the chain PUT refuses a moved start with this sentence. */
 export const BLOCK_START_FIXED = "A block's start can't be moved. Delete the block and draw it again.";
 
+/** A block contains its plans: a save that draws or shortens a block over days
+ *  that already hold a plan trims the plans to fit, and the chain PUT refuses
+ *  it with this sentence (409, the trims beside it) until the coach says yes. */
+export const BLOCK_TRIMS_UNCONFIRMED = "Saving this block changes plans that are already on the calendar.";
+
 // Pagination
 export const CLIENT_CHECKINS_PAGE_SIZE = 20; // "Load older" page size for the coach per-client check-ins tab
 

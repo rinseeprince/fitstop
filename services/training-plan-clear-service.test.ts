@@ -13,7 +13,11 @@ vi.mock("./training-event-service", () => ({
 import { supabaseAdmin } from "./supabase-admin";
 import { resolveEventDeletionFloor } from "./event-deletion-floor";
 import { cancelFutureEventsForPlans } from "./training-event-service";
-import { clearTrainingPlansForClient, retireTrainingPlans } from "./training-plan-clear-service";
+import {
+  clearTrainingPlansForClient,
+  endTrainingPlansAt,
+  retireTrainingPlans,
+} from "./training-plan-clear-service";
 
 type ChainResult = { data?: unknown; error?: { message: string } | null };
 
@@ -50,7 +54,7 @@ const finished = { id: "p-done", effective_from: "2026-03-01", effective_until: 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(resolveEventDeletionFloor).mockResolvedValue(TODAY);
-  vi.mocked(cancelFutureEventsForPlans).mockResolvedValue(undefined);
+  vi.mocked(cancelFutureEventsForPlans).mockResolvedValue([]);
 });
 
 describe("retireTrainingPlans — a delete is a save of nothing from today", () => {
@@ -93,6 +97,29 @@ describe("retireTrainingPlans — a delete is a save of nothing from today", () 
     await expect(retireTrainingPlans([running], TODAY)).rejects.toThrow(
       "Failed to end the running program: boom"
     );
+  });
+});
+
+describe("endTrainingPlansAt — each program ends on its own last day (a block trim)", () => {
+  it("caps each program on its day, one statement per day, archives one left no day, and never lengthens a window", async () => {
+    const chains = mockFromSequence([{ error: null }, { error: null }, { error: null }]);
+
+    const result = await endTrainingPlansAt([
+      { ...running, lastDay: "2026-07-19" },
+      { ...queued, lastDay: "2026-08-02" },
+      { id: "p-inside", effective_from: "2026-07-20", effective_until: "2026-08-02", lastDay: "2026-08-02" },
+      { id: "p-gone", effective_from: "2026-08-10", effective_until: "2026-08-23", lastDay: "2026-08-09" },
+    ]);
+
+    expect(result).toEqual({ ended: ["p-run", "p-queued"], archived: ["p-gone"] });
+    expect(chains[0].update).toHaveBeenCalledWith(expect.objectContaining({ effective_until: "2026-07-19" }));
+    expect(chains[0].in).toHaveBeenCalledWith("id", ["p-run"]);
+    expect(chains[1].update).toHaveBeenCalledWith(expect.objectContaining({ effective_until: "2026-08-02" }));
+    expect(chains[1].in).toHaveBeenCalledWith("id", ["p-queued"]);
+    expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ status: "archived" }));
+    expect(chains[2].in).toHaveBeenCalledWith("id", ["p-gone"]);
+    // The program already ending on its last day is in no statement.
+    expect(chains).toHaveLength(3);
   });
 });
 

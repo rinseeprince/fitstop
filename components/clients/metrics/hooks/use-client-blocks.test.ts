@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
 const { mockUseSWR } = vi.hoisted(() => ({ mockUseSWR: vi.fn() }));
@@ -8,7 +8,7 @@ vi.mock("swr", () => ({
   useSWRConfig: () => ({ mutate: vi.fn() }),
 }));
 
-import { useClientBlocks } from "./use-client-blocks";
+import { deleteBlockRequest, putBlockChain, useClientBlocks } from "./use-client-blocks";
 
 describe("useClientBlocks", () => {
   beforeEach(() => {
@@ -43,5 +43,50 @@ describe("useClientBlocks", () => {
     expect(result.current.blocks).toEqual([]);
     expect(result.current.clientToday).toBeNull();
     expect(result.current.planStartFloor).toBeNull();
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("putBlockChain — a save, or the question it raises", () => {
+  const payload = { blocks: [{ name: "Build", startsOn: "2026-10-06", endsOn: "2026-11-02" }] };
+  const respond = (status: number, body: unknown) =>
+    vi.fn().mockResolvedValue({ ok: status < 400, status, json: () => Promise.resolve(body) });
+
+  it("a save comes back with the chain", async () => {
+    const data = { blocks: [], clientToday: "2026-09-15", planStartFloor: "2026-09-15" };
+    vi.stubGlobal("fetch", respond(200, { success: true, data }));
+
+    await expect(putBlockChain("c1", payload)).resolves.toEqual({ saved: data });
+  });
+
+  it("a 409 carrying trims is the question, not a failure", async () => {
+    const trims = [{ track: "training", id: "p-1", name: "Power", startsOn: "2026-10-06", endsOn: "2026-11-29", newEndsOn: "2026-11-02" }];
+    vi.stubGlobal("fetch", respond(409, { success: false, error: "Saving this block changes plans that are already on the calendar.", data: { trims } }));
+
+    await expect(putBlockChain("c1", payload)).resolves.toEqual({ trims });
+  });
+
+  it("any other refusal throws its sentence", async () => {
+    vi.stubGlobal("fetch", respond(422, { success: false, error: "A block can't be extended. Add a block after it." }));
+
+    await expect(putBlockChain("c1", payload)).rejects.toThrow("A block can't be extended. Add a block after it.");
+  });
+});
+
+describe("deleteBlockRequest — a block goes with its plans", () => {
+  it("asks for nothing but the delete: there is no keep-the-plans variant", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ success: true, data: { blocks: [], clientToday: "2026-09-15", planStartFloor: "2026-09-15" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deleteBlockRequest("c1", "blk-1");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/clients/c1/blocks/blk-1", { method: "DELETE" });
   });
 });

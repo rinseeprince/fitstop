@@ -442,7 +442,7 @@ describe("cancelFutureEventsForPlans — the set form a placement supersedes wit
       .mockReturnValueOnce(detach2 as any)
       .mockReturnValueOnce(delete2 as any);
 
-    await expect(cancelFutureEventsForPlans(ids, "2026-09-11")).resolves.toBeUndefined();
+    await expect(cancelFutureEventsForPlans(ids, "2026-09-11")).resolves.toEqual([]);
 
     expect(mockFrom).toHaveBeenCalledTimes(4);
     expect(detach1.in).toHaveBeenCalledWith("training_plan_id", ids.slice(0, 100));
@@ -454,7 +454,26 @@ describe("cancelFutureEventsForPlans — the set form a placement supersedes wit
   });
 
   it("issues nothing for an empty set", async () => {
-    await expect(cancelFutureEventsForPlans([], "2026-09-11")).resolves.toBeUndefined();
+    await expect(cancelFutureEventsForPlans([], "2026-09-11")).resolves.toEqual([]);
     expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns the session rows the removed days pointed at, from every chunk", async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `plan-${i}`);
+    const detach1 = createMockQuery({ data: null, error: null });
+    const delete1 = createMockQuery({
+      data: [{ training_session_id: "s-1" }, { training_session_id: null }],
+      error: null,
+    });
+    const detach2 = createMockQuery({ data: null, error: null });
+    const delete2 = createMockQuery({ data: [{ training_session_id: "s-2" }], error: null });
+    mockFrom
+      .mockReturnValueOnce(detach1 as never)
+      .mockReturnValueOnce(delete1 as never)
+      .mockReturnValueOnce(detach2 as never)
+      .mockReturnValueOnce(delete2 as never);
+
+    await expect(cancelFutureEventsForPlans(ids, "2026-09-11")).resolves.toEqual(["s-1", "s-2"]);
+    expect(delete1.select).toHaveBeenCalledWith("training_session_id");
   });
 });

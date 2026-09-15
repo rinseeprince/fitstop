@@ -19,28 +19,18 @@ import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 
-// Delete one journey block: the row goes and nothing else moves (migration 164).
-// Elapsed blocks 422.
-//
-// `?clearPlans=true` additionally fires THREE THINGS THE COACH CAN ALREADY DO,
-// together: delete the nutrition plan, delete the training plan, delete the
-// block. It is the coach's answer to the confirm dialog, never a default —
-// without it nothing but the row goes, which is the rule that a block edit
-// writes nothing on its own.
+// Delete one journey block, and its plans with it: the running plan on each
+// track ends yesterday, a queued one is removed, then the row goes. No other
+// block moves (migration 164). Elapsed blocks 422.
 //
 // It reuses the two clears the calendars' own deletes call, each given this
 // block's window, rather than inventing a block-scoped deletion: a rule for
 // which plans "belong to" a block is how a pointer architecture arrives by the
 // back door, and blocks carry DATES, never an id anything else points at.
 //
-// Clearing the block's own days and leaving the plans standing is not a thing
-// this can do: a nutrition day is computed from the version covering it, so a
-// version left standing still answers for every day in its window, and a
-// program's upcoming sessions travel with the program.
-//
-// Both deletes are SCOPED TO THIS BLOCK's window. A later block keeps its own
-// program and its own targets — the coach asked about one block's date range,
-// and nothing outside it is theirs to remove here.
+// Both deletes are SCOPED TO THIS BLOCK's window: a block contains its plans,
+// so the plans starting in its days are its own, and a later block keeps its
+// own program and its own targets.
 
 export async function DELETE(
   request: NextRequest,
@@ -59,38 +49,30 @@ export async function DELETE(
     if (!auth.authorized) return auth.response;
 
     const clientToday = await getClientTodayString(clientId);
-    const clearPlans =
-      new URL(request.url).searchParams.get("clearPlans") === "true";
 
     // Nutrition, then training, then the block. The two clears are
-    // independent now — each ends its own plans and writes nothing the other
-    // reads — so the order is the dialog's, not a dependency.
-    let cleared:
-      | { nutritionVersionsCleared: number; trainingPlansCleared: number }
-      | null = null;
-    if (clearPlans) {
-      // SCOPED TO THIS BLOCK. Both tracks answer "does this plan belong to the
-      // block?" from dates alone — a program is truncated to the block it is
-      // placed in, and a version's end is resolved to the block its start
-      // falls in — so the windows line up with the block's by construction and
-      // no pointer is needed. A plan that merely CROSSES the block belongs to
-      // an earlier one and survives; the coach removes it from its own calendar.
-      const block = (await listBlocks(clientId)).find((b) => b.id === blockId);
-      if (!block) throw new UnknownBlockIdError("Block not found");
-
-      const { versionsCleared } = await clearNutritionPlansForClient(clientId, clientToday, {
-        from: block.startsOn,
-        to: block.endsOn,
-      });
-      const { plansCleared } = await clearTrainingPlansForClient(clientId, clientToday, {
-        from: block.startsOn,
-        to: block.endsOn,
-      });
-      cleared = {
-        nutritionVersionsCleared: versionsCleared,
-        trainingPlansCleared: plansCleared,
-      };
+    // independent — each ends its own plans and writes nothing the other
+    // reads — but both run BEFORE the row goes: losing the label while the
+    // prescription survives is the one outcome the UI cannot undo. An elapsed
+    // block ends no plan: its row refuses below, and so its plans are left be.
+    const block = (await listBlocks(clientId)).find((b) => b.id === blockId);
+    if (!block) throw new UnknownBlockIdError("Block not found");
+    if (block.endsOn < clientToday) {
+      throw new ElapsedBlockImmutableError("Past blocks are read-only.");
     }
+
+    const { versionsCleared } = await clearNutritionPlansForClient(clientId, clientToday, {
+      from: block.startsOn,
+      to: block.endsOn,
+    });
+    const { plansCleared } = await clearTrainingPlansForClient(clientId, clientToday, {
+      from: block.startsOn,
+      to: block.endsOn,
+    });
+    const cleared = {
+      nutritionVersionsCleared: versionsCleared,
+      trainingPlansCleared: plansCleared,
+    };
 
     // The chain payload carries the plan-start floor beside the client's today
     // (see the GET); it does not depend on the delete, so the two run together.
@@ -106,7 +88,7 @@ export async function DELETE(
       targetTable: "client_phases",
       targetId: blockId,
       clientId,
-      metadata: { blockCount: result.blocks.length, clearedPlans: clearPlans },
+      metadata: { blockCount: result.blocks.length, ...cleared },
       request,
     });
 

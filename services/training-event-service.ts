@@ -164,11 +164,15 @@ export async function cancelFutureEventsForPlan(
  * re-placed monthly for a year has a dozen of them — two round trips per plan
  * would make placement scale with the client's history (CONVENTIONS §2,
  * performance 7).
+ *
+ * Returns the session rows the removed days pointed at, for the one caller
+ * that retires them with their days (a block trim).
  */
 export async function cancelFutureEventsForPlans(
   planIds: string[],
   fromDate: string
-): Promise<void> {
+): Promise<string[]> {
+  const removedSessionIds: string[] = [];
   for (const chunk of chunkIds(planIds)) {
     const { error: detachError } = await supabaseAdmin
       .from("training_events")
@@ -179,15 +183,20 @@ export async function cancelFutureEventsForPlans(
 
     if (detachError) throw detachError;
 
-    const { error: deleteError } = await supabaseAdmin
+    const { data: removed, error: deleteError } = await supabaseAdmin
       .from("training_events")
       .delete()
       .in("training_plan_id", chunk)
       .gte("date", fromDate)
-      .eq("status", "scheduled");
+      .eq("status", "scheduled")
+      .select("training_session_id");
 
     if (deleteError) throw deleteError;
+    for (const row of removed ?? []) {
+      if (row.training_session_id) removedSessionIds.push(row.training_session_id);
+    }
   }
+  return removedSessionIds;
 }
 
 // --- Regenerate future events ---

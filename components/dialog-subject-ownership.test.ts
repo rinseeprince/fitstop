@@ -19,6 +19,7 @@ const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
 const SURFACES: { file: string; derived: RegExp[]; latches?: string[] }[] = [
   { file: "components/clients/metrics/blocks/delete-plan-dialog.tsx", derived: [/open=\{plan\s*!==?\s*null\}/] },
   { file: "components/clients/metrics/blocks/delete-block-dialog.tsx", derived: [/open=\{block\s*!==?\s*null\}/] },
+  { file: "components/clients/metrics/blocks/block-trim-dialog.tsx", derived: [/open=\{question\s*!==?\s*null\}/, /if\s*\(!question\)\s*return null/] },
   {
     file: "components/clients/training/calendar/delete-event-dialog.tsx",
     derived: [/open=\{event\s*!==?\s*null\}/, /open=\{weekStartDate\s*!==?\s*null\}/],
@@ -41,7 +42,7 @@ const SURFACES: { file: string; derived: RegExp[]; latches?: string[] }[] = [
 
 // Each host keeps its subjects with the hook, and no close nulls one.
 const HOSTS: { file: string; nulled: string[] }[] = [
-  { file: "components/clients/metrics/blocks/blocks-subtab.tsx", nulled: ["setDeleteTarget(null)", "setDeletePlanTarget(null)"] },
+  { file: "components/clients/metrics/blocks/blocks-subtab.tsx", nulled: ["setDeleteTarget(null)", "setDeletePlanTarget(null)", "setPendingEdit(null)"] },
   { file: "components/clients/training/calendar/training-calendar-view.tsx", nulled: ["setDeleteTarget(null)", "setPendingClearWeek(null)", "setSelectedSession(null)"] },
   { file: "components/clients/training/program-builder/library-session-list.tsx", nulled: ["setDeleteTarget(null)", "setEditorState(null)"] },
   { file: "components/clients/training/program-builder/library-exercise-list.tsx", nulled: ["setDeleteTarget(null)", "setEditTarget(null)"] },

@@ -23,9 +23,8 @@ import { deleteNutritionDayEditsInRanges } from "./nutrition-day-edits-service";
  * 2026-09-10), so this issues NO day statement: ending the versions IS
  * removing the days, and nothing can be left standing on the calendar for a
  * version this did not select. That is what makes the block-scoped delete
- * safe — a version saved before the block was drawn and reaching past the
- * block's end is either ended whole or left whole; there is no day range for
- * a bound to get wrong.
+ * safe — a version is either ended whole or left whole; there is no day range
+ * for a bound to get wrong.
  *
  * The one thing stored per day is the coach's hand edit, and the days this
  * uncovers take their edits with them (owner decision 2026-09-10): the edits
@@ -36,17 +35,18 @@ import { deleteNutritionDayEditsInRanges } from "./nutrition-day-edits-service";
  * whatever version next covered the date.
  *
  * ONE act, three selections: the nutrition calendar's own delete (every
- * running or queued version), the block delete's "and its plans" (only the
- * versions laid inside the block) and the block card's per-plan delete (one
- * version by id). Every selection hands its rows to the same retire path —
- * the statements are spelled once. There is no delete-the-days-but-keep-the-
+ * running or queued version), the block delete, which always takes the
+ * block's plans (only the versions inside it), and the block card's per-plan
+ * delete (one version by id). Every selection hands its rows to the same
+ * retire path — the statements are spelled once, in `endNutritionVersionsAt`,
+ * which a block trim shares. There is no delete-the-days-but-keep-the-
  * plan variant (owner, 2026-09-08): a version left standing covers its days,
  * so the two cannot be separated. Deleting one version never touches another
  * (owner, 2026-09-11): a queued version's dates go empty and the coach fills
  * them; nothing regrows.
  *
- * Three statements, whatever the count: the edits first, then one per
- * version outcome. The edits go FIRST so a mid-flight failure leaves every
+ * Three statements, whatever the count: the edits first, then the cap at
+ * yesterday, then the archive. The edits go FIRST so a mid-flight failure leaves every
  * version whole for the retry to find; the other order would end the versions
  * and strand their edits, which a retry can no longer reach.
  */
@@ -58,58 +58,91 @@ type RetireResult = { versionsCleared: number; versionIds: string[]; editsCleare
 
 const VERSION_COLUMNS = "id, effective_from, effective_until";
 
+/** A version and the last day it keeps. */
+type VersionEnd = RetirableVersion & { lastDay: string };
+
 /**
- * The retire path — the statements, spelled once. Takes the rows a selection
- * has already proved are the client's, active, and still reaching today.
+ * End each version on its own last day — the statements, spelled once. Takes
+ * rows the caller has already proved are the client's, active, and still
+ * reaching a day ahead.
+ *
+ * - A version that started on or before its last day and reaches past it is
+ *   CAPPED there: the days after it are no longer computed from it.
+ * - A version that would start after its last day has no day left, never ran
+ *   one of its own, and is ARCHIVED.
+ * - A cap never lengthens a window: a version already ending by then moves not.
+ *
+ * The edits on the days each version gives up — from the day after its last
+ * day (its start, when it is archived) to its own end — go first, in one
+ * statement. Then one cap statement per distinct last day, then one archive.
+ * The delete ends everything at yesterday (below); a block trim ends each
+ * version on the day its block allows (`block-plan-trim-service.ts`).
  */
-async function retireNutritionVersions(
+export async function endNutritionVersionsAt(
   clientId: string,
-  clientToday: string,
-  versions: RetirableVersion[]
+  versions: VersionEnd[]
 ): Promise<RetireResult> {
   const versionIds = versions.map((version) => version.id);
   if (versionIds.length === 0) return { versionsCleared: 0, versionIds: [], editsCleared: 0 };
 
-  // The days these versions answer for from today, read before anything
-  // moves: a running version's from today, a queued one's whole window. Past
-  // days are never in range — they keep their version and their edits.
+  // Read before anything moves. Days on or before a version's last day are
+  // never in range — they keep their version and their edits.
   const editsCleared = await deleteNutritionDayEditsInRanges(
     clientId,
-    versions.map((version) => ({
-      from: version.effective_from > clientToday ? version.effective_from : clientToday,
-      to: version.effective_until,
-    }))
+    versions.map((version) => {
+      const dayAfter = addDaysToDateString(version.lastDay, 1);
+      return {
+        from: version.effective_from > dayAfter ? version.effective_from : dayAfter,
+        to: version.effective_until,
+      };
+    })
   );
 
   const now = new Date().toISOString();
-  const running = versions
-    .filter((version) => version.effective_from < clientToday)
-    .map((version) => version.id);
-  const queued = versions
-    .filter((version) => version.effective_from >= clientToday)
+  const capped = versions.filter(
+    (version) => version.effective_from <= version.lastDay && version.effective_until > version.lastDay
+  );
+  const archived = versions
+    .filter((version) => version.effective_from > version.lastDay)
     .map((version) => version.id);
 
-  if (running.length > 0) {
+  for (const lastDay of new Set(capped.map((version) => version.lastDay))) {
     const { error: capError } = await supabaseAdmin
       .from("nutrition_plans")
-      .update({ effective_until: addDaysToDateString(clientToday, -1), updated_at: now })
-      .in("id", running);
+      .update({ effective_until: lastDay, updated_at: now })
+      .in(
+        "id",
+        capped.filter((version) => version.lastDay === lastDay).map((version) => version.id)
+      );
     if (capError) {
       throw new Error(`Failed to end the running nutrition version: ${capError.message}`);
     }
   }
 
-  if (queued.length > 0) {
+  if (archived.length > 0) {
     const { error: archiveError } = await supabaseAdmin
       .from("nutrition_plans")
       .update({ status: "archived", updated_at: now })
-      .in("id", queued);
+      .in("id", archived);
     if (archiveError) {
       throw new Error(`Failed to retire the queued nutrition versions: ${archiveError.message}`);
     }
   }
 
   return { versionsCleared: versionIds.length, versionIds, editsCleared };
+}
+
+/** The delete's end: every version it names ends at YESTERDAY. */
+function retireNutritionVersions(
+  clientId: string,
+  clientToday: string,
+  versions: RetirableVersion[]
+): Promise<RetireResult> {
+  const yesterday = addDaysToDateString(clientToday, -1);
+  return endNutritionVersionsAt(
+    clientId,
+    versions.map((version) => ({ ...version, lastDay: yesterday }))
+  );
 }
 
 /** Every version of the client with a day still ahead — a finished one is untouched history. */
@@ -126,16 +159,13 @@ export async function clearNutritionPlansForClient(
   clientId: string,
   clientToday: string,
   /**
-   * Optional block window. Given, only the versions LAID INSIDE it go — a
-   * version belongs to a block when its start falls in the block's days, which
-   * is a question dates answer on their own because a version's end is
-   * resolved to the block covering its start (see resolveNutritionPlacementEnd).
-   * Omitted, every running or queued version goes: that is the nutrition
-   * calendar's own delete, and it is the training calendar's shape.
-   *
-   * A version that merely CROSSES the block (saved before it existed) belongs
-   * to no block and survives — the coach removes it from the calendar, where
-   * they can see what they are removing.
+   * Optional block window. Given, only the versions that START inside it go —
+   * a block contains its plans (a version's end is resolved to the block
+   * covering its start, see resolveNutritionPlacementEnd, and drawing or
+   * shortening a block trims its versions to fit), so the versions starting
+   * in its days are the block's own. Omitted, every running or queued version
+   * goes: that is the nutrition calendar's own delete, and it is the training
+   * calendar's shape.
    */
   window?: { from: string; to: string }
 ): Promise<RetireResult> {

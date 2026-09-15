@@ -1049,7 +1049,7 @@ describe("library-placement-service: the placement supersedes the earlier progra
     mockGetBlockBound.mockResolvedValue(null);
     mockGetSavedPlanById.mockResolvedValue(makeSavedPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
-    vi.mocked(cancelFutureEventsForPlans).mockResolvedValue(undefined);
+    vi.mocked(cancelFutureEventsForPlans).mockResolvedValue([]);
   });
 
   it("cancels the earlier programs' forward rays from the start day AFTER the events land", async () => {

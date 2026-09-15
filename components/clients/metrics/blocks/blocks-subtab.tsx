@@ -27,14 +27,13 @@ import {
   deletePlanRequest,
   patchBlockArchived,
   putBlockChain,
-  syncBlockEvents,
   useBlockFacts,
   useClientBlocks,
   useClearBlockFacts,
   useInvalidateClientBlocks,
   useSeedClientBlocks,
 } from "../hooks/use-client-blocks";
-import { formatBlockDate } from "@/lib/blocks/block-format";
+import type { ReplaceBlockChainInput } from "@/types/client-blocks";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
@@ -43,15 +42,8 @@ import { blockColor } from "./block-colors";
 import { BlockCard } from "./block-card";
 import { BlockForm, type BlockFormValues } from "./block-form";
 import { buildAppendPayload, buildEditPayload } from "./block-chain-payload";
-import {
-  BlockEventsDialog,
-  type BlockEventsChoice,
-  type BlockEventsPrompt,
-} from "./block-events-dialog";
-import {
-  DeleteBlockDialog,
-  type BlockDeleteChoice,
-} from "./delete-block-dialog";
+import { BlockTrimDialog, type BlockTrimQuestion } from "./block-trim-dialog";
+import { DeleteBlockDialog } from "./delete-block-dialog";
 import { DeletePlanDialog } from "./delete-plan-dialog";
 import type { BlockPlanDeleteTarget } from "./block-timeline";
 
@@ -59,10 +51,9 @@ import type { BlockPlanDeleteTarget } from "./block-timeline";
 // CLIENT's timezone — state is never re-derived here) + per-block facts.
 // Add, edit and delete all mount here.
 
-/** The one description line the completed save carries, if it needs one. */
-function calendarOutcome(choice: BlockEventsChoice): string | undefined {
-  return choice.calendar === "clear" ? "The days that left are clear." : undefined;
-}
+/** A save the server answered with its trims: the question, and the payload
+ *  the coach's yes re-sends unchanged. */
+type PendingTrimSave = BlockTrimQuestion & { payload: ReplaceBlockChainInput };
 
 /** The per-plan delete's outcome, in the dialog's own verb. */
 function planDeleteOutcome(plan: BlockPlanDeleteTarget): string {
@@ -107,9 +98,10 @@ export function BlocksSubtab({
   // makes them wrong — and they render a definite answer, so a stale entry
   // states something false rather than merely being late.
   const clearBlockFacts = useClearBlockFacts();
-  // The block sync rewrites training_events and moves the nutrition versions'
-  // ends, which the computed nutrition month view is priced from, so this
-  // screen owes both calendar areas their invalidator as well as its own.
+  // A save that trims plans, and every delete, rewrite training_events and move
+  // the nutrition versions' ends, which the computed nutrition month view is
+  // priced from, so this screen owes both calendar areas their invalidator as
+  // well as its own.
   const invalidateTrainingData = useInvalidateTrainingData();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearClientOverview = useClearClientOverview();
@@ -125,9 +117,10 @@ export function BlocksSubtab({
   // from live state, so the fading card still names what it named (CONVENTIONS
   // §7 → "No frame disagrees").
   const blockDeleteDialog = useDialogSubject<ClientBlockView>();
-  // Which delete is running, not merely that one is: the spinner belongs on
-  // the button that was pressed.
-  const [deleting, setDeleting] = useState<BlockDeleteChoice | null>(null);
+  const [isDeletingBlock, setIsDeletingBlock] = useState(false);
+  // The one question a save that trims plans raises, over the open form.
+  const trimDialog = useDialogSubject<PendingTrimSave>();
+  const [isTrimming, setIsTrimming] = useState(false);
   // The per-plan delete (C3): the timeline row the coach picked, behind the
   // destructive confirm.
   const planDeleteDialog = useDialogSubject<BlockPlanDeleteTarget>();
@@ -137,8 +130,12 @@ export function BlocksSubtab({
   // fades out on the frame it closed on; the next open clears the flag in the
   // same update that shows the new subject.
   const openBlockDelete = (block: ClientBlockView) => {
-    setDeleting(null);
+    setIsDeletingBlock(false);
     blockDeleteDialog.show(block);
+  };
+  const openTrimQuestion = (pending: PendingTrimSave) => {
+    setIsTrimming(false);
+    trimDialog.show(pending);
   };
   const openPlanDelete = (plan: BlockPlanDeleteTarget) => {
     setIsDeletingPlan(false);
@@ -150,103 +147,81 @@ export function BlocksSubtab({
     [facts]
   );
 
-  // Raised INSTEAD of a save whose end moved earlier. Nothing is stored until
-  // the coach picks: both arms of the dialog complete the save, and dismissing
-  // it abandons the edit with the form still open behind it, so a coach can
-  // never end up with new dates and a question they walked away from.
-  const [pendingEdit, setPendingEdit] = useState<{
-    block: ClientBlockView;
-    values: BlockFormValues;
-    prompt: BlockEventsPrompt;
-  } | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
+  /** A save landed: the add form or the edit form closes with it. */
+  const closeForm = (kind: BlockTrimQuestion["kind"]) => {
+    if (kind === "add") setShowAddForm(false);
+    else setEditingId(null);
+  };
 
   /**
-   * The coach's answer completes the save: the dates first, the calendar
-   * second, ONE toast at the end.
-   *
-   * The two are SEQUENTIAL, not atomic — the dates land through the chain PUT
-   * and the calendar through its own POST — so the failure between them is a
-   * real state and the toast says exactly that rather than "save failed".
+   * The coach's yes: the same save, re-sent with `confirmTrims`. The server
+   * trims the plans, then writes the block, and answers with the chain — which
+   * is seeded in the same tick the form and the question close, so the list
+   * never shows under a closed form without the block.
    */
-  const completeEdit = async (choice: BlockEventsChoice) => {
-    if (!pendingEdit) return;
-    const { block, values } = pendingEdit;
-    setIsSyncing(true);
-
-    let saved;
+  const confirmTrims = async () => {
+    const pending = trimDialog.subject;
+    if (!pending) return;
+    setIsTrimming(true);
     try {
-      saved = await saveBlockDates(block, values);
+      const result = await putBlockChain(clientId, {
+        ...pending.payload,
+        confirmTrims: true,
+      });
+      if ("trims" in result) {
+        openTrimQuestion({ ...pending, trims: result.trims });
+        return;
+      }
+      void seedBlocks(clientId, result.saved);
+      closeForm(pending.kind);
+      // `isTrimming` stays set: the next open clears it (openTrimQuestion).
+      trimDialog.close();
+      toast.success(
+        `"${pending.blockName}" ${pending.kind === "add" ? "added" : "updated"}`,
+        { description: "The plans were trimmed to fit." }
+      );
     } catch (error) {
+      // The question stays OPEN: it is the retry. The trims land before the
+      // block does, and a trimmed plan already fits, so the same save re-sent
+      // finishes whatever failed.
       toast.error("Save failed", {
         description: error instanceof Error ? error.message : "Could not save the block",
       });
-      setIsSyncing(false);
-      return;
-    }
-
-    // The dates are stored from here on. Anything that fails below leaves them
-    // saved, and the coach is told which half landed.
-    try {
-      if (choice.calendar === "clear") {
-        await syncBlockEvents(clientId, block.id);
-        // The clear rewrites both calendars, so both areas are owed their
-        // invalidator (CONVENTIONS §7) — the blocks area alone leaves the
-        // Training and Nutrition tabs showing yesterday's days with no error.
-        void invalidateTrainingData(clientId);
-        void invalidateNutritionCalendar(clientId);
-        void clearBlockFacts(clientId);
-      }
-
-      // Seeded before the form and the dialog go, in the same tick, so the row
-      // underneath never shows the old dates under a closed form.
-      void seedBlocks(clientId, saved);
-      toast.success(`"${values.name}" updated`, {
-        description: calendarOutcome(choice),
-      });
-      setPendingEdit(null);
-      setEditingId(null);
-    } catch (error) {
-      // The dialog deliberately stays OPEN: it is now the retry. The chain PUT
-      // is idempotent (same dates) and the sync reconciles rather than replaying
-      // a diff, so picking again is safe and finishes the half that failed.
-      toast.error("The dates are saved, but the calendar wasn't updated", {
-        description: error instanceof Error ? error.message : "Nothing on the calendar changed",
-      });
+      setIsTrimming(false);
     } finally {
-      // The success path has already awaited it; this catches the failure path,
-      // where the dates DID save and the row must show them.
+      // Trims may have landed on either path: the calendars, the facts, the
+      // Overview and the feed are all derived from the plans they moved
+      // (CONVENTIONS §7).
       void invalidateBlocks(clientId);
+      void invalidateTrainingData(clientId);
+      void invalidateNutritionCalendar(clientId);
+      void clearBlockFacts(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
-      setIsSyncing(false);
     }
   };
 
-  const handleDeleteConfirm = async (
-    block: ClientBlockView,
-    clearPlans: boolean
-  ) => {
-    setDeleting(clearPlans ? "plans" : "block");
+  /**
+   * Delete a block and its plans: the running plan on each track ends
+   * yesterday, a queued one is removed, then the row goes.
+   */
+  const handleDeleteConfirm = async (block: ClientBlockView) => {
+    setIsDeletingBlock(true);
     try {
-      const remaining = await deleteBlockRequest(clientId, block.id, clearPlans);
+      const remaining = await deleteBlockRequest(clientId, block.id);
       // Same reason as the add: the dialog closing against a stale list shows
       // the deleted row for a frame, and deleting the LAST block shows it and
       // then the empty state.
       void seedBlocks(clientId, remaining);
-      // `deleting` stays set: the open clears it (openBlockDelete).
+      // `isDeletingBlock` stays set: the open clears it (openBlockDelete).
       blockDeleteDialog.close();
-      if (clearPlans) {
-        // Same rule as the sync: this removed rows from both calendars, so both
-        // areas are owed their invalidator or the Training and Nutrition tabs
-        // keep showing days that are gone (CONVENTIONS §7).
-        void invalidateTrainingData(clientId);
-        void invalidateNutritionCalendar(clientId);
-        void clearBlockFacts(clientId);
-      }
-      toast.success(clearPlans
-          ? `"${block.name}" and their plans are gone`
-          : `"${block.name}" deleted`);
+      // The plans went with it, from both calendars, so both areas are owed
+      // their invalidator or the Training and Nutrition tabs keep showing days
+      // that are gone (CONVENTIONS §7).
+      void invalidateTrainingData(clientId);
+      void invalidateNutritionCalendar(clientId);
+      void clearBlockFacts(clientId);
+      toast.success(`"${block.name}" deleted`);
       void invalidateBlocks(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
@@ -255,7 +230,7 @@ export function BlocksSubtab({
         description: error instanceof Error ? error.message : "Could not delete the block",
       });
       // The card stays open as the retry, so its buttons come back now.
-      setDeleting(null);
+      setIsDeletingBlock(false);
     }
   };
 
@@ -296,25 +271,29 @@ export function BlocksSubtab({
     }
   };
 
-  const handleAdd = async (values: BlockFormValues) => {
+  /**
+   * Every add and edit is one chain PUT. A save that draws or shortens a block
+   * over days holding a plan comes back with its trims instead — nothing is
+   * stored — and the question opens over the form, which keeps its values.
+   */
+  const saveChain = async (
+    question: Omit<BlockTrimQuestion, "trims">,
+    buildPayload: () => ReplaceBlockChainInput
+  ) => {
     try {
-      const saved = await putBlockChain(
-        clientId,
-        buildAppendPayload(blocks, {
-          name: values.name,
-          // Add mode always requires both dates — a block owns its own window.
-          startsOn: values.startsOn as string,
-          endsOn: values.endsOn as string,
-          focus: values.focus,
-        })
-      );
+      const payload = buildPayload();
+      const result = await putBlockChain(clientId, payload);
+      if ("trims" in result) {
+        openTrimQuestion({ ...question, trims: result.trims, payload });
+        return;
+      }
       // Seed + close in the same tick: React batches them, so the coach goes
       // from form to list with nothing in between. The empty state is gated on
-      // `blocks.length === 0` and the form on `showAddForm`, so ANY frame where
-      // only one of the two has changed shows something wrong.
-      void seedBlocks(clientId, saved);
-      setShowAddForm(false);
-      toast.success(`"${values.name}" added`);
+      // `blocks.length === 0` and the forms on their own state, so ANY frame
+      // where only one of the two has changed shows something wrong.
+      void seedBlocks(clientId, result.saved);
+      closeForm(question.kind);
+      toast.success(`"${question.blockName}" ${question.kind === "add" ? "added" : "updated"}`);
       void invalidateBlocks(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
@@ -324,6 +303,29 @@ export function BlocksSubtab({
       });
     }
   };
+
+  const handleAdd = (values: BlockFormValues) =>
+    saveChain({ kind: "add", blockName: values.name }, () =>
+      buildAppendPayload(blocks, {
+        name: values.name,
+        // Add mode always requires both dates — a block owns its own window.
+        startsOn: values.startsOn as string,
+        endsOn: values.endsOn as string,
+        focus: values.focus,
+      })
+    );
+
+  // A drawn block's start is fixed and its end never moves later (the form
+  // caps its Ends field at the stored end, and the chain PUT refuses both), so
+  // an edit is a rename, a new focus, or a shorter end.
+  const handleEdit = (block: ClientBlockView, values: BlockFormValues) =>
+    saveChain({ kind: "save", blockName: values.name }, () =>
+      buildEditPayload(blocks, block.id, {
+        name: values.name,
+        focus: values.focus,
+        endsOn: values.endsOn,
+      }).payload
+    );
 
   const handleArchive = async (block: ClientBlockView, archived: boolean) => {
     try {
@@ -338,60 +340,6 @@ export function BlocksSubtab({
     } catch (error) {
       toast.error(archived ? "Archive failed" : "Restore failed", {
         description: error instanceof Error ? error.message : "Could not update the block",
-      });
-    }
-  };
-
-  /** The chain PUT for one edited block. Shared by both arms of Save. */
-  const saveBlockDates = async (
-    block: ClientBlockView,
-    values: BlockFormValues
-  ) => {
-    const { payload } = buildEditPayload(blocks, block.id, {
-      name: values.name,
-      focus: values.focus,
-      endsOn: values.endsOn,
-    });
-    return putBlockChain(clientId, payload);
-  };
-
-  const handleEdit = async (block: ClientBlockView, values: BlockFormValues) => {
-    // Only a moved END changes which days the block owns going forward: a drawn
-    // block's start is fixed. An end later than stored never reaches the dialog
-    // — the form caps its Ends field at the stored end and the chain PUT refuses
-    // it — so a changed end is a SHORTER one, and the only question is what
-    // happens to the days that left.
-    const nextEnd = values.endsOn ?? block.endsOn;
-
-    // The end moved earlier: ask FIRST. The save happens inside whichever arm
-    // the coach picks, so the X leaves them with their edit still in the form
-    // and nothing stored — rather than dates saved and a question they never
-    // answered.
-    if (nextEnd < block.endsOn) {
-      setPendingEdit({
-        block,
-        values,
-        prompt: {
-          blockName: values.name,
-          newEndLabel: formatBlockDate(nextEnd),
-        },
-      });
-      return;
-    }
-
-    try {
-      const saved = await saveBlockDates(block, values);
-      // Seed + close together, or the row renders the OLD name and dates for a
-      // frame under a form that has already gone.
-      void seedBlocks(clientId, saved);
-      setEditingId(null);
-      toast.success(`"${values.name}" updated`);
-      void invalidateBlocks(clientId);
-      void clearClientOverview(clientId);
-      void clearAttentionFeed();
-    } catch (error) {
-      toast.error("Save failed", {
-        description: error instanceof Error ? error.message : "Could not save the block",
       });
     }
   };
@@ -635,19 +583,20 @@ export function BlocksSubtab({
         </div>
       )}
 
-      <BlockEventsDialog
-        prompt={pendingEdit?.prompt ?? null}
-        isWorking={isSyncing}
-        onCancel={() => setPendingEdit(null)}
-        onChoose={(choice) => void completeEdit(choice)}
+      <BlockTrimDialog
+        open={trimDialog.open}
+        question={trimDialog.subject}
+        isSaving={isTrimming}
+        onCancel={trimDialog.close}
+        onConfirm={() => void confirmTrims()}
       />
 
       <DeleteBlockDialog
         open={blockDeleteDialog.open}
         block={blockDeleteDialog.subject}
-        deleting={deleting}
+        isDeleting={isDeletingBlock}
         onCancel={blockDeleteDialog.close}
-        onConfirm={(block, clearPlans) => void handleDeleteConfirm(block, clearPlans)}
+        onConfirm={(block) => void handleDeleteConfirm(block)}
       />
 
       <DeletePlanDialog

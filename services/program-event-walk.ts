@@ -137,9 +137,9 @@ export async function resolveWindowCap(
  * Capped, either way, at the day before the next coexisting program starts.
  *
  * Decided once, here, and stored on the row (migration 167): every reader
- * takes a program's end from `training_plans.effective_until`, and the two
- * writers that change a program's length — the plan editor's save and the
- * block shorten — move it under the same cap.
+ * takes a program's end from `training_plans.effective_until`. The plan
+ * editor's save moves it under the same cap, and a block drawn or shortened
+ * over it trims it to the block.
  *
  * The block is not a maximum here: a block LONGER than the program stretches
  * the window and the caller repeats the program to fill it, a block SHORTER

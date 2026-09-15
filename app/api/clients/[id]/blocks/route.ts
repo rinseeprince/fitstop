@@ -9,6 +9,7 @@ import {
   replaceBlockChain,
   ElapsedBlockImmutableError,
   BlockPayloadError,
+  BlockTrimsPendingError,
   BlockWindowError,
 } from "@/services/client-blocks-service";
 import { getClientTodayString } from "@/services/today-service";
@@ -23,8 +24,18 @@ import { AUDIT_ACTIONS } from "@/lib/constants";
 // goal (workstream invariant 7), and updateGoals supersedes-and-inserts on
 // every call with no change detection.
 
-/** 422 for the request-shaped service errors; null for everything else. */
+/** 422 for the request-shaped service errors, 409 for the question; null
+ *  for everything else. */
 function mapBlockError(error: unknown): NextResponse | null {
+  // The save would trim plans already on the calendar: the trims ride the
+  // refusal, the blocks screen asks with them, and the coach's yes re-sends
+  // the same save with `confirmTrims`.
+  if (error instanceof BlockTrimsPendingError) {
+    return NextResponse.json(
+      { success: false, error: error.message, data: { trims: error.trims } },
+      { status: 409 }
+    );
+  }
   if (
     error instanceof ElapsedBlockImmutableError ||
     error instanceof BlockWindowError ||
@@ -117,9 +128,10 @@ export async function PUT(
     }
 
     const clientToday = await getClientTodayString(clientId);
-    // The floor does not depend on the write (a block edit touches no log), so
-    // the two run together.
-    const [blocks, planStartFloor] = await Promise.all([
+    // The floor does not depend on the write — a trim removes scheduled
+    // sessions and detaches logged ones, and the floor reads only whether a
+    // logged one sits on today — so the two run together.
+    const [{ blocks, trimmed }, planStartFloor] = await Promise.all([
       replaceBlockChain(clientId, clientToday, validation.data),
       resolveEventDeletionFloor(clientId, clientToday),
     ]);
@@ -130,7 +142,7 @@ export async function PUT(
       action: AUDIT_ACTIONS.BLOCK_CHAIN_UPDATE,
       targetTable: "client_phases",
       clientId,
-      metadata: { blockCount: blocks.length },
+      metadata: { blockCount: blocks.length, trimmedPlans: trimmed },
       request,
     });
 

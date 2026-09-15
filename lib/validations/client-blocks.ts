@@ -40,9 +40,11 @@ const blockEntrySchema = z.object({
     .optional(),
 });
 
-/** Every block the client has, each carrying its own window. */
+/** Every block the client has, each carrying its own window. `confirmTrims`
+ *  is the coach's yes to the question a save that trims plans raises. */
 export const replaceBlockChainSchema = z.object({
   blocks: z.array(blockEntrySchema).min(1).max(BLOCKS_PER_CLIENT_MAX),
+  confirmTrims: z.literal(true).optional(),
 });
 
 

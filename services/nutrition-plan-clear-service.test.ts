@@ -6,6 +6,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import {
   clearNutritionPlanById,
   clearNutritionPlansForClient,
+  endNutritionVersionsAt,
 } from "./nutrition-plan-clear-service";
 
 type ChainResult = { data?: unknown; error?: { message: string } | null; count?: number | null };
@@ -47,6 +48,38 @@ const startedToday = { id: "v-today", effective_from: TODAY, effective_until: "2
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("endNutritionVersionsAt — each version ends on its own last day (a block trim)", () => {
+  it("removes the edits on the days each gives up, caps each on its day, and archives one left no day", async () => {
+    const chains = mockFromSequence([{ count: 3, error: null }, { error: null }, { error: null }]);
+
+    const result = await endNutritionVersionsAt(CLIENT, [
+      { ...running, lastDay: "2026-07-19" },
+      { id: "v-gone", effective_from: "2026-08-10", effective_until: "2026-08-23", lastDay: "2026-08-09" },
+    ]);
+
+    expect(result).toEqual({ versionsCleared: 2, versionIds: ["v-run", "v-gone"], editsCleared: 3 });
+    // From the day after the last day to the version's own end; the whole
+    // window of the one that goes.
+    expect(chains[0].or).toHaveBeenCalledWith(
+      "and(date.gte.2026-07-20,date.lte.2026-08-31),and(date.gte.2026-08-10,date.lte.2026-08-23)"
+    );
+    expect(chains[1].update).toHaveBeenCalledWith(expect.objectContaining({ effective_until: "2026-07-19" }));
+    expect(chains[1].in).toHaveBeenCalledWith("id", ["v-run"]);
+    expect(chains[2].update).toHaveBeenCalledWith(expect.objectContaining({ status: "archived" }));
+    expect(chains[2].in).toHaveBeenCalledWith("id", ["v-gone"]);
+    expect(tablesTouched()).toEqual(["nutrition_day_edits", "nutrition_plans", "nutrition_plans"]);
+  });
+
+  it("issues nothing for an empty list", async () => {
+    expect(await endNutritionVersionsAt(CLIENT, [])).toEqual({
+      versionsCleared: 0,
+      versionIds: [],
+      editsCleared: 0,
+    });
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+  });
 });
 
 describe("clearNutritionPlansForClient — the calendar's own delete (no window)", () => {

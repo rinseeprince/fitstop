@@ -10,8 +10,13 @@ import {
   BlockPayloadError,
   BlockWindowError,
   UnknownBlockIdError,
+  BlockTrimsPendingError,
 } from "./client-blocks-service";
-import { BLOCK_EXTENSION_REFUSED, BLOCK_START_FIXED } from "@/lib/constants";
+import {
+  BLOCK_EXTENSION_REFUSED,
+  BLOCK_START_FIXED,
+  BLOCK_TRIMS_UNCONFIRMED,
+} from "@/lib/constants";
 
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: {
@@ -19,7 +24,16 @@ vi.mock("./supabase-admin", () => ({
   },
 }));
 
+// What a save trims is proved in lib/blocks/block-plan-trims.test.ts and
+// services/block-plan-trim-service.test.ts; here only that the chain asks, and
+// when. By default a save reaches no plan.
+vi.mock("./block-plan-trim-service", () => ({
+  findBlockPlanTrims: vi.fn(),
+  applyBlockPlanTrims: vi.fn(),
+}));
+
 import { supabaseAdmin } from "./supabase-admin";
+import { applyBlockPlanTrims, findBlockPlanTrims } from "./block-plan-trim-service";
 
 const TODAY = "2026-08-11";
 const CLIENT_ID = "client-1";
@@ -88,6 +102,8 @@ beforeEach(() => {
     if (!query) throw new Error("Unexpected supabase call");
     return query;
   }) as never);
+  vi.mocked(findBlockPlanTrims).mockResolvedValue([]);
+  vi.mocked(applyBlockPlanTrims).mockResolvedValue(undefined);
 });
 
 describe("listBlocks", () => {
@@ -279,7 +295,7 @@ describe("replaceBlockChain", () => {
           { id: "a", name: "Renamed", startsOn: "2026-07-20", endsOn: "2026-08-16" },
         ],
       })
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ blocks: [], trimmed: 0 });
   });
 
   it("rejects a payload that omits an existing non-elapsed block (DELETE is the removal path)", async () => {
@@ -389,7 +405,7 @@ describe("replaceBlockChain", () => {
         // 2026-08-12 still covers today and is earlier than the stored end.
         blocks: [{ id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-12" }],
       })
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ blocks: [], trimmed: 0 });
   });
 
   it("leaves a NEW block unconstrained beside a stored one shortened — more time is a block after it", async () => {
@@ -411,7 +427,7 @@ describe("replaceBlockChain", () => {
           { name: "Cut", startsOn: "2026-09-10", endsOn: "2026-12-20" },
         ],
       })
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ blocks: [], trimmed: 0 });
   });
 
   it("saves a drawn block's name, focus and earlier end over its stored start", async () => {
@@ -477,7 +493,7 @@ describe("replaceBlockChain", () => {
         // 364 inclusive days = exactly 52 weeks.
         blocks: [{ name: "Year block", startsOn: "2026-08-11", endsOn: "2027-08-09" }],
       })
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ blocks: [], trimmed: 0 });
   });
 
   it("refuses a block backed onto an ELAPSED one", async () => {
@@ -554,7 +570,103 @@ describe("replaceBlockChain", () => {
           { name: "Peak", startsOn: "2026-09-28", endsOn: "2026-10-25" },
         ],
       })
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ blocks: [], trimmed: 0 });
+  });
+});
+
+describe("replaceBlockChain — a block contains its plans", () => {
+  const TRIM = {
+    track: "training" as const,
+    id: "p-1",
+    name: "Strength",
+    startsOn: "2026-08-20",
+    endsOn: "2026-10-18",
+    newEndsOn: "2026-09-16",
+  };
+
+  it("asks the trims for the blocks it draws and the ones it shortens — never a rename, never an elapsed block", async () => {
+    const future = row("f", "2026-08-20", "2026-09-16");
+    queueResults(
+      { data: [ELAPSED, CURRENT, future], error: null },
+      { error: null }, // upsert
+      { error: null }, // insert
+      { data: [], error: null } // re-read
+    );
+
+    await replaceBlockChain(CLIENT_ID, TODAY, {
+      blocks: [
+        { id: "e", name: "Renamed e" },
+        // Current, renamed, dates unchanged: no trim.
+        { id: "a", name: "Renamed a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
+        // Future, shortened from 16 Sep to 9 Sep.
+        { id: "f", name: "Block f", startsOn: "2026-08-20", endsOn: "2026-09-09" },
+        // New.
+        { name: "Peak", startsOn: "2026-09-21", endsOn: "2026-10-18" },
+      ],
+    });
+
+    expect(findBlockPlanTrims).toHaveBeenCalledWith(CLIENT_ID, TODAY, [
+      { startsOn: "2026-08-20", endsOn: "2026-09-09", previousEndsOn: "2026-09-16" },
+      { startsOn: "2026-09-21", endsOn: "2026-10-18", previousEndsOn: "2026-10-18" },
+    ]);
+    expect(applyBlockPlanTrims).not.toHaveBeenCalled();
+  });
+
+  it("refuses a save that trims plans until the coach says yes — and writes nothing", async () => {
+    vi.mocked(findBlockPlanTrims).mockResolvedValue([TRIM]);
+    queueResults({ data: [CURRENT], error: null });
+
+    const attempt = replaceBlockChain(CLIENT_ID, TODAY, {
+      blocks: [
+        { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
+        { name: "Build", startsOn: "2026-08-20", endsOn: "2026-09-16" },
+      ],
+    });
+
+    await expect(attempt).rejects.toBeInstanceOf(BlockTrimsPendingError);
+    await expect(attempt).rejects.toThrow(BLOCK_TRIMS_UNCONFIRMED);
+    await expect(attempt).rejects.toMatchObject({ trims: [TRIM] });
+    expect(applyBlockPlanTrims).not.toHaveBeenCalled();
+    // Only the chain read ran: no upsert, no insert.
+    expect(supabaseAdmin.from).toHaveBeenCalledTimes(1);
+  });
+
+  it("with the coach's yes, trims the plans BEFORE any block row is written", async () => {
+    vi.mocked(findBlockPlanTrims).mockResolvedValue([TRIM]);
+    const [, upsertQuery, insertQuery] = queueResults(
+      { data: [CURRENT], error: null },
+      { error: null }, // upsert
+      { error: null }, // insert
+      { data: [], error: null } // re-read
+    );
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        blocks: [
+          { id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-16" },
+          { name: "Build", startsOn: "2026-08-20", endsOn: "2026-09-16" },
+        ],
+        confirmTrims: true,
+      })
+    ).resolves.toEqual({ blocks: [], trimmed: 1 });
+
+    expect(applyBlockPlanTrims).toHaveBeenCalledWith(CLIENT_ID, TODAY, [TRIM]);
+    const trimmedAt = vi.mocked(applyBlockPlanTrims).mock.invocationCallOrder[0];
+    expect(trimmedAt).toBeLessThan(upsertQuery.upsert.mock.invocationCallOrder[0]);
+    expect(trimmedAt).toBeLessThan(insertQuery.insert.mock.invocationCallOrder[0]);
+  });
+
+  it("a refused save never reaches the trims: the window rules answer first", async () => {
+    queueResults({ data: [CURRENT], error: null });
+
+    await expect(
+      replaceBlockChain(CLIENT_ID, TODAY, {
+        blocks: [{ id: "a", name: "Block a", startsOn: "2026-07-06", endsOn: "2026-08-30" }],
+        confirmTrims: true,
+      })
+    ).rejects.toThrow(BLOCK_EXTENSION_REFUSED);
+    expect(findBlockPlanTrims).not.toHaveBeenCalled();
+    expect(applyBlockPlanTrims).not.toHaveBeenCalled();
   });
 });
 

@@ -44,6 +44,11 @@ vi.mock("@/services/client-blocks-service", () => {
   class BlockWindowError extends Error {}
   class BlockPayloadError extends Error {}
   class UnknownBlockIdError extends Error {}
+  class BlockTrimsPendingError extends Error {
+    constructor(readonly trims: unknown[]) {
+      super("Saving this block changes plans that are already on the calendar.");
+    }
+  }
   return {
     listBlocks: vi.fn(),
     replaceBlockChain: vi.fn(),
@@ -52,6 +57,7 @@ vi.mock("@/services/client-blocks-service", () => {
     BlockWindowError,
     BlockPayloadError,
     UnknownBlockIdError,
+    BlockTrimsPendingError,
   };
 });
 
@@ -65,6 +71,7 @@ import {
   ElapsedBlockImmutableError,
   BlockWindowError,
   BlockPayloadError,
+  BlockTrimsPendingError,
 } from "@/services/client-blocks-service";
 import { updateGoals, getCurrentGoals } from "@/services/client-goals-service";
 
@@ -207,10 +214,10 @@ describe("/api/clients/[id]/blocks", () => {
     });
 
     it("saves the chain with the client's today and returns it decorated", async () => {
-      vi.mocked(replaceBlockChain).mockResolvedValue([
-        CURRENT_BLOCK,
-        FUTURE_BLOCK,
-      ]);
+      vi.mocked(replaceBlockChain).mockResolvedValue({
+        blocks: [CURRENT_BLOCK, FUTURE_BLOCK],
+        trimmed: 0,
+      });
 
       const response = await PUT(
         createMockRequest("PUT", VALID_PUT_BODY),
@@ -237,14 +244,58 @@ describe("/api/clients/[id]/blocks", () => {
           action: "block.chain_update",
           targetTable: "client_phases",
           clientId: "client-1",
+          metadata: { blockCount: 2, trimmedPlans: 0 },
         })
       );
+    });
+
+    it("answers 409 with the trims when the save changes plans and the coach has not said yes", async () => {
+      const trims = [
+        { track: "training", id: "p-1", name: "Power", startsOn: "2026-09-08", endsOn: "2026-11-01", newEndsOn: "2026-10-19" },
+      ];
+      vi.mocked(replaceBlockChain).mockRejectedValue(new BlockTrimsPendingError(trims as never));
+
+      const response = await PUT(createMockRequest("PUT", VALID_PUT_BODY), mockParams);
+      const payload = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(payload).toEqual({
+        success: false,
+        error: "Saving this block changes plans that are already on the calendar.",
+        data: { trims },
+      });
+      expect(recordAuditEvent).not.toHaveBeenCalled();
+    });
+
+    it("carries the coach's yes to the service, and audits how many plans it trimmed", async () => {
+      vi.mocked(replaceBlockChain).mockResolvedValue({ blocks: [CURRENT_BLOCK], trimmed: 2 });
+
+      const response = await PUT(
+        createMockRequest("PUT", { ...VALID_PUT_BODY, confirmTrims: true }),
+        mockParams
+      );
+
+      expect(response.status).toBe(200);
+      const [, , input] = vi.mocked(replaceBlockChain).mock.calls[0];
+      expect(input.confirmTrims).toBe(true);
+      expect(recordAuditEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { blockCount: 1, trimmedPlans: 2 } })
+      );
+    });
+
+    it("400s a yes that is anything but true", async () => {
+      const response = await PUT(
+        createMockRequest("PUT", { ...VALID_PUT_BODY, confirmTrims: "yes" }),
+        mockParams
+      );
+      expect(response.status).toBe(400);
+      expect(replaceBlockChain).not.toHaveBeenCalled();
     });
 
     it("strips a targetWeightKg a stale caller still sends — never refuses it", async () => {
       // A block carries no target. The schema has no such field, so the key
       // is dropped before the service sees the payload.
-      vi.mocked(replaceBlockChain).mockResolvedValue([CURRENT_BLOCK]);
+      vi.mocked(replaceBlockChain).mockResolvedValue({ blocks: [CURRENT_BLOCK], trimmed: 0 });
 
       const response = await PUT(
         createMockRequest("PUT", {
@@ -265,7 +316,7 @@ describe("/api/clients/[id]/blocks", () => {
     });
 
     it("NEVER touches the goal layer (invariant 7)", async () => {
-      vi.mocked(replaceBlockChain).mockResolvedValue([CURRENT_BLOCK]);
+      vi.mocked(replaceBlockChain).mockResolvedValue({ blocks: [CURRENT_BLOCK], trimmed: 0 });
 
       await PUT(createMockRequest("PUT", VALID_PUT_BODY), mockParams);
 

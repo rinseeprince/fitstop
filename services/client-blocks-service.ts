@@ -4,12 +4,19 @@ import { inclusiveDays, DAYS_PER_BLOCK_WEEK } from "@/lib/blocks/block-chain";
 import {
   BLOCK_EXTENSION_REFUSED,
   BLOCK_START_FIXED,
+  BLOCK_TRIMS_UNCONFIRMED,
   BLOCK_WEEKS_MAX,
 } from "@/lib/constants";
 import type { TablesInsert } from "@/types/database";
-import type { ClientBlock, ReplaceBlockChainInput } from "@/types/client-blocks";
+import type {
+  BlockPlanTrim,
+  ClientBlock,
+  ReplaceBlockChainInput,
+} from "@/types/client-blocks";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import type { ClientBlockWindow } from "@/lib/prescription-triggers";
+import type { BlockTrimTarget } from "@/lib/blocks/block-plan-trims";
+import { applyBlockPlanTrims, findBlockPlanTrims } from "./block-plan-trim-service";
 
 /**
  * Journey blocks (client_phases — the table keeps the phases name, the
@@ -28,6 +35,10 @@ import type { ClientBlockWindow } from "@/lib/prescription-triggers";
  * editable (3.6-C). A stored block's start is fixed — a new start is a delete
  * and a new block — and its end moves EARLIER or not at all: more time is a
  * new block after it, never a later end on this one.
+ *
+ * A block contains its plans: drawing one, or shortening one, over days that
+ * already hold a plan trims the plans to fit, behind one question, and
+ * deleting one takes its plans.
  */
 
 /** 422: the block (or its elapsed prefix) is read-only history. */
@@ -38,6 +49,13 @@ export class BlockWindowError extends Error {}
 export class BlockPayloadError extends Error {}
 /** 404: the DELETE target does not exist for this client. */
 export class UnknownBlockIdError extends Error {}
+/** 409: the save changes plans already on the calendar, and the coach has not
+ *  said yes. The route answers with the trims, which the question shows. */
+export class BlockTrimsPendingError extends Error {
+  constructor(readonly trims: BlockPlanTrim[]) {
+    super(BLOCK_TRIMS_UNCONFIRMED);
+  }
+}
 
 type BlockRow = {
   id: string;
@@ -187,12 +205,17 @@ const isCurrent = (block: ClientBlock, today: string): boolean =>
  * The payload carries every stored row (elapsed lead it, the rest must be
  * present), so checking the payload's windows against each other IS checking
  * them against the client's whole calendar; no second read is needed.
+ *
+ * A block it draws or shortens trims the plans crossing its new edges to fit
+ * (`block-plan-trim-service.ts`): refused with the trims until
+ * `confirmTrims`, then applied BEFORE the rows are written, so a failure
+ * between them leaves a state the same save, re-sent, finishes.
  */
 export const replaceBlockChain = async (
   clientId: string,
   clientToday: string,
   input: ReplaceBlockChainInput
-): Promise<ClientBlock[]> => {
+): Promise<{ blocks: ClientBlock[]; trimmed: number }> => {
   const stored = await listBlocks(clientId);
   const storedById = new Map(stored.map((block) => [block.id, block]));
   const elapsed = stored.filter((block) => block.endsOn < clientToday);
@@ -328,11 +351,28 @@ export const replaceBlockChain = async (
     // of the decision, with its own program and targets — so a later end is
     // refused for current and future blocks alike, dates-only included. The
     // form caps its Ends field at the stored end; this is the belt behind it.
-    // An earlier end is the shorten, which stays.
+    // An earlier end is the shorten, which trims the block's plans below.
     if (window.endsOn > storedBlock.endsOn) {
       throw new BlockWindowError(BLOCK_EXTENSION_REFUSED);
     }
   });
+
+  // A block contains its plans. The blocks this save draws, and the ones it
+  // shortens, trim every plan crossing their new edges — never a rename, and
+  // never an elapsed block, whose dates are pinned.
+  const targets: BlockTrimTarget[] = suffix.flatMap((entry, i) => {
+    const window = windows[i];
+    if (!entry.id) return [{ ...window, previousEndsOn: window.endsOn }];
+    const storedBlock = storedById.get(entry.id) as ClientBlock;
+    return window.endsOn < storedBlock.endsOn
+      ? [{ ...window, previousEndsOn: storedBlock.endsOn }]
+      : [];
+  });
+  const trims = await findBlockPlanTrims(clientId, clientToday, targets);
+  if (trims.length > 0) {
+    if (!input.confirmTrims) throw new BlockTrimsPendingError(trims);
+    await applyBlockPlanTrims(clientId, clientToday, trims);
+  }
 
   const now = new Date().toISOString();
   const updates: TablesInsert<"client_phases">[] = [];
@@ -390,23 +430,21 @@ export const replaceBlockChain = async (
     }
   }
 
-  return listBlocks(clientId);
+  return { blocks: await listBlocks(clientId), trimmed: trims.length };
 };
 
 /**
- * Delete one block: the row goes and NOTHING else moves.
+ * Delete one block's row. No other block moves.
  *
  * Blocks own their own windows (migration 164), so there is no chain to
  * re-anchor — deleting one leaves a gap, which is a real state meaning nothing
- * is planned for those days. That is the whole operation: no shift, no
- * truncation, no consequence sentence to preview.
+ * is planned for those days.
  *
  * Elapsed blocks refuse (belt — the UI never offers it): a finished block is
  * the record of days the client lived, and archiving is how it leaves the list.
  *
- * The block's training and nutrition events are deliberately left alone. A
- * block edit writes nothing on its own; clearing the events is a separate,
- * explicit act.
+ * The block's plans are the DELETE route's to end first, so the row goes only
+ * once they have.
  */
 export const deleteBlock = async (
   clientId: string,

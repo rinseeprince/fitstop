@@ -30,10 +30,10 @@ vi.mock("@/services/event-deletion-floor", () => ({
 
 // The factory defines the error classes so the route and this test share the
 // same class objects for instanceof.
-// The route reaches the two plan-delete services only behind ?clearPlans=true;
-// both are stubbed so importing them does not pull in supabase-admin. Their own
-// behaviour is proved in their own suites — here only that they are FIRED, in
-// the right order, and only when asked.
+// A delete always takes the block's plans, through the two plan-delete
+// services; both are stubbed so importing them does not pull in
+// supabase-admin. Their own behaviour is proved in their own suites — here
+// only that they are FIRED, in the right order, before the row goes.
 vi.mock("@/services/training-plan-clear-service", () => ({
   clearTrainingPlansForClient: vi.fn().mockResolvedValue({ plansCleared: 0 }),
 }));
@@ -89,12 +89,21 @@ const REMAINING_BLOCK = {
 };
 
 
-function createMockRequest(search = "") {
+function createMockRequest() {
   return new NextRequest(
-    `http://localhost:3000/api/clients/client-1/blocks/block-b${search}`,
+    "http://localhost:3000/api/clients/client-1/blocks/block-b",
     { method: "DELETE" }
   );
 }
+
+const BLOCK_B = {
+  id: "block-b",
+  name: "Cut",
+  focus: null,
+  startsOn: "2026-08-11",
+  endsOn: "2026-09-07",
+  archivedAt: null,
+};
 
 describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
   beforeEach(() => {
@@ -105,6 +114,7 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
     });
     vi.mocked(getClientTodayString).mockResolvedValue(TODAY);
     vi.mocked(resolveEventDeletionFloor).mockResolvedValue(TODAY);
+    vi.mocked(listBlocks).mockResolvedValue([BLOCK_B]);
   });
 
   it("404s a client the coach does not own, before any read", async () => {
@@ -117,6 +127,8 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
 
     expect(response.status).toBe(404);
     expect(deleteBlock).not.toHaveBeenCalled();
+    expect(clearNutritionPlansForClient).not.toHaveBeenCalled();
+    expect(clearTrainingPlansForClient).not.toHaveBeenCalled();
   });
 
   it("deletes with the client's today and returns the fresh chain", async () => {
@@ -144,29 +156,18 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
         targetTable: "client_phases",
         targetId: "block-b",
         clientId: "client-1",
-        metadata: { blockCount: 1, clearedPlans: false },
+        metadata: { blockCount: 1, nutritionVersionsCleared: 0, trainingPlansCleared: 0 },
       })
     );
   });
 
-  it("scopes both plan deletes to THIS block's window", async () => {
-    // A block delete is about one block's date range. Both tracks answer
-    // "does this plan belong here?" from dates — a program is truncated to the
-    // block it is placed in, a version's end is resolved to the block its start
-    // falls in — so a LATER block keeps its own program and its own targets.
+  it("always takes the block's plans, scoped to THIS block's window, before the row goes", async () => {
+    // A block contains its plans, so deleting it takes them: both tracks
+    // answer "does this plan belong here?" from dates, and a LATER block keeps
+    // its own program and its own targets.
     vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
-    vi.mocked(listBlocks).mockResolvedValue([
-      {
-        id: "block-b",
-        name: "Cut",
-        focus: null,
-        startsOn: "2026-08-11",
-        endsOn: "2026-09-07",
-        archivedAt: null,
-      },
-    ]);
 
-    const response = await DELETE(createMockRequest("?clearPlans=true"), mockParams);
+    const response = await DELETE(createMockRequest(), mockParams);
 
     expect(response.status).toBe(200);
     expect(clearNutritionPlansForClient).toHaveBeenCalledWith("client-1", TODAY, {
@@ -187,42 +188,43 @@ describe("/api/clients/[id]/blocks/[blockId] DELETE", () => {
     ).toBeLessThan(vi.mocked(deleteBlock).mock.invocationCallOrder[0]);
   });
 
-  it("touches no plan without ?clearPlans=true", async () => {
-    // What keeps "a block edit writes nothing on its own" true.
-    vi.mocked(deleteBlock).mockResolvedValue({ blocks: [REMAINING_BLOCK] });
+  it("an elapsed block refuses before any plan is touched", async () => {
+    // A finished block is the record of days the client lived; its plans are
+    // history, and archiving is how it leaves the list.
+    vi.mocked(listBlocks).mockResolvedValue([
+      { ...BLOCK_B, startsOn: "2026-07-01", endsOn: "2026-08-10" },
+    ]);
 
-    await DELETE(createMockRequest(), mockParams);
+    const response = await DELETE(createMockRequest(), mockParams);
 
+    expect(response.status).toBe(422);
     expect(clearNutritionPlansForClient).not.toHaveBeenCalled();
     expect(clearTrainingPlansForClient).not.toHaveBeenCalled();
+    expect(deleteBlock).not.toHaveBeenCalled();
   });
 
   it("stops before deleting the block when a plan delete fails", async () => {
     // Losing the block while its plans survive is the one outcome that cannot
     // be undone from the UI: the label is gone and the prescription is not.
-    vi.mocked(listBlocks).mockResolvedValue([
-      {
-        id: "block-b", name: "Cut", focus: null,
-        startsOn: "2026-08-11", endsOn: "2026-09-07", archivedAt: null,
-      },
-    ]);
     vi.mocked(clearNutritionPlansForClient).mockRejectedValueOnce(new Error("boom"));
 
-    const response = await DELETE(createMockRequest("?clearPlans=true"), mockParams);
+    const response = await DELETE(createMockRequest(), mockParams);
 
     expect(response.status).toBe(500);
     expect(clearTrainingPlansForClient).not.toHaveBeenCalled();
     expect(deleteBlock).not.toHaveBeenCalled();
   });
 
-  it("404s an unknown block id", async () => {
-    vi.mocked(deleteBlock).mockRejectedValue(new UnknownBlockIdError("Block not found"));
+  it("404s an unknown block id, before any plan is touched", async () => {
+    vi.mocked(listBlocks).mockResolvedValue([]);
 
     const response = await DELETE(createMockRequest(), mockParams);
     const payload = await response.json();
 
     expect(response.status).toBe(404);
     expect(payload.error).toBe("Block not found");
+    expect(clearNutritionPlansForClient).not.toHaveBeenCalled();
+    expect(deleteBlock).not.toHaveBeenCalled();
   });
 
   it("422s an elapsed block", async () => {

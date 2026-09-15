@@ -36,9 +36,27 @@ export interface BlockChainEntryInput {
 /** The PUT body: every block the client has, each carrying its OWN window.
  *  Gaps between blocks are a real state — the client is between programs and
  *  nothing is planned; overlaps are refused, in the service and by a database
- *  constraint (migration 164). */
+ *  constraint (migration 164). `confirmTrims` is the coach's yes to the one
+ *  question: a save that draws or shortens a block over days that already hold
+ *  a plan is refused without it (409, the trims beside it). */
 export interface ReplaceBlockChainInput {
   blocks: BlockChainEntryInput[];
+  confirmTrims?: true;
+}
+
+/**
+ * One plan a block save changes so the block contains it — a training program
+ * or a nutrition version (`name` null: a version has no name the coach gave
+ * it). `startsOn` / `endsOn` are its window before the save; `newEndsOn` is its
+ * last day after it, or null when the trim leaves it no day and it is removed.
+ */
+export interface BlockPlanTrim {
+  track: "training" | "nutrition";
+  id: string;
+  name: string | null;
+  startsOn: string;
+  endsOn: string;
+  newEndsOn: string | null;
 }
 
 // ---------------------------------------------------------------------------

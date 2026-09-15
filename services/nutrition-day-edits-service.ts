@@ -124,7 +124,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Remove every edit dated inside any of `ranges` — the days a plan delete or a
- * block shorten has just uncovered — in ONE statement, returning how many rows
+ * block trim has just uncovered — in ONE statement, returning how many rows
  * went. An edit is a fact about a date, and a date no version covers has no
  * day for the coach to see or revert it on, so an edit left behind would sit
  * dormant and answer again under whatever version next covers the date (owner
