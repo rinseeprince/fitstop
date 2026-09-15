@@ -33,7 +33,6 @@
   ### Scope discipline
   - Implement exactly what's asked, not what you think might be needed later.
   - Don't add optimistic updates, caching strategies, or performance optimizations unless explicitly requested.
-    - **Authorized exception (client scale only):** Sessions 3.5–3.10 of `docs/CLIENT-PORTAL-EXECUTION-PLAN.md` are an explicitly-requested performance/scale workstream for the client app. Within those sessions (and only those), caching and perf work are in-scope: the Upstash `user_id → client_id` auth-resolution cache (3.8, `lib/auth-cache.ts`, 60s TTL), SQL aggregation (3.6/3.7), keyset pagination (3.7, `lib/cursor.ts`), bounded/render-ready payloads (3.9), and client rate-limit re-keying (3.10). Per product-owner direction, where this rule blocks a needed scale change in those sessions, the change wins and the deviation is flagged in the session. Everywhere else, this rule stands.
   - Simple and working beats clever and fragile.
   - One fix per change. Don't fix a bug AND refactor the component AND update the styling in the same edit. If something breaks, you can't tell which change caused it.
 
@@ -63,7 +62,6 @@
 
   ### Don't assume success
   - Don't say "all done, everything works" without verifying. Show proof: terminal output, build results, or explain what was tested.
-  - Commit-ready means ALL of these pass: `npx tsc --noEmit`, `npx vitest run`, no `console.log` debug artifacts left in code.
 
   ### Don't install packages without asking
   - If a task can be done with what's already in the project, don't add a new dependency. Always ask before running `npm install`.
@@ -108,7 +106,10 @@
   3. zod validation before any write.
   4. The write itself is scoped to the tenant (`.eq("client_id", …)`) as defence in depth, so a
      forged id matches zero rows.
-  5. `npm run check:rls` — every table has RLS, and new policies are tenant-scoped. Never assert
+  5. `npm run check:rls` — every table has RLS, no policy is trivially true for `authenticated`,
+     none is reachable by `anon` without keying on `auth.uid()`, and every view is
+     `security_invoker`. It does not judge whether a policy is tenant-scoped, it reads no grants,
+     and it reads the linked project only, so check a new policy's scoping yourself. Never assert
      RLS state from the docs; the live catalog is the source of truth.
   6. Anything writing via `supabaseAdmin` bypasses RLS — confirm the route authorizes it.
 
@@ -131,7 +132,7 @@
   **Reporting — separate what you verified from what you inferred.** Reading code is not measuring.
   If you have not run load against it, say so plainly and name what is untested (read paths under
   concurrency, pool behaviour, aggregations) rather than implying coverage you do not have. Offer
-  to measure using the scale seed and `PERF_COACH_ID` fixture (`docs/perf-baseline.md`).
+  to measure using the scale seed: the fixture coach is `PERF_COACH_ID` (`scripts/perf-fixtures.ts`), and the measured client baseline is `docs/perf-baseline.md`.
 
   ## 3. Coding Standards
 
@@ -226,7 +227,7 @@
   /lib           - Constants, helpers, utilities
     /validations - Zod schemas (auth, check-in, client, nutrition, training, assistant, etc.)
     (constants live in the flat `lib/constants.ts`; training-only constants in `lib/training-constants.ts` - there is no `lib/constants/` directory)
-  /contexts      - App-wide React context providers (auth, intake-panel, nutrition-builder, training-builder). Feature-scoped providers mounted by a route layout live beside their feature instead - e.g. `components/clients/training/program-builder/program-draft-provider.tsx`, which owns all training authoring state.
+  /contexts      - App-wide React context providers (auth, intake-panel, motion-preferences, nutrition-builder, training-builder, units). Feature-scoped providers mounted by a route layout live beside their feature instead - e.g. `components/clients/training/program-builder/program-draft-provider.tsx`, which owns all training authoring state.
   /emails        - React Email templates (Resend)
   /supabase      - Database migrations and config
   /docs          - Architecture documentation
@@ -249,7 +250,7 @@
 
   The `components/` tree has three audience-scoped folders that are easy to confuse because of the singular/plural difference. They are **parallel audiences**, not refactor-before-and-after, and files never move across them.
 
-  - **`components/clients/`** (plural) - **coach-facing**. A coach viewing, editing, or managing their clients' data: training plans, nutrition plans, history tables, check-in review, wellness strip, attention feed, etc.
+  - **`components/clients/`** (plural) - **coach-facing**. A coach viewing, editing, or managing their clients' data: training plans, nutrition plans, history tables, check-in review, attention feed, etc.
   - **`components/client/`** (singular) - **client-facing, pre-activation**. Flows the client sees before their coach has fully activated them: intake/onboarding (`client/onboarding/`) and the guided walkthrough (`client/walkthrough/`).
   - **`components/client-portal/`** - **client-facing, post-activation**. The logged-in client portal after activation: home day view, detail pages (training, nutrition, wellness, habits), navigation, settings, etc.
 
@@ -264,7 +265,7 @@
   Two sibling folders under `components/clients/training/` are easy to confuse:
 
   - **`program-builder/`** — the real authoring surface: the weeks × Day-1-7 grid, session editor, library panel, progression dialog, assistant dock, and `ProgramDraftProvider`. Mounted by `/dashboard/programs/[savedPlanId]`, remounted inside the client Training drawer via `target="client-draft"`, and mounted over a client's live placed plan via `target="placed-plan"` (the amendment surface — past slots locked through `program-builder-lock-model.ts`, saves via the amendment PUT). All new training authoring goes here.
-  - **`builder/`** — the client-attached drawer + the amendment overlay: `training-plan-builder.tsx` (tabs + chrome), `training-builder-right-panel.tsx` (calendar + hero + the amendment entry point), and `plan-amendment-overlay.tsx` (the full-screen `placed-plan` mount). **Browse, apply, and mount only** — if you find yourself adding an editor here, you want `program-builder/`.
+  - **`builder/`** — the client-attached drawer + the amendment overlay: `training-plan-builder-overlay.tsx` (the drawer, a library browser that remounts `program-builder/` via `target="client-draft"`), `training-plan-builder.tsx` (tabs + chrome), `training-builder-right-panel.tsx` (calendar + hero + the amendment entry point), `plan-amendment-overlay.tsx` (the full-screen `placed-plan` mount) and `client-draft-leave-guard.tsx` (the soft-navigation guard for the client draft editor). **Browse, apply, and mount only** — if you find yourself adding an editor here, you want `program-builder/`.
 
   Also live under `training/`: `calendar/` — the client's event calendar plus the placed-session tray (`placed-session-editor.tsx`, a 780px Sheet hosting the shared `session-editor-body` over a one-slot draft). The old `sessions/` folder (the legacy drawer's add-exercise dialog + exercise row) was deleted with the drawer in the placed-plan editing overhaul.
 
@@ -337,17 +338,13 @@
   scans the tree for one that does not.
 
   **Known gap:** this is a rule for new and touched code, not a claim about the
-  codebase. Roughly 50 coach-side SWR reads exist against those two exported
-  invalidators, plus a handful of inline `globalMutate("literal key")` calls that
-  predate the rule. Widen an area's invalidator when you touch it; do not assume a
+  codebase. Coach-side SWR reads written before the rule may sit behind no invalidator, and
+  a handful of inline `globalMutate("literal key")` calls predate the rule. Widen an area's invalidator when you touch it; do not assume a
   read you depend on is already covered.
 
   ### Nutrition calendar cache invalidation (landmine)
-  - The coach nutrition calendar renders from an SWR cache keyed per month window (`/api/clients/{clientId}/nutrition/events?startDate=...&endDate=...`). The days it shows are COMPUTED on the server (ARCHITECTURE → "The window is the row") — nothing is stored per day, so nothing can tell the cache it is stale. **Any client-side success path whose server route changes what a day is computed from** — a nutrition version's window or grid (the plan save and delete, the block shorten), a session on a date or its surplus (place, move, duplicate, delete, amend, the client's own week move), a per-day edit or reset — **must call `useInvalidateNutritionCalendar` from `hooks/use-nutrition-calendar-events.ts`**, or the calendar silently shows stale targets until a page refresh.
+  - The coach nutrition calendar renders from an SWR cache keyed per month window (`/api/clients/{clientId}/nutrition/events?startDate=...&endDate=...`). The days it shows are COMPUTED on the server (ARCHITECTURE → "The window is the row") — nothing is stored per day, so nothing can tell the cache it is stale. **Any client-side success path whose server route changes what a day is computed from** — a nutrition version's window or grid (the plan save and delete, the block shorten), a session on a date or its surplus (place, move, duplicate, delete, amend), a per-day edit or reset — **must call `useInvalidateNutritionCalendar` from `hooks/use-nutrition-calendar-events.ts`**, or the calendar silently shows stale targets until a page refresh. The client's own week move changes the same days but runs in the client's browser, and an invalidator reaches only the SWR cache of the browser that calls it: no client-side call can refresh a coach's calendar, which does not revalidate on focus, so it stays stale until it refetches. Do not add a call there that cannot reach its reader.
   - The key-builder and invalidator are co-located in that hook module deliberately so they can never drift. Never construct a `/nutrition/events` key anywhere else.
-
-  ### Legacy (being retired)
-  - The old Daily Pulse used `fetch` with `{ cache: 'no-store' }`, `Promise.all` for initial load, `fetchWithRetry`, and AbortController for request cancellation. That pattern is being removed in the client portal redesign (see `docs/CLIENT-PORTAL-REDESIGN.md` and `docs/CLIENT-PORTAL-EXECUTION-PLAN.md`). Do NOT imitate it in new code. If you find yourself editing Daily Pulse code before it's deleted, keep the existing pattern - don't mix the two.
 
   ### State management
   - Server state: SWR.
@@ -489,7 +486,7 @@
 
   ### Auth & data-access architecture (Shape B)
 
-  CoachHub runs in a backend-mediated shape: the browser calls Next.js API routes, routes authenticate the user and verify ownership, routes call service functions scoped by `clientId`, service functions read/write through `supabaseAdmin`. Row-Level Security policies exist on most tables as a **safety net** for bugs in the route/service layers — not a second line of defense (if the route layer is broken, RLS does nothing because `service_role` bypasses it; see "RLS policies" below). This is a valid pattern for apps with a dedicated backend, multiple user audiences (coach + client), cross-user aggregation reads, and server-only integrations (OpenAI, Stripe, Resend). See `TECHNICAL-DEBT.md → Auth Architecture Hygiene` for the rationale and for open hardening items.
+  CoachHub runs in a backend-mediated shape: the browser calls Next.js API routes, routes authenticate the user and verify ownership, routes call service functions scoped by `clientId`, service functions read/write through `supabaseAdmin`. Row-Level Security policies exist on most tables as a **safety net** for bugs in the route/service layers — not a second line of defense (if the route layer is broken, RLS does nothing because `service_role` bypasses it; see "RLS policies" below). This is a valid pattern for apps with a dedicated backend, multiple user audiences (coach + client), cross-user aggregation reads, and server-only integrations (OpenAI, Anthropic, Resend). See `TECHNICAL-DEBT.md → Auth Architecture Hygiene` for the rationale and for open hardening items.
 
   The consequence: the route layer **is** the security perimeter. Gaps in route-level auth are not caught by a second line of defense. Treat the route's auth chain and the service function's scoping parameter as non-optional.
 
@@ -519,7 +516,7 @@
 
   #### When to use `createServerSupabaseClient()`
 
-  Rarely. Most existing usages are either legacy or candidates for consolidation (see `TECHNICAL-DEBT.md → Auth Architecture Hygiene H1 #4`). If you think you need the session-scoped client, first confirm:
+  Rarely. The existing usages run under the caller's JWT, so RLS applies to every query they make: before moving one onto `supabaseAdmin`, confirm the route itself filters by the authed principal, because `supabaseAdmin` drops RLS and leaves the route's own filter as the only one. If you think you need the session-scoped client, first confirm:
 
   - You genuinely need `auth.uid()` in-database (to satisfy an RLS policy that is doing real work), AND
   - The admin + explicit-scope pattern doesn't fit, AND
@@ -529,17 +526,17 @@
 
   #### RLS policies
 
-  - RLS is enabled on **every** table in `public` (verified against the live catalog by `npm run check:rls`). For the app path it is a safety net, because service_role bypasses it. For anyone hitting PostgREST directly with the browser-shipped anon key, **it is the only perimeter**.
+  - RLS is enabled on **every** table in `public` (verified against the live catalog by `npm run check:rls`). For the app's `supabaseAdmin` path it is a safety net, because service_role bypasses it. On the app's session-client reads (see "When to use `createServerSupabaseClient()`" above) it applies to every query, and for anyone hitting PostgREST directly with the browser-shipped anon key **it is the only perimeter**.
   - Do NOT write new app-code that relies on RLS to enforce access. If the route layer is broken, RLS under service_role does nothing (service_role bypasses RLS entirely — which is most of our DB traffic).
   - **When adding a new table: `ALTER TABLE … ENABLE ROW LEVEL SECURITY` and write NO policies.** Deny-all is the default posture, because every service read and write goes through `supabaseAdmin`, which bypasses RLS — so a policy grants access that nothing in the app needs. Precedent: `108_create_audit_logs.sql:37`, and migrations 122/125/126. Only add a policy when a specific non-service_role caller provably needs the table, and scope it to the owner.
-  - **A new table's privileges are set explicitly, in the migration — a REVOKE, then exactly the grants it needs.** Supabase's stock default privileges hand ALL on a new table to `anon`, `authenticated` and `service_role` the moment it exists, on both projects, whatever "Automatically expose new tables" says in Settings → API (probed on `client_phases`, `check_in_forms` and `nutrition_plan_notes`, 2026-09-02). Left to the defaults, a table is reachable through PostgREST with the browser-shipped anon key and RLS as its only perimeter — silently, never as an error. So revoke first, then grant `service_role` what the service layer uses (ALL for an ordinary table; `SELECT, INSERT` for an append-only one), and `anon`/`authenticated` nothing unless a specific non-service_role caller provably needs the table, scoped by a policy. `158_client_measurements.sql` is the shape, its one client-scoped policy beside the grant.
+  - **A new table's privileges are set explicitly, in the migration — a REVOKE, then exactly the grants it needs.** Supabase's stock default privileges hand ALL on a new table to `anon`, `authenticated` and `service_role` the moment it exists, on both projects, whatever "Automatically expose new tables" says in Settings → API (probed on `client_phases` and `check_in_forms`, 2026-09-02; on 2026-09-14 every table created without a REVOKE still held the grant, on both projects). Left to the defaults, a table is reachable through PostgREST with the browser-shipped anon key and RLS as its only perimeter — silently, never as an error. So revoke first, then grant `service_role` what the service layer uses (ALL for an ordinary table; `SELECT, INSERT` for an append-only one), and `anon`/`authenticated` nothing unless a specific non-service_role caller provably needs the table, scoped by a policy. `158_client_measurements.sql` is the shape, its one client-scoped policy beside the grant.
     ```sql
     CREATE TABLE IF NOT EXISTS public.new_thing (...);
     ALTER TABLE IF EXISTS public.new_thing ENABLE ROW LEVEL SECURITY;
     REVOKE ALL ON TABLE public.new_thing FROM PUBLIC, anon, authenticated, service_role;
     GRANT ALL ON TABLE public.new_thing TO service_role;
     ```
-    Put it in the migration, never in the dashboard — a grant made in Studio is invisible to source and drifts, which is how migration 125's `DROP POLICY` became a silent no-op. **Do not retrofit the existing tables:** they carry `GRANT ALL … TO anon, authenticated` from those same defaults, and revoking across 41 tables is real breakage risk for defence RLS already provides (migration 122:20-26 records that decision).
+    Put it in the migration, never in the dashboard — a grant made in Studio is invisible to source and drifts, which is how migration 125's `DROP POLICY` became a silent no-op. **Do not retrofit the tables that carry policies.** The 26 tables created before this rule that carry policies keep the stock `GRANT ALL … TO anon, authenticated`: eight of them (`coaches`, `clients`, `profiles`, `content_items`, `content_assignments`, `check_ins`, `nutrition_plans`, `nutrition_plan_daily_targets`) are read through the session client, so a blanket revoke would lock those readers out, and narrowing their grants is a per-table design, not a retrofit. A table with no policy is different: through the API only the service role can read or write it, so an `anon` or `authenticated` grant on it buys nothing and leaves RLS as its only perimeter, which `check:rls` cannot fully judge (§2 review, item 5).
   - **NEVER write `TO authenticated USING (true)`.** It is not "deny-by-default"; it is a platform-wide cross-tenant read and write. The anon key ships in the browser bundle and any logged-in user holds an `authenticated` JWT, so such a policy is directly exploitable via `/rest/v1/…`. This convention previously *prescribed* that shape; migrations 091 and 101 followed it and both had to be dropped in 125. See `TECHNICAL-DEBT.md → Known RLS Gaps`.
   - **Always add an explicit `TO` clause.** A policy with no `TO` defaults to `PUBLIC`, which includes `anon`. That is only safe if the qual references `auth.uid()` (NULL without a JWT ⇒ fails closed). A no-`TO` policy whose qual does not reference the caller — e.g. `USING (bucket_id = '…')` — is unauthenticated access; that exact shape exposed the private progress-photos bucket until migration 126.
   - Avoid nested-subquery policies that replicate the IDOR chain: they cost at scale for no benefit under service_role. If a table genuinely needs both coach- and client-side reads, write **one** policy with a single qual rather than two permissive ones — two permissive policies OR together, and a sublink under an `OR` never pulls up to a semi-join.
@@ -550,7 +547,7 @@
 
   - Security-relevant actions on client-owned data are recorded in an immutable, append-only `audit_logs` table for incident investigation (`services/audit-log-service.ts`, migration 108). Call `recordAuditEvent(...)` **fire-and-forget** (`void`-prefixed) AFTER a successful, already-authorized write — it records what the route already authorized; it never authorizes or blocks the request.
   - Pass a caller-verified `actorId` + `clientId`. Use `action` names from `AUDIT_ACTIONS` (`lib/constants.ts`); `metadata` is small, non-sensitive context only — never health PII. If you pass `request`, the helper hashes the IP (SHA-256 prefix), never the raw address.
-  - When to log: client invitation/activation, goal/plan/metric changes, intake metrics sync, role creation. Failures go to Sentry, not the user.
+  - When to log: the actions `AUDIT_ACTIONS` names — client invitation and activation, goals, measurements and metric entries, the intake metrics sync, nutrition and training plans, blocks and check-in forms. Failures go to Sentry, not the user.
 
   ### General
   - Migrations: Version controlled, never edit directly
@@ -564,13 +561,14 @@
   - No suffix - Returns an array of rows.
 
   ### Client read scaling (client-portal reads)
-  These codify the Phase-3 scale contract (Sessions 3.6 / 3.7 / 3.9); full rationale lives in `docs/CLIENT-PORTAL-REDESIGN.md`. They override the generic "copy the nearest pattern" guidance (§3) where existing client code still uses offset.
-  - **Bounded AND keyset by default.** Client list/history reads page on a cursor (e.g. `(completed_at, id)` for sessions, `(created_at, id)` for check-ins), never `OFFSET` / `.range()`. Offset cost grows with how deep the client scrolls into a multi-year history; keyset stays flat. Add the matching keyset index *with* the query (e.g. `session_logs(client_id, completed_at DESC, id DESC)`).
+  These are the client app's scale contract; full rationale lives in `docs/CLIENT-PORTAL-REDESIGN.md`. They override the generic "copy the nearest pattern" guidance (§3) where existing code still uses offset.
+  - **Bounded AND keyset by default.** Client list/history reads page on a cursor (today the check-in lists, on `(created_at, id)`), never `OFFSET` / `.range()`. Offset cost grows with how deep the client scrolls into a multi-year history; keyset stays flat. Add the matching keyset index *with* the query (e.g. `session_logs(client_id, completed_at DESC, id DESC)`).
     **This is not a client-portal-only rule, despite the heading.** Any paginated, time-ordered
     "load older" list follows it whoever reads it — the COACH's per-client check-in list
     (`GET /api/clients/[id]/check-ins`) pages on the same `(created_at, id)` cursor as the client's
-    own. It stayed on `OFFSET` for months precisely because this section reads as client-only, and
-    an offset page is not merely slow: it addresses an absolute position in the list *as it is now*,
+    own. That list paged on `OFFSET` by early 2026, months before this rule was written on
+    2026-05-22, and stayed there until 2026-08-30: a new rule does not reach code already written.
+    An offset page is not merely slow: it addresses an absolute position in the list *as it is now*,
     so a row arriving at the head between two page fetches makes the pages repeat a row (a duplicate
     React key) or skip one, with nothing raising an error. Page *n*'s key derives from page *n-1*'s
     cursor on the client too — never re-derive it from an index.
@@ -608,7 +606,7 @@
     `supabaseAdmin`: the browser and the seed scripts both use it, and
     `npm run check:service-key` fails on a `"use client"` module reachable from
     `services/supabase-admin.ts` by value imports. TDEE derives from the **rounded**
-    BMR so the stored pair is reproducible and matches `calculateTDEE`.
+    BMR so the stored pair is reproducible and agrees with the nutrition calculator's TDEE step.
   - **An override flag freezes exactly its own value**; the other half keeps
     auto-recomputing. A flag set over a NULL value is not a freeze and is recomputed.
   - **Activity level is a CLIENT fact.** It is set on the client profile (the Overview
@@ -628,9 +626,9 @@
 
   Date-specific TRAINING targets live on **events** (`training_events`), one row per session per date. Plans and their slot rows (`training_sessions`) are **the placed program that generates events + provenance for analytics/reapply** — not the live read path for a given day, and never embedded via a live join to a deletable plan. Historical reads resolve from immutable snapshots (`session_logs`, `nutrition_logs`), never from re-layable events. When you add a date-specific training feature, write it onto the event, not the plan. **A NUTRITION day is computed, never stored**: the target on a date is resolved when asked from the version covering it (`nutrition_plans` — a window plus its weekday grid), the session on the date and the coach's per-day edit (`nutrition_day_edits`). No writer keeps days in sync — there is no cascade, sweep or regenerate — and a day table, a day-sync writer or a nutrition-day deletion floor must not be reintroduced. A version's grid is never edited in place once its first day has passed; that is what keeps a derived past stable, so a feature that adjusts a running plan's numbers mints a version. Full model: `docs/ARCHITECTURE.md → Nutrition & Training Events`.
 
-  **Deferred debt (events-SOT — documented, not done):**
-  - **Adherence is not unified.** Two divergent live adherence calc conventions coexist (coach history = `session_logs` / `frequency_per_week`; client check-in = `training_events` count). A periodisation-safe denominator + unifying them is a separate decision — do not change adherence math under the guise of an events-SOT edit.
-  - **Prescribed denormalization.** `training_events.calorie_surplus_percentage` is denormalized from the session so a nutrition day can read it per date; **every** training event-write path must keep populating it (one dropped write silently prices that day at rest-day calories while the TRAIN badge still renders). See `TECHNICAL-DEBT.md`.
+  **Two things an events-SOT edit must not break:**
+  - **Adherence math is its own decision.** On the coach's check-in surfaces a completion count has one source, `summariseSessions` (`lib/check-in/adherence.ts`), and `lib/check-in/adherence-ownership.test.ts` fails on a second definition — do not change adherence math under the guise of an events-SOT edit.
+  - **Prescribed denormalization.** `training_events.calorie_surplus_percentage` is denormalized from the session so a nutrition day can read it per date; **every** training event-write path must keep populating it. One dropped write silently misprices that day: the day resolver falls back to the sessions' flat `estimated_calories`, zero when none is set, so the day is priced as a rest day while the TRAIN badge still renders.
 
   ### Training prescription model (migrations 119-121)
 
@@ -638,10 +636,10 @@
   - **Read through `expandSetSpecs`, not the columns.** It returns authored specs when present and otherwise synthesizes N `working` specs from the compact columns, so every prescription yields per-set rows carrying a `set_type`. A reader that ignores `set_specs` sees a truthful but lossy summary — it loses warm-ups, AMRAP/drop/failure sets, per-set loads and per-set rest.
   - **Edits go through the shared kernel.** `applySetSpecEdit` (`utils/set-spec-edits.ts`) is the one pure editing path, used by both the builder hook and the assistant's server executors so they cannot drift. Its invariants are load-bearing: `MAX_SET_SPECS` 30, `MAX_WORKING_SETS` 20, never all-warmup, deleting the last set reverts `setSpecs` to `null` (never `[]`), and a no-op edit returns the same array reference so a blur can't silently materialize specs.
   - **Set type is coach-prescribed, never client-chosen.** `set_logs.set_type` is seeded from the prescription snapshot; the log schema accepts-but-ignores any client value. Analytics exclude `warmup` from every performance metric; the progression engine touches `working`-type sets only. **These two filters are deliberately different — don't unify them.**
-  - **`superset_group` and `is_warmup` are retired from builder authoring** (S4.2): `is_warmup` is still rendered in the client tracker, but its last writer (the legacy calendar drawer's add-exercise dialog) was deleted with the drawer — it now only round-trips through the draft/clone/serialize/placement paths. `superset_group` has no reader and is pure round-trip. Both must keep round-tripping through every clone/serialize/placement path; add no new UI for either.
+  - **`superset_group` and `is_warmup` are retired from builder authoring**: `is_warmup` is still rendered in the client tracker, but its last writer (the legacy calendar drawer's add-exercise dialog) was deleted with the drawer — it now only round-trips through the draft/clone/serialize/placement paths. `superset_group` has no reader and is pure round-trip. Both must keep round-tripping through every clone/serialize/placement path; add no new UI for either.
   - **Days are positional, not weekdays.** The builder authors a weeks × Day-1-7 grid; placement writes `day_of_week: null` and places the whole program once as a sequential date-walk keyed on `(week_index, order_index)`. Rest days are **real rows** (`is_rest = true`) that advance the slot position and emit no `training_event` — "empty === rest". A missing rest row collapses the week and slides every later date. Never reintroduce weekday-derived scheduling or a 7-day repeat assumption.
   - **`training_plans.saved_plan_id` is not a reliable back-link.** Apply-with-edits places `saved_plan_id = NULL`. Don't reason about "which template is this client on" from that column.
-  - **One scheduled session per client per day** (migration 136 — launch scope, drop it when multi-session days ship). Enforced in two layers: a partial unique index on `training_events (client_id, date) WHERE status = 'scheduled'`, and a status-agnostic pre-check (`assertDateFree`, `services/training-event-occupancy.ts`) that every path putting an event on a date must call. **Do not add a same-day guard keyed on `training_session_id`** — that was the original design and it silently stopped working the moment placement began cloning each day into its own session row, because no two events share a session id any more. Any new event-write path calls `assertDateFree`; the index is only the backstop, and it is not covered by the generated-event upserts' conflict arbiter, so translate `23505` with `rethrowIfDateOccupied` rather than letting Postgres text reach a coach. The one write that cannot call it is the layout RPC (`move_training_events_atomic`, migration 150 — N moves in one transaction, park-then-place): it carries the equivalent pre-check in SQL (a non-moving scheduled event on any target raises `occupied:<date>`), its caller `services/training-event-layout-service.ts` runs the status-agnostic check in TS before it, and the route translates the index's `23505` through `rethrowIfAnyDateOccupied`. Same rule, three layers; a new multi-row writer follows this shape rather than skipping the pre-check.
+  - **One scheduled session per client per day** (migration 136 — launch scope, drop it when multi-session days ship). Enforced in two layers: a partial unique index on `training_events (client_id, date) WHERE status = 'scheduled'`, and a status-agnostic pre-check (`assertDateFree`, `services/training-event-occupancy.ts`) on the three single-date paths — move, duplicate and the library-session drop. **Do not add a same-day guard keyed on `training_session_id`** — that was the original design and it silently stopped working the moment placement began cloning each day into its own session row, because no two events share a session id any more. Whole-program placement and the amendment deliberately do NOT pre-check: each first deletes the scheduled events in the window it is about to fill, so a pre-check would reject the window it just vacated (the module's header says the same). They translate the index's `23505` instead, through `rethrowIfAnyDateOccupied` in the shared walk (`services/program-event-walk.ts`), because an early log the clear leaves behind, or a concurrent write, can still collide. The index is only the backstop, and it is not covered by the generated-event upserts' conflict arbiter, so every writer either pre-checks or translates (`rethrowIfDateOccupied` for a single date): a collision must reach a coach as a sentence, not as Postgres text. The layout RPC (`move_training_events_atomic`, migration 150 — N moves in one transaction, park-then-place) carries the equivalent pre-check in SQL (a non-moving scheduled event on any target raises `occupied:<date>`); its caller `services/training-event-layout-service.ts` runs the status-agnostic check in TS before it and translates the index's `23505` through `rethrowIfAnyDateOccupied`. A new single-date writer calls `assertDateFree`; a new writer that clears a window first follows placement's shape.
   - **A logged day's prescription is frozen.** `assertSessionUnlogged` (same module) refuses a session-editing write when ANY linked `training_event` has left `status = 'scheduled'` — the same predicate `program-builder-lock-model.ts:63` applies to a plan-builder slot, and the only one: do not invent a second. It lives INSIDE `cloneSessionForEvent` and `replaceSessionFull` so a future caller inherits it, runs AFTER each proves the session belongs to the client so a foreign id still 404s, and both routes translate it to a 409 carrying its message. Rewriting the exercise rows under a logged day orphans the client's `exercise_logs`, and since `completion_quality` became server-derived it records a full workout as `partial`. Any new path that rewrites a placed session's exercises calls it.
 
   ### Migration awareness
@@ -666,7 +664,9 @@
   de-duplication, or anything else that cannot be undone by a follow-up migration, run the
   probe that justifies it **against prod**, not only against dev. A successful `db push`
   proves the migration applied; it proves nothing about whether the two databases agree, and
-  prod has drifted from the migration tree before (see "Live catalog is SOT"). Dev is
+  both databases have drifted from the migration tree, in both directions: dumped on 2026-09-14,
+  Dev carried a unique key on `coaches.user_id` and `TO authenticated` clauses on two `daily_logs`
+  policies that no migration creates, and Prod carried a Supabase helper function Dev lacks. Dev is
   `aeaphsslctwcmebldrzx`, prod is `etezzztgafcotyahgijk`; `npx supabase db query --linked`
   gives password-free read access to whichever is linked. Row counts, "no client has X",
   "zero duplicates exist" and `pg_depend = 0` are **per-database facts** and do not travel.
@@ -698,32 +698,32 @@
   **Docker requirement:** The daily workflow above does NOT need Docker — `db push` and `gen types` talk directly to the cloud DB via `--linked` credentials. Docker Desktop is only required for commands that spin up a local shadow DB (`supabase start`, `supabase db reset`, `supabase db diff`). Open Docker when you need those; keep it closed otherwise.
 
   ### Schema architecture
-  Schema diagrams, table hierarchies, and JSONB conventions are documented in **docs/ARCHITECTURE.md**. That file evolves with migrations. These coding rules stay stable.
+  Schema diagrams and table hierarchies are documented in **docs/ARCHITECTURE.md**; when JSONB is allowed is §8 "Data modelling" above. That file evolves with migrations. These coding rules stay stable.
 
   ## 9. Security
   - Auth: Check on every protected route/component
   - Middleware auth: Uses `getUser()` which validates JWT server-side, NOT `getSession()` (which only reads the cookie without verification, making it susceptible to tampered tokens)
-  - Input sanitization: All user inputs (especially coach bios, session notes)
+  - Input sanitization: All user inputs
   - Rate limiting: **MANDATORY** - Every API route must include rate limiting as the first check
   - CSRF protection: **MANDATORY** - All mutating API routes (POST/PUT/PATCH/DELETE) must call `requireCSRFProtection(request)` from `lib/csrf-protection.ts` as the second check after rate limiting
-  - Sensitive data: Never log passwords, tokens, payment info
-  - File uploads: Validate type, size, scan (profile pics, workout plans)
+  - Sensitive data: Never log passwords or tokens
+  - File uploads: Validate the size, and the declared type against the file's own signature (`lib/upload-validation.ts`). The uploads are progress photos and content-library files
 
   ### Rate Limiting Requirements
-  **ALL new API routes MUST implement rate limiting as the first operation in every handler function.** Two routes deviate in *ordering* (below). Tier assignment is a separate and worse story — read the next paragraph before "fixing" one.
+  **ALL new API routes MUST implement rate limiting as the first operation in every handler function.** Two sanctioned shapes deviate in *ordering* (below); a route that limits after auth outside them is a defect, not a third shape. Tier assignment is a separate and worse story — read the next paragraph before "fixing" one.
 
   > **The limiter does not namespace by tier, so retiering a route is unpredictable.** `lib/rate-limit.ts` hardcodes `prefix: "ratelimit:api"` and keys on the bare IP; the config shapes only the sliding-window algorithm, never the key. So on the Redis path **every tier routed through the generic `rateLimit()` shares one counter per IP**, and which ceiling applies depends on which limiter instance ran last. (The in-memory fallback *does* namespace by `${clientId}:${maxRequests}:${windowMs}`, so the two paths disagree. `assistantRateLimit` sets its own prefix and is genuinely isolated.) The visible symptom of this is 15 `/api/clients/**` route files sitting on `apiRateLimit` where this section says `coachApiRateLimit` (re-counted 2026-08-30; it said 21) — but moving them is not a one-line fix, because it perturbs unrelated routes for the same IP. **Fix the key first, then the tiers.** Recorded in `TECHNICAL-DEBT.md`.
 
-  > **Client-portal two-tier exception (Session 3.10).** Client routes are keyed per *client identity*, but the client id isn't known until auth resolves. So client-portal routes run **two tiers**: a generous IP-keyed burst guard stays the mandatory *first* operation (DoS / carrier-NAT safe), and a tight **per-client** limit is applied immediately *after* `getAuthenticatedClientId()` resolves. This is the one sanctioned place a rate-limit check runs post-auth; the first-operation rule still holds for the IP guard.
+  > **Client-portal two-tier exception.** Client routes are keyed per *client identity*, but the client id isn't known until auth resolves. So client-portal routes run **two tiers**: a generous IP-keyed burst guard stays the mandatory *first* operation (DoS / carrier-NAT safe), and a tight **per-client** limit is applied immediately *after* `getAuthenticatedClientId()` resolves. This is one of the two sanctioned places a rate-limit check runs post-auth (the assistant, below, is the other); the first-operation rule still holds for the IP guard.
 
-  > **Assistant single-tier deviation (builder S6a) — described, not endorsed.** `/api/training/assistant` runs CSRF → auth → `assistantRateLimit(request, coachId)`, and unlike the client-portal exception it has **no IP-keyed first tier at all**. The limiter is coach-keyed with no IP fallback so IP rotation can't buy extra model spend, and the route does no work before the limit — the model call sits behind it. **The missing burst guard is logged as debt in `TECHNICAL-DEBT.md`, not a pattern to copy.** Do not replicate this shape on a route that reads or writes before limiting.
+  > **Assistant single-tier deviation — described, not endorsed.** `/api/training/assistant` runs CSRF → auth → `assistantRateLimit(request, coachId)`, and unlike the client-portal exception it has **no IP-keyed first tier at all**. The limiter is coach-keyed with no IP fallback so IP rotation can't buy extra model spend, and the route does no work before the limit — the model call sits behind it. **The missing burst guard is logged as debt in `TECHNICAL-DEBT.md`, not a pattern to copy.** Do not replicate this shape on a route that reads or writes before limiting.
 
   #### Rate Limit Types:
   - `authRateLimit`: Auth/invitation routes (5 requests per 15 minutes)
   - `apiRateLimit`: General API endpoints (60 requests per minute)
   - `coachApiRateLimit`: Coach-side client routes (30 requests per 10 seconds, allows burst traffic)
   - `clientApiRateLimit`: Client portal routes (first tier) — a loose, abuse-only IP burst guard (~1000 req/10s) set above any plausible carrier-NAT aggregate. Paired with a tight **per-client** limit (`clientPerClientRateLimit`, 30 req/10s, keyed by client id) applied post-auth. The per-client tier composes on top of any first-tier override; it is never replaced by one.
-  - `checkInRateLimit`: Public check-in endpoints (30 requests per minute)
+  - `checkInRateLimit`: 30 requests per minute. No route uses it: the public check-in flow was removed with migration 142
   - `aiRateLimit`: One-shot AI endpoints (10 requests per minute) - prevents cost abuse
   - `assistantRateLimit`: The AI program assistant's chat turns (20 requests per 5 minutes, prefix `ratelimit:assistant`, always keyed by coach id). Its own tier because `aiRateLimit` is sized for one-shot generations and would 429 a coach mid-conversation; the wider window still caps runaway model spend. **Runs after auth**, not first, because it keys on the resolved coach id (the same sanctioned exception as the client-portal per-client tier).
 
@@ -740,16 +740,16 @@
   ```
 
   #### When to Use Each Type:
-  - **authRateLimit**: `/api/auth/*` (except `/api/auth/me` — a per-app-load bootstrap GET for both roles, on `apiRateLimit` per the `/auth/callback` precedent), `/api/invitations/*`, login, signup, password reset
+  - **authRateLimit**: `/api/invitations/*`. No app route serves login, signup or password reset: those call Supabase Auth from the browser. The one `/api/auth/*` route, `/api/auth/me`, is a per-app-load bootstrap GET for both roles, on `apiRateLimit` per the `/auth/callback` precedent
   - **coachApiRateLimit**: `/api/clients/*` (coach viewing/managing client data)
   - **clientApiRateLimit**: `/api/client/*` (client portal endpoints)
-  - **checkInRateLimit**: Public check-in submission endpoints
-  - **aiRateLimit**: One-shot AI endpoints (check-in summaries, activity analysis)
+  - **checkInRateLimit**: none today (see above)
+  - **aiRateLimit**: One-shot AI endpoints (check-in summaries)
   - **assistantRateLimit**: The program assistant's chat route (`/api/training/assistant`) — conversational, so it needs a wider window than `aiRateLimit`
   - **apiRateLimit**: All other routes (default choice)
 
   ## 10. API Design
-  - RESTful routes: /api/coaches, /api/sessions/:id
+  - RESTful routes
   - Status codes: 200 (success), 201 (created), 400 (validation), 401 (auth), 404 (not found), 500 (server)
   - Response format: { success: bool, data: {}, error?: string }
   - Timestamps: ISO 8601 format
@@ -804,21 +804,20 @@
   - Server-side errors: Use `captureApiError(error, context)` from `lib/error-handler.ts` to log and send to Sentry
   - Client-side errors: Wrap error-prone UI sections with `<ErrorBoundary>` from `components/ui/error-boundary.tsx`
   - Sentry config: `instrumentation-client.ts` (browser — 10% traces, `sendDefaultPii: false`, `scrubHealthData` beforeSend/beforeBreadcrumb, replay with `maskAllText`/`blockAllMedia`), `sentry.server.config.ts` and `sentry.edge.config.ts` (10% traces + `scrubHealthData`). The browser init lives in `instrumentation-client.ts` because under Next 16/Turbopack the legacy `sentry.client.config.ts` no longer loads — there must be exactly one client init.
-  - Validation: Zod schemas in `lib/validations/` for all inputs/API payloads. Use `optionalString()`, `optionalNumber()` helpers for null/empty coercion. Use `.refine()` for cross-field validation.
+  - Validation: Zod schemas in `lib/validations/` for all inputs/API payloads. Use `.refine()` for cross-field validation.
   - Database operations: Transaction rollbacks on failure
   - No empty catch blocks - always log the error or surface it to the user
 
   ## 13. Testing
   - Unit tests: All service functions and utilities
-  - Integration tests: Critical flows (booking, payments, auth)
+  - Integration tests: Critical flows (auth)
   - API tests: All endpoints with success/error cases
   - Run tests before commits
-  - Coverage target: 70% minimum
 
   ### Commit-ready checklist
   Before saying "ready to commit", ALL of these must pass:
   1. `npx tsc --noEmit` - no TypeScript errors
-  2. `npx eslint .` - no lint errors (catches floating promises, console.log, type issues)
+  2. `npx eslint .` - no lint errors (it catches floating and misused promises and type issues). A `console.log` is only a warning (§18) and does not fail it, so also `grep -rn "console.log" [changed files]`.
   3. `npx vitest run` - all tests pass
   4. `npm run check:labels` - shared tokens hold: mono = numbers only (no raw `font-mono-display` or hand-rolled `uppercase tracking-` outside the token modules), and no hand-rolled segmented control (clause 3 — every pane/period/filter switcher imports `<SegmentedControl>`). See `docs/newdesignsystem.md` → Typography and → Segmented control
   5. `grep -rn "as any" [changed files]` - no type escapes
@@ -836,29 +835,20 @@
   - Database queries: Indexes on foreign keys, frequently queried fields. Index *with* the query — add the keyset index alongside the read it serves (see §8 "Client read scaling").
   - API responses: <200ms target. Client list/history reads are **keyset-paginated and bounded by default** (§8), not offset.
   - Images: Optimize/compress before upload, use WebP
-  - Caching: Redis (Upstash) for rate limiting, plus the client-scale caches authorized in §2 (auth-resolution + short-TTL context, Sessions 3.7 / 3.8).
+  - Caching: Redis (Upstash) for rate limiting and the 60-second `user_id → client_id` auth-resolution cache (`lib/auth-cache.ts`). Any other cache needs an explicit request (§2 "Scope discipline").
   - Lazy loading / infinite scroll: a **web-render** concern. The client web app is a throwaway test harness (the real client is React Native), so web-render perf — lazy-mount, memoization, virtualization, chart animations — is explicitly **out of scope** for the client portal; invest scale work in the data/API/DB layer instead. (Coach-side web perf is unaffected by this note.)
 
   ## 15. Documentation
   - API endpoints: Request/response examples, error codes
   - Complex functions: JSDoc with params, returns, examples
   - Setup: **`.env.example` does not exist in this repo** (only `.env.local`). Until someone creates it, a new env var is documented in the section of this file that owns the feature (AI keys in §11) plus a comment at its read site.
-  - Database schema: ER diagram, migration strategy
   - README: Local setup in <5 steps
 
   ## 16. References
-  - **docs/ARCHITECTURE.md**: Database schema diagrams, table hierarchies, JSONB conventions. Evolves with migrations - update when shipping schema changes.
-  - **docs/CLIENT-PORTAL-REDESIGN.md** + **docs/CLIENT-PORTAL-EXECUTION-PLAN.md**: Active redesign replacing Daily Pulse with a day-centric, event-driven client portal. These are the source of truth for any client-portal work. Read both before modifying anything under `app/client/**` or `components/client-portal/**`. Where ARCHITECTURE.md and these docs disagree about a client-portal write path or data flow (for example the monolithic `upsert_daily_log_atomic()` write under ARCHITECTURE's "Daily Logs" section), these redesign docs win; ARCHITECTURE describes the legacy path until Session 5.1's doc sweep rewrites it.
+  - **docs/ARCHITECTURE.md**: Database schema diagrams and table hierarchies, as built. Evolves with migrations - update when shipping schema changes.
+  - **docs/CLIENT-PORTAL-REDESIGN.md** + **docs/CLIENT-PORTAL-EXECUTION-PLAN.md**: The day-centric, event-driven client portal. These are the source of truth for any client-portal work. Read both before modifying anything under `app/client/**` or `components/client-portal/**`.
   - **`docs/newdesignsystem.md`**: Visual patterns, colour tokens, spacing, typography. The authoritative source for visual tokens.
-  - The completed training-builder and wellness-soreness execution plans were **deleted after shipping** — this file + **docs/ARCHITECTURE.md** are canonical for everything they built (training authoring/placement/prescription, the assistant, the soreness metric). Their STATUS blocks (recorded deviations, phase ledgers) live in git history of the deleted paths under `docs/`.
   - **TECHNICAL-DEBT.md**: Known gaps between conventions and current implementation.
-
-  ## 17. Logging
-  - Info: User actions (login, booking, payment)
-  - Warn: Recoverable errors (rate limit hit, validation fail)
-  - Error: System failures with stack traces - use `captureApiError()` for Sentry reporting
-  - Current approach: `console.error/warn` + Sentry capture (no structured JSON logging yet)
-  - Never log: Passwords, tokens, full credit cards
 
   ## 18. ESLint Configuration
   Uses flat config (`eslint.config.mjs`) with TypeScript ESLint type-checked rules.
@@ -879,8 +869,8 @@
   - Test files: `no-explicit-any` and `no-console` disabled
 
   ## 19. Configuration
-  - .env files: .env.local (dev), .env.production
-  - Required vars: there is no `.env.example` to document them in - see §15. The current surface is `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, and the Supabase + Upstash keys. If you create `.env.example`, backfill it from those.
+  - .env files: .env.local
+  - Required vars: there is no `.env.example` to document them in - see §15. The code reads `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` with the optional `ASSISTANT_MODEL` / `ASSISTANT_EFFORT` / `ASSISTANT_THINKING` overrides, `RESEND_API_KEY`, `NEXT_PUBLIC_APP_URL`, and `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_ORG` / `SENTRY_PROJECT`. If you create `.env.example`, backfill it from those.
   - Secrets: Never in code, use vault/secrets manager for prod
   ## 20. Units
 
@@ -954,7 +944,7 @@
 
   A payload field naming its own unit is a legacy shape. Two survive, both for a
   non-web client (React Native) that logs in its own unit:
-  `logTrainingEventSchema.weightUnit` and the check-in schema's
+  `logTrainingEventSchema`'s per-exercise `weightUnit` (`exercises[].weightUnit`) and the check-in schema's
   `weightUnit`/`measurementUnit`. **Both are REQUIRED alongside the value they
   describe**, and that requiredness is what makes them safe — an optional tag
   needs a fallback, and a fallback silently decides the unit for a payload that
