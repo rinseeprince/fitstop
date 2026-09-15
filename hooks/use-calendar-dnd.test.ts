@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 
@@ -143,6 +143,54 @@ describe("useCalendarDnd", () => {
         ),
       );
       expect(onLibrarySessionDrop).toHaveBeenCalledWith("s1", CLIENT_TODAY);
+    });
+  });
+
+  // The server refuses a move whose session has moved since the calendar
+  // loaded, so the request carries the day the calendar showed it on.
+  describe("move request", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("sends the day the calendar loaded the session on as fromDate, beside the drop target", async () => {
+      const fetchMock = vi.fn(() =>
+        Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ success: true }) }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const { result, mutate } = setup([event({ date: "2026-07-28" })]);
+
+      act(() => result.current.handleDragEnd(dragEnd("ev-1", "2026-07-30")));
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      // The optimistic update has already put the card on the target day.
+      expect(mutate).toHaveBeenCalledWith(expect.any(Function), { revalidate: false });
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe("/api/clients/c1/training/plan-1/events/ev-1/move");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(String(init.body))).toEqual({
+        targetDate: "2026-07-30",
+        fromDate: "2026-07-28",
+      });
+    });
+
+    it("a refused move refetches the calendar and shows the server's sentence", async () => {
+      const drift =
+        "This session moved since your calendar loaded. The calendar now shows where it is.";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() =>
+          Promise.resolve({ ok: false, status: 409, json: () => Promise.resolve({ error: drift }) }),
+        ),
+      );
+      const { result, mutate } = setup([event()]);
+
+      act(() => result.current.handleDragEnd(dragEnd("ev-1", "2026-07-30")));
+
+      await vi.waitFor(() =>
+        expect(mockToast.error).toHaveBeenCalledWith("Move failed", { description: drift }),
+      );
+      // The revert is a refetch — a bare mutate() — so the calendar shows
+      // where the session now is.
+      expect(mutate).toHaveBeenLastCalledWith();
     });
   });
 

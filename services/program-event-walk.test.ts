@@ -88,7 +88,7 @@ describe("program-event-walk", () => {
       return eventUpsertQuery;
     }
 
-    it("zero-offset regression: walks slots from position 0 when startPosition is omitted", async () => {
+    it("walks the slots from the first date", async () => {
       const eventUpsertQuery = wireEventUpsert();
 
       const count = await generateProgramEvents({
@@ -115,73 +115,21 @@ describe("program-event-walk", () => {
       expect(count).toBe(2);
     });
 
-    it("startPosition resumes the walk mid-program: the first date maps to that slot", async () => {
+    it("a rest slot consumes its date without emitting an event", async () => {
       const eventUpsertQuery = wireEventUpsert();
 
-      // 5-slot program, resuming at slot 3 (as an amendment does when 3 days
-      // have elapsed): the floor date maps to slot 3, not slot 0.
+      // The rest slot takes 07-05 silently and the next slot lands on 07-06:
+      // no compression.
       await generateProgramEvents({
         clientId: "client-1",
         planId: "plan-1",
         programSlots: [
           makeSlot({ id: "ts-0", name: "S0" }),
-          makeSlot({ id: "ts-1", name: "S1" }),
-          makeSlot({ id: "ts-2", name: "S2" }),
-          makeSlot({ id: "ts-3", name: "S3" }),
-          makeSlot({ id: "ts-4", name: "S4" }),
-        ],
-        startDate: "2026-07-04",
-        endDate: "2026-07-05",
-        startPosition: 3,
-      });
-
-      const rows = eventUpsertQuery.upsert.mock.calls[0][0] as Array<{
-        training_session_id: string;
-        date: string;
-      }>;
-      expect(rows.map((r) => [r.training_session_id, r.date])).toEqual([
-        ["ts-3", "2026-07-04"],
-        ["ts-4", "2026-07-05"],
-      ]);
-    });
-
-    it("startPosition: 0 behaves identically to omitting it", async () => {
-      const slots = [makeSlot({ id: "ts-a" }), makeSlot({ id: "ts-b" })];
-
-      const firstQuery = wireEventUpsert();
-      await generateProgramEvents({
-        clientId: "client-1", planId: "plan-1", programSlots: slots,
-        startDate: "2026-07-01", endDate: "2026-07-02",
-      });
-      const withoutParam = firstQuery.upsert.mock.calls[0][0];
-
-      const secondQuery = wireEventUpsert();
-      await generateProgramEvents({
-        clientId: "client-1", planId: "plan-1", programSlots: slots,
-        startDate: "2026-07-01", endDate: "2026-07-02", startPosition: 0,
-      });
-      const withZero = secondQuery.upsert.mock.calls[0][0];
-
-      expect(withZero).toEqual(withoutParam);
-    });
-
-    it("rest slots after the resume point consume dates without emitting events", async () => {
-      const eventUpsertQuery = wireEventUpsert();
-
-      // Resume at slot 1; slot 2 is rest — it consumes 07-05 silently and
-      // slot 3 lands on 07-06 (no compression).
-      await generateProgramEvents({
-        clientId: "client-1",
-        planId: "plan-1",
-        programSlots: [
-          makeSlot({ id: "ts-0", name: "S0" }),
-          makeSlot({ id: "ts-1", name: "S1" }),
           makeSlot({ id: "ts-r", name: "Rest", isRest: true }),
-          makeSlot({ id: "ts-3", name: "S3" }),
+          makeSlot({ id: "ts-2", name: "S2" }),
         ],
         startDate: "2026-07-04",
         endDate: "2026-07-06",
-        startPosition: 1,
       });
 
       const rows = eventUpsertQuery.upsert.mock.calls[0][0] as Array<{
@@ -189,8 +137,8 @@ describe("program-event-walk", () => {
         date: string;
       }>;
       expect(rows.map((r) => [r.training_session_id, r.date])).toEqual([
-        ["ts-1", "2026-07-04"],
-        ["ts-3", "2026-07-06"],
+        ["ts-0", "2026-07-04"],
+        ["ts-2", "2026-07-06"],
       ]);
     });
 
@@ -442,7 +390,7 @@ describe("expandProgramToWindow", () => {
 });
 
 // ===========================================================================
-// resolveWindowCap — the one bound placement and the amendment share.
+// resolveWindowCap — the one bound placement and the plan editor share.
 // ===========================================================================
 
 describe("resolveWindowCap", () => {

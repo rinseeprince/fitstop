@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       draft: parsed.data.draft as ProgramDraft,
       command: parsed.data.command,
       transcript: parsed.data.transcript,
-      lockedSlotUids: parsed.data.lockedSlotUids,
+      editableDays: parsed.data.editableDays,
     });
 
     return NextResponse.json({ success: true, data }, { status: 200 });

@@ -1,9 +1,11 @@
 import type { ComponentProps } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { PAST_LOCKED } from "./program-builder-lock-model";
 import { ProgramBuilder } from "./program-builder";
 import { ProgramDraftProvider } from "./program-draft-provider";
+import { addDaysToDateString } from "@/lib/date-helpers";
+import type { PlanEditDay, PlanForEditing } from "@/services/plan-edit-service";
 import type { SavedPlan, SavedSession } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 
@@ -41,18 +43,6 @@ const mutateMock = vi.fn(() => Promise.resolve(undefined));
 let planFixture: SavedPlan | null = null;
 vi.mock("@/hooks/use-saved-plan", () => ({
   useSavedPlan: () => ({ plan: planFixture, isLoading: false, mutate: mutateMock }),
-}));
-
-// Placed-plan target: the amendment GET feeding usePlacedPlanSource.
-let placedPlanFixture: unknown = null;
-const placedMutateMock = vi.fn(() => Promise.resolve(placedPlanFixture));
-vi.mock("@/hooks/use-placed-plan", () => ({
-  usePlacedPlan: (clientId: string | null, planId: string | null) => ({
-    placedPlan: clientId && planId ? placedPlanFixture : null,
-    isLoading: false,
-    error: null,
-    mutate: placedMutateMock,
-  }),
 }));
 
 // The session-library drawer + add-session popover read the standalone list.
@@ -136,7 +126,10 @@ type FetchCall = { url: string; method: string; body: unknown };
 const fetchCalls: FetchCall[] = [];
 let promoteStatus = 200;
 let overwriteStatus = 200;
-let amendStatus = 200;
+// Placed-plan target: what the plan editor's read (GET …/edit) serves, and
+// the status its save (PUT …/edit) answers with.
+let planEditFixture: PlanForEditing | null = null;
+let editStatus = 200;
 
 const jsonResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -169,15 +162,21 @@ vi.stubGlobal(
         jsonResponse(201, { success: true, sessionId: "s-new", name: "Push (copy)" }),
       );
     }
-    if (u.endsWith("/amendment") && init?.method === "PUT") {
-      return Promise.resolve(
-        jsonResponse(
-          amendStatus,
-          amendStatus === 200
-            ? { success: true, floor: "2026-07-22", offset: 7, eventsCreated: 3 }
-            : { error: "This plan changed while you were editing" },
-        ),
-      );
+    if (u.endsWith("/edit")) {
+      if (init?.method === "PUT") {
+        return Promise.resolve(
+          jsonResponse(
+            editStatus,
+            editStatus === 200
+              ? {
+                  success: true,
+                  data: { firstDay: "2026-07-22", lastDay: "2026-08-01", sessionsWritten: 5 },
+                }
+              : { error: "This plan changed while you were editing" },
+          ),
+        );
+      }
+      return Promise.resolve(jsonResponse(200, { success: true, data: planEditFixture }));
     }
     return Promise.resolve(jsonResponse(200, { success: true }));
   }),
@@ -791,115 +790,131 @@ describe("ProgramBuilder client-draft mode (Phase 5)", () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Placed-plan target (Job 2): the amendment surface's chrome + save flow.
+// Placed-plan target: the plan editor — its read, its day rules, its save.
 // ═════════════════════════════════════════════════════════════════════════════
 
+const EDIT_URL = "/api/clients/client-1/training/plan-1/edit";
+const PLAN_START = "2026-07-15";
 const isTrainingPos = (i: number) => i % 7 === 0 || i % 7 === 2 || i % 7 === 4;
+/** The read lays a session on days 1, 3 and 5 of each week, up to the limit. */
+const holdsSession = (i: number) => isTrainingPos(i) && i <= 17;
 
-function placedDate(position: number): string {
-  const d = new Date("2026-07-15T00:00:00");
-  d.setDate(d.getDate() + position);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/** A 2-week placed read: effective 2026-07-15, client today 2026-07-22 →
- *  week 1 elapsed (locked), week 2 open. */
-function makePlacedRead() {
+/** Three weeks from 2026-07-15. The client's today, 07-22 (position 7), is the
+ *  first editable day, so week 1 is history. The block ends 08-01 (position
+ *  17): the read lays nothing on the last three days, which the grid greys. */
+function makePlanForEditing(overrides: Partial<PlanForEditing> = {}): PlanForEditing {
   return {
     plan: {
       id: "plan-1",
       name: "PPL Block",
       splitType: "Push/Pull",
-      programDurationWeeks: 2,
-      frequencyPerWeek: 3,
-      effectiveFrom: "2026-07-15",
-      savedPlanId: null,
-      status: "active",
-      updatedAt: "2026-07-20T00:00:00Z",
+      effectiveFrom: PLAN_START,
+      effectiveUntil: "2026-08-04",
     },
     clientToday: "2026-07-22",
-    windowEnd: "2026-07-28",
-    isFullyPast: false,
-    amendmentToken: "tok-1",
-    sessions: Array.from({ length: 14 }, (_, i) => ({
-      id: `cur-${i}`,
-      name: isTrainingPos(i) ? `Session ${i}` : "Rest",
-      focus: isTrainingPos(i) ? "strength" : null,
-      weekIndex: Math.floor(i / 7),
-      orderIndex: i,
-      isRest: !isTrainingPos(i),
-      estimatedDurationMinutes: null,
-      calorieSurplusPercentage: isTrainingPos(i) ? 15 : null,
-      notes: null,
-      sessionType: "training",
-      createdAt: "2026-07-15T00:00:00Z",
-      exercises: [],
-      events: [
-        // Week-1 training days completed; week-2 still scheduled.
-        {
-          id: `ev-${i}`,
-          date: placedDate(i),
-          status: i < 7 ? "completed" : "scheduled",
-          isModified: false,
-        },
-      ].filter(() => isTrainingPos(i)),
-    })),
-    futureModifiedEvents: [
-      { id: "ev-9", date: "2026-07-24", sessionName: "Session 9" },
-    ],
+    firstEditableDate: "2026-07-22",
+    limit: { endsOn: "2026-08-01", source: "block" },
+    days: Array.from({ length: 21 }, (_, i): PlanEditDay => {
+      const date = addDaysToDateString(PLAN_START, i);
+      return holdsSession(i)
+        ? {
+            date,
+            isRest: false,
+            name: `Session ${i}`,
+            focus: "strength",
+            estimatedDurationMinutes: null,
+            notes: null,
+            calorieSurplusPercentage: 15,
+            exercises: [],
+          }
+        : { date, isRest: true };
+    }),
+    version: "v-1",
+    ...overrides,
   };
 }
 
-function renderPlaced() {
+// Real SWR on its default cache, as the app runs it: the editor's read drops
+// its entry when the editor unmounts, so every render reads the plan anew.
+function renderPlaced(onSaved?: () => Promise<void>) {
   return render(
     <ProgramDraftProvider
       placedPlanId="plan-1"
       target="placed-plan"
       clientId="client-1"
       clientName="Casey Client"
+      onSaved={onSaved}
     >
       <ProgramBuilder />
     </ProgramDraftProvider>,
   );
 }
 
-const amendPut = () =>
-  fetchCalls.find((c) => c.url.endsWith("/amendment") && c.method === "PUT");
+const editGets = () => fetchCalls.filter((c) => c.url === EDIT_URL && c.method === "GET");
+const editPuts = () => fetchCalls.filter((c) => c.url === EDIT_URL && c.method === "PUT");
 
-describe("ProgramBuilder placed-plan target", () => {
+type PlanEditPutBody = {
+  sessions: Array<{ name: string; orderIndex: number; weekIndex?: number; isRest: boolean }>;
+  plan: { name: string; splitType: string | null };
+  version: string;
+};
+
+const openEditor = () => screen.findByRole("button", { name: "Save changes to plan" });
+
+/** Rename the plan — the identity input commits on blur. */
+function renamePlan(name: string) {
+  const nameInput = screen.getByLabelText("Program name");
+  fireEvent.change(nameInput, { target: { value: name } });
+  fireEvent.blur(nameInput);
+}
+
+/** Clear a session back to rest from its card's quick-clear. */
+function clearSession(name: string) {
+  fireEvent.click(
+    within(screen.getByLabelText(`Open session ${name}`)).getByLabelText(
+      "Clear session (back to rest)",
+    ),
+  );
+}
+
+/** The rail save icon, then the confirm's Confirm. */
+async function saveAndConfirm() {
+  fireEvent.click(screen.getByRole("button", { name: "Save changes to plan" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+}
+
+describe("ProgramBuilder placed-plan target (the plan editor)", () => {
   beforeEach(() => {
     cleanup();
     fetchCalls.length = 0;
-    amendStatus = 200;
+    editStatus = 200;
     planFixture = null; // useSavedPlan is disabled for this target
-    placedPlanFixture = makePlacedRead();
+    planEditFixture = makePlanForEditing();
     toastSpy.success.mockClear();
     toastSpy.error.mockClear();
-    placedMutateMock.mockClear();
   });
 
-  it("fills the overlay box (h-full) — never the library's shell-cancelling negative margins", async () => {
+  it("reads the plan once and fills the overlay box (h-full) — never the library's shell-cancelling negative margins", async () => {
     const { container } = renderPlaced();
-    await screen.findByRole("button", { name: "Save changes to plan" });
+    await openEditor();
+    expect(editGets()).toHaveLength(1);
     const root = container.firstElementChild as HTMLElement;
     // The -mx-8 shift exists to cancel the programs shell's padding; inside
     // the full-screen overlay it slides the editor over the nav rail and
-    // pushes Day 7 off screen (owner smoke finding).
+    // pushes Day 7 off screen.
     expect(root.className).toContain("h-full");
     expect(root.className).not.toContain("-mx-8");
   });
 
-  it("shows the amendment chrome: save-changes present, library commit absent, calendar back label", async () => {
+  it("shows the plan editor's chrome: the save icon, no library commit, a calendar back label, a renamable plan", async () => {
     renderPlaced();
-    expect(
-      await screen.findByRole("button", { name: "Save changes to plan" }),
-    ).toBeInTheDocument();
+    expect(await openEditor()).toBeInTheDocument();
     expect(screen.queryByLabelText("Save program")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Delete program")).not.toBeInTheDocument();
     expect(screen.queryByText("Apply to client")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Back to calendar")).toBeInTheDocument();
-    // Opens straight into edit mode: the identity input is live.
-    expect(screen.getByLabelText("Program name")).toBeInTheDocument();
+    // Opens straight into edit mode with the plan's name live.
+    expect(screen.getByLabelText("Program name")).toHaveValue("PPL Block");
     // No default-surplus pill: placement resolved the default into every row
     // (absolute surplus), so the header knob would be dead — hidden instead.
     expect(
@@ -907,80 +922,208 @@ describe("ProgramBuilder placed-plan target", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("save is disabled until dirty, then PUTs the grid + token + identity patch through the confirm", async () => {
+  it("renders the history days inert and leaves the editable days their affordances", async () => {
     renderPlaced();
-    const saveBtn = await screen.findByRole("button", { name: "Save changes to plan" });
+    await openEditor();
+    // Week 1's three sessions carry the lock marker ...
+    expect(screen.getAllByTitle(PAST_LOCKED)).toHaveLength(3);
+    // ... and only the five editable sessions (days 7, 9, 11, 14, 16) clear.
+    expect(screen.getAllByLabelText("Clear session (back to rest)")).toHaveLength(5);
+    // Only the editable rest days (8, 10, 12, 13, 15, 17) offer an add.
+    expect(screen.getAllByLabelText(/^Add session to day/)).toHaveLength(6);
+  });
+
+  it("greys the days past the block's end and says why", async () => {
+    const { container } = renderPlaced();
+    await openEditor();
+    expect(
+      screen.getByText("This block ends 1 Aug. Days after it are greyed out."),
+    ).toBeInTheDocument();
+    // Days 18-20 are greyed, and carry no Rest label: 4 history + 6 editable.
+    expect(container.getElementsByClassName("bg-[rgba(147,176,180,0.12)]")).toHaveLength(3);
+    expect(screen.getAllByText("Rest")).toHaveLength(10);
+  });
+
+  it("rings the client's today", async () => {
+    const { container } = renderPlaced();
+    await openEditor();
+    const ringed = container.getElementsByClassName("ring-1 ring-[#0d9488]");
+    expect(ringed).toHaveLength(1);
+    expect(ringed[0]).toBe(screen.getByLabelText("Open session Session 7"));
+  });
+
+  it("disables Add week when the next week would start past the limit", async () => {
+    renderPlaced();
+    await openEditor();
+    expect(screen.getByRole("button", { name: "Add week" })).toBeDisabled();
+    cleanup();
+
+    // The next program starts 11 Aug: a fourth week, from 5 Aug, still starts
+    // inside the limit.
+    planEditFixture = makePlanForEditing({
+      limit: { endsOn: "2026-08-10", source: "next_plan" },
+    });
+    renderPlaced();
+    await openEditor();
+    expect(
+      screen.getByText("The next program starts 11 Aug. Days from then are greyed out."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add week" })).not.toBeDisabled();
+  });
+
+  it("keeps save disabled until an edit, then confirms and PUTs the grid, the plan's name and focus, and the version", async () => {
+    renderPlaced();
+    const saveBtn = await openEditor();
     expect(saveBtn).toBeDisabled();
 
-    // The identity input commits on blur (uncontrolled).
-    const nameInput = screen.getByLabelText("Program name");
-    fireEvent.change(nameInput, { target: { value: "PPL Block v2" } });
-    fireEvent.blur(nameInput);
+    renamePlan("PPL Block v2");
     expect(saveBtn).not.toBeDisabled();
 
     fireEvent.click(saveBtn);
-    // Confirm dialog with the moved-events warning list.
-    expect(await screen.findByText("Save changes to this plan?")).toBeInTheDocument();
-    expect(screen.getByText(/manually-moved upcoming session/)).toBeInTheDocument();
-    // The moved session is named in the dialog list (it also renders in the
-    // grid behind the dialog, hence All).
-    expect(screen.getAllByText("Session 9").length).toBeGreaterThan(1);
+    expect(
+      await screen.findByRole("dialog", { name: "Confirm updated plan" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    // Nothing is sent before the confirm.
+    expect(editPuts()).toHaveLength(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(amendPut()).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(editPuts()).toHaveLength(1));
 
-    const body = amendPut()!.body as {
-      expectedToken: string;
-      plan?: { name?: string };
-      sessions: Array<{ orderIndex: number; weekIndex?: number; isRest: boolean }>;
-    };
-    expect(body.expectedToken).toBe("tok-1");
-    expect(body.plan?.name).toBe("PPL Block v2");
-    expect(body.sessions).toHaveLength(14);
+    const body = editPuts()[0].body as PlanEditPutBody;
+    expect(Object.keys(body).sort()).toEqual(["plan", "sessions", "version"]);
+    expect(body.plan).toEqual({ name: "PPL Block v2", splitType: "Push/Pull" });
+    expect(body.version).toBe("v-1");
+    expect(body.sessions).toHaveLength(21);
     body.sessions.forEach((s, i) => {
       expect(s.orderIndex).toBe(i);
       expect(s.weekIndex).toBe(Math.floor(i / 7));
+      expect(s.isRest).toBe(!holdsSession(i));
     });
+    await waitFor(() => expect(toastSpy.success).toHaveBeenCalledWith("Plan updated"));
+    // With no host waiting on the save, the confirm closes on a clean tree.
     await waitFor(() =>
-      expect(toastSpy.success).toHaveBeenCalledWith("Plan updated"),
+      expect(
+        screen.queryByRole("dialog", { name: "Confirm updated plan" }),
+      ).not.toBeInTheDocument(),
     );
-    // A clean save revalidates the shared amendment-GET cache so the next
-    // editor open can't seed the pre-save snapshot and self-409.
-    expect(placedMutateMock).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Save changes to plan" })).toBeDisabled();
   });
 
-  it("a 409 opens the drift dialog and keeps the draft", async () => {
-    amendStatus = 409;
+  it("waits on the host's onSaved: the confirm stays up, saving, until it resolves", async () => {
+    let finishSaved!: () => void;
+    const saved = new Promise<void>((resolve) => {
+      finishSaved = resolve;
+    });
+    const onSaved = vi.fn(() => saved);
+    renderPlaced(onSaved);
+    await openEditor();
+    renamePlan("PPL Block v2");
+    await saveAndConfirm();
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("dialog", { name: "Confirm updated plan" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeDisabled();
+
+    await act(async () => {
+      finishSaved();
+      await saved;
+    });
+    // The save ends with onSaved; the host closes the editor with the confirm
+    // still on it.
+    expect(screen.getByRole("button", { name: "Confirm" })).not.toBeDisabled();
+    expect(screen.getByRole("dialog", { name: "Confirm updated plan" })).toBeInTheDocument();
+  });
+
+  it("a 409 swaps the confirm for the refusal and keeps the draft for another save", async () => {
+    editStatus = 409;
     renderPlaced();
-    const nameInput = await screen.findByLabelText("Program name");
-    fireEvent.change(nameInput, { target: { value: "PPL Block v2" } });
-    fireEvent.blur(nameInput);
-    fireEvent.click(screen.getByRole("button", { name: "Save changes to plan" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
+    await openEditor();
+    renamePlan("PPL Block v2");
+    await saveAndConfirm();
 
     expect(
-      await screen.findByText("This plan changed while you were editing"),
+      await screen.findByRole("dialog", { name: "This plan changed while you were editing" }),
     ).toBeInTheDocument();
-    // Draft intact — the edited name survived and the tree is still dirty.
-    expect(screen.getByLabelText("Program name")).toHaveValue("PPL Block v2");
-    // "Keep editing" dismisses without touching the tree.
+    expect(
+      screen.queryByRole("dialog", { name: "Confirm updated plan" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reload and discard edits" })).toBeInTheDocument();
+    expect(toastSpy.success).not.toHaveBeenCalled();
+
+    // "Keep editing" dismisses without touching the tree: it is still dirty.
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
     await waitFor(() =>
       expect(
-        screen.queryByText("This plan changed while you were editing"),
+        screen.queryByRole("dialog", { name: "This plan changed while you were editing" }),
       ).not.toBeInTheDocument(),
     );
-    expect(
-      screen.getByRole("button", { name: "Save changes to plan" }),
-    ).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save changes to plan" })).not.toBeDisabled();
+
+    // The next save still carries the edit.
+    editStatus = 200;
+    await saveAndConfirm();
+    await waitFor(() => expect(editPuts()).toHaveLength(2));
+    expect((editPuts()[1].body as PlanEditPutBody).plan.name).toBe("PPL Block v2");
   });
 
-  it("locked (elapsed) day cells render inert; future cells stay editable", async () => {
+  it("a reload shows the plan's name as it was read, not the discarded rename", async () => {
+    editStatus = 409;
     renderPlaced();
-    await screen.findByRole("button", { name: "Save changes to plan" });
-    // Week-1 training cards carry the lock marker; week-2 cards don't.
-    expect(screen.getAllByTitle(PAST_LOCKED)).toHaveLength(3);
-    // Clear-X only on the 3 unlocked week-2 session cards.
-    expect(screen.getAllByLabelText("Clear session (back to rest)")).toHaveLength(3);
+    await openEditor();
+    renamePlan("PPL Block v2");
+    await saveAndConfirm();
+    await screen.findByRole("dialog", { name: "This plan changed while you were editing" });
+
+    planEditFixture = makePlanForEditing({ version: "v-2" });
+    fireEvent.click(screen.getByRole("button", { name: "Reload and discard edits" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Program name")).toHaveValue("PPL Block"));
+  });
+
+  it("Discard changes shows the plan's name as it was read again", async () => {
+    renderPlaced();
+    await openEditor();
+    renamePlan("PPL Block v2");
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard changes" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Program name")).toHaveValue("PPL Block"));
+  });
+
+  it("Reload and discard edits reads the plan again and re-seeds the editor from it", async () => {
+    editStatus = 409;
+    renderPlaced();
+    await openEditor();
+    clearSession("Session 9");
+    expect(screen.queryByText("Session 9")).not.toBeInTheDocument();
+    await saveAndConfirm();
+    await screen.findByRole("dialog", { name: "This plan changed while you were editing" });
+
+    // The calendar moved on: day 11's session was renamed elsewhere.
+    const latest = makePlanForEditing({ version: "v-2" });
+    latest.days = latest.days.map((day, i) =>
+      i === 11 && !day.isRest ? { ...day, name: "Session 11 (moved)" } : day,
+    );
+    planEditFixture = latest;
+    fireEvent.click(screen.getByRole("button", { name: "Reload and discard edits" }));
+
+    await waitFor(() => expect(screen.getByText("Session 11 (moved)")).toBeInTheDocument());
+    expect(editGets()).toHaveLength(2);
+    // The discarded edit is gone: Session 9 is back.
+    expect(screen.getByText("Session 9")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "This plan changed while you were editing" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Save changes to plan" })).toBeDisabled();
+
+    // The next save sends the version of the plan it re-read.
+    editStatus = 200;
+    clearSession("Session 9");
+    await saveAndConfirm();
+    await waitFor(() => expect(editPuts()).toHaveLength(2));
+    expect((editPuts()[1].body as PlanEditPutBody).version).toBe("v-2");
   });
 });

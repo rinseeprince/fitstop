@@ -58,9 +58,9 @@ async function clearCeiling(
  * Remove the scheduled training sessions in [from, to], and deactivate the
  * slot rows behind them.
  *
- * The slots matter as much as the events: the amendment editor's day-slots are
- * the plan's active rows in date-walk order, so rows left active past the end
- * would put days on its grid that the window no longer has.
+ * The slots matter as much as the events: the plan's active rows are its
+ * blueprint, so rows left active past its end would describe days the window
+ * no longer has.
  *
  * Floored at the deletion floor and scoped to `status = 'scheduled'`, so the
  * past and everything trained survive — the same two guards every other

@@ -1,45 +1,43 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "@/services/today-service";
-import { assertDateFree, rethrowIfDateOccupied } from "./training-event-occupancy";
+import {
+  assertDateFree,
+  DateOccupiedError,
+  occupiedMessage,
+  rethrowIfDateOccupied,
+} from "./training-event-occupancy";
+import { readMoveRpcError, type MoveRpcError } from "./training-event-layout-service";
+
+/** The coach's calendar is stale: the session moved since it loaded. The route answers 409. */
+export class CalendarMoveDriftError extends Error {}
+/** An event that does not exist for this client and plan. The route answers 404 (no existence oracle). */
+export class CalendarMoveNotFoundError extends Error {}
+
+const MOVE_DRIFT_MESSAGE =
+  "This session moved since your calendar loaded. The calendar now shows where it is.";
 
 /**
- * Move a single training event to a new date. The only move there is — the
- * "this and all future X sessions" scope was removed because it matched
- * siblings by `training_session_id`, and whole-program placement gives every
- * day its own cloned session row, so the sibling set was never more than the
- * dragged event itself.
+ * Move a single scheduled training event to a new date — the coach's calendar
+ * drag.
  *
- * Sets is_modified, which drives the calendar card's edited badge. It is NOT a
- * write predicate: the amendment rewrite deletes and re-lays future scheduled
- * events without consulting it.
+ * A move writes ONLY the event, never the plan's session rows. Under
+ * events-as-SOT (CONVENTIONS §8) the event carries the date and the session
+ * rows are the program's blueprint, so a plan whose slot order differs from
+ * the calendar is a blueprint superseded for those dates, not two sources of
+ * truth disagreeing.
  *
- * A move writes ONLY the event, and never the plan's day-slots. That is the
- * model, not an oversight. Under events-as-SOT (CONVENTIONS §8) the event
- * carries the date-specific truth and `training_sessions` is a blueprint, so a
- * plan whose slot order no longer matches the calendar is a blueprint that has
- * been superseded for those dates — not two sources of truth disagreeing.
- *
- * The two only meet when a coach saves an amendment, which re-lays the future
- * from the slots. That moment is already guarded: the confirm dialog itemises
- * every is_modified future event by date and name and lets the coach cancel
- * (amend-plan-dialogs.tsx:67-91). Nothing else can surface a contradiction,
- * because the plan editor is positional — "Week 3 · Day 5", never a weekday —
- * and the ONLY date formatting anywhere in program-builder/ is inside that
- * dialog. The calendar owns dated, tactical edits; the editor owns structural
- * ones; one re-lay warning is the whole coupling between them.
- *
- * Writing moves back into the slot coordinates was designed in full and
- * rejected (owner decision, 2026-07-27): it inverts the model by making the
- * blueprint chase the events, and it buys nothing a coach can see. Do not
- * rebuild it. If it is ever revisited, two findings from that pass are worth
- * keeping: distinct (week_index, order_index) pairs — not a canonical grid —
- * are the necessary condition for a coordinate swap to be position-preserving,
- * and a single CASE-expression UPDATE inside an RPC is the only atomic way to
- * perform one, since a two-statement swap that half-fails leaves duplicate
- * coordinates that nothing detects.
+ * The write goes through `move_training_events_atomic` (migration 150), the
+ * same database function as the client's week view
+ * (`training-event-layout-service.ts`). Each side keeps its own rules, and the
+ * coach's are checked here. `fromDate` is the day the coach's calendar showed
+ * the session on: it is checked here and re-checked by the function under a
+ * row lock, so a drag racing the client's own move is refused rather than
+ * applied to a session that has left that day. The function also sets
+ * is_modified, which drives the calendar card's edited badge.
  */
 export async function moveEvent(
   eventId: string,
+  fromDate: string,
   newDate: string,
   clientId: string,
   planId: string
@@ -50,13 +48,16 @@ export async function moveEvent(
     .eq("id", eventId)
     .single();
 
-  if (error || !event) throw new Error("Event not found");
+  if (error || !event) throw new CalendarMoveNotFoundError("Event not found");
   if (event.client_id !== clientId || event.training_plan_id !== planId) {
-    throw new Error("Event does not belong to this client/plan");
+    throw new CalendarMoveNotFoundError("Event does not belong to this client/plan");
   }
   if (event.status !== "scheduled") {
     throw new Error("Only scheduled events can be moved");
   }
+  // The client moves sessions from their own week view, so a calendar loaded
+  // before that move would drag the session from a day it has already left.
+  if (event.date !== fromDate) throw new CalendarMoveDriftError(MOVE_DRIFT_MESSAGE);
 
   const today = await getClientTodayString(clientId);
   if (newDate < today) {
@@ -67,16 +68,32 @@ export async function moveEvent(
   // could therefore never fire — see training-event-occupancy.ts.
   await assertDateFree(clientId, newDate, eventId);
 
-  const { error: updateError } = await supabaseAdmin
-    .from("training_events")
-    .update({
-      date: newDate,
-      is_modified: true,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", eventId);
+  const { error: rpcError } = await supabaseAdmin.rpc("move_training_events_atomic", {
+    p_client_id: clientId,
+    p_moves: [{ event_id: eventId, from_date: fromDate, to_date: newDate }],
+  });
+  if (rpcError) throw translateMoveRpcError(rpcError);
+}
 
-  if (updateError) throw updateError;
+/**
+ * The function's refusal in the coach's sentences. A duplicate takes two moves,
+ * so a single drag cannot raise one; it fails like an unrecognised refusal.
+ */
+function translateMoveRpcError(error: MoveRpcError): Error {
+  const failure = readMoveRpcError(error);
+  switch (failure.kind) {
+    case "drift":
+      return new CalendarMoveDriftError(MOVE_DRIFT_MESSAGE);
+    case "occupied":
+      return new DateOccupiedError(occupiedMessage(failure.date));
+    case "not_found":
+      return new CalendarMoveNotFoundError("Event not found");
+    case "not_scheduled":
+      return new Error("Only scheduled events can be moved");
+    case "duplicate":
+    case "other":
+      return new Error(`Failed to move event: ${error.message ?? ""}`);
+  }
 }
 
 /**

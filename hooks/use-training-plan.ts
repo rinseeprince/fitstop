@@ -1,72 +1,90 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { toast } from "sonner";
-import type { TrainingPlan } from "@/types/training";
+import { useCallback } from "react";
+import useSWR, { useSWRConfig } from "swr";
+import { swrFetcher } from "@/lib/swr-fetcher";
 import { parseGetPlanResponse } from "@/lib/validations/training";
 
 type UseTrainingPlanProps = {
   clientId: string;
 };
 
+/** The GET's body, as its validator parses it. */
+type GetPlanApiResponse = NonNullable<ReturnType<typeof parseGetPlanResponse>>;
+
+/** The Training tab's plan read. The key sits inside the training area
+ *  (`/api/clients/{id}/training`), so `useInvalidateTrainingData`
+ *  (hooks/use-calendar-events.ts) reaches it: every calendar write revalidates
+ *  it in place. Never build this key elsewhere. */
+export function trainingPlanKey(clientId: string): string {
+  return `/api/clients/${clientId}/training`;
+}
+
+async function fetchTrainingPlan(url: string): Promise<GetPlanApiResponse> {
+  const data = parseGetPlanResponse(await swrFetcher(url));
+  if (!data) throw new Error("Invalid response from server");
+  return data;
+}
+
+/** The server's own sentence when it sent one, else the error's. */
+function loadErrorMessage(error: unknown): string {
+  const info = (error as { info?: { error?: unknown } } | null)?.info;
+  if (typeof info?.error === "string") return info.error;
+  return error instanceof Error ? error.message : "Failed to load training plan";
+}
+
 /**
  * Reads a client's active training plan for the coach-side Training tab.
  *
  * Read-only: authoring lives in the Programs builder (`ProgramDraftProvider`),
  * and a plan reaches a client's calendar through placement, not through here.
+ * `isPending` is "no answer yet" — the first load, or a cleared entry
+ * refetching — and every surface reading the plan renders its frame with the
+ * values pending rather than claiming a plan or its absence. A revalidation
+ * keeps the answer in hand, so a refresh never flashes.
  */
 export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
-  const [plan, setPlan] = useState<TrainingPlan | null>(null);
-  // Set only when `plan` is a program that has not started yet. Without it the
-  // hero cannot tell a running program from a queued one and reports both as
-  // active — which is how a retired future plan passed for the current one.
-  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
-  const [clientTimezone, setClientTimezone] = useState<string | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  const fetchPlan = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const res = await fetch(`/api/clients/${clientId}/training`);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch plan: ${res.status}`);
-      }
-      const rawData = await res.json();
-      const data = parseGetPlanResponse(rawData);
-      if (!data) {
-        console.error("Invalid API response structure:", rawData);
-        throw new Error("Invalid response from server");
-      }
-      if (data.success) {
-        setPlan(data.plan || null);
-        setScheduledFor(data.scheduledFor ?? null);
-        setClientTimezone(data.clientTimezone);
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to load training plan";
-      console.error("Failed to fetch training plan:", error);
-      setLoadError(errorMessage);
-      toast.error("Error loading plan", {
-        description: errorMessage,
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [clientId]);
-
-  useEffect(() => {
-    fetchPlan();
-  }, [fetchPlan]);
+  const { data, error, mutate } = useSWR<GetPlanApiResponse>(
+    trainingPlanKey(clientId),
+    fetchTrainingPlan,
+    {
+      revalidateOnFocus: false,
+      errorRetryCount: 3,
+      errorRetryInterval: 1000,
+      onError: (err) => console.error("Failed to fetch training plan:", err),
+    },
+  );
+  // A wrapper, not the bound `mutate` itself: handed to a click or a callback,
+  // `mutate` would take that argument as the cache's new data.
+  const refresh = useCallback(() => mutate(), [mutate]);
 
   return {
     clientId,
-    plan,
-    scheduledFor,
-    clientTimezone,
-    isLoading,
-    loadError,
-    fetchPlan,
+    plan: data?.plan ?? null,
+    // Set only when `plan` is a program that has not started yet. Without it the
+    // hero cannot tell a running program from a queued one and reports both as
+    // active — which is how a retired future plan passed for the current one.
+    scheduledFor: data?.scheduledFor ?? null,
+    clientTimezone: data?.clientTimezone,
+    isPending: data === undefined,
+    // Only while there is no answer to show: a failed revalidation keeps the
+    // plan on screen.
+    loadError: data === undefined && error ? loadErrorMessage(error) : null,
+    refresh,
   };
+}
+
+/**
+ * Drops the plan read and refetches it. A write that changes which plan the
+ * tab describes — an apply, a delete — calls this, because the hero renders a
+ * definite answer and a revalidation would serve the stale one for the whole
+ * refetch (CONVENTIONS §7).
+ */
+export function useClearTrainingPlan() {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    (clientId: string) =>
+      mutate(trainingPlanKey(clientId), undefined, { revalidate: true }),
+    [mutate],
+  );
 }

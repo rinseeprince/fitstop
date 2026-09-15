@@ -22,7 +22,7 @@ import { PlanStateChip } from "./plan-state-chip";
 // facts read. Every plan and version starting in the block is listed with its
 // RANGE — the row's own window, start to end — and the state the wire stamped
 // (Active / Planned / Ended), while the columns above headline one entry per
-// track. Block boundaries are a single date. Plan amendments are invisible by
+// track. Block boundaries are a single date. Edits to a plan are invisible by
 // design (audit_logs has no readers).
 
 /**

@@ -224,8 +224,8 @@ export const getNextFutureTrainingPlan = async (
  * (`resolveNutritionPlacementEnd`), used when the client has no block
  * declaring a bound.
  *
- * The end is on the row (migration 167) — a placement decides it, the
- * amendment, the block extension and the block shorten move it, and a later
+ * The end is on the row (migration 167) — a placement decides it, the plan
+ * editor's save and the block shorten move it, and a later
  * placement caps it — so this is one read for the furthest `effective_until`
  * among the client's live programs. Same two exclusions as
  * `getNextFutureTrainingPlan` and `getTrainingPlansOverlapping`, for the same

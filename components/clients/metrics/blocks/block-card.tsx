@@ -44,15 +44,15 @@ type BlockCardProps = {
    *  expand toggle (buttons cannot nest). */
   rowAction?: React.ReactNode;
   /** The Journey round trip (7.3/7.4, H): the Training / Nutrition facts are
-   *  the way into the apply and plan flows — the empty state's "place one" /
-   *  "set targets", and the set state's "update plan" / "update targets"
-   *  beside the value on its own line, which place a NEW plan from the block's
-   *  first available day and supersede the standing one from there (never the
-   *  amendment, which edits a placed program in place). One handler per track
-   *  serves both states, in one grammar. Undefined, or a block that fails
-   *  blockAcceptsSetup, leaves the empty state as plain text and the set state
-   *  without its action. */
+   *  the way into the apply and plan flows, beside the value on its line, in
+   *  one grammar. Training: the empty state's "place one" and an ended
+   *  headline's "update plan" open the program list (`onPlaceProgram`); a
+   *  running or planned headline's "edit plan" opens the plan editor on that
+   *  plan (`onEditPlan`). Nutrition: "set targets" / "update targets" open the
+   *  targets drawer (`onSetNutrition`). Undefined, or a block that fails
+   *  blockAcceptsSetup, leaves the value as plain text. */
   onPlaceProgram?: () => void;
+  onEditPlan?: (planId: string) => void;
   onSetNutrition?: () => void;
   /** The per-plan delete (C3): a hover-revealed destructive icon on the
    *  timeline's active and upcoming rows, on the same gate as the way in
@@ -139,9 +139,9 @@ function NutritionValue({ fact }: { fact: BlockNutritionFact }) {
 }
 
 /**
- * ONE gate per track, consulted once: the handler reaches the empty state's
- * "place one" and the set state's "update plan" together, or neither — so the
- * two affordances cannot drift apart on which blocks offer them.
+ * ONE gate per track, consulted once: blockAcceptsSetup decides for every door
+ * on the column together — "place one", "edit plan" and "update plan" — so
+ * they cannot drift apart on which blocks offer them.
  */
 function TrainingColumn({
   block,
@@ -149,12 +149,14 @@ function TrainingColumn({
   factsLoading,
   factsError,
   onPlaceProgram,
+  onEditPlan,
 }: Pick<
   BlockCardProps,
-  "block" | "facts" | "factsLoading" | "factsError" | "onPlaceProgram"
+  "block" | "facts" | "factsLoading" | "factsError" | "onPlaceProgram" | "onEditPlan"
 >) {
-  const setUp =
-    onPlaceProgram && blockAcceptsSetup(block) ? onPlaceProgram : undefined;
+  const accepts = blockAcceptsSetup(block);
+  const setUp = onPlaceProgram && accepts ? onPlaceProgram : undefined;
+  const edit = onEditPlan && accepts ? onEditPlan : undefined;
   if (factsError) {
     return <p className="text-xs text-[#93b0b4]">Unavailable</p>;
   }
@@ -164,9 +166,10 @@ function TrainingColumn({
   // ONE entry — the headline: the plan in force today, else the next one
   // queued in the block, else the last one that ran, so a program that ended
   // early with nothing after it still headlines its block, as ended, with the
-  // door beside it (owner, 2026-09-11). The wire's whole list feeds the
-  // timeline below. The way in rides the headline's line — the position the
-  // empty state's line holds — and the state chip sits after the value only
+  // door beside it. The wire's whole list feeds the timeline below. The way in
+  // rides the headline's line — the position the empty state's line holds: a
+  // running or planned plan opens in the plan editor, an ended one can't, so
+  // its door is the program list. The state chip sits after the value only
   // when the headline is not in force: a running block's header already says
   // it is running. Under the value, the plan's own range, in the grammar the
   // card's header spells the block's.
@@ -186,11 +189,15 @@ function TrainingColumn({
       )}
     </span>
   );
+  const door =
+    shown.state === "ended"
+      ? setUp && { action: "update plan", onClick: setUp }
+      : edit && { action: "edit plan", onClick: () => edit(shown.id) };
   return (
     <div>
       <p className="text-xs">
-        {setUp ? (
-          <SetupPrompt state={value} action="update plan" onClick={setUp} />
+        {door ? (
+          <SetupPrompt state={value} action={door.action} onClick={door.onClick} />
         ) : (
           value
         )}

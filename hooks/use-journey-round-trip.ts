@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  readJourneyReturnBlock,
   readJourneyTrip,
   stripJourneyReturn,
   stripJourneyTrip,
@@ -66,15 +67,18 @@ export function useJourneyRoundTrip(surface: JourneyTripSurface): {
 }
 
 /**
- * The trip's other half for an ADDRESSED surface — the Training apply tray,
- * whose open state is `?apply=1` and never local. Only the return target is
- * one-shot here: on arrival with the trip the block is captured and the two
- * return params are stripped, and `?apply=1` stays as the tray's address. The
- * block survives the pick and the editor's arrow (both replace the address; the
- * state is untouched) and the host clears it on the X and on a hand open, so a
- * trip left behind cannot bounce a later, unrelated apply back to Journey.
+ * The trip's other half for an ADDRESSED surface — the Training apply tray and
+ * the plan editor, whose open state is their address (`?apply=1`,
+ * `?plan=<planId>`) and never local; the host says whether either is `open`.
+ * Only the return target is one-shot here: on arrival with the trip, while a
+ * surface is open, the block is captured and the two return params are
+ * stripped, and the surface's own param stays as its address. The block
+ * survives the pick and the client editor's arrow (both replace the address;
+ * the state is untouched) and the host clears it on the tray's X, the plan
+ * editor's arrow and a hand open, so a trip left behind cannot bounce a later,
+ * unrelated save back to Journey.
  */
-export function useJourneyReturnBlock(surface: JourneyTripSurface): {
+export function useJourneyReturnBlock(open: boolean): {
   returnBlockId: string | null;
   clearReturnBlock: () => void;
 } {
@@ -84,14 +88,13 @@ export function useJourneyReturnBlock(surface: JourneyTripSurface): {
   const consumed = useRef(false);
 
   useEffect(() => {
-    if (consumed.current) return;
-    const trip = readJourneyTrip(searchParams, surface);
+    if (consumed.current || !open) return;
     const stripped = stripJourneyReturn(searchParams.toString());
-    if (!trip.open || stripped === searchParams.toString()) return;
+    if (stripped === searchParams.toString()) return;
     consumed.current = true;
-    setReturnBlockId(trip.returnBlockId);
+    setReturnBlockId(readJourneyReturnBlock(searchParams));
     router.replace(`?${stripped}`, { scroll: false });
-  }, [searchParams, router, surface]);
+  }, [open, searchParams, router]);
 
   const clearReturnBlock = useCallback(() => setReturnBlockId(null), []);
 

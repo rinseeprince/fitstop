@@ -19,12 +19,25 @@ vi.mock("@/contexts/training-builder-context", () => ({
   useTrainingBuilderContext: () => ({
     clientId: "client-1",
     clientTimezone: "UTC",
-    fetchPlan: vi.fn(),
   }),
 }));
-// The editor branch is not under test here.
+// The editor branch: the provider stub exposes the apply callback it is
+// handed, fired the way the builder's apply dialog fires it.
 vi.mock("@/components/clients/training/program-builder/program-draft-provider", () => ({
-  ProgramDraftProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  ProgramDraftProvider: ({
+    children,
+    onApplied,
+  }: {
+    children: ReactNode;
+    onApplied?: () => void;
+  }) => (
+    <div data-testid="provider">
+      <button type="button" onClick={() => onApplied?.()}>
+        provider applied
+      </button>
+      {children}
+    </div>
+  ),
 }));
 vi.mock("@/components/clients/training/program-builder/program-builder", () => ({
   ProgramBuilder: () => null,
@@ -138,5 +151,36 @@ describe("the tray's template delete", () => {
     await waitFor(() => expect(plansMutate).toHaveBeenCalledTimes(1));
     expect(confirm()).toHaveAttribute("data-title", 'Delete "Template B"?');
     expect(confirm()).toHaveAttribute("data-confirm-label", "Delete");
+  });
+});
+
+// An apply hands the host the editor's entry to complete (the apply dialog
+// refreshed what reads the calendar).
+describe("an apply from the client editor", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("hands the host the entry", () => {
+    const onApplied = vi.fn();
+    render(
+      <TrainingPlanBuilderOverlay
+        trayOpen={false}
+        editorPlanId="plan-a"
+        onCloseTray={vi.fn()}
+        onPick={vi.fn()}
+        onExitEditor={vi.fn()}
+        onApplied={onApplied}
+      />,
+    );
+    expect(onApplied).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "provider applied" }));
+
+    expect(onApplied).toHaveBeenCalledTimes(1);
   });
 });

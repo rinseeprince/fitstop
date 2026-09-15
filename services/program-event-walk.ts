@@ -31,18 +31,6 @@ export type ProgramSlot = {
  * emits NO event, so a rest day never spawns a training_event (it still consumes
  * its date). Each slot references a distinct cloned session id and the
  * (client, session, date) upsert is idempotent.
- *
- * `startPosition` resumes the walk mid-program: the first calendar date maps to
- * programSlots[startPosition]. A plan amendment re-walks only the future window
- * (startDate = the today floor) while keeping every elapsed slot's date
- * arithmetic intact — slotPosition = daysBetween(effective_from, date).
- *
- * `skipPositions` are slots whose day is already accounted for by an event the
- * caller is deliberately preserving — the amendment's frozen positions, where a
- * session the client logged early keeps its original row. Relying on the upsert
- * arbiter instead would be wrong for a preserved event that has been MOVED: its
- * date no longer matches its slot's, nothing conflicts, and the session would be
- * written a second time on the slot's own day.
  */
 export async function generateProgramEvents(params: {
   clientId: string;
@@ -50,11 +38,8 @@ export async function generateProgramEvents(params: {
   programSlots: ProgramSlot[];
   startDate: string;
   endDate: string;
-  startPosition?: number;
-  skipPositions?: ReadonlySet<number>;
 }): Promise<number> {
-  const { clientId, planId, programSlots, startDate, endDate, startPosition, skipPositions } =
-    params;
+  const { clientId, planId, programSlots, startDate, endDate } = params;
 
   const slotCount = programSlots.length;
   if (slotCount === 0) return 0;
@@ -62,11 +47,11 @@ export async function generateProgramEvents(params: {
   const rows: TrainingEventInsert[] = [];
   const start = new Date(startDate + "T00:00:00");
   const end = new Date(endDate + "T00:00:00");
-  let slotPosition = startPosition ?? 0;
+  let slotPosition = 0;
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const slot = programSlots[slotPosition];
-    if (!slot.isRest && !skipPositions?.has(slotPosition)) {
+    if (!slot.isRest) {
       rows.push({
         client_id: clientId,
         training_plan_id: planId,
@@ -96,9 +81,9 @@ export async function generateProgramEvents(params: {
 
   if (error) {
     // The arbiter above does NOT cover migration 136's one-scheduled-per-day
-    // index, so a collision there arrives as a raw 23505. Both callers clear
-    // their window of scheduled events first, which is why neither pre-checks
-    // with assertDateFree — but a concurrent write between that clear and this
+    // index, so a collision there arrives as a raw 23505. Placement clears its
+    // window of scheduled events first, which is why it doesn't pre-check with
+    // assertDateFree — but a concurrent write between that clear and this
     // upsert can still land one, and a coach must never read Postgres.
     rethrowIfAnyDateOccupied(error);
     throw new Error(`Failed to generate events: ${error.message}`);
@@ -122,8 +107,8 @@ export type WindowCap = {
  * which case a placement fills to the cap rather than stopping at its own
  * length. A null cap means nothing bounds the program but itself.
  *
- * One question for placement and for the amendment, so the editor cannot let
- * a program outgrow the bound placement gave it.
+ * One question for placement and for the plan editor, so an edited program
+ * stays inside the bound placement gave it.
  */
 export async function resolveWindowCap(
   clientId: string,
@@ -152,9 +137,9 @@ export async function resolveWindowCap(
  * Capped, either way, at the day before the next coexisting program starts.
  *
  * Decided once, here, and stored on the row (migration 167): every reader
- * takes a program's end from `training_plans.effective_until`, and the three
- * writers that change a program's length — the amendment, the block extension
- * and the block shorten — move it under the same cap.
+ * takes a program's end from `training_plans.effective_until`, and the two
+ * writers that change a program's length — the plan editor's save and the
+ * block shorten — move it under the same cap.
  *
  * The block is not a maximum here: a block LONGER than the program stretches
  * the window and the caller repeats the program to fill it, a block SHORTER

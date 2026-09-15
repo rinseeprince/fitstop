@@ -29,6 +29,10 @@ import type { TrainingPlan, TrainingEvent } from "@/types/training";
 type TrainingCalendarViewProps = {
   clientId: string;
   plan: TrainingPlan | null;
+  /** The plan read has no answer yet. What depends on the plan — the
+   *  Delete-plan trigger, the week actions, a library session drop — stays on
+   *  screen and does nothing until it answers. */
+  planPending?: boolean;
   editMode: boolean;
   clientTimezone?: string;
   /** For the apply dialog's sentence under its date field. */
@@ -75,6 +79,7 @@ function buildWeeks(gridStart: Date, gridEnd: Date): string[][] {
 export function TrainingCalendarView({
   clientId,
   plan,
+  planPending = false,
   editMode,
   clientTimezone,
   onUpdate,
@@ -142,8 +147,8 @@ export function TrainingCalendarView({
   const { events, eventsByDate, isLoading, mutate } = useCalendarEvents(clientId, startDate, endDate);
 
   // Every write below refreshes the whole training AREA, not just this
-  // calendar's month window: the plan editor reads the same rows through the
-  // amendment GET, and a bound `mutate` cannot reach it.
+  // calendar's month window: the plan editor reads the same rows through its
+  // own read, and a bound `mutate` cannot reach it.
   const invalidateTrainingData = useInvalidateTrainingData();
 
   // A nutrition day is computed from the session on it (calorie targets track
@@ -171,6 +176,8 @@ export function TrainingCalendarView({
       // retargeting to the plan whose range covers `targetDate` (for dates in a
       // future coexisting plan) is deferred; the event still lands on the date.
       void (async () => {
+        // Which plan the session joins is not known yet: the drop does nothing.
+        if (planPending) return;
         if (!plan) {
           toast.error("No active plan", {
             description: "Generate a plan before dropping sessions from the library.",
@@ -352,6 +359,7 @@ export function TrainingCalendarView({
     weekStartDate: string,
     _action: WeekAction
   ) => {
+    if (planPending) return;
     const weekDays: string[] = [];
     const ws = new Date(weekStartDate + "T00:00:00");
     for (let d = 0; d < 7; d++) {
@@ -376,7 +384,7 @@ export function TrainingCalendarView({
       return;
     }
     showClearWeek(weekStartDate);
-  }, [clientToday, eventsByDate, weekRowPlanId, showClearWeek]);
+  }, [planPending, clientToday, eventsByDate, weekRowPlanId, showClearWeek]);
 
   const monthLabel = format(new Date(viewMonth.year, viewMonth.month, 1), "MMMM yyyy");
 
@@ -437,6 +445,7 @@ export function TrainingCalendarView({
           onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
           monthSessionCount={monthSessionCount}
           onDeleteFuture={onDeleteFuture}
+          deleteFutureDisabled={planPending}
         />
 
         <CalendarGrid
@@ -448,7 +457,7 @@ export function TrainingCalendarView({
           duplicateMode={!!pendingDuplicate}
           viewMonth={viewMonth.month}
           viewYear={viewMonth.year}
-          hasPlan={!!plan}
+          hasPlan={!!plan || planPending}
           weekRowPlanId={weekRowPlanId}
           onWeekAction={handleWeekAction}
           onCellClick={handleCellClick}

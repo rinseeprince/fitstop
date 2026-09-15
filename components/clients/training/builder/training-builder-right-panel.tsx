@@ -1,11 +1,8 @@
 "use client";
 
 import { memo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
-import { useCoachBack } from "@/hooks/use-coach-back";
 import { Loader2, AlertTriangle, RefreshCw } from "lucide-react";
-import { PageLoading } from "@/components/page-loading";
 import {
   Dialog,
   DialogContent,
@@ -16,75 +13,53 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
-import { usePlacedPlan } from "@/hooks/use-placed-plan";
+import { useClearTrainingPlan } from "@/hooks/use-training-plan";
 import { TrainingCalendarView } from "../calendar/training-calendar-view";
-import { PlanAmendmentOverlay } from "./plan-amendment-overlay";
 import { TrainingPlanHero } from "@/components/clients/training/training-plan-hero";
 
 type TrainingBuilderRightPanelProps = {
   clientId: string;
   clientName?: string;
   onOpenGenerator?: () => void;
+  /** The hero's "Edit plan": the host opens the plan editor on this plan. */
+  onEditPlan?: (planId: string) => void;
 };
 
-// The Plans-subtab surface: dark hero (both branches) + the month calendar.
-// Owns the client-level "Delete training plan" flow (relocated from the
-// old TopContentBar) — the trigger renders in the calendar toolbar's
-// Schedule divider, the confirm dialog lives here — and the plan-amendment
-// entry point, the hero's "Edit plan", which opens the full-screen amendment
-// overlay. It is the ONLY entry point on purpose: the overlay amends
-// `builder.plan` (the plan this panel owns), and the hero describes exactly
-// that plan. The placed-session tray used to offer "Edit whole plan" too, but
-// the tray opens from an arbitrary calendar event — with coexisting plans the
-// calendar shows events from more than one — so it opened the amendment
-// editor for the current program when the coach was looking at a session of
-// an upcoming one. Do not re-add a tray entry that does not resolve the
-// EVENT's plan.
+// The Plans-subtab surface: the dark hero (every branch — a plan, none, or the
+// read still pending) + the month calendar. Owns the client-level "Delete
+// training plan" confirm; its trigger renders in the calendar toolbar's
+// Schedule divider. The hero's "Edit plan" asks the host to open the plan
+// editor on the plan the hero shows, `builder.plan`. Any whole-plan entry
+// elsewhere must resolve the EVENT's plan, never `builder.plan`: the
+// placed-session tray opens from an arbitrary calendar event, and with
+// coexisting programs the calendar shows events from more than one plan.
+//
+// The structure always renders: while the plan read is pending the hero holds
+// placeholders and the calendar disables what depends on the plan, so nothing
+// here waits on the read but the error card.
 export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel({
   clientId,
   clientName,
   onOpenGenerator,
+  onEditPlan,
 }: TrainingBuilderRightPanelProps) {
   const builder = useTrainingBuilderContext();
   const { editMode, setEditMode } = builder;
+  const invalidateTrainingData = useInvalidateTrainingData();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearBlockFacts = useClearBlockFacts();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
+  const clearTrainingPlan = useClearTrainingPlan();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
 
-  // The amendment GET (shared SWR key with the overlay, so opening the editor
-  // never double-fetches) — here only for the fully-past gate on the entry
-  // points: an ended plan can't be amended ("apply a new program" is the
-  // gesture).
-  const planId = builder.plan?.id ?? null;
-  const { placedPlan } = usePlacedPlan(clientId, planId);
-  const isFullyPast = placedPlan?.isFullyPast ?? false;
-
-  // The amendment editor is a PLACE: `?amend=<planId>`, read unconditionally,
-  // pushed by "Edit plan" so browser Back closes it onto the calendar; its own
-  // arrow and a save pop the entry the same way, and a pasted address falls
-  // back to a replace.
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const amendOpen = planId != null && searchParams.get("amend") === planId;
-  const openAmend = planId
-    ? () => {
-        const params = new URLSearchParams(searchParams.toString());
-        params.set("amend", planId);
-        router.push(`?${params.toString()}`, { scroll: false });
-      }
-    : undefined;
-  const closeAmend = useCoachBack(() => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("amend");
-    router.replace(`?${params.toString()}`, { scroll: false });
-  });
+  const plan = builder.plan;
 
   const handleClearPlan = async () => {
     if (!builder.plan) return;
@@ -102,15 +77,19 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
       // The Journey block cards are DERIVED from these rows, so they now claim a
       // program that is gone. Cleared rather than revalidated: they render a
       // definite answer, and SWR serves the stale one for the whole refetch
-      // (CONVENTIONS §7).
+      // (CONVENTIONS §7). The hero's plan read likewise: the delete changes
+      // which plan it describes.
       void clearBlockFacts(clientId);
       void clearClientOverview(clientId);
       void clearAttentionFeed();
+      void clearTrainingPlan(clientId);
       setShowClearConfirm(false);
+      // The calendar stays on screen through the delete and still holds the
+      // sessions it removed, so the training area refetches in place.
+      void invalidateTrainingData(clientId);
       // The nutrition month view is computed from the sessions this removed
       // and is SWR-cached, so it must refetch.
       void invalidateNutritionCalendar(clientId);
-      await builder.fetchPlan();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to clear plan";
       toast.error("Error", { description: message });
@@ -119,12 +98,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
     }
   };
 
-  // Loading state
-  if (builder.isLoading) {
-    return <PageLoading label="Loading training plan…" />;
-  }
-
-  // Error state
+  // The first load failed: nothing to show but the error.
   if (builder.loadError) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -138,7 +112,7 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
           {builder.loadError}
         </p>
         <button
-          onClick={() => builder.fetchPlan()}
+          onClick={() => void builder.refresh()}
           className="inline-flex items-center gap-1.5 rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5a7d82] transition-colors hover:bg-[#f0f5f4]"
         >
           <RefreshCw className="h-3.5 w-3.5" />
@@ -148,40 +122,32 @@ export const TrainingBuilderRightPanel = memo(function TrainingBuilderRightPanel
     );
   }
 
-  // Calendar is always visible — the hero owns both plan/empty branches.
-  // space-y-4 = the divider spec's 16px above the calendar toolbar.
+  // Calendar is always visible — the hero owns the plan, empty and pending
+  // branches. space-y-4 = the divider spec's 16px above the calendar toolbar.
   return (
     <div className="space-y-4">
       <TrainingPlanHero
         clientId={clientId}
         onOpenGenerator={onOpenGenerator}
-        onEditPlan={openAmend}
-        editPlanDisabledReason={
-          isFullyPast ? "This plan has ended — apply a new program instead" : null
-        }
+        onEditPlan={plan && onEditPlan ? () => onEditPlan(plan.id) : undefined}
       />
 
       <TrainingCalendarView
         clientId={clientId}
-        plan={builder.plan ?? null}
+        plan={plan}
+        planPending={builder.isPending}
         editMode={editMode}
         clientTimezone={builder.clientTimezone}
         clientName={clientName}
-        onUpdate={builder.fetchPlan}
+        // A move changes the plan read's inputs but not its answer, so it is
+        // revalidated in place — nothing flashes.
+        onUpdate={builder.refresh}
         onEditModeChange={setEditMode}
+        // Held (disabled by the calendar) while the read is pending, so the
+        // trigger never leaves and comes back.
         onDeleteFuture={
-          builder.plan ? () => setShowClearConfirm(true) : undefined
+          plan || builder.isPending ? () => setShowClearConfirm(true) : undefined
         }
-      />
-
-      <PlanAmendmentOverlay
-        open={amendOpen}
-        onOpenChange={(next) => {
-          if (!next) closeAmend();
-        }}
-        clientId={clientId}
-        planId={planId}
-        clientName={clientName}
       />
 
       <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>

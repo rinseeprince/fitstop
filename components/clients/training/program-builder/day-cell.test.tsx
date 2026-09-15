@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { DndContext } from "@dnd-kit/core";
-import { MOVED_PAST_LOCKED, PAST_LOCKED } from "./program-builder-lock-model";
+import { PAST_LOCKED } from "./program-builder-lock-model";
 import { DayCell } from "./day-cell";
 import type { DaySlotDraft, SessionDraft } from "./program-builder-types";
 
@@ -143,7 +143,7 @@ describe("DayCell — session state", () => {
   });
 });
 
-describe("DayCell — locked (placed-plan history)", () => {
+describe("DayCell — the plan editor's locked, greyed and today days", () => {
   beforeEach(() => cleanup());
 
   it("a locked rest cell is inert: no add affordance, no popover on click", () => {
@@ -166,17 +166,34 @@ describe("DayCell — locked (placed-plan history)", () => {
     expect(screen.queryByLabelText("Drag session")).not.toBeInTheDocument();
   });
 
-  // A cell locked because its session was MOVED sits in a column whose own day
-  // is still ahead, so the generic "that day has already happened" would read as
-  // a bug rather than an explanation.
-  it("explains a move-locked card differently from an elapsed one", () => {
+  // The grid marks a greyed day locked as well (the day rules' `beyond` is part
+  // of `locked`), so the cell gets both.
+  it("a greyed rest cell shows no Rest label and offers no add", () => {
+    const handlers = renderCell({ locked: true, greyed: true });
+    const cell = document.querySelector<HTMLElement>(".group\\/rest");
+    expect(cell).toHaveClass("bg-[rgba(147,176,180,0.12)]");
+    expect(screen.queryByText("Rest")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Add session to day 1")).not.toBeInTheDocument();
+    expect(screen.queryByText("Add session")).not.toBeInTheDocument();
+    fireEvent.click(cell!);
+    expect(handlers.onRequestAddSession).not.toHaveBeenCalled();
+  });
+
+  it("rings today's cell, rest or session", () => {
+    renderCell({ isToday: true });
+    expect(screen.getByLabelText("Add session to day 1")).toHaveClass("ring-1", "ring-[#0d9488]");
+    cleanup();
+
     renderCell({
-      locked: true,
-      lockedBecauseMoved: true,
+      isToday: true,
       slot: makeSlot({ isRest: false, session: makeSession() }),
     });
-    expect(screen.getByTitle(MOVED_PAST_LOCKED)).toBeInTheDocument();
-    expect(screen.queryByTitle(PAST_LOCKED)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Open session Push")).toHaveClass("ring-1", "ring-[#0d9488]");
+    cleanup();
+
+    // Any other day carries no ring.
+    renderCell({ slot: makeSlot({ isRest: false, session: makeSession() }) });
+    expect(screen.getByLabelText("Open session Push")).not.toHaveClass("ring-1");
   });
 
   it("a locked session card STAYS clickable (opens the editor read-only)", () => {

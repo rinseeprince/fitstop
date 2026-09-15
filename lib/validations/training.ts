@@ -171,26 +171,23 @@ export const savedSessionInputSchema = z.object({
   exercises: z.array(savedExerciseInputSchema).max(50),
 });
 
-// Amend a PLACED plan's future (PUT .../training/[planId]/amendment). The body
-// is the WHOLE program grid — the server recomputes the elapsed boundary itself
-// and ignores incoming content at past positions, so a stale client cannot
-// rewrite history. min(7): whole weeks only (the serializer emits weekIndex*7+day
-// slots); an all-rest future is legal (an explicit deload). expectedToken is the
-// drift token from the amendment GET — a mismatch means the plan, its events, or
-// the client's "today" moved since the coach loaded the editor (409).
-export const amendPlacedPlanSchema = z.object({
+// Save the plan editor (PUT .../training/[planId]/edit). The body is the WHOLE
+// grid — slot i is the plan's day effective_from + i — and the server decides
+// which of its days are written, so a stale editor cannot rewrite a past day.
+// min(7): whole weeks only (the serializer emits weekIndex*7+day slots).
+// `version` is the read's, sent back unchanged: the save is refused (409) when
+// anything the editor was built from changed.
+export const planEditSaveSchema = z.object({
   sessions: z.array(savedSessionInputSchema).min(7).max(364),
-  plan: z
-    .object({
-      name: z.string().min(1).max(100).optional(),
-      // Free-text program focus (stored in split_type) — same shape as
-      // updateSavedPlanSchema/overwriteSavedPlanSchema.
-      splitType: z.string().max(100).nullish(),
-    })
-    .optional(),
-  expectedToken: z.string().min(1).max(300),
+  plan: z.object({
+    name: z.string().min(1).max(100),
+    // Free-text program focus (stored in split_type) — same shape as
+    // updateSavedPlanSchema/overwriteSavedPlanSchema.
+    splitType: z.string().max(100).nullish(),
+  }),
+  version: z.string().min(1).max(500_000),
 });
-export type AmendPlacedPlanBody = z.infer<typeof amendPlacedPlanSchema>;
+export type PlanEditSaveBody = z.infer<typeof planEditSaveSchema>;
 
 export const updateSavedPlanSchema = z.object({
   name: z.string().min(1).max(100).optional(),

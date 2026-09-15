@@ -18,8 +18,7 @@ import { assertSessionUnlogged } from "./training-event-occupancy";
  * (migration 121), so "every future occurrence" is normally ONE event; a
  * per-event duplicate is the only way it becomes more.
  *
- * Also sets is_modified=true so the amendment's re-lay doesn't overwrite the
- * coach's deliberate edit.
+ * Also sets is_modified=true, which marks the day edited on the calendar.
  *
  * Nutrition follows on its own: a day's target reads the surplus off the
  * event, so the days this touches re-price the moment the update lands.

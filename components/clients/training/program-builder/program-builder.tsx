@@ -26,7 +26,7 @@ import {
 import { savedSessionToDraft } from "./program-builder-serialize";
 import { defaultExerciseDraftFromCatalog, findSession } from "./program-builder-model";
 import { isSessionLocked } from "./program-builder-lock-model";
-import { AmendConfirmDialog, AmendDriftDialog } from "./amend-plan-dialogs";
+import { PlanEditConfirmDialog, PlanEditStaleDialog } from "./plan-edit-dialogs";
 import { useProgramDnd } from "./use-program-dnd";
 import { useSaveDayAsWorkout } from "./use-save-day-as-workout";
 import { useProgramDraft } from "./program-draft-provider";
@@ -58,17 +58,16 @@ type ProgramBuilderProps = {
   onExit?: () => void;
 };
 
-/** The one line the placed-plan editor shows about how far the program may
- *  grow — the same bound the amendment PUT refuses past. */
-function windowCapNotice(cap: WindowCap): string {
-  const dayAfter = formatDateOnlyShort(addDaysToDateString(cap.endsOn, 1));
-  switch (cap.source) {
+/** The plan editor's one line on why days past the plan's limit are greyed. */
+function limitNotice(limit: WindowCap): string {
+  const dayAfter = formatDateOnlyShort(addDaysToDateString(limit.endsOn, 1));
+  switch (limit.source) {
     case "block":
-      return `This block ends ${formatDateOnlyShort(cap.endsOn)}. Weeks past it cannot be placed.`;
+      return `This block ends ${formatDateOnlyShort(limit.endsOn)}. Days after it are greyed out.`;
     case "next_block":
-      return `The next block starts ${dayAfter}. Weeks reaching into it cannot be placed.`;
+      return `The next block starts ${dayAfter}. Days from then are greyed out.`;
     case "next_plan":
-      return `The next program starts ${dayAfter}. Weeks reaching into it cannot be placed.`;
+      return `The next program starts ${dayAfter}. Days from then are greyed out.`;
   }
 }
 
@@ -85,6 +84,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     plan,
     isPlanLoading,
     draft,
+    seedCount,
     isDirty,
     mode,
     setMode,
@@ -110,13 +110,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     reorderExercise,
     editSetSpec,
     insertWeekAfter,
-    lockedSlotUids,
-    movedPastSlotUids,
-    fullyLocked,
-    futureModifiedEvents,
-    windowCap,
+    dayRules,
+    limit,
     placedLoadError,
-    amend,
+    planSave,
   } = useProgramDraft();
 
   // Client-draft mode (Phase 5): the shared builder mounted inside the coach's
@@ -125,9 +122,10 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   // programs" link) is swapped for an Apply-to-client flow; the template is
   // never mutated — Apply materializes the edited copy onto the client's
   // calendar.
-  // Placed-plan mode (Job 2): the same builder over a client's LIVE placed
-  // program — past slots locked, identity editable, saves go through the
-  // amendment PUT ("Save changes to plan").
+  // Placed-plan mode is the plan editor: the same builder over a client's
+  // program as laid on the calendar — days before the first editable day
+  // locked, days past the plan's limit greyed, identity editable — saved
+  // through the plan editor's PUT ("Save changes to plan").
   const isClientDraft = target === "client-draft";
   const isPlacedPlan = target === "placed-plan";
   const isLibrary = target === "library";
@@ -179,7 +177,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     moveSession,
     placeLibrarySession,
     placeLibraryExercise,
-    lockedSlotUids: isPlacedPlan ? lockedSlotUids : undefined,
+    lockedSlotUids: dayRules?.locked,
   });
   const { isSavingWorkout, saveDayAsWorkout } = useSaveDayAsWorkout(draft);
 
@@ -307,6 +305,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
             <div className="flex min-h-0 min-w-0 flex-1 flex-col px-6 pt-5">
               <ProgramTopBar
                 draft={draft}
+                seedCount={seedCount}
                 mode={mode}
                 identityEditable={!isClientDraft}
                 // A placed plan has no inheritable default — placement resolved
@@ -345,18 +344,17 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                         affordance for an editor surface (owner call; codified in
                         docs/newdesignsystem.md → Buttons). Same slot + look as
                         the library save; commit leftmost, destructive rightmost.
-                        fullyLocked: an ended plan has nothing future to rewrite;
                         assistantBusy mirrors the library save. */}
                     {isPlacedPlan && mode === "edit" && (
                       <button
                         type="button"
                         aria-label="Save changes to plan"
                         title="Save changes to plan"
-                        disabled={!isDirty || amend.isAmending || assistantBusy || fullyLocked}
+                        disabled={!isDirty || planSave.isSaving || assistantBusy}
                         className="rounded p-1 text-[#0d9488] transition-colors hover:text-[#0b7f75] disabled:opacity-50"
-                        onClick={amend.request}
+                        onClick={planSave.request}
                       >
-                        {amend.isAmending ? (
+                        {planSave.isSaving ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -448,25 +446,18 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                   </div>
                 }
               />
-              {isPlacedPlan && fullyLocked && (
+              {isPlacedPlan && limit && (
+                // The plan stays inside its limit — the block's end, else the
+                // day before the next block or program — and the grid greys
+                // the days past it; this line says why.
                 <div className="mb-2 rounded-[6px] border border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] px-3 py-2 text-[12.5px] text-[#0a5c55]">
-                  This plan has ended — nothing left to edit. Apply a new program
-                  to continue.
-                </div>
-              )}
-              {isPlacedPlan && !fullyLocked && windowCap && (
-                // The grid may keep its end but may not grow past the bound
-                // placement gave it (migration 167); the save refuses weeks past
-                // it with the same date, so the coach reads it here first.
-                <div className="mb-2 rounded-[6px] border border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] px-3 py-2 text-[12.5px] text-[#0a5c55]">
-                  {windowCapNotice(windowCap)}
+                  {limitNotice(limit)}
                 </div>
               )}
               <ProgramGrid
                 draft={draft}
                 mode={mode}
-                lockedSlotUids={isPlacedPlan ? lockedSlotUids : undefined}
-                movedPastSlotUids={isPlacedPlan ? movedPastSlotUids : undefined}
+                dayRules={dayRules ?? undefined}
                 collapsedWeeks={collapsedWeeks}
                 onToggleCollapse={(weekUid) =>
                   setCollapsedWeeks((prev) => {
@@ -543,12 +534,12 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
       <SessionEditorSheet
         open={sessionSheetOpen}
         session={editingSession}
-        // A locked (elapsed / already-logged) session opens read-only — its
-        // day is history; the locked mutators would refuse edits anyway.
+        // A session on a locked day opens read-only — the guarded mutators
+        // would refuse its edits anyway.
         mode={
           editingSession &&
-          isPlacedPlan &&
-          isSessionLocked(draft, lockedSlotUids, editingSession.uid)
+          dayRules &&
+          isSessionLocked(draft, dayRules.locked, editingSession.uid)
             ? "view"
             : mode
         }
@@ -682,22 +673,20 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         hideLauncher={sessionSheetOpen}
       />
 
-      {/* Placed-plan save flow (Job 2): confirm (with the moved-events
-          warning) → PUT; a 409 opens the drift dialog with the draft intact. */}
+      {/* The plan editor's save: confirm → PUT; a 409 (the calendar changed
+          since the editor opened) opens the refusal with the draft intact. */}
       {isPlacedPlan && (
         <>
-          <AmendConfirmDialog
-            open={amend.confirmOpen}
-            onOpenChange={amend.setConfirmOpen}
-            clientName={clientName}
-            futureModifiedEvents={futureModifiedEvents}
-            isAmending={amend.isAmending}
-            onConfirm={() => void amend.confirm()}
+          <PlanEditConfirmDialog
+            open={planSave.confirmOpen}
+            onOpenChange={planSave.setConfirmOpen}
+            isSaving={planSave.isSaving}
+            onConfirm={() => void planSave.confirm()}
           />
-          <AmendDriftDialog
-            open={amend.driftOpen}
-            onOpenChange={amend.setDriftOpen}
-            onReload={amend.reloadAndDiscard}
+          <PlanEditStaleDialog
+            open={planSave.staleOpen}
+            onOpenChange={planSave.setStaleOpen}
+            onReload={planSave.reloadAndDiscard}
           />
         </>
       )}

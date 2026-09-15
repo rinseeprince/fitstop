@@ -47,6 +47,10 @@ export function useProgramBuilderState() {
   const draftRef = useRef<ProgramDraft | null>(null);
   const isDirtyRef = useRef(false);
   const revisionRef = useRef(0);
+  // One per seed: a seed is a new document even when it is the same program
+  // (the plan editor's discard and reload re-seed without leaving edit mode),
+  // so inputs that hold their own text key on it to start again from the seed.
+  const [seedCount, setSeedCount] = useState(0);
 
   const apply = useCallback(
     (reducer: (current: ProgramDraft) => ProgramDraft) => {
@@ -68,6 +72,7 @@ export function useProgramBuilderState() {
     const normalized = normalizeDraft(next);
     draftRef.current = normalized;
     setDraft(normalized);
+    setSeedCount((count) => count + 1);
     isDirtyRef.current = false;
     setIsDirty(false);
   }, []);
@@ -406,6 +411,7 @@ export function useProgramBuilderState() {
     draft,
     isDirty,
     seed,
+    seedCount,
     getRevision,
     getDraft,
     getDirty,

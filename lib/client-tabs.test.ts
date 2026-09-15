@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildClientTabUrl,
   checkInReviewUrl,
+  journeyPlanTripParams,
   paneParamSearch,
+  readJourneyReturnBlock,
   resolvePaneParam,
   stripJourneyReturn,
   stripJourneyTrip,
@@ -50,12 +52,14 @@ describe("buildClientTabUrl", () => {
     const url = buildClientTabUrl(
       "c1",
       "metrics",
-      "tab=training&training=plans&apply=1&editor=sp-1&amend=p-1"
+      "tab=training&training=plans&apply=1&editor=sp-1&plan=p-1"
     );
-    expect(url).not.toContain("apply");
-    expect(url).not.toContain("editor");
-    expect(url).not.toContain("amend");
-    expect(url).toContain("training=plans");
+    const params = new URLSearchParams(url.split("?")[1]);
+    expect(params.has("apply")).toBe(false);
+    expect(params.has("editor")).toBe(false);
+    expect(params.has("plan")).toBe(false);
+    expect(params.get("training")).toBe("plans");
+    expect(params.get("tab")).toBe("metrics");
   });
 
   it("extraParams address a pane on arrival, overriding a carried value", () => {
@@ -181,6 +185,54 @@ describe("the round trip's strips", () => {
 
   it("stripJourneyTrip removes the surface's one-shot as well", () => {
     expect(stripJourneyTrip(trip, "apply")).toBe("tab=training&training=plans");
+  });
+});
+
+// Journey's "edit plan": the block card sends the coach to the plan editor on
+// the plan it heads, knowing the way back to the block.
+describe("journeyPlanTripParams", () => {
+  it("addresses the plan editor on the plan, with the trip back to the block", () => {
+    expect(journeyPlanTripParams("p-9", "blk-7")).toEqual({
+      plan: "p-9",
+      returnTo: "journey",
+      returnBlock: "blk-7",
+    });
+  });
+
+  it("lands through the tab change with the plan editor open: a carried plan goes, the addressed one stays", () => {
+    const url = buildClientTabUrl("c1", "training", "tab=metrics&journey=blocks&plan=p-old", {
+      training: "plans",
+      ...journeyPlanTripParams("p-9", "blk-7"),
+    });
+    const params = new URLSearchParams(url.split("?")[1]);
+    expect(params.get("tab")).toBe("training");
+    expect(params.get("training")).toBe("plans");
+    expect(params.getAll("plan")).toEqual(["p-9"]);
+    expect(params.get("returnTo")).toBe("journey");
+    expect(params.get("returnBlock")).toBe("blk-7");
+    // The plan editor is its own place: the trip opens no tray.
+    expect(params.has("apply")).toBe(false);
+  });
+});
+
+describe("readJourneyReturnBlock", () => {
+  const search = (q: string) => new URLSearchParams(q);
+
+  it("returns the block a Journey trip names, whatever surface it opened", () => {
+    expect(readJourneyReturnBlock(search("apply=1&returnTo=journey&returnBlock=blk-7"))).toBe(
+      "blk-7"
+    );
+    expect(readJourneyReturnBlock(search("plan=p-9&returnTo=journey&returnBlock=blk-7"))).toBe(
+      "blk-7"
+    );
+  });
+
+  it("returns null for a return target naming something else, or none", () => {
+    expect(readJourneyReturnBlock(search("plan=p-9&returnTo=elsewhere&returnBlock=blk-7"))).toBe(
+      null
+    );
+    expect(readJourneyReturnBlock(search("plan=p-9&returnBlock=blk-7"))).toBe(null);
+    expect(readJourneyReturnBlock(search("plan=p-9&returnTo=journey"))).toBe(null);
   });
 });
 

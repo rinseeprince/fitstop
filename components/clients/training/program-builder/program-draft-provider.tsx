@@ -6,6 +6,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -25,7 +26,12 @@ import { useSetSpecMutations, type SetSpecEdit } from "./use-set-spec-mutations"
 import { useProgramSave } from "./use-program-save";
 import { usePlacedPlanSource } from "./use-placed-plan-source";
 import { useLockedMutators } from "./use-locked-mutators";
-import { useAmendPlan, type AmendPlanApi } from "./use-amend-plan";
+import { usePlanEditSave, type PlanEditSaveApi } from "./use-plan-edit-save";
+import {
+  planDayRules,
+  type EditableDays,
+  type PlanDayRules,
+} from "./program-builder-lock-model";
 
 // Owns the builder's working tree + mode + save pipeline ABOVE the route
 // level: the builder page (children slot) and the create-session slide-over
@@ -34,11 +40,11 @@ import { useAmendPlan, type AmendPlanApi } from "./use-amend-plan";
 // old page-level remount guarantee (a dynamic-segment layout does NOT remount
 // on param change by itself — state would leak across plans without the key).
 //
-// Three targets, three sources: "library"/"client-draft" seed from the saved
-// plan; "placed-plan" seeds from the amendment GET (a client's live placed
-// program — past slots locked, saves go through the amend PUT). For the placed
-// target the context's mutators are the LOCKED wrappers, so every UI path
-// refuses history at one choke point.
+// Three targets, two sources: "library"/"client-draft" seed from the saved
+// plan; "placed-plan" is the plan editor, seeded from its read (a client's
+// program as laid on the calendar) and saved through its PUT. For the plan
+// editor the context's mutators are the guarded wrappers, so every UI path
+// refuses a locked or greyed day at one choke point.
 type ProgramDraftContextValue = ProgramBuilderState & {
   savedPlanId: string | null;
   placedPlanId: string | null;
@@ -68,9 +74,9 @@ type ProgramDraftContextValue = ProgramBuilderState & {
   // builder; "skipped" = not a library save (client-draft applies instead).
   saveProgram: () => Promise<"saved" | "kept-draft" | "error" | "skipped">;
   // Re-seed the working tree from the last server state (saved plans' Discard
-  // changes; the placed target re-seeds from the amendment read). Re-seeding
-  // regenerates uids, so any open session editor closes itself (its uid no
-  // longer resolves).
+  // changes; the plan editor re-seeds from its read). Re-seeding regenerates
+  // uids, so any open session editor closes itself (its uid no longer
+  // resolves).
   discardChanges: () => void;
   editSetSpec: (sessionUid: string, exercise: ExerciseDraft, edit: SetSpecEdit) => void;
   // True while an AI-assistant turn is in flight. Soft-lock only: the grid
@@ -78,22 +84,16 @@ type ProgramDraftContextValue = ProgramBuilderState & {
   // chat send are disabled so a save can't interleave with an op replay.
   assistantBusy: boolean;
   setAssistantBusy: (busy: boolean) => void;
-  // --- placed-plan (amendment) surface ---
-  // Slots whose calendar day is history (empty set for other targets). The
-  // grid renders them inert, dnd excludes them, the locked mutators and the
-  // assistant's ops ctx refuse them.
-  lockedSlotUids: ReadonlySet<string>;
-  movedPastSlotUids: ReadonlySet<string>;
-  fullyLocked: boolean;
-  sessionIdByUid: ReadonlyMap<string, string>;
-  futureModifiedEvents: Array<{ id: string; date: string; sessionName: string }>;
-  /** What bounds the placed program's growth from the editor (migration 167);
-   *  null when nothing does. Placed-plan mode only. */
-  windowCap: WindowCap | null;
+  // --- the plan editor (placed-plan) ---
+  /** The editable days as positions; null for the other targets. */
+  editableDays: EditableDays | null;
+  /** The grid's day rules under them — locked, greyed, today, week actions —
+   *  for the draft as it stands; null for the other targets. */
+  dayRules: PlanDayRules | null;
+  /** The last day the plan may reach and what sets it; null when nothing does. */
+  limit: WindowCap | null;
   placedLoadError: string | null;
-  amend: AmendPlanApi;
-  isAmending: boolean;
-  amendPlan: () => void;
+  planSave: PlanEditSaveApi;
 };
 
 const ProgramDraftContext = createContext<ProgramDraftContextValue | null>(null);
@@ -112,15 +112,15 @@ type ProgramDraftProviderProps = {
   // The client-side training_plans id — required for target="placed-plan".
   placedPlanId?: string;
   target: BuilderTarget;
-  // Present for target="client-draft" (apply) and "placed-plan" (amend).
+  // Present for target="client-draft" (apply) and "placed-plan" (the plan editor).
   clientId?: string;
   clientName?: string;
   clientTimezone?: string;
   preselectedBlockId?: string;
   onApplied?: () => void;
-  // Fired after a clean amendment save (the overlay refreshes the calendar
-  // caches and closes).
-  onAmended?: () => void;
+  // Fired after a clean plan-editor save: the overlay refreshes what the save
+  // touched and closes. The confirm spins until it resolves.
+  onSaved?: () => Promise<void> | void;
   children: ReactNode;
 };
 
@@ -133,7 +133,7 @@ export function ProgramDraftProvider({
   clientTimezone,
   preselectedBlockId,
   onApplied,
-  onAmended,
+  onSaved,
   children,
 }: ProgramDraftProviderProps) {
   const isPlaced = target === "placed-plan";
@@ -159,27 +159,30 @@ export function ProgramDraftProvider({
     state,
     setMode,
   });
-  const lockedMutators = useLockedMutators({
-    enabled: isPlaced,
-    lockedSlotUids: placed.lockedSlotUids,
-    state,
-    editSetSpec,
-  });
-  const amend = useAmendPlan({
+  const editableDays = isPlaced ? placed.editableDays : null;
+  const lockedMutators = useLockedMutators({ editableDays, state, editSetSpec });
+  const dayRules = useMemo(
+    () =>
+      editableDays && draft
+        ? planDayRules(draft.weeks, editableDays, placed.todayPosition)
+        : null,
+    [editableDays, draft, placed.todayPosition],
+  );
+  const planSave = usePlanEditSave({
     enabled: isPlaced,
     clientId: clientId ?? null,
-    placedPlanId: placedPlanId ?? null,
+    planId: placedPlanId ?? null,
     getDraft,
     getRevision,
     markSaved,
-    amendmentToken: placed.amendmentToken,
+    version: placed.version,
     reload: placed.reload,
-    refreshToken: placed.refreshToken,
-    onAmended,
+    refreshVersion: placed.refreshVersion,
+    onSaved,
   });
 
   // Seed the working tree from server state exactly once (the !draft gate
-  // makes SWR refreshes no-ops; the placed target seeds inside its source
+  // makes SWR refreshes no-ops; the plan editor seeds inside its source
   // hook). Cross-plan cleanup is the layout's key={savedPlanId} remount.
   // New drafts open straight into edit mode and stay there until Save program.
   useEffect(() => {
@@ -232,8 +235,8 @@ export function ProgramDraftProvider({
 
   const discardChanges = useCallback(() => {
     if (isPlaced) {
-      // Re-seed from the last amendment read; the placed surface stays in
-      // edit mode (it opened there).
+      // Re-seed from the editor's read; the editor stays in edit mode (it
+      // opened there).
       placed.discard();
       return;
     }
@@ -244,8 +247,8 @@ export function ProgramDraftProvider({
 
   const value: ProgramDraftContextValue = {
     ...state,
-    // Locked wrappers (identity pass-through for non-placed targets) — the
-    // single manual-edit choke point for the amendment surface.
+    // Guarded wrappers (identity pass-through for the other targets) — the
+    // plan editor's single manual-edit choke point.
     ...lockedMutators,
     savedPlanId: savedPlanId ?? null,
     placedPlanId: placedPlanId ?? null,
@@ -266,16 +269,11 @@ export function ProgramDraftProvider({
     editSetSpec: lockedMutators.editSetSpec,
     assistantBusy,
     setAssistantBusy,
-    lockedSlotUids: placed.lockedSlotUids,
-    movedPastSlotUids: placed.movedPastSlotUids,
-    fullyLocked: placed.fullyLocked,
-    sessionIdByUid: placed.sessionIdByUid,
-    futureModifiedEvents: placed.futureModifiedEvents,
-    windowCap: placed.windowCap,
+    editableDays,
+    dayRules,
+    limit: isPlaced ? placed.limit : null,
     placedLoadError: placed.loadError,
-    amend,
-    isAmending: amend.isAmending,
-    amendPlan: amend.request,
+    planSave,
   };
 
   return (

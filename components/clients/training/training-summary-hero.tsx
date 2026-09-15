@@ -29,7 +29,7 @@ import type { TrainingWeekSummary } from "@/types/history";
 // this endpoint is the truthful source. Reads `plan` from TrainingBuilderContext
 // for the program-info row (both mount sites live inside TrainingBuilderProvider).
 export function TrainingSummaryHero({ clientId }: { clientId: string }) {
-  const { plan, isLoading: planLoading } = useTrainingBuilderContext();
+  const { plan, isPending: planLoading } = useTrainingBuilderContext();
 
   const { data: summaryResponse, isLoading: summaryLoading } = useSWR<{
     success: boolean;
@@ -46,7 +46,7 @@ export function TrainingSummaryHero({ clientId }: { clientId: string }) {
 
   return (
     <div className="bg-[#0f2027] rounded-[6px] p-5">
-      {/* Program info row. While the plan read is in flight the row holds its
+      {/* Program info row. While the plan read has no answer the row holds its
           slot as pending — the band must not grow when the plan lands
           (newdesignsystem → "Loading & async states"). If the read settles
           with no plan the row leaves and the band tightens once: the rarer

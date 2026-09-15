@@ -148,12 +148,14 @@ describe("POST /api/training/assistant", () => {
 describe("POST /api/training/assistant placed-plan target", () => {
   const clientId = "55555555-5555-4555-8555-555555555555";
   const planId = "66666666-6666-4666-8666-666666666666";
+  // The editor's editable days: from its first editable day to the plan's limit.
+  const editableDays = { from: 3, through: 20 };
   const placedBody = {
     ...validBody,
     target: "placed-plan",
     clientId,
     planId,
-    lockedSlotUids: ["slot-a", "slot-b"],
+    editableDays,
   };
 
   beforeEach(() => {
@@ -165,26 +167,32 @@ describe("POST /api/training/assistant placed-plan target", () => {
     mockPlan.mockResolvedValue({ id: planId, clientId } as never);
   });
 
-  it("400s when planId or lockedSlotUids are missing (schema refine)", async () => {
-    expect(
-      (await POST(makeRequest({ ...placedBody, planId: undefined }))).status,
-    ).toBe(400);
-    expect(
-      (await POST(makeRequest({ ...placedBody, lockedSlotUids: undefined }))).status,
-    ).toBe(400);
-    expect(
-      (await POST(makeRequest({ ...placedBody, clientId: undefined }))).status,
-    ).toBe(400);
+  it("400s when clientId, planId or editableDays is missing (schema refine)", async () => {
+    for (const missing of ["clientId", "planId", "editableDays"] as const) {
+      const res = await POST(makeRequest({ ...placedBody, [missing]: undefined }));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/required for the placed-plan editor/);
+    }
     expect(mockRun).not.toHaveBeenCalled();
   });
 
-  it("400s the placed-only fields on other targets (schema refine)", async () => {
-    expect(
-      (await POST(makeRequest({ ...validBody, planId }))).status,
-    ).toBe(400);
-    expect(
-      (await POST(makeRequest({ ...validBody, lockedSlotUids: ["slot-a"] }))).status,
-    ).toBe(400);
+  it("400s malformed editable days", async () => {
+    for (const bad of [{ from: -1, through: null }, { from: 3 }, { from: 2.5, through: 20 }]) {
+      expect((await POST(makeRequest({ ...placedBody, editableDays: bad }))).status).toBe(400);
+    }
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it("400s planId or editableDays on another target (schema refine)", async () => {
+    for (const body of [
+      { ...validBody, planId },
+      { ...validBody, editableDays },
+      { ...validBody, target: "client-draft", clientId, editableDays },
+    ]) {
+      const res = await POST(makeRequest(body));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/only valid for the placed-plan editor/);
+    }
     expect(mockRun).not.toHaveBeenCalled();
   });
 
@@ -203,15 +211,21 @@ describe("POST /api/training/assistant placed-plan target", () => {
     expect(mockPlan).not.toHaveBeenCalled();
   });
 
-  it("forwards the lock set into the turn", async () => {
+  it("forwards the editable days into the turn", async () => {
     const res = await POST(makeRequest(placedBody));
     expect(res.status).toBe(200);
     expect(mockPlan).toHaveBeenCalledWith(planId);
     expect(mockRun).toHaveBeenCalledWith(
       expect.objectContaining({
         target: "placed-plan",
-        lockedSlotUids: ["slot-a", "slot-b"],
+        editableDays: { from: 3, through: 20 },
       }),
+    );
+
+    // A plan nothing bounds has no last day.
+    await POST(makeRequest({ ...placedBody, editableDays: { from: 0, through: null } }));
+    expect(mockRun).toHaveBeenLastCalledWith(
+      expect.objectContaining({ editableDays: { from: 0, through: null } }),
     );
   });
 });

@@ -58,11 +58,21 @@ describe("the apply surface has one owner, the address", () => {
     expect(tray).toContain("data-[state=open]:slide-in-from-right");
   });
 
-  it("the amendment editor appears and goes in the frame its address does", () => {
-    const source = read("components/clients/training/builder/plan-amendment-overlay.tsx");
-    expect(source).not.toContain("data-[state=");
-    expect(source).not.toContain("animate-");
+  it("the plan editor appears and goes in the frame its address does", () => {
+    const host = read("components/clients/training/builder/training-plan-builder.tsx");
+    const source = read("components/clients/training/builder/plan-editor-overlay.tsx");
+    const content = segment(source, "<DialogPrimitive.Content", "<DialogPrimitive.Title");
+    // The program builder does not animate, so neither does the Content it
+    // mounts in, and a non-modal Root has no overlay to fade.
+    expect(content).not.toContain("data-[state=");
+    expect(content).not.toContain("animate-");
     expect(source).not.toContain("DialogPrimitive.Overlay");
+    // Open is the address the host hands it, `?plan=`, never a state of its own.
+    expect(host).toContain('searchParams.get("plan")');
+    expect(source).toContain("open={planId != null}");
+    expect(source).not.toMatch(hook("useState"));
+    expect(source).not.toMatch(hook("useRef"));
+    expect(source).not.toMatch(hook("useEffect"));
   });
 
   it("the exercise pane's selection is the address's, never a state seeded from it", () => {

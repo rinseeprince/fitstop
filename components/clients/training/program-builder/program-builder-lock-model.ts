@@ -1,191 +1,183 @@
-import { getDateDaysFrom } from "@/lib/date-helpers";
 import type { ProgramDraft, WeekDraft } from "./program-builder-types";
 
-// ONE lock source for the placed-plan (amendment) target. Locks derive from a
-// serializable `lockedSlotUids: string[]` plus the draft — computed once at
-// seed time and shared by grid rendering, dnd gating, the provider's wrapped
-// mutators, and applyDraftOp's ctx (server executor and client replay build
-// the same Set from the same array, so the two sides cannot drift).
+// The plan editor's one date rule. The grid's slots are the plan's days in
+// order — slot i of the flattened weeks is the day effective_from + i — and a
+// day can change only from the first editable day (the client's today, or
+// tomorrow once they have logged a workout today) through the last day the
+// plan may reach (its block's end, or the day before the next block or the
+// next plan). Days before are history; days after are greyed and can't hold a
+// session.
 //
-// Lock rule per slot position — a slot is locked when its day is already
-// history, by any of three routes:
-//   1. slotDate(position) < clientToday          — the day itself has passed
-//   2. a linked event is no longer 'scheduled'   — the client logged it early
-//   3. a linked event is DATED before today      — the coach moved it forward
-//                                                  and the calendar overtook it
-// slotDate(position) = effective_from + position days — the same arithmetic the
-// placement date-walk uses, so a locked slot is exactly one whose calendar day
-// the amendment writer will not touch. `amendPlacedPlanFuture` derives its
-// frozen positions from the same three clauses against live DB state; the two
-// MUST agree, because a slot the editor locks and the writer replaces is how the
-// plan ended up with two active rows claiming one day.
-//
-// Route 3 is the only one that can lock a slot sitting in a FUTURE column, so it
-// gets its own explanation — see MOVED_PAST_LOCKED.
-//
-// Because dates are contiguous, weeks before the boundary are fully locked and
-// weeks after it fully open; only boundary weeks are partial (an early-logged
-// future event can create a second partial week later on — the boundary is the
-// LAST week containing any locked slot, conservatively).
-//
-// React-free: importable from API routes, the assistant workspace, and the
-// state hook alike.
+// The rule is applied by POSITION to the grid as it stands, because adding,
+// removing or moving a week shifts every later day. React-free: the grid, the
+// dnd gates, the provider's guarded mutators and the assistant's ops (the
+// server executor and the client replay alike) all ask it.
+
+/** The editable days, as positions from the plan's start. */
+export type EditableDays = {
+  /** The first editable day. */
+  from: number;
+  /** The last day the plan may reach; null when nothing bounds it. */
+  through: number | null;
+};
 
 export const PAST_LOCKED =
   "That day is locked — it has already happened on the client's calendar";
 
-/**
- * Route 3's explanation. A slot locked this way sits in a column whose own date
- * is still ahead, so "that day has already happened" would read as a bug — what
- * happened is the session, on the earlier date it was moved to.
- */
-export const MOVED_PAST_LOCKED =
-  "That session is locked — it was moved to a day that has already passed";
+export const LIMIT_LOCKED = "That day is greyed out — the plan can't reach it";
 
-// Structural subset of the amendment GET the lock computation needs. Position i
-// in the flattened draft maps to sessions[i] (canonical order); tail rest
-// padding added by the flat regroup has no backing entry and locks by date
-// alone.
-export type PlacedPlanLockSource = {
-  plan: { effectiveFrom: string };
-  clientToday: string;
-  sessions: Array<{ events: Array<{ status: string; date: string }> }>;
+type WeekRules = { canDelete: boolean; canDuplicate: boolean; canReorder: boolean };
+
+export type PlanDayRules = {
+  /** Every slot the coach can't change: history and greyed days. */
+  locked: ReadonlySet<string>;
+  /** Slots whose day is history. */
+  past: ReadonlySet<string>;
+  /** Slots past the plan's last possible day. */
+  beyond: ReadonlySet<string>;
+  todaySlotUid: string | null;
+  canAddWeek: boolean;
+  weeks: ReadonlyMap<string, WeekRules>;
 };
 
-function slotLockRoutes(
-  source: PlacedPlanLockSource,
-  position: number,
-  slotDate: string,
-): { locked: boolean; movedPast: boolean } {
-  const backing = source.sessions[position];
-  const events = backing?.events ?? [];
-  const dayPassed = slotDate < source.clientToday;
-  const notScheduled = events.some((e) => e.status !== "scheduled");
-  const movedPast = events.some((e) => e.date < source.clientToday);
-  return {
-    locked: dayPassed || notScheduled || movedPast,
-    // Only worth a distinct message when the slot's own column is still ahead.
-    movedPast: movedPast && !dayPassed,
-  };
-}
-
-export function computeLockedSlotUids(
-  source: PlacedPlanLockSource,
-  weeks: WeekDraft[],
-): string[] {
-  const start = new Date(source.plan.effectiveFrom + "T00:00:00");
-  const locked: string[] = [];
+/** Whether any session sits on a day past `through`. */
+function sessionPastLimit(weeks: WeekDraft[], through: number | null): boolean {
+  if (through == null) return false;
   let position = 0;
   for (const week of weeks) {
     for (const slot of week.days) {
-      const slotDate = getDateDaysFrom(start, position);
-      if (slotLockRoutes(source, position, slotDate).locked) locked.push(slot.uid);
+      if (slot.session && position > through) return true;
       position += 1;
-    }
-  }
-  return locked;
-}
-
-/**
- * The subset of locked slots whose own day is still in the future — locked only
- * because their session was moved to a date that has since passed. Presentation
- * only; the lock set itself is `computeLockedSlotUids` and stays the one
- * serialized contract the assistant and the writer share.
- */
-export function computeMovedPastSlotUids(
-  source: PlacedPlanLockSource,
-  weeks: WeekDraft[],
-): string[] {
-  const start = new Date(source.plan.effectiveFrom + "T00:00:00");
-  const movedPast: string[] = [];
-  let position = 0;
-  for (const week of weeks) {
-    for (const slot of week.days) {
-      const slotDate = getDateDaysFrom(start, position);
-      if (slotLockRoutes(source, position, slotDate).movedPast) movedPast.push(slot.uid);
-      position += 1;
-    }
-  }
-  return movedPast;
-}
-
-/** A session is locked iff the slot holding it is locked. Vanished → false. */
-export function isSessionLocked(
-  draft: ProgramDraft,
-  lockedSlotUids: ReadonlySet<string>,
-  sessionUid: string,
-): boolean {
-  for (const week of draft.weeks) {
-    for (const slot of week.days) {
-      if (slot.session?.uid === sessionUid) return lockedSlotUids.has(slot.uid);
     }
   }
   return false;
 }
 
-export function weekLockState(
-  week: WeekDraft,
-  lockedSlotUids: ReadonlySet<string>,
-): "none" | "partial" | "full" {
-  const lockedCount = week.days.filter((slot) => lockedSlotUids.has(slot.uid)).length;
-  if (lockedCount === 0) return "none";
-  return lockedCount === week.days.length ? "full" : "partial";
+function insertWeek(weeks: WeekDraft[], at: number, week: WeekDraft): WeekDraft[] {
+  return [...weeks.slice(0, at), week, ...weeks.slice(at)];
 }
 
-/** Index of the LAST week containing any locked slot; -1 when nothing is locked. */
-export function lockBoundaryWeekIndex(
+function moveWeek(weeks: WeekDraft[], from: number, to: number): WeekDraft[] {
+  const next = [...weeks];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+/** The last week holding a history day; -1 when none does. */
+function historyBoundary(weeks: WeekDraft[], days: EditableDays): number {
+  return days.from <= 0 ? -1 : Math.min(weeks.length - 1, Math.floor((days.from - 1) / 7));
+}
+
+export function planDayRules(
   weeks: WeekDraft[],
-  lockedSlotUids: ReadonlySet<string>,
-): number {
-  for (let i = weeks.length - 1; i >= 0; i--) {
-    if (weekLockState(weeks[i], lockedSlotUids) !== "none") return i;
+  days: EditableDays,
+  todayPosition: number | null,
+): PlanDayRules {
+  const past = new Set<string>();
+  const beyond = new Set<string>();
+  let todaySlotUid: string | null = null;
+  let position = 0;
+  for (const week of weeks) {
+    for (const slot of week.days) {
+      if (position < days.from) past.add(slot.uid);
+      else if (days.through != null && position > days.through) beyond.add(slot.uid);
+      if (position === todayPosition) todaySlotUid = slot.uid;
+      position += 1;
+    }
   }
-  return -1;
+  const locked = new Set([...past, ...beyond]);
+
+  const rules = new Map<string, WeekRules>();
+  weeks.forEach((week, index) => {
+    rules.set(week.uid, {
+      // Removing a week moves every later day earlier — never a day of history.
+      canDelete: !week.days.some((slot) => past.has(slot.uid)),
+      // A copy lands right after the week and pushes the later weeks on.
+      canDuplicate: insertWeekRefusal(weeks, days, index, week) == null,
+      canReorder: !week.days.some((slot) => locked.has(slot.uid)),
+    });
+  });
+
+  return {
+    locked,
+    past,
+    beyond,
+    todaySlotUid,
+    // A new week's first day must be one the plan can reach.
+    canAddWeek: days.through == null || weeks.length * 7 <= days.through,
+    weeks: rules,
+  };
 }
 
-/** Deleting a week is allowed only when none of its days are history. */
-export function canDeleteWeek(
-  week: WeekDraft,
-  lockedSlotUids: ReadonlySet<string>,
+/** Why a slot is locked, in the words a refusal shows; null when it isn't. */
+export function slotRefusal(rules: PlanDayRules, slotUid: string): string | null {
+  if (rules.past.has(slotUid)) return PAST_LOCKED;
+  return rules.beyond.has(slotUid) ? LIMIT_LOCKED : null;
+}
+
+/** Why a session's day is locked; null when it isn't, or the session is gone. */
+export function sessionRefusal(
+  draft: ProgramDraft,
+  rules: PlanDayRules,
+  sessionUid: string,
+): string | null {
+  for (const week of draft.weeks) {
+    for (const slot of week.days) {
+      if (slot.session?.uid === sessionUid) return slotRefusal(rules, slot.uid);
+    }
+  }
+  return null;
+}
+
+/** A session is locked iff the slot holding it is locked. Vanished → false. */
+export function isSessionLocked(
+  draft: ProgramDraft,
+  locked: ReadonlySet<string>,
+  sessionUid: string,
 ): boolean {
-  return weekLockState(week, lockedSlotUids) === "none";
+  for (const week of draft.weeks) {
+    for (const slot of week.days) {
+      if (slot.session?.uid === sessionUid) return locked.has(slot.uid);
+    }
+  }
+  return false;
 }
 
 /**
- * Duplicating (or progressing) a week is allowed unless the week is fully
- * elapsed (decision 8) — the boundary week's remaining days are still worth
- * copying forward.
+ * Why `week` can't be inserted after `afterIndex`; null when it can. An
+ * insert shifts every later week, so it lands only after the last week of
+ * history, only on a week that starts on a day the plan can reach (the Add
+ * week rule), and only when no session is pushed past the plan's last day.
  */
-export function canDuplicateWeek(
-  week: WeekDraft,
-  lockedSlotUids: ReadonlySet<string>,
-): boolean {
-  return weekLockState(week, lockedSlotUids) !== "full";
-}
-
-/**
- * Inserting after week `afterIndex` shifts every later week's dates — legal
- * only at/after the lock boundary, so no locked slot ever changes position.
- * (Appending at the end passes trivially: afterIndex = weeks.length - 1.)
- */
-export function canInsertAfterWeek(
+export function insertWeekRefusal(
   weeks: WeekDraft[],
-  lockedSlotUids: ReadonlySet<string>,
+  days: EditableDays,
   afterIndex: number,
-): boolean {
-  return afterIndex >= lockBoundaryWeekIndex(weeks, lockedSlotUids);
+  week: WeekDraft,
+): string | null {
+  if (afterIndex < historyBoundary(weeks, days)) return PAST_LOCKED;
+  if (days.through != null && (afterIndex + 1) * 7 > days.through) return LIMIT_LOCKED;
+  return sessionPastLimit(insertWeek(weeks, afterIndex + 1, week), days.through)
+    ? LIMIT_LOCKED
+    : null;
 }
 
 /**
- * A week may move only when BOTH endpoints sit strictly after the boundary —
- * moving a locked week, or landing on/before one, would re-date history.
+ * Why the week at `fromIndex` can't move to `toIndex`; null when it can. Both
+ * ends must sit after the last week of history — moving a week of history, or
+ * landing on or before one, would re-date it — and no session may land past
+ * the plan's last day.
  */
-export function canReorderWeeks(
+export function moveWeekRefusal(
   weeks: WeekDraft[],
-  lockedSlotUids: ReadonlySet<string>,
+  days: EditableDays,
   fromIndex: number,
   toIndex: number,
-): boolean {
-  const boundary = lockBoundaryWeekIndex(weeks, lockedSlotUids);
-  return fromIndex > boundary && toIndex > boundary;
+): string | null {
+  const boundary = historyBoundary(weeks, days);
+  if (fromIndex <= boundary || toIndex <= boundary) return PAST_LOCKED;
+  return sessionPastLimit(moveWeek(weeks, fromIndex, toIndex), days.through)
+    ? LIMIT_LOCKED
+    : null;
 }

@@ -92,15 +92,16 @@ describe("useJourneyRoundTrip", () => {
   });
 });
 
-// The apply tray's half: its open state is the address (`?apply=1`), so only
-// the return target is one-shot — captured, then the two return params
-// stripped while `apply=1` stays.
+// The addressed surfaces' half: the apply tray (`?apply=1`) and the plan
+// editor (`?plan=<planId>`) are open by their address, which the host reads
+// and hands in as `open`. Only the return target is one-shot — captured, then
+// the two return params stripped while the surface's own param stays.
 describe("useJourneyReturnBlock", () => {
   it("captures the block on arrival and strips ONLY the return params", () => {
     search = new URLSearchParams(
       "tab=training&training=plans&apply=1&returnTo=journey&returnBlock=blk-7"
     );
-    const { result } = renderHook(() => useJourneyReturnBlock("apply"));
+    const { result } = renderHook(() => useJourneyReturnBlock(true));
 
     expect(result.current.returnBlockId).toBe("blk-7");
     expect(mockReplace).toHaveBeenCalledTimes(1);
@@ -110,9 +111,26 @@ describe("useJourneyReturnBlock", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
+  it("captures the block for the plan editor and keeps its address", () => {
+    // Journey's "edit plan": the block card sends the coach straight into the
+    // plan editor, with no tray and no ?apply=1 on the address.
+    search = new URLSearchParams(
+      "tab=training&training=plans&plan=plan-9&returnTo=journey&returnBlock=blk-7"
+    );
+    const { result } = renderHook(() => useJourneyReturnBlock(true));
+
+    expect(result.current.returnBlockId).toBe("blk-7");
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith(
+      "?tab=training&training=plans&plan=plan-9",
+      { scroll: false }
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
   it("consumes ONCE, so a re-render before the stripped URL commits cannot re-fire", () => {
     search = new URLSearchParams("apply=1&returnTo=journey&returnBlock=blk-7");
-    const { result, rerender } = renderHook(() => useJourneyReturnBlock("apply"));
+    const { result, rerender } = renderHook(() => useJourneyReturnBlock(true));
     rerender();
     expect(result.current.returnBlockId).toBe("blk-7");
     expect(mockReplace).toHaveBeenCalledTimes(1);
@@ -120,7 +138,7 @@ describe("useJourneyReturnBlock", () => {
 
   it("keeps the block across the address changes of the flow, and clears it on demand", () => {
     search = new URLSearchParams("apply=1&returnTo=journey&returnBlock=blk-7");
-    const { result, rerender } = renderHook(() => useJourneyReturnBlock("apply"));
+    const { result, rerender } = renderHook(() => useJourneyReturnBlock(true));
     // The pick and the arrow replace the address; the state is untouched.
     search = new URLSearchParams("editor=plan-1");
     rerender();
@@ -132,20 +150,29 @@ describe("useJourneyReturnBlock", () => {
 
   it("strips a return target naming something else, capturing nothing", () => {
     search = new URLSearchParams("apply=1&returnTo=elsewhere&returnBlock=blk-7");
-    const { result } = renderHook(() => useJourneyReturnBlock("apply"));
+    const { result } = renderHook(() => useJourneyReturnBlock(true));
     expect(result.current.returnBlockId).toBe(null);
     expect(mockReplace).toHaveBeenCalledWith("?apply=1", { scroll: false });
   });
 
-  it("writes nothing on a plain tray address, and ignores the OTHER surface's trip", () => {
+  it("writes nothing on a plain surface address", () => {
     search = new URLSearchParams("tab=training&apply=1");
-    const plain = renderHook(() => useJourneyReturnBlock("apply"));
+    const plain = renderHook(() => useJourneyReturnBlock(true));
     expect(plain.result.current.returnBlockId).toBe(null);
     expect(mockReplace).not.toHaveBeenCalled();
+  });
 
+  it("writes nothing while no surface is open, whatever trip the address carries", () => {
+    // The nutrition drawer's trip, or a trip whose surface is not up: not this
+    // hook's to consume.
     search = new URLSearchParams("edit=1&returnTo=journey&returnBlock=blk-7");
-    const other = renderHook(() => useJourneyReturnBlock("apply"));
+    const other = renderHook(() => useJourneyReturnBlock(false));
     expect(other.result.current.returnBlockId).toBe(null);
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    search = new URLSearchParams("tab=training&returnTo=journey&returnBlock=blk-7");
+    const shut = renderHook(() => useJourneyReturnBlock(false));
+    expect(shut.result.current.returnBlockId).toBe(null);
     expect(mockReplace).not.toHaveBeenCalled();
   });
 });

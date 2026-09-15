@@ -1,22 +1,17 @@
 import type { z } from "zod";
 import type {
-  AmendPlacedPlanBody,
+  PlanEditSaveBody,
   replaceSessionSchema,
 } from "@/lib/validations/training";
 import type { TrainingExercise } from "@/types/training";
-import type {
-  PlacedPlanForBuilder,
-  PlacedSlotRead,
-} from "@/services/plan-amendment-service";
+import type { PlanForEditing } from "@/services/plan-edit-service";
 import {
   draftToSessionInputs,
   exerciseDraftToInput,
 } from "./program-builder-serialize";
-import {
-  computeLockedSlotUids,
-  computeMovedPastSlotUids,
-} from "./program-builder-lock-model";
+import type { EditableDays } from "./program-builder-lock-model";
 import { toPrescribedFields } from "@/utils/prescribed-fields";
+import { daysBetween } from "@/utils/metric-points";
 import {
   DAYS_PER_WEEK,
   makeRestSlot,
@@ -28,16 +23,15 @@ import {
   type WeekDraft,
 } from "./program-builder-types";
 
-// Serialization boundary between PLACED client rows (training_sessions /
-// training_exercises) and the builder's draft model. The tray reads a placed
-// session into a SessionDraft and writes it back through the replace PUT; the
-// amendment surface reads the whole plan via placedPlanToDraft and writes it
-// back through draftToAmendBody.
+// Serialization boundary between a client's placed rows and the builder's
+// draft model. The tray reads a placed session into a SessionDraft and writes
+// it back through the replace PUT; the plan editor reads the whole plan via
+// planForEditingToDraft and saves it through draftToPlanEditBody.
 
 type PlacedSessionPayload = z.infer<typeof replaceSessionSchema>;
 
-// Structural source both the tray's TrainingSession and the amendment reader's
-// PlacedSlotRead satisfy — one conversion serves both surfaces.
+// Structural source both the tray's TrainingSession and the plan editor's
+// session day satisfy — one conversion serves both surfaces.
 type PlacedSessionSource = {
   name: string;
   focus?: string | null;
@@ -121,118 +115,78 @@ export function sessionDraftToPlacedPayload(
   };
 }
 
-// --- Whole-plan (amendment) serialization ------------------------------------
+// --- The plan editor -----------------------------------------------------------
 
-type PlacedPlanDraftSeed = {
+type PlanEditorSeed = {
   draft: ProgramDraft;
-  // Serializable — the assistant sends this array over the wire and the ops
-  // ctx rebuilds the same Set on both sides.
-  lockedSlotUids: string[];
-  // Presentation only: the locked slots whose own column is still in the future,
-  // locked because their session was moved to a day that has now passed. Kept
-  // OUT of lockedSlotUids so the serialized lock contract stays one array.
-  movedPastSlotUids: string[];
-  // Draft session uid → training_sessions row id (per SLOT — every slot gets a
-  // fresh uid even if diverged data ever shared a row).
-  sessionIdByUid: Map<string, string>;
-  amendmentToken: string;
-  fullyLocked: boolean;
+  /** The editable days, as positions from the plan's start. */
+  editableDays: EditableDays;
+  /** The client's today as a position; null when outside the grid. */
+  todayPosition: number | null;
 };
 
 /**
- * Build the editable draft tree from the amendment GET. Same dual path as
- * savedPlanToDraft: week-shaped when every weekIndex group is exactly 7 rows,
- * else a flat repack with tail rest padding (diverged plans — cloned-day and
- * dropped-session coords, plus historic duplicate-week rows, can collide or sit
- * outside the grid — take the flat path, and saving the amendment
- * normalizes the future back to the positional model). The read's canonical
- * order IS the slot-position order, so flattened draft position i maps to
- * read.sessions[i] — the invariant computeLockedSlotUids relies on.
+ * Build the editable draft from the plan editor's read: one slot per day,
+ * weeks of seven, slot i = the plan's day effective_from + i — the position
+ * the lock model and the save both count in. Session days clone the day's row
+ * (trainingSessionToDraft); rest days and greyed days are empty slots.
  */
-export function placedPlanToDraft(read: PlacedPlanForBuilder): PlacedPlanDraftSeed {
-  const sessionIdByUid = new Map<string, string>();
-
-  const slotFrom = (s: PlacedSlotRead, orderIndex: number): DaySlotDraft => {
-    if (s.isRest) return makeRestSlot(orderIndex);
-    const { draft } = trainingSessionToDraft(s);
-    sessionIdByUid.set(draft.uid, s.id);
-    return { uid: newUid("slot"), orderIndex, isRest: false, session: draft };
-  };
-
-  const ordered = read.sessions; // canonical (week, order, created_at, id)
-  let weeks: WeekDraft[] = [];
-  const hasWeekModel = ordered.some((s) => s.weekIndex > 0 || s.isRest);
-  if (hasWeekModel) {
-    const groups = new Map<number, PlacedSlotRead[]>();
-    for (const s of ordered) {
-      const group = groups.get(s.weekIndex);
-      if (group) group.push(s);
-      else groups.set(s.weekIndex, [s]);
-    }
-    if ([...groups.values()].every((g) => g.length === DAYS_PER_WEEK)) {
-      weeks = [...groups.values()].map((group, w) => ({
-        uid: newUid("wk"),
-        weekIndex: w,
-        days: group.map((s, i) => slotFrom(s, i)),
-      }));
-    }
+export function planForEditingToDraft(read: PlanForEditing): PlanEditorSeed {
+  const days: DaySlotDraft[] = read.days.map((day, i) =>
+    day.isRest
+      ? makeRestSlot(i % DAYS_PER_WEEK)
+      : {
+          uid: newUid("slot"),
+          orderIndex: i % DAYS_PER_WEEK,
+          isRest: false,
+          session: trainingSessionToDraft(day).draft,
+        },
+  );
+  const weeks: WeekDraft[] = [];
+  for (let w = 0; w * DAYS_PER_WEEK < days.length; w++) {
+    weeks.push({
+      uid: newUid("wk"),
+      weekIndex: w,
+      days: days.slice(w * DAYS_PER_WEEK, (w + 1) * DAYS_PER_WEEK),
+    });
   }
 
-  if (weeks.length === 0) {
-    const days: DaySlotDraft[] = ordered.map((s, i) =>
-      slotFrom(s, i % DAYS_PER_WEEK),
-    );
-    while (days.length % DAYS_PER_WEEK !== 0 || days.length === 0) {
-      days.push(makeRestSlot(days.length % DAYS_PER_WEEK));
-    }
-    for (let w = 0; w * DAYS_PER_WEEK < days.length; w++) {
-      weeks.push({
-        uid: newUid("wk"),
-        weekIndex: w,
-        days: days.slice(w * DAYS_PER_WEEK, (w + 1) * DAYS_PER_WEEK),
-      });
-    }
-  }
-
-  const draft: ProgramDraft = {
-    id: read.plan.id,
-    name: read.plan.name,
-    description: null,
-    status: "saved",
-    splitType: read.plan.splitType,
-    programDurationWeeks: read.plan.programDurationWeeks,
-    // Placed surplus is ABSOLUTE (decision 10) — there is no stored plan
-    // default; a null session surplus means "no surplus", never "inherit".
-    defaultSurplusPercentage: null,
-    weeks,
-  };
-
-  const lockedSlotUids = computeLockedSlotUids(read, weeks);
+  const from = read.plan.effectiveFrom;
+  const todayPosition = daysBetween(from, read.clientToday);
   return {
-    draft,
-    lockedSlotUids,
-    movedPastSlotUids: computeMovedPastSlotUids(read, weeks),
-    sessionIdByUid,
-    amendmentToken: read.amendmentToken,
-    fullyLocked:
-      weeks.length > 0 &&
-      lockedSlotUids.length === weeks.length * DAYS_PER_WEEK,
+    draft: {
+      id: read.plan.id,
+      name: read.plan.name,
+      description: null,
+      status: "saved",
+      splitType: read.plan.splitType,
+      programDurationWeeks: weeks.length,
+      // A placed session's surplus is ABSOLUTE: there is no plan default to
+      // inherit, so null here means "no surplus", never "inherit".
+      defaultSurplusPercentage: null,
+      weeks,
+    },
+    editableDays: {
+      from: daysBetween(from, read.firstEditableDate),
+      through: read.limit ? daysBetween(from, read.limit.endsOn) : null,
+    },
+    todayPosition:
+      todayPosition >= 0 && todayPosition < days.length ? todayPosition : null,
   };
 }
 
 /**
- * Serialize the whole draft into the amendment PUT body — the shared
- * draftToSessionInputs (the canonical weekIndex*7+day grid the writer
- * validates), the coach's identity patch, and the drift token from the seed.
+ * The plan editor's save body: the whole grid (draftToSessionInputs, the
+ * canonical weekIndex*7+day slots the server counts in), the plan's name and
+ * focus, and the read's version, unchanged.
  */
-export function draftToAmendBody(
-  draft: ProgramDraft,
-  planPatch: { name?: string; splitType?: string | null } | undefined,
-  expectedToken: string,
-): AmendPlacedPlanBody {
+export function draftToPlanEditBody(draft: ProgramDraft, version: string): PlanEditSaveBody {
   return {
     sessions: draftToSessionInputs(draft),
-    ...(planPatch ? { plan: planPatch } : {}),
-    expectedToken,
+    plan: {
+      name: draft.name.slice(0, 100),
+      splitType: draft.splitType ? draft.splitType.slice(0, 100) : draft.splitType,
+    },
+    version,
   };
 }

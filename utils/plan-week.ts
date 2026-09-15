@@ -3,8 +3,8 @@ import { differenceInDays } from "@/lib/date-helpers";
 /**
  * Which week of a placed training plan a given date falls in (1-based).
  *
- * Mirrors the canonical date-walk math (services/plan-amendment-service.ts:
- * slotPosition = daysBetween(effective_from, date), week = floor(position / 7)):
+ * Mirrors the canonical date-walk math (services/program-event-walk.ts:
+ * position = daysBetween(effective_from, date), week = floor(position / 7)):
  * week N covers days [7*(N-1), 7*N) after effective_from. Returns null when
  * today is before the plan starts or past the authored window; a plan with no
  * duration is open-ended, so the computed week is returned uncapped.

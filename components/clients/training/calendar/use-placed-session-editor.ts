@@ -61,7 +61,7 @@ export function usePlacedSessionEditor(
   state: PlacedSessionState | null,
   opts: {
     onClose: () => void;
-    /** Upstream plan refresh (the Plans tab's fetchPlan). */
+    /** Upstream plan refresh (the Plans tab's refresh). */
     onUpdate: () => void;
     /** The calendar's bound SWR mutate. */
     mutateCalendar: () => Promise<unknown>;
@@ -130,10 +130,9 @@ export function usePlacedSessionEditor(
   // longer be edited, because both save paths rewrite the exercise rows the
   // client's logs point at. Server-enforced in `assertSessionUnlogged`
   // (services/training-event-occupancy.ts); this is the same predicate so the
-  // coach sees a locked panel instead of a save that 409s. Three places spell
-  // it — that assertion, `program-builder-lock-model.ts:63`, and here — and it
-  // cannot be shared with the first two: that module reaches supabaseAdmin, and
-  // the lock model may not format dates (training-event-calendar-service.ts:27).
+  // coach sees a locked panel instead of a save that 409s. Two places spell
+  // it — that assertion and here — and it cannot be shared: that module
+  // reaches supabaseAdmin.
   // Links arrive date-ascending, so this is the EARLIEST logged occurrence.
   const loggedEvent = useMemo(
     () => data?.events.find((e) => e.status !== "scheduled") ?? null,
@@ -208,10 +207,8 @@ export function usePlacedSessionEditor(
       toast.success(scope === "day" ? "Saved for this day only" : "Session saved");
       await opts.mutateCalendar();
       // The whole training area, not just the calendar. A "this day only" save
-      // CLONES the session and repoints the event at the clone, so a plan
-      // editor still holding the pre-save read is not merely showing stale
-      // text — its slot maps to a session id the event no longer references,
-      // and an amendment saved from that seed reasons about the wrong row.
+      // CLONES the session and repoints the event at the clone, so every read
+      // of the day — the plan editor's included — must see the new row.
       void invalidateTrainingData(state.clientId);
       void invalidateNutritionCalendar(state.clientId);
       void clearClientOverview(state.clientId);

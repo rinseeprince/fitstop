@@ -131,7 +131,7 @@ export default function ProgramTrainingPage() {
       <PlanStateNote plan={plan} className="mt-1 block font-mono-display text-xs text-muted-foreground" />
       <div className="mt-4 flex flex-col gap-2 pb-6">
         {sortedSessions.map((session) => (
-          <TrainingSessionRow key={session.id} session={session} />
+          <TrainingSessionRow key={session.orderIndex} session={session} />
         ))}
       </div>
     </div>

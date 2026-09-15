@@ -5,7 +5,7 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import type { DaySlotDraft } from "./program-builder-types";
 import type { SessionDragData, SlotDropData } from "./use-program-dnd";
-import { MOVED_PAST_LOCKED, PAST_LOCKED } from "./program-builder-lock-model";
+import { PAST_LOCKED } from "./program-builder-lock-model";
 import { setsRepsShort } from "./exercise-summary";
 import {
   FOCUS_RING,
@@ -28,14 +28,14 @@ import {
 type DayCellProps = {
   slot: DaySlotDraft;
   mode: "view" | "edit";
-  // Placed-plan target: this slot's calendar day is history. The cell renders
-  // inert (no drop/drag/clear/add) at reduced opacity with a lock marker; a
+  // The plan editor: a day the coach can't change. The cell renders inert (no
+  // drop/drag/clear/add) at reduced opacity, a session with a lock marker; a
   // locked session card stays CLICKABLE — it opens the editor in view mode.
   locked?: boolean;
-  // Locked only because its session was moved to a day that has now passed —
-  // the one route that can lock a cell sitting in a FUTURE column, so it needs
-  // its own explanation or the padlock reads as a bug.
-  lockedBecauseMoved?: boolean;
+  // A day past the plan's limit: greyed and empty — it can't hold a session.
+  greyed?: boolean;
+  // The client's today, ringed so the coach knows where the client is.
+  isToday?: boolean;
   collapsed: boolean;
   // Program-level default surplus — the value a session inherits when it has no
   // per-day override. Drives the effective-surplus badge.
@@ -65,7 +65,8 @@ export function DayCell({
   slot,
   mode,
   locked = false,
-  lockedBecauseMoved = false,
+  greyed = false,
+  isToday = false,
   collapsed,
   defaultSurplusPercentage,
   onOpenSession,
@@ -123,6 +124,8 @@ export function DayCell({
             "group/rest flex h-full flex-col items-center justify-center rounded-[6px] border border-dashed border-transparent bg-transparent transition-colors",
             heightClass,
             locked && "opacity-60",
+            greyed && "bg-[rgba(147,176,180,0.12)]",
+            isToday && "ring-1 ring-[#0d9488]",
             isOver && "border-[#0d9488] bg-[rgba(13,148,136,0.05)]",
             editable && cn("cursor-pointer hover:border-[rgba(13,148,136,0.25)] hover:bg-[rgba(13,148,136,0.03)]", FOCUS_RING),
           )}
@@ -136,7 +139,7 @@ export function DayCell({
             ? pressable((target) => onRequestAddSession(slot, target))
             : {})}
         >
-          {collapsed ? (
+          {greyed ? null : collapsed ? (
             <span className={cn("text-xs", TEXT_MUTED)}>—</span>
           ) : (
             <>
@@ -169,6 +172,7 @@ export function DayCell({
           TRAINING_CARD_BORDER,
           heightClass,
           locked && "opacity-60",
+          isToday && "ring-1 ring-[#0d9488]",
           isOver && "border-[#0d9488]",
           isDragging && "opacity-40",
           !collapsed && !locked &&
@@ -192,10 +196,7 @@ export function DayCell({
                 {session.name}
               </span>
               {locked && (
-                <span
-                  title={lockedBecauseMoved ? MOVED_PAST_LOCKED : PAST_LOCKED}
-                  className={cn("shrink-0", TEXT_MUTED)}
-                >
+                <span title={PAST_LOCKED} className={cn("shrink-0", TEXT_MUTED)}>
                   <Lock className="h-3 w-3" strokeWidth={1.5} />
                 </span>
               )}

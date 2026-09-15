@@ -14,10 +14,12 @@ import {
 } from "./program-builder-model";
 import {
   PAST_LOCKED,
-  canDeleteWeek,
-  canInsertAfterWeek,
-  canReorderWeeks,
-  isSessionLocked,
+  insertWeekRefusal,
+  moveWeekRefusal,
+  planDayRules,
+  sessionRefusal,
+  slotRefusal,
+  type EditableDays,
 } from "./program-builder-lock-model";
 
 // AI-assistant operation layer (builder S6a). The server's tool executors and
@@ -81,12 +83,13 @@ export type DraftOp =
       label?: string;
     };
 
-// lockedSlotUids (placed-plan target): slots whose calendar day is history —
-// see program-builder-lock-model. Server executor and client replay build the
-// same Set from the same serialized array, so their skip decisions agree.
+// editableDays (the plan editor): the days a coach may change, as positions —
+// see program-builder-lock-model. Every op asks the rule of the draft as it
+// stands, so the server executor and the client replay, holding the same
+// draft and the same two numbers, make the same skip decisions.
 export type DraftOpContext = {
   target: BuilderTarget;
-  lockedSlotUids?: ReadonlySet<string>;
+  editableDays?: EditableDays;
 };
 
 type DraftOpOutcome = { draft: ProgramDraft; skipped?: string };
@@ -121,18 +124,6 @@ function findSlotSession(
   return null;
 }
 
-function findSlotUidForSession(
-  draft: ProgramDraft,
-  sessionUid: string,
-): string | null {
-  for (const week of draft.weeks) {
-    for (const slot of week.days) {
-      if (slot.session?.uid === sessionUid) return slot.uid;
-    }
-  }
-  return null;
-}
-
 const hasUid = (draft: ProgramDraft, uid: string): boolean =>
   draft.weeks.some(
     (w) =>
@@ -157,8 +148,12 @@ export function applyDraftOp(
 ): DraftOpOutcome {
   const clientDraft = ctx.target === "client-draft";
   // Lock checks run FIRST in every case that has one — a locked slot's other
-  // failure modes (occupied, vanished) must not mask that it is history.
-  const locked = ctx.lockedSlotUids;
+  // failure modes (occupied, vanished) must not mask that it is locked.
+  const days = ctx.editableDays;
+  const rules = days ? planDayRules(draft.weeks, days, null) : null;
+  const slotLocked = (slotUid: string) => (rules ? slotRefusal(rules, slotUid) : null);
+  const sessionLocked = (sessionUid: string) =>
+    rules ? sessionRefusal(draft, rules, sessionUid) : null;
 
   switch (op.type) {
     case "set_program_meta": {
@@ -176,15 +171,17 @@ export function applyDraftOp(
       if (hasUid(draft, op.week.uid)) {
         return { draft, skipped: "Week already inserted" };
       }
-      if (op.afterWeekUid === null) {
-        return { draft: { ...draft, weeks: [...draft.weeks, op.week] } };
-      }
-      const index = draft.weeks.findIndex((w) => w.uid === op.afterWeekUid);
+      const index =
+        op.afterWeekUid === null
+          ? draft.weeks.length - 1
+          : draft.weeks.findIndex((w) => w.uid === op.afterWeekUid);
       if (index < 0) {
         return { draft, skipped: "The source week no longer exists" };
       }
-      if (locked && !canInsertAfterWeek(draft.weeks, locked, index)) {
-        return { draft, skipped: PAST_LOCKED };
+      const insertRefused = days && insertWeekRefusal(draft.weeks, days, index, op.week);
+      if (insertRefused) return { draft, skipped: insertRefused };
+      if (op.afterWeekUid === null) {
+        return { draft: { ...draft, weeks: [...draft.weeks, op.week] } };
       }
       const weeks = [...draft.weeks];
       weeks.splice(index + 1, 0, op.week);
@@ -195,8 +192,7 @@ export function applyDraftOp(
       if (draft.weeks.length <= 1) {
         return { draft, skipped: "A program keeps at least one week" };
       }
-      const target = draft.weeks.find((w) => w.uid === op.weekUid);
-      if (locked && target && !canDeleteWeek(target, locked)) {
+      if (rules?.weeks.get(op.weekUid)?.canDelete === false) {
         return { draft, skipped: PAST_LOCKED };
       }
       const weeks = draft.weeks.filter((w) => w.uid !== op.weekUid);
@@ -211,14 +207,14 @@ export function applyDraftOp(
       if (from < 0) return { draft, skipped: "That week no longer exists" };
       const to = Math.max(0, Math.min(draft.weeks.length - 1, op.toIndex));
       if (from === to) return { draft };
-      if (locked && !canReorderWeeks(draft.weeks, locked, from, to)) {
-        return { draft, skipped: PAST_LOCKED };
-      }
+      const moveRefused = days && moveWeekRefusal(draft.weeks, days, from, to);
+      if (moveRefused) return { draft, skipped: moveRefused };
       return { draft: { ...draft, weeks: arrayMove(draft.weeks, from, to) } };
     }
 
     case "place_session": {
-      if (locked?.has(op.slotUid)) return { draft, skipped: PAST_LOCKED };
+      const refused = slotLocked(op.slotUid);
+      if (refused) return { draft, skipped: refused };
       let placed = false;
       let occupied = false;
       const next = mapSlots(draft, (slot) => {
@@ -238,7 +234,8 @@ export function applyDraftOp(
     }
 
     case "clear_slot": {
-      if (locked?.has(op.slotUid)) return { draft, skipped: PAST_LOCKED };
+      const refused = slotLocked(op.slotUid);
+      if (refused) return { draft, skipped: refused };
       let cleared = false;
       const next = mapSlots(draft, (slot) => {
         if (slot.uid !== op.slotUid || !slot.session) return slot;
@@ -250,11 +247,8 @@ export function applyDraftOp(
     }
 
     case "move_session": {
-      if (locked?.has(op.targetSlotUid)) return { draft, skipped: PAST_LOCKED };
-      const sourceSlotUid = findSlotUidForSession(draft, op.sessionUid);
-      if (sourceSlotUid && locked?.has(sourceSlotUid)) {
-        return { draft, skipped: PAST_LOCKED };
-      }
+      const refused = slotLocked(op.targetSlotUid) ?? sessionLocked(op.sessionUid);
+      if (refused) return { draft, skipped: refused };
       const moving = findSlotSession(draft, op.sessionUid);
       if (!moving) return { draft, skipped: "That session no longer exists" };
       let displaced: SessionDraft | null = null;
@@ -281,9 +275,8 @@ export function applyDraftOp(
     }
 
     case "update_session": {
-      if (locked && isSessionLocked(draft, locked, op.sessionUid)) {
-        return { draft, skipped: PAST_LOCKED };
-      }
+      const refused = sessionLocked(op.sessionUid);
+      if (refused) return { draft, skipped: refused };
       if (
         clientDraft &&
         (op.patch.name !== undefined || op.patch.focus !== undefined)
@@ -303,9 +296,8 @@ export function applyDraftOp(
     }
 
     case "add_exercise": {
-      if (locked && isSessionLocked(draft, locked, op.sessionUid)) {
-        return { draft, skipped: PAST_LOCKED };
-      }
+      const refused = sessionLocked(op.sessionUid);
+      if (refused) return { draft, skipped: refused };
       if (hasUid(draft, op.exercise.uid)) {
         return { draft, skipped: "Exercise already added" };
       }
@@ -319,9 +311,8 @@ export function applyDraftOp(
     }
 
     case "update_exercise": {
-      if (locked && isSessionLocked(draft, locked, op.sessionUid)) {
-        return { draft, skipped: PAST_LOCKED };
-      }
+      const refused = sessionLocked(op.sessionUid);
+      if (refused) return { draft, skipped: refused };
       let found = false;
       let changed = false;
       const next = mapSession(draft, op.sessionUid, (s) => ({
@@ -339,9 +330,8 @@ export function applyDraftOp(
     }
 
     case "remove_exercise": {
-      if (locked && isSessionLocked(draft, locked, op.sessionUid)) {
-        return { draft, skipped: PAST_LOCKED };
-      }
+      const refused = sessionLocked(op.sessionUid);
+      if (refused) return { draft, skipped: refused };
       let found = false;
       const next = mapSession(draft, op.sessionUid, (s) => {
         const exercises = s.exercises.filter((e) => e.uid !== op.exerciseUid);
@@ -354,9 +344,8 @@ export function applyDraftOp(
     }
 
     case "reorder_exercise": {
-      if (locked && isSessionLocked(draft, locked, op.sessionUid)) {
-        return { draft, skipped: PAST_LOCKED };
-      }
+      const refused = sessionLocked(op.sessionUid);
+      if (refused) return { draft, skipped: refused };
       let found = false;
       let changed = false;
       const next = mapSession(draft, op.sessionUid, (s) => {

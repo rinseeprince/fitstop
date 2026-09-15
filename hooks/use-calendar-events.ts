@@ -22,7 +22,7 @@ function trainingEventsKeyPrefix(clientId: string) {
 
 /**
  * Everything a client's training data is read from — the month calendar, the
- * plan editor's amendment GET, the placed-session tray, and any reader added
+ * plan editor's read, the placed-session tray, and any reader added
  * later.
  *
  * This matcher is an API AREA, not an endpoint. It used to be the key prefix
@@ -74,7 +74,9 @@ export function useCalendarEvents(
       : null;
 
   const { data, error, isLoading, mutate } = useSWR<EventsResponse>(key, swrFetcher, {
-    revalidateOnFocus: false,
+    // The client moves sessions on their own device, which this browser cannot learn of, so
+    // refetch when the coach comes back; a drag on a stale calendar fails its from-date check.
+    revalidateOnFocus: true,
   });
 
   const events = useMemo(() => data?.events ?? [], [data]);

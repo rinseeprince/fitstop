@@ -35,9 +35,9 @@ beforeEach(() => {
 
 describe("clearScheduledEvents", () => {
   it("removes the scheduled sessions and deactivates the slots behind them; nutrition has no day to remove", async () => {
-    // The slots matter as much as the events: the amendment editor's day-slots
-    // are the plan's active rows, so orphans past the end would put days on its
-    // grid that the window no longer has.
+    // The slots matter as much as the events: the plan's active rows are its
+    // blueprint, so rows left active past its end would describe days the
+    // window no longer has.
     const training = query({ data: [{ training_session_id: "s1" }], error: null });
     const slots = query({ data: null, error: null });
     let call = 0;

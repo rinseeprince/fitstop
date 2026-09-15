@@ -17,7 +17,7 @@
  *   - scheduled training_events for ONE client in an explicit date range,
  *   - is_modified = true (the duplicate path inserts with this flag),
  *   - optionally created on/after --created-since (the buggy-duplicate day),
- *     to spare amended originals that also carry is_modified.
+ *     to spare edited originals that also carry is_modified.
  *
  * After deleting events it deactivates (is_active = false, never hard-delete)
  * the cloned training_sessions those events pointed at — but ONLY when no

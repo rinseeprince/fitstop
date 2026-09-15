@@ -56,7 +56,7 @@ import type { DraftWorkspace } from "./draft-workspace";
 export function commitOp(ws: DraftWorkspace, op: DraftOp): string | null {
   const outcome = applyDraftOp(ws.draft, op, {
     target: ws.target,
-    lockedSlotUids: ws.lockedSlotUids,
+    editableDays: ws.editableDays ?? undefined,
   });
   if (outcome.skipped) return outcome.skipped;
   if (outcome.draft !== ws.draft) ws.draft = normalizeDraft(outcome.draft);

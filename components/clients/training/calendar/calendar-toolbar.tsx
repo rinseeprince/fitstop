@@ -30,6 +30,8 @@ type CalendarToolbarProps = {
   monthSessionCount: number;
   /** When provided, renders the Delete-future trigger (always rightmost). */
   onDeleteFuture?: () => void;
+  /** Renders that trigger disabled — the plan it deletes is still loading. */
+  deleteFutureDisabled?: boolean;
 };
 
 // The calendar's control line IS the divider: the month nav sits on the left
@@ -48,6 +50,7 @@ export function CalendarToolbar({
   onToggleLibrary,
   monthSessionCount,
   onDeleteFuture,
+  deleteFutureDisabled = false,
 }: CalendarToolbarProps) {
   return (
     // mb-1 + the parent's gap-2 = the divider spec's 12px to the grid below.
@@ -138,9 +141,10 @@ export function CalendarToolbar({
         {onDeleteFuture && (
           <button
             onClick={onDeleteFuture}
+            disabled={deleteFutureDisabled}
             aria-label="Delete training plan"
             title="Delete training plan"
-            className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060]"
+            className="rounded p-1 text-[#93b0b4] transition-colors hover:text-[#c06060] disabled:opacity-50"
           >
             <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>

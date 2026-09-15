@@ -1,16 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+  LIMIT_LOCKED,
   PAST_LOCKED,
-  computeLockedSlotUids,
-  computeMovedPastSlotUids,
+  insertWeekRefusal,
   isSessionLocked,
-  weekLockState,
-  lockBoundaryWeekIndex,
-  canDeleteWeek,
-  canDuplicateWeek,
-  canInsertAfterWeek,
-  canReorderWeeks,
-  type PlacedPlanLockSource,
+  moveWeekRefusal,
+  planDayRules,
+  sessionRefusal,
+  slotRefusal,
 } from "./program-builder-lock-model";
 import {
   DAYS_PER_WEEK,
@@ -20,7 +17,9 @@ import {
   type WeekDraft,
 } from "./program-builder-types";
 
-// Deterministic fixtures (no newUid) so assertions can name uids directly.
+// Deterministic fixtures (no newUid) so assertions can name uids directly:
+// week w is `wk-w`, and the slot at position p — the plan's day
+// effective_from + p — is `s<p>`, holding session `sess-<p>` when it has one.
 
 function sess(uid: string): SessionDraft {
   return {
@@ -39,23 +38,35 @@ function slot(uid: string, orderIndex: number, session: SessionDraft | null = nu
   return { uid, orderIndex, isRest: session == null, session };
 }
 
-function makeWeeks(count: number): WeekDraft[] {
+function makeWeeks(count: number, sessionsAt: number[] = []): WeekDraft[] {
   return Array.from({ length: count }, (_, w) => ({
     uid: `wk-${w}`,
     weekIndex: w,
-    days: Array.from({ length: DAYS_PER_WEEK }, (_, d) =>
-      slot(`s${w * DAYS_PER_WEEK + d}`, d),
-    ),
+    days: Array.from({ length: DAYS_PER_WEEK }, (_, d) => {
+      const position = w * DAYS_PER_WEEK + d;
+      return slot(
+        `s${position}`,
+        d,
+        sessionsAt.includes(position) ? sess(`sess-${position}`) : null,
+      );
+    }),
   }));
 }
 
-function makeSource(overrides: Partial<PlacedPlanLockSource> = {}): PlacedPlanLockSource {
+/** A rest week to insert, or one with a session on `sessionDay`. */
+function newWeek(sessionDay: number | null = null): WeekDraft {
   return {
-    plan: { effectiveFrom: "2026-07-15" },
-    clientToday: "2026-07-22",
-    sessions: Array.from({ length: 14 }, () => ({ events: [] })),
-    ...overrides,
+    uid: "wk-new",
+    weekIndex: 0,
+    days: Array.from({ length: DAYS_PER_WEEK }, (_, d) =>
+      slot(`new-${d}`, d, d === sessionDay ? sess("sess-new") : null),
+    ),
   };
+}
+
+/** The slot uids from position `from` through `to`. */
+function slots(from: number, to: number): Set<string> {
+  return new Set(Array.from({ length: to - from + 1 }, (_, i) => `s${from + i}`));
 }
 
 function draftWith(weeks: WeekDraft[]): ProgramDraft {
@@ -71,123 +82,198 @@ function draftWith(weeks: WeekDraft[]): ProgramDraft {
   };
 }
 
-describe("computeLockedSlotUids", () => {
-  it("locks every slot whose date already happened; today stays open", () => {
-    const weeks = makeWeeks(2);
-    const locked = computeLockedSlotUids(makeSource(), weeks);
-    // 07-15..07-21 = positions 0..6 locked; position 7 (07-22) IS today → open.
-    expect(locked).toEqual(["s0", "s1", "s2", "s3", "s4", "s5", "s6"]);
+describe("planDayRules", () => {
+  it("splits the grid by position: history before `from`, greyed after `through`", () => {
+    const rules = planDayRules(makeWeeks(3), { from: 9, through: 16 }, null);
+    expect(rules.past).toEqual(slots(0, 8));
+    expect(rules.beyond).toEqual(slots(17, 20));
+    expect(rules.locked).toEqual(new Set([...slots(0, 8), ...slots(17, 20)]));
   });
 
-  it("locks a future slot whose linked event already left the scheduled state", () => {
-    const weeks = makeWeeks(2);
-    const source = makeSource();
-    source.sessions[9] = { events: [{ status: "completed", date: "2026-07-24" }] };
-    const locked = computeLockedSlotUids(source, weeks);
-    expect(locked).toContain("s9");
-    // A future slot with only scheduled events stays open.
-    expect(locked).not.toContain("s8");
+  it("greys nothing when nothing bounds the plan", () => {
+    const rules = planDayRules(makeWeeks(2), { from: 3, through: null }, null);
+    expect(rules.beyond.size).toBe(0);
+    expect(rules.locked).toEqual(slots(0, 2));
   });
 
-  // Route 3: the coach moved a future session forward and the calendar overtook
-  // it. Its slot's own column is still ahead, but its day has happened.
-  it("locks a future slot whose event was moved to a day that has now passed", () => {
-    const weeks = makeWeeks(2);
-    const source = makeSource();
-    source.sessions[10] = { events: [{ status: "scheduled", date: "2026-07-20" }] };
-    const locked = computeLockedSlotUids(source, weeks);
-    expect(locked).toContain("s10");
-    // ...and it is the ONE route that gets its own explanation, because the
-    // padlock is sitting in a future column.
-    expect(computeMovedPastSlotUids(source, weeks)).toEqual(["s10"]);
+  it("has no history when the first editable day is the plan's first day", () => {
+    const rules = planDayRules(makeWeeks(2), { from: 0, through: null }, null);
+    expect(rules.past.size).toBe(0);
+    expect(rules.locked.size).toBe(0);
   });
 
-  it("does not flag an already-elapsed slot as moved-past (its own day passed)", () => {
+  it("rings today's slot, even when today is already history; null off the grid", () => {
     const weeks = makeWeeks(2);
-    const source = makeSource();
-    source.sessions[3] = { events: [{ status: "scheduled", date: "2026-07-18" }] };
-    expect(computeMovedPastSlotUids(source, weeks)).toEqual([]);
+    expect(planDayRules(weeks, { from: 7, through: null }, 7).todaySlotUid).toBe("s7");
+    // A workout logged today moves the first editable day to tomorrow.
+    const logged = planDayRules(weeks, { from: 7, through: null }, 6);
+    expect(logged.todaySlotUid).toBe("s6");
+    expect(logged.past.has("s6")).toBe(true);
+    expect(planDayRules(weeks, { from: 7, through: null }, null).todaySlotUid).toBeNull();
+    expect(planDayRules(weeks, { from: 7, through: null }, 14).todaySlotUid).toBeNull();
   });
 
-  it("locks nothing for a not-yet-started plan", () => {
-    const weeks = makeWeeks(2);
-    const source = makeSource({ clientToday: "2026-07-10" });
-    expect(computeLockedSlotUids(source, weeks)).toEqual([]);
+  it("reads the grid as it stands: a moved week takes the rule of its new place", () => {
+    const [first, second] = makeWeeks(2);
+    const rules = planDayRules([second, first], { from: 7, through: null }, null);
+    expect(rules.past).toEqual(new Set(second.days.map((s) => s.uid)));
+    expect(first.days.some((s) => rules.locked.has(s.uid))).toBe(false);
   });
 
-  it("tail padding (no backing row) locks by date alone", () => {
+  it("allows Add week only while the next week's first day is inside the limit", () => {
+    // Two weeks: the next week would start on position 14.
     const weeks = makeWeeks(2);
-    // Only 10 backing rows; positions 10..13 are padding, dates 07-25..07-28
-    // are future → open.
-    const source = makeSource({ sessions: Array.from({ length: 10 }, () => ({ events: [] })) });
-    const locked = computeLockedSlotUids(source, weeks);
-    expect(locked).toEqual(["s0", "s1", "s2", "s3", "s4", "s5", "s6"]);
+    expect(planDayRules(weeks, { from: 0, through: 13 }, null).canAddWeek).toBe(false);
+    expect(planDayRules(weeks, { from: 0, through: 14 }, null).canAddWeek).toBe(true);
+    expect(planDayRules(weeks, { from: 0, through: null }, null).canAddWeek).toBe(true);
+  });
+
+  describe("week actions", () => {
+    it("refuses delete for any week holding a history day; a greyed week can go", () => {
+      // from 9: week 0 is all history and week 1 holds days 7-8; 17-20 greyed.
+      const rules = planDayRules(makeWeeks(3), { from: 9, through: 16 }, null);
+      expect(rules.weeks.get("wk-0")?.canDelete).toBe(false);
+      expect(rules.weeks.get("wk-1")?.canDelete).toBe(false);
+      expect(rules.weeks.get("wk-2")?.canDelete).toBe(true);
+    });
+
+    it("refuses duplicate before the last history week and when the copy pushes a session past the limit", () => {
+      // Sessions on 3, 10 and 16; week 1 holds the last history day.
+      const weeks = makeWeeks(3, [3, 10, 16]);
+      const open = planDayRules(weeks, { from: 9, through: null }, null);
+      expect(open.weeks.get("wk-0")?.canDuplicate).toBe(false);
+      expect(open.weeks.get("wk-1")?.canDuplicate).toBe(true);
+      expect(open.weeks.get("wk-2")?.canDuplicate).toBe(true);
+
+      // The plan ends on position 20: a copy of week 1 pushes week 2's session
+      // to 23.
+      const capped = planDayRules(weeks, { from: 9, through: 20 }, null);
+      expect(capped.weeks.get("wk-1")?.canDuplicate).toBe(false);
+      // Through 23 it still reaches that day.
+      const roomy = planDayRules(weeks, { from: 9, through: 23 }, null);
+      expect(roomy.weeks.get("wk-1")?.canDuplicate).toBe(true);
+      expect(roomy.weeks.get("wk-2")?.canDuplicate).toBe(true);
+    });
+
+    it("keeps a week touching a history or greyed day from being dragged", () => {
+      const rules = planDayRules(makeWeeks(4), { from: 9, through: 23 }, null);
+      expect(rules.weeks.get("wk-0")?.canReorder).toBe(false);
+      expect(rules.weeks.get("wk-1")?.canReorder).toBe(false);
+      expect(rules.weeks.get("wk-2")?.canReorder).toBe(true);
+      // Days 24-27 are greyed.
+      expect(rules.weeks.get("wk-3")?.canReorder).toBe(false);
+    });
   });
 });
 
-describe("lock queries", () => {
-  const weeks = makeWeeks(3);
-  const locked = new Set(["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s8"]); // wk0 full, wk1 partial
-
-  it("isSessionLocked resolves through the slot holding the session", () => {
-    const withSessions = makeWeeks(2);
-    withSessions[0].days[1] = slot("s1", 1, sess("sess-past"));
-    withSessions[1].days[0] = slot("s7", 0, sess("sess-future"));
-    const draft = draftWith(withSessions);
-    const set = new Set(["s0", "s1", "s2", "s3", "s4", "s5", "s6"]);
-    expect(isSessionLocked(draft, set, "sess-past")).toBe(true);
-    expect(isSessionLocked(draft, set, "sess-future")).toBe(false);
-    expect(isSessionLocked(draft, set, "sess-vanished")).toBe(false);
-  });
-
-  it("weekLockState classifies none / partial / full", () => {
-    expect(weekLockState(weeks[0], locked)).toBe("full");
-    expect(weekLockState(weeks[1], locked)).toBe("partial");
-    expect(weekLockState(weeks[2], locked)).toBe("none");
-  });
-
-  it("lockBoundaryWeekIndex is the LAST week containing a locked slot", () => {
-    expect(lockBoundaryWeekIndex(weeks, locked)).toBe(1);
-    expect(lockBoundaryWeekIndex(weeks, new Set())).toBe(-1);
+describe("slotRefusal", () => {
+  it("names why a slot is locked, and nothing for an editable or unknown slot", () => {
+    const rules = planDayRules(makeWeeks(2), { from: 3, through: 10 }, null);
+    expect(slotRefusal(rules, "s2")).toBe(PAST_LOCKED);
+    expect(slotRefusal(rules, "s3")).toBeNull();
+    expect(slotRefusal(rules, "s10")).toBeNull();
+    expect(slotRefusal(rules, "s11")).toBe(LIMIT_LOCKED);
+    expect(slotRefusal(rules, "s-gone")).toBeNull();
   });
 });
 
-describe("week policies", () => {
-  const weeks = makeWeeks(3);
-  const locked = new Set(["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s8"]);
+describe("session queries", () => {
+  // Sessions on a history day (1), an editable day (5) and a greyed day (12).
+  const draft = draftWith(makeWeeks(2, [1, 5, 12]));
+  const rules = planDayRules(draft.weeks, { from: 3, through: 10 }, null);
 
-  it("canDeleteWeek: only untouched weeks", () => {
-    expect(canDeleteWeek(weeks[0], locked)).toBe(false);
-    expect(canDeleteWeek(weeks[1], locked)).toBe(false); // boundary (partial)
-    expect(canDeleteWeek(weeks[2], locked)).toBe(true);
+  it("sessionRefusal resolves through the slot holding the session", () => {
+    expect(sessionRefusal(draft, rules, "sess-1")).toBe(PAST_LOCKED);
+    expect(sessionRefusal(draft, rules, "sess-5")).toBeNull();
+    expect(sessionRefusal(draft, rules, "sess-12")).toBe(LIMIT_LOCKED);
+    expect(sessionRefusal(draft, rules, "sess-gone")).toBeNull();
   });
 
-  it("canDuplicateWeek: boundary week allowed, fully-elapsed blocked (decision 8)", () => {
-    expect(canDuplicateWeek(weeks[0], locked)).toBe(false);
-    expect(canDuplicateWeek(weeks[1], locked)).toBe(true);
-    expect(canDuplicateWeek(weeks[2], locked)).toBe(true);
-  });
-
-  it("canInsertAfterWeek: at/after the boundary only", () => {
-    expect(canInsertAfterWeek(weeks, locked, 0)).toBe(false);
-    expect(canInsertAfterWeek(weeks, locked, 1)).toBe(true); // after the boundary week
-    expect(canInsertAfterWeek(weeks, locked, 2)).toBe(true);
-    expect(canInsertAfterWeek(weeks, new Set(), 0)).toBe(true); // nothing locked
-  });
-
-  it("canReorderWeeks: both endpoints strictly after the boundary", () => {
-    const four = makeWeeks(4);
-    expect(canReorderWeeks(four, locked, 2, 3)).toBe(true);
-    expect(canReorderWeeks(four, locked, 3, 2)).toBe(true);
-    expect(canReorderWeeks(four, locked, 1, 3)).toBe(false); // boundary week itself
-    expect(canReorderWeeks(four, locked, 2, 1)).toBe(false); // landing on the boundary
-    expect(canReorderWeeks(four, new Set(), 0, 3)).toBe(true);
+  it("isSessionLocked is true exactly when the session's slot is locked", () => {
+    expect(isSessionLocked(draft, rules.locked, "sess-1")).toBe(true);
+    expect(isSessionLocked(draft, rules.locked, "sess-5")).toBe(false);
+    expect(isSessionLocked(draft, rules.locked, "sess-12")).toBe(true);
+    expect(isSessionLocked(draft, rules.locked, "sess-gone")).toBe(false);
   });
 });
 
-describe("PAST_LOCKED copy", () => {
-  it("is a plain sentence (shared by ops skips, toasts, and the assistant)", () => {
+describe("insertWeekRefusal", () => {
+  it("refuses an insert before the last history week", () => {
+    const weeks = makeWeeks(3);
+    // from 9: week 1 holds the last history days (7-8).
+    const days = { from: 9, through: null };
+    expect(insertWeekRefusal(weeks, days, 0, newWeek())).toBe(PAST_LOCKED);
+    expect(insertWeekRefusal(weeks, days, 1, newWeek())).toBeNull();
+    expect(insertWeekRefusal(weeks, days, 2, newWeek())).toBeNull();
+    // History ending on a week's last day: that week is the last history week.
+    expect(insertWeekRefusal(weeks, { from: 7, through: null }, 0, newWeek())).toBeNull();
+  });
+
+  it("refuses an insert that pushes a session past the plan's last day", () => {
+    // A session on 15; the plan reaches position 21.
+    const weeks = makeWeeks(3, [15]);
+    const days = { from: 0, through: 21 };
+    // After week 1, week 2 moves on a week and its session to 22.
+    expect(insertWeekRefusal(weeks, days, 1, newWeek())).toBe(LIMIT_LOCKED);
+    // Appended after the last week, a rest week pushes nothing.
+    expect(insertWeekRefusal(weeks, days, 2, newWeek())).toBeNull();
+  });
+
+  it("refuses a week that would start past the plan's limit — the Add week rule", () => {
+    // Three weeks end on position 20; an appended week starts on 21.
+    const weeks = makeWeeks(3);
+    expect(insertWeekRefusal(weeks, { from: 0, through: 20 }, 2, newWeek())).toBe(LIMIT_LOCKED);
+    expect(insertWeekRefusal(weeks, { from: 0, through: 21 }, 2, newWeek())).toBeNull();
+    // So the last week can't be copied once the grid reaches the limit.
+    const rules = planDayRules(weeks, { from: 0, through: 20 }, null);
+    expect(rules.canAddWeek).toBe(false);
+    expect(rules.weeks.get(weeks[2].uid)?.canDuplicate).toBe(false);
+  });
+
+  it("counts the start from where the week lands, not from the grid's end", () => {
+    // After week 0 the new week starts on 7.
+    const weeks = makeWeeks(2);
+    expect(insertWeekRefusal(weeks, { from: 0, through: 6 }, 0, newWeek())).toBe(LIMIT_LOCKED);
+    expect(insertWeekRefusal(weeks, { from: 0, through: 7 }, 0, newWeek())).toBeNull();
+  });
+
+  it("refuses an appended week whose own session lands past the limit", () => {
+    // Appended to three weeks, the new week covers 21-27 and the plan reaches
+    // 22: it starts inside the limit, so its own session decides.
+    const weeks = makeWeeks(3);
+    expect(insertWeekRefusal(weeks, { from: 0, through: 22 }, 2, newWeek(3))).toBe(LIMIT_LOCKED);
+    expect(insertWeekRefusal(weeks, { from: 0, through: 22 }, 2, newWeek(1))).toBeNull();
+    expect(insertWeekRefusal(weeks, { from: 0, through: null }, 2, newWeek(3))).toBeNull();
+  });
+});
+
+describe("moveWeekRefusal", () => {
+  it("refuses a move from or onto the last history week or any before it", () => {
+    const weeks = makeWeeks(4);
+    // from 9: week 1 is the last history week.
+    const days = { from: 9, through: null };
+    expect(moveWeekRefusal(weeks, days, 0, 3)).toBe(PAST_LOCKED);
+    expect(moveWeekRefusal(weeks, days, 1, 3)).toBe(PAST_LOCKED);
+    expect(moveWeekRefusal(weeks, days, 3, 1)).toBe(PAST_LOCKED);
+    expect(moveWeekRefusal(weeks, days, 3, 2)).toBeNull();
+    expect(moveWeekRefusal(weeks, days, 2, 3)).toBeNull();
+  });
+
+  it("refuses a move that lands a session past the plan's last day", () => {
+    // A session on 8 (week 1); the plan reaches position 20.
+    const weeks = makeWeeks(4, [8]);
+    const days = { from: 0, through: 20 };
+    // To the last week: the session lands on 22.
+    expect(moveWeekRefusal(weeks, days, 1, 3)).toBe(LIMIT_LOCKED);
+    // One week on: 15.
+    expect(moveWeekRefusal(weeks, days, 1, 2)).toBeNull();
+  });
+});
+
+describe("refusal copy", () => {
+  it("is two different plain sentences (shared by ops skips, toasts and the assistant)", () => {
     expect(PAST_LOCKED).toMatch(/locked/);
-    expect(PAST_LOCKED.length).toBeGreaterThan(10);
+    expect(LIMIT_LOCKED).toMatch(/greyed out/);
+    expect(PAST_LOCKED).not.toBe(LIMIT_LOCKED);
   });
 });

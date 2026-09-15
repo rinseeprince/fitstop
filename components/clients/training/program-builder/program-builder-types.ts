@@ -9,8 +9,9 @@ import type { SavedPlanStatus } from "@/types/training";
 // `uid`s below are client-only identity for React keys + dnd).
 
 // "library" edits a saved-plan template; "client-draft" edits a working copy
-// before placement (template identity locked); "placed-plan" amends a plan
-// already on a client's calendar (past slots locked, identity editable).
+// before placement (template identity locked); "placed-plan" is the plan
+// editor, over a plan as it is on a client's calendar (locked and greyed days
+// refused, identity editable).
 export type BuilderTarget = "library" | "client-draft" | "placed-plan";
 
 export const DAYS_PER_WEEK = 7;

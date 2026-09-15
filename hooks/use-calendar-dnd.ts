@@ -103,7 +103,10 @@ export function useCalendarDnd({
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ targetDate }),
+            // `event` predates the optimistic update, so its date is the day this
+            // calendar loaded the session on: the server refuses the move if the
+            // session has moved since.
+            body: JSON.stringify({ targetDate, fromDate: event.date }),
           }
         );
 

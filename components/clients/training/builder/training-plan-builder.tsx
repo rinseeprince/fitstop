@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { TrainingBuilderProvider } from "@/contexts/training-builder-context";
 import { TrainingBuilderRightPanel } from "./training-builder-right-panel";
 import { TrainingPlanBuilderOverlay } from "./training-plan-builder-overlay";
+import { PlanEditorOverlay } from "./plan-editor-overlay";
 import { TrainingHistoryTable } from "../training-history-table";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { SegmentedControl } from "@/components/programs/shared/segmented-control";
@@ -38,22 +39,28 @@ export function TrainingPlanBuilder({
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // The apply surface has ONE owner, the address (CONVENTIONS §7 → "No frame
-  // disagrees"). The tray is a place, `?apply=1`, and the client editor is a
-  // place, `?editor=<savedPlanId>`; both are read unconditionally, and every
-  // transition is one router call. "Apply program" PUSHES the tray, so Back
-  // closes it; a pick REPLACES the tray's entry with the editor's, so Back out
-  // of the editor lands on the calendar with no tray; the editor's arrow
-  // replaces back to the list; the X pops the tray's entry, or replaces the
-  // param away on a pasted address; an apply pops the editor's entry, or
-  // completes it as the Journey return when a round trip is alive.
+  // Every surface here has ONE owner, the address (CONVENTIONS §7 → "No frame
+  // disagrees"). The tray is a place, `?apply=1`; the client editor is a
+  // place, `?editor=<savedPlanId>`; the plan editor is a place,
+  // `?plan=<planId>`. All three are read unconditionally, and every transition
+  // is one router call. "Apply program" PUSHES the tray, so Back closes it; a
+  // pick REPLACES the tray's entry with the editor's, so Back out of the editor
+  // lands on the calendar with no tray; the editor's arrow replaces back to the
+  // list; the X pops the tray's entry, or replaces the param away on a pasted
+  // address. "Edit plan" PUSHES the plan editor, and its arrow pops that
+  // entry. An apply or a plan save pops its editor's entry, or completes it as
+  // the Journey return when a round trip is alive.
   const trayOpen = searchParams.get("apply") === "1";
   const editorPlanId = searchParams.get("editor");
+  const planEditorId = searchParams.get("plan");
   // The Journey round trip's return target, captured on arrival (7.3): the
-  // block the apply dialog's Block field preselects, and where an apply lands.
-  // Cleared by the X and by a hand open, so an abandoned trip cannot bounce a
-  // later, unrelated apply back to Journey.
-  const { returnBlockId, clearReturnBlock } = useJourneyReturnBlock("apply");
+  // block the apply dialog's Block field preselects, and where an apply or a
+  // plan save lands. Cleared by the tray's X, the plan editor's arrow and a
+  // hand open, so an abandoned trip cannot bounce a later, unrelated save back
+  // to Journey.
+  const { returnBlockId, clearReturnBlock } = useJourneyReturnBlock(
+    trayOpen || planEditorId != null
+  );
 
   const openTray = () => {
     clearReturnBlock();
@@ -85,8 +92,33 @@ export function TrainingPlanBuilder({
   const closeEditor = useCoachBack(() => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("editor");
+    params.delete("plan");
     router.replace(`?${params.toString()}`, { scroll: false });
   });
+  const openPlanEditor = (planId: string) => {
+    clearReturnBlock();
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("apply");
+    params.delete("editor");
+    params.set("plan", planId);
+    router.push(`?${params.toString()}`, { scroll: false });
+  };
+  const exitPlanEditor = () => {
+    clearReturnBlock();
+    closeEditor();
+  };
+  // A save or an apply completes its editor's entry — never left behind Back:
+  // with a trip it BECOMES the Journey entry (the tab change unmounts this
+  // surface), without one it is popped onto the calendar.
+  const completeEditor = () => {
+    if (returnBlockId) {
+      onTabChange?.("metrics", journeyReturnParams(returnBlockId), {
+        replace: true,
+      });
+    } else {
+      closeEditor();
+    }
+  };
 
   // ?training= is OURS alone (Session 7.2) — read unconditionally, so a deep
   // link into a pane resolves on the first render. The legacy shared ?subtab=
@@ -121,6 +153,7 @@ export function TrainingPlanBuilder({
                 clientId={client.id}
                 clientName={client.name}
                 onOpenGenerator={openTray}
+                onEditPlan={openPlanEditor}
               />
             </ErrorBoundary>
           </div>
@@ -134,18 +167,15 @@ export function TrainingPlanBuilder({
           onExitEditor={exitEditorToList}
           clientName={client.name}
           preselectedBlockId={returnBlockId}
-          onApplied={() => {
-            // The editor's entry is completed, never left behind Back: with a
-            // trip it BECOMES the Journey entry (the tab change unmounts this
-            // surface), without one it is popped onto the calendar.
-            if (returnBlockId) {
-              onTabChange?.("metrics", journeyReturnParams(returnBlockId), {
-                replace: true,
-              });
-            } else {
-              closeEditor();
-            }
-          }}
+          onApplied={completeEditor}
+        />
+
+        <PlanEditorOverlay
+          clientId={client.id}
+          planId={planEditorId}
+          clientName={client.name}
+          onExit={exitPlanEditor}
+          onSaved={completeEditor}
         />
       </TrainingBuilderProvider>
     </ErrorBoundary>

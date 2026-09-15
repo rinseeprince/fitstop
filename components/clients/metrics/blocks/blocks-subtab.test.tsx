@@ -71,16 +71,23 @@ vi.mock("../hooks/use-client-blocks", () => ({
   putBlockChain: vi.fn(),
   syncBlockEvents: vi.fn(),
 }));
-// The card is under its own tests: here it is the row's actions and the
-// timeline's per-plan delete.
+// The card is under its own tests, which pin which door calls which handler:
+// here it is the row's actions, the timeline's per-plan delete, and the
+// Training column's two handlers — the program list's, behind "place one" and
+// an ended headline's "update plan", and the plan editor's, behind "edit
+// plan" with the plan it heads.
 vi.mock("./block-card", () => ({
   BlockCard: ({
     block,
     rowAction,
+    onPlaceProgram,
+    onEditPlan,
     onDeletePlan,
   }: {
     block: ClientBlockView;
     rowAction?: React.ReactNode;
+    onPlaceProgram?: () => void;
+    onEditPlan?: (planId: string) => void;
     onDeletePlan?: (plan: BlockPlanDeleteTarget) => void;
   }) => (
     <div>
@@ -88,6 +95,16 @@ vi.mock("./block-card", () => ({
       <button type="button" onClick={() => onDeletePlan?.(planOf(block))}>
         {`End ${block.name} program`}
       </button>
+      {onPlaceProgram && (
+        <button type="button" onClick={onPlaceProgram}>
+          {`${block.name}: place one or update plan`}
+        </button>
+      )}
+      {onEditPlan && (
+        <button type="button" onClick={() => onEditPlan(planOf(block).id)}>
+          {`${block.name}: edit plan`}
+        </button>
+      )}
     </div>
   ),
 }));
@@ -269,5 +286,37 @@ describe("BlocksSubtab — the per-plan delete confirm", () => {
       await request.promise.catch(() => undefined);
     });
     expect(planDialog()).toMatchObject({ open: "true", subject: "plan-blk-1", deleting: "false" });
+  });
+});
+
+// The Training column's doors, as the address each lands on: one tab change
+// through the client page's handler, carrying the trip back to the block.
+describe("BlocksSubtab — the Training column's doors", () => {
+  it("edit plan lands on the plan editor on that plan, with the trip back to its block", () => {
+    const onTabChange = vi.fn();
+    render(<BlocksSubtab clientId="c1" onTabChange={onTabChange} />);
+
+    click("Build 1: edit plan");
+    expect(onTabChange).toHaveBeenCalledTimes(1);
+    expect(onTabChange).toHaveBeenCalledWith("training", {
+      training: "plans",
+      plan: "plan-blk-2",
+      returnTo: "journey",
+      returnBlock: "blk-2",
+    });
+  });
+
+  it("place one and update plan land on the program list, with the apply trip", () => {
+    const onTabChange = vi.fn();
+    render(<BlocksSubtab clientId="c1" onTabChange={onTabChange} />);
+
+    click("Cut 2: place one or update plan");
+    expect(onTabChange).toHaveBeenCalledTimes(1);
+    expect(onTabChange).toHaveBeenCalledWith("training", {
+      training: "plans",
+      apply: "1",
+      returnTo: "journey",
+      returnBlock: "blk-1",
+    });
   });
 });

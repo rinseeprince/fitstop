@@ -5,29 +5,52 @@ import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { HEADER_EYEBROW_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
 import { InlineMono } from "@/components/clients/overview/overview-primitives";
 import { formatDateOnlyWeekday } from "@/components/clients/overview/overview-format";
+import { TextSkeleton } from "@/components/text-skeleton";
 
 type TrainingPlanHeroProps = {
   clientId: string;
   onOpenGenerator?: () => void;
-  /** The teal "Edit plan" primary renders only when provided. */
+  /** The teal "Edit plan" primary renders only when provided, and always
+   *  enabled: the plan read answers with the program covering the client's
+   *  today, else the next queued one, so an ended program never reaches the
+   *  hero. */
   onEditPlan?: () => void;
-  /** When set, the Edit-plan button renders disabled with this tooltip
-   *  (e.g. a fully-elapsed plan can't be amended). */
-  editPlanDisabledReason?: string | null;
 };
 
 // The Plans-subtab hero in the shared hero anatomy (Metrics / Exercise Data):
 // eyebrow + title cluster on top, actions in the bottom row under a hairline.
 // No stat row (owner call; week numbers live on the Data tab's
 // TrainingSummaryHero). Owns the empty branch too, so the right panel has a
-// single hero mount.
+// single hero mount — and the pending one: until the plan read answers, the
+// hero is its own frame with the values held as placeholders, claiming neither
+// a plan nor its absence.
 export function TrainingPlanHero({
   clientId: _clientId,
   onOpenGenerator,
   onEditPlan,
-  editPlanDisabledReason,
 }: TrainingPlanHeroProps) {
-  const { plan, scheduledFor } = useTrainingBuilderContext();
+  const { plan, scheduledFor, isPending } = useTrainingBuilderContext();
+
+  if (isPending) {
+    return (
+      <div className="rounded-[6px] bg-[#0f2027] px-5 py-[18px]">
+        <div className="min-w-0">
+          <p className={HEADER_EYEBROW_CLASS}>Training plan</p>
+          <h2 className="mt-0.5 truncate text-[15px] font-medium text-white">
+            <TextSkeleton className="w-44" />
+          </h2>
+        </div>
+        <div className="mt-3 flex items-center gap-1 border-t border-[rgba(255,255,255,0.06)] pt-3">
+          <span className="px-2 py-1 text-[11px] font-medium">
+            <TextSkeleton className="w-16" />
+          </span>
+          <span className="px-2 py-1 text-[11px] font-medium">
+            <TextSkeleton className="w-20" />
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-[6px] bg-[#0f2027] px-5 py-[18px]">
@@ -60,10 +83,8 @@ export function TrainingPlanHero({
           <>
             {onEditPlan && (
               <button
-                onClick={editPlanDisabledReason ? undefined : onEditPlan}
-                disabled={!!editPlanDisabledReason}
-                title={editPlanDisabledReason ?? undefined}
-                className="rounded-[4px] bg-[rgba(13,148,136,0.15)] px-2 py-1 text-[11px] font-medium text-[#0d9488] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={onEditPlan}
+                className="rounded-[4px] bg-[rgba(13,148,136,0.15)] px-2 py-1 text-[11px] font-medium text-[#0d9488] transition-colors"
               >
                 Edit plan
               </button>

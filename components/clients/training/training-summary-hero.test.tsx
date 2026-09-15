@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   swrData: undefined as unknown,
   swrLoading: false,
   plan: undefined as unknown,
+  planPending: false,
 }));
 
 vi.mock("swr", () => ({
@@ -14,12 +15,13 @@ vi.mock("swr", () => ({
 }));
 
 vi.mock("@/contexts/training-builder-context", () => ({
-  useTrainingBuilderContext: () => ({ plan: state.plan }),
+  useTrainingBuilderContext: () => ({ plan: state.plan, isPending: state.planPending }),
 }));
 
 describe("TrainingSummaryHero", () => {
   beforeEach(() => {
     cleanup();
+    state.planPending = false;
     state.swrLoading = false;
     state.swrData = {
       success: true,
@@ -61,5 +63,17 @@ describe("TrainingSummaryHero", () => {
     expect(screen.getByText("Sessions Completed")).toBeInTheDocument();
     expect(screen.getByText("Jane's Program")).toBeInTheDocument();
     expect(screen.queryByText(/planned/)).toBeNull();
+  });
+
+  it("holds the program-info row's slot as pending while the plan read has no answer", () => {
+    state.planPending = true;
+    state.plan = null;
+    const { container } = render(<TrainingSummaryHero clientId="client-1" />);
+
+    // The name and its two chips are placeholders; no program is claimed.
+    expect(container.querySelectorAll("[data-slot='skeleton']")).toHaveLength(3);
+    expect(screen.queryByText("Jane's Program")).toBeNull();
+    // The week's numbers come from their own read and are not held.
+    expect(screen.getByText("of 8 planned")).toBeInTheDocument();
   });
 });

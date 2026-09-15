@@ -2959,6 +2959,21 @@ export type Database = {
         }
         Returns: string
       }
+      edit_training_plan_atomic: {
+        Args: {
+          p_client_id: string
+          p_days: Json
+          p_first_day: string
+          p_frequency_per_week: number
+          p_last_day: string
+          p_name: string
+          p_plan_id: string
+          p_program_duration_weeks: number
+          p_split_type: string
+          p_version: Json
+        }
+        Returns: Json
+      }
       get_client_exercise_list: {
         Args: {
           p_client_id: string

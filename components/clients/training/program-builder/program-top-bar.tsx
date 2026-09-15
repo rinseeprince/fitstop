@@ -22,6 +22,8 @@ import { DarkSurplusPill } from "./dark-surplus-pill";
 // unsaved-changes guard), so a second one here read as a duplicate affordance.
 type ProgramTopBarProps = {
   draft: ProgramDraft;
+  /** The builder state's seed count: the inputs below start again on a new seed. */
+  seedCount: number;
   mode: "view" | "edit";
   // Name + focus are TEMPLATE identity — editable in the program builder, but
   // read-only in the client editor (the coach applies the template + adjusts
@@ -29,8 +31,8 @@ type ProgramTopBarProps = {
   identityEditable?: boolean;
   // The default-surplus pill is a TEMPLATE concept: sessions inherit it at
   // placement time. A placed plan carries the RESOLVED value on every row
-  // (surplus is absolute there), so the amendment surface hides the pill —
-  // a dead knob would read as a bulk control and silently do nothing.
+  // (surplus is absolute there), so the plan editor hides the pill — a dead
+  // knob would read as a bulk control and silently do nothing.
   showSurplus?: boolean;
   onRename: (name: string) => void;
   onFocusChange: (focus: string | null) => void;
@@ -46,6 +48,7 @@ const INLINE_DESC_CLASS =
 
 export function ProgramTopBar({
   draft,
+  seedCount,
   mode,
   identityEditable = true,
   showSurplus = true,
@@ -73,9 +76,10 @@ export function ProgramTopBar({
         {mode === "edit" && identityEditable ? (
           <>
             <Input
-              // Uncontrolled + keyed so reseeding picks up a fresh name; commit
-              // on blur (empty falls back rather than violating name min(1)).
-              key={`name-${draft.id}`}
+              // Uncontrolled + keyed by the seed, so a discard or a reload
+              // shows the seeded name again; commit on blur (empty falls back
+              // rather than violating name min(1)).
+              key={`name-${draft.id}-${seedCount}`}
               defaultValue={draft.name}
               maxLength={100}
               aria-label="Program name"
@@ -93,7 +97,7 @@ export function ProgramTopBar({
             />
             <Input
               // Free-text focus; empty commits null (no focus).
-              key={`focus-${draft.id}`}
+              key={`focus-${draft.id}-${seedCount}`}
               defaultValue={draft.splitType ?? ""}
               maxLength={100}
               aria-label="Program focus"
@@ -106,7 +110,7 @@ export function ProgramTopBar({
             />
             <Textarea
               // Uncontrolled + keyed like name/focus; empty commits null.
-              key={`desc-${draft.id}`}
+              key={`desc-${draft.id}-${seedCount}`}
               defaultValue={draft.description ?? ""}
               maxLength={500}
               rows={2}

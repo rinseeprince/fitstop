@@ -6,6 +6,7 @@ import {
   type DraftOp,
 } from "./program-builder-ops";
 import { normalizeDraft } from "./program-builder-model";
+import { LIMIT_LOCKED, PAST_LOCKED } from "./program-builder-lock-model";
 import {
   DAYS_PER_WEEK,
   MAX_WEEKS,
@@ -346,165 +347,179 @@ describe("wire-schema round trip (drift belt)", () => {
 });
 
 // =============================================================================
-// Placed-plan lock enforcement (ctx.lockedSlotUids) — every structural and
-// session/exercise op refuses history with PAST_LOCKED; identity stays editable
-// (IDENTITY_LOCKED is client-draft-only).
+// The plan editor (ctx.editableDays): every op asks the day rule of the draft
+// as it stands — a history day refuses with PAST_LOCKED, a greyed day with
+// LIMIT_LOCKED — and identity stays editable (IDENTITY_LOCKED is
+// client-draft-only).
 // =============================================================================
 
-describe("applyDraftOp locked slots (placed-plan)", () => {
-  // Week 0 = elapsed (all 7 slots locked, session in day 0); week 1+ = future.
-  function makeLockedFixture(weekCount = 2) {
-    const pastSession = makeSession({ name: "Past Day" });
-    const futureSession = makeSession({ name: "Future Day" });
-    const weeks = [weekWithSession(pastSession, 0)];
+describe("applyDraftOp on the plan editor's days (placed-plan)", () => {
+  // Week 0 is positions 0-6 with a session on its first day; week 1 starts on
+  // position 7 with a session on its first day; later weeks are rest.
+  function makeFixture(weekCount = 2) {
+    const weeks = [weekWithSession(makeSession({ name: "Past Day" }), 0)];
     for (let w = 1; w < weekCount; w++) {
-      weeks.push(w === 1 ? weekWithSession(futureSession, 1) : makeRestWeek(w));
+      weeks.push(
+        w === 1 ? weekWithSession(makeSession({ name: "Future Day" }), 1) : makeRestWeek(w),
+      );
     }
     const draft = makeDraft(weeks);
-    const lockedSlotUids = new Set(draft.weeks[0].days.map((d) => d.uid));
-    const ctx = { target: "placed-plan" as const, lockedSlotUids };
-    return { draft, ctx, lockedSlotUids };
+    return {
+      draft,
+      past: draft.weeks[0].days[0].session!,
+      future: draft.weeks[1].days[0].session!,
+    };
   }
 
-  it("place_session into a locked (past rest) slot skips", () => {
-    const { draft, ctx } = makeLockedFixture();
-    const out = applyDraftOp(
+  // The first editable day and the plan's last day, as positions.
+  const placed = (from: number, through: number | null = null) => ({
+    target: "placed-plan" as const,
+    editableDays: { from, through },
+  });
+
+  it("place_session and clear_slot on a history day skip with PAST_LOCKED", () => {
+    const { draft } = makeFixture();
+    const placedOut = applyDraftOp(
       draft,
       { type: "place_session", slotUid: draft.weeks[0].days[3].uid, session: makeSession() },
-      ctx,
+      placed(7),
     );
-    expect(out.skipped).toMatch(/locked/);
-    expect(out.draft).toBe(draft);
-  });
+    expect(placedOut.skipped).toBe(PAST_LOCKED);
+    expect(placedOut.draft).toBe(draft);
 
-  it("clear_slot on a locked slot skips", () => {
-    const { draft, ctx } = makeLockedFixture();
-    const out = applyDraftOp(
+    const cleared = applyDraftOp(
       draft,
       { type: "clear_slot", slotUid: draft.weeks[0].days[0].uid },
-      ctx,
+      placed(7),
     );
-    expect(out.skipped).toMatch(/locked/);
+    expect(cleared.skipped).toBe(PAST_LOCKED);
+    expect(cleared.draft).toBe(draft);
   });
 
-  it("move_session skips when the SOURCE slot is locked", () => {
-    const { draft, ctx } = makeLockedFixture();
-    const pastUid = draft.weeks[0].days[0].session!.uid;
-    const out = applyDraftOp(
+  it("place_session and clear_slot on editable days apply", () => {
+    const { draft } = makeFixture();
+    const session = makeSession();
+    const placedOut = applyDraftOp(
       draft,
-      { type: "move_session", sessionUid: pastUid, targetSlotUid: draft.weeks[1].days[2].uid },
-      ctx,
+      { type: "place_session", slotUid: draft.weeks[1].days[3].uid, session },
+      placed(7),
     );
-    expect(out.skipped).toMatch(/locked/);
-  });
+    expect(placedOut.skipped).toBeUndefined();
+    expect(placedOut.draft.weeks[1].days[3].session?.uid).toBe(session.uid);
 
-  it("move_session skips when the TARGET slot is locked", () => {
-    const { draft, ctx } = makeLockedFixture();
-    const futureUid = draft.weeks[1].days[0].session!.uid;
-    const out = applyDraftOp(
+    const cleared = applyDraftOp(
       draft,
-      { type: "move_session", sessionUid: futureUid, targetSlotUid: draft.weeks[0].days[3].uid },
-      ctx,
+      { type: "clear_slot", slotUid: draft.weeks[1].days[0].uid },
+      placed(7),
     );
-    expect(out.skipped).toMatch(/locked/);
+    expect(cleared.skipped).toBeUndefined();
+    expect(cleared.draft.weeks[1].days[0].session).toBeNull();
   });
 
-  it("move_session between future slots still applies", () => {
-    const { draft, ctx } = makeLockedFixture();
-    const futureUid = draft.weeks[1].days[0].session!.uid;
-    const out = applyDraftOp(
+  it("move_session refuses a history source or target with PAST_LOCKED, and moves between editable days", () => {
+    const { draft, past, future } = makeFixture();
+    const fromHistory = applyDraftOp(
       draft,
-      { type: "move_session", sessionUid: futureUid, targetSlotUid: draft.weeks[1].days[4].uid },
-      ctx,
+      { type: "move_session", sessionUid: past.uid, targetSlotUid: draft.weeks[1].days[2].uid },
+      placed(7),
     );
-    expect(out.skipped).toBeUndefined();
-    expect(out.draft.weeks[1].days[4].session?.uid).toBe(futureUid);
+    expect(fromHistory.skipped).toBe(PAST_LOCKED);
+
+    const ontoHistory = applyDraftOp(
+      draft,
+      { type: "move_session", sessionUid: future.uid, targetSlotUid: draft.weeks[0].days[3].uid },
+      placed(7),
+    );
+    expect(ontoHistory.skipped).toBe(PAST_LOCKED);
+
+    const moved = applyDraftOp(
+      draft,
+      { type: "move_session", sessionUid: future.uid, targetSlotUid: draft.weeks[1].days[4].uid },
+      placed(7),
+    );
+    expect(moved.skipped).toBeUndefined();
+    expect(moved.draft.weeks[1].days[4].session?.uid).toBe(future.uid);
   });
 
-  it("session/exercise ops on a locked session skip; on a future session apply", () => {
-    const { draft, ctx } = makeLockedFixture();
-    const pastUid = draft.weeks[0].days[0].session!.uid;
-    const pastExUid = draft.weeks[0].days[0].session!.exercises[0].uid;
-    const futureUid = draft.weeks[1].days[0].session!.uid;
+  it("session and exercise ops on a history session skip with PAST_LOCKED; on an editable one they apply", () => {
+    const { draft, past, future } = makeFixture();
+    const opsOn = (session: SessionDraft): DraftOp[] => {
+      const exerciseUid = session.exercises[0].uid;
+      return [
+        { type: "update_session", sessionUid: session.uid, patch: { notes: "x" } },
+        { type: "add_exercise", sessionUid: session.uid, exercise: makeExercise() },
+        { type: "update_exercise", sessionUid: session.uid, exerciseUid, patch: { sets: 5 } },
+        { type: "remove_exercise", sessionUid: session.uid, exerciseUid },
+        { type: "reorder_exercise", sessionUid: session.uid, exerciseUid, toIndex: 0 },
+      ];
+    };
+    for (const op of opsOn(past)) {
+      const out = applyDraftOp(draft, op, placed(7));
+      expect(out.skipped, op.type).toBe(PAST_LOCKED);
+      expect(out.draft, op.type).toBe(draft);
+    }
+    for (const op of opsOn(future)) {
+      expect(applyDraftOp(draft, op, placed(7)).skipped, op.type).toBeUndefined();
+    }
+  });
 
-    const lockedOps: DraftOp[] = [
-      { type: "update_session", sessionUid: pastUid, patch: { notes: "x" } },
-      { type: "add_exercise", sessionUid: pastUid, exercise: makeExercise() },
-      { type: "update_exercise", sessionUid: pastUid, exerciseUid: pastExUid, patch: { sets: 5 } },
-      { type: "remove_exercise", sessionUid: pastUid, exerciseUid: pastExUid },
-      { type: "reorder_exercise", sessionUid: pastUid, exerciseUid: pastExUid, toIndex: 0 },
-    ];
-    for (const op of lockedOps) {
-      const out = applyDraftOp(draft, op, ctx);
-      expect(out.skipped, op.type).toMatch(/locked/);
+  it("a greyed day refuses a session with LIMIT_LOCKED, ahead of its other failures", () => {
+    const { draft, future } = makeFixture();
+    // The plan reaches position 10: days 11-13 are greyed.
+    const ctx = placed(7, 10);
+    const greyedSlot = draft.weeks[1].days[5].uid;
+    expect(
+      applyDraftOp(draft, { type: "place_session", slotUid: greyedSlot, session: makeSession() }, ctx)
+        .skipped,
+    ).toBe(LIMIT_LOCKED);
+    expect(
+      applyDraftOp(
+        draft,
+        { type: "move_session", sessionUid: future.uid, targetSlotUid: greyedSlot },
+        ctx,
+      ).skipped,
+    ).toBe(LIMIT_LOCKED);
+    // A rest day would skip as already rest; the greyed day says why first.
+    expect(applyDraftOp(draft, { type: "clear_slot", slotUid: greyedSlot }, ctx).skipped).toBe(
+      LIMIT_LOCKED,
+    );
+    // The plan's last day still takes a session.
+    const lastDay = applyDraftOp(
+      draft,
+      { type: "place_session", slotUid: draft.weeks[1].days[3].uid, session: makeSession() },
+      ctx,
+    );
+    expect(lastDay.skipped).toBeUndefined();
+  });
+
+  it("remove_week refuses a week holding a history day with PAST_LOCKED, and removes a later one", () => {
+    const { draft } = makeFixture(3);
+    // from 9: week 1 holds history days 7-8.
+    for (const week of [draft.weeks[0], draft.weeks[1]]) {
+      const out = applyDraftOp(draft, { type: "remove_week", weekUid: week.uid }, placed(9));
+      expect(out.skipped).toBe(PAST_LOCKED);
       expect(out.draft).toBe(draft);
     }
-
-    const ok = applyDraftOp(
-      draft,
-      { type: "update_session", sessionUid: futureUid, patch: { notes: "x" } },
-      ctx,
-    );
-    expect(ok.skipped).toBeUndefined();
-  });
-
-  it("remove_week refuses a week containing history but deletes a future week", () => {
-    const { draft, ctx } = makeLockedFixture(3);
-    const lockedOut = applyDraftOp(
-      draft,
-      { type: "remove_week", weekUid: draft.weeks[0].uid },
-      ctx,
-    );
-    expect(lockedOut.skipped).toMatch(/locked/);
-
-    const futureOut = applyDraftOp(
+    const removed = applyDraftOp(
       draft,
       { type: "remove_week", weekUid: draft.weeks[2].uid },
-      ctx,
+      placed(9),
     );
-    expect(futureOut.skipped).toBeUndefined();
-    expect(futureOut.draft.weeks).toHaveLength(2);
+    expect(removed.skipped).toBeUndefined();
+    expect(removed.draft.weeks).toHaveLength(2);
   });
 
-  it("move_week refuses touching the boundary but reorders future weeks", () => {
-    const { draft, ctx } = makeLockedFixture(3);
-    const lockedFrom = applyDraftOp(
-      draft,
-      { type: "move_week", weekUid: draft.weeks[0].uid, toIndex: 2 },
-      ctx,
-    );
-    expect(lockedFrom.skipped).toMatch(/locked/);
-
-    const lockedTo = applyDraftOp(
-      draft,
-      { type: "move_week", weekUid: draft.weeks[2].uid, toIndex: 0 },
-      ctx,
-    );
-    expect(lockedTo.skipped).toMatch(/locked/);
-
-    const ok = applyDraftOp(
-      draft,
-      { type: "move_week", weekUid: draft.weeks[2].uid, toIndex: 1 },
-      ctx,
-    );
-    expect(ok.skipped).toBeUndefined();
-  });
-
-  it("insert_week is allowed after the boundary week, refused before it", () => {
-    // Weeks 0 AND 1 fully locked → boundary index 1.
-    const { draft } = makeLockedFixture(3);
-    const lockedSlotUids = new Set([
-      ...draft.weeks[0].days.map((d) => d.uid),
-      ...draft.weeks[1].days.map((d) => d.uid),
-    ]);
-    const ctx = { target: "placed-plan" as const, lockedSlotUids };
-
+  it("insert_week refuses a week before the last history week with PAST_LOCKED", () => {
+    const { draft } = makeFixture(3);
+    // from 14: weeks 0 and 1 are history.
+    const ctx = placed(14);
     const before = applyDraftOp(
       draft,
       { type: "insert_week", afterWeekUid: draft.weeks[0].uid, week: makeRestWeek(0) },
       ctx,
     );
-    expect(before.skipped).toMatch(/locked/);
+    expect(before.skipped).toBe(PAST_LOCKED);
+    expect(before.draft).toBe(draft);
 
     const after = applyDraftOp(
       draft,
@@ -512,6 +527,7 @@ describe("applyDraftOp locked slots (placed-plan)", () => {
       ctx,
     );
     expect(after.skipped).toBeUndefined();
+    expect(after.draft.weeks).toHaveLength(4);
 
     const append = applyDraftOp(
       draft,
@@ -521,27 +537,140 @@ describe("applyDraftOp locked slots (placed-plan)", () => {
     expect(append.skipped).toBeUndefined();
   });
 
-  it("identity stays editable on placed-plan (IDENTITY_LOCKED is client-draft-only)", () => {
-    const { draft, ctx } = makeLockedFixture();
+  it("insert_week refuses with LIMIT_LOCKED when a session would land past the plan's last day", () => {
+    const { draft } = makeFixture(3);
+    // After week 0, Future Day would move from 7 to 14, past the plan's last day.
+    const pushes = applyDraftOp(
+      draft,
+      { type: "insert_week", afterWeekUid: draft.weeks[0].uid, week: makeRestWeek(0) },
+      placed(7, 13),
+    );
+    expect(pushes.skipped).toBe(LIMIT_LOCKED);
+    expect(pushes.draft).toBe(draft);
+
+    // Appended, the week starts on 21 and its own session sits on 24.
+    const lateSession = () => {
+      const week = makeRestWeek(3);
+      week.days[3] = { ...makeRestSlot(3), isRest: false, session: makeSession() };
+      return week;
+    };
+    const append = applyDraftOp(
+      draft,
+      { type: "insert_week", afterWeekUid: null, week: lateSession() },
+      placed(7, 22),
+    );
+    expect(append.skipped).toBe(LIMIT_LOCKED);
+
+    // A plan that reaches 24 takes the same append.
+    const reaches = applyDraftOp(
+      draft,
+      { type: "insert_week", afterWeekUid: null, week: lateSession() },
+      placed(7, 24),
+    );
+    expect(reaches.skipped).toBeUndefined();
+    expect(reaches.draft.weeks).toHaveLength(4);
+  });
+
+  it("insert_week refuses with LIMIT_LOCKED a week that would start past the plan's last day, as Add week does", () => {
+    const { draft } = makeFixture(3);
+    // Three weeks end on 20: an appended rest week would start on 21.
+    const pastLimit = applyDraftOp(
+      draft,
+      { type: "insert_week", afterWeekUid: null, week: makeRestWeek(3) },
+      placed(7, 20),
+    );
+    expect(pastLimit.skipped).toBe(LIMIT_LOCKED);
+    expect(pastLimit.draft).toBe(draft);
+
+    const onLastDay = applyDraftOp(
+      draft,
+      { type: "insert_week", afterWeekUid: null, week: makeRestWeek(3) },
+      placed(7, 21),
+    );
+    expect(onLastDay.skipped).toBeUndefined();
+
+    // Mid-grid the start is where the week lands: after week 1 it starts on 14
+    // (week 2 holds no session to push).
+    const afterWeek1 = (through: number) =>
+      applyDraftOp(
+        draft,
+        { type: "insert_week", afterWeekUid: draft.weeks[1].uid, week: makeRestWeek(0) },
+        placed(7, through),
+      );
+    expect(afterWeek1(13).skipped).toBe(LIMIT_LOCKED);
+    expect(afterWeek1(14).skipped).toBeUndefined();
+  });
+
+  it("move_week refuses the history boundary with PAST_LOCKED and the limit with LIMIT_LOCKED", () => {
+    const { draft } = makeFixture(3);
+    // from 7: week 0 is the last history week.
+    const fromHistory = applyDraftOp(
+      draft,
+      { type: "move_week", weekUid: draft.weeks[0].uid, toIndex: 2 },
+      placed(7),
+    );
+    expect(fromHistory.skipped).toBe(PAST_LOCKED);
+    const ontoHistory = applyDraftOp(
+      draft,
+      { type: "move_week", weekUid: draft.weeks[2].uid, toIndex: 0 },
+      placed(7),
+    );
+    expect(ontoHistory.skipped).toBe(PAST_LOCKED);
+
+    // The plan reaches 13: moving Future Day's week last lands it on 14.
+    const pastLimit = applyDraftOp(
+      draft,
+      { type: "move_week", weekUid: draft.weeks[1].uid, toIndex: 2 },
+      placed(7, 13),
+    );
+    expect(pastLimit.skipped).toBe(LIMIT_LOCKED);
+
+    const moved = applyDraftOp(
+      draft,
+      { type: "move_week", weekUid: draft.weeks[1].uid, toIndex: 2 },
+      placed(7),
+    );
+    expect(moved.skipped).toBeUndefined();
+    expect(moved.draft.weeks[2].uid).toBe(draft.weeks[1].uid);
+  });
+
+  it("applyDraftOps asks the rule of the grid each op leaves", () => {
+    const { draft } = makeFixture(3);
+    // The plan reaches position 20: all three weeks are inside it.
+    const lastWeekDay = draft.weeks[2].days[0].uid;
+    const result = applyDraftOps(
+      draft,
+      [
+        { type: "insert_week", afterWeekUid: draft.weeks[1].uid, week: makeRestWeek(0) },
+        // Its week now starts on 21, past the plan's last day.
+        { type: "place_session", slotUid: lastWeekDay, session: makeSession() },
+      ],
+      placed(7, 20),
+    );
+    expect(result.applied).toBe(1);
+    expect(result.skipped).toEqual([{ index: 1, type: "place_session", reason: LIMIT_LOCKED }]);
+  });
+
+  it("identity stays editable (IDENTITY_LOCKED is client-draft-only)", () => {
+    const { draft, future } = makeFixture();
     const meta = applyDraftOp(
       draft,
       { type: "set_program_meta", patch: { name: "Renamed", splitType: "Upper/Lower" } },
-      ctx,
+      placed(7),
     );
     expect(meta.skipped).toBeUndefined();
     expect(meta.draft.name).toBe("Renamed");
 
-    const futureUid = draft.weeks[1].days[0].session!.uid;
     const rename = applyDraftOp(
       draft,
-      { type: "update_session", sessionUid: futureUid, patch: { name: "Renamed Day" } },
-      ctx,
+      { type: "update_session", sessionUid: future.uid, patch: { name: "Renamed Day" } },
+      placed(7),
     );
     expect(rename.skipped).toBeUndefined();
   });
 
-  it("without lockedSlotUids the placed-plan target behaves like library", () => {
-    const { draft } = makeLockedFixture();
+  it("without editableDays the placed-plan target behaves like library", () => {
+    const { draft } = makeFixture();
     const out = applyDraftOp(
       draft,
       { type: "clear_slot", slotUid: draft.weeks[0].days[0].uid },

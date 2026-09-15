@@ -331,7 +331,7 @@ Source of truth: `types/client-training-plan.ts`. This is the **client read shap
 type ClientTrainingPlan = {
   planId: string
   planName: string
-  sessions: ClientTrainingSessionEntry[] // ordered by (weekIndex, orderIndex); rest days are real isRest entries
+  sessions: ClientTrainingSessionEntry[] // one entry per day of the program as it is on the client's calendar, ordered by (weekIndex, orderIndex); rest days are real isRest entries
 }
 
 type ClientTrainingSessionEntry = {

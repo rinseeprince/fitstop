@@ -26,14 +26,16 @@ import { supabaseAdmin } from "./supabase-admin";
  *
  * **`assertDateFree` is on the three single-date paths, not on every writer** —
  * move, duplicate, and the library-session drop (`training-event-calendar-
- * service.ts`, `library-placement-service.ts`). Whole-program placement and the
- * amendment deliberately do NOT pre-check: each one first deletes the future
- * `scheduled` events in the window it is about to fill, so a per-date question
- * is one it has already answered. What that clear does not remove is a
- * non-scheduled survivor (an early log), and a concurrent write can still land
- * one between the clear and the upsert — which is what `rethrowIfDateOccupied`
- * is for on the walk. Do not "fix" those two by adding a pre-check; it would
- * reject the window they just vacated.
+ * service.ts`, `library-placement-service.ts`). Whole-program placement
+ * deliberately does NOT pre-check: it first deletes the future `scheduled`
+ * events in the window it is about to fill, so a per-date question is one it
+ * has already answered. What that clear does not remove is a non-scheduled
+ * survivor (an early log), and a concurrent write can still land one between
+ * the clear and the upsert — which is what `rethrowIfDateOccupied` is for on
+ * the walk. Do not "fix" it by adding a pre-check; it would reject the window
+ * it just vacated. The plan editor's save needs none either: it keeps the
+ * scheduled event already on a day and replaces what it holds, inside a
+ * transaction that holds the day's events locked (migration 175).
  */
 export class DateOccupiedError extends Error {}
 
@@ -43,7 +45,7 @@ const OCCUPANCY_INDEX = "idx_training_events_one_scheduled_per_day";
 
 /**
  * The app's date spelling, month-first — `EEE, MMM d`, as used by the calendar
- * tray's header, the amend and delete dialogs, the metric and exercise charts
+ * tray's header, the delete dialogs, the metric and exercise charts
  * and the check-in surfaces. Both messages below are read beside those, so they
  * follow the convention rather than setting a second one. This function was the
  * product's ONLY day-first spelling until Phase 4; do not reintroduce one.

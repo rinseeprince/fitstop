@@ -179,7 +179,7 @@ export const AUDIT_ACTIONS = {
   NUTRITION_PLAN_VERSION_DELETE: "nutrition_plan.version_delete",
   TRAINING_PLAN_PLACE: "training_plan.place",
   TRAINING_PLAN_CREATE: "training_plan.create",
-  TRAINING_PLAN_AMEND: "training_plan.amend",
+  TRAINING_PLAN_EDIT: "training_plan.edit",
   INVITATION_SEND: "invitation.send",
   BLOCK_CHAIN_UPDATE: "block.chain_update",
   BLOCK_DELETE: "block.delete",

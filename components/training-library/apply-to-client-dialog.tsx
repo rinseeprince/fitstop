@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
+import { useClearTrainingPlan } from "@/hooks/use-training-plan";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
 import {
@@ -90,6 +91,7 @@ export function ApplyToClientDialog({
 }: ApplyToClientDialogProps) {
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const invalidateTrainingData = useInvalidateTrainingData();
+  const clearTrainingPlan = useClearTrainingPlan();
   const clearBlockFacts = useClearBlockFacts();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
@@ -218,10 +220,13 @@ export function ApplyToClientDialog({
         description: `Created ${data.sessionsCreated} sessions and ${data.eventsCreated} events`,
       });
 
-      // The nutrition month view is computed from the sessions placement just
-      // laid and is SWR-cached; refresh it here so every host of this dialog
-      // is covered once.
+      // The calendars read the sessions placement just laid and are
+      // SWR-cached; refresh them here so every host of this dialog is covered
+      // once. The Training tab's plan read is cleared, not revalidated: the
+      // placement changes which plan its hero describes (CONVENTIONS §7).
       void invalidateNutritionCalendar(clientId);
+      void invalidateTrainingData(clientId);
+      void clearTrainingPlan(clientId);
       // And the Journey block cards, which are DERIVED from the rows this just
       // wrote — the area that owes an invalidator is the one that READS what
       // you wrote, not the one you wrote (CONVENTIONS §7).

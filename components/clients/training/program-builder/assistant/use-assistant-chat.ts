@@ -64,7 +64,7 @@ export function useAssistantChat() {
     target,
     clientId,
     placedPlanId,
-    lockedSlotUids,
+    editableDays,
     mode,
     isSaving,
     assistantBusy,
@@ -101,10 +101,10 @@ export function useAssistantChat() {
       const before = getDraft();
       const wasDirty = getDirty();
       // Same ctx the server executors used — replay skips exactly what they
-      // skipped (placed-plan history included).
+      // skipped (the plan editor's locked and greyed days included).
       const result = applyAssistantOps(ops, {
         target,
-        lockedSlotUids: target === "placed-plan" ? lockedSlotUids : undefined,
+        editableDays: target === "placed-plan" ? (editableDays ?? undefined) : undefined,
       });
       if (!result) return { applied: 0, skipped: ["The program isn't loaded yet"] };
       // Snapshot AFTER the fact and only when something actually changed: a
@@ -124,7 +124,7 @@ export function useAssistantChat() {
         skipped: result.skipped.map((s) => s.reason),
       };
     },
-    [applyAssistantOps, getDirty, getDraft, target, lockedSlotUids],
+    [applyAssistantOps, getDirty, getDraft, target, editableDays],
   );
 
   // Any completed save invalidates the "restore the old clean flag" shortcut.
@@ -159,8 +159,8 @@ export function useAssistantChat() {
             target,
             clientId: target !== "library" ? (clientId ?? undefined) : undefined,
             planId: target === "placed-plan" ? (placedPlanId ?? undefined) : undefined,
-            lockedSlotUids:
-              target === "placed-plan" ? [...lockedSlotUids] : undefined,
+            editableDays:
+              target === "placed-plan" ? (editableDays ?? undefined) : undefined,
             command: trimmed,
             transcript,
             draft,
@@ -240,7 +240,7 @@ export function useAssistantChat() {
       assistantBusy,
       clientId,
       placedPlanId,
-      lockedSlotUids,
+      editableDays,
       getDraft,
       getRevision,
       isSaving,

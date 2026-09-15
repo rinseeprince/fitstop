@@ -2,12 +2,14 @@
 
 import { toast } from "sonner";
 import {
+  insertWeekRefusal,
+  moveWeekRefusal,
+  planDayRules,
+  sessionRefusal,
+  slotRefusal,
+  LIMIT_LOCKED,
   PAST_LOCKED,
-  canDeleteWeek,
-  canDuplicateWeek,
-  canInsertAfterWeek,
-  canReorderWeeks,
-  isSessionLocked,
+  type EditableDays,
 } from "./program-builder-lock-model";
 import type {
   ExerciseDraft,
@@ -17,16 +19,16 @@ import type {
 import type { ProgramBuilderState } from "./use-program-builder-state";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
 
-// Single choke point for placed-plan lock enforcement on MANUAL edits: the
-// provider swaps its context mutators for these wrappers, so every UI path
-// (grid, dnd fall-through, session editor, add-session popover, progression
-// dialog) refuses history with one destructive toast. The grid additionally
-// disables locked affordances — this is the belt that catches anything that
-// slips past the visuals (keyboard paths, future call sites).
+// The plan editor's single choke point for MANUAL edits: the provider swaps
+// its context mutators for these wrappers, so every UI path (grid, dnd, session
+// editor, add-session popover, progression dialog) refuses a locked or greyed
+// day with one toast. The grid also disables those affordances; this is the
+// belt for anything that slips past them (keyboard paths, future call sites).
+// The rule is read from the grid as it stands at the moment of the edit.
 
 type UseLockedMutatorsParams = {
-  enabled: boolean;
-  lockedSlotUids: ReadonlySet<string>;
+  /** The plan editor's editable days; null leaves every mutator untouched. */
+  editableDays: EditableDays | null;
   state: ProgramBuilderState;
   editSetSpec: (
     sessionUid: string,
@@ -36,14 +38,13 @@ type UseLockedMutatorsParams = {
 };
 
 export function useLockedMutators({
-  enabled,
-  lockedSlotUids,
+  editableDays,
   state,
   editSetSpec,
 }: UseLockedMutatorsParams) {
-
-  if (!enabled) {
+  if (!editableDays) {
     return {
+      addWeek: state.addWeek,
       placeSession: state.placeSession,
       clearSlot: state.clearSlot,
       moveSession: state.moveSession,
@@ -60,57 +61,52 @@ export function useLockedMutators({
     };
   }
 
-  const refuse = () => {
-    toast.error("Day locked", { description: PAST_LOCKED });
+  // Shows the refusal and reports whether there was one.
+  const refused = (reason: string | null) => {
+    if (reason) toast.error("Day locked", { description: reason });
+    return reason != null;
   };
-  const slotLocked = (slotUid: string) => lockedSlotUids.has(slotUid);
-  const sessionLocked = (sessionUid: string) => {
+  const weeksNow = () => state.getDraft()?.weeks ?? [];
+  const rulesNow = () => planDayRules(weeksNow(), editableDays, null);
+  const slotRefused = (slotUid: string) => refused(slotRefusal(rulesNow(), slotUid));
+  const sessionRefused = (sessionUid: string) => {
     const draft = state.getDraft();
-    return draft ? isSessionLocked(draft, lockedSlotUids, sessionUid) : false;
+    return draft
+      ? refused(sessionRefusal(draft, planDayRules(draft.weeks, editableDays, null), sessionUid))
+      : false;
   };
-  const sourceSlotLocked = (sessionUid: string) => {
-    const draft = state.getDraft();
-    if (!draft) return false;
-    for (const week of draft.weeks) {
-      for (const slot of week.days) {
-        if (slot.session?.uid === sessionUid) return lockedSlotUids.has(slot.uid);
-      }
-    }
-    return false;
-  };
-  const weekAt = (weekUid: string) => {
-    const draft = state.getDraft();
-    if (!draft) return null;
-    const index = draft.weeks.findIndex((w) => w.uid === weekUid);
-    return index < 0 ? null : { weeks: draft.weeks, index, week: draft.weeks[index] };
-  };
+  const weekIndex = (weekUid: string) => weeksNow().findIndex((w) => w.uid === weekUid);
 
   return {
+    addWeek: () => {
+      if (refused(rulesNow().canAddWeek ? null : LIMIT_LOCKED)) return;
+      state.addWeek();
+    },
     placeSession: (slotUid: string, session: SessionDraft) => {
-      if (slotLocked(slotUid)) return refuse();
+      if (slotRefused(slotUid)) return;
       state.placeSession(slotUid, session);
     },
     clearSlot: (slotUid: string) => {
-      if (slotLocked(slotUid)) return refuse();
+      if (slotRefused(slotUid)) return;
       state.clearSlot(slotUid);
     },
     moveSession: (sessionUid: string, targetSlotUid: string) => {
-      if (slotLocked(targetSlotUid) || sourceSlotLocked(sessionUid)) return refuse();
+      if (slotRefused(targetSlotUid) || sessionRefused(sessionUid)) return;
       state.moveSession(sessionUid, targetSlotUid);
     },
     updateSession: (
       sessionUid: string,
       patch: Partial<Omit<SessionDraft, "uid" | "exercises">>,
     ) => {
-      if (sessionLocked(sessionUid)) return refuse();
+      if (sessionRefused(sessionUid)) return;
       state.updateSession(sessionUid, patch);
     },
     addExercise: (sessionUid: string, exercise: Omit<ExerciseDraft, "uid">) => {
-      if (sessionLocked(sessionUid)) return refuse();
+      if (sessionRefused(sessionUid)) return;
       state.addExercise(sessionUid, exercise);
     },
     removeExercise: (sessionUid: string, exerciseUid: string) => {
-      if (sessionLocked(sessionUid)) return refuse();
+      if (sessionRefused(sessionUid)) return;
       state.removeExercise(sessionUid, exerciseUid);
     },
     updateExercise: (
@@ -118,44 +114,42 @@ export function useLockedMutators({
       exerciseUid: string,
       patchOrFn: Partial<ExerciseDraft> | ((e: ExerciseDraft) => ExerciseDraft),
     ) => {
-      if (sessionLocked(sessionUid)) return refuse();
+      if (sessionRefused(sessionUid)) return;
       state.updateExercise(sessionUid, exerciseUid, patchOrFn);
     },
     reorderExercise: (sessionUid: string, activeUid: string, overUid: string) => {
-      if (sessionLocked(sessionUid)) return refuse();
+      if (sessionRefused(sessionUid)) return;
       state.reorderExercise(sessionUid, activeUid, overUid);
     },
     deleteWeek: (weekUid: string) => {
-      const info = weekAt(weekUid);
-      if (info && !canDeleteWeek(info.week, lockedSlotUids)) return refuse();
+      if (refused(rulesNow().weeks.get(weekUid)?.canDelete === false ? PAST_LOCKED : null)) {
+        return;
+      }
       state.deleteWeek(weekUid);
     },
     duplicateWeek: (weekUid: string) => {
-      const info = weekAt(weekUid);
-      if (info && !canDuplicateWeek(info.week, lockedSlotUids)) return refuse();
+      const index = weekIndex(weekUid);
+      const week = weeksNow()[index];
+      if (week && refused(insertWeekRefusal(weeksNow(), editableDays, index, week))) return;
       state.duplicateWeek(weekUid);
     },
     insertWeekAfter: (weekUid: string, week: WeekDraft) => {
-      const info = weekAt(weekUid);
-      if (info && !canInsertAfterWeek(info.weeks, lockedSlotUids, info.index)) {
-        return refuse();
+      const index = weekIndex(weekUid);
+      if (index >= 0 && refused(insertWeekRefusal(weeksNow(), editableDays, index, week))) {
+        return;
       }
       state.insertWeekAfter(weekUid, week);
     },
     reorderWeek: (activeUid: string, overUid: string) => {
-      const from = weekAt(activeUid);
-      const to = weekAt(overUid);
-      if (
-        from &&
-        to &&
-        !canReorderWeeks(from.weeks, lockedSlotUids, from.index, to.index)
-      ) {
-        return refuse();
+      const from = weekIndex(activeUid);
+      const to = weekIndex(overUid);
+      if (from >= 0 && to >= 0 && refused(moveWeekRefusal(weeksNow(), editableDays, from, to))) {
+        return;
       }
       state.reorderWeek(activeUid, overUid);
     },
     editSetSpec: (sessionUid: string, exercise: ExerciseDraft, edit: SetSpecEdit) => {
-      if (sessionLocked(sessionUid)) return refuse();
+      if (sessionRefused(sessionUid)) return;
       editSetSpec(sessionUid, exercise, edit);
     },
   };

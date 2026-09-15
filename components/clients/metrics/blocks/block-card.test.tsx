@@ -9,10 +9,13 @@ import type { BlockFacts } from "@/types/client-blocks";
 // Elapsed and archived keep plain text: a plan cannot start before the deletion
 // floor, so a finished block is not listed by the setup surfaces' Block field,
 // and it matches the read-only posture elapsed blocks already have.
-// H: a SET fact carries the same way in — "update plan" / "update targets" to
-// the RIGHT of the value on its own line, exactly where "place one" sits after
-// "No program placed" — on the same gate and through the same handler, so a
+// H: a SET fact carries a way in on the same gate, to the RIGHT of the value on
+// its line, exactly where "place one" sits after "No program placed", so a
 // coach changes a block's programming from the card rather than the calendars.
+// Training: a running or planned headline says "edit plan" and opens the plan
+// editor on that plan (`onEditPlan`); an ended one can't be edited, so it says
+// "update plan" and opens the program list (`onPlaceProgram`), the empty
+// state's door. Nutrition: "update targets", through the empty state's handler.
 
 function makeBlock(overrides: Partial<ClientBlockView> = {}): ClientBlockView {
   return {
@@ -86,6 +89,7 @@ function column(label: "Training" | "Nutrition") {
 
 function renderCard(block: ClientBlockView, handlers: {
   onPlaceProgram?: () => void;
+  onEditPlan?: (planId: string) => void;
   onSetNutrition?: () => void;
   facts?: BlockFacts;
 } = {}) {
@@ -158,6 +162,21 @@ describe("BlockCard — the round-trip empty states", () => {
     renderCard(makeBlock({ state: "current" }), { onPlaceProgram });
     screen.getByRole("button", { name: /No program placed/ }).click();
     expect(onPlaceProgram).toHaveBeenCalledTimes(1);
+  });
+
+  // With no plan there is nothing to edit: the empty state's door is the
+  // program list, whatever else the card was handed.
+  it("keeps place one with the plan editor's handler present, and opens the program list", () => {
+    const onPlaceProgram = vi.fn();
+    const onEditPlan = vi.fn();
+    renderCard(makeBlock({ state: "current" }), { onPlaceProgram, onEditPlan });
+    const placeOne = screen.getByRole("button", { name: /No program placed/ });
+    expect(placeOne.textContent).toBe("No program placed — place one");
+    expect(screen.queryByRole("button", { name: /edit plan|update plan/ })).toBeNull();
+
+    placeOne.click();
+    expect(onPlaceProgram).toHaveBeenCalledTimes(1);
+    expect(onEditPlan).not.toHaveBeenCalled();
   });
 
   // A set block says when its targets run, as the training column says when
@@ -256,36 +275,39 @@ describe("BlockCard — every plan shows its range (C1)", () => {
   });
 });
 
-describe("BlockCard — the set state's update affordance (H)", () => {
-  it("offers update plan on a set CURRENT block, beside the value, in place of the empty state", () => {
+describe("BlockCard — the set state's doors (H)", () => {
+  it("offers edit plan on a RUNNING headline, beside the value, in place of the empty state", () => {
     renderCard(makeBlock({ state: "current" }), {
       facts: SET_FACTS,
       onPlaceProgram: vi.fn(),
+      onEditPlan: vi.fn(),
     });
-    const update = screen.getByRole("button", { name: /update plan/ });
+    const edit = screen.getByRole("button", { name: /edit plan/ });
     expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
     expect(screen.queryByRole("button", { name: /No program placed/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /update plan/ })).toBeNull();
     // ONE grammar and ONE position for the way in: the value, a dash, then the
     // word — the plan's name is INSIDE the same line as the word, to its left,
     // exactly as "No program placed" is to the left of "place one". Never a
     // line of its own under the value, never the label register (a small-caps
     // word beside the column label reads as a title).
-    expect(update.textContent).toBe("Push Pull Legs — update plan");
+    expect(edit.textContent).toBe("Push Pull Legs — edit plan");
     const empty = renderEmpty();
     const placeOne = empty.getByRole("button", { name: /No program placed/ });
     expect(placeOne.textContent).toBe("No program placed — place one");
-    expect(update.className).toBe(placeOne.className);
-    expect(update.querySelector("span:last-child")?.className).toBe(
+    expect(edit.className).toBe(placeOne.className);
+    expect(edit.querySelector("span:last-child")?.className).toBe(
       placeOne.querySelector("span:last-child")?.className
     );
-    expect(update.className).not.toMatch(/uppercase/);
+    expect(edit.className).not.toMatch(/uppercase/);
   });
 
   // ONE entry per track — the headline. The plan in force today shows; one
   // queued later in the block does not (the timeline lists it), and the day it
   // takes over it becomes the headline, because its state does. The door rides
-  // the headline's line, once.
+  // the headline's line, once, and opens the plan it heads.
   it("headlines the plan in force and hides one queued later in the block", () => {
+    const onEditPlan = vi.fn();
     renderCard(makeBlock({ state: "current" }), {
       facts: {
         ...SET_FACTS,
@@ -297,10 +319,13 @@ describe("BlockCard — the set state's update affordance (H)", () => {
         ],
       },
       onPlaceProgram: vi.fn(),
+      onEditPlan,
     });
-    const doors = screen.getAllByRole("button", { name: /update plan/ });
+    const doors = screen.getAllByRole("button", { name: /edit plan/ });
     expect(doors).toHaveLength(1);
-    expect(doors[0].textContent).toBe("Push Pull Legs — update plan");
+    expect(doors[0].textContent).toBe("Push Pull Legs — edit plan");
+    doors[0].click();
+    expect(onEditPlan).toHaveBeenCalledWith("p1");
     const training = column("Training");
     expect(training.queryByText("Glute Focused")).toBeNull();
     expect(training.queryByText("Active")).toBeNull();
@@ -313,8 +338,11 @@ describe("BlockCard — the set state's update affordance (H)", () => {
 
   // Owner, 2026-09-11: a program that ended early with nothing queued after it
   // still headlines its block — as ended, with the door beside it — rather than
-  // the block falling back to "No program placed".
-  it("headlines a program that ended early with nothing after it, as Ended, with the door", () => {
+  // the block falling back to "No program placed". An ended program can't be
+  // edited, so its door is the program list, the empty state's.
+  it("headlines a program that ended early as Ended, with update plan to the program list", () => {
+    const onPlaceProgram = vi.fn();
+    const onEditPlan = vi.fn();
     renderCard(makeBlock({ state: "current" }), {
       facts: {
         ...SET_FACTS,
@@ -322,15 +350,23 @@ describe("BlockCard — the set state's update affordance (H)", () => {
           { id: "p1", name: "Push Pull Legs", startsOn: "2026-08-03", endsOn: "2026-08-20", state: "ended" },
         ],
       },
-      onPlaceProgram: vi.fn(),
+      onPlaceProgram,
+      onEditPlan,
     });
     const door = screen.getByRole("button", { name: /update plan/ });
     expect(door.textContent).toBe("Push Pull LegsEnded — update plan");
     expect(column("Training").getByText("Ended")).toBeDefined();
     expect(screen.queryByText(/No program placed/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /edit plan/ })).toBeNull();
+
+    door.click();
+    expect(onPlaceProgram).toHaveBeenCalledTimes(1);
+    expect(onEditPlan).not.toHaveBeenCalled();
   });
 
-  it("with nothing in force, headlines the first queued plan as Planned", () => {
+  it("with nothing in force, headlines the first queued plan as Planned, and edit plan opens it", () => {
+    const onPlaceProgram = vi.fn();
+    const onEditPlan = vi.fn();
     renderCard(makeBlock({ state: "current" }), {
       facts: {
         ...SET_FACTS,
@@ -340,12 +376,21 @@ describe("BlockCard — the set state's update affordance (H)", () => {
           { id: "p3", name: "Peak", startsOn: "2026-10-01", endsOn: "2026-10-28", state: "upcoming" },
         ],
       },
+      onPlaceProgram,
+      onEditPlan,
     });
     const training = column("Training");
     expect(training.getByText("Glute Focused")).toBeDefined();
     expect(training.getByText("Planned")).toBeDefined();
     expect(training.queryByText("Base")).toBeNull();
     expect(training.queryByText("Peak")).toBeNull();
+
+    const door = screen.getByRole("button", { name: /edit plan/ });
+    expect(door.textContent).toBe("Glute FocusedPlanned — edit plan");
+    expect(screen.queryByRole("button", { name: /update plan/ })).toBeNull();
+    door.click();
+    expect(onEditPlan).toHaveBeenCalledWith("p2");
+    expect(onPlaceProgram).not.toHaveBeenCalled();
   });
 
   it("nutrition headlines by the same rule — an early-ended version reads Ended with the door", () => {
@@ -366,31 +411,44 @@ describe("BlockCard — the set state's update affordance (H)", () => {
     expect(column("Nutrition").queryByText("2,600")).toBeNull();
   });
 
-  it("offers update plan on a set FUTURE block", () => {
+  it("offers edit plan on a set FUTURE block", () => {
     renderCard(makeBlock({ state: "future" }), {
       facts: SET_FACTS,
-      onPlaceProgram: vi.fn(),
+      onEditPlan: vi.fn(),
     });
-    expect(screen.getByRole("button", { name: /update plan/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /edit plan/ })).toBeDefined();
   });
 
-  it("keeps a set ELAPSED block's program as plain text", () => {
-    renderCard(makeBlock({ state: "past" }), {
-      facts: SET_FACTS,
-      onPlaceProgram: vi.fn(),
-    });
-    expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
-    expect(screen.queryByRole("button", { name: /update plan/ })).toBeNull();
-  });
+  // The one gate, blockAcceptsSetup, decides for every door on the column: a
+  // finished or archived block's headline is plain text in every state.
+  it.each(["active", "upcoming", "ended"] as const)(
+    "keeps a set ELAPSED block's %s headline as plain text",
+    (state) => {
+      renderCard(makeBlock({ state: "past" }), {
+        facts: { ...SET_FACTS, training: [{ ...SET_FACTS.training[0], state }] },
+        onPlaceProgram: vi.fn(),
+        onEditPlan: vi.fn(),
+      });
+      expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
+      expect(screen.queryByRole("button", { name: /edit plan|update plan/ })).toBeNull();
+    }
+  );
 
-  it("keeps a set ARCHIVED block's program as plain text, even while current", () => {
-    renderCard(
-      makeBlock({ state: "current", archivedAt: "2026-08-20T00:00:00Z" }),
-      { facts: SET_FACTS, onPlaceProgram: vi.fn() }
-    );
-    expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
-    expect(screen.queryByRole("button", { name: /update plan/ })).toBeNull();
-  });
+  it.each(["active", "upcoming", "ended"] as const)(
+    "keeps a set ARCHIVED block's %s headline as plain text, even while current",
+    (state) => {
+      renderCard(
+        makeBlock({ state: "current", archivedAt: "2026-08-20T00:00:00Z" }),
+        {
+          facts: { ...SET_FACTS, training: [{ ...SET_FACTS.training[0], state }] },
+          onPlaceProgram: vi.fn(),
+          onEditPlan: vi.fn(),
+        }
+      );
+      expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
+      expect(screen.queryByRole("button", { name: /edit plan|update plan/ })).toBeNull();
+    }
+  );
 
   // The Nutrition column is gated by the same one rule.
   it("offers update targets on a set CURRENT block and not on an ELAPSED one", () => {
@@ -413,19 +471,23 @@ describe("BlockCard — the set state's update affordance (H)", () => {
     expect(screen.queryByRole("button", { name: /update targets/ })).toBeNull();
   });
 
-  // The change action IS the empty state's round trip: the same handler, so it
-  // lands on the same surface with the same block preselected. Each track's
-  // action fires its own handler and never the other's.
-  it("update plan fires the apply round trip, not the nutrition one", () => {
+  // A running plan's door opens the plan editor on that plan — never the
+  // program list, which would place a new one. Each track's action fires its
+  // own handler and never the other's.
+  it("edit plan hands the plan editor the headline's plan, not the program list or the nutrition trip", () => {
     const onPlaceProgram = vi.fn();
+    const onEditPlan = vi.fn();
     const onSetNutrition = vi.fn();
     renderCard(makeBlock({ state: "current" }), {
       facts: SET_FACTS,
       onPlaceProgram,
+      onEditPlan,
       onSetNutrition,
     });
-    screen.getByRole("button", { name: /update plan/ }).click();
-    expect(onPlaceProgram).toHaveBeenCalledTimes(1);
+    screen.getByRole("button", { name: /edit plan/ }).click();
+    expect(onEditPlan).toHaveBeenCalledTimes(1);
+    expect(onEditPlan).toHaveBeenCalledWith("p1");
+    expect(onPlaceProgram).not.toHaveBeenCalled();
     expect(onSetNutrition).not.toHaveBeenCalled();
   });
 
@@ -445,8 +507,27 @@ describe("BlockCard — the set state's update affordance (H)", () => {
   it("renders no change action without a handler", () => {
     renderCard(makeBlock({ state: "current" }), { facts: SET_FACTS });
     expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
-    expect(screen.queryByRole("button", { name: /update plan/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /edit plan|update plan/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /update targets/ })).toBeNull();
+  });
+
+  // Each door rides its own handler: the program list's never opens a running
+  // plan, and the plan editor's never an ended one.
+  it("renders no door when the headline's own handler is missing", () => {
+    const { unmount } = renderCard(makeBlock({ state: "current" }), {
+      facts: SET_FACTS,
+      onPlaceProgram: vi.fn(),
+    });
+    expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /edit plan|update plan/ })).toBeNull();
+    unmount();
+
+    renderCard(makeBlock({ state: "current" }), {
+      facts: { ...SET_FACTS, training: [{ ...SET_FACTS.training[0], state: "ended" }] },
+      onEditPlan: vi.fn(),
+    });
+    expect(column("Training").getByText("Push Pull Legs")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /edit plan|update plan/ })).toBeNull();
   });
 
   // A fact that has not resolved is not set: nothing to change yet, and nothing
@@ -461,10 +542,11 @@ describe("BlockCard — the set state's update affordance (H)", () => {
         factsError={false}
         defaultOpen
         onPlaceProgram={vi.fn()}
+        onEditPlan={vi.fn()}
         onSetNutrition={vi.fn()}
       />
     );
-    expect(screen.queryByRole("button", { name: /update/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /update|edit plan/ })).toBeNull();
     unmount();
 
     render(
@@ -476,11 +558,12 @@ describe("BlockCard — the set state's update affordance (H)", () => {
         factsError
         defaultOpen
         onPlaceProgram={vi.fn()}
+        onEditPlan={vi.fn()}
         onSetNutrition={vi.fn()}
       />
     );
     expect(screen.getAllByText("Unavailable").length).toBe(2);
-    expect(screen.queryByRole("button", { name: /update/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /update|edit plan/ })).toBeNull();
   });
 });
 

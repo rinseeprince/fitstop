@@ -23,6 +23,11 @@ import {
   type SessionDraft,
 } from "@/components/clients/training/program-builder/program-builder-types";
 import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
+import {
+  LIMIT_LOCKED,
+  PAST_LOCKED,
+  type EditableDays,
+} from "@/components/clients/training/program-builder/program-builder-lock-model";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { buildWorkspaceFromRows, finalizeAssistantOps } from "./draft-workspace";
 import { programContext } from "./draft-tool-helpers";
@@ -582,8 +587,9 @@ describe("duplicate_week reports STORED loads, not recomputed arithmetic", () =>
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Placed-plan target: past-slot locking (ops ctx + the locked sweep), with
-// identity deliberately editable.
+// Placed-plan target: the editable days, as positions from the plan's start
+// (ops ctx + the sweep). Days before `from` are history, days past `through`
+// are greyed; the program and session names stay editable.
 // ═════════════════════════════════════════════════════════════════════════════
 
 function makePlacedDraft(): ProgramDraft {
@@ -623,20 +629,19 @@ function makePlacedDraft(): ProgramDraft {
   });
 }
 
-function makePlacedWs(extraLockedUids: string[] = []) {
-  const draft = makePlacedDraft();
-  // Week 1 is history.
-  const lockedSlotUids = [...draft.weeks[0].days.map((d) => d.uid), ...extraLockedUids];
+// Week 1 (positions 0-6) is history and week 2 editable unless the days say
+// otherwise; each week's day 1 holds a session.
+function makePlacedWs(editableDays: EditableDays = { from: 7, through: null }) {
   return buildWorkspaceFromRows({
     target: "placed-plan",
-    draft,
+    draft: makePlacedDraft(),
     catalog: CATALOG,
-    lockedSlotUids,
+    editableDays,
   });
 }
 
-describe("placed-plan locked slots (tool executors)", () => {
-  it("edits touching a locked day are skipped; the same edit on a future day lands", async () => {
+describe("placed-plan editable days (tool executors)", () => {
+  it("skips an edit on a history day as locked; the same edit on an editable day lands", async () => {
     const ws = makePlacedWs();
     const update = tool(buildExerciseTools(ws), "update_exercise");
 
@@ -646,7 +651,7 @@ describe("placed-plan locked slots (tool executors)", () => {
       exerciseName: "Back Squat",
       loadKg: 90,
     } as never);
-    expect(refused).toMatch(/locked/);
+    expect(refused).toBe(PAST_LOCKED);
     expect(ws.ops).toHaveLength(0);
 
     const ok = await update.run({
@@ -659,13 +664,66 @@ describe("placed-plan locked slots (tool executors)", () => {
     expect(ws.ops).toHaveLength(1);
   });
 
-  it("structural ops on history are skipped (delete_week / clear_day)", async () => {
+  it("never adds a session to a history day, or moves one onto or off it", async () => {
     const ws = makePlacedWs();
-    const del = tool(buildWeekTools(ws), "delete_week");
-    expect(await del.run({ week: 1 } as never)).toMatch(/locked/);
+    const add = tool(buildSessionTools(ws), "add_session");
+    const move = tool(buildSessionTools(ws), "move_session");
 
-    const clear = tool(buildSessionTools(ws), "clear_day");
-    expect(await clear.run({ week: 1, day: 1 } as never)).toMatch(/locked/);
+    expect(await add.run({ week: 1, day: 2, name: "Extra" } as never)).toBe(PAST_LOCKED);
+    expect(
+      await move.run({ fromWeek: 1, fromDay: 1, toWeek: 2, toDay: 3 } as never),
+    ).toBe(PAST_LOCKED);
+    expect(
+      await move.run({ fromWeek: 2, fromDay: 1, toWeek: 1, toDay: 2 } as never),
+    ).toBe(PAST_LOCKED);
+    expect(ws.ops).toHaveLength(0);
+  });
+
+  it("skips structural ops on history (delete_week / clear_day / move_week / duplicate_week)", async () => {
+    const ws = makePlacedWs();
+    expect(await tool(buildWeekTools(ws), "delete_week").run({ week: 1 } as never)).toBe(
+      PAST_LOCKED,
+    );
+    expect(
+      await tool(buildSessionTools(ws), "clear_day").run({ week: 1, day: 1 } as never),
+    ).toBe(PAST_LOCKED);
+    expect(
+      await tool(buildWeekTools(ws), "move_week").run({ week: 2, toPosition: 1 } as never),
+    ).toBe(PAST_LOCKED);
+    expect(ws.ops).toHaveLength(0);
+
+    // Week 2's first three days are history: a copy landing after week 1
+    // would move them.
+    const midWeek = makePlacedWs({ from: 10, through: null });
+    expect(
+      await tool(buildWeekTools(midWeek), "duplicate_week").run({ week: 1 } as never),
+    ).toBe(PAST_LOCKED);
+    expect(midWeek.ops).toHaveLength(0);
+  });
+
+  it("never puts a session on a greyed day past the plan's limit", async () => {
+    // The plan reaches week 2 day 4 (position 10); days 5-7 are greyed.
+    const ws = makePlacedWs({ from: 7, through: 10 });
+    const add = tool(buildSessionTools(ws), "add_session");
+    const move = tool(buildSessionTools(ws), "move_session");
+
+    expect(await add.run({ week: 2, day: 5, name: "Extra" } as never)).toBe(LIMIT_LOCKED);
+    expect(
+      await move.run({ fromWeek: 2, fromDay: 1, toWeek: 2, toDay: 6 } as never),
+    ).toBe(LIMIT_LOCKED);
+    expect(ws.ops).toHaveLength(0);
+
+    // The limit's own day still takes one.
+    expect(await add.run({ week: 2, day: 4, name: "Extra" } as never)).toMatch(/Added/);
+    expect(ws.ops).toHaveLength(1);
+  });
+
+  it("skips a copied week that would push a session past the plan's limit", async () => {
+    // The plan reaches the end of week 2 and no further.
+    const ws = makePlacedWs({ from: 7, through: 13 });
+    expect(
+      await tool(buildWeekTools(ws), "duplicate_week").run({ week: 2 } as never),
+    ).toBe(LIMIT_LOCKED);
     expect(ws.ops).toHaveLength(0);
   });
 
@@ -675,7 +733,7 @@ describe("placed-plan locked slots (tool executors)", () => {
     const session = tool(buildSessionTools(ws), "update_session_details");
 
     expect(await program.run({ name: "Renamed Block" } as never)).not.toMatch(/identity/);
-    // A FUTURE session's rename lands too.
+    // An editable session's rename lands too.
     expect(
       await session.run({ week: 2, day: 1, name: "Lower B2" } as never),
     ).toMatch(/Updated/);
@@ -684,17 +742,10 @@ describe("placed-plan locked slots (tool executors)", () => {
     expect(finalized.ops.length).toBeGreaterThan(0);
     expect(finalized.notes).toHaveLength(0);
   });
-
-  it("unknown lock uids from the wire are ignored", () => {
-    const ws = makePlacedWs(["slot-not-in-this-draft"]);
-    expect(ws.lockedSlotUids.has("slot-not-in-this-draft")).toBe(false);
-    const finalized = finalizeAssistantOps(ws);
-    expect(finalized.notes).toHaveLength(0);
-  });
 });
 
-describe("placed-plan locked sweep (finalizeAssistantOps)", () => {
-  it("discards the turn when a locked slot's content changed despite the guards", () => {
+describe("placed-plan sweep (finalizeAssistantOps)", () => {
+  it("discards the turn when a history day's content changed despite the guards", () => {
     const ws = makePlacedWs();
     // Simulate an executor bug mutating history directly (bypassing commitOp).
     ws.draft = normalizeDraft({
@@ -718,7 +769,7 @@ describe("placed-plan locked sweep (finalizeAssistantOps)", () => {
     expect(finalized.notes.join(" ")).toMatch(/already happened/);
   });
 
-  it("discards the turn when a locked slot vanished (its week removed)", () => {
+  it("discards the turn when a history day vanished (its week removed)", () => {
     const ws = makePlacedWs();
     ws.draft = normalizeDraft({ ...ws.draft, weeks: ws.draft.weeks.slice(1) });
 
@@ -727,8 +778,39 @@ describe("placed-plan locked sweep (finalizeAssistantOps)", () => {
     expect(finalized.notes.join(" ")).toMatch(/already happened/);
   });
 
-  it("ships the ops when history is untouched", async () => {
-    const ws = makePlacedWs();
+  it("discards the turn when it leaves a session on a greyed day", () => {
+    const ws = makePlacedWs({ from: 7, through: 10 });
+    // Simulate an executor bug placing a session on week 2 day 6 (position
+    // 12), past the limit, bypassing commitOp.
+    const extra: SessionDraft = {
+      uid: newUid("sess"),
+      name: "Extra",
+      focus: null,
+      estimatedDurationMinutes: null,
+      calorieSurplusPercentage: null,
+      notes: null,
+      sessionType: "training",
+      exercises: [],
+    };
+    const greyedUid = ws.draft.weeks[1].days[5].uid;
+    ws.draft = normalizeDraft({
+      ...ws.draft,
+      weeks: ws.draft.weeks.map((w) => ({
+        ...w,
+        days: w.days.map((slot) =>
+          slot.uid === greyedUid ? { ...slot, isRest: false, session: extra } : slot,
+        ),
+      })),
+    });
+    ws.ops.push({ type: "place_session", slotUid: greyedUid, session: extra });
+
+    const finalized = finalizeAssistantOps(ws);
+    expect(finalized.ops).toHaveLength(0);
+    expect(finalized.notes.join(" ")).toMatch(/greyed-out day/);
+  });
+
+  it("ships the ops when history is untouched and every greyed day is rest", async () => {
+    const ws = makePlacedWs({ from: 7, through: 10 });
     const update = tool(buildExerciseTools(ws), "update_exercise");
     await update.run({ week: 2, day: 1, exerciseName: "Leg Curl", loadKg: 45 } as never);
 

@@ -52,11 +52,11 @@ const WRITERS: Writer[] = [
     to: "const closeTrayEntry",
     method: "push",
   },
-  // The amendment editor, a full-screen place of its own
+  // The plan editor, a full-screen place of its own: Edit plan pushes it
   {
-    file: "components/clients/training/builder/training-builder-right-panel.tsx",
-    from: "const openAmend =",
-    to: "const closeAmend",
+    file: "components/clients/training/builder/training-plan-builder.tsx",
+    from: "const openPlanEditor =",
+    to: "const exitPlanEditor",
     method: "push",
   },
   // Refinements
@@ -96,13 +96,7 @@ const WRITERS: Writer[] = [
   {
     file: "components/clients/training/builder/training-plan-builder.tsx",
     from: "const closeEditor =",
-    to: "// ?training= is OURS",
-    method: "replace",
-  },
-  {
-    file: "components/clients/training/builder/training-builder-right-panel.tsx",
-    from: "const closeAmend =",
-    to: "const handleClearPlan",
+    to: "const openPlanEditor",
     method: "replace",
   },
   // One-shot strips

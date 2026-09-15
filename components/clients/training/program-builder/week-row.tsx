@@ -5,11 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
 import type { DaySlotDraft, WeekDraft } from "./program-builder-types";
 import type { WeekDragData } from "./use-program-dnd";
-import {
-  canDeleteWeek,
-  canDuplicateWeek,
-  weekLockState,
-} from "./program-builder-lock-model";
+import type { PlanDayRules } from "./program-builder-lock-model";
 import { GRID_COLS } from "./builder-tokens";
 import { WeekCard } from "./week-card";
 import { DayCell } from "./day-cell";
@@ -17,14 +13,15 @@ import { DayCell } from "./day-cell";
 // One grid row = sticky week card + 7 day cells. The row is the sortable node
 // (vertical week reorder); the grip that activates it lives in WeekCard.
 // Collapsed rows keep the SAME column template so columns stay aligned.
-// With lockedSlotUids (placed-plan target) the row derives its week policies
-// from the shared lock model: a week touching history can't be dragged or
-// deleted, a fully-elapsed week can't be duplicated/progressed.
+// With the plan editor's day rules the row takes its week actions from the
+// lock model: a week touching a locked or greyed day can't be dragged, a week
+// touching history can't be deleted, and a copy lands only after the last week
+// of history, on a week the plan can reach, pushing no session onto a greyed
+// day.
 type WeekRowProps = {
   week: WeekDraft;
   mode: "view" | "edit";
-  lockedSlotUids?: ReadonlySet<string>;
-  movedPastSlotUids?: ReadonlySet<string>;
+  dayRules?: PlanDayRules;
   collapsed: boolean;
   canDelete: boolean;
   defaultSurplusPercentage: number | null;
@@ -40,8 +37,7 @@ type WeekRowProps = {
 export function WeekRow({
   week,
   mode,
-  lockedSlotUids,
-  movedPastSlotUids,
+  dayRules,
   collapsed,
   canDelete,
   defaultSurplusPercentage,
@@ -53,8 +49,8 @@ export function WeekRow({
   onRequestAddSession,
   onClearSlot,
 }: WeekRowProps) {
-  const weekLocked =
-    lockedSlotUids != null && weekLockState(week, lockedSlotUids) !== "none";
+  const weekRules = dayRules?.weeks.get(week.uid);
+  const weekLocked = weekRules != null && !weekRules.canReorder;
   const dragData: WeekDragData = { type: "week", weekUid: week.uid };
   const {
     setNodeRef,
@@ -83,12 +79,8 @@ export function WeekRow({
           week={week}
           mode={mode}
           collapsed={collapsed}
-          canDelete={
-            canDelete && (lockedSlotUids == null || canDeleteWeek(week, lockedSlotUids))
-          }
-          canDuplicate={
-            lockedSlotUids == null || canDuplicateWeek(week, lockedSlotUids)
-          }
+          canDelete={canDelete && (weekRules?.canDelete ?? true)}
+          canDuplicate={weekRules?.canDuplicate ?? true}
           canReorder={!weekLocked}
           onToggleCollapse={() => onToggleCollapse(week.uid)}
           onDuplicate={() => onDuplicateWeek(week.uid)}
@@ -102,8 +94,9 @@ export function WeekRow({
           key={slot.uid}
           slot={slot}
           mode={mode}
-          locked={lockedSlotUids?.has(slot.uid) ?? false}
-          lockedBecauseMoved={movedPastSlotUids?.has(slot.uid) ?? false}
+          locked={dayRules?.locked.has(slot.uid) ?? false}
+          greyed={dayRules?.beyond.has(slot.uid) ?? false}
+          isToday={dayRules?.todaySlotUid === slot.uid}
           collapsed={collapsed}
           defaultSurplusPercentage={defaultSurplusPercentage}
           onOpenSession={onOpenSession}

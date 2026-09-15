@@ -224,12 +224,18 @@ export const assistantChatRequestSchema = z
     target: z.enum(["library", "client-draft", "placed-plan"]),
     // Present (and IDOR-checked by the route) for the client-scoped editors.
     clientId: z.string().uuid().optional(),
-    // Placed-plan only: the client-side training_plans id (the route verifies
-    // it belongs to clientId) and the serialized lock set — the same array the
-    // amendment surface computed at seed, so server executors and client
-    // replay refuse the same history. 400 slots = 52 weeks × 7 + headroom.
+    // The plan editor only: the client-side training_plans id (the route
+    // verifies it belongs to clientId) and the editable days as positions —
+    // the same two numbers the editor holds, so server executors and client
+    // replay refuse the same days. Positions from the plan's start: the limit
+    // can sit far beyond the grid (a block or a queued plan well ahead).
     planId: z.string().uuid().optional(),
-    lockedSlotUids: z.array(z.string().min(1).max(64)).max(400).optional(),
+    editableDays: z
+      .object({
+        from: z.number().int().min(0).max(10_000),
+        through: z.number().int().min(0).max(10_000).nullable(),
+      })
+      .optional(),
     command: z.string().min(1).max(2000),
     transcript: z.array(assistantTranscriptEntrySchema).max(24),
     draft: programDraftSnapshotSchema,
@@ -240,18 +246,18 @@ export const assistantChatRequestSchema = z
   .refine(
     (body) =>
       body.target !== "placed-plan" ||
-      (body.clientId != null && body.planId != null && body.lockedSlotUids != null),
+      (body.clientId != null && body.planId != null && body.editableDays != null),
     {
       message:
-        "clientId, planId and lockedSlotUids are required for the placed-plan editor",
+        "clientId, planId and editableDays are required for the placed-plan editor",
     },
   )
   .refine(
     (body) =>
       body.target === "placed-plan" ||
-      (body.planId == null && body.lockedSlotUids == null),
+      (body.planId == null && body.editableDays == null),
     {
-      message: "planId and lockedSlotUids are only valid for the placed-plan editor",
+      message: "planId and editableDays are only valid for the placed-plan editor",
     },
   );
 

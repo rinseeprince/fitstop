@@ -4,6 +4,7 @@ import type {
   ProgramDraft,
 } from "@/components/clients/training/program-builder/program-builder-types";
 import type { AssistantChatResponseData } from "@/lib/validations/assistant";
+import type { EditableDays } from "@/components/clients/training/program-builder/program-builder-lock-model";
 import { createDraftWorkspace, finalizeAssistantOps } from "./draft-workspace";
 import { buildReadTools } from "./draft-read-tools";
 import { buildWeekTools } from "./draft-week-tools";
@@ -185,10 +186,10 @@ export function systemPrompt(target: BuilderTarget): string {
 
   const placedPlan = `
 
-## Placed-plan rules (this session amends a CLIENT'S live placed program)
-- This is a client's placed program, mid-flight on their calendar. Nothing reaches the calendar until the coach saves their changes — you edit the working copy only.
-- Days before the lock boundary are HISTORY: the tools will skip any edit touching them. Work on the remaining (future) days instead, and say so when the coach asks for a change to an elapsed day.
-- Renames ARE allowed here — the program and session names are the coach's to change on a placed plan.`;
+## Plan editor rules (this session edits a CLIENT'S plan as it is on their calendar)
+- This is a client's program as it is laid on their calendar. Nothing reaches the calendar until the coach saves — you edit the working copy only.
+- Days before the first editable day are HISTORY, and days past the plan's last possible day are greyed out and can't hold a session: the tools skip any edit touching either. Work on the editable days instead, and say so when the coach asks for a change the tools refused.
+- Renames ARE allowed here — the program and session names are the coach's to change.`;
 
   if (target === "client-draft") return base + clientDraft;
   if (target === "placed-plan") return base + placedPlan;
@@ -210,14 +211,14 @@ export async function runAssistantTurn(opts: {
   draft: ProgramDraft;
   command: string;
   transcript: Array<{ role: "user" | "assistant"; text: string }>;
-  // Placed-plan target: the amendment surface's serialized lock set.
-  lockedSlotUids?: string[];
+  // The plan editor: the editable days, as positions from the plan's start.
+  editableDays?: EditableDays;
 }): Promise<AssistantChatResponseData> {
   const ws = await createDraftWorkspace({
     coachId: opts.coachId,
     target: opts.target,
     draft: opts.draft,
-    lockedSlotUids: opts.lockedSlotUids,
+    editableDays: opts.editableDays,
   });
 
   const tools = [

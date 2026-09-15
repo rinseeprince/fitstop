@@ -8,8 +8,17 @@ vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), err
 vi.mock("@/hooks/use-nutrition-calendar-events", () => ({
   useInvalidateNutritionCalendar: () => vi.fn(),
 }));
+// The training area and the Training tab's plan read, spied: an apply
+// refreshes the one and clears the other.
+const refresh = vi.hoisted(() => ({
+  invalidateTrainingData: vi.fn(),
+  clearTrainingPlan: vi.fn(),
+}));
 vi.mock("@/hooks/use-calendar-events", () => ({
-  useInvalidateTrainingData: () => vi.fn(),
+  useInvalidateTrainingData: () => refresh.invalidateTrainingData,
+}));
+vi.mock("@/hooks/use-training-plan", () => ({
+  useClearTrainingPlan: () => refresh.clearTrainingPlan,
 }));
 vi.mock("@/hooks/use-client-overview", () => ({
   useClearClientOverview: () => vi.fn(),
@@ -188,6 +197,21 @@ describe("ApplyToClientDialog — the start floor", () => {
     expect(body).toEqual({ type: "plan", savedPlanId: PLAN.id, startDate: TOMORROW });
     expect(body).not.toHaveProperty("startAnyway");
     expect(screen.queryByText(/Start anyway/)).toBeNull();
+  });
+
+  // The Plans pane never remounts its calendar, so the apply itself refreshes
+  // what reads the sessions it laid, for every host of the dialog.
+  it("a placement refreshes the client's calendar and clears the plan read", async () => {
+    state.planStartFloor = TOMORROW;
+    refresh.invalidateTrainingData.mockClear();
+    refresh.clearTrainingPlan.mockClear();
+    mockPlacement();
+    renderDialog();
+
+    fireEvent.click(screen.getByRole("button", { name: /Apply Plan/ }));
+
+    await waitFor(() => expect(refresh.clearTrainingPlan).toHaveBeenCalledWith("client-1"));
+    expect(refresh.invalidateTrainingData).toHaveBeenCalledWith("client-1");
   });
 });
 

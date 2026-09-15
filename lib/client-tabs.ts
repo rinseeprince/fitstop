@@ -53,12 +53,12 @@ export function buildClientTabUrl(
   const params = new URLSearchParams(currentSearch)
   params.delete("subtab")
   // The Training tab's apply tray (`?apply=1`) and its two editors (`?editor=`,
-  // `?amend=`) are places of their own, not panes: carried across a tab change
+  // `?plan=`) are places of their own, not panes: carried across a tab change
   // they would re-open on every return to the tab, so they go the way the
   // one-shot params do.
   params.delete("apply")
   params.delete("editor")
-  params.delete("amend")
+  params.delete("plan")
   params.set("tab", tab)
   for (const [key, value] of Object.entries(extraParams ?? {})) {
     if (value === null) params.delete(key)
@@ -130,18 +130,19 @@ export function paneParamSearch(
 // The Journey ⇄ setup-surface round trip (Session 7.3 / 7.4)
 //
 // A Journey block's Training or Nutrition fact IS the way in — unset ("place
-// one" / "set targets") or set ("update plan" / "update targets", which place
-// a NEW plan from the block's first available day and supersede the standing
-// one from there): one click lands on the owning tab with its setup
-// surface already open, and a successful save lands back on the block it came
-// from, expanded.
+// one" / "set targets", which open the apply tray and the nutrition drawer)
+// or set (a running or planned program's "edit plan", which opens the plan
+// editor on it; an ended one's "update plan", which opens the apply tray;
+// "update targets", which opens the drawer): one click lands on the owning
+// tab with its surface already open, and a successful save lands back on the
+// block it came from, expanded.
 //
 // The return params are ONE-SHOT: the surface captures the block on arrival
 // and strips them (`useJourneyRoundTrip` on the nutrition drawer, which also
-// consumes its `?edit=1`; `useJourneyReturnBlock` on the apply tray, whose
-// `?apply=1` is the tray's address and stays), because the whole query is
-// carried across every tab change and a `returnTo` left riding would bounce a
-// LATER, unrelated save back to Journey.
+// consumes its `?edit=1`; `useJourneyReturnBlock` on the apply tray and the
+// plan editor, whose `?apply=1` / `?plan=` are their addresses and stay),
+// because the whole query is carried across every tab change and a `returnTo`
+// left riding would bounce a LATER, unrelated save back to Journey.
 // ---------------------------------------------------------------------------
 
 /** Which surface the trip opens. The value IS the URL param name. */
@@ -164,9 +165,28 @@ export function journeyTripParams(
   }
 }
 
+/** Journey → the plan editor on one of the block's programs, knowing the way
+ *  back. Spread it beside the destination pane:
+ *  `{ training: "plans", ...journeyPlanTripParams(planId, blockId) }`. */
+export function journeyPlanTripParams(
+  planId: string,
+  blockId: string
+): Record<string, string> {
+  return {
+    plan: planId,
+    [RETURN_TO]: RETURN_TO_JOURNEY,
+    [RETURN_BLOCK]: blockId,
+  }
+}
+
 /** A setup surface → back to the block it came from, expanded. */
 export function journeyReturnParams(blockId: string): Record<string, string> {
   return { journey: "blocks", block: blockId }
+}
+
+/** The block a Journey trip names, or null when the URL carries none. */
+export function readJourneyReturnBlock(search: URLSearchParams): string | null {
+  return search.get(RETURN_TO) === RETURN_TO_JOURNEY ? search.get(RETURN_BLOCK) : null
 }
 
 /** What a surface should do with the URL it just received. `returnBlockId` is
@@ -176,11 +196,7 @@ export function readJourneyTrip(
   surface: JourneyTripSurface
 ): { open: boolean; returnBlockId: string | null } {
   if (search.get(surface) !== "1") return { open: false, returnBlockId: null }
-  return {
-    open: true,
-    returnBlockId:
-      search.get(RETURN_TO) === RETURN_TO_JOURNEY ? search.get(RETURN_BLOCK) : null,
-  }
+  return { open: true, returnBlockId: readJourneyReturnBlock(search) }
 }
 
 /** The same query with the one-shot trip params removed. */

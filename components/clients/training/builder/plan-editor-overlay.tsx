@@ -1,7 +1,6 @@
 "use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { ProgramDraftProvider } from "@/components/clients/training/program-builder/program-draft-provider";
 import { ProgramBuilder } from "@/components/clients/training/program-builder/program-builder";
 import { ClientDraftLeaveGuard } from "./client-draft-leave-guard";
@@ -9,40 +8,45 @@ import { useInvalidateTrainingData } from "@/hooks/use-calendar-events";
 import { useInvalidateNutritionCalendar } from "@/hooks/use-nutrition-calendar-events";
 import { useClearClientOverview } from "@/hooks/use-client-overview";
 import { useClearAttentionFeed } from "@/hooks/use-attention-feed";
+import { useClearBlockFacts } from "@/components/clients/metrics/hooks/use-client-blocks";
 
-// The plan-amendment surface (Job 2): the SHARED Program builder mounted
-// full-screen over a client's PLACED plan (target="placed-plan" — past slots
-// locked, saves go through the amendment PUT). Clone of the client-draft
-// overlay's editor state: non-modal so the 52px nav rail stays clickable,
-// Escape/outside-click neutralized so a stray key can never silently drop
-// unsaved changes — the coach leaves via the builder's guarded back arrow.
-type PlanAmendmentOverlayProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+// The plan editor: the SHARED Program builder mounted full-screen over one of
+// a client's plans as it is laid on the calendar (target="placed-plan" —
+// locked and greyed days refused, saved through the plan editor's PUT). Its
+// open state is the host's address (`?plan=<planId>`). Non-modal so the 52px
+// nav rail stays clickable; Escape and outside clicks are neutralized so a
+// stray key can never silently drop unsaved changes — the coach leaves by the
+// builder's guarded back arrow.
+type PlanEditorOverlayProps = {
   clientId: string;
+  /** The plan the address opens; null = closed. */
   planId: string | null;
   clientName?: string;
+  /** The builder's back arrow. */
+  onExit: () => void;
+  /** After a clean save, once the calendar reads have the saved plan. */
+  onSaved: () => void;
 };
 
-export function PlanAmendmentOverlay({
-  open,
-  onOpenChange,
+export function PlanEditorOverlay({
   clientId,
   planId,
   clientName,
-}: PlanAmendmentOverlayProps) {
-  const builder = useTrainingBuilderContext();
+  onExit,
+  onSaved,
+}: PlanEditorOverlayProps) {
   const invalidateTrainingData = useInvalidateTrainingData();
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
   const clearClientOverview = useClearClientOverview();
   const clearAttentionFeed = useClearAttentionFeed();
+  const clearBlockFacts = useClearBlockFacts();
 
   return (
     <DialogPrimitive.Root
-      open={open && planId != null}
+      open={planId != null}
       modal={false}
       onOpenChange={(next) => {
-        if (!next) onOpenChange(false);
+        if (!next) onExit();
       }}
     >
       <DialogPrimitive.Portal>
@@ -62,7 +66,7 @@ export function PlanAmendmentOverlay({
             Edit training plan
           </DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
-            Edit the remaining weeks of this client&apos;s placed training plan.
+            Edit this client&apos;s training plan from its first editable day.
           </DialogPrimitive.Description>
 
           {planId != null && (
@@ -73,19 +77,22 @@ export function PlanAmendmentOverlay({
               placedPlanId={planId}
               clientId={clientId}
               clientName={clientName}
-              onAmended={() => {
-                // The future window was re-laid: refresh the client's plan
-                // read AND both calendar caches, then close.
-                void builder.fetchPlan();
-                void invalidateTrainingData(clientId);
+              onSaved={async () => {
+                // The save rewrote the calendar: the training area (the
+                // calendar, the Plans pane's plan) is refetched before the
+                // editor closes, so the first frame after it is the saved
+                // plan. The screens off this one refresh on their own time.
                 void invalidateNutritionCalendar(clientId);
                 void clearClientOverview(clientId);
                 void clearAttentionFeed();
-                onOpenChange(false);
+                // The Journey block cards are derived from the plan's window.
+                void clearBlockFacts(clientId);
+                await invalidateTrainingData(clientId);
+                onSaved();
               }}
             >
               <ClientDraftLeaveGuard description="You have unsaved changes to this plan. Leaving now will discard them — they only reach the calendar when you save." />
-              <ProgramBuilder onExit={() => onOpenChange(false)} />
+              <ProgramBuilder onExit={onExit} />
             </ProgramDraftProvider>
           )}
         </DialogPrimitive.Content>

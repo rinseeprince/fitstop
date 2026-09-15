@@ -1,32 +1,40 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { usePlacedPlan } from "@/hooks/use-placed-plan";
-import type { PlacedPlanForBuilder } from "@/services/plan-amendment-service";
-import { placedPlanToDraft } from "./placed-serialize";
+import { usePlanEdit } from "@/hooks/use-plan-edit";
+import type { PlanForEditing } from "@/services/plan-edit-service";
+import type { WindowCap } from "@/services/program-event-walk";
+import { planForEditingToDraft } from "./placed-serialize";
+import type { EditableDays } from "./program-builder-lock-model";
 import type { ProgramBuilderState } from "./use-program-builder-state";
 
-// The placed-plan draft source for ProgramDraftProvider: seeds the working
-// tree ONCE from the amendment GET (SWR refreshes are no-ops — the overlay
-// keys the provider by planId, so cross-plan cleanup is a remount), and owns
-// everything the seed produced: the lock set, the row-id map, the drift token.
+// The plan editor's draft source for ProgramDraftProvider: seeds the working
+// tree ONCE from the editor's read (the read is fresh per open, and the
+// overlay keys the provider by plan), and holds what the seed brought with
+// it: the editable days, today's position, the plan's limit and the version
+// the save sends back.
 
-type PlacedPlanSeedInfo = {
-  lockedSlotUids: ReadonlySet<string>;
-  /** Presentation-only subset — see PlacedPlanDraftSeed. */
-  movedPastSlotUids: ReadonlySet<string>;
-  fullyLocked: boolean;
-  sessionIdByUid: ReadonlyMap<string, string>;
-  amendmentToken: string | null;
+type PlanEditorSeedInfo = {
+  editableDays: EditableDays | null;
+  todayPosition: number | null;
+  limit: WindowCap | null;
+  version: string | null;
 };
 
-const EMPTY_SEED: PlacedPlanSeedInfo = {
-  lockedSlotUids: new Set(),
-  movedPastSlotUids: new Set(),
-  fullyLocked: false,
-  sessionIdByUid: new Map(),
-  amendmentToken: null,
+const EMPTY_SEED: PlanEditorSeedInfo = {
+  editableDays: null,
+  todayPosition: null,
+  limit: null,
+  version: null,
 };
+
+/** The server's own sentence when it sent one, else the generic one. */
+function loadErrorMessage(error: unknown): string {
+  const info = (error as { info?: { error?: unknown } } | null)?.info;
+  return typeof info?.error === "string"
+    ? info.error
+    : "This plan couldn't be loaded for editing";
+}
 
 export function usePlacedPlanSource(params: {
   enabled: boolean;
@@ -36,83 +44,63 @@ export function usePlacedPlanSource(params: {
   setMode: (mode: "view" | "edit") => void;
 }) {
   const { enabled, clientId, placedPlanId, state, setMode } = params;
-  const { placedPlan, isLoading, error, mutate } = usePlacedPlan(
+  const { planForEditing, isLoading, error, mutate } = usePlanEdit(
     enabled ? clientId : null,
     enabled ? placedPlanId : null,
   );
-  const { draft, seed, isDirty } = state;
-
-  const [seedInfo, setSeedInfo] = useState<PlacedPlanSeedInfo>(EMPTY_SEED);
+  const { draft, seed } = state;
+  const [seedInfo, setSeedInfo] = useState<PlanEditorSeedInfo>(EMPTY_SEED);
 
   const applySeed = useCallback(
-    (read: PlacedPlanForBuilder) => {
-      const seeded = placedPlanToDraft(read);
+    (read: PlanForEditing) => {
+      const seeded = planForEditingToDraft(read);
       seed(seeded.draft);
       setSeedInfo({
-        lockedSlotUids: new Set(seeded.lockedSlotUids),
-        movedPastSlotUids: new Set(seeded.movedPastSlotUids),
-        fullyLocked: seeded.fullyLocked,
-        sessionIdByUid: seeded.sessionIdByUid,
-        amendmentToken: seeded.amendmentToken,
+        editableDays: seeded.editableDays,
+        todayPosition: seeded.todayPosition,
+        limit: read.limit,
+        version: read.version,
       });
-      // The amendment surface opens ready to edit — view is one toggle away.
+      // The editor opens ready to edit — view is one toggle away.
       setMode("edit");
     },
     [seed, setMode],
   );
 
   useEffect(() => {
-    if (!enabled || !placedPlan) return;
-    if (!draft) {
-      applySeed(placedPlan);
-      return;
-    }
-    // A fresh read landing while the tree is PRISTINE re-seeds. This covers
-    // reopening the editor from a stale SWR cache (the Plans-subtab hook keeps
-    // the key alive, and our own last save changed the plan): the instant seed
-    // uses the cached snapshot, then the mount revalidation arrives and — no
-    // edits made yet — replaces it, fresh token included. Never while dirty:
-    // edits always win, and real drift then surfaces as a 409 with the
-    // reload-vs-keep-editing dialog.
-    if (!isDirty && placedPlan.amendmentToken !== seedInfo.amendmentToken) {
-      applySeed(placedPlan);
-    }
-  }, [enabled, placedPlan, draft, isDirty, seedInfo.amendmentToken, applySeed]);
+    if (enabled && planForEditing && !draft) applySeed(planForEditing);
+  }, [enabled, planForEditing, draft, applySeed]);
 
-  // Discard changes = re-seed from the last read (uids regenerate — any open
-  // session editor closes itself — and locks recompute with them).
+  // Discard changes = re-seed from the read the draft came from (uids
+  // regenerate, so an open session editor closes itself).
   const discard = useCallback(() => {
-    if (placedPlan) applySeed(placedPlan);
-  }, [placedPlan, applySeed]);
+    if (planForEditing) applySeed(planForEditing);
+  }, [planForEditing, applySeed]);
 
-  // Drift recovery (409): refetch, then re-seed from the fresh read. Unsaved
-  // edits are deliberately dropped — the coach chose "reload" in the dialog.
+  // A refused save: read the calendar again and re-seed from it. Unsaved edits
+  // go — the coach chose "Reload and discard edits".
   const reload = useCallback(async () => {
     const next = await mutate();
-    if (next) applySeed(next);
+    if (next?.data) applySeed(next.data);
   }, [mutate, applySeed]);
 
-  // After a save that raced mid-save edits ("kept-draft"): the amendment
-  // landed, so the held token is stale — refetch it WITHOUT re-seeding, or the
-  // very edits we kept would be clobbered. Locks stay valid (same boundary
-  // date; a midnight flip surfaces as a 409 on the next save).
-  const refreshToken = useCallback(async () => {
+  // After a save that edits landed during: the save wrote the calendar, so the
+  // held version is stale. Take the fresh one WITHOUT re-seeding, or the edits
+  // kept for a second save would go.
+  const refreshVersion = useCallback(async () => {
     const next = await mutate();
-    if (next) {
-      setSeedInfo((prev) => ({ ...prev, amendmentToken: next.amendmentToken }));
+    if (next?.data) {
+      const fresh = next.data.version;
+      setSeedInfo((prev) => ({ ...prev, version: fresh }));
     }
   }, [mutate]);
 
   return {
-    read: placedPlan,
     isLoading: enabled && isLoading,
-    loadError:
-      enabled && error ? "This plan couldn't be loaded for editing" : null,
+    loadError: enabled && error ? loadErrorMessage(error) : null,
     ...seedInfo,
-    futureModifiedEvents: placedPlan?.futureModifiedEvents ?? [],
-    windowCap: placedPlan?.windowCap ?? null,
     discard,
     reload,
-    refreshToken,
+    refreshVersion,
   };
 }

@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: {
     from: vi.fn(),
+    rpc: vi.fn(),
   },
 }));
 
@@ -41,13 +42,17 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
 import { supabaseAdmin } from "./supabase-admin";
 import { getClientTodayString } from "./today-service";
 import { getTodayDateString } from "@/lib/date-helpers";
+import { DateOccupiedError } from "./training-event-occupancy";
 import {
+  CalendarMoveDriftError,
+  CalendarMoveNotFoundError,
   deleteEvent,
   duplicateEvent,
   moveEvent,
 } from "./training-event-calendar-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
+const mockRpc = vi.mocked(supabaseAdmin.rpc);
 const mockGetClientTodayString = vi.mocked(getClientTodayString);
 
 describe("training-event-calendar-service", () => {
@@ -165,93 +170,117 @@ describe("training-event-calendar-service", () => {
   describe("moveEvent", () => {
     const clientId = "client-1";
     const planId = "plan-1";
+    // The day the coach's calendar loaded the session on, and the drop target.
+    const LOADED = "2026-04-27";
+    const TARGET = "2026-04-30";
+    const DRIFT =
+      "This session moved since your calendar loaded. The calendar now shows where it is.";
+
+    const storedEvent = (over: Record<string, unknown> = {}) => ({
+      id: "event-1",
+      client_id: clientId,
+      training_plan_id: planId,
+      date: LOADED,
+      training_session_id: null,
+      status: "scheduled",
+      session_name: "Push",
+      session_focus: null,
+      estimated_calories: 300,
+      is_modified: false,
+      ...over,
+    });
+
+    /**
+     * Wires the training_events reads moveEvent issues, in order: the event
+     * itself, then assertDateFree's probe of the target day. The read count
+     * shows where a refusal stopped; a direct write would be a third read.
+     */
+    function wire(event: Record<string, unknown> | null, occupants: { id: string }[] = []) {
+      let reads = 0;
+      mockFrom.mockImplementation(() => {
+        reads += 1;
+        return createMockQuery<unknown>(
+          reads === 1 ? { data: event, error: null } : { data: occupants, error: null },
+        ) as never;
+      });
+      return { reads: () => reads };
+    }
 
     beforeEach(() => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-04-20T12:00:00"));
+      mockRpc.mockResolvedValue({ data: null, error: null } as never);
     });
 
     afterEach(() => {
       vi.useRealTimers();
     });
 
-    it("re-dates the event and marks it modified", async () => {
-      const existingEvent = {
-        id: "event-1",
-        client_id: clientId,
-        training_plan_id: planId,
-        date: "2026-04-27",
-        training_session_id: null,
-        status: "scheduled",
-        session_name: "Push",
-        session_focus: null,
-        estimated_calories: 300,
-        is_modified: false,
-      };
+    it("moves the event through the week view's database function, as exactly one move", async () => {
+      const { reads } = wire(storedEvent());
 
-      let fromCallIndex = 0;
-      const updateQuery = createMockQuery({ data: null, error: null });
+      await expect(moveEvent("event-1", LOADED, TARGET, clientId, planId)).resolves.toBeUndefined();
 
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "training_plans") {
-          return createMockQuery({ data: null, error: null }) as any;
-        }
-        if (table === "training_events") {
-          fromCallIndex++;
-          if (fromCallIndex === 1) {
-            // Initial event fetch.
-            return createMockQuery({ data: existingEvent, error: null }) as any;
-          }
-          // Update call.
-          return updateQuery as any;
-        }
-        return createMockQuery({ data: null, error: null }) as any;
+      // The function re-checks the from-date under a row lock and sets
+      // is_modified and updated_at itself.
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockRpc).toHaveBeenCalledWith("move_training_events_atomic", {
+        p_client_id: clientId,
+        p_moves: [{ event_id: "event-1", from_date: LOADED, to_date: TARGET }],
       });
+      // The event read and the occupancy probe only: nothing writes the table directly.
+      expect(reads()).toBe(2);
+    });
 
-      await expect(moveEvent("event-1", "2026-04-30", clientId, planId)).resolves.toBeUndefined();
+    it("refuses a session that moved since the calendar loaded, before calling the function", async () => {
+      // The client moved it a day later from their own week view.
+      const { reads } = wire(storedEvent({ date: "2026-04-28" }));
 
-      expect(updateQuery.update).toHaveBeenCalledWith(
-        expect.objectContaining({ date: "2026-04-30", is_modified: true }),
+      const attempt = moveEvent("event-1", LOADED, TARGET, clientId, planId);
+
+      await expect(attempt).rejects.toBeInstanceOf(CalendarMoveDriftError);
+      await expect(attempt).rejects.toMatchObject({ message: DRIFT });
+      expect(mockRpc).not.toHaveBeenCalled();
+      // Refused on the event read alone, before the occupancy probe.
+      expect(reads()).toBe(1);
+    });
+
+    it("refuses an event that has left the scheduled state", async () => {
+      wire(storedEvent({ status: "completed" }));
+
+      await expect(moveEvent("event-1", LOADED, TARGET, clientId, planId)).rejects.toThrow(
+        "Only scheduled events can be moved",
       );
-      expect(updateQuery.eq).toHaveBeenCalledWith("id", "event-1");
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it("reads a missing event, or one that is not this client's or this plan's, as not found", async () => {
+      for (const event of [
+        null,
+        storedEvent({ client_id: "client-OTHER" }),
+        storedEvent({ training_plan_id: "plan-OTHER" }),
+      ]) {
+        wire(event);
+        await expect(moveEvent("event-1", LOADED, TARGET, clientId, planId)).rejects.toBeInstanceOf(
+          CalendarMoveNotFoundError,
+        );
+      }
+      expect(mockRpc).not.toHaveBeenCalled();
     });
 
     it("refuses a move onto a day that already holds a session", async () => {
       // The guard this replaces matched on training_session_id, so it could
       // never fire once every placed day owned its own cloned session row —
       // which is how two sessions ended up stacked on dates no UI could clear.
-      const existingEvent = {
-        id: "event-1",
-        client_id: clientId,
-        training_plan_id: planId,
-        date: "2026-04-27",
-        training_session_id: "session-a",
-        status: "scheduled",
-        session_name: "Push",
-        session_focus: null,
-        estimated_calories: 300,
-        is_modified: false,
-      };
+      // The occupancy probe: a DIFFERENT session already sits on the target.
+      wire(storedEvent({ training_session_id: "session-a" }), [{ id: "event-2" }]);
 
-      let fromCallIndex = 0;
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "training_events") {
-          fromCallIndex++;
-          if (fromCallIndex === 1) {
-            return createMockQuery({ data: existingEvent, error: null }) as any;
-          }
-          // The occupancy probe: a DIFFERENT session already sits on 04-30.
-          return createMockQuery({ data: [{ id: "event-2" }], error: null }) as any;
-        }
-        return createMockQuery({ data: null, error: null }) as any;
-      });
+      await expect(moveEvent("event-1", LOADED, TARGET, clientId, planId)).rejects.toThrow(
+        /already has a session/,
+      );
 
-      await expect(
-        moveEvent("event-1", "2026-04-30", clientId, planId),
-      ).rejects.toThrow(/already has a session/);
-
-      // Nothing was written: the update would have been the 3rd query.
-      expect(fromCallIndex).toBe(2);
+      // Nothing was written: the function is never reached.
+      expect(mockRpc).not.toHaveBeenCalled();
     });
 
     it("judges 'past' against client-local today, not server UTC (west-of-UTC boundary)", async () => {
@@ -260,62 +289,66 @@ describe("training-event-calendar-service", () => {
       // *today* (06-09) was rejected as a past date.
       vi.setSystemTime(new Date("2026-06-10T00:30:00Z"));
       mockGetClientTodayString.mockResolvedValue("2026-06-09");
+      wire(storedEvent({ date: "2026-06-12" }));
 
-      const existingEvent = {
-        id: "event-1",
-        client_id: clientId,
-        training_plan_id: planId,
-        date: "2026-06-12",
-        training_session_id: null,
-        status: "scheduled",
-        session_name: "Push",
-        session_focus: null,
-        estimated_calories: 300,
-        is_modified: false,
-      };
-
-      let fromCallIndex = 0;
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "training_plans") {
-          return createMockQuery({ data: null, error: null }) as any;
-        }
-        if (table === "training_events") {
-          fromCallIndex++;
-          if (fromCallIndex === 1) {
-            return createMockQuery({ data: existingEvent, error: null }) as any;
-          }
-          return createMockQuery({ data: null, error: null }) as any;
-        }
-        return createMockQuery({ data: null, error: null }) as any;
-      });
-
-      await expect(moveEvent("event-1", "2026-06-09", clientId, planId)).resolves.toBeUndefined();
+      await expect(
+        moveEvent("event-1", "2026-06-12", "2026-06-09", clientId, planId),
+      ).resolves.toBeUndefined();
 
       expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
+      expect(mockRpc).toHaveBeenCalledTimes(1);
     });
 
     it("still rejects dates before the client-local today", async () => {
       mockGetClientTodayString.mockResolvedValue("2026-06-09");
-
-      const existingEvent = {
-        id: "event-1",
-        client_id: clientId,
-        training_plan_id: planId,
-        date: "2026-06-12",
-        training_session_id: null,
-        status: "scheduled",
-        session_name: "Push",
-        session_focus: null,
-        estimated_calories: 300,
-        is_modified: false,
-      };
-      mockFrom.mockReturnValue(
-        createMockQuery({ data: existingEvent, error: null }) as any,
-      );
+      wire(storedEvent({ date: "2026-06-12" }));
 
       await expect(
-        moveEvent("event-1", "2026-06-08", clientId, planId),
+        moveEvent("event-1", "2026-06-12", "2026-06-08", clientId, planId),
       ).rejects.toThrow("Cannot move event to a past date");
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it("translates the function's message contract into the coach's errors", async () => {
+      // Each refusal is one the function makes under its row lock — a client
+      // move landing between the pre-checks above and the write.
+      const attempt = (message: string) => {
+        wire(storedEvent());
+        mockRpc.mockResolvedValue({ data: null, error: { message } } as never);
+        return moveEvent("event-1", LOADED, TARGET, clientId, planId);
+      };
+
+      const drift = attempt("drift: event event-1 is on 2026-04-28, not 2026-04-27");
+      await expect(drift).rejects.toBeInstanceOf(CalendarMoveDriftError);
+      await expect(drift).rejects.toMatchObject({ message: DRIFT });
+
+      const occupied = attempt("occupied:2026-04-30");
+      await expect(occupied).rejects.toBeInstanceOf(DateOccupiedError);
+      await expect(occupied).rejects.toMatchObject({ message: "Thu, Apr 30 already has a session" });
+
+      await expect(attempt("not_found: event event-1 is not this client's")).rejects.toBeInstanceOf(
+        CalendarMoveNotFoundError,
+      );
+      await expect(
+        attempt("not_scheduled: event event-1 has left the scheduled state"),
+      ).rejects.toThrow("Only scheduled events can be moved");
+    });
+
+    it("translates the index backstop (a raw 23505) into the same sentence as the pre-check", async () => {
+      wire(storedEvent());
+      mockRpc.mockResolvedValue({
+        data: null,
+        error: {
+          code: "23505",
+          message: 'duplicate key value violates unique constraint "idx_training_events_one_scheduled_per_day"',
+          details: "Key (client_id, date)=(client-1, 2026-04-30) already exists.",
+        },
+      } as never);
+
+      const attempt = moveEvent("event-1", LOADED, TARGET, clientId, planId);
+
+      await expect(attempt).rejects.toBeInstanceOf(DateOccupiedError);
+      await expect(attempt).rejects.toMatchObject({ message: "Thu, Apr 30 already has a session" });
     });
   });
 

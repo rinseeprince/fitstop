@@ -9,14 +9,17 @@ import { getTrainingWeekEnd, getTrainingWeekStart } from "@/lib/date-helpers";
 import { getLogWindow } from "./daily-log-permissions-service";
 
 // =============================================================================
-// Client week layout — the ONE write path for "a session changes date".
+// Client week layout — the client's side of "a session changes date".
 //
 // A single move, a two-day swap and a whole-week rearrangement are the same
 // operation at different sizes: a list of {event, from, to} applied in one
-// transaction by `move_training_events_atomic` (migration 150). This service
-// owns the POLICY the RPC deliberately does not — the rules a client's own
-// calendar imposes — and translates the RPC's message contract into typed
-// errors the route can answer with a sentence.
+// transaction by `move_training_events_atomic` (migration 150). That function
+// is the ONE write path for a change of date: the client's layout here and the
+// coach's calendar drag (`moveEvent`, training-event-calendar-service.ts) both
+// go through it, and each side keeps its own rules. This service owns the
+// POLICY a client's own calendar imposes, the calendar service owns the
+// coach's; `readMoveRpcError` reads the function's message contract once, and
+// each side answers it with its own typed errors and sentences.
 // =============================================================================
 
 type LayoutMove = { eventId: string; fromDate: string; toDate: string };
@@ -139,25 +142,50 @@ export async function applyClientLayout(
   return { moved: real };
 }
 
+/** The error `supabaseAdmin.rpc("move_training_events_atomic", …)` returns. */
+export type MoveRpcError = { code?: string; message: string; details?: string };
+
+/** What the RPC refused, read from its message; only `occupied` names a day. */
+type MoveRpcFailure =
+  | { kind: "occupied"; date: string }
+  | { kind: "drift" | "not_found" | "not_scheduled" | "duplicate" | "other" };
+
 /**
- * The RPC's message prefixes are its error contract (see migration 150). The
- * index backstop is translated first: a raw 23505 from
- * `idx_training_events_one_scheduled_per_day` becomes the same sentence the
- * pre-check produces (CONVENTIONS §8).
+ * The RPC's message prefixes are its error contract (see migration 150), read
+ * here for both of its callers — this service and the coach's `moveEvent` — so
+ * the two cannot parse it differently; each answers the kind in its own
+ * sentences. The index backstop is translated first: a raw 23505 from
+ * `idx_training_events_one_scheduled_per_day` is thrown as the same sentence
+ * the pre-check produces (CONVENTIONS §8).
  */
-function translateRpcError(error: { code?: string; message: string; details?: string }): Error {
+export function readMoveRpcError(error: MoveRpcError): MoveRpcFailure {
   rethrowIfAnyDateOccupied(error);
   const message = error.message ?? "";
-  if (message.startsWith("drift:")) return new LayoutDriftError(LAYOUT_DRIFT_MESSAGE);
+  if (message.startsWith("drift:")) return { kind: "drift" };
   if (message.startsWith("occupied:")) {
-    return new DateOccupiedError(occupiedMessage(message.slice("occupied:".length).trim()));
+    return { kind: "occupied", date: message.slice("occupied:".length).trim() };
   }
-  if (message.startsWith("not_found:")) return new LayoutNotFoundError("Session not found");
-  if (message.startsWith("not_scheduled:")) {
-    return new LayoutPolicyError("A session that has been logged can't be moved");
+  if (message.startsWith("not_found:")) return { kind: "not_found" };
+  if (message.startsWith("not_scheduled:")) return { kind: "not_scheduled" };
+  if (message.startsWith("duplicate_")) return { kind: "duplicate" };
+  return { kind: "other" };
+}
+
+/** The RPC's refusal in the client's sentences. */
+function translateRpcError(error: MoveRpcError): Error {
+  const failure = readMoveRpcError(error);
+  switch (failure.kind) {
+    case "drift":
+      return new LayoutDriftError(LAYOUT_DRIFT_MESSAGE);
+    case "occupied":
+      return new DateOccupiedError(occupiedMessage(failure.date));
+    case "not_found":
+      return new LayoutNotFoundError("Session not found");
+    case "not_scheduled":
+      return new LayoutPolicyError("A session that has been logged can't be moved");
+    case "duplicate":
+      return new LayoutPolicyError("Two sessions can't land on the same day");
+    case "other":
+      return new Error(`Failed to apply layout: ${error.message ?? ""}`);
   }
-  if (message.startsWith("duplicate_")) {
-    return new LayoutPolicyError("Two sessions can't land on the same day");
-  }
-  return new Error(`Failed to apply layout: ${message}`);
 }

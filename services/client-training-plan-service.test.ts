@@ -52,6 +52,73 @@ function awaitableQuery<T>(result: MockResult<T>) {
   return q;
 }
 
+type Row = Record<string, unknown>;
+
+/** A column's value on a fixture row, following an embed's dotted path. */
+function valueAt(row: Row, column: string): unknown {
+  return column
+    .split(".")
+    .reduce<unknown>(
+      (value, key) =>
+        value !== null && typeof value === "object" ? (value as Row)[key] : undefined,
+      row
+    );
+}
+
+function compare(a: unknown, b: unknown): number {
+  if (a === b) return 0;
+  return (a as string | number) < (b as string | number) ? -1 : 1;
+}
+
+/**
+ * A chainable read over fixture rows, one per `from()` call. It applies the
+ * filters, order and range the service built when awaited, so a test states
+ * the tables and reads back what the service made of them.
+ */
+function tableQuery(table: string, rows: Row[], log: string[], errorMessage?: string) {
+  log.push(`issue ${table}`);
+  const q = {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
+    gte: vi.fn().mockReturnThis(),
+    lte: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    range: vi.fn().mockReturnThis(),
+  };
+  const selected = (): Row[] => {
+    const matching = rows.filter(
+      (row) =>
+        q.eq.mock.calls.every(([column, value]) => valueAt(row, column) === value) &&
+        q.in.mock.calls.every(([column, values]) => values.includes(valueAt(row, column))) &&
+        q.gte.mock.calls.every(([column, value]) => compare(valueAt(row, column), value) >= 0) &&
+        q.lte.mock.calls.every(([column, value]) => compare(valueAt(row, column), value) <= 0)
+    );
+    const sorted = [...matching].sort((a, b) => {
+      for (const [column, options] of q.order.mock.calls) {
+        const order = compare(valueAt(a, column), valueAt(b, column));
+        if (order !== 0) return options?.ascending === false ? -order : order;
+      }
+      return 0;
+    });
+    const [from, to] = q.range.mock.lastCall ?? [0, sorted.length];
+    return sorted.slice(from, to + 1);
+  };
+  Object.defineProperty(q, "then", {
+    value: (resolve: (value: MockResult<Row[]>) => void) => {
+      log.push(`read ${table}`);
+      return Promise.resolve(
+        errorMessage
+          ? { data: null, error: { message: errorMessage } }
+          : { data: selected(), error: null }
+      ).then(resolve);
+    },
+  });
+  return q;
+}
+
+type TableQuery = ReturnType<typeof tableQuery>;
+
 describe("client-training-plan-service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -59,22 +126,38 @@ describe("client-training-plan-service", () => {
     vi.mocked(getNextFutureTrainingPlan).mockResolvedValue(null);
   });
 
-  /** plan → sessions → exercises, dispatched by table. */
+  /**
+   * The plan query, then the tables the program is read from: every `from()`
+   * on them gets its own query over the fixture rows.
+   */
   function mockTables(opts: {
     plan: unknown;
-    sessions?: unknown[];
-    exercises?: unknown[];
+    events?: Row[];
+    sessions?: Row[];
+    exercises?: Row[];
+    errors?: Partial<Record<string, string>>;
   }) {
     const planQuery = awaitableQuery({ data: opts.plan, error: null });
-    const sessionsQuery = awaitableQuery({ data: opts.sessions ?? [], error: null });
-    const exercisesQuery = awaitableQuery({ data: opts.exercises ?? [], error: null });
+    const tables: Record<string, Row[]> = {
+      training_events: opts.events ?? [],
+      training_sessions: opts.sessions ?? [],
+      training_exercises: opts.exercises ?? [],
+    };
+    const reads: Record<string, TableQuery[]> = {
+      training_events: [],
+      training_sessions: [],
+      training_exercises: [],
+    };
+    const log: string[] = [];
     mockFrom.mockImplementation((table: string) => {
       if (table === "training_plans") return planQuery as never;
-      if (table === "training_sessions") return sessionsQuery as never;
-      if (table === "training_exercises") return exercisesQuery as never;
-      throw new Error(`Unexpected from(): ${table}`);
+      const rows = tables[table];
+      if (!rows) throw new Error(`Unexpected from(): ${table}`);
+      const query = tableQuery(table, rows, log, opts.errors?.[table]);
+      reads[table].push(query);
+      return query as never;
     });
-    return { planQuery, sessionsQuery, exercisesQuery };
+    return { planQuery, reads, log };
   }
 
   it("returns null when no active training plan exists for the client", async () => {
@@ -222,128 +305,485 @@ describe("client-training-plan-service", () => {
     });
   });
 
-  it("returns the plan's sessions with their exercises", async () => {
-    const planRow = {
-      id: "plan-1",
-      name: "My Plan",
-      effective_from: "2026-07-01",
-      effective_until: "2026-08-11",
+  describe("the program as it is on the client's calendar", () => {
+    const PLAN_ID = "plan-1";
+    // Two weeks: Mon 20 Jul is day 0, Sun 2 Aug is day 13. TODAY is day 7.
+    const PLAN = {
+      id: PLAN_ID,
+      name: "Block A",
+      effective_from: "2026-07-20",
+      effective_until: "2026-08-02",
     };
-    const sessionRows = [
-      {
-        id: "session-1",
-        name: "Push",
-        focus: "Chest",
-        order_index: 0,
-        estimated_duration_minutes: 60,
-      },
-      {
-        id: "session-2",
-        name: "Pull",
-        focus: "Back",
-        order_index: 1,
-        estimated_duration_minutes: 60,
-      },
-    ];
-    const exerciseRows = [
-      {
-        id: "ex-1",
-        session_id: "session-1",
-        name: "Bench",
-        order_index: 0,
-        sets: 4,
+
+    function event(id: string, date: string, sessionId: string | null, extra: Row = {}): Row {
+      return {
+        id,
+        client_id: CLIENT_ID,
+        training_plan_id: PLAN_ID,
+        training_session_id: sessionId,
+        date,
+        status: "scheduled",
+        session_name: `Event ${id}`,
+        session_focus: null,
+        ...extra,
+      };
+    }
+
+    function session(id: string, weekIndex: number, orderIndex: number, extra: Row = {}): Row {
+      return {
+        id,
+        plan_id: PLAN_ID,
+        name: `Session ${id}`,
+        focus: null,
+        week_index: weekIndex,
+        order_index: orderIndex,
+        is_rest: false,
+        is_active: true,
+        estimated_duration_minutes: null,
+        created_at: "2026-07-01T00:00:00Z",
+        // The `training_plans!inner(client_id)` embed the service scopes on.
+        training_plans: { client_id: CLIENT_ID },
+        ...extra,
+      };
+    }
+
+    function exercise(id: string, sessionId: string, orderIndex: number, extra: Row = {}): Row {
+      return {
+        id,
+        session_id: sessionId,
+        name: `Exercise ${id}`,
+        order_index: orderIndex,
+        sets: 3,
         reps_min: 8,
         reps_max: 10,
         reps_target: null,
-        rpe_target: 8,
+        rpe_target: null,
         tempo: null,
-        rest_seconds: 120,
-        is_warmup: false,
+        rest_seconds: null,
+        is_warmup: null,
         superset_group: null,
-      },
-    ];
+        set_specs: null,
+        video_url: null,
+        prescribed_fields: null,
+        is_active: true,
+        ...extra,
+      };
+    }
 
-    const planQuery = awaitableQuery({ data: planRow, error: null });
-    const sessionsQuery = awaitableQuery({ data: sessionRows, error: null });
-    const exercisesQuery = awaitableQuery({ data: exerciseRows, error: null });
+    async function readSessions() {
+      const result = await getClientTrainingPlan(CLIENT_ID);
+      return result!.sessions;
+    }
 
-    let call = 0;
-    mockFrom.mockImplementation((table: string) => {
-      call++;
-      if (table === "training_plans") return planQuery as never;
-      if (table === "training_sessions") return sessionsQuery as never;
-      if (table === "training_exercises") return exercisesQuery as never;
-      throw new Error(`Unexpected from(): ${table} (call ${call})`);
+    it("lists one entry per day of the window: orderIndex is the day, weekIndex the week holding it", async () => {
+      // Ten days, so the second week is cut short.
+      mockTables({ plan: { ...PLAN, effective_until: "2026-07-29" } });
+
+      const sessions = await readSessions();
+
+      expect(sessions.map((s) => s.orderIndex)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      expect(sessions.map((s) => s.weekIndex)).toEqual([0, 0, 0, 0, 0, 0, 0, 1, 1, 1]);
     });
 
-    const result = await getClientTrainingPlan(CLIENT_ID);
+    it("shows a moved session on its new day only", async () => {
+      mockTables({
+        plan: PLAN,
+        sessions: [
+          session("s-push", 0, 0, { name: "Push" }),
+          session("s-pull", 0, 2, { name: "Pull" }),
+        ],
+        events: [
+          event("e-push", "2026-07-20", "s-push"),
+          // Pull's row sits on day 2; its day was moved to day 3.
+          event("e-pull", "2026-07-23", "s-pull"),
+        ],
+      });
 
-    expect(result).not.toBeNull();
-    expect(result!.planId).toBe("plan-1");
-    expect(result!.planName).toBe("My Plan");
-    expect(result!.sessions).toHaveLength(2);
-    expect(result!.sessions[0]).toMatchObject({
-      id: "session-1",
-      name: "Push",
-      isRest: false,
-      orderIndex: 0,
-    });
-    expect(result!.sessions[0].exercises).toHaveLength(1);
-    expect(result!.sessions[0].exercises[0]).toMatchObject({
-      name: "Bench",
-      sets: 4,
-      repsMin: 8,
-      repsMax: 10,
-      rpeTarget: 8,
-    });
-    expect(result!.sessions[1].exercises).toEqual([]);
-    // The plan describes itself — the library template is never consulted.
-    expect(mockFrom).not.toHaveBeenCalledWith("coach_saved_plans");
-  });
+      const sessions = await readSessions();
 
-  it("returns real is_rest rows inline", async () => {
-    const planRow = { id: "plan-1", name: "New PPL", effective_from: "2026-07-01" };
-    const sessionRows = [
-      { id: "s0", name: "Push", focus: "Chest", order_index: 0, week_index: 0, is_rest: false, estimated_duration_minutes: 60 },
-      { id: "s1", name: "Rest", focus: null, order_index: 1, week_index: 0, is_rest: true, estimated_duration_minutes: null },
-      { id: "s2", name: "Legs", focus: "Quads", order_index: 2, week_index: 0, is_rest: false, estimated_duration_minutes: 60 },
-    ];
-    const planQuery = awaitableQuery({ data: planRow, error: null });
-    const sessionsQuery = awaitableQuery({ data: sessionRows, error: null });
-    const exercisesQuery = awaitableQuery({ data: [], error: null });
-    mockFrom.mockImplementation((table: string) => {
-      if (table === "training_plans") return planQuery as never;
-      if (table === "training_sessions") return sessionsQuery as never;
-      if (table === "training_exercises") return exercisesQuery as never;
-      throw new Error(`Unexpected from(): ${table}`);
+      expect(sessions.filter((s) => s.name === "Pull").map((s) => s.orderIndex)).toEqual([3]);
+      expect(sessions[2]).toMatchObject({ name: "Rest", isRest: true, exercises: [] });
+      expect(sessions[3]).toMatchObject({ id: "s-pull", name: "Pull", isRest: false });
     });
 
-    const result = await getClientTrainingPlan(CLIENT_ID);
+    it("shows a 'just this day' edit once, as the row the day's event points at", async () => {
+      mockTables({
+        plan: PLAN,
+        sessions: [
+          session("s-legs", 0, 4, { name: "Legs" }),
+          // cloneSessionForEvent: a second active row at the same coordinates.
+          session("s-legs-copy", 0, 4, {
+            name: "Legs (lighter)",
+            created_at: "2026-07-23T09:00:00Z",
+          }),
+        ],
+        events: [event("e-legs", "2026-07-24", "s-legs-copy")],
+        exercises: [
+          exercise("x-squat", "s-legs", 0, { name: "Back squat" }),
+          exercise("x-goblet", "s-legs-copy", 0, { name: "Goblet squat" }),
+          exercise("x-dropped", "s-legs-copy", 1, { name: "Lunge", is_active: false }),
+        ],
+      });
 
-    expect(result!.sessions.map((s) => s.name)).toEqual(["Push", "Rest", "Legs"]);
-    expect(result!.sessions[1].isRest).toBe(true);
-    expect(mockFrom).not.toHaveBeenCalledWith("coach_saved_plans");
-  });
+      const sessions = await readSessions();
 
-  it("returns multi-week (week_index > 0) entries inline", async () => {
-    const planRow = { id: "plan-1", name: "3-week", effective_from: "2026-07-01" };
-    const sessionRows = [
-      { id: "w0", name: "Week1 Day1", focus: null, order_index: 0, week_index: 0, is_rest: false, estimated_duration_minutes: null },
-      { id: "w1", name: "Week2 Day1", focus: null, order_index: 0, week_index: 1, is_rest: false, estimated_duration_minutes: null },
-    ];
-    const planQuery = awaitableQuery({ data: planRow, error: null });
-    const sessionsQuery = awaitableQuery({ data: sessionRows, error: null });
-    const exercisesQuery = awaitableQuery({ data: [], error: null });
-    mockFrom.mockImplementation((table: string) => {
-      if (table === "training_plans") return planQuery as never;
-      if (table === "training_sessions") return sessionsQuery as never;
-      if (table === "training_exercises") return exercisesQuery as never;
-      throw new Error(`Unexpected from(): ${table}`);
+      expect(sessions).toHaveLength(14);
+      expect(sessions.filter((s) => !s.isRest)).toHaveLength(1);
+      expect(sessions[4]).toMatchObject({ id: "s-legs-copy", name: "Legs (lighter)", orderIndex: 4 });
+      expect(sessions[4].exercises.map((e) => e.name)).toEqual(["Goblet squat"]);
     });
 
-    const result = await getClientTrainingPlan(CLIENT_ID);
+    it("shows a day whose event was deleted as a rest day", async () => {
+      mockTables({
+        plan: PLAN,
+        sessions: [
+          session("s-push", 0, 0, { name: "Push", focus: "Chest", estimated_duration_minutes: 60 }),
+        ],
+        exercises: [exercise("x-bench", "s-push", 0)],
+      });
 
-    expect(result!.sessions.map((s) => s.weekIndex)).toEqual([0, 1]);
-    expect(mockFrom).not.toHaveBeenCalledWith("coach_saved_plans");
+      const sessions = await readSessions();
+
+      // The day's training row is no rest row: the day is named by the plan
+      // and its position.
+      expect(sessions[0]).toEqual({
+        id: "plan-1:0",
+        name: "Rest",
+        focus: null,
+        orderIndex: 0,
+        weekIndex: 0,
+        isRest: true,
+        estimatedDurationMinutes: null,
+        exercises: [],
+      });
+    });
+
+    it("identifies a rest day by the plan's rest row at that day, else by the plan and the position", async () => {
+      const rest = { name: "Rest", is_rest: true };
+      mockTables({
+        plan: PLAN,
+        sessions: [
+          session("r-rest", 0, 1, rest),
+          // A training row whose session moved away names no rest day.
+          session("r-moved", 0, 2),
+          // Two rows at day 5: the earliest written wins, whatever the ids say.
+          session("r-b1", 0, 5, { ...rest, created_at: "2026-07-02T00:00:00Z" }),
+          session("r-b2", 0, 5, { ...rest, created_at: "2026-07-01T00:00:00Z" }),
+          // Written together at day 6: the lower id wins.
+          session("r-c2", 0, 6, rest),
+          session("r-c1", 0, 6, rest),
+          // Placement's second cycle of a one-week program: week 1, authored day 1.
+          session("r-cycle", 1, 1, rest),
+          // The plan editor's save: week 1, order 9.
+          session("r-editor", 1, 9, rest),
+          // An inactive row holds no day.
+          session("r-gone", 1, 3, { ...rest, is_active: false }),
+        ],
+      });
+
+      const sessions = await readSessions();
+
+      expect(sessions.map((s) => s.id)).toEqual([
+        "plan-1:0",
+        "r-rest",
+        "plan-1:2",
+        "plan-1:3",
+        "plan-1:4",
+        "r-b2",
+        "r-c1",
+        "plan-1:7",
+        "r-cycle",
+        "r-editor",
+        "plan-1:10",
+        "plan-1:11",
+        "plan-1:12",
+        "plan-1:13",
+      ]);
+      expect(sessions.every((s) => s.isRest)).toBe(true);
+    });
+
+    it("lays a day whose row cannot be read from its event's snapshot", async () => {
+      mockTables({
+        plan: PLAN,
+        events: [
+          event("e-gone", "2026-07-21", "s-missing", { session_name: "Upper", session_focus: "Chest" }),
+          event("e-bare", "2026-07-22", null, { session_name: "Conditioning" }),
+        ],
+      });
+
+      const sessions = await readSessions();
+
+      expect(sessions[1]).toEqual({
+        id: "e-gone",
+        name: "Upper",
+        focus: "Chest",
+        orderIndex: 1,
+        weekIndex: 0,
+        isRest: false,
+        estimatedDurationMinutes: null,
+        exercises: [],
+      });
+      expect(sessions[2]).toEqual({
+        id: "e-bare",
+        name: "Conditioning",
+        focus: null,
+        orderIndex: 2,
+        weekIndex: 0,
+        isRest: false,
+        estimatedDurationMinutes: null,
+        exercises: [],
+      });
+    });
+
+    it("never lays another client's row or event", async () => {
+      mockTables({
+        plan: PLAN,
+        sessions: [
+          session("s-theirs", 0, 0, { name: "Theirs", training_plans: { client_id: "client-2" } }),
+        ],
+        events: [
+          event("e-mine", "2026-07-20", "s-theirs", { session_name: "Mine" }),
+          event("e-theirs", "2026-07-21", "s-theirs", { client_id: "client-2" }),
+        ],
+        exercises: [exercise("x-theirs", "s-theirs", 0)],
+      });
+
+      const sessions = await readSessions();
+
+      expect(sessions[0]).toMatchObject({ id: "e-mine", name: "Mine", exercises: [] });
+      expect(sessions[1]).toMatchObject({ isRest: true });
+    });
+
+    it("shows the row a day points at even when that row is inactive", async () => {
+      mockTables({
+        plan: PLAN,
+        sessions: [session("s-retired", 0, 0, { name: "Push", is_active: false })],
+        events: [event("e-push", "2026-07-20", "s-retired")],
+        exercises: [exercise("x-bench", "s-retired", 0, { name: "Bench" })],
+      });
+
+      const sessions = await readSessions();
+
+      expect(sessions[0]).toMatchObject({ id: "s-retired", name: "Push", isRest: false });
+      expect(sessions[0].exercises.map((e) => e.name)).toEqual(["Bench"]);
+    });
+
+    it("takes each day's event from the calendar, whichever plan wrote it, the scheduled one first", async () => {
+      mockTables({
+        plan: PLAN,
+        sessions: [
+          session("s-now", 0, 3, { name: "Scheduled" }),
+          session("s-extra", 0, 3, { name: "Logged extra" }),
+          session("s-logged", 0, 5, { name: "Logged earlier" }),
+          session("s-later", 0, 5, { name: "Scheduled later" }),
+          session("s-drop", 0, 0, { plan_id: "plan-other", name: "Dropped in" }),
+        ],
+        // The scheduled event wins on each day, whether its id sorts first or last.
+        events: [
+          event("e-c", "2026-07-23", "s-now"),
+          event("e-d", "2026-07-23", "s-extra", { status: "completed" }),
+          event("e-a", "2026-07-25", "s-logged", { status: "completed" }),
+          event("e-b", "2026-07-25", "s-later"),
+          event("e-drop", "2026-07-26", "s-drop", { training_plan_id: null }),
+        ],
+      });
+
+      const sessions = await readSessions();
+
+      expect(sessions[3]).toMatchObject({ id: "s-now", name: "Scheduled" });
+      expect(sessions[5]).toMatchObject({ id: "s-later", name: "Scheduled later" });
+      expect(sessions[6]).toMatchObject({ id: "s-drop", name: "Dropped in", isRest: false });
+    });
+
+    it("carries the row's active exercises in order, mapped as the client reads them", async () => {
+      const specs = [{ set_number: 1, set_type: "working", reps_min: 5, reps_max: 5 }];
+      mockTables({
+        plan: PLAN,
+        sessions: [
+          session("s-push", 0, 0, { name: "Push", focus: "Chest", estimated_duration_minutes: 60 }),
+        ],
+        events: [event("e-push", "2026-07-20", "s-push")],
+        exercises: [
+          exercise("x-2", "s-push", 1, { name: "Dips", is_warmup: true }),
+          exercise("x-1", "s-push", 0, {
+            name: "Bench",
+            sets: 4,
+            rpe_target: 8,
+            tempo: "3010",
+            rest_seconds: 120,
+            set_specs: specs,
+            video_url: "https://example.com/bench",
+            prescribed_fields: ["reps", "rpe"],
+          }),
+        ],
+      });
+
+      const sessions = await readSessions();
+
+      expect(sessions[0]).toEqual({
+        id: "s-push",
+        name: "Push",
+        focus: "Chest",
+        orderIndex: 0,
+        weekIndex: 0,
+        isRest: false,
+        estimatedDurationMinutes: 60,
+        exercises: [
+          {
+            id: "x-1",
+            name: "Bench",
+            orderIndex: 0,
+            sets: 4,
+            repsMin: 8,
+            repsMax: 10,
+            repsTarget: null,
+            rpeTarget: 8,
+            tempo: "3010",
+            restSeconds: 120,
+            isWarmup: false,
+            supersetGroup: null,
+            setSpecs: specs,
+            videoUrl: "https://example.com/bench",
+            prescribedFields: ["reps", "rpe"],
+          },
+          {
+            id: "x-2",
+            name: "Dips",
+            orderIndex: 1,
+            sets: 3,
+            repsMin: 8,
+            repsMax: 10,
+            repsTarget: null,
+            rpeTarget: null,
+            tempo: null,
+            restSeconds: null,
+            isWarmup: true,
+            supersetGroup: null,
+            setSpecs: null,
+            videoUrl: null,
+            prescribedFields: null,
+          },
+        ],
+      });
+      // The library template is never consulted.
+      expect(mockFrom).not.toHaveBeenCalledWith("coach_saved_plans");
+    });
+
+    it("reads sparse, ordered pages: the window's events for the client, the plan's rows, the days' rows and their exercises", async () => {
+      const { reads } = mockTables({
+        plan: PLAN,
+        sessions: [session("s-push", 0, 0)],
+        events: [event("e-push", "2026-07-20", "s-push")],
+      });
+
+      await getClientTrainingPlan(CLIENT_ID);
+
+      const [events] = reads.training_events;
+      expect(events.select).toHaveBeenCalledWith(
+        "id, date, status, training_session_id, session_name, session_focus"
+      );
+      expect(events.eq.mock.calls).toEqual([["client_id", CLIENT_ID]]);
+      expect(events.gte).toHaveBeenCalledWith("date", "2026-07-20");
+      expect(events.lte).toHaveBeenCalledWith("date", "2026-08-02");
+      expect(events.order.mock.calls).toEqual([
+        ["date", { ascending: true }],
+        ["id", { ascending: true }],
+      ]);
+      expect(events.range).toHaveBeenCalledWith(0, 999);
+
+      const planRows = reads.training_sessions.find((q) => q.in.mock.calls.length === 0)!;
+      expect(planRows.select).toHaveBeenCalledWith("id, week_index, order_index");
+      expect(planRows.eq.mock.calls).toEqual([
+        ["plan_id", PLAN_ID],
+        ["is_active", true],
+        ["is_rest", true],
+      ]);
+      expect(planRows.order.mock.calls).toEqual([
+        ["created_at", { ascending: true }],
+        ["id", { ascending: true }],
+      ]);
+
+      const dayRows = reads.training_sessions.find((q) => q.in.mock.calls.length > 0)!;
+      expect(dayRows.select).toHaveBeenCalledWith(
+        "id, name, focus, estimated_duration_minutes, training_plans!inner(client_id)"
+      );
+      expect(dayRows.in).toHaveBeenCalledWith("id", ["s-push"]);
+      // Whatever row a day points at is what the day holds: no is_active filter.
+      expect(dayRows.eq.mock.calls).toEqual([["training_plans.client_id", CLIENT_ID]]);
+      expect(dayRows.order.mock.calls).toEqual([["id", { ascending: true }]]);
+
+      const [exercises] = reads.training_exercises;
+      expect(exercises.select).toHaveBeenCalledWith(
+        "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, superset_group, set_specs, video_url, prescribed_fields"
+      );
+      expect(exercises.in).toHaveBeenCalledWith("session_id", ["s-push"]);
+      expect(exercises.eq.mock.calls).toEqual([["is_active", true]]);
+      expect(exercises.order.mock.calls).toEqual([
+        ["session_id", { ascending: true }],
+        ["order_index", { ascending: true }],
+        ["id", { ascending: true }],
+      ]);
+    });
+
+    it("issues its reads two at a time: the events beside the plan's rows, then the days' rows beside their exercises", async () => {
+      const { log } = mockTables({
+        plan: PLAN,
+        sessions: [session("s-push", 0, 0)],
+        events: [event("e-push", "2026-07-20", "s-push")],
+      });
+
+      await getClientTrainingPlan(CLIENT_ID);
+
+      expect(log).toEqual([
+        "issue training_events",
+        "issue training_sessions",
+        "read training_events",
+        "read training_sessions",
+        "issue training_sessions",
+        "issue training_exercises",
+        "read training_sessions",
+        "read training_exercises",
+      ]);
+    });
+
+    it("lays an upcoming program over its own window", async () => {
+      vi.mocked(getNextFutureTrainingPlan).mockResolvedValue({
+        id: "plan-2",
+        name: "Next block",
+        effectiveFrom: "2026-08-17",
+        effectiveUntil: "2026-08-30",
+        splitType: "ppl",
+        frequencyPerWeek: 4,
+        programDurationWeeks: 2,
+      });
+      const { reads } = mockTables({
+        plan: null,
+        sessions: [session("s-open", 0, 0, { plan_id: "plan-2", name: "Opener" })],
+        events: [event("e-open", "2026-08-17", "s-open", { training_plan_id: "plan-2" })],
+      });
+
+      const result = await getClientTrainingPlan(CLIENT_ID);
+
+      expect(result).toMatchObject({ planId: "plan-2", state: "upcoming", startsOn: "2026-08-17" });
+      expect(result!.sessions).toHaveLength(14);
+      expect(result!.sessions[0]).toMatchObject({ id: "s-open", name: "Opener", orderIndex: 0 });
+      expect(result!.sessions[1]).toMatchObject({ id: "plan-2:1", isRest: true });
+      expect(reads.training_events[0].gte).toHaveBeenCalledWith("date", "2026-08-17");
+      expect(reads.training_events[0].lte).toHaveBeenCalledWith("date", "2026-08-30");
+    });
+
+    it.each([
+      ["training_events", "Failed to fetch training events: connection reset"],
+      ["training_exercises", "Failed to fetch training exercises: connection reset"],
+    ])("throws when the %s read fails", async (table, message) => {
+      mockTables({
+        plan: PLAN,
+        sessions: [session("s-push", 0, 0)],
+        events: [event("e-push", "2026-07-20", "s-push")],
+        errors: { [table]: "connection reset" },
+      });
+
+      await expect(getClientTrainingPlan(CLIENT_ID)).rejects.toThrow(message);
+    });
   });
 });

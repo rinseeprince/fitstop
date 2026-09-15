@@ -189,42 +189,6 @@ Logged: 2026-07-02.
 
 ---
 
-## Plan amendment — deferred tails (placed-plan editing Job 2)
-
-Logged: 2026-07-22.
-
-- **Entry-point gating fetches the full amendment payload for one boolean.** `TrainingBuilderRightPanel` runs the amendment GET (via `usePlacedPlan`) on every Plans-subtab view just to read `isFullyPast` for the hero button's disabled state. The SWR key is shared with the amendment overlay, so opening the editor never double-fetches — but the payload is the whole plan (all exercises). Fine at current plan sizes; if it ever shows up in traces, add a lean `?summary=1` variant rather than a second endpoint.
-
----
-
-## The amendment writer breaks "one active row per slot position" — FIXED
-
-Logged: 2026-07-27. Found while scoping (and then not building) calendar/plan slot sync. **Fixed the same day**; kept as the record of what the shape was, because the surviving producer below writes the same shape from a different door.
-
-**The fix.** The editor's lock model already treated an early-logged future slot as immutable while the writer treated it as replaceable — that disagreement WAS the bug, so the two now share one predicate. The writer computes `frozenPositions` from the same three clauses `computeLockedSlotUids` uses, keeps those rows, skips minting a replacement, passes them to the walk as `skipPositions`, and 422s a shrink that would drop one. Separately, `toSlotRows` makes the slot list explicit — one active row per coordinate — so an extra row from any other writer can no longer shift a position. Existing rows were NOT repaired (all 14 affected plans are archived and inert).
-
-**The invariant.** A placed plan's active `training_sessions` rows ARE its ordered day-slots: position in `canonicalSortRows` order *is* the date-walk slot position (`plan-amendment-service.ts:106-124`), and `date(position) = effective_from + position`. Nothing enforces it — there is no unique index on `(plan_id, week_index, order_index)` and there cannot be one, because `cloneSessionForEvent` mints colliding coordinates deliberately (see below). The invariant is "one active row per slot position", NOT merely "no duplicate coordinates": a row that survives past the grid's end breaks the walk just as thoroughly without colliding with anything.
-
-**What happens.** `amendPlacedPlanFuture` keeps any session row still referenced by a surviving event — `survivingEvents` matches `date < floor OR status <> 'scheduled'`, so a **future** row the client logged early is kept active (`plan-amendment-service.ts:459-477`). Step 8 then inserts a fresh row for **every** future position, including that one, at the same `order_index` / `week_index` (`:512-537`). Two shapes follow:
-
-- **Same-size or growing grid** → the kept row's position is inside `[offset, sessions.length)`, so a fresh row lands on top of it: two active rows sharing a coordinate pair, permanently.
-- **Shrinking grid** → the kept row's position is past the new grid end. No collision, but the row stays `is_active` (it is in `keepIds`, so `deactivateIds` at `:477` excludes it) and still inflates the active row count. `plan-amendment-service.test.ts:891` exercises both at once, leaving 9 active rows for a 7-slot plan.
-
-**Why it matters.** The canonical sort tiebreaks on `created_at` then `id`, so once positions are wrong, which row owns which slot is an accident of insertion time. Four things follow, none of them visible to a coach:
-
-- **The next amendment freezes the wrong rows.** The elapsed/future partition is `currentRows.forEach((row, position) => { if (position < offset) keepIds.add(row.id) })` (`:474-477`). `offset` is derived from dates, the positions from row order — so one extra row before the boundary shifts the partition by one, and rows the coach still owns get treated as history while history gets replaced.
-- **The read-side window grows.** `calculatePlacementEndDate` derives it from the row count it is handed (`program-event-walk.ts:91-109`). The GET passes `sessionRows.length` (`plan-amendment-service.ts:301-305`) and the PUT's drift check passes `currentRows.length` (`:401-405`), so both inflate by one day per extra row — corrupting `isFullyPast`, the "this plan has already ended" 422, and the delete-candidate range that feeds the **drift token**. The save path is immune: `:444-448` passes `sessions.length`, the incoming grid, which `:426-435` has already hard-validated as canonical and a whole multiple of 7. So the rewrite itself does not slide dates. Since migration 167 the window is read off the row and no reader counts rows for it, so the read-side inflation is gone by construction.
-- **The editor stops round-tripping and doesn't say so.** `placedPlanToDraft` takes its week-shaped path only when every `weekIndex` group is exactly 7 rows (`placed-serialize.ts:163`); an extra row breaks that, so the plan falls to the flat repack (`:172-186`), which discards the stored coordinates and re-lays positions on save. **This is where dates actually slide**: the repack pads up to the next multiple of 7, the coach saves that grid, `sessions.length` grows, and the window grows with it — compounding on every subsequent save. The confirm dialog warns about moved *events*, never about the grid being reshaped.
-- **Two events can land on one date, past both guards.** Step 11 resumes the walk over the fresh rows (`:619-653`). At the kept row's position it emits an event carrying the FRESH session id, on the date the early-logged event already occupies. The upsert arbitrates on `(client_id, training_session_id, date)` (`program-event-walk.ts:75`) — different session id, so `ignoreDuplicates` does not fire — and migration 136's index is partial `WHERE status = 'scheduled'` while the surviving event is `completed`, so it does not fire either. `plan-amendment-service.test.ts:907` already demonstrates the emission; nothing asserts the collision. Compounding this, `rethrowIfDateOccupied` exists precisely to translate a `23505` from that upsert (`training-event-occupancy.ts:65-74` says so) but is never called on it — its only call sites are `library-placement-service.ts:584` and `training-event-calendar-service.ts:135` — so if the index ever did fire there, the coach would see raw Postgres text.
-
-**Severity: real, live, and self-inflicted by a normal workflow.** Trigger is "client logs a future session early, coach then amends" — not an edge case. Measured against the live DB on 2026-07-27: **14 of 118 plans with active rows carry duplicate coordinates.** Worst case `88e76207`: 78 active rows over 42 distinct coordinates, with ten-way collisions at each of `(1,7)`, `(1,8)`, `(1,10)`, `(1,12)`. All 14 are `archived` today — archived plans can be neither amended nor resolved by either reader, so the existing rows are inert — but every one of them was `active` at the moment the duplicates were minted.
-
-**Two green tests encode the bug.** `plan-amendment-service.test.ts:760` asserts 7 inserts *and* `:770` asserts the kept row stays active — i.e. the collision itself; `:891` asserts the shrink shape. Any fix must change them, and the commit that does needs to say so.
-
-Independent of calendar behaviour — no move, duplicate or drop is involved.
-
----
-
 ## `place-from-library` has no server-side past-date guard on the session branch
 
 Logged: 2026-07-27, found while fixing the calendar's drag gates.
@@ -252,13 +216,13 @@ Scope only. Fixing it means either a real "never synced" marker distinct from th
 
 ## `cloneSessionForEvent` writes a row that is not a slot
 
-Logged: 2026-07-27, split out of the entry above once the amendment writer was fixed.
+Logged: 2026-07-27.
 
-**What happens.** The placed-session tray's "just this day" scope (`training-session-service.ts:200-244`) inserts a clone carrying the source row's `order_index` / `week_index` verbatim, repoints that one event at the clone, and leaves the original active. Two active rows now share a coordinate — by design, from a shipped feature. **This is why no unique index on `(plan_id, week_index, order_index) WHERE is_active` can be added**, and why `toSlotRows` exists instead.
+**What happens.** The placed-session tray's "just this day" scope (`cloneSessionForEvent`, `training-session-service.ts:144`) inserts a clone carrying the source row's `order_index` / `week_index` verbatim, repoints that one event at the clone, and leaves the original active. Two active rows now share a coordinate — by design, from a shipped feature. **This is why no unique index on `(plan_id, week_index, order_index) WHERE is_active` can be added**, and why every reader of a plan's days — the plan editor and the client's Program tab — reads the calendar, never the rows.
 
-**Reachability is narrower than it looks.** `requestSave` only offers the scope dialog when the row backs **more than one** future scheduled event (`placed-session-editor.tsx:116`); otherwise it saves in place and never clones. Under whole-program placement each slot backs exactly one date, so the dialog never appears. It takes a **per-event duplicate** first — `duplicateEvent` points the copy at the *same* `training_session_id` (`training-event-calendar-service.ts:110`) — or a legacy weekday-recurring plan. Measured on the live DB 2026-07-27: **zero non-archived plans carry duplicate coordinates.**
+**Reachability is narrower than it looks.** `requestSave` only offers the scope dialog when the row backs **more than one** future scheduled event (`placed-session-editor.tsx:116`); otherwise it saves in place and never clones. Under whole-program placement each slot backs exactly one date, so the dialog never appears. It takes a **per-event duplicate** first — `duplicateEvent` points the copy at the *same* `training_session_id` (`training-event-calendar-service.ts:133`) — or a legacy weekday-recurring plan. Measured on the live DB 2026-07-27: **zero non-archived plans carry duplicate coordinates.**
 
-**Why it is still debt.** `toSlotRows` contains the damage (the extra row stops shifting positions, inflating the window, or breaking the editor's grid) but does not resolve the modelling question: a per-date override is not a day-slot, and nothing in the schema says so. The tie-break keeps the ORIGINAL row as the slot — correct, because after a duplicate-then-override the original still backs the slot's own date while the clone backs the duplicate's off-slot date — so the override stays a per-date thing and never becomes the slot's content. But the clone remains active, invisible to the editor, and referenced only by its event.
+**Why it is still debt.** Reading the calendar contains the damage — a clone shows once, on the day that points at it, and the plan editor's save retires it once nothing points at it — but it does not resolve the modelling question: a per-date override is not a day-slot, and nothing in the schema says so. Until a save rewrites its day, the clone stays active beside the original and is referenced only by its event.
 
 **The real question:** should `training_sessions` carry per-date override rows at all, or should a per-day edit be materialized onto the event (the way a nutrition day's edit row already does for nutrition — `nutrition_day_edits`, a per-date override beside the version rather than a slot)? That is a design decision, not a patch. Related: `placeSessionOnCalendar` appends a dropped session at `(lastWeek, lastOrder + 1)` — out-of-band rather than colliding, but the same "row that is not a slot" shape.
 

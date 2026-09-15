@@ -44,6 +44,7 @@ import {
   LayoutNotFoundError,
   LayoutPolicyError,
   LAYOUT_DRIFT_MESSAGE,
+  readMoveRpcError,
 } from "./training-event-layout-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -280,5 +281,65 @@ describe("applyClientLayout", () => {
     await expect(
       applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: SAT }]),
     ).rejects.toMatchObject({ message: "Sat, Aug 29 already has a session" });
+  });
+
+  it("keeps the client's sentences for a duplicate and for an unrecognised failure", async () => {
+    const attempt = async (message: string) => {
+      wire({
+        events: [{ id: "ev-thu", date: THU, status: "scheduled" }],
+        occupants: [{ id: "ev-thu", date: THU }],
+      });
+      mockRpc.mockResolvedValue({ data: null, error: { message } } as never);
+      return applyClientLayout("client-1", [{ eventId: "ev-thu", fromDate: THU, toDate: SAT }]);
+    };
+
+    const duplicate = attempt("duplicate_target: two moves share a target date");
+    await expect(duplicate).rejects.toBeInstanceOf(LayoutPolicyError);
+    await expect(duplicate).rejects.toMatchObject({
+      message: "Two sessions can't land on the same day",
+    });
+    await expect(attempt("invalid_moves: p_moves must be a non-empty array")).rejects.toMatchObject({
+      message: "Failed to apply layout: invalid_moves: p_moves must be a non-empty array",
+    });
+  });
+});
+
+// The function's message contract, read once for both of its callers — this
+// service and the coach's moveEvent — so the two cannot parse it differently.
+describe("readMoveRpcError", () => {
+  it("reads each prefix of the contract, and only an occupied day names its date", () => {
+    expect(readMoveRpcError({ message: "drift: event ev-thu is on 2026-08-29, not 2026-08-27" })).toEqual({
+      kind: "drift",
+    });
+    expect(readMoveRpcError({ message: "occupied:2026-08-29" })).toEqual({
+      kind: "occupied",
+      date: "2026-08-29",
+    });
+    expect(readMoveRpcError({ message: "not_found: event ev-thu is not this client's" })).toEqual({
+      kind: "not_found",
+    });
+    expect(
+      readMoveRpcError({ message: "not_scheduled: event ev-thu has left the scheduled state" }),
+    ).toEqual({ kind: "not_scheduled" });
+    expect(readMoveRpcError({ message: "duplicate_target: two moves share a target date" })).toEqual({
+      kind: "duplicate",
+    });
+    expect(readMoveRpcError({ message: "duplicate_event: an event appears twice" })).toEqual({
+      kind: "duplicate",
+    });
+    expect(readMoveRpcError({ message: "invalid_moves: p_moves must be a non-empty array" })).toEqual({
+      kind: "other",
+    });
+  });
+
+  it("throws the index backstop (a raw 23505) as the pre-check's sentence instead of reading it", () => {
+    const backstop = {
+      code: "23505",
+      message: 'duplicate key value violates unique constraint "idx_training_events_one_scheduled_per_day"',
+      details: "Key (client_id, date)=(client-1, 2026-08-29) already exists.",
+    };
+
+    expect(() => readMoveRpcError(backstop)).toThrow(DateOccupiedError);
+    expect(() => readMoveRpcError(backstop)).toThrow("Sat, Aug 29 already has a session");
   });
 });

@@ -4,23 +4,23 @@ import { getTrainingPlanById } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
-import { moveEvent } from "@/services/training-event-calendar-service";
+import {
+  CalendarMoveDriftError,
+  CalendarMoveNotFoundError,
+  moveEvent,
+} from "@/services/training-event-calendar-service";
 import { DateOccupiedError } from "@/services/training-event-occupancy";
 import { z } from "zod";
 
 const moveEventSchema = z.object({
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
-  // No `scope`: there is one kind of move. A stale tab still sending the
-  // retired `scope: "all_future"` is harmless — zod strips unrecognised keys
-  // rather than rejecting, so its drag still lands as a single move.
+  // The day the coach's calendar showed the session on.
+  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
 });
 
 /**
- * POST - Move a training event to a new date. Always a single-event move: the
- * "this and all future X sessions" scope was removed because it resolved
- * siblings by `training_session_id`, and whole-program placement gives every
- * placed day its own cloned session row — so it could never find a sibling and
- * behaved identically to a single move while asking the coach a question.
+ * POST - Move a training event to a new date. The move is refused (409) when
+ * the session has moved since the coach's calendar loaded.
  */
 export async function POST(
   request: NextRequest,
@@ -33,7 +33,7 @@ export async function POST(
   if (csrfError) return csrfError;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -56,14 +56,17 @@ export async function POST(
       return NextResponse.json({ error: "Invalid input", details: validation.error.issues }, { status: 400 });
     }
 
-    const { targetDate } = validation.data;
+    const { targetDate, fromDate } = validation.data;
 
-    await moveEvent(eventId, targetDate, clientId, planId);
+    await moveEvent(eventId, fromDate, targetDate, clientId, planId);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    if (error instanceof DateOccupiedError) {
+    if (error instanceof DateOccupiedError || error instanceof CalendarMoveDriftError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    if (error instanceof CalendarMoveNotFoundError) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
     const message = error instanceof Error ? error.message : "Failed to move event";

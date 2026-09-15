@@ -19,8 +19,8 @@ import { isPlainLeftClick } from "@/lib/pointer-navigation";
 //
 // Mounted INSIDE ProgramDraftProvider so it can read the live dirty/mode state.
 // Scoped to the rail only — links inside the editor (role="dialog") pass through.
-// `description` lets the amendment overlay swap the apply-specific copy for
-// its save-specific one.
+// `description` lets the plan editor swap the apply-specific copy for its
+// save-specific one.
 export function ClientDraftLeaveGuard({
   description = "You have unsaved changes to this program. Leaving now will discard them — they're only saved to the client once you apply.",
 }: {

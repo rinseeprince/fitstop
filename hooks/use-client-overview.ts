@@ -35,7 +35,7 @@ export function overviewPlanSummaryKey(clientId: string) {
  * Clearing puts each section into the pending state it already renders.
  *
  * Called from every calendar writer's success path — the placement, the
- * nutrition save and delete, the training delete, the amendment, the block
+ * nutrition save and delete, the training delete, the plan editor's save, the block
  * screen's writes and the per-day calendar edits — none of which writes an
  * Overview table. The Overview is DERIVED from what they write, so the area
  * that owes the invalidator is the one that READS what you wrote

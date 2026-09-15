@@ -44,12 +44,12 @@ describe("useInvalidateTrainingData", () => {
     ).toBe(true);
   });
 
-  it("matches the plan editor's amendment read — the reader the old prefix missed", () => {
+  it("matches the plan editor's read — the reader the old prefix missed", () => {
     // The whole point of widening from `…/training/events?` to `…/training`.
     // Saving a session's exercises from the calendar left this key stale, so
     // "Edit plan" showed pre-edit data until a hard browser refresh.
     const predicate = getPredicate("c1");
-    expect(predicate("/api/clients/c1/training/plan-9/amendment")).toBe(true);
+    expect(predicate("/api/clients/c1/training/plan-9/edit")).toBe(true);
   });
 
   it("matches the placed-session tray's read", () => {
@@ -60,7 +60,7 @@ describe("useInvalidateTrainingData", () => {
   it("rejects other clients' keys", () => {
     const predicate = getPredicate("c1");
     expect(predicate("/api/clients/c2/training/events?startDate=2026-06-29&endDate=2026-08-02")).toBe(false);
-    expect(predicate("/api/clients/c2/training/plan-9/amendment")).toBe(false);
+    expect(predicate("/api/clients/c2/training/plan-9/edit")).toBe(false);
   });
 
   it("stays inside the training area", () => {
@@ -85,5 +85,13 @@ describe("useInvalidateTrainingData", () => {
 
     const predicate = getPredicate("c1");
     expect(predicate(subscribedKey)).toBe(true);
+  });
+});
+
+describe("useCalendarEvents", () => {
+  it("refetches when the coach comes back to the page — the client moves sessions from their own device", () => {
+    renderHook(() => useCalendarEvents("c1", "2026-06-29", "2026-08-02"));
+    const config = swrSubscribeMock.mock.calls[0][2] as { revalidateOnFocus?: boolean };
+    expect(config.revalidateOnFocus).toBe(true);
   });
 });

@@ -137,14 +137,11 @@ export function TrainingPlanBuilderOverlay({
               clientName={clientName}
               clientTimezone={builder.clientTimezone}
               preselectedBlockId={preselectedBlockId ?? undefined}
-              onApplied={() => {
-                // The plan landed on the client's calendar — refresh the
-                // client's plan view; the parent completes the editor's entry
-                // (not the back arrow, so the confirm-leave guard never fires;
-                // there is nothing to discard once applied).
-                void builder.fetchPlan();
-                onApplied?.();
-              }}
+              // The plan landed on the client's calendar (the apply dialog
+              // refreshed what reads it); the parent completes the editor's
+              // entry — not the back arrow, so the confirm-leave guard never
+              // fires: there is nothing to discard once applied.
+              onApplied={onApplied}
             >
               <ClientDraftLeaveGuard />
               <ProgramBuilder onExit={onExitEditor} />

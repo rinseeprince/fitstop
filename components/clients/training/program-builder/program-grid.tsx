@@ -5,6 +5,7 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { cn } from "@/lib/utils";
 import type { DaySlotDraft, ProgramDraft } from "./program-builder-types";
 import { MAX_WEEKS } from "./program-builder-types";
+import type { PlanDayRules } from "./program-builder-lock-model";
 import { GRID_COLS, MONO_LABEL_CLASS, TEXT_SECONDARY } from "./builder-tokens";
 import { WeekRow } from "./week-row";
 
@@ -16,10 +17,10 @@ import { WeekRow } from "./week-row";
 type ProgramGridProps = {
   draft: ProgramDraft;
   mode: "view" | "edit";
-  // Placed-plan target: slots whose calendar day is history render inert
-  // (see program-builder-lock-model). Undefined = no locking.
-  lockedSlotUids?: ReadonlySet<string>;
-  movedPastSlotUids?: ReadonlySet<string>;
+  // The plan editor's day rules (program-builder-lock-model): locked and
+  // greyed days render inert, today carries its ring, and the week actions and
+  // Add week follow the rules. Undefined = no rules (the other targets).
+  dayRules?: PlanDayRules;
   collapsedWeeks: Set<string>;
   onToggleCollapse: (weekUid: string) => void;
   onDuplicateWeek: (weekUid: string) => void;
@@ -34,8 +35,7 @@ type ProgramGridProps = {
 export function ProgramGrid({
   draft,
   mode,
-  lockedSlotUids,
-  movedPastSlotUids,
+  dayRules,
   collapsedWeeks,
   onToggleCollapse,
   onDuplicateWeek,
@@ -76,8 +76,7 @@ export function ProgramGrid({
                 key={week.uid}
                 week={week}
                 mode={mode}
-                lockedSlotUids={lockedSlotUids}
-                movedPastSlotUids={movedPastSlotUids}
+                dayRules={dayRules}
                 collapsed={collapsedWeeks.has(week.uid)}
                 canDelete={canDelete}
                 defaultSurplusPercentage={draft.defaultSurplusPercentage}
@@ -102,7 +101,7 @@ export function ProgramGrid({
         <div className="sticky left-0 pt-2">
           <button
             type="button"
-            disabled={draft.weeks.length >= MAX_WEEKS}
+            disabled={draft.weeks.length >= MAX_WEEKS || dayRules?.canAddWeek === false}
             className={cn(
               "flex w-full items-center justify-center gap-1.5 rounded-[6px] border border-dashed border-[rgba(13,148,136,0.2)] py-2 text-xs transition-colors hover:border-[#0d9488] hover:bg-[rgba(13,148,136,0.05)] disabled:cursor-not-allowed disabled:opacity-50",
               TEXT_SECONDARY,

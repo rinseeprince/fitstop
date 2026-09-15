@@ -6,6 +6,10 @@ import type {
 } from "@/components/clients/training/program-builder/program-builder-types";
 import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
 import type { DraftOp } from "@/components/clients/training/program-builder/program-builder-ops";
+import {
+  planDayRules,
+  type EditableDays,
+} from "@/components/clients/training/program-builder/program-builder-lock-model";
 
 // Per-request working state for one assistant turn (builder S6a). The server
 // holds NO cross-turn draft state — every turn uploads a fresh snapshot, so
@@ -22,11 +26,10 @@ export type DraftWorkspace = {
   notes: string[];
   catalog: ExerciseRow[];
   isCompound: (ex: { exerciseId: string | null; name: string }) => boolean;
-  // Placed-plan target: slots whose calendar day is history. Materialized from
-  // the wire array (unknown uids ignored); commitOp passes it into
-  // applyDraftOp's ctx so server executors refuse exactly what client replay
-  // refuses.
-  lockedSlotUids: ReadonlySet<string>;
+  // The plan editor: the days the coach may change, as positions from the
+  // plan's start. commitOp passes them into applyDraftOp's ctx, so server
+  // executors refuse exactly what the client replay refuses.
+  editableDays: EditableDays | null;
   // Entry-state fingerprints for the pre-return defense sweeps.
   entry: {
     programName: string;
@@ -34,9 +37,9 @@ export type DraftWorkspace = {
     sessionIdentity: Map<string, { name: string; focus: string | null }>;
     exerciseUids: Set<string>;
     exerciseNames: Set<string>; // lowercase — clones of pre-existing content
-    // Placed-plan: locked slot uid → serialized entry content, so the locked
-    // sweep can prove no locked day's content changed this turn.
-    lockedSlotFingerprints: Map<string, string>;
+    // The plan editor: each history day's slot uid → its serialized entry
+    // content, so the sweep can prove no day of history changed this turn.
+    pastSlotFingerprints: Map<string, string>;
   };
 };
 
@@ -63,14 +66,14 @@ export async function createDraftWorkspace(opts: {
   coachId: string;
   target: BuilderTarget;
   draft: ProgramDraft;
-  lockedSlotUids?: string[];
+  editableDays?: EditableDays;
 }): Promise<DraftWorkspace> {
   const catalog = await fetchCatalogRowsForResolve(opts.coachId);
   return buildWorkspaceFromRows({
     target: opts.target,
     draft: opts.draft,
     catalog,
-    lockedSlotUids: opts.lockedSlotUids,
+    editableDays: opts.editableDays,
   });
 }
 
@@ -79,7 +82,7 @@ export function buildWorkspaceFromRows(opts: {
   target: BuilderTarget;
   draft: ProgramDraft;
   catalog: ExerciseRow[];
-  lockedSlotUids?: string[];
+  editableDays?: EditableDays;
 }): DraftWorkspace {
   const { catalog } = opts;
   const draft = normalizeDraft(opts.draft);
@@ -87,10 +90,8 @@ export function buildWorkspaceFromRows(opts: {
   const sessionIdentity = new Map<string, { name: string; focus: string | null }>();
   const exerciseUids = new Set<string>();
   const exerciseNames = new Set<string>();
-  const draftSlotUids = new Set<string>();
   for (const week of draft.weeks) {
     for (const slot of week.days) {
-      draftSlotUids.add(slot.uid);
       if (!slot.session) continue;
       sessionIdentity.set(slot.session.uid, {
         name: slot.session.name,
@@ -103,18 +104,13 @@ export function buildWorkspaceFromRows(opts: {
     }
   }
 
-  // Materialize the lock set from the wire array; a uid that doesn't resolve
-  // in this draft is ignored (stale client state — nothing to lock).
-  const lockedSlotUids = new Set(
-    (opts.lockedSlotUids ?? []).filter((uid) => draftSlotUids.has(uid)),
-  );
-  const lockedSlotFingerprints = new Map<string, string>();
-  if (lockedSlotUids.size > 0) {
+  const editableDays = opts.editableDays ?? null;
+  const pastSlotFingerprints = new Map<string, string>();
+  if (editableDays) {
+    const { past } = planDayRules(draft.weeks, editableDays, null);
     for (const week of draft.weeks) {
       for (const slot of week.days) {
-        if (lockedSlotUids.has(slot.uid)) {
-          lockedSlotFingerprints.set(slot.uid, JSON.stringify(slot));
-        }
+        if (past.has(slot.uid)) pastSlotFingerprints.set(slot.uid, JSON.stringify(slot));
       }
     }
   }
@@ -126,14 +122,14 @@ export function buildWorkspaceFromRows(opts: {
     notes: [],
     catalog,
     isCompound: buildIsCompoundFromRows(catalog),
-    lockedSlotUids,
+    editableDays,
     entry: {
       programName: draft.name,
       programSplitType: draft.splitType,
       sessionIdentity,
       exerciseUids,
       exerciseNames,
-      lockedSlotFingerprints,
+      pastSlotFingerprints,
     },
   };
 }
@@ -204,12 +200,12 @@ export function finalizeAssistantOps(ws: DraftWorkspace): {
     }
   }
 
-  if (ws.target === "placed-plan" && ws.entry.lockedSlotFingerprints.size > 0) {
+  if (ws.target === "placed-plan" && ws.editableDays) {
     const slotsByUid = new Map<string, unknown>();
     for (const week of ws.draft.weeks) {
       for (const slot of week.days) slotsByUid.set(slot.uid, slot);
     }
-    for (const [slotUid, entryFingerprint] of ws.entry.lockedSlotFingerprints) {
+    for (const [slotUid, entryFingerprint] of ws.entry.pastSlotFingerprints) {
       const finalSlot = slotsByUid.get(slotUid);
       if (!finalSlot || JSON.stringify(finalSlot) !== entryFingerprint) {
         return {
@@ -220,6 +216,19 @@ export function finalizeAssistantOps(ws: DraftWorkspace): {
           ],
         };
       }
+    }
+    const { beyond } = planDayRules(ws.draft.weeks, ws.editableDays, null);
+    const onGreyedDay = ws.draft.weeks.some((week) =>
+      week.days.some((slot) => slot.session != null && beyond.has(slot.uid)),
+    );
+    if (onGreyedDay) {
+      return {
+        ops: [],
+        notes: [
+          ...ws.notes,
+          "Discarded this turn's edits: a session can't go on a greyed-out day.",
+        ],
+      };
     }
   }
 

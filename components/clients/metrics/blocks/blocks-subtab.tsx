@@ -12,7 +12,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { journeyTripParams, type ClientTab } from "@/lib/client-tabs";
+import {
+  journeyPlanTripParams,
+  journeyTripParams,
+  type ClientTab,
+} from "@/lib/client-tabs";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
@@ -71,8 +75,9 @@ const ROW_ICON_BUTTON =
 
 type BlocksSubtabProps = {
   clientId: string;
-  /** The round trip out of a fact, unset or set (7.3/7.4, H): "place one" /
-   *  "set targets" and "update plan" / "update targets" all go the same way.
+  /** The round trip out of a fact, unset or set (7.3/7.4, H): "place one" and
+   *  "update plan" open the program list, "edit plan" the plan editor on the
+   *  plan it heads, "set targets" / "update targets" the targets drawer.
    *  Cross-tab navigation runs through the client page's handler — the one
    *  builder of a tab URL, which pushes the tab change. Absent = the empty
    *  states stay plain text and the set states carry no action. */
@@ -560,6 +565,15 @@ export function BlocksSubtab({
                         onTabChange("training", {
                           training: "plans",
                           ...journeyTripParams("apply", block.id),
+                        })
+                    : undefined
+                }
+                onEditPlan={
+                  onTabChange
+                    ? (planId) =>
+                        onTabChange("training", {
+                          training: "plans",
+                          ...journeyPlanTripParams(planId, block.id),
                         })
                     : undefined
                 }

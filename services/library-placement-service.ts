@@ -164,8 +164,8 @@ const EXERCISE_ID_CHUNK = 150;
  * actually references is bounded by plan size, not catalog size, and stays
  * correct at any scale. Same shape as coach-standalone-session-service.ts:67.
  *
- * Exported for the plan-amendment writer, which applies the same foreign-id
- * belt to its fresh future rows.
+ * Exported for the plan editor's save, which applies the same foreign-id belt
+ * to the days it writes.
  */
 export async function fetchVisibleExerciseIds(
   coachId: string,
@@ -719,5 +719,5 @@ export async function placeSessionOnCalendar(params: {
 }
 
 // The date-walk (generateProgramEvents) and the window cap (resolveWindowCap)
-// live in ./program-event-walk — shared with the plan-amendment writer, which
-// resumes the walk mid-program via startPosition and grows under the same cap.
+// live in ./program-event-walk; the cap is shared with the plan editor, which
+// keeps an edited program inside the same bound.
