@@ -42,6 +42,7 @@ import {
   listNutritionPlanNotesInRange,
   resolveNutritionPlacementEnd,
 } from './nutrition-plan-service'
+import { BLOCKS_UNREADABLE } from '@/lib/constants'
 
 /**
  * Chain stub for the date resolvers: every filter/order method self-returns,
@@ -537,6 +538,18 @@ describe('Nutrition Plan Service', () => {
 
       expect(await resolveNutritionPlacementEnd('client-123', START)).toBe('2026-11-06')
       expect(getBlockBoundForDate).toHaveBeenCalledWith('client-123', START)
+    })
+
+    it("refuses when the client's blocks can't be read — no fallback stands in for the bound", async () => {
+      // A failed read knows nothing, and the caller writes after this: targets
+      // stored without the block's end would run past it.
+      vi.mocked(getBlockBoundForDate).mockRejectedValue(new Error(BLOCKS_UNREADABLE))
+      vi.mocked(getFurthestLiveProgramEnd).mockResolvedValue('2026-12-11')
+      noQueuedVersion()
+
+      await expect(resolveNutritionPlacementEnd('client-123', START)).rejects.toThrow(
+        BLOCKS_UNREADABLE
+      )
     })
 
     it("caps the program fallback at the day before the next block when the start is in a gap", async () => {

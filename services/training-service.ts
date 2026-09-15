@@ -302,7 +302,7 @@ export const getLiveProgramWindowsForClients = async (
   }));
 };
 
-export type TrainingPlanWindowSummary = {
+type TrainingPlanWindowSummary = {
   id: string;
   name: string;
   effectiveFrom: string;

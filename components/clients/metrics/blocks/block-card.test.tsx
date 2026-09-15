@@ -70,7 +70,6 @@ function renderEmpty() {
       block={makeBlock({ state: "current" })}
       color="#0d9488"
       facts={EMPTY_FACTS}
-      factsLoading={false}
       factsError={false}
       defaultOpen
       onPlaceProgram={vi.fn()}
@@ -99,7 +98,6 @@ function renderCard(block: ClientBlockView, handlers: {
       block={block}
       color="#0d9488"
       facts={facts}
-      factsLoading={false}
       factsError={false}
       defaultOpen
       {...rest}
@@ -538,7 +536,6 @@ describe("BlockCard — the set state's doors (H)", () => {
         block={makeBlock({ state: "current" })}
         color="#0d9488"
         facts={undefined}
-        factsLoading
         factsError={false}
         defaultOpen
         onPlaceProgram={vi.fn()}
@@ -554,7 +551,6 @@ describe("BlockCard — the set state's doors (H)", () => {
         block={makeBlock({ state: "current" })}
         color="#0d9488"
         facts={SET_FACTS}
-        factsLoading={false}
         factsError
         defaultOpen
         onPlaceProgram={vi.fn()}
@@ -562,8 +558,77 @@ describe("BlockCard — the set state's doors (H)", () => {
         onSetNutrition={vi.fn()}
       />
     );
-    expect(screen.getAllByText("Unavailable").length).toBe(2);
+    expect(screen.getAllByText("Couldn't load the plans").length).toBe(3);
     expect(screen.queryByRole("button", { name: /update|edit plan/ })).toBeNull();
+  });
+});
+
+// The block's plans, before they land, are never rendered as an empty state:
+// "No program placed", "Not set" and "Nothing yet." are statements about the
+// data, and only a settled read may make one. Every slot the plans fill — both
+// columns and the timeline — says the same thing while they are pending, and
+// says so when they could not be read.
+describe("BlockCard — the plans before they land", () => {
+  it("says Loading… in both columns and in What happened while the block has no entry yet", () => {
+    render(
+      <BlockCard
+        block={makeBlock({ state: "current" })}
+        color="#0d9488"
+        facts={undefined}
+        factsError={false}
+        defaultOpen
+        onPlaceProgram={vi.fn()}
+        onSetNutrition={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByText("Loading…").length).toBe(3);
+    expect(screen.queryByText("No program placed")).toBeNull();
+    expect(screen.queryByText("Not set")).toBeNull();
+    expect(screen.queryByText("Nothing yet.")).toBeNull();
+    expect(screen.queryByText("Block started")).toBeNull();
+  });
+
+  it("says the plans couldn't be loaded — in the timeline too, even with an entry in hand", () => {
+    // A read that failed after one landed is still a failed read: the entry may
+    // be stale, so no slot claims it, the timeline included (its rows carry the
+    // per-plan delete).
+    render(
+      <BlockCard
+        block={makeBlock({ state: "current" })}
+        color="#0d9488"
+        facts={SET_FACTS}
+        factsError
+        defaultOpen
+        onPlaceProgram={vi.fn()}
+        onSetNutrition={vi.fn()}
+        onDeletePlan={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByText("Couldn't load the plans").length).toBe(3);
+    expect(screen.queryByText("Push Pull Legs")).toBeNull();
+    expect(screen.queryByText("Block started")).toBeNull();
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+
+  it("a block whose settled entry holds nothing keeps its empty states", () => {
+    render(
+      <BlockCard
+        block={makeBlock({ state: "current" })}
+        color="#0d9488"
+        facts={EMPTY_FACTS}
+        factsError={false}
+        defaultOpen
+        onPlaceProgram={vi.fn()}
+        onSetNutrition={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /No program placed/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Not set/ })).toBeDefined();
+    expect(screen.getByText("Block started")).toBeDefined();
+    expect(screen.queryByText("Loading…")).toBeNull();
   });
 });
 

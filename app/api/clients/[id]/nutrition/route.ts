@@ -25,6 +25,7 @@ import {
   getLatestNutritionPlan,
   getNextFutureNutritionPlan,
 } from "@/services/nutrition-plan-service";
+import { BlocksUnreadableError } from "@/services/client-blocks-service";
 import { getCurrentGoals } from "@/services/client-goals-service";
 import { resolveNutritionCalcInputs } from "@/services/nutrition-calc-inputs";
 import { captureApiError } from "@/lib/error-handler";
@@ -263,6 +264,12 @@ export async function POST(
   } catch (error) {
     if (error instanceof NutritionPlanError) {
       return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
+    // The version's end is resolved before the save, so a blocks read that
+    // failed refuses it: targets stored without the block's end would run past
+    // it, into days the coach has not priced.
+    if (error instanceof BlocksUnreadableError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 503 });
     }
     console.error("Error generating nutrition plan:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(

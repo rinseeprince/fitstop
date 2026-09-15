@@ -3,6 +3,19 @@ import { NextRequest, NextResponse } from "next/server";
 
 vi.mock("@/services/client-service", () => ({ getClientById: vi.fn() }));
 
+// The route imports the class alone, to say why it refused; the real module
+// loads supabase-admin. The sentence comes from the constant, never a copy.
+vi.mock("@/services/client-blocks-service", async () => {
+  const { BLOCKS_UNREADABLE } = await import("@/lib/constants");
+  return {
+    BlocksUnreadableError: class BlocksUnreadableError extends Error {
+      constructor() {
+        super(BLOCKS_UNREADABLE);
+      }
+    },
+  };
+});
+
 // The refusals carry the sentences the service gives them, and the route
 // relays each one, so these classes say what the service's say.
 vi.mock("@/services/plan-edit-service", () => {
@@ -48,10 +61,12 @@ import {
   PlanEndedError,
   type PlanForEditing,
 } from "@/services/plan-edit-service";
+import { BlocksUnreadableError } from "@/services/client-blocks-service";
 import { recordAuditEvent } from "@/services/audit-log-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
+import { BLOCKS_UNREADABLE } from "@/lib/constants";
 
 const CLIENT_ID = "c0000000-0000-4000-8000-000000000001";
 const PLAN_ID = "a0000000-0000-4000-8000-000000000001";
@@ -183,6 +198,18 @@ describe("GET /api/clients/[id]/training/[planId]/edit", () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "This plan has ended and can't be edited." });
+  });
+
+  // The editor's limit is the block's end, so without the blocks it cannot say
+  // which days belong to the plan: it refuses to open rather than offer days
+  // past the block.
+  it("503s when the client's blocks can't be read, with the same sentence as a refused placement", async () => {
+    vi.mocked(getPlanForEditing).mockRejectedValue(new BlocksUnreadableError());
+
+    const response = await GET(makeGet(), params());
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: BLOCKS_UNREADABLE });
   });
 
   it("500s an unexpected failure without its text", async () => {
@@ -342,6 +369,16 @@ describe("PUT /api/clients/[id]/training/[planId]/edit", () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "The plan must be whole weeks" });
+    expect(recordAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("503s a save whose blocks read failed, with the same sentence, and audits nothing", async () => {
+    vi.mocked(savePlanEdit).mockRejectedValue(new BlocksUnreadableError());
+
+    const response = await PUT(makePut(validBody), params());
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: BLOCKS_UNREADABLE });
     expect(recordAuditEvent).not.toHaveBeenCalled();
   });
 

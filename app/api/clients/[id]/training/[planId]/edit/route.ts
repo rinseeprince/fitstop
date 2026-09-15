@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getClientById } from "@/services/client-service";
+import { BlocksUnreadableError } from "@/services/client-blocks-service";
 import {
   getPlanForEditing,
   savePlanEdit,
@@ -51,6 +52,12 @@ export async function GET(
   } catch (error) {
     if (error instanceof PlanEndedError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
+    }
+    // The editor's limit is the block's end, so without the blocks it cannot
+    // say which days are the plan's: it refuses to open rather than offer days
+    // past the block (the save refuses for the same reason).
+    if (error instanceof BlocksUnreadableError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
     }
     console.error("Error reading the plan for editing:", error);
     return NextResponse.json({ error: "Failed to load plan" }, { status: 500 });
@@ -124,6 +131,11 @@ export async function PUT(
     }
     if (error instanceof PlanEditInvalidError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    // The limit is re-read before the save, so a blocks read that failed
+    // refuses it: saving without the block's end could carry the plan past it.
+    if (error instanceof BlocksUnreadableError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
     }
     // Never echo the raw message: it can carry Postgres text.
     console.error("Error saving the plan:", error);

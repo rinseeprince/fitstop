@@ -36,8 +36,10 @@ const HAIRLINE = "border-t border-[rgba(13,148,136,0.06)]";
 type BlockCardProps = {
   block: ClientBlockView;
   color: string;
+  /** The block's own entry from the facts read. Absent = not landed yet: the
+   *  read covers every block, so a card with no entry is still loading — after
+   *  a write that cleared them, or after a save that added this block. */
   facts: BlockFacts | undefined;
-  factsLoading: boolean;
   factsError: boolean;
   defaultOpen: boolean;
   /** 3.4's delete affordance mounts here, inside the row but outside the
@@ -113,6 +115,22 @@ function SetupPrompt({
   );
 }
 
+/**
+ * The block's plans before they land. Unresolved or failed is never rendered as
+ * empty (design system → Loading & async states): "No program placed", "Not
+ * set" and "Nothing yet." are statements about the data, so they may only come
+ * from a read that settled. Every slot the plans fill — both columns and the
+ * timeline — says the same thing while they are pending, and says so when they
+ * could not be read.
+ */
+function PlansUnresolved({ failed }: { failed: boolean }) {
+  return (
+    <p className="text-xs text-[#93b0b4]">
+      {failed ? "Couldn't load the plans" : "Loading…"}
+    </p>
+  );
+}
+
 /** A version's target and deficit on one line, both in the target's weight,
  *  the units in the unit's — inline, so it can sit inside the way-in line. */
 function NutritionValue({ fact }: { fact: BlockNutritionFact }) {
@@ -146,22 +164,18 @@ function NutritionValue({ fact }: { fact: BlockNutritionFact }) {
 function TrainingColumn({
   block,
   facts,
-  factsLoading,
   factsError,
   onPlaceProgram,
   onEditPlan,
 }: Pick<
   BlockCardProps,
-  "block" | "facts" | "factsLoading" | "factsError" | "onPlaceProgram" | "onEditPlan"
+  "block" | "facts" | "factsError" | "onPlaceProgram" | "onEditPlan"
 >) {
   const accepts = blockAcceptsSetup(block);
   const setUp = onPlaceProgram && accepts ? onPlaceProgram : undefined;
   const edit = onEditPlan && accepts ? onEditPlan : undefined;
-  if (factsError) {
-    return <p className="text-xs text-[#93b0b4]">Unavailable</p>;
-  }
-  if (!facts) {
-    return factsLoading ? <p className="text-xs text-[#93b0b4]">Loading…</p> : null;
+  if (factsError || !facts) {
+    return <PlansUnresolved failed={factsError} />;
   }
   // ONE entry — the headline: the plan in force today, else the next one
   // queued in the block, else the last one that ran, so a program that ended
@@ -212,20 +226,16 @@ function TrainingColumn({
 function NutritionColumn({
   block,
   facts,
-  factsLoading,
   factsError,
   onSetNutrition,
 }: Pick<
   BlockCardProps,
-  "block" | "facts" | "factsLoading" | "factsError" | "onSetNutrition"
+  "block" | "facts" | "factsError" | "onSetNutrition"
 >) {
   const setUp =
     onSetNutrition && blockAcceptsSetup(block) ? onSetNutrition : undefined;
-  if (factsError) {
-    return <p className="text-xs text-[#93b0b4]">Unavailable</p>;
-  }
-  if (!facts) {
-    return factsLoading ? <p className="text-xs text-[#93b0b4]">Loading…</p> : null;
+  if (factsError || !facts) {
+    return <PlansUnresolved failed={factsError} />;
   }
   // The training column's rule, entry for entry: one headline version by the
   // same precedence, the date under the numbers, the way in on its line.
@@ -262,7 +272,7 @@ function NutritionColumn({
 }
 
 export function BlockCard(props: BlockCardProps) {
-  const { block, color, facts, defaultOpen, rowAction, onDeletePlan } = props;
+  const { block, color, facts, factsError, defaultOpen, rowAction, onDeletePlan } = props;
   const [open, setOpen] = useState(defaultOpen);
   const muted = block.state !== "current";
   // The same one gate the way in consults: a finished or archived block's
@@ -336,15 +346,18 @@ export function BlockCard(props: BlockCardProps) {
           </div>
           <div className={cn(HAIRLINE, "pt-3")}>
             <p className={cn(LABEL_CLASS, "mb-2")}>What happened</p>
-            <BlockTimeline
-              entries={deriveTimelineEntries(
-                block,
-                facts?.training ?? [],
-                facts?.nutrition ?? []
-              )}
-              color={color}
-              onDeletePlan={deletePlan}
-            />
+            {/* The same three states as the columns, off the same entry: the
+                list is the block's plans, so "Nothing yet." is a statement
+                only a settled read may make. */}
+            {factsError || !facts ? (
+              <PlansUnresolved failed={factsError} />
+            ) : (
+              <BlockTimeline
+                entries={deriveTimelineEntries(block, facts.training, facts.nutrition)}
+                color={color}
+                onDeletePlan={deletePlan}
+              />
+            )}
           </div>
         </div>
       )}

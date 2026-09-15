@@ -16,6 +16,7 @@ import {
   BLOCK_EXTENSION_REFUSED,
   BLOCK_START_FIXED,
   BLOCK_TRIMS_UNCONFIRMED,
+  BLOCKS_UNREADABLE,
 } from "@/lib/constants";
 
 vi.mock("./supabase-admin", () => ({
@@ -840,10 +841,15 @@ describe("getBlockBoundForDate", () => {
     expect(query.is).toHaveBeenCalledWith("archived_at", null);
   });
 
-  it("degrades to null on a read error rather than throwing", async () => {
+  it("refuses on a read error instead of answering 'no block'", async () => {
+    // Null is a real answer — no block bounds this date — and a failed read is
+    // not it. Every caller asks before it writes, so the save is refused with
+    // the sentence rather than stored without the block's end.
     queueResults({ data: null, error: { message: "boom" } });
 
-    await expect(getBlockBoundForDate(CLIENT_ID, START)).resolves.toBeNull();
+    await expect(getBlockBoundForDate(CLIENT_ID, START)).rejects.toThrow(
+      BLOCKS_UNREADABLE
+    );
   });
 });
 

@@ -130,11 +130,11 @@ async function main() {
   // fan-out alone.
   const perfClientToday = await getClientTodayString(PERF_CLIENT_ID);
   baselines.push(await measure(
-    "getBlockFacts (4-way fan-out)",
+    "getBlockFacts (3-way fan-out)",
     "services/client-blocks-facts-service.ts",
     `getBlockFacts(PERF_CLIENT_ID, clientToday)`,
     () => getBlockFacts(PERF_CLIENT_ID, perfClientToday),
-    "Three parallel reads over the whole journey span, partitioned per block in memory — round trips are constant in the number of blocks, never per-block.",
+    "The blocks, then two parallel reads over the whole journey span, partitioned per block in memory — round trips are constant in the number of blocks, never per-block.",
   ));
 
   baselines.push(await measure(

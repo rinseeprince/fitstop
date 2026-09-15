@@ -6,6 +6,7 @@ import {
   BLOCK_START_FIXED,
   BLOCK_TRIMS_UNCONFIRMED,
   BLOCK_WEEKS_MAX,
+  BLOCKS_UNREADABLE,
 } from "@/lib/constants";
 import type { TablesInsert } from "@/types/database";
 import type {
@@ -49,6 +50,14 @@ export class BlockWindowError extends Error {}
 export class BlockPayloadError extends Error {}
 /** 404: the DELETE target does not exist for this client. */
 export class UnknownBlockIdError extends Error {}
+/** 503: the client's blocks could not be read, so nothing knows where a plan
+ *  placed now would end. Every caller asks before it writes, so the save is
+ *  refused with this sentence rather than stored without the block's end. */
+export class BlocksUnreadableError extends Error {
+  constructor() {
+    super(BLOCKS_UNREADABLE);
+  }
+}
 /** 409: the save changes plans already on the calendar, and the coach has not
  *  said yes. The route answers with the trims, which the question shows. */
 export class BlockTrimsPendingError extends Error {
@@ -154,11 +163,12 @@ export const listBlocks = async (clientId: string): Promise<ClientBlock[]> => {
  * (setBlockArchived), but it is written rather than inherited, so this read does
  * not silently depend on a rule enforced in another function.
  *
- * Degrades to null on a read error (logged, Sentried) rather than throwing: both
- * callers fall back to what they did before blocks bounded anything — the
- * program's authored length, and the program-then-fixed-window chain. A
- * generation that quietly covers less is self-healing on the next one; a coach's
- * write failing outright after it has already committed is not.
+ * A read ERROR throws (logged and Sentried first). Null means "no block bounds
+ * this date", which is a real answer; a failed read knows nothing, and every
+ * caller asks before it writes, so the save is refused with a sentence rather
+ * than stored without the block's end. Left to fall back, a blip would lay a
+ * program or a version straight through a block — the one way left to put a
+ * plan across a block's edge, and invisible when it happened.
  */
 type BlockBound =
   | { kind: "covering"; endsOn: string }
@@ -181,7 +191,7 @@ export const getBlockBoundForDate = async (
   if (error) {
     console.error("Failed to read the block bound for a date:", error);
     captureApiError(error, { action: "block-bound-for-date", clientId });
-    return null;
+    throw new BlocksUnreadableError();
   }
   if (!data) return null;
   return data.starts_on <= date

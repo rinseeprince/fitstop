@@ -135,6 +135,12 @@ export const BLOCK_START_FIXED = "A block's start can't be moved. Delete the blo
  *  it with this sentence (409, the trims beside it) until the coach says yes. */
 export const BLOCK_TRIMS_UNCONFIRMED = "Saving this block changes plans that are already on the calendar.";
 
+/** A block bounds every plan placed inside it, so a save that cannot read the
+ *  client's blocks does not know where its plan ends. It is refused with this
+ *  sentence rather than stored without the bound — placing a program, saving
+ *  targets and the plan editor alike. */
+export const BLOCKS_UNREADABLE = "Couldn't read this client's blocks. Try again.";
+
 // Pagination
 export const CLIENT_CHECKINS_PAGE_SIZE = 20; // "Load older" page size for the coach per-client check-ins tab
 

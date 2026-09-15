@@ -44,20 +44,21 @@ const plan = (
 });
 
 describe("deriveTimelineEntries", () => {
-  it("current block: start entry + in-window placements, date-sorted", () => {
+  it("current block: the block's plans and its own start, date-sorted", () => {
     const entries = deriveTimelineEntries(
       { ...BLOCK, state: "current" },
       [
         plan("p2", "Peak", "2026-06-15"),
         plan("p1", "Base", "2026-06-03"),
-        // Overlaps the block but STARTED before it — a placement entry
-        // belongs to the block whose window contains its start.
+        // Already running when the block was drawn: it is one of the block's
+        // plans, listed from its own start, which sorts above the block's.
         plan("p0", "Prep", "2026-05-20"),
       ],
       []
     );
-    expect(entries.map((e) => e.label)).toEqual(["Block started", "Base", "Peak"]);
+    expect(entries.map((e) => e.label)).toEqual(["Prep", "Block started", "Base", "Peak"]);
     expect(entries.map((e) => e.date)).toEqual([
+      "2026-05-20",
       "2026-06-01",
       "2026-06-03",
       "2026-06-15",
@@ -262,15 +263,18 @@ describe("deriveTimelineEntries", () => {
       expect(without.map((e) => [e.date, e.label])).toEqual(withNote.map((e) => [e.date, e.label]));
     });
 
-    it("a version that began before the block has no entry, so its note stays with it", () => {
+    it("a version already running when the block was drawn is listed from its own start, note and all", () => {
       const entries = deriveTimelineEntries(
         { ...BLOCK, state: "current" },
         [],
         nutrition([{ from: "2026-05-20", calories: 3000, deficitPerDay: 400, note: "Earlier note." }])
       );
 
-      expect(entries.map((e) => e.label)).toEqual(["Block started"]);
-      expect(entries.some((e) => e.note)).toBe(false);
+      expect(entries.map((e) => [e.date, e.label])).toEqual([
+        ["2026-05-20", "Nutrition"],
+        ["2026-06-01", "Block started"],
+      ]);
+      expect(entries[0].note).toBe("Earlier note.");
     });
   });
 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/services/client-service";
+import { BlocksUnreadableError } from "@/services/client-blocks-service";
 import { DateOccupiedError } from "@/services/training-event-occupancy";
 import { getTrainingPlanById } from "@/services/training-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
@@ -235,6 +236,12 @@ export async function POST(
   } catch (error) {
     if (error instanceof DateOccupiedError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    // The window is resolved before anything is written, so a blocks read that
+    // failed refuses the placement outright: a program laid without the block's
+    // end would run straight through it.
+    if (error instanceof BlocksUnreadableError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
     }
     // The program IS on the calendar; only the earlier program's later
     // sessions survived. Say exactly that rather than "failed to place".

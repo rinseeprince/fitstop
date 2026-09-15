@@ -84,11 +84,7 @@ export function BlocksSubtab({
   // current block): the coach came back to the one they were setting up. The
   // hook consumes the one-shot and strips it.
   const focusBlockId = useJourneyFocusBlock();
-  const {
-    facts,
-    isLoading: factsLoading,
-    isError: factsError,
-  } = useBlockFacts(clientId);
+  const { facts, isError: factsError } = useBlockFacts(clientId);
   const invalidateBlocks = useInvalidateClientBlocks();
   // Every write returns the chain it just produced. Seeding it lands the new
   // list and the closing form in ONE render, which is the only way the frame
@@ -497,7 +493,6 @@ export function BlocksSubtab({
                 block={block}
                 color={color}
                 facts={factsById.get(block.id)}
-                factsLoading={factsLoading}
                 factsError={factsError}
                 defaultOpen={
                   focusBlockId ? block.id === focusBlockId : block.state === "current"

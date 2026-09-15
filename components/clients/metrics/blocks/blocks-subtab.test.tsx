@@ -63,7 +63,7 @@ vi.mock("../hooks/use-client-blocks", () => ({
     isLoading: false,
     isError: false,
   }),
-  useBlockFacts: () => ({ facts: [], isLoading: false, isError: false }),
+  useBlockFacts: () => ({ facts: [], isError: false }),
   useInvalidateClientBlocks: () => vi.fn(),
   useSeedClientBlocks: () => api.seedBlocks,
   useClearBlockFacts: () => vi.fn(),

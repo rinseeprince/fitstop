@@ -75,9 +75,9 @@ export interface BlockPlanTrim {
  */
 export type BlockPlanState = "active" | "upcoming" | "ended";
 
-/** A training program whose window overlapped the block. `startsOn` /
- *  `endsOn` are the plan's own `effective_from` / `effective_until` — when it
- *  started on the calendar and the last day of its window (migration 167). */
+/** A training program whose window meets the block's. `startsOn` / `endsOn`
+ *  are the plan's own `effective_from` / `effective_until` — when it started on
+ *  the calendar and the last day of its window (migration 167). */
 export interface BlockTrainingFact {
   id: string;
   name: string;
@@ -99,9 +99,7 @@ export interface BlockTrainingFact {
  */
 export interface BlockNutritionFact {
   id: string;
-  /** The version's `effective_from` — when its targets took (or take) effect;
-   *  earlier than the block's start for a version already running when the
-   *  block began, as a crossing program's `startsOn` is. */
+  /** The version's `effective_from` — when its targets took (or take) effect. */
   startsOn: string;
   /** The version's `effective_until` — the last day it answers for. */
   endsOn: string;

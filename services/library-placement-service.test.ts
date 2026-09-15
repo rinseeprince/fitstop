@@ -41,6 +41,7 @@ import {
   PlacementSupersedeError,
 } from "./library-placement-service";
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
+import { BLOCKS_UNREADABLE } from "@/lib/constants";
 import type { InlinePlanBody } from "@/lib/validations/training";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -909,6 +910,23 @@ describe("library-placement-service: the block bounds the placement", () => {
     });
     return { sessionInsertQuery, exerciseInsertQuery, eventUpsertQuery };
   }
+
+  it("refuses the placement when the client's blocks can't be read, before anything is written", async () => {
+    // The window is resolved first, so a failed blocks read stops the save
+    // rather than placing a program that runs straight through a block.
+    mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    mockGetBlockBound.mockRejectedValue(new Error(BLOCKS_UNREADABLE));
+    wire(["ts-1", "ts-2", "ts-3"]);
+
+    await expect(
+      placePlanOnCalendar({
+        savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+      }),
+    ).rejects.toThrow(BLOCKS_UNREADABLE);
+
+    expect(mockCreateAtomic).not.toHaveBeenCalled();
+  });
 
   it("repeats a short program to fill its block, cloning every cycle its own rows", async () => {
     // 3-slot program in a 9-day block (2026-09-07 → 2026-09-15): three cycles.

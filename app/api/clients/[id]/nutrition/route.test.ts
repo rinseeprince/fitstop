@@ -79,6 +79,20 @@ vi.mock('@/services/client-goals-service', () => ({
   getCurrentGoals: vi.fn(),
 }))
 
+// The POST imports the class alone, to say why a save was refused; the real
+// module loads supabase-admin and the trim service. The sentence comes from the
+// constant, never a copy of it.
+vi.mock('@/services/client-blocks-service', async () => {
+  const { BLOCKS_UNREADABLE } = await import('@/lib/constants')
+  return {
+    BlocksUnreadableError: class BlocksUnreadableError extends Error {
+      constructor() {
+        super(BLOCKS_UNREADABLE)
+      }
+    },
+  }
+})
+
 vi.mock('@/services/today-service', () => ({
   getClientTodayString: vi.fn().mockResolvedValue('2026-01-15'),
 }))
@@ -97,7 +111,10 @@ import {
   getNutritionPlanForDate,
   getLatestNutritionPlan,
   getNextFutureNutritionPlan,
+  resolveNutritionPlacementEnd,
 } from '@/services/nutrition-plan-service'
+import { BlocksUnreadableError } from '@/services/client-blocks-service'
+import { BLOCKS_UNREADABLE } from '@/lib/constants'
 import { clearNutritionPlansForClient } from '@/services/nutrition-plan-clear-service'
 import { getCurrentGoals } from '@/services/client-goals-service'
 import { getClientTodayString } from '@/services/today-service'
@@ -304,6 +321,21 @@ describe('Nutrition Route POST - effectiveFrom judged against client-local today
     expect(response.status).toBe(200)
     expect(resolveEventDeletionFloor).not.toHaveBeenCalled()
     expect(createNutritionPlan).toHaveBeenCalledTimes(1)
+  })
+
+  // A block bounds the version placed inside it, so a save that cannot read the
+  // client's blocks does not know where its targets end. It is refused with the
+  // sentence rather than stored without the bound.
+  it("refuses the save with its own sentence when the client's blocks can't be read", async () => {
+    vi.mocked(resolveNutritionPlacementEnd).mockRejectedValue(new BlocksUnreadableError())
+
+    const request = makeRequest(mockBody)
+    const response = await POST(request, { params: Promise.resolve({ id: 'client-1' }) })
+    const data = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(data.error).toBe(BLOCKS_UNREADABLE)
+    expect(createNutritionPlan).not.toHaveBeenCalled()
   })
 })
 

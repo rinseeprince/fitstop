@@ -89,16 +89,23 @@ export function useClientBlocks(clientId: string) {
   };
 }
 
-/** Per-block server facts (training programs + nutrition targets). */
+/**
+ * Per-block server facts (training programs + nutrition targets).
+ *
+ * No loading flag: the read answers for EVERY block, so a block with no entry
+ * in the list has not been answered for yet — whether the read is on its first
+ * trip, was cleared by a write, or has yet to cover a block the same write
+ * added. The card derives its pending state from the entry's absence, which
+ * cannot drift from the data the way a second flag can.
+ */
 export function useBlockFacts(clientId: string) {
-  const { data, error, isLoading } = useSWR<BlockFactsResponse>(
+  const { data, error } = useSWR<BlockFactsResponse>(
     blockFactsKey(clientId),
     swrFetcher,
     SWR_CONFIG
   );
   return {
     facts: data?.data?.facts ?? [],
-    isLoading,
     isError: Boolean(error),
   };
 }

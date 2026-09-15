@@ -4,12 +4,11 @@ import { requireCoachOwnsClient } from "@/lib/require-coach-auth";
 import { getBlockFacts } from "@/services/client-blocks-facts-service";
 import { getClientTodayString } from "@/services/today-service";
 
-// Read-only decoration for the Journey tab's expanded block cards: which
-// training programs ran during each block and what the nutrition targets were
-// (from the EVENTS + the era's version, per Session 1B). Kept off the chain
-// GET deliberately — PUT/DELETE echo that GET's exact payload ("one shape, no
-// drift", Session 2), and folding four extra reads into every write echo
-// would break that for a column only this pane renders.
+// Read-only decoration for the Journey tab's expanded block cards: the
+// training programs and nutrition versions each block's dates hold. Kept off
+// the chain GET deliberately — PUT/DELETE echo that GET's exact payload ("one
+// shape, no drift", Session 2), and folding two extra reads into every write
+// echo would break that for a column only this pane renders.
 
 export async function GET(
   request: NextRequest,

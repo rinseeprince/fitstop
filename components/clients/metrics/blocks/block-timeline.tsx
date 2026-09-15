@@ -16,14 +16,16 @@ import type {
 } from "@/types/client-blocks";
 import { PlanStateChip } from "./plan-state-chip";
 
-// "What happened" — the expanded block card's vertical timeline. Sources: block
-// boundaries (derived), training placements in the window, and the nutrition
-// versions that start in the window, each carrying its save note — all from the
-// facts read. Every plan and version starting in the block is listed with its
-// RANGE — the row's own window, start to end — and the state the wire stamped
-// (Active / Planned / Ended), while the columns above headline one entry per
-// track. Block boundaries are a single date. Edits to a plan are invisible by
-// design (audit_logs has no readers).
+// "What happened" — the expanded block card's vertical timeline. Sources: the
+// block's own boundaries (derived) and the block's plans on both tracks, each
+// nutrition version carrying its save note — all from the facts read, which is
+// the plans whose dates fall inside the block. The list is that read entire:
+// every plan and version in the block with its RANGE — the row's own window,
+// start to end, which can begin before the block for a plan that was already
+// running when it was drawn — and the state the wire stamped (Active / Planned
+// / Ended), while the columns above headline one entry per track. Block
+// boundaries are a single date. Edits to a plan are invisible by design
+// (audit_logs has no readers).
 
 /**
  * The plan a timeline row stands for — what the per-plan delete acts on
@@ -88,55 +90,49 @@ export function deriveTimelineEntries(
     });
   }
   for (const plan of training) {
-    if (plan.startsOn >= block.startsOn && plan.startsOn <= block.endsOn) {
-      entries.push({
-        key: `plan-${plan.id}`,
-        date: plan.startsOn,
-        endsOn: plan.endsOn,
-        label: plan.name,
+    entries.push({
+      key: `plan-${plan.id}`,
+      date: plan.startsOn,
+      endsOn: plan.endsOn,
+      label: plan.name,
+      state: plan.state,
+      plan: {
+        track: "training",
+        id: plan.id,
+        name: plan.name,
         state: plan.state,
-        plan: {
-          track: "training",
-          id: plan.id,
-          name: plan.name,
-          state: plan.state,
-          startsOn: plan.startsOn,
-          endsOn: plan.endsOn,
-        },
-      });
-    }
+        startsOn: plan.startsOn,
+        endsOn: plan.endsOn,
+      },
+    });
   }
   // What the client was eating, and when it changed — the question a coach
   // reviewing a finished block asks first. Each version carries the numbers off
   // its own row, so a later plan save cannot rewrite an entry that has already
   // happened. A version queued inside the block is listed the way a queued
   // program is, whether the block has begun or not, its state saying so; a
-  // second version's date already says the targets changed. A version that
-  // began before the block has no entry, as a crossing program has none — and
-  // its note, dated at its start, stays with it. The note rides its own entry:
-  // it explains that prescription change and nothing else, so a "Block
-  // started" or a program's row is never its host.
-  nutrition
-    .filter((fact) => fact.startsOn >= block.startsOn && fact.startsOn <= block.endsOn)
-    .forEach((fact) => {
-      entries.push({
-        key: `nutrition-${fact.id}`,
-        date: fact.startsOn,
-        endsOn: fact.endsOn,
-        label: "Nutrition",
+  // second version's date already says the targets changed. The note rides its
+  // own entry: it explains that prescription change and nothing else, so a
+  // "Block started" or a program's row is never its host.
+  for (const fact of nutrition) {
+    entries.push({
+      key: `nutrition-${fact.id}`,
+      date: fact.startsOn,
+      endsOn: fact.endsOn,
+      label: "Nutrition",
+      state: fact.state,
+      detail: formatNutritionEra({ calories: fact.calories, deficitPerDay: fact.deficitPerDay }),
+      ...(fact.note ? { note: fact.note } : {}),
+      plan: {
+        track: "nutrition",
+        id: fact.id,
+        name: null,
         state: fact.state,
-        detail: formatNutritionEra({ calories: fact.calories, deficitPerDay: fact.deficitPerDay }),
-        ...(fact.note ? { note: fact.note } : {}),
-        plan: {
-          track: "nutrition",
-          id: fact.id,
-          name: null,
-          state: fact.state,
-          startsOn: fact.startsOn,
-          endsOn: fact.endsOn,
-        },
-      });
+        startsOn: fact.startsOn,
+        endsOn: fact.endsOn,
+      },
     });
+  }
 
   if (block.state === "past") {
     entries.push({
