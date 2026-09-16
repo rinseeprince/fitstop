@@ -170,7 +170,12 @@ describe('Training Route GET - the hero\'s program and the one after it', () => 
     expect(response.status).toBe(200)
     expect(data.success).toBe(true)
     expect(data.plan.id).toBe('plan-active')
-    expect(data.nextPlan).toEqual({ id: 'plan-upcoming', name: 'Scheduled Plan', effectiveFrom: '2026-01-19' })
+    expect(data.nextPlan).toEqual({
+      id: 'plan-upcoming',
+      name: 'Scheduled Plan',
+      effectiveFrom: '2026-01-19',
+      effectiveUntil: '2026-02-15',
+    })
     // The running program is already whole; the queued one is only named.
     expect(getTrainingPlanById).not.toHaveBeenCalled()
   })
@@ -183,7 +188,12 @@ describe('Training Route GET - the hero\'s program and the one after it', () => 
     const { data } = await get()
 
     expect(data.plan.id).toBe('plan-upcoming')
-    expect(data.nextPlan).toEqual({ id: 'plan-behind', name: 'Strength', effectiveFrom: '2026-02-16' })
+    expect(data.nextPlan).toEqual({
+      id: 'plan-behind',
+      name: 'Strength',
+      effectiveFrom: '2026-02-16',
+      effectiveUntil: '2026-03-15',
+    })
     expect(getTrainingPlanById).toHaveBeenCalledWith('plan-upcoming')
     expect(getNextFutureTrainingPlan).toHaveBeenCalledWith('client-1', '2026-01-19')
   })

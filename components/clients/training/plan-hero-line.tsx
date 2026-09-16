@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -15,16 +15,19 @@ import { formatDateOnlyWeekday } from "@/components/clients/overview/overview-fo
 import { FOCUS_RING } from "@/components/clients/training/program-builder/builder-tokens";
 import { StartDateCalendar } from "./start-date-calendar";
 import { MovePlanDialog, type PlanMoveChoice } from "./move-plan-dialog";
+import type { ProgramDeleteTarget } from "./delete-program-dialog";
 
-type PlanStartLineProps = {
+type PlanHeroLineProps = {
   clientId: string;
-  program: { id: string; name: string; startsOn: string };
-  /** "start": the hero's own program. "next": the program that starts after it. */
-  kind: "start" | "next";
+  program: { id: string; name: string; startsOn: string; endsOn: string };
+  /** "plan": the hero's own program. "next": the program that starts after it. */
+  kind: "plan" | "next";
   /** The client's today, on their calendar. */
   clientToday: string;
   /** The first day a program may start: a program starting before it has started. */
   floor: string;
+  /** The bin: the hero owns the delete's confirm, which must outlive this line. */
+  onDelete: (target: ProgramDeleteTarget) => void;
 };
 
 /** What the calendar was opened on, kept through its close so it fades out as it was. */
@@ -32,24 +35,30 @@ type PickerSubject = { startsOn: string; today: string; floor: string };
 
 const MOVE_FAILED = "Something went wrong. Try again.";
 
+const ICON_BUTTON =
+  "grid h-4 w-4 shrink-0 place-items-center rounded-[4px] text-[rgba(255,255,255,0.45)] transition-colors";
+
 /**
- * A program's start under the Plans hero's name — "Starts Mon, 28 Sep",
- * "Starts today", or "Next: Strength, starts Mon, 5 Oct" — with a pencil that
- * moves the whole program to another start date.
+ * A program's line under the Plans hero's name, ending in its icons:
+ * - the hero's program before it starts — "Starts Mon, 28 Sep" or "Starts
+ *   today" — with a pencil and a bin;
+ * - the hero's program once it has started — "Ends Sun, 4 Oct" — with a bin;
+ * - the program after it — "Next: Strength, starts Mon, 5 Oct" — with a
+ *   pencil and a bin.
  *
- * Only a program that hasn't started has the pencil: its start is on or after
- * the client's deletion floor (their today, or tomorrow once they've logged a
- * workout today). A running program's start line is gone; the next program
- * always starts later, so its line always has one.
+ * A program has started once its start is before the client's deletion floor
+ * (their today, or tomorrow once they've logged a workout today). Only a
+ * program that hasn't started moves, so only its line has the pencil.
  *
- * Picking a day closes the calendar and opens the confirm in the same click;
- * picking the current start closes the calendar and asks nothing. The confirm
- * carries the wait: Move program spins until the move and the Training tab's
- * refetch are done, then the dialog closes onto the new dates. The dialog
- * lives beside the line rather than inside it, so a line that hides while it
- * is open doesn't take the dialog with it.
+ * The pencil opens a month calendar; picking a day closes it and opens the
+ * move's confirm in the same click (picking the current start asks nothing).
+ * Move program spins until the move and the Training tab's refetch are done,
+ * then the confirm closes onto the new dates. The move's confirm lives beside
+ * the line, so a line that hides while it is open doesn't take it with it. The
+ * bin hands its program to the hero, whose delete confirm outlives the line
+ * the delete removes.
  */
-export function PlanStartLine({ clientId, program, kind, clientToday, floor }: PlanStartLineProps) {
+export function PlanHeroLine({ clientId, program, kind, clientToday, floor, onDelete }: PlanHeroLineProps) {
   const picker = useDialogSubject<PickerSubject>();
   const confirm = useDialogSubject<PlanMoveChoice>();
   const invalidateTrainingData = useInvalidateTrainingData();
@@ -58,8 +67,10 @@ export function PlanStartLine({ clientId, program, kind, clientToday, floor }: P
   const clearAttentionFeed = useClearAttentionFeed();
   const clearBlockFacts = useClearBlockFacts();
 
-  const movable = program.startsOn >= floor;
-  const startsToday = program.startsOn === clientToday;
+  const hasStarted = program.startsOn < floor;
+  const shownDate = kind === "plan" && hasStarted ? program.endsOn : program.startsOn;
+  const label =
+    kind === "next" ? `Next: ${program.name}, starts` : hasStarted ? "Ends" : "Starts";
 
   function pick(startsOn: string) {
     picker.close();
@@ -102,19 +113,19 @@ export function PlanStartLine({ clientId, program, kind, clientToday, floor }: P
 
   return (
     <>
-      {(kind === "next" || movable) && (
-        <p className="mt-1 flex min-w-0 items-center text-[11px] font-medium text-[rgba(255,255,255,0.45)]">
-          <span className={kind === "next" ? "truncate" : "shrink-0"}>
-            {kind === "next" ? `Next: ${program.name}, starts` : "Starts"}
-            {startsToday && " today"}
+      <p className="mt-1 flex min-w-0 items-center text-[11px] font-medium text-[rgba(255,255,255,0.45)]">
+        <span className={kind === "next" ? "truncate" : "shrink-0"}>
+          {label}
+          {shownDate === clientToday && " today"}
+        </span>
+        {/* No space before InlineMono — it owns its own gap. */}
+        {shownDate !== clientToday && (
+          <span className="shrink-0">
+            <InlineMono>{formatDateOnlyWeekday(shownDate)}</InlineMono>
           </span>
-          {/* No space before InlineMono — it owns its own gap. */}
-          {!startsToday && (
-            <span className="shrink-0">
-              <InlineMono>{formatDateOnlyWeekday(program.startsOn)}</InlineMono>
-            </span>
-          )}
-          {movable && (
+        )}
+        <span className="ml-1.5 flex shrink-0 items-center gap-1">
+          {!hasStarted && (
             <Popover
               open={picker.open}
               onOpenChange={(open) =>
@@ -127,10 +138,7 @@ export function PlanStartLine({ clientId, program, kind, clientToday, floor }: P
                 <button
                   type="button"
                   aria-label={kind === "next" ? `Change ${program.name}'s start date` : "Change start date"}
-                  className={cn(
-                    "ml-1.5 grid h-4 w-4 shrink-0 place-items-center rounded-[4px] text-[rgba(255,255,255,0.45)] transition-colors hover:text-white",
-                    FOCUS_RING,
-                  )}
+                  className={cn(ICON_BUTTON, "hover:text-white", FOCUS_RING)}
                 >
                   <Pencil className="h-3 w-3" strokeWidth={1.5} />
                 </button>
@@ -152,8 +160,25 @@ export function PlanStartLine({ clientId, program, kind, clientToday, floor }: P
               </PopoverContent>
             </Popover>
           )}
-        </p>
-      )}
+          <button
+            type="button"
+            aria-label={`${hasStarted ? "End" : "Remove"} ${program.name}`}
+            onClick={() =>
+              onDelete({
+                id: program.id,
+                name: program.name,
+                startsOn: program.startsOn,
+                endsOn: program.endsOn,
+                hasStarted,
+                sessionsFrom: floor === clientToday ? "today" : "tomorrow",
+              })
+            }
+            className={cn(ICON_BUTTON, "hover:text-[#c06060]", FOCUS_RING)}
+          >
+            <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+          </button>
+        </span>
+      </p>
       <MovePlanDialog
         key={`move-plan-${confirm.openKey}`}
         open={confirm.open}

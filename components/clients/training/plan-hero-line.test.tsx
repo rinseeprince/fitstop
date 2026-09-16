@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, act, waitFor } from "@testing-library/react";
-import { PlanStartLine } from "./plan-start-line";
+import { PlanHeroLine } from "./plan-hero-line";
 import { formatDateOnlyWeekday } from "@/components/clients/overview/overview-format";
 
 // Every screen a move changes is refreshed through its own hook; the mocks say
@@ -36,16 +36,19 @@ const CLIENT = "client-1";
 const TODAY = "2026-09-16";
 const TOMORROW = "2026-09-17";
 
-type LineProps = Parameters<typeof PlanStartLine>[0];
+type LineProps = Parameters<typeof PlanHeroLine>[0];
+
+const onDelete = vi.fn();
 
 function renderLine(overrides: Partial<LineProps> = {}) {
   return render(
-    <PlanStartLine
+    <PlanHeroLine
       clientId={CLIENT}
-      kind="start"
-      program={{ id: "plan-1", name: "Upper Lower", startsOn: "2026-09-28" }}
+      kind="plan"
+      program={{ id: "plan-1", name: "Upper Lower", startsOn: "2026-09-28", endsOn: "2026-10-25" }}
       clientToday={TODAY}
       floor={TODAY}
+      onDelete={onDelete}
       {...overrides}
     />,
   );
@@ -85,7 +88,7 @@ function holdExitAnimation() {
   });
 }
 
-describe("PlanStartLine", () => {
+describe("PlanHeroLine", () => {
   const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<FetchResult>>();
 
   beforeEach(() => {
@@ -102,39 +105,86 @@ describe("PlanStartLine", () => {
   });
 
   describe("what the line says", () => {
-    it("a program that hasn't started: Starts, its date, and a pencil", () => {
+    const bin = (name: string) => screen.getByRole("button", { name });
+
+    it("a program that hasn't started: Starts, its date, a pencil and a bin", () => {
       renderLine();
       const line = pencil().closest("p");
       expect(line?.textContent).toBe(`Starts${formatDateOnlyWeekday("2026-09-28")}`);
-      expect(pencil()).toBeEnabled();
+      expect(bin("Remove Upper Lower").closest("p")).toBe(line);
     });
 
-    it("a program starting today, before the client has logged a workout: Starts today, with a pencil", () => {
-      renderLine({ program: { id: "plan-1", name: "Upper Lower", startsOn: TODAY } });
+    it("a program starting today, before the client has logged a workout: Starts today, a pencil and a bin", () => {
+      renderLine({ program: { id: "plan-1", name: "Upper Lower", startsOn: TODAY, endsOn: "2026-10-13" } });
       expect(pencil().closest("p")?.textContent).toBe("Starts today");
+      expect(bin("Remove Upper Lower")).toBeInTheDocument();
     });
 
-    it("a program starting today, once the client has logged a workout: no line", () => {
-      const { container } = renderLine({
-        program: { id: "plan-1", name: "Upper Lower", startsOn: TODAY },
+    it("a program starting today, once the client has logged a workout: Ends, its date and a bin, no pencil", () => {
+      renderLine({
+        program: { id: "plan-1", name: "Upper Lower", startsOn: TODAY, endsOn: "2026-10-13" },
         floor: TOMORROW,
       });
-      expect(container).toBeEmptyDOMElement();
+      expect(screen.queryByRole("button", { name: "Change start date" })).toBeNull();
+      expect(bin("End Upper Lower").closest("p")?.textContent).toBe(
+        `Ends${formatDateOnlyWeekday("2026-10-13")}`,
+      );
     });
 
-    it("a running program: no line", () => {
-      const { container } = renderLine({
-        program: { id: "plan-1", name: "Upper Lower", startsOn: "2026-08-31" },
+    it("a running program: Ends, its date and a bin, no pencil", () => {
+      renderLine({ program: { id: "plan-1", name: "Upper Lower", startsOn: "2026-08-31", endsOn: "2026-10-04" } });
+      expect(screen.queryByRole("button", { name: "Change start date" })).toBeNull();
+      expect(bin("End Upper Lower").closest("p")?.textContent).toBe(
+        `Ends${formatDateOnlyWeekday("2026-10-04")}`,
+      );
+    });
+
+    it("a running program on its last day: Ends today", () => {
+      renderLine({ program: { id: "plan-1", name: "Upper Lower", startsOn: "2026-08-31", endsOn: TODAY } });
+      expect(bin("End Upper Lower").closest("p")?.textContent).toBe("Ends today");
+    });
+
+    it("the next program: Next, its name and date, with its own pencil and bin", () => {
+      renderLine({
+        kind: "next",
+        program: { id: "plan-2", name: "Strength", startsOn: "2026-10-05", endsOn: "2026-10-18" },
       });
-      expect(container).toBeEmptyDOMElement();
-    });
-
-    it("the next program: Next, its name and date, with its own pencil", () => {
-      renderLine({ kind: "next", program: { id: "plan-2", name: "Strength", startsOn: "2026-10-05" } });
       const button = pencil("Change Strength's start date");
       expect(button.closest("p")?.textContent).toBe(
         `Next: Strength, starts${formatDateOnlyWeekday("2026-10-05")}`,
       );
+      expect(bin("Remove Strength").closest("p")).toBe(button.closest("p"));
+    });
+  });
+
+  describe("the bin", () => {
+    it("hands a program that hasn't started to the hero, to be removed", () => {
+      renderLine();
+      fireEvent.click(screen.getByRole("button", { name: "Remove Upper Lower" }));
+      expect(onDelete).toHaveBeenCalledWith({
+        id: "plan-1",
+        name: "Upper Lower",
+        startsOn: "2026-09-28",
+        endsOn: "2026-10-25",
+        hasStarted: false,
+        sessionsFrom: "today",
+      });
+    });
+
+    it("hands a running program to the hero, to be ended from the floor", () => {
+      renderLine({
+        program: { id: "plan-1", name: "Upper Lower", startsOn: "2026-08-31", endsOn: "2026-10-04" },
+        floor: TOMORROW,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "End Upper Lower" }));
+      expect(onDelete).toHaveBeenCalledWith({
+        id: "plan-1",
+        name: "Upper Lower",
+        startsOn: "2026-08-31",
+        endsOn: "2026-10-04",
+        hasStarted: true,
+        sessionsFrom: "tomorrow",
+      });
     });
   });
 
@@ -253,7 +303,10 @@ describe("PlanStartLine", () => {
 
     it("the next program moves through its own id", async () => {
       fetchMock.mockResolvedValue(answer(200, { success: true }));
-      renderLine({ kind: "next", program: { id: "plan-2", name: "Strength", startsOn: "2026-10-05" } });
+      renderLine({
+        kind: "next",
+        program: { id: "plan-2", name: "Strength", startsOn: "2026-10-05", endsOn: "2026-10-18" },
+      });
 
       pickDay(/^Monday 12 October 2026$/, "Change Strength's start date");
       expect(screen.getByRole("heading", { name: "Move Strength?" })).toBeInTheDocument();
@@ -311,24 +364,25 @@ describe("PlanStartLine", () => {
       for (const hook of Object.values(refresh)) expect(hook).not.toHaveBeenCalled();
     });
 
-    it("the confirm outlives its line: a program that starts meanwhile keeps the question open", () => {
+    it("the confirm outlives its pencil: a program that starts meanwhile keeps the question open", () => {
       const props: LineProps = {
         clientId: CLIENT,
-        kind: "start",
-        program: { id: "plan-1", name: "Upper Lower", startsOn: TODAY },
+        kind: "plan",
+        program: { id: "plan-1", name: "Upper Lower", startsOn: TODAY, endsOn: "2026-10-13" },
         clientToday: TODAY,
         floor: TODAY,
+        onDelete,
       };
-      const { rerender } = render(<PlanStartLine {...props} />);
+      const { rerender } = render(<PlanHeroLine {...props} />);
       pickDay(/^Friday 18 September 2026$/);
       expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-      // The client logs a workout: the program has started, and its line goes.
-      rerender(<PlanStartLine {...props} floor={TOMORROW} />);
+      // The client logs a workout: the program has started, and its pencil goes.
+      rerender(<PlanHeroLine {...props} floor={TOMORROW} />);
 
       expect(screen.queryByRole("button", { name: "Change start date" })).toBeNull();
       expect(screen.getByRole("dialog")).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Move Upper Lower?" })).toBeInTheDocument();
-    });
+  });
   });
 });

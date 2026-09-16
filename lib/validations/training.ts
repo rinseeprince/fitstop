@@ -451,7 +451,12 @@ const getTrainingPlanApiResponseSchema = z.object({
   success: z.boolean(),
   plan: trainingPlanResponseSchema.nullable().optional(),
   nextPlan: z
-    .object({ id: z.string(), name: z.string(), effectiveFrom: z.string() })
+    .object({
+      id: z.string(),
+      name: z.string(),
+      effectiveFrom: z.string(),
+      effectiveUntil: z.string(),
+    })
     .nullable(),
   clientToday: z.string(),
   planStartFloor: z.string(),
@@ -465,7 +470,7 @@ type GetPlanApiResponse = {
   /** The program covering the client's today, else the first one queued. */
   plan?: TrainingPlan | null;
   /** The program that starts after `plan`, whether `plan` is running or queued. */
-  nextPlan: { id: string; name: string; effectiveFrom: string } | null;
+  nextPlan: { id: string; name: string; effectiveFrom: string; effectiveUntil: string } | null;
   /** The client's today, on their own calendar. */
   clientToday: string;
   /** The first day a program may start: the deletion floor. A program starting

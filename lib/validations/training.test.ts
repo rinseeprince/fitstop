@@ -220,7 +220,7 @@ describe('Training Validation Schemas', () => {
         const data = {
           success: true,
           plan: null,
-          nextPlan: { id: 'plan-2', name: 'Strength', effectiveFrom: '2026-01-26' },
+          nextPlan: { id: 'plan-2', name: 'Strength', effectiveFrom: '2026-01-26', effectiveUntil: '2026-02-08' },
           clientToday: '2026-01-15',
           planStartFloor: '2026-01-16',
           clientTimezone: 'Europe/London',
@@ -228,10 +228,27 @@ describe('Training Validation Schemas', () => {
 
         const result = parseGetPlanResponse(data)
         expect(result).not.toBeNull()
-        expect(result?.nextPlan).toEqual({ id: 'plan-2', name: 'Strength', effectiveFrom: '2026-01-26' })
+        expect(result?.nextPlan).toEqual({
+          id: 'plan-2',
+          name: 'Strength',
+          effectiveFrom: '2026-01-26',
+          effectiveUntil: '2026-02-08',
+        })
         expect(result?.clientToday).toBe('2026-01-15')
         expect(result?.planStartFloor).toBe('2026-01-16')
         expect(result?.clientTimezone).toBe('Europe/London')
+      })
+
+      it('refuses a next program without its end', () => {
+        expect(
+          parseGetPlanResponse({
+            success: true,
+            plan: null,
+            nextPlan: { id: 'plan-2', name: 'Strength', effectiveFrom: '2026-01-26' },
+            clientToday: '2026-01-15',
+            planStartFloor: '2026-01-15',
+          })
+        ).toBeNull()
       })
 
       it('refuses an answer without the days the hero reads', () => {

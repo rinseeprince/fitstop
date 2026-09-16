@@ -35,7 +35,7 @@ function planResponse(name: string) {
       createdAt: "2026-09-01T00:00:00Z",
       updatedAt: "2026-09-01T00:00:00Z",
     },
-    nextPlan: { id: "plan-str", name: "Strength", effectiveFrom: "2026-10-05" },
+    nextPlan: { id: "plan-str", name: "Strength", effectiveFrom: "2026-10-05", effectiveUntil: "2026-10-18" },
     clientToday: "2026-09-16",
     planStartFloor: "2026-09-17",
     clientTimezone: "Europe/London",
@@ -125,6 +125,7 @@ describe("useTrainingPlan", () => {
       id: "plan-str",
       name: "Strength",
       effectiveFrom: "2026-10-05",
+      effectiveUntil: "2026-10-18",
     });
     expect(result.current.clientToday).toBe("2026-09-16");
     expect(result.current.planStartFloor).toBe("2026-09-17");

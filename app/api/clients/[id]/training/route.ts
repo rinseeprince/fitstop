@@ -82,7 +82,12 @@ export async function GET(
         plan,
         nextPlan:
           plan && after
-            ? { id: after.id, name: after.name, effectiveFrom: after.effectiveFrom }
+            ? {
+                id: after.id,
+                name: after.name,
+                effectiveFrom: after.effectiveFrom,
+                effectiveUntil: after.effectiveUntil,
+              }
             : null,
         clientToday,
         // A program starting before the floor has started, and can't move.
