@@ -97,9 +97,6 @@ Client blocks don't change.
 
 ## 3. Before commit 1
 
-- The block-as-program commit another session has in progress — migration 178 (it was 177 until
-  commit 1 took that number), which changes Edit plan's save — is committed and smoked first.
-  Commits 2, 5 and 18 change that save again.
 - DEV runs ahead of PROD (PROD was at 174 when this was written). Commits push migrations to DEV;
   PROD is the owner's call.
 
