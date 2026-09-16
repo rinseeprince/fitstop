@@ -6,6 +6,21 @@ const ctx = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("@/contexts/training-builder-context", () => ({
   useTrainingBuilderContext: () => ctx.value,
 }));
+// The lines' own rules (which start shows, the pencil, the move) are proved in
+// plan-start-line.test.tsx; here, which lines the hero asks for, with what.
+vi.mock("./plan-start-line", () => ({
+  PlanStartLine: (props: {
+    clientId: string;
+    kind: string;
+    program: { id: string; name: string; startsOn: string };
+    clientToday: string;
+    floor: string;
+  }) => (
+    <p data-testid={`line-${props.kind}`}>
+      {[props.clientId, props.program.id, props.program.name, props.program.startsOn, props.clientToday, props.floor].join("|")}
+    </p>
+  ),
+}));
 
 function renderHero(props: Partial<Parameters<typeof TrainingPlanHero>[0]> = {}) {
   return render(<TrainingPlanHero clientId="client-1" {...props} />);
@@ -62,8 +77,10 @@ describe("TrainingPlanHero", () => {
   // one, so Edit plan has no state in which it is refused.
   it("never disables Edit plan, a queued program included", () => {
     ctx.value = {
-      plan: { id: "p1", name: "PPL", frequencyPerWeek: 4 },
-      scheduledFor: "2026-10-05",
+      plan: { id: "p1", name: "PPL", frequencyPerWeek: 4, effectiveFrom: "2026-10-05" },
+      nextPlan: null,
+      clientToday: "2026-09-16",
+      planStartFloor: "2026-09-16",
     };
     renderHero({ onEditPlan: vi.fn() });
 
@@ -79,8 +96,10 @@ describe("TrainingPlanHero", () => {
   it("claims nothing while the plan read is pending, even with a plan still in hand", () => {
     ctx.value = {
       isPending: true,
-      plan: { id: "p1", name: "PPL", frequencyPerWeek: 4 },
-      scheduledFor: "2026-10-05",
+      plan: { id: "p1", name: "PPL", frequencyPerWeek: 4, effectiveFrom: "2026-10-05" },
+      nextPlan: { id: "p2", name: "Strength", effectiveFrom: "2026-11-02" },
+      clientToday: "2026-09-16",
+      planStartFloor: "2026-09-16",
     };
     const { container } = renderHero({ onOpenGenerator: vi.fn(), onEditPlan: vi.fn() });
 
@@ -91,9 +110,55 @@ describe("TrainingPlanHero", () => {
     expect(screen.queryByText("PPL")).toBeNull();
     expect(screen.queryByText("No active training plan")).toBeNull();
     expect(screen.queryByText(/Starts/)).toBeNull();
+    expect(screen.queryByTestId("line-start")).toBeNull();
+    expect(screen.queryByTestId("line-next")).toBeNull();
     expect(screen.queryByRole("button", { name: /Edit plan/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Apply program/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Browse programs/ })).toBeNull();
     expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("gives the start line the hero's program, the client's today and the floor", () => {
+    ctx.value = {
+      plan: { id: "p1", name: "Upper Lower", frequencyPerWeek: 4, effectiveFrom: "2026-09-28" },
+      nextPlan: null,
+      clientToday: "2026-09-16",
+      planStartFloor: "2026-09-17",
+    };
+    renderHero();
+
+    expect(screen.getByTestId("line-start").textContent).toBe(
+      "client-1|p1|Upper Lower|2026-09-28|2026-09-16|2026-09-17",
+    );
+    expect(screen.queryByTestId("line-next")).toBeNull();
+  });
+
+  it("gives the next line the program after the hero's one, under the start line", () => {
+    ctx.value = {
+      plan: { id: "p1", name: "Upper Lower", frequencyPerWeek: 4, effectiveFrom: "2026-08-31" },
+      nextPlan: { id: "p2", name: "Strength", effectiveFrom: "2026-10-05" },
+      clientToday: "2026-09-16",
+      // The client has logged a workout today: the floor is tomorrow.
+      planStartFloor: "2026-09-17",
+    };
+    renderHero();
+
+    const start = screen.getByTestId("line-start");
+    const next = screen.getByTestId("line-next");
+    expect(next.textContent).toBe("client-1|p2|Strength|2026-10-05|2026-09-16|2026-09-17");
+    expect(start.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("with no program there are no lines, even beside a next program", () => {
+    ctx.value = {
+      plan: null,
+      nextPlan: { id: "p2", name: "Strength", effectiveFrom: "2026-10-05" },
+      clientToday: "2026-09-16",
+      planStartFloor: "2026-09-16",
+    };
+    renderHero({ onOpenGenerator: vi.fn() });
+
+    expect(screen.queryByTestId("line-start")).toBeNull();
+    expect(screen.queryByTestId("line-next")).toBeNull();
   });
 });

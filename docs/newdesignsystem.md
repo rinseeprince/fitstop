@@ -349,6 +349,8 @@ rejected afterwards — a coach should never be able to select a day the app wil
   past *start date* is a real thing to record, so it is not. Greying out a legitimate day is the
   same defect in the other direction.
 
+A date changed from an icon rather than a field is the "Date picker popover" (Overlays) — the same bound, greyed in its calendar.
+
 Shipped references: `components/clients/nutrition/builder/nutrition-settings-form.tsx` and
 `components/training-library/apply-to-client-dialog.tsx` (the two setup surfaces — "Starts on" /
 "Start Date" under a Block field: `min` = the field's floor — the deletion floor on the apply dialog, the client's today on the nutrition drawer; with a block chosen the field is
@@ -526,6 +528,17 @@ The base `DropdownMenuContent`/`Item` primitives (`components/ui/dropdown-menu.t
 ### Popover (320px pattern)
 
 `<PopoverContent align="start" sideOffset={6} className="w-[320px] rounded-[6px] border-[rgba(13,148,136,0.08)] p-0">` — header `px-3.5 pb-2 pt-3` (title `text-sm font-semibold` + `MONO_LABEL_CLASS` subtitle + close X), scroll body `max-h-[260px] overflow-y-auto px-1.5 pb-1.5`, footer `border-t border-[rgba(13,148,136,0.06)] p-1.5` with a teal-text action.
+
+### Date picker popover (a date changed from an icon)
+
+Reference: `components/clients/training/plan-start-line.tsx` + `start-date-calendar.tsx` — the pencil beside the Plans hero's "Starts <date>". A date changed from an icon, with no field to type in, opens a month calendar in a `Popover`; a date FIELD keeps its native input and `min`/`max` (see "Date inputs express their bounds natively").
+
+- **Trigger:** a `Pencil h-3 w-3 strokeWidth={1.5}` in a `grid h-4 w-4 place-items-center rounded-[4px]` button, `ml-1.5` after the datum, in the line's own muted colour (on a dark hero `text-[rgba(255,255,255,0.45)] hover:text-white`), `FOCUS_RING`, and an `aria-label` naming the act ("Change start date"). While the picked date's write is in flight the same button holds `Loader2 h-3 w-3 animate-spin` and is disabled — the pending state shows on the surface behind the picker, never on the closing card.
+- **Card:** `<PopoverContent align="start" sideOffset={6} className="w-auto rounded-[6px] border-[rgba(13,148,136,0.08)] bg-white p-3">`, the calendar `w-[252px]`.
+- **Header:** the month in `MONO_LABEL_CLASS text-[11px]` ("SEP 2026") on the left; previous/next `ChevronLeft`/`ChevronRight h-3.5 w-3.5 strokeWidth={1.5}` in `rounded p-1 text-[#93b0b4] hover:text-[#0d9488]`, disabled `text-[#d5e0dd]`. Previous is disabled on the month holding the earliest allowed day, since every month before it would be greyed.
+- **Grid:** `grid grid-cols-7 gap-1`, Monday first like the coach calendar; weekday initials in `LABEL_CLASS` `h-6` cells; always six weeks (`monthPage`, `lib/month-grid.ts`), blank cells outside the month, so paging never changes the card's height.
+- **Day:** `MONO text-[12px] grid h-8 w-8 place-items-center rounded-[4px]` + `FOCUS_RING`. Resting `text-[#0c1a1e] hover:bg-[rgba(13,148,136,0.08)] hover:text-[#0a5c55]`; the current value `bg-[#0d9488] font-semibold text-white hover:bg-[#0b7f75]`; today `ring-1 ring-inset ring-[#0d9488]`; a day outside the bound is `disabled` with `cursor-not-allowed text-[#d5e0dd]` — greyed and unclickable, the promise a native `min` makes.
+- **Behaviour:** a pick closes the popover in the same click that starts the work (the scope-dialog rule below); picking the current value closes it and sends nothing. The card renders from a subject captured at open (`useDialogSubject`) and is keyed by `openKey`, so its exit shows what it showed and each open starts on the current value's month.
 
 ### Destructive confirm dialog
 

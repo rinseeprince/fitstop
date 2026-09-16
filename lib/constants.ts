@@ -196,6 +196,7 @@ export const AUDIT_ACTIONS = {
   TRAINING_PLAN_PLACE: "training_plan.place",
   TRAINING_PLAN_CREATE: "training_plan.create",
   TRAINING_PLAN_EDIT: "training_plan.edit",
+  TRAINING_PLAN_MOVE: "training_plan.move",
   INVITATION_SEND: "invitation.send",
   BLOCK_CHAIN_UPDATE: "block.chain_update",
   BLOCK_DELETE: "block.delete",

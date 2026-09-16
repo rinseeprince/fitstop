@@ -97,8 +97,9 @@ Client blocks don't change.
 
 ## 3. Before commit 1
 
-- The block-as-program commit another session has in progress — migration 177, which changes Edit
-  plan's save — is committed and smoked first. Commits 2, 5 and 18 change that save again.
+- The block-as-program commit another session has in progress — migration 178 (it was 177 until
+  commit 1 took that number), which changes Edit plan's save — is committed and smoked first.
+  Commits 2, 5 and 18 change that save again.
 - DEV runs ahead of PROD (PROD was at 174 when this was written). Commits push migrations to DEV;
   PROD is the owner's call.
 
@@ -465,7 +466,7 @@ anything you rely on.
 | 21 | Phase colours on the coach calendar | Every day shows its phase |
 | 22 | Phases for the client | The client's program and header show phases |
 
-### Commit 1 — Change a program's start date
+### Commit 1 — Change a program's start date — SHIPPED 2026-09-16
 
 ```text
 Implement commit 1 of 22 — Change a program's start date — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

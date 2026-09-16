@@ -61,10 +61,15 @@ export function useTrainingPlan({ clientId }: UseTrainingPlanProps) {
   return {
     clientId,
     plan: data?.plan ?? null,
-    // Set only when `plan` is a program that has not started yet. Without it the
-    // hero cannot tell a running program from a queued one and reports both as
-    // active — which is how a retired future plan passed for the current one.
-    scheduledFor: data?.scheduledFor ?? null,
+    // The program that starts after `plan`, whether `plan` is running or queued.
+    nextPlan: data?.nextPlan ?? null,
+    // The client's today and the first day a program may start (the deletion
+    // floor): a program starting before the floor has started. Together with a
+    // program's own start they tell the hero a running program from one that
+    // hasn't begun — without them it reported both alike, which is how a
+    // retired future plan once passed for the current one.
+    clientToday: data?.clientToday ?? null,
+    planStartFloor: data?.planStartFloor ?? null,
     clientTimezone: data?.clientTimezone,
     isPending: data === undefined,
     // Only while there is no answer to show: a failed revalidation keeps the

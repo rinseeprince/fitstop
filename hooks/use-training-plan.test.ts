@@ -35,8 +35,9 @@ function planResponse(name: string) {
       createdAt: "2026-09-01T00:00:00Z",
       updatedAt: "2026-09-01T00:00:00Z",
     },
-    upcomingPlan: null,
-    scheduledFor: "2026-09-07",
+    nextPlan: { id: "plan-str", name: "Strength", effectiveFrom: "2026-10-05" },
+    clientToday: "2026-09-16",
+    planStartFloor: "2026-09-17",
     clientTimezone: "Europe/London",
   };
 }
@@ -120,7 +121,13 @@ describe("useTrainingPlan", () => {
     });
     await waitFor(() => expect(result.current.isPending).toBe(false));
     expect(result.current.plan?.name).toBe("Upper Lower");
-    expect(result.current.scheduledFor).toBe("2026-09-07");
+    expect(result.current.nextPlan).toEqual({
+      id: "plan-str",
+      name: "Strength",
+      effectiveFrom: "2026-10-05",
+    });
+    expect(result.current.clientToday).toBe("2026-09-16");
+    expect(result.current.planStartFloor).toBe("2026-09-17");
     expect(result.current.clientTimezone).toBe("Europe/London");
     expect(result.current.loadError).toBeNull();
   });

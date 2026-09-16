@@ -3032,6 +3032,15 @@ export type Database = {
         Args: { p_client_id: string; p_moves: Json }
         Returns: undefined
       }
+      move_training_plan_atomic: {
+        Args: {
+          p_client_id: string
+          p_floor: string
+          p_plan_id: string
+          p_starts_on: string
+        }
+        Returns: Json
+      }
       restore_measurement: {
         Args: { p_client_id: string; p_id: string }
         Returns: {

@@ -3,9 +3,8 @@
 import { cn } from "@/lib/utils";
 import { useTrainingBuilderContext } from "@/contexts/training-builder-context";
 import { HEADER_EYEBROW_CLASS } from "@/components/clients/training/program-builder/builder-tokens";
-import { InlineMono } from "@/components/clients/overview/overview-primitives";
-import { formatDateOnlyWeekday } from "@/components/clients/overview/overview-format";
 import { TextSkeleton } from "@/components/text-skeleton";
+import { PlanStartLine } from "./plan-start-line";
 
 type TrainingPlanHeroProps = {
   clientId: string;
@@ -20,16 +19,18 @@ type TrainingPlanHeroProps = {
 // The Plans-subtab hero in the shared hero anatomy (Metrics / Exercise Data):
 // eyebrow + title cluster on top, actions in the bottom row under a hairline.
 // No stat row (owner call; week numbers live on the Data tab's
-// TrainingSummaryHero). Owns the empty branch too, so the right panel has a
-// single hero mount — and the pending one: until the plan read answers, the
-// hero is its own frame with the values held as placeholders, claiming neither
-// a plan nor its absence.
+// TrainingSummaryHero). Under the name, the program's start while it hasn't
+// begun and the program after it, each with a pencil that moves that program
+// (PlanStartLine). Owns the empty branch too, so the right panel has a single
+// hero mount — and the pending one: until the plan read answers, the hero is
+// its own frame with the values held as placeholders, claiming neither a plan
+// nor its absence.
 export function TrainingPlanHero({
-  clientId: _clientId,
+  clientId,
   onOpenGenerator,
   onEditPlan,
 }: TrainingPlanHeroProps) {
-  const { plan, scheduledFor, isPending } = useTrainingBuilderContext();
+  const { plan, nextPlan, clientToday, planStartFloor, isPending } = useTrainingBuilderContext();
 
   if (isPending) {
     return (
@@ -64,13 +65,28 @@ export function TrainingPlanHero({
         >
           {plan ? plan.name : "No active training plan"}
         </h2>
-        {/* A program that starts later is queued, not running. Same wording and
-            formatter as the Overview's queued card so the two surfaces read as
-            one fact. No space before InlineMono — it owns its own gap. */}
-        {scheduledFor && (
-          <p className="mt-1 text-[11px] font-medium text-[rgba(255,255,255,0.45)]">
-            Starts<InlineMono>{formatDateOnlyWeekday(scheduledFor)}</InlineMono>
-          </p>
+        {/* "Starts <date>" is the Overview queued card's wording and formatter,
+            so the two surfaces read as one fact. Keyed by program, so a line
+            never carries a pending move onto another program. */}
+        {plan?.effectiveFrom && clientToday && planStartFloor && (
+          <PlanStartLine
+            key={plan.id}
+            clientId={clientId}
+            kind="start"
+            program={{ id: plan.id, name: plan.name, startsOn: plan.effectiveFrom }}
+            clientToday={clientToday}
+            floor={planStartFloor}
+          />
+        )}
+        {plan && nextPlan && clientToday && planStartFloor && (
+          <PlanStartLine
+            key={nextPlan.id}
+            clientId={clientId}
+            kind="next"
+            program={{ id: nextPlan.id, name: nextPlan.name, startsOn: nextPlan.effectiveFrom }}
+            clientToday={clientToday}
+            floor={planStartFloor}
+          />
         )}
       </div>
 

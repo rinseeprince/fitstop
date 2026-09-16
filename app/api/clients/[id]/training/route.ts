@@ -6,6 +6,7 @@ import {
   getTrainingPlanById,
 } from "@/services/training-service";
 import { clearTrainingPlansForClient } from "@/services/training-plan-clear-service";
+import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { getClientTodayString } from "@/services/today-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
@@ -15,7 +16,8 @@ import { requireCSRFProtection } from "@/lib/csrf-protection";
 // deleted with the drawer's AI-generation mode in S5, and authoring moved to the
 // Programs builder + draft assistant. GET and DELETE below are live.
 
-// GET - Get active training plan
+// GET - The Training tab's plan read: the program the Plans hero shows, the
+// program after it, and the two days its start lines are judged by.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,7 +26,7 @@ export async function GET(
   if (rateLimitResult) return rateLimitResult;
 
   try {
-    const coachId = await getAuthenticatedCoachId();
+    const coachId = await getAuthenticatedCoachId(request);
     if (!coachId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -48,46 +50,43 @@ export async function GET(
 
     // getTrainingPlanForDate, not getActiveTrainingPlan: the latter is just
     // getClientTodayString + getTrainingPlanForDate, so calling it here would
-    // re-run the clients+coaches timezone query we already paid for one line up.
-    // Both lookups take only (clientId, clientToday) and share no data, so the
-    // active plan and the next future plan resolve in one round trip, not two.
-    // The next future plan uses the shared predicate (additive placement has no
-    // 'planned' status) — a fourth hand-rolled copy is what let retired plans
-    // resurface here.
-    const [activePlan, nextPlanRow] = await Promise.all([
+    // re-run the timezone query already paid for one line up. The three reads
+    // take only (clientId, clientToday) and share no data, so they resolve in
+    // one round trip. The queued plan comes from the shared predicate — a
+    // hand-rolled copy is what let retired plans resurface here.
+    const [activePlan, firstQueued, planStartFloor] = await Promise.all([
       getTrainingPlanForDate(clientId, clientToday),
       getNextFutureTrainingPlan(clientId, clientToday),
+      resolveEventDeletionFloor(clientId, clientToday),
     ]);
 
-    const nextFullPlan = nextPlanRow
-      ? await getTrainingPlanById(nextPlanRow.id)
-      : null;
-
-    // With no plan covering today, the next future plan IS the coach's working
-    // plan: returned as `plan` (editable in the builder) with `scheduledFor`
-    // marking its start date. `upcomingPlan` only describes a future plan queued
-    // BEHIND a plan that already covers today.
-    const upcomingPlan =
-      activePlan && nextPlanRow && nextFullPlan
-        ? {
-            id: nextFullPlan.id,
-            effectiveFrom: nextPlanRow.effectiveFrom,
-            name: nextFullPlan.name,
-            splitType: nextFullPlan.splitType,
-            frequencyPerWeek: nextFullPlan.frequencyPerWeek,
-            sessions: nextFullPlan.sessions,
-          }
-        : null;
+    // The hero's program is the one covering today, else the first one queued
+    // (returned as `plan`, editable in the builder). The program after it is
+    // the next one to start: the first queued behind a running program, the
+    // one queued behind the first when none runs. Live windows never overlap,
+    // so no program starts between a running one's start and today.
+    let plan = activePlan;
+    let after = firstQueued;
+    if (!activePlan && firstQueued) {
+      const [queuedPlan, behindIt] = await Promise.all([
+        getTrainingPlanById(firstQueued.id),
+        getNextFutureTrainingPlan(clientId, firstQueued.effectiveFrom),
+      ]);
+      plan = queuedPlan;
+      after = behindIt;
+    }
 
     return NextResponse.json(
       {
         success: true,
-        plan: activePlan ?? nextFullPlan,
-        upcomingPlan,
-        scheduledFor:
-          !activePlan && nextPlanRow && nextFullPlan
-            ? nextPlanRow.effectiveFrom
+        plan,
+        nextPlan:
+          plan && after
+            ? { id: after.id, name: after.name, effectiveFrom: after.effectiveFrom }
             : null,
+        clientToday,
+        // A program starting before the floor has started, and can't move.
+        planStartFloor,
         clientTimezone: client.timezone,
       },
       { status: 200 }

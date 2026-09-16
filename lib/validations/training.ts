@@ -390,6 +390,23 @@ export const clientLayoutSchema = z.object({
     .max(7),
 });
 
+// A program's new start date, picked from the Plans hero. Format AND calendar
+// validity: "2026-02-31" passes the regex and would reach Postgres as a 500.
+// Whether the program may move there is the move function's to say
+// (services/training-plan-move-service.ts).
+export const moveTrainingPlanSchema = z.object({
+  startsOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
+    .refine(
+      (value) => {
+        const parsed = new Date(`${value}T00:00:00Z`);
+        return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+      },
+      { message: "Not a real calendar date" }
+    ),
+});
+
 // =============================================================================
 // API Response Validation Schemas
 // =============================================================================
@@ -433,28 +450,27 @@ const trainingPlanResponseSchema = z.object({
 const getTrainingPlanApiResponseSchema = z.object({
   success: z.boolean(),
   plan: trainingPlanResponseSchema.nullable().optional(),
-  upcomingPlan: z.unknown().optional(),
-  scheduledFor: z.string().nullable().optional(),
+  nextPlan: z
+    .object({ id: z.string(), name: z.string(), effectiveFrom: z.string() })
+    .nullable(),
+  clientToday: z.string(),
+  planStartFloor: z.string(),
   clientTimezone: z.string().optional(),
   errorMessage: z.string().optional(),
 });
 
 // Response types for API calls
-type UpcomingTrainingPlan = {
-  id: string;
-  effectiveFrom: string;
-  name: string;
-  splitType: string;
-  frequencyPerWeek: number;
-  sessions: TrainingPlan["sessions"];
-};
-
 type GetPlanApiResponse = {
   success: boolean;
+  /** The program covering the client's today, else the first one queued. */
   plan?: TrainingPlan | null;
-  upcomingPlan?: UpcomingTrainingPlan | null;
-  /** Set only when there is no active plan and the returned `plan` is an upcoming (future-dated) one. */
-  scheduledFor?: string | null;
+  /** The program that starts after `plan`, whether `plan` is running or queued. */
+  nextPlan: { id: string; name: string; effectiveFrom: string } | null;
+  /** The client's today, on their own calendar. */
+  clientToday: string;
+  /** The first day a program may start: the deletion floor. A program starting
+   *  before it has started, and cannot move. */
+  planStartFloor: string;
   clientTimezone?: string;
   errorMessage?: string;
 };

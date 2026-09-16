@@ -107,11 +107,11 @@ const upcomingFullPlan = {
   sessions: [],
 }
 
-// Fixed date after the mocked client-today (2026-01-15): the route resolves the
-// "next future plan" by effective_from > today. The lookup is now the shared
-// getNextFutureTrainingPlan (which owns the deleted/archived exclusions), so the
-// route test stubs the service rather than a hand-rolled query chain — the
-// archived predicate is covered where it lives, in the service.
+// Fixed dates after the mocked client-today (2026-01-15): the route resolves a
+// queued plan by effective_from > the day it asks about. The lookup is the
+// shared getNextFutureTrainingPlan (which owns the deleted/archived
+// exclusions), so the route test stubs the service rather than a query chain —
+// the predicate is covered where it lives, in the service.
 const upcomingRow = {
   id: 'plan-upcoming',
   effectiveFrom: '2026-01-19',
@@ -122,91 +122,121 @@ const upcomingRow = {
   programDurationWeeks: 4,
 }
 
-function mockUpcomingPlanRow(row: typeof upcomingRow | null): void {
-  vi.mocked(getNextFutureTrainingPlan).mockResolvedValue(row)
+const behindRow = {
+  id: 'plan-behind',
+  effectiveFrom: '2026-02-16',
+  effectiveUntil: '2026-03-15',
+  name: 'Strength',
+  splitType: 'upper_lower',
+  frequencyPerWeek: 4,
+  programDurationWeeks: 4,
+}
+
+/** The queued plan starting after each day: the first after today, and the
+ *  one behind it. */
+function mockQueued(afterToday: typeof upcomingRow | null, behind: typeof behindRow | null = null): void {
+  vi.mocked(getNextFutureTrainingPlan).mockImplementation((_clientId, date) =>
+    Promise.resolve(
+      date === '2026-01-15' ? afterToday : date === upcomingRow.effectiveFrom ? behind : null
+    )
+  )
 }
 
 function makeGetRequest(): NextRequest {
   return new NextRequest('http://localhost/api/clients/client-1/training')
 }
 
-describe('Training Route GET - scheduled plan semantics', () => {
+const get = async () => {
+  const response = await GET(makeGetRequest(), { params: Promise.resolve({ id: 'client-1' }) })
+  return { response, data: await response.json() }
+}
+
+describe('Training Route GET - the hero\'s program and the one after it', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getClientById).mockResolvedValue({
       ...mockClient,
       timezone: 'Europe/London',
     } as never)
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue('2026-01-15')
   })
 
-  it('upcoming-only: returns the future-dated plan as plan with scheduledFor set', async () => {
-    vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
-    vi.mocked(getTrainingPlanById).mockResolvedValue(upcomingFullPlan as never)
-    mockUpcomingPlanRow(upcomingRow)
+  it('running + queued: the running program, with the queued one next', async () => {
+    vi.mocked(getTrainingPlanForDate).mockResolvedValue(activePlan as never)
+    mockQueued(upcomingRow)
 
-    const response = await GET(makeGetRequest(), {
-      params: Promise.resolve({ id: 'client-1' }),
-    })
-    const data = await response.json()
+    const { response, data } = await get()
 
     expect(response.status).toBe(200)
     expect(data.success).toBe(true)
-    expect(data.plan.id).toBe('plan-upcoming')
-    expect(data.scheduledFor).toBe('2026-01-19')
-    expect(data.upcomingPlan).toBeNull()
-    expect(data.clientTimezone).toBe('Europe/London')
-  })
-
-  it('active + upcoming: returns the active plan with upcomingPlan set and no scheduledFor', async () => {
-    vi.mocked(getTrainingPlanForDate).mockResolvedValue(activePlan as never)
-    vi.mocked(getTrainingPlanById).mockResolvedValue(upcomingFullPlan as never)
-    mockUpcomingPlanRow(upcomingRow)
-
-    const response = await GET(makeGetRequest(), {
-      params: Promise.resolve({ id: 'client-1' }),
-    })
-    const data = await response.json()
-
-    expect(response.status).toBe(200)
     expect(data.plan.id).toBe('plan-active')
-    expect(data.upcomingPlan).toMatchObject({
-      id: 'plan-upcoming',
-      effectiveFrom: '2026-01-19',
-      name: 'Scheduled Plan',
-    })
-    expect(data.scheduledFor).toBeNull()
+    expect(data.nextPlan).toEqual({ id: 'plan-upcoming', name: 'Scheduled Plan', effectiveFrom: '2026-01-19' })
+    // The running program is already whole; the queued one is only named.
+    expect(getTrainingPlanById).not.toHaveBeenCalled()
   })
 
-  it('no plans at all: plan, upcomingPlan and scheduledFor are all null', async () => {
+  it('queued only: the first queued program, with the one queued behind it next', async () => {
     vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
-    vi.mocked(getTrainingPlanById).mockResolvedValue(null)
-    mockUpcomingPlanRow(null)
+    vi.mocked(getTrainingPlanById).mockResolvedValue(upcomingFullPlan as never)
+    mockQueued(upcomingRow, behindRow)
 
-    const response = await GET(makeGetRequest(), {
-      params: Promise.resolve({ id: 'client-1' }),
-    })
-    const data = await response.json()
+    const { data } = await get()
+
+    expect(data.plan.id).toBe('plan-upcoming')
+    expect(data.nextPlan).toEqual({ id: 'plan-behind', name: 'Strength', effectiveFrom: '2026-02-16' })
+    expect(getTrainingPlanById).toHaveBeenCalledWith('plan-upcoming')
+    expect(getNextFutureTrainingPlan).toHaveBeenCalledWith('client-1', '2026-01-19')
+  })
+
+  it('one queued program and nothing behind it: no next program', async () => {
+    vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
+    vi.mocked(getTrainingPlanById).mockResolvedValue(upcomingFullPlan as never)
+    mockQueued(upcomingRow, null)
+
+    const { data } = await get()
+
+    expect(data.plan.id).toBe('plan-upcoming')
+    expect(data.nextPlan).toBeNull()
+  })
+
+  it('no plans at all: no program and no next one, the days still answered', async () => {
+    vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
+    mockQueued(null)
+
+    const { response, data } = await get()
 
     expect(response.status).toBe(200)
     expect(data.plan).toBeNull()
-    expect(data.upcomingPlan).toBeNull()
-    expect(data.scheduledFor).toBeNull()
+    expect(data.nextPlan).toBeNull()
+    expect(data.clientToday).toBe('2026-01-15')
     expect(data.clientTimezone).toBe('Europe/London')
   })
 
-  it('upcoming row exists but full fetch fails: no phantom scheduledFor', async () => {
+  it('a queued row whose full read fails: no phantom program, and no next one either', async () => {
     vi.mocked(getTrainingPlanForDate).mockResolvedValue(null)
     vi.mocked(getTrainingPlanById).mockResolvedValue(null)
-    mockUpcomingPlanRow(upcomingRow)
+    mockQueued(upcomingRow, behindRow)
 
-    const response = await GET(makeGetRequest(), {
-      params: Promise.resolve({ id: 'client-1' }),
-    })
-    const data = await response.json()
+    const { response, data } = await get()
 
     expect(response.status).toBe(200)
     expect(data.plan).toBeNull()
-    expect(data.scheduledFor).toBeNull()
+    expect(data.nextPlan).toBeNull()
+  })
+
+  it("carries the client's today and the deletion floor resolved from it", async () => {
+    vi.mocked(getTrainingPlanForDate).mockResolvedValue(activePlan as never)
+    mockQueued(null)
+    // The client has logged a workout today, so a program can start tomorrow.
+    vi.mocked(resolveEventDeletionFloor).mockResolvedValue('2026-01-16')
+
+    const { data } = await get()
+
+    expect(resolveEventDeletionFloor).toHaveBeenCalledWith('client-1', '2026-01-15')
+    expect(data.clientToday).toBe('2026-01-15')
+    expect(data.planStartFloor).toBe('2026-01-16')
+    expect(data).not.toHaveProperty('scheduledFor')
+    expect(data).not.toHaveProperty('upcomingPlan')
   })
 })
 

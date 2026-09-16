@@ -11,6 +11,7 @@ import {
   createSavedPlanSchema,
   savedSessionInputSchema,
   replaceSessionSchema,
+  moveTrainingPlanSchema,
 } from './training'
 import { MAX_PRESCRIBED_ROWS } from '@/utils/set-spec-rows'
 
@@ -172,6 +173,10 @@ describe('Training Validation Schemas', () => {
 
   describe('API Response Parsers', () => {
     describe('parseGetPlanResponse', () => {
+      // What every answer carries besides the plan: the hero reads the day the
+      // client is on and the first day a program may start.
+      const days = { nextPlan: null, clientToday: '2026-01-15', planStartFloor: '2026-01-15' }
+
       it('parses a successful response with plan', () => {
         const data = {
           success: true,
@@ -188,6 +193,7 @@ describe('Training Validation Schemas', () => {
             createdAt: '2024-01-01T00:00:00Z',
             updatedAt: '2024-01-01T00:00:00Z',
           },
+          ...days,
         }
 
         const result = parseGetPlanResponse(data)
@@ -196,7 +202,7 @@ describe('Training Validation Schemas', () => {
       })
 
       it('parses a successful response with null plan', () => {
-        const data = { success: true, plan: null }
+        const data = { success: true, plan: null, ...days }
         const result = parseGetPlanResponse(data)
 
         expect(result).not.toBeNull()
@@ -210,34 +216,52 @@ describe('Training Validation Schemas', () => {
         expect(result).toBeNull()
       })
 
-      it('passes through scheduledFor and clientTimezone', () => {
+      it('passes through the next program, the client\'s today, the floor and the timezone', () => {
         const data = {
           success: true,
-          plan: {
-            id: '123',
-            clientId: '456',
-            coachId: '789',
-            name: 'Scheduled Plan',
-            status: 'planned',
-            coachPrompt: 'Test prompt',
-            splitType: 'push_pull_legs',
-            frequencyPerWeek: 4,
-            sessions: [],
-            createdAt: '2026-01-01T00:00:00Z',
-            updatedAt: '2026-01-01T00:00:00Z',
-          },
-          upcomingPlan: null,
-          scheduledFor: '2026-01-19',
+          plan: null,
+          nextPlan: { id: 'plan-2', name: 'Strength', effectiveFrom: '2026-01-26' },
+          clientToday: '2026-01-15',
+          planStartFloor: '2026-01-16',
           clientTimezone: 'Europe/London',
         }
 
         const result = parseGetPlanResponse(data)
         expect(result).not.toBeNull()
-        expect(result?.scheduledFor).toBe('2026-01-19')
+        expect(result?.nextPlan).toEqual({ id: 'plan-2', name: 'Strength', effectiveFrom: '2026-01-26' })
+        expect(result?.clientToday).toBe('2026-01-15')
+        expect(result?.planStartFloor).toBe('2026-01-16')
         expect(result?.clientTimezone).toBe('Europe/London')
+      })
+
+      it('refuses an answer without the days the hero reads', () => {
+        expect(parseGetPlanResponse({ success: true, plan: null, nextPlan: null })).toBeNull()
+        expect(
+          parseGetPlanResponse({ success: true, plan: null, nextPlan: null, clientToday: '2026-01-15' })
+        ).toBeNull()
       })
     })
 
+  })
+
+  describe('moveTrainingPlanSchema', () => {
+    it('accepts a calendar date', () => {
+      expect(moveTrainingPlanSchema.safeParse({ startsOn: '2026-09-23' }).success).toBe(true)
+      expect(moveTrainingPlanSchema.safeParse({ startsOn: '2028-02-29' }).success).toBe(true)
+    })
+
+    it('refuses a date that is not on the calendar', () => {
+      expect(moveTrainingPlanSchema.safeParse({ startsOn: '2026-02-31' }).success).toBe(false)
+      expect(moveTrainingPlanSchema.safeParse({ startsOn: '2026-13-01' }).success).toBe(false)
+      expect(moveTrainingPlanSchema.safeParse({ startsOn: '2027-02-29' }).success).toBe(false)
+    })
+
+    it('refuses anything but YYYY-MM-DD', () => {
+      expect(moveTrainingPlanSchema.safeParse({ startsOn: '23/09/2026' }).success).toBe(false)
+      expect(moveTrainingPlanSchema.safeParse({ startsOn: '2026-9-23' }).success).toBe(false)
+      expect(moveTrainingPlanSchema.safeParse({ startsOn: '2026-09-23T00:00:00Z' }).success).toBe(false)
+      expect(moveTrainingPlanSchema.safeParse({}).success).toBe(false)
+    })
   })
 
   describe('logTrainingEventSchema', () => {
