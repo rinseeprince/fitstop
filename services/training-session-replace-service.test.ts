@@ -143,7 +143,6 @@ function linksChain(events: Array<{ date: string; status: string }>) {
       id: `ev-${i}`,
       date: e.date,
       status: e.status,
-      is_modified: false,
     })),
     error: null,
   });
@@ -218,8 +217,6 @@ describe("replaceSessionFull", () => {
     ).toHaveLength(1);
     expect(links.fns.update).not.toHaveBeenCalled();
     expect(mockSurplusUpdate).not.toHaveBeenCalled();
-    expect(result.surplusChanged).toBe(false);
-    expect(result.identityChanged).toBe(false);
 
     // The session comes back with the exercises as re-read AFTER the write, in
     // their groups.
@@ -245,7 +242,7 @@ describe("replaceSessionFull", () => {
     );
   });
 
-  it("writes a rename to the session's future scheduled events only (normally the edited day)", async () => {
+  it("writes a rename to the session's scheduled events from the client's today", async () => {
     const read = makeChain({ data: currentRow, error: null });
     const update = makeChain({
       data: { ...updatedRow, name: "Push Day A", focus: "Chest + Tris" },
@@ -258,7 +255,7 @@ describe("replaceSessionFull", () => {
       .mockReturnValueOnce(update.chain)
       .mockReturnValueOnce(rename.chain);
 
-    const result = await replaceSessionFull(
+    await replaceSessionFull(
       baseParams(makeInput({ name: "Push Day A", focus: "Chest + Tris" })),
     );
 
@@ -274,8 +271,6 @@ describe("replaceSessionFull", () => {
     expect(rename.fns.gte).toHaveBeenCalledWith("date", FROM_DATE);
 
     expect(mockSurplusUpdate).not.toHaveBeenCalled();
-    expect(result.identityChanged).toBe(true);
-    expect(result.surplusChanged).toBe(false);
   });
 
   it("propagates a surplus change through updateSurplusForFutureEvents with the fromDate floor", async () => {
@@ -291,7 +286,7 @@ describe("replaceSessionFull", () => {
       .mockReturnValueOnce(update.chain);
     mockSurplusUpdate.mockResolvedValue(undefined);
 
-    const result = await replaceSessionFull(
+    await replaceSessionFull(
       baseParams(makeInput({ calorieSurplusPercentage: 20 })),
     );
 
@@ -302,8 +297,6 @@ describe("replaceSessionFull", () => {
       mockFrom.mock.calls.filter(([table]) => String(table) === "training_events"),
     ).toHaveLength(1);
     expect(links.fns.update).not.toHaveBeenCalled();
-    expect(result.surplusChanged).toBe(true);
-    expect(result.identityChanged).toBe(false);
   });
 
   it("REFUSES a session the client has logged, before any write", async () => {
@@ -353,11 +346,10 @@ describe("replaceSessionFull", () => {
       .mockReturnValueOnce(update.chain);
     mockSurplusUpdate.mockResolvedValue(undefined);
 
-    const result = await replaceSessionFull(
+    await replaceSessionFull(
       baseParams(makeInput({ calorieSurplusPercentage: null })),
     );
 
     expect(mockSurplusUpdate).toHaveBeenCalledWith(SESSION_ID, null, FROM_DATE);
-    expect(result.surplusChanged).toBe(true);
   });
 });

@@ -173,7 +173,7 @@ Recipes elsewhere in this doc describe **rendered pixels**; where a recipe names
 
 - ✅ `Removes Push Day on Sun, Aug 2 from the calendar.` (all sans; "Push Day" may be `font-semibold`)
 - ❌ `Removes Push Day on `<code>Sun, Aug 2</code>` from the calendar.` (mono date mid-sentence reads as broken kerning)
-- ✅ A card meta line `Wed, Jul 22 · on 3 upcoming days` in `MONO_LABEL_CLASS` — that's standalone data, not a sentence.
+- ✅ A card meta line `Wed, Jul 22` in `MONO_LABEL_CLASS` — that's standalone data, not a sentence.
 
 ### Type scale (px → role)
 
@@ -373,7 +373,7 @@ The builder tokens are **app-wide** — reuse them anywhere, not just in the bui
 | `TEXT_MUTED` | `text-[#93b0b4]` |
 | `FOCUS_RING` | `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]/35 focus-visible:ring-offset-0` |
 | `LABEL_CLASS` | `text-[10px] font-medium uppercase tracking-[0.06em] text-[#93b0b4]` (word-only labels) |
-| `MONO_LABEL_CLASS` | `font-mono-display text-[10px] font-medium uppercase tracking-[0.08em] text-[#93b0b4]` (number-bearing labels/metas ONLY — `Day 3`, `Wed, Jul 22 · on 3 upcoming days`) |
+| `MONO_LABEL_CLASS` | `font-mono-display text-[10px] font-medium uppercase tracking-[0.08em] text-[#93b0b4]` (number-bearing labels/metas ONLY — `Day 3`, `Wed, Jul 22`) |
 | `HEADER_EYEBROW_CLASS` | `text-[9.5px] font-medium uppercase tracking-[0.14em] text-[rgba(255,255,255,0.35)]` (on dark; SANS — eyebrows are word-only) |
 | `MONO` | `font-mono-display` (bare numeric fragments inheriting size/colour — the only sanctioned route to the raw utility) |
 | `MONO_META_CLASS` | `font-mono-display text-[#93b0b4]` (numeric metas/footers/counters; size at call site) |
@@ -549,10 +549,6 @@ Reference: `components/clients/training/calendar/delete-event-dialog.tsx`. Use t
 **Non-delete variant.** The same recipe covers a confirm that is not a deletion but is still unrecoverable and consequential — the reference is `overview/confirm-start-edit-dialog.tsx`, correcting a client's recorded START weight, which overwrites a fact no later measurement can recover and re-bases every progress figure derived from it. **Change the glyph, nothing else:** `AlertTriangle` in the same danger thumb, since nothing is being removed. Danger palette, danger-outline CTA and the one-sentence body all stay — the register is "you cannot undo this", not "this deletes a row".
 
 - Footer: Cancel (`variant="ghost"`) + danger-outline CTA: `variant="outline"` + `border-[rgba(192,96,96,0.3)] text-[#c06060] hover:bg-[rgba(192,96,96,0.08)] hover:text-[#c06060]`, `Loader2` spinner while pending. **There is no filled destructive button in this system — never invent one.** CTA label repeats the verb ("Remove session", "Clear week"), never "OK"/"Confirm".
-
-### Scope / choice dialog (pick-one actions)
-
-Reference: the placed-session tray's save-scope dialog. `sm:max-w-md`; a one-sentence sans intro; then full-width option buttons: `flex w-full items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3 text-left hover:bg-[rgba(13,148,136,0.03)]` — leading `h-4 w-4` radio circle (`border-2 border-[#0d9488]` for the primary option, `border-[#93b0b4]` otherwise; static — a choice closes the dialog in the same click that starts the work, so the work's pending state shows on the surface behind it, never on the fading card), title `text-sm font-medium text-[#0c1a1e]`, subline `text-[11px] text-[#93b0b4]`. Footer: ghost Cancel only (choosing an option IS the confirm). A radio-input variant (a real `<input type="radio">` with `accent-[#0d9488]`, tinting the selected row `border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)]`) was used by the calendar's move-scope dialog; that dialog was deleted on 2026-07-27 and **no instance currently ships**. Prefer the option-button form above — choosing an option IS the confirm, which is one interaction rather than two.
 
 ### Toasts
 

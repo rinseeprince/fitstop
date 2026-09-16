@@ -26,7 +26,7 @@ import type { TrainingExerciseGroup } from "@/types/training";
 // first day that can still change.
 //
 // The read lays the calendar out day by day from the plan's start (the day's
-// session, whatever the coach moved, deleted or edited "just this day", else
+// session as the calendar holds it, whatever the coach moved or deleted, else
 // rest) and hands back a version: everything the editor was built from. The
 // save sends the version back, and edit_training_plan_atomic (migration 178)
 // refuses it in the same transaction as the write when any of it changed.

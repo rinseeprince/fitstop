@@ -122,11 +122,11 @@ const CLIENT_ID = "client-1";
 describe("getSessionEventLinks", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns client-scoped event links with is_modified coerced to boolean", async () => {
+  it("returns the session's client-scoped event links", async () => {
     const q = mockLinksQuery({
       data: [
-        { id: "ev-1", date: "2026-07-20", status: "completed", is_modified: null },
-        { id: "ev-2", date: "2026-07-27", status: "scheduled", is_modified: true },
+        { id: "ev-1", date: "2026-07-20", status: "completed" },
+        { id: "ev-2", date: "2026-07-27", status: "scheduled" },
       ],
       error: null,
     });
@@ -138,8 +138,8 @@ describe("getSessionEventLinks", () => {
     expect(q.eq).toHaveBeenCalledWith("training_session_id", SESSION_ID);
     expect(q.eq).toHaveBeenCalledWith("client_id", CLIENT_ID);
     expect(links).toEqual([
-      { id: "ev-1", date: "2026-07-20", status: "completed", isModified: false },
-      { id: "ev-2", date: "2026-07-27", status: "scheduled", isModified: true },
+      { id: "ev-1", date: "2026-07-20", status: "completed" },
+      { id: "ev-2", date: "2026-07-27", status: "scheduled" },
     ]);
   });
 
@@ -161,7 +161,6 @@ describe("assertSessionUnlogged", () => {
     id: `ev-${date}`,
     date,
     status,
-    is_modified: false,
   });
 
   it("refuses a session whose event has left `scheduled`, naming the day", async () => {
@@ -210,9 +209,8 @@ describe("assertSessionUnlogged", () => {
   );
 
   it("does not filter the read by status — narrowing it would leave nothing to find", async () => {
-    // The mirror of assertDateFree's own status-agnostic test above. Whoever
-    // deletes the vestigial save-scope dialog is the likely person to narrow
-    // this read to `scheduled`, which would disable the lock in silence.
+    // The mirror of assertDateFree's own status-agnostic test above: narrowing
+    // this read to `scheduled` would disable the lock in silence.
     const q = mockLinksQuery({ data: [link("2026-08-14", "completed")], error: null });
     vi.mocked(supabaseAdmin.from).mockReturnValue(q as never);
 

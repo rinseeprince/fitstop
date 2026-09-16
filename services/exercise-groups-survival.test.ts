@@ -50,7 +50,6 @@ import {
   placePlanOnCalendar,
   placeSessionOnCalendar,
 } from "./library-placement-service";
-import { cloneSessionForEvent } from "./training-session-service";
 import { replaceSessionFull } from "./training-session-replace-service";
 import type { InlinePlanBody, SavedExerciseGroupInput } from "@/lib/validations/training";
 
@@ -604,45 +603,7 @@ describe("placement carries groups onto the client's calendar", () => {
 // =============================================================================
 
 describe("the placed-session tray carries groups", () => {
-  function trayDb(extra: (call: Call) => Result | null = () => null) {
-    return installDb((call) => {
-      const answered = extra(call);
-      if (answered) return answered;
-      if (call.table === "training_events" && call.op === "select") return ok({ id: "ev-1" });
-      if (call.table === "training_sessions" && call.op === "select") {
-        return ok({ id: "client-s1", plan_id: "plan-1", name: "Hybrid", focus: null, order_index: 0, week_index: 0, is_rest: false, notes: null, estimated_duration_minutes: 45, estimated_calories: null, calories_calculated_at: null, calorie_surplus_percentage: null });
-      }
-      if (call.table === "training_sessions" && call.op === "insert") return ok({ id: "clone-1" });
-      return ok();
-    });
-  }
-
-  it("editing just this day with changes clones the session with the groups the coach sent", async () => {
-    const db = trayDb();
-
-    await cloneSessionForEvent("client-s1", "ev-1", "client-1", "coach-1", INPUT_GROUPS);
-
-    expect(
-      writtenShape(db.inserted("training_exercise_groups"), db.inserted("training_exercises"), "session_id", "clone-1"),
-    ).toEqual(EXPECTED_SHAPE);
-  });
-
-  it("cloning a session for one day copies its live groups as they are", async () => {
-    const db = trayDb((call) =>
-      call.table === "training_exercises" && call.op === "select" ? ok(clientExerciseRows("client-s1")) : null,
-    );
-
-    await cloneSessionForEvent("client-s1", "ev-1", "client-1", "coach-1");
-
-    expect(
-      writtenShape(db.inserted("training_exercise_groups"), db.inserted("training_exercises"), "session_id", "clone-1"),
-    ).toEqual(EXPECTED_SHAPE);
-    const read = db.calls.find((c) => c.table === "training_exercises" && c.op === "select");
-    expect(read?.columns).toContain("training_exercises_group_fkey");
-    expect(read?.filters).toContainEqual(["eq", "is_active", true]);
-  });
-
-  it("saving every occurrence replaces the exercises with the new groups and retires the old rows", async () => {
+  it("saving a day replaces its exercises with the new groups and retires the old rows", async () => {
     const db = installDb((call) => {
       if (call.table === "training_sessions" && call.op === "select" && call.columns?.startsWith("*")) {
         return ok({ id: "client-s1", plan_id: "plan-1", name: "Hybrid", focus: null, is_rest: false, calorie_surplus_percentage: null });

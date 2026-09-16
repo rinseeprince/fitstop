@@ -435,12 +435,12 @@ describe("client-training-plan-service", () => {
       expect(sessions[3]).toMatchObject({ id: "s-pull", name: "Pull", isRest: false });
     });
 
-    it("shows a 'just this day' edit once, as the row the day's event points at", async () => {
+    it("shows a day once, as the row its event points at, beside another row at the same coordinates", async () => {
       mockTables({
         plan: PLAN,
         sessions: [
           session("s-legs", 0, 4, { name: "Legs" }),
-          // cloneSessionForEvent: a second active row at the same coordinates.
+          // A second active row at the same coordinates.
           session("s-legs-copy", 0, 4, {
             name: "Legs (lighter)",
             created_at: "2026-07-23T09:00:00Z",

@@ -19,7 +19,7 @@ export const exerciseSchema = z.object({
   sets: z.number().int().min(1, "At least 1 set required").max(20, "Maximum 20 sets"),
   // reps floor is 0 (timed/AMRAP holds), matching the authoring schemas and the
   // absent reps_min/reps_max DB CHECK — so the single add/edit exercise routes
-  // accept a 0-rep exercise too, not just the bulk/clone paths.
+  // accept a 0-rep exercise too, not just the bulk paths.
   repsMin: z.number().int().min(0).max(100).optional().nullable(),
   repsMax: z.number().int().min(0).max(100).optional().nullable(),
   repsTarget: z.string().max(20).optional().nullable(),
@@ -132,11 +132,10 @@ const savedExerciseInputSchema = z.object({
   prescribedFields: prescribedFieldsSchema,
 });
 
-// Per-exercise item for the "replace exercises" (PUT) and "clone-with-overrides"
-// paths — the two buttons of the same save-scope dialog, so they MUST validate
-// identically. Reuses the bounded exerciseSchema (rpeTarget keeps its min(1) —
-// training_exercises has CHECK rpe_target >= 1) but relaxes the reps floor to 0
-// to match authoring + the ABSENT reps DB CHECK. Carries setSpecs + (scheme-safe)
+// Per-exercise item for the placed-session tray's save (PUT
+// sessions/[sessionId]). Reuses the bounded exerciseSchema (rpeTarget keeps its
+// min(1) — training_exercises has CHECK rpe_target >= 1) but relaxes the reps
+// floor to 0 to match authoring + the ABSENT reps DB CHECK. Carries setSpecs + (scheme-safe)
 // videoUrl so editing one exercise does NOT silently NULL the coach's per-set
 // programming — projectExerciseCompact writes whatever it receives, so an
 // omitted field became null. Adds exerciseId.
@@ -179,11 +178,11 @@ function exerciseGroupsSchema<E extends z.ZodTypeAny>(exercise: E) {
 }
 
 export const savedExerciseGroupsSchema = exerciseGroupsSchema(savedExerciseInputSchema);
-export const bulkExerciseGroupsSchema = exerciseGroupsSchema(bulkExerciseInputSchema);
+const bulkExerciseGroupsSchema = exerciseGroupsSchema(bulkExerciseInputSchema);
 export type SavedExerciseGroupInput = z.infer<typeof savedExerciseGroupsSchema>[number];
 
 // Full replace of a PLACED session (meta + exercises) — the calendar tray's
-// "All occurrences" save (PUT sessions/[sessionId]). Duration uses the authoring
+// save (PUT sessions/[sessionId]). Duration uses the authoring
 // bounds (0..480, matching what placement writes from savedSessionInputSchema),
 // NOT the retired session PATCH schema's 10..180 — a placed row authored at 8 or 240 minutes
 // must round-trip through the tray without a phantom validation error.

@@ -25,12 +25,9 @@ type CalendarDayCellProps = {
   isPast: boolean;
   isOutsideMonth?: boolean;
   editMode: boolean;
-  duplicateMode: boolean;
   // Client-local "today" forwarded to the event card's drag/delete gate.
   clientToday: string;
-  onCellClick: (date: string) => void;
   onEventClick: (event: TrainingEvent) => void;
-  onDuplicate: (event: TrainingEvent) => void;
   onDelete: (event: TrainingEvent) => void;
 };
 
@@ -44,11 +41,8 @@ export const CalendarDayCell = memo(function CalendarDayCell({
   isPast,
   isOutsideMonth,
   editMode,
-  duplicateMode,
   clientToday,
-  onCellClick,
   onEventClick,
-  onDuplicate,
   onDelete,
 }: CalendarDayCellProps) {
   // Deliberately NOT `disabled: isPast`. A disabled droppable is removed from
@@ -75,14 +69,8 @@ export const CalendarDayCell = memo(function CalendarDayCell({
         isToday && "ring-1 ring-[#0d9488]",
         isOver &&
           !isPast &&
-          "border-dashed border-[#0d9488] bg-[rgba(13,148,136,0.05)]",
-        duplicateMode && !isPast && "cursor-crosshair hover:bg-[rgba(13,148,136,0.05)]"
+          "border-dashed border-[#0d9488] bg-[rgba(13,148,136,0.05)]"
       )}
-      onClick={() => {
-        if (duplicateMode && !isPast) {
-          onCellClick(date);
-        }
-      }}
     >
       {/* Date numeral */}
       <span
@@ -103,7 +91,6 @@ export const CalendarDayCell = memo(function CalendarDayCell({
           editMode={editMode}
           clientToday={clientToday}
           onEventClick={onEventClick}
-          onDuplicate={onDuplicate}
           onDelete={onDelete}
         />
       ))}
@@ -146,7 +133,6 @@ export const CalendarDayCell = memo(function CalendarDayCell({
                     setOverflowOpen(false);
                     onEventClick(evt);
                   }}
-                  onDuplicate={onDuplicate}
                   onDelete={onDelete}
                 />
               ))}

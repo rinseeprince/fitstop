@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { calendarCollisionDetection } from "./calendar-collision";
 import { useCalendarEvents, useInvalidateTrainingData } from "@/hooks/use-calendar-events";
@@ -21,7 +21,7 @@ import { ApplyToClientDialog } from "@/components/training-library/apply-to-clie
 import { toast } from "sonner";
 import { useSavedPlans } from "@/hooks/use-saved-plans";
 import { getTodayDateString, getTodayDateStringInTimezone, getDateString } from "@/lib/date-helpers";
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import type { WeekAction } from "./calendar-week-rail";
 import type { TrainingPlan, TrainingEvent } from "@/types/training";
@@ -112,7 +112,6 @@ export function TrainingCalendarView({
     show: showSessionTray,
     close: closeSessionTray,
   } = useDialogSubject<PlacedSessionState>();
-  const [pendingDuplicate, setPendingDuplicate] = useState<TrainingEvent | null>(null);
   const [isWeekActionLoading, setIsWeekActionLoading] = useState(false);
   const {
     subject: pendingClearWeek,
@@ -216,46 +215,6 @@ export function TrainingCalendarView({
       })();
     },
   });
-
-  // Escape key to cancel duplicate mode
-  useEffect(() => {
-    if (!pendingDuplicate) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPendingDuplicate(null);
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [pendingDuplicate]);
-
-  // Cell click handler (for duplicate mode)
-  const handleCellClick = useCallback(async (targetDate: string) => {
-    if (!pendingDuplicate) return;
-    try {
-      const res = await fetch(
-        `/api/clients/${clientId}/training/${pendingDuplicate.trainingPlanId}/events/${pendingDuplicate.id}/duplicate`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ targetDate }),
-        }
-      );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to duplicate");
-      }
-      toast.success("Session duplicated");
-      await invalidateTrainingData(clientId);
-      void invalidateNutritionCalendar(clientId);
-          void clearClientOverview(clientId);
-          void clearAttentionFeed();
-    } catch (error) {
-      toast.error("Duplicate failed", {
-        description: error instanceof Error ? error.message : "Failed to duplicate event",
-      });
-    } finally {
-      setPendingDuplicate(null);
-    }
-  }, [pendingDuplicate, clientId, invalidateTrainingData, invalidateNutritionCalendar, clearClientOverview, clearAttentionFeed]);
 
   // Resolve the single plan a week row belongs to, or null if mixed/empty.
   const weekRowPlanId = useCallback(
@@ -417,22 +376,6 @@ export function TrainingCalendarView({
       onDragEnd={dnd.handleDragEnd}
     >
       <div className="flex flex-col gap-2">
-        {/* Duplicate banner */}
-        {pendingDuplicate && (
-          <div className="flex items-center gap-2 rounded-[6px] border border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] px-3 py-2">
-            <span className="flex-1 text-[12px] text-[#0a5c55]">
-              Click a day to place a copy of <strong>{pendingDuplicate.sessionName}</strong>
-            </span>
-            <button
-              onClick={() => setPendingDuplicate(null)}
-              aria-label="Cancel duplicate"
-              className="rounded p-1 transition-colors hover:bg-[rgba(13,148,136,0.08)]"
-            >
-              <X className="h-3.5 w-3.5 text-[#0a5c55]" strokeWidth={1.5} />
-            </button>
-          </div>
-        )}
-
         <CalendarToolbar
           monthLabel={monthLabel}
           onPrevMonth={goPrevMonth}
@@ -454,15 +397,12 @@ export function TrainingCalendarView({
           editMode={editMode}
           todayDate={todayDate}
           clientToday={clientToday}
-          duplicateMode={!!pendingDuplicate}
           viewMonth={viewMonth.month}
           viewYear={viewMonth.year}
           hasPlan={!!plan || planPending}
           weekRowPlanId={weekRowPlanId}
           onWeekAction={handleWeekAction}
-          onCellClick={handleCellClick}
           onEventClick={(event) => {
-            if (pendingDuplicate) return;
             if (event.trainingSessionId && event.trainingPlanId) {
               // A fresh subject per open: the tray seeds its draft once per
               // subject, so re-opening the same day drops a discarded draft.
@@ -475,7 +415,6 @@ export function TrainingCalendarView({
               });
             }
           }}
-          onDuplicate={(event) => setPendingDuplicate(event)}
           onDelete={(event) => {
             // The open clears the pending flag a successful delete left set.
             setIsDeletingEvent(false);
@@ -526,10 +465,7 @@ export function TrainingCalendarView({
         open={sessionTrayOpen}
         state={selectedSession}
         onClose={closeSessionTray}
-        onUpdate={onUpdate}
-        mutateCalendar={mutate}
       />
-
 
       {/* Library panel */}
       <LibraryPanel open={libraryOpen} onOpenChange={setLibraryOpen} />

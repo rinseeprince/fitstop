@@ -418,8 +418,7 @@ async function writeSessionLog(params: {
   // Ownership: performedSessionId is body-supplied on both the event and
   // event-less paths, is written into session_logs.training_session_id, and
   // (event-less) drives the prescription snapshot below. Validate it resolves
-  // to THIS client (session -> plan -> client_id, the cloneSessionForEvent
-  // shape) or reject — otherwise a foreign id is a cross-tenant read primitive
+  // to THIS client (session -> plan -> client_id) or reject — otherwise a foreign id is a cross-tenant read primitive
   // and a dangling-FK write. eventId + the event's own session are already
   // client-scoped by the caller, so only this free id needs checking.
   if (performedSessionId !== null) {

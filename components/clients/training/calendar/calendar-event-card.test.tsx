@@ -9,7 +9,7 @@ import type { TrainingEvent } from "@/types/training";
 // 7.82 server move/delete guards (which anchor on the client's tz). Here we drive
 // the gate purely off the clientToday prop (no system-clock mocking). The
 // draggable-disabled state is dnd-kit-internal, so we assert via the user-visible
-// Duplicate/Delete menu trigger — the only real <button> ELEMENT the card renders
+// Delete menu trigger — the only real <button> ELEMENT the card renders
 // (gated by the same isFutureScheduled flag). We query the `button` tag rather
 // than role=button: when the event IS draggable, dnd-kit also stamps
 // role="button" onto the card's root <div>, so a role query would match both.
@@ -41,7 +41,6 @@ function menuTrigger(eventDate: string, clientToday: string): HTMLButtonElement 
         editMode
         clientToday={clientToday}
         onEventClick={() => {}}
-        onDuplicate={() => {}}
         onDelete={() => {}}
       />
     </DndContext>

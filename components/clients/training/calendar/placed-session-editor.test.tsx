@@ -94,43 +94,29 @@ function makePlacedSession(): TrainingSession {
 }
 
 const SINGLE_EVENT: SessionEventLink[] = [
-  { id: "ev1", date: "2026-07-24", status: "scheduled", isModified: false },
+  { id: "ev1", date: "2026-07-24", status: "scheduled" },
 ];
 
 const LOGGED_EVENT: SessionEventLink[] = [
-  { id: "ev1", date: "2026-07-24", status: "completed", isModified: false },
+  { id: "ev1", date: "2026-07-24", status: "completed" },
 ];
 
 // The clicked day is still scheduled; a SIBLING occurrence is logged. The lock
 // is on the session, so the tray must still show it locked.
 const LOGGED_SIBLING: SessionEventLink[] = [
-  { id: "ev0", date: "2026-07-20", status: "partial", isModified: false },
-  { id: "ev1", date: "2026-07-24", status: "scheduled", isModified: false },
-];
-
-// All scheduled, deliberately: a logged occurrence anywhere locks the session,
-// so a fixture with one could never reach the scope dialog these tests drive.
-// ev0 is in the past, so futureScheduledCount is 2 and the dialog opens.
-const SHARED_EVENTS: SessionEventLink[] = [
-  { id: "ev0", date: "2026-07-20", status: "scheduled", isModified: false },
-  { id: "ev1", date: "2026-07-24", status: "scheduled", isModified: false },
-  { id: "ev2", date: "2026-07-31", status: "scheduled", isModified: false },
+  { id: "ev0", date: "2026-07-20", status: "partial" },
+  { id: "ev1", date: "2026-07-24", status: "scheduled" },
 ];
 
 function stubFetch(events: SessionEventLink[]) {
   fetchImpl = (url, method) => {
     if (method === "GET" && url === SESSION_URL) {
       return Promise.resolve(
-        jsonResponse(200, {
-          success: true,
-          session: makePlacedSession(),
-          events,
-          clientToday: "2026-07-22",
-        }),
+        jsonResponse(200, { success: true, session: makePlacedSession(), events }),
       );
     }
-    if (method === "POST" && url.endsWith("/clone")) {
-      return Promise.resolve(jsonResponse(200, { success: true, newSessionId: "s2" }));
+    if (method === "PUT" && url === SESSION_URL) {
+      return Promise.resolve(jsonResponse(200, { success: true, session: makePlacedSession() }));
     }
     return Promise.resolve(jsonResponse(200, { success: true }));
   };
@@ -139,8 +125,6 @@ function stubFetch(events: SessionEventLink[]) {
 function makeHandlers() {
   return {
     onClose: vi.fn<() => void>(),
-    onUpdate: vi.fn<() => void>(),
-    mutateCalendar: vi.fn<() => Promise<unknown>>(() => Promise.resolve()),
   };
 }
 type TrayHandlers = ReturnType<typeof makeHandlers>;
@@ -155,13 +139,7 @@ function trayTree(
 ) {
   return (
     <SWRConfig value={{ provider: () => cache, dedupingInterval: 0 }}>
-      <PlacedSessionEditor
-        open={open}
-        state={state}
-        onClose={handlers.onClose}
-        onUpdate={handlers.onUpdate}
-        mutateCalendar={handlers.mutateCalendar}
-      />
+      <PlacedSessionEditor open={open} state={state} onClose={handlers.onClose} />
     </SWRConfig>
   );
 }
@@ -194,7 +172,7 @@ function holdExitAnimation() {
     const styles = computed(element, pseudo);
     if (
       element instanceof HTMLElement &&
-      (element.dataset.slot === "sheet-content" || element.dataset.slot === "dialog-content")
+      element.dataset.slot === "sheet-content"
     ) {
       Object.defineProperty(styles, "animationName", {
         get: () => (element.dataset.state === "closed" ? "exit" : "enter"),
@@ -204,7 +182,7 @@ function holdExitAnimation() {
   });
 }
 
-function closingCard(slot: "sheet-content" | "dialog-content"): HTMLElement {
+function closingCard(slot: "sheet-content"): HTMLElement {
   const card = document.querySelector<HTMLElement>(
     `[data-slot="${slot}"][data-state="closed"]`,
   );
@@ -251,7 +229,7 @@ describe("PlacedSessionEditor", () => {
     expect(callsBy("GET")[0].url).toBe(SESSION_URL);
   });
 
-  it("saves directly via PUT (no scope dialog) with a single future occurrence, preserving setSpecs/videoUrl", async () => {
+  it("saves via PUT, preserving setSpecs/videoUrl", async () => {
     const handlers = renderTray();
     await screen.findByDisplayValue("Push Day A");
 
@@ -269,45 +247,6 @@ describe("PlacedSessionEditor", () => {
     expect(body.name).toBe("Push Day A");
     expect(sessionExercises(body)[0].setSpecs).toEqual(SPECS);
     expect(sessionExercises(body)[0].videoUrl).toBe("https://example.com/bench.mp4");
-    expect(handlers.mutateCalendar).toHaveBeenCalled();
-    expect(handlers.onUpdate).toHaveBeenCalled();
-  });
-
-  it("offers the scope dialog when the session repeats; 'all' PUTs the original session", async () => {
-    stubFetch(SHARED_EVENTS);
-    const handlers = renderTray();
-    await screen.findByDisplayValue("Push Day A");
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByText("All occurrences")).toBeDefined();
-    fireEvent.click(screen.getByText("All occurrences"));
-
-    await waitFor(() => expect(handlers.onClose).toHaveBeenCalledTimes(1));
-    expect(callsBy("POST")).toHaveLength(0);
-    expect(callsBy("PUT")[0].url).toBe(SESSION_URL);
-  });
-
-  it("'just this day' clones the event's session, then PUTs the clone", async () => {
-    stubFetch(SHARED_EVENTS);
-    const handlers = renderTray();
-    await screen.findByDisplayValue("Push Day A");
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    fireEvent.click(await screen.findByText("Just this day"));
-
-    await waitFor(() => expect(handlers.onClose).toHaveBeenCalledTimes(1));
-    const posts = callsBy("POST");
-    expect(posts).toHaveLength(1);
-    expect(posts[0].url).toBe(`${SESSION_URL}/clone`);
-    expect(posts[0].body).toMatchObject({ eventId: "ev1" });
-    const cloneBody = posts[0].body as {
-      groups: Array<{ exercises: Array<{ setSpecs: SetSpec[] }> }>;
-    };
-    expect(sessionExercises(cloneBody)[0].setSpecs).toEqual(SPECS);
-    // The builder-grade pass lands on the CLONE (meta + event snapshot).
-    const puts = callsBy("PUT");
-    expect(puts).toHaveLength(1);
-    expect(puts[0].url).toBe("/api/clients/c1/training/p1/sessions/s2");
   });
 
   it("closes a clean tray without a discard prompt or any write", async () => {
@@ -391,12 +330,7 @@ describe("PlacedSessionEditor", () => {
     fetchImpl = (url, method) => {
       if (method === "GET" && url === SESSION_URL) {
         return Promise.resolve(
-          jsonResponse(200, {
-            success: true,
-            session: makePlacedSession(),
-            events: SINGLE_EVENT,
-            clientToday: "2026-07-22",
-          }),
+          jsonResponse(200, { success: true, session: makePlacedSession(), events: SINGLE_EVENT }),
         );
       }
       return Promise.resolve(jsonResponse(500, { error: "Failed to save session" }));
@@ -419,7 +353,6 @@ describe("PlacedSessionEditor", () => {
             success: true,
             session: { ...makePlacedSession(), estimatedDurationMinutes: 600 },
             events: SINGLE_EVENT,
-            clientToday: "2026-07-22",
           }),
         );
       }
@@ -467,6 +400,42 @@ describe("PlacedSessionEditor", () => {
       expect(screen.queryByDisplayValue("Renamed locally")).toBeNull();
     });
 
+    it("reopens a saved day on what was saved, even when the refresh after the save fails", async () => {
+      let sessionReads = 0;
+      fetchImpl = (url, method) => {
+        if (method === "GET" && url === SESSION_URL) {
+          sessionReads += 1;
+          // The first read opens the tray; every read after the save fails, so
+          // only the save's own response can bring the tray's read up to date.
+          return Promise.resolve(
+            sessionReads === 1
+              ? jsonResponse(200, { success: true, session: makePlacedSession(), events: SINGLE_EVENT })
+              : jsonResponse(500, { error: "Unavailable" }),
+          );
+        }
+        if (method === "PUT" && url === SESSION_URL) {
+          return Promise.resolve(
+            jsonResponse(200, { success: true, session: { ...makePlacedSession(), name: "Push Day B" } }),
+          );
+        }
+        return Promise.resolve(jsonResponse(200, { success: true }));
+      };
+      const tray = renderTray();
+      const nameInput = await screen.findByDisplayValue("Push Day A");
+      fireEvent.blur(nameInput, { target: { value: "Push Day B" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(tray.onClose).toHaveBeenCalledTimes(1));
+      // The save refreshed the training area, the tray's own read included.
+      expect(sessionReads).toBeGreaterThan(1);
+
+      tray.rerenderTray(STATE, false);
+      tray.rerenderTray({ ...STATE }, true);
+
+      expect(await screen.findByDisplayValue("Push Day B")).toBeDefined();
+      expect(screen.queryByDisplayValue("Push Day A")).toBeNull();
+    });
+
     it("closes a successful save with Save still pending; the next open clears it", async () => {
       holdExitAnimation();
       const tray = renderTray();
@@ -502,25 +471,6 @@ describe("PlacedSessionEditor", () => {
       expect(within(closing).getByDisplayValue("Push Day A")).toBeDefined();
       expect(within(closing).getByText("Fri, Jul 24")).toBeDefined();
       expect(closing.querySelector(".animate-spin")).toBeNull();
-    });
-
-    it("keeps the scope card as it was while the chosen scope closes it", async () => {
-      holdExitAnimation();
-      stubFetch(SHARED_EVENTS);
-      const handlers = renderTray();
-      await screen.findByDisplayValue("Push Day A");
-
-      fireEvent.click(screen.getByRole("button", { name: "Save" }));
-      fireEvent.click(await screen.findByText("Just this day"));
-
-      // The click closed the card and started the save in one commit; the
-      // fading card shows no trace of the save.
-      const closing = closingCard("dialog-content");
-      expect(within(closing).getByText("Just this day").closest("button")).not.toBeDisabled();
-      expect(within(closing).getByRole("button", { name: "Cancel" })).not.toBeDisabled();
-      expect(closing.querySelector(".animate-spin")).toBeNull();
-
-      await waitFor(() => expect(handlers.onClose).toHaveBeenCalledTimes(1));
     });
   });
 });

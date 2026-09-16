@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Pencil, Copy, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import {
   LABEL_CLASS,
   MONO_LABEL_CLASS,
@@ -25,7 +25,6 @@ type CalendarEventCardProps = {
   clientToday: string;
   isDragging?: boolean;
   onEventClick: (event: TrainingEvent) => void;
-  onDuplicate?: (event: TrainingEvent) => void;
   onDelete?: (event: TrainingEvent) => void;
 };
 
@@ -41,7 +40,6 @@ export const CalendarEventCard = memo(function CalendarEventCard({
   clientToday,
   isDragging,
   onEventClick,
-  onDuplicate,
   onDelete,
 }: CalendarEventCardProps) {
   const isFutureScheduled =
@@ -122,17 +120,6 @@ export const CalendarEventCard = memo(function CalendarEventCard({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-36">
-              {onDuplicate && (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDuplicate(event);
-                  }}
-                >
-                  <Copy className="mr-2 h-3.5 w-3.5" />
-                  Duplicate
-                </DropdownMenuItem>
-              )}
               {onDelete && (
                 <DropdownMenuItem
                   className="text-[#c06060] focus:text-[#c06060]"

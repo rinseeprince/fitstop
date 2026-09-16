@@ -21,11 +21,8 @@ import {
 // State container for the placed-session tray: the builder's state hook seeded
 // with ONE placed session (same one-slot wrapper as the standalone Sessions
 // editor), fetched by id so events from coexisting (non-active) plans resolve
-// too. Save serializes slot 0: "all" PUTs the builder-grade replace on the
-// session; "day" first repoints this event to a fresh clone (the existing
-// clone route), then PUTs the SAME payload on the clone — so day-scope saves
-// get identical semantics (meta + rename snapshot + surplus cascade) instead
-// of the old drawer's exercises-only clone.
+// too. Save serializes slot 0 and PUTs the builder-grade replace of the day's
+// session.
 
 export type PlacedSessionState = {
   clientId: string;
@@ -39,17 +36,19 @@ export type SessionEventLink = {
   id: string;
   date: string;
   status: string;
-  isModified: boolean;
 };
 
 type SessionGetResponse = {
   success: boolean;
   session: TrainingSession;
   events: SessionEventLink[];
-  clientToday: string;
 };
 
-export type SaveScope = "day" | "all";
+type SessionPutResponse = {
+  success: boolean;
+  session?: TrainingSession;
+  error?: string;
+};
 
 /**
  * `state` is the tray's SUBJECT, one object per opening (`useDialogSubject`
@@ -61,10 +60,6 @@ export function usePlacedSessionEditor(
   state: PlacedSessionState | null,
   opts: {
     onClose: () => void;
-    /** Upstream plan refresh (the Plans tab's refresh). */
-    onUpdate: () => void;
-    /** The calendar's bound SWR mutate. */
-    mutateCalendar: () => Promise<unknown>;
   },
 ) {
   const invalidateNutritionCalendar = useInvalidateNutritionCalendar();
@@ -113,22 +108,9 @@ export function usePlacedSessionEditor(
   // opening's session and must not render.
   const isSeeded = state != null && seededForRef.current === state;
 
-  // Scope dialog trigger: >1 FUTURE SCHEDULED occurrence means an "all" save
-  // touches other days. Past/logged events keep their snapshots either way.
-  // Under placement every placed day owns its own session row (migration 121),
-  // so this is normally 1 — it exceeds 1 only after a per-event DUPLICATE
-  // (`duplicateEvent` copies `training_session_id`), and that is when the
-  // dialog opens. Live, not vestigial: placed-session-editor.test.tsx covers it.
-  const futureScheduledCount = useMemo(() => {
-    if (!data) return 0;
-    return data.events.filter(
-      (e) => e.status === "scheduled" && e.date >= data.clientToday,
-    ).length;
-  }, [data]);
-
   // The lock: a session whose calendar has left `scheduled` anywhere can no
-  // longer be edited, because both save paths rewrite the exercise rows the
-  // client's logs point at. Server-enforced in `assertSessionUnlogged`
+  // longer be edited, because the save rewrites the exercise rows the client's
+  // logs point at. Server-enforced in `assertSessionUnlogged`
   // (services/training-event-occupancy.ts); this is the same predicate so the
   // coach sees a locked panel instead of a save that 409s. Two places spell
   // it — that assertion and here — and it cannot be shared: that module
@@ -148,7 +130,7 @@ export function usePlacedSessionEditor(
   // setState is async — the ref is the authoritative double-fire gate.
   const inFlightRef = useRef(false);
 
-  const handleSave = async (scope: SaveScope): Promise<void> => {
+  const handleSave = async (): Promise<void> => {
     if (!session || !state || inFlightRef.current) return;
     inFlightRef.current = true;
     setSavingFor(state);
@@ -167,57 +149,34 @@ export function usePlacedSessionEditor(
         return;
       }
 
-      let targetSessionId = state.sessionId;
-      if (scope === "day") {
-        const cloneRes = await fetch(
-          `/api/clients/${state.clientId}/training/${state.planId}/sessions/${state.sessionId}/clone`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ eventId: state.eventId, groups: payload.groups }),
-          },
-        );
-        if (!cloneRes.ok) {
-          const cloneData = (await cloneRes.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          throw new Error(cloneData.error ?? "Failed to save for this day");
-        }
-        const { newSessionId } = (await cloneRes.json()) as { newSessionId: string };
-        targetSessionId = newSessionId;
-      }
-
-      // The builder-grade write. For "day" this runs on the fresh clone —
-      // the clone already carries the groups, so this pass lands the meta
-      // (name/focus/duration/notes/surplus), re-snapshots the event and fires
-      // the surplus cascade; a retried save repairs any partial.
       const res = await fetch(
-        `/api/clients/${state.clientId}/training/${state.planId}/sessions/${targetSessionId}`,
+        `/api/clients/${state.clientId}/training/${state.planId}/sessions/${state.sessionId}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         },
       );
-      if (!res.ok) {
-        const resData = (await res.json().catch(() => ({}))) as { error?: string };
+      const resData = (await res.json().catch(() => ({}))) as SessionPutResponse;
+      if (!res.ok || !resData.session) {
         throw new Error(resData.error ?? "Failed to save session");
       }
 
-      toast.success(scope === "day" ? "Saved for this day only" : "Session saved");
-      await opts.mutateCalendar();
-      // The whole training area, not just the calendar. A "this day only" save
-      // CLONES the session and repoints the event at the clone, so every read
-      // of the day — the plan editor's included — must see the new row.
-      void invalidateTrainingData(state.clientId);
+      // The editor fills once per opening from this read, so the saved session
+      // goes into it now, from the save's own response. Left to the refresh
+      // below, a reopen before that refetch lands fills from the session as it
+      // was before the save and keeps it for the whole opening.
+      const saved = resData.session;
+      await mutateSession((current) => current && { ...current, session: saved }, {
+        revalidate: false,
+      });
+      // The whole training area — the calendar, the Plans hero and this read —
+      // before the close, so the calendar the tray reveals already shows it.
+      await invalidateTrainingData(state.clientId);
       void invalidateNutritionCalendar(state.clientId);
       void clearClientOverview(state.clientId);
       void clearAttentionFeed();
-      void mutateSession();
-      opts.onUpdate();
-      // The close keeps this subject even after a "day" save repointed the
-      // event at the clone: the next open reads the clone off the refreshed
-      // calendar.
+      toast.success("Session saved");
       opts.onClose();
     } catch (error) {
       toast.error("Save failed", {
@@ -268,7 +227,6 @@ export function usePlacedSessionEditor(
     isLoading,
     loadError,
     isDirty: builder.isDirty,
-    futureScheduledCount,
     loggedEvent,
     isSaving,
     handleSave,

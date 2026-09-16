@@ -538,13 +538,13 @@ describe("getPlanForEditing", () => {
     expect(days.every((day) => day.isRest)).toBe(true);
   });
 
-  it("shows a day edited 'just this day' as the row its event points at", async () => {
+  it("shows a day as the row its event points at, beside another row at the same place", async () => {
     const LEGS = rowId(1);
     const LEGS_THIS_DAY = rowId(2);
     mockTables({
       sessions: [
         sessionRow(LEGS, "Legs", { week_index: 0, order_index: 4 }),
-        // The day's own copy, at the same place in the plan.
+        // A second row at the same place in the plan.
         sessionRow(LEGS_THIS_DAY, "Legs (lighter)", {
           week_index: 0,
           order_index: 4,

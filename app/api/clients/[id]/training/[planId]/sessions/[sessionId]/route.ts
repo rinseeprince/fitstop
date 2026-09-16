@@ -15,8 +15,7 @@ import { getClientTodayString } from "@/services/today-service";
 // GET - Fetch a single session (with exercises) for the placed-session tray.
 // The tray needs to resolve sessions from coexisting (non-active) plans whose
 // sessions aren't in the active plan's session list, so it fetches by id here.
-// `events` + `clientToday` let the tray derive its shared-occurrence count
-// (the "just this day / all occurrences" scope dialog) without a second fetch.
+// `events` lets the tray show a logged session locked without a second fetch.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; planId: string; sessionId: string }> }
@@ -48,15 +47,9 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const [events, clientToday] = await Promise.all([
-      getSessionEventLinks(sessionId, clientId),
-      getClientTodayString(clientId),
-    ]);
+    const events = await getSessionEventLinks(sessionId, clientId);
 
-    return NextResponse.json(
-      { success: true, session, events, clientToday },
-      { status: 200 }
-    );
+    return NextResponse.json({ success: true, session, events }, { status: 200 });
   } catch (error) {
     console.error("Error fetching session:", error);
     return NextResponse.json({ error: "Failed to fetch session" }, { status: 500 });
@@ -64,11 +57,11 @@ export async function GET(
 }
 
 // PUT - Builder-grade full replace of a placed session (meta + whole exercise
-// list incl. setSpecs/videoUrl), the tray's "All occurrences" save. Renames
-// land on this session's future scheduled events — normally just this day (one
-// session row per placed day), more only after a duplicate; past keeps its
-// snapshots. A surplus change re-prices those days' computed nutrition targets
-// by itself — the day reads the surplus off the event.
+// list incl. setSpecs/videoUrl), the tray's save. A rename lands on the
+// session's scheduled calendar entry from today; past keeps its snapshot. A
+// surplus change re-prices that day's computed nutrition target by itself — the
+// day reads the surplus off the event. The response carries the saved session,
+// which the tray writes into its own read.
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; planId: string; sessionId: string }> }
@@ -119,20 +112,10 @@ export async function PUT(
       clientId,
       coachId,
       fromDate: today,
-      // The groups pass through as validated, exactly as the sibling clone
-      // route passes its overrides: the two saves must write identically.
       input: validation.data,
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        session: result.session,
-        surplusChanged: result.surplusChanged,
-        identityChanged: result.identityChanged,
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ success: true, session: result.session }, { status: 200 });
   } catch (error) {
     if (error instanceof Error && error.message === "Session not found") {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });

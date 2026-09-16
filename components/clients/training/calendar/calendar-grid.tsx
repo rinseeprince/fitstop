@@ -15,16 +15,13 @@ type CalendarGridProps = {
   editMode: boolean;
   todayDate: string;
   clientToday: string;
-  duplicateMode: boolean;
   viewMonth: number;
   viewYear: number;
   hasPlan: boolean;
   /** Resolves the single plan a week row belongs to (null = mixed/empty). */
   weekRowPlanId: (days: string[]) => string | null;
   onWeekAction: (weekStartDate: string, action: WeekAction) => void;
-  onCellClick: (date: string) => void;
   onEventClick: (event: TrainingEvent) => void;
-  onDuplicate: (event: TrainingEvent) => void;
   onDelete: (event: TrainingEvent) => void;
 };
 
@@ -37,15 +34,12 @@ export const CalendarGrid = memo(function CalendarGrid({
   editMode,
   todayDate,
   clientToday,
-  duplicateMode,
   viewMonth,
   viewYear,
   hasPlan,
   weekRowPlanId,
   onWeekAction,
-  onCellClick,
   onEventClick,
-  onDuplicate,
   onDelete,
 }: CalendarGridProps) {
   return (
@@ -80,15 +74,12 @@ export const CalendarGrid = memo(function CalendarGrid({
                 editMode={editMode}
                 todayDate={todayDate}
                 clientToday={clientToday}
-                duplicateMode={duplicateMode}
                 viewMonth={viewMonth}
                 viewYear={viewYear}
                 showWeekKebab={showKebab}
                 weekActionDisabledReason={disabledReason}
                 onWeekAction={onWeekAction}
-                onCellClick={onCellClick}
                 onEventClick={onEventClick}
-                onDuplicate={onDuplicate}
                 onDelete={onDelete}
               />
             </div>

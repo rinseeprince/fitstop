@@ -35,15 +35,12 @@ import {
 import {
   usePlacedSessionEditor,
   type PlacedSessionState,
-  type SaveScope,
 } from "./use-placed-session-editor";
 
 // Builder-grade tray for one PLACED session, opened from the calendar. Hosts
 // the shared session-editor-body (per-set specs, drop sets, video, identity —
-// placed identity is editable; a rename lands on the session's future scheduled
-// events, normally just this day)
-// against a local draft with explicit Save/Cancel. Replaces the legacy
-// session-detail-drawer.
+// placed identity is editable) against a local draft with explicit
+// Save/Cancel.
 //
 // `open` is its own prop, never derived from `state`: the close flips `open`
 // and leaves the subject, because Radix re-renders the sliding-out tray from
@@ -53,8 +50,6 @@ type PlacedSessionEditorProps = {
   open: boolean;
   state: PlacedSessionState | null; // null only before the first open
   onClose: () => void;
-  onUpdate: () => void;
-  mutateCalendar: () => Promise<unknown>;
 };
 
 const DANGER_OUTLINE_BUTTON =
@@ -78,8 +73,6 @@ export function PlacedSessionEditor({
   open,
   state,
   onClose,
-  onUpdate,
-  mutateCalendar,
 }: PlacedSessionEditorProps) {
   const {
     session,
@@ -87,7 +80,6 @@ export function PlacedSessionEditor({
     isLoading,
     loadError,
     isDirty,
-    futureScheduledCount,
     loggedEvent,
     isSaving,
     handleSave,
@@ -99,13 +91,8 @@ export function PlacedSessionEditor({
     updateExercise,
     reorderExercise,
     editSetSpec,
-  } = usePlacedSessionEditor(state, {
-    onClose,
-    onUpdate,
-    mutateCalendar,
-  });
+  } = usePlacedSessionEditor(state, { onClose });
 
-  const [scopeDialogOpen, setScopeDialogOpen] = useState(false);
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [libraryDialogOpen, setLibraryDialogOpen] = useState(false);
   const [libraryName, setLibraryName] = useState("");
@@ -121,16 +108,7 @@ export function PlacedSessionEditor({
 
   const requestSave = () => {
     if (isSaving || !session) return;
-    if (futureScheduledCount > 1) {
-      setScopeDialogOpen(true);
-      return;
-    }
-    void handleSave("all");
-  };
-
-  const saveWithScope = (scope: SaveScope) => {
-    setScopeDialogOpen(false);
-    void handleSave(scope);
+    void handleSave();
   };
 
   const showBody = isSeeded && session != null;
@@ -164,9 +142,6 @@ export function PlacedSessionEditor({
                 className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}
               >
                 {dateLabel}
-                {futureScheduledCount > 1
-                  ? ` · on ${futureScheduledCount} upcoming days`
-                  : ""}
               </SheetDescription>
             </div>
             <DropdownMenu>
@@ -254,53 +229,6 @@ export function PlacedSessionEditor({
           </div>
         </SheetContent>
       </Sheet>
-
-      {/* Scope dialog — the session repeats on future days. A choice closes it
-          in the same click that starts the save, so it never shows the save's
-          pending state: its card is static and still reads the same while it
-          fades (CONVENTIONS §7 → "No frame disagrees"). */}
-      <Dialog open={scopeDialogOpen} onOpenChange={setScopeDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Save changes</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-[#5a7d82]">
-            This session repeats across the calendar. Where should these changes
-            apply?
-          </p>
-          <div className="space-y-2 py-1">
-            <button
-              className="flex w-full cursor-pointer items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3 text-left transition-colors hover:bg-[rgba(13,148,136,0.03)]"
-              onClick={() => saveWithScope("day")}
-            >
-              <div className="h-4 w-4 shrink-0 rounded-full border-2 border-[#0d9488]" />
-              <div>
-                <p className="text-sm font-medium text-[#0c1a1e]">Just this day</p>
-                <p className="text-[11px] text-[#93b0b4]">
-                  Create a copy with your changes for this date only
-                </p>
-              </div>
-            </button>
-            <button
-              className="flex w-full cursor-pointer items-center gap-3 rounded-[6px] border border-[rgba(13,148,136,0.08)] p-3 text-left transition-colors hover:bg-[rgba(13,148,136,0.03)]"
-              onClick={() => saveWithScope("all")}
-            >
-              <div className="h-4 w-4 shrink-0 rounded-full border-2 border-[#93b0b4]" />
-              <div>
-                <p className="text-sm font-medium text-[#0c1a1e]">All occurrences</p>
-                <p className="text-[11px] text-[#93b0b4]">
-                  Apply changes to every future scheduled day
-                </p>
-              </div>
-            </button>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setScopeDialogOpen(false)}>
-              Cancel
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Discard-confirm on dirty cancel */}
       <Dialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>

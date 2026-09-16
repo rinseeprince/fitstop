@@ -20,17 +20,14 @@ type ReplaceSessionInput = {
 
 type ReplaceSessionResult = {
   session: TrainingSession;
-  surplusChanged: boolean;
-  identityChanged: boolean;
 };
 
 /**
  * Builder-grade full edit of a placed session: meta + the whole exercise list
  * (per-set specs and video included) in one call, with rename/surplus changes
- * written to this session's FUTURE SCHEDULED events — under placement that is
- * normally just the edited day (one session row per placed day, migration 121)
- * and more than one only after a per-event duplicate; past events keep their
- * snapshotted name/focus/surplus, which is correct history.
+ * written to the session's scheduled events from `fromDate` — the placed day
+ * it prescribes; a past day keeps its snapshotted name/focus/surplus, which is
+ * correct history.
  *
  * Every step is idempotent, so a retried save repairs any partial write; no
  * compensator is needed at this blast radius (one session's rows + its future
@@ -120,7 +117,5 @@ export async function replaceSessionFull(params: {
 
   return {
     session: mapSessionRow(updatedRow, mapExerciseRowsToGroups(exerciseRows)),
-    surplusChanged,
-    identityChanged,
   };
 }

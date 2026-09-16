@@ -472,7 +472,7 @@ describe('Training Validation Schemas', () => {
     })
   })
 
-  describe('bulkExerciseInputSchema (PUT/clone exercise item)', () => {
+  describe('bulkExerciseInputSchema (PUT exercise item)', () => {
     const base = { name: 'Squat', sets: 5 }
 
     it('accepts a 0-rep exercise (reps floor relaxed to match authoring + absent DB CHECK)', () => {
@@ -598,7 +598,7 @@ describe('Training Validation Schemas', () => {
       restBetweenRoundsSeconds: 90,
       notes: 'A',
     }
-    // Each exercise names its isWarmup (the PUT/clone item defaults it), so a
+    // Each exercise names its isWarmup (the PUT item defaults it), so a
     // parsed group is exactly the group sent.
     const squat = { name: 'Squat', sets: 3, isWarmup: false }
     const row = { name: 'Row', sets: 3, repsMin: 8, repsMax: 10, isWarmup: false }

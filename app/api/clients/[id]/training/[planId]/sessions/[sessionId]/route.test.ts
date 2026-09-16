@@ -107,8 +107,6 @@ const circuitGroup = {
 
 const replaceResult = {
   session: { id: SESSION_ID, name: "Push Day A", groups: [] },
-  surplusChanged: false,
-  identityChanged: true,
 } as unknown as Awaited<ReturnType<typeof replaceSessionFull>>;
 
 function makeParams() {
@@ -144,10 +142,10 @@ beforeEach(() => {
 });
 
 describe("GET /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
-  it("returns the session plus its event links and clientToday", async () => {
+  it("returns the session plus its event links", async () => {
     const events = [
-      { id: "ev-1", date: "2026-07-20", status: "completed", isModified: false },
-      { id: "ev-2", date: "2026-07-27", status: "scheduled", isModified: false },
+      { id: "ev-1", date: "2026-07-20", status: "completed" },
+      { id: "ev-2", date: "2026-07-27", status: "scheduled" },
     ];
     vi.mocked(getSessionEventLinks).mockResolvedValue(events);
 
@@ -155,12 +153,7 @@ describe("GET /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(data).toEqual({
-      success: true,
-      session: mockSession,
-      events,
-      clientToday: TODAY,
-    });
+    expect(data).toEqual({ success: true, session: mockSession, events });
     expect(getSessionEventLinks).toHaveBeenCalledWith(SESSION_ID, CLIENT_ID);
   });
 
@@ -178,19 +171,14 @@ describe("GET /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
 });
 
 describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
-  it("replaces the session with the client-local today floor and reports what changed", async () => {
+  it("replaces the session with the client-local today floor and returns the saved session", async () => {
     vi.mocked(replaceSessionFull).mockResolvedValue(replaceResult);
 
     const response = await PUT(makePutRequest(validBody), makeParams());
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(data).toEqual({
-      success: true,
-      session: replaceResult.session,
-      surplusChanged: false,
-      identityChanged: true,
-    });
+    expect(data).toEqual({ success: true, session: replaceResult.session });
 
     expect(replaceSessionFull).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -224,20 +212,6 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
     expect(replaceSessionFull).toHaveBeenCalledTimes(1);
     const input = vi.mocked(replaceSessionFull).mock.calls[0][0].input;
     expect(input.groups).toEqual([circuitGroup]);
-  });
-
-  it("reports a surplus change on the wire — the day's computed nutrition target reads it off the event, so the route writes nothing more", async () => {
-    vi.mocked(replaceSessionFull).mockResolvedValue({
-      ...(replaceResult as object),
-      surplusChanged: true,
-    } as unknown as Awaited<ReturnType<typeof replaceSessionFull>>);
-
-    const response = await PUT(makePutRequest(validBody), makeParams());
-    const data = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(data.surplusChanged).toBe(true);
-    expect(replaceSessionFull).toHaveBeenCalledTimes(1);
   });
 
   it("400s an invalid body without touching the service", async () => {

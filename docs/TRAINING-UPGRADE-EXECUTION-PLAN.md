@@ -381,13 +381,13 @@ anything you rely on.
   writes, row by row), duplicate, promote from draft, standalone workouts, saving a client session to
   the library, placing a program (from the library and from an edited client draft), dropping a
   session onto the calendar, Edit plan's database function (with an explicit column list), and the
-  placed-session tray's clone and replace. The log's prescription snapshot copies them too, and a test
-  pins its keys.
+  placed-session tray's save. The log's prescription snapshot copies them too, and a test pins its
+  keys.
 - Server validators are plain `z.object` schemas that silently strip unknown keys. The assistant's
   draft schemas strip unknown fields and its patch schemas reject unknown keys. A field that isn't
   taught to a path vanishes without an error. Survival tests (`services/set-specs-survival.test.ts`
   and neighbours) cover some paths only; `prescribed_fields` survival is untested on placement,
-  duplicate, promote, standalone, clone and replace.
+  duplicate, promote, standalone and the tray's save.
 - The per-set prescription is `set_specs` JSON: set type (warm-up, working, AMRAP, drop, failure),
   reps range, load type (absolute, % 1RM, % top set), RPE, tempo (no builder control; only the
   assistant writes it), rest, drops.

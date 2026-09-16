@@ -24,9 +24,9 @@ import { supabaseAdmin } from "./supabase-admin";
  * The index is the backstop for paths added later; the pre-check is what
  * produces a sentence a coach can act on.
  *
- * **`assertDateFree` is on the three single-date paths, not on every writer** —
- * move, duplicate, and the library-session drop (`training-event-calendar-
- * service.ts`, `library-placement-service.ts`). Whole-program placement
+ * **`assertDateFree` is on the two single-date paths, not on every writer** —
+ * move and the library-session drop (`training-event-calendar-service.ts`,
+ * `library-placement-service.ts`). Whole-program placement
  * deliberately does NOT pre-check: it first deletes the future `scheduled`
  * events in the window it is about to fill, so a per-date question is one it
  * has already answered. What that clear does not remove is a non-scheduled
@@ -139,7 +139,6 @@ type SessionEventLink = {
   id: string;
   date: string;
   status: string;
-  isModified: boolean;
 };
 
 /**
@@ -150,12 +149,9 @@ type SessionEventLink = {
  * to `status = 'scheduled'` would leave that assertion nothing to find and
  * silently disable the logged-day lock.
  *
- * The list shape is earned three ways: `assertSessionUnlogged`'s `find` over the
- * date-ascending list (it names the EARLIEST logged day), the tray's
- * `loggedEvent` / `futureScheduledCount`, and genuine multi-event sessions — a
- * per-event duplicate (`duplicateEvent`) copies `training_session_id`, so one
- * session CAN own two future scheduled events and the tray's save-scope dialog
- * does open then. Narrowing this read licenses nothing.
+ * The list shape is earned by `assertSessionUnlogged`'s `find` over the
+ * date-ascending list (it names the EARLIEST logged day) and the tray's
+ * `loggedEvent`, which asks the same question in the browser.
  */
 export async function getSessionEventLinks(
   sessionId: string,
@@ -163,19 +159,14 @@ export async function getSessionEventLinks(
 ): Promise<SessionEventLink[]> {
   const { data, error } = await supabaseAdmin
     .from("training_events")
-    .select("id, date, status, is_modified")
+    .select("id, date, status")
     .eq("training_session_id", sessionId)
     .eq("client_id", clientId)
     .order("date", { ascending: true });
 
   if (error) throw new Error(`Failed to fetch session events: ${error.message}`);
 
-  return (data ?? []).map((e) => ({
-    id: e.id,
-    date: e.date,
-    status: e.status,
-    isModified: e.is_modified ?? false,
-  }));
+  return (data ?? []).map((e) => ({ id: e.id, date: e.date, status: e.status }));
 }
 
 /**
@@ -200,10 +191,10 @@ function loggedMessage(date: string): string {
  * cannot import this module — it reaches `supabaseAdmin`). Whoever changes the
  * rule changes all three.
  *
- * Called INSIDE `cloneSessionForEvent` and `replaceSessionFull` rather than at
- * their routes, so a future caller inherits it. Both call it AFTER proving the
- * session belongs to the client, so a foreign sessionId still reads as not
- * found rather than as locked.
+ * Called INSIDE `replaceSessionFull` rather than at its route, so a future
+ * caller inherits it. It runs AFTER the service proves the session belongs to
+ * the client, so a foreign sessionId still reads as not found rather than as
+ * locked.
  *
  * Links come back date-ascending, so the message names the EARLIEST logged
  * occurrence. A read failure propagates as `getSessionEventLinks`' own error:

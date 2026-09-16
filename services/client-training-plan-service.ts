@@ -159,7 +159,7 @@ async function fetchStartedPlan(
  *
  * The entries are the program as it is on the client's calendar — one per day
  * of the window, rest days carried as `isRest` entries — so a moved day shows
- * on its new date and a "just this day" edit shows once (`fetchPlanEntries`).
+ * on its new date (`fetchPlanEntries`).
  * No library-template join is needed.
  */
 export async function getClientTrainingPlan(
@@ -236,9 +236,8 @@ async function buildQueuedPlan(
  * the position when there is none (a day whose session was moved away or
  * removed) — so no rest day borrows the id of a session showing elsewhere.
  *
- * So a moved session shows on its new date only, and a "just this day" edit —
- * a second row at its source's coordinates — shows once, as the row its day
- * points at.
+ * So a moved session shows on its new date only, and a day shows the row its
+ * event points at, whatever other row sits at the same coordinates.
  *
  * Four reads, two at a time: the window's events beside the plan's own rows,
  * then the days' rows beside their exercises.

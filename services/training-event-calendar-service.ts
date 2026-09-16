@@ -4,7 +4,6 @@ import {
   assertDateFree,
   DateOccupiedError,
   occupiedMessage,
-  rethrowIfDateOccupied,
 } from "./training-event-occupancy";
 import { readMoveRpcError, type MoveRpcError } from "./training-event-layout-service";
 
@@ -94,63 +93,6 @@ function translateMoveRpcError(error: MoveRpcError): Error {
     case "other":
       return new Error(`Failed to move event: ${error.message ?? ""}`);
   }
-}
-
-/**
- * Duplicate a training event to a new date.
- * The new event is marked as is_modified.
- */
-export async function duplicateEvent(
-  sourceEventId: string,
-  targetDate: string,
-  clientId: string,
-  planId: string
-): Promise<string> {
-  const { data: source, error } = await supabaseAdmin
-    .from("training_events")
-    .select("*")
-    .eq("id", sourceEventId)
-    .single();
-
-  if (error || !source) throw new Error("Source event not found");
-  if (source.client_id !== clientId || source.training_plan_id !== planId) {
-    throw new Error("Event does not belong to this client/plan");
-  }
-
-  const today = await getClientTodayString(clientId);
-  if (targetDate < today) {
-    throw new Error("Cannot duplicate event to a past date");
-  }
-
-  // One session per day — the old training_session_id check could never fire.
-  await assertDateFree(clientId, targetDate);
-
-  const { data: newEvent, error: insertError } = await supabaseAdmin
-    .from("training_events")
-    .insert({
-      client_id: source.client_id,
-      training_plan_id: source.training_plan_id,
-      training_session_id: source.training_session_id,
-      session_name: source.session_name,
-      session_focus: source.session_focus,
-      estimated_calories: source.estimated_calories,
-      // Load-bearing: the nutrition cascade reads surplus % from the event.
-      // Omitting it leaves the duplicated event with NULL, which falls through
-      // to rest-day calories even though the TRAIN badge still renders (the
-      // badge is driven by event presence, the calorie bump by surplus value).
-      calorie_surplus_percentage: source.calorie_surplus_percentage,
-      date: targetDate,
-      status: "scheduled",
-      is_modified: true,
-    })
-    .select("id")
-    .single();
-
-  if (insertError || !newEvent) {
-    rethrowIfDateOccupied(insertError, targetDate);
-    throw insertError ?? new Error("Failed to duplicate event");
-  }
-  return newEvent.id;
 }
 
 /**

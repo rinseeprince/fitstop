@@ -14,7 +14,6 @@ type CalendarWeekRowProps = {
   // Client-local "today" for drag/delete gating (matches the 7.82 server guards).
   // Distinct from todayDate, which drives the coach-device visual today ring.
   clientToday: string;
-  duplicateMode: boolean;
   /** Month shown in the grid; days outside it render dimmed. 0-indexed. */
   viewMonth: number;
   viewYear: number;
@@ -22,9 +21,7 @@ type CalendarWeekRowProps = {
   showWeekKebab: boolean;
   weekActionDisabledReason?: string;
   onWeekAction: (weekStartDate: string, action: WeekAction) => void;
-  onCellClick: (date: string) => void;
   onEventClick: (event: TrainingEvent) => void;
-  onDuplicate: (event: TrainingEvent) => void;
   onDelete: (event: TrainingEvent) => void;
 };
 
@@ -34,15 +31,12 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
   editMode,
   todayDate,
   clientToday,
-  duplicateMode,
   viewMonth,
   viewYear,
   showWeekKebab,
   weekActionDisabledReason,
   onWeekAction,
-  onCellClick,
   onEventClick,
-  onDuplicate,
   onDelete,
 }: CalendarWeekRowProps) {
   const weekStartDate = days[0];
@@ -76,11 +70,8 @@ export const CalendarWeekRow = memo(function CalendarWeekRow({
             isPast={date < clientToday}
             isOutsideMonth={isOutsideMonth}
             editMode={editMode}
-            duplicateMode={duplicateMode}
             clientToday={clientToday}
-            onCellClick={onCellClick}
             onEventClick={onEventClick}
-            onDuplicate={onDuplicate}
             onDelete={onDelete}
           />
         );

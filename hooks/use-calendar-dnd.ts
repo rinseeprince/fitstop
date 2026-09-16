@@ -73,14 +73,7 @@ export function useCalendarDnd({
     [events, clientToday]
   );
 
-  /**
-   * Moves one event and one event only. A drop used to arm a scope dialog which
-   * then performed the move; the dialog's second option ("this and all future X
-   * sessions") was structurally inert — it matched siblings by
-   * `training_session_id`, and placement gives every day its own cloned session
-   * row, so the sibling set was always just the dragged event. Every drag paid
-   * for a modal that could not do anything the drop had not already decided.
-   */
+  /** Moves one event and one event only. */
   const performMove = useCallback(
     async (event: TrainingEvent, targetDate: string) => {
       // Optimistic: the card lands under the cursor and stays there.

@@ -47,7 +47,6 @@ import {
   CalendarMoveDriftError,
   CalendarMoveNotFoundError,
   deleteEvent,
-  duplicateEvent,
   moveEvent,
 } from "./training-event-calendar-service";
 
@@ -390,44 +389,6 @@ describe("training-event-calendar-service", () => {
       });
 
       await expect(deleteEvent("event-1", clientId, planId)).resolves.toBeUndefined();
-      expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
-    });
-
-    it("duplicateEvent allows duplicating onto the client's local today", async () => {
-      let eventCalls = 0;
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "training_events") {
-          eventCalls++;
-          if (eventCalls === 1) {
-            // Source fetch. No training_session_id -> conflict check skipped.
-            return createMockQuery({
-              data: {
-                id: "event-1",
-                client_id: clientId,
-                training_plan_id: planId,
-                training_session_id: null,
-                session_name: "Push",
-                session_focus: null,
-                estimated_calories: 300,
-                calorie_surplus_percentage: null,
-                status: "scheduled",
-                date: "2026-06-12",
-              },
-              error: null,
-            }) as any;
-          }
-          // Insert of the duplicate.
-          return createMockQuery({ data: { id: "event-2" }, error: null }) as any;
-        }
-        if (table === "training_plans") {
-          return createMockQuery({ data: null, error: null }) as any;
-        }
-        return createMockQuery({ data: null, error: null }) as any;
-      });
-
-      await expect(
-        duplicateEvent("event-1", "2026-06-09", clientId, planId),
-      ).resolves.toBe("event-2");
       expect(mockGetClientTodayString).toHaveBeenCalledWith(clientId);
     });
 
