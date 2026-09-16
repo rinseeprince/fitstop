@@ -130,7 +130,8 @@ commit's plan.
   Nothing is trimmed to make room.
 - **Blocks:** no block behaviour is designed here, but a block must still contain its plans, so a
   move across a block's edge is refused with a sentence. *(confirm)*
-- **No confirm step:** a move loses nothing, and picking the original day moves it back. *(confirm)*
+- **Confirm step:** picking a day asks to confirm the move first (owner, 2026-09-16, after commit 1's smoke —
+  replacing the no-confirm proposal).
 - **Nutrition:** targets keep their own dates; training-day calories follow the sessions
   automatically.
 

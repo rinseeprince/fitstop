@@ -149,19 +149,18 @@ describe("PlanStartLine", () => {
       expect(day(/^Thursday 17 September 2026$/)).toBeEnabled();
     });
 
-    it("picking the current start closes it and moves nothing", () => {
+    it("picking the current start closes it, asks nothing and moves nothing", () => {
       renderLine();
       openCalendar();
       fireEvent.click(day(/current start$/));
 
       expect(screen.queryByText("Sep 2026")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(pencil()).toBeEnabled();
     });
 
     it("still shows what it was opened on while it fades out", () => {
       holdExitAnimation();
-      fetchMock.mockReturnValue(new Promise(() => {}));
       renderLine();
       openCalendar();
       fireEvent.click(day(/^Wednesday 30 September 2026$/));
@@ -178,25 +177,53 @@ describe("PlanStartLine", () => {
   });
 
   describe("moving the program", () => {
-    it("sends the day, spins until the Training tab has refetched, then says it moved", async () => {
+    const pickDay = (name: RegExp, pencilName?: string) => {
+      openCalendar(pencilName);
+      fireEvent.click(day(name));
+    };
+    const moveButton = () => screen.getByRole("button", { name: /Move program/ });
+
+    it("picking a day closes the calendar and asks first, naming the move; nothing is sent", () => {
+      renderLine();
+      pickDay(/^Wednesday 30 September 2026$/);
+
+      expect(screen.queryByText("Sep 2026")).toBeNull();
+      expect(screen.getByRole("heading", { name: "Move Upper Lower?" })).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          `It will start on ${formatDateOnlyWeekday("2026-09-30")}, and every session moves 2 days later with it.`,
+        ),
+      ).toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("Cancel closes the confirm and moves nothing", () => {
+      renderLine();
+      pickDay(/^Wednesday 30 September 2026$/);
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+      for (const hook of Object.values(refresh)) expect(hook).not.toHaveBeenCalled();
+    });
+
+    it("Move program sends the day, and the confirm spins until the Training tab has refetched", async () => {
       const response = deferred<FetchResult>();
       const trainingRefetch = deferred<undefined>();
       fetchMock.mockReturnValue(response.promise);
       refresh.invalidateTrainingData.mockReturnValue(trainingRefetch.promise);
       renderLine();
 
-      openCalendar();
-      fireEvent.click(day(/^Wednesday 30 September 2026$/));
+      pickDay(/^Wednesday 30 September 2026$/);
+      fireEvent.click(moveButton());
 
-      // One click: the calendar closes and the pencil spins in its place.
-      expect(screen.queryByText("Sep 2026")).toBeNull();
-      expect(pencil()).toBeDisabled();
-      expect(pencil().querySelector(".animate-spin")).not.toBeNull();
       expect(fetchMock).toHaveBeenCalledWith(`/api/clients/${CLIENT}/training/plan-1/move`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ startsOn: "2026-09-30" }),
       });
+      expect(moveButton()).toBeDisabled();
+      expect(moveButton().querySelector(".animate-spin")).not.toBeNull();
 
       await act(async () => {
         response.release(answer(200, { success: true, data: { startsOn: "2026-09-30" } }));
@@ -209,8 +236,9 @@ describe("PlanStartLine", () => {
       expect(refresh.clearAttentionFeed).toHaveBeenCalledTimes(1);
       expect(refresh.clearBlockFacts).toHaveBeenCalledWith(CLIENT);
       expect(refresh.invalidateTrainingData).toHaveBeenCalledWith(CLIENT);
-      // …and until the Training tab has refetched, the pencil still spins.
-      expect(pencil()).toBeDisabled();
+      // …and until the Training tab has refetched, the confirm stays, spinning.
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(moveButton().querySelector(".animate-spin")).not.toBeNull();
       expect(toast.success).not.toHaveBeenCalled();
 
       await act(async () => {
@@ -218,8 +246,7 @@ describe("PlanStartLine", () => {
         await trainingRefetch.promise;
       });
 
-      await waitFor(() => expect(pencil()).toBeEnabled());
-      expect(pencil().querySelector(".animate-spin")).toBeNull();
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(toast.success).toHaveBeenCalledWith("Program moved");
       expect(toast.error).not.toHaveBeenCalled();
     });
@@ -228,45 +255,80 @@ describe("PlanStartLine", () => {
       fetchMock.mockResolvedValue(answer(200, { success: true }));
       renderLine({ kind: "next", program: { id: "plan-2", name: "Strength", startsOn: "2026-10-05" } });
 
-      openCalendar("Change Strength's start date");
-      fireEvent.click(day(/^Monday 12 October 2026$/));
+      pickDay(/^Monday 12 October 2026$/, "Change Strength's start date");
+      expect(screen.getByRole("heading", { name: "Move Strength?" })).toBeInTheDocument();
+      fireEvent.click(moveButton());
 
       await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Program moved"));
       expect(fetchMock.mock.calls[0][0]).toBe(`/api/clients/${CLIENT}/training/plan-2/move`);
     });
 
-    it("a refused move says why in the server's sentence, and refreshes nothing", async () => {
+    it("a refused move closes the confirm, says why in the server's sentence, and refreshes nothing", async () => {
       fetchMock.mockResolvedValue(answer(409, { error: "That would overlap Strength." }));
       renderLine();
 
-      openCalendar();
-      fireEvent.click(day(/^Wednesday 30 September 2026$/));
+      pickDay(/^Wednesday 30 September 2026$/);
+      fireEvent.click(moveButton());
 
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith("Program not moved", {
           description: "That would overlap Strength.",
         }),
       );
-      await waitFor(() => expect(pencil()).toBeEnabled());
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       for (const hook of Object.values(refresh)) expect(hook).not.toHaveBeenCalled();
       expect(toast.success).not.toHaveBeenCalled();
     });
 
-    it("a request that fails says so, and refreshes nothing", async () => {
+    it("after a refused move, the next pick asks again with Move program ready", async () => {
+      fetchMock.mockResolvedValue(answer(409, { error: "That would overlap Strength." }));
+      renderLine();
+      pickDay(/^Wednesday 30 September 2026$/);
+      fireEvent.click(moveButton());
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+      pickDay(/^Tuesday 29 September 2026$/);
+
+      expect(screen.getByRole("heading", { name: "Move Upper Lower?" })).toBeInTheDocument();
+      expect(moveButton()).toBeEnabled();
+      expect(moveButton().querySelector(".animate-spin")).toBeNull();
+    });
+
+    it("a request that fails closes the confirm and says so, and refreshes nothing", async () => {
       vi.spyOn(console, "error").mockImplementation(() => {});
       fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
       renderLine();
 
-      openCalendar();
-      fireEvent.click(day(/^Wednesday 30 September 2026$/));
+      pickDay(/^Wednesday 30 September 2026$/);
+      fireEvent.click(moveButton());
 
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith("Program not moved", {
           description: "Something went wrong. Try again.",
         }),
       );
-      await waitFor(() => expect(pencil()).toBeEnabled());
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       for (const hook of Object.values(refresh)) expect(hook).not.toHaveBeenCalled();
+    });
+
+    it("the confirm outlives its line: a program that starts meanwhile keeps the question open", () => {
+      const props: LineProps = {
+        clientId: CLIENT,
+        kind: "start",
+        program: { id: "plan-1", name: "Upper Lower", startsOn: TODAY },
+        clientToday: TODAY,
+        floor: TODAY,
+      };
+      const { rerender } = render(<PlanStartLine {...props} />);
+      pickDay(/^Friday 18 September 2026$/);
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      // The client logs a workout: the program has started, and its line goes.
+      rerender(<PlanStartLine {...props} floor={TOMORROW} />);
+
+      expect(screen.queryByRole("button", { name: "Change start date" })).toBeNull();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Move Upper Lower?" })).toBeInTheDocument();
     });
   });
 });
