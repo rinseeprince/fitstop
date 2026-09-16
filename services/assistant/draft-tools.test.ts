@@ -13,24 +13,34 @@ vi.mock("@/services/supabase-admin", () => ({
   },
 }));
 
+import { z } from "zod";
 import type { ExerciseRow } from "@/lib/database-helpers";
 import {
   makeRestSlot,
   makeRestWeek,
   newUid,
   type ExerciseDraft,
+  type ExerciseGroupDraft,
   type ProgramDraft,
   type SessionDraft,
 } from "@/components/clients/training/program-builder/program-builder-types";
 import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
+import { applyDraftOps } from "@/components/clients/training/program-builder/program-builder-ops";
 import {
   LIMIT_LOCKED,
   PAST_LOCKED,
   type EditableDays,
 } from "@/components/clients/training/program-builder/program-builder-lock-model";
+import { draftOpSchema } from "@/lib/validations/assistant";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import {
+  STRAIGHT_SETS,
+  groupSettingsOf,
+  sessionExercises,
+  type GroupSettings,
+} from "@/utils/exercise-groups";
 import { buildWorkspaceFromRows, finalizeAssistantOps } from "./draft-workspace";
-import { programContext } from "./draft-tool-helpers";
+import { programContext, resolveExerciseRef } from "./draft-tool-helpers";
 import { buildWeekTools } from "./draft-week-tools";
 import { buildSessionTools } from "./draft-session-tools";
 import { buildExerciseTools } from "./draft-exercise-tools";
@@ -90,13 +100,26 @@ function exercise(
     percentage1rm: null,
     tempo: null,
     restSeconds: null,
-    supersetGroup: null,
     isWarmup: false,
     notes: null,
     videoUrl: null,
     prescribedFields: null,
   };
 }
+
+// A lone exercise: a straight-sets group of one.
+function lone(ex: ExerciseDraft): ExerciseGroupDraft {
+  return { uid: newUid("grp"), ...STRAIGHT_SETS, exercises: [ex] };
+}
+
+// A superset/circuit: three rounds, 90s between rounds.
+const CIRCUIT: GroupSettings = {
+  ...STRAIGHT_SETS,
+  format: "circuit",
+  rounds: 3,
+  restBetweenRoundsSeconds: 90,
+  notes: "A",
+};
 
 function makeDraft(): ProgramDraft {
   const session: SessionDraft = {
@@ -107,9 +130,9 @@ function makeDraft(): ProgramDraft {
     calorieSurplusPercentage: null,
     notes: null,
     sessionType: "training",
-    exercises: [
-      exercise("Back Squat", SQUAT_ID, [workingSet(100), workingSet(100)]),
-      exercise("Leg Curl", CURL_ID, [workingSet(40), workingSet(40)]),
+    groups: [
+      lone(exercise("Back Squat", SQUAT_ID, [workingSet(100), workingSet(100)])),
+      lone(exercise("Leg Curl", CURL_ID, [workingSet(40), workingSet(40)])),
     ],
   };
   const week = makeRestWeek(0);
@@ -138,7 +161,9 @@ const tool = (tools: Array<{ name: string }>, name: string) => {
 
 const squatLoads = (ws: ReturnType<typeof makeWs>, weekIndex: number): number[] => {
   const session = ws.draft.weeks[weekIndex].days[0].session;
-  return (session?.exercises[0].setSpecs ?? []).map((s) => s.load_value ?? -1);
+  return ((session ? sessionExercises(session)[0].setSpecs : null) ?? []).map(
+    (s) => s.load_value ?? -1,
+  );
 };
 
 describe("duplicate_week with progression", () => {
@@ -166,8 +191,10 @@ describe("duplicate_week with progression", () => {
       count: 4,
       rules: [{ kind: "sets", amount: 1, everyNWeeks: 2 }],
     } as never);
-    const setCount = (w: number) =>
-      ws.draft.weeks[w].days[0].session?.exercises[0].setSpecs?.length;
+    const setCount = (w: number) => {
+      const session = ws.draft.weeks[w].days[0].session;
+      return session ? sessionExercises(session)[0].setSpecs?.length : undefined;
+    };
     expect(setCount(1)).toBe(2); // step 1: rule not due
     expect(setCount(2)).toBe(3); // step 2: +1
     expect(setCount(3)).toBe(3); // step 3: not due
@@ -183,9 +210,9 @@ describe("duplicate_week with progression", () => {
       rules: [{ kind: "load_kg", amount: 5 }],
       scope: "compounds",
     } as never);
-    const session = ws.draft.weeks[1].days[0].session!;
-    expect(session.exercises[0].setSpecs?.[0].load_value).toBe(105); // Back Squat (Compound)
-    expect(session.exercises[1].setSpecs?.[0].load_value).toBe(40); // Leg Curl untouched
+    const exercises = sessionExercises(ws.draft.weeks[1].days[0].session!);
+    expect(exercises[0].setSpecs?.[0].load_value).toBe(105); // Back Squat (Compound)
+    expect(exercises[1].setSpecs?.[0].load_value).toBe(40); // Leg Curl untouched
   });
 
   it("relays the MAX_WEEKS belt instead of silently no-opping", async () => {
@@ -228,8 +255,30 @@ describe("catalog constraint (add_exercise)", () => {
     expect(ws.ops).toHaveLength(1);
     const op = ws.ops[0];
     if (op.type !== "add_exercise") throw new Error("expected add_exercise");
-    expect(op.exercise.exerciseId).toBe(BENCH_ID);
-    expect(op.exercise.name).toBe("Bench Press");
+    expect(op.group.exercises).toHaveLength(1);
+    expect(op.group.exercises[0].exerciseId).toBe(BENCH_ID);
+    expect(op.group.exercises[0].name).toBe("Bench Press");
+  });
+
+  it("commits the exercise as a straight-sets group of one, its grp- uid minted by the tool", async () => {
+    const ws = makeWs();
+    const add = tool(buildExerciseTools(ws), "add_exercise");
+    await add.run({ week: 1, day: 1, name: "Bench Press" } as never);
+    expect(ws.ops).toHaveLength(1);
+    const op = ws.ops[0];
+    if (op.type !== "add_exercise") throw new Error("expected add_exercise");
+
+    const { uid, exercises, ...settings } = op.group;
+    expect(uid).toMatch(/^grp-/);
+    expect(settings).toEqual(STRAIGHT_SETS);
+    expect(exercises).toHaveLength(1);
+    expect(exercises[0]).toMatchObject({ exerciseId: BENCH_ID, name: "Bench Press" });
+    expect(exercises[0].uid).toMatch(/^ex-/);
+
+    // The working copy holds that very group, after the session's two.
+    const groups = ws.draft.weeks[0].days[0].session!.groups;
+    expect(groups).toHaveLength(3);
+    expect(groups[2]).toEqual(op.group);
   });
 
   it("rejects an unresolvable name with repair candidates and constructs NO op", async () => {
@@ -317,7 +366,7 @@ describe("finalizeAssistantOps sweeps", () => {
     const ws = makeWs();
     // Simulate an executor bug: an exercise with no catalog identity and a
     // name that did not exist at entry lands in the working copy.
-    const rogue = exercise("Invented Movement", null, null);
+    const rogue = lone(exercise("Invented Movement", null, null));
     const sessionUid = ws.draft.weeks[0].days[0].session!.uid;
     ws.draft = normalizeDraft({
       ...ws.draft,
@@ -329,14 +378,14 @@ describe("finalizeAssistantOps sweeps", () => {
                 ...slot,
                 session: {
                   ...slot.session,
-                  exercises: [...slot.session.exercises, rogue],
+                  groups: [...slot.session.groups, rogue],
                 },
               }
             : slot,
         ),
       })),
     });
-    ws.ops.push({ type: "add_exercise", sessionUid, exercise: rogue });
+    ws.ops.push({ type: "add_exercise", sessionUid, group: rogue });
 
     const { ops, notes } = finalizeAssistantOps(ws);
     expect(ops).toEqual([]);
@@ -348,7 +397,7 @@ describe("finalizeAssistantOps sweeps", () => {
       target: "library",
       draft: (() => {
         const d = makeDraft();
-        d.weeks[0].days[0].session!.exercises[0] = exercise("Coach Special", null, null);
+        d.weeks[0].days[0].session!.groups[0].exercises[0] = exercise("Coach Special", null, null);
         return normalizeDraft(d);
       })(),
       catalog: CATALOG,
@@ -388,7 +437,7 @@ describe("review-fleet regressions (S6a follow-up)", () => {
                 ...slot,
                 session: {
                   ...slot.session,
-                  exercises: [exercise("Back Squat", SQUAT_ID, null)],
+                  groups: [lone(exercise("Back Squat", SQUAT_ID, null))],
                 },
               }
             : slot,
@@ -524,8 +573,8 @@ describe("programContext front-loading (latency)", () => {
             calorieSurplusPercentage: null,
             notes: null,
             sessionType: "training",
-            exercises: Array.from({ length: 8 }, () =>
-              exercise("Back Squat", SQUAT_ID, [workingSet(100)]),
+            groups: Array.from({ length: 8 }, () =>
+              lone(exercise("Back Squat", SQUAT_ID, [workingSet(100)])),
             ),
           },
         };
@@ -556,7 +605,7 @@ describe("duplicate_week reports STORED loads, not recomputed arithmetic", () =>
                 ...slot,
                 session: {
                   ...slot.session,
-                  exercises: [exercise("Back Squat", SQUAT_ID, [workingSet(80)])],
+                  groups: [lone(exercise("Back Squat", SQUAT_ID, [workingSet(80)]))],
                 },
               }
             : slot,
@@ -581,8 +630,199 @@ describe("duplicate_week reports STORED loads, not recomputed arithmetic", () =>
     expect(out).not.toContain("92.6");
 
     const loads = (w: number) =>
-      ws.draft.weeks[w].days[0].session!.exercises[0].setSpecs![0].load_value;
+      sessionExercises(ws.draft.weeks[w].days[0].session!)[0].setSpecs![0].load_value;
     expect([loads(1), loads(2), loads(3)]).toEqual([84, 88, 92.5]);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Groups through a turn: tools count exercise positions across groups, and the
+// ops a turn returns replay onto the coach's draft without touching a group the
+// turn did not edit.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Week 1 day 1: a circuit of Back Squat then Leg Curl, then Bench Press,
+// Walking Lunge and Calf Raise, each a lone exercise.
+function makeCircuitDraft(): { draft: ProgramDraft; circuit: ExerciseGroupDraft } {
+  const circuit: ExerciseGroupDraft = {
+    uid: newUid("grp"),
+    ...CIRCUIT,
+    exercises: [
+      exercise("Back Squat", SQUAT_ID, [workingSet(100), workingSet(100)]),
+      exercise("Leg Curl", CURL_ID, [workingSet(40)]),
+    ],
+  };
+  const session: SessionDraft = {
+    uid: newUid("sess"),
+    name: "Lower A",
+    focus: "legs",
+    estimatedDurationMinutes: null,
+    calorieSurplusPercentage: null,
+    notes: null,
+    sessionType: "training",
+    groups: [
+      circuit,
+      lone(exercise("Bench Press", BENCH_ID, null)),
+      lone(exercise("Walking Lunge", null, null)),
+      lone(exercise("Calf Raise", null, null)),
+    ],
+  };
+  const week = makeRestWeek(0);
+  week.days[0] = { ...makeRestSlot(0), isRest: false, session };
+  const draft = normalizeDraft({
+    id: "44444444-4444-4444-8444-444444444444",
+    name: "Strength Block",
+    description: null,
+    status: "saved",
+    splitType: "Strength",
+    programDurationWeeks: null,
+    defaultSurplusPercentage: null,
+    weeks: [week],
+  });
+  return { draft, circuit };
+}
+
+describe("a turn over a draft holding a circuit", () => {
+  it("edits to other exercises replay onto the coach's draft with the circuit's uid and settings intact", async () => {
+    const { draft: coachDraft, circuit } = makeCircuitDraft();
+    const ws = buildWorkspaceFromRows({ target: "library", draft: coachDraft, catalog: CATALOG });
+    const tools = buildExerciseTools(ws);
+
+    // Position 3 is the first exercise after the two-exercise circuit.
+    expect(
+      await tool(tools, "update_exercise").run({
+        week: 1,
+        day: 1,
+        exercisePosition: 3,
+        sets: 5,
+      } as never),
+    ).toMatch(/Updated "Bench Press"/);
+    expect(
+      await tool(tools, "set_exercise_sets").run({
+        week: 1,
+        day: 1,
+        exerciseName: "Walking Lunge",
+        sets: [
+          { setType: "working", repsMin: 10, repsMax: 12 },
+          { setType: "working", repsMin: 10, repsMax: 12 },
+        ],
+      } as never),
+    ).toMatch(/Programmed 2 sets/);
+    expect(
+      await tool(tools, "remove_exercise").run({
+        week: 1,
+        day: 1,
+        exerciseName: "Calf Raise",
+      } as never),
+    ).toMatch(/Removed "Calf Raise"/);
+
+    const { ops, notes } = finalizeAssistantOps(ws);
+    expect(notes).toEqual([]);
+    expect(ops.map((op) => op.type)).toEqual([
+      "update_exercise",
+      "update_exercise",
+      "remove_exercise",
+    ]);
+
+    // The client re-validates the response body, then replays what the schema kept.
+    const received = z.array(draftOpSchema).parse(JSON.parse(JSON.stringify(ops)));
+    const replayed = applyDraftOps(coachDraft, received, { target: "library" });
+    expect(replayed.skipped).toEqual([]);
+    expect(replayed.applied).toBe(3);
+
+    const session = replayed.draft.weeks[0].days[0].session!;
+    expect(session.groups[0].uid).toBe(circuit.uid);
+    expect(groupSettingsOf(session.groups[0])).toEqual(CIRCUIT);
+    expect(session.groups[0]).toEqual(circuit);
+    expect(sessionExercises(session).map((e) => e.name)).toEqual([
+      "Back Squat",
+      "Leg Curl",
+      "Bench Press",
+      "Walking Lunge",
+    ]);
+    // The coach's draft lands where the server's working copy did.
+    expect(replayed.draft).toEqual(ws.draft);
+  });
+
+  // A move never splits a linked group, so an exercise can land beside the
+  // place the model asked for. The tool reports where it is, never the ask.
+  it("reorder_exercise reports where the exercise landed when a linked group kept it from the place asked", async () => {
+    const { draft } = makeCircuitDraft();
+    const ws = buildWorkspaceFromRows({ target: "library", draft, catalog: CATALOG });
+    const tools = buildExerciseTools(ws);
+
+    // Position 2 is inside the circuit: Bench Press stays after it, at 3.
+    const out = await tool(tools, "reorder_exercise").run({
+      week: 1,
+      day: 1,
+      exerciseName: "Bench Press",
+      toPosition: 2,
+    } as never);
+    expect(out).toBe(
+      '"Bench Press" is at position 3, not 2: exercises linked in a group stay together, so it went to the nearest place that keeps every group whole.',
+    );
+    expect(sessionExercises(ws.draft.weeks[0].days[0].session!).map((e) => e.name)).toEqual([
+      "Back Squat",
+      "Leg Curl",
+      "Bench Press",
+      "Walking Lunge",
+      "Calf Raise",
+    ]);
+
+    // A move a group allows is reported as asked, clamped to the session.
+    expect(
+      await tool(tools, "reorder_exercise").run({
+        week: 1,
+        day: 1,
+        exerciseName: "Calf Raise",
+        toPosition: 1,
+      } as never),
+    ).toBe('Moved "Calf Raise" to position 1.');
+    expect(
+      await tool(tools, "reorder_exercise").run({
+        week: 1,
+        day: 1,
+        exerciseName: "Calf Raise",
+        toPosition: 50,
+      } as never),
+    ).toBe('Moved "Calf Raise" to position 5.');
+  });
+
+  it("add_exercise with a position inside a linked group says where the new exercise went", async () => {
+    const { draft } = makeCircuitDraft();
+    const ws = buildWorkspaceFromRows({ target: "library", draft, catalog: CATALOG });
+    const tools = buildExerciseTools(ws);
+
+    const out = await tool(tools, "add_exercise").run({
+      week: 1,
+      day: 1,
+      name: "Bench Press",
+      position: 2,
+    } as never);
+    expect(out).toMatch(/^Added "[^"]+" to "Lower A" \(week 1 day 1\)\. "[^"]+" is at position 3, not 2: exercises linked in a group stay together/);
+    const names = sessionExercises(ws.draft.weeks[0].days[0].session!).map((e) => e.name);
+    expect(names.slice(0, 2)).toEqual(["Back Squat", "Leg Curl"]);
+  });
+});
+
+describe("resolveExerciseRef across groups", () => {
+  it("counts exercisePosition across groups: position 2 is the second exercise of a two-exercise first group", () => {
+    const session = makeCircuitDraft().draft.weeks[0].days[0].session!;
+
+    const second = resolveExerciseRef(session, { exercisePosition: 2 });
+    if (!second.ok) throw new Error(second.error);
+    expect(second.value.exercise).toBe(session.groups[0].exercises[1]);
+    expect(second.value.exercise.name).toBe("Leg Curl");
+    expect(second.value.index).toBe(1);
+
+    const third = resolveExerciseRef(session, { exercisePosition: 3 });
+    if (!third.ok) throw new Error(third.error);
+    expect(third.value.exercise).toBe(session.groups[1].exercises[0]);
+    expect(third.value.index).toBe(2);
+
+    const past = resolveExerciseRef(session, { exercisePosition: 6 });
+    expect(past.ok).toBe(false);
+    if (!past.ok) expect(past.error).toMatch(/has 5 exercise\(s\) — position 6 doesn't exist/);
   });
 });
 
@@ -601,7 +841,7 @@ function makePlacedDraft(): ProgramDraft {
     calorieSurplusPercentage: null,
     notes: null,
     sessionType: "training",
-    exercises: [exercise("Back Squat", SQUAT_ID, [workingSet(100)])],
+    groups: [lone(exercise("Back Squat", SQUAT_ID, [workingSet(100)]))],
   };
   const future: SessionDraft = {
     uid: newUid("sess"),
@@ -611,7 +851,7 @@ function makePlacedDraft(): ProgramDraft {
     calorieSurplusPercentage: null,
     notes: null,
     sessionType: "training",
-    exercises: [exercise("Leg Curl", CURL_ID, [workingSet(40)])],
+    groups: [lone(exercise("Leg Curl", CURL_ID, [workingSet(40)]))],
   };
   const week0 = makeRestWeek(0);
   week0.days[0] = { ...makeRestSlot(0), isRest: false, session: past };
@@ -790,7 +1030,7 @@ describe("placed-plan sweep (finalizeAssistantOps)", () => {
       calorieSurplusPercentage: null,
       notes: null,
       sessionType: "training",
-      exercises: [],
+      groups: [],
     };
     const greyedUid = ws.draft.weeks[1].days[5].uid;
     ws.draft = normalizeDraft({

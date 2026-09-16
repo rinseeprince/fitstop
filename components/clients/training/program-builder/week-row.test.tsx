@@ -18,7 +18,7 @@ function makeWeek(): WeekDraft {
       calorieSurplusPercentage: null,
       notes: null,
       sessionType: "training",
-      exercises: [],
+      groups: [],
     },
   };
   return week;

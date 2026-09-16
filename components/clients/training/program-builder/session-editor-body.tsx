@@ -19,6 +19,7 @@ import { ExerciseCard } from "./exercise-card";
 import { AddExercisePopover } from "./add-exercise-popover";
 import { SectionLabel } from "@/components/programs/shared/section-label";
 import { FOCUS_RING, LABEL_CLASS, MONO_INPUT_CLASS } from "./builder-tokens";
+import { sessionExercises } from "@/utils/exercise-groups";
 
 // Chrome-agnostic session editor body — the fields grid + per-set exercise
 // authoring, shared by the click-to-edit Sheet and the routed create-blank
@@ -53,7 +54,7 @@ export type SessionEditorBodyProps = {
   surplusHelpText?: string;
   onUpdateSession: (
     sessionUid: string,
-    patch: Partial<Omit<SessionDraft, "uid" | "exercises">>,
+    patch: Partial<Omit<SessionDraft, "uid" | "groups">>,
   ) => void;
   onAddExercise: (sessionUid: string, exercise: Omit<ExerciseDraft, "uid">) => void;
   onRemoveExercise: (sessionUid: string, exerciseUid: string) => void;
@@ -77,6 +78,9 @@ export function SessionEditorBody({
   onSpecEdit,
 }: SessionEditorBodyProps) {
   const editable = mode === "edit";
+  // Every exercise of the session in order, group by group — the editor lists
+  // them as it always has.
+  const exercises = sessionExercises(session);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
@@ -95,11 +99,11 @@ export function SessionEditorBody({
   if (seenRef.current?.sessionUid !== session.uid) {
     seenRef.current = {
       sessionUid: session.uid,
-      uids: new Set(session.exercises.map((e) => e.uid)),
+      uids: new Set(exercises.map((e) => e.uid)),
     };
     if (openUid !== null) setOpenUid(null);
   }
-  const added = session.exercises.find((e) => !seenRef.current!.uids.has(e.uid));
+  const added = exercises.find((e) => !seenRef.current!.uids.has(e.uid));
   if (added) {
     seenRef.current.uids.add(added.uid);
     if (openUid !== added.uid) setOpenUid(added.uid);
@@ -258,7 +262,7 @@ export function SessionEditorBody({
 
       <SectionLabel
         label="Exercises"
-        meta={String(session.exercises.length)}
+        meta={String(exercises.length)}
         actions={
           editable ? (
             <AddExercisePopover
@@ -284,10 +288,10 @@ export function SessionEditorBody({
           onDragEnd={handleDragEnd}
         >
           <SortableContext
-            items={session.exercises.map((e) => e.uid)}
+            items={exercises.map((e) => e.uid)}
             strategy={verticalListSortingStrategy}
           >
-            {session.exercises.map((exercise, i) => (
+            {exercises.map((exercise, i) => (
               <ExerciseCard
                 key={exercise.uid}
                 exercise={exercise}
@@ -305,7 +309,7 @@ export function SessionEditorBody({
             ))}
           </SortableContext>
         </DndContext>
-        {session.exercises.length === 0 && (
+        {exercises.length === 0 && (
           <p className="py-4 text-center text-xs text-[#93b0b4]">
             No exercises yet — add the first one from the rail above.
           </p>

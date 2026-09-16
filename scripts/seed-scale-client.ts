@@ -39,6 +39,7 @@ import {
   PERF_CLIENT_NAME,
   PERF_CLIENT_PASSWORD,
 } from "./perf-fixtures";
+import type { TrainingExerciseGroupInsert } from "@/lib/database-helpers";
 
 // ---------------------------------------------------------------------------
 // CLI flags
@@ -519,6 +520,9 @@ async function insertTrainingPlan(
 
   const exerciseRowsBySession = new Map<string, PrescribedExercise[]>();
   const exerciseInsertRows: Array<Record<string, unknown>> = [];
+  // Every exercise sits in a group (migration 178): each fixture exercise is a
+  // straight-sets group of one, the group taking the exercise's id.
+  const groupInsertRows: TrainingExerciseGroupInsert[] = [];
 
   for (const sessionRow of sessionRows) {
     const sessionExercises = exercises.slice(0, 6).map((e, idx) => {
@@ -546,21 +550,33 @@ async function insertTrainingPlan(
 
     for (let idx = 0; idx < sessionExercises.length; idx++) {
       const pe = sessionExercises[idx];
+      groupInsertRows.push({
+        id: pe.id,
+        session_id: sessionRow.id,
+        order_index: idx,
+        format: "straight_sets",
+      });
       exerciseInsertRows.push({
         id: pe.id,
         session_id: sessionRow.id,
+        group_id: pe.id,
         name: pe.name,
         sets: pe.sets,
         reps_min: pe.repsMin,
         reps_max: pe.repsMax,
         rpe_target: pe.rpeTarget,
         rest_seconds: pe.restSeconds,
-        order_index: idx,
+        order_index: 0,
         is_active: true,
         exercise_id: pe.exerciseId,
       });
     }
   }
+
+  const { error: gErr } = await supabaseAdmin
+    .from("training_exercise_groups")
+    .insert(groupInsertRows);
+  if (gErr) throw new Error(`training_exercise_groups insert: ${gErr.message}`);
 
   const { error: eErr } = await supabaseAdmin
     .from("training_exercises")

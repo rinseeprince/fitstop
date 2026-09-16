@@ -6,15 +6,19 @@ import { resolveWindowCap, type WindowCap } from "./program-event-walk";
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import { fetchVisibleExerciseIds } from "./library-placement-service";
 import { eventByDay } from "./calendar-day-events";
-import { mapExerciseRow } from "./training-mappers";
+import {
+  EXERCISE_WITH_GROUP_COLUMNS,
+  mapExerciseRowsToGroupsBySession,
+  type TrainingExerciseWithGroupRow,
+} from "./training-mappers";
 import { isDayUnchanged } from "./plan-edit-same-day";
 import { fetchAllPages, fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { addDaysToDateString } from "@/lib/date-helpers";
 import { daysBetween } from "@/utils/metric-points";
 import { toPrescribedFields } from "@/utils/prescribed-fields";
+import { groupSettingsToRow, sessionExercises } from "@/utils/exercise-groups";
 import type { savedSessionInputSchema } from "@/lib/validations/training";
-import type { TrainingExercise } from "@/types/training";
-import type { TrainingExerciseRow } from "@/lib/database-helpers";
+import type { TrainingExerciseGroup } from "@/types/training";
 
 // =============================================================================
 // Edit plan: the plan editor opens a client's program as it is laid on the
@@ -24,7 +28,7 @@ import type { TrainingExerciseRow } from "@/lib/database-helpers";
 // The read lays the calendar out day by day from the plan's start (the day's
 // session, whatever the coach moved, deleted or edited "just this day", else
 // rest) and hands back a version: everything the editor was built from. The
-// save sends the version back, and edit_training_plan_atomic (migration 176)
+// save sends the version back, and edit_training_plan_atomic (migration 178)
 // refuses it in the same transaction as the write when any of it changed.
 // The save lays the days it writes the same way, so a day saved as it was laid
 // keeps its edited mark and a day the coach changed loses it.
@@ -44,7 +48,7 @@ export type PlanEditDay =
       notes: string | null;
       /** The day's event carries the per-date value. */
       calorieSurplusPercentage: number | null;
-      exercises: TrainingExercise[];
+      groups: TrainingExerciseGroup[];
     };
 
 export type PlanForEditing = {
@@ -242,47 +246,43 @@ async function readSessionRows(clientId: string, ids: string[]): Promise<Session
   );
 }
 
-/** The calendar from `from` to `through`, the rows its days point at and their exercises. */
+/** The calendar from `from` to `through`, the rows its days point at and their groups. */
 async function readLaidCalendar(clientId: string, from: string, through: string) {
   const events = await readCalendar(clientId, from, through);
   const sessionIds = [
     ...new Set(events.map((e) => e.training_session_id).filter((id): id is string => id != null)),
   ];
-  const [rows, exercises] = await Promise.all([
+  const [rows, groups] = await Promise.all([
     readSessionRows(clientId, sessionIds),
-    readExercises(sessionIds),
+    readGroups(sessionIds),
   ]);
-  return { events, rows, exercises };
+  return { events, rows, groups };
 }
 
-async function readExercises(sessionIds: string[]): Promise<Map<string, TrainingExercise[]>> {
-  const rows = await fetchAllByChunkedIds<TrainingExerciseRow, string>(
+// Each session's groups, read through its live exercises. Paged on
+// (session_id, id) for a stable page walk; the nesting puts groups and
+// exercises in their order.
+async function readGroups(sessionIds: string[]): Promise<Map<string, TrainingExerciseGroup[]>> {
+  const rows = await fetchAllByChunkedIds<TrainingExerciseWithGroupRow, string>(
     sessionIds,
     (chunk, from, to) =>
       supabaseAdmin
         .from("training_exercises")
-        .select("*")
+        .select(EXERCISE_WITH_GROUP_COLUMNS)
         .in("session_id", chunk)
         .eq("is_active", true)
         .order("session_id", { ascending: true })
-        .order("order_index", { ascending: true })
         .order("id", { ascending: true })
         .range(from, to),
     { errorLabel: "the plan's exercises" },
   );
-  const bySession = new Map<string, TrainingExercise[]>();
-  for (const row of rows) {
-    const list = bySession.get(row.session_id) ?? [];
-    list.push(mapExerciseRow(row));
-    bySession.set(row.session_id, list);
-  }
-  return bySession;
+  return mapExerciseRowsToGroupsBySession(rows);
 }
 
 /**
  * One day per date from `from` to `gridEnd`. Up to `layThrough` a day holds
  * its event's session, read through the row it points at (an event whose row
- * cannot be read is laid from its own snapshot, with no exercises), else rest.
+ * cannot be read is laid from its own snapshot, with no groups), else rest.
  * Past `layThrough` a day holds nothing: the plan can't reach it.
  */
 function layDays(input: {
@@ -291,7 +291,7 @@ function layDays(input: {
   layThrough: string;
   events: CalendarEventRow[];
   rows: Map<string, SessionRow>;
-  exercises: Map<string, TrainingExercise[]>;
+  groups: Map<string, TrainingExerciseGroup[]>;
 }): PlanEditDay[] {
   const byDay = eventByDay(input.events);
   const total = daysBetween(input.from, input.gridEnd) + 1;
@@ -312,7 +312,7 @@ function layDays(input: {
       estimatedDurationMinutes: row?.estimated_duration_minutes ?? null,
       notes: row?.notes ?? null,
       calorieSurplusPercentage: event.calorie_surplus_percentage,
-      exercises: row ? (input.exercises.get(row.id) ?? []) : [],
+      groups: row ? (input.groups.get(row.id) ?? []) : [],
     });
   }
   return days;
@@ -325,14 +325,14 @@ async function readLaidDays(
   through: string,
 ): Promise<PlanEditDay[]> {
   if (through < from) return [];
-  const { events, rows, exercises } = await readLaidCalendar(clientId, from, through);
+  const { events, rows, groups } = await readLaidCalendar(clientId, from, through);
   return layDays({
     from,
     gridEnd: through,
     layThrough: through,
     events,
     rows: new Map(rows.map((row) => [row.id, row])),
-    exercises,
+    groups,
   });
 }
 
@@ -358,7 +358,7 @@ export async function getPlanForEditing(
   // plan's own days past its limit, which a save clears.
   const through = later(layThrough, plan.effective_until);
 
-  const { events, rows, exercises } = await readLaidCalendar(
+  const { events, rows, groups } = await readLaidCalendar(
     clientId,
     plan.effective_from,
     through,
@@ -387,7 +387,7 @@ export async function getPlanForEditing(
       layThrough,
       events,
       rows: rowsById,
-      exercises,
+      groups,
     }),
     version: encodeVersion({
       plan_updated_at: plan.updated_at,
@@ -408,9 +408,10 @@ export async function getPlanForEditing(
   };
 }
 
-// One day of the save, in migration 176's columns. Exercises splat verbatim —
-// the builder keeps each exercise's compact columns the projection of its
-// set specs, as placement does — with a catalog id the coach can't see nulled.
+// One day of the save, in migration 178's columns: the day's groups in order,
+// each with its settings and its exercises in order. Exercises splat verbatim —
+// the builder keeps each exercise's compact columns the projection of its set
+// specs, as placement does — with a catalog id the coach can't see nulled.
 // `unchanged` says the day as written is the day as laid, so its event keeps
 // its edited mark; the function never reads it on a rest day.
 function toSaveDay(
@@ -420,12 +421,13 @@ function toSaveDay(
   laid: PlanEditDay | undefined,
 ) {
   if (input.isRest) return { date, is_rest: true };
-  const exercises = [...input.exercises]
-    .sort((a, b) => a.orderIndex - b.orderIndex)
-    .map((ex) => ({
+  const groups = input.groups.map((group) => ({
+    ...group,
+    exercises: group.exercises.map((ex) => ({
       ...ex,
       exerciseId: ex.exerciseId && visible.has(ex.exerciseId) ? ex.exerciseId : null,
-    }));
+    })),
+  }));
   return {
     date,
     is_rest: false,
@@ -434,25 +436,26 @@ function toSaveDay(
     notes: input.notes ?? null,
     estimated_duration_minutes: input.estimatedDurationMinutes ?? null,
     calorie_surplus_percentage: input.calorieSurplusPercentage ?? null,
-    unchanged: isDayUnchanged(laid, { ...input, exercises }),
-    exercises: exercises.map((ex) => ({
-      name: ex.name,
-      exercise_id: ex.exerciseId,
-      order_index: ex.orderIndex,
-      sets: ex.sets,
-      reps_min: ex.repsMin ?? null,
-      reps_max: ex.repsMax ?? null,
-      reps_target: ex.repsTarget ?? null,
-      rpe_target: ex.rpeTarget ?? null,
-      percentage_1rm: ex.percentage1rm ?? null,
-      tempo: ex.tempo ?? null,
-      rest_seconds: ex.restSeconds ?? null,
-      notes: ex.notes ?? null,
-      superset_group: ex.supersetGroup ?? null,
-      is_warmup: ex.isWarmup ?? false,
-      set_specs: ex.setSpecs ?? null,
-      video_url: ex.videoUrl ?? null,
-      prescribed_fields: toPrescribedFields(ex.prescribedFields),
+    unchanged: isDayUnchanged(laid, { ...input, groups }),
+    groups: groups.map((group) => ({
+      ...groupSettingsToRow(group),
+      exercises: group.exercises.map((ex) => ({
+        name: ex.name,
+        exercise_id: ex.exerciseId,
+        sets: ex.sets,
+        reps_min: ex.repsMin ?? null,
+        reps_max: ex.repsMax ?? null,
+        reps_target: ex.repsTarget ?? null,
+        rpe_target: ex.rpeTarget ?? null,
+        percentage_1rm: ex.percentage1rm ?? null,
+        tempo: ex.tempo ?? null,
+        rest_seconds: ex.restSeconds ?? null,
+        notes: ex.notes ?? null,
+        is_warmup: ex.isWarmup ?? false,
+        set_specs: ex.setSpecs ?? null,
+        video_url: ex.videoUrl ?? null,
+        prescribed_fields: toPrescribedFields(ex.prescribedFields),
+      })),
     })),
   };
 }
@@ -522,7 +525,7 @@ export async function savePlanEdit(params: {
     fetchVisibleExerciseIds(
       coachId,
       written.flatMap((s) =>
-        s.exercises.map((e) => e.exerciseId).filter((id): id is string => Boolean(id)),
+        sessionExercises(s).map((e) => e.exerciseId).filter((id): id is string => Boolean(id)),
       ),
     ),
     readLaidDays(clientId, firstEditableDate, lastDay),

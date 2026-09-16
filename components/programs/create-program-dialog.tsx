@@ -69,7 +69,7 @@ export function CreateProgramDialog({
           sessions: Array.from({ length: DAYS_PER_WEEK }, () => ({
             name: "Rest",
             isRest: true,
-            exercises: [],
+            groups: [],
           })),
         }),
       })

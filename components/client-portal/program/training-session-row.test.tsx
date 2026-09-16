@@ -3,6 +3,7 @@ import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 
 import { TrainingSessionRow } from "./training-session-row";
 import type { ClientTrainingSessionEntry } from "@/types/client-training-plan";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 
 function makeSession(
   overrides: Partial<ClientTrainingSessionEntry> = {},
@@ -14,23 +15,29 @@ function makeSession(
     orderIndex: 0,
     isRest: false,
     estimatedDurationMinutes: 60,
-    exercises: [
+    groups: [
       {
-        id: "ex-1",
-        name: "Bench Press",
+        id: "grp-1",
         orderIndex: 0,
-        sets: 4,
-        repsMin: 8,
-        repsMax: 10,
-        repsTarget: null,
-        rpeTarget: 8,
-        tempo: "3-1-1",
-        restSeconds: 120,
-        isWarmup: false,
-        supersetGroup: null,
-        setSpecs: null,
-        videoUrl: null,
-        prescribedFields: null,
+        ...STRAIGHT_SETS,
+        exercises: [
+          {
+            id: "ex-1",
+            name: "Bench Press",
+            orderIndex: 0,
+            sets: 4,
+            repsMin: 8,
+            repsMax: 10,
+            repsTarget: null,
+            rpeTarget: 8,
+            tempo: "3-1-1",
+            restSeconds: 120,
+            isWarmup: false,
+            setSpecs: null,
+            videoUrl: null,
+            prescribedFields: null,
+          },
+        ],
       },
     ],
     ...overrides,
@@ -79,7 +86,7 @@ describe("TrainingSessionRow", () => {
       isRest: true,
       focus: null,
       estimatedDurationMinutes: null,
-      exercises: [],
+      groups: [],
     });
 
     render(<TrainingSessionRow session={session} />);

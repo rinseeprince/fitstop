@@ -1,4 +1,5 @@
 import { toPrescribedFields } from "@/utils/prescribed-fields";
+import { groupSettingsToRow, type GroupSettingsInput } from "@/utils/exercise-groups";
 import type { PlanEditDay } from "./plan-edit-service";
 
 // =============================================================================
@@ -22,27 +23,30 @@ type ExerciseContent = {
   tempo?: string | null;
   restSeconds?: number | null;
   notes?: string | null;
-  supersetGroup?: string | null;
   isWarmup?: boolean;
   setSpecs?: readonly object[] | null;
   videoUrl?: string | null;
   prescribedFields?: readonly string[] | null;
 };
 
-/** A session day in the order its exercises are written. */
+/** A group in the order its exercises are written. */
+type GroupContent = GroupSettingsInput & { exercises: readonly ExerciseContent[] };
+
+/** A session day in the order its groups are written. */
 type DayContent = {
   name: string;
   focus?: string | null;
   notes?: string | null;
   estimatedDurationMinutes?: number | null;
   calorieSurplusPercentage?: number | null;
-  exercises: readonly ExerciseContent[];
+  groups: readonly GroupContent[];
 };
 
 // What the editor rewrites on a day nobody touched is evened out here, and
-// nothing else: it numbers exercises and sets by position, sends an empty set
-// list as none, trims a video link and drops an empty prescribed-fields list
-// (trainingSessionToDraft, normalizeDraft and exerciseDraftToInput).
+// nothing else: it numbers groups, exercises and sets by position, sends an
+// empty set list as none, trims a video link and drops an empty
+// prescribed-fields list (trainingSessionToDraft, normalizeDraft and
+// exerciseDraftToInput).
 function exerciseKey(exercise: ExerciseContent) {
   return {
     name: exercise.name,
@@ -56,7 +60,6 @@ function exerciseKey(exercise: ExerciseContent) {
     tempo: exercise.tempo ?? null,
     restSeconds: exercise.restSeconds ?? null,
     notes: exercise.notes ?? null,
-    supersetGroup: exercise.supersetGroup ?? null,
     isWarmup: exercise.isWarmup ?? false,
     setSpecs: exercise.setSpecs?.length
       ? exercise.setSpecs.map((spec, i) => ({ ...spec, set_number: i + 1 }))
@@ -76,7 +79,10 @@ function dayKey(day: DayContent): string {
       notes: day.notes ?? null,
       estimatedDurationMinutes: day.estimatedDurationMinutes ?? null,
       calorieSurplusPercentage: day.calorieSurplusPercentage ?? null,
-      exercises: day.exercises.map(exerciseKey),
+      groups: day.groups.map((group) => ({
+        ...groupSettingsToRow(group),
+        exercises: group.exercises.map(exerciseKey),
+      })),
     },
     (_key, value: unknown) =>
       value !== null && typeof value === "object" && !Array.isArray(value)
@@ -89,8 +95,9 @@ function dayKey(day: DayContent): string {
 
 /**
  * True when the session day about to be written is the day as laid: the same
- * name, focus, notes, duration and surplus, and the same exercises in the same
- * order. A day laid as rest is never unchanged by a session.
+ * name, focus, notes, duration and surplus, and the same groups — settings and
+ * exercises — in the same order. A day laid as rest is never unchanged by a
+ * session.
  */
 export function isDayUnchanged(laid: PlanEditDay | undefined, saved: DayContent): boolean {
   if (!laid || laid.isRest) return false;

@@ -174,7 +174,7 @@ export function usePlacedSessionEditor(
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ eventId: state.eventId, exercises: payload.exercises }),
+            body: JSON.stringify({ eventId: state.eventId, groups: payload.groups }),
           },
         );
         if (!cloneRes.ok) {
@@ -188,7 +188,7 @@ export function usePlacedSessionEditor(
       }
 
       // The builder-grade write. For "day" this runs on the fresh clone —
-      // the clone already carries the exercises, so this pass lands the meta
+      // the clone already carries the groups, so this pass lands the meta
       // (name/focus/duration/notes/surplus), re-snapshots the event and fires
       // the surplus cascade; a retried save repairs any partial.
       const res = await fetch(

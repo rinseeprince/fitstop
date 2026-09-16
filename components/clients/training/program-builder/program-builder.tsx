@@ -46,6 +46,7 @@ import {
   TEXT_SECONDARY,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
+import { countSessionExercises } from "@/utils/exercise-groups";
 
 // Orchestrator for the full-page Program builder. Draft state, mode, and the
 // save pipeline live in ProgramDraftProvider (the [savedPlanId] layout) so the
@@ -495,7 +496,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                     {dnd.activeDrag.session.name}
                   </div>
                   <div className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-                    {dnd.activeDrag.session.exercises.length} exercises
+                    {countSessionExercises(dnd.activeDrag.session)} exercises
                   </div>
                 </div>
               ) : dnd.activeDrag?.type === "library-session" ? (
@@ -510,7 +511,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                       </span>
                     )}
                     <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-                      {dnd.activeDrag.session.exercises.length} exercises
+                      {countSessionExercises(dnd.activeDrag.session)} exercises
                     </span>
                   </div>
                 </div>
@@ -595,7 +596,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
               calorieSurplusPercentage: null,
               notes: null,
               sessionType: "training",
-              exercises: [],
+              groups: [],
             };
             placeSession(t.slotUid, blank);
             sessionSheet.show(blank.uid);

@@ -1,6 +1,7 @@
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import type { PrescribedField } from "@/utils/prescribed-fields";
 import type { SavedPlanStatus } from "@/types/training";
+import type { GroupSettings } from "@/utils/exercise-groups";
 
 // In-memory draft tree for the full-page Program builder (builder S2.5). The
 // coach edits this working copy; nothing persists until "Save program"
@@ -40,7 +41,6 @@ export type ExerciseDraft = {
   percentage1rm: number | null;
   tempo: string | null;
   restSeconds: number | null;
-  supersetGroup: string | null;
   isWarmup: boolean;
   notes: string | null;
   videoUrl: string | null;
@@ -48,6 +48,14 @@ export type ExerciseDraft = {
   // 149). null = all five. Decides what the CLIENT app renders, so it must
   // round-trip every serialize/clone/placement path like set_specs does.
   prescribedFields: PrescribedField[] | null;
+};
+
+// A group of exercises (migration 178): its settings and its exercises, in
+// order. Never empty — normalizeDraft drops a group left with no exercises. A
+// lone exercise is a straight-sets group of one.
+export type ExerciseGroupDraft = GroupSettings & {
+  uid: string;
+  exercises: ExerciseDraft[];
 };
 
 export type SessionDraft = {
@@ -61,7 +69,8 @@ export type SessionDraft = {
   calorieSurplusPercentage: number | null;
   notes: string | null;
   sessionType: string;
-  exercises: ExerciseDraft[];
+  // Every exercise sits in a group; the groups are in order.
+  groups: ExerciseGroupDraft[];
 };
 
 // One positional day slot (Day 1–7, never weekdays). `session` is singular by
@@ -103,7 +112,7 @@ export type ProgramDraft = {
   weeks: WeekDraft[]; // min length 1
 };
 
-export function newUid(prefix: "wk" | "slot" | "sess" | "ex"): string {
+export function newUid(prefix: "wk" | "slot" | "sess" | "grp" | "ex"): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 

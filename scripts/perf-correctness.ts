@@ -240,15 +240,25 @@ async function seedPlanAndExercises() {
   ]);
   if (sessErr) throw new Error(`session: ${sessErr.message}`);
 
+  // Every exercise sits in a group (migration 178): each fixture exercise is a
+  // straight-sets group of one, the group taking the exercise's id.
+  const { error: groupErr } = await supabaseAdmin.from("training_exercise_groups").insert([
+    { id: TE_BENCH_DIRECT, session_id: TS_MAIN, order_index: 0, format: "straight_sets" },
+    { id: TE_BENCH_VIA_TE, session_id: TS_MAIN, order_index: 1, format: "straight_sets" },
+    { id: TE_SQUAT, session_id: TS_ALT, order_index: 0, format: "straight_sets" },
+    { id: TE_OHP, session_id: TS_F, order_index: 0, format: "straight_sets" },
+  ]);
+  if (groupErr) throw new Error(`training_exercise_groups: ${groupErr.message}`);
+
   const { error: exErr } = await supabaseAdmin.from("training_exercises").insert([
     // Case A/E: el.exercise_id=BENCH_ID; te.exercise_id also BENCH_ID (canonical)
-    { id: TE_BENCH_DIRECT, session_id: TS_MAIN, name: "Bench Press", order_index: 0, sets: 2, exercise_id: BENCH_ID },
+    { id: TE_BENCH_DIRECT, session_id: TS_MAIN, group_id: TE_BENCH_DIRECT, name: "Bench Press", order_index: 0, sets: 2, exercise_id: BENCH_ID },
     // Case B: el.exercise_id=NULL but te.exercise_id=BENCH_ID — the dual-identity branch
-    { id: TE_BENCH_VIA_TE, session_id: TS_MAIN, name: "Bench Press", order_index: 1, sets: 2, exercise_id: BENCH_ID },
+    { id: TE_BENCH_VIA_TE, session_id: TS_MAIN, group_id: TE_BENCH_VIA_TE, name: "Bench Press", order_index: 0, sets: 2, exercise_id: BENCH_ID },
     // Case D: el.exercise_id=SQUAT_ID, under TS_ALT to dodge the C/D same-week UNIQUE collision
-    { id: TE_SQUAT, session_id: TS_ALT, name: "Squat", order_index: 0, sets: 1, exercise_id: SQUAT_ID },
+    { id: TE_SQUAT, session_id: TS_ALT, group_id: TE_SQUAT, name: "Squat", order_index: 0, sets: 1, exercise_id: SQUAT_ID },
     // F1-F14: 14 OHP sessions under TS_F
-    { id: TE_OHP, session_id: TS_F, name: "Overhead Press", order_index: 0, sets: 1, exercise_id: OHP_ID },
+    { id: TE_OHP, session_id: TS_F, group_id: TE_OHP, name: "Overhead Press", order_index: 0, sets: 1, exercise_id: OHP_ID },
   ]);
   if (exErr) throw new Error(`training_exercises: ${exErr.message}`);
 }

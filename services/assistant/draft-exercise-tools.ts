@@ -1,7 +1,11 @@
 import { betaTool } from "@anthropic-ai/sdk/helpers/beta/json-schema";
 import { newUid } from "@/components/clients/training/program-builder/program-builder-types";
 import type { ExerciseDraft } from "@/components/clients/training/program-builder/program-builder-types";
-import { defaultExerciseDraftFromCatalog } from "@/components/clients/training/program-builder/program-builder-model";
+import {
+  defaultExerciseDraftFromCatalog,
+  straightSetsGroup,
+} from "@/components/clients/training/program-builder/program-builder-model";
+import { countSessionExercises } from "@/utils/exercise-groups";
 import {
   compactFromSpecs,
   expandSetSpecs,
@@ -15,7 +19,13 @@ import {
   suggestExerciseCandidates,
 } from "@/services/exercise-catalog-service";
 import type { DraftWorkspace } from "./draft-workspace";
-import { commitOp, resolveExerciseRef, resolveSession } from "./draft-tool-helpers";
+import {
+  commitOp,
+  exercisePositionNow,
+  linkedGroupNote,
+  resolveExerciseRef,
+  resolveSession,
+} from "./draft-tool-helpers";
 
 // Exercise-level WRITE tools. Two invariants live here:
 // - CATALOG CONSTRAINT (the surviving core of the original Phase 6): every
@@ -106,7 +116,9 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       const err = commitOp(ws, {
         type: "add_exercise",
         sessionUid: session.value.uid,
-        exercise,
+        // A lone exercise: a straight-sets group of one, its uid minted here
+        // so the client replays the same group.
+        group: straightSetsGroup(newUid("grp"), exercise),
         label: `W${input.week} D${input.day}: added ${row.name} (${exercise.sets}×${exercise.repsMin}-${exercise.repsMax})`,
       });
       if (err) return err;
@@ -114,7 +126,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         // Clamp to the session's real length — an out-of-range toIndex is
         // schema-invalid on the client and would discard the whole turn
         // (including the add above) while this tool reported success.
-        const count = session.value.exercises.length + 1;
+        const count = countSessionExercises(session.value) + 1;
         const target = Math.min(Math.max(input.position, 1), count);
         const reorderErr = commitOp(ws, {
           type: "reorder_exercise",
@@ -124,6 +136,10 @@ export function buildExerciseTools(ws: DraftWorkspace) {
           label: `W${input.week} D${input.day}: ${row.name} to position ${input.position}`,
         });
         if (reorderErr) return `Added ${row.name}, but couldn't reposition it: ${reorderErr}`;
+        const landed = exercisePositionNow(ws, session.value.uid, exercise.uid);
+        if (landed !== target) {
+          return `Added "${row.name}" to "${session.value.name}" (week ${input.week} day ${input.day}). ${linkedGroupNote(row.name, landed, target)}`;
+        }
       }
       return `Added "${row.name}" to "${session.value.name}" (week ${input.week} day ${input.day}).${row.name !== input.name.trim() ? ` (Catalog name used: "${row.name}".)` : ""}`;
     },
@@ -363,7 +379,14 @@ export function buildExerciseTools(ws: DraftWorkspace) {
         toIndex: input.toPosition - 1,
         label: `W${input.week} D${input.day}: ${ref.value.exercise.name} to position ${input.toPosition}`,
       });
-      return err ?? `Moved "${ref.value.exercise.name}" to position ${input.toPosition}.`;
+      if (err) return err;
+      // The op clamps to the session's length; a linked group can move the
+      // exercise somewhere else again. Report where it is.
+      const asked = Math.min(input.toPosition, countSessionExercises(session.value));
+      const landed = exercisePositionNow(ws, session.value.uid, ref.value.exercise.uid);
+      return landed === asked
+        ? `Moved "${ref.value.exercise.name}" to position ${asked}.`
+        : linkedGroupNote(ref.value.exercise.name, landed, asked);
     },
   });
 

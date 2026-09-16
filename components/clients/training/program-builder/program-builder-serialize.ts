@@ -5,13 +5,20 @@ import type {
   InlinePlanBody,
   overwriteSavedPlanSchema,
 } from "@/lib/validations/training";
-import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
+import type {
+  SavedPlan,
+  SavedSession,
+  SavedExercise,
+  SavedExerciseGroup,
+} from "@/types/training";
+import { groupSettingsOf } from "@/utils/exercise-groups";
 import {
   DAYS_PER_WEEK,
   newUid,
   makeRestSlot,
   type DaySlotDraft,
   type ExerciseDraft,
+  type ExerciseGroupDraft,
   type ProgramDraft,
   type SessionDraft,
   type WeekDraft,
@@ -42,11 +49,18 @@ function exerciseToDraft(e: SavedExercise): ExerciseDraft {
     percentage1rm: e.percentage1rm,
     tempo: e.tempo,
     restSeconds: e.restSeconds,
-    supersetGroup: e.supersetGroup,
     isWarmup: e.isWarmup,
     notes: e.notes,
     videoUrl: e.videoUrl,
     prescribedFields: toPrescribedFields(e.prescribedFields),
+  };
+}
+
+function groupToDraft(g: SavedExerciseGroup): ExerciseGroupDraft {
+  return {
+    uid: newUid("grp"),
+    ...groupSettingsOf(g),
+    exercises: g.exercises.map(exerciseToDraft),
   };
 }
 
@@ -59,7 +73,7 @@ function sessionToDraft(s: SavedSession): SessionDraft {
     calorieSurplusPercentage: s.calorieSurplusPercentage,
     notes: s.notes,
     sessionType: s.sessionType,
-    exercises: s.exercises.map(exerciseToDraft),
+    groups: s.groups.map(groupToDraft),
   };
 }
 
@@ -154,12 +168,12 @@ export function savedPlanToDraft(plan: SavedPlan): ProgramDraft {
 // One exercise-input mapping shared by the overwrite body, the standalone
 // create payload and the placed-session payload (placed-serialize.ts) — the
 // write paths must never drift (a field missed on one side silently drops
-// per-set data on that path).
-export function exerciseDraftToInput(e: ExerciseDraft, i: number) {
+// per-set data on that path). An exercise's position is its place in its
+// group's array.
+function exerciseDraftToInput(e: ExerciseDraft) {
   return {
     name: e.name,
     exerciseId: e.exerciseId,
-    orderIndex: i,
     sets: Math.min(20, Math.max(1, Math.round(e.sets))),
     repsMin: e.repsMin,
     repsMax: e.repsMax,
@@ -169,7 +183,6 @@ export function exerciseDraftToInput(e: ExerciseDraft, i: number) {
     tempo: e.tempo,
     restSeconds: e.restSeconds,
     notes: e.notes,
-    supersetGroup: e.supersetGroup,
     isWarmup: e.isWarmup,
     // [] must never reach the API — it fails the ≥1-non-warmup refine and
     // 400s the whole save. normalizeDraft reverts [] to null upstream;
@@ -179,6 +192,16 @@ export function exerciseDraftToInput(e: ExerciseDraft, i: number) {
     // null, never [] — an empty list is refused by the 149 CHECK and would
     // render the client an empty grid.
     prescribedFields: e.prescribedFields?.length ? e.prescribedFields : null,
+  };
+}
+
+// One group-input mapping for every write path (migration 178): the group's
+// settings and its exercises, in order. A group's position is its place in the
+// session's array.
+export function groupDraftToInput(g: ExerciseGroupDraft) {
+  return {
+    ...groupSettingsOf(g),
+    exercises: g.exercises.map(exerciseDraftToInput),
   };
 }
 
@@ -201,7 +224,7 @@ export function sessionDraftToStandalonePayload(
     // program default wherever it is next placed.
     calorieSurplusPercentage: null,
     notes: session.notes,
-    exercises: session.exercises.map(exerciseDraftToInput),
+    groups: session.groups.map(groupDraftToInput),
   };
 }
 
@@ -228,7 +251,7 @@ export function draftToSessionInputs(draft: ProgramDraft): ProgramOverwriteBody[
       calorieSurplusPercentage: slot.session?.calorieSurplusPercentage ?? null,
       notes: slot.session?.notes ?? null,
       sessionType: slot.session?.sessionType ?? "training",
-      exercises: (slot.session?.exercises ?? []).map(exerciseDraftToInput),
+      groups: (slot.session?.groups ?? []).map(groupDraftToInput),
     })),
   );
   if (sessions.length === 0) {

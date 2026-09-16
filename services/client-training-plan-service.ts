@@ -4,8 +4,14 @@ import type {
   ClientTrainingPlanState,
   ClientTrainingSessionEntry,
   ClientTrainingExercise,
+  ClientTrainingExerciseGroup,
 } from "@/types/client-training-plan";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import {
+  groupSettingsFromRow,
+  nestRowsIntoGroups,
+  type GroupSettingsRow,
+} from "@/utils/exercise-groups";
 import { fetchAllByChunkedIds, fetchAllPages } from "@/lib/paged-fetch";
 import { expandDateRange } from "@/lib/date-helpers";
 import { eventByDay } from "./calendar-day-events";
@@ -40,6 +46,9 @@ type PlanSlotRow = {
   order_index: number;
 };
 
+/** The group an exercise sits in, as the client read selects it. */
+type ExerciseGroupRow = GroupSettingsRow & { id: string; order_index: number };
+
 type TrainingExerciseRow = {
   id: string;
   session_id: string;
@@ -53,10 +62,10 @@ type TrainingExerciseRow = {
   tempo: string | null;
   rest_seconds: number | null;
   is_warmup: boolean | null;
-  superset_group: string | null;
   set_specs: SetSpec[] | null;
   video_url: string | null;
   prescribed_fields: string[] | null;
+  exercise_group: ExerciseGroupRow;
 };
 
 function mapExercise(row: TrainingExerciseRow): ClientTrainingExercise {
@@ -72,11 +81,22 @@ function mapExercise(row: TrainingExerciseRow): ClientTrainingExercise {
     tempo: row.tempo,
     restSeconds: row.rest_seconds,
     isWarmup: row.is_warmup ?? false,
-    supersetGroup: row.superset_group,
     setSpecs: row.set_specs ?? null,
     videoUrl: row.video_url ?? null,
     prescribedFields: row.prescribed_fields ?? null,
   };
+}
+
+/** One session's exercise rows as its groups, in order. */
+function mapGroups(rows: TrainingExerciseRow[]): ClientTrainingExerciseGroup[] {
+  return nestRowsIntoGroups(rows.map((row) => ({ group: row.exercise_group, exercise: row }))).map(
+    ({ group, exercises }) => ({
+      id: group.id,
+      orderIndex: group.order_index,
+      ...groupSettingsFromRow(group),
+      exercises: exercises.map(mapExercise),
+    }),
+  );
 }
 
 /**
@@ -287,12 +307,11 @@ async function fetchPlanEntries(
       supabaseAdmin
         .from("training_exercises")
         .select(
-          "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, superset_group, set_specs, video_url, prescribed_fields"
+          "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, set_specs, video_url, prescribed_fields, exercise_group:training_exercise_groups!training_exercises_group_fkey(id, order_index, format, rounds, time_cap_seconds, interval_seconds, rest_between_exercises_seconds, rest_between_rounds_seconds, notes)"
         )
         .in("session_id", chunk)
         .eq("is_active", true)
         .order("session_id", { ascending: true })
-        .order("order_index", { ascending: true })
         .order("id", { ascending: true })
         .range(from, to),
       { errorLabel: "training exercises" },
@@ -301,12 +320,16 @@ async function fetchPlanEntries(
 
   const rowsById = new Map(sessionRows.map((row) => [row.id, row]));
 
-  const exercisesBySession = new Map<string, ClientTrainingExercise[]>();
-  for (const row of exerciseRows as TrainingExerciseRow[]) {
-    const list = exercisesBySession.get(row.session_id) ?? [];
-    list.push(mapExercise(row));
-    exercisesBySession.set(row.session_id, list);
+  // Each session's exercises in their groups, in order.
+  const exerciseRowsBySession = new Map<string, TrainingExerciseRow[]>();
+  for (const row of exerciseRows as unknown as TrainingExerciseRow[]) {
+    const list = exerciseRowsBySession.get(row.session_id) ?? [];
+    list.push(row);
+    exerciseRowsBySession.set(row.session_id, list);
   }
+  const groupsBySession = new Map(
+    [...exerciseRowsBySession].map(([sessionId, rows]) => [sessionId, mapGroups(rows)]),
+  );
 
   const planRowIdByDay = new Map<number, string>();
   for (const row of planRows) {
@@ -329,7 +352,7 @@ async function fetchPlanEntries(
           weekIndex,
           isRest: true,
           estimatedDurationMinutes: null,
-          exercises: [],
+          groups: [],
         };
       }
 
@@ -345,7 +368,7 @@ async function fetchPlanEntries(
           weekIndex,
           isRest: false,
           estimatedDurationMinutes: null,
-          exercises: [],
+          groups: [],
         };
       }
 
@@ -357,7 +380,7 @@ async function fetchPlanEntries(
         weekIndex,
         isRest: false,
         estimatedDurationMinutes: row.estimated_duration_minutes,
-        exercises: exercisesBySession.get(row.id) ?? [],
+        groups: groupsBySession.get(row.id) ?? [],
       };
     }
   );

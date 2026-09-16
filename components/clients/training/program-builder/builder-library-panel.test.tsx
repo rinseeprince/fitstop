@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { DndContext } from "@dnd-kit/core";
 import type { SavedSession, Exercise } from "@/types/training";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import { BuilderLibraryPanel } from "./builder-library-panel";
 
 // -- mocks --------------------------------------------------------------------
@@ -15,19 +16,21 @@ vi.mock("sonner", () => ({
 }));
 
 const sessionMutate = vi.fn();
+// A lone exercise: a straight-sets group of one.
+const lone = () => ({ ...STRAIGHT_SETS, exercises: [{}] });
 const sessions: SavedSession[] = [
   {
     id: "sess-1",
     name: "Push Day A",
     focus: "Chest",
-    exercises: [{}, {}, {}],
+    groups: [lone(), lone(), lone()],
     estimatedDurationMinutes: 60,
   } as unknown as SavedSession,
   {
     id: "sess-2",
     name: "Pull Day A",
     focus: null,
-    exercises: [{}],
+    groups: [lone()],
     estimatedDurationMinutes: null,
   } as unknown as SavedSession,
 ];

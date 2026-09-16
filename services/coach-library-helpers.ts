@@ -1,10 +1,13 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type {
+  CoachSavedExerciseGroupInsert,
+  CoachSavedExerciseGroupRow,
   CoachSavedExerciseInsert,
   CoachSavedExerciseRow,
 } from "@/lib/database-helpers";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { projectExerciseCompact } from "@/utils/exercise-set-specs";
+import { groupSettingsToRow, type GroupSettingsInput } from "@/utils/exercise-groups";
 
 /**
  * Internal helpers shared across the coach saved-plan and saved-session
@@ -55,97 +58,183 @@ export function dedupeCopyName(desired: string, takenLower: Set<string>): string
   return name;
 }
 
-/**
- * Batch-insert exercises for a saved session. Resolves exercise names to
- * canonical exercise_ids via the caller-supplied lookup map; an explicit
- * per-exercise `exerciseId` (already-resolved prescription, e.g. the
- * builder's create-blank payload) wins over the name lookup.
- */
-export async function insertSavedExercises(
-  sessionId: string,
-  exercises: Array<{
-    name: string;
-    exerciseId?: string | null;
-    sets: number;
-    repsMin?: number | null;
-    repsMax?: number | null;
-    repsTarget?: string | null;
-    rpeTarget?: number | null;
-    percentage1rm?: number | null;
-    tempo?: string | null;
-    restSeconds?: number | null;
-    notes?: string | null;
-    supersetGroup?: string | null;
-    isWarmup?: boolean;
-    setSpecs?: SetSpec[] | null;
-    videoUrl?: string | null;
-    prescribedFields?: readonly string[] | null;
-  }>,
-  exerciseIdMap: Map<string, string>,
-): Promise<void> {
-  if (exercises.length === 0) return;
-  const rows: CoachSavedExerciseInsert[] = exercises.map((e, i) => {
-    const w = projectExerciseCompact(e);
-    return {
-      saved_session_id: sessionId,
-      exercise_id:
-        e.exerciseId ?? exerciseIdMap.get(e.name.trim().toLowerCase()) ?? null,
-      name: e.name,
-      order_index: i,
-      sets: w.sets,
-      reps_min: w.reps_min,
-      reps_max: w.reps_max,
-      reps_target: e.repsTarget ?? null,
-      rpe_target: e.rpeTarget ?? null,
-      percentage_1rm: e.percentage1rm ?? null,
-      tempo: e.tempo ?? null,
-      rest_seconds: e.restSeconds ?? null,
-      notes: e.notes ?? null,
-      superset_group: e.supersetGroup ?? null,
-      is_warmup: e.isWarmup ?? false,
-      set_specs: w.set_specs,
-      video_url: w.video_url,
-      prescribed_fields: w.prescribed_fields,
-    };
-  });
+/** Rows per INSERT statement: a whole program's groups can run to thousands. */
+const INSERT_CHUNK = 500;
 
-  const { error } = await supabaseAdmin
-    .from("coach_saved_exercises")
-    .insert(rows);
-  if (error) throw new Error(`Failed to insert saved exercises: ${error.message}`);
+/** One exercise on its way into a library session. */
+export type SavedExerciseWrite = {
+  name: string;
+  exerciseId?: string | null;
+  sets: number;
+  repsMin?: number | null;
+  repsMax?: number | null;
+  repsTarget?: string | null;
+  rpeTarget?: number | null;
+  percentage1rm?: number | null;
+  tempo?: string | null;
+  restSeconds?: number | null;
+  notes?: string | null;
+  isWarmup?: boolean;
+  setSpecs?: SetSpec[] | null;
+  videoUrl?: string | null;
+  prescribedFields?: readonly string[] | null;
+};
+
+/** One group on its way into a library session: its settings and its exercises, in order. */
+export type SavedGroupWrite = GroupSettingsInput & { exercises: SavedExerciseWrite[] };
+
+/** A library session's groups and exercises as rows, groups first. */
+export type SavedGroupRows = {
+  groups: CoachSavedExerciseGroupInsert[];
+  exercises: CoachSavedExerciseInsert[];
+};
+
+/** A group row read with its exercises (the embed every library read uses). */
+type SavedGroupRowTree = CoachSavedExerciseGroupRow & {
+  coach_saved_exercises?: CoachSavedExerciseRow[] | null;
+};
+
+/**
+ * The rows that write `groups` into a library session. Positions are array
+ * places: a group's order_index is its place in the session, an exercise's its
+ * place in its group. Group ids are minted here so every exercise row names its
+ * group before anything is written — no read-back to match rows up. Resolves
+ * exercise names to catalog ids through the caller's lookup map; an explicit
+ * `exerciseId` (an already-resolved prescription) wins over the name lookup.
+ */
+export function savedGroupRowsFromInput(
+  sessionId: string,
+  groups: readonly SavedGroupWrite[],
+  exerciseIdMap: Map<string, string>,
+): SavedGroupRows {
+  const rows: SavedGroupRows = { groups: [], exercises: [] };
+  groups.forEach((group, groupIndex) => {
+    const groupId = crypto.randomUUID();
+    rows.groups.push({
+      id: groupId,
+      saved_session_id: sessionId,
+      order_index: groupIndex,
+      ...groupSettingsToRow(group),
+    });
+    group.exercises.forEach((e, exerciseIndex) => {
+      const w = projectExerciseCompact(e);
+      rows.exercises.push({
+        saved_session_id: sessionId,
+        group_id: groupId,
+        exercise_id:
+          e.exerciseId ?? exerciseIdMap.get(e.name.trim().toLowerCase()) ?? null,
+        name: e.name,
+        order_index: exerciseIndex,
+        sets: w.sets,
+        reps_min: w.reps_min,
+        reps_max: w.reps_max,
+        reps_target: e.repsTarget ?? null,
+        rpe_target: e.rpeTarget ?? null,
+        percentage_1rm: e.percentage1rm ?? null,
+        tempo: e.tempo ?? null,
+        rest_seconds: e.restSeconds ?? null,
+        notes: e.notes ?? null,
+        is_warmup: e.isWarmup ?? false,
+        set_specs: w.set_specs,
+        video_url: w.video_url,
+        prescribed_fields: w.prescribed_fields,
+      });
+    });
+  });
+  return rows;
 }
 
 /**
- * Map existing coach_saved_exercises rows onto a new session as verbatim
- * copies — every prescription column including set_specs, video_url, and the
- * already-resolved exercise_id is carried as-is (no name re-resolution,
- * which could re-link or silently drop ids). Used by promote's
- * save-sessions-individually pass and the plan/session duplicate endpoints.
+ * Library group rows (read with their exercises) as verbatim copies under
+ * another session — every group setting and position, and every exercise
+ * column including set_specs, video_url, prescribed_fields and the
+ * already-resolved exercise_id, carried as-is (no name re-resolution, which
+ * could re-link or silently drop ids). Fresh group ids, so the copy shares no
+ * row with its source. Used by promote's save-sessions-individually pass, the
+ * plan duplicate and the standalone session's snapshot restore.
  */
-export function copySavedExerciseRows(
-  exercises: CoachSavedExerciseRow[],
+export function copySavedGroupRows(
+  groups: readonly SavedGroupRowTree[],
   targetSessionId: string,
-): CoachSavedExerciseInsert[] {
-  return exercises.map((e) => ({
-    saved_session_id: targetSessionId,
-    exercise_id: e.exercise_id,
-    name: e.name,
-    order_index: e.order_index,
-    sets: e.sets,
-    reps_min: e.reps_min,
-    reps_max: e.reps_max,
-    reps_target: e.reps_target,
-    rpe_target: e.rpe_target,
-    percentage_1rm: e.percentage_1rm,
-    tempo: e.tempo,
-    rest_seconds: e.rest_seconds,
-    superset_group: e.superset_group,
-    is_warmup: e.is_warmup,
-    notes: e.notes,
-    set_specs: e.set_specs ?? null,
-    video_url: e.video_url ?? null,
-    prescribed_fields: e.prescribed_fields ?? null,
-  }));
+): SavedGroupRows {
+  const rows: SavedGroupRows = { groups: [], exercises: [] };
+  for (const group of groups) {
+    const groupId = crypto.randomUUID();
+    rows.groups.push({
+      id: groupId,
+      saved_session_id: targetSessionId,
+      order_index: group.order_index,
+      format: group.format,
+      rounds: group.rounds,
+      time_cap_seconds: group.time_cap_seconds,
+      interval_seconds: group.interval_seconds,
+      rest_between_exercises_seconds: group.rest_between_exercises_seconds,
+      rest_between_rounds_seconds: group.rest_between_rounds_seconds,
+      notes: group.notes,
+    });
+    for (const e of group.coach_saved_exercises ?? []) {
+      rows.exercises.push({
+        saved_session_id: targetSessionId,
+        group_id: groupId,
+        exercise_id: e.exercise_id,
+        name: e.name,
+        order_index: e.order_index,
+        sets: e.sets,
+        reps_min: e.reps_min,
+        reps_max: e.reps_max,
+        reps_target: e.reps_target,
+        rpe_target: e.rpe_target,
+        percentage_1rm: e.percentage_1rm,
+        tempo: e.tempo,
+        rest_seconds: e.rest_seconds,
+        is_warmup: e.is_warmup,
+        notes: e.notes,
+        set_specs: e.set_specs ?? null,
+        video_url: e.video_url ?? null,
+        prescribed_fields: e.prescribed_fields ?? null,
+      });
+    }
+  }
+  return rows;
+}
+
+/** Merge several sessions' rows into one pair of batches. */
+export function concatSavedGroupRows(parts: readonly SavedGroupRows[]): SavedGroupRows {
+  return {
+    groups: parts.flatMap((part) => part.groups),
+    exercises: parts.flatMap((part) => part.exercises),
+  };
+}
+
+/**
+ * Write library group rows: the groups, then the exercises that sit in them
+ * (an exercise's foreign key names its group, so the groups land first).
+ * Chunked, so a whole program is a handful of statements, never one per row.
+ * Not a transaction: a failure between the two leaves groups with no
+ * exercises, which every caller removes with the session they belong to.
+ */
+export async function insertSavedGroupRows(rows: SavedGroupRows): Promise<void> {
+  for (let from = 0; from < rows.groups.length; from += INSERT_CHUNK) {
+    const { error } = await supabaseAdmin
+      .from("coach_saved_exercise_groups")
+      .insert(rows.groups.slice(from, from + INSERT_CHUNK));
+    if (error) throw new Error(`Failed to insert saved exercise groups: ${error.message}`);
+  }
+  for (let from = 0; from < rows.exercises.length; from += INSERT_CHUNK) {
+    const { error } = await supabaseAdmin
+      .from("coach_saved_exercises")
+      .insert(rows.exercises.slice(from, from + INSERT_CHUNK));
+    if (error) throw new Error(`Failed to insert saved exercises: ${error.message}`);
+  }
+}
+
+/** Write `groups` into one library session. */
+export async function insertSavedGroups(
+  sessionId: string,
+  groups: readonly SavedGroupWrite[],
+  exerciseIdMap: Map<string, string>,
+): Promise<void> {
+  await insertSavedGroupRows(savedGroupRowsFromInput(sessionId, groups, exerciseIdMap));
 }
 
 /**

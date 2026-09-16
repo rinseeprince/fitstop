@@ -2,15 +2,19 @@ import {
   MAX_WEEKS,
   type BuilderTarget,
   type ExerciseDraft,
+  type ExerciseGroupDraft,
   type ProgramDraft,
   type SessionDraft,
   type WeekDraft,
 } from "./program-builder-types";
 import {
   mapSession,
+  mapSessionExercises,
   mapSlots,
+  moveSessionExercise,
   normalizeDraft,
   patchChanges,
+  removeSessionExercise,
 } from "./program-builder-model";
 import {
   PAST_LOCKED,
@@ -63,10 +67,12 @@ export type DraftOp =
   | {
       type: "update_session";
       sessionUid: string;
-      patch: Partial<Omit<SessionDraft, "uid" | "exercises">>;
+      patch: Partial<Omit<SessionDraft, "uid" | "groups">>;
       label?: string;
     }
-  | { type: "add_exercise"; sessionUid: string; exercise: ExerciseDraft; label?: string }
+  // Appends a group to the session: an exercise the assistant adds arrives as
+  // a straight-sets group of one, fully materialized with its own uid.
+  | { type: "add_exercise"; sessionUid: string; group: ExerciseGroupDraft; label?: string }
   | {
       type: "update_exercise";
       sessionUid: string;
@@ -76,6 +82,8 @@ export type DraftOp =
     }
   | { type: "remove_exercise"; sessionUid: string; exerciseUid: string; label?: string }
   | {
+      // toIndex is a place in the session's exercise order; a move never
+      // splits a group (moveSessionExercise).
       type: "reorder_exercise";
       sessionUid: string;
       exerciseUid: string;
@@ -132,7 +140,9 @@ const hasUid = (draft: ProgramDraft, uid: string): boolean =>
         (s) =>
           s.uid === uid ||
           s.session?.uid === uid ||
-          s.session?.exercises.some((e) => e.uid === uid),
+          s.session?.groups.some(
+            (g) => g.uid === uid || g.exercises.some((e) => e.uid === uid),
+          ),
       ),
   );
 
@@ -298,13 +308,16 @@ export function applyDraftOp(
     case "add_exercise": {
       const refused = sessionLocked(op.sessionUid);
       if (refused) return { draft, skipped: refused };
-      if (hasUid(draft, op.exercise.uid)) {
+      if (
+        hasUid(draft, op.group.uid) ||
+        op.group.exercises.some((e) => hasUid(draft, e.uid))
+      ) {
         return { draft, skipped: "Exercise already added" };
       }
       let found = false;
       const next = mapSession(draft, op.sessionUid, (s) => {
         found = true;
-        return { ...s, exercises: [...s.exercises, op.exercise] };
+        return { ...s, groups: [...s.groups, op.group] };
       });
       if (!found) return { draft, skipped: "That session no longer exists" };
       return { draft: next };
@@ -315,16 +328,15 @@ export function applyDraftOp(
       if (refused) return { draft, skipped: refused };
       let found = false;
       let changed = false;
-      const next = mapSession(draft, op.sessionUid, (s) => ({
-        ...s,
-        exercises: s.exercises.map((e) => {
+      const next = mapSession(draft, op.sessionUid, (s) =>
+        mapSessionExercises(s, (e) => {
           if (e.uid !== op.exerciseUid) return e;
           found = true;
           if (!patchChanges(e, op.patch)) return e;
           changed = true;
           return { ...e, ...op.patch };
         }),
-      }));
+      );
       if (!found) return { draft, skipped: "That exercise no longer exists" };
       return { draft: changed ? next : draft };
     }
@@ -334,10 +346,9 @@ export function applyDraftOp(
       if (refused) return { draft, skipped: refused };
       let found = false;
       const next = mapSession(draft, op.sessionUid, (s) => {
-        const exercises = s.exercises.filter((e) => e.uid !== op.exerciseUid);
-        if (exercises.length === s.exercises.length) return s;
-        found = true;
-        return { ...s, exercises };
+        const removed = removeSessionExercise(s, op.exerciseUid);
+        if (removed !== s) found = true;
+        return removed;
       });
       if (!found) return { draft, skipped: "That exercise no longer exists" };
       return { draft: next };
@@ -349,13 +360,11 @@ export function applyDraftOp(
       let found = false;
       let changed = false;
       const next = mapSession(draft, op.sessionUid, (s) => {
-        const from = s.exercises.findIndex((e) => e.uid === op.exerciseUid);
-        if (from < 0) return s;
+        if (!s.groups.some((g) => g.exercises.some((e) => e.uid === op.exerciseUid))) return s;
         found = true;
-        const to = Math.max(0, Math.min(s.exercises.length - 1, op.toIndex));
-        if (from === to) return s;
-        changed = true;
-        return { ...s, exercises: arrayMove(s.exercises, from, to) };
+        const moved = moveSessionExercise(s, op.exerciseUid, op.toIndex);
+        if (moved !== s) changed = true;
+        return moved;
       });
       if (!found) return { draft, skipped: "That exercise no longer exists" };
       return { draft: changed ? next : draft };

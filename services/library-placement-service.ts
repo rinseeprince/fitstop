@@ -9,15 +9,25 @@ import {
   resolvePlacementWindowEnd,
 } from "./program-event-walk";
 import { assertDateFree, rethrowIfDateOccupied } from "./training-event-occupancy";
-import type { TrainingEventInsert, TrainingEventRow, CoachSavedExerciseRow } from "@/lib/database-helpers";
-import type { Json } from "@/types/database";
-import type { SavedSession, SavedExercise } from "@/types/training";
+import {
+  concatTrainingGroupRows,
+  insertTrainingGroupRows,
+  trainingGroupRowsFromCopy,
+} from "./training-group-writes";
+import {
+  SAVED_SESSION_GROUPS_EMBED,
+  mapSavedSessionTree,
+  type SavedSessionTreeRow,
+} from "@/lib/coach-mappers";
+import type { TrainingEventInsert, TrainingEventRow } from "@/lib/database-helpers";
+import type { SavedSession, SavedExercise, SavedExerciseGroup } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import type { InlinePlanBody } from "@/lib/validations/training";
 // Pure date maths, shared with the block chain rather than re-derived here —
 // the block is what supplies this window's length.
 import { inclusiveDays, weeksSpanned } from "@/lib/blocks/block-chain";
 import { toPrescribedFields } from "@/utils/prescribed-fields";
+import { sessionExercises } from "@/utils/exercise-groups";
 
 /** Rows per INSERT statement — the placement clone can now run to hundreds. */
 const INSERT_CHUNK = 500;
@@ -124,7 +134,7 @@ export async function placeInlineEditedPlanOnCalendar(params: {
   );
 
   const referencedExerciseIds = plan.sessions.flatMap((s) =>
-    s.exercises
+    sessionExercises(s)
       .map((e) => e.exerciseId)
       .filter((id): id is string => Boolean(id)),
   );
@@ -188,10 +198,11 @@ export async function fetchVisibleExerciseIds(
   return visible;
 }
 
-// Map a validated inline-body session/exercise to the SavedSession/SavedExercise
-// shape placePlaceablePlanOnCalendar consumes. Ids/timestamps are placeholders —
-// the placement inserts fresh rows and never reads the source ids. A foreign
-// exercise_id (not in the coach's own+global catalog) is nulled.
+// Map a validated inline-body session/group/exercise to the SavedSession shape
+// placePlaceablePlanOnCalendar consumes. Ids/timestamps are placeholders — the
+// placement inserts fresh rows and never reads the source ids — and positions
+// are array places. A foreign exercise_id (not in the coach's own+global
+// catalog) is nulled.
 function inlineSessionToSaved(
   s: InlinePlanBody["sessions"][number],
   ownedExerciseIds: Set<string>,
@@ -211,22 +222,38 @@ function inlineSessionToSaved(
     // SavedSessionType is the single literal 'training'; the placement path
     // doesn't read this field anyway (it clones into training_sessions).
     sessionType: "training",
-    exercises: s.exercises.map((e) => inlineExerciseToSaved(e, ownedExerciseIds)),
+    groups: s.groups.map((group, groupIndex): SavedExerciseGroup => ({
+      id: "",
+      savedSessionId: "",
+      orderIndex: groupIndex,
+      format: group.format,
+      rounds: group.rounds ?? null,
+      timeCapSeconds: group.timeCapSeconds ?? null,
+      intervalSeconds: group.intervalSeconds ?? null,
+      restBetweenExercisesSeconds: group.restBetweenExercisesSeconds ?? null,
+      restBetweenRoundsSeconds: group.restBetweenRoundsSeconds ?? null,
+      notes: group.notes ?? null,
+      exercises: group.exercises.map((e, exerciseIndex) =>
+        inlineExerciseToSaved(e, exerciseIndex, ownedExerciseIds),
+      ),
+    })),
     createdAt: "",
     updatedAt: "",
   };
 }
 
 function inlineExerciseToSaved(
-  e: InlinePlanBody["sessions"][number]["exercises"][number],
+  e: InlinePlanBody["sessions"][number]["groups"][number]["exercises"][number],
+  orderIndex: number,
   ownedExerciseIds: Set<string>,
 ): SavedExercise {
   return {
     id: "",
     savedSessionId: "",
+    groupId: "",
     exerciseId: e.exerciseId && ownedExerciseIds.has(e.exerciseId) ? e.exerciseId : null,
     name: e.name,
-    orderIndex: e.orderIndex,
+    orderIndex,
     sets: e.sets,
     repsMin: e.repsMin ?? null,
     repsMax: e.repsMax ?? null,
@@ -235,7 +262,6 @@ function inlineExerciseToSaved(
     percentage1rm: e.percentage1rm ?? null,
     tempo: e.tempo ?? null,
     restSeconds: e.restSeconds ?? null,
-    supersetGroup: e.supersetGroup ?? null,
     isWarmup: e.isWarmup ?? false,
     notes: e.notes ?? null,
     setSpecs: (e.setSpecs ?? null) as SetSpec[] | null,
@@ -488,45 +514,24 @@ async function placePlaceablePlanOnCalendar(params: {
     }
   }
 
-  // Exercises for training slots only (rest slots have none). Splat the per-set
-  // model verbatim — the source row's compact columns are already the correct
-  // projection of its set_specs.
-  const exerciseInserts = windowSlots.flatMap((slot) => {
-    if (slot.isRest || slot.exercises.length === 0) return [];
-    const sessionId = sessionIdBySlot.get(slotKey(slot.weekIndex, slot.orderIndex));
-    if (!sessionId) {
-      throw new Error(`No cloned session for slot ${slot.weekIndex}/${slot.orderIndex}`);
-    }
-    return [...slot.exercises]
-      .sort((a, b) => a.orderIndex - b.orderIndex)
-      .map((ex: SavedExercise) => ({
-        session_id: sessionId,
-        name: ex.name,
-        exercise_id: ex.exerciseId ?? null,
-        order_index: ex.orderIndex,
-        sets: ex.sets,
-        reps_min: ex.repsMin ?? null,
-        reps_max: ex.repsMax ?? null,
-        reps_target: ex.repsTarget ?? null,
-        rpe_target: ex.rpeTarget ?? null,
-        percentage_1rm: ex.percentage1rm ?? null,
-        tempo: ex.tempo ?? null,
-        rest_seconds: ex.restSeconds ?? null,
-        notes: ex.notes ?? null,
-        superset_group: ex.supersetGroup ?? null,
-        is_warmup: ex.isWarmup ?? false,
-        set_specs: (ex.setSpecs ?? null) as unknown as Json,
-        video_url: ex.videoUrl ?? null,
-        prescribed_fields: toPrescribedFields(ex.prescribedFields),
-        is_active: true,
-      }));
-  });
-
-  for (let from = 0; from < exerciseInserts.length; from += INSERT_CHUNK) {
-    const { error: exError } = await supabaseAdmin
-      .from("training_exercises")
-      .insert(exerciseInserts.slice(from, from + INSERT_CHUNK));
-    if (exError) throw new Error(`Failed to clone exercises: ${exError.message}`);
+  // Groups and their exercises for training slots only (rest slots have
+  // none), in their order. Splat the per-set model verbatim — the source row's
+  // compact columns are already the correct projection of its set_specs.
+  const groupRows = concatTrainingGroupRows(
+    windowSlots.flatMap((slot) => {
+      if (slot.isRest || slot.groups.length === 0) return [];
+      const sessionId = sessionIdBySlot.get(slotKey(slot.weekIndex, slot.orderIndex));
+      if (!sessionId) {
+        throw new Error(`No cloned session for slot ${slot.weekIndex}/${slot.orderIndex}`);
+      }
+      return [trainingGroupRowsFromCopy(sessionId, slot.groups)];
+    }),
+  );
+  try {
+    await insertTrainingGroupRows(groupRows);
+  } catch (cloneError) {
+    const detail = cloneError instanceof Error ? cloneError.message : String(cloneError);
+    throw new Error(`Failed to clone exercises: ${detail}`);
   }
 
   const clonedSlots = windowSlots.map((slot) => ({
@@ -596,15 +601,16 @@ export async function placeSessionOnCalendar(params: {
 }): Promise<{ sessionId: string; eventId: string }> {
   const { savedSessionId, coachId, clientId, planId, targetDate } = params;
 
-  // 1. Fetch saved session with exercises
-  const { data: savedSession, error: fetchError } = await supabaseAdmin
+  // 1. Fetch saved session with its groups and exercises
+  const { data: savedSessionRow, error: fetchError } = await supabaseAdmin
     .from("coach_saved_sessions")
-    .select("*, coach_saved_exercises(*)")
+    .select(`*, ${SAVED_SESSION_GROUPS_EMBED}`)
     .eq("id", savedSessionId)
     .eq("coach_id", coachId)
     .single();
 
-  if (fetchError || !savedSession) throw new Error("Saved session not found");
+  if (fetchError || !savedSessionRow) throw new Error("Saved session not found");
+  const savedSession = savedSessionRow as SavedSessionTreeRow;
 
   // One session per day. Checked BEFORE any cloning: this path used to have no
   // date guard of any kind, and rejecting after the session/exercise clones
@@ -658,39 +664,14 @@ export async function placeSessionOnCalendar(params: {
     throw new Error(`Failed to clone session: ${sessionError?.message}`);
   }
 
-  // 5. Clone exercises
-  const exercises = (savedSession.coach_saved_exercises ?? []).sort(
-    (a: CoachSavedExerciseRow, b: CoachSavedExerciseRow) => a.order_index - b.order_index
-  );
-
-  if (exercises.length > 0) {
-    const exerciseInserts = exercises.map((ex: CoachSavedExerciseRow) => ({
-      session_id: clonedSession.id,
-      name: ex.name,
-      exercise_id: ex.exercise_id ?? null,
-      order_index: ex.order_index,
-      sets: ex.sets,
-      reps_min: ex.reps_min ?? null,
-      reps_max: ex.reps_max ?? null,
-      reps_target: ex.reps_target ?? null,
-      rpe_target: ex.rpe_target ?? null,
-      percentage_1rm: ex.percentage_1rm ?? null,
-      tempo: ex.tempo ?? null,
-      rest_seconds: ex.rest_seconds ?? null,
-      notes: ex.notes ?? null,
-      superset_group: ex.superset_group ?? null,
-      is_warmup: ex.is_warmup ?? false,
-      set_specs: ex.set_specs ?? null,
-      video_url: ex.video_url ?? null,
-      prescribed_fields: ex.prescribed_fields ?? null,
-      is_active: true,
-    }));
-
-    const { error: exError } = await supabaseAdmin
-      .from("training_exercises")
-      .insert(exerciseInserts);
-
-    if (exError) throw new Error(`Failed to clone exercises: ${exError.message}`);
+  // 5. Clone its groups and their exercises, in order
+  try {
+    await insertTrainingGroupRows(
+      trainingGroupRowsFromCopy(clonedSession.id, mapSavedSessionTree(savedSession).groups),
+    );
+  } catch (cloneError) {
+    const detail = cloneError instanceof Error ? cloneError.message : String(cloneError);
+    throw new Error(`Failed to clone exercises: ${detail}`);
   }
 
   // 6. Create single event

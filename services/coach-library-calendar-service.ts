@@ -1,5 +1,13 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { CoachSavedExerciseInsert } from "@/lib/database-helpers";
+import { insertSavedGroupRows, type SavedGroupRows } from "./coach-library-helpers";
+import {
+  EXERCISE_WITH_GROUP_COLUMNS,
+  mapExerciseRowsToGroups,
+  type TrainingExerciseWithGroupRow,
+} from "./training-mappers";
+import type { TrainingExerciseGroup } from "@/types/training";
+import { groupSettingsToRow } from "@/utils/exercise-groups";
+import type { Json } from "@/types/database";
 
 // --- Save from calendar ---
 // Reads from client tables (training_sessions, training_exercises) and writes to
@@ -22,7 +30,9 @@ export async function saveSessionFromCalendar(
   // null parent and the coach_id filter would not exclude it.
   const { data: source } = await supabaseAdmin
     .from("training_sessions")
-    .select("*, training_exercises(*), training_plans!inner(clients!inner(coach_id))")
+    .select(
+      `*, training_exercises!training_exercises_session_id_fkey(${EXERCISE_WITH_GROUP_COLUMNS}), training_plans!inner(clients!inner(coach_id))`,
+    )
     .eq("id", sourceSessionId)
     .eq("training_plans.clients.coach_id", coachId)
     .maybeSingle();
@@ -47,35 +57,69 @@ export async function saveSessionFromCalendar(
     .single();
   if (error || !savedSession) throw new Error(`Failed to save session from calendar: ${error?.message}`);
 
-  const activeExercises = (source.training_exercises ?? []).filter(
-    (e: { is_active: boolean }) => e.is_active
-  );
-  if (activeExercises.length > 0) {
-     
-    const exerciseRows: CoachSavedExerciseInsert[] = activeExercises.map(
-      (e: any, idx: number) => ({
-        saved_session_id: savedSession.id,
-        exercise_id: e.exercise_id ?? null,
-        name: e.name,
-        order_index: idx,
-        sets: e.sets,
-        reps_min: e.reps_min ?? null,
-        reps_max: e.reps_max ?? null,
-        reps_target: e.reps_target ?? null,
-        rpe_target: e.rpe_target ?? null,
-        percentage_1rm: e.percentage_1rm ?? null,
-        tempo: e.tempo ?? null,
-        rest_seconds: e.rest_seconds ?? null,
-        superset_group: e.superset_group ?? null,
-        is_warmup: e.is_warmup ?? false,
-        notes: e.notes ?? null,
-        set_specs: e.set_specs ?? null,
-        video_url: e.video_url ?? null,
-        prescribed_fields: e.prescribed_fields ?? null,
-      })
+  // The session's live exercises in their groups, copied verbatim: every
+  // group setting and every exercise column as it is, positions renumbered over
+  // what is live.
+  const activeRows = (
+    (source.training_exercises ?? []) as unknown as TrainingExerciseWithGroupRow[]
+  ).filter((e) => e.is_active);
+  try {
+    await insertSavedGroupRows(
+      savedGroupRowsFromTrainingGroups(savedSession.id, mapExerciseRowsToGroups(activeRows)),
     );
-    await supabaseAdmin.from("coach_saved_exercises").insert(exerciseRows);
+  } catch (copyError) {
+    // No shell sessions in the library: the copy that failed takes its session
+    // (and any group that landed) with it.
+    const { error: cleanupError } = await supabaseAdmin
+      .from("coach_saved_sessions")
+      .delete()
+      .eq("id", savedSession.id)
+      .eq("coach_id", coachId);
+    const copyMsg = copyError instanceof Error ? copyError.message : String(copyError);
+    throw new Error(
+      cleanupError ? `${copyMsg}; cleanup also failed: ${cleanupError.message}` : copyMsg,
+    );
   }
 
   return savedSession.id;
+}
+
+/** A client session's groups as library rows under `sessionId`, verbatim. */
+function savedGroupRowsFromTrainingGroups(
+  sessionId: string,
+  groups: readonly TrainingExerciseGroup[],
+): SavedGroupRows {
+  const rows: SavedGroupRows = { groups: [], exercises: [] };
+  groups.forEach((group, groupIndex) => {
+    const groupId = crypto.randomUUID();
+    rows.groups.push({
+      id: groupId,
+      saved_session_id: sessionId,
+      order_index: groupIndex,
+      ...groupSettingsToRow(group),
+    });
+    group.exercises.forEach((e, exerciseIndex) => {
+      rows.exercises.push({
+        saved_session_id: sessionId,
+        group_id: groupId,
+        exercise_id: e.exerciseId ?? null,
+        name: e.name,
+        order_index: exerciseIndex,
+        sets: e.sets,
+        reps_min: e.repsMin ?? null,
+        reps_max: e.repsMax ?? null,
+        reps_target: e.repsTarget ?? null,
+        rpe_target: e.rpeTarget ?? null,
+        percentage_1rm: e.percentage1rm ?? null,
+        tempo: e.tempo ?? null,
+        rest_seconds: e.restSeconds ?? null,
+        is_warmup: e.isWarmup,
+        notes: e.notes ?? null,
+        set_specs: (e.setSpecs ?? null) as unknown as Json,
+        video_url: e.videoUrl ?? null,
+        prescribed_fields: e.prescribedFields ?? null,
+      });
+    });
+  });
+  return rows;
 }

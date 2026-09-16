@@ -3,7 +3,13 @@ import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { DndContext } from "@dnd-kit/core";
 import { PAST_LOCKED } from "./program-builder-lock-model";
 import { DayCell } from "./day-cell";
-import type { DaySlotDraft, SessionDraft } from "./program-builder-types";
+import type {
+  DaySlotDraft,
+  ExerciseDraft,
+  ExerciseGroupDraft,
+  SessionDraft,
+} from "./program-builder-types";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 
 function makeSession(overrides: Partial<SessionDraft> = {}): SessionDraft {
   return {
@@ -14,9 +20,14 @@ function makeSession(overrides: Partial<SessionDraft> = {}): SessionDraft {
     calorieSurplusPercentage: null,
     notes: null,
     sessionType: "training",
-    exercises: [],
+    groups: [],
     ...overrides,
   };
+}
+
+// A lone exercise: a straight-sets group of one.
+function lone(exercise: ExerciseDraft): ExerciseGroupDraft {
+  return { uid: `grp-${exercise.uid}`, ...STRAIGHT_SETS, exercises: [exercise] };
 }
 
 function makeSlot(overrides: Partial<DaySlotDraft> = {}): DaySlotDraft {
@@ -73,15 +84,15 @@ describe("DayCell — session state", () => {
     makeSlot({
       isRest: false,
       session: makeSession({
-        exercises: [
-          {
+        groups: [
+          lone({
             uid: "ex-1",
             name: "Bench",
             sets: 3,
             repsMin: 8,
             repsMax: 12,
-          } as SessionDraft["exercises"][number],
-          { uid: "ex-2", name: "Fly", sets: 3, repsMin: 8, repsMax: 12 } as SessionDraft["exercises"][number],
+          } as ExerciseDraft),
+          lone({ uid: "ex-2", name: "Fly", sets: 3, repsMin: 8, repsMax: 12 } as ExerciseDraft),
         ],
         calorieSurplusPercentage: 12,
       }),

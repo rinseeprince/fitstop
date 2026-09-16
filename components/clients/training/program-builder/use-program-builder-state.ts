@@ -14,10 +14,15 @@ import {
 import {
   cloneWeek,
   mapSession,
+  mapSessionExercises,
   mapSlots,
+  moveSessionExercise,
   normalizeDraft,
   patchChanges,
+  removeSessionExercise,
+  straightSetsGroup,
 } from "./program-builder-model";
+import { sessionExercises } from "@/utils/exercise-groups";
 import {
   applyDraftOps,
   type DraftOp,
@@ -258,7 +263,7 @@ export function useProgramBuilderState() {
             calorieSurplusPercentage: null,
             notes: null,
             sessionType: "training",
-            exercises: [],
+            groups: [],
           };
           return { ...slot, session };
         });
@@ -324,7 +329,7 @@ export function useProgramBuilderState() {
 
   // --- sessions / exercises ---
   const updateSession = useCallback(
-    (sessionUid: string, patch: Partial<Omit<SessionDraft, "uid" | "exercises">>) =>
+    (sessionUid: string, patch: Partial<Omit<SessionDraft, "uid" | "groups">>) =>
       apply((d) => {
         let changed = false;
         const next = mapSession(d, sessionUid, (s) => {
@@ -337,12 +342,16 @@ export function useProgramBuilderState() {
     [apply],
   );
 
+  // A picked exercise joins the session as a straight-sets group of one.
   const addExercise = useCallback(
     (sessionUid: string, exercise: Omit<ExerciseDraft, "uid">) =>
       apply((d) =>
         mapSession(d, sessionUid, (s) => ({
           ...s,
-          exercises: [...s.exercises, { ...exercise, uid: newUid("ex") }],
+          groups: [
+            ...s.groups,
+            straightSetsGroup(newUid("grp"), { ...exercise, uid: newUid("ex") }),
+          ],
         })),
       ),
     [apply],
@@ -353,10 +362,9 @@ export function useProgramBuilderState() {
       apply((d) => {
         let changed = false;
         const next = mapSession(d, sessionUid, (s) => {
-          const exercises = s.exercises.filter((e) => e.uid !== exerciseUid);
-          if (exercises.length === s.exercises.length) return s;
-          changed = true;
-          return { ...s, exercises };
+          const removed = removeSessionExercise(s, exerciseUid);
+          if (removed !== s) changed = true;
+          return removed;
         });
         return changed ? next : d;
       }),
@@ -371,9 +379,8 @@ export function useProgramBuilderState() {
     ) =>
       apply((d) => {
         let changed = false;
-        const next = mapSession(d, sessionUid, (s) => ({
-          ...s,
-          exercises: s.exercises.map((e) => {
+        const next = mapSession(d, sessionUid, (s) =>
+          mapSessionExercises(s, (e) => {
             if (e.uid !== exerciseUid) return e;
             if (typeof patchOrFn === "function") {
               const result = patchOrFn(e);
@@ -385,7 +392,7 @@ export function useProgramBuilderState() {
             changed = true;
             return { ...e, ...patchOrFn };
           }),
-        }));
+        );
         return changed ? next : d;
       }),
     [apply],
@@ -396,11 +403,13 @@ export function useProgramBuilderState() {
       apply((d) => {
         let changed = false;
         const next = mapSession(d, sessionUid, (s) => {
-          const from = s.exercises.findIndex((e) => e.uid === activeUid);
-          const to = s.exercises.findIndex((e) => e.uid === overUid);
+          const exercises = sessionExercises(s);
+          const from = exercises.findIndex((e) => e.uid === activeUid);
+          const to = exercises.findIndex((e) => e.uid === overUid);
           if (from < 0 || to < 0 || from === to) return s;
-          changed = true;
-          return { ...s, exercises: arrayMove(s.exercises, from, to) };
+          const moved = moveSessionExercise(s, activeUid, to);
+          if (moved !== s) changed = true;
+          return moved;
         });
         return changed ? next : d;
       }),

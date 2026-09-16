@@ -6,6 +6,7 @@ import { StandaloneSessionEditor } from "./standalone-session-editor";
 import type { SavedSession } from "@/types/training";
 import type { SessionEditorState } from "./use-standalone-session-editor";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars. Any
@@ -55,29 +56,37 @@ function makeSavedSession(overrides: Partial<SavedSession> = {}): SavedSession {
     calorieSurplusPercentage: 10,
     notes: null,
     sessionType: "training",
-    exercises: [
+    groups: [
       {
-        id: "e1",
+        id: "g1",
         savedSessionId: "s1",
-        // Must be a real uuid — the client-side zod belt enforces it.
-        exerciseId: "123e4567-e89b-12d3-a456-426614174000",
-        name: "Bench Press",
         orderIndex: 0,
-        sets: 1,
-        repsMin: 5,
-        repsMax: 8,
-        repsTarget: null,
-        rpeTarget: null,
-        percentage1rm: null,
-        tempo: null,
-        restSeconds: 90,
-        supersetGroup: null,
-        isWarmup: false,
-        notes: null,
-        setSpecs: SPECS,
-        videoUrl: "https://example.com/bench.mp4",
-        createdAt: "2026-07-01T00:00:00Z",
-        updatedAt: "2026-07-01T00:00:00Z",
+        ...STRAIGHT_SETS,
+        exercises: [
+          {
+            id: "e1",
+            savedSessionId: "s1",
+            groupId: "g1",
+            // Must be a real uuid — the client-side zod belt enforces it.
+            exerciseId: "123e4567-e89b-12d3-a456-426614174000",
+            name: "Bench Press",
+            orderIndex: 0,
+            sets: 1,
+            repsMin: 5,
+            repsMax: 8,
+            repsTarget: null,
+            rpeTarget: null,
+            percentage1rm: null,
+            tempo: null,
+            restSeconds: 90,
+            isWarmup: false,
+            notes: null,
+            setSpecs: SPECS,
+            videoUrl: "https://example.com/bench.mp4",
+            createdAt: "2026-07-01T00:00:00Z",
+            updatedAt: "2026-07-01T00:00:00Z",
+          },
+        ],
       },
     ],
     createdAt: "2026-07-01T00:00:00Z",
@@ -127,7 +136,7 @@ describe("StandaloneSessionEditor", () => {
     expect(fetchCalls[0].method).toBe("POST");
     expect(fetchCalls[0].body).toMatchObject({
       name: "Untitled session",
-      exercises: [],
+      groups: [],
     });
     // The editor's create keeps the coach's name verbatim — no dedupe flag.
     expect(fetchCalls[0].body).not.toHaveProperty("dedupeName");
@@ -152,10 +161,10 @@ describe("StandaloneSessionEditor", () => {
     expect(fetchCalls).toHaveLength(1);
     expect(fetchCalls[0].url).toBe("/api/training/saved-sessions/s1/overwrite");
     const body = fetchCalls[0].body as {
-      exercises: Array<{ setSpecs: SetSpec[]; videoUrl: string }>;
+      groups: Array<{ exercises: Array<{ setSpecs: SetSpec[]; videoUrl: string }> }>;
     };
-    expect(body.exercises[0].setSpecs).toEqual(SPECS);
-    expect(body.exercises[0].videoUrl).toBe("https://example.com/bench.mp4");
+    expect(sessionExercises(body)[0].setSpecs).toEqual(SPECS);
+    expect(sessionExercises(body)[0].videoUrl).toBe("https://example.com/bench.mp4");
   });
 
   it("cancel discards without any network call", () => {
@@ -228,7 +237,12 @@ describe("StandaloneSessionEditor", () => {
     const toastError = vi.spyOn(toast, "error");
     const valid = makeSavedSession();
     const rejected = makeSavedSession({
-      exercises: [{ ...valid.exercises[0], exerciseId: "not-a-uuid" }],
+      groups: [
+        {
+          ...valid.groups[0],
+          exercises: [{ ...valid.groups[0].exercises[0], exerciseId: "not-a-uuid" }],
+        },
+      ],
     });
     const onClose = vi.fn();
     render(

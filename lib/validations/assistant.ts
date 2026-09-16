@@ -1,5 +1,14 @@
 import { z } from "zod";
 import { setSpecSchema } from "./training";
+import {
+  GROUP_FORMATS,
+  GROUP_INTERVAL_SECONDS_MAX,
+  GROUP_NOTES_MAX,
+  GROUP_REST_SECONDS_MAX,
+  GROUP_ROUNDS_MAX,
+  GROUP_TIME_CAP_SECONDS_MAX,
+  MAX_EXERCISES_PER_SESSION,
+} from "@/utils/exercise-groups";
 import type { DraftOp } from "@/components/clients/training/program-builder/program-builder-ops";
 
 // AI draft-assistant wire schemas (builder S6a).
@@ -33,7 +42,6 @@ const exerciseDraftSnapshotSchema = z.object({
   percentage1rm: z.number().min(0).max(100).nullable(),
   tempo: z.string().max(20).nullable(),
   restSeconds: z.number().int().min(0).max(3600).nullable(),
-  supersetGroup: z.string().max(10).nullable(),
   isWarmup: z.boolean(),
   notes: z.string().max(500).nullable(),
   videoUrl: z.string().max(500).nullable(),
@@ -46,6 +54,29 @@ const exerciseDraftSnapshotSchema = z.object({
     .nullable(),
 });
 
+// Migration 178. The snapshot carries every group's settings as well as its
+// exercises: a session copied or placed from the server's working copy is
+// built from what this schema kept, so a setting it stripped would be erased
+// from the coach's draft by the replay.
+const groupSettingsSnapshotShape = {
+  format: z.enum(GROUP_FORMATS),
+  rounds: z.number().int().min(1).max(GROUP_ROUNDS_MAX).nullable(),
+  timeCapSeconds: z.number().int().min(1).max(GROUP_TIME_CAP_SECONDS_MAX).nullable(),
+  intervalSeconds: z.number().int().min(1).max(GROUP_INTERVAL_SECONDS_MAX).nullable(),
+  restBetweenExercisesSeconds: z.number().int().min(0).max(GROUP_REST_SECONDS_MAX).nullable(),
+  restBetweenRoundsSeconds: z.number().int().min(0).max(GROUP_REST_SECONDS_MAX).nullable(),
+  notes: z.string().max(GROUP_NOTES_MAX).nullable(),
+};
+
+const groupDraftSnapshotSchema = z.object({
+  uid: uidSchema,
+  ...groupSettingsSnapshotShape,
+  exercises: z.array(exerciseDraftSnapshotSchema).min(1).max(MAX_EXERCISES_PER_SESSION),
+});
+
+const withinExerciseCap = (groups: Array<{ exercises: unknown[] }>) =>
+  groups.reduce((sum, group) => sum + group.exercises.length, 0) <= MAX_EXERCISES_PER_SESSION;
+
 const sessionDraftSnapshotSchema = z.object({
   uid: uidSchema,
   name: z.string().min(1).max(200),
@@ -54,7 +85,12 @@ const sessionDraftSnapshotSchema = z.object({
   calorieSurplusPercentage: z.number().min(0).max(100).nullable(),
   notes: z.string().max(1000).nullable(),
   sessionType: z.string().max(50),
-  exercises: z.array(exerciseDraftSnapshotSchema).max(50),
+  groups: z
+    .array(groupDraftSnapshotSchema)
+    .max(MAX_EXERCISES_PER_SESSION)
+    .refine(withinExerciseCap, {
+      message: `A session holds at most ${MAX_EXERCISES_PER_SESSION} exercises`,
+    }),
 });
 
 const daySlotSnapshotSchema = z.object({
@@ -120,7 +156,6 @@ const exercisePatchSchema = z
     percentage1rm: z.number().min(0).max(100).nullable().optional(),
     tempo: z.string().max(20).nullable().optional(),
     restSeconds: z.number().int().min(0).max(3600).nullable().optional(),
-    supersetGroup: z.string().max(10).nullable().optional(),
     isWarmup: z.boolean().optional(),
     notes: z.string().max(500).nullable().optional(),
     videoUrl: z.string().max(500).nullable().optional(),
@@ -137,6 +172,12 @@ const exercisePatchSchema = z
 // resolved the name; an unresolved add can't even be constructed).
 const aiAddedExerciseSchema = exerciseDraftSnapshotSchema.extend({
   exerciseId: z.string().uuid(),
+});
+
+// The group an added exercise arrives in: every exercise it holds carries the
+// same catalog belt.
+const aiAddedGroupSchema = groupDraftSnapshotSchema.extend({
+  exercises: z.array(aiAddedExerciseSchema).min(1).max(MAX_EXERCISES_PER_SESSION),
 });
 
 export const draftOpSchema = z.discriminatedUnion("type", [
@@ -180,7 +221,7 @@ export const draftOpSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("add_exercise"),
     sessionUid: uidSchema,
-    exercise: aiAddedExerciseSchema,
+    group: aiAddedGroupSchema,
     label: opLabel,
   }),
   z.object({

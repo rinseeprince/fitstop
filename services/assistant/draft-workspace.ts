@@ -5,6 +5,7 @@ import type {
   ProgramDraft,
 } from "@/components/clients/training/program-builder/program-builder-types";
 import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
+import { sessionExercises } from "@/utils/exercise-groups";
 import type { DraftOp } from "@/components/clients/training/program-builder/program-builder-ops";
 import {
   planDayRules,
@@ -97,7 +98,7 @@ export function buildWorkspaceFromRows(opts: {
         name: slot.session.name,
         focus: slot.session.focus,
       });
-      for (const ex of slot.session.exercises) {
+      for (const ex of sessionExercises(slot.session)) {
         exerciseUids.add(ex.uid);
         exerciseNames.add(ex.name.trim().toLowerCase());
       }
@@ -158,7 +159,7 @@ export function finalizeAssistantOps(ws: DraftWorkspace): {
 
   for (const week of ws.draft.weeks) {
     for (const slot of week.days) {
-      for (const ex of slot.session?.exercises ?? []) {
+      for (const ex of slot.session ? sessionExercises(slot.session) : []) {
         if (ws.entry.exerciseUids.has(ex.uid)) continue;
         const resolved = ex.exerciseId != null && catalogIds.has(ex.exerciseId);
         const cloneOfExisting = ws.entry.exerciseNames.has(

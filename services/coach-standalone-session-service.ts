@@ -1,20 +1,19 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { resolveExercises } from "./exercise-catalog-service";
-import type { SetSpec } from "@/utils/exercise-set-specs";
 import {
-  mapSavedExerciseRow,
-  mapSavedSessionRow,
+  SAVED_SESSION_GROUPS_EMBED,
+  mapSavedSessionTree,
+  type SavedSessionTreeRow,
 } from "@/lib/coach-mappers";
 import {
-  copySavedExerciseRows,
+  copySavedGroupRows,
   dedupeCopyName,
-  insertSavedExercises,
+  insertSavedGroupRows,
+  insertSavedGroups,
+  type SavedGroupWrite,
 } from "./coach-library-helpers";
+import { sessionExercises } from "@/utils/exercise-groups";
 import type { SavedSession } from "@/types/training";
-import type {
-  CoachSavedSessionRow,
-  CoachSavedExerciseRow,
-} from "@/lib/database-helpers";
 
 // STANDALONE saved sessions (coach_saved_sessions with saved_plan_id NULL) —
 // the reusable-workout library. Split out of coach-saved-session-service.ts
@@ -27,23 +26,7 @@ type StandaloneSessionInput = {
   estimatedDurationMinutes?: number | null;
   calorieSurplusPercentage?: number | null;
   notes?: string | null;
-  exercises: Array<{
-    name: string;
-    exerciseId?: string | null;
-    sets: number;
-    repsMin?: number | null;
-    repsMax?: number | null;
-    repsTarget?: string | null;
-    rpeTarget?: number | null;
-    percentage1rm?: number | null;
-    tempo?: string | null;
-    restSeconds?: number | null;
-    notes?: string | null;
-    supersetGroup?: string | null;
-    isWarmup?: boolean;
-    setSpecs?: SetSpec[] | null;
-    videoUrl?: string | null;
-  }>;
+  groups: SavedGroupWrite[];
 };
 
 /**
@@ -51,18 +34,19 @@ type StandaloneSessionInput = {
  * catalog (own + global) — a foreign coach's id (or a stale one) is nulled
  * out and falls back to name resolution rather than linking cross-tenant.
  */
-async function nullifyForeignExerciseIds<T extends { exerciseId?: string | null }>(
+async function nullifyForeignExerciseIds(
   coachId: string,
-  exercises: T[],
-): Promise<T[]> {
+  groups: SavedGroupWrite[],
+): Promise<SavedGroupWrite[]> {
   const explicitIds = [
     ...new Set(
-      exercises
+      groups
+        .flatMap((group) => group.exercises)
         .map((e) => e.exerciseId)
         .filter((id): id is string => Boolean(id))
     ),
   ];
-  if (explicitIds.length === 0) return exercises;
+  if (explicitIds.length === 0) return groups;
 
   const { data: rows, error: idError } = await supabaseAdmin
     .from("exercises")
@@ -73,11 +57,14 @@ async function nullifyForeignExerciseIds<T extends { exerciseId?: string | null 
     throw new Error(`Failed to validate exercise ids: ${idError.message}`);
   }
   const visibleIds = new Set((rows ?? []).map((r) => r.id));
-  return exercises.map((e) =>
-    e.exerciseId && !visibleIds.has(e.exerciseId)
-      ? { ...e, exerciseId: null }
-      : e
-  );
+  return groups.map((group) => ({
+    ...group,
+    exercises: group.exercises.map((e) =>
+      e.exerciseId && !visibleIds.has(e.exerciseId)
+        ? { ...e, exerciseId: null }
+        : e
+    ),
+  }));
 }
 
 // Note: the input carries no sessionType and the insert hardcodes
@@ -88,12 +75,14 @@ export async function createStandaloneSession(
   coachId: string,
   data: StandaloneSessionInput
 ): Promise<string> {
-  const exercises = await nullifyForeignExerciseIds(coachId, data.exercises);
+  const groups = await nullifyForeignExerciseIds(coachId, data.groups);
 
   // Only unresolved names need the lookup; explicit exerciseIds win inside
-  // insertSavedExercises (never create catalog rows for already-linked
+  // insertSavedGroups (never create catalog rows for already-linked
   // prescriptions).
-  const exerciseNames = exercises.filter((e) => !e.exerciseId).map((e) => e.name);
+  const exerciseNames = sessionExercises({ groups })
+    .filter((e) => !e.exerciseId)
+    .map((e) => e.name);
   const exerciseIdMap = await resolveExercises(exerciseNames, coachId);
 
   const { data: session, error } = await supabaseAdmin
@@ -116,10 +105,10 @@ export async function createStandaloneSession(
   if (error || !session) throw new Error(`Failed to create standalone session: ${error?.message}`);
 
   try {
-    await insertSavedExercises(session.id, exercises, exerciseIdMap);
+    await insertSavedGroups(session.id, groups, exerciseIdMap);
   } catch (insertError) {
-    // No shell sessions in the library: a failed exercise insert removes the
-    // just-created row before rethrowing.
+    // No shell sessions in the library: a failed group or exercise insert
+    // removes the just-created row (its groups cascade) before rethrowing.
     await supabaseAdmin
       .from("coach_saved_sessions")
       .delete()
@@ -158,19 +147,14 @@ export async function createStandaloneSessionDeduped(
 export async function getStandaloneSessions(coachId: string): Promise<SavedSession[]> {
   const { data, error } = await supabaseAdmin
     .from("coach_saved_sessions")
-    .select("*, coach_saved_exercises(*)")
+    .select(`*, ${SAVED_SESSION_GROUPS_EMBED}`)
     .eq("coach_id", coachId)
     .is("saved_plan_id", null)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(`Failed to fetch standalone sessions: ${error.message}`);
 
-  return (data ?? []).map((s: CoachSavedSessionRow & { coach_saved_exercises?: CoachSavedExerciseRow[] }) => {
-    const exercises = (s.coach_saved_exercises ?? [])
-      .sort((a: CoachSavedExerciseRow, b: CoachSavedExerciseRow) => a.order_index - b.order_index)
-      .map(mapSavedExerciseRow);
-    return mapSavedSessionRow(s, exercises);
-  });
+  return ((data ?? []) as SavedSessionTreeRow[]).map(mapSavedSessionTree);
 }
 
 /**
@@ -201,34 +185,38 @@ export async function overwriteStandaloneSession(
   // like the duplicate route) — do not template details into it.
   const { data: existing, error: fetchError } = await supabaseAdmin
     .from("coach_saved_sessions")
-    .select("*, coach_saved_exercises(*)")
+    .select(`*, ${SAVED_SESSION_GROUPS_EMBED}`)
     .eq("id", sessionId)
     .eq("coach_id", coachId)
     .is("saved_plan_id", null)
     .single();
   if (fetchError || !existing) throw new Error("Session not found");
 
-  const snapshot = (existing.coach_saved_exercises ?? []) as CoachSavedExerciseRow[];
+  const snapshot = (existing as SavedSessionTreeRow).coach_saved_exercise_groups ?? [];
 
   // Read-only prep before the first destructive write.
-  const exercises = await nullifyForeignExerciseIds(coachId, input.exercises);
-  const exerciseNames = exercises.filter((e) => !e.exerciseId).map((e) => e.name);
+  const groups = await nullifyForeignExerciseIds(coachId, input.groups);
+  const exerciseNames = sessionExercises({ groups })
+    .filter((e) => !e.exerciseId)
+    .map((e) => e.name);
   const exerciseIdMap = await resolveExercises(exerciseNames, coachId);
 
-  // Verbatim CLONE restore of the pre-call children (set_specs / video_url /
-  // exercise_id carried as-is — no re-resolution).
+  // Verbatim CLONE restore of the pre-call children (group settings, set_specs
+  // / video_url / exercise_id carried as-is — no re-resolution).
   const restoreSnapshot = async (): Promise<void> => {
     if (snapshot.length === 0) return;
-    const { error: restoreError } = await supabaseAdmin
-      .from("coach_saved_exercises")
-      .insert(copySavedExerciseRows(snapshot, sessionId));
-    if (restoreError) {
-      throw new Error(`restore also failed: ${restoreError.message}`);
+    try {
+      await insertSavedGroupRows(copySavedGroupRows(snapshot, sessionId));
+    } catch (restoreError) {
+      const restoreMsg =
+        restoreError instanceof Error ? restoreError.message : String(restoreError);
+      throw new Error(`restore also failed: ${restoreMsg}`);
     }
   };
 
+  // Deleting the groups takes their exercises with them.
   const { error: deleteError } = await supabaseAdmin
-    .from("coach_saved_exercises")
+    .from("coach_saved_exercise_groups")
     .delete()
     .eq("saved_session_id", sessionId);
   if (deleteError) {
@@ -236,15 +224,25 @@ export async function overwriteStandaloneSession(
   }
 
   try {
-    await insertSavedExercises(sessionId, exercises, exerciseIdMap);
+    await insertSavedGroups(sessionId, groups, exerciseIdMap);
   } catch (insertError) {
+    const insertMsg =
+      insertError instanceof Error ? insertError.message : String(insertError);
+    // A failure between the groups and their exercises leaves the groups
+    // behind: clear the session's children before restoring the snapshot, or
+    // the restored groups would sit beside empty ones.
+    const { error: clearError } = await supabaseAdmin
+      .from("coach_saved_exercise_groups")
+      .delete()
+      .eq("saved_session_id", sessionId);
+    if (clearError) {
+      throw new Error(`${insertMsg}; restore also failed: ${clearError.message}`);
+    }
     // A failing restore must never shadow the root cause — combine both
     // (same contract as the update-failure path below).
     try {
       await restoreSnapshot();
     } catch (restoreError) {
-      const insertMsg =
-        insertError instanceof Error ? insertError.message : String(insertError);
       const restoreMsg =
         restoreError instanceof Error ? restoreError.message : String(restoreError);
       throw new Error(`${insertMsg}; ${restoreMsg}`);
@@ -276,7 +274,7 @@ export async function overwriteStandaloneSession(
     // just-inserted rows, restore the snapshot. Restore failures append to —
     // never shadow — the update error.
     const { error: unwindError } = await supabaseAdmin
-      .from("coach_saved_exercises")
+      .from("coach_saved_exercise_groups")
       .delete()
       .eq("saved_session_id", sessionId);
     if (unwindError) {

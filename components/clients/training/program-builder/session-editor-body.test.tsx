@@ -3,6 +3,8 @@ import { useState } from "react";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { SessionEditorBody } from "./session-editor-body";
 import { applySetSpecEdit } from "@/utils/set-spec-edits";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
+import { mapSessionExercises } from "./program-builder-model";
 import type { ExerciseDraft, SessionDraft } from "./program-builder-types";
 
 // The picker fetches the catalog on mount — irrelevant to these tests.
@@ -32,7 +34,6 @@ function makeExercise(uid: string, sets: number): ExerciseDraft {
     percentage1rm: null,
     tempo: null,
     restSeconds: null,
-    supersetGroup: null,
     isWarmup: false,
     notes: null,
     videoUrl: null,
@@ -40,6 +41,7 @@ function makeExercise(uid: string, sets: number): ExerciseDraft {
   };
 }
 
+// Each exercise alone in its group: a straight-sets group of one.
 function makeSession(uid: string, exercises: ExerciseDraft[]): SessionDraft {
   return {
     uid,
@@ -49,7 +51,11 @@ function makeSession(uid: string, exercises: ExerciseDraft[]): SessionDraft {
     calorieSurplusPercentage: null,
     notes: null,
     sessionType: "training",
-    exercises,
+    groups: exercises.map((exercise) => ({
+      uid: `grp-${exercise.uid}`,
+      ...STRAIGHT_SETS,
+      exercises: [exercise],
+    })),
   };
 }
 
@@ -150,12 +156,11 @@ describe("SessionEditorBody — accordion", () => {
         onSpecEdit={(_uid, exercise, edit) => {
           const result = applySetSpecEdit(exercise, edit);
           if (!result.ok) return;
-          setSession((s) => ({
-            ...s,
-            exercises: s.exercises.map((e) =>
+          setSession((s) =>
+            mapSessionExercises(s, (e) =>
               e.uid === exercise.uid ? result.exercise : e,
             ),
-          }));
+          );
         }}
       />
     );

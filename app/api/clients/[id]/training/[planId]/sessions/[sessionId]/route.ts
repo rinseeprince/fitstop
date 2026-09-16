@@ -110,22 +110,6 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
-    // Same zod-output -> ExerciseInput coercion as the sibling clone route:
-    // the two saves of the scope dialog must serialize identically.
-    const exercises = validation.data.exercises.map((e) => ({
-      ...e,
-      exerciseId: e.exerciseId ?? null,
-      repsMin: e.repsMin ?? null,
-      repsMax: e.repsMax ?? null,
-      repsTarget: e.repsTarget ?? null,
-      rpeTarget: e.rpeTarget ?? null,
-      restSeconds: e.restSeconds ?? null,
-      tempo: e.tempo ?? null,
-      percentage1rm: e.percentage1rm ?? null,
-      supersetGroup: e.supersetGroup ?? null,
-      notes: e.notes ?? null,
-    }));
-
     // Client-local today: "future" events live on the CLIENT's calendar.
     const today = await getClientTodayString(clientId);
 
@@ -135,7 +119,9 @@ export async function PUT(
       clientId,
       coachId,
       fromDate: today,
-      input: { ...validation.data, exercises },
+      // The groups pass through as validated, exactly as the sibling clone
+      // route passes its overrides: the two saves must write identically.
+      input: validation.data,
     });
 
     return NextResponse.json(

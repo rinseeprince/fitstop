@@ -7,6 +7,7 @@ import type {
   ClientTrainingExercise,
   ClientTrainingSessionEntry,
 } from "@/types/client-training-plan";
+import { sessionExercises } from "@/utils/exercise-groups";
 
 type Props = {
   session: ClientTrainingSessionEntry;
@@ -33,6 +34,8 @@ function formatPrescription(ex: ClientTrainingExercise): string {
 export function TrainingSessionRow({ session }: Props) {
   const [expanded, setExpanded] = useState(false);
   const displayName = session.isRest ? "Rest" : session.name;
+  // Every exercise of the day in order, group by group.
+  const exercises = sessionExercises(session);
 
   const containerClass = [
     "rounded-md border border-border bg-card",
@@ -68,8 +71,8 @@ export function TrainingSessionRow({ session }: Props) {
               </span>
             )}
             <span className="font-mono-display">
-              {session.exercises.length} exercise
-              {session.exercises.length === 1 ? "" : "s"}
+              {exercises.length} exercise
+              {exercises.length === 1 ? "" : "s"}
             </span>
           </div>
         )}
@@ -80,13 +83,13 @@ export function TrainingSessionRow({ session }: Props) {
             <p className="text-sm italic text-muted-foreground">
               Rest day - no training prescribed.
             </p>
-          ) : session.exercises.length === 0 ? (
+          ) : exercises.length === 0 ? (
             <p className="text-sm italic text-muted-foreground">
               No exercises prescribed yet.
             </p>
           ) : (
             <ul className="space-y-2">
-              {session.exercises.map((ex) => (
+              {exercises.map((ex) => (
                 <li key={ex.id} className="space-y-0.5">
                   <p className="text-sm font-semibold text-foreground">
                     {ex.name}

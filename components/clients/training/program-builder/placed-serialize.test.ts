@@ -1,9 +1,21 @@
 import { describe, it, expect } from "vitest";
 import type { PlanEditDay, PlanForEditing } from "@/services/plan-edit-service";
-import type { TrainingExercise } from "@/types/training";
+import type { TrainingExercise, TrainingExerciseGroup } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import {
+  STRAIGHT_SETS,
+  groupSettingsOf,
+  sessionExercises,
+  type GroupSettings,
+} from "@/utils/exercise-groups";
+import { planEditSaveSchema, replaceSessionSchema } from "@/lib/validations/training";
 import { addDaysToDateString } from "@/lib/date-helpers";
-import { planForEditingToDraft, draftToPlanEditBody } from "./placed-serialize";
+import {
+  planForEditingToDraft,
+  draftToPlanEditBody,
+  sessionDraftToPlacedPayload,
+  trainingSessionToDraft,
+} from "./placed-serialize";
 import { draftToSessionInputs } from "./program-builder-serialize";
 import { DAYS_PER_WEEK } from "./program-builder-types";
 
@@ -20,6 +32,7 @@ function makeExercise(overrides: Partial<TrainingExercise> = {}): TrainingExerci
   return {
     id: "row-ex-1",
     sessionId: "row-sess-0",
+    groupId: "row-grp-1",
     exerciseId: "cat-1",
     name: "Bench Press",
     orderIndex: 0,
@@ -32,7 +45,6 @@ function makeExercise(overrides: Partial<TrainingExercise> = {}): TrainingExerci
     tempo: undefined,
     restSeconds: 90,
     notes: undefined,
-    supersetGroup: undefined,
     isWarmup: false,
     setSpecs: BENCH_SPECS,
     videoUrl: "https://example.com/bench",
@@ -43,8 +55,32 @@ function makeExercise(overrides: Partial<TrainingExercise> = {}): TrainingExerci
   };
 }
 
+/** A placed group row at `orderIndex`, holding `exercises` in order. */
+function makeGroup(
+  id: string,
+  orderIndex: number,
+  settings: GroupSettings,
+  exercises: TrainingExercise[],
+): TrainingExerciseGroup {
+  return {
+    id,
+    sessionId: "row-sess-0",
+    orderIndex,
+    ...settings,
+    exercises: exercises.map((e, i) => ({ ...e, groupId: id, orderIndex: i })),
+  };
+}
+
+/** A lone exercise: a straight-sets group of one. */
+function lone(exercise: TrainingExercise, orderIndex = 0): TrainingExerciseGroup {
+  return makeGroup(`row-grp-${exercise.id}`, orderIndex, STRAIGHT_SETS, [exercise]);
+}
+
 /** The plan's day at `position`: training on days 1, 3 and 5 of each week. */
-function makeDay(position: number): PlanEditDay {
+function makeDay(
+  position: number,
+  groups: TrainingExerciseGroup[] = position === 0 ? [lone(makeExercise())] : [],
+): PlanEditDay {
   if (!isTrainingPos(position)) return { date: dateAt(position), isRest: true };
   return {
     date: dateAt(position),
@@ -54,7 +90,7 @@ function makeDay(position: number): PlanEditDay {
     estimatedDurationMinutes: 60,
     notes: "note",
     calorieSurplusPercentage: 15,
-    exercises: position === 0 ? [makeExercise()] : [],
+    groups,
   };
 }
 
@@ -104,7 +140,7 @@ describe("planForEditingToDraft", () => {
       calorieSurplusPercentage: 15,
       sessionType: "training",
     });
-    const [exercise] = slot.session!.exercises;
+    const [exercise] = sessionExercises(slot.session!);
     expect(exercise).toMatchObject({
       name: "Bench Press",
       exerciseId: "cat-1",
@@ -123,7 +159,8 @@ describe("planForEditingToDraft", () => {
     const again = planForEditingToDraft(read).draft.weeks[0].days[0];
     expect(again.uid).not.toBe(slot.uid);
     expect(again.session!.uid).not.toBe(slot.session!.uid);
-    expect(again.session!.exercises[0].uid).not.toBe(exercise.uid);
+    expect(again.session!.groups[0].uid).not.toBe(slot.session!.groups[0].uid);
+    expect(sessionExercises(again.session!)[0].uid).not.toBe(exercise.uid);
   });
 
   it("lays rest days and greyed days as empty slots", () => {
@@ -191,8 +228,9 @@ describe("draftToPlanEditBody", () => {
       expect(s.isRest).toBe(!isTrainingPos(i));
     });
     // Per-set fidelity survives verbatim.
-    expect(body.sessions[0].exercises[0].setSpecs).toEqual(BENCH_SPECS);
-    expect(body.sessions[0].exercises[0].videoUrl).toBe("https://example.com/bench");
+    const [bench] = sessionExercises(body.sessions[0]);
+    expect(bench.setSpecs).toEqual(BENCH_SPECS);
+    expect(bench.videoUrl).toBe("https://example.com/bench");
   });
 
   it("caps the name and focus at 100 characters; no focus stays null", () => {
@@ -203,5 +241,191 @@ describe("draftToPlanEditBody", () => {
       splitType: "x".repeat(100),
     });
     expect(draftToPlanEditBody({ ...draft, splitType: null }, "v-1").plan.splitType).toBeNull();
+  });
+});
+
+// =============================================================================
+// Groups (migration 178) — the tray and the plan editor keep every setting
+// =============================================================================
+
+const SQUAT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const ROW_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const BENCH_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+// A circuit with every setting set, so a dropped setting shows.
+const CIRCUIT: GroupSettings = {
+  format: "circuit",
+  rounds: 3,
+  timeCapSeconds: 900,
+  intervalSeconds: 60,
+  restBetweenExercisesSeconds: 15,
+  restBetweenRoundsSeconds: 90,
+  notes: "A",
+};
+
+/**
+ * A circuit of Back Squat then Bent-over Row, then a lone Bench Press. Catalog
+ * ids are uuids, so the write bodies can pass their schemas.
+ */
+function makeGroupedGroups(): TrainingExerciseGroup[] {
+  return [
+    makeGroup("row-grp-circuit", 0, CIRCUIT, [
+      makeExercise({
+        id: "row-ex-squat",
+        exerciseId: SQUAT_ID,
+        name: "Back Squat",
+        repsTarget: "8-10",
+        percentage1rm: 75,
+        tempo: "3010",
+        notes: "Brace",
+        videoUrl: "https://example.com/squat",
+        prescribedFields: ["set_type", "reps", "load"],
+      }),
+      makeExercise({
+        id: "row-ex-row",
+        exerciseId: ROW_ID,
+        name: "Bent-over Row",
+        sets: 3,
+        repsMin: 10,
+        repsMax: 12,
+        rpeTarget: undefined,
+        restSeconds: undefined,
+        setSpecs: null,
+        videoUrl: null,
+        prescribedFields: ["reps", "rpe"],
+      }),
+    ]),
+    lone(makeExercise({ id: "row-ex-bench", exerciseId: BENCH_ID }), 1),
+  ];
+}
+
+/** The groups every write body must carry for makeGroupedGroups, in order. */
+const GROUPED_INPUT = [
+  {
+    ...CIRCUIT,
+    exercises: [
+      {
+        name: "Back Squat",
+        exerciseId: SQUAT_ID,
+        sets: 4,
+        repsMin: 8,
+        repsMax: 12,
+        repsTarget: "8-10",
+        rpeTarget: 8,
+        percentage1rm: 75,
+        tempo: "3010",
+        restSeconds: 90,
+        notes: "Brace",
+        isWarmup: false,
+        setSpecs: BENCH_SPECS,
+        videoUrl: "https://example.com/squat",
+        prescribedFields: ["set_type", "reps", "load"],
+      },
+      {
+        name: "Bent-over Row",
+        exerciseId: ROW_ID,
+        sets: 3,
+        repsMin: 10,
+        repsMax: 12,
+        repsTarget: null,
+        rpeTarget: null,
+        percentage1rm: null,
+        tempo: null,
+        restSeconds: null,
+        notes: null,
+        isWarmup: false,
+        setSpecs: null,
+        videoUrl: null,
+        prescribedFields: ["reps", "rpe"],
+      },
+    ],
+  },
+  {
+    ...STRAIGHT_SETS,
+    exercises: [
+      {
+        name: "Bench Press",
+        exerciseId: BENCH_ID,
+        sets: 4,
+        repsMin: 8,
+        repsMax: 12,
+        repsTarget: null,
+        rpeTarget: 8,
+        percentage1rm: null,
+        tempo: null,
+        restSeconds: 90,
+        notes: null,
+        isWarmup: false,
+        setSpecs: BENCH_SPECS,
+        videoUrl: "https://example.com/bench",
+        prescribedFields: null,
+      },
+    ],
+  },
+];
+
+describe("groups through the placed paths", () => {
+  const groupedSource = () => ({
+    name: "Push A",
+    focus: "strength",
+    estimatedDurationMinutes: 60,
+    calorieSurplusPercentage: 15,
+    notes: "note",
+    groups: makeGroupedGroups(),
+  });
+
+  it("trainingSessionToDraft keeps a circuit's settings, with fresh grp- uids and exercises in group order", () => {
+    const { draft, exerciseIdByUid } = trainingSessionToDraft(groupedSource());
+
+    expect(draft.groups).toHaveLength(2);
+    const [circuit, bench] = draft.groups;
+    expect(groupSettingsOf(circuit)).toEqual(CIRCUIT);
+    expect(groupSettingsOf(bench)).toEqual(STRAIGHT_SETS);
+    expect(circuit.uid).toMatch(/^grp-/);
+    expect(bench.uid).toMatch(/^grp-/);
+    expect(circuit.uid).not.toBe(bench.uid);
+    expect(circuit.exercises.map((e) => e.name)).toEqual(["Back Squat", "Bent-over Row"]);
+    expect(bench.exercises.map((e) => e.name)).toEqual(["Bench Press"]);
+    // Each draft exercise maps back to its row.
+    expect(sessionExercises(draft).map((e) => exerciseIdByUid.get(e.uid))).toEqual([
+      "row-ex-squat",
+      "row-ex-row",
+      "row-ex-bench",
+    ]);
+  });
+
+  it("sessionDraftToPlacedPayload emits every group setting and exercise, and passes replaceSessionSchema", () => {
+    const payload = sessionDraftToPlacedPayload(trainingSessionToDraft(groupedSource()).draft);
+
+    expect(payload.groups).toEqual(GROUPED_INPUT);
+    // A position is an array place: no exercise input carries one, nor a superset label.
+    for (const exercise of sessionExercises(payload)) {
+      expect(exercise).not.toHaveProperty("orderIndex");
+      expect(exercise).not.toHaveProperty("supersetGroup");
+    }
+
+    const parsed = replaceSessionSchema.safeParse(payload);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual(payload);
+  });
+
+  it("planForEditingToDraft → draftToPlanEditBody carries a day's groups and settings, and passes planEditSaveSchema", () => {
+    // Position 9 (week 2, day 3) holds the grouped session; every other day none.
+    const read = makeRead({
+      days: Array.from({ length: 14 }, (_, i) =>
+        i === 9 ? makeDay(9, makeGroupedGroups()) : makeDay(i, []),
+      ),
+    });
+    const { draft } = planForEditingToDraft(read);
+    const day = draft.weeks[1].days[2].session!;
+    expect(day.groups.map((g) => groupSettingsOf(g))).toEqual([CIRCUIT, STRAIGHT_SETS]);
+
+    const body = draftToPlanEditBody(draft, read.version);
+    expect(body.sessions[9].groups).toEqual(GROUPED_INPUT);
+    expect(body.sessions.filter((s) => s.groups.length > 0)).toHaveLength(1);
+
+    const parsed = planEditSaveSchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual(body);
   });
 });

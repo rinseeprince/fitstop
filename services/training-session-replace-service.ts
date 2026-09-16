@@ -1,11 +1,12 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { TrainingSession } from "@/types/training";
-import { mapExerciseRow, mapSessionRow } from "./training-mappers";
+import { mapExerciseRowsToGroups, mapSessionRow } from "./training-mappers";
 import {
   bulkReplaceExercises,
+  readActiveExerciseRows,
   updateSurplusForFutureEvents,
 } from "./training-session-service";
-import type { ExerciseInput } from "./training-session-service";
+import type { TrainingGroupWrite } from "./training-group-writes";
 import { assertSessionUnlogged } from "./training-event-occupancy";
 
 type ReplaceSessionInput = {
@@ -14,7 +15,7 @@ type ReplaceSessionInput = {
   estimatedDurationMinutes?: number | null;
   calorieSurplusPercentage?: number | null;
   notes?: string | null;
-  exercises: ExerciseInput[];
+  groups: TrainingGroupWrite[];
 };
 
 type ReplaceSessionResult = {
@@ -74,7 +75,7 @@ export async function replaceSessionFull(params: {
   const identityChanged =
     current.name !== input.name || (current.focus ?? null) !== nextFocus;
 
-  await bulkReplaceExercises(sessionId, input.exercises, coachId, clientId);
+  await bulkReplaceExercises(sessionId, input.groups, coachId, clientId);
 
   const { data: updatedRow, error: updateError } = await supabaseAdmin
     .from("training_sessions")
@@ -115,19 +116,10 @@ export async function replaceSessionFull(params: {
     await updateSurplusForFutureEvents(sessionId, nextSurplus, fromDate);
   }
 
-  const { data: exerciseRows, error: exercisesError } = await supabaseAdmin
-    .from("training_exercises")
-    .select("*")
-    .eq("session_id", sessionId)
-    .eq("is_active", true)
-    .order("order_index", { ascending: true });
-
-  if (exercisesError) {
-    throw new Error(`Failed to read replaced exercises: ${exercisesError.message}`);
-  }
+  const exerciseRows = await readActiveExerciseRows(sessionId);
 
   return {
-    session: mapSessionRow(updatedRow, (exerciseRows ?? []).map(mapExerciseRow)),
+    session: mapSessionRow(updatedRow, mapExerciseRowsToGroups(exerciseRows)),
     surplusChanged,
     identityChanged,
   };

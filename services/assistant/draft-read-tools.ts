@@ -1,5 +1,6 @@
 import { betaTool } from "@anthropic-ai/sdk/helpers/beta/json-schema";
 import { normalizeExerciseName } from "@/services/exercise-catalog-service";
+import { sessionExercises } from "@/utils/exercise-groups";
 import type { DraftWorkspace } from "./draft-workspace";
 import {
   exerciseLine,
@@ -44,7 +45,9 @@ export function buildReadTools(ws: DraftWorkspace) {
       const lines = w.value.days.map((slot, i) => {
         if (!slot.session) return `Day ${i + 1}: rest`;
         const head = `Day ${i + 1}: "${slot.session.name}"${slot.session.focus ? ` (${slot.session.focus})` : ""}`;
-        const exercises = slot.session.exercises.map((ex, j) => `  ${exerciseLine(ex, j + 1)}`);
+        const exercises = sessionExercises(slot.session).map(
+          (ex, j) => `  ${exerciseLine(ex, j + 1)}`,
+        );
         return [head, ...exercises].join("\n");
       });
       return [`Week ${week}:`, ...lines].join("\n");

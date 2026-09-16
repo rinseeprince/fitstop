@@ -146,6 +146,9 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   const plans: Record<string, unknown>[] = [];
   const sessions: Record<string, unknown>[] = [];
   const exercises: Record<string, unknown>[] = [];
+  // Every exercise sits in a group (migration 178); a seeded exercise is a
+  // straight-sets group of one, the group taking the exercise's id.
+  const exerciseGroups: Record<string, unknown>[] = [];
   const events: Record<string, unknown>[] = [];
   const nPlans: Record<string, unknown>[] = [];
   const nTargets: Record<string, unknown>[] = [];
@@ -470,12 +473,20 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
               // that compactFromSpecs clamps to.
               const compact = compactFromSpecs(specs);
 
-              exercises.push({
-                id: seedUuid("texercise", coachIdx, c, b, d, i),
+              const exerciseRowId = seedUuid("texercise", coachIdx, c, b, d, i);
+              exerciseGroups.push({
+                id: exerciseRowId,
                 session_id: sessionId,
+                order_index: i,
+                format: "straight_sets",
+              });
+              exercises.push({
+                id: exerciseRowId,
+                session_id: sessionId,
+                group_id: exerciseRowId,
                 exercise_id: ex.id,
                 name: ex.name,
-                order_index: i,
+                order_index: 0,
                 sets: compact.sets,
                 reps_min: compact.repsMin,
                 reps_max: compact.repsMax,
@@ -887,6 +898,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
   push("daily_habits", habits);
   push("training_plans", plans);
   push("training_sessions", sessions);
+  push("training_exercise_groups", exerciseGroups);
   push("training_exercises", exercises);
   push("training_events", events);
   push("nutrition_plans", nPlans);

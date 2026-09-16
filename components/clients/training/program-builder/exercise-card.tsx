@@ -30,9 +30,9 @@ import {
 // `4 × 8–12 @ RPE 8` projected from the compact columns — kept truthful by
 // re-projection on every spec edit) that expands to per-set authoring plus
 // the exercise-level fields (note, video URL). The legacy exercise-level
-// supersetGroup/isWarmup fields are retired from authoring (owner decision:
-// warm-ups are a per-set type now, supersets never became functional) —
-// they still round-trip through the draft/serializer for legacy rows.
+// isWarmup field is retired from authoring (owner decision: warm-ups are a
+// per-set type now) — it still round-trips through the draft/serializer for
+// legacy rows.
 type ExerciseCardProps = {
   exercise: ExerciseDraft;
   // 1-based position in the session — rendered as the block's ord circle.

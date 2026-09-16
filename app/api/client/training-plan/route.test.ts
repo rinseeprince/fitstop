@@ -34,7 +34,7 @@ const mockPlan: ClientTrainingPlan = {
       orderIndex: 0,
       isRest: false,
       estimatedDurationMinutes: 60,
-      exercises: [],
+      groups: [],
     },
   ],
 };

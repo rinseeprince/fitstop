@@ -1,6 +1,22 @@
 import { describe, it, expect } from "vitest";
-import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
+import type {
+  SavedPlan,
+  SavedSession,
+  SavedExercise,
+  SavedExerciseGroup,
+} from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import {
+  STRAIGHT_SETS,
+  groupSettingsOf,
+  sessionExercises,
+  type GroupSettings,
+} from "@/utils/exercise-groups";
+import {
+  createStandaloneSessionSchema,
+  inlinePlanBodySchema,
+  overwriteSavedPlanSchema,
+} from "@/lib/validations/training";
 import {
   savedPlanToDraft,
   draftToOverwriteBody,
@@ -63,6 +79,7 @@ function makeExercise(overrides: Partial<SavedExercise> = {}): SavedExercise {
   return {
     id: "ex-row-1",
     savedSessionId: "sess-row-1",
+    groupId: "group-row-1",
     exerciseId: "cat-1",
     name: "Bench Press",
     orderIndex: 0,
@@ -74,7 +91,6 @@ function makeExercise(overrides: Partial<SavedExercise> = {}): SavedExercise {
     percentage1rm: null,
     tempo: null,
     restSeconds: 120,
-    supersetGroup: "A",
     isWarmup: false,
     notes: "Pause on chest",
     setSpecs: null,
@@ -84,6 +100,27 @@ function makeExercise(overrides: Partial<SavedExercise> = {}): SavedExercise {
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
+}
+
+/** A library group row at `orderIndex`, holding `exercises` in order. */
+function makeGroup(
+  id: string,
+  orderIndex: number,
+  settings: GroupSettings,
+  exercises: SavedExercise[],
+): SavedExerciseGroup {
+  return {
+    id,
+    savedSessionId: "sess-row-1",
+    orderIndex,
+    ...settings,
+    exercises: exercises.map((e, i) => ({ ...e, groupId: id, orderIndex: i })),
+  };
+}
+
+/** Lone exercises: each a straight-sets group of one, in order. */
+function lones(...exercises: SavedExercise[]): SavedExerciseGroup[] {
+  return exercises.map((e, i) => makeGroup(`group-${e.id}`, i, STRAIGHT_SETS, [e]));
 }
 
 function makeSession(overrides: Partial<SavedSession> = {}): SavedSession {
@@ -100,7 +137,7 @@ function makeSession(overrides: Partial<SavedSession> = {}): SavedSession {
     calorieSurplusPercentage: 10,
     notes: null,
     sessionType: "training",
-    exercises: [],
+    groups: [],
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -117,7 +154,7 @@ function makeRestRow(weekIndex: number, orderIndex: number): SavedSession {
     isRest: true,
     estimatedDurationMinutes: null,
     calorieSurplusPercentage: null,
-    exercises: [],
+    groups: [],
   });
 }
 
@@ -155,23 +192,21 @@ function makeWeekShapedPlan(weekCount: number): SavedPlan {
             weekIndex: w,
             orderIndex,
             calorieSurplusPercentage: d === 0 ? 10 : null,
-            exercises:
+            groups:
               d === 0
-                ? [
+                ? lones(
                     makeExercise({ setSpecs: SPECS, sets: 2, repsMin: 8, repsMax: 10 }),
                     makeExercise({
                       id: "ex-row-2",
                       exerciseId: null,
                       name: "Cable Fly",
-                      orderIndex: 1,
                       sets: 3,
                       rpeTarget: null,
-                      supersetGroup: null,
                       notes: null,
                       videoUrl: null,
                       prescribedFields: null,
                     }),
-                  ]
+                  )
                 : [],
           }),
         );
@@ -224,53 +259,59 @@ describe("savedPlanToDraft / draftToOverwriteBody parity (week-shaped)", () => {
       calorieSurplusPercentage: 10,
       notes: null,
       sessionType: "training",
-      exercises: [
+      groups: [
         {
-          name: "Bench Press",
-          exerciseId: "cat-1",
-          orderIndex: 0,
-          sets: 2,
-          repsMin: 8,
-          repsMax: 10,
-          repsTarget: null,
-          rpeTarget: 8,
-          percentage1rm: null,
-          tempo: null,
-          restSeconds: 120,
-          notes: "Pause on chest",
-          supersetGroup: "A",
-          isWarmup: false,
-          setSpecs: SPECS,
-          videoUrl: "https://example.com/bench",
-          prescribedFields: null,
+          ...STRAIGHT_SETS,
+          exercises: [
+            {
+              name: "Bench Press",
+              exerciseId: "cat-1",
+              sets: 2,
+              repsMin: 8,
+              repsMax: 10,
+              repsTarget: null,
+              rpeTarget: 8,
+              percentage1rm: null,
+              tempo: null,
+              restSeconds: 120,
+              notes: "Pause on chest",
+              isWarmup: false,
+              setSpecs: SPECS,
+              videoUrl: "https://example.com/bench",
+              prescribedFields: null,
+            },
+          ],
         },
         {
-          name: "Cable Fly",
-          exerciseId: null,
-          orderIndex: 1,
-          sets: 3,
-          repsMin: 8,
-          repsMax: 10,
-          repsTarget: null,
-          rpeTarget: null,
-          percentage1rm: null,
-          tempo: null,
-          restSeconds: 120,
-          notes: null,
-          supersetGroup: null,
-          isWarmup: false,
-          setSpecs: null,
-          videoUrl: null,
-          prescribedFields: null,
+          ...STRAIGHT_SETS,
+          exercises: [
+            {
+              name: "Cable Fly",
+              exerciseId: null,
+              sets: 3,
+              repsMin: 8,
+              repsMax: 10,
+              repsTarget: null,
+              rpeTarget: null,
+              percentage1rm: null,
+              tempo: null,
+              restSeconds: 120,
+              notes: null,
+              isWarmup: false,
+              setSpecs: null,
+              videoUrl: null,
+              prescribedFields: null,
+            },
+          ],
         },
       ],
     });
 
-    // Rest rows are real rows with an empty exercises array and null surplus.
+    // Rest rows are real rows with an empty groups array and null surplus.
     const day1 = body.sessions[1];
     expect(day1.isRest).toBe(true);
     expect(day1.name).toBe("Rest");
-    expect(day1.exercises).toEqual([]);
+    expect(day1.groups).toEqual([]);
     expect(day1.calorieSurplusPercentage).toBeNull();
 
     // Per-session surplus: set on W1 Push, inherited (null) on W1 Pull.
@@ -281,7 +322,7 @@ describe("savedPlanToDraft / draftToOverwriteBody parity (week-shaped)", () => {
   it("keeps setSpecs a verbatim passthrough (null stays null, no synthesis)", () => {
     const plan = makeWeekShapedPlan(1);
     const body = draftToOverwriteBody(savedPlanToDraft(plan));
-    const [withSpecs, compactOnly] = body.sessions[0].exercises;
+    const [withSpecs, compactOnly] = sessionExercises(body.sessions[0]);
     expect(withSpecs.setSpecs).toEqual(SPECS);
     expect(compactOnly.setSpecs).toBeNull();
   });
@@ -364,19 +405,20 @@ describe("draftToOverwriteBody guards", () => {
   it("serializes an all-rest week as 7 real rest rows", () => {
     const body = draftToOverwriteBody(baseDraft());
     expect(body.sessions).toHaveLength(7);
-    expect(body.sessions.every((s) => s.isRest && s.exercises.length === 0)).toBe(true);
+    expect(body.sessions.every((s) => s.isRest && s.groups.length === 0)).toBe(true);
   });
 
   it("nullifies blank video URLs and empty setSpecs arrays", () => {
     const plan = makeWeekShapedPlan(1);
     const draft = savedPlanToDraft(plan);
     const slot = draft.weeks[0].days[0];
-    const [ex1, ex2] = slot.session!.exercises;
+    const [ex1, ex2] = sessionExercises(slot.session!);
     ex1.videoUrl = "   ";
     ex2.setSpecs = []; // must never reach the API — fails the zod refine
     const body = draftToOverwriteBody(draft);
-    expect(body.sessions[0].exercises[0].videoUrl).toBeNull();
-    expect(body.sessions[0].exercises[1].setSpecs).toBeNull();
+    const [out1, out2] = sessionExercises(body.sessions[0]);
+    expect(out1.videoUrl).toBeNull();
+    expect(out2.setSpecs).toBeNull();
   });
 
   it("truncates over-cap name/description instead of blocking the save (AI plans allow 200/1000)", () => {
@@ -391,12 +433,13 @@ describe("draftToOverwriteBody guards", () => {
   it("clamps exercise sets into the schema's 1..20 range", () => {
     const plan = makeWeekShapedPlan(1);
     const draft = savedPlanToDraft(plan);
-    const [ex1, ex2] = draft.weeks[0].days[0].session!.exercises;
+    const [ex1, ex2] = sessionExercises(draft.weeks[0].days[0].session!);
     ex1.sets = 0;
     ex2.sets = 25;
     const body = draftToOverwriteBody(draft);
-    expect(body.sessions[0].exercises[0].sets).toBe(1);
-    expect(body.sessions[0].exercises[1].sets).toBe(20);
+    const [out1, out2] = sessionExercises(body.sessions[0]);
+    expect(out1.sets).toBe(1);
+    expect(out2.sets).toBe(20);
   });
 });
 
@@ -407,14 +450,15 @@ describe("savedSessionToDraft (library insert clone)", () => {
       focus: "push",
       estimatedDurationMinutes: 45,
       calorieSurplusPercentage: 12,
-      exercises: [
+      groups: lones(
         makeExercise({ id: "e-1", exerciseId: "cat-1", setSpecs: SPECS }),
         makeExercise({ id: "e-2", exerciseId: null, setSpecs: [] }),
-      ],
+      ),
     });
 
     const a = savedSessionToDraft(saved);
     const b = savedSessionToDraft(saved);
+    const aExercises = sessionExercises(a);
 
     expect(a.uid).not.toBe(b.uid); // fresh identity per clone
     expect(a.name).toBe("Push Day A");
@@ -422,11 +466,11 @@ describe("savedSessionToDraft (library insert clone)", () => {
     // a dragged-in library session drops its own surplus and inherits the
     // program default wherever it lands.
     expect(a.calorieSurplusPercentage).toBeNull();
-    expect(a.exercises[0].exerciseId).toBe("cat-1");
-    expect(a.exercises[0].setSpecs).toEqual(SPECS);
+    expect(aExercises[0].exerciseId).toBe("cat-1");
+    expect(aExercises[0].setSpecs).toEqual(SPECS);
     // [] specs normalize to null (an empty array would 400 the save).
-    expect(a.exercises[1].setSpecs).toBeNull();
-    expect(a.exercises[0].uid).not.toBe(b.exercises[0].uid);
+    expect(aExercises[1].setSpecs).toBeNull();
+    expect(aExercises[0].uid).not.toBe(sessionExercises(b)[0].uid);
   });
 });
 
@@ -437,7 +481,7 @@ describe("sessionDraftToStandalonePayload (create-blank save)", () => {
       focus: "legs",
       estimatedDurationMinutes: 40,
       calorieSurplusPercentage: 8,
-      exercises: [
+      groups: lones(
         makeExercise({
           id: "e-1",
           exerciseId: "cat-9",
@@ -445,7 +489,7 @@ describe("sessionDraftToStandalonePayload (create-blank save)", () => {
           videoUrl: "  https://example.com/squat.mp4  ",
           prescribedFields: null,
         }),
-      ],
+      ),
     });
     const draft = savedSessionToDraft(saved);
 
@@ -457,10 +501,11 @@ describe("sessionDraftToStandalonePayload (create-blank save)", () => {
     // A saved workout is a movement template — it carries no surplus (inherits
     // the program default wherever it's next placed).
     expect(payload.calorieSurplusPercentage).toBeNull();
-    expect(payload.exercises).toHaveLength(1);
-    expect(payload.exercises[0]).toMatchObject({
+    // Its position is its place: the first group's first exercise.
+    expect(payload.groups).toHaveLength(1);
+    expect(payload.groups[0].exercises).toHaveLength(1);
+    expect(payload.groups[0].exercises[0]).toMatchObject({
       exerciseId: "cat-9",
-      orderIndex: 0,
       setSpecs: SPECS,
       videoUrl: "https://example.com/squat.mp4",
       prescribedFields: null, // trimmed
@@ -492,10 +537,10 @@ describe("draftToInlinePlanBody", () => {
     expect(week2Push.name).toBe("Push W2");
     const rest = body.sessions[1];
     expect(rest.isRest).toBe(true);
-    expect(rest.exercises).toEqual([]);
+    expect(rest.groups).toEqual([]);
 
     // The first exercise's per-set prescription survives byte-for-byte.
-    const ex = body.sessions[0].exercises[0];
+    const ex = sessionExercises(body.sessions[0])[0];
     expect(ex.setSpecs).toEqual(SPECS);
     expect(ex.videoUrl).toBe("https://example.com/bench");
     expect(ex.exerciseId).toBe("cat-1");
@@ -544,5 +589,205 @@ describe("draftToInlinePlanBody", () => {
 
     const explicit: ProgramDraft = { ...fallback, programDurationWeeks: 5 };
     expect(draftToInlinePlanBody(explicit).programDurationWeeks).toBe(5);
+  });
+});
+
+// =============================================================================
+// Groups (migration 178) — every setting and exercise survives every write path
+// =============================================================================
+
+const SQUAT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const ROW_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const BENCH_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+// A circuit with every setting set, so a dropped setting shows.
+const CIRCUIT: GroupSettings = {
+  format: "circuit",
+  rounds: 3,
+  timeCapSeconds: 900,
+  intervalSeconds: 60,
+  restBetweenExercisesSeconds: 15,
+  restBetweenRoundsSeconds: 90,
+  notes: "A",
+};
+
+/**
+ * A circuit of Back Squat then Bent-over Row, then a lone Bench Press. Catalog
+ * ids are uuids and video URLs http(s), so the write bodies can pass their
+ * schemas.
+ */
+function makeGroupedSession(): SavedSession {
+  return makeSession({
+    groups: [
+      makeGroup("saved-group-circuit", 0, CIRCUIT, [
+        makeExercise({
+          id: "ex-squat",
+          exerciseId: SQUAT_ID,
+          name: "Back Squat",
+          sets: 2,
+          repsMin: 8,
+          repsMax: 10,
+          repsTarget: "8-10",
+          rpeTarget: 8,
+          percentage1rm: 75,
+          tempo: "3010",
+          restSeconds: 120,
+          notes: "Brace",
+          setSpecs: SPECS,
+          videoUrl: "https://example.com/squat",
+          prescribedFields: ["set_type", "reps", "load"],
+        }),
+        makeExercise({
+          id: "ex-row",
+          exerciseId: ROW_ID,
+          name: "Bent-over Row",
+          sets: 3,
+          repsMin: 10,
+          repsMax: 12,
+          rpeTarget: null,
+          restSeconds: null,
+          notes: null,
+          videoUrl: null,
+          prescribedFields: ["reps", "rpe"],
+        }),
+      ]),
+      makeGroup("saved-group-bench", 1, STRAIGHT_SETS, [
+        makeExercise({ id: "ex-bench", exerciseId: BENCH_ID }),
+      ]),
+    ],
+  });
+}
+
+/** The groups every write body must carry for makeGroupedSession, in order. */
+const GROUPED_INPUT = [
+  {
+    ...CIRCUIT,
+    exercises: [
+      {
+        name: "Back Squat",
+        exerciseId: SQUAT_ID,
+        sets: 2,
+        repsMin: 8,
+        repsMax: 10,
+        repsTarget: "8-10",
+        rpeTarget: 8,
+        percentage1rm: 75,
+        tempo: "3010",
+        restSeconds: 120,
+        notes: "Brace",
+        isWarmup: false,
+        setSpecs: SPECS,
+        videoUrl: "https://example.com/squat",
+        prescribedFields: ["set_type", "reps", "load"],
+      },
+      {
+        name: "Bent-over Row",
+        exerciseId: ROW_ID,
+        sets: 3,
+        repsMin: 10,
+        repsMax: 12,
+        repsTarget: null,
+        rpeTarget: null,
+        percentage1rm: null,
+        tempo: null,
+        restSeconds: null,
+        notes: null,
+        isWarmup: false,
+        setSpecs: null,
+        videoUrl: null,
+        prescribedFields: ["reps", "rpe"],
+      },
+    ],
+  },
+  {
+    ...STRAIGHT_SETS,
+    exercises: [
+      {
+        name: "Bench Press",
+        exerciseId: BENCH_ID,
+        sets: 2,
+        repsMin: 8,
+        repsMax: 10,
+        repsTarget: null,
+        rpeTarget: 8,
+        percentage1rm: null,
+        tempo: null,
+        restSeconds: 120,
+        notes: "Pause on chest",
+        isWarmup: false,
+        setSpecs: null,
+        videoUrl: "https://example.com/bench",
+        prescribedFields: null,
+      },
+    ],
+  },
+];
+
+/** A position is an array place: no exercise input carries one, nor a superset label. */
+function expectNoPositionFields(groups: ReadonlyArray<{ exercises: ReadonlyArray<object> }>) {
+  for (const exercise of sessionExercises({ groups })) {
+    expect(exercise).not.toHaveProperty("orderIndex");
+    expect(exercise).not.toHaveProperty("supersetGroup");
+  }
+}
+
+describe("groups through the serializers", () => {
+  it("savedPlanToDraft builds the session's groups: settings kept, fresh grp- uids, exercises in group order", () => {
+    const plan = makePlan({ sessions: [makeGroupedSession()] });
+    const session = savedPlanToDraft(plan).weeks[0].days[0].session!;
+
+    expect(session.groups).toHaveLength(2);
+    const [circuit, bench] = session.groups;
+    expect(groupSettingsOf(circuit)).toEqual(CIRCUIT);
+    expect(groupSettingsOf(bench)).toEqual(STRAIGHT_SETS);
+    expect(circuit.exercises.map((e) => e.name)).toEqual(["Back Squat", "Bent-over Row"]);
+    expect(bench.exercises.map((e) => e.name)).toEqual(["Bench Press"]);
+
+    // Draft identity is minted, never the row's id, and fresh on every build.
+    expect(circuit.uid).toMatch(/^grp-/);
+    expect(bench.uid).toMatch(/^grp-/);
+    expect(circuit.uid).not.toBe(bench.uid);
+    const again = savedPlanToDraft(plan).weeks[0].days[0].session!;
+    expect(again.groups.map((g) => g.uid)).not.toContain(circuit.uid);
+    expect(again.groups.map((g) => g.uid)).not.toContain(bench.uid);
+  });
+
+  it("round-trips savedPlan → draft → overwrite body keeping every group setting and exercise, in order", () => {
+    const body = draftToOverwriteBody(
+      savedPlanToDraft(makePlan({ sessions: [makeGroupedSession()] })),
+    );
+
+    expect(body.sessions[0].groups).toEqual(GROUPED_INPUT);
+    expectNoPositionFields(body.sessions[0].groups);
+    // The padded rest days carry no groups.
+    expect(body.sessions.slice(1).every((s) => s.isRest && s.groups.length === 0)).toBe(true);
+
+    const parsed = overwriteSavedPlanSchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual(body);
+  });
+
+  it("draftToInlinePlanBody emits the same groups and passes inlinePlanBodySchema", () => {
+    const body = draftToInlinePlanBody(
+      savedPlanToDraft(makePlan({ sessions: [makeGroupedSession()] })),
+    );
+
+    expect(body.sessions[0].groups).toEqual(GROUPED_INPUT);
+    expectNoPositionFields(body.sessions[0].groups);
+
+    const parsed = inlinePlanBodySchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual(body);
+  });
+
+  it("sessionDraftToStandalonePayload emits the groups and passes createStandaloneSessionSchema", () => {
+    const payload = sessionDraftToStandalonePayload(savedSessionToDraft(makeGroupedSession()));
+
+    expect(payload.groups).toEqual(GROUPED_INPUT);
+    expectNoPositionFields(payload.groups);
+
+    const parsed = createStandaloneSessionSchema.safeParse(payload);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual(payload);
   });
 });

@@ -14,14 +14,41 @@ import {
   makeRestWeek,
   newUid,
   type ExerciseDraft,
+  type ExerciseGroupDraft,
   type ProgramDraft,
   type SessionDraft,
   type WeekDraft,
 } from "./program-builder-types";
-import { programDraftSnapshotSchema } from "@/lib/validations/assistant";
+import { draftOpSchema, programDraftSnapshotSchema } from "@/lib/validations/assistant";
+import {
+  STRAIGHT_SETS,
+  groupSettingsOf,
+  sessionExercises,
+  type GroupSettings,
+} from "@/utils/exercise-groups";
 
 const LIB = { target: "library" as const };
 const CLIENT = { target: "client-draft" as const };
+
+// A superset/circuit: three rounds, 90s between rounds.
+const CIRCUIT: GroupSettings = {
+  ...STRAIGHT_SETS,
+  format: "circuit",
+  rounds: 3,
+  restBetweenRoundsSeconds: 90,
+  notes: "A",
+};
+
+// Every setting a group carries, each one set.
+const EVERY_SETTING: GroupSettings = {
+  format: "emom",
+  rounds: 10,
+  timeCapSeconds: 600,
+  intervalSeconds: 60,
+  restBetweenExercisesSeconds: 15,
+  restBetweenRoundsSeconds: 120,
+  notes: "On the minute",
+};
 
 function makeExercise(overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
   return {
@@ -37,13 +64,17 @@ function makeExercise(overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
     percentage1rm: null,
     tempo: null,
     restSeconds: null,
-    supersetGroup: null,
     isWarmup: false,
     notes: null,
     videoUrl: null,
     prescribedFields: null,
     ...overrides,
   };
+}
+
+// A lone exercise: a straight-sets group of one.
+function lone(exercise: ExerciseDraft): ExerciseGroupDraft {
+  return { uid: newUid("grp"), ...STRAIGHT_SETS, exercises: [exercise] };
 }
 
 function makeSession(overrides: Partial<SessionDraft> = {}): SessionDraft {
@@ -55,7 +86,7 @@ function makeSession(overrides: Partial<SessionDraft> = {}): SessionDraft {
     calorieSurplusPercentage: null,
     notes: null,
     sessionType: "training",
-    exercises: [makeExercise()],
+    groups: [lone(makeExercise())],
     ...overrides,
   };
 }
@@ -166,7 +197,10 @@ describe("applyDraftOp", () => {
 
   it("moves a session (swap when occupied) and reorders exercises by index", () => {
     const a = makeSession({ name: "A" });
-    const b = makeSession({ name: "B", exercises: [makeExercise(), makeExercise({ name: "Row" })] });
+    const b = makeSession({
+      name: "B",
+      groups: [lone(makeExercise()), lone(makeExercise({ name: "Row" }))],
+    });
     const week = makeRestWeek(0);
     week.days[0] = { ...makeRestSlot(0), session: a, isRest: false };
     week.days[3] = { ...makeRestSlot(3), session: b, isRest: false };
@@ -183,11 +217,16 @@ describe("applyDraftOp", () => {
 
     const reordered = applyDraftOp(
       draft,
-      { type: "reorder_exercise", sessionUid: b.uid, exerciseUid: b.exercises[1].uid, toIndex: 0 },
+      {
+        type: "reorder_exercise",
+        sessionUid: b.uid,
+        exerciseUid: sessionExercises(b)[1].uid,
+        toIndex: 0,
+      },
       LIB,
     );
     const session = reordered.draft.weeks[0].days[3].session!;
-    expect(session.exercises.map((e) => e.name)).toEqual(["Row", "Bench Press"]);
+    expect(sessionExercises(session).map((e) => e.name)).toEqual(["Row", "Bench Press"]);
   });
 
   it("refuses to double-insert a week or exercise carrying an existing uid", () => {
@@ -202,7 +241,7 @@ describe("applyDraftOp", () => {
 
     const dupEx = applyDraftOp(
       draft,
-      { type: "add_exercise", sessionUid: session.uid, exercise: session.exercises[0] },
+      { type: "add_exercise", sessionUid: session.uid, group: session.groups[0] },
       LIB,
     );
     expect(dupEx.skipped).toMatch(/already/);
@@ -281,50 +320,55 @@ describe("wire-schema round trip (drift belt)", () => {
             estimatedDurationMinutes: 60,
             calorieSurplusPercentage: 12,
             notes: "session note",
-            exercises: [
-              makeExercise({
-                setSpecs: [
-                  {
-                    set_number: 1,
-                    set_type: "warmup",
-                    reps_min: 10,
-                    reps_max: 12,
-                    reps_target: null,
-                    load_type: "absolute",
-                    load_value: 40,
-                    rpe_target: null,
+            groups: [
+              {
+                uid: newUid("grp"),
+                ...EVERY_SETTING,
+                exercises: [
+                  makeExercise({
+                    setSpecs: [
+                      {
+                        set_number: 1,
+                        set_type: "warmup",
+                        reps_min: 10,
+                        reps_max: 12,
+                        reps_target: null,
+                        load_type: "absolute",
+                        load_value: 40,
+                        rpe_target: null,
+                        tempo: "2010",
+                        rest_seconds: 60,
+                        drops: null,
+                      },
+                      {
+                        set_number: 2,
+                        set_type: "drop",
+                        reps_min: 8,
+                        reps_max: 8,
+                        reps_target: "AMRAP",
+                        load_type: "pct_1rm",
+                        load_value: 75,
+                        rpe_target: 9,
+                        tempo: null,
+                        rest_seconds: 120,
+                        drops: [{ weight: 60, reps: 8 }],
+                      },
+                    ],
+                    sets: 1,
+                    repsMin: 8,
+                    repsMax: 8,
+                    repsTarget: "AMRAP",
+                    rpeTarget: 9,
+                    percentage1rm: 75,
                     tempo: "2010",
-                    rest_seconds: 60,
-                    drops: null,
-                  },
-                  {
-                    set_number: 2,
-                    set_type: "drop",
-                    reps_min: 8,
-                    reps_max: 8,
-                    reps_target: "AMRAP",
-                    load_type: "pct_1rm",
-                    load_value: 75,
-                    rpe_target: 9,
-                    tempo: null,
-                    rest_seconds: 120,
-                    drops: [{ weight: 60, reps: 8 }],
-                  },
+                    restSeconds: 120,
+                    isWarmup: false,
+                    notes: "cue: elbows in",
+                    videoUrl: "https://example.com/v",
+                    prescribedFields: null,
+                  }),
                 ],
-                sets: 1,
-                repsMin: 8,
-                repsMax: 8,
-                repsTarget: "AMRAP",
-                rpeTarget: 9,
-                percentage1rm: 75,
-                tempo: "2010",
-                restSeconds: 120,
-                supersetGroup: "A",
-                isWarmup: false,
-                notes: "cue: elbows in",
-                videoUrl: "https://example.com/v",
-                prescribedFields: null,
-              }),
+              },
             ],
           }),
         ),
@@ -343,6 +387,272 @@ describe("wire-schema round trip (drift belt)", () => {
       weeks: [{ ...draft.weeks[0], days: draft.weeks[0].days.slice(0, DAYS_PER_WEEK - 1) }],
     };
     expect(programDraftSnapshotSchema.safeParse(short).success).toBe(false);
+  });
+
+  it("keeps a circuit group's uid, settings and exercises (nothing stripped)", () => {
+    const circuit: ExerciseGroupDraft = {
+      uid: newUid("grp"),
+      ...CIRCUIT,
+      exercises: [makeExercise({ name: "Squat" }), makeExercise({ name: "Row" })],
+    };
+    const draft = makeDraft([
+      weekWithSession(makeSession({ groups: [circuit, lone(makeExercise())] })),
+    ]);
+
+    const parsed = programDraftSnapshotSchema.parse(draft);
+    const [parsedCircuit] = parsed.weeks[0].days[0].session!.groups;
+    expect(parsedCircuit).toEqual(circuit);
+    expect(groupSettingsOf(parsedCircuit)).toEqual(CIRCUIT);
+  });
+});
+
+// =============================================================================
+// Groups through the ops: an added exercise arrives as a whole group, exercise
+// ops address exercises wherever their group, and no op loses a setting.
+// =============================================================================
+
+describe("add_exercise appends a whole group", () => {
+  it("appends the op's fully-materialized group unchanged; a replayed duplicate skips", () => {
+    const session = makeSession();
+    const draft = makeDraft([weekWithSession(session)]);
+    const group: ExerciseGroupDraft = {
+      uid: newUid("grp"),
+      ...CIRCUIT,
+      exercises: [makeExercise({ name: "Row" }), makeExercise({ name: "Dip" })],
+    };
+    const op: DraftOp = { type: "add_exercise", sessionUid: session.uid, group };
+
+    const result = applyDraftOps(draft, [op], LIB);
+    expect(result.applied).toBe(1);
+    expect(result.skipped).toEqual([]);
+    const groups = result.draft.weeks[0].days[0].session!.groups;
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toEqual(draft.weeks[0].days[0].session!.groups[0]);
+    expect(groups[1]).toEqual(group);
+
+    // The same op replayed.
+    const replayed = applyDraftOp(result.draft, op, LIB);
+    expect(replayed.skipped).toBe("Exercise already added");
+    expect(replayed.draft).toBe(result.draft);
+
+    // The same group uid, holding a fresh exercise.
+    const sameGroupUid = applyDraftOp(
+      result.draft,
+      {
+        type: "add_exercise",
+        sessionUid: session.uid,
+        group: { ...group, exercises: [makeExercise({ name: "Row" })] },
+      },
+      LIB,
+    );
+    expect(sameGroupUid.skipped).toBe("Exercise already added");
+    expect(sameGroupUid.draft).toBe(result.draft);
+
+    // A fresh group uid, holding an exercise uid the draft already has.
+    const sameExerciseUid = applyDraftOp(
+      result.draft,
+      { type: "add_exercise", sessionUid: session.uid, group: lone(group.exercises[1]) },
+      LIB,
+    );
+    expect(sameExerciseUid.skipped).toBe("Exercise already added");
+    expect(sameExerciseUid.draft).toBe(result.draft);
+  });
+});
+
+describe("exercise ops on a session holding a circuit", () => {
+  // The session's groups: a circuit of Squat then Row, then a lone Bench Press.
+  function makeFixture() {
+    const squat = makeExercise({ name: "Squat" });
+    const row = makeExercise({ name: "Row" });
+    const bench = makeExercise({ name: "Bench Press" });
+    const circuit: ExerciseGroupDraft = { uid: newUid("grp"), ...CIRCUIT, exercises: [squat, row] };
+    const benchGroup = lone(bench);
+    const session = makeSession({ groups: [circuit, benchGroup] });
+    const draft = makeDraft([weekWithSession(session)]);
+    return { draft, sessionUid: session.uid, circuit, benchGroup, squat, row, bench };
+  }
+
+  const groupsOf = (draft: ProgramDraft) => draft.weeks[0].days[0].session!.groups;
+  const namesOf = (draft: ProgramDraft) =>
+    sessionExercises(draft.weeks[0].days[0].session!).map((e) => e.name);
+
+  // The circuit is still ONE group, with its uid, its settings and both its
+  // exercises.
+  function expectCircuitWhole(draft: ProgramDraft, circuit: ExerciseGroupDraft) {
+    const circuitUids = circuit.exercises.map((e) => e.uid);
+    const holding = groupsOf(draft).filter((g) =>
+      g.exercises.some((e) => circuitUids.includes(e.uid)),
+    );
+    expect(holding).toHaveLength(1);
+    expect(holding[0].uid).toBe(circuit.uid);
+    expect(groupSettingsOf(holding[0])).toEqual(CIRCUIT);
+    expect(holding[0].exercises.map((e) => e.uid).sort()).toEqual([...circuitUids].sort());
+  }
+
+  it("update_exercise keeps the circuit's uid and settings, in or out of it", () => {
+    const { draft, sessionUid, circuit, benchGroup, row, bench } = makeFixture();
+
+    const inCircuit = applyDraftOps(
+      draft,
+      [{ type: "update_exercise", sessionUid, exerciseUid: row.uid, patch: { sets: 5 } }],
+      LIB,
+    );
+    expect(inCircuit.skipped).toEqual([]);
+    const [updatedCircuit, sameBench] = groupsOf(inCircuit.draft);
+    expect(updatedCircuit.uid).toBe(circuit.uid);
+    expect(groupSettingsOf(updatedCircuit)).toEqual(CIRCUIT);
+    expect(updatedCircuit.exercises).toEqual([circuit.exercises[0], { ...row, sets: 5 }]);
+    expect(sameBench).toEqual(benchGroup);
+
+    const outOfCircuit = applyDraftOps(
+      draft,
+      [{ type: "update_exercise", sessionUid, exerciseUid: bench.uid, patch: { notes: "pause" } }],
+      LIB,
+    );
+    expect(outOfCircuit.skipped).toEqual([]);
+    expect(groupsOf(outOfCircuit.draft)).toEqual([
+      circuit,
+      { ...benchGroup, exercises: [{ ...bench, notes: "pause" }] },
+    ]);
+  });
+
+  it("remove_exercise of the circuit's second exercise leaves a group of one WITH its circuit settings", () => {
+    const { draft, sessionUid, circuit, benchGroup, squat, row } = makeFixture();
+    const result = applyDraftOps(
+      draft,
+      [{ type: "remove_exercise", sessionUid, exerciseUid: row.uid }],
+      LIB,
+    );
+    expect(result.skipped).toEqual([]);
+    const groups = groupsOf(result.draft);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].uid).toBe(circuit.uid);
+    expect(groupSettingsOf(groups[0])).toEqual(CIRCUIT);
+    expect(groups[0].exercises).toEqual([squat]);
+    expect(groups[1]).toEqual(benchGroup);
+  });
+
+  it("remove_exercise of a lone exercise removes its group", () => {
+    const { draft, sessionUid, circuit, bench } = makeFixture();
+    const result = applyDraftOps(
+      draft,
+      [{ type: "remove_exercise", sessionUid, exerciseUid: bench.uid }],
+      LIB,
+    );
+    expect(result.skipped).toEqual([]);
+    expect(groupsOf(result.draft)).toEqual([circuit]);
+  });
+
+  it("reorder_exercise never splits the circuit", () => {
+    const { draft, sessionUid, circuit, benchGroup, squat, row, bench } = makeFixture();
+    const reorder = (exerciseUid: string, toIndex: number) =>
+      applyDraftOp(draft, { type: "reorder_exercise", sessionUid, exerciseUid, toIndex }, LIB);
+
+    // The lone exercise to the front: its group moves ahead of the circuit.
+    const benchFirst = reorder(bench.uid, 0);
+    expect(benchFirst.skipped).toBeUndefined();
+    expect(namesOf(benchFirst.draft)).toEqual(["Bench Press", "Squat", "Row"]);
+    expect(groupsOf(benchFirst.draft).map((g) => g.uid)).toEqual([benchGroup.uid, circuit.uid]);
+    expectCircuitWhole(benchFirst.draft, circuit);
+
+    // Into the middle of the circuit: it does not land between Squat and Row.
+    const intoCircuit = reorder(bench.uid, 1);
+    expect(intoCircuit.skipped).toBeUndefined();
+    expect(namesOf(intoCircuit.draft)).toEqual(["Squat", "Row", "Bench Press"]);
+    expectCircuitWhole(intoCircuit.draft, circuit);
+
+    // A circuit exercise past the circuit's end moves within the circuit.
+    const squatLast = reorder(squat.uid, 2);
+    expect(squatLast.skipped).toBeUndefined();
+    expect(namesOf(squatLast.draft)).toEqual(["Row", "Squat", "Bench Press"]);
+    expect(groupsOf(squatLast.draft)[1]).toEqual(benchGroup);
+    expectCircuitWhole(squatLast.draft, circuit);
+
+    // A circuit exercise to the front, within the circuit.
+    const rowFirst = reorder(row.uid, 0);
+    expect(rowFirst.skipped).toBeUndefined();
+    expect(namesOf(rowFirst.draft)).toEqual(["Row", "Squat", "Bench Press"]);
+    expectCircuitWhole(rowFirst.draft, circuit);
+  });
+});
+
+describe("place_session and insert_week carry every group setting", () => {
+  function sessionWithEverySetting(): SessionDraft {
+    return makeSession({
+      groups: [
+        {
+          uid: newUid("grp"),
+          ...EVERY_SETTING,
+          exercises: [makeExercise({ name: "Burpee" }), makeExercise({ name: "Thruster" })],
+        },
+        lone(makeExercise({ name: "Plank" })),
+      ],
+    });
+  }
+
+  it("the placed session and the inserted week hold their groups as the ops sent them", () => {
+    const draft = makeDraft([makeRestWeek(0)]);
+    const session = sessionWithEverySetting();
+    const week = weekWithSession(sessionWithEverySetting(), 1);
+    const ops: DraftOp[] = [
+      { type: "place_session", slotUid: draft.weeks[0].days[2].uid, session },
+      { type: "insert_week", afterWeekUid: null, week },
+    ];
+
+    // The client replays what its schema belt kept, so the schema keeps them too.
+    for (const op of ops) expect(draftOpSchema.parse(op)).toEqual(op);
+
+    const result = applyDraftOps(draft, ops, LIB);
+    expect(result.skipped).toEqual([]);
+    expect(result.applied).toBe(2);
+
+    const placedGroups = result.draft.weeks[0].days[2].session!.groups;
+    expect(placedGroups).toEqual(session.groups);
+    expect(groupSettingsOf(placedGroups[0])).toEqual(EVERY_SETTING);
+
+    const insertedGroups = result.draft.weeks[1].days[0].session!.groups;
+    expect(insertedGroups).toEqual(week.days[0].session!.groups);
+    expect(groupSettingsOf(insertedGroups[0])).toEqual(EVERY_SETTING);
+  });
+});
+
+describe("draftOpSchema (the client's belt before replay)", () => {
+  const OTHER_CATALOG_ID = "44444444-4444-4444-8444-444444444444";
+  const addExerciseOp = (exercises: ExerciseDraft[]) => ({
+    type: "add_exercise" as const,
+    sessionUid: "sess-1",
+    group: { uid: "grp-1", ...CIRCUIT, exercises },
+  });
+
+  it("accepts an added group whose every exercise carries a catalog uuid, keeping every setting", () => {
+    const op = addExerciseOp([
+      makeExercise(),
+      makeExercise({ name: "Row", exerciseId: OTHER_CATALOG_ID }),
+    ]);
+    const parsed = draftOpSchema.safeParse(op);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual(op);
+  });
+
+  it("rejects an added group holding an exercise with no catalog identity", () => {
+    const op = addExerciseOp([makeExercise(), makeExercise({ name: "Row", exerciseId: null })]);
+    expect(draftOpSchema.safeParse(op).success).toBe(false);
+  });
+
+  it("rejects an update_exercise patch carrying supersetGroup or groups (strict)", () => {
+    const updateExerciseOp = (patch: Record<string, unknown>) => ({
+      type: "update_exercise",
+      sessionUid: "sess-1",
+      exerciseUid: "ex-1",
+      patch,
+    });
+    expect(draftOpSchema.safeParse(updateExerciseOp({ sets: 4 })).success).toBe(true);
+    expect(
+      draftOpSchema.safeParse(updateExerciseOp({ sets: 4, supersetGroup: "A" })).success,
+    ).toBe(false);
+    expect(draftOpSchema.safeParse(updateExerciseOp({ sets: 4, groups: [] })).success).toBe(
+      false,
+    );
   });
 });
 
@@ -444,10 +754,10 @@ describe("applyDraftOp on the plan editor's days (placed-plan)", () => {
   it("session and exercise ops on a history session skip with PAST_LOCKED; on an editable one they apply", () => {
     const { draft, past, future } = makeFixture();
     const opsOn = (session: SessionDraft): DraftOp[] => {
-      const exerciseUid = session.exercises[0].uid;
+      const exerciseUid = sessionExercises(session)[0].uid;
       return [
         { type: "update_session", sessionUid: session.uid, patch: { notes: "x" } },
-        { type: "add_exercise", sessionUid: session.uid, exercise: makeExercise() },
+        { type: "add_exercise", sessionUid: session.uid, group: lone(makeExercise()) },
         { type: "update_exercise", sessionUid: session.uid, exerciseUid, patch: { sets: 5 } },
         { type: "remove_exercise", sessionUid: session.uid, exerciseUid },
         { type: "reorder_exercise", sessionUid: session.uid, exerciseUid, toIndex: 0 },

@@ -15,7 +15,6 @@ import type {
   SetLogInsert,
   SetLogRow,
   TrainingEventRow,
-  TrainingExerciseRow,
 } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
 import type { SetType } from "@/utils/exercise-set-specs";
@@ -55,7 +54,12 @@ import { toCanonicalWeightKg } from "@/utils/unit-conversions";
 // set types — while the compact reps/RPE columns still came through and made the
 // payload look complete. CONVENTIONS §8: "A reader that ignores set_specs sees a
 // truthful but lossy summary."
-import { mapExerciseRow } from "@/services/training-mappers";
+import {
+  EXERCISE_WITH_GROUP_COLUMNS,
+  mapExerciseRowsToGroups,
+  type TrainingExerciseWithGroupRow,
+} from "@/services/training-mappers";
+import { nestRowsIntoGroups, sessionExercises } from "@/utils/exercise-groups";
 // The one flattening. The client's log form seeds its rows from this same
 // function, so a drop set's expansion cannot differ between what the client
 // filled in and what set_type each row is stamped with here.
@@ -85,8 +89,26 @@ type SessionSnapshot = {
   estimated_calories: number | null;
 };
 
+// The group an exercise sat in when it was logged (migration 178): the group's
+// id and place in the session, and its settings. With the exercise's own
+// order_index — its place in that group — a snapshot says where the exercise
+// stood in its session even after the session's rows are gone.
+type GroupSnapshot = {
+  id: string;
+  order_index: number;
+  format: string;
+  rounds: number | null;
+  time_cap_seconds: number | null;
+  interval_seconds: number | null;
+  rest_between_exercises_seconds: number | null;
+  rest_between_rounds_seconds: number | null;
+  notes: string | null;
+};
+
 type ExerciseSnapshot = {
   name: string;
+  order_index: number;
+  group: GroupSnapshot;
   sets: number;
   reps_min: number | null;
   reps_max: number | null;
@@ -96,7 +118,6 @@ type ExerciseSnapshot = {
   tempo: string | null;
   rest_seconds: number | null;
   notes: string | null;
-  superset_group: string | null;
   is_warmup: boolean;
   // Per-set prescription (mig 119). Captured so warm-up-aware compliance is
   // correct for historical logs once the Phase 2 builder authors it; null until
@@ -164,14 +185,13 @@ function mapSetLogRow(row: SetLogRow): SetLog {
 
 // --- Prescription reads (detailed mode) ---
 
-// One row of training_exercises, as both prescription reads below select it.
+// One row of training_exercises, as both prescription reads below select it,
+// with the group it sits in.
 type PrescriptionRow = {
   id: string;
   name: string;
-  // Read for the coach's session-log readout, which lists a session's exercises
-  // in the order they were authored. Deliberately NOT carried into
-  // toExerciseSnapshot: that shape is written to prescribed_exercise_snapshot,
-  // and adding a key there would change stored data.
+  // The exercise's place in its group; the group's order_index is its place in
+  // the session.
   order_index: number;
   sets: number;
   reps_min: number | null;
@@ -182,16 +202,18 @@ type PrescriptionRow = {
   tempo: string | null;
   rest_seconds: number | null;
   notes: string | null;
-  superset_group: string | null;
   is_warmup: boolean | null;
   set_specs: Json | null;
   prescribed_fields: string[] | null;
+  exercise_group: GroupSnapshot;
 };
 
 const PRESCRIPTION_COLUMNS =
   "id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, " +
-  "percentage_1rm, tempo, rest_seconds, notes, superset_group, is_warmup, " +
-  "set_specs, prescribed_fields";
+  "percentage_1rm, tempo, rest_seconds, notes, is_warmup, set_specs, prescribed_fields, " +
+  "exercise_group:training_exercise_groups!training_exercises_group_fkey(id, order_index, " +
+  "format, rounds, time_cap_seconds, interval_seconds, rest_between_exercises_seconds, " +
+  "rest_between_rounds_seconds, notes)";
 
 // The tenant scope for both reads: exercise -> session -> plan -> client_id.
 // `!inner` filters out anything this client does not own, so a body-supplied
@@ -199,8 +221,21 @@ const PRESCRIPTION_COLUMNS =
 const PRESCRIPTION_SCOPE = ", training_sessions!inner(training_plans!inner(client_id))";
 
 function toExerciseSnapshot(row: PrescriptionRow): ExerciseSnapshot {
+  const group = row.exercise_group;
   return {
     name: row.name,
+    order_index: row.order_index,
+    group: {
+      id: group.id,
+      order_index: group.order_index,
+      format: group.format,
+      rounds: group.rounds,
+      time_cap_seconds: group.time_cap_seconds,
+      interval_seconds: group.interval_seconds,
+      rest_between_exercises_seconds: group.rest_between_exercises_seconds,
+      rest_between_rounds_seconds: group.rest_between_rounds_seconds,
+      notes: group.notes,
+    },
     sets: row.sets,
     reps_min: row.reps_min,
     reps_max: row.reps_max,
@@ -210,7 +245,6 @@ function toExerciseSnapshot(row: PrescriptionRow): ExerciseSnapshot {
     tempo: row.tempo,
     rest_seconds: row.rest_seconds,
     notes: row.notes,
-    superset_group: row.superset_group,
     is_warmup: row.is_warmup ?? false,
     set_specs: row.set_specs ?? null,
     prescribed_fields: row.prescribed_fields ?? null,
@@ -275,16 +309,23 @@ async function loadSessionPrescription(
     .select(PRESCRIPTION_COLUMNS + PRESCRIPTION_SCOPE)
     .eq("session_id", sessionId)
     .eq("is_active", true)
-    .eq("training_sessions.training_plans.client_id", clientId)
-    // Authored order, for the coach readout. The completion-quality derivation
-    // below reads this through a Map and does not care about order.
-    .order("order_index", { ascending: true });
+    .eq("training_sessions.training_plans.client_id", clientId);
   if (error) {
     throw new Error(
       `Failed to load session prescription: ${error.message}`,
     );
   }
-  return (data ?? []).map((row) => row as unknown as PrescriptionRow);
+  // Authored order — group by group, each group's exercises in turn — for the
+  // coach readout. The completion-quality derivation below reads this through
+  // a Map and does not care about order.
+  return sessionExercises({
+    groups: nestRowsIntoGroups(
+      (data ?? []).map((row) => {
+        const prescription = row as unknown as PrescriptionRow;
+        return { group: prescription.exercise_group, exercise: prescription };
+      }),
+    ),
+  });
 }
 
 // Fetches set_logs for the given exercise_logs in one query and attaches them
@@ -824,7 +865,7 @@ export async function getTrainingEventDetail(
     const { data: sessionData, error: sessionErr } = await supabaseAdmin
       .from("training_sessions")
       .select(
-        "id, plan_id, name, day_of_week, order_index, focus, notes, estimated_duration_minutes, estimated_calories, calories_calculated_at, calorie_surplus_percentage, created_at, updated_at, training_exercises(*)",
+        `id, plan_id, name, day_of_week, order_index, focus, notes, estimated_duration_minutes, estimated_calories, calories_calculated_at, calorie_surplus_percentage, created_at, updated_at, training_exercises!training_exercises_session_id_fkey(${EXERCISE_WITH_GROUP_COLUMNS})`,
       )
       .eq("id", event.trainingSessionId)
       .eq("is_active", true)
@@ -835,12 +876,9 @@ export async function getTrainingEventDetail(
       );
     }
     if (sessionData) {
-      const exerciseRows = ((sessionData.training_exercises as
-        | (TrainingExerciseRow & { is_active?: boolean })[]
-        | null) ?? [])
-        .filter((e) => e.is_active !== false)
-        .sort((a, b) => a.order_index - b.order_index)
-        .map((row) => mapExerciseRow(row as TrainingExerciseRow));
+      const exerciseRows = (
+        (sessionData.training_exercises as unknown as TrainingExerciseWithGroupRow[] | null) ?? []
+      ).filter((e) => e.is_active !== false);
       liveSession = {
         id: sessionData.id,
         planId: sessionData.plan_id,
@@ -854,7 +892,7 @@ export async function getTrainingEventDetail(
         estimatedCalories: sessionData.estimated_calories ?? undefined,
         caloriesCalculatedAt: sessionData.calories_calculated_at ?? undefined,
         calorieSurplusPercentage: sessionData.calorie_surplus_percentage,
-        exercises: exerciseRows,
+        groups: mapExerciseRowsToGroups(exerciseRows),
         createdAt: sessionData.created_at,
         updatedAt: sessionData.updated_at,
       };
@@ -920,9 +958,10 @@ export async function getTrainingEventDetail(
         snapshot: log.prescribedExerciseSnapshot ?? {},
       }));
   } else {
-    // Live exercises in order_index order.
-    const liveIds = new Set(liveSession.exercises.map((e) => e.id));
-    exercises = liveSession.exercises.map((exercise) => ({
+    // Live exercises in order: group by group, each group's exercises in turn.
+    const liveExercises = sessionExercises(liveSession);
+    const liveIds = new Set(liveExercises.map((e) => e.id));
+    exercises = liveExercises.map((exercise) => ({
       source: "live",
       exercise,
     }));
@@ -1021,7 +1060,6 @@ export async function getSessionLogDetail(
   const prescribedExercises: SessionLogPrescribedExercise[] =
     prescriptionRows.map((prescriptionRow) => ({
       trainingExerciseId: prescriptionRow.id,
-      orderIndex: prescriptionRow.order_index,
       name: prescriptionRow.name,
       snapshot: toExerciseSnapshot(prescriptionRow),
     }));

@@ -1,8 +1,14 @@
 import { describe, it, expect } from "vitest";
 import type { Exercise } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 import { progressWeek } from "./program-builder-model";
-import { makeRestWeek, type ExerciseDraft, type WeekDraft } from "./program-builder-types";
+import {
+  makeRestWeek,
+  type ExerciseDraft,
+  type ExerciseGroupDraft,
+  type WeekDraft,
+} from "./program-builder-types";
 import {
   buildIsCompound,
   buildPreviewRows,
@@ -40,7 +46,6 @@ function exercise(over: Partial<ExerciseDraft> = {}): ExerciseDraft {
     percentage1rm: null,
     tempo: null,
     restSeconds: null,
-    supersetGroup: null,
     isWarmup: false,
     notes: null,
     videoUrl: null,
@@ -144,6 +149,13 @@ describe("diff formatters (working sets only)", () => {
 });
 
 describe("buildPreviewRows", () => {
+  // A lone exercise: a straight-sets group of one.
+  const lone = (ex: ExerciseDraft): ExerciseGroupDraft => ({
+    uid: `grp-${ex.uid}`,
+    ...STRAIGHT_SETS,
+    exercises: [ex],
+  });
+
   function sourceWeek(): WeekDraft {
     const week = makeRestWeek(0);
     week.days[2] = {
@@ -157,17 +169,21 @@ describe("buildPreviewRows", () => {
         calorieSurplusPercentage: null,
         notes: null,
         sessionType: "training",
-        exercises: [
-          exercise({
-            uid: "ex-bench",
-            setSpecs: [working(1, { load_type: "absolute", load_value: 100 })],
-          }),
-          exercise({
-            uid: "ex-curl",
-            exerciseId: null,
-            name: "Cable Curl",
-            setSpecs: [working(1, { load_type: "pct_1rm", load_value: 60 })],
-          }),
+        groups: [
+          lone(
+            exercise({
+              uid: "ex-bench",
+              setSpecs: [working(1, { load_type: "absolute", load_value: 100 })],
+            }),
+          ),
+          lone(
+            exercise({
+              uid: "ex-curl",
+              exerciseId: null,
+              name: "Cable Curl",
+              setSpecs: [working(1, { load_type: "pct_1rm", load_value: 60 })],
+            }),
+          ),
         ],
       },
     };
@@ -199,7 +215,7 @@ describe("buildPreviewRows", () => {
       after: null,
     });
     // row uid is the CLONE's uid so checkbox state survives commit-side lookups
-    expect(bench.uid).toBe(progressed.days[2].session!.exercises[0].uid);
+    expect(bench.uid).toBe(sessionExercises(progressed.days[2].session!)[0].uid);
   });
 });
 

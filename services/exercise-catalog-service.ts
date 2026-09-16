@@ -414,8 +414,8 @@ export async function getRecentExercisesForCoach(
     .eq("coach_saved_sessions.coach_id", coachId)
     .not("exercise_id", "is", null)
     // Rows of one save share a created_at (single-transaction batch insert),
-    // so tie-break on session position + id — otherwise the strip's subset
-    // and order reshuffle arbitrarily between fetches.
+    // so tie-break on position (in its group) + id — otherwise the strip's
+    // subset and order reshuffle arbitrarily between fetches.
     .order("created_at", { ascending: false })
     .order("order_index", { ascending: true })
     .order("id", { ascending: true })

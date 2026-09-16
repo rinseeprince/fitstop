@@ -8,6 +8,7 @@ import {
   type ProgressionRule,
 } from "./progression-rules";
 import { compactFromSpecs, type SetSpec } from "./exercise-set-specs";
+import { STRAIGHT_SETS, sessionExercises } from "./exercise-groups";
 import {
   cloneWeek,
   progressWeek,
@@ -15,6 +16,7 @@ import {
 import {
   makeRestWeek,
   type ExerciseDraft,
+  type ExerciseGroupDraft,
   type WeekDraft,
 } from "@/components/clients/training/program-builder/program-builder-types";
 
@@ -430,13 +432,17 @@ function draftExercise(over: Partial<ExerciseDraft> = {}): ExerciseDraft {
     percentage1rm: null,
     tempo: null,
     restSeconds: null,
-    supersetGroup: null,
     isWarmup: false,
     notes: null,
     videoUrl: null,
     prescribedFields: null,
     ...over,
   };
+}
+
+// A lone exercise: a straight-sets group of one.
+function lone(exercise: ExerciseDraft): ExerciseGroupDraft {
+  return { uid: `grp-${exercise.uid}`, ...STRAIGHT_SETS, exercises: [exercise] };
 }
 
 function weekWithSessions(): WeekDraft {
@@ -452,21 +458,25 @@ function weekWithSessions(): WeekDraft {
       calorieSurplusPercentage: 12,
       notes: null,
       sessionType: "training",
-      exercises: [
-        draftExercise({
-          uid: "ex-bench",
-          setSpecs: [
-            spec("warmup", 1, { load_type: "absolute", load_value: 60 }),
-            absWorking(2, 100),
-            absWorking(3, 90),
-          ],
-        }),
-        draftExercise({
-          uid: "ex-curl",
-          exerciseId: null,
-          name: "Cable Curl",
-          setSpecs: [spec("working", 1, { load_type: "pct_1rm", load_value: 60 })],
-        }),
+      groups: [
+        lone(
+          draftExercise({
+            uid: "ex-bench",
+            setSpecs: [
+              spec("warmup", 1, { load_type: "absolute", load_value: 60 }),
+              absWorking(2, 100),
+              absWorking(3, 90),
+            ],
+          }),
+        ),
+        lone(
+          draftExercise({
+            uid: "ex-curl",
+            exerciseId: null,
+            name: "Cable Curl",
+            setSpecs: [spec("working", 1, { load_type: "pct_1rm", load_value: 60 })],
+          }),
+        ),
       ],
     },
   };
@@ -488,7 +498,7 @@ describe("progressWeek (duplicate-week integration)", () => {
     expect(JSON.stringify(weeks)).toBe(before);
     expect(weeks).toEqual(beforeDeep);
     // and the progressed clone actually changed
-    expect(progressed.days[0].session!.exercises[0].setSpecs![1].load_value).toBe(102.5);
+    expect(sessionExercises(progressed.days[0].session!)[0].setSpecs![1].load_value).toBe(102.5);
   });
 
   it("'+2.5 kg, compounds only': bench changes, curl keeps its reference, uids are the clone's", () => {
@@ -499,12 +509,12 @@ describe("progressWeek (duplicate-week integration)", () => {
       kg(2.5),
       buildScopePredicate({ kind: "compounds" }, isCompound),
     );
-    const [bench, curl] = progressed.days[0].session!.exercises;
+    const [bench, curl] = sessionExercises(progressed.days[0].session!);
     expect(bench.setSpecs![1].load_value).toBe(102.5);
     expect(bench.setSpecs![2].load_value).toBe(92.5);
     expect(bench.setSpecs![0].load_value).toBe(60); // warm-up untouched
-    expect(curl).toBe(clone.days[0].session!.exercises[1]); // out of scope: same reference
-    expect(changedExerciseUids).toEqual(new Set([clone.days[0].session!.exercises[0].uid]));
+    expect(curl).toBe(sessionExercises(clone.days[0].session!)[1]); // out of scope: same reference
+    expect(changedExerciseUids).toEqual(new Set([sessionExercises(clone.days[0].session!)[0].uid]));
     // surplus reconciliation: the session's surplus passes through untouched
     expect(progressed.days[0].session!.calorieSurplusPercentage).toBe(12);
   });

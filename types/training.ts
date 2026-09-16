@@ -1,5 +1,6 @@
 
 import type { SetSpec, SetType } from "@/utils/exercise-set-specs";
+import type { GroupSettings } from "@/utils/exercise-groups";
 
 // Training plan split types
 export type TrainingSplitType =
@@ -17,6 +18,9 @@ export type TrainingPlanStatus = "active" | "archived" | "draft" | "planned";
 export type TrainingExercise = {
   id: string;
   sessionId: string;
+  // The group this exercise sits in (migration 178); orderIndex is its
+  // position in that group.
+  groupId: string;
   exerciseId: string | null;
   name: string;
   orderIndex: number;
@@ -29,7 +33,6 @@ export type TrainingExercise = {
   tempo?: string;
   restSeconds?: number;
   notes?: string;
-  supersetGroup?: string;
   isWarmup: boolean;
   setSpecs?: SetSpec[] | null;
   videoUrl?: string | null;
@@ -55,6 +58,15 @@ export type Exercise = {
   updatedAt: string;
 };
 
+// A client session's group (migration 178): its settings and its exercises in
+// order. orderIndex is the group's position in the session.
+export type TrainingExerciseGroup = GroupSettings & {
+  id: string;
+  sessionId: string;
+  orderIndex: number;
+  exercises: TrainingExercise[];
+};
+
 // Training session (workout day) or external activity
 export type TrainingSession = {
   id: string;
@@ -65,7 +77,8 @@ export type TrainingSession = {
   focus?: string;
   notes?: string;
   estimatedDurationMinutes?: number;
-  exercises: TrainingExercise[];
+  // Every exercise sits in a group; the groups are in order.
+  groups: TrainingExerciseGroup[];
   // AI-estimated calorie burn (for training sessions)
   estimatedCalories?: number;
   caloriesCalculatedAt?: string;
@@ -152,27 +165,6 @@ export type UpdateTrainingPlanRequest = {
   programDurationWeeks?: number | null;
 };
 
-// Manual session being built (before saving)
-export type ManualSessionDraft = {
-  tempId: string;
-  name: string;
-
-  focus?: string;
-  isRest?: boolean;
-  exercises: ManualExerciseDraft[];
-};
-
-// Manual exercise being built (before saving)
-type ManualExerciseDraft = {
-  tempId: string;
-  name: string;
-  sets: number;
-  repsTarget?: string;
-  rpeTarget?: number;
-  restSeconds?: number;
-  notes?: string;
-};
-
 // --- Coach Library Types ---
 
 export type SavedPlanStatus = 'draft' | 'saved';
@@ -244,14 +236,26 @@ export type SavedSession = {
   calorieSurplusPercentage: number | null;
   notes: string | null;
   sessionType: SavedSessionType;
-  exercises: SavedExercise[];
+  // Every exercise sits in a group; the groups are in order (migration 178).
+  groups: SavedExerciseGroup[];
   createdAt: string;
   updatedAt: string;
+};
+
+// A library session's group: its settings and its exercises in order.
+// orderIndex is the group's position in the session.
+export type SavedExerciseGroup = GroupSettings & {
+  id: string;
+  savedSessionId: string;
+  orderIndex: number;
+  exercises: SavedExercise[];
 };
 
 export type SavedExercise = {
   id: string;
   savedSessionId: string;
+  // The group this exercise sits in; orderIndex is its position in it.
+  groupId: string;
   exerciseId: string | null;
   name: string;
   orderIndex: number;
@@ -263,7 +267,6 @@ export type SavedExercise = {
   percentage1rm: number | null;
   tempo: string | null;
   restSeconds: number | null;
-  supersetGroup: string | null;
   isWarmup: boolean;
   notes: string | null;
   setSpecs: SetSpec[] | null;
@@ -343,8 +346,9 @@ export type ExerciseLog = {
 // carries, so both go through one expansion.
 export type SessionLogPrescribedExercise = {
   trainingExerciseId: string;
-  orderIndex: number;
   name: string;
+  // Carries the exercise's group and its place in it (migration 178); the list
+  // is in session order.
   snapshot: Record<string, unknown>;
 };
 

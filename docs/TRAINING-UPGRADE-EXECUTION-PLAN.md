@@ -497,7 +497,7 @@ WATCH FOR
 NOT IN THIS COMMIT: moving a program that has started (Edit plan covers that); nutrition target dates.
 ```
 
-### Commit 2 — Groups: the structure
+### Commit 2 — Groups: the structure — SHIPPED 2026-09-16
 
 ```text
 Implement commit 2 of 22 — Groups: the structure — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

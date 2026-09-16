@@ -46,6 +46,7 @@ import {
   type ExerciseFormValues,
   type LogFormValues,
 } from "./log-form-types";
+import { sessionExercises } from "@/utils/exercise-groups";
 
 type EventDetailResponse = { success: boolean; data: TrainingEventDetail };
 type SessionDetailResponse = { success: boolean; data: { session: TrainingSession } };
@@ -533,7 +534,7 @@ function syntheticDetailFromSession(
   return {
     event,
     session: { source: "live", session },
-    exercises: session.exercises.map((exercise) => ({
+    exercises: sessionExercises(session).map((exercise) => ({
       source: "live",
       exercise,
     })),

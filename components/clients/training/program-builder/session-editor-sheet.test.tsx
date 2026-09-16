@@ -23,7 +23,7 @@ const session: SessionDraft = {
   calorieSurplusPercentage: null,
   notes: null,
   sessionType: "training",
-  exercises: [],
+  groups: [],
 };
 
 const noop = () => undefined;

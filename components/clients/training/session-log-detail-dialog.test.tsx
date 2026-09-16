@@ -102,7 +102,6 @@ function makePrescribed(
 ): SessionLogPrescribedExercise {
   return {
     trainingExerciseId: "te-1",
-    orderIndex: 0,
     name: "Bench Press",
     snapshot: { name: "Bench Press", sets: 3, reps_min: 8, reps_max: 12 },
     ...overrides,
@@ -545,10 +544,9 @@ describe("SessionLogDetailDialog", () => {
       setupSWR({
         exerciseLogs: [makeExerciseLog({ trainingExerciseId: "te-1" })],
         prescribedExercises: [
-          makePrescribed({ trainingExerciseId: "te-1", orderIndex: 0 }),
+          makePrescribed({ trainingExerciseId: "te-1" }),
           makePrescribed({
             trainingExerciseId: "te-2",
-            orderIndex: 1,
             name: "Lat Raise",
             snapshot: {
               name: "Lat Raise",
@@ -588,8 +586,8 @@ describe("SessionLogDetailDialog", () => {
           }),
         ],
         prescribedExercises: [
-          makePrescribed({ trainingExerciseId: "te-1", orderIndex: 0, name: "Bench Press" }),
-          makePrescribed({ trainingExerciseId: "te-2", orderIndex: 1, name: "Row" }),
+          makePrescribed({ trainingExerciseId: "te-1", name: "Bench Press" }),
+          makePrescribed({ trainingExerciseId: "te-2", name: "Row" }),
         ],
       });
 

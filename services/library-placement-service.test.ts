@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { SavedPlan, SavedSession, SavedExercise } from "@/types/training";
+import type { SavedPlan, SavedSession, SavedExercise, SavedExerciseGroup } from "@/types/training";
 
 // Mock supabase-admin before importing the service
 vi.mock("./supabase-admin", () => ({
@@ -43,6 +43,8 @@ import {
 import { deriveFrequencyPerWeek } from "./coach-library-helpers";
 import { BLOCKS_UNREADABLE } from "@/lib/constants";
 import type { InlinePlanBody } from "@/lib/validations/training";
+import { SAVED_SESSION_GROUPS_EMBED } from "@/lib/coach-mappers";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetSavedPlanById = vi.mocked(getSavedPlanById);
@@ -119,10 +121,22 @@ function insertedSlots(q: { insert: ReturnType<typeof vi.fn> }) {
 
 // --- Test data factories ---
 
+/** Each exercise alone in a straight-sets group, the groups in the exercises' order. */
+function loneGroups(...exercises: SavedExercise[]): SavedExerciseGroup[] {
+  return exercises.map((exercise, orderIndex) => ({
+    id: `grp-${exercise.id}`,
+    savedSessionId: exercise.savedSessionId,
+    orderIndex,
+    ...STRAIGHT_SETS,
+    exercises: [{ ...exercise, groupId: `grp-${exercise.id}`, orderIndex: 0 }],
+  }));
+}
+
 function makeExercise(overrides?: Partial<SavedExercise>): SavedExercise {
   return {
     id: "ex-1",
     savedSessionId: "ss-1",
+    groupId: "grp-ex-1",
     exerciseId: "catalog-1",
     name: "Bench Press",
     orderIndex: 0,
@@ -134,7 +148,6 @@ function makeExercise(overrides?: Partial<SavedExercise>): SavedExercise {
     percentage1rm: null,
     tempo: null,
     restSeconds: 90,
-    supersetGroup: null,
     isWarmup: false,
     notes: null,
     setSpecs: null,
@@ -160,7 +173,7 @@ function makeSession(overrides?: Partial<SavedSession>): SavedSession {
     calorieSurplusPercentage: 15,
     notes: null,
     sessionType: "training",
-    exercises: [makeExercise()],
+    groups: loneGroups(makeExercise()),
     createdAt: "2026-04-01T00:00:00Z",
     updatedAt: "2026-04-01T00:00:00Z",
     ...overrides,
@@ -184,7 +197,7 @@ function makeSavedPlan(overrides?: Partial<SavedPlan>): SavedPlan {
       makeSession({ id: "ss-1", name: "Push", orderIndex: 0, focus: "chest" }),
       makeSession({ id: "ss-2", name: "Pull", orderIndex: 1, focus: "back" }),
       makeSession({ id: "ss-3", name: "Legs", orderIndex: 2, focus: "legs" }),
-      makeSession({ id: "ss-rest", name: "Rest", orderIndex: 3, isRest: true, exercises: [] }),
+      makeSession({ id: "ss-rest", name: "Rest", orderIndex: 3, isRest: true, groups: [] }),
     ],
     createdAt: "2026-04-01T00:00:00Z",
     updatedAt: "2026-04-01T00:00:00Z",
@@ -226,11 +239,13 @@ describe("library-placement-service", () => {
       mockCreateAtomic.mockResolvedValue("new-plan-id");
 
       const sessionInsertQuery = makeSessionInsertQuery(["ts-1", "ts-2", "ts-3", "ts-rest"]);
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
 
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_exercise_groups") return groupInsertQuery as never;
         if (table === "training_exercises") return exerciseInsertQuery as never;
         if (table === "training_events") return eventUpsertQuery as never;
         return createMockQuery({ data: null, error: null }) as never;
@@ -255,8 +270,19 @@ describe("library-placement-service", () => {
       expect(restInsert!.name).toBe("Rest");
       expect(insertedSlots(sessionInsertQuery).filter((r) => r.is_rest === false)).toHaveLength(3);
       // Only the 3 non-rest slots get exercises.
-      // One batched statement carrying all three slots' exercises.
+      // One batched statement carrying all three slots' groups, then one
+      // carrying their exercises, each exercise naming its slot's group.
+      expect(groupInsertQuery.insert).toHaveBeenCalledTimes(1);
+      const groupRows = groupInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expect(groupRows.map((g) => g.session_id)).toEqual(["ts-1", "ts-2", "ts-3"]);
+      expect(groupInsertQuery.insert.mock.invocationCallOrder[0]).toBeLessThan(
+        exerciseInsertQuery.insert.mock.invocationCallOrder[0],
+      );
       expect(exerciseInsertQuery.insert).toHaveBeenCalledTimes(1);
+      const exerciseRows = exerciseInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expect(exerciseRows.map((e) => [e.session_id, e.group_id])).toEqual(
+        groupRows.map((g) => [g.session_id, g.id]),
+      );
       // Window = 4 slots = 4 days → Push, Pull, Legs (rest skipped) = 3 events.
       const events = eventUpsertQuery.upsert.mock.calls[0][0];
       expect(events).toHaveLength(3);
@@ -272,9 +298,9 @@ describe("library-placement-service", () => {
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
           sessions: [
-            makeSession({ id: "a", name: "A", orderIndex: 0, exercises: [] }),
-            makeSession({ id: "b", name: "B", orderIndex: 1, exercises: [] }),
-            makeSession({ id: "c", name: "C", orderIndex: 2, exercises: [] }),
+            makeSession({ id: "a", name: "A", orderIndex: 0, groups: [] }),
+            makeSession({ id: "b", name: "B", orderIndex: 1, groups: [] }),
+            makeSession({ id: "c", name: "C", orderIndex: 2, groups: [] }),
           ],
         }),
       );
@@ -298,9 +324,9 @@ describe("library-placement-service", () => {
         makeSavedPlan({
           defaultSurplusPercentage: 10,
           sessions: [
-            makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 20, exercises: [] }),
-            makeSession({ id: "ss-2", orderIndex: 1, calorieSurplusPercentage: null, exercises: [] }),
-            makeSession({ id: "ss-r", orderIndex: 2, isRest: true, calorieSurplusPercentage: 99, exercises: [] }),
+            makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 20, groups: [] }),
+            makeSession({ id: "ss-2", orderIndex: 1, calorieSurplusPercentage: null, groups: [] }),
+            makeSession({ id: "ss-r", orderIndex: 2, isRest: true, calorieSurplusPercentage: 99, groups: [] }),
           ],
         }),
       );
@@ -327,7 +353,7 @@ describe("library-placement-service", () => {
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
           sessions: Array.from({ length: 28 }, (_, i) =>
-            makeSession({ id: `d-${i}`, weekIndex: Math.floor(i / 7), orderIndex: i % 7, exercises: [] }),
+            makeSession({ id: `d-${i}`, weekIndex: Math.floor(i / 7), orderIndex: i % 7, groups: [] }),
           ),
         }),
       );
@@ -351,7 +377,7 @@ describe("library-placement-service", () => {
 
     it("is idempotent on re-place: same window + same event count across two placements", async () => {
       const savedPlan = makeSavedPlan({
-        sessions: [makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 15, exercises: [] })],
+        sessions: [makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 15, groups: [] })],
       });
       mockGetSavedPlanById.mockResolvedValue(savedPlan);
       mockCreateAtomic.mockResolvedValue("new-plan-id");
@@ -381,9 +407,9 @@ describe("library-placement-service", () => {
         makeSavedPlan({
           defaultSurplusPercentage: 10,
           sessions: [
-            makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 25, exercises: [] }),
-            makeSession({ id: "ss-2", orderIndex: 1, calorieSurplusPercentage: 25, exercises: [] }),
-            makeSession({ id: "ss-3", orderIndex: 2, calorieSurplusPercentage: 25, exercises: [] }),
+            makeSession({ id: "ss-1", orderIndex: 0, calorieSurplusPercentage: 25, groups: [] }),
+            makeSession({ id: "ss-2", orderIndex: 1, calorieSurplusPercentage: 25, groups: [] }),
+            makeSession({ id: "ss-3", orderIndex: 2, calorieSurplusPercentage: 25, groups: [] }),
           ],
         }),
       );
@@ -408,10 +434,10 @@ describe("library-placement-service", () => {
           sessions: [
             makeSession({
               id: "ss-1", orderIndex: 0,
-              exercises: [
+              groups: loneGroups(
                 makeExercise({ exerciseId: "catalog-abc", name: "Bench Press" }),
                 makeExercise({ id: "ex-2", exerciseId: null, name: "Custom Move" }),
-              ],
+              ),
             }),
           ],
         }),
@@ -443,7 +469,7 @@ describe("library-placement-service", () => {
           sessions: [
             makeSession({
               id: "ss-1", orderIndex: 0,
-              exercises: [makeExercise({ setSpecs: specs as never, videoUrl: "https://demo/bench" })],
+              groups: loneGroups(makeExercise({ setSpecs: specs as never, videoUrl: "https://demo/bench" })),
             }),
           ],
         }),
@@ -475,10 +501,10 @@ describe("library-placement-service", () => {
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
           sessions: [
-            makeSession({ id: "ss-push", name: "Push", orderIndex: 0, exercises: [] }),
-            makeSession({ id: "ss-pull", name: "Pull", orderIndex: 1, exercises: [] }),
-            makeSession({ id: "ss-legs", name: "Legs", orderIndex: 2, exercises: [] }),
-            makeSession({ id: "ss-rest", name: "Rest", orderIndex: 3, isRest: true, exercises: [] }),
+            makeSession({ id: "ss-push", name: "Push", orderIndex: 0, groups: [] }),
+            makeSession({ id: "ss-pull", name: "Pull", orderIndex: 1, groups: [] }),
+            makeSession({ id: "ss-legs", name: "Legs", orderIndex: 2, groups: [] }),
+            makeSession({ id: "ss-rest", name: "Rest", orderIndex: 3, isRest: true, groups: [] }),
           ],
         }),
       );
@@ -505,12 +531,12 @@ describe("library-placement-service", () => {
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
           sessions: [
-            makeSession({ id: "ss-w0", name: "Workout", orderIndex: 0, exercises: [] }),
-            makeSession({ id: "ss-r1", name: "Rest", orderIndex: 1, isRest: true, exercises: [] }),
-            makeSession({ id: "ss-w2", name: "Workout", orderIndex: 2, exercises: [] }),
-            makeSession({ id: "ss-r3", name: "Rest", orderIndex: 3, isRest: true, exercises: [] }),
-            makeSession({ id: "ss-w4", name: "Workout", orderIndex: 4, exercises: [] }),
-            makeSession({ id: "ss-r5", name: "Rest", orderIndex: 5, isRest: true, exercises: [] }),
+            makeSession({ id: "ss-w0", name: "Workout", orderIndex: 0, groups: [] }),
+            makeSession({ id: "ss-r1", name: "Rest", orderIndex: 1, isRest: true, groups: [] }),
+            makeSession({ id: "ss-w2", name: "Workout", orderIndex: 2, groups: [] }),
+            makeSession({ id: "ss-r3", name: "Rest", orderIndex: 3, isRest: true, groups: [] }),
+            makeSession({ id: "ss-w4", name: "Workout", orderIndex: 4, groups: [] }),
+            makeSession({ id: "ss-r5", name: "Rest", orderIndex: 5, isRest: true, groups: [] }),
           ],
         }),
       );
@@ -535,10 +561,10 @@ describe("library-placement-service", () => {
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
           sessions: [
-            makeSession({ id: "a", name: "A", weekIndex: 0, orderIndex: 0, exercises: [] }),
-            makeSession({ id: "b", name: "B", weekIndex: 0, orderIndex: 1, exercises: [] }),
-            makeSession({ id: "c", name: "C", weekIndex: 1, orderIndex: 0, exercises: [] }),
-            makeSession({ id: "d", name: "D", weekIndex: 1, orderIndex: 1, exercises: [] }),
+            makeSession({ id: "a", name: "A", weekIndex: 0, orderIndex: 0, groups: [] }),
+            makeSession({ id: "b", name: "B", weekIndex: 0, orderIndex: 1, groups: [] }),
+            makeSession({ id: "c", name: "C", weekIndex: 1, orderIndex: 0, groups: [] }),
+            makeSession({ id: "d", name: "D", weekIndex: 1, orderIndex: 1, groups: [] }),
           ],
         }),
       );
@@ -568,12 +594,12 @@ describe("library-placement-service", () => {
       mockGetSavedPlanById.mockResolvedValue(
         makeSavedPlan({
           sessions: [
-            makeSession({ id: "a", name: "A", weekIndex: 0, orderIndex: 0, exercises: [] }),
-            makeSession({ id: "b", name: "B", weekIndex: 0, orderIndex: 1, exercises: [] }),
-            makeSession({ id: "r1", name: "Rest", weekIndex: 1, orderIndex: 0, isRest: true, exercises: [] }),
-            makeSession({ id: "r2", name: "Rest", weekIndex: 1, orderIndex: 1, isRest: true, exercises: [] }),
-            makeSession({ id: "c", name: "C", weekIndex: 2, orderIndex: 0, exercises: [] }),
-            makeSession({ id: "r3", name: "Rest", weekIndex: 2, orderIndex: 1, isRest: true, exercises: [] }),
+            makeSession({ id: "a", name: "A", weekIndex: 0, orderIndex: 0, groups: [] }),
+            makeSession({ id: "b", name: "B", weekIndex: 0, orderIndex: 1, groups: [] }),
+            makeSession({ id: "r1", name: "Rest", weekIndex: 1, orderIndex: 0, isRest: true, groups: [] }),
+            makeSession({ id: "r2", name: "Rest", weekIndex: 1, orderIndex: 1, isRest: true, groups: [] }),
+            makeSession({ id: "c", name: "C", weekIndex: 2, orderIndex: 0, groups: [] }),
+            makeSession({ id: "r3", name: "Rest", weekIndex: 2, orderIndex: 1, isRest: true, groups: [] }),
           ],
         }),
       );
@@ -611,23 +637,32 @@ describe("library-placement-service", () => {
         id: "ss-1", coach_id: "coach-1", saved_plan_id: null, name: "Push Day", focus: "chest",
         order_index: 0, week_index: 0, is_rest: false, estimated_duration_minutes: 60,
         calorie_surplus_percentage: 15, notes: null, session_type: "training",
-        coach_saved_exercises: [
+        coach_saved_exercise_groups: [
           {
-            id: "se-1", exercise_id: "catalog-1", name: "Bench Press", order_index: 0, sets: 4,
-            reps_min: 8, reps_max: 12, reps_target: null, rpe_target: 8, percentage_1rm: null,
-            tempo: null, rest_seconds: 90, notes: null, superset_group: null, is_warmup: false,
-            set_specs: null, video_url: null,
+            id: "sg-1", saved_session_id: "ss-1", order_index: 0, format: "straight_sets", rounds: null,
+            time_cap_seconds: null, interval_seconds: null, rest_between_exercises_seconds: null,
+            rest_between_rounds_seconds: null, notes: null,
+            coach_saved_exercises: [
+              {
+                id: "se-1", group_id: "sg-1", exercise_id: "catalog-1", name: "Bench Press", order_index: 0, sets: 4,
+                reps_min: 8, reps_max: 12, reps_target: null, rpe_target: 8, percentage_1rm: null,
+                tempo: null, rest_seconds: 90, notes: null, is_warmup: false,
+                set_specs: null, video_url: null,
+              },
+            ],
           },
         ],
       };
       const sessionFetchQuery = createMockQuery({ data: savedSessionRow, error: null });
       const sessionInsertQuery = createMockQuery({ data: { id: "ts-new" }, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
       const eventInsertQuery = createMockQuery({ data: { id: "evt-new" }, error: null });
 
       mockFrom.mockImplementation((table: string) => {
         if (table === "coach_saved_sessions") return sessionFetchQuery as never;
         if (table === "training_sessions") return sessionInsertQuery as never;
+        if (table === "training_exercise_groups") return groupInsertQuery as never;
         if (table === "training_exercises") return exerciseInsertQuery as never;
         if (table === "training_events") return eventInsertQuery as never;
         return createMockQuery({ data: null, error: null }) as never;
@@ -642,8 +677,16 @@ describe("library-placement-service", () => {
       expect(sessionInsertQuery.insert).toHaveBeenCalledWith(
         expect.objectContaining({ plan_id: "plan-1", day_of_week: null, is_rest: false, calorie_surplus_percentage: 15 }),
       );
+      // The template is read with its groups and their exercises; the clone
+      // writes the group, then the exercise under it.
+      expect(sessionFetchQuery.select).toHaveBeenCalledWith(`*, ${SAVED_SESSION_GROUPS_EMBED}`);
+      const groupInsert = groupInsertQuery.insert.mock.calls[0][0];
+      expect(groupInsert).toEqual([
+        expect.objectContaining({ session_id: "ts-new", order_index: 0, format: "straight_sets" }),
+      ]);
       const exInsert = exerciseInsertQuery.insert.mock.calls[0][0];
       expect(exInsert[0].exercise_id).toBe("catalog-1");
+      expect(exInsert[0].group_id).toBe(groupInsert[0].id);
       expect(eventInsertQuery.insert).toHaveBeenCalledWith(
         expect.objectContaining({ is_modified: true, date: "2026-04-20", status: "scheduled", calorie_surplus_percentage: 15 }),
       );
@@ -664,7 +707,7 @@ describe("library-placement-service", () => {
         id: "ss-1", coach_id: "coach-1", saved_plan_id: null, name: "Push Day", focus: null,
         order_index: opts.templateOrderIndex, week_index: opts.templateWeekIndex, is_rest: false,
         estimated_duration_minutes: 60, calorie_surplus_percentage: null, notes: null,
-        session_type: "training", coach_saved_exercises: [],
+        session_type: "training", coach_saved_exercise_groups: [],
       };
       // The slot lookup ends in .maybeSingle(); the insert ends in .select().single().
       const trainingSessionsQuery = {
@@ -742,7 +785,7 @@ describe("library-placement-service", () => {
           {
             name: "Push", focus: "chest", orderIndex: 0, isRest: false, estimatedDurationMinutes: 60,
             calorieSurplusPercentage: 15, notes: null, sessionType: "training",
-            exercises: [{ name: "Bench", exerciseId: "catalog-1", orderIndex: 0, sets: 3 }],
+            groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench", exerciseId: "catalog-1", sets: 3 }] }],
           },
         ],
         ...overrides,
@@ -762,6 +805,7 @@ describe("library-placement-service", () => {
         if (table === "training_exercises") return exerciseInsertQuery as never;
         if (table === "training_events") return eventUpsertQuery as never;
         if (table === "coach_saved_sessions") return libraryQuery as never;
+        if (table === "coach_saved_exercise_groups") return libraryQuery as never;
         if (table === "coach_saved_exercises") return libraryQuery as never;
         if (table === "coach_saved_plans") return libraryQuery as never;
         return createMockQuery({ data: null, error: null }) as never;
@@ -813,9 +857,9 @@ describe("library-placement-service", () => {
             {
               name: "Push", focus: null, orderIndex: 0, isRest: false, estimatedDurationMinutes: null,
               calorieSurplusPercentage: null, notes: null, sessionType: "training",
-              exercises: [
-                { name: "Owned", exerciseId: "catalog-1", orderIndex: 0, sets: 3 },
-                { name: "Foreign", exerciseId: "not-in-catalog", orderIndex: 1, sets: 3 },
+              groups: [
+                { ...STRAIGHT_SETS, exercises: [{ name: "Owned", exerciseId: "catalog-1", sets: 3 }] },
+                { ...STRAIGHT_SETS, exercises: [{ name: "Foreign", exerciseId: "not-in-catalog", sets: 3 }] },
               ],
             },
           ],
@@ -891,9 +935,9 @@ describe("library-placement-service: the block bounds the placement", () => {
   function threeSlotPlan() {
     return makeSavedPlan({
       sessions: [
-        makeSession({ id: "s1", name: "Upper", orderIndex: 0, exercises: [makeExercise()] }),
-        makeSession({ id: "s2", name: "Lower", orderIndex: 1, exercises: [makeExercise()] }),
-        makeSession({ id: "s3", name: "Rest", orderIndex: 2, isRest: true, exercises: [] }),
+        makeSession({ id: "s1", name: "Upper", orderIndex: 0, groups: loneGroups(makeExercise()) }),
+        makeSession({ id: "s2", name: "Lower", orderIndex: 1, groups: loneGroups(makeExercise()) }),
+        makeSession({ id: "s3", name: "Rest", orderIndex: 2, isRest: true, groups: [] }),
       ],
     });
   }
@@ -1018,13 +1062,13 @@ describe("library-placement-service: the block bounds the placement", () => {
   });
 
   it("refuses a template carrying two slots at one position rather than mis-linking exercises", async () => {
-    // The exercise batch is keyed on (week_index, order_index); a duplicate
-    // would hand one row both slots' exercises and leave the other empty.
+    // The group batch is keyed on (week_index, order_index); a duplicate
+    // would hand one row both slots' groups and leave the other empty.
     mockGetSavedPlanById.mockResolvedValue(
       makeSavedPlan({
         sessions: [
-          makeSession({ id: "d1", name: "One", orderIndex: 0, exercises: [makeExercise()] }),
-          makeSession({ id: "d2", name: "Two", orderIndex: 0, exercises: [makeExercise()] }),
+          makeSession({ id: "d1", name: "One", orderIndex: 0, groups: loneGroups(makeExercise()) }),
+          makeSession({ id: "d2", name: "Two", orderIndex: 0, groups: loneGroups(makeExercise()) }),
         ],
       }),
     );
@@ -1114,7 +1158,7 @@ describe("library-placement-service: the placement supersedes the earlier progra
       placePlanOnCalendar({
         savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-04-15",
       }),
-    ).rejects.toThrow("Failed to clone exercises: disk full");
+    ).rejects.toThrow("Failed to clone exercises: Failed to insert exercises: disk full");
 
     // The RPC capped old-1 at 2026-04-14 (and would have archived a same-day
     // one); with the new plan gone, each row gets its snapshot back.

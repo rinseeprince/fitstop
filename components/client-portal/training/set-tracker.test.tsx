@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { TrainingEventDetail } from "@/types/training";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import { SetTracker } from "./set-tracker";
 
 // jsdom doesn't implement ResizeObserver; Radix UI primitives need it.
@@ -112,7 +113,7 @@ function baseFixture(): TrainingEventDetail {
         focus: "Chest + triceps",
         estimatedDurationMinutes: 45,
         calorieSurplusPercentage: null,
-        exercises: [],
+        groups: [],
         createdAt: ISO,
         updatedAt: ISO,
       },
@@ -123,6 +124,7 @@ function baseFixture(): TrainingEventDetail {
         exercise: {
           id: REAL_UUID_A,
           sessionId: "s-1",
+          groupId: "grp-bench",
           exerciseId: null,
           name: "Bench Press",
           orderIndex: 0,
@@ -140,9 +142,10 @@ function baseFixture(): TrainingEventDetail {
         exercise: {
           id: REAL_UUID_B,
           sessionId: "s-1",
+          groupId: "grp-ohp",
           exerciseId: null,
           name: "Overhead Press",
-          orderIndex: 1,
+          orderIndex: 0,
           sets: 4,
           repsTarget: "6-10",
           isWarmup: false,
@@ -1252,17 +1255,26 @@ describe("SetTracker", () => {
             focus: "Back",
             estimatedDurationMinutes: 45,
             calorieSurplusPercentage: null,
-            exercises: [
+            groups: [
               {
-                id: REAL_UUID_B,
+                id: "grp-row",
                 sessionId: "s-2",
-                exerciseId: null,
-                name: "Barbell Row",
                 orderIndex: 0,
-                sets: 3,
-                isWarmup: false,
-                createdAt: ISO,
-                updatedAt: ISO,
+                ...STRAIGHT_SETS,
+                exercises: [
+                  {
+                    id: REAL_UUID_B,
+                    sessionId: "s-2",
+                    groupId: "grp-row",
+                    exerciseId: null,
+                    name: "Barbell Row",
+                    orderIndex: 0,
+                    sets: 3,
+                    isWarmup: false,
+                    createdAt: ISO,
+                    updatedAt: ISO,
+                  },
+                ],
               },
             ],
             createdAt: ISO,

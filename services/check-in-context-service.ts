@@ -15,6 +15,7 @@ import type {
   SessionCompletionQuality,
   DayOfWeek,
 } from "@/types/check-in";
+import { sessionExercises } from "@/utils/exercise-groups";
 
 /**
  * Get training context for the check-in form
@@ -40,7 +41,7 @@ export const getCheckInTrainingContext = async (
       name: s.name,
       dayOfWeek: s.dayOfWeek as DayOfWeek | undefined,
       focus: s.focus,
-      exercises: s.exercises.map((e) => ({
+      exercises: sessionExercises(s).map((e) => ({
         id: e.id,
         name: e.name,
         sets: e.sets,

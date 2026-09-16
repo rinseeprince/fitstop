@@ -30,7 +30,6 @@ function makeExercise(overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
     percentage1rm: null,
     tempo: null,
     restSeconds: 120,
-    supersetGroup: "A",
     isWarmup: false,
     notes: null,
     videoUrl: null,
@@ -82,8 +81,8 @@ describe("ExerciseCard", () => {
   beforeEach(() => cleanup());
 
   it("compact row shows the projected summary; legacy superset/warm-up fields render nothing", () => {
-    // Fixture carries supersetGroup "A" + isWarmup — both retired from the
-    // builder UI (warm-ups are a per-set type; supersets never functional).
+    // Fixture carries isWarmup — retired from the builder UI (warm-ups are a
+    // per-set type) — and the old "SS A" superset chip must not render either.
     render(<Wrapper exercise={makeExercise({ isWarmup: true, videoUrl: "https://x.io/v" })} />);
     expect(screen.getByText("Bench Press")).toBeInTheDocument();
     expect(screen.getByText("4×8-12")).toBeInTheDocument();

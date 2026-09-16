@@ -20,6 +20,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { getClientTrainingPlan } from "./client-training-plan-service";
 import { getClientTodayString } from "./today-service";
 import { getNextFutureTrainingPlan } from "./training-service";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 
@@ -347,7 +348,30 @@ describe("client-training-plan-service", () => {
       };
     }
 
-    function exercise(id: string, sessionId: string, orderIndex: number, extra: Row = {}): Row {
+    /** A group as the read's exercise_group embed selects it: straight sets unless `settings` says otherwise. */
+    function group(id: string, orderIndex: number, settings: Row = {}): Row {
+      return {
+        id,
+        order_index: orderIndex,
+        format: "straight_sets",
+        rounds: null,
+        time_cap_seconds: null,
+        interval_seconds: null,
+        rest_between_exercises_seconds: null,
+        rest_between_rounds_seconds: null,
+        notes: null,
+        ...settings,
+      };
+    }
+
+    /** An exercise at `orderIndex` in `inGroup`, read with that group embedded. */
+    function groupedExercise(
+      id: string,
+      sessionId: string,
+      inGroup: Row,
+      orderIndex: number,
+      extra: Row = {}
+    ): Row {
       return {
         id,
         session_id: sessionId,
@@ -361,13 +385,18 @@ describe("client-training-plan-service", () => {
         tempo: null,
         rest_seconds: null,
         is_warmup: null,
-        superset_group: null,
         set_specs: null,
         video_url: null,
         prescribed_fields: null,
         is_active: true,
+        exercise_group: inGroup,
         ...extra,
       };
+    }
+
+    /** A lone exercise: alone in its own straight-sets group, that group at `position` in the session. */
+    function exercise(id: string, sessionId: string, position: number, extra: Row = {}): Row {
+      return groupedExercise(id, sessionId, group(`grp-${id}`, position), 0, extra);
     }
 
     async function readSessions() {
@@ -402,7 +431,7 @@ describe("client-training-plan-service", () => {
       const sessions = await readSessions();
 
       expect(sessions.filter((s) => s.name === "Pull").map((s) => s.orderIndex)).toEqual([3]);
-      expect(sessions[2]).toMatchObject({ name: "Rest", isRest: true, exercises: [] });
+      expect(sessions[2]).toMatchObject({ name: "Rest", isRest: true, groups: [] });
       expect(sessions[3]).toMatchObject({ id: "s-pull", name: "Pull", isRest: false });
     });
 
@@ -430,7 +459,7 @@ describe("client-training-plan-service", () => {
       expect(sessions).toHaveLength(14);
       expect(sessions.filter((s) => !s.isRest)).toHaveLength(1);
       expect(sessions[4]).toMatchObject({ id: "s-legs-copy", name: "Legs (lighter)", orderIndex: 4 });
-      expect(sessions[4].exercises.map((e) => e.name)).toEqual(["Goblet squat"]);
+      expect(sessionExercises(sessions[4]).map((e) => e.name)).toEqual(["Goblet squat"]);
     });
 
     it("shows a day whose event was deleted as a rest day", async () => {
@@ -454,7 +483,7 @@ describe("client-training-plan-service", () => {
         weekIndex: 0,
         isRest: true,
         estimatedDurationMinutes: null,
-        exercises: [],
+        groups: [],
       });
     });
 
@@ -521,7 +550,7 @@ describe("client-training-plan-service", () => {
         weekIndex: 0,
         isRest: false,
         estimatedDurationMinutes: null,
-        exercises: [],
+        groups: [],
       });
       expect(sessions[2]).toEqual({
         id: "e-bare",
@@ -531,7 +560,7 @@ describe("client-training-plan-service", () => {
         weekIndex: 0,
         isRest: false,
         estimatedDurationMinutes: null,
-        exercises: [],
+        groups: [],
       });
     });
 
@@ -550,7 +579,7 @@ describe("client-training-plan-service", () => {
 
       const sessions = await readSessions();
 
-      expect(sessions[0]).toMatchObject({ id: "e-mine", name: "Mine", exercises: [] });
+      expect(sessions[0]).toMatchObject({ id: "e-mine", name: "Mine", groups: [] });
       expect(sessions[1]).toMatchObject({ isRest: true });
     });
 
@@ -565,7 +594,7 @@ describe("client-training-plan-service", () => {
       const sessions = await readSessions();
 
       expect(sessions[0]).toMatchObject({ id: "s-retired", name: "Push", isRest: false });
-      expect(sessions[0].exercises.map((e) => e.name)).toEqual(["Bench"]);
+      expect(sessionExercises(sessions[0]).map((e) => e.name)).toEqual(["Bench"]);
     });
 
     it("takes each day's event from the calendar, whichever plan wrote it, the scheduled one first", async () => {
@@ -628,45 +657,103 @@ describe("client-training-plan-service", () => {
         weekIndex: 0,
         isRest: false,
         estimatedDurationMinutes: 60,
-        exercises: [
+        groups: [
           {
-            id: "x-1",
-            name: "Bench",
+            id: "grp-x-1",
             orderIndex: 0,
-            sets: 4,
-            repsMin: 8,
-            repsMax: 10,
-            repsTarget: null,
-            rpeTarget: 8,
-            tempo: "3010",
-            restSeconds: 120,
-            isWarmup: false,
-            supersetGroup: null,
-            setSpecs: specs,
-            videoUrl: "https://example.com/bench",
-            prescribedFields: ["reps", "rpe"],
+            ...STRAIGHT_SETS,
+            exercises: [
+              {
+                id: "x-1",
+                name: "Bench",
+                orderIndex: 0,
+                sets: 4,
+                repsMin: 8,
+                repsMax: 10,
+                repsTarget: null,
+                rpeTarget: 8,
+                tempo: "3010",
+                restSeconds: 120,
+                isWarmup: false,
+                setSpecs: specs,
+                videoUrl: "https://example.com/bench",
+                prescribedFields: ["reps", "rpe"],
+              },
+            ],
           },
           {
-            id: "x-2",
-            name: "Dips",
+            id: "grp-x-2",
             orderIndex: 1,
-            sets: 3,
-            repsMin: 8,
-            repsMax: 10,
-            repsTarget: null,
-            rpeTarget: null,
-            tempo: null,
-            restSeconds: null,
-            isWarmup: true,
-            supersetGroup: null,
-            setSpecs: null,
-            videoUrl: null,
-            prescribedFields: null,
+            ...STRAIGHT_SETS,
+            exercises: [
+              {
+                id: "x-2",
+                name: "Dips",
+                orderIndex: 0,
+                sets: 3,
+                repsMin: 8,
+                repsMax: 10,
+                repsTarget: null,
+                rpeTarget: null,
+                tempo: null,
+                restSeconds: null,
+                isWarmup: true,
+                setSpecs: null,
+                videoUrl: null,
+                prescribedFields: null,
+              },
+            ],
           },
         ],
       });
       // The library template is never consulted.
       expect(mockFrom).not.toHaveBeenCalledWith("coach_saved_plans");
+    });
+
+    it("nests the row's exercises into their groups: groups in order with their settings, each group's exercises in order", async () => {
+      // Every id sorts against its position, so only the positions can order them.
+      const circuit = group("g-a", 1, {
+        format: "circuit",
+        rounds: 3,
+        time_cap_seconds: 600,
+        interval_seconds: null,
+        rest_between_exercises_seconds: 15,
+        rest_between_rounds_seconds: 90,
+        notes: "Back to back",
+      });
+      mockTables({
+        plan: PLAN,
+        sessions: [session("s-push", 0, 0, { name: "Push" })],
+        events: [event("e-push", "2026-07-20", "s-push")],
+        exercises: [
+          groupedExercise("x-a", "s-push", circuit, 1, { name: "Push-up" }),
+          exercise("x-b", "s-push", 2, { name: "Plank" }),
+          groupedExercise("x-c", "s-push", circuit, 0, { name: "Dips" }),
+          exercise("x-d", "s-push", 0, { name: "Bench" }),
+          groupedExercise("x-e", "s-push", circuit, 2, { name: "Flyes", is_active: false }),
+        ],
+      });
+
+      const sessions = await readSessions();
+
+      expect(
+        sessions[0].groups.map((g) => [g.id, g.orderIndex, g.exercises.map((e) => [e.name, e.orderIndex])])
+      ).toEqual([
+        ["grp-x-d", 0, [["Bench", 0]]],
+        ["g-a", 1, [["Dips", 0], ["Push-up", 1]]],
+        ["grp-x-b", 2, [["Plank", 0]]],
+      ]);
+      expect(sessions[0].groups[1]).toMatchObject({
+        format: "circuit",
+        rounds: 3,
+        timeCapSeconds: 600,
+        intervalSeconds: null,
+        restBetweenExercisesSeconds: 15,
+        restBetweenRoundsSeconds: 90,
+        notes: "Back to back",
+      });
+      expect(sessions[0].groups[0]).toMatchObject(STRAIGHT_SETS);
+      expect(sessions[0].groups[2]).toMatchObject(STRAIGHT_SETS);
     });
 
     it("reads sparse, ordered pages: the window's events for the client, the plan's rows, the days' rows and their exercises", async () => {
@@ -714,13 +801,14 @@ describe("client-training-plan-service", () => {
 
       const [exercises] = reads.training_exercises;
       expect(exercises.select).toHaveBeenCalledWith(
-        "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, superset_group, set_specs, video_url, prescribed_fields"
+        "id, session_id, name, order_index, sets, reps_min, reps_max, reps_target, rpe_target, tempo, rest_seconds, is_warmup, set_specs, video_url, prescribed_fields, exercise_group:training_exercise_groups!training_exercises_group_fkey(id, order_index, format, rounds, time_cap_seconds, interval_seconds, rest_between_exercises_seconds, rest_between_rounds_seconds, notes)"
       );
       expect(exercises.in).toHaveBeenCalledWith("session_id", ["s-push"]);
       expect(exercises.eq.mock.calls).toEqual([["is_active", true]]);
+      // A stable page walk only: the groups and their exercises are put in
+      // order by their positions once read (the nesting test above).
       expect(exercises.order.mock.calls).toEqual([
         ["session_id", { ascending: true }],
-        ["order_index", { ascending: true }],
         ["id", { ascending: true }],
       ]);
     });

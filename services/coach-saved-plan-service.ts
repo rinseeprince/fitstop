@@ -1,47 +1,48 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { resolveExercises } from "./exercise-catalog-service";
 import {
-  mapSavedExerciseRow,
-  mapSavedSessionRow,
+  SAVED_SESSION_GROUPS_EMBED,
   mapSavedPlanRow,
+  mapSavedSessionTree,
+  type SavedSessionTreeRow,
 } from "@/lib/coach-mappers";
 import {
-  copySavedExerciseRows,
+  concatSavedGroupRows,
+  copySavedGroupRows,
   dedupeCopyName,
   deriveFrequencyPerWeek,
-  insertSavedExercises,
+  insertSavedGroupRows,
+  savedGroupRowsFromInput,
+  type SavedGroupRows,
+  type SavedGroupWrite,
 } from "./coach-library-helpers";
-import { projectExerciseCompact } from "@/utils/exercise-set-specs";
-import type { SetSpec } from "@/utils/exercise-set-specs";
+import { sessionExercises } from "@/utils/exercise-groups";
 import type {
   SavedPlan,
   SavedPlanListItem,
   SavedPlansSummary,
   SavedPlanSource,
   SavedPlanStatus,
-  ManualSessionDraft,
 } from "@/types/training";
+import type { CreateSavedPlanBody } from "@/lib/validations/training";
 import type {
   CoachSavedPlanRow,
-  CoachSavedSessionRow,
-  CoachSavedExerciseRow,
   CoachSavedPlanInsert,
   CoachSavedSessionInsert,
-  CoachSavedExerciseInsert,
 } from "@/lib/database-helpers";
 
 export async function createSavedPlanManual(
   coachId: string,
   name: string,
   splitType: string | null,
-  sessions: ManualSessionDraft[],
+  sessions: CreateSavedPlanBody["sessions"],
   opts?: { description?: string | null; defaultSurplusPercentage?: number | null }
 ): Promise<string> {
   // Only collect names from training sessions — rest days have no exercises.
   const allNames: string[] = [];
   for (const s of sessions) {
     if (s.isRest) continue;
-    for (const e of s.exercises) allNames.push(e.name);
+    for (const e of sessionExercises(s)) allNames.push(e.name);
   }
   const exerciseIdMap = await resolveExercises(allNames, coachId);
 
@@ -66,6 +67,7 @@ export async function createSavedPlanManual(
     .single();
   if (planError || !plan) throw new Error(`Failed to create saved plan: ${planError?.message}`);
 
+  const groupRows: SavedGroupRows[] = [];
   for (let i = 0; i < sessions.length; i++) {
     const s = sessions[i];
     const isRest = !!s.isRest;
@@ -89,9 +91,12 @@ export async function createSavedPlanManual(
     if (sessionError || !session) throw new Error(`Failed to create saved session: ${sessionError?.message}`);
 
     if (!isRest) {
-      await insertSavedExercises(session.id, s.exercises, exerciseIdMap);
+      groupRows.push(savedGroupRowsFromInput(session.id, s.groups, exerciseIdMap));
     }
   }
+
+  // Every session's groups and exercises together, in chunked statements.
+  await insertSavedGroupRows(concatSavedGroupRows(groupRows));
 
   return plan.id;
 }
@@ -138,12 +143,12 @@ export async function promoteDraftToSaved(
   if (options.saveSessionsIndividually) {
     const { data: sessions } = await supabaseAdmin
       .from("coach_saved_sessions")
-      .select("*, coach_saved_exercises(*)")
+      .select(`*, ${SAVED_SESSION_GROUPS_EMBED}`)
       .eq("saved_plan_id", planId)
       .eq("is_rest", false)
       .order("order_index");
 
-    for (const s of sessions ?? []) {
+    for (const s of (sessions ?? []) as SavedSessionTreeRow[]) {
       // Check for existing standalone session with same name
       const { data: existing } = await supabaseAdmin
         .from("coach_saved_sessions")
@@ -174,13 +179,10 @@ export async function promoteDraftToSaved(
         .single();
       if (sError || !newSession) continue;
 
-      // Copy exercises verbatim (shared with the duplicate endpoints)
-      const exercises = (s.coach_saved_exercises ?? []) as CoachSavedExerciseRow[];
-      if (exercises.length > 0) {
-        await supabaseAdmin
-          .from("coach_saved_exercises")
-          .insert(copySavedExerciseRows(exercises, newSession.id));
-      }
+      // Copy groups and exercises verbatim (shared with the duplicate endpoints)
+      await insertSavedGroupRows(
+        copySavedGroupRows(s.coach_saved_exercise_groups ?? [], newSession.id),
+      );
     }
   }
 
@@ -199,24 +201,26 @@ export async function getSavedPlans(
   const statuses = opts?.includeDrafts ? ["saved", "draft"] : ["saved"];
   const { data, error } = await supabaseAdmin
     .from("coach_saved_plans")
-    .select("*, coach_saved_sessions(*, coach_saved_exercises(*))")
+    .select(`*, coach_saved_sessions(*, ${SAVED_SESSION_GROUPS_EMBED})`)
     .eq("coach_id", coachId)
     .in("status", statuses)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(`Failed to fetch saved plans: ${error.message}`);
 
-  return (data ?? []).map((row) => {
-    const sessions = ((row.coach_saved_sessions ?? []) as CoachSavedSessionRow[])
-      .sort((a, b) => a.order_index - b.order_index)
-      .map((s: CoachSavedSessionRow & { coach_saved_exercises?: CoachSavedExerciseRow[] }) => {
-        const exercises = (s.coach_saved_exercises ?? [])
-          .sort((a: CoachSavedExerciseRow, b: CoachSavedExerciseRow) => a.order_index - b.order_index)
-          .map(mapSavedExerciseRow);
-        return mapSavedSessionRow(s, exercises);
-      });
-    return mapSavedPlanRow(row as CoachSavedPlanRow, sessions);
-  });
+  return (data ?? []).map((row) => mapSavedPlanTree(row));
+}
+
+type SavedPlanTreeRow = CoachSavedPlanRow & {
+  coach_saved_sessions?: SavedSessionTreeRow[] | null;
+};
+
+function mapSavedPlanTree(row: unknown): SavedPlan {
+  const plan = row as SavedPlanTreeRow;
+  const sessions = [...(plan.coach_saved_sessions ?? [])]
+    .sort((a, b) => a.order_index - b.order_index)
+    .map(mapSavedSessionTree);
+  return mapSavedPlanRow(plan, sessions);
 }
 
 export async function getSavedPlanById(
@@ -225,22 +229,14 @@ export async function getSavedPlanById(
 ): Promise<SavedPlan | null> {
   const { data, error } = await supabaseAdmin
     .from("coach_saved_plans")
-    .select("*, coach_saved_sessions(*, coach_saved_exercises(*))")
+    .select(`*, coach_saved_sessions(*, ${SAVED_SESSION_GROUPS_EMBED})`)
     .eq("id", planId)
     .eq("coach_id", coachId)
     .single();
 
   if (error || !data) return null;
 
-  const sessions = ((data.coach_saved_sessions ?? []) as CoachSavedSessionRow[])
-    .sort((a, b) => a.order_index - b.order_index)
-    .map((s: CoachSavedSessionRow & { coach_saved_exercises?: CoachSavedExerciseRow[] }) => {
-      const exercises = (s.coach_saved_exercises ?? [])
-        .sort((a: CoachSavedExerciseRow, b: CoachSavedExerciseRow) => a.order_index - b.order_index)
-        .map(mapSavedExerciseRow);
-      return mapSavedSessionRow(s, exercises);
-    });
-  return mapSavedPlanRow(data as CoachSavedPlanRow, sessions);
+  return mapSavedPlanTree(data);
 }
 
 // --- Update / Delete ---
@@ -292,25 +288,7 @@ export type OverwriteSavedPlanInput = {
     calorieSurplusPercentage?: number | null;
     notes?: string | null;
     sessionType?: string | null;
-    exercises: Array<{
-      name: string;
-      exerciseId?: string | null;
-      orderIndex: number;
-      sets: number;
-      repsMin?: number | null;
-      repsMax?: number | null;
-      repsTarget?: string | null;
-      rpeTarget?: number | null;
-      percentage1rm?: number | null;
-      tempo?: string | null;
-      restSeconds?: number | null;
-      notes?: string | null;
-      supersetGroup?: string | null;
-      isWarmup?: boolean;
-      setSpecs?: SetSpec[] | null;
-      videoUrl?: string | null;
-      prescribedFields?: readonly string[] | null;
-    }>;
+    groups: SavedGroupWrite[];
   }>;
 };
 
@@ -352,7 +330,7 @@ export async function overwriteSavedPlan(
   const allNames: string[] = [];
   for (const s of input.sessions) {
     if (s.isRest) continue;
-    for (const e of s.exercises) {
+    for (const e of sessionExercises(s)) {
       // Only resolve names that don't already carry an exerciseId.
       if (!e.exerciseId) allNames.push(e.name);
     }
@@ -376,8 +354,12 @@ export async function overwriteSavedPlan(
   const oldSessionIds = (oldRows ?? []).map((r) => r.id);
 
   // Insert the new structure, tracking new ids so a mid-loop failure can be
-  // rolled back without touching the old sessions.
+  // rolled back without touching the old sessions. The sessions go in one by
+  // one (each returns the id its groups hang off); every session's groups and
+  // exercises then go in together, a few chunked statements for the whole
+  // program rather than two per session.
   const newSessionIds: string[] = [];
+  const groupRows: SavedGroupRows[] = [];
   try {
     for (const s of input.sessions) {
       const sessionRow: CoachSavedSessionInsert = {
@@ -404,44 +386,16 @@ export async function overwriteSavedPlan(
       }
       newSessionIds.push(newSession.id);
 
-      if (s.isRest || s.exercises.length === 0) continue;
-
-      // coach_saved_exercises has no coach_id column — ownership is inferred
-      // via saved_session_id → coach_saved_sessions → coach_id.
-      const exerciseRows = s.exercises.map((e) => {
-        const w = projectExerciseCompact(e);
-        return {
-          saved_session_id: newSession.id,
-          exercise_id: e.exerciseId ?? exerciseIdMap.get(e.name) ?? null,
-          name: e.name,
-          order_index: e.orderIndex,
-          sets: w.sets,
-          reps_min: w.reps_min,
-          reps_max: w.reps_max,
-          reps_target: e.repsTarget ?? null,
-          rpe_target: e.rpeTarget ?? null,
-          percentage_1rm: e.percentage1rm ?? null,
-          tempo: e.tempo ?? null,
-          rest_seconds: e.restSeconds ?? null,
-          superset_group: e.supersetGroup ?? null,
-          is_warmup: e.isWarmup ?? false,
-          notes: e.notes ?? null,
-          set_specs: w.set_specs,
-          video_url: w.video_url,
-          prescribed_fields: w.prescribed_fields,
-        };
-      });
-
-      const { error: exError } = await supabaseAdmin
-        .from("coach_saved_exercises")
-        .insert(exerciseRows);
-      if (exError) {
-        throw new Error(`Failed to insert exercises for "${s.name}": ${exError.message}`);
-      }
+      if (s.isRest || s.groups.length === 0) continue;
+      groupRows.push(savedGroupRowsFromInput(newSession.id, s.groups, exerciseIdMap));
     }
+
+    // The groups and exercise tables have no coach_id column — ownership is
+    // inferred via saved_session_id → coach_saved_sessions → coach_id.
+    await insertSavedGroupRows(concatSavedGroupRows(groupRows));
   } catch (err) {
-    // Roll back the partially-inserted NEW sessions (cascades their exercises)
-    // so the original program survives. Never shadow the root cause.
+    // Roll back the partially-inserted NEW sessions (cascades their groups and
+    // exercises) so the original program survives. Never shadow the root cause.
     if (newSessionIds.length > 0) {
       const { error: rbErr } = await supabaseAdmin
         .from("coach_saved_sessions")
@@ -514,7 +468,7 @@ export async function duplicateSavedPlan(
 ): Promise<string> {
   const { data: plan, error } = await supabaseAdmin
     .from("coach_saved_plans")
-    .select("*, coach_saved_sessions(*, coach_saved_exercises(*))")
+    .select(`*, coach_saved_sessions(*, ${SAVED_SESSION_GROUPS_EMBED})`)
     .eq("id", planId)
     .eq("coach_id", coachId)
     .single();
@@ -554,15 +508,11 @@ export async function duplicateSavedPlan(
   }
 
   try {
-    const sessions = (
-      (plan.coach_saved_sessions ?? []) as Array<
-        CoachSavedSessionRow & { coach_saved_exercises?: CoachSavedExerciseRow[] }
-      >
-    ).sort(
+    const sessions = [...((plan as SavedPlanTreeRow).coach_saved_sessions ?? [])].sort(
       (a, b) => (a.week_index ?? 0) - (b.week_index ?? 0) || a.order_index - b.order_index
     );
 
-    const exerciseRows: CoachSavedExerciseInsert[] = [];
+    const groupRows: SavedGroupRows[] = [];
     for (const s of sessions) {
       const sessionInsert: CoachSavedSessionInsert = {
         coach_id: coachId,
@@ -587,18 +537,15 @@ export async function duplicateSavedPlan(
           `Failed to copy session "${s.name}": ${sessionError?.message ?? "no row"}`
         );
       }
-      exerciseRows.push(
-        ...copySavedExerciseRows(s.coach_saved_exercises ?? [], newSession.id)
-      );
+      groupRows.push(copySavedGroupRows(s.coach_saved_exercise_groups ?? [], newSession.id));
     }
 
-    if (exerciseRows.length > 0) {
-      const { error: exError } = await supabaseAdmin
-        .from("coach_saved_exercises")
-        .insert(exerciseRows);
-      if (exError) {
-        throw new Error(`Failed to copy exercises: ${exError.message}`);
-      }
+    try {
+      await insertSavedGroupRows(concatSavedGroupRows(groupRows));
+    } catch (copyExercisesError) {
+      const detail =
+        copyExercisesError instanceof Error ? copyExercisesError.message : String(copyExercisesError);
+      throw new Error(`Failed to copy exercises: ${detail}`);
     }
   } catch (copyError) {
     // Child copy failed part-way: remove the new plan (children cascade) so

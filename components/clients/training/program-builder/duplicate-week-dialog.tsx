@@ -34,6 +34,7 @@ import { useUnits } from "@/contexts/units-context";
 import { formatLoad, parseWeightToKg } from "@/utils/unit-conversions";
 import { ProgressionPreview } from "./progression-preview";
 import type { WeekDraft } from "./program-builder-types";
+import { sessionExercises } from "@/utils/exercise-groups";
 
 // "Duplicate with progression": clone a week, apply one rule to the clone's
 // working sets, preview the result, commit. The engine is pure, so the
@@ -90,7 +91,7 @@ export function DuplicateWeekDialog({
   const [setsAmount, setSetsAmount] = useState("1");
   const [scopeKind, setScopeKind] = useState<ScopeKind>("all");
 
-  const allExercises = week.days.flatMap((d) => d.session?.exercises ?? []);
+  const allExercises = week.days.flatMap((d) => (d.session ? sessionExercises(d.session) : []));
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
     // "Pick exercises" starts all-checked; toggling works by identity key.
     () => new Set(allExercises.map(exerciseScopeKey)),

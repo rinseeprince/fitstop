@@ -30,7 +30,7 @@ function sess(uid: string): SessionDraft {
     calorieSurplusPercentage: null,
     notes: null,
     sessionType: "training",
-    exercises: [],
+    groups: [],
   };
 }
 

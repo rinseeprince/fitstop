@@ -1,10 +1,33 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { TrainingSession } from "@/types/training";
-import { mapExerciseRow, mapSessionRow } from "./training-mappers";
+import {
+  EXERCISE_WITH_GROUP_COLUMNS,
+  mapExerciseRowsToGroups,
+  mapSessionRow,
+  type TrainingExerciseWithGroupRow,
+} from "./training-mappers";
 import { resolveExercises } from "./exercise-catalog-service";
-import { projectExerciseCompact } from "@/utils/exercise-set-specs";
-import type { SetSpec } from "@/utils/exercise-set-specs";
 import { assertSessionUnlogged } from "./training-event-occupancy";
+import {
+  insertTrainingGroupRows,
+  trainingGroupRowsFromCopy,
+  trainingGroupRowsFromInput,
+  type TrainingGroupWrite,
+} from "./training-group-writes";
+import { sessionExercises } from "@/utils/exercise-groups";
+
+/** A session's live exercises, read with the groups they sit in. */
+export async function readActiveExerciseRows(
+  sessionId: string,
+): Promise<TrainingExerciseWithGroupRow[]> {
+  const { data, error } = await supabaseAdmin
+    .from("training_exercises")
+    .select(EXERCISE_WITH_GROUP_COLUMNS)
+    .eq("session_id", sessionId)
+    .eq("is_active", true);
+  if (error) throw new Error(`Failed to read the session's exercises: ${error.message}`);
+  return (data ?? []) as unknown as TrainingExerciseWithGroupRow[];
+}
 
 /**
  * Propagate a session's new calorie_surplus_percentage to all of its future
@@ -55,37 +78,7 @@ export const getSessionWithExercises = async (
 
   if (sessionError || !sessionRow) return null;
 
-  const { data: exerciseRows } = await supabaseAdmin
-    .from("training_exercises")
-    .select("*")
-    .eq("session_id", sessionId)
-    .eq("is_active", true)
-    .order("order_index", { ascending: true });
-
-  return mapSessionRow(
-    sessionRow,
-    (exerciseRows || []).map(mapExerciseRow)
-  );
-};
-
-// Exercise input shape for bulk operations
-export type ExerciseInput = {
-  name: string;
-  sets: number;
-  orderIndex: number;
-  exerciseId?: string | null;
-  repsMin?: number | null;
-  repsMax?: number | null;
-  repsTarget?: string | null;
-  rpeTarget?: number | null;
-  restSeconds?: number | null;
-  tempo?: string | null;
-  percentage1rm?: number | null;
-  supersetGroup?: string | null;
-  isWarmup?: boolean;
-  notes?: string | null;
-  setSpecs?: SetSpec[] | null;
-  videoUrl?: string | null;
+  return mapSessionRow(sessionRow, mapExerciseRowsToGroups(await readActiveExerciseRows(sessionId)));
 };
 
 /**
@@ -97,56 +90,24 @@ export type ExerciseInput = {
  * coach-saved-plan-service.ts:46.
  */
 async function resolveMissingExerciseIds(
-  exercises: ExerciseInput[],
+  groups: readonly TrainingGroupWrite[],
   coachId: string,
 ): Promise<Map<string, string>> {
-  const unresolvedNames = exercises.filter((e) => !e.exerciseId).map((e) => e.name);
+  const unresolvedNames = sessionExercises({ groups })
+    .filter((e) => !e.exerciseId)
+    .map((e) => e.name);
   if (unresolvedNames.length === 0) return new Map();
   return resolveExercises(unresolvedNames, coachId);
 }
 
-function buildExerciseInserts(
-  sessionId: string,
-  exercises: ExerciseInput[],
-  exerciseIdMap: Map<string, string>,
-) {
-  return exercises.map((ex) => {
-    const w = projectExerciseCompact(ex);
-    return {
-      session_id: sessionId,
-      name: ex.name,
-      // Explicit id wins; otherwise fall back to the name-resolved catalog id.
-      // Writing a bare `ex.exerciseId ?? null` here is what left 574
-      // training_exercises rows with a NULL catalog link.
-      exercise_id: ex.exerciseId ?? exerciseIdMap.get(ex.name) ?? null,
-      order_index: ex.orderIndex,
-      sets: w.sets,
-      reps_min: w.reps_min,
-      reps_max: w.reps_max,
-      reps_target: ex.repsTarget ?? null,
-      rpe_target: ex.rpeTarget ?? null,
-      percentage_1rm: ex.percentage1rm ?? null,
-      tempo: ex.tempo ?? null,
-      rest_seconds: ex.restSeconds ?? null,
-      notes: ex.notes ?? null,
-      superset_group: ex.supersetGroup ?? null,
-      is_warmup: ex.isWarmup ?? false,
-      set_specs: w.set_specs,
-      video_url: w.video_url,
-      prescribed_fields: w.prescribed_fields,
-      is_active: true,
-    };
-  });
-}
-
 // Clone a session and reassign a specific event to the clone.
-// If exerciseOverrides is provided, use those instead of cloning the originals.
+// If groupOverrides is provided, the clone holds those instead of the originals.
 export async function cloneSessionForEvent(
   sessionId: string,
   eventId: string,
   clientId: string,
   coachId: string,
-  exerciseOverrides?: ExerciseInput[]
+  groupOverrides?: TrainingGroupWrite[]
 ): Promise<string> {
   // 0. Verify the target event belongs to this client BEFORE doing any work, so a
   //    foreign eventId can't repoint another client's scheduled event (and so the
@@ -206,47 +167,16 @@ export async function cloneSessionForEvent(
     throw new Error(`Failed to clone session: ${cloneError?.message}`);
   }
 
-  // 4. Insert exercises (overrides or cloned from original)
-  if (exerciseOverrides) {
-    if (exerciseOverrides.length > 0) {
-      const exerciseIdMap = await resolveMissingExerciseIds(exerciseOverrides, coachId);
-      const inserts = buildExerciseInserts(clonedSession.id, exerciseOverrides, exerciseIdMap);
-      const { error: exError } = await supabaseAdmin.from("training_exercises").insert(inserts);
-      if (exError) throw new Error(`Failed to insert exercises: ${exError.message}`);
-    }
+  // 4. Its groups and exercises: the overrides, or the original's copied as
+  //    they are.
+  if (groupOverrides) {
+    const exerciseIdMap = await resolveMissingExerciseIds(groupOverrides, coachId);
+    await insertTrainingGroupRows(
+      trainingGroupRowsFromInput(clonedSession.id, groupOverrides, exerciseIdMap),
+    );
   } else {
-    const { data: exercises } = await supabaseAdmin
-      .from("training_exercises")
-      .select("*")
-      .eq("session_id", sessionId)
-      .eq("is_active", true)
-      .order("order_index", { ascending: true });
-
-    if (exercises && exercises.length > 0) {
-      const exerciseInserts = exercises.map((ex) => ({
-        session_id: clonedSession.id,
-        name: ex.name,
-        exercise_id: ex.exercise_id,
-        order_index: ex.order_index,
-        sets: ex.sets,
-        reps_min: ex.reps_min,
-        reps_max: ex.reps_max,
-        reps_target: ex.reps_target,
-        rpe_target: ex.rpe_target,
-        percentage_1rm: ex.percentage_1rm,
-        tempo: ex.tempo,
-        rest_seconds: ex.rest_seconds,
-        notes: ex.notes,
-        superset_group: ex.superset_group,
-        is_warmup: ex.is_warmup as boolean,
-        set_specs: ex.set_specs ?? null,
-        video_url: ex.video_url ?? null,
-        prescribed_fields: ex.prescribed_fields ?? null,
-        is_active: true,
-      }));
-      const { error: exError } = await supabaseAdmin.from("training_exercises").insert(exerciseInserts);
-      if (exError) throw new Error(`Failed to clone exercises: ${exError.message}`);
-    }
+    const original = mapExerciseRowsToGroups(await readActiveExerciseRows(sessionId));
+    await insertTrainingGroupRows(trainingGroupRowsFromCopy(clonedSession.id, original));
   }
 
   // 5. Update event to point to cloned session — scoped to this client (defense
@@ -266,10 +196,12 @@ export async function cloneSessionForEvent(
   return clonedSession.id;
 }
 
-// Bulk replace all exercises for a session (soft-delete old, insert new)
+// Replace all of a session's exercises, in their groups (insert new, then
+// soft-delete old). A replaced exercise's group stays with it: a group is read
+// through its live exercises, so nothing reads the old groups again.
 export async function bulkReplaceExercises(
   sessionId: string,
-  exercises: ExerciseInput[],
+  groups: TrainingGroupWrite[],
   coachId: string,
   clientId: string
 ): Promise<void> {
@@ -301,12 +233,10 @@ export async function bulkReplaceExercises(
   if (oldErr) throw new Error(`Failed to read existing exercises: ${oldErr.message}`);
   const oldIds = (oldRows ?? []).map((r) => r.id);
 
-  // Insert new exercises
-  if (exercises.length > 0) {
-    const exerciseIdMap = await resolveMissingExerciseIds(exercises, coachId);
-    const inserts = buildExerciseInserts(sessionId, exercises, exerciseIdMap);
-    const { error: insertError } = await supabaseAdmin.from("training_exercises").insert(inserts);
-    if (insertError) throw new Error(`Failed to insert exercises: ${insertError.message}`);
+  // Insert the new groups and their exercises
+  if (groups.length > 0) {
+    const exerciseIdMap = await resolveMissingExerciseIds(groups, coachId);
+    await insertTrainingGroupRows(trainingGroupRowsFromInput(sessionId, groups, exerciseIdMap));
   }
 
   // Soft-delete the previous rows by id (not by session — the new rows must stay).

@@ -3,14 +3,15 @@ import type {
   PlanEditSaveBody,
   replaceSessionSchema,
 } from "@/lib/validations/training";
-import type { TrainingExercise } from "@/types/training";
+import type { TrainingExercise, TrainingExerciseGroup } from "@/types/training";
 import type { PlanForEditing } from "@/services/plan-edit-service";
 import {
   draftToSessionInputs,
-  exerciseDraftToInput,
+  groupDraftToInput,
 } from "./program-builder-serialize";
 import type { EditableDays } from "./program-builder-lock-model";
 import { toPrescribedFields } from "@/utils/prescribed-fields";
+import { groupSettingsOf } from "@/utils/exercise-groups";
 import { daysBetween } from "@/utils/metric-points";
 import {
   DAYS_PER_WEEK,
@@ -18,6 +19,7 @@ import {
   newUid,
   type DaySlotDraft,
   type ExerciseDraft,
+  type ExerciseGroupDraft,
   type ProgramDraft,
   type SessionDraft,
   type WeekDraft,
@@ -38,24 +40,25 @@ type PlacedSessionSource = {
   estimatedDurationMinutes?: number | null;
   calorieSurplusPercentage: number | null;
   notes?: string | null;
-  exercises: TrainingExercise[];
+  groups: TrainingExerciseGroup[];
 };
 
 /**
- * Clone a placed session row into an editable SessionDraft — fresh uids,
- * undefined→null coercions, `[]` setSpecs normalized to null (an empty array
- * fails the ≥1-non-warmup zod refine and would 400 the save), catalog
- * exerciseId preserved. `sessionType` is synthesized: training_sessions has
- * no session_type column. `exerciseIdByUid` maps each draft exercise uid back
- * to its training_exercises ROW id (not the catalog id) — unused by the tray
- * (the replace PUT is insert-fresh).
+ * Clone a placed session row into an editable SessionDraft — fresh uids for
+ * its groups and exercises, undefined→null coercions, `[]` setSpecs
+ * normalized to null (an empty array fails the ≥1-non-warmup zod refine and
+ * would 400 the save), catalog exerciseId preserved. `sessionType` is
+ * synthesized: training_sessions has no session_type column.
+ * `exerciseIdByUid` maps each draft exercise uid back to its
+ * training_exercises ROW id (not the catalog id) — unused by the tray (the
+ * replace PUT is insert-fresh).
  */
 export function trainingSessionToDraft(s: PlacedSessionSource): {
   draft: SessionDraft;
   exerciseIdByUid: Map<string, string>;
 } {
   const exerciseIdByUid = new Map<string, string>();
-  const exercises: ExerciseDraft[] = s.exercises.map((e) => {
+  const toExerciseDraft = (e: TrainingExercise): ExerciseDraft => {
     const uid = newUid("ex");
     exerciseIdByUid.set(uid, e.id);
     return {
@@ -71,13 +74,17 @@ export function trainingSessionToDraft(s: PlacedSessionSource): {
       percentage1rm: e.percentage1rm ?? null,
       tempo: e.tempo ?? null,
       restSeconds: e.restSeconds ?? null,
-      supersetGroup: e.supersetGroup ?? null,
       isWarmup: e.isWarmup,
       notes: e.notes ?? null,
       videoUrl: e.videoUrl ?? null,
       prescribedFields: toPrescribedFields(e.prescribedFields),
     };
-  });
+  };
+  const groups: ExerciseGroupDraft[] = s.groups.map((group) => ({
+    uid: newUid("grp"),
+    ...groupSettingsOf(group),
+    exercises: group.exercises.map(toExerciseDraft),
+  }));
 
   return {
     draft: {
@@ -91,7 +98,7 @@ export function trainingSessionToDraft(s: PlacedSessionSource): {
       calorieSurplusPercentage: s.calorieSurplusPercentage ?? null,
       notes: s.notes ?? null,
       sessionType: "training",
-      exercises,
+      groups,
     },
     exerciseIdByUid,
   };
@@ -99,8 +106,8 @@ export function trainingSessionToDraft(s: PlacedSessionSource): {
 
 /**
  * Serialize one SessionDraft into the replace-session PUT body. Reuses the
- * shared exerciseDraftToInput so per-set specs and video URLs survive verbatim
- * on this path exactly as they do on the library/inline paths.
+ * shared groupDraftToInput so groups, per-set specs and video URLs survive
+ * verbatim on this path exactly as they do on the library/inline paths.
  */
 export function sessionDraftToPlacedPayload(
   session: SessionDraft,
@@ -111,7 +118,7 @@ export function sessionDraftToPlacedPayload(
     estimatedDurationMinutes: session.estimatedDurationMinutes,
     calorieSurplusPercentage: session.calorieSurplusPercentage,
     notes: session.notes,
-    exercises: session.exercises.map(exerciseDraftToInput),
+    groups: session.groups.map(groupDraftToInput),
   };
 }
 

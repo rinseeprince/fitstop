@@ -19,8 +19,8 @@ vi.mock("sonner", () => ({
 
 const sessionMutate = vi.fn();
 const sessions = [
-  { id: "sess-1", name: "Push Day A", focus: null, exercises: [], estimatedDurationMinutes: null },
-  { id: "sess-2", name: "Pull Day A", focus: null, exercises: [], estimatedDurationMinutes: null },
+  { id: "sess-1", name: "Push Day A", focus: null, groups: [], estimatedDurationMinutes: null },
+  { id: "sess-2", name: "Pull Day A", focus: null, groups: [], estimatedDurationMinutes: null },
 ] as unknown as SavedSession[];
 vi.mock("@/hooks/use-standalone-sessions", () => ({
   useStandaloneSessions: () => ({

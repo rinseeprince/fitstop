@@ -5,6 +5,9 @@ export type CheckInRow = Database["public"]["Tables"]["check_ins"]["Row"];
 export type TrainingPlanRow = Database["public"]["Tables"]["training_plans"]["Row"];
 export type TrainingSessionRow = Database["public"]["Tables"]["training_sessions"]["Row"];
 export type TrainingExerciseRow = Database["public"]["Tables"]["training_exercises"]["Row"];
+export type TrainingExerciseInsert = Database["public"]["Tables"]["training_exercises"]["Insert"];
+export type TrainingExerciseGroupRow = Database["public"]["Tables"]["training_exercise_groups"]["Row"];
+export type TrainingExerciseGroupInsert = Database["public"]["Tables"]["training_exercise_groups"]["Insert"];
 export type ExerciseRow = Database["public"]["Tables"]["exercises"]["Row"];
 
 export type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
@@ -52,3 +55,5 @@ export type CoachSavedSessionInsert = Database["public"]["Tables"]["coach_saved_
 
 export type CoachSavedExerciseRow = Database["public"]["Tables"]["coach_saved_exercises"]["Row"];
 export type CoachSavedExerciseInsert = Database["public"]["Tables"]["coach_saved_exercises"]["Insert"];
+export type CoachSavedExerciseGroupRow = Database["public"]["Tables"]["coach_saved_exercise_groups"]["Row"];
+export type CoachSavedExerciseGroupInsert = Database["public"]["Tables"]["coach_saved_exercise_groups"]["Insert"];

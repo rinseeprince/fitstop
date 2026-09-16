@@ -46,13 +46,13 @@ describe("POST /api/training/saved-sessions", () => {
 
   it("returns 401 when unauthenticated", async () => {
     mockAuth.mockResolvedValue(null);
-    const res = await POST(makeRequest({ name: "X", exercises: [] }));
+    const res = await POST(makeRequest({ name: "X", groups: [] }));
     expect(res.status).toBe(401);
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it("returns 400 on an invalid body", async () => {
-    const res = await POST(makeRequest({ name: "", exercises: [] }));
+    const res = await POST(makeRequest({ name: "", groups: [] }));
     expect(res.status).toBe(400);
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockCreateDeduped).not.toHaveBeenCalled();
@@ -60,7 +60,7 @@ describe("POST /api/training/saved-sessions", () => {
 
   it("creates without dedup by default and echoes the name", async () => {
     mockCreate.mockResolvedValue("s-new");
-    const res = await POST(makeRequest({ name: "Push Day", exercises: [] }));
+    const res = await POST(makeRequest({ name: "Push Day", groups: [] }));
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({
       success: true,
@@ -80,7 +80,7 @@ describe("POST /api/training/saved-sessions", () => {
       name: "Push Day (copy)",
     });
     const res = await POST(
-      makeRequest({ name: "Push Day", exercises: [], dedupeName: true })
+      makeRequest({ name: "Push Day", groups: [], dedupeName: true })
     );
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({

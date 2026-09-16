@@ -20,6 +20,7 @@ vi.mock("@/lib/csrf-protection", () => ({
 import { POST } from "./route";
 import { overwriteStandaloneSession } from "@/services/coach-standalone-session-service";
 import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 
 const mockOverwrite = vi.mocked(overwriteStandaloneSession);
 const mockAuth = vi.mocked(getAuthenticatedCoachId);
@@ -38,7 +39,7 @@ function makeRequest(body: unknown) {
 const validBody = {
   name: "Push Day",
   focus: "chest",
-  exercises: [{ name: "Bench Press", sets: 3 }],
+  groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench Press", sets: 3 }] }],
 };
 
 const params = { params: Promise.resolve({ savedSessionId: "s1" }) };
@@ -57,7 +58,7 @@ describe("POST /api/training/saved-sessions/[savedSessionId]/overwrite", () => {
   });
 
   it("returns 400 on an invalid body", async () => {
-    const res = await POST(makeRequest({ exercises: [] }), params);
+    const res = await POST(makeRequest({ groups: [] }), params);
     expect(res.status).toBe(400);
     expect(mockOverwrite).not.toHaveBeenCalled();
   });

@@ -1145,10 +1145,64 @@ export type Database = {
           },
         ]
       }
+      coach_saved_exercise_groups: {
+        Row: {
+          created_at: string
+          format: string
+          id: string
+          interval_seconds: number | null
+          notes: string | null
+          order_index: number
+          rest_between_exercises_seconds: number | null
+          rest_between_rounds_seconds: number | null
+          rounds: number | null
+          saved_session_id: string
+          time_cap_seconds: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          format: string
+          id?: string
+          interval_seconds?: number | null
+          notes?: string | null
+          order_index: number
+          rest_between_exercises_seconds?: number | null
+          rest_between_rounds_seconds?: number | null
+          rounds?: number | null
+          saved_session_id: string
+          time_cap_seconds?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          format?: string
+          id?: string
+          interval_seconds?: number | null
+          notes?: string | null
+          order_index?: number
+          rest_between_exercises_seconds?: number | null
+          rest_between_rounds_seconds?: number | null
+          rounds?: number | null
+          saved_session_id?: string
+          time_cap_seconds?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_saved_exercise_groups_saved_session_id_fkey"
+            columns: ["saved_session_id"]
+            isOneToOne: false
+            referencedRelation: "coach_saved_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       coach_saved_exercises: {
         Row: {
           created_at: string
           exercise_id: string | null
+          group_id: string
           id: string
           is_warmup: boolean | null
           name: string
@@ -1164,7 +1218,6 @@ export type Database = {
           saved_session_id: string
           set_specs: Json | null
           sets: number
-          superset_group: string | null
           tempo: string | null
           updated_at: string
           video_url: string | null
@@ -1172,6 +1225,7 @@ export type Database = {
         Insert: {
           created_at?: string
           exercise_id?: string | null
+          group_id: string
           id?: string
           is_warmup?: boolean | null
           name: string
@@ -1187,7 +1241,6 @@ export type Database = {
           saved_session_id: string
           set_specs?: Json | null
           sets?: number
-          superset_group?: string | null
           tempo?: string | null
           updated_at?: string
           video_url?: string | null
@@ -1195,6 +1248,7 @@ export type Database = {
         Update: {
           created_at?: string
           exercise_id?: string | null
+          group_id?: string
           id?: string
           is_warmup?: boolean | null
           name?: string
@@ -1210,7 +1264,6 @@ export type Database = {
           saved_session_id?: string
           set_specs?: Json | null
           sets?: number
-          superset_group?: string | null
           tempo?: string | null
           updated_at?: string
           video_url?: string | null
@@ -1222,6 +1275,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "exercises"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_saved_exercises_group_fkey"
+            columns: ["group_id", "saved_session_id"]
+            isOneToOne: false
+            referencedRelation: "coach_saved_exercise_groups"
+            referencedColumns: ["id", "saved_session_id"]
           },
           {
             foreignKeyName: "coach_saved_exercises_saved_session_id_fkey"
@@ -2302,10 +2362,64 @@ export type Database = {
           },
         ]
       }
+      training_exercise_groups: {
+        Row: {
+          created_at: string
+          format: string
+          id: string
+          interval_seconds: number | null
+          notes: string | null
+          order_index: number
+          rest_between_exercises_seconds: number | null
+          rest_between_rounds_seconds: number | null
+          rounds: number | null
+          session_id: string
+          time_cap_seconds: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          format: string
+          id?: string
+          interval_seconds?: number | null
+          notes?: string | null
+          order_index: number
+          rest_between_exercises_seconds?: number | null
+          rest_between_rounds_seconds?: number | null
+          rounds?: number | null
+          session_id: string
+          time_cap_seconds?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          format?: string
+          id?: string
+          interval_seconds?: number | null
+          notes?: string | null
+          order_index?: number
+          rest_between_exercises_seconds?: number | null
+          rest_between_rounds_seconds?: number | null
+          rounds?: number | null
+          session_id?: string
+          time_cap_seconds?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_exercise_groups_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "training_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       training_exercises: {
         Row: {
           created_at: string
           exercise_id: string | null
+          group_id: string
           id: string
           is_active: boolean
           is_warmup: boolean | null
@@ -2322,7 +2436,6 @@ export type Database = {
           session_id: string
           set_specs: Json | null
           sets: number
-          superset_group: string | null
           tempo: string | null
           updated_at: string
           video_url: string | null
@@ -2330,6 +2443,7 @@ export type Database = {
         Insert: {
           created_at?: string
           exercise_id?: string | null
+          group_id: string
           id?: string
           is_active?: boolean
           is_warmup?: boolean | null
@@ -2346,7 +2460,6 @@ export type Database = {
           session_id: string
           set_specs?: Json | null
           sets: number
-          superset_group?: string | null
           tempo?: string | null
           updated_at?: string
           video_url?: string | null
@@ -2354,6 +2467,7 @@ export type Database = {
         Update: {
           created_at?: string
           exercise_id?: string | null
+          group_id?: string
           id?: string
           is_active?: boolean
           is_warmup?: boolean | null
@@ -2370,7 +2484,6 @@ export type Database = {
           session_id?: string
           set_specs?: Json | null
           sets?: number
-          superset_group?: string | null
           tempo?: string | null
           updated_at?: string
           video_url?: string | null
@@ -2382,6 +2495,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "exercises"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "training_exercises_group_fkey"
+            columns: ["group_id", "session_id"]
+            isOneToOne: false
+            referencedRelation: "training_exercise_groups"
+            referencedColumns: ["id", "session_id"]
           },
           {
             foreignKeyName: "training_exercises_session_id_fkey"

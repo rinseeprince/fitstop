@@ -22,6 +22,7 @@ import { useStandaloneSessions } from "@/hooks/use-standalone-sessions";
 import { LayoutGrid, Dumbbell, Loader2, GripVertical } from "lucide-react";
 import type { SavedPlan, SavedSession } from "@/types/training";
 import { LibrarySearchInput } from "@/components/programs/shared/library-search-input";
+import { countSessionExercises } from "@/utils/exercise-groups";
 
 type LibraryPanelProps = {
   open: boolean;
@@ -170,7 +171,7 @@ function DraggablePlanCard({ plan }: { plan: SavedPlan }) {
 }
 
 function DraggableSessionCard({ session }: { session: SavedSession }) {
-  const exerciseCount = session.exercises?.length ?? 0;
+  const exerciseCount = countSessionExercises(session);
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `library-session-${session.id}`,

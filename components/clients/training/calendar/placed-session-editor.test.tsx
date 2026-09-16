@@ -5,6 +5,7 @@ import { PlacedSessionEditor } from "./placed-session-editor";
 import type { PlacedSessionState, SessionEventLink } from "./use-placed-session-editor";
 import type { TrainingSession } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars. Any
@@ -59,23 +60,32 @@ function makePlacedSession(): TrainingSession {
     focus: "push",
     estimatedDurationMinutes: 45,
     calorieSurplusPercentage: 10,
-    exercises: [
+    groups: [
       {
-        id: "te1",
+        id: "tg1",
         sessionId: "s1",
-        exerciseId: "123e4567-e89b-12d3-a456-426614174000",
-        name: "Bench Press",
         orderIndex: 0,
-        sets: 1,
-        repsMin: 5,
-        repsMax: 8,
-        restSeconds: 90,
-        isWarmup: false,
-        setSpecs: SPECS,
-        videoUrl: "https://example.com/bench.mp4",
-        prescribedFields: null,
-        createdAt: "2026-07-01T00:00:00Z",
-        updatedAt: "2026-07-01T00:00:00Z",
+        ...STRAIGHT_SETS,
+        exercises: [
+          {
+            id: "te1",
+            sessionId: "s1",
+            groupId: "tg1",
+            exerciseId: "123e4567-e89b-12d3-a456-426614174000",
+            name: "Bench Press",
+            orderIndex: 0,
+            sets: 1,
+            repsMin: 5,
+            repsMax: 8,
+            restSeconds: 90,
+            isWarmup: false,
+            setSpecs: SPECS,
+            videoUrl: "https://example.com/bench.mp4",
+            prescribedFields: null,
+            createdAt: "2026-07-01T00:00:00Z",
+            updatedAt: "2026-07-01T00:00:00Z",
+          },
+        ],
       },
     ],
     createdAt: "2026-07-01T00:00:00Z",
@@ -254,11 +264,11 @@ describe("PlacedSessionEditor", () => {
     expect(puts[0].url).toBe(SESSION_URL);
     const body = puts[0].body as {
       name: string;
-      exercises: Array<{ setSpecs: SetSpec[]; videoUrl: string }>;
+      groups: Array<{ exercises: Array<{ setSpecs: SetSpec[]; videoUrl: string }> }>;
     };
     expect(body.name).toBe("Push Day A");
-    expect(body.exercises[0].setSpecs).toEqual(SPECS);
-    expect(body.exercises[0].videoUrl).toBe("https://example.com/bench.mp4");
+    expect(sessionExercises(body)[0].setSpecs).toEqual(SPECS);
+    expect(sessionExercises(body)[0].videoUrl).toBe("https://example.com/bench.mp4");
     expect(handlers.mutateCalendar).toHaveBeenCalled();
     expect(handlers.onUpdate).toHaveBeenCalled();
   });
@@ -290,8 +300,10 @@ describe("PlacedSessionEditor", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0].url).toBe(`${SESSION_URL}/clone`);
     expect(posts[0].body).toMatchObject({ eventId: "ev1" });
-    const cloneBody = posts[0].body as { exercises: Array<{ setSpecs: SetSpec[] }> };
-    expect(cloneBody.exercises[0].setSpecs).toEqual(SPECS);
+    const cloneBody = posts[0].body as {
+      groups: Array<{ exercises: Array<{ setSpecs: SetSpec[] }> }>;
+    };
+    expect(sessionExercises(cloneBody)[0].setSpecs).toEqual(SPECS);
     // The builder-grade pass lands on the CLONE (meta + event snapshot).
     const puts = callsBy("PUT");
     expect(puts).toHaveLength(1);

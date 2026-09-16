@@ -80,7 +80,7 @@ export function buildSessionTools(ws: DraftWorkspace) {
         calorieSurplusPercentage: null,
         notes: null,
         sessionType: "training",
-        exercises: [],
+        groups: [],
       };
       const err = commitOp(ws, {
         type: "place_session",
@@ -176,7 +176,7 @@ export function buildSessionTools(ws: DraftWorkspace) {
       if (!session.ok) return session.error;
       const identityTouch = name !== undefined || focus !== undefined;
       if (ws.target === "client-draft" && identityTouch) return IDENTITY_ERROR;
-      const patch: Partial<Omit<SessionDraft, "uid" | "exercises">> = {};
+      const patch: Partial<Omit<SessionDraft, "uid" | "groups">> = {};
       if (name !== undefined) patch.name = name;
       if (focus !== undefined) patch.focus = focus;
       if (durationMinutes !== undefined) patch.estimatedDurationMinutes = durationMinutes;

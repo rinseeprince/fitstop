@@ -8,6 +8,7 @@ import { addDaysToDateString } from "@/lib/date-helpers";
 import type { PlanEditDay, PlanForEditing } from "@/services/plan-edit-service";
 import type { SavedPlan, SavedSession } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 
 // -- mocks --------------------------------------------------------------------
 
@@ -198,7 +199,7 @@ function makeSession(overrides: Partial<SavedSession>): SavedSession {
     calorieSurplusPercentage: null,
     notes: null,
     sessionType: "training",
-    exercises: [],
+    groups: [],
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -368,7 +369,7 @@ describe("ProgramBuilder save flow", () => {
         weekIndex: number;
         orderIndex: number;
         calorieSurplusPercentage: number | null;
-        exercises: unknown[];
+        groups: unknown[];
       }>;
     };
     // Program-level default surplus survives — including 0.
@@ -382,7 +383,7 @@ describe("ProgramBuilder save flow", () => {
       orderIndex: 0,
       calorieSurplusPercentage: 0,
     });
-    expect(body.sessions.slice(1).every((s) => s.isRest && s.exercises.length === 0)).toBe(true);
+    expect(body.sessions.slice(1).every((s) => s.isRest && s.groups.length === 0)).toBe(true);
 
     // programDurationWeeks kept truthful (null → 1) on every save.
     expect(durationPatch()!.body).toMatchObject({ programDurationWeeks: 1 });
@@ -464,29 +465,37 @@ describe("ProgramBuilder save flow", () => {
       { set_number: 3, set_type: "working", load_type: "absolute", load_value: 90 },
     ];
     const plan = makeDraftPlan();
-    plan.sessions[0].exercises = [
+    plan.sessions[0].groups = [
       {
-        id: "ex-row-1",
+        id: "grp-row-1",
         savedSessionId: "s-0",
-        exerciseId: BENCH_CATALOG_ID,
-        name: "Bench Press",
         orderIndex: 0,
-        sets: 2,
-        repsMin: 8,
-        repsMax: 10,
-        repsTarget: null,
-        rpeTarget: null,
-        percentage1rm: null,
-        tempo: null,
-        restSeconds: null,
-        supersetGroup: null,
-        isWarmup: false,
-        notes: null,
-        setSpecs: benchSpecs.map((s) => ({ ...s })),
-        videoUrl: null,
-        prescribedFields: null,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
+        ...STRAIGHT_SETS,
+        exercises: [
+          {
+            id: "ex-row-1",
+            savedSessionId: "s-0",
+            groupId: "grp-row-1",
+            exerciseId: BENCH_CATALOG_ID,
+            name: "Bench Press",
+            orderIndex: 0,
+            sets: 2,
+            repsMin: 8,
+            repsMax: 10,
+            repsTarget: null,
+            rpeTarget: null,
+            percentage1rm: null,
+            tempo: null,
+            restSeconds: null,
+            isWarmup: false,
+            notes: null,
+            setSpecs: benchSpecs.map((s) => ({ ...s })),
+            videoUrl: null,
+            prescribedFields: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
       },
     ];
     planFixture = plan;
@@ -518,16 +527,18 @@ describe("ProgramBuilder save flow", () => {
         name: string;
         weekIndex: number;
         isRest: boolean;
-        exercises: Array<{ setSpecs: Array<{ set_type?: string; load_value?: number }> | null }>;
+        groups: Array<{
+          exercises: Array<{ setSpecs: Array<{ set_type?: string; load_value?: number }> | null }>;
+        }>;
       }>;
     };
     expect(body.sessions).toHaveLength(14);
     const week0Push = body.sessions.find((s) => s.weekIndex === 0 && !s.isRest)!;
     const week1Push = body.sessions.find((s) => s.weekIndex === 1 && !s.isRest)!;
     // Week 0 serializes byte-identical to the fixture prescription.
-    expect(week0Push.exercises[0].setSpecs).toEqual(benchSpecs);
+    expect(sessionExercises(week0Push)[0].setSpecs).toEqual(benchSpecs);
     // Week 1 carries the progressed working loads; warm-up untouched.
-    expect(week1Push.exercises[0].setSpecs!.map((s) => s.load_value)).toEqual([
+    expect(sessionExercises(week1Push)[0].setSpecs!.map((s) => s.load_value)).toEqual([
       60, 102.5, 92.5,
     ]);
   });
@@ -546,7 +557,7 @@ describe("ProgramBuilder save flow", () => {
     expect(savedSessionPost()[0].body).toMatchObject({
       name: "Push",
       dedupeName: true,
-      exercises: [],
+      groups: [],
     });
     await waitFor(() =>
       expect(toastSpy.success).toHaveBeenCalledWith(expect.stringContaining("Push (copy)"), {
@@ -825,7 +836,7 @@ function makePlanForEditing(overrides: Partial<PlanForEditing> = {}): PlanForEdi
             estimatedDurationMinutes: null,
             notes: null,
             calorieSurplusPercentage: 15,
-            exercises: [],
+            groups: [],
           }
         : { date, isRest: true };
     }),

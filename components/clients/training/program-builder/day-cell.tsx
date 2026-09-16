@@ -18,6 +18,7 @@ import {
   THUMB_CLASS,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
+import { countSessionExercises, sessionExercises } from "@/utils/exercise-groups";
 
 // One positional day cell. Two states only (empty === rest): a session card
 // or a rest marker whose hover swaps to "Add session" (opens the add-session
@@ -246,9 +247,9 @@ export function DayCell({
             </div>
 
             {/* Ordered exercise list — name + sets×reps, first 3 + "+N more". */}
-            {session.exercises.length > 0 && (
+            {countSessionExercises(session) > 0 && (
               <div className="mt-1.5 min-w-0 flex-1 space-y-[3px] overflow-hidden">
-                {session.exercises.slice(0, 3).map((ex, i) => (
+                {sessionExercises(session).slice(0, 3).map((ex, i) => (
                   <div key={ex.uid} className="flex items-baseline gap-1.5">
                     <span className={cn(MONO, "w-2 shrink-0 text-[9.5px] text-[#c2d0cc]")}>
                       {i + 1}
@@ -261,9 +262,9 @@ export function DayCell({
                     </span>
                   </div>
                 ))}
-                {session.exercises.length > 3 && (
+                {countSessionExercises(session) > 3 && (
                   <div className={cn(MONO_META_CLASS, "pl-[14px] text-[10px] text-[#c2d0cc]")}>
-                    +{session.exercises.length - 3} more
+                    +{countSessionExercises(session) - 3} more
                   </div>
                 )}
               </div>
@@ -274,7 +275,7 @@ export function DayCell({
               <span className={cn(MONO_META_CLASS, "text-[10px]")}>
                 {session.estimatedDurationMinutes != null
                   ? `${session.estimatedDurationMinutes} min`
-                  : `${session.exercises.length} ${session.exercises.length === 1 ? "exercise" : "exercises"}`}
+                  : `${countSessionExercises(session)} ${countSessionExercises(session) === 1 ? "exercise" : "exercises"}`}
               </span>
               {session.focus && (
                 <span className={cn("min-w-0 truncate text-[10px]", TEXT_MUTED)}>

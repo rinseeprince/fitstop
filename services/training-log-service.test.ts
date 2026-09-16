@@ -54,6 +54,8 @@ import {
   getTrainingEventDetail,
   getSessionLogDetail,
 } from "./training-log-service";
+import { EXERCISE_WITH_GROUP_COLUMNS } from "./training-mappers";
+import { sessionExercises } from "@/utils/exercise-groups";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 
@@ -94,9 +96,44 @@ const SESSION_PRESCRIPTION = {
   estimated_calories: 400,
 };
 
+/** A group as the prescription reads' exercise_group embed selects it. */
+type GroupEmbed = {
+  id: string;
+  order_index: number;
+  format: string;
+  rounds: number | null;
+  time_cap_seconds: number | null;
+  interval_seconds: number | null;
+  rest_between_exercises_seconds: number | null;
+  rest_between_rounds_seconds: number | null;
+  notes: string | null;
+};
+
+/**
+ * The group a lone exercise sits in, as the prescription reads' exercise_group
+ * embed selects it: straight sets, every setting null, at `orderIndex` in the
+ * session.
+ */
+function loneGroup(id: string, orderIndex: number): GroupEmbed {
+  return {
+    id,
+    order_index: orderIndex,
+    format: "straight_sets",
+    rounds: null,
+    time_cap_seconds: null,
+    interval_seconds: null,
+    rest_between_exercises_seconds: null,
+    rest_between_rounds_seconds: null,
+    notes: null,
+  };
+}
+
+const EXERCISE_A_GROUP = loneGroup("grp-a", 0);
+
 const EXERCISE_A_PRESCRIPTION = {
   id: EXERCISE_A,
   name: "Bench Press",
+  order_index: 0,
   sets: 3,
   reps_min: 8,
   reps_max: 10,
@@ -106,12 +143,14 @@ const EXERCISE_A_PRESCRIPTION = {
   tempo: null,
   rest_seconds: 90,
   notes: null,
-  superset_group: null,
   is_warmup: false,
+  exercise_group: EXERCISE_A_GROUP,
 };
 
 const EXERCISE_A_SNAPSHOT = {
   name: EXERCISE_A_PRESCRIPTION.name,
+  order_index: EXERCISE_A_PRESCRIPTION.order_index,
+  group: EXERCISE_A_GROUP,
   sets: EXERCISE_A_PRESCRIPTION.sets,
   reps_min: EXERCISE_A_PRESCRIPTION.reps_min,
   reps_max: EXERCISE_A_PRESCRIPTION.reps_max,
@@ -121,12 +160,30 @@ const EXERCISE_A_SNAPSHOT = {
   tempo: EXERCISE_A_PRESCRIPTION.tempo,
   rest_seconds: EXERCISE_A_PRESCRIPTION.rest_seconds,
   notes: EXERCISE_A_PRESCRIPTION.notes,
-  superset_group: EXERCISE_A_PRESCRIPTION.superset_group,
   is_warmup: EXERCISE_A_PRESCRIPTION.is_warmup,
   // Captured from training_exercises.set_specs (mig 119); null for this legacy
   // prescription fixture (no per-set list authored).
   set_specs: null,
 };
+
+/** A client group row as EXERCISE_WITH_GROUP_COLUMNS embeds it on a live exercise. */
+function liveGroupRow(id: string, orderIndex: number, settings: Record<string, unknown> = {}) {
+  return {
+    id,
+    session_id: SESSION_ID,
+    order_index: orderIndex,
+    format: "straight_sets",
+    rounds: null,
+    time_cap_seconds: null,
+    interval_seconds: null,
+    rest_between_exercises_seconds: null,
+    rest_between_rounds_seconds: null,
+    notes: null,
+    created_at: "2026-05-01T00:00:00Z",
+    updated_at: "2026-05-01T00:00:00Z",
+    ...settings,
+  };
+}
 
 // `Router` builds a mockFrom that dispatches by table name; each entry can be
 // either a single mockQuery or an array consumed in order (for tables that get
@@ -806,7 +863,7 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 10. Snapshot field shapes — exact
   // -------------------------------------------------------------------------
-  it("[10] snapshot shape: session has exact 5 keys, exercise has exact 14 keys including set_specs and prescribed_fields", async () => {
+  it("[10] snapshot shape: session has exact 5 keys, exercise has exact 15 keys including order_index, group, set_specs and prescribed_fields; group has exact 9 keys", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { next_check_in_due: null },
@@ -868,9 +925,11 @@ describe("logTrainingEvent", () => {
       insertExQ.insert.mock.calls[0][0][0].prescribed_exercise_snapshot;
     expect(Object.keys(exerciseSnap).sort()).toEqual(
       [
+        "group",
         "is_warmup",
         "name",
         "notes",
+        "order_index",
         "percentage_1rm",
         "prescribed_fields",
         "reps_max",
@@ -880,10 +939,168 @@ describe("logTrainingEvent", () => {
         "rpe_target",
         "set_specs",
         "sets",
-        "superset_group",
         "tempo",
       ].sort(),
     );
+    expect(Object.keys(exerciseSnap.group).sort()).toEqual(
+      [
+        "format",
+        "id",
+        "interval_seconds",
+        "notes",
+        "order_index",
+        "rest_between_exercises_seconds",
+        "rest_between_rounds_seconds",
+        "rounds",
+        "time_cap_seconds",
+      ].sort(),
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 10b. Snapshot values for an exercise inside a group: the exercise's place
+  //      in its group, the group's own place and settings, and its per-set
+  //      prescription — and set_type still stamped by prescribed row position.
+  // -------------------------------------------------------------------------
+  it("[10b] an exercise second in a circuit snapshots its place in the group and exactly the group's nine values; set_type stamps by row position", async () => {
+    const circuit = {
+      id: "grp-circuit",
+      order_index: 1,
+      format: "circuit",
+      rounds: 3,
+      time_cap_seconds: 600,
+      interval_seconds: null,
+      rest_between_exercises_seconds: 15,
+      rest_between_rounds_seconds: 90,
+      notes: "A",
+    };
+    // Flattens to five rows: 1 warmup · 2 working · 3 drop(top) · 4 drop · 5 failure.
+    const setSpecs = [
+      { set_number: 1, set_type: "warmup", reps_min: 12, reps_max: 12 },
+      { set_number: 2, set_type: "working", reps_min: 8, reps_max: 10, load_type: "absolute", load_value: 60 },
+      { set_number: 3, set_type: "drop", drops: [{ weight: 40, reps: 8 }] },
+      { set_number: 4, set_type: "failure" },
+    ];
+    const row = {
+      id: EXERCISE_B,
+      name: "Row",
+      order_index: 1,
+      sets: 4,
+      reps_min: 8,
+      reps_max: 10,
+      reps_target: "8-10",
+      rpe_target: 8,
+      percentage_1rm: null,
+      tempo: "2010",
+      rest_seconds: 60,
+      notes: "Squeeze",
+      is_warmup: false,
+      set_specs: setSpecs,
+      prescribed_fields: ["set_type", "reps", "load"],
+      exercise_group: circuit,
+    };
+    const firstInCircuit = {
+      ...EXERCISE_A_PRESCRIPTION,
+      id: "ex-pull-up",
+      name: "Pull-up",
+      order_index: 0,
+      exercise_group: circuit,
+    };
+
+    const eventQ = createMockQuery({ data: eventRow(), error: null });
+    const clientQ = createMockQuery({ data: { next_check_in_due: null }, error: null });
+    const sessionSnapQ = createMockQuery({ data: SESSION_PRESCRIPTION, error: null });
+    // The by-id snapshot read, then the session's prescription read.
+    const byIdQ = createMockQuery({ data: [row], error: null });
+    const sessionPrescriptionQ = createMockQuery({
+      data: [row, EXERCISE_A_PRESCRIPTION, firstInCircuit],
+      error: null,
+    });
+    const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const existingExLogsQ = createMockQuery({ data: [], error: null });
+    const deleteExQ = createMockQuery({ data: null, error: null });
+    const insertExQ = insertExerciseLogsReturning(["el-row"]);
+    const setLogsInsertQ = createMockQuery({ data: null, error: null });
+    const linkQ = createMockQuery({ data: null, error: null });
+
+    installRouter({
+      training_events: [eventQ, linkQ],
+      clients: clientQ,
+      training_sessions: sessionSnapQ,
+      training_exercises: [byIdQ, sessionPrescriptionQ],
+      session_logs: upsertQ,
+      exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
+      set_logs: setLogsInsertQ,
+    });
+
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: {
+        completionQuality: "full",
+        exercises: [
+          {
+            trainingExerciseId: EXERCISE_B,
+            exerciseName: "Row",
+            // Rows 2, 4 and 5: the working set, the drop set's drop, failure.
+            sets: [
+              { setNumber: 2, reps: 9, weight: 60 },
+              { setNumber: 4, reps: 8, weight: 40 },
+              { setNumber: 5, reps: 6, weight: 60 },
+            ],
+            weightUnit: "kg",
+          },
+        ],
+      },
+    });
+
+    // The read asks for exactly the group's nine columns.
+    expect(byIdQ.in).toHaveBeenCalledWith("id", [EXERCISE_B]);
+    expect(byIdQ.select).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "exercise_group:training_exercise_groups!training_exercises_group_fkey(id, order_index, " +
+          "format, rounds, time_cap_seconds, interval_seconds, rest_between_exercises_seconds, " +
+          "rest_between_rounds_seconds, notes)",
+      ),
+    );
+
+    expect(insertExQ.insert.mock.calls[0][0][0].prescribed_exercise_snapshot).toEqual({
+      name: "Row",
+      order_index: 1,
+      group: {
+        id: "grp-circuit",
+        order_index: 1,
+        format: "circuit",
+        rounds: 3,
+        time_cap_seconds: 600,
+        interval_seconds: null,
+        rest_between_exercises_seconds: 15,
+        rest_between_rounds_seconds: 90,
+        notes: "A",
+      },
+      sets: 4,
+      reps_min: 8,
+      reps_max: 10,
+      reps_target: "8-10",
+      rpe_target: 8,
+      percentage_1rm: null,
+      tempo: "2010",
+      rest_seconds: 60,
+      notes: "Squeeze",
+      is_warmup: false,
+      set_specs: setSpecs,
+      prescribed_fields: ["set_type", "reps", "load"],
+    });
+
+    const inserted = setLogsInsertQ.insert.mock.calls[0][0] as {
+      set_number: number;
+      set_type: string;
+    }[];
+    expect(inserted.map((r) => [r.set_number, r.set_type])).toEqual([
+      [2, "working"],
+      [4, "drop"],
+      [5, "failure"],
+    ]);
   });
 
   // -------------------------------------------------------------------------
@@ -1216,7 +1433,12 @@ describe("logTrainingEvent", () => {
     const exerciseSnapQ = createMockQuery({
       data: [
         EXERCISE_A_PRESCRIPTION,
-        { ...EXERCISE_A_PRESCRIPTION, id: EXERCISE_B, name: "Row" },
+        {
+          ...EXERCISE_A_PRESCRIPTION,
+          id: EXERCISE_B,
+          name: "Row",
+          exercise_group: loneGroup("grp-b", 1),
+        },
       ],
       error: null,
     });
@@ -1745,6 +1967,7 @@ describe("getTrainingEventDetail", () => {
           {
             id: EXERCISE_A,
             session_id: SESSION_ID,
+            group_id: "grp-a",
             exercise_id: null,
             name: "Bench",
             order_index: 0,
@@ -1757,11 +1980,11 @@ describe("getTrainingEventDetail", () => {
             tempo: null,
             rest_seconds: 90,
             notes: null,
-            superset_group: null,
             is_warmup: false,
             is_active: true,
             created_at: "2026-05-01T00:00:00Z",
             updated_at: "2026-05-01T00:00:00Z",
+            exercise_group: liveGroupRow("grp-a", 0),
           },
         ],
       },
@@ -1817,6 +2040,127 @@ describe("getTrainingEventDetail", () => {
     expect(result!.exercises[0].source).toBe("live");
     expect(result!.sessionLog?.id).toBe(SESSION_LOG_ID);
     expect(result!.exerciseLogs).toHaveLength(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // 16b. The live session carries its groups, and the flat exercise list runs
+  //      group by group, each group's exercises in turn — never by the
+  //      exercises' own order numbers across the session.
+  // -------------------------------------------------------------------------
+  it("[16b] live path: the session's groups in order, and the exercises group by group", async () => {
+    const eventQ = createMockQuery({
+      data: {
+        id: EVENT_ID,
+        client_id: CLIENT_ID,
+        training_plan_id: "plan-1",
+        training_session_id: SESSION_ID,
+        date: "2026-05-04",
+        session_name: "Pull",
+        session_focus: null,
+        estimated_calories: null,
+        status: "scheduled",
+        session_log_id: null,
+        is_modified: false,
+        calorie_surplus_percentage: null,
+        created_at: "x",
+        updated_at: "x",
+      },
+      error: null,
+    });
+    const circuit = liveGroupRow("grp-circuit", 1, {
+      format: "circuit",
+      rounds: 3,
+      rest_between_exercises_seconds: 15,
+      rest_between_rounds_seconds: 90,
+    });
+    const exercise = (id: string, name: string, orderIndex: number, group: Record<string, unknown>) => ({
+      id,
+      session_id: SESSION_ID,
+      group_id: group.id,
+      exercise_id: null,
+      name,
+      order_index: orderIndex,
+      sets: 3,
+      reps_min: null,
+      reps_max: null,
+      reps_target: null,
+      rpe_target: null,
+      percentage_1rm: null,
+      tempo: null,
+      rest_seconds: null,
+      notes: null,
+      is_warmup: false,
+      is_active: true,
+      created_at: "x",
+      updated_at: "x",
+      exercise_group: group,
+    });
+    const sessionQ = createMockQuery({
+      data: {
+        id: SESSION_ID,
+        plan_id: "plan-1",
+        name: "Pull",
+        day_of_week: null,
+        order_index: 0,
+        focus: null,
+        notes: null,
+        estimated_duration_minutes: null,
+        estimated_calories: null,
+        calories_calculated_at: null,
+        calorie_surplus_percentage: null,
+        created_at: "x",
+        updated_at: "x",
+        // Embedded in no particular order.
+        training_exercises: [
+          exercise("ex-face-pull", "Face pull", 0, liveGroupRow("grp-last", 2)),
+          exercise("ex-row", "Row", 1, circuit),
+          exercise("ex-deadlift", "Deadlift", 0, liveGroupRow("grp-first", 0)),
+          exercise("ex-pull-up", "Pull-up", 0, circuit),
+        ],
+      },
+      error: null,
+    });
+
+    installRouter({
+      training_events: eventQ,
+      training_sessions: sessionQ,
+    });
+
+    const result = await getTrainingEventDetail(EVENT_ID, CLIENT_ID);
+
+    expect(sessionQ.select).toHaveBeenCalledWith(
+      expect.stringContaining(EXERCISE_WITH_GROUP_COLUMNS),
+    );
+    expect(result?.session.source).toBe("live");
+    if (result?.session.source === "live") {
+      const { groups } = result.session.session;
+      expect(groups.map((g) => [g.id, g.exercises.map((e) => e.name)])).toEqual([
+        ["grp-first", ["Deadlift"]],
+        ["grp-circuit", ["Pull-up", "Row"]],
+        ["grp-last", ["Face pull"]],
+      ]);
+      expect(groups[1]).toMatchObject({
+        orderIndex: 1,
+        format: "circuit",
+        rounds: 3,
+        timeCapSeconds: null,
+        intervalSeconds: null,
+        restBetweenExercisesSeconds: 15,
+        restBetweenRoundsSeconds: 90,
+        notes: null,
+      });
+      expect(sessionExercises(result.session.session).map((e) => e.id)).toEqual([
+        "ex-deadlift",
+        "ex-pull-up",
+        "ex-row",
+        "ex-face-pull",
+      ]);
+    }
+    expect(
+      result?.exercises.map((resolved) =>
+        resolved.source === "live" ? resolved.exercise.id : null,
+      ),
+    ).toEqual(["ex-deadlift", "ex-pull-up", "ex-row", "ex-face-pull"]);
   });
 
   // -------------------------------------------------------------------------
@@ -2119,6 +2463,7 @@ describe("getTrainingEventDetail", () => {
           {
             id: EXERCISE_A,
             session_id: SESSION_ID,
+            group_id: "grp-a",
             exercise_id: null,
             name: "Bench",
             order_index: 0,
@@ -2131,11 +2476,11 @@ describe("getTrainingEventDetail", () => {
             tempo: null,
             rest_seconds: null,
             notes: null,
-            superset_group: null,
             is_warmup: false,
             is_active: true,
             created_at: "x",
             updated_at: "x",
+            exercise_group: liveGroupRow("grp-a", 0),
           },
         ],
       },
@@ -2280,6 +2625,7 @@ describe("mapExerciseRow is the shared mapper, not a lossy local copy", () => {
     const mapped = mapExerciseRow({
       id: "te-1",
       session_id: "ts-1",
+      group_id: "tg-1",
       exercise_id: null,
       name: "Squats",
       order_index: 0,
@@ -2292,7 +2638,6 @@ describe("mapExerciseRow is the shared mapper, not a lossy local copy", () => {
       tempo: null,
       rest_seconds: 180,
       notes: null,
-      superset_group: null,
       is_warmup: false,
       video_url: "https://example.test/squat",
       set_specs: [
@@ -2345,7 +2690,14 @@ describe("getSessionLogDetail", () => {
     updated_at: "2026-08-24T09:00:00Z",
   };
 
-  function prescriptionRow(over: { id: string; name: string; order_index: number }) {
+  // A row of the prescription read: the exercise at `order_index` in its group,
+  // with that group embedded.
+  function prescriptionRow(over: {
+    id: string;
+    name: string;
+    order_index: number;
+    exercise_group: GroupEmbed;
+  }) {
     return {
       sets: 3,
       reps_min: 8,
@@ -2356,7 +2708,6 @@ describe("getSessionLogDetail", () => {
       tempo: null,
       rest_seconds: 90,
       notes: null,
-      superset_group: null,
       is_warmup: false,
       set_specs: null,
       prescribed_fields: null,
@@ -2405,9 +2756,20 @@ describe("getSessionLogDetail", () => {
       }),
       training_sessions: createMockQuery({ data: { name: "Push Day" }, error: null }),
       training_exercises: createMockQuery({
+        // Read in no particular order: the service puts it in authored order.
         data: [
-          prescriptionRow({ id: "ex-a", name: "Bench Press", order_index: 0 }),
-          prescriptionRow({ id: "ex-b", name: "Overhead Press", order_index: 1 }),
+          prescriptionRow({
+            id: "ex-b",
+            name: "Overhead Press",
+            order_index: 0,
+            exercise_group: loneGroup("grp-b", 1),
+          }),
+          prescriptionRow({
+            id: "ex-a",
+            name: "Bench Press",
+            order_index: 0,
+            exercise_group: loneGroup("grp-a", 0),
+          }),
         ],
         error: null,
       }),
@@ -2423,7 +2785,11 @@ describe("getSessionLogDetail", () => {
       "ex-b",
     ]);
     expect(result?.prescribedExercises[1].name).toBe("Overhead Press");
-    expect(result?.prescribedExercises[1].orderIndex).toBe(1);
+    // Its place in the session: first in the session's second group.
+    expect(result?.prescribedExercises[1].snapshot).toMatchObject({
+      order_index: 0,
+      group: { id: "grp-b", order_index: 1 },
+    });
     // The snapshot is the same snake_case shape a log carries, so both expand
     // through one function.
     expect(result?.prescribedExercises[1].snapshot).toMatchObject({
@@ -2435,6 +2801,62 @@ describe("getSessionLogDetail", () => {
     expect(result?.exerciseLogs).toHaveLength(1);
     expect(result?.exerciseLogs[0].sets).toHaveLength(1);
     expect(result?.performedSessionName).toBe("Push Day");
+  });
+
+  // -------------------------------------------------------------------------
+  // Authored order is group by group, each group's exercises in turn — never
+  // the exercises' own order numbers across the session.
+  // -------------------------------------------------------------------------
+  it("[SLD-1b] lists the prescription group by group, each group's exercises in turn", async () => {
+    const circuit: GroupEmbed = {
+      id: "grp-circuit",
+      order_index: 1,
+      format: "circuit",
+      rounds: 3,
+      time_cap_seconds: null,
+      interval_seconds: null,
+      rest_between_exercises_seconds: 15,
+      rest_between_rounds_seconds: 90,
+      notes: null,
+    };
+    installRouter({
+      session_logs: createMockQuery({ data: SESSION_LOG_ROW, error: null }),
+      exercise_logs: createMockQuery({ data: [], error: null }),
+      training_sessions: createMockQuery({ data: { name: "Pull Day" }, error: null }),
+      training_exercises: createMockQuery({
+        data: [
+          prescriptionRow({ id: "ex-row", name: "Row", order_index: 1, exercise_group: circuit }),
+          prescriptionRow({
+            id: "ex-face-pull",
+            name: "Face pull",
+            order_index: 0,
+            exercise_group: loneGroup("grp-last", 2),
+          }),
+          prescriptionRow({ id: "ex-pull-up", name: "Pull-up", order_index: 0, exercise_group: circuit }),
+          prescriptionRow({
+            id: "ex-deadlift",
+            name: "Deadlift",
+            order_index: 0,
+            exercise_group: loneGroup("grp-first", 0),
+          }),
+        ],
+        error: null,
+      }),
+    });
+
+    const result = await getSessionLogDetail(SESSION_LOG_ID);
+
+    expect(result?.prescribedExercises.map((p) => p.trainingExerciseId)).toEqual([
+      "ex-deadlift",
+      "ex-pull-up",
+      "ex-row",
+      "ex-face-pull",
+    ]);
+    expect(result?.prescribedExercises[2].snapshot).toMatchObject({
+      name: "Row",
+      order_index: 1,
+      group: circuit,
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -2488,7 +2910,14 @@ describe("getSessionLogDetail", () => {
       set_logs: createMockQuery({ data: [], error: null }),
       training_sessions: createMockQuery({ data: { name: "Push Day" }, error: null }),
       training_exercises: createMockQuery({
-        data: [prescriptionRow({ id: "ex-a", name: "Bench Press", order_index: 0 })],
+        data: [
+          prescriptionRow({
+            id: "ex-a",
+            name: "Bench Press",
+            order_index: 0,
+            exercise_group: loneGroup("grp-a", 0),
+          }),
+        ],
         error: null,
       }),
     });
@@ -2522,9 +2951,13 @@ describe("getSessionLogDetail", () => {
       "training_sessions.training_plans.client_id",
       CLIENT_ID,
     );
-    expect(trainingExercisesQ.order).toHaveBeenCalledWith("order_index", {
-      ascending: true,
-    });
+    // Authored order is not asked of the database: each row is read with the
+    // group it sits in and nested into order (SLD-1, SLD-1b).
+    expect(trainingExercisesQ.select).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "exercise_group:training_exercise_groups!training_exercises_group_fkey(",
+      ),
+    );
   });
 
   it("[SLD-5] returns null for a session log that does not exist", async () => {

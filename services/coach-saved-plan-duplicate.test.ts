@@ -47,6 +47,7 @@ const mockFrom = vi.mocked(supabaseAdmin.from);
 const exerciseRow = {
   id: "e1",
   saved_session_id: "s1",
+  group_id: "g1",
   exercise_id: "ex-9",
   name: "Bench Press",
   order_index: 0,
@@ -58,7 +59,6 @@ const exerciseRow = {
   percentage_1rm: null,
   tempo: "31X0",
   rest_seconds: 120,
-  superset_group: "A",
   is_warmup: false,
   notes: "coach note",
   set_specs: [
@@ -68,6 +68,24 @@ const exerciseRow = {
   video_url: "https://example.com/bench.mp4",
   created_at: "2026-06-01T00:00:00Z",
   updated_at: "2026-06-01T00:00:00Z",
+};
+
+// Push's one group, read with its exercise: a circuit with its settings set, so
+// a copy that dropped any of them would show.
+const groupRow = {
+  id: "g1",
+  saved_session_id: "s1",
+  order_index: 0,
+  format: "circuit",
+  rounds: 3,
+  time_cap_seconds: 600,
+  interval_seconds: null,
+  rest_between_exercises_seconds: 15,
+  rest_between_rounds_seconds: 90,
+  notes: "A",
+  created_at: "2026-06-01T00:00:00Z",
+  updated_at: "2026-06-01T00:00:00Z",
+  coach_saved_exercises: [exerciseRow],
 };
 
 const sourcePlan = {
@@ -100,7 +118,7 @@ const sourcePlan = {
       session_type: "training",
       created_at: "2026-06-01T00:00:00Z",
       updated_at: "2026-06-01T00:00:00Z",
-      coach_saved_exercises: [exerciseRow],
+      coach_saved_exercise_groups: [groupRow],
     },
     {
       id: "s2",
@@ -117,7 +135,7 @@ const sourcePlan = {
       session_type: "training",
       created_at: "2026-06-01T00:00:00Z",
       updated_at: "2026-06-01T00:00:00Z",
-      coach_saved_exercises: [],
+      coach_saved_exercise_groups: [],
     },
   ],
 };
@@ -136,6 +154,7 @@ describe("duplicateSavedPlan", () => {
     const planInsertQuery = createMockQuery({ data: { id: "plan-2" }, error: null });
     const session1InsertQuery = createMockQuery({ data: { id: "ns1" }, error: null });
     const session2InsertQuery = createMockQuery({ data: { id: "ns2" }, error: null });
+    const groupInsertQuery = createMockQuery({ data: null, error: null });
     const exerciseInsertQuery = createMockQuery({ data: null, error: null });
 
     mockFrom
@@ -144,6 +163,7 @@ describe("duplicateSavedPlan", () => {
       .mockReturnValueOnce(planInsertQuery as never)
       .mockReturnValueOnce(session1InsertQuery as never)
       .mockReturnValueOnce(session2InsertQuery as never)
+      .mockReturnValueOnce(groupInsertQuery as never)
       .mockReturnValueOnce(exerciseInsertQuery as never);
 
     const newId = await duplicateSavedPlan("plan-1", "coach-1");
@@ -165,14 +185,38 @@ describe("duplicateSavedPlan", () => {
     const s2Insert = session2InsertQuery.insert.mock.calls[0][0] as Record<string, unknown>;
     expect(s2Insert.is_rest).toBe(true);
 
+    // The groups land first, in one batch: Push's circuit copied verbatim under
+    // the new session with a fresh id; the rest day has none.
+    expect(mockFrom.mock.calls.slice(5).map(([table]) => table)).toEqual([
+      "coach_saved_exercise_groups",
+      "coach_saved_exercises",
+    ]);
+    const groupRows = groupInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(groupRows).toEqual([
+      {
+        id: expect.any(String),
+        saved_session_id: "ns1",
+        order_index: 0,
+        format: "circuit",
+        rounds: 3,
+        time_cap_seconds: 600,
+        interval_seconds: null,
+        rest_between_exercises_seconds: 15,
+        rest_between_rounds_seconds: 90,
+        notes: "A",
+      },
+    ]);
+    expect(groupRows[0].id).not.toBe("g1");
+
     // Exercise rows copied verbatim: set_specs, video_url, exercise_id intact
     const exRows = exerciseInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
     expect(exRows).toHaveLength(1);
     expect(exRows[0].saved_session_id).toBe("ns1");
+    expect(exRows[0].group_id).toBe(groupRows[0].id);
+    expect(exRows[0].order_index).toBe(0);
     expect(exRows[0].exercise_id).toBe("ex-9");
     expect(exRows[0].set_specs).toEqual(exerciseRow.set_specs);
     expect(exRows[0].video_url).toBe(exerciseRow.video_url);
-    expect(exRows[0].superset_group).toBe("A");
   });
 
   it("throws Plan not found for a foreign or missing plan", async () => {
@@ -204,6 +248,32 @@ describe("duplicateSavedPlan", () => {
     await expect(duplicateSavedPlan("plan-1", "coach-1")).rejects.toThrow(
       'Failed to copy session "Push"'
     );
+    expect(cleanupQuery.delete).toHaveBeenCalled();
+    expect(cleanupQuery.eq).toHaveBeenCalledWith("id", "plan-2");
+  });
+
+  it("cleans up the new plan row when the groups fail to copy, before any exercise is written", async () => {
+    const sourceQuery = createMockQuery({ data: sourcePlan, error: null });
+    const namesQuery = createMockQuery({ data: [], error: null });
+    const planInsertQuery = createMockQuery({ data: { id: "plan-2" }, error: null });
+    const session1InsertQuery = createMockQuery({ data: { id: "ns1" }, error: null });
+    const session2InsertQuery = createMockQuery({ data: { id: "ns2" }, error: null });
+    const groupFailQuery = createMockQuery({ data: null, error: { message: "boom" } });
+    const cleanupQuery = createMockQuery({ data: null, error: null });
+
+    mockFrom
+      .mockReturnValueOnce(sourceQuery as never)
+      .mockReturnValueOnce(namesQuery as never)
+      .mockReturnValueOnce(planInsertQuery as never)
+      .mockReturnValueOnce(session1InsertQuery as never)
+      .mockReturnValueOnce(session2InsertQuery as never)
+      .mockReturnValueOnce(groupFailQuery as never)
+      .mockReturnValueOnce(cleanupQuery as never);
+
+    await expect(duplicateSavedPlan("plan-1", "coach-1")).rejects.toThrow(
+      "Failed to copy exercises: Failed to insert saved exercise groups: boom"
+    );
+    expect(mockFrom.mock.calls.map(([table]) => table)).not.toContain("coach_saved_exercises");
     expect(cleanupQuery.delete).toHaveBeenCalled();
     expect(cleanupQuery.eq).toHaveBeenCalledWith("id", "plan-2");
   });

@@ -48,6 +48,7 @@ import { getTrainingPlanById } from "@/services/training-service";
 import { replaceSessionFull } from "@/services/training-session-replace-service";
 import { getSessionEventLinks } from "@/services/training-event-occupancy";
 import { getClientTodayString } from "@/services/today-service";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 
 const COACH_ID = "coach-1";
 const CLIENT_ID = "11111111-1111-1111-1111-111111111111";
@@ -69,28 +70,43 @@ const mockPlan = {
   sessions: [mockSession],
 } as unknown as Awaited<ReturnType<typeof getTrainingPlanById>>;
 
+const benchPress = {
+  name: "Bench Press",
+  sets: 3,
+  setSpecs: [
+    { set_number: 1, set_type: "warmup", reps_min: 10, reps_max: 12 },
+    { set_number: 2, set_type: "working", reps_min: 5, reps_max: 8 },
+  ],
+  videoUrl: "https://example.com/bench.mp4",
+};
+
 const validBody = {
   name: "Push Day A",
   focus: "Chest",
   estimatedDurationMinutes: 45,
   calorieSurplusPercentage: 15,
   notes: null,
+  groups: [{ ...STRAIGHT_SETS, exercises: [benchPress] }],
+};
+
+// A superset/circuit group with every setting set. Each exercise names its
+// isWarmup, so the parsed group is exactly this object.
+const circuitGroup = {
+  format: "circuit",
+  rounds: 3,
+  timeCapSeconds: 600,
+  intervalSeconds: 60,
+  restBetweenExercisesSeconds: 15,
+  restBetweenRoundsSeconds: 90,
+  notes: "A",
   exercises: [
-    {
-      name: "Bench Press",
-      sets: 3,
-      orderIndex: 0,
-      setSpecs: [
-        { set_number: 1, set_type: "warmup", reps_min: 10, reps_max: 12 },
-        { set_number: 2, set_type: "working", reps_min: 5, reps_max: 8 },
-      ],
-      videoUrl: "https://example.com/bench.mp4",
-    },
+    { name: "Kettlebell Swing", sets: 1, repsMin: 15, repsMax: 15, isWarmup: false },
+    { name: "Push-up", sets: 1, repsMin: 10, repsMax: 12, restSeconds: 30, isWarmup: false },
   ],
 };
 
 const replaceResult = {
-  session: { id: SESSION_ID, name: "Push Day A", exercises: [] },
+  session: { id: SESSION_ID, name: "Push Day A", groups: [] },
   surplusChanged: false,
   identityChanged: true,
 } as unknown as Awaited<ReturnType<typeof replaceSessionFull>>;
@@ -185,15 +201,29 @@ describe("PUT /api/clients/[id]/training/[planId]/sessions/[sessionId]", () => {
         fromDate: TODAY,
       }),
     );
-    // setSpecs/videoUrl must survive validation + the ExerciseInput coercion.
+    // setSpecs/videoUrl must survive validation on their way to the service.
     const input = vi.mocked(replaceSessionFull).mock.calls[0][0].input;
-    expect(input.exercises[0]).toEqual(
+    expect(sessionExercises(input)[0]).toEqual(
       expect.objectContaining({
         name: "Bench Press",
-        setSpecs: validBody.exercises[0].setSpecs,
+        setSpecs: benchPress.setSpecs,
         videoUrl: "https://example.com/bench.mp4",
       }),
     );
+  });
+
+  it("hands a circuit group to the service with its settings and exercises intact", async () => {
+    vi.mocked(replaceSessionFull).mockResolvedValue(replaceResult);
+
+    const response = await PUT(
+      makePutRequest({ ...validBody, groups: [circuitGroup] }),
+      makeParams(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(replaceSessionFull).toHaveBeenCalledTimes(1);
+    const input = vi.mocked(replaceSessionFull).mock.calls[0][0].input;
+    expect(input.groups).toEqual([circuitGroup]);
   });
 
   it("reports a surplus change on the wire — the day's computed nutrition target reads it off the event, so the route writes nothing more", async () => {

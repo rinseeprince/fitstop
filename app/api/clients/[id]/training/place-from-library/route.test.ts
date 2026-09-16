@@ -73,6 +73,7 @@ import { resolveEventDeletionFloor } from "@/services/event-deletion-floor";
 import { PlacementSupersedeError } from "@/services/library-placement-service";
 import { BlocksUnreadableError } from "@/services/client-blocks-service";
 import { BLOCKS_UNREADABLE } from "@/lib/constants";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import { POST } from "./route";
 
 const clientId = "client-1";
@@ -85,7 +86,7 @@ const inlinePlanBody = {
       name: "Push",
       orderIndex: 0,
       isRest: false,
-      exercises: [{ name: "Bench", orderIndex: 0, sets: 3 }],
+      groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench", sets: 3 }] }],
     },
   ],
 };

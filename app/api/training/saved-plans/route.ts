@@ -9,7 +9,6 @@ import {
 } from "@/services/coach-saved-plan-service";
 import { parsePaginationParams } from "@/lib/api-utils";
 import { createSavedPlanSchema } from "@/lib/validations/training";
-import type { ManualSessionDraft } from "@/types/training";
 
 // GET - List saved plans for the authenticated coach.
 // ?status=all additionally returns drafts (the Programs table surfaces them);
@@ -88,7 +87,7 @@ export async function POST(request: NextRequest) {
       coachId,
       parsed.data.name,
       parsed.data.splitType ?? null,
-      parsed.data.sessions as ManualSessionDraft[],
+      parsed.data.sessions,
       {
         description: parsed.data.description ?? null,
         defaultSurplusPercentage: parsed.data.defaultSurplusPercentage ?? null,

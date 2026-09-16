@@ -40,7 +40,7 @@ function blankSessionDraft(): SessionDraft {
     calorieSurplusPercentage: null,
     notes: null,
     sessionType: "training",
-    exercises: [],
+    groups: [],
   };
 }
 

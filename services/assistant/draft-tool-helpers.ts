@@ -5,7 +5,10 @@ import type {
   WeekDraft,
 } from "@/components/clients/training/program-builder/program-builder-types";
 import type { ProgramDraft } from "@/components/clients/training/program-builder/program-builder-types";
-import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
+import {
+  findSession,
+  normalizeDraft,
+} from "@/components/clients/training/program-builder/program-builder-model";
 import {
   applyDraftOp,
   type DraftOp,
@@ -16,6 +19,7 @@ import {
   formatSetCount,
 } from "@/components/clients/training/program-builder/progression-preview-model";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import { countSessionExercises, sessionExercises } from "@/utils/exercise-groups";
 import type { DraftWorkspace } from "./draft-workspace";
 
 // Shared plumbing for the assistant's tool executors: 1-based week/day/exercise
@@ -121,13 +125,15 @@ export function resolveExerciseRef(
   session: SessionDraft,
   ref: { exercisePosition?: number; exerciseName?: string },
 ): Resolved<{ exercise: ExerciseDraft; index: number }> {
+  // Positions count the session's exercises in order, group by group.
+  const exercises = sessionExercises(session);
   if (ref.exercisePosition != null) {
     const index = ref.exercisePosition - 1;
-    const exercise = session.exercises[index];
+    const exercise = exercises[index];
     if (!exercise) {
       return {
         ok: false,
-        error: `"${session.name}" has ${session.exercises.length} exercise(s) — position ${ref.exercisePosition} doesn't exist.`,
+        error: `"${session.name}" has ${exercises.length} exercise(s) — position ${ref.exercisePosition} doesn't exist.`,
       };
     }
     return { ok: true, value: { exercise, index } };
@@ -136,15 +142,15 @@ export function resolveExerciseRef(
   if (!query) {
     return { ok: false, error: "Provide exercisePosition or exerciseName." };
   }
-  const exact = session.exercises.findIndex((e) => e.name.trim().toLowerCase() === query);
-  if (exact >= 0) return { ok: true, value: { exercise: session.exercises[exact], index: exact } };
-  const partial = session.exercises
+  const exact = exercises.findIndex((e) => e.name.trim().toLowerCase() === query);
+  if (exact >= 0) return { ok: true, value: { exercise: exercises[exact], index: exact } };
+  const partial = exercises
     .map((e, index) => ({ e, index }))
     .filter(({ e }) => e.name.toLowerCase().includes(query));
   if (partial.length === 1) {
     return { ok: true, value: { exercise: partial[0].e, index: partial[0].index } };
   }
-  const names = session.exercises.map((e, i) => `${i + 1}. ${e.name}`).join(", ");
+  const names = exercises.map((e, i) => `${i + 1}. ${e.name}`).join(", ");
   return {
     ok: false,
     error:
@@ -152,6 +158,28 @@ export function resolveExerciseRef(
         ? `No exercise matching "${ref.exerciseName}" in "${session.name}". It has: ${names}`
         : `"${ref.exerciseName}" matches several exercises in "${session.name}": ${names}. Use exercisePosition.`,
   };
+}
+
+/**
+ * An exercise's 1-based position in its session as the working copy now
+ * stands — group by group, each group's exercises in turn, the order the model
+ * speaks — or null when it is gone. A move never splits a linked group, so a
+ * tool that moved an exercise reports where it landed, not where it was sent.
+ */
+export function exercisePositionNow(
+  ws: DraftWorkspace,
+  sessionUid: string,
+  exerciseUid: string,
+): number | null {
+  const session = findSession(ws.draft, sessionUid);
+  if (!session) return null;
+  const index = sessionExercises(session).findIndex((e) => e.uid === exerciseUid);
+  return index < 0 ? null : index + 1;
+}
+
+/** The sentence for an exercise that could not go where it was sent. */
+export function linkedGroupNote(name: string, landed: number | null, asked: number): string {
+  return `"${name}" is at position ${landed ?? "?"}, not ${asked}: exercises linked in a group stay together, so it went to the nearest place that keeps every group whole.`;
 }
 
 // --- Compact rendering for read tools ---
@@ -200,7 +228,7 @@ export function sessionDetail(session: SessionDraft, week: number, day: number):
   ]
     .filter(Boolean)
     .join(" — ");
-  const lines = session.exercises.flatMap((ex, i) => {
+  const lines = sessionExercises(session).flatMap((ex, i) => {
     const out = [exerciseLine(ex, i + 1)];
     if (ex.setSpecs) out.push(...ex.setSpecs.map((s) => `   ${specLine(s)}`));
     return out;
@@ -213,7 +241,7 @@ function weekOneLiner(week: WeekDraft): string {
   const days = week.days
     .map((slot, i) =>
       slot.session
-        ? `D${i + 1} ${slot.session.name}(${slot.session.exercises.length}ex)`
+        ? `D${i + 1} ${slot.session.name}(${countSessionExercises(slot.session)}ex)`
         : `D${i + 1} rest`,
     )
     .join(" | ");
@@ -261,7 +289,7 @@ function programFullDetail(draft: ProgramDraft): string {
         .filter(Boolean)
         .join(", ");
       lines.push(`  Day ${d + 1}: "${s.name}"${meta ? ` (${meta})` : ""}`);
-      s.exercises.forEach((ex, i) => lines.push(`    ${exerciseLine(ex, i + 1)}`));
+      sessionExercises(s).forEach((ex, i) => lines.push(`    ${exerciseLine(ex, i + 1)}`));
     });
   });
   return lines.join("\n");

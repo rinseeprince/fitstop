@@ -29,7 +29,7 @@ function sess(uid: string): SessionDraft {
     calorieSurplusPercentage: null,
     notes: null,
     sessionType: "training",
-    exercises: [],
+    groups: [],
   };
 }
 
@@ -45,7 +45,6 @@ const EXERCISE: Omit<ExerciseDraft, "uid"> = {
   percentage1rm: null,
   tempo: null,
   restSeconds: null,
-  supersetGroup: null,
   isWarmup: false,
   notes: null,
   videoUrl: null,

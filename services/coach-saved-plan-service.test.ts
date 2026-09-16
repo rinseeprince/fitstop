@@ -51,6 +51,8 @@ import {
   promoteDraftToSaved,
   getSavedPlans,
 } from "./coach-saved-plan-service";
+import { SAVED_SESSION_GROUPS_EMBED } from "@/lib/coach-mappers";
+import { sessionExercises } from "@/utils/exercise-groups";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockResolveExercises = vi.mocked(resolveExercises);
@@ -158,26 +160,42 @@ describe("coach-saved-plan-service", () => {
           calorie_surplus_percentage: null,
           notes: null,
           session_type: "training",
-          coach_saved_exercises: [
+          coach_saved_exercise_groups: [
             {
-              id: "e1",
+              id: "g1",
               saved_session_id: "s1",
-              exercise_id: "ex-1",
-              name: "Bench Press",
               order_index: 0,
-              sets: 3,
-              reps_min: null,
-              reps_max: null,
-              reps_target: "8-10",
-              rpe_target: null,
-              percentage_1rm: null,
-              tempo: null,
-              rest_seconds: 90,
-              superset_group: null,
-              is_warmup: false,
+              format: "straight_sets",
+              rounds: null,
+              time_cap_seconds: null,
+              interval_seconds: null,
+              rest_between_exercises_seconds: null,
+              rest_between_rounds_seconds: null,
               notes: null,
               created_at: "2026-04-15T12:00:00Z",
               updated_at: "2026-04-15T12:00:00Z",
+              coach_saved_exercises: [
+                {
+                  id: "e1",
+                  saved_session_id: "s1",
+                  group_id: "g1",
+                  exercise_id: "ex-1",
+                  name: "Bench Press",
+                  order_index: 0,
+                  sets: 3,
+                  reps_min: null,
+                  reps_max: null,
+                  reps_target: "8-10",
+                  rpe_target: null,
+                  percentage_1rm: null,
+                  tempo: null,
+                  rest_seconds: 90,
+                  is_warmup: false,
+                  notes: null,
+                  created_at: "2026-04-15T12:00:00Z",
+                  updated_at: "2026-04-15T12:00:00Z",
+                },
+              ],
             },
           ],
           created_at: "2026-04-15T12:00:00Z",
@@ -189,7 +207,8 @@ describe("coach-saved-plan-service", () => {
       const standaloneCheckQuery = createMockQuery({ data: null, error: null });
       // Insert standalone session
       const standaloneInsertQuery = createMockQuery({ data: { id: "standalone-1" }, error: null });
-      // Insert standalone exercises
+      // Insert the standalone copy's groups, then its exercises
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
 
       let planCallCount = 0;
@@ -207,6 +226,7 @@ describe("coach-saved-plan-service", () => {
           if (sessionCallCount === 2) return standaloneCheckQuery as any; // dedup check
           return standaloneInsertQuery as any; // insert standalone
         }
+        if (table === "coach_saved_exercise_groups") return groupInsertQuery as never;
         if (table === "coach_saved_exercises") return exerciseInsertQuery as any;
         return createMockQuery({ data: null, error: null }) as any;
       });
@@ -224,6 +244,18 @@ describe("coach-saved-plan-service", () => {
       expect(result).toEqual({});
       // Should have inserted the standalone session copy
       expect(standaloneInsertQuery.insert).toHaveBeenCalled();
+      // The plan's sessions are read with their groups and exercises, and the
+      // copy's group and exercise land under the standalone session.
+      expect(sessionsQuery.select).toHaveBeenCalledWith(`*, ${SAVED_SESSION_GROUPS_EMBED}`);
+      const [group] = groupInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expect(group).toMatchObject({ saved_session_id: "standalone-1", order_index: 0, format: "straight_sets" });
+      const [exercise] = exerciseInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expect(exercise).toMatchObject({
+        saved_session_id: "standalone-1",
+        group_id: group.id,
+        exercise_id: "ex-1",
+        name: "Bench Press",
+      });
     });
 
     it("skips standalone creation when saveSessionsIndividually is false", async () => {
@@ -313,26 +345,42 @@ describe("coach-saved-plan-service", () => {
               session_type: "training",
               created_at: "2026-04-15T12:00:00Z",
               updated_at: "2026-04-15T12:00:00Z",
-              coach_saved_exercises: [
+              coach_saved_exercise_groups: [
                 {
-                  id: "e1",
+                  id: "g1",
                   saved_session_id: "s1",
-                  exercise_id: "ex-1",
-                  name: "Bench Press",
                   order_index: 0,
-                  sets: 3,
-                  reps_min: null,
-                  reps_max: null,
-                  reps_target: "8-10",
-                  rpe_target: null,
-                  percentage_1rm: null,
-                  tempo: null,
-                  rest_seconds: 90,
-                  superset_group: null,
-                  is_warmup: false,
+                  format: "straight_sets",
+                  rounds: null,
+                  time_cap_seconds: null,
+                  interval_seconds: null,
+                  rest_between_exercises_seconds: null,
+                  rest_between_rounds_seconds: null,
                   notes: null,
                   created_at: "2026-04-15T12:00:00Z",
                   updated_at: "2026-04-15T12:00:00Z",
+                  coach_saved_exercises: [
+                    {
+                      id: "e1",
+                      saved_session_id: "s1",
+                      group_id: "g1",
+                      exercise_id: "ex-1",
+                      name: "Bench Press",
+                      order_index: 0,
+                      sets: 3,
+                      reps_min: null,
+                      reps_max: null,
+                      reps_target: "8-10",
+                      rpe_target: null,
+                      percentage_1rm: null,
+                      tempo: null,
+                      rest_seconds: 90,
+                      is_warmup: false,
+                      notes: null,
+                      created_at: "2026-04-15T12:00:00Z",
+                      updated_at: "2026-04-15T12:00:00Z",
+                    },
+                  ],
                 },
               ],
             },
@@ -356,8 +404,12 @@ describe("coach-saved-plan-service", () => {
       expect(plans[0].name).toBe("PPL");
       expect(plans[0].sessions).toHaveLength(1);
       expect(plans[0].sessions[0].name).toBe("Push");
-      expect(plans[0].sessions[0].exercises).toHaveLength(1);
-      expect(plans[0].sessions[0].exercises[0].name).toBe("Bench Press");
+      expect(plans[0].sessions[0].groups).toHaveLength(1);
+      expect(sessionExercises(plans[0].sessions[0])).toHaveLength(1);
+      expect(sessionExercises(plans[0].sessions[0])[0].name).toBe("Bench Press");
+      expect(plansQuery.select).toHaveBeenCalledWith(
+        `*, coach_saved_sessions(*, ${SAVED_SESSION_GROUPS_EMBED})`
+      );
     });
   });
 

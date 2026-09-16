@@ -24,6 +24,7 @@ import {
   THUMB_CLASS,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
+import { countSessionExercises } from "@/utils/exercise-groups";
 
 // Sessions tab of the builder library panel (S4.5). Grew out of the old
 // Grip-only draggable card that inserts a
@@ -83,7 +84,7 @@ function LibrarySessionCard({
           {session.name}
         </div>
         <div className={cn("mt-0.5", MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-          {session.exercises.length} exercises
+          {countSessionExercises(session)} exercises
           {session.estimatedDurationMinutes != null &&
             ` · ${session.estimatedDurationMinutes} min`}
         </div>

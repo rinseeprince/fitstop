@@ -7,37 +7,43 @@ vi.mock("./supabase-admin", () => ({
   },
 }));
 
+// The row mappers stand in as plain wrappers so this file tests the service's
+// wiring: the rows re-read after the write become the returned session's groups.
 vi.mock("./training-mappers", () => ({
-  mapExerciseRow: vi.fn((row: unknown) => row),
-  mapSessionRow: vi.fn((row: Record<string, unknown>, exercises: unknown[]) => ({
+  mapExerciseRowsToGroups: vi.fn((rows: unknown[]) => [{ id: "grp-1", exercises: rows }]),
+  mapSessionRow: vi.fn((row: Record<string, unknown>, groups: unknown[]) => ({
     ...row,
-    exercises,
+    groups,
   })),
 }));
 
 vi.mock("./training-session-service", () => ({
   bulkReplaceExercises: vi.fn(),
+  readActiveExerciseRows: vi.fn(),
   updateSurplusForFutureEvents: vi.fn(),
 }));
 
 import { supabaseAdmin } from "./supabase-admin";
 import {
   bulkReplaceExercises,
+  readActiveExerciseRows,
   updateSurplusForFutureEvents,
 } from "./training-session-service";
-import type { ExerciseInput } from "./training-session-service";
+import type { TrainingGroupWrite } from "./training-group-writes";
+import type { TrainingExerciseWithGroupRow } from "./training-mappers";
 import { replaceSessionFull } from "./training-session-replace-service";
 import { SessionLoggedError } from "./training-event-occupancy";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockBulkReplace = vi.mocked(bulkReplaceExercises);
+const mockReadActiveRows = vi.mocked(readActiveExerciseRows);
 const mockSurplusUpdate = vi.mocked(updateSurplusForFutureEvents);
 
 type ChainResult = { data: unknown; error: { message: string } | null };
 
 // One fake per from() call: every builder method returns the chain; maybeSingle/
-// single resolve the result; awaiting the chain itself (rename .select("id"),
-// exercises .order()) resolves it too.
+// single resolve the result; awaiting the chain itself (rename .select("id"))
+// resolves it too.
 function makeChain(result: ChainResult) {
   const fns = {
     select: vi.fn(),
@@ -90,17 +96,27 @@ const updatedRow = {
   is_rest: false,
 };
 
-const exercisesWithSpecs: ExerciseInput[] = [
+const groupsWithSpecs: TrainingGroupWrite[] = [
   {
-    name: "Bench Press",
-    sets: 3,
-    orderIndex: 0,
-    exerciseId: null,
-    setSpecs: [
-      { set_number: 1, set_type: "warmup", reps_min: 10, reps_max: 12 },
-      { set_number: 2, set_type: "working", reps_min: 5, reps_max: 8 },
+    format: "circuit",
+    rounds: 3,
+    timeCapSeconds: null,
+    intervalSeconds: null,
+    restBetweenExercisesSeconds: 15,
+    restBetweenRoundsSeconds: 90,
+    notes: "Back to back",
+    exercises: [
+      {
+        name: "Bench Press",
+        sets: 3,
+        exerciseId: null,
+        setSpecs: [
+          { set_number: 1, set_type: "warmup", reps_min: 10, reps_max: 12 },
+          { set_number: 2, set_type: "working", reps_min: 5, reps_max: 8 },
+        ],
+        videoUrl: "https://example.com/bench.mp4",
+      },
     ],
-    videoUrl: "https://example.com/bench.mp4",
   },
 ];
 
@@ -111,7 +127,7 @@ function makeInput(overrides: Record<string, unknown> = {}) {
     estimatedDurationMinutes: 60,
     calorieSurplusPercentage: 10,
     notes: null,
-    exercises: exercisesWithSpecs,
+    groups: groupsWithSpecs,
     ...overrides,
   };
 }
@@ -149,6 +165,7 @@ function baseParams(input = makeInput()) {
 describe("replaceSessionFull", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockReadActiveRows.mockResolvedValue([]);
   });
 
   it("rejects a session that isn't owned by the client/plan before any write", async () => {
@@ -171,27 +188,27 @@ describe("replaceSessionFull", () => {
     expect(mockBulkReplace).not.toHaveBeenCalled();
   });
 
-  it("passes exercises to bulkReplaceExercises verbatim (setSpecs/videoUrl survive) and writes no events when nothing propagates", async () => {
+  it("passes the groups to bulkReplaceExercises verbatim (settings, setSpecs/videoUrl survive) and writes no events when nothing propagates", async () => {
     const read = makeChain({ data: currentRow, error: null });
     const links = linksChain(SCHEDULED_LINK);
     const update = makeChain({ data: updatedRow, error: null });
-    const exercisesRead = makeChain({ data: [{ id: "ex-1" }], error: null });
+    const replacedRows = [{ id: "ex-1" }] as unknown as TrainingExerciseWithGroupRow[];
+    mockReadActiveRows.mockResolvedValue(replacedRows);
     mockFrom
       .mockReturnValueOnce(read.chain)
       .mockReturnValueOnce(links.chain)
-      .mockReturnValueOnce(update.chain)
-      .mockReturnValueOnce(exercisesRead.chain);
+      .mockReturnValueOnce(update.chain);
 
     const result = await replaceSessionFull(baseParams());
 
-    // Verbatim: the SAME array reference, specs and video untouched.
+    // Verbatim: the SAME array reference, settings, specs and video untouched.
     expect(mockBulkReplace).toHaveBeenCalledWith(
       SESSION_ID,
-      exercisesWithSpecs,
+      groupsWithSpecs,
       COACH_ID,
       CLIENT_ID,
     );
-    expect(mockBulkReplace.mock.calls[0][1]).toBe(exercisesWithSpecs);
+    expect(mockBulkReplace.mock.calls[0][1]).toBe(groupsWithSpecs);
 
     // No-change input: the ONLY training_events call is the lock read, and it
     // writes nothing. (It used to be "no training_events touch at all"; the
@@ -204,8 +221,17 @@ describe("replaceSessionFull", () => {
     expect(result.surplusChanged).toBe(false);
     expect(result.identityChanged).toBe(false);
 
+    // The session comes back with the exercises as re-read AFTER the write, in
+    // their groups.
+    expect(mockReadActiveRows).toHaveBeenCalledWith(SESSION_ID);
+    expect(mockReadActiveRows.mock.invocationCallOrder[0]).toBeGreaterThan(
+      update.fns.update.mock.invocationCallOrder[0],
+    );
     expect(result.session).toEqual(
-      expect.objectContaining({ id: SESSION_ID, exercises: [{ id: "ex-1" }] }),
+      expect.objectContaining({
+        id: SESSION_ID,
+        groups: [{ id: "grp-1", exercises: [{ id: "ex-1" }] }],
+      }),
     );
 
     expect(update.fns.update).toHaveBeenCalledWith(
@@ -226,13 +252,11 @@ describe("replaceSessionFull", () => {
       error: null,
     });
     const rename = makeChain({ data: [{ id: "ev-1" }, { id: "ev-2" }], error: null });
-    const exercisesRead = makeChain({ data: [], error: null });
     mockFrom
       .mockReturnValueOnce(read.chain)
       .mockReturnValueOnce(linksChain(SCHEDULED_LINK).chain)
       .mockReturnValueOnce(update.chain)
-      .mockReturnValueOnce(rename.chain)
-      .mockReturnValueOnce(exercisesRead.chain);
+      .mockReturnValueOnce(rename.chain);
 
     const result = await replaceSessionFull(
       baseParams(makeInput({ name: "Push Day A", focus: "Chest + Tris" })),
@@ -260,13 +284,11 @@ describe("replaceSessionFull", () => {
       data: { ...updatedRow, calorie_surplus_percentage: 20 },
       error: null,
     });
-    const exercisesRead = makeChain({ data: [], error: null });
     const links = linksChain(SCHEDULED_LINK);
     mockFrom
       .mockReturnValueOnce(read.chain)
       .mockReturnValueOnce(links.chain)
-      .mockReturnValueOnce(update.chain)
-      .mockReturnValueOnce(exercisesRead.chain);
+      .mockReturnValueOnce(update.chain);
     mockSurplusUpdate.mockResolvedValue(undefined);
 
     const result = await replaceSessionFull(
@@ -304,7 +326,6 @@ describe("replaceSessionFull", () => {
   it("still replaces a session whose events are all scheduled", async () => {
     const read = makeChain({ data: currentRow, error: null });
     const update = makeChain({ data: updatedRow, error: null });
-    const exercisesRead = makeChain({ data: [], error: null });
     mockFrom
       .mockReturnValueOnce(read.chain)
       .mockReturnValueOnce(
@@ -313,8 +334,7 @@ describe("replaceSessionFull", () => {
           { date: "2026-08-03", status: "scheduled" },
         ]).chain,
       )
-      .mockReturnValueOnce(update.chain)
-      .mockReturnValueOnce(exercisesRead.chain);
+      .mockReturnValueOnce(update.chain);
 
     await expect(replaceSessionFull(baseParams())).resolves.toBeDefined();
     expect(mockBulkReplace).toHaveBeenCalledTimes(1);
@@ -326,13 +346,11 @@ describe("replaceSessionFull", () => {
       data: { ...updatedRow, calorie_surplus_percentage: null },
       error: null,
     });
-    const exercisesRead = makeChain({ data: [], error: null });
     const links = linksChain(SCHEDULED_LINK);
     mockFrom
       .mockReturnValueOnce(read.chain)
       .mockReturnValueOnce(links.chain)
-      .mockReturnValueOnce(update.chain)
-      .mockReturnValueOnce(exercisesRead.chain);
+      .mockReturnValueOnce(update.chain);
     mockSurplusUpdate.mockResolvedValue(undefined);
 
     const result = await replaceSessionFull(

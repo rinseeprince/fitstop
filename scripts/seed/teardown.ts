@@ -49,6 +49,7 @@ export const TEARDOWN_ORDER: readonly string[] = [
   "nutrition_plans",
   "training_events",
   "training_exercises",
+  "training_exercise_groups",
   "training_sessions",
   "training_plans",
   "daily_habits",

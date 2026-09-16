@@ -6,16 +6,20 @@ import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { cloneSessionForEvent } from "@/services/training-session-service";
 import { SessionLoggedError } from "@/services/training-event-occupancy";
-import { bulkExerciseInputSchema } from "@/lib/validations/training";
+import { bulkExerciseGroupsSchema } from "@/lib/validations/training";
 import { z } from "zod";
 
-// Same bounded item schema as the sibling PUT exercises route (M13) — the two
+// Same bounded groups schema as the sibling PUT session route (M13) — the two
 // buttons of the save-scope dialog are fed by the same payload builder and must
-// validate identically.
-const cloneSchema = z.object({
-  eventId: z.string().uuid(),
-  exercises: z.array(bulkExerciseInputSchema).max(50).optional(),
-});
+// validate identically. Strict: a body without `groups` clones the session's
+// original exercises, so an unknown key (a stale editor's `exercises` list) is
+// refused rather than dropped, which would clone without the coach's edits.
+const cloneSchema = z
+  .object({
+    eventId: z.string().uuid(),
+    groups: bulkExerciseGroupsSchema.optional(),
+  })
+  .strict();
 
 /**
  * POST - Clone a session for a specific event (edit-just-this-day).
@@ -64,26 +68,12 @@ export async function POST(
       );
     }
 
-    const exerciseOverrides = validation.data.exercises?.map((e) => ({
-      ...e,
-      exerciseId: e.exerciseId ?? null,
-      repsMin: e.repsMin ?? null,
-      repsMax: e.repsMax ?? null,
-      repsTarget: e.repsTarget ?? null,
-      rpeTarget: e.rpeTarget ?? null,
-      restSeconds: e.restSeconds ?? null,
-      tempo: e.tempo ?? null,
-      percentage1rm: e.percentage1rm ?? null,
-      supersetGroup: e.supersetGroup ?? null,
-      notes: e.notes ?? null,
-    }));
-
     const newSessionId = await cloneSessionForEvent(
       sessionId,
       validation.data.eventId,
       clientId,
       coachId,
-      exerciseOverrides
+      validation.data.groups
     );
 
     return NextResponse.json({ success: true, newSessionId }, { status: 200 });

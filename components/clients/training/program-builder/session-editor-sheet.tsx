@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import type { SessionDraft } from "./program-builder-types";
 import { SessionEditorBody, type SessionEditorBodyProps } from "./session-editor-body";
 import { SessionHero } from "./session-hero";
+import { countSessionExercises } from "@/utils/exercise-groups";
 
 // Click-to-edit chrome for one day cell's session: the editor body in a right
 // slide-over. Write-through — "Save program" on the page is the commit point,
@@ -74,7 +75,7 @@ export function SessionEditorSheet({
               sessionUid={session.uid}
               name={session.name}
               focus={session.focus}
-              exerciseCount={session.exercises.length}
+              exerciseCount={countSessionExercises(session)}
               durationMinutes={session.estimatedDurationMinutes}
               calorieSurplusPercentage={session.calorieSurplusPercentage}
               defaultSurplusPercentage={bodyProps.defaultSurplusPercentage}

@@ -39,6 +39,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { getClientById } from "@/services/client-service";
 import { getTrainingPlanById } from "@/services/training-service";
 import { cloneSessionForEvent } from "@/services/training-session-service";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 
 const COACH_ID = "coach-1";
 const CLIENT_ID = "11111111-1111-1111-1111-111111111111";
@@ -60,7 +61,23 @@ const mockPlan = {
 
 const validBody = {
   eventId: EVENT_ID,
-  exercises: [{ name: "Bench Press", sets: 3, orderIndex: 0 }],
+  groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench Press", sets: 3 }] }],
+};
+
+// A superset/circuit group with every setting set. Each exercise names its
+// isWarmup, so the parsed group is exactly this object.
+const circuitGroup = {
+  format: "circuit",
+  rounds: 3,
+  timeCapSeconds: 600,
+  intervalSeconds: 60,
+  restBetweenExercisesSeconds: 15,
+  restBetweenRoundsSeconds: 90,
+  notes: "A",
+  exercises: [
+    { name: "Kettlebell Swing", sets: 1, repsMin: 15, repsMax: 15, isWarmup: false },
+    { name: "Push-up", sets: 1, repsMin: 10, repsMax: 12, restSeconds: 30, isWarmup: false },
+  ],
 };
 
 function makeParams() {
@@ -101,7 +118,30 @@ describe("POST /api/clients/[id]/training/[planId]/sessions/[sessionId]/clone", 
       EVENT_ID,
       CLIENT_ID,
       COACH_ID,
-      expect.arrayContaining([expect.objectContaining({ name: "Bench Press" })]),
+      expect.arrayContaining([
+        expect.objectContaining({
+          exercises: expect.arrayContaining([expect.objectContaining({ name: "Bench Press" })]),
+        }),
+      ]),
+    );
+  });
+
+  it("hands a circuit group to the service with its settings and exercises intact", async () => {
+    vi.mocked(cloneSessionForEvent).mockResolvedValue("new-session-1");
+
+    const response = await POST(
+      makeRequest({ eventId: EVENT_ID, groups: [circuitGroup] }),
+      makeParams(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(cloneSessionForEvent).toHaveBeenCalledTimes(1);
+    expect(cloneSessionForEvent).toHaveBeenCalledWith(
+      SESSION_ID,
+      EVENT_ID,
+      CLIENT_ID,
+      COACH_ID,
+      [circuitGroup],
     );
   });
 
@@ -160,6 +200,22 @@ describe("POST /api/clients/[id]/training/[planId]/sessions/[sessionId]/clone", 
 
   it("400s an invalid body without touching the service", async () => {
     const response = await POST(makeRequest({ eventId: "not-a-uuid" }), makeParams());
+
+    expect(response.status).toBe(400);
+    expect(cloneSessionForEvent).not.toHaveBeenCalled();
+  });
+
+  // Without `groups` the clone copies the session's original exercises, so a
+  // body still carrying the old flat `exercises` list (an editor loaded before
+  // groups) must be refused rather than cloned without the coach's edits.
+  it("400s a body carrying an exercises list instead of groups, without cloning", async () => {
+    const response = await POST(
+      makeRequest({
+        eventId: EVENT_ID,
+        exercises: [{ name: "Bench Press", sets: 4 }],
+      }),
+      makeParams(),
+    );
 
     expect(response.status).toBe(400);
     expect(cloneSessionForEvent).not.toHaveBeenCalled();

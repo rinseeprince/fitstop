@@ -18,7 +18,6 @@ function makeExercise(overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
     percentage1rm: null,
     tempo: null,
     restSeconds: 120,
-    supersetGroup: null,
     isWarmup: false,
     notes: null,
     videoUrl: null,

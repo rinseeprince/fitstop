@@ -67,6 +67,7 @@ import { getAuthenticatedCoachId } from "@/lib/auth-helpers";
 import { coachApiRateLimit } from "@/lib/rate-limit";
 import { requireCSRFProtection } from "@/lib/csrf-protection";
 import { BLOCKS_UNREADABLE } from "@/lib/constants";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 
 const CLIENT_ID = "c0000000-0000-4000-8000-000000000001";
 const PLAN_ID = "a0000000-0000-4000-8000-000000000001";
@@ -106,7 +107,7 @@ const planForEditing: PlanForEditing = {
       estimatedDurationMinutes: 60,
       notes: null,
       calorieSurplusPercentage: 10,
-      exercises: [],
+      groups: [],
     },
   ],
   version: "eyJmcm9tIjoiMjAyNi0wOS0xMCJ9",
@@ -118,7 +119,7 @@ const sessions = Array.from({ length: 7 }, (_, i) => ({
   orderIndex: i,
   weekIndex: 0,
   isRest: i !== 0,
-  exercises: i === 0 ? [{ name: "Bench press", orderIndex: 0, sets: 3 }] : [],
+  groups: i === 0 ? [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench press", sets: 3 }] }] : [],
 }));
 const validBody = {
   sessions,

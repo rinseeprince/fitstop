@@ -8,10 +8,12 @@ import {
   newUid,
   type DaySlotDraft,
   type ExerciseDraft,
+  type ExerciseGroupDraft,
   type ProgramDraft,
   type SessionDraft,
   type WeekDraft,
 } from "./program-builder-types";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 
 // Pure model helpers for the builder draft tree — normalization, cloning, and
 // lookups. Kept free of React so the state hook stays thin and these are unit
@@ -34,14 +36,23 @@ function normalizeExercise(e: ExerciseDraft): ExerciseDraft {
   };
 }
 
+function normalizeSession(session: SessionDraft): SessionDraft {
+  return {
+    ...session,
+    // Every exercise sits in a group and a group holds at least one: a group
+    // its last exercise left goes with it.
+    groups: session.groups
+      .filter((group) => group.exercises.length > 0)
+      .map((group) => ({ ...group, exercises: group.exercises.map(normalizeExercise) })),
+  };
+}
+
 function normalizeSlot(slot: DaySlotDraft, orderIndex: number): DaySlotDraft {
   return {
     ...slot,
     orderIndex,
     isRest: slot.session == null,
-    session: slot.session
-      ? { ...slot.session, exercises: slot.session.exercises.map(normalizeExercise) }
-      : null,
+    session: slot.session ? normalizeSession(slot.session) : null,
   };
 }
 
@@ -77,7 +88,15 @@ function cloneExercise(e: ExerciseDraft): ExerciseDraft {
 }
 
 function cloneSession(s: SessionDraft): SessionDraft {
-  return { ...s, uid: newUid("sess"), exercises: s.exercises.map(cloneExercise) };
+  return {
+    ...s,
+    uid: newUid("sess"),
+    groups: s.groups.map((group) => ({
+      ...group,
+      uid: newUid("grp"),
+      exercises: group.exercises.map(cloneExercise),
+    })),
+  };
 }
 
 export function cloneWeek(w: WeekDraft): WeekDraft {
@@ -116,18 +135,16 @@ export function progressWeek(
   let weekChanged = false;
   const days = week.days.map((slot) => {
     if (!slot.session) return slot;
-    let sessionChanged = false;
-    const exercises = slot.session.exercises.map((ex) => {
+    const session = mapSessionExercises(slot.session, (ex) => {
       if (!inScope(ex)) return ex;
       const result = progressExercise(ex, rule);
       if (!result) return ex;
-      sessionChanged = true;
       changedExerciseUids.add(ex.uid);
       return { ...ex, ...result };
     });
-    if (!sessionChanged) return slot;
+    if (session === slot.session) return slot;
     weekChanged = true;
-    return { ...slot, session: { ...slot.session, exercises } };
+    return { ...slot, session };
   });
   return {
     week: weekChanged ? { ...week, days } : week,
@@ -174,6 +191,102 @@ export function mapSession(
   );
 }
 
+// =============================================================================
+// exercises within a session's groups
+// =============================================================================
+
+/** A lone exercise's group: straight sets, holding just `exercise`. */
+export function straightSetsGroup(uid: string, exercise: ExerciseDraft): ExerciseGroupDraft {
+  return { uid, ...STRAIGHT_SETS, exercises: [exercise] };
+}
+
+/**
+ * Apply `fn` to every exercise of a session, wherever its group. A group none
+ * of whose exercises changed keeps its reference, and a session nothing
+ * changed in comes back as the same reference.
+ */
+export function mapSessionExercises(
+  session: SessionDraft,
+  fn: (exercise: ExerciseDraft) => ExerciseDraft,
+): SessionDraft {
+  let changed = false;
+  const groups = session.groups.map((group) => {
+    let groupChanged = false;
+    const exercises = group.exercises.map((exercise) => {
+      const next = fn(exercise);
+      if (next !== exercise) groupChanged = true;
+      return next;
+    });
+    if (!groupChanged) return group;
+    changed = true;
+    return { ...group, exercises };
+  });
+  return changed ? { ...session, groups } : session;
+}
+
+/**
+ * Remove one exercise from its group; a group left empty goes with it. The
+ * same reference when the session holds no such exercise.
+ */
+export function removeSessionExercise(session: SessionDraft, exerciseUid: string): SessionDraft {
+  let found = false;
+  const groups = session.groups.flatMap((group) => {
+    const exercises = group.exercises.filter((e) => e.uid !== exerciseUid);
+    if (exercises.length === group.exercises.length) return [group];
+    found = true;
+    return exercises.length > 0 ? [{ ...group, exercises }] : [];
+  });
+  return found ? { ...session, groups } : session;
+}
+
+/**
+ * Move an exercise to `toIndex` in the session's exercise order (group by
+ * group, each group's exercises in turn), never splitting a group: a lone
+ * exercise's group moves among the groups, to the first group boundary at or
+ * after `toIndex` — for a session of lone exercises exactly an array move — and
+ * an exercise that shares its group moves within that group. The same reference
+ * when nothing moves or the exercise is absent.
+ */
+export function moveSessionExercise(
+  session: SessionDraft,
+  exerciseUid: string,
+  toIndex: number,
+): SessionDraft {
+  const total = sessionExercises(session).length;
+  const groupIndex = session.groups.findIndex((g) => g.exercises.some((e) => e.uid === exerciseUid));
+  if (groupIndex < 0 || total === 0) return session;
+  const target = Math.max(0, Math.min(total - 1, toIndex));
+  const group = session.groups[groupIndex];
+
+  if (group.exercises.length > 1) {
+    const start = sessionExercises({ groups: session.groups.slice(0, groupIndex) }).length;
+    const from = group.exercises.findIndex((e) => e.uid === exerciseUid);
+    const to = Math.max(0, Math.min(group.exercises.length - 1, target - start));
+    if (from === to) return session;
+    const exercises = [...group.exercises];
+    const [moved] = exercises.splice(from, 1);
+    exercises.splice(to, 0, moved);
+    const groups = [...session.groups];
+    groups[groupIndex] = { ...group, exercises };
+    return { ...session, groups };
+  }
+
+  const rest = session.groups.filter((_, i) => i !== groupIndex);
+  let start = 0;
+  let insertAt = rest.length;
+  for (let i = 0; i < rest.length; i++) {
+    if (start >= target) {
+      insertAt = i;
+      break;
+    }
+    start += rest[i].exercises.length;
+  }
+  if (insertAt === groupIndex) return session;
+  const groups = [...rest];
+  groups.splice(insertAt, 0, group);
+  return { ...session, groups };
+}
+
 /** True when applying `patch` to `obj` would change at least one field. */
 export function patchChanges<T extends object>(obj: T, patch: Partial<T>): boolean {
   return Object.entries(patch).some(
@@ -211,7 +324,6 @@ export function defaultExerciseDraftFromCatalog({
     percentage1rm: null,
     tempo: null,
     restSeconds: null,
-    supersetGroup: null,
     isWarmup: false,
     notes: null,
     videoUrl: null,

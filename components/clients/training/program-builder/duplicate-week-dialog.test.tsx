@@ -2,8 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import type { Exercise } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 import { DuplicateWeekDialog } from "./duplicate-week-dialog";
-import { makeRestWeek, type ExerciseDraft, type WeekDraft } from "./program-builder-types";
+import {
+  makeRestWeek,
+  type ExerciseDraft,
+  type ExerciseGroupDraft,
+  type WeekDraft,
+} from "./program-builder-types";
 
 const catalogState: {
   exercises: Exercise[];
@@ -52,13 +58,17 @@ function draftExercise(over: Partial<ExerciseDraft>): ExerciseDraft {
     percentage1rm: null,
     tempo: null,
     restSeconds: null,
-    supersetGroup: null,
     isWarmup: false,
     notes: null,
     videoUrl: null,
     prescribedFields: null,
     ...over,
   };
+}
+
+// A lone exercise: a straight-sets group of one.
+function lone(exercise: ExerciseDraft): ExerciseGroupDraft {
+  return { uid: `grp-${exercise.uid}`, ...STRAIGHT_SETS, exercises: [exercise] };
 }
 
 const working = (n: number, load: number, reps: [number, number]): SetSpec => ({
@@ -94,19 +104,21 @@ function makeWeek(): WeekDraft {
       calorieSurplusPercentage: 12,
       notes: null,
       sessionType: "training",
-      exercises: [
-        draftExercise({
-          uid: "ex-bench",
-          exerciseId: "e-bench",
-          name: "Bench Press",
-          setSpecs: [
-            { set_number: 1, set_type: "warmup", load_type: "absolute", load_value: 60 },
-            working(2, 100, [8, 10]),
-            working(3, 90, [8, 10]),
-            working(4, 90, [8, 10]),
-          ],
-        }),
-        draftExercise({ uid: "ex-curl", exerciseId: null, name: "Cable Curl" }),
+      groups: [
+        lone(
+          draftExercise({
+            uid: "ex-bench",
+            exerciseId: "e-bench",
+            name: "Bench Press",
+            setSpecs: [
+              { set_number: 1, set_type: "warmup", load_type: "absolute", load_value: 60 },
+              working(2, 100, [8, 10]),
+              working(3, 90, [8, 10]),
+              working(4, 90, [8, 10]),
+            ],
+          }),
+        ),
+        lone(draftExercise({ uid: "ex-curl", exerciseId: null, name: "Cable Curl" })),
       ],
     },
   };
@@ -161,12 +173,12 @@ describe("DuplicateWeekDialog", () => {
     expect(onCommit).toHaveBeenCalledTimes(1);
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
     expect(committed.uid).not.toBe(week.uid);
-    const bench = committed.days[0].session!.exercises[0];
+    const bench = sessionExercises(committed.days[0].session!)[0];
     expect(bench.uid).not.toBe("ex-bench");
     expect(bench.setSpecs!.map((s) => s.load_value)).toEqual([60, 102.5, 92.5, 92.5]);
     expect(committed.days[0].session!.calorieSurplusPercentage).toBe(12);
     // the frozen source is untouched
-    expect(week.days[0].session!.exercises[0].setSpecs!.map((s) => s.load_value)).toEqual([
+    expect(sessionExercises(week.days[0].session!)[0].setSpecs!.map((s) => s.load_value)).toEqual([
       60, 100, 90, 90,
     ]);
   });
@@ -180,7 +192,7 @@ describe("DuplicateWeekDialog", () => {
 
     fireEvent.click(commitButton());
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
-    const [bench, curl] = committed.days[0].session!.exercises;
+    const [bench, curl] = sessionExercises(committed.days[0].session!);
     expect(bench.setSpecs![1].reps_min).toBe(9);
     expect(curl.setSpecs).toBeNull(); // stayed compact: rule never touched it
   });
@@ -197,7 +209,7 @@ describe("DuplicateWeekDialog", () => {
 
     fireEvent.click(commitButton());
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
-    const [bench, curl] = committed.days[0].session!.exercises;
+    const [bench, curl] = sessionExercises(committed.days[0].session!);
     expect(bench.setSpecs![1].reps_min).toBe(8); // unchecked: untouched
     // compact-only curl materialized with 10-12 -> 11-13
     expect(curl.setSpecs!.every((s) => s.reps_min === 11 && s.reps_max === 13)).toBe(true);
@@ -225,7 +237,7 @@ describe("DuplicateWeekDialog", () => {
 
     fireEvent.click(commitButton());
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
-    const [bench, curl] = committed.days[0].session!.exercises;
+    const [bench, curl] = sessionExercises(committed.days[0].session!);
     // warm-up + first two working sets survive; the LAST working set was removed
     expect(bench.setSpecs!.map((s) => [s.set_type, s.load_value])).toEqual([
       ["warmup", 60],
@@ -270,7 +282,7 @@ describe("DuplicateWeekDialog", () => {
     fireEvent.click(commitButton());
     const committed = onCommit.mock.calls[0][0] as WeekDraft;
     expect(
-      committed.days[0].session!.exercises[0].setSpecs!.map((s) => s.load_value),
+      sessionExercises(committed.days[0].session!)[0].setSpecs!.map((s) => s.load_value),
     ).toEqual([60, 100, 90, 90]);
   });
 

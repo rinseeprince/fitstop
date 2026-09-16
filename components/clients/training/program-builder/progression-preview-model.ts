@@ -9,6 +9,7 @@ import {
 import type { Exercise } from "@/types/training";
 import type { ExerciseDraft, WeekDraft } from "./program-builder-types";
 import { formatLoad, type UnitSystem } from "@/utils/unit-conversions";
+import { sessionExercises } from "@/utils/exercise-groups";
 
 // Pure view-model for the duplicate-week progression preview: pairs the
 // source week with its progressed clone POSITIONALLY (progressWeek never
@@ -139,8 +140,11 @@ export function buildPreviewRows(
   source.days.forEach((slot, dayIndex) => {
     const progressedSession = progressed.days[dayIndex]?.session;
     if (!slot.session || !progressedSession) return;
-    const rows = slot.session.exercises.map((before, i): ProgressionPreviewRow => {
-      const after = progressedSession.exercises[i];
+    // progressWeek keeps every group and exercise in place, so the two
+    // sessions' exercise orders pair up position by position.
+    const progressedExercises = sessionExercises(progressedSession);
+    const rows = sessionExercises(slot.session).map((before, i): ProgressionPreviewRow => {
+      const after = progressedExercises[i];
       const changed = after != null && changedExerciseUids.has(after.uid);
       return {
         uid: after?.uid ?? before.uid,

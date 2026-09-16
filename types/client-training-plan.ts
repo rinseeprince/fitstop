@@ -1,8 +1,10 @@
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import type { GroupSettings } from "@/utils/exercise-groups";
 
 export type ClientTrainingExercise = {
   id: string;
   name: string;
+  // Position in its group.
   orderIndex: number;
   sets: number;
   repsMin: number | null;
@@ -12,7 +14,6 @@ export type ClientTrainingExercise = {
   tempo: string | null;
   restSeconds: number | null;
   isWarmup: boolean;
-  supersetGroup: string | null;
   // Per-set prescription (authoritative when present) + optional demo video,
   // threaded to the client for log-form seeding and display.
   setSpecs: SetSpec[] | null;
@@ -21,6 +22,15 @@ export type ClientTrainingExercise = {
   // the client renders only what is listed, so this is what a coach's column
   // picker actually controls.
   prescribedFields: string[] | null;
+};
+
+// A session's group (migration 178): its settings and its exercises in order.
+// orderIndex is the group's position in the session. A lone exercise is a
+// straight-sets group of one.
+export type ClientTrainingExerciseGroup = GroupSettings & {
+  id: string;
+  orderIndex: number;
+  exercises: ClientTrainingExercise[];
 };
 
 export type ClientTrainingSessionEntry = {
@@ -33,7 +43,8 @@ export type ClientTrainingSessionEntry = {
   weekIndex?: number;
   isRest: boolean;
   estimatedDurationMinutes: number | null;
-  exercises: ClientTrainingExercise[];
+  // [] when isRest.
+  groups: ClientTrainingExerciseGroup[];
 };
 
 /**

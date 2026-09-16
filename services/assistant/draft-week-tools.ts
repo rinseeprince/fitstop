@@ -14,6 +14,7 @@ import {
 } from "@/utils/progression-rules";
 import { formatLoads } from "@/components/clients/training/program-builder/progression-preview-model";
 import { matchExerciseInRows } from "@/services/exercise-catalog-service";
+import { sessionExercises } from "@/utils/exercise-groups";
 import type { DraftWorkspace } from "./draft-workspace";
 import { commitOp, resolveWeek } from "./draft-tool-helpers";
 
@@ -37,8 +38,9 @@ function loadChanges(before: WeekDraft, after: WeekDraft): string[] {
   before.days.forEach((slot, d) => {
     const afterSession = after.days[d]?.session;
     if (!slot.session || !afterSession) return;
-    slot.session.exercises.forEach((ex, i) => {
-      const next = afterSession.exercises[i];
+    const afterExercises = sessionExercises(afterSession);
+    sessionExercises(slot.session).forEach((ex, i) => {
+      const next = afterExercises[i];
       if (!next || seen.has(ex.name)) return;
       // Pinned to metric, NOT the coach's preference: the assistant speaks
       // canonical kilograms everywhere (this file's own WireRule "load_kg",
@@ -210,7 +212,9 @@ export function buildWeekTools(ws: DraftWorkspace) {
         const inScope = generated.days.reduce(
           (sum, slot) =>
             sum +
-            (slot.session?.exercises.filter((e) => !e.isWarmup && predicate(e)).length ?? 0),
+            (slot.session
+              ? sessionExercises(slot.session).filter((e) => !e.isWarmup && predicate(e)).length
+              : 0),
           0,
         );
         const label =

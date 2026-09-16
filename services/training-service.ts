@@ -1,7 +1,13 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { TrainingPlan, TrainingSession, TrainingExercise, UpdateTrainingPlanRequest } from "@/types/training";
+import type { TrainingPlan, TrainingSession, UpdateTrainingPlanRequest } from "@/types/training";
 import type { TrainingPlanUpdate } from "@/lib/database-helpers";
-import { mapExerciseRow, mapSessionRow, mapPlanRow } from "./training-mappers";
+import {
+  EXERCISE_WITH_GROUP_COLUMNS,
+  mapExerciseRowsToGroupsBySession,
+  mapPlanRow,
+  mapSessionRow,
+  type TrainingExerciseWithGroupRow,
+} from "./training-mappers";
 import { getClientTodayString } from "@/services/today-service";
 import { fetchAllByChunkedIds } from "@/lib/paged-fetch";
 import { coversDate } from "./training-plan-window";
@@ -35,30 +41,25 @@ const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSessi
   // threshold showed its first few exercises and then stopped. This read feeds
   // getActiveTrainingPlan, which reaches the client dashboard, the coach
   // nutrition page and the check-in AI prompt.
-  const exerciseRows = await fetchAllByChunkedIds(sessionIds, (chunk, from, to) =>
-    supabaseAdmin
-      .from("training_exercises")
-      .select("*")
-      .in("session_id", chunk)
-      .eq("is_active", true)
-      .order("session_id", { ascending: true })
-      .order("order_index", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, to),
+  const exerciseRows = await fetchAllByChunkedIds<TrainingExerciseWithGroupRow, string>(
+    sessionIds,
+    (chunk, from, to) =>
+      supabaseAdmin
+        .from("training_exercises")
+        .select(EXERCISE_WITH_GROUP_COLUMNS)
+        .in("session_id", chunk)
+        .eq("is_active", true)
+        .order("session_id", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
     { errorLabel: "exercises" },
   );
 
-  const exercisesBySession = new Map<string, TrainingExercise[]>();
-  for (const row of exerciseRows) {
-    const sessionId = row.session_id;
-    if (!exercisesBySession.has(sessionId)) {
-      exercisesBySession.set(sessionId, []);
-    }
-    exercisesBySession.get(sessionId)!.push(mapExerciseRow(row));
-  }
+  // Each session's exercises in their groups, in order.
+  const groupsBySession = mapExerciseRowsToGroupsBySession(exerciseRows);
 
   return sessionList.map((sessionRow) =>
-    mapSessionRow(sessionRow, exercisesBySession.get(sessionRow.id) || [])
+    mapSessionRow(sessionRow, groupsBySession.get(sessionRow.id) ?? [])
   );
 };
 

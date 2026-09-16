@@ -18,6 +18,7 @@ import {
   TEXT_MUTED,
   TEXT_PRIMARY,
 } from "./builder-tokens";
+import { countSessionExercises } from "@/utils/exercise-groups";
 
 // Rest-cell popover (mockup `pop`): pick a library session to clone into the
 // day, or hand off to the routed create-blank slide-over. Anchored to the
@@ -152,7 +153,7 @@ export function AddSessionPopover({
                     {session.name}
                   </span>
                   <span className={cn(MONO_LABEL_CLASS, "normal-case tracking-normal")}>
-                    {session.exercises.length} exercises
+                    {countSessionExercises(session)} exercises
                     {session.estimatedDurationMinutes != null &&
                       ` · ${session.estimatedDurationMinutes} min`}
                   </span>

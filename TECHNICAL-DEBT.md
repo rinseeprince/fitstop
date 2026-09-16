@@ -180,12 +180,11 @@ Logged: 2026-07-02.
 
 ---
 
-## Exercise columns with no authoring path — `superset_group` / `is_warmup`
+## Exercise column with no authoring path — `is_warmup`
 
-- **`superset_group` has zero readers.** Every reference is serialize/map/write plumbing; nothing renders it. It round-trips through the columns and drafts and is displayed nowhere.
 - **`is_warmup` is read but no longer written.** Its remaining render branches live in the client tracker (`components/client-portal/training/exercise-tracker-block.tsx`); its last writer (the legacy calendar drawer's add-exercise dialog, plus the drawer's exercise row) was deleted with the drawer in the placed-plan editing overhaul — the builder-grade tray authors warm-ups as per-set `set_type` inside `set_specs` instead.
-- **Why neither is dropped:** removing either column needs a migration plus a data audit ("does anything readable still carry a non-default value?"), and `is_warmup` additionally needs its authoring surface and render branches retired first.
-- **Rule until then:** keep splatting both fields at every clone/insert site — a write path that drops them silently rewrites existing prescriptions. Add no new UI for either.
+- **Why it is not dropped:** removing the column needs a migration plus a data audit ("does anything readable still carry a non-default value?"), and its render branches retired first.
+- **Rule until then:** keep splatting it at every clone/insert site — a write path that drops it silently rewrites existing prescriptions. Add no new UI for it.
 
 ---
 

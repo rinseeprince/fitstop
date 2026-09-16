@@ -1,10 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { arrayMove } from "@dnd-kit/sortable";
+import { STRAIGHT_SETS, sessionExercises, type GroupSettings } from "@/utils/exercise-groups";
 import { useProgramBuilderState, findSession } from "./use-program-builder-state";
 import {
   DAYS_PER_WEEK,
   MAX_WEEKS,
   makeRestWeek,
+  type ExerciseDraft,
+  type ExerciseGroupDraft,
   type ProgramDraft,
   type SessionDraft,
 } from "./program-builder-types";
@@ -133,32 +137,37 @@ describe("useProgramBuilderState — weeks", () => {
           calorieSurplusPercentage: null,
           notes: null,
           sessionType: "training",
-          exercises: [
+          groups: [
             {
-              uid: "ex-in",
-              exerciseId: null,
-              name: "Row",
-              setSpecs: [],
-              sets: 3,
-              repsMin: 8,
-              repsMax: 10,
-              repsTarget: null,
-              rpeTarget: null,
-              percentage1rm: null,
-              tempo: null,
-              restSeconds: null,
-              supersetGroup: null,
-              isWarmup: false,
-              notes: null,
-              videoUrl: null,
-              prescribedFields: null,
+              uid: "grp-in",
+              ...STRAIGHT_SETS,
+              exercises: [
+                {
+                  uid: "ex-in",
+                  exerciseId: null,
+                  name: "Row",
+                  setSpecs: [],
+                  sets: 3,
+                  repsMin: 8,
+                  repsMax: 10,
+                  repsTarget: null,
+                  rpeTarget: null,
+                  percentage1rm: null,
+                  tempo: null,
+                  restSeconds: null,
+                  isWarmup: false,
+                  notes: null,
+                  videoUrl: null,
+                  prescribedFields: null,
+                },
+              ],
             },
           ],
         },
       };
       result.current.insertWeekAfter(source.uid, incoming);
     });
-    expect(sessionAt(result.current.draft!, 1, 0)!.exercises[0].setSpecs).toBeNull();
+    expect(sessionExercises(sessionAt(result.current.draft!, 1, 0)!)[0].setSpecs).toBeNull();
   });
 
   it("deleteWeek is a no-op at one week (min-1 invariant)", () => {
@@ -253,7 +262,7 @@ describe("useProgramBuilderState — placeSession (library insert)", () => {
     calorieSurplusPercentage: 10,
     notes: null,
     sessionType: "training",
-    exercises: [],
+    groups: [],
   });
 
   it("inserts a pre-built SessionDraft into an empty slot and dirties", () => {
@@ -305,7 +314,6 @@ describe("useProgramBuilderState — exercises + normalize", () => {
     percentage1rm: null,
     tempo: null,
     restSeconds: null,
-    supersetGroup: null,
     isWarmup: false,
     notes: null,
     videoUrl: null,
@@ -319,15 +327,15 @@ describe("useProgramBuilderState — exercises + normalize", () => {
 
     act(() => result.current.addExercise(sessionUid, baseExercise));
     let session = findSession(result.current.draft, sessionUid)!;
-    expect(session.exercises).toHaveLength(1);
-    const exUid = session.exercises[0].uid;
+    expect(sessionExercises(session)).toHaveLength(1);
+    const exUid = sessionExercises(session)[0].uid;
 
     act(() => result.current.updateExercise(sessionUid, exUid, { name: "Incline Bench" }));
     session = findSession(result.current.draft, sessionUid)!;
-    expect(session.exercises[0].name).toBe("Incline Bench");
+    expect(sessionExercises(session)[0].name).toBe("Incline Bench");
 
     act(() => result.current.removeExercise(sessionUid, exUid));
-    expect(findSession(result.current.draft, sessionUid)!.exercises).toHaveLength(0);
+    expect(sessionExercises(findSession(result.current.draft, sessionUid)!)).toHaveLength(0);
   });
 
   it("normalize reverts an empty setSpecs array to null (never serialize [])", () => {
@@ -335,10 +343,10 @@ describe("useProgramBuilderState — exercises + normalize", () => {
     act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
     const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
     act(() => result.current.addExercise(sessionUid, baseExercise));
-    const exUid = findSession(result.current.draft, sessionUid)!.exercises[0].uid;
+    const exUid = sessionExercises(findSession(result.current.draft, sessionUid)!)[0].uid;
 
     act(() => result.current.updateExercise(sessionUid, exUid, { setSpecs: [] }));
-    expect(findSession(result.current.draft, sessionUid)!.exercises[0].setSpecs).toBeNull();
+    expect(sessionExercises(findSession(result.current.draft, sessionUid)!)[0].setSpecs).toBeNull();
   });
 
   it("normalize renumbers set_number after spec updates", () => {
@@ -346,7 +354,7 @@ describe("useProgramBuilderState — exercises + normalize", () => {
     act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
     const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
     act(() => result.current.addExercise(sessionUid, baseExercise));
-    const exUid = findSession(result.current.draft, sessionUid)!.exercises[0].uid;
+    const exUid = sessionExercises(findSession(result.current.draft, sessionUid)!)[0].uid;
 
     act(() =>
       result.current.updateExercise(sessionUid, exUid, {
@@ -356,8 +364,223 @@ describe("useProgramBuilderState — exercises + normalize", () => {
         ],
       }),
     );
-    const specs = findSession(result.current.draft, sessionUid)!.exercises[0].setSpecs!;
+    const specs = sessionExercises(findSession(result.current.draft, sessionUid)!)[0].setSpecs!;
     expect(specs.map((s) => s.set_number)).toEqual([1, 2]);
+  });
+});
+
+describe("useProgramBuilderState — exercises sit in groups", () => {
+  const SESSION_UID = "sess-groups";
+
+  // What a catalog pick hands addExercise.
+  const PICKED: Omit<ExerciseDraft, "uid"> = {
+    exerciseId: null,
+    name: "Row",
+    setSpecs: null,
+    sets: 4,
+    repsMin: 6,
+    repsMax: 10,
+    repsTarget: null,
+    rpeTarget: null,
+    percentage1rm: null,
+    tempo: null,
+    restSeconds: null,
+    isWarmup: false,
+    notes: null,
+    videoUrl: null,
+    prescribedFields: null,
+  };
+
+  const exercise = (uid: string, name: string): ExerciseDraft => ({ ...PICKED, uid, name });
+  const A = exercise("ex-a", "Bench");
+  const B = exercise("ex-b", "Pull-up");
+  const C = exercise("ex-c", "Dip");
+  const D = exercise("ex-d", "Curl");
+
+  // A lone exercise: a straight-sets group of one.
+  const lone = (ex: ExerciseDraft): ExerciseGroupDraft => ({
+    uid: `grp-${ex.uid}`,
+    ...STRAIGHT_SETS,
+    exercises: [ex],
+  });
+
+  // Settings a lone exercise never carries.
+  const CIRCUIT: GroupSettings = {
+    format: "circuit",
+    rounds: 3,
+    timeCapSeconds: null,
+    intervalSeconds: null,
+    restBetweenExercisesSeconds: 15,
+    restBetweenRoundsSeconds: 90,
+    notes: "Pull-up and dip back to back",
+  };
+
+  // Bench alone, Pull-up + Dip as one two-exercise circuit, Curl alone.
+  const grouped = (): ExerciseGroupDraft[] => [
+    lone(A),
+    { uid: "grp-bc", ...CIRCUIT, exercises: [B, C] },
+    lone(D),
+  ];
+
+  function seedSession(groups: ExerciseGroupDraft[]) {
+    const draft = makeDraft(1);
+    draft.weeks[0].days[0] = {
+      ...draft.weeks[0].days[0],
+      isRest: false,
+      session: {
+        uid: SESSION_UID,
+        name: "Upper",
+        focus: null,
+        estimatedDurationMinutes: null,
+        calorieSurplusPercentage: null,
+        notes: null,
+        sessionType: "training",
+        groups,
+      },
+    };
+    const hook = renderHook(() => useProgramBuilderState());
+    act(() => hook.result.current.seed(draft));
+    return hook;
+  }
+
+  const sessionOf = (hook: ReturnType<typeof seedSession>) =>
+    findSession(hook.result.current.draft, SESSION_UID)!;
+
+  it("addExercise appends a straight-sets group of one holding the new exercise", () => {
+    const hook = seedSession([lone(A)]);
+
+    act(() => hook.result.current.addExercise(SESSION_UID, PICKED));
+    const groups = sessionOf(hook).groups;
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toEqual(lone(A));
+    expect(groups[1]).toEqual({
+      uid: expect.stringMatching(/^grp-/),
+      format: "straight_sets",
+      rounds: null,
+      timeCapSeconds: null,
+      intervalSeconds: null,
+      restBetweenExercisesSeconds: null,
+      restBetweenRoundsSeconds: null,
+      notes: null,
+      exercises: [{ ...PICKED, uid: expect.stringMatching(/^ex-/) }],
+    });
+    expect(groups[1].uid).not.toBe(groups[0].uid);
+    expect(hook.result.current.isDirty).toBe(true);
+
+    // The next pick is a group of its own, never a second exercise of the last one.
+    act(() => hook.result.current.addExercise(SESSION_UID, { ...PICKED, name: "Curl" }));
+    const next = sessionOf(hook).groups;
+    expect(next.map((g) => g.exercises.map((e) => e.name))).toEqual([["Bench"], ["Row"], ["Curl"]]);
+    expect(next[2]).toMatchObject(STRAIGHT_SETS);
+    expect(new Set(next.map((g) => g.uid)).size).toBe(3);
+  });
+
+  it("removeExercise drops the group its last exercise leaves, and keeps a two-exercise group with its settings", () => {
+    const hook = seedSession(grouped());
+
+    // Bench was alone: its group goes with it.
+    act(() => hook.result.current.removeExercise(SESSION_UID, "ex-a"));
+    expect(sessionOf(hook).groups).toEqual([
+      { uid: "grp-bc", ...CIRCUIT, exercises: [B, C] },
+      lone(D),
+    ]);
+
+    // One of the circuit's two leaves: the circuit stays, uid and settings and all.
+    act(() => hook.result.current.removeExercise(SESSION_UID, "ex-b"));
+    expect(sessionOf(hook).groups).toEqual([
+      { uid: "grp-bc", ...CIRCUIT, exercises: [C] },
+      lone(D),
+    ]);
+
+    // Its last one leaves: now the circuit goes too.
+    act(() => hook.result.current.removeExercise(SESSION_UID, "ex-c"));
+    expect(sessionOf(hook).groups).toEqual([lone(D)]);
+  });
+
+  it("updateExercise inside a two-exercise group changes only that exercise; the group keeps its uid and settings", () => {
+    const hook = seedSession(grouped());
+
+    act(() =>
+      hook.result.current.updateExercise(SESSION_UID, "ex-c", { name: "Ring dip", sets: 5 }),
+    );
+    expect(sessionOf(hook).groups).toEqual([
+      lone(A),
+      { uid: "grp-bc", ...CIRCUIT, exercises: [B, { ...C, name: "Ring dip", sets: 5 }] },
+      lone(D),
+    ]);
+    expect(hook.result.current.isDirty).toBe(true);
+  });
+
+  it("reorderExercise over lone exercises gives the order an array move gives, for every pair", () => {
+    const order = ["ex-a", "ex-b", "ex-c", "ex-d"];
+    order.forEach((active, from) => {
+      order.forEach((over, to) => {
+        if (from === to) return;
+        const hook = seedSession([lone(A), lone(B), lone(C), lone(D)]);
+
+        act(() => hook.result.current.reorderExercise(SESSION_UID, active, over));
+        const moved = arrayMove(order, from, to);
+        const session = sessionOf(hook);
+        expect(sessionExercises(session).map((e) => e.uid), `${active} over ${over}`).toEqual(moved);
+        // Each exercise moves with its own group of one.
+        expect(session.groups.map((g) => g.uid), `${active} over ${over}`).toEqual(
+          moved.map((uid) => `grp-${uid}`),
+        );
+        expect(session.groups.every((g) => g.exercises.length === 1)).toBe(true);
+        hook.unmount();
+      });
+    });
+  });
+
+  it("reorderExercise moves an exercise of a two-exercise group within its group only", () => {
+    const cases: Array<[active: string, over: string, circuit: ExerciseDraft[]]> = [
+      ["ex-b", "ex-c", [C, B]],
+      ["ex-c", "ex-b", [C, B]],
+      // Dropped past its group's edge, it stops at that edge.
+      ["ex-b", "ex-d", [C, B]],
+      ["ex-c", "ex-a", [C, B]],
+      // Already at the edge it was dropped past: nothing moves.
+      ["ex-b", "ex-a", [B, C]],
+      ["ex-c", "ex-d", [B, C]],
+    ];
+    for (const [active, over, circuit] of cases) {
+      const hook = seedSession(grouped());
+
+      act(() => hook.result.current.reorderExercise(SESSION_UID, active, over));
+      expect(sessionOf(hook).groups, `${active} over ${over}`).toEqual([
+        lone(A),
+        { uid: "grp-bc", ...CIRCUIT, exercises: circuit },
+        lone(D),
+      ]);
+      hook.unmount();
+    }
+  });
+
+  it("reorderExercise never splits a two-exercise group, whichever exercise moves over whichever", () => {
+    const order = ["ex-a", "ex-b", "ex-c", "ex-d"];
+    for (const active of order) {
+      for (const over of order) {
+        if (active === over) continue;
+        const hook = seedSession(grouped());
+
+        act(() => hook.result.current.reorderExercise(SESSION_UID, active, over));
+        const session = sessionOf(hook);
+        expect(session.groups, `${active} over ${over}`).toHaveLength(3);
+        // Every group still holds exactly the exercises it held.
+        expect(
+          Object.fromEntries(
+            session.groups.map((g) => [g.uid, g.exercises.map((e) => e.uid).sort()]),
+          ),
+          `${active} over ${over}`,
+        ).toEqual({
+          "grp-ex-a": ["ex-a"],
+          "grp-bc": ["ex-b", "ex-c"],
+          "grp-ex-d": ["ex-d"],
+        });
+        expect(session.groups.find((g) => g.uid === "grp-bc")).toMatchObject(CIRCUIT);
+        hook.unmount();
+      }
+    }
   });
 });
 

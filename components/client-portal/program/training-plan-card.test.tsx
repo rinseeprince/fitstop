@@ -36,7 +36,7 @@ function makePlan(overrides: Partial<ClientTrainingPlan> = {}): ClientTrainingPl
         orderIndex: 0,
         isRest: false,
         estimatedDurationMinutes: 60,
-        exercises: [],
+        groups: [],
       },
       {
         id: "s-1",
@@ -45,7 +45,7 @@ function makePlan(overrides: Partial<ClientTrainingPlan> = {}): ClientTrainingPl
         orderIndex: 1,
         isRest: false,
         estimatedDurationMinutes: 60,
-        exercises: [],
+        groups: [],
       },
       {
         id: "rest-2",
@@ -54,7 +54,7 @@ function makePlan(overrides: Partial<ClientTrainingPlan> = {}): ClientTrainingPl
         orderIndex: 2,
         isRest: true,
         estimatedDurationMinutes: null,
-        exercises: [],
+        groups: [],
       },
       {
         id: "s-3",
@@ -63,7 +63,7 @@ function makePlan(overrides: Partial<ClientTrainingPlan> = {}): ClientTrainingPl
         orderIndex: 3,
         isRest: false,
         estimatedDurationMinutes: 70,
-        exercises: [],
+        groups: [],
       },
       {
         id: "rest-4",
@@ -72,7 +72,7 @@ function makePlan(overrides: Partial<ClientTrainingPlan> = {}): ClientTrainingPl
         orderIndex: 4,
         isRest: true,
         estimatedDurationMinutes: null,
-        exercises: [],
+        groups: [],
       },
     ],
     ...overrides,

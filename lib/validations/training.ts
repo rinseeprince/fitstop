@@ -1,6 +1,15 @@
 import { z } from "zod";
 import { LOAD_KG_MAX } from "@/lib/constants";
 import { MAX_PRESCRIBED_ROWS } from "@/utils/set-spec-rows";
+import {
+  GROUP_FORMATS,
+  GROUP_INTERVAL_SECONDS_MAX,
+  GROUP_NOTES_MAX,
+  GROUP_REST_SECONDS_MAX,
+  GROUP_ROUNDS_MAX,
+  GROUP_TIME_CAP_SECONDS_MAX,
+  MAX_EXERCISES_PER_SESSION,
+} from "@/utils/exercise-groups";
 import type { TrainingPlan } from "@/types/training";
 
 export const planStatusSchema = z.enum(["active", "archived", "draft", "planned"]);
@@ -19,7 +28,6 @@ export const exerciseSchema = z.object({
   tempo: z.string().max(20).optional().nullable(),
   restSeconds: z.number().int().min(0).max(600).optional().nullable(),
   notes: z.string().max(500).optional().nullable(),
-  supersetGroup: z.string().max(10).optional().nullable(),
   isWarmup: z.boolean().optional().default(false),
 });
 
@@ -109,7 +117,6 @@ const videoUrlSchema = z
 const savedExerciseInputSchema = z.object({
   name: z.string().min(1).max(200),
   exerciseId: z.string().uuid().nullish(),
-  orderIndex: z.number().int().min(0),
   sets: z.number().int().min(1).max(20),
   repsMin: z.number().int().min(0).max(100).nullish(),
   repsMax: z.number().int().min(0).max(100).nullish(),
@@ -119,7 +126,6 @@ const savedExerciseInputSchema = z.object({
   tempo: z.string().max(20).nullish(),
   restSeconds: z.number().int().min(0).max(600).nullish(),
   notes: z.string().max(500).nullish(),
-  supersetGroup: z.string().max(10).nullish(),
   isWarmup: z.boolean().optional(),
   setSpecs: setSpecsArraySchema.nullish(),
   videoUrl: videoUrlSchema,
@@ -133,14 +139,48 @@ const savedExerciseInputSchema = z.object({
 // to match authoring + the ABSENT reps DB CHECK. Carries setSpecs + (scheme-safe)
 // videoUrl so editing one exercise does NOT silently NULL the coach's per-set
 // programming — projectExerciseCompact writes whatever it receives, so an
-// omitted field became null. Adds orderIndex + exerciseId.
+// omitted field became null. Adds exerciseId.
 export const bulkExerciseInputSchema = exerciseSchema.extend({
-  orderIndex: z.number().int().min(0),
   exerciseId: z.string().uuid().nullish(),
   setSpecs: setSpecsArraySchema.nullish(),
   videoUrl: videoUrlSchema,
   prescribedFields: prescribedFieldsSchema,
 });
+
+// A session's groups on every write path (migration 178): each group's settings
+// and its exercises, both in order — a position is an element's place in its
+// array, never a field. Every exercise sits in a group, so a group holds at
+// least one; the session's cap counts exercises across all of its groups.
+const groupSettingsInputShape = {
+  format: z.enum(GROUP_FORMATS),
+  rounds: z.number().int().min(1).max(GROUP_ROUNDS_MAX).nullish(),
+  timeCapSeconds: z.number().int().min(1).max(GROUP_TIME_CAP_SECONDS_MAX).nullish(),
+  intervalSeconds: z.number().int().min(1).max(GROUP_INTERVAL_SECONDS_MAX).nullish(),
+  restBetweenExercisesSeconds: z.number().int().min(0).max(GROUP_REST_SECONDS_MAX).nullish(),
+  restBetweenRoundsSeconds: z.number().int().min(0).max(GROUP_REST_SECONDS_MAX).nullish(),
+  notes: z.string().max(GROUP_NOTES_MAX).nullish(),
+};
+
+function exerciseGroupsSchema<E extends z.ZodTypeAny>(exercise: E) {
+  return z
+    .array(
+      z.object({
+        ...groupSettingsInputShape,
+        exercises: z.array(exercise).min(1).max(MAX_EXERCISES_PER_SESSION),
+      }),
+    )
+    .max(MAX_EXERCISES_PER_SESSION)
+    .refine(
+      (groups) =>
+        groups.reduce((sum, group) => sum + group.exercises.length, 0) <=
+        MAX_EXERCISES_PER_SESSION,
+      { message: `A session holds at most ${MAX_EXERCISES_PER_SESSION} exercises` },
+    );
+}
+
+export const savedExerciseGroupsSchema = exerciseGroupsSchema(savedExerciseInputSchema);
+export const bulkExerciseGroupsSchema = exerciseGroupsSchema(bulkExerciseInputSchema);
+export type SavedExerciseGroupInput = z.infer<typeof savedExerciseGroupsSchema>[number];
 
 // Full replace of a PLACED session (meta + exercises) — the calendar tray's
 // "All occurrences" save (PUT sessions/[sessionId]). Duration uses the authoring
@@ -153,7 +193,7 @@ export const replaceSessionSchema = z.object({
   estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
   calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
   notes: z.string().max(1000).nullish(),
-  exercises: z.array(bulkExerciseInputSchema).max(50),
+  groups: bulkExerciseGroupsSchema,
 });
 
 export const savedSessionInputSchema = z.object({
@@ -168,7 +208,7 @@ export const savedSessionInputSchema = z.object({
   calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
   notes: z.string().max(1000).nullish(),
   sessionType: z.string().max(50).nullish(),
-  exercises: z.array(savedExerciseInputSchema).max(50),
+  groups: savedExerciseGroupsSchema,
 });
 
 // Save the plan editor (PUT .../training/[planId]/edit). The body is the WHOLE
@@ -217,32 +257,23 @@ export const createSavedPlanSchema = z.object({
     name: z.string().min(1).max(100),
     focus: z.string().max(200).optional(),
     isRest: z.boolean().optional(),
-    exercises: z.array(z.object({
-      tempId: z.string().optional(),
-      name: z.string().min(1).max(200),
-      sets: z.number().int().min(1).max(20),
-      repsTarget: z.string().max(20).optional(),
-      rpeTarget: z.number().min(0).max(10).optional(),
-      restSeconds: z.number().int().min(0).max(600).optional(),
-      notes: z.string().max(500).optional(),
-    })).max(50),
+    groups: savedExerciseGroupsSchema,
   })).max(364),
 });
+export type CreateSavedPlanBody = z.infer<typeof createSavedPlanSchema>;
 
 // Full-fat standalone-session body, shared by create and overwrite: the
 // builder's create-blank slide-over, save-day-as-workout, and the Sessions
 // page editor all persist authored sessions here, so the exercise shape must
 // match the overwrite input (setSpecs, videoUrl, exerciseId, ...) — a
-// narrower schema would silently strip per-set data. orderIndex is optional
-// (the service assigns array order); the legacy minimal shape ({name, sets})
-// stays valid.
+// narrower schema would silently strip per-set data.
 const standaloneSessionBodySchema = z.object({
   name: z.string().min(1).max(100),
   focus: z.string().max(200).nullish(),
   estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
   calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
   notes: z.string().max(1000).nullish(),
-  exercises: z.array(savedExerciseInputSchema.partial({ orderIndex: true })).max(50),
+  groups: savedExerciseGroupsSchema,
 });
 
 // dedupeName: server-side " (copy N)" rename on name conflict (used by the
@@ -436,10 +467,13 @@ const trainingPlanResponseSchema = z.object({
     id: z.string(),
     planId: z.string(),
     name: z.string(),
-    exercises: z.array(z.object({
+    groups: z.array(z.object({
       id: z.string(),
-      name: z.string(),
-      sets: z.number(),
+      exercises: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        sets: z.number(),
+      }).passthrough()),
     }).passthrough()),
   }).passthrough()),
   createdAt: z.string(),

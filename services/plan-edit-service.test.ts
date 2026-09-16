@@ -34,6 +34,8 @@ import {
 import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
 import type { ProgramDraft } from "@/components/clients/training/program-builder/program-builder-types";
 import { planEditSaveSchema } from "@/lib/validations/training";
+import { EXERCISE_WITH_GROUP_COLUMNS } from "./training-mappers";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockRpc = vi.mocked(supabaseAdmin.rpc);
@@ -215,16 +217,37 @@ function sessionRow(id: string, name: string, extra: Row = {}): Row {
   };
 }
 
-function exerciseRow(
+/** A group row at `orderIndex` in its session: straight sets, every setting null, unless `extra` says otherwise. */
+function groupRow(id: string, sessionId: string, orderIndex: number, extra: Row = {}): Row {
+  return {
+    id,
+    session_id: sessionId,
+    order_index: orderIndex,
+    format: "straight_sets",
+    rounds: null,
+    time_cap_seconds: null,
+    interval_seconds: null,
+    rest_between_exercises_seconds: null,
+    rest_between_rounds_seconds: null,
+    notes: null,
+    created_at: ROW_UPDATED_AT,
+    updated_at: ROW_UPDATED_AT,
+    ...extra,
+  };
+}
+
+/** An exercise row at `orderIndex` in `group`, read with that group embedded. */
+function groupedExerciseRow(
   id: string,
-  sessionId: string,
+  group: Row,
   name: string,
   orderIndex: number,
   extra: Row = {},
 ): Row {
   return {
     id,
-    session_id: sessionId,
+    session_id: group.session_id,
+    group_id: group.id,
     exercise_id: null,
     name,
     order_index: orderIndex,
@@ -237,7 +260,6 @@ function exerciseRow(
     tempo: null,
     rest_seconds: null,
     notes: null,
-    superset_group: null,
     is_warmup: false,
     set_specs: null,
     video_url: null,
@@ -245,8 +267,21 @@ function exerciseRow(
     is_active: true,
     created_at: ROW_UPDATED_AT,
     updated_at: ROW_UPDATED_AT,
+    // The exercise_group embed the read selects (EXERCISE_WITH_GROUP_COLUMNS).
+    exercise_group: group,
     ...extra,
   };
+}
+
+/** A lone exercise: alone in its own straight-sets group, that group at `position` in the session. */
+function exerciseRow(
+  id: string,
+  sessionId: string,
+  name: string,
+  position: number,
+  extra: Row = {},
+): Row {
+  return groupedExerciseRow(id, groupRow(`grp-${id}`, sessionId, position), name, 0, extra);
 }
 
 async function open(): Promise<PlanForEditing> {
@@ -371,13 +406,69 @@ describe("getPlanForEditing", () => {
       estimatedDurationMinutes: 60,
       notes: "Pause the reps",
     });
-    expect(push.exercises.map((exercise) => exercise.name)).toEqual(["Bench press", "Dips"]);
-    expect(push.exercises[0]).toMatchObject({
+    expect(sessionExercises(push).map((exercise) => exercise.name)).toEqual(["Bench press", "Dips"]);
+    expect(sessionExercises(push)[0]).toMatchObject({
       id: "x-bench",
       sessionId: PUSH,
+      groupId: "grp-x-bench",
       orderIndex: 0,
       sets: 5,
     });
+  });
+
+  it("gives a day its groups in order, each with its settings and its exercises in order", async () => {
+    const PUSH = rowId(1);
+    const CIRCUIT = groupRow("grp-circuit", PUSH, 1, {
+      format: "circuit",
+      rounds: 3,
+      time_cap_seconds: 600,
+      interval_seconds: null,
+      rest_between_exercises_seconds: 15,
+      rest_between_rounds_seconds: 90,
+      notes: "Back to back",
+    });
+    const reads = mockTables({
+      sessions: [sessionRow(PUSH, "Push")],
+      events: [event(eventId(1), 0, PUSH)],
+      exercises: [
+        groupedExerciseRow("x-flyes", CIRCUIT, "Flyes", 1),
+        exerciseRow("x-bench", PUSH, "Bench press", 0),
+        groupedExerciseRow("x-dips", CIRCUIT, "Dips", 0),
+        groupedExerciseRow("x-pushup", CIRCUIT, "Push-up", 2, { is_active: false }),
+      ],
+    });
+
+    const push = sessionDay((await open()).days[0]);
+
+    expect(push.groups).toEqual([
+      expect.objectContaining({
+        id: "grp-x-bench",
+        sessionId: PUSH,
+        orderIndex: 0,
+        ...STRAIGHT_SETS,
+        exercises: [expect.objectContaining({ id: "x-bench", groupId: "grp-x-bench", orderIndex: 0 })],
+      }),
+      expect.objectContaining({
+        id: "grp-circuit",
+        sessionId: PUSH,
+        orderIndex: 1,
+        format: "circuit",
+        rounds: 3,
+        timeCapSeconds: 600,
+        intervalSeconds: null,
+        restBetweenExercisesSeconds: 15,
+        restBetweenRoundsSeconds: 90,
+        notes: "Back to back",
+        // The retired push-up is not the day's.
+        exercises: [
+          expect.objectContaining({ id: "x-dips", groupId: "grp-circuit", orderIndex: 0 }),
+          expect.objectContaining({ id: "x-flyes", groupId: "grp-circuit", orderIndex: 1 }),
+        ],
+      }),
+    ]);
+    const exercisesRead = reads.training_exercises[0];
+    expect(exercisesRead.select).toHaveBeenCalledWith(EXERCISE_WITH_GROUP_COLUMNS);
+    expect(exercisesRead.eq).toHaveBeenCalledWith("is_active", true);
   });
 
   it("reads the row a day points at even when that row is retired", async () => {
@@ -391,7 +482,7 @@ describe("getPlanForEditing", () => {
     const push = sessionDay((await open()).days[0]);
 
     expect(push.name).toBe("Push");
-    expect(push.exercises.map((exercise) => exercise.name)).toEqual(["Bench press"]);
+    expect(sessionExercises(push).map((exercise) => exercise.name)).toEqual(["Bench press"]);
   });
 
   it("takes a day's surplus from its event, never from the row", async () => {
@@ -480,7 +571,7 @@ describe("getPlanForEditing", () => {
       estimatedDurationMinutes: 45,
       notes: "Go easy",
     });
-    expect(legs.exercises.map((exercise) => exercise.name)).toEqual([
+    expect(sessionExercises(legs).map((exercise) => exercise.name)).toEqual([
       "Split squat",
       "Goblet squat",
     ]);
@@ -512,7 +603,7 @@ describe("getPlanForEditing", () => {
       estimatedDurationMinutes: null,
       notes: null,
       calorieSurplusPercentage: 10,
-      exercises: [],
+      groups: [],
     });
     expect(days[2]).toEqual({
       date: dayAt(2),
@@ -522,7 +613,7 @@ describe("getPlanForEditing", () => {
       estimatedDurationMinutes: null,
       notes: null,
       calorieSurplusPercentage: null,
-      exercises: [],
+      groups: [],
     });
   });
 
@@ -541,7 +632,7 @@ describe("getPlanForEditing", () => {
 
     const { days } = await open();
 
-    expect(days[0]).toMatchObject({ name: "Mine", exercises: [] });
+    expect(days[0]).toMatchObject({ name: "Mine", groups: [] });
     expect(days[1]).toEqual({ date: dayAt(1), isRest: true });
   });
 
@@ -712,13 +803,17 @@ describe("getPlanForEditing", () => {
 // =============================================================================
 
 type PlanEditSessionInput = Parameters<typeof savePlanEdit>[0]["sessions"][number];
-type Exercise = PlanEditSessionInput["exercises"][number];
+type Group = PlanEditSessionInput["groups"][number];
+type Exercise = Group["exercises"][number];
 type SessionFields = Omit<PlanEditSessionInput, "orderIndex" | "weekIndex" | "isRest">;
 
-const session = (name: string, exercises: Exercise[] = []): SessionFields => ({
+const session = (name: string, groups: Group[] = []): SessionFields => ({
   name,
-  exercises,
+  groups,
 });
+
+/** A lone exercise: a straight-sets group of one. */
+const lone = (exercise: Exercise): Group => ({ ...STRAIGHT_SETS, exercises: [exercise] });
 
 /** A canonical grid: slot i is the plan's day i, rest unless `sessions` holds it. */
 function grid(
@@ -730,7 +825,7 @@ function grid(
     const fields = sessions[i];
     return fields
       ? { ...fields, ...place, isRest: false }
-      : { name: "Rest", ...place, isRest: true, exercises: [] };
+      : { name: "Rest", ...place, isRest: true, groups: [] };
   });
 }
 
@@ -779,7 +874,7 @@ function rpcArgs(): Record<string, unknown> {
 type SaveDay = { date: string; is_rest: boolean; [column: string]: unknown };
 const rpcDays = (): SaveDay[] => rpcArgs().p_days as SaveDay[];
 
-/** An exercise as the save writes it, every column it isn't given null. */
+/** An exercise as the save writes it, every column it isn't given null. No position: its place in its group's list is its position. */
 function writtenExercise(columns: Record<string, unknown>) {
   return {
     exercise_id: null,
@@ -791,12 +886,26 @@ function writtenExercise(columns: Record<string, unknown>) {
     tempo: null,
     rest_seconds: null,
     notes: null,
-    superset_group: null,
     is_warmup: false,
     set_specs: null,
     video_url: null,
     prescribed_fields: null,
     ...columns,
+  };
+}
+
+/** A group as the save writes it: straight sets with every setting null unless given, then its exercises. */
+function writtenGroup(exercises: unknown[], settings: Record<string, unknown> = {}) {
+  return {
+    format: "straight_sets",
+    rounds: null,
+    time_cap_seconds: null,
+    interval_seconds: null,
+    rest_between_exercises_seconds: null,
+    rest_between_rounds_seconds: null,
+    notes: null,
+    ...settings,
+    exercises,
   };
 }
 
@@ -1038,35 +1147,44 @@ describe("savePlanEdit", () => {
         },
       ];
       const sessions = grid(2, {
-        0: session("Push", [{ name: "Bench press", exerciseId: IN_HISTORY, orderIndex: 0, sets: 3 }]),
+        0: session("Push", [lone({ name: "Bench press", exerciseId: IN_HISTORY, sets: 3 })]),
         3: {
           name: "Pull",
           focus: "Back",
           notes: "Brace",
           estimatedDurationMinutes: 50,
           calorieSurplusPercentage: 12.5,
-          exercises: [
+          groups: [
             {
-              name: "Row",
-              exerciseId: MINE,
-              orderIndex: 1,
-              sets: 4,
-              repsMin: 6,
-              repsMax: 8,
-              repsTarget: "6-8",
-              rpeTarget: 8,
-              percentage1rm: 75,
-              tempo: "3010",
-              restSeconds: 120,
-              notes: "Pause",
-              supersetGroup: "A",
-              isWarmup: true,
-              setSpecs: specs,
-              videoUrl: "https://example.com/row",
-              prescribedFields: ["reps", "load"],
+              format: "circuit",
+              rounds: 3,
+              timeCapSeconds: 600,
+              intervalSeconds: 45,
+              restBetweenExercisesSeconds: 15,
+              restBetweenRoundsSeconds: 90,
+              notes: "No rest between the pulls",
+              exercises: [
+                { name: "Pull-up", exerciseId: NOT_MINE, sets: 3 },
+                {
+                  name: "Row",
+                  exerciseId: MINE,
+                  sets: 4,
+                  repsMin: 6,
+                  repsMax: 8,
+                  repsTarget: "6-8",
+                  rpeTarget: 8,
+                  percentage1rm: 75,
+                  tempo: "3010",
+                  restSeconds: 120,
+                  notes: "Pause",
+                  isWarmup: true,
+                  setSpecs: specs,
+                  videoUrl: "https://example.com/row",
+                  prescribedFields: ["reps", "load"],
+                },
+              ],
             },
-            { name: "Pull-up", exerciseId: NOT_MINE, orderIndex: 0, sets: 3 },
-            { name: "Face pull", orderIndex: 2, sets: 2 },
+            lone({ name: "Face pull", sets: 2 }),
           ],
         },
         5: session("Legs"),
@@ -1085,31 +1203,49 @@ describe("savePlanEdit", () => {
         calorie_surplus_percentage: 12.5,
         // The calendar holds nothing here: a session on a rest day is a change.
         unchanged: false,
-        // In the grid's order, however the list arrived.
-        exercises: [
-          writtenExercise({ name: "Pull-up", order_index: 0, sets: 3 }),
-          writtenExercise({
-            name: "Row",
-            exercise_id: MINE,
-            order_index: 1,
-            sets: 4,
-            reps_min: 6,
-            reps_max: 8,
-            reps_target: "6-8",
-            rpe_target: 8,
-            percentage_1rm: 75,
-            tempo: "3010",
-            rest_seconds: 120,
-            notes: "Pause",
-            superset_group: "A",
-            is_warmup: true,
-            set_specs: specs,
-            video_url: "https://example.com/row",
-            prescribed_fields: ["reps", "load"],
-          }),
-          writtenExercise({ name: "Face pull", order_index: 2, sets: 2 }),
+        // The groups in the grid's order, each with its settings and its
+        // exercises in its list's order: a position is a place, never a column.
+        groups: [
+          writtenGroup(
+            [
+              writtenExercise({ name: "Pull-up", sets: 3 }),
+              writtenExercise({
+                name: "Row",
+                exercise_id: MINE,
+                sets: 4,
+                reps_min: 6,
+                reps_max: 8,
+                reps_target: "6-8",
+                rpe_target: 8,
+                percentage_1rm: 75,
+                tempo: "3010",
+                rest_seconds: 120,
+                notes: "Pause",
+                is_warmup: true,
+                set_specs: specs,
+                video_url: "https://example.com/row",
+                prescribed_fields: ["reps", "load"],
+              }),
+            ],
+            {
+              format: "circuit",
+              rounds: 3,
+              time_cap_seconds: 600,
+              interval_seconds: 45,
+              rest_between_exercises_seconds: 15,
+              rest_between_rounds_seconds: 90,
+              notes: "No rest between the pulls",
+            },
+          ),
+          writtenGroup([writtenExercise({ name: "Face pull", sets: 2 })]),
         ],
       });
+      // An exercise's position is its place in its group's list, never a column.
+      for (const group of pull.groups as Array<{ exercises: Record<string, unknown>[] }>) {
+        for (const exercise of group.exercises) {
+          expect(exercise).not.toHaveProperty("order_index");
+        }
+      }
       expect(rest).toEqual({ date: dayAt(4), is_rest: true });
       expect(legs).toEqual({
         date: dayAt(5),
@@ -1120,10 +1256,10 @@ describe("savePlanEdit", () => {
         estimated_duration_minutes: null,
         calorie_surplus_percentage: null,
         unchanged: false,
-        exercises: [],
+        groups: [],
       });
       // Asked of the written days only: history's exercises are not sent.
-      expect(fetchVisibleExerciseIds).toHaveBeenCalledWith(COACH_ID, [MINE, NOT_MINE]);
+      expect(fetchVisibleExerciseIds).toHaveBeenCalledWith(COACH_ID, [NOT_MINE, MINE]);
     });
 
     it("saves the plan's name, and a plan with no focus as custom", async () => {
@@ -1171,6 +1307,18 @@ describe("savePlanEdit", () => {
       { load_value: 40, set_type: "warmup", set_number: 2, reps_min: 10, reps_max: 10, load_type: "absolute" },
       { load_value: 80, set_type: "working", set_number: 5, reps_min: 6, reps_max: 8, load_type: "absolute" },
     ];
+    // Lower A's squat and lunge share a circuit with every setting set; the
+    // circuit sits second, numbered with a gap like the rest.
+    const lowerACircuit = () =>
+      groupRow("grp-lower-a", LOWER_A, 4, {
+        format: "circuit",
+        rounds: 3,
+        time_cap_seconds: 900,
+        interval_seconds: 60,
+        rest_between_exercises_seconds: 15,
+        rest_between_rounds_seconds: 90,
+        notes: "Unbroken",
+      });
     const calendar = () => ({
       sessions: [
         sessionRow(UPPER_A, "Upper A", { focus: "Chest and back", estimated_duration_minutes: 60 }),
@@ -1191,16 +1339,17 @@ describe("savePlanEdit", () => {
           video_url: "  https://example.com/fly  ",
           prescribed_fields: [],
         }),
-        exerciseRow("ex-4", LOWER_A, "Squat", 0, {
+        exerciseRow("ex-6", LOWER_A, "Hip hinge", 1),
+        groupedExerciseRow("ex-4", lowerACircuit(), "Squat", 2, {
           reps_target: "6-8",
           rpe_target: 7.5,
           percentage_1rm: 70,
           tempo: "3010",
           rest_seconds: 120,
           notes: "Pause",
-          superset_group: "A",
           prescribed_fields: ["reps", "load"],
         }),
+        groupedExerciseRow("ex-7", lowerACircuit(), "Lunge", 7),
         exerciseRow("ex-5", UPPER_B, "Press", 0),
       ],
     });
@@ -1263,6 +1412,29 @@ describe("savePlanEdit", () => {
         withSlot(draft, 0, 5, (slot) => ({
           ...slot,
           session: slot.session && { ...slot.session, estimatedDurationMinutes: 45 },
+        })),
+      );
+
+      expect(marks()).toEqual([
+        [TODAY, true],
+        [dayAt(5), false],
+        [dayAt(9), true],
+      ]);
+    });
+
+    it("says a day whose group's settings the coach changed is not, and leaves the rest unchanged", async () => {
+      mockTables(calendar());
+
+      // Lower A's circuit goes from three rounds to four.
+      await saveThroughEditor((draft) =>
+        withSlot(draft, 0, 5, (slot) => ({
+          ...slot,
+          session: slot.session && {
+            ...slot.session,
+            groups: slot.session.groups.map((group) =>
+              group.format === "circuit" ? { ...group, rounds: 4 } : group,
+            ),
+          },
         })),
       );
 

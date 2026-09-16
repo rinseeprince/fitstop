@@ -175,9 +175,9 @@ All client API endpoints require authentication except where noted.
 
 - `GET /api/client/training-plan` - The active plan, self-describing (`ClientTrainingPlan | null`)
 - `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: `training: TrainingEventSummary[]`, nutrition, wellness, habits. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
-- `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, exercises, sessionLog, exerciseLogs }`
+- `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, exercises, sessionLog, exerciseLogs }`. A live `session` carries its `groups` (each with its settings and exercises, in order); `exercises` lists the same live exercises flat, group by group, each with its `groupId`, then a snapshot block for any logged exercise the coach has since removed. Each `exerciseLogs[].prescribedExerciseSnapshot` records the prescription as logged, including `order_index` (its place in its group) and `group` (`id`, `order_index`, `format` and every setting in snake_case)
 - `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `403` day locked, body `"This day is locked."` (outside `logsOpenFrom`…today) · `404` not found / not this client
-- `GET /api/client/training/sessions/{sessionId}` - Session + exercises; 404 unless the session belongs to the client's ACTIVE plan. Powers the rest-day picker
+- `GET /api/client/training/sessions/{sessionId}` - Session + its groups of exercises; 404 unless the session belongs to the client's ACTIVE plan. Powers the rest-day picker
 - `GET /api/client/training/week?date={YYYY-MM-DD}` - The training week containing `date` (`ClientTrainingWeek`, `types/client-training-week.ts`): `{ weekStart, weekEnd, today, sessions[] }`, each session `{ eventId, sessionId, name, focus, date, state }` with `state` = `done | today | upcoming | missed` derived against the client's today. ≤7 rows, `no-store`. The session picker and the week view list THIS — it is exactly the set a layout write may touch
 - `POST /api/client/training/events/layout` - **Move / swap / rearrange the client's own week.** Body `{ moves: [{ eventId, fromDate, toDate }] }` (1–7). One transaction for the whole list (`move_training_events_atomic`, migration 150), so a swap is two entries and a rotation never half-applies. Rules: only a still-scheduled session moves (a logged day is pinned); a session moves only within the training week it currently sits in; neither `fromDate` nor `toDate` may fall before `logsOpenFrom` (a week a check-in has closed keeps its shape); a target may not hold any non-moving session. `fromDate` is the day the client SAW the session on — if it has moved since (a coach edit), `409` "Your week changed since you opened it — reload and try again". Other answers: `409` "{Sat, Aug 29} already has a session" · `400` a rule of the client's own calendar, with the sentence · `404` not this client's. Returns `{ moved: [...] }`. Nutrition follows the moved sessions (a day's target is computed from the session on it, so the next read re-prices it); a day the client has already logged shows the refreshed target at their next food save. The **rest-day "Log a session" picker** is a one-entry layout (move here, then open the event); "Do a different session" on a prescribed day with a still-scheduled other-day pick is a two-entry swap. The **Program tab's week view** is the third caller and the general case: the app applies moves locally over `training/week` (`lib/week-layout.ts`), refuses to save while any day holds two sessions (the server's occupancy rule, applied before the round trip), and sends every changed session with the day it was read on; a `409` means reload the week and start over
 - `GET /api/client/exercises/catalog?since={ISO}` - Exercise-catalog delta sync: a sparse fieldset of rows with `updated_at` after `since` (omit `since` for a full resync). Complete past the ~1000-row PostgREST cap (paged internally on `(updated_at, id)`); deletes are invisible to the delta, so resync periodically
@@ -342,13 +342,28 @@ type ClientTrainingSessionEntry = {
   weekIndex?: number     // 0-based; group under "Week N" dividers
   isRest: boolean        // rest days are REAL entries, not gaps
   estimatedDurationMinutes: number | null
-  exercises: ClientTrainingExercise[] // [] when isRest
+  groups: ClientTrainingExerciseGroup[] // in order; [] when isRest
+}
+
+type GroupFormat = "straight_sets" | "circuit" | "amrap" | "emom" | "for_time"
+
+type ClientTrainingExerciseGroup = {
+  id: string
+  orderIndex: number                        // the group's place in the session
+  format: GroupFormat                       // "circuit" = superset or circuit
+  rounds: number | null                     // 1-100
+  timeCapSeconds: number | null             // 1-14400
+  intervalSeconds: number | null            // 1-3600 (EMOM interval)
+  restBetweenExercisesSeconds: number | null // 0-3600
+  restBetweenRoundsSeconds: number | null   // 0-3600
+  notes: string | null
+  exercises: ClientTrainingExercise[]       // in order; never empty
 }
 
 type ClientTrainingExercise = {
   id: string
   name: string
-  orderIndex: number
+  orderIndex: number      // its place in its group
   sets: number            // PROJECTION of setSpecs — never independent truth
   repsMin: number | null  // PROJECTION
   repsMax: number | null  // PROJECTION
@@ -357,11 +372,13 @@ type ClientTrainingExercise = {
   tempo: string | null
   restSeconds: number | null
   isWarmup: boolean       // legacy; always false on builder-authored content
-  supersetGroup: string | null // legacy; always null on new content
   setSpecs: SetSpec[] | null   // AUTHORITATIVE per-set prescription when non-null
   videoUrl: string | null      // optional demo video
+  prescribedFields: string[] | null // the columns the coach prescribes; null = all five
 }
 ```
+
+> **RN contract — every exercise sits in a group.** A session is an ordered list of groups and a group an ordered list of exercises (migration 178). A lone exercise is a `straight_sets` group of one with every setting null — exactly the exercise it always was. Render a session's exercises group by group, each group's exercises in turn; that is the order the coach wrote. A group's format and settings are the coach's prescription for how its exercises are done together; the web client does not render them yet, and no group today holds more than one exercise or another format.
 
 > **RN contract — days are POSITIONAL, not weekdays.** `dayOfWeek` is gone: placement writes `day_of_week: null` and tiles the whole authored program as a sequential date-walk. Render by `weekIndex` + `orderIndex`, never by weekday name.
 

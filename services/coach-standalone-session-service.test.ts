@@ -51,13 +51,26 @@ import {
   getStandaloneSessions,
   overwriteStandaloneSession,
 } from "./coach-standalone-session-service";
+import { SAVED_SESSION_GROUPS_EMBED } from "@/lib/coach-mappers";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
+import type { SavedGroupWrite } from "./coach-library-helpers";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockResolveExercises = vi.mocked(resolveExercises);
 
+/** A lone exercise: a straight-sets group of one. */
+const lone = (exercise: SavedGroupWrite["exercises"][number]): SavedGroupWrite => ({
+  ...STRAIGHT_SETS,
+  exercises: [exercise],
+});
+
+/** The tables the service touched, in order. */
+const tablesTouched = () => mockFrom.mock.calls.map(([table]) => table);
+
 const exerciseRow = {
   id: "e1",
   saved_session_id: "s1",
+  group_id: "g1",
   exercise_id: "ex-3",
   name: "Squat",
   order_index: 0,
@@ -69,7 +82,6 @@ const exerciseRow = {
   percentage_1rm: 80,
   tempo: null,
   rest_seconds: 180,
-  superset_group: null,
   is_warmup: false,
   notes: null,
   set_specs: [{ set_number: 1, set_type: "working", load_type: "pct_1rm", load_value: 80 }],
@@ -77,6 +89,43 @@ const exerciseRow = {
   created_at: "2026-06-01T00:00:00Z",
   updated_at: "2026-06-01T00:00:00Z",
 };
+
+// The session's one group, read with its exercise: a circuit with its settings
+// set, so a restore that dropped any of them would show.
+const groupRow = {
+  id: "g1",
+  saved_session_id: "s1",
+  order_index: 0,
+  format: "circuit",
+  rounds: 3,
+  time_cap_seconds: 600,
+  interval_seconds: null,
+  rest_between_exercises_seconds: 15,
+  rest_between_rounds_seconds: 90,
+  notes: "Unbroken",
+  created_at: "2026-06-01T00:00:00Z",
+  updated_at: "2026-06-01T00:00:00Z",
+  coach_saved_exercises: [exerciseRow],
+};
+
+/** The pre-call group as a restore writes it back: every setting and position, under a fresh id. */
+function expectRestoredGroup(restoredGroups: Array<Record<string, unknown>>) {
+  expect(restoredGroups).toEqual([
+    {
+      id: expect.any(String),
+      saved_session_id: "s1",
+      order_index: 0,
+      format: "circuit",
+      rounds: 3,
+      time_cap_seconds: 600,
+      interval_seconds: null,
+      rest_between_exercises_seconds: 15,
+      rest_between_rounds_seconds: 90,
+      notes: "Unbroken",
+    },
+  ]);
+  expect(restoredGroups[0].id).not.toBe("g1");
+}
 
 const sourceSession = {
   id: "s1",
@@ -93,7 +142,7 @@ const sourceSession = {
   session_type: "training",
   created_at: "2026-06-01T00:00:00Z",
   updated_at: "2026-06-01T00:00:00Z",
-  coach_saved_exercises: [exerciseRow],
+  coach_saved_exercise_groups: [groupRow],
 };
 
 describe("coach-standalone-session-service", () => {
@@ -111,22 +160,34 @@ describe("coach-standalone-session-service", () => {
   describe("createStandaloneSession", () => {
     it("creates session with saved_plan_id = NULL", async () => {
       const sessionInsertQuery = createMockQuery({ data: { id: "session-1" }, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
 
       mockFrom.mockImplementation((table: string) => {
         if (table === "coach_saved_sessions") return sessionInsertQuery as never;
+        if (table === "coach_saved_exercise_groups") return groupInsertQuery as never;
         if (table === "coach_saved_exercises") return exerciseInsertQuery as never;
         return createMockQuery({ data: null, error: null }) as never;
       });
 
       const sessionId = await createStandaloneSession("coach-1", {
         name: "Quick Workout",
-        exercises: [{ name: "Bench Press", sets: 3 }],
+        groups: [lone({ name: "Bench Press", sets: 3 })],
       });
 
       expect(sessionId).toBe("session-1");
       const insertCall = sessionInsertQuery.insert.mock.calls[0][0];
       expect(insertCall.saved_plan_id).toBeNull();
+      // The group lands first, then the exercise that names it.
+      const [group] = groupInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      const [exercise] = exerciseInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expect(group).toMatchObject({ saved_session_id: "session-1", order_index: 0, format: "straight_sets" });
+      expect(exercise).toMatchObject({ saved_session_id: "session-1", group_id: group.id, order_index: 0 });
+      expect(tablesTouched()).toEqual([
+        "coach_saved_sessions",
+        "coach_saved_exercise_groups",
+        "coach_saved_exercises",
+      ]);
     });
 
     it("resolves exercise names to catalog IDs", async () => {
@@ -141,10 +202,7 @@ describe("coach-standalone-session-service", () => {
 
       await createStandaloneSession("coach-1", {
         name: "Test Session",
-        exercises: [
-          { name: "Bench Press", sets: 3 },
-          { name: "Squat", sets: 4 },
-        ],
+        groups: [lone({ name: "Bench Press", sets: 3 }), lone({ name: "Squat", sets: 4 })],
       });
 
       expect(mockResolveExercises).toHaveBeenCalledWith(
@@ -167,9 +225,9 @@ describe("coach-standalone-session-service", () => {
 
       await createStandaloneSession("coach-1", {
         name: "Test Session",
-        exercises: [
-          { name: "Own Exercise", exerciseId: "ex-own", sets: 3 },
-          { name: "Foreign Exercise", exerciseId: "ex-foreign", sets: 3 },
+        groups: [
+          lone({ name: "Own Exercise", exerciseId: "ex-own", sets: 3 }),
+          lone({ name: "Foreign Exercise", exerciseId: "ex-foreign", sets: 3 }),
         ],
       });
 
@@ -206,11 +264,38 @@ describe("coach-standalone-session-service", () => {
       await expect(
         createStandaloneSession("coach-1", {
           name: "Doomed",
-          exercises: [{ name: "Bench Press", sets: 3 }],
+          groups: [lone({ name: "Bench Press", sets: 3 })],
         })
       ).rejects.toThrow(/insert blew up/);
 
       // The just-created session row was compensating-deleted.
+      expect(sessionQuery.delete).toHaveBeenCalled();
+      expect(sessionQuery.eq).toHaveBeenCalledWith("id", "session-1");
+    });
+
+    it("removes the shell session when the group insert fails, before any exercise is written", async () => {
+      const sessionQuery = createMockQuery({ data: { id: "session-1" }, error: null });
+      const groupFailQuery = createMockQuery({
+        data: null,
+        error: { message: "group insert blew up" },
+      });
+      const exerciseInsertQuery = createMockQuery({ data: null, error: null });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "coach_saved_sessions") return sessionQuery as never;
+        if (table === "coach_saved_exercise_groups") return groupFailQuery as never;
+        if (table === "coach_saved_exercises") return exerciseInsertQuery as never;
+        return createMockQuery({ data: null, error: null }) as never;
+      });
+
+      await expect(
+        createStandaloneSession("coach-1", {
+          name: "Doomed",
+          groups: [lone({ name: "Bench Press", sets: 3 })],
+        })
+      ).rejects.toThrow(/group insert blew up/);
+
+      expect(exerciseInsertQuery.insert).not.toHaveBeenCalled();
       expect(sessionQuery.delete).toHaveBeenCalled();
       expect(sessionQuery.eq).toHaveBeenCalledWith("id", "session-1");
     });
@@ -224,16 +309,18 @@ describe("coach-standalone-session-service", () => {
     it("keeps a free name verbatim and scopes the name check to standalone rows", async () => {
       const namesQuery = createMockQuery({ data: [{ name: "Other" }], error: null });
       const sessionInsertQuery = createMockQuery({ data: { id: "s-new" }, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
 
       mockFrom
         .mockReturnValueOnce(namesQuery as never)
         .mockReturnValueOnce(sessionInsertQuery as never)
+        .mockReturnValueOnce(groupInsertQuery as never)
         .mockReturnValueOnce(exerciseInsertQuery as never);
 
       const result = await createStandaloneSessionDeduped("coach-1", {
         name: "Push Day A",
-        exercises: [{ name: "Bench Press", sets: 3 }],
+        groups: [lone({ name: "Bench Press", sets: 3 })],
       });
 
       expect(result).toEqual({ sessionId: "s-new", name: "Push Day A" });
@@ -245,16 +332,18 @@ describe("coach-standalone-session-service", () => {
     it("renames case-insensitively on conflict", async () => {
       const namesQuery = createMockQuery({ data: [{ name: "leg day a" }], error: null });
       const sessionInsertQuery = createMockQuery({ data: { id: "s-new" }, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
 
       mockFrom
         .mockReturnValueOnce(namesQuery as never)
         .mockReturnValueOnce(sessionInsertQuery as never)
+        .mockReturnValueOnce(groupInsertQuery as never)
         .mockReturnValueOnce(exerciseInsertQuery as never);
 
       const result = await createStandaloneSessionDeduped("coach-1", {
         name: "Leg Day A",
-        exercises: [{ name: "Squat", sets: 3 }],
+        groups: [lone({ name: "Squat", sets: 3 })],
       });
 
       expect(result.name).toBe("Leg Day A (copy)");
@@ -267,16 +356,18 @@ describe("coach-standalone-session-service", () => {
         error: null,
       });
       const sessionInsertQuery = createMockQuery({ data: { id: "s-new" }, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
 
       mockFrom
         .mockReturnValueOnce(namesQuery as never)
         .mockReturnValueOnce(sessionInsertQuery as never)
+        .mockReturnValueOnce(groupInsertQuery as never)
         .mockReturnValueOnce(exerciseInsertQuery as never);
 
       const result = await createStandaloneSessionDeduped("coach-1", {
         name: "Push Day",
-        exercises: [{ name: "Bench Press", sets: 3 }],
+        groups: [lone({ name: "Bench Press", sets: 3 })],
       });
 
       expect(result.name).toBe("Push Day (copy 2)");
@@ -286,16 +377,18 @@ describe("coach-standalone-session-service", () => {
       const longName = "A".repeat(100);
       const namesQuery = createMockQuery({ data: [{ name: longName }], error: null });
       const sessionInsertQuery = createMockQuery({ data: { id: "s-new" }, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
 
       mockFrom
         .mockReturnValueOnce(namesQuery as never)
         .mockReturnValueOnce(sessionInsertQuery as never)
+        .mockReturnValueOnce(groupInsertQuery as never)
         .mockReturnValueOnce(exerciseInsertQuery as never);
 
       const result = await createStandaloneSessionDeduped("coach-1", {
         name: longName,
-        exercises: [{ name: "Bench Press", sets: 3 }],
+        groups: [lone({ name: "Bench Press", sets: 3 })],
       });
 
       expect(result.name).toBe(`${"A".repeat(88)} (copy)`);
@@ -309,22 +402,24 @@ describe("coach-standalone-session-service", () => {
       ];
       const namesQuery = createMockQuery({ data: [], error: null });
       const sessionInsertQuery = createMockQuery({ data: { id: "s-new" }, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
 
       mockFrom
         .mockReturnValueOnce(namesQuery as never)
         .mockReturnValueOnce(sessionInsertQuery as never)
+        .mockReturnValueOnce(groupInsertQuery as never)
         .mockReturnValueOnce(exerciseInsertQuery as never);
 
       await createStandaloneSessionDeduped("coach-1", {
         name: "Specced",
-        exercises: [
-          {
+        groups: [
+          lone({
             name: "Bench Press",
             sets: 3,
             setSpecs: specs as never,
             videoUrl: "https://example.com/bench.mp4",
-          },
+          }),
         ],
       });
 
@@ -348,6 +443,7 @@ describe("coach-standalone-session-service", () => {
       await getStandaloneSessions("coach-1");
 
       expect(mockFrom).toHaveBeenCalledWith("coach_saved_sessions");
+      expect(sessionsQuery.select).toHaveBeenCalledWith(`*, ${SAVED_SESSION_GROUPS_EMBED}`);
       expect(sessionsQuery.eq).toHaveBeenCalledWith("coach_id", "coach-1");
       expect(sessionsQuery.is).toHaveBeenCalledWith("saved_plan_id", null);
     });
@@ -362,6 +458,7 @@ describe("coach-standalone-session-service", () => {
       const snapshotQuery = createMockQuery({ data: sourceSession, error: null });
       const idCheckQuery = createMockQuery({ data: [{ id: "ex-own" }], error: null });
       const deleteQuery = createMockQuery({ data: null, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const insertQuery = createMockQuery({ data: null, error: null });
       const updateQuery = createMockQuery({ data: null, error: null });
 
@@ -369,6 +466,7 @@ describe("coach-standalone-session-service", () => {
         .mockReturnValueOnce(snapshotQuery as never)
         .mockReturnValueOnce(idCheckQuery as never)
         .mockReturnValueOnce(deleteQuery as never)
+        .mockReturnValueOnce(groupInsertQuery as never)
         .mockReturnValueOnce(insertQuery as never)
         .mockReturnValueOnce(updateQuery as never);
 
@@ -384,26 +482,44 @@ describe("coach-standalone-session-service", () => {
         focus: "chest",
         estimatedDurationMinutes: 45,
         calorieSurplusPercentage: 10,
-        exercises: [
-          {
+        groups: [
+          lone({
             name: "Bench Press",
             exerciseId: "ex-own",
             sets: 3,
             setSpecs: specs as never,
             videoUrl: "https://example.com/bench.mp4",
-          },
-          { name: "Flye", sets: 3 },
+          }),
+          lone({ name: "Flye", sets: 3 }),
         ],
       });
 
-      // Snapshot is ownership + standalone scope in one query.
+      // Snapshot is ownership + standalone scope in one query, read with the
+      // session's groups and their exercises.
+      expect(snapshotQuery.select).toHaveBeenCalledWith(`*, ${SAVED_SESSION_GROUPS_EMBED}`);
       expect(snapshotQuery.eq).toHaveBeenCalledWith("id", "s1");
       expect(snapshotQuery.eq).toHaveBeenCalledWith("coach_id", "coach-1");
       expect(snapshotQuery.is).toHaveBeenCalledWith("saved_plan_id", null);
 
-      // Old children removed by session scope.
+      // Old children removed by session scope: the groups, whose exercises go
+      // with them. Then the new groups land before the exercises that name them.
+      expect(tablesTouched()).toEqual([
+        "coach_saved_sessions",
+        "exercises",
+        "coach_saved_exercise_groups",
+        "coach_saved_exercise_groups",
+        "coach_saved_exercises",
+        "coach_saved_sessions",
+      ]);
       expect(deleteQuery.delete).toHaveBeenCalled();
       expect(deleteQuery.eq).toHaveBeenCalledWith("saved_session_id", "s1");
+
+      const groups = groupInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expect(groups).toHaveLength(2);
+      expect(groups.map((g) => g.order_index)).toEqual([0, 1]);
+      for (const group of groups) {
+        expect(group).toMatchObject({ saved_session_id: "s1", format: "straight_sets" });
+      }
 
       const rows = insertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
       expect(rows).toHaveLength(2);
@@ -415,9 +531,11 @@ describe("coach-standalone-session-service", () => {
       expect(rows[0].reps_min).toBe(5);
       expect(rows[0].reps_max).toBe(10);
       expect(rows[0].exercise_id).toBe("ex-own");
+      expect(rows[0].group_id).toBe(groups[0].id);
       expect(rows[0].order_index).toBe(0);
       expect(rows[1].exercise_id).toBe("ex-flye");
-      expect(rows[1].order_index).toBe(1);
+      expect(rows[1].group_id).toBe(groups[1].id);
+      expect(rows[1].order_index).toBe(0);
 
       // Field update is full-replace with explicit nulls + canonical indices.
       expect(updateQuery.update).toHaveBeenCalledWith({
@@ -439,7 +557,7 @@ describe("coach-standalone-session-service", () => {
       mockFrom.mockReturnValueOnce(snapshotQuery as never);
 
       await expect(
-        overwriteStandaloneSession("s1", "coach-1", { name: "X", exercises: [] })
+        overwriteStandaloneSession("s1", "coach-1", { name: "X", groups: [] })
       ).rejects.toThrow("Session not found");
       // No delete was ever issued.
       expect(mockFrom).toHaveBeenCalledTimes(1);
@@ -449,6 +567,7 @@ describe("coach-standalone-session-service", () => {
       const snapshotQuery = createMockQuery({ data: sourceSession, error: null });
       const idCheckQuery = createMockQuery({ data: [], error: null });
       const deleteQuery = createMockQuery({ data: null, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const insertQuery = createMockQuery({ data: null, error: null });
       const updateQuery = createMockQuery({ data: null, error: null });
 
@@ -456,6 +575,7 @@ describe("coach-standalone-session-service", () => {
         .mockReturnValueOnce(snapshotQuery as never)
         .mockReturnValueOnce(idCheckQuery as never)
         .mockReturnValueOnce(deleteQuery as never)
+        .mockReturnValueOnce(groupInsertQuery as never)
         .mockReturnValueOnce(insertQuery as never)
         .mockReturnValueOnce(updateQuery as never);
 
@@ -463,7 +583,7 @@ describe("coach-standalone-session-service", () => {
 
       await overwriteStandaloneSession("s1", "coach-1", {
         name: "X",
-        exercises: [{ name: "Foreign", exerciseId: "ex-foreign", sets: 3 }],
+        groups: [lone({ name: "Foreign", exerciseId: "ex-foreign", sets: 3 })],
       });
 
       expect(mockResolveExercises).toHaveBeenCalledWith(["Foreign"], "coach-1");
@@ -474,39 +594,98 @@ describe("coach-standalone-session-service", () => {
     it("restores the snapshot children when the new insert fails", async () => {
       const snapshotQuery = createMockQuery({ data: sourceSession, error: null });
       const deleteQuery = createMockQuery({ data: null, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const insertFailQuery = createMockQuery({
         data: null,
         error: { message: "insert blew up" },
       });
+      const clearQuery = createMockQuery({ data: null, error: null });
+      const restoreGroupsQuery = createMockQuery({ data: null, error: null });
       const restoreQuery = createMockQuery({ data: null, error: null });
 
       mockFrom
         .mockReturnValueOnce(snapshotQuery as never)
         .mockReturnValueOnce(deleteQuery as never)
+        .mockReturnValueOnce(groupInsertQuery as never)
         .mockReturnValueOnce(insertFailQuery as never)
+        .mockReturnValueOnce(clearQuery as never)
+        .mockReturnValueOnce(restoreGroupsQuery as never)
         .mockReturnValueOnce(restoreQuery as never);
 
       await expect(
         overwriteStandaloneSession("s1", "coach-1", {
           name: "X",
-          exercises: [{ name: "Bench Press", sets: 3 }],
+          groups: [lone({ name: "Bench Press", sets: 3 })],
         })
       ).rejects.toThrow(/insert blew up/);
 
-      // The restore re-inserted the pre-call children verbatim.
+      // The groups the failed save left behind were cleared before the restore.
+      expect(tablesTouched()[4]).toBe("coach_saved_exercise_groups");
+      expect(clearQuery.delete).toHaveBeenCalled();
+      expect(clearQuery.eq).toHaveBeenCalledWith("saved_session_id", "s1");
+
+      // The restore re-inserted the pre-call children verbatim: the group with
+      // every setting, then its exercise under that group.
+      const restoredGroups = restoreGroupsQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expectRestoredGroup(restoredGroups);
       const restored = restoreQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
       expect(restored[0].saved_session_id).toBe("s1");
+      expect(restored[0].group_id).toBe(restoredGroups[0].id);
       expect(restored[0].exercise_id).toBe("ex-3");
       expect(restored[0].set_specs).toEqual(exerciseRow.set_specs);
+    });
+
+    it("restores the snapshot children when the new groups fail to insert", async () => {
+      const snapshotQuery = createMockQuery({ data: sourceSession, error: null });
+      const deleteQuery = createMockQuery({ data: null, error: null });
+      const groupInsertFailQuery = createMockQuery({
+        data: null,
+        error: { message: "group insert blew up" },
+      });
+      const clearQuery = createMockQuery({ data: null, error: null });
+      const restoreGroupsQuery = createMockQuery({ data: null, error: null });
+      const restoreQuery = createMockQuery({ data: null, error: null });
+
+      mockFrom
+        .mockReturnValueOnce(snapshotQuery as never)
+        .mockReturnValueOnce(deleteQuery as never)
+        .mockReturnValueOnce(groupInsertFailQuery as never)
+        .mockReturnValueOnce(clearQuery as never)
+        .mockReturnValueOnce(restoreGroupsQuery as never)
+        .mockReturnValueOnce(restoreQuery as never);
+
+      await expect(
+        overwriteStandaloneSession("s1", "coach-1", {
+          name: "X",
+          groups: [lone({ name: "Bench Press", sets: 3 })],
+        })
+      ).rejects.toThrow(/group insert blew up/);
+
+      expect(tablesTouched()).toEqual([
+        "coach_saved_sessions",
+        "coach_saved_exercise_groups",
+        "coach_saved_exercise_groups",
+        "coach_saved_exercise_groups",
+        "coach_saved_exercise_groups",
+        "coach_saved_exercises",
+      ]);
+      expect(clearQuery.delete).toHaveBeenCalled();
+      const restoredGroups = restoreGroupsQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expectRestoredGroup(restoredGroups);
+      const restored = restoreQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expect(restored[0].group_id).toBe(restoredGroups[0].id);
+      expect(restored[0].exercise_id).toBe("ex-3");
     });
 
     it("combines both errors when the restore itself fails (root cause never shadowed)", async () => {
       const snapshotQuery = createMockQuery({ data: sourceSession, error: null });
       const deleteQuery = createMockQuery({ data: null, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const insertFailQuery = createMockQuery({
         data: null,
         error: { message: "insert blew up" },
       });
+      const clearQuery = createMockQuery({ data: null, error: null });
       const restoreFailQuery = createMockQuery({
         data: null,
         error: { message: "restore boom" },
@@ -515,16 +694,20 @@ describe("coach-standalone-session-service", () => {
       mockFrom
         .mockReturnValueOnce(snapshotQuery as never)
         .mockReturnValueOnce(deleteQuery as never)
+        .mockReturnValueOnce(groupInsertQuery as never)
         .mockReturnValueOnce(insertFailQuery as never)
+        .mockReturnValueOnce(clearQuery as never)
         .mockReturnValueOnce(restoreFailQuery as never);
 
+      // The restore writes through the shared group writer, which names the
+      // insert that failed.
       await expect(
         overwriteStandaloneSession("s1", "coach-1", {
           name: "X",
-          exercises: [{ name: "Bench Press", sets: 3 }],
+          groups: [lone({ name: "Bench Press", sets: 3 })],
         })
       ).rejects.toThrow(
-        /insert blew up.*restore also failed: restore boom/
+        "Failed to insert saved exercises: insert blew up; restore also failed: Failed to insert saved exercise groups: restore boom"
       );
     });
 
@@ -536,7 +719,7 @@ describe("coach-standalone-session-service", () => {
       await expect(
         overwriteStandaloneSession("s1", "coach-1", {
           name: "X",
-          exercises: [{ name: "Bench Press", sets: 3 }],
+          groups: [lone({ name: "Bench Press", sets: 3 })],
         })
       ).rejects.toThrow("resolve boom");
 
@@ -556,10 +739,10 @@ describe("coach-standalone-session-service", () => {
 
       await overwriteStandaloneSession("s1", "coach-1", {
         name: "Emptied",
-        exercises: [],
+        groups: [],
       });
 
-      // insertSavedExercises early-returns on [] — exactly 3 queries ran.
+      // insertSavedGroups writes nothing for no groups — exactly 3 queries ran.
       expect(mockFrom).toHaveBeenCalledTimes(3);
       expect(deleteQuery.delete).toHaveBeenCalled();
       expect(updateQuery.update).toHaveBeenCalledWith(
@@ -570,34 +753,43 @@ describe("coach-standalone-session-service", () => {
     it("unwinds the child swap when the final field update fails", async () => {
       const snapshotQuery = createMockQuery({ data: sourceSession, error: null });
       const deleteQuery = createMockQuery({ data: null, error: null });
+      const groupInsertQuery = createMockQuery({ data: null, error: null });
       const insertQuery = createMockQuery({ data: null, error: null });
       const updateFailQuery = createMockQuery({
         data: null,
         error: { message: "upd boom" },
       });
       const unwindDeleteQuery = createMockQuery({ data: null, error: null });
+      const restoreGroupsQuery = createMockQuery({ data: null, error: null });
       const restoreQuery = createMockQuery({ data: null, error: null });
 
       mockFrom
         .mockReturnValueOnce(snapshotQuery as never)
         .mockReturnValueOnce(deleteQuery as never)
+        .mockReturnValueOnce(groupInsertQuery as never)
         .mockReturnValueOnce(insertQuery as never)
         .mockReturnValueOnce(updateFailQuery as never)
         .mockReturnValueOnce(unwindDeleteQuery as never)
+        .mockReturnValueOnce(restoreGroupsQuery as never)
         .mockReturnValueOnce(restoreQuery as never);
 
       await expect(
         overwriteStandaloneSession("s1", "coach-1", {
           name: "X",
-          exercises: [{ name: "Bench Press", sets: 3 }],
+          groups: [lone({ name: "Bench Press", sets: 3 })],
         })
       ).rejects.toThrow("Failed to update session: upd boom");
 
-      // The just-inserted children were removed and the snapshot restored —
-      // the session is byte-identical to its pre-call state.
+      // The just-inserted children were removed (their groups, exercises with
+      // them) and the snapshot restored — the session is byte-identical to its
+      // pre-call state.
+      expect(tablesTouched()[5]).toBe("coach_saved_exercise_groups");
       expect(unwindDeleteQuery.delete).toHaveBeenCalled();
       expect(unwindDeleteQuery.eq).toHaveBeenCalledWith("saved_session_id", "s1");
+      const restoredGroups = restoreGroupsQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expectRestoredGroup(restoredGroups);
       const restored = restoreQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expect(restored[0].group_id).toBe(restoredGroups[0].id);
       expect(restored[0].exercise_id).toBe("ex-3");
       expect(restored[0].set_specs).toEqual(exerciseRow.set_specs);
     });
