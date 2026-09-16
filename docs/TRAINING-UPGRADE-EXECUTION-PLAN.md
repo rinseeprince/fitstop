@@ -16,10 +16,10 @@ When this plan is done:
 
 - **A wrong start date is a quick fix.** A coach who placed a program on the wrong day moves it from
   the Plans hero. The whole program moves as it is, with everything customised for that client.
-- **Workouts are built from groups.** A session is an ordered list of groups (A, B, C). Each group
-  holds exercises (A1, A2, A3) and has a format — straight sets, superset/circuit, AMRAP, EMOM or
-  For time — with its rounds, time cap and rests. Hybrid and HYROX sessions can be written the way
-  coaches actually program them.
+- **Workouts are built from groups.** A session is an ordered list of groups. Each group holds
+  exercises and has a format — straight sets, superset/circuit, AMRAP, EMOM or For time — with its
+  rounds, time cap and rests. Hybrid and HYROX sessions can be written the way coaches actually
+  program them.
 - **A day can hold several sessions**, in order, each its own workout — a morning run and an
   evening lift.
 - **Completion speaks one vocabulary.** A workout is scheduled or completed; how well it went (Full
@@ -134,13 +134,15 @@ commit's plan.
 
 ### 4.2 Groups (commits 2–4, 14–15)
 
-- **Name:** "Group" — Group A, B, C; exercises A1, A2, A3. "Block" is reserved for client blocks.
+- **Name:** coaches and clients see a group by its format's name — Superset, Circuit, Straight sets,
+  AMRAP, EMOM, For time — and never a letter (owner, 2026-09-16). "Group" is the data's word;
+  "Block" is reserved for client blocks.
 - **Shape:** a session is an ordered list of groups; a group is an ordered list of exercises; every
   exercise sits in a group. A group with one exercise on straight sets is exactly today's exercise.
 - **What the coach sees:** linking is the action — select any exercises, in any mix, and make them a
-  superset or circuit; each keeps its own columns. A lone exercise looks like today's exercise with
-  its letter; only linked exercises get a slim header with the group's settings. Coaches never see a
-  group around a single exercise.
+  superset or circuit; each keeps its own columns. A lone exercise looks like today's exercise; only
+  linked exercises get a slim header with the group's name and settings. Coaches never see a group
+  around a single exercise.
 - **Formats:**
   - *Straight sets* — each exercise's sets in turn.
   - *Superset/circuit* — a loop through the group's exercises, for its rounds.
@@ -525,7 +527,7 @@ WATCH FOR
 NOT IN THIS COMMIT: any visible change (commits 3–4); what AMRAP, EMOM and For time do (commits 14–15).
 ```
 
-### Commit 3 — Groups for the client
+### Commit 3 — Groups for the client — SHIPPED 2026-09-16
 
 ```text
 Implement commit 3 of 22 — Groups for the client — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
@@ -537,7 +539,7 @@ Clients see and log grouped exercises. The builder can't make groups until commi
 
 WHEN THIS COMMIT IS DONE
 - A group of one looks exactly as today.
-- A superset or circuit shows its exercises as A1, A2, A3 under the group, with its rounds and rests; each exercise's rows are its rounds.
+- A superset or circuit shows its exercises under the group, with its rounds and rests; each exercise's rows are its rounds.
 - Logging works as today (tick, reps, weight, RPE per row). The rest timer uses the group's rest between exercises and between rounds.
 - Completion counts rows exactly as today.
 - The client's program page and day summaries read sensibly for groups.
@@ -564,7 +566,7 @@ WHAT WE'RE BUILDING
 Coaches build straight sets, supersets and circuits.
 
 WHEN THIS COMMIT IS DONE
-- In the session editor, a lone exercise looks like today's exercise card, with its letter (A, B, C). Only linked exercises — a superset or circuit — sit under a slim header showing the group's settings, lettered B1, B2, B3. A coach never sees a group around a single exercise.
+- In the session editor, a lone exercise looks like today's exercise card. Only linked exercises — a superset or circuit — sit under a slim header showing the group's name and settings. A coach never sees a group around a single exercise.
 - A coach can link any exercises into a superset or circuit, unlink them, move exercises into and out of a circuit, and reorder exercises and circuits.
 - Group settings: format (straight sets or superset/circuit), rounds, rest between exercises, rest between rounds, notes. In a looped group, each exercise's rows follow the group's rounds, and each round can have its own targets.
 - It works everywhere a session is edited: the session sheet, the create slide-over, the placed-session tray, the standalone workout editor, and all three builder targets (library, client draft, Edit plan).

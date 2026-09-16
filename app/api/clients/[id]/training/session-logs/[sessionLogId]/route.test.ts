@@ -58,7 +58,7 @@ const mockResult = {
   sessionLog: mockSessionLog,
   exerciseLogs: [],
   performedSessionName: null,
-  prescribedExercises: [],
+  prescribedGroups: [],
 };
 
 describe("GET /api/clients/[id]/training/session-logs/[sessionLogId]", () => {
@@ -143,7 +143,7 @@ describe("GET /api/clients/[id]/training/session-logs/[sessionLogId]", () => {
       sessionLog: { ...mockSessionLog, clientId: OTHER_CLIENT_ID },
       exerciseLogs: [],
       performedSessionName: null,
-      prescribedExercises: [],
+      prescribedGroups: [],
     });
 
     const response = await GET(makeRequest(), {

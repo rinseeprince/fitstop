@@ -117,7 +117,7 @@ Each summary is minimal: name, logged-state boolean, progress counts. Target und
 
 ### Detail endpoints
 
-- `GET /api/client/training/events/[eventId]`: full event plus resolved session, exercises, existing `session_log` + `exercise_logs`.
+- `GET /api/client/training/events/[eventId]`: full event plus the resolved session header, its groups of exercises, existing `session_log` + `exercise_logs`.
 - `GET /api/client/daily-logs/[date]/nutrition`: nutrition event target plus any existing log.
 - `GET /api/client/daily-logs/[date]/wellness`: wellness log.
 - `GET /api/client/daily-logs/[date]/habits`: habits plus the day's logs.

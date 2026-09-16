@@ -63,6 +63,8 @@ function SetTypeTag({ row }: { row?: PrescribedRow }) {
 
 type SetRowProps = {
   setNumber: number;
+  /** "Round" where the exercise's rows are a group's rounds. */
+  rowNoun?: "Set" | "Round";
   /** Which prescription columns this exercise uses. */
   fields: ReadonlySet<PrescribedField>;
   /**
@@ -107,6 +109,7 @@ function withAutoTick(
 
 export function SetRow({
   setNumber,
+  rowNoun = "Set",
   fields,
   prescribed,
   register,
@@ -208,7 +211,7 @@ export function SetRow({
           <Checkbox
             checked={banked}
             onCheckedChange={() => onToggleComplete?.()}
-            aria-label={`Set ${setNumber} complete`}
+            aria-label={`${rowNoun} ${setNumber} complete`}
             data-testid={`set-complete-${exerciseIndex}-${setIndex}`}
             className="size-5 border-[#93b0b4] data-[state=checked]:border-[#0d9488] data-[state=checked]:bg-[#0d9488]"
           />
@@ -233,7 +236,7 @@ export function SetRow({
           {...withAutoTick(register(`${namePrefix}.weight`), onBlurRow)}
           inputMode="decimal"
           type="text"
-          aria-label={`Set ${setNumber} weight`}
+          aria-label={`${rowNoun} ${setNumber} weight`}
           className={`h-9 pr-9 text-center text-[13px] font-mono-display ${valueClass}`}
         />
         <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] uppercase tracking-[0.06em] text-[#93b0b4]">
@@ -247,7 +250,7 @@ export function SetRow({
           inputMode="numeric"
           type="text"
           placeholder={repsPlaceholder}
-          aria-label={`Set ${setNumber} reps`}
+          aria-label={`${rowNoun} ${setNumber} reps`}
           className={`h-9 text-center text-[13px] font-mono-display ${valueClass}`}
         />
       )}
@@ -258,7 +261,7 @@ export function SetRow({
           inputMode="decimal"
           type="text"
           placeholder={rpePlaceholder}
-          aria-label={`Set ${setNumber} RPE`}
+          aria-label={`${rowNoun} ${setNumber} RPE`}
           className={`h-9 text-center text-[13px] font-mono-display ${valueClass}`}
         />
       )}
@@ -268,7 +271,7 @@ export function SetRow({
           <button
             type="button"
             onClick={onRemove}
-            aria-label={`Delete set ${setNumber}`}
+            aria-label={`Delete ${rowNoun.toLowerCase()} ${setNumber}`}
             data-testid={`delete-set-${exerciseIndex}-${setIndex}`}
             className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#5a7d82] transition-colors hover:bg-[rgba(220,38,38,0.06)] hover:text-[#dc2626] disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -280,7 +283,7 @@ export function SetRow({
             type="button"
             onClick={onCopyPrevious}
             disabled={canCopyPrevious === false}
-            aria-label={`Copy previous set into set ${setNumber}`}
+            aria-label={`Copy previous ${rowNoun.toLowerCase()} into ${rowNoun.toLowerCase()} ${setNumber}`}
             data-testid={`copy-previous-${exerciseIndex}-${setIndex}`}
             className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#5a7d82] transition-colors hover:bg-[rgba(13,148,136,0.06)] hover:text-[#0d9488] disabled:cursor-not-allowed disabled:opacity-40"
           >

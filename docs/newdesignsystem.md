@@ -100,7 +100,7 @@ Every teal tint is `rgba(13,148,136,α)`. Pick the rung by role:
 | `0.06` | Inner hairlines (table/card/popover footers & dividers) |
 | `0.08` | **Default** — borders, chip/thumb/ordinal fills, icon-button hover bg, table highlight |
 | `0.10` | Rest-day dashed border |
-| `0.15` | Drop-set dashed rail; active icon on dark strip |
+| `0.15` | Drop-set dashed rail; linked-group rail; active icon on dark strip |
 | `0.20` | Idle dashed "add" button border; working-set select border |
 | `0.25` | Dashed "new" button border; interactive card hover border |
 | `0.35` | Focus ring (`ring-[#0d9488]/35`) |
@@ -723,6 +723,17 @@ List area `min-h-0 flex-1 space-y-2 overflow-y-auto px-[14px] pb-2`; search `h-8
 - Set grid: `grid grid-cols-[20px_minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.7fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_48px] items-center gap-1.5` (# / type / reps / load / RPE / rest / actions). Column header row uses `LABEL_CLASS`.
 - All set inputs/selects `h-7 … font-mono-display text-[11px]` + `FOCUS_RING`, numerics centered; working-set select adds `border-[rgba(13,148,136,0.2)] bg-[rgba(13,148,136,0.05)] font-medium text-[#0a5c55]`. Row action buttons `rounded p-1 hover:bg-[rgba(13,148,136,0.08)] text-[#93b0b4]` (`h-3 w-3` icons).
 - Drop-set sub-editor: `ml-8 mt-1 space-y-1 border-l border-dashed border-[rgba(13,148,136,0.15)] pl-3`; inputs `h-6 … font-mono-display text-[11px]`; "Add drop" uses `LABEL_CLASS hover:text-[#0d9488]`.
+
+### Grouped exercises (readout)
+
+Reference: `components/clients/training/session-log-group.tsx`, the coach's workout log view. The words come from `utils/exercise-group-display.ts`, which the client app shares, so a group reads the same to a coach and a client.
+
+- **A group of one is a plain exercise card** — no heading, no rail. Coaches never see a group around a single exercise.
+- **Groups carry no letters, anywhere.** A linked group is known by its format's name: Superset (a looped pair), Circuit (three or more), Straight sets, AMRAP, EMOM, For time.
+- **A linked group (two or more exercises)** is `<section aria-label={title} className="flex flex-col gap-2">`:
+  - Heading `px-1`: the name `text-[13px] font-semibold text-[#0c1a1e]`, then `·` (`mx-1.5`) and the rounds in `font-normal text-[#5a7d82]`, the count in `MONO`. Under it the rests, `mt-0.5 text-[12px] text-[#5a7d82]`, each duration in `MONO` — "30s rest between exercises · 1m 30s rest between rounds". Then the coach's notes, `mt-0.5 whitespace-pre-wrap text-[12px] text-[#93b0b4]`.
+  - Its cards on one rail: `flex flex-col gap-[10px] border-l-2 border-[rgba(13,148,136,0.15)] pl-3`.
+- **Where a group's rows are rounds** (every format but straight sets) the set table's first column reads **Round**.
 
 ### Session editor sheet / create slide-over / add-session popover / exercise picker / duplicate-week dialog / progression preview
 

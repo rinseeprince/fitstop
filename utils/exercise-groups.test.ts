@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   GROUP_FORMATS,
   STRAIGHT_SETS,
+  asLiveGroups,
   countSessionExercises,
   groupSettingsFromRow,
   groupSettingsOf,
   groupSettingsToRow,
   nestRowsIntoGroups,
   sessionExercises,
+  snapshotGroup,
   type GroupSettings,
 } from "./exercise-groups";
 
@@ -127,5 +129,92 @@ describe("nestRowsIntoGroups", () => {
 
   it("knows a group only through the exercises that point at it", () => {
     expect(nestRowsIntoGroups([])).toEqual([]);
+  });
+});
+
+describe("asLiveGroups", () => {
+  it("keeps every setting and marks each exercise live, in order", () => {
+    // A client group carries its session id beside its own fields.
+    const clientGroups = [
+      { ...CIRCUIT, id: "g-1", orderIndex: 0, sessionId: "s-1", exercises: ["a1", "a2"] },
+    ];
+    const groups = asLiveGroups(clientGroups);
+    expect(groups).toEqual([
+      {
+        id: "g-1",
+        orderIndex: 0,
+        ...CIRCUIT,
+        exercises: [
+          { source: "live", exercise: "a1" },
+          { source: "live", exercise: "a2" },
+        ],
+      },
+    ]);
+    // Only a group's own fields travel: nothing the source carries beside them.
+    expect(groups[0]).not.toHaveProperty("sessionId");
+  });
+});
+
+describe("snapshotGroup", () => {
+  const recorded = {
+    id: "g-circuit",
+    order_index: 2,
+    format: "circuit",
+    rounds: 3,
+    time_cap_seconds: 600,
+    interval_seconds: 60,
+    rest_between_exercises_seconds: 15,
+    rest_between_rounds_seconds: 90,
+    notes: "A",
+  };
+
+  it("reads the group a snapshot records, with the exercise's place in it", () => {
+    expect(snapshotGroup({ name: "Row", order_index: 1, group: recorded }, "ex-row")).toEqual({
+      id: "g-circuit",
+      orderIndex: 2,
+      settings: CIRCUIT,
+      exerciseOrderIndex: 1,
+    });
+  });
+
+  it("reads a snapshot written before groups as a straight-sets group of one, its id the exercise's own, in its old place", () => {
+    expect(snapshotGroup({ name: "Squat", order_index: 4 }, "ex-squat")).toEqual({
+      id: "ex-squat",
+      orderIndex: 4,
+      settings: STRAIGHT_SETS,
+      exerciseOrderIndex: 0,
+    });
+    expect(snapshotGroup({}, "ex-bare")).toEqual({
+      id: "ex-bare",
+      orderIndex: 0,
+      settings: STRAIGHT_SETS,
+      exerciseOrderIndex: 0,
+    });
+  });
+
+  it("does not trust a recorded group it cannot read", () => {
+    for (const group of [
+      null,
+      "g-circuit",
+      { ...recorded, id: 7 },
+      { ...recorded, order_index: "2" },
+      { ...recorded, format: "tabata" },
+    ]) {
+      expect(snapshotGroup({ order_index: 1, group }, "ex-1")).toEqual({
+        id: "ex-1",
+        orderIndex: 1,
+        settings: STRAIGHT_SETS,
+        exerciseOrderIndex: 0,
+      });
+    }
+  });
+
+  it("reads a setting of the wrong kind as unset", () => {
+    const { settings } = snapshotGroup(
+      { order_index: 0, group: { ...recorded, rounds: "3", notes: 5 } },
+      "ex-1",
+    );
+    expect(settings.rounds).toBeNull();
+    expect(settings.notes).toBeNull();
   });
 });

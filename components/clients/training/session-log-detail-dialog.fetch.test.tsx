@@ -67,7 +67,7 @@ describe("SessionLogDetailDialog through real SWR", () => {
           data: {
             sessionLog: sessionLog("sl-a", "Push Day"),
             exerciseLogs: [],
-            prescribedExercises: [],
+            prescribedGroups: [],
             performedSessionName: null,
           },
         });

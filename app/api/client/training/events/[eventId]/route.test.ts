@@ -39,7 +39,7 @@ function makeRequest(): NextRequest {
 const mockDetail = {
   event: { id: EVENT_ID, clientId: CLIENT_ID } as never,
   session: { source: "snapshot", snapshot: {} } as never,
-  exercises: [],
+  groups: [],
   sessionLog: null,
   exerciseLogs: [],
 };

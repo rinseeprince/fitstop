@@ -26,11 +26,8 @@ import type {
   TrainingEventDetail,
   TrainingSession,
 } from "@/types/training";
-import {
-  ExerciseTrackerBlock,
-  type ExerciseFormContext,
-  type PrescribedExerciseView,
-} from "./exercise-tracker-block";
+import type { PrescribedExerciseView } from "./exercise-tracker-block";
+import { TrackerExerciseList } from "./tracker-exercise-list";
 import { CompleteWorkoutFooter } from "./complete-workout-footer";
 import { AddExerciseRow } from "./add-exercise-row";
 import { SessionPicker } from "./session-picker";
@@ -46,7 +43,7 @@ import {
   type ExerciseFormValues,
   type LogFormValues,
 } from "./log-form-types";
-import { sessionExercises } from "@/utils/exercise-groups";
+import { asLiveGroups, sessionExercises } from "@/utils/exercise-groups";
 
 type EventDetailResponse = { success: boolean; data: TrainingEventDetail };
 type SessionDetailResponse = { success: boolean; data: { session: TrainingSession } };
@@ -274,9 +271,14 @@ function TrainingLogForm({
   const header = normalizeSessionHeader(detail.session, detail.event);
   const formattedDate = formatTrainingDate(date ?? detail.event.date);
 
+  // The prescription in order, group by group — the form's leading exercises.
+  // The groups themselves only decide how those exercises are laid out.
   const prescribedViews = useMemo(
-    () => detail.exercises.map((e, i) => normalizeExercise(e, i)),
-    [detail.exercises],
+    () =>
+      sessionExercises({ groups: detail.groups }).map((e, i) =>
+        normalizeExercise(e, i),
+      ),
+    [detail.groups],
   );
 
   // The flattened prescription per form position. Only the prescribed prefix has
@@ -469,47 +471,13 @@ function TrainingLogForm({
             />
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-3 space-y-3">
-            {exerciseFields.map((field, i) => {
-              // Nothing prescribed. `sets: 0` is this tree's spelling of that
-              // (exercise-tracker-block's zero-guard), which is what makes every
-              // row of an unplanned exercise deletable: the row list is entirely
-              // the client's own, so there is no prescription for a delete to
-              // shift out of alignment.
-              const unplannedView: PrescribedExerciseView = {
-                id: field.trainingExerciseId || field.id,
-                name: field.exerciseName,
-                sets: 0,
-                isWarmup: false,
-              };
-              const formContext: ExerciseFormContext = {
-                control,
-                register,
-                setValue,
-                getValues,
-                isUnplanned: field.isUnplanned,
-                onRemove: field.isUnplanned
-                  ? () => removeExercise(i)
-                  : undefined,
-              };
-              const prescribedView = prescribedViews[i];
-              return (
-                <ExerciseTrackerBlock
-                  key={field.id}
-                  // The PRESCRIPTION, unmodified. It used to carry
-                  // `sets: field.sets.length`, which fed the form's own row count
-                  // back into expandSetSpecs — so prescribedRows tracked the form
-                  // rather than the coach, and "is this row past the
-                  // prescription?" could never be true.
-                  exercise={
-                    field.isUnplanned || !prescribedView
-                      ? unplannedView
-                      : prescribedView
-                  }
-                  index={i}
-                  formContext={formContext}
-                />
-              );
-            })}
+            <TrackerExerciseList
+              groups={detail.groups}
+              prescribedViews={prescribedViews}
+              fields={exerciseFields}
+              form={{ control, register, setValue, getValues }}
+              onRemoveExercise={removeExercise}
+            />
             <AddExerciseRow onAdd={handleAddUnplanned} />
           </CollapsibleContent>
         </Collapsible>
@@ -531,13 +499,11 @@ function syntheticDetailFromSession(
     exerciseLogs: TrainingEventDetail["exerciseLogs"];
   },
 ): TrainingEventDetail {
+  const { groups, ...header } = session;
   return {
     event,
-    session: { source: "live", session },
-    exercises: sessionExercises(session).map((exercise) => ({
-      source: "live",
-      exercise,
-    })),
+    session: { source: "live", session: header },
+    groups: asLiveGroups(groups),
     sessionLog: logged?.sessionLog ?? null,
     exerciseLogs: logged?.exerciseLogs ?? [],
   };

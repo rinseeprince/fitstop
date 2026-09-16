@@ -7,8 +7,10 @@ import type {
   ExerciseLog,
   SetLog,
   SessionLogPrescribedExercise,
+  SessionLogPrescribedGroup,
 } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
+import { STRAIGHT_SETS, type GroupSettings } from "@/utils/exercise-groups";
 
 // Required, not optional: units-context imports auth-context, which constructs
 // the browser Supabase client at module load and throws without env vars. Any
@@ -108,10 +110,20 @@ function makePrescribed(
   };
 }
 
+/** A group of the prescription: straight sets of one unless settings say otherwise. */
+function makeGroup(
+  id: string,
+  orderIndex: number,
+  exercises: SessionLogPrescribedExercise[],
+  settings: Partial<GroupSettings> = {},
+): SessionLogPrescribedGroup {
+  return { id, orderIndex, ...STRAIGHT_SETS, ...settings, exercises };
+}
+
 function setupSWR(options: {
   sessionLog?: SessionLog;
   exerciseLogs?: ExerciseLog[];
-  prescribedExercises?: SessionLogPrescribedExercise[];
+  prescribedGroups?: SessionLogPrescribedGroup[];
   performedSessionName?: string | null;
   isLoading?: boolean;
   error?: Error | null;
@@ -124,7 +136,7 @@ function setupSWR(options: {
           data: {
             sessionLog: options.sessionLog ?? makeSessionLog(),
             exerciseLogs: options.exerciseLogs ?? [],
-            prescribedExercises: options.prescribedExercises ?? [],
+            prescribedGroups: options.prescribedGroups ?? [],
             performedSessionName: options.performedSessionName ?? null,
           },
         },
@@ -543,21 +555,23 @@ describe("SessionLogDetailDialog", () => {
     it("renders a prescribed exercise the client never touched", () => {
       setupSWR({
         exerciseLogs: [makeExerciseLog({ trainingExerciseId: "te-1" })],
-        prescribedExercises: [
-          makePrescribed({ trainingExerciseId: "te-1" }),
-          makePrescribed({
-            trainingExerciseId: "te-2",
-            name: "Lat Raise",
-            snapshot: {
+        prescribedGroups: [
+          makeGroup("grp-1", 0, [makePrescribed({ trainingExerciseId: "te-1" })]),
+          makeGroup("grp-2", 1, [
+            makePrescribed({
+              trainingExerciseId: "te-2",
               name: "Lat Raise",
-              sets: 3,
-              set_specs: [
-                spec({ set_number: 1, reps_min: 12, reps_max: 15 }),
-                spec({ set_number: 2, reps_min: 12, reps_max: 15 }),
-                spec({ set_number: 3, reps_min: 12, reps_max: 15 }),
-              ],
-            },
-          }),
+              snapshot: {
+                name: "Lat Raise",
+                sets: 3,
+                set_specs: [
+                  spec({ set_number: 1, reps_min: 12, reps_max: 15 }),
+                  spec({ set_number: 2, reps_min: 12, reps_max: 15 }),
+                  spec({ set_number: 3, reps_min: 12, reps_max: 15 }),
+                ],
+              },
+            }),
+          ]),
         ],
       });
 
@@ -585,9 +599,11 @@ describe("SessionLogDetailDialog", () => {
             prescribedExerciseSnapshot: { name: "Row", sets: 1 },
           }),
         ],
-        prescribedExercises: [
-          makePrescribed({ trainingExerciseId: "te-1", name: "Bench Press" }),
-          makePrescribed({ trainingExerciseId: "te-2", name: "Row" }),
+        prescribedGroups: [
+          makeGroup("grp-1", 0, [
+            makePrescribed({ trainingExerciseId: "te-1", name: "Bench Press" }),
+          ]),
+          makeGroup("grp-2", 1, [makePrescribed({ trainingExerciseId: "te-2", name: "Row" })]),
         ],
       });
 
@@ -601,6 +617,104 @@ describe("SessionLogDetailDialog", () => {
         .map((b) => b.textContent)
         .filter((t) => t && t !== "Close");
       expect(names).toEqual(["Bench Press", "Row", "Unplanned Curl"]);
+    });
+  });
+
+  describe("groups", () => {
+    const threeRounds = [
+      spec({ set_number: 1, reps_min: 10, reps_max: 10 }),
+      spec({ set_number: 2, reps_min: 10, reps_max: 10 }),
+      spec({ set_number: 3, reps_min: 10, reps_max: 10 }),
+    ];
+    const prescribed = (id: string, name: string) =>
+      makePrescribed({
+        trainingExerciseId: id,
+        name,
+        snapshot: { name, sets: 3, set_specs: threeRounds },
+      });
+
+    function setupSuperset(extraLogs: ExerciseLog[] = []) {
+      setupSWR({
+        exerciseLogs: [
+          makeExerciseLog({
+            id: "el-row",
+            trainingExerciseId: "te-row",
+            prescribedExerciseSnapshot: { name: "Pendlay Row", sets: 3, set_specs: threeRounds },
+            sets: [makeSetLog({ setNumber: 2, reps: 10, weight: 50 })],
+          }),
+          ...extraLogs,
+        ],
+        prescribedGroups: [
+          makeGroup("grp-squat", 0, [prescribed("te-squat", "Back Squat")]),
+          makeGroup(
+            "grp-superset",
+            1,
+            [prescribed("te-bench", "Bench Press"), prescribed("te-row", "Pendlay Row")],
+            {
+              format: "circuit",
+              rounds: 3,
+              restBetweenExercisesSeconds: 30,
+              restBetweenRoundsSeconds: 90,
+              notes: "Back to back",
+            },
+          ),
+        ],
+      });
+    }
+
+    it("sits a linked group under a slim heading with its name, rounds, rests and notes", () => {
+      setupSuperset();
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const superset = screen.getByRole("region", { name: "Superset · 3 rounds" });
+      expect(within(superset).getByText("Superset")).toBeInTheDocument();
+      // The separators are spaced by margin, as in the dialog's header line.
+      expect(superset).toHaveTextContent("30s rest between exercises");
+      expect(superset).toHaveTextContent("1m 30s rest between rounds");
+      expect(within(superset).getByText("Back to back")).toBeInTheDocument();
+      expect(
+        within(superset)
+          .getAllByRole("button")
+          .map((b) => b.textContent),
+      ).toEqual(["Bench Press", "Pendlay Row"]);
+      // Its rows are rounds, and a logged round sits on its own row.
+      expect(within(superset).getAllByText("Round")).toHaveLength(2);
+      const rowRows = within(superset).getAllByTestId("logged-set-row").slice(3);
+      expect(within(rowRows[1]).getByText("Logged")).toBeInTheDocument();
+      expect(within(rowRows[0]).getByText("Not done")).toBeInTheDocument();
+    });
+
+    it("gives a lone exercise no heading, no letter and its Set column", () => {
+      setupSuperset();
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      expect(screen.getAllByRole("region")).toHaveLength(1);
+      const squat = screen.getByRole("button", { name: "Back Squat" });
+      expect(squat.closest("section")).toBeNull();
+      expect(screen.getAllByText("Set")).toHaveLength(1);
+    });
+
+    it("keeps exercises logged outside the prescription after the groups, in none of them", () => {
+      setupSuperset([
+        makeExerciseLog({
+          id: "el-extra",
+          trainingExerciseId: null,
+          performedName: "Unplanned Curl",
+          prescribedExerciseSnapshot: null,
+          sets: [makeSetLog({ setNumber: 1, reps: 12, weight: 15 })],
+        }),
+      ]);
+
+      render(<SessionLogDetailDialog {...defaultProps} />);
+
+      const names = screen
+        .getAllByRole("button")
+        .map((b) => b.textContent)
+        .filter((t) => t && t !== "Close");
+      expect(names).toEqual(["Back Squat", "Bench Press", "Pendlay Row", "Unplanned Curl"]);
+      expect(screen.getByRole("button", { name: "Unplanned Curl" }).closest("section")).toBeNull();
     });
   });
 

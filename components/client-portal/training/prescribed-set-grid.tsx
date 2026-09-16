@@ -4,10 +4,14 @@ import type { UseFormRegister } from "react-hook-form";
 import type { LogFormValues } from "./log-form-types";
 import {
   buildSetDisplayNumbers,
-  restAfterRow,
   type PrescribedRow,
 } from "@/utils/set-spec-rows";
 import type { PrescribedField } from "@/utils/prescribed-fields";
+import {
+  LONE_EXERCISE,
+  restAfterGroupedRow,
+  type ExerciseGroupPlace,
+} from "@/utils/exercise-group-display";
 import { SET_GRID_BASE, SetRow, setGridTemplate } from "./set-row";
 import { RestTimer } from "./rest-timer";
 
@@ -52,6 +56,12 @@ type PrescribedSetGridProps = {
   canRemove?: (index: number) => boolean;
   onCopyPrevious?: (index: number) => void;
   canCopyPrevious?: (index: number) => boolean;
+  /**
+   * Where the exercise sits in its group. In a superset or circuit each row is a
+   * round and the rests between rows are the group's. Absent reads as a lone
+   * exercise.
+   */
+  place?: Readonly<ExerciseGroupPlace>;
 };
 
 const HEADER_CLASS =
@@ -70,9 +80,11 @@ export function PrescribedSetGrid({
   canRemove,
   onCopyPrevious,
   canCopyPrevious,
+  place = LONE_EXERCISE,
 }: PrescribedSetGridProps) {
   const rowCount = fieldIds ? fieldIds.length : rows.length;
   if (rowCount === 0) return null;
+  const rowNoun = place.roundsAreRows ? "Round" : "Set";
 
   // The tick belongs to the log form, never to the read-only prescription view.
   // Decided once here so the header and every row cannot disagree about how many
@@ -92,7 +104,7 @@ export function PrescribedSetGrid({
         style={{ gridTemplateColumns: setGridTemplate(fields, withTick) }}
       >
         {withTick && <div />}
-        <div className={HEADER_CLASS}>Set</div>
+        <div className={HEADER_CLASS}>{rowNoun}</div>
         {fields.has("load") && <div className={HEADER_CLASS}>Load</div>}
         <div className={HEADER_CLASS}>Weight</div>
         {fields.has("reps") && <div className={HEADER_CLASS}>Reps</div>}
@@ -106,15 +118,22 @@ export function PrescribedSetGrid({
           // Rest belongs AFTER the set it follows, and never between the drops
           // of one set — the whole point of a drop set is no rest. The kernel
           // owns that boundary question, because a drop set's rest sits on the
-          // parent spec while the interval falls after its LAST row.
-          const restSeconds = fields.has("rest")
-            ? restAfterRow(rows, i, rowCount)
-            : null;
+          // parent spec while the interval falls after its LAST row — and, in a
+          // linked group, because what follows a row is the group's to say.
+          // The Rest column gates the exercise's own rests, never the group's.
+          const restSeconds = restAfterGroupedRow(
+            rows,
+            i,
+            rowCount,
+            place,
+            fields.has("rest"),
+          );
 
           return (
             <div key={fieldIds ? fieldIds[i] : i}>
               <SetRow
                 setNumber={displayNumbers[i]}
+                rowNoun={rowNoun}
                 fields={fields}
                 prescribed={prescribed}
                 register={register}

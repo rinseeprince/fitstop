@@ -27,6 +27,12 @@ import {
   resolvePrescribedFields,
   type PrescribedField,
 } from "@/utils/prescribed-fields";
+import {
+  formatRestDuration,
+  formatRoundReps,
+  LONE_EXERCISE,
+  type ExerciseGroupPlace,
+} from "@/utils/exercise-group-display";
 
 export type PrescribedExerciseView = {
   id: string;
@@ -76,12 +82,15 @@ type ExerciseTrackerBlockProps = {
   exercise: PrescribedExerciseView;
   index: number;
   formContext?: ExerciseFormContext;
+  /** Where the exercise sits in its group. Absent reads as a lone exercise. */
+  place?: Readonly<ExerciseGroupPlace>;
 };
 
 export function ExerciseTrackerBlock({
   exercise,
   index,
   formContext,
+  place = LONE_EXERCISE,
 }: ExerciseTrackerBlockProps) {
   // The prescription, per set. This used to collapse to ONE exercise-level reps
   // hint reused on every row, which is why a session prescribed 15-20 / 10-12 /
@@ -91,7 +100,12 @@ export function ExerciseTrackerBlock({
     [exercise],
   );
   const fields = resolvePrescribedFields(exercise.prescribedFields);
-  const summary = formatSummary(exercise, formatRepsHint(exercise));
+  // Where rows are rounds, "3 × …" would read as sets and the exercise's own
+  // rest isn't the one that follows its rows: the line reads its reps round by
+  // round instead.
+  const summary = place.roundsAreRows
+    ? formatRoundsSummary(exercise, prescribedRows)
+    : formatSummary(exercise, formatRepsHint(exercise));
 
   if (!formContext) {
     return (
@@ -126,6 +140,7 @@ export function ExerciseTrackerBlock({
               rows={prescribedRows}
               fields={fields}
               fieldIds={null}
+              place={place}
             />
           </div>
         )}
@@ -141,6 +156,7 @@ export function ExerciseTrackerBlock({
       prescribedRows={prescribedRows}
       fields={fields}
       summary={summary}
+      place={place}
     />
   );
 }
@@ -152,6 +168,7 @@ function FormModeBlock({
   prescribedRows,
   fields,
   summary,
+  place,
 }: {
   exercise: PrescribedExerciseView;
   index: number;
@@ -159,6 +176,7 @@ function FormModeBlock({
   prescribedRows: PrescribedRow[];
   fields: ReadonlySet<PrescribedField>;
   summary: string;
+  place: Readonly<ExerciseGroupPlace>;
 }) {
   const {
     control,
@@ -414,6 +432,7 @@ function FormModeBlock({
           canRemove={(row) => row >= prescribedRows.length}
           onCopyPrevious={handleCopyPrevious}
           canCopyPrevious={canCopyAt}
+          place={place}
         />
         <button
           type="button"
@@ -422,7 +441,7 @@ function FormModeBlock({
           className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-[#0d9488] transition-colors hover:text-[#0a766b] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Plus className="h-3.5 w-3.5" />
-          Add set
+          {place.roundsAreRows ? "Add round" : "Add set"}
         </button>
       </div>
 
@@ -499,15 +518,17 @@ function formatSummary(
     parts.push(repsHint ? `${e.sets} × ${repsHint}` : `${e.sets} sets`);
   }
   if (e.rpeTarget != null) parts.push(`@ RPE ${e.rpeTarget}`);
-  if (e.restSeconds != null) parts.push(formatRest(e.restSeconds));
+  if (e.restSeconds != null) parts.push(`${formatRestDuration(e.restSeconds)} rest`);
   return parts.join(" · ");
 }
 
-function formatRest(seconds: number): string {
-  if (seconds >= 60) {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return s ? `${m}m ${s}s rest` : `${m}m rest`;
-  }
-  return `${seconds}s rest`;
+function formatRoundsSummary(
+  e: PrescribedExerciseView,
+  rows: PrescribedRow[],
+): string {
+  const parts: string[] = [];
+  const reps = formatRoundReps(rows);
+  if (reps) parts.push(reps);
+  if (e.rpeTarget != null) parts.push(`@ RPE ${e.rpeTarget}`);
+  return parts.join(" · ");
 }

@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { TrainingEventDetail } from "@/types/training";
+import type {
+  ResolvedExercise,
+  TrainingEventDetail,
+  TrainingExercise,
+} from "@/types/training";
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
 import { SetTracker } from "./set-tracker";
 
@@ -113,51 +117,163 @@ function baseFixture(): TrainingEventDetail {
         focus: "Chest + triceps",
         estimatedDurationMinutes: 45,
         calorieSurplusPercentage: null,
-        groups: [],
         createdAt: ISO,
         updatedAt: ISO,
       },
     },
-    exercises: [
+    groups: [
       {
-        source: "live",
-        exercise: {
-          id: REAL_UUID_A,
-          sessionId: "s-1",
-          groupId: "grp-bench",
-          exerciseId: null,
-          name: "Bench Press",
-          orderIndex: 0,
-          sets: 3,
-          repsTarget: "8-12",
-          rpeTarget: 8,
-          isWarmup: false,
-          prescribedFields: null,
-          createdAt: ISO,
-          updatedAt: ISO,
-        },
+        id: "grp-bench",
+        orderIndex: 0,
+        ...STRAIGHT_SETS,
+        exercises: [
+          {
+            source: "live",
+            exercise: {
+              id: REAL_UUID_A,
+              sessionId: "s-1",
+              groupId: "grp-bench",
+              exerciseId: null,
+              name: "Bench Press",
+              orderIndex: 0,
+              sets: 3,
+              repsTarget: "8-12",
+              rpeTarget: 8,
+              isWarmup: false,
+              prescribedFields: null,
+              createdAt: ISO,
+              updatedAt: ISO,
+            },
+          },
+        ],
       },
       {
-        source: "live",
-        exercise: {
-          id: REAL_UUID_B,
-          sessionId: "s-1",
-          groupId: "grp-ohp",
-          exerciseId: null,
-          name: "Overhead Press",
-          orderIndex: 0,
-          sets: 4,
-          repsTarget: "6-10",
-          isWarmup: false,
-          prescribedFields: null,
-          createdAt: ISO,
-          updatedAt: ISO,
-        },
+        id: "grp-ohp",
+        orderIndex: 1,
+        ...STRAIGHT_SETS,
+        exercises: [
+          {
+            source: "live",
+            exercise: {
+              id: REAL_UUID_B,
+              sessionId: "s-1",
+              groupId: "grp-ohp",
+              exerciseId: null,
+              name: "Overhead Press",
+              orderIndex: 0,
+              sets: 4,
+              repsTarget: "6-10",
+              isWarmup: false,
+              prescribedFields: null,
+              createdAt: ISO,
+              updatedAt: ISO,
+            },
+          },
+        ],
       },
     ],
     sessionLog: null,
     exerciseLogs: [],
   };
+}
+
+// A workout with every shape a group takes on screen: a lone exercise with its
+// own rests, a superset of two whose first exercise carries a per-set rest the
+// group's rests replace, and a 21-15-9 circuit of three with no rest between
+// exercises set.
+const SQUAT_UUID = "33333333-3333-4333-8333-333333333333";
+const BENCH_UUID = "44444444-4444-4444-8444-444444444444";
+const ROW_UUID = "55555555-5555-4555-8555-555555555555";
+const THRUSTER_UUID = "66666666-6666-4666-8666-666666666666";
+const PULL_UP_UUID = "77777777-7777-4777-8777-777777777777";
+const BURPEE_UUID = "88888888-8888-4888-8888-888888888888";
+
+function liveExercise(
+  id: string,
+  name: string,
+  groupId: string,
+  orderIndex: number,
+  over: Partial<TrainingExercise>,
+): ResolvedExercise {
+  return {
+    source: "live",
+    exercise: {
+      id,
+      sessionId: "s-1",
+      groupId,
+      exerciseId: null,
+      name,
+      orderIndex,
+      sets: 3,
+      isWarmup: false,
+      prescribedFields: null,
+      createdAt: ISO,
+      updatedAt: ISO,
+      ...over,
+    },
+  };
+}
+
+const rounds = (reps: number[], rest: number | null = null) =>
+  reps.map((r, i) => ({
+    set_number: i + 1,
+    set_type: "working" as const,
+    reps_min: r,
+    reps_max: r,
+    rest_seconds: rest,
+  }));
+
+function groupedFixture(): TrainingEventDetail {
+  const detail = baseFixture();
+  detail.groups = [
+    {
+      id: "grp-squat",
+      orderIndex: 0,
+      ...STRAIGHT_SETS,
+      exercises: [
+        liveExercise(SQUAT_UUID, "Back Squat", "grp-squat", 0, {
+          sets: 2,
+          setSpecs: rounds([5, 5], 120),
+        }),
+      ],
+    },
+    {
+      id: "grp-superset",
+      orderIndex: 1,
+      ...STRAIGHT_SETS,
+      format: "circuit",
+      rounds: 3,
+      restBetweenExercisesSeconds: 30,
+      restBetweenRoundsSeconds: 90,
+      notes: "Back to back",
+      exercises: [
+        liveExercise(BENCH_UUID, "Bench Press", "grp-superset", 0, {
+          setSpecs: [
+            { set_number: 1, set_type: "working", reps_min: 8, reps_max: 10, rest_seconds: 60 },
+            { set_number: 2, set_type: "working", reps_min: 8, reps_max: 10, rest_seconds: 60 },
+            { set_number: 3, set_type: "working", reps_min: 8, reps_max: 10, rest_seconds: 60 },
+          ],
+        }),
+        liveExercise(ROW_UUID, "Pendlay Row", "grp-superset", 1, {
+          setSpecs: rounds([10, 10, 10]),
+        }),
+      ],
+    },
+    {
+      id: "grp-circuit",
+      orderIndex: 2,
+      ...STRAIGHT_SETS,
+      format: "circuit",
+      rounds: 3,
+      restBetweenRoundsSeconds: 120,
+      exercises: [
+        liveExercise(THRUSTER_UUID, "Thruster", "grp-circuit", 0, { setSpecs: rounds([21, 15, 9]) }),
+        liveExercise(PULL_UP_UUID, "Pull-up", "grp-circuit", 1, { setSpecs: rounds([21, 15, 9]) }),
+        liveExercise(BURPEE_UUID, "Burpee", "grp-circuit", 2, { setSpecs: rounds([10, 10, 10]) }),
+      ],
+    },
+  ];
+  return detail;
 }
 
 function setEventReady(detail: TrainingEventDetail = baseFixture()) {
@@ -422,8 +538,8 @@ describe("SetTracker", () => {
   it("[warmup-unscored] a warm-up is tickable and sent, but out of the count", async () => {
     const detail = baseFixture();
     // One warm-up plus two working sets, in place of the plain 3.
-    detail.exercises = [detail.exercises[0]];
-    (detail.exercises[0] as { exercise: { setSpecs?: unknown } }).exercise.setSpecs = [
+    detail.groups = [detail.groups[0]];
+    (detail.groups[0].exercises[0] as { exercise: { setSpecs?: unknown } }).exercise.setSpecs = [
       { set_number: 1, set_type: "warmup", reps_min: 15, reps_max: 20 },
       { set_number: 2, set_type: "working", reps_min: 8, reps_max: 12 },
       { set_number: 3, set_type: "working", reps_min: 8, reps_max: 12 },
@@ -592,14 +708,21 @@ describe("SetTracker", () => {
   it("[uuid-filter] non-UUID prescribed id is omitted from payload", async () => {
     const detail = baseFixture();
     // Change exercise to snapshot with no id, so set-tracker synthesizes "snapshot-0"
-    detail.exercises = [
+    detail.groups = [
       {
-        source: "snapshot",
-        snapshot: {
-          name: "Mystery Exercise",
-          sets: 2,
-          isWarmup: false,
-        },
+        id: "grp-mystery",
+        orderIndex: 0,
+        ...STRAIGHT_SETS,
+        exercises: [
+          {
+            source: "snapshot",
+            snapshot: {
+              name: "Mystery Exercise",
+              sets: 2,
+              isWarmup: false,
+            },
+          },
+        ],
       },
     ];
     setEventReady(detail);
@@ -1261,6 +1384,9 @@ describe("SetTracker", () => {
                 sessionId: "s-2",
                 orderIndex: 0,
                 ...STRAIGHT_SETS,
+                format: "circuit",
+                rounds: 3,
+                restBetweenRoundsSeconds: 60,
                 exercises: [
                   {
                     id: REAL_UUID_B,
@@ -1269,6 +1395,18 @@ describe("SetTracker", () => {
                     exerciseId: null,
                     name: "Barbell Row",
                     orderIndex: 0,
+                    sets: 3,
+                    isWarmup: false,
+                    createdAt: ISO,
+                    updatedAt: ISO,
+                  },
+                  {
+                    id: SQUAT_UUID,
+                    sessionId: "s-2",
+                    groupId: "grp-row",
+                    exerciseId: null,
+                    name: "Chin-up",
+                    orderIndex: 1,
                     sets: 3,
                     isWarmup: false,
                     createdAt: ISO,
@@ -1290,11 +1428,187 @@ describe("SetTracker", () => {
 
     // Header shows the PERFORMED session (Back Day), not the prescribed one.
     expect(await screen.findByText("Back Day")).toBeInTheDocument();
+    // Its superset is laid out as one, like any workout's.
+    expect(screen.getByRole("region", { name: "Superset · 3 rounds" })).toBeInTheDocument();
 
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const body = getLastFetchPayload() as { performedSessionId?: string };
     expect(body.performedSessionId).toBe("s-2");
+  });
+
+  // ---- Groups ---------------------------------------------------------------
+
+  it("[groups-lone] a workout of lone exercises shows no group and no rounds", () => {
+    setEventReady();
+    render(<SetTracker eventId="evt-1" />);
+    expect(screen.queryByTestId("exercise-group")).toBeNull();
+    expect(screen.queryByText("Round")).toBeNull();
+    const [bench] = screen.getAllByTestId("exercise-tracker-block");
+    expect(within(bench).getByText("Set")).toBeInTheDocument();
+    expect(within(bench).getByTestId("add-set-0")).toHaveTextContent("Add set");
+  });
+
+  it("[groups-heading] linked exercises sit under their group's heading; a lone exercise under none", () => {
+    setEventReady(groupedFixture());
+    render(<SetTracker eventId="evt-1" />);
+
+    const blocks = screen.getAllByTestId("exercise-tracker-block");
+    expect(blocks).toHaveLength(6);
+    const groups = screen.getAllByTestId("exercise-group");
+    expect(groups).toHaveLength(2);
+
+    // The lone squat is a plain block.
+    expect(blocks[0].closest('[data-testid="exercise-group"]')).toBeNull();
+
+    const superset = screen.getByRole("region", { name: "Superset · 3 rounds" });
+    expect(within(superset).getByRole("heading", { name: "Superset · 3 rounds" })).toBeInTheDocument();
+    expect(
+      within(superset).getByText("30s rest between exercises · 1m 30s rest between rounds"),
+    ).toBeInTheDocument();
+    expect(within(superset).getByText("Back to back")).toBeInTheDocument();
+    expect(
+      within(superset).getAllByTestId("exercise-tracker-block").map((b) => within(b).getAllByRole("heading")[0].textContent),
+    ).toEqual(["Bench Press", "Pendlay Row"]);
+
+    // Three or more is a circuit; a rest the coach didn't set isn't mentioned.
+    const circuit = screen.getByRole("region", { name: "Circuit · 3 rounds" });
+    expect(within(circuit).getByText("2m rest between rounds")).toBeInTheDocument();
+    expect(within(circuit).queryByText(/between exercises/)).toBeNull();
+    expect(within(circuit).getAllByTestId("exercise-tracker-block")).toHaveLength(3);
+  });
+
+  it("[groups-rounds] in a superset or circuit each row is a round with its own targets", () => {
+    setEventReady(groupedFixture());
+    render(<SetTracker eventId="evt-1" />);
+    const [squat, bench, , thruster] = screen.getAllByTestId("exercise-tracker-block");
+
+    expect(within(bench).getByText("Round")).toBeInTheDocument();
+    expect(within(bench).queryByText("Set")).toBeNull();
+    expect(within(bench).getByLabelText("Round 1 reps")).toBeInTheDocument();
+    expect(within(bench).getByTestId("add-set-1")).toHaveTextContent("Add round");
+    // Reps per round, not "3 × …", and not the exercise's own rest.
+    expect(within(bench).getByText("8-10 reps")).toBeInTheDocument();
+    expect(within(bench).queryByText(/1m rest/)).toBeNull();
+
+    expect(within(thruster).getByText("21-15-9 reps")).toBeInTheDocument();
+    expect(within(thruster).getByLabelText("Round 1 reps")).toHaveAttribute("placeholder", "21");
+    expect(within(thruster).getByLabelText("Round 2 reps")).toHaveAttribute("placeholder", "15");
+    expect(within(thruster).getByLabelText("Round 3 reps")).toHaveAttribute("placeholder", "9");
+
+    // A lone exercise reads exactly as before.
+    expect(within(squat).getByText("Set")).toBeInTheDocument();
+    expect(within(squat).getByLabelText("Set 1 reps")).toBeInTheDocument();
+  });
+
+  it("[groups-rest] rest timers follow the group: between exercises, between rounds, none after the last round", () => {
+    setEventReady(groupedFixture());
+    render(<SetTracker eventId="evt-1" />);
+    const [squat, bench, row, thruster, pullUp, burpee] =
+      screen.getAllByTestId("exercise-tracker-block");
+    const timers = (block: HTMLElement) =>
+      within(block).queryAllByTestId("rest-timer").map((t) => t.textContent);
+
+    // Lone: its own rest between its two sets.
+    expect(timers(squat)).toEqual(["2:00 rest"]);
+    // Superset: after every Bench Press round the rest between exercises — not
+    // its own 60s — and after Pendlay Row, the last, the rest between rounds
+    // except after the final round.
+    expect(timers(bench)).toEqual(["30s rest", "30s rest", "30s rest"]);
+    expect(timers(row)).toEqual(["1:30 rest", "1:30 rest"]);
+    // Circuit with no rest between exercises set: no timer until the last.
+    expect(timers(thruster)).toEqual([]);
+    expect(timers(pullUp)).toEqual([]);
+    expect(timers(burpee)).toEqual(["2:00 rest", "2:00 rest"]);
+  });
+
+  it("[groups-log-round] a logged round is sent as that exercise's row, and counted as a row", async () => {
+    setEventReady(groupedFixture());
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    const row = screen.getAllByTestId("exercise-tracker-block")[2];
+
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "0 of 17 working sets logged. Will be recorded as skipped.",
+    );
+    await user.click(screen.getByTestId("set-complete-2-1"));
+    await user.type(within(row).getByLabelText("Round 2 reps"), "10");
+    expect(screen.getByTestId("completion-outcome")).toHaveTextContent(
+      "1 of 17 working sets logged. Will be recorded as partial.",
+    );
+
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const payload = getLastFetchPayload() as {
+      completionQuality: string;
+      exercises?: Array<{
+        trainingExerciseId?: string;
+        sets: Array<{ setNumber: number; reps?: number }>;
+      }>;
+    };
+    expect(payload.completionQuality).toBe("partial");
+    expect(payload.exercises).toEqual([
+      expect.objectContaining({
+        trainingExerciseId: ROW_UUID,
+        exerciseName: "Pendlay Row",
+        sets: [{ setNumber: 2, reps: 10 }],
+      }),
+    ]);
+  });
+
+  it("[groups-restore] a logged round reopens on its own row", () => {
+    const detail = groupedFixture();
+    detail.sessionLog = {
+      id: "log-1",
+      clientId: "c-1",
+      trainingSessionId: "s-1",
+      trainingEventId: "evt-1",
+      completedAt: detail.event.date,
+      completionQuality: "partial",
+      notes: null,
+      weekStartDate: "2026-05-04",
+      prescribedSessionSnapshot: null,
+      createdAt: ISO,
+      updatedAt: ISO,
+    };
+    detail.exerciseLogs = [
+      {
+        id: "elog-row",
+        sessionLogId: "log-1",
+        trainingExerciseId: ROW_UUID,
+        exerciseId: null,
+        completed: true,
+        notes: null,
+        performedName: "Pendlay Row",
+        prescribedExerciseSnapshot: { name: "Pendlay Row" },
+        sets: [
+          {
+            id: "sl-1",
+            exerciseLogId: "elog-row",
+            setType: "working",
+            setNumber: 2,
+            reps: 10,
+            weight: 60,
+            rpe: null,
+            createdAt: ISO,
+            updatedAt: ISO,
+          },
+        ],
+        createdAt: ISO,
+        updatedAt: ISO,
+      },
+    ];
+    setEventReady(detail);
+    setMe("kg");
+    render(<SetTracker eventId="evt-1" />);
+    const row = screen.getAllByTestId("exercise-tracker-block")[2];
+
+    expect(within(row).getByLabelText<HTMLInputElement>("Round 2 reps").value).toBe("10");
+    expect(within(row).getByLabelText<HTMLInputElement>("Round 1 reps").value).toBe("");
+    expect(screen.getByTestId("set-complete-2-1")).toHaveAttribute("data-state", "checked");
+    expect(screen.getByTestId("set-complete-2-0")).toHaveAttribute("data-state", "unchecked");
+    // Nothing else in the superset picked the round up.
+    expect(screen.getByTestId("set-complete-1-1")).toHaveAttribute("data-state", "unchecked");
   });
 
   it("[locked] a day in a week a check-in has closed is read-only (banner shown, save disabled)", () => {

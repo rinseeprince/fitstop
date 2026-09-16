@@ -55,7 +55,7 @@ import {
   getSessionLogDetail,
 } from "./training-log-service";
 import { EXERCISE_WITH_GROUP_COLUMNS } from "./training-mappers";
-import { sessionExercises } from "@/utils/exercise-groups";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 
@@ -2036,18 +2036,19 @@ describe("getTrainingEventDetail", () => {
     expect(result).not.toBeNull();
     expect(result!.event.id).toBe(EVENT_ID);
     expect(result!.session.source).toBe("live");
-    expect(result!.exercises).toHaveLength(1);
-    expect(result!.exercises[0].source).toBe("live");
+    expect(result!.groups).toHaveLength(1);
+    expect(result!.groups[0].exercises).toHaveLength(1);
+    expect(result!.groups[0].exercises[0].source).toBe("live");
     expect(result!.sessionLog?.id).toBe(SESSION_LOG_ID);
     expect(result!.exerciseLogs).toHaveLength(1);
   });
 
   // -------------------------------------------------------------------------
-  // 16b. The live session carries its groups, and the flat exercise list runs
-  //      group by group, each group's exercises in turn — never by the
-  //      exercises' own order numbers across the session.
+  // 16b. The workout is the live session's groups in order, each with every
+  //      setting and its exercises in turn — never by the exercises' own order
+  //      numbers across the session — and the session is a header without them.
   // -------------------------------------------------------------------------
-  it("[16b] live path: the session's groups in order, and the exercises group by group", async () => {
+  it("[16b] live path: the workout is the session's groups in order, and the session a header", async () => {
     const eventQ = createMockQuery({
       data: {
         id: EVENT_ID,
@@ -2133,31 +2134,37 @@ describe("getTrainingEventDetail", () => {
     );
     expect(result?.session.source).toBe("live");
     if (result?.session.source === "live") {
-      const { groups } = result.session.session;
-      expect(groups.map((g) => [g.id, g.exercises.map((e) => e.name)])).toEqual([
-        ["grp-first", ["Deadlift"]],
-        ["grp-circuit", ["Pull-up", "Row"]],
-        ["grp-last", ["Face pull"]],
-      ]);
-      expect(groups[1]).toMatchObject({
-        orderIndex: 1,
-        format: "circuit",
-        rounds: 3,
-        timeCapSeconds: null,
-        intervalSeconds: null,
-        restBetweenExercisesSeconds: 15,
-        restBetweenRoundsSeconds: 90,
-        notes: null,
-      });
-      expect(sessionExercises(result.session.session).map((e) => e.id)).toEqual([
-        "ex-deadlift",
-        "ex-pull-up",
-        "ex-row",
-        "ex-face-pull",
-      ]);
+      // The prescription is on the payload once: in `groups`.
+      expect(result.session.session).not.toHaveProperty("groups");
+      expect(result.session.session.name).toBe("Pull");
     }
+    const groups = result?.groups ?? [];
     expect(
-      result?.exercises.map((resolved) =>
+      groups.map((g) => [
+        g.id,
+        g.exercises.map((resolved) =>
+          resolved.source === "live" ? resolved.exercise.name : null,
+        ),
+      ]),
+    ).toEqual([
+      ["grp-first", ["Deadlift"]],
+      ["grp-circuit", ["Pull-up", "Row"]],
+      ["grp-last", ["Face pull"]],
+    ]);
+    expect(groups[1]).toEqual({
+      id: "grp-circuit",
+      orderIndex: 1,
+      format: "circuit",
+      rounds: 3,
+      timeCapSeconds: null,
+      intervalSeconds: null,
+      restBetweenExercisesSeconds: 15,
+      restBetweenRoundsSeconds: 90,
+      notes: null,
+      exercises: groups[1].exercises,
+    });
+    expect(
+      sessionExercises(result!).map((resolved) =>
         resolved.source === "live" ? resolved.exercise.id : null,
       ),
     ).toEqual(["ex-deadlift", "ex-pull-up", "ex-row", "ex-face-pull"]);
@@ -2347,10 +2354,10 @@ describe("getTrainingEventDetail", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 19b. Regression guard: when liveSession is null, all exercise_logs become
-  //      snapshot-source (no `liveSession.exercises` access).
+  // 19b. Regression guard: when liveSession is null, every logged exercise
+  //      becomes snapshot-source, in the group its snapshot records.
   // -------------------------------------------------------------------------
-  it("[19b] no liveSession + non-empty exerciseLogs: every exercise emitted as snapshot, ordered by created_at", async () => {
+  it("[19b] no liveSession + non-empty exerciseLogs: every exercise emitted as snapshot, in its snapshot's group", async () => {
     const eventQ = createMockQuery({
       data: {
         id: EVENT_ID,
@@ -2413,11 +2420,15 @@ describe("getTrainingEventDetail", () => {
     });
 
     const result = await getTrainingEventDetail(EVENT_ID, CLIENT_ID);
-    expect(result?.exercises).toHaveLength(1);
-    expect(result?.exercises[0].source).toBe("snapshot");
-    if (result?.exercises[0].source === "snapshot") {
-      expect(result.exercises[0].snapshot).toEqual(EXERCISE_A_SNAPSHOT);
-    }
+    expect(result?.groups).toHaveLength(1);
+    expect(result?.groups[0]).toMatchObject({
+      id: EXERCISE_A_GROUP.id,
+      orderIndex: 0,
+      format: "straight_sets",
+    });
+    expect(result?.groups[0].exercises).toEqual([
+      { source: "snapshot", snapshot: EXERCISE_A_SNAPSHOT },
+    ]);
   });
 
   // -------------------------------------------------------------------------
@@ -2502,7 +2513,11 @@ describe("getTrainingEventDetail", () => {
       error: null,
     });
     // exercise_logs has TWO rows: one matches live (A), one is orphan (B-deleted).
-    const orphanSnapshot = { ...EXERCISE_A_SNAPSHOT, name: "Old Move B" };
+    const orphanSnapshot = {
+      ...EXERCISE_A_SNAPSHOT,
+      name: "Old Move B",
+      group: loneGroup("grp-b-retired", 1),
+    };
     const exerciseLogsQ = createMockQuery({
       data: [
         {
@@ -2543,12 +2558,141 @@ describe("getTrainingEventDetail", () => {
     });
 
     const result = await getTrainingEventDetail(EVENT_ID, CLIENT_ID);
-    expect(result?.exercises).toHaveLength(2);
-    expect(result?.exercises[0].source).toBe("live"); // live first
-    expect(result?.exercises[1].source).toBe("snapshot"); // orphan appended
-    if (result?.exercises[1].source === "snapshot") {
-      expect(result.exercises[1].snapshot).toEqual(orphanSnapshot);
-    }
+    const exercises = sessionExercises(result!);
+    expect(exercises).toHaveLength(2);
+    expect(exercises[0].source).toBe("live"); // live first
+    expect(result?.groups[0].id).toBe("grp-a");
+    // The orphan follows as the group its snapshot records.
+    expect(result?.groups[1]).toMatchObject({ id: "grp-b-retired", format: "straight_sets" });
+    expect(exercises[1]).toEqual({ source: "snapshot", snapshot: orphanSnapshot });
+  });
+
+  // -------------------------------------------------------------------------
+  // 20b/20c. A workout read off its log's snapshots keeps its groups: a
+  //          snapshot records the group it sat in, and one written before
+  //          migration 178 reads as the straight-sets group of one the
+  //          migration made of it.
+  // -------------------------------------------------------------------------
+  function installDeletedSessionWithLogs(logs: Array<{ id: string; exerciseId: string; snapshot: Record<string, unknown> }>) {
+    installRouter({
+      training_events: createMockQuery({
+        data: {
+          id: EVENT_ID,
+          client_id: CLIENT_ID,
+          training_plan_id: "plan-1",
+          training_session_id: SESSION_ID,
+          date: "2026-05-04",
+          session_name: "Push",
+          session_focus: null,
+          estimated_calories: null,
+          status: "completed",
+          session_log_id: SESSION_LOG_ID,
+          is_modified: false,
+          calorie_surplus_percentage: null,
+          created_at: "x",
+          updated_at: "x",
+        },
+        error: null,
+      }),
+      training_sessions: createMockQuery({ data: null, error: null }),
+      session_logs: createMockQuery({
+        data: {
+          id: SESSION_LOG_ID,
+          client_id: CLIENT_ID,
+          training_session_id: SESSION_ID,
+          completed_at: "x",
+          completion_quality: "full",
+          notes: null,
+          week_start_date: "2026-05-04",
+          prescribed_session_snapshot: SESSION_PRESCRIPTION,
+          created_at: "x",
+          updated_at: "x",
+        },
+        error: null,
+      }),
+      exercise_logs: createMockQuery({
+        data: logs.map((log) => ({
+          id: log.id,
+          session_log_id: SESSION_LOG_ID,
+          training_exercise_id: log.exerciseId,
+          completed: true,
+          notes: null,
+          prescribed_exercise_snapshot: log.snapshot,
+          created_at: "x",
+          updated_at: "x",
+        })),
+        error: null,
+      }),
+      set_logs: createMockQuery({ data: [], error: null }),
+    });
+  }
+
+  it("[20b] snapshot groups: the exercises a snapshot places in one group nest in it, with its settings, in their places", async () => {
+    const circuit: GroupEmbed = {
+      id: "grp-circuit",
+      order_index: 1,
+      format: "circuit",
+      rounds: 3,
+      time_cap_seconds: null,
+      interval_seconds: null,
+      rest_between_exercises_seconds: 30,
+      rest_between_rounds_seconds: 90,
+      notes: "Back to back",
+    };
+    // Logged in no particular order.
+    installDeletedSessionWithLogs([
+      { id: "el-row", exerciseId: "ex-row", snapshot: { ...EXERCISE_A_SNAPSHOT, name: "Row", order_index: 1, group: circuit } },
+      { id: "el-squat", exerciseId: "ex-squat", snapshot: { ...EXERCISE_A_SNAPSHOT, name: "Squat", order_index: 0, group: loneGroup("grp-squat", 0) } },
+      { id: "el-bench", exerciseId: "ex-bench", snapshot: { ...EXERCISE_A_SNAPSHOT, name: "Bench", order_index: 0, group: circuit } },
+    ]);
+
+    const result = await getTrainingEventDetail(EVENT_ID, CLIENT_ID);
+
+    const names = (result?.groups ?? []).map((g) => [
+      g.id,
+      g.exercises.map((resolved) =>
+        resolved.source === "snapshot" ? resolved.snapshot.name : null,
+      ),
+    ]);
+    expect(names).toEqual([
+      ["grp-squat", ["Squat"]],
+      ["grp-circuit", ["Bench", "Row"]],
+    ]);
+    expect(result?.groups[1]).toMatchObject({
+      orderIndex: 1,
+      format: "circuit",
+      rounds: 3,
+      timeCapSeconds: null,
+      intervalSeconds: null,
+      restBetweenExercisesSeconds: 30,
+      restBetweenRoundsSeconds: 90,
+      notes: "Back to back",
+    });
+  });
+
+  it("[20c] a snapshot written before groups reads as a straight-sets group of one, its id the exercise's own, in its old place", async () => {
+    const { group: _group, ...legacy } = EXERCISE_A_SNAPSHOT;
+    installDeletedSessionWithLogs([
+      { id: "el-2", exerciseId: "ex-press", snapshot: { ...legacy, name: "Press", order_index: 2 } },
+      { id: "el-1", exerciseId: "ex-squat", snapshot: { ...legacy, name: "Squat", order_index: 0 } },
+    ]);
+
+    const result = await getTrainingEventDetail(EVENT_ID, CLIENT_ID);
+
+    expect(result?.groups).toEqual([
+      {
+        id: "ex-squat",
+        orderIndex: 0,
+        ...STRAIGHT_SETS,
+        exercises: [{ source: "snapshot", snapshot: { ...legacy, name: "Squat", order_index: 0 } }],
+      },
+      {
+        id: "ex-press",
+        orderIndex: 2,
+        ...STRAIGHT_SETS,
+        exercises: [{ source: "snapshot", snapshot: { ...legacy, name: "Press", order_index: 2 } }],
+      },
+    ]);
   });
 
   // -------------------------------------------------------------------------
@@ -2780,19 +2924,21 @@ describe("getSessionLogDetail", () => {
     expect(result).not.toBeNull();
     // ex-b was prescribed and never logged — it is absent from exercise_logs
     // entirely, so without this read the coach could not see it was asked for.
-    expect(result?.prescribedExercises.map((p) => p.trainingExerciseId)).toEqual([
-      "ex-a",
-      "ex-b",
-    ]);
-    expect(result?.prescribedExercises[1].name).toBe("Overhead Press");
+    const prescribed = sessionExercises({ groups: result?.prescribedGroups ?? [] });
+    expect(prescribed.map((p) => p.trainingExerciseId)).toEqual(["ex-a", "ex-b"]);
+    expect(prescribed[1].name).toBe("Overhead Press");
     // Its place in the session: first in the session's second group.
-    expect(result?.prescribedExercises[1].snapshot).toMatchObject({
+    expect(result?.prescribedGroups.map((g) => [g.id, g.orderIndex])).toEqual([
+      ["grp-a", 0],
+      ["grp-b", 1],
+    ]);
+    expect(prescribed[1].snapshot).toMatchObject({
       order_index: 0,
       group: { id: "grp-b", order_index: 1 },
     });
     // The snapshot is the same snake_case shape a log carries, so both expand
     // through one function.
-    expect(result?.prescribedExercises[1].snapshot).toMatchObject({
+    expect(prescribed[1].snapshot).toMatchObject({
       name: "Overhead Press",
       sets: 3,
       reps_min: 8,
@@ -2846,13 +2992,24 @@ describe("getSessionLogDetail", () => {
 
     const result = await getSessionLogDetail(SESSION_LOG_ID);
 
-    expect(result?.prescribedExercises.map((p) => p.trainingExerciseId)).toEqual([
-      "ex-deadlift",
-      "ex-pull-up",
-      "ex-row",
-      "ex-face-pull",
+    const groups = result?.prescribedGroups ?? [];
+    expect(groups.map((g) => [g.id, g.exercises.map((e) => e.trainingExerciseId)])).toEqual([
+      ["grp-first", ["ex-deadlift"]],
+      ["grp-circuit", ["ex-pull-up", "ex-row"]],
+      ["grp-last", ["ex-face-pull"]],
     ]);
-    expect(result?.prescribedExercises[2].snapshot).toMatchObject({
+    // The group carries every setting, for the readout's heading.
+    expect(groups[1]).toMatchObject({
+      orderIndex: 1,
+      format: "circuit",
+      rounds: 3,
+      timeCapSeconds: null,
+      intervalSeconds: null,
+      restBetweenExercisesSeconds: 15,
+      restBetweenRoundsSeconds: 90,
+      notes: null,
+    });
+    expect(groups[1].exercises[1].snapshot).toMatchObject({
       name: "Row",
       order_index: 1,
       group: circuit,
@@ -2877,7 +3034,7 @@ describe("getSessionLogDetail", () => {
 
     const result = await getSessionLogDetail(SESSION_LOG_ID);
 
-    expect(result?.prescribedExercises).toEqual([]);
+    expect(result?.prescribedGroups).toEqual([]);
     expect(result?.performedSessionName).toBeNull();
     expect(trainingExercisesQ.select).not.toHaveBeenCalled();
     expect(trainingSessionsQ.select).not.toHaveBeenCalled();
@@ -2924,9 +3081,11 @@ describe("getSessionLogDetail", () => {
 
     const result = await getSessionLogDetail(SESSION_LOG_ID);
 
-    expect(result?.prescribedExercises.map((p) => p.trainingExerciseId)).toEqual([
-      "ex-a",
-    ]);
+    expect(
+      sessionExercises({ groups: result?.prescribedGroups ?? [] }).map(
+        (p) => p.trainingExerciseId,
+      ),
+    ).toEqual(["ex-a"]);
     expect(result?.exerciseLogs.map((l) => l.trainingExerciseId)).toEqual(["ex-gone"]);
   });
 

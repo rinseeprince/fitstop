@@ -175,7 +175,7 @@ All client API endpoints require authentication except where noted.
 
 - `GET /api/client/training-plan` - The active plan, self-describing (`ClientTrainingPlan | null`)
 - `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: `training: TrainingEventSummary[]`, nutrition, wellness, habits. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
-- `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, exercises, sessionLog, exerciseLogs }`. A live `session` carries its `groups` (each with its settings and exercises, in order); `exercises` lists the same live exercises flat, group by group, each with its `groupId`, then a snapshot block for any logged exercise the coach has since removed. Each `exerciseLogs[].prescribedExerciseSnapshot` records the prescription as logged, including `order_index` (its place in its group) and `group` (`id`, `order_index`, `format` and every setting in snake_case)
+- `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, groups, sessionLog, exerciseLogs }` (`TrainingEventDetail`, below). `session` is the session's header — live, its name, focus and duration with no groups of its own; or the log's `prescribed_session_snapshot` once the session is gone. `groups` is the workout in order, each group with its settings and its exercises in order, each exercise live or read off its log's snapshot: the live session's groups first, then any logged exercise the live session no longer holds (all of them when the session is gone), in the group its snapshot records — a snapshot logged before groups existed reads as a straight-sets group of one whose `id` is the exercise's own. Each `exerciseLogs[].prescribedExerciseSnapshot` records the prescription as logged, including `order_index` (its place in its group) and `group` (`id`, `order_index`, `format` and every setting in snake_case). Render it group by group — see "RN contract — how a group reads" and "RN contract — logging a group"
 - `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `403` day locked, body `"This day is locked."` (outside `logsOpenFrom`…today) · `404` not found / not this client
 - `GET /api/client/training/sessions/{sessionId}` - Session + its groups of exercises; 404 unless the session belongs to the client's ACTIVE plan. Powers the rest-day picker
 - `GET /api/client/training/week?date={YYYY-MM-DD}` - The training week containing `date` (`ClientTrainingWeek`, `types/client-training-week.ts`): `{ weekStart, weekEnd, today, sessions[] }`, each session `{ eventId, sessionId, name, focus, date, state }` with `state` = `done | today | upcoming | missed` derived against the client's today. ≤7 rows, `no-store`. The session picker and the week view list THIS — it is exactly the set a layout write may touch
@@ -378,13 +378,50 @@ type ClientTrainingExercise = {
 }
 ```
 
-> **RN contract — every exercise sits in a group.** A session is an ordered list of groups and a group an ordered list of exercises (migration 178). A lone exercise is a `straight_sets` group of one with every setting null — exactly the exercise it always was. Render a session's exercises group by group, each group's exercises in turn; that is the order the coach wrote. A group's format and settings are the coach's prescription for how its exercises are done together; the web client does not render them yet, and no group today holds more than one exercise or another format.
+> **RN contract — every exercise sits in a group.** A session is an ordered list of groups and a group an ordered list of exercises (migration 178). A lone exercise is a `straight_sets` group of one with every setting null — exactly the exercise it always was. Render a session's exercises group by group, each group's exercises in turn; that is the order the coach wrote. A group's format and settings are the coach's prescription for how its exercises are done together.
+
+> **RN contract — how a group reads.** A group of one is a plain exercise: no heading, its own rests. A group of two or more is known by its format's name and never by a letter — `circuit` is **Superset** for two exercises and **Circuit** for three or more, `straight_sets` **Straight sets**, `amrap` **AMRAP**, `emom` **EMOM**, `for_time` **For time** — under one heading with its `rounds` (every format but straight sets), its rests (between exercises, then between rounds for every format but straight sets; `0` reads "no rest", `null` isn't mentioned) and its `notes`. In every format but straight sets a group loops through its exercises, so **each exercise's rows are its rounds**: row n of its flattened `setSpecs` is round n, with that round's own targets — 21-15-9 is three rows asking 21, 15 and 9.
+
+> **RN contract — the rest after a row.** A lone exercise rests as its `setSpecs` say. In a group whose rows are rounds: after a row of any exercise but the last, the group's `restBetweenExercisesSeconds`; after a row of the last exercise, its `restBetweenRoundsSeconds`; after the last exercise's final row, nothing. An exercise's own per-set rest isn't used there. In a linked straight-sets group: the exercise's own rests between its sets, then `restBetweenExercisesSeconds` after its last set unless it is the last exercise. Never between the rows of one drop set, and a rest of `0` is no rest. The web client's rule is `restAfterGroupedRow` (`utils/exercise-group-display.ts`).
+
+> **RN contract — logging a group.** A group changes nothing you send. Each exercise is its own `exercises[]` entry with its own `trainingExerciseId`, and a round is a set of that exercise: `setNumber` is the row's 1-based place in that exercise's flattened `setSpecs`, so a logged round reopens on its row. Completion counts rows exactly as for any exercise.
 
 > **RN contract — days are POSITIONAL, not weekdays.** `dayOfWeek` is gone: placement writes `day_of_week: null` and tiles the whole authored program as a sequential date-walk. Render by `weekIndex` + `orderIndex`, never by weekday name.
 
 > **RN contract — `setSpecs` wins over `sets`/`repsMin`/`repsMax`.** The compact trio is a maintained projection (non-warmup set count; reps span the working sets). A renderer reading only the trio is truthful but lossy — it loses warm-ups, AMRAP/drop/failure sets, per-set loads and per-set rest. Seed the log form from `setSpecs` when present; otherwise synthesize N `working` specs from the trio.
 
 > **RN contract — every entry is a training day or a rest day.** There is no session-type axis.
+
+### TrainingEventDetail (the workout read)
+Source of truth: `types/training.ts`. Returned by `GET /api/client/training/events/{eventId}`.
+
+```typescript
+type TrainingEventDetail = {
+  event: TrainingEvent
+  session:
+    | { source: "live"; session: TrainingSessionHeader } // the session without its groups
+    | { source: "snapshot"; snapshot: Record<string, unknown> } // prescribed_session_snapshot
+  groups: ResolvedExerciseGroup[] // the workout, in order
+  sessionLog: SessionLog | null
+  exerciseLogs: ExerciseLog[]
+}
+
+type ResolvedExerciseGroup = {
+  id: string
+  orderIndex: number // the group's place in the session
+  format: GroupFormat
+  rounds: number | null
+  timeCapSeconds: number | null
+  intervalSeconds: number | null
+  restBetweenExercisesSeconds: number | null
+  restBetweenRoundsSeconds: number | null
+  notes: string | null
+  exercises: Array<
+    | { source: "live"; exercise: TrainingExercise }
+    | { source: "snapshot"; snapshot: Record<string, unknown> } // snake_case prescription as logged
+  > // in order; never empty
+}
+```
 
 ### SetSpec (per-set prescription)
 

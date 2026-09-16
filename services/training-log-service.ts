@@ -35,16 +35,17 @@ export class TrainingLogOwnershipError extends Error {
 import type {
   ExerciseLog,
   LogTrainingEventResponse,
-  ResolvedExercise,
+  ResolvedExerciseGroup,
   ResolvedSession,
   SessionLog,
   SessionLogDetail,
-  SessionLogPrescribedExercise,
+  SessionLogPrescribedGroup,
   SetLog,
   TrainingEvent,
   TrainingEventDetail,
   TrainingEventStatus,
-  TrainingSession,
+  TrainingExerciseGroup,
+  TrainingSessionHeader,
 } from "@/types/training";
 import type { SessionCompletionQuality } from "@/types/check-in";
 import { toCanonicalWeightKg } from "@/utils/unit-conversions";
@@ -59,7 +60,13 @@ import {
   mapExerciseRowsToGroups,
   type TrainingExerciseWithGroupRow,
 } from "@/services/training-mappers";
-import { nestRowsIntoGroups, sessionExercises } from "@/utils/exercise-groups";
+import {
+  asLiveGroups,
+  groupSettingsFromRow,
+  nestRowsIntoGroups,
+  sessionExercises,
+  snapshotGroup,
+} from "@/utils/exercise-groups";
 // The one flattening. The client's log form seeds its rows from this same
 // function, so a drop set's expansion cannot differ between what the client
 // filled in and what set_type each row is stamped with here.
@@ -287,9 +294,12 @@ async function loadExerciseSnapshots(
   return rows;
 }
 
+/** One group of a session's prescription and its exercise rows, in order. */
+type PrescriptionGroup = { group: GroupSnapshot; exercises: PrescriptionRow[] };
+
 /**
- * Every ACTIVE exercise of the session the client PERFORMED — the denominator
- * for completion_quality.
+ * Every ACTIVE exercise of the session the client PERFORMED, in its groups — the
+ * denominator for completion_quality.
  *
  * It has to be read rather than inferred from the payload: an exercise the
  * client never touched is absent from the payload entirely, so asking the
@@ -303,7 +313,7 @@ async function loadExerciseSnapshots(
 async function loadSessionPrescription(
   clientId: string,
   sessionId: string,
-): Promise<PrescriptionRow[]> {
+): Promise<PrescriptionGroup[]> {
   const { data, error } = await supabaseAdmin
     .from("training_exercises")
     .select(PRESCRIPTION_COLUMNS + PRESCRIPTION_SCOPE)
@@ -315,17 +325,44 @@ async function loadSessionPrescription(
       `Failed to load session prescription: ${error.message}`,
     );
   }
-  // Authored order — group by group, each group's exercises in turn — for the
-  // coach readout. The completion-quality derivation below reads this through
-  // a Map and does not care about order.
-  return sessionExercises({
-    groups: nestRowsIntoGroups(
-      (data ?? []).map((row) => {
-        const prescription = row as unknown as PrescriptionRow;
-        return { group: prescription.exercise_group, exercise: prescription };
-      }),
-    ),
+  // Authored order — the groups in order, each group's exercises in turn — for
+  // the coach readout. The completion-quality derivation below reads the rows
+  // through a Map and does not care about order.
+  return nestRowsIntoGroups(
+    (data ?? []).map((row) => {
+      const prescription = row as unknown as PrescriptionRow;
+      return { group: prescription.exercise_group, exercise: prescription };
+    }),
+  );
+}
+
+/**
+ * Logged exercises with no live prescription row, as the groups their snapshots
+ * record (`snapshotGroup`: a pre-migration-178 snapshot is a straight-sets group
+ * of one), in the order those snapshots give. An unplanned log has no
+ * prescription and is not among them.
+ */
+function snapshotGroups(logs: ExerciseLog[]): ResolvedExerciseGroup[] {
+  const rows = logs.flatMap((log) => {
+    if (log.trainingExerciseId === null) return [];
+    const snapshot = log.prescribedExerciseSnapshot ?? {};
+    const place = snapshotGroup(snapshot, log.trainingExerciseId);
+    return [
+      {
+        group: { id: place.id, order_index: place.orderIndex, settings: place.settings },
+        exercise: { id: log.trainingExerciseId, order_index: place.exerciseOrderIndex, snapshot },
+      },
+    ];
   });
+  return nestRowsIntoGroups(rows).map(({ group, exercises }) => ({
+    id: group.id,
+    orderIndex: group.order_index,
+    ...group.settings,
+    exercises: exercises.map((exercise) => ({
+      source: "snapshot" as const,
+      snapshot: exercise.snapshot,
+    })),
+  }));
 }
 
 // Fetches set_logs for the given exercise_logs in one query and attaches them
@@ -483,18 +520,18 @@ async function writeSessionLog(params: {
     ];
     // Independent reads — issued together so the added denominator read costs
     // no round trip of its own (CONVENTIONS §2, performance 11).
-    const [snapshotRows, sessionRows] = await Promise.all([
+    const [snapshotRows, sessionGroups] = await Promise.all([
       distinctExerciseIds.length > 0
         ? loadExerciseSnapshots(clientId, distinctExerciseIds)
         : Promise.resolve<PrescriptionRow[]>([]),
       performedSessionId !== null
         ? loadSessionPrescription(clientId, performedSessionId)
-        : Promise.resolve<PrescriptionRow[]>([]),
+        : Promise.resolve<PrescriptionGroup[]>([]),
     ]);
     for (const row of snapshotRows) {
       freshExerciseSnapshotMap.set(row.id, toExerciseSnapshot(row));
     }
-    for (const row of sessionRows) {
+    for (const row of sessionExercises({ groups: sessionGroups })) {
       sessionPrescribedRows.set(
         row.id,
         buildPrescribedRows(snapshotToSpecs(toExerciseSnapshot(row))),
@@ -856,10 +893,11 @@ export async function getTrainingEventDetail(
 
   const event = mapEventRow(eventRow as TrainingEventRow);
 
-  // Live session (with active exercises).
+  // Live session (with active exercises, in their groups).
   // is_active filter IS appropriate here — we don't want a soft-deleted
   // session to surface as "live" in the UI. Snapshot fallback covers it.
-  let liveSession: TrainingSession | null = null;
+  let liveSession: TrainingSessionHeader | null = null;
+  let liveGroups: TrainingExerciseGroup[] = [];
   if (event.trainingSessionId !== null) {
     const { data: sessionData, error: sessionErr } = await supabaseAdmin
       .from("training_sessions")
@@ -878,6 +916,7 @@ export async function getTrainingEventDetail(
       const exerciseRows = (
         (sessionData.training_exercises as unknown as TrainingExerciseWithGroupRow[] | null) ?? []
       ).filter((e) => e.is_active !== false);
+      liveGroups = mapExerciseRowsToGroups(exerciseRows);
       liveSession = {
         id: sessionData.id,
         planId: sessionData.plan_id,
@@ -891,7 +930,6 @@ export async function getTrainingEventDetail(
         estimatedCalories: sessionData.estimated_calories ?? undefined,
         caloriesCalculatedAt: sessionData.calories_calculated_at ?? undefined,
         calorieSurplusPercentage: sessionData.calorie_surplus_percentage,
-        groups: mapExerciseRowsToGroups(exerciseRows),
         createdAt: sessionData.created_at,
         updatedAt: sessionData.updated_at,
       };
@@ -940,52 +978,27 @@ export async function getTrainingEventDetail(
           snapshot: sessionLog?.prescribedSessionSnapshot ?? {},
         };
 
-  // Build ResolvedExercise[].
-  // Truly unplanned logs (trainingExerciseId is null) are excluded from this
-  // array. They already live in exerciseLogs, and the frontend's
-  // seedDefaultValues handles them via its orphan-log path. Including them
-  // here would cause each unplanned exercise to render twice (once as
-  // "prescribed", once as orphan).
-  let exercises: ResolvedExercise[];
-  if (liveSession === null) {
-    // No live session — reconstruct prescribed exercise blocks from logged
-    // snapshots. Exclude unplanned logs (trainingExerciseId is null).
-    exercises = exerciseLogs
-      .filter((log) => log.trainingExerciseId !== null)
-      .map((log) => ({
-        source: "snapshot",
-        snapshot: log.prescribedExerciseSnapshot ?? {},
-      }));
-  } else {
-    // Live exercises in order: group by group, each group's exercises in turn.
-    const liveExercises = sessionExercises(liveSession);
-    const liveIds = new Set(liveExercises.map((e) => e.id));
-    exercises = liveExercises.map((exercise) => ({
-      source: "live",
-      exercise,
-    }));
-    // Append snapshot blocks for logs of soft-deleted prescribed exercises
-    // (trainingExerciseId set but no longer in live). Truly unplanned logs
-    // (trainingExerciseId null) are NOT appended — see comment above.
-    const deletedOrphans: ResolvedExercise[] = exerciseLogs
-      .filter(
-        (log) =>
-          log.trainingExerciseId !== null &&
-          !liveIds.has(log.trainingExerciseId),
-      )
-      .map((log) => ({
-        source: "snapshot",
-        snapshot: log.prescribedExerciseSnapshot ?? {},
-      }));
-    if (deletedOrphans.length > 0) {
-      exercises = [...exercises, ...deletedOrphans];
-    }
-  }
+  // The workout as groups: the live session's groups in order, then any logged
+  // exercise the live session no longer holds (all of them when the session is
+  // gone), as the groups its snapshot records.
+  // Truly unplanned logs (trainingExerciseId is null) are excluded. They already
+  // live in exerciseLogs, and the frontend's seedDefaultValues handles them via
+  // its orphan-log path. Including them here would cause each unplanned exercise
+  // to render twice (once as "prescribed", once as orphan).
+  const liveIds = new Set(sessionExercises({ groups: liveGroups }).map((e) => e.id));
+  const groups: ResolvedExerciseGroup[] = [
+    ...asLiveGroups(liveGroups),
+    ...snapshotGroups(
+      exerciseLogs.filter(
+        (log) => log.trainingExerciseId !== null && !liveIds.has(log.trainingExerciseId),
+      ),
+    ),
+  ];
 
   return {
     event,
     session,
-    exercises,
+    groups,
     sessionLog,
     exerciseLogs,
   };
@@ -1037,7 +1050,7 @@ export async function getSessionLogDetail(
   //
   // Scope comes from the log row's own client_id. The route proves the caller
   // owns that client by matching it against the URL before returning anything.
-  const [sessionRowResult, prescriptionRows] = await Promise.all([
+  const [sessionRowResult, prescription] = await Promise.all([
     row.training_session_id
       ? supabaseAdmin
           .from("training_sessions")
@@ -1047,7 +1060,7 @@ export async function getSessionLogDetail(
       : Promise.resolve({ data: null, error: null }),
     row.training_session_id
       ? loadSessionPrescription(row.client_id, row.training_session_id)
-      : Promise.resolve<PrescriptionRow[]>([]),
+      : Promise.resolve<PrescriptionGroup[]>([]),
   ]);
   if (sessionRowResult.error) {
     throw new Error(
@@ -1056,17 +1069,23 @@ export async function getSessionLogDetail(
   }
   const performedSessionName: string | null = sessionRowResult.data?.name ?? null;
 
-  const prescribedExercises: SessionLogPrescribedExercise[] =
-    prescriptionRows.map((prescriptionRow) => ({
-      trainingExerciseId: prescriptionRow.id,
-      name: prescriptionRow.name,
-      snapshot: toExerciseSnapshot(prescriptionRow),
-    }));
+  const prescribedGroups: SessionLogPrescribedGroup[] = prescription.map(
+    ({ group, exercises }) => ({
+      id: group.id,
+      orderIndex: group.order_index,
+      ...groupSettingsFromRow(group),
+      exercises: exercises.map((prescriptionRow) => ({
+        trainingExerciseId: prescriptionRow.id,
+        name: prescriptionRow.name,
+        snapshot: toExerciseSnapshot(prescriptionRow),
+      })),
+    }),
+  );
 
   return {
     sessionLog: mapSessionLogRow(row as SessionLogRow),
     exerciseLogs,
     performedSessionName,
-    prescribedExercises,
+    prescribedGroups,
   };
 }

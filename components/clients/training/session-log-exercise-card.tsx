@@ -130,12 +130,15 @@ type SessionLogExerciseCardProps = {
   log: ExerciseLog | null;
   /** The live prescription, or null for an exercise with no prescription left. */
   prescribed: SessionLogPrescribedExercise | null;
+  /** In a superset or circuit each row is one round, and the first column says so. */
+  roundsAreRows?: boolean;
   onExerciseDrillDown?: (exerciseId: string | null, exerciseName: string) => void;
 };
 
 export function SessionLogExerciseCard({
   log,
   prescribed,
+  roundsAreRows = false,
   onExerciseDrillDown,
 }: SessionLogExerciseCardProps) {
   const { preference } = useUnits();
@@ -195,7 +198,7 @@ export function SessionLogExerciseCard({
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className="w-8 pl-4" />
-              <TableHead className="w-[132px]">Set</TableHead>
+              <TableHead className="w-[132px]">{roundsAreRows ? "Round" : "Set"}</TableHead>
               {showPrescribed && <TableHead>Prescribed</TableHead>}
               <TableHead>Weight ({unitLabel})</TableHead>
               <TableHead>Reps</TableHead>

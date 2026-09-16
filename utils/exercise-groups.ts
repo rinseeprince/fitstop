@@ -136,6 +136,72 @@ export function countSessionExercises(session: {
   return session.groups.reduce((sum, group) => sum + group.exercises.length, 0);
 }
 
+/**
+ * A session's live groups as a workout lists them: every setting kept, each
+ * exercise marked live. The client's workout read and the tracker's swapped
+ * session go through this one mapping, so neither can drop a setting.
+ */
+export function asLiveGroups<E>(
+  groups: ReadonlyArray<GroupSettings & { id: string; orderIndex: number; exercises: ReadonlyArray<E> }>,
+): Array<GroupSettings & { id: string; orderIndex: number; exercises: Array<{ source: "live"; exercise: E }> }> {
+  return groups.map((group) => ({
+    id: group.id,
+    orderIndex: group.orderIndex,
+    ...groupSettingsOf(group),
+    exercises: group.exercises.map((exercise) => ({ source: "live" as const, exercise })),
+  }));
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * The group a logged exercise sat in, read off its prescription snapshot, with
+ * the exercise's place in it.
+ *
+ * A snapshot written since migration 178 records its group. One written before
+ * records none — or a group this reader cannot trust — and reads as a
+ * straight-sets group of one whose id is the exercise's own and whose place is
+ * the exercise's old place in the session: exactly what the migration's
+ * backfill made of the row.
+ */
+export function snapshotGroup(
+  snapshot: Readonly<Record<string, unknown>>,
+  exerciseId: string,
+): { id: string; orderIndex: number; settings: GroupSettings; exerciseOrderIndex: number } {
+  const place = numberOrNull(snapshot.order_index) ?? 0;
+  const group = snapshot.group;
+  if (
+    group !== null &&
+    typeof group === "object" &&
+    "id" in group &&
+    typeof group.id === "string" &&
+    "order_index" in group &&
+    typeof group.order_index === "number" &&
+    "format" in group &&
+    typeof group.format === "string" &&
+    isGroupFormat(group.format)
+  ) {
+    const row = group as Record<string, unknown>;
+    return {
+      id: group.id,
+      orderIndex: group.order_index,
+      settings: {
+        format: group.format,
+        rounds: numberOrNull(row.rounds),
+        timeCapSeconds: numberOrNull(row.time_cap_seconds),
+        intervalSeconds: numberOrNull(row.interval_seconds),
+        restBetweenExercisesSeconds: numberOrNull(row.rest_between_exercises_seconds),
+        restBetweenRoundsSeconds: numberOrNull(row.rest_between_rounds_seconds),
+        notes: typeof row.notes === "string" ? row.notes : null,
+      },
+      exerciseOrderIndex: place,
+    };
+  }
+  return { id: exerciseId, orderIndex: place, settings: { ...STRAIGHT_SETS }, exerciseOrderIndex: 0 };
+}
+
 type Ordered = { id: string; order_index: number };
 
 const byPosition = (a: Ordered, b: Ordered) =>

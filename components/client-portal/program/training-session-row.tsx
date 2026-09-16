@@ -5,9 +5,19 @@ import { ChevronRight } from "lucide-react";
 
 import type {
   ClientTrainingExercise,
+  ClientTrainingExerciseGroup,
   ClientTrainingSessionEntry,
 } from "@/types/client-training-plan";
 import { sessionExercises } from "@/utils/exercise-groups";
+import { expandSetSpecs } from "@/utils/exercise-set-specs";
+import { buildPrescribedRows } from "@/utils/set-spec-rows";
+import {
+  exerciseGroupPlace,
+  formatRoundReps,
+  groupHeading,
+  groupHeadingText,
+  isLinkedGroup,
+} from "@/utils/exercise-group-display";
 
 type Props = {
   session: ClientTrainingSessionEntry;
@@ -29,6 +39,94 @@ function formatPrescription(ex: ClientTrainingExercise): string {
   const reps = formatReps(ex);
   const setsReps = reps ? `${ex.sets} x ${reps}` : `${ex.sets} sets`;
   return ex.rpeTarget != null ? `${setsReps} @ RPE ${ex.rpeTarget}` : setsReps;
+}
+
+// Where an exercise's rows are a group's rounds, "4 x …" would read as sets:
+// its reps read round by round instead ("21-15-9 reps").
+function formatRoundsPrescription(ex: ClientTrainingExercise): string {
+  const reps = formatRoundReps(
+    buildPrescribedRows(
+      expandSetSpecs({
+        setSpecs: ex.setSpecs,
+        sets: ex.sets,
+        repsMin: ex.repsMin,
+        repsMax: ex.repsMax,
+        repsTarget: ex.repsTarget,
+        rpeTarget: ex.rpeTarget,
+        tempo: ex.tempo,
+        restSeconds: ex.restSeconds,
+      }),
+    ),
+  );
+  const rpe = ex.rpeTarget != null ? `@ RPE ${ex.rpeTarget}` : null;
+  return [reps, rpe].filter(Boolean).join(" ");
+}
+
+// A superset or circuit reads its exercises' rests off the group's heading, so
+// an exercise in one shows no rest of its own.
+function ExerciseItem({
+  ex,
+  roundsAreRows,
+}: {
+  ex: ClientTrainingExercise;
+  roundsAreRows: boolean;
+}) {
+  const prescription = roundsAreRows
+    ? formatRoundsPrescription(ex)
+    : formatPrescription(ex);
+  const showRest = !roundsAreRows && ex.restSeconds != null;
+  return (
+    <li className="space-y-0.5">
+      <p className="text-sm font-semibold text-foreground">{ex.name}</p>
+      {prescription && (
+        <p className="font-mono-display text-xs text-muted-foreground">
+          {prescription}
+        </p>
+      )}
+      {(ex.tempo || showRest) && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+          {ex.tempo && (
+            <span className="rounded-md bg-muted px-2 py-0.5 font-mono-display text-[11px] text-muted-foreground">
+              Tempo {ex.tempo}
+            </span>
+          )}
+          {showRest && (
+            <span className="rounded-md bg-muted px-2 py-0.5 font-mono-display text-[11px] text-muted-foreground">
+              Rest {ex.restSeconds}s
+            </span>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+// A linked group: its heading, then its exercises beneath it.
+function GroupItem({ group }: { group: ClientTrainingExerciseGroup }) {
+  const heading = groupHeading(group);
+  const { title, rests } = groupHeadingText(heading);
+  return (
+    <li aria-label={title} className="space-y-2">
+      <div className="space-y-0.5">
+        <p className="text-xs font-semibold text-foreground">{title}</p>
+        {rests && <p className="text-xs text-muted-foreground">{rests}</p>}
+        {heading.notes && (
+          <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+            {heading.notes}
+          </p>
+        )}
+      </div>
+      <ul className="space-y-2 border-l border-border pl-3">
+        {group.exercises.map((ex, position) => (
+          <ExerciseItem
+            key={ex.id}
+            ex={ex}
+            roundsAreRows={exerciseGroupPlace(group, position).roundsAreRows}
+          />
+        ))}
+      </ul>
+    </li>
+  );
 }
 
 export function TrainingSessionRow({ session }: Props) {
@@ -89,30 +187,13 @@ export function TrainingSessionRow({ session }: Props) {
             </p>
           ) : (
             <ul className="space-y-2">
-              {exercises.map((ex) => (
-                <li key={ex.id} className="space-y-0.5">
-                  <p className="text-sm font-semibold text-foreground">
-                    {ex.name}
-                  </p>
-                  <p className="font-mono-display text-xs text-muted-foreground">
-                    {formatPrescription(ex)}
-                  </p>
-                  {(ex.tempo || ex.restSeconds != null) && (
-                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                      {ex.tempo && (
-                        <span className="rounded-md bg-muted px-2 py-0.5 font-mono-display text-[11px] text-muted-foreground">
-                          Tempo {ex.tempo}
-                        </span>
-                      )}
-                      {ex.restSeconds != null && (
-                        <span className="rounded-md bg-muted px-2 py-0.5 font-mono-display text-[11px] text-muted-foreground">
-                          Rest {ex.restSeconds}s
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
+              {session.groups.flatMap((group) =>
+                isLinkedGroup(group)
+                  ? [<GroupItem key={group.id} group={group} />]
+                  : group.exercises.map((ex) => (
+                      <ExerciseItem key={ex.id} ex={ex} roundsAreRows={false} />
+                    )),
+              )}
             </ul>
           )}
         </div>

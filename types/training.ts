@@ -347,9 +347,16 @@ export type ExerciseLog = {
 export type SessionLogPrescribedExercise = {
   trainingExerciseId: string;
   name: string;
-  // Carries the exercise's group and its place in it (migration 178); the list
-  // is in session order.
+  // Carries the exercise's group and its place in it (migration 178).
   snapshot: Record<string, unknown>;
+};
+
+// A group of the performed session's live prescription: its settings and its
+// exercises in order. orderIndex is the group's place in the session.
+export type SessionLogPrescribedGroup = GroupSettings & {
+  id: string;
+  orderIndex: number;
+  exercises: SessionLogPrescribedExercise[];
 };
 
 // The coach's logged-workout detail payload (GET
@@ -360,31 +367,44 @@ export type SessionLogDetail = {
   /** Live name of the session PERFORMED; null if it was hard-deleted. */
   performedSessionName: string | null;
   /**
-   * The performed session's active exercises, in authored order. Empty when the
-   * log has no training_session_id (legacy, or the session was deleted), and the
-   * readout then falls back to the logs alone.
+   * The performed session's active exercises, group by group in authored order.
+   * Empty when the log has no training_session_id (legacy, or the session was
+   * deleted), and the readout then falls back to the logs alone.
    */
-  prescribedExercises: SessionLogPrescribedExercise[];
+  prescribedGroups: SessionLogPrescribedGroup[];
 };
+
+// A session as a workout's header: everything but its groups, which the workout
+// read returns resolved beside it (TrainingEventDetail.groups).
+export type TrainingSessionHeader = Omit<TrainingSession, "groups">;
 
 // Resolved session/exercise carries a discriminator so consumers know whether
 // the row came from a live FK reference or the snapshot fallback. After plan
 // edits or session deletions, the live ref may be null while the snapshot
 // preserves the prescription as it was at log time.
 export type ResolvedSession =
-  | { source: 'live'; session: TrainingSession }
+  | { source: 'live'; session: TrainingSessionHeader }
   | { source: 'snapshot'; snapshot: Record<string, unknown> };
 
 export type ResolvedExercise =
   | { source: 'live'; exercise: TrainingExercise }
   | { source: 'snapshot'; snapshot: Record<string, unknown> };
 
-// Combined event detail returned by getTrainingEventDetail().
+// A workout's group as the client's workout read returns it: its settings and
+// its exercises in order, each live or read off the log's snapshot.
+export type ResolvedExerciseGroup = GroupSettings & {
+  id: string;
+  orderIndex: number;
+  exercises: ResolvedExercise[];
+};
+
+// Combined event detail returned by getTrainingEventDetail(): the workout as
+// ordered groups, the one place its prescription is on the payload.
 // exerciseLogs is empty when the client used quick log only or hasn't logged yet.
 export type TrainingEventDetail = {
   event: TrainingEvent;
   session: ResolvedSession;
-  exercises: ResolvedExercise[];
+  groups: ResolvedExerciseGroup[];
   sessionLog: SessionLog | null;
   exerciseLogs: ExerciseLog[];
 };

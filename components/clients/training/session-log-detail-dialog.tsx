@@ -24,8 +24,14 @@ import type {
   SessionLog,
   SessionLogDetail,
   SessionLogPrescribedExercise,
+  SessionLogPrescribedGroup,
 } from "@/types/training";
+import {
+  exerciseGroupPlace,
+  isLinkedGroup,
+} from "@/utils/exercise-group-display";
 import { SessionLogExerciseCard } from "./session-log-exercise-card";
+import { SessionLogGroup } from "./session-log-group";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +55,12 @@ type ExerciseEntry = {
   key: string;
   prescribed: SessionLogPrescribedExercise | null;
   log: ExerciseLog | null;
+};
+
+/** A group of the prescription, with each of its exercises' entries in order. */
+type GroupEntry = {
+  group: SessionLogPrescribedGroup;
+  entries: ExerciseEntry[];
 };
 
 // ---------------------------------------------------------------------------
@@ -96,24 +108,24 @@ function snapshotNumber(snapshot: Record<string, unknown> | null, key: string): 
 }
 
 /**
- * The body's exercise list: the session's prescription in authored order, each
- * with its log if the client touched it, then anything logged that the
- * prescription no longer contains.
+ * The body's exercise list: the session's prescription in authored order, group
+ * by group, each exercise with its log if the client touched it, then anything
+ * logged that the prescription no longer contains.
  *
  * The order mirrors the client's own log form (`seedDefaultValues`), so the
  * coach reads the session in the order the client worked through it. A
  * prescribed exercise with no log renders fully not-done rather than vanishing,
  * which is the whole reason the route returns the prescription at all.
  *
- * The trailing group covers three real cases: an unplanned exercise the client
+ * The trailing entries cover three real cases: an unplanned exercise the client
  * added, a free-form entry with no `training_exercise_id`, and a prescribed one
  * the coach has since soft-deleted (absent from the live read, but its log and
- * snapshot survive).
+ * snapshot survive). They belong to no group of the session as it stands.
  */
 function buildExerciseEntries(
-  prescribedExercises: SessionLogPrescribedExercise[],
+  prescribedGroups: SessionLogPrescribedGroup[],
   exerciseLogs: ExerciseLog[],
-): ExerciseEntry[] {
+): { groups: GroupEntry[]; extras: ExerciseEntry[] } {
   const logsByExerciseId = new Map<string, ExerciseLog>();
   for (const log of exerciseLogs) {
     if (log.trainingExerciseId !== null) {
@@ -121,23 +133,29 @@ function buildExerciseEntries(
     }
   }
 
-  const entries: ExerciseEntry[] = prescribedExercises.map((prescribed) => ({
-    key: prescribed.trainingExerciseId,
-    prescribed,
-    log: logsByExerciseId.get(prescribed.trainingExerciseId) ?? null,
+  const groups: GroupEntry[] = prescribedGroups.map((group) => ({
+    group,
+    entries: group.exercises.map((prescribed) => ({
+      key: prescribed.trainingExerciseId,
+      prescribed,
+      log: logsByExerciseId.get(prescribed.trainingExerciseId) ?? null,
+    })),
   }));
 
   const prescribedIds = new Set(
-    prescribedExercises.map((p) => p.trainingExerciseId),
+    prescribedGroups.flatMap((group) =>
+      group.exercises.map((prescribed) => prescribed.trainingExerciseId),
+    ),
   );
+  const extras: ExerciseEntry[] = [];
   for (const log of exerciseLogs) {
     if (log.trainingExerciseId !== null && prescribedIds.has(log.trainingExerciseId)) {
       continue;
     }
-    entries.push({ key: log.id, prescribed: null, log });
+    extras.push({ key: log.id, prescribed: null, log });
   }
 
-  return entries;
+  return { groups, extras };
 }
 
 // ---------------------------------------------------------------------------
@@ -170,16 +188,17 @@ export function SessionLogDetailDialog({
 
   const sessionLog = data?.data?.sessionLog;
   const exerciseLogs = useMemo(() => data?.data?.exerciseLogs ?? [], [data]);
-  const prescribedExercises = useMemo(
-    () => data?.data?.prescribedExercises ?? [],
+  const prescribedGroups = useMemo(
+    () => data?.data?.prescribedGroups ?? [],
     [data],
   );
   const performedSessionName: string | null = data?.data?.performedSessionName ?? null;
 
   const entries = useMemo(
-    () => buildExerciseEntries(prescribedExercises, exerciseLogs),
-    [prescribedExercises, exerciseLogs],
+    () => buildExerciseEntries(prescribedGroups, exerciseLogs),
+    [prescribedGroups, exerciseLogs],
   );
+  const hasEntries = entries.groups.length > 0 || entries.extras.length > 0;
 
   const sessionSnapshot = sessionLog?.prescribedSessionSnapshot ?? null;
   const sessionName = snapshotString(sessionSnapshot, "name") ?? "Training Session";
@@ -276,7 +295,7 @@ export function SessionLogDetailDialog({
 
             {/* Quick-logged state: nothing prescribed to show, and nothing logged
                 against it. */}
-            {entries.length === 0 && (
+            {!hasEntries && (
               <div className="mt-[22px] rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-[rgba(13,148,136,0.03)] p-4 text-center">
                 <p className={cn("text-[13px]", TEXT_MUTED)}>
                   Client logged this session as complete without per-set detail.
@@ -284,11 +303,31 @@ export function SessionLogDetailDialog({
               </div>
             )}
 
-            {entries.length > 0 && (
+            {hasEntries && (
               <div className="mt-[28px]">
                 <p className={cn(LABEL_CLASS, "mb-3 font-semibold")}>Exercises</p>
                 <div className="flex flex-col gap-[10px]">
-                  {entries.map((entry) => (
+                  {entries.groups.flatMap(({ group, entries: groupEntries }) => {
+                    const cards = groupEntries.map((entry, position) => (
+                      <SessionLogExerciseCard
+                        key={entry.key}
+                        log={entry.log}
+                        prescribed={entry.prescribed}
+                        roundsAreRows={exerciseGroupPlace(group, position).roundsAreRows}
+                        onExerciseDrillDown={onExerciseDrillDown}
+                      />
+                    ));
+                    // A lone exercise is a plain card; only a linked group reads
+                    // as a group.
+                    return isLinkedGroup(group)
+                      ? [
+                          <SessionLogGroup key={group.id} group={group}>
+                            {cards}
+                          </SessionLogGroup>,
+                        ]
+                      : cards;
+                  })}
+                  {entries.extras.map((entry) => (
                     <SessionLogExerciseCard
                       key={entry.key}
                       log={entry.log}
