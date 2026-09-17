@@ -39,11 +39,15 @@ export const SET_GRID_BASE = "grid items-center gap-1.5";
 // The header row and every set row derive their template from the same field
 // set, so a hidden column cannot leave the two misaligned. Fractional columns
 // stretch to the card width (# and the duplicate/remove column stay fixed);
-// minmax(0,…) lets narrow viewports squeeze instead of overflowing.
+// minmax(0,…) lets narrow viewports squeeze instead of overflowing. The number
+// column fits "#" in 20px; rows that are a superset's or circuit's rounds are
+// headed "Round", which renders 39px wide, so theirs is 44px — the width of the
+// client tracker's number column.
 export function setGridTemplate(
   fields: ReadonlySet<PrescribedField>,
+  rounds = false,
 ): string {
-  const columns = ["20px"];
+  const columns = [rounds ? "44px" : "20px"];
   if (fields.has("set_type")) columns.push("minmax(0,1.1fr)");
   if (fields.has("reps")) columns.push("minmax(0,0.9fr)");
   if (fields.has("load")) columns.push("minmax(0,1.7fr)");
@@ -60,10 +64,11 @@ type SetRowEditorProps = {
   index: number;
   disabled: boolean;
   /**
-   * The row is one of a superset's or circuit's rounds: the number of rows is
-   * the group's to change, so the row has no duplicate or remove.
+   * The row is one of a superset's or circuit's rounds: it takes the wider
+   * number column the Round heading needs, and it has no duplicate or remove —
+   * the number of rows is the group's to change.
    */
-  rowsFixed?: boolean;
+  isRound?: boolean;
   onEdit: (edit: SetSpecEdit) => void;
 };
 
@@ -72,7 +77,7 @@ export function SetRowEditor({
   fields,
   index,
   disabled,
-  rowsFixed = false,
+  isRound = false,
   onEdit,
 }: SetRowEditorProps) {
   const { preference } = useUnits();
@@ -88,7 +93,7 @@ export function SetRowEditor({
     <div>
       <div
         className={SET_GRID_BASE}
-        style={{ gridTemplateColumns: setGridTemplate(fields) }}
+        style={{ gridTemplateColumns: setGridTemplate(fields, isRound) }}
       >
         <span className={cn(MONO, "text-center text-[11px]", TEXT_MUTED)}>
           {spec.set_number}
@@ -250,7 +255,7 @@ export function SetRowEditor({
           />
         )}
 
-        {!disabled && !rowsFixed ? (
+        {!disabled && !isRound ? (
           <div className="flex items-center">
             <button
               type="button"

@@ -59,7 +59,7 @@ export function ExerciseCardBody({
       {/* Column header for the set rows */}
       <div
         className={cn(SET_GRID_BASE, LABEL_CLASS)}
-        style={{ gridTemplateColumns: setGridTemplate(shown) }}
+        style={{ gridTemplateColumns: setGridTemplate(shown, roundsAreRows) }}
       >
         <span className="text-center">{roundsAreRows ? "Round" : "#"}</span>
         {shown.has("set_type") && <span>Type</span>}
@@ -89,7 +89,7 @@ export function ExerciseCardBody({
           fields={shown}
           index={i}
           disabled={!editable}
-          rowsFixed={roundsAreRows}
+          isRound={roundsAreRows}
           onEdit={onSpecEdit}
         />
       ))}

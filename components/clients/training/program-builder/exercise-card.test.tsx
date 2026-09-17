@@ -318,6 +318,24 @@ describe("ExerciseCard — in a superset or circuit (rows are rounds)", () => {
     expect(screen.getByRole("menuitemcheckbox", { name: "Reps" })).toBeInTheDocument();
   });
 
+  it("widens the number column to fit Round, for the heading and every round alike", () => {
+    const template = (el: HTMLElement) =>
+      el.closest<HTMLElement>('[style*="grid-template-columns"]')!.style.gridTemplateColumns;
+
+    render(<Wrapper exercise={scheme()} roundsAreRows defaultExpanded />);
+    const rounds = template(screen.getByText("Round"));
+    expect(rounds.split(" ")[0]).toBe("44px");
+    for (const n of [1, 2, 3]) {
+      expect(template(screen.getByLabelText(`Set ${n} reps`))).toBe(rounds);
+    }
+
+    cleanup();
+    render(<Wrapper exercise={scheme()} roundsAreRows={false} defaultExpanded />);
+    const sets = template(screen.getByText("#"));
+    expect(sets.split(" ")[0]).toBe("20px");
+    expect(template(screen.getByLabelText("Set 1 reps"))).toBe(sets);
+  });
+
   it("unticking a column there keeps the stored Rest choice", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
