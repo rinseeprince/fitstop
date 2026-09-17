@@ -11,7 +11,7 @@ import { TrainingHistoryTable } from "./training-history-table";
 // "No frame disagrees", rule 5). The dialogs are stubbed to expose exactly
 // those props.
 
-const rows: TrainingHistoryRow[] = [
+const BASE_ROWS: TrainingHistoryRow[] = [
   {
     date: "2026-04-06",
     session_name: "Push Day",
@@ -31,6 +31,10 @@ const rows: TrainingHistoryRow[] = [
     session_log_id: "sl-b",
   },
 ];
+
+// The rows the mocked read hands over. A case that needs its own week replaces
+// this and the top-level beforeEach puts the base week back.
+let rows: TrainingHistoryRow[] = [...BASE_ROWS];
 
 vi.mock("@/hooks/use-history-data", () => ({
   HISTORY_PAGE_SIZE: 10,
@@ -60,25 +64,39 @@ vi.mock("@/components/clients/history-table/history-table", () => ({
   }: {
     columns: {
       key: string;
+      width?: string;
       render: (value: unknown, row: TrainingHistoryRow) => ReactNode;
     }[];
     data: TrainingHistoryRow[];
     onColumnClick: (key: string) => void;
     onRowClick: (row: TrainingHistoryRow) => void;
   }) => {
-    // The Status column's own cell, so the chip a coach reads is what is asserted.
-    const status = columns.find((column) => column.key === "completion_quality");
+    // The cells a coach reads, rendered through the real column defs: the
+    // Status chip, the Session name beside its Alt chip, and the note.
+    const cell = (key: string) => columns.find((column) => column.key === key);
     return (
       <div>
         <button type="button" onClick={() => onColumnClick("completion_quality")}>
           Status chart
         </button>
+        {/* Each column's declared width, so the layout contract is assertable
+            without a paint — jsdom lays nothing out. */}
+        <div
+          data-testid="column-widths"
+          data-widths={columns.map((column) => `${column.key}:${column.width ?? ""}`).join(" ")}
+        />
         {data.map((row) => (
           <div key={row.date}>
             <button type="button" onClick={() => onRowClick(row)}>
               {row.session_name}
             </button>
-            {status?.render(row.completion_quality, row)}
+            {cell("completion_quality")?.render(row.completion_quality, row)}
+            <div data-testid={`session-${row.date}`}>
+              {cell("session_name")?.render(row.session_name, row)}
+            </div>
+            <div data-testid={`notes-${row.date}`}>
+              {cell("notes")?.render(row.notes, row)}
+            </div>
           </div>
         ))}
       </div>
@@ -134,6 +152,10 @@ vi.mock("@/components/clients/training/session-log-detail-dialog", () => ({
 const sessionDialog = () => screen.getByTestId("session-dialog");
 const chartDialog = () => screen.getByTestId("chart-dialog");
 
+beforeEach(() => {
+  rows = [...BASE_ROWS];
+});
+
 describe("TrainingHistoryTable", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -143,7 +165,7 @@ describe("TrainingHistoryTable", () => {
     it("keeps its session log through the close, and the next open replaces it", () => {
       render(<TrainingHistoryTable clientId="client-1" onTabChange={vi.fn()} />);
 
-      fireEvent.click(screen.getByText("Push Day"));
+      fireEvent.click(screen.getByRole("button", { name: "Push Day" }));
       expect(sessionDialog()).toHaveAttribute("data-open", "true");
       expect(sessionDialog()).toHaveAttribute("data-subject", "sl-a");
 
@@ -151,7 +173,7 @@ describe("TrainingHistoryTable", () => {
       expect(sessionDialog()).toHaveAttribute("data-open", "false");
       expect(sessionDialog()).toHaveAttribute("data-subject", "sl-a");
 
-      fireEvent.click(screen.getByText("Pull Day"));
+      fireEvent.click(screen.getByRole("button", { name: "Pull Day" }));
       expect(sessionDialog()).toHaveAttribute("data-open", "true");
       expect(sessionDialog()).toHaveAttribute("data-subject", "sl-b");
     });
@@ -160,7 +182,7 @@ describe("TrainingHistoryTable", () => {
       const onTabChange = vi.fn();
       render(<TrainingHistoryTable clientId="client-1" onTabChange={onTabChange} />);
 
-      fireEvent.click(screen.getByText("Push Day"));
+      fireEvent.click(screen.getByRole("button", { name: "Push Day" }));
       fireEvent.click(screen.getByText("Drill down"));
 
       expect(onTabChange).toHaveBeenCalledTimes(1);
@@ -202,5 +224,74 @@ describe("the Status chip", () => {
 
     expect(screen.getByText("Completed")).toBeInTheDocument(); // the full row
     expect(screen.getByText("Partial")).toBeInTheDocument(); // the partial row
+  });
+});
+
+/**
+ * The columns hold their width whatever is in them.
+ *
+ * A single long note used to set the Notes column's width and the four beside
+ * it gave up the space — so the grid moved as the coach paged. The four data
+ * columns now declare a measured width and Notes takes what they leave, which
+ * means the two columns holding text the coach wrote have to clip instead of
+ * spilling into their neighbour.
+ */
+describe("the columns' widths", () => {
+  const widths = () =>
+    screen.getByTestId("column-widths").getAttribute("data-widths") ?? "";
+
+  it("declares a width for every column — the four bounded in px, Notes as a share", () => {
+    render(<TrainingHistoryTable clientId="client-1" onTabChange={vi.fn()} />);
+
+    // EVERY column declares one: the leftover space is shared in proportion to
+    // them, so the five grow together and fill the card. Leaving Notes
+    // undeclared handed it the whole remainder and bunched the rest on the
+    // left. Notes is a percentage because it is the one that should yield first
+    // when the window is narrow.
+    expect(widths()).toBe(
+      "date:w-[100px] day:w-[120px] session_name:w-[208px] completion_quality:w-[130px] notes:w-[34%]"
+    );
+  });
+
+  it("clips a long note at the column instead of at a character count", () => {
+    const note =
+      "Knee felt off — stopped after the squats, and the hamstring curls felt tight the whole way through so I called it there rather than push on.";
+    rows = [{ ...BASE_ROWS[0], notes: note }];
+
+    render(<TrainingHistoryTable clientId="client-1" onTabChange={vi.fn()} />);
+    const cell = screen.getByTestId("notes-2026-04-06");
+
+    // The whole note is in the DOM and the browser ellipses it at the column's
+    // edge; the old 50-character slice truncated with its own "..." and could
+    // not know how wide the column was.
+    expect(cell).toHaveTextContent(note);
+    expect(cell.textContent).not.toContain("...");
+    expect(cell.querySelector("span")).toHaveClass("truncate");
+  });
+
+  it("still shows a dash when the workout carries no note", () => {
+    render(<TrainingHistoryTable clientId="client-1" onTabChange={vi.fn()} />);
+
+    expect(screen.getByTestId("notes-2026-04-06")).toHaveTextContent("—");
+  });
+
+  it("clips a long session name and keeps its Alt chip beside it", () => {
+    rows = [
+      {
+        ...BASE_ROWS[0],
+        session_name: "Glutes, hamstrings and a very long name a coach typed",
+        is_alternative: true,
+      },
+    ];
+
+    render(<TrainingHistoryTable clientId="client-1" onTabChange={vi.fn()} />);
+    const cell = screen.getByTestId("session-2026-04-06");
+
+    // The NAME clips; the chip is `shrink-0`, so a long name can never push it
+    // out of the cell.
+    expect(cell.querySelector(".truncate")).toHaveTextContent(
+      "Glutes, hamstrings and a very long name a coach typed"
+    );
+    expect(cell).toHaveTextContent("Alt");
   });
 });

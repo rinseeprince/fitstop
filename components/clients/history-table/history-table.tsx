@@ -19,6 +19,29 @@ export type ColumnDef<TRow = Record<string, unknown>> = {
   label: string;
   render: (value: unknown, row: TRow) => ReactNode;
   chartType?: "line" | "bar" | "heatmap";
+  /**
+   * A Tailwind width class for this column (`w-[104px]`, `w-[22%]`).
+   *
+   * Declaring one on ANY column switches the whole table to a fixed layout, so
+   * the columns stop taking their width from their widest cell: a long note on
+   * one row no longer squashes the columns beside it, and they no longer move
+   * when the page changes.
+   *
+   * **Declare one on EVERY column.** Space left over is shared out in
+   * proportion to the declared widths, so a table that declares them all grows
+   * evenly and fills its card; a column left undeclared instead absorbs the
+   * WHOLE remainder and bunches the rest on the left. Give the column that
+   * should yield first a percentage and the others their measured floor in px,
+   * and the percentage one is the only one that narrows when the window does.
+   *
+   * The cost is the other half of the same rule: content wider than its column
+   * OVERFLOWS instead of widening it, so a column holding text the coach wrote
+   * clips it (`truncate`) rather than letting it spill.
+   *
+   * A table that declares none is untouched — it keeps the auto layout, which
+   * is right for the tables whose every column is a short, bounded figure.
+   */
+  width?: string;
 };
 
 type HistoryTableProps<TRow = Record<string, unknown>> = {
@@ -52,12 +75,17 @@ export function HistoryTable<TRow extends Record<string, unknown>>({
   isRowClickable,
   rowClassName,
 }: HistoryTableProps<TRow>) {
+  // Fixed layout is opt-in, per table, by declaring a width (see `ColumnDef`).
+  // In a fixed table the header row's widths govern every body row, which is
+  // why the width rides on the heading and no cell repeats it.
+  const hasDeclaredWidths = columns.some((col) => col.width);
+
   return (
-    <Table>
+    <Table className={cn(hasDeclaredWidths && "table-fixed")}>
       <TableHeader>
         <TableRow>
           {columns.map((col) => (
-            <TableHead key={col.key}>
+            <TableHead key={col.key} className={col.width}>
               {col.chartType && onColumnClick ? (
                 <button
                   type="button"

@@ -146,9 +146,27 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
 
   const columns: ColumnDef<TrainingHistoryRow>[] = useMemo(
     () => [
+      // EVERY column declares a width, and that is the point: in a fixed-layout
+      // table the space left over is shared out in PROPORTION to the declared
+      // widths, so the five grow together and the table fills its card. Leaving
+      // Notes undeclared instead handed it the whole remainder — 615px of empty
+      // column at a 1,131px table — and bunched the other four on the left.
+      //
+      // The four px values are floors measured in headless Chrome against the
+      // real faces, read as BORDER boxes (Tailwind's preflight): "17 Sept" in
+      // JetBrains Mono at 14px is 58.8px of the 84 inside a 100px column,
+      // "Wednesday" in Instrument Sans medium 77.7 of 104, the longest seeded
+      // session name beside an Alt chip 186.7 of 192, the "Not Logged" pill
+      // 81.4 of 114. Notes is a PERCENTAGE so that it, and only it, gives the
+      // space back when the window is too narrow for all five — the note is the
+      // one thing here with no natural length.
+      //
+      // Measured at 1,400 / 1,131 / 950 / 860px of table: nothing bounded ever
+      // clips, and the five stay in proportion at every one.
       {
         key: "date",
         label: "Date",
+        width: "w-[100px]",
         render: (_v, row) => (
           <span className={cn(MONO, "tabular-nums", row.is_logged === false ? "text-[#b8cfd3]" : "text-[#93b0b4]")}>
             {formatDate(row.date)}
@@ -158,6 +176,7 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
       {
         key: "day",
         label: "Day",
+        width: "w-[120px]",
         render: (_v, row) => (
           <span className={row.is_logged === false ? "text-[#b8cfd3] font-medium" : "text-[#0c1a1e] font-medium"}>
             {formatDay(row.date)}
@@ -167,18 +186,23 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
       {
         key: "session_name",
         label: "Session",
+        width: "w-[208px]",
         render: (_v, row) =>
           row.session_name ? (
+            // The name is the coach's own text, so it clips rather than
+            // spilling into Status. `min-w-0` is what lets it: without it the
+            // flex item refuses to shrink below its content and the Alt chip
+            // is pushed out of the cell instead.
             <span
-              className={`inline-flex items-center gap-1.5 ${
+              className={`flex min-w-0 items-center gap-1.5 ${
                 row.is_logged === false ? "text-[#b8cfd3]" : "text-[#0c1a1e]"
               }`}
             >
-              {row.session_name}
+              <span className="truncate">{row.session_name}</span>
               {row.is_alternative && (
                 <span
                   title="Client logged a different session than prescribed"
-                  className={cn(LABEL_CLASS, CHIP_NEUTRAL_CLASS, "font-semibold")}
+                  className={cn(LABEL_CLASS, CHIP_NEUTRAL_CLASS, "shrink-0 font-semibold")}
                 >
                   Alt
                 </span>
@@ -191,17 +215,24 @@ export function TrainingHistoryTable({ clientId, onTabChange }: Props) {
       {
         key: "completion_quality",
         label: "Status",
+        width: "w-[130px]",
         chartType: "bar" as const,
         render: (_v, row) => renderStatus(row),
       },
       {
         key: "notes",
         label: "Notes",
+        width: "w-[34%]",
         render: (_v, row) => {
           if (!row.notes) return renderDash();
-          const truncated =
-            row.notes.length > 50 ? row.notes.slice(0, 50) + "..." : row.notes;
-          return <span className="text-sm text-[#93b0b4]">{truncated}</span>;
+          // Clipped by the COLUMN, not at a character count: a count cannot
+          // know how wide the column is. The whole note is one click away —
+          // the row opens the workout, which quotes it under "Client Notes".
+          return (
+            <span className="block truncate text-sm text-[#93b0b4]">
+              {row.notes}
+            </span>
+          );
         },
       },
     ],
