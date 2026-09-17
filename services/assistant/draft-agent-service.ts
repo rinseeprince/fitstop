@@ -10,6 +10,7 @@ import { buildReadTools } from "./draft-read-tools";
 import { buildWeekTools } from "./draft-week-tools";
 import { buildSessionTools } from "./draft-session-tools";
 import { buildExerciseTools } from "./draft-exercise-tools";
+import { buildGroupTools } from "./draft-group-tools";
 import { programContext } from "./draft-tool-helpers";
 
 // One assistant chat turn (builder S6a): Anthropic tool loop over a
@@ -106,6 +107,13 @@ export function systemPrompt(target: BuilderTarget): string {
 - Exercises carry either a compact prescription (sets × rep range) or full per-set programming (set types: warmup/working/amrap/drop/failure, per-set reps/loads/RPE).
 - "Working sets" are what progression and volume count; warm-ups and finishers are never auto-progressed.
 
+## Supersets and circuits
+- Exercises in a session can be linked into a group the client does together. Two exercises looping for a number of rounds are a Superset, three or more a Circuit; Straight sets does each linked exercise's sets in turn, with a rest between exercises. Call them only that — never letters (no A1/B2, no "group A").
+- In a superset or circuit every exercise has exactly one set per round, and each round keeps its own targets: 21-15-9 is three rounds asking 21, 15 and 9 reps. Change the number of rounds with update_group — never by giving one exercise more or fewer sets. To program the rounds of one exercise, use set_exercise_sets with exactly the group's rounds.
+- There, the group's rest between exercises and rest between rounds replace each exercise's own rest.
+- Exercise positions count straight through the session, groups included. The program state prints a group's heading above its exercises.
+- link_exercises makes a NEW group from the exercises you name; add_to_group puts an exercise into an existing group (it takes the group's rounds); unlink_exercises takes exercises out; move_group moves a whole group; update_group changes its format, rounds, rests and notes. reorder_exercise keeps an exercise inside its group and never moves a standalone exercise into one.
+
 ## Speed — the coach is waiting on every round trip
 - Each response you send is one round trip that costs the coach ~10-30 seconds of staring at a spinner. Minimise the NUMBER of responses, not the number of tools per response.
 - **Emit independent tool calls TOGETHER in a single response.** They execute in parallel. Three edits to three different weeks = one response with three tool calls, not three responses. Only split across responses when a call genuinely needs the RESULT of an earlier one.
@@ -141,6 +149,9 @@ export function systemPrompt(target: BuilderTarget): string {
 - "add a warm-up set to the squat" → set_exercise_sets with the full list (a warm-up changes the set list, so send every set, warm-up first).
 - "swap leg press for hack squat on day 3" → get_week to locate it, then remove_exercise + add_exercise (use position to keep the order).
 - "add an arms day on day 5 of week 1" → add_session, then one add_exercise per movement.
+- "superset bench and rows on day 1, 3 rounds, 90 seconds between rounds" → ONE link_exercises{exercisePositions:[bench, row], rounds:3, restBetweenRoundsSeconds:90}.
+- "finish day 3 with a 21-15-9 of thrusters and pull-ups" → add_exercise for each if missing, link_exercises{rounds:3}, then set_exercise_sets on each with three working sets of 21, 15 and 9 reps.
+- "take the burpees out of the circuit" → unlink_exercises. "add face pulls to the superset" → add_to_group.
 
 ## Fields you can set, and what they actually mean
 - Calorie surplus % (per session, or the program-level default): this is a NUTRITION control, not a training-load one. It cascades to the client's daily calories for that training day; a session with no override inherits the program default. Never treat it as intensity, and never set it just because a session got harder — only when the coach asks about calories or nutrition.
@@ -226,6 +237,7 @@ export async function runAssistantTurn(opts: {
     ...buildWeekTools(ws),
     ...buildSessionTools(ws),
     ...buildExerciseTools(ws),
+    ...buildGroupTools(ws),
   ];
 
   // Prior turns are text-only context: each turn re-uploads a fresh snapshot,

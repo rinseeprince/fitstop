@@ -42,7 +42,11 @@ export function StandaloneSessionEditor({
     addExercise,
     removeExercise,
     updateExercise,
-    reorderExercise,
+    linkExercises,
+    unlinkGroup,
+    moveExercise,
+    moveGroup,
+    updateGroup,
     editSetSpec,
   } = useStandaloneSessionEditor(state, open, onClose);
 
@@ -91,7 +95,11 @@ export function StandaloneSessionEditor({
               onAddExercise={addExercise}
               onRemoveExercise={removeExercise}
               onEditExercise={updateExercise}
-              onReorderExercise={reorderExercise}
+              onLinkExercises={linkExercises}
+              onUnlinkGroup={unlinkGroup}
+              onMoveExercise={moveExercise}
+              onMoveGroup={moveGroup}
+              onUpdateGroup={updateGroup}
               onSpecEdit={editSetSpec}
             />
           ) : (

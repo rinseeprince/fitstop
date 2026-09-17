@@ -252,9 +252,11 @@ const SQUAT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ROW_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const BENCH_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
-// A circuit with every setting set, so a dropped setting shows.
-const CIRCUIT: GroupSettings = {
-  format: "circuit",
+// A timed group with every setting set, so a dropped setting shows. (An EMOM:
+// a superset or circuit stores no time cap or interval, and the write schemas
+// refuse one that does.)
+const EVERY_SETTING: GroupSettings = {
+  format: "emom",
   rounds: 3,
   timeCapSeconds: 900,
   intervalSeconds: 60,
@@ -269,7 +271,7 @@ const CIRCUIT: GroupSettings = {
  */
 function makeGroupedGroups(): TrainingExerciseGroup[] {
   return [
-    makeGroup("row-grp-circuit", 0, CIRCUIT, [
+    makeGroup("row-grp-circuit", 0, EVERY_SETTING, [
       makeExercise({
         id: "row-ex-squat",
         exerciseId: SQUAT_ID,
@@ -302,7 +304,7 @@ function makeGroupedGroups(): TrainingExerciseGroup[] {
 /** The groups every write body must carry for makeGroupedGroups, in order. */
 const GROUPED_INPUT = [
   {
-    ...CIRCUIT,
+    ...EVERY_SETTING,
     exercises: [
       {
         name: "Back Squat",
@@ -379,7 +381,7 @@ describe("groups through the placed paths", () => {
 
     expect(draft.groups).toHaveLength(2);
     const [circuit, bench] = draft.groups;
-    expect(groupSettingsOf(circuit)).toEqual(CIRCUIT);
+    expect(groupSettingsOf(circuit)).toEqual(EVERY_SETTING);
     expect(groupSettingsOf(bench)).toEqual(STRAIGHT_SETS);
     expect(circuit.uid).toMatch(/^grp-/);
     expect(bench.uid).toMatch(/^grp-/);
@@ -418,7 +420,7 @@ describe("groups through the placed paths", () => {
     });
     const { draft } = planForEditingToDraft(read);
     const day = draft.weeks[1].days[2].session!;
-    expect(day.groups.map((g) => groupSettingsOf(g))).toEqual([CIRCUIT, STRAIGHT_SETS]);
+    expect(day.groups.map((g) => groupSettingsOf(g))).toEqual([EVERY_SETTING, STRAIGHT_SETS]);
 
     const body = draftToPlanEditBody(draft, read.version);
     expect(body.sessions[9].groups).toEqual(GROUPED_INPUT);

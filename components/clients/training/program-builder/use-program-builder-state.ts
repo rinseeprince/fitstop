@@ -11,18 +11,28 @@ import {
   type SessionDraft,
   type WeekDraft,
 } from "./program-builder-types";
+import { toast } from "sonner";
 import {
   cloneWeek,
+  findSession,
   mapSession,
   mapSessionExercises,
   mapSlots,
-  moveSessionExercise,
   normalizeDraft,
   patchChanges,
   removeSessionExercise,
   straightSetsGroup,
 } from "./program-builder-model";
-import { sessionExercises } from "@/utils/exercise-groups";
+import {
+  linkExercises as linkSessionExercises,
+  moveExercise as moveSessionExercise,
+  moveGroup as moveSessionGroup,
+  unlinkGroup as unlinkSessionGroup,
+  updateGroup as updateSessionGroup,
+  type ExerciseDestination,
+  type GroupEditResult,
+  type GroupSettingsPatch,
+} from "./program-builder-groups";
 import {
   applyDraftOps,
   type DraftOp,
@@ -30,7 +40,7 @@ import {
   type DraftOpsResult,
 } from "./program-builder-ops";
 
-export { findSession } from "./program-builder-model";
+export { findSession };
 
 // Working-tree state for the Program builder. Every mutation is a pure
 // reducer piped through normalizeDraft. Two invariants live here:
@@ -398,22 +408,62 @@ export function useProgramBuilderState() {
     [apply],
   );
 
-  const reorderExercise = useCallback(
-    (sessionUid: string, activeUid: string, overUid: string) =>
-      apply((d) => {
-        let changed = false;
-        const next = mapSession(d, sessionUid, (s) => {
-          const exercises = sessionExercises(s);
-          const from = exercises.findIndex((e) => e.uid === activeUid);
-          const to = exercises.findIndex((e) => e.uid === overUid);
-          if (from < 0 || to < 0 || from === to) return s;
-          const moved = moveSessionExercise(s, activeUid, to);
-          if (moved !== s) changed = true;
-          return moved;
-        });
-        return changed ? next : d;
-      }),
+  // --- groups (program-builder-groups.ts) ---
+  // Each edit is worked out against the session as it stands, OUT HERE rather
+  // than inside a reducer: a refusal is a toast, and reducers stay side-effect
+  // free. The group edits never mint a uid themselves; these mint the uids new
+  // groups take.
+  const editGroups = useCallback(
+    (sessionUid: string, edit: (session: SessionDraft) => GroupEditResult) => {
+      const current = draftRef.current;
+      const session = findSession(current, sessionUid);
+      if (!session) return;
+      const result = edit(session);
+      if (!result.ok) {
+        toast.error(result.reason);
+        return;
+      }
+      if (result.session === session) return;
+      apply((d) => mapSession(d, sessionUid, () => result.session));
+    },
     [apply],
+  );
+
+  const linkExercises = useCallback(
+    (sessionUid: string, exerciseUids: string[]) =>
+      editGroups(sessionUid, (s) => linkSessionExercises(s, exerciseUids, newUid("grp"))),
+    [editGroups],
+  );
+
+  const unlinkGroup = useCallback(
+    (sessionUid: string, groupUid: string) =>
+      editGroups(sessionUid, (s) => {
+        const size = s.groups.find((g) => g.uid === groupUid)?.exercises.length ?? 0;
+        return unlinkSessionGroup(
+          s,
+          groupUid,
+          Array.from({ length: size }, () => newUid("grp")),
+        );
+      }),
+    [editGroups],
+  );
+
+  const moveExercise = useCallback(
+    (sessionUid: string, exerciseUid: string, to: ExerciseDestination) =>
+      editGroups(sessionUid, (s) => moveSessionExercise(s, exerciseUid, to, newUid("grp"))),
+    [editGroups],
+  );
+
+  const moveGroup = useCallback(
+    (sessionUid: string, groupUid: string, index: number) =>
+      editGroups(sessionUid, (s) => moveSessionGroup(s, groupUid, index)),
+    [editGroups],
+  );
+
+  const updateGroup = useCallback(
+    (sessionUid: string, groupUid: string, patch: GroupSettingsPatch) =>
+      editGroups(sessionUid, (s) => updateSessionGroup(s, groupUid, patch)),
+    [editGroups],
   );
 
   return {
@@ -445,7 +495,11 @@ export function useProgramBuilderState() {
     addExercise,
     removeExercise,
     updateExercise,
-    reorderExercise,
+    linkExercises,
+    unlinkGroup,
+    moveExercise,
+    moveGroup,
+    updateGroup,
   };
 }
 

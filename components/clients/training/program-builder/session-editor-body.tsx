@@ -1,25 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
-import {
-  DndContext,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { ExerciseDraft, SessionDraft } from "./program-builder-types";
-import type { SetSpecEdit } from "./use-set-spec-mutations";
-import { defaultExerciseDraftFromCatalog } from "./program-builder-model";
-import { ExerciseCard } from "./exercise-card";
-import { AddExercisePopover } from "./add-exercise-popover";
-import { SectionLabel } from "@/components/programs/shared/section-label";
+import type { SessionDraft } from "./program-builder-types";
+import { SessionExercises, type SessionExercisesProps } from "./session-exercises";
 import { FOCUS_RING, LABEL_CLASS, MONO_INPUT_CLASS } from "./builder-tokens";
-import { sessionExercises } from "@/utils/exercise-groups";
 
 // Chrome-agnostic session editor body — the fields grid + per-set exercise
 // authoring, shared by the click-to-edit Sheet and the routed create-blank
@@ -28,7 +13,7 @@ import { sessionExercises } from "@/utils/exercise-groups";
 // surplus lives here — it overrides the program default and cascades to the
 // client's nutrition at apply time (blank = inherit; never coerce blank to a
 // number).
-export type SessionEditorBodyProps = {
+export type SessionEditorBodyProps = Omit<SessionExercisesProps, "chrome"> & {
   session: SessionDraft;
   mode: "view" | "edit";
   // Session name + focus are TEMPLATE identity — read-only in the client editor
@@ -56,11 +41,6 @@ export type SessionEditorBodyProps = {
     sessionUid: string,
     patch: Partial<Omit<SessionDraft, "uid" | "groups">>,
   ) => void;
-  onAddExercise: (sessionUid: string, exercise: Omit<ExerciseDraft, "uid">) => void;
-  onRemoveExercise: (sessionUid: string, exerciseUid: string) => void;
-  onEditExercise: (sessionUid: string, exerciseUid: string, patch: Partial<ExerciseDraft>) => void;
-  onReorderExercise: (sessionUid: string, activeUid: string, overUid: string) => void;
-  onSpecEdit: (sessionUid: string, exercise: ExerciseDraft, edit: SetSpecEdit) => void;
 };
 
 export function SessionEditorBody({
@@ -71,49 +51,9 @@ export function SessionEditorBody({
   defaultSurplusPercentage,
   surplusHelpText = "Leave blank to use the program default",
   onUpdateSession,
-  onAddExercise,
-  onRemoveExercise,
-  onEditExercise,
-  onReorderExercise,
-  onSpecEdit,
+  ...exerciseProps
 }: SessionEditorBodyProps) {
   const editable = mode === "edit";
-  // Every exercise of the session in order, group by group — the editor lists
-  // them as it always has.
-  const exercises = sessionExercises(session);
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-  );
-
-  // Accordion: ONE exercise open at a time, owned here rather than by each
-  // card, so opening one collapses the other. Collapsing loses nothing — every
-  // input commits to the shared draft on blur, and clicking another header
-  // blurs the focused field first.
-  const [openUid, setOpenUid] = useState<string | null>(null);
-
-  // Exercises present when this session was first shown; anything appended
-  // later was added by the coach right now and opens straight into per-set
-  // authoring. Reset when the editor switches to a different session (uids
-  // regenerate per seed, so a stale set would mark everything "new").
-  const seenRef = useRef<{ sessionUid: string; uids: Set<string> } | null>(null);
-  if (seenRef.current?.sessionUid !== session.uid) {
-    seenRef.current = {
-      sessionUid: session.uid,
-      uids: new Set(exercises.map((e) => e.uid)),
-    };
-    if (openUid !== null) setOpenUid(null);
-  }
-  const added = exercises.find((e) => !seenRef.current!.uids.has(e.uid));
-  if (added) {
-    seenRef.current.uids.add(added.uid);
-    if (openUid !== added.uid) setOpenUid(added.uid);
-  }
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    onReorderExercise(session.uid, String(active.id), String(over.id));
-  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -260,61 +200,14 @@ export function SessionEditorBody({
         </div>
       )}
 
-      <SectionLabel
-        label="Exercises"
-        meta={String(exercises.length)}
-        actions={
-          editable ? (
-            <AddExercisePopover
-              onPick={({ name, exerciseId }) =>
-                onAddExercise(
-                  session.uid,
-                  defaultExerciseDraftFromCatalog({ name, exerciseId }),
-                )
-              }
-            />
-          ) : undefined
-        }
+      {/* Keyed by session: another session's list starts afresh. */}
+      <SessionExercises
+        key={session.uid}
+        session={session}
+        mode={mode}
+        chrome={chrome}
+        {...exerciseProps}
       />
-
-      {/* px-1, not pr-1: overflow-y-auto clips the X axis too (CSS forces the
-          other axis away from `visible`), and focus rings draw OUTSIDE the
-          element box — with no left padding a card's ring was shaved flat
-          against the container edge. */}
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-1 pb-1">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={exercises.map((e) => e.uid)}
-            strategy={verticalListSortingStrategy}
-          >
-            {exercises.map((exercise, i) => (
-              <ExerciseCard
-                key={exercise.uid}
-                exercise={exercise}
-                ordinal={i + 1}
-                mode={mode}
-                expanded={openUid === exercise.uid}
-                onToggleExpanded={() =>
-                  setOpenUid((uid) => (uid === exercise.uid ? null : exercise.uid))
-                }
-                bordered={chrome === "inline"}
-                onEdit={(patch) => onEditExercise(session.uid, exercise.uid, patch)}
-                onSpecEdit={(edit) => onSpecEdit(session.uid, exercise, edit)}
-                onRemove={() => onRemoveExercise(session.uid, exercise.uid)}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
-        {exercises.length === 0 && (
-          <p className="py-4 text-center text-xs text-[#93b0b4]">
-            No exercises yet — add the first one from the rail above.
-          </p>
-        )}
-      </div>
     </div>
   );
 }

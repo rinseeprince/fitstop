@@ -4,6 +4,7 @@ import {
   compactFromSpecs,
   expandSetSpecs,
   projectExerciseCompact,
+  setSpecCount,
   type SetSpec,
 } from "./exercise-set-specs";
 import { setSpecsArraySchema } from "@/lib/validations/training";
@@ -83,6 +84,25 @@ describe("expandSetSpecs", () => {
     expect(out).toHaveLength(3);
     expect(out.every((s) => s.set_type === "working")).toBe(true);
     expect(out[0]).toMatchObject({ reps_min: 8, reps_max: 12, load_type: "pct_1rm", load_value: 75 });
+  });
+});
+
+describe("setSpecCount", () => {
+  it("is the length expandSetSpecs returns, warm-ups included, without building the list", () => {
+    const authored: SetSpec[] = [spec("warmup", 1), spec("working", 2), spec("drop", 3)];
+    for (const exercise of [
+      { setSpecs: authored, sets: 2 },
+      { setSpecs: null, sets: 4 },
+      { setSpecs: [], sets: 3 },
+      { setSpecs: null, sets: 99 },
+      { setSpecs: null, sets: 0 },
+    ]) {
+      expect(setSpecCount(exercise)).toBe(expandSetSpecs(exercise).length);
+    }
+    expect(setSpecCount({ setSpecs: authored, sets: 2 })).toBe(3);
+    // The compact count clamps like the training_exercises.sets CHECK.
+    expect(setSpecCount({ setSpecs: null, sets: 99 })).toBe(20);
+    expect(setSpecCount({ setSpecs: null, sets: 0 })).toBe(1);
   });
 });
 

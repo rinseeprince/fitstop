@@ -217,6 +217,36 @@ describe("buildPreviewRows", () => {
     // row uid is the CLONE's uid so checkbox state survives commit-side lookups
     expect(bench.uid).toBe(sessionExercises(progressed.days[2].session!)[0].uid);
   });
+
+  it("reads a superset's Sets change as rounds, for every exercise in it", () => {
+    const source = sourceWeek();
+    const session = source.days[2].session!;
+    source.days[2] = {
+      ...source.days[2],
+      session: {
+        ...session,
+        groups: [
+          {
+            uid: "grp-superset",
+            ...STRAIGHT_SETS,
+            format: "circuit",
+            rounds: 3,
+            exercises: session.groups.map((g) => ({ ...g.exercises[0], setSpecs: null, sets: 3 })),
+          },
+        ],
+      },
+    };
+    const rule = { kind: "sets", amount: 1 } as const;
+    // Only the bench is in scope; the curl's rounds change with it.
+    const { week: progressed, changedExerciseUids } = progressWeek(
+      source,
+      rule,
+      (ex) => ex.name === "Bench Press",
+    );
+    const [bench, curl] = buildPreviewRows(source, progressed, changedExerciseUids, rule, "metric")[0].rows;
+    expect(bench).toMatchObject({ changed: true, before: "3 rounds", after: "4 rounds" });
+    expect(curl).toMatchObject({ changed: true, before: "3 rounds", after: "4 rounds" });
+  });
 });
 
 // formatLoads is the fork point between the coach-facing preview dialog and the

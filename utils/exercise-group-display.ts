@@ -164,19 +164,38 @@ export function restAfterGroupedRow(
   return seconds != null && seconds > 0 ? seconds : null;
 }
 
+// Each round's reps, in order (a drop's rows continue their round), or null
+// when a round asks no rep count.
+function roundReps(rows: PrescribedRow[]): string[] | null {
+  const reps = rows
+    .filter((row) => row.dropIndex == null)
+    .map((row) => row.repsTarget ?? formatRepsRange({ min: row.repsMin, max: row.repsMax }));
+  return reps.length === 0 || reps.some((text) => text === "") ? null : reps;
+}
+
+// Single counts read as a rep scheme (21-15-9); a range among them needs a
+// separator a range can't contain.
+const repScheme = (reps: string[]) =>
+  reps.join(reps.every((text) => /^\d+$/.test(text)) ? "-" : ", ");
+
 /**
  * An exercise's reps round by round, where its rows are rounds: "21-15-9 reps",
  * or "8-10 reps" when every round asks the same. Null when a round asks no rep
  * count, so nothing half-true is shown.
  */
 export function formatRoundReps(rows: PrescribedRow[]): string | null {
-  const reps = rows
-    .filter((row) => row.dropIndex == null)
-    .map((row) => row.repsTarget ?? formatRepsRange({ min: row.repsMin, max: row.repsMax }));
-  if (reps.length === 0 || reps.some((text) => text === "")) return null;
-  if (new Set(reps).size === 1) return `${reps[0]} reps`;
-  // Single counts read as a rep scheme (21-15-9); a range among them needs a
-  // separator a range can't contain.
-  const counts = reps.every((text) => /^\d+$/.test(text));
-  return `${reps.join(counts ? "-" : ", ")} reps`;
+  const reps = roundReps(rows);
+  if (!reps) return null;
+  return new Set(reps).size === 1 ? `${reps[0]} reps` : `${repScheme(reps)} reps`;
+}
+
+/**
+ * The same, dense, for a card with no room for the group's heading (the
+ * builder's week grid): "3×8-10" — rounds × reps — when every round asks the
+ * same, else the scheme alone, "21-15-9". Null when a round asks no rep count.
+ */
+export function formatRoundRepsShort(rows: PrescribedRow[]): string | null {
+  const reps = roundReps(rows);
+  if (!reps) return null;
+  return new Set(reps).size === 1 ? `${reps.length}×${reps[0]}` : repScheme(reps);
 }

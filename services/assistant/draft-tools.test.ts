@@ -44,6 +44,8 @@ import { programContext, resolveExerciseRef } from "./draft-tool-helpers";
 import { buildWeekTools } from "./draft-week-tools";
 import { buildSessionTools } from "./draft-session-tools";
 import { buildExerciseTools } from "./draft-exercise-tools";
+import { buildGroupTools } from "./draft-group-tools";
+import { setSpecCount } from "@/utils/exercise-set-specs";
 
 const SQUAT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const CURL_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -1057,5 +1059,248 @@ describe("placed-plan sweep (finalizeAssistantOps)", () => {
     const finalized = finalizeAssistantOps(ws);
     expect(finalized.ops).toHaveLength(1);
     expect(finalized.notes).toHaveLength(0);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Group tools: the coach's own gestures — link, add to a group, take out, move
+// a whole group, change its settings — as ops the client replays identically.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Week 1 day 1: Back Squat, Bench Press, Leg Curl (2 sets) and Calf Raise,
+// each a lone exercise.
+function makeLoneDraft(): ProgramDraft {
+  const session: SessionDraft = {
+    uid: newUid("sess"),
+    name: "Full body A",
+    focus: null,
+    estimatedDurationMinutes: null,
+    calorieSurplusPercentage: null,
+    notes: null,
+    sessionType: "training",
+    groups: [
+      lone(exercise("Back Squat", SQUAT_ID, null)),
+      lone(exercise("Bench Press", BENCH_ID, null)),
+      lone({ ...exercise("Leg Curl", CURL_ID, null), sets: 2 }),
+      lone(exercise("Calf Raise", null, null)),
+    ],
+  };
+  const week = makeRestWeek(0);
+  week.days[0] = { ...makeRestSlot(0), isRest: false, session };
+  return normalizeDraft({
+    id: "44444444-4444-4444-8444-444444444444",
+    name: "Hybrid",
+    description: null,
+    status: "saved",
+    splitType: null,
+    programDurationWeeks: null,
+    defaultSurplusPercentage: null,
+    weeks: [week],
+  });
+}
+
+const dayOne = (draft: ProgramDraft) => draft.weeks[0].days[0].session!;
+const shapeOf = (draft: ProgramDraft) =>
+  dayOne(draft).groups.map((g) => g.exercises.map((e) => e.name));
+
+describe("group tools", () => {
+  function groupWs() {
+    const coachDraft = makeLoneDraft();
+    const ws = buildWorkspaceFromRows({ target: "library", draft: coachDraft, catalog: CATALOG });
+    return { coachDraft, ws, groups: buildGroupTools(ws), exercises: buildExerciseTools(ws) };
+  }
+
+  // What the client does with a turn: re-validate, then replay onto its own draft.
+  function expectReplayMatches(coachDraft: ProgramDraft, ws: ReturnType<typeof groupWs>["ws"]) {
+    const { ops, notes } = finalizeAssistantOps(ws);
+    expect(notes).toEqual([]);
+    const received = z.array(draftOpSchema).parse(JSON.parse(JSON.stringify(ops)));
+    const replayed = applyDraftOps(coachDraft, received, { target: "library" });
+    expect(replayed.skipped).toEqual([]);
+    expect(replayed.draft).toEqual(ws.draft);
+    return ops;
+  }
+
+  it("link_exercises makes a superset with its settings, and the client replays it exactly", async () => {
+    const { coachDraft, ws, groups } = groupWs();
+    const out = await tool(groups, "link_exercises").run({
+      week: 1,
+      day: 1,
+      exercisePositions: [3, 2],
+      rounds: 4,
+      restBetweenRoundsSeconds: 90,
+    } as never);
+
+    expect(out).toBe("Linked them: Superset · 4 rounds — 1m 30s rest between rounds (positions 2-3).");
+    expect(shapeOf(ws.draft)).toEqual([["Back Squat"], ["Bench Press", "Leg Curl"], ["Calf Raise"]]);
+    expect(dayOne(ws.draft).groups[1].exercises.map(setSpecCount)).toEqual([4, 4]);
+    expect(expectReplayMatches(coachDraft, ws).map((op) => op.type)).toEqual([
+      "link_exercises",
+      "update_group",
+    ]);
+  });
+
+  it("link_exercises refuses straight sets with rounds, and fewer than two exercises", async () => {
+    const { ws, groups } = groupWs();
+    expect(
+      await tool(groups, "link_exercises").run({
+        week: 1,
+        day: 1,
+        exercisePositions: [1, 2],
+        format: "straight_sets",
+        rounds: 3,
+      } as never),
+    ).toMatch(/Straight sets have no rounds/);
+    expect(
+      await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [2, 2] } as never),
+    ).toMatch(/at least two different exercises/);
+    expect(ws.ops).toEqual([]);
+  });
+
+  it("add_to_group puts an exercise at the end of a group, taking its rounds; a lone anchor is refused", async () => {
+    const { coachDraft, ws, groups } = groupWs();
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [1, 2] } as never);
+
+    expect(
+      await tool(groups, "add_to_group").run({
+        week: 1,
+        day: 1,
+        exercisePosition: 3,
+        groupExercisePosition: 4,
+      } as never),
+    ).toMatch(/isn't in a superset, circuit or straight-sets group/);
+
+    const out = await tool(groups, "add_to_group").run({
+      week: 1,
+      day: 1,
+      exerciseName: "Leg Curl",
+      groupExercisePosition: 1,
+    } as never);
+    expect(out).toBe('Added "Leg Curl": Circuit · 3 rounds (positions 1-3).');
+    expect(shapeOf(ws.draft)).toEqual([["Back Squat", "Bench Press", "Leg Curl"], ["Calf Raise"]]);
+    // Leg Curl had two sets and took the circuit's three rounds.
+    expect(dayOne(ws.draft).groups[0].exercises.map(setSpecCount)).toEqual([3, 3, 3]);
+    expectReplayMatches(coachDraft, ws);
+  });
+
+  it("unlink_exercises takes exercises out in order: the first before its group, any other after it", async () => {
+    const { coachDraft, ws, groups } = groupWs();
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [1, 2, 3] } as never);
+
+    expect(
+      await tool(groups, "unlink_exercises").run({ week: 1, day: 1, exercisePositions: [1, 3] } as never),
+    ).toBe("Took Back Squat, Leg Curl out of their group.");
+    expect(shapeOf(ws.draft)).toEqual([["Back Squat"], ["Bench Press"], ["Leg Curl"], ["Calf Raise"]]);
+    // The circuit left with Bench Press alone is a plain exercise again.
+    expect(groupSettingsOf(dayOne(ws.draft).groups[1])).toEqual(STRAIGHT_SETS);
+    expectReplayMatches(coachDraft, ws);
+
+    expect(
+      await tool(groups, "unlink_exercises").run({ week: 1, day: 1, exercisePositions: [4] } as never),
+    ).toBe("None of those exercises is in a group.");
+  });
+
+  it("move_group moves a whole group and says where it starts", async () => {
+    const { coachDraft, ws, groups } = groupWs();
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [3, 4] } as never);
+    expect(
+      await tool(groups, "move_group").run({ week: 1, day: 1, exercisePosition: 4, toPosition: 1 } as never),
+    ).toBe("Moved it to start at position 1.");
+    expect(shapeOf(ws.draft)).toEqual([["Leg Curl", "Calf Raise"], ["Back Squat"], ["Bench Press"]]);
+    // Asked to start inside another group, it goes to the nearest boundary.
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [3, 4] } as never);
+    expect(
+      await tool(groups, "move_group").run({ week: 1, day: 1, exercisePosition: 3, toPosition: 2 } as never),
+    ).toMatch(/starts at position 3, not 2/);
+    expectReplayMatches(coachDraft, ws);
+  });
+
+  it("update_group changes the format and settings; a lone exercise has none", async () => {
+    const { coachDraft, ws, groups } = groupWs();
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [1, 2] } as never);
+    expect(
+      await tool(groups, "update_group").run({
+        week: 1,
+        day: 1,
+        exercisePosition: 2,
+        format: "straight_sets",
+        restBetweenExercisesSeconds: 60,
+        notes: "Squat, then bench",
+      } as never),
+    ).toBe("Updated: Straight sets — 1m rest between exercises — notes: Squat, then bench (positions 1-2).");
+    expect(
+      await tool(groups, "update_group").run({ week: 1, day: 1, exercisePosition: 4, rounds: 2 } as never),
+    ).toMatch(/isn't in a group/);
+    expectReplayMatches(coachDraft, ws);
+  });
+
+  it("a superset exercise's sets change only with the group's rounds", async () => {
+    const { ws, groups, exercises } = groupWs();
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [1, 2] } as never);
+
+    expect(
+      await tool(exercises, "update_exercise").run({ week: 1, day: 1, exercisePosition: 1, sets: 5 } as never),
+    ).toMatch(/3-round superset: it has exactly one set per round/);
+    expect(
+      await tool(exercises, "set_exercise_sets").run({
+        week: 1,
+        day: 1,
+        exercisePosition: 2,
+        sets: [{ setType: "working", repsMin: 21, repsMax: 21 }],
+      } as never),
+    ).toMatch(/send 3 sets, or change the rounds with update_group/);
+    expect(
+      await tool(exercises, "set_exercise_sets").run({
+        week: 1,
+        day: 1,
+        exercisePosition: 2,
+        sets: [
+          { setType: "working", repsMin: 21, repsMax: 21 },
+          { setType: "working", repsMin: 15, repsMax: 15 },
+          { setType: "working", repsMin: 9, repsMax: 9 },
+        ],
+      } as never),
+    ).toMatch(/Programmed 3 sets/);
+    expect(dayOne(ws.draft).groups[0].exercises.map(setSpecCount)).toEqual([3, 3]);
+  });
+
+  it("reorder_exercise keeps a group's exercise inside its group", async () => {
+    const { coachDraft, ws, groups, exercises } = groupWs();
+    await tool(groups, "link_exercises").run({ week: 1, day: 1, exercisePositions: [2, 3] } as never);
+    expect(
+      await tool(exercises, "reorder_exercise").run({
+        week: 1,
+        day: 1,
+        exerciseName: "Leg Curl",
+        toPosition: 2,
+      } as never),
+    ).toBe('Moved "Leg Curl" to position 2.');
+    expect(shapeOf(ws.draft)).toEqual([["Back Squat"], ["Leg Curl", "Bench Press"], ["Calf Raise"]]);
+    // Sent past its group, it stops at the group's edge.
+    expect(
+      await tool(exercises, "reorder_exercise").run({
+        week: 1,
+        day: 1,
+        exerciseName: "Leg Curl",
+        toPosition: 4,
+      } as never),
+    ).toMatch(/is at position 3, not 4/);
+    expectReplayMatches(coachDraft, ws);
+  });
+
+  it("the program state shows a group's heading above its indented exercises, in rounds", async () => {
+    const { ws, groups } = groupWs();
+    await tool(groups, "link_exercises").run({
+      week: 1,
+      day: 1,
+      exercisePositions: [2, 3],
+      restBetweenExercisesSeconds: 0,
+    } as never);
+    const text = programContext(ws.draft).text;
+    expect(text).toContain("    1. Back Squat — 3 sets");
+    expect(text).toContain("    Superset · 3 rounds — No rest between exercises");
+    expect(text).toContain("      2. Bench Press — 3 rounds");
+    expect(text).toContain("      3. Leg Curl — 3 rounds");
+    expect(text).toContain("    4. Calf Raise — 3 sets");
   });
 });

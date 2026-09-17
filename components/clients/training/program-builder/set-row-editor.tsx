@@ -59,10 +59,22 @@ type SetRowEditorProps = {
   fields: ReadonlySet<PrescribedField>;
   index: number;
   disabled: boolean;
+  /**
+   * The row is one of a superset's or circuit's rounds: the number of rows is
+   * the group's to change, so the row has no duplicate or remove.
+   */
+  rowsFixed?: boolean;
   onEdit: (edit: SetSpecEdit) => void;
 };
 
-export function SetRowEditor({ spec, fields, index, disabled, onEdit }: SetRowEditorProps) {
+export function SetRowEditor({
+  spec,
+  fields,
+  index,
+  disabled,
+  rowsFixed = false,
+  onEdit,
+}: SetRowEditorProps) {
   const { preference } = useUnits();
   const loadUnit = formatLoad(0, preference).unit;
   const LOAD_OPTIONS = loadOptions(loadUnit);
@@ -238,7 +250,7 @@ export function SetRowEditor({ spec, fields, index, disabled, onEdit }: SetRowEd
           />
         )}
 
-        {!disabled ? (
+        {!disabled && !rowsFixed ? (
           <div className="flex items-center">
             <button
               type="button"

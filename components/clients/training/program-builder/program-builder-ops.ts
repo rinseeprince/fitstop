@@ -8,14 +8,25 @@ import {
   type WeekDraft,
 } from "./program-builder-types";
 import {
+  findSession,
   mapSession,
   mapSessionExercises,
   mapSlots,
-  moveSessionExercise,
   normalizeDraft,
   patchChanges,
   removeSessionExercise,
 } from "./program-builder-model";
+import {
+  isSupersetOrCircuit,
+  linkExercises,
+  moveExercise,
+  moveGroup,
+  updateGroup,
+  type ExerciseDestination,
+  type GroupEditResult,
+  type GroupSettingsPatch,
+} from "./program-builder-groups";
+import { setSpecCount } from "@/utils/exercise-set-specs";
 import {
   PAST_LOCKED,
   insertWeekRefusal,
@@ -81,13 +92,32 @@ export type DraftOp =
       label?: string;
     }
   | { type: "remove_exercise"; sessionUid: string; exerciseUid: string; label?: string }
+  // The group edits (program-builder-groups.ts). Every uid a new group takes
+  // rides on the op, minted by the server.
   | {
-      // toIndex is a place in the session's exercise order; a move never
-      // splits a group (moveSessionExercise).
-      type: "reorder_exercise";
+      type: "link_exercises";
+      sessionUid: string;
+      exerciseUids: string[];
+      groupUid: string;
+      label?: string;
+    }
+  | {
+      // `to` counts places in the session as it stands before the move;
+      // `groupUid` names the group the exercise stands alone in, when it
+      // leaves a linked group for a place of its own.
+      type: "move_exercise";
       sessionUid: string;
       exerciseUid: string;
-      toIndex: number;
+      to: ExerciseDestination;
+      groupUid: string;
+      label?: string;
+    }
+  | { type: "move_group"; sessionUid: string; groupUid: string; toIndex: number; label?: string }
+  | {
+      type: "update_group";
+      sessionUid: string;
+      groupUid: string;
+      patch: GroupSettingsPatch;
       label?: string;
     };
 
@@ -326,6 +356,20 @@ export function applyDraftOp(
     case "update_exercise": {
       const refused = sessionLocked(op.sessionUid);
       if (refused) return { draft, skipped: refused };
+      // In a superset or circuit an exercise's sets are the group's rounds:
+      // only the group changes how many there are.
+      const group = findSession(draft, op.sessionUid)?.groups.find((g) =>
+        g.exercises.some((e) => e.uid === op.exerciseUid),
+      );
+      const exercise = group?.exercises.find((e) => e.uid === op.exerciseUid);
+      if (
+        group &&
+        exercise &&
+        isSupersetOrCircuit(group) &&
+        setSpecCount({ ...exercise, ...op.patch }) !== setSpecCount(exercise)
+      ) {
+        return { draft, skipped: ROUNDS_ON_GROUP };
+      }
       let found = false;
       let changed = false;
       const next = mapSession(draft, op.sessionUid, (s) =>
@@ -354,22 +398,52 @@ export function applyDraftOp(
       return { draft: next };
     }
 
-    case "reorder_exercise": {
+    case "link_exercises": {
       const refused = sessionLocked(op.sessionUid);
       if (refused) return { draft, skipped: refused };
-      let found = false;
-      let changed = false;
-      const next = mapSession(draft, op.sessionUid, (s) => {
-        if (!s.groups.some((g) => g.exercises.some((e) => e.uid === op.exerciseUid))) return s;
-        found = true;
-        const moved = moveSessionExercise(s, op.exerciseUid, op.toIndex);
-        if (moved !== s) changed = true;
-        return moved;
-      });
-      if (!found) return { draft, skipped: "That exercise no longer exists" };
-      return { draft: changed ? next : draft };
+      if (hasUid(draft, op.groupUid)) return { draft, skipped: "Those exercises are already linked" };
+      return editGroups(draft, op.sessionUid, (s) => linkExercises(s, op.exerciseUids, op.groupUid));
+    }
+
+    case "move_exercise": {
+      const refused = sessionLocked(op.sessionUid);
+      if (refused) return { draft, skipped: refused };
+      if (hasUid(draft, op.groupUid)) return { draft, skipped: "That exercise has already moved" };
+      return editGroups(draft, op.sessionUid, (s) =>
+        moveExercise(s, op.exerciseUid, op.to, op.groupUid),
+      );
+    }
+
+    case "move_group": {
+      const refused = sessionLocked(op.sessionUid);
+      if (refused) return { draft, skipped: refused };
+      return editGroups(draft, op.sessionUid, (s) => moveGroup(s, op.groupUid, op.toIndex));
+    }
+
+    case "update_group": {
+      const refused = sessionLocked(op.sessionUid);
+      if (refused) return { draft, skipped: refused };
+      return editGroups(draft, op.sessionUid, (s) => updateGroup(s, op.groupUid, op.patch));
     }
   }
+}
+
+const ROUNDS_ON_GROUP =
+  "That exercise is in a superset or circuit — its sets are the group's rounds, so change the rounds instead";
+
+// One group edit on one session: a refusal is the skip reason, and a session
+// the edit leaves as it is leaves the draft as it is.
+function editGroups(
+  draft: ProgramDraft,
+  sessionUid: string,
+  edit: (session: SessionDraft) => GroupEditResult,
+): DraftOpOutcome {
+  const session = findSession(draft, sessionUid);
+  if (!session) return { draft, skipped: "That session no longer exists" };
+  const result = edit(session);
+  if (!result.ok) return { draft, skipped: result.reason };
+  if (result.session === session) return { draft };
+  return { draft: mapSession(draft, sessionUid, () => result.session) };
 }
 
 export type DraftOpsResult = {

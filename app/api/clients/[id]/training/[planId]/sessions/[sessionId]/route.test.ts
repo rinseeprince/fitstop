@@ -91,11 +91,10 @@ const validBody = {
 
 // A superset/circuit group with every setting set. Each exercise names its
 // isWarmup, so the parsed group is exactly this object.
+// One set per round on each exercise, as a superset or circuit holds them.
 const circuitGroup = {
   format: "circuit",
-  rounds: 3,
-  timeCapSeconds: 600,
-  intervalSeconds: 60,
+  rounds: 1,
   restBetweenExercisesSeconds: 15,
   restBetweenRoundsSeconds: 90,
   notes: "A",

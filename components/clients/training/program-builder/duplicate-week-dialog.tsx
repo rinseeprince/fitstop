@@ -246,7 +246,8 @@ export function DuplicateWeekDialog({
                   </label>
                   <span className={cn("pb-2 text-[10px]", TEXT_MUTED)}>
                     Negative removes working sets from the end — every exercise
-                    keeps its first working set.
+                    keeps its first working set. In a superset or circuit it adds
+                    or removes rounds instead.
                   </span>
                 </>
               )}

@@ -1307,14 +1307,13 @@ describe("savePlanEdit", () => {
       { load_value: 40, set_type: "warmup", set_number: 2, reps_min: 10, reps_max: 10, load_type: "absolute" },
       { load_value: 80, set_type: "working", set_number: 5, reps_min: 6, reps_max: 8, load_type: "absolute" },
     ];
-    // Lower A's squat and lunge share a circuit with every setting set; the
-    // circuit sits second, numbered with a gap like the rest.
+    // Lower A's squat and lunge share a circuit with every setting a circuit
+    // stores set, one set per round each; the circuit sits second, numbered
+    // with a gap like the rest.
     const lowerACircuit = () =>
       groupRow("grp-lower-a", LOWER_A, 4, {
         format: "circuit",
         rounds: 3,
-        time_cap_seconds: 900,
-        interval_seconds: 60,
         rest_between_exercises_seconds: 15,
         rest_between_rounds_seconds: 90,
         notes: "Unbroken",
@@ -1425,14 +1424,14 @@ describe("savePlanEdit", () => {
     it("says a day whose group's settings the coach changed is not, and leaves the rest unchanged", async () => {
       mockTables(calendar());
 
-      // Lower A's circuit goes from three rounds to four.
+      // Lower A's circuit rests two minutes between rounds instead of 90 seconds.
       await saveThroughEditor((draft) =>
         withSlot(draft, 0, 5, (slot) => ({
           ...slot,
           session: slot.session && {
             ...slot.session,
             groups: slot.session.groups.map((group) =>
-              group.format === "circuit" ? { ...group, rounds: 4 } : group,
+              group.format === "circuit" ? { ...group, restBetweenRoundsSeconds: 120 } : group,
             ),
           },
         })),

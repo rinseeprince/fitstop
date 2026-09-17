@@ -67,7 +67,11 @@ const bodyProps = {
   onAddExercise: noop,
   onRemoveExercise: noop,
   onEditExercise: noop,
-  onReorderExercise: noop,
+  onLinkExercises: noop,
+  onUnlinkGroup: noop,
+  onMoveExercise: noop,
+  onMoveGroup: noop,
+  onUpdateGroup: noop,
   onSpecEdit: noop,
 };
 

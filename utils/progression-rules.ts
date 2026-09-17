@@ -73,7 +73,8 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 const roundHalf = (n: number): number => Math.round(n * 2) / 2;
 
-const isWorking = (s: SetSpec): boolean => (s.set_type ?? "working") === "working";
+/** A working-type set: what progression moves. A spec with no type counts as one. */
+export const isWorkingSpec = (s: SetSpec): boolean => (s.set_type ?? "working") === "working";
 
 const cloneSpec = (s: SetSpec): SetSpec => ({
   ...s,
@@ -112,9 +113,9 @@ const renumber = (specs: SetSpec[]): SetSpec[] =>
 // exact result): append up to the joint headroom of both ceilings; no
 // headroom (or no working set to clone) = no-op.
 function appendWorkingSets(specs: SetSpec[], count: number): SetSpec[] | null {
-  const lastWorking = specs.reduce((acc, s, i) => (isWorking(s) ? i : acc), -1);
+  const lastWorking = specs.reduce((acc, s, i) => (isWorkingSpec(s) ? i : acc), -1);
   if (lastWorking < 0) return null;
-  const workingCount = specs.filter(isWorking).length;
+  const workingCount = specs.filter(isWorkingSpec).length;
   const headroom = Math.min(MAX_SET_SPECS - specs.length, MAX_WORKING_SETS - workingCount);
   const n = Math.min(count, headroom);
   if (n < 1) return null;
@@ -129,7 +130,7 @@ function appendWorkingSets(specs: SetSpec[], count: number): SetSpec[] | null {
 function removeWorkingSets(specs: SetSpec[], count: number): SetSpec[] | null {
   const workingIdx: number[] = [];
   specs.forEach((s, i) => {
-    if (isWorking(s)) workingIdx.push(i);
+    if (isWorkingSpec(s)) workingIdx.push(i);
   });
   const n = Math.min(count, workingIdx.length - 1);
   if (n < 1) return null;
@@ -147,7 +148,7 @@ export function progressSetSpecs(specs: SetSpec[], rule: ProgressionRule): SetSp
     return null; // fractional between -1 and 1
   }
   const next = specs.map((s) => {
-    if (!isWorking(s)) return s;
+    if (!isWorkingSpec(s)) return s;
     return rule.kind === "load"
       ? progressLoad(s, rule.mode, rule.amount)
       : progressReps(s, rule.amount);

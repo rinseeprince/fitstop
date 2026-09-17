@@ -18,8 +18,14 @@ import {
   formatReps,
   formatSetCount,
 } from "@/components/clients/training/program-builder/progression-preview-model";
-import type { SetSpec } from "@/utils/exercise-set-specs";
+import { setSpecCount, type SetSpec } from "@/utils/exercise-set-specs";
 import { countSessionExercises, sessionExercises } from "@/utils/exercise-groups";
+import { groupHeading, groupHeadingText } from "@/utils/exercise-group-display";
+import {
+  isSupersetOrCircuit,
+  type ExerciseDestination,
+} from "@/components/clients/training/program-builder/program-builder-groups";
+import type { ExerciseGroupDraft } from "@/components/clients/training/program-builder/program-builder-types";
 import type { DraftWorkspace } from "./draft-workspace";
 
 // Shared plumbing for the assistant's tool executors: 1-based week/day/exercise
@@ -182,6 +188,60 @@ export function linkedGroupNote(name: string, landed: number | null, asked: numb
   return `"${name}" is at position ${landed ?? "?"}, not ${asked}: exercises linked in a group stay together, so it went to the nearest place that keeps every group whole.`;
 }
 
+/** The group an exercise sits in: the group, its place in the session and the exercise's place in it. */
+export function exerciseGroupAt(
+  session: SessionDraft,
+  exerciseUid: string,
+): { group: ExerciseGroupDraft; groupIndex: number; index: number } | null {
+  for (const [groupIndex, group] of session.groups.entries()) {
+    const index = group.exercises.findIndex((e) => e.uid === exerciseUid);
+    if (index >= 0) return { group, groupIndex, index };
+  }
+  return null;
+}
+
+/**
+ * Where the group at `groupIndex` goes when asked to start at 1-based
+ * `position`: the first group boundary at or after it, so no group is split —
+ * as a place counted before the move (ExerciseDestination's convention).
+ */
+export function boundaryIndex(session: SessionDraft, groupIndex: number, position: number): number {
+  const target = position - 1;
+  const others = session.groups.filter((_, i) => i !== groupIndex);
+  let start = 0;
+  let insertAt = others.length;
+  for (let i = 0; i < others.length; i++) {
+    if (start >= target) {
+      insertAt = i;
+      break;
+    }
+    start += others[i].exercises.length;
+  }
+  return insertAt >= groupIndex ? insertAt + 1 : insertAt;
+}
+
+/**
+ * Where reorder_exercise sends an exercise asked to stand at 1-based
+ * `position`: inside its own linked group, clamped to it; a standalone exercise
+ * never lands inside a group — it goes to the first group boundary at or after
+ * the position.
+ */
+export function reorderDestination(
+  session: SessionDraft,
+  exerciseUid: string,
+  position: number,
+): ExerciseDestination | null {
+  const at = exerciseGroupAt(session, exerciseUid);
+  if (!at) return null;
+  const { group, groupIndex, index } = at;
+  if (group.exercises.length < 2) {
+    return { kind: "session", index: boundaryIndex(session, groupIndex, position) };
+  }
+  const start = countSessionExercises({ groups: session.groups.slice(0, groupIndex) });
+  const place = Math.max(0, Math.min(group.exercises.length - 1, position - 1 - start));
+  return { kind: "group", groupUid: group.uid, index: place > index ? place + 1 : place };
+}
+
 // --- Compact rendering for read tools ---
 
 const specLine = (s: SetSpec): string => {
@@ -200,19 +260,56 @@ const specLine = (s: SetSpec): string => {
   return `S${s.set_number} ${s.set_type}: ${reps}${load}${rpe}${drops}`;
 };
 
-export function exerciseLine(ex: ExerciseDraft, position: number): string {
+// `inRounds`: the exercise is in a superset or circuit, so its sets are the
+// group's rounds and its own rest isn't used.
+function exerciseLine(ex: ExerciseDraft, position: number, inRounds = false): string {
   const bits = [
     `${position}. ${ex.name}`,
-    formatSetCount(ex),
+    inRounds ? `${setSpecCount(ex)} rounds` : formatSetCount(ex),
     `reps ${formatReps(ex)}`,
     // Model-facing: canonical kilograms, never the viewer's unit. See the fork
     // note on formatLoads in progression-preview-model.ts.
     `load ${formatLoads(ex, "metric")}`,
   ];
   if (ex.rpeTarget != null) bits.push(`RPE ${ex.rpeTarget}`);
-  if (ex.restSeconds != null) bits.push(`rest ${ex.restSeconds}s`);
+  if (ex.restSeconds != null && !inRounds) bits.push(`rest ${ex.restSeconds}s`);
   if (ex.exerciseId == null) bits.push("(unlinked free-text)");
   return bits.join(" — ");
+}
+
+/** A linked group's heading for the model, in the words coaches and clients read. */
+export function groupLine(group: ExerciseGroupDraft): string {
+  const heading = groupHeading(group);
+  const { title, rests } = groupHeadingText(heading);
+  return [title, rests, heading.notes ? `notes: ${heading.notes}` : null]
+    .filter(Boolean)
+    .join(" — ");
+}
+
+/**
+ * A session's exercises as the model reads them: numbered straight through the
+ * session, a linked group's heading above its exercises, which are indented
+ * beneath it. `detail` adds each exercise's per-set lines.
+ */
+export function sessionExerciseLines(
+  session: SessionDraft,
+  indent: string,
+  detail: (ex: ExerciseDraft) => string[] = () => [],
+): string[] {
+  const lines: string[] = [];
+  let position = 0;
+  for (const group of session.groups) {
+    const linked = group.exercises.length > 1;
+    if (linked) lines.push(`${indent}${groupLine(group)}`);
+    const inRounds = isSupersetOrCircuit(group);
+    for (const ex of group.exercises) {
+      position += 1;
+      const pad = linked ? `${indent}  ` : indent;
+      lines.push(`${pad}${exerciseLine(ex, position, inRounds)}`);
+      lines.push(...detail(ex).map((line) => `${pad}${line}`));
+    }
+  }
+  return lines;
 }
 
 export function sessionDetail(session: SessionDraft, week: number, day: number): string {
@@ -228,11 +325,9 @@ export function sessionDetail(session: SessionDraft, week: number, day: number):
   ]
     .filter(Boolean)
     .join(" — ");
-  const lines = sessionExercises(session).flatMap((ex, i) => {
-    const out = [exerciseLine(ex, i + 1)];
-    if (ex.setSpecs) out.push(...ex.setSpecs.map((s) => `   ${specLine(s)}`));
-    return out;
-  });
+  const lines = sessionExerciseLines(session, "", (ex) =>
+    ex.setSpecs ? ex.setSpecs.map((s) => `   ${specLine(s)}`) : [],
+  );
   const notes = session.notes ? [`Notes: ${session.notes}`] : [];
   return [header, ...lines, ...notes].join("\n") || header;
 }
@@ -289,7 +384,7 @@ function programFullDetail(draft: ProgramDraft): string {
         .filter(Boolean)
         .join(", ");
       lines.push(`  Day ${d + 1}: "${s.name}"${meta ? ` (${meta})` : ""}`);
-      sessionExercises(s).forEach((ex, i) => lines.push(`    ${exerciseLine(ex, i + 1)}`));
+      lines.push(...sessionExerciseLines(s, "    "));
     });
   });
   return lines.join("\n");

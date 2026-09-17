@@ -183,7 +183,11 @@ export function useStandaloneSessionEditor(
     addExercise: builder.addExercise,
     removeExercise: builder.removeExercise,
     updateExercise: builder.updateExercise,
-    reorderExercise: builder.reorderExercise,
+    linkExercises: builder.linkExercises,
+    unlinkGroup: builder.unlinkGroup,
+    moveExercise: builder.moveExercise,
+    moveGroup: builder.moveGroup,
+    updateGroup: builder.updateGroup,
     editSetSpec,
   };
 }

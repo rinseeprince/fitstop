@@ -53,7 +53,10 @@ const opFallbackLabel: Record<DraftOp["type"], string> = {
   add_exercise: "Add an exercise",
   update_exercise: "Update an exercise",
   remove_exercise: "Remove an exercise",
-  reorder_exercise: "Reorder an exercise",
+  link_exercises: "Link exercises",
+  move_exercise: "Move an exercise",
+  move_group: "Move a superset or circuit",
+  update_group: "Change a superset or circuit",
 };
 
 const opLabelText = (op: DraftOp): string =>

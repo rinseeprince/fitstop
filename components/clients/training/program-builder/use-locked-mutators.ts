@@ -16,6 +16,7 @@ import type {
   SessionDraft,
   WeekDraft,
 } from "./program-builder-types";
+import type { ExerciseDestination, GroupSettingsPatch } from "./program-builder-groups";
 import type { ProgramBuilderState } from "./use-program-builder-state";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
 
@@ -52,7 +53,11 @@ export function useLockedMutators({
       addExercise: state.addExercise,
       removeExercise: state.removeExercise,
       updateExercise: state.updateExercise,
-      reorderExercise: state.reorderExercise,
+      linkExercises: state.linkExercises,
+      unlinkGroup: state.unlinkGroup,
+      moveExercise: state.moveExercise,
+      moveGroup: state.moveGroup,
+      updateGroup: state.updateGroup,
       deleteWeek: state.deleteWeek,
       duplicateWeek: state.duplicateWeek,
       insertWeekAfter: state.insertWeekAfter,
@@ -96,7 +101,7 @@ export function useLockedMutators({
     },
     updateSession: (
       sessionUid: string,
-      patch: Partial<Omit<SessionDraft, "uid" | "exercises">>,
+      patch: Partial<Omit<SessionDraft, "uid" | "groups">>,
     ) => {
       if (sessionRefused(sessionUid)) return;
       state.updateSession(sessionUid, patch);
@@ -117,9 +122,25 @@ export function useLockedMutators({
       if (sessionRefused(sessionUid)) return;
       state.updateExercise(sessionUid, exerciseUid, patchOrFn);
     },
-    reorderExercise: (sessionUid: string, activeUid: string, overUid: string) => {
+    linkExercises: (sessionUid: string, exerciseUids: string[]) => {
       if (sessionRefused(sessionUid)) return;
-      state.reorderExercise(sessionUid, activeUid, overUid);
+      state.linkExercises(sessionUid, exerciseUids);
+    },
+    unlinkGroup: (sessionUid: string, groupUid: string) => {
+      if (sessionRefused(sessionUid)) return;
+      state.unlinkGroup(sessionUid, groupUid);
+    },
+    moveExercise: (sessionUid: string, exerciseUid: string, to: ExerciseDestination) => {
+      if (sessionRefused(sessionUid)) return;
+      state.moveExercise(sessionUid, exerciseUid, to);
+    },
+    moveGroup: (sessionUid: string, groupUid: string, index: number) => {
+      if (sessionRefused(sessionUid)) return;
+      state.moveGroup(sessionUid, groupUid, index);
+    },
+    updateGroup: (sessionUid: string, groupUid: string, patch: GroupSettingsPatch) => {
+      if (sessionRefused(sessionUid)) return;
+      state.updateGroup(sessionUid, groupUid, patch);
     },
     deleteWeek: (weekUid: string) => {
       if (refused(rulesNow().weeks.get(weekUid)?.canDelete === false ? PAST_LOCKED : null)) {

@@ -1,15 +1,17 @@
 import {
   expandSetSpecs,
+  setSpecCount,
   type SetSpec,
 } from "@/utils/exercise-set-specs";
 import {
   exerciseScopeKey,
+  isWorkingSpec,
   type ProgressionRule,
 } from "@/utils/progression-rules";
 import type { Exercise } from "@/types/training";
 import type { ExerciseDraft, WeekDraft } from "./program-builder-types";
 import { formatLoad, type UnitSystem } from "@/utils/unit-conversions";
-import { sessionExercises } from "@/utils/exercise-groups";
+import { isSupersetOrCircuit } from "./program-builder-groups";
 
 // Pure view-model for the duplicate-week progression preview: pairs the
 // source week with its progressed clone POSITIONALLY (progressWeek never
@@ -55,11 +57,8 @@ export function buildIsCompound(
       : (byName.get(ex.name.trim().toLowerCase()) ?? false);
 }
 
-// Same working-set convention as the engine: missing set_type counts as working.
-const isWorking = (s: SetSpec): boolean => (s.set_type ?? "working") === "working";
-
 const workingSpecs = (ex: ExerciseDraft): SetSpec[] =>
-  expandSetSpecs(ex).filter(isWorking);
+  expandSetSpecs(ex).filter(isWorkingSpec);
 
 const loadToken = (s: SetSpec, viewer: UnitSystem): string => {
   if (s.load_value == null || s.load_type == null) return "—";
@@ -119,14 +118,22 @@ export function formatSetCount(ex: ExerciseDraft): string {
   return `${n} ${n === 1 ? "set" : "sets"}`;
 }
 
+// In a superset or circuit an exercise's sets are the group's rounds, and the
+// Sets rule adds or removes rounds.
+function formatRoundCount(ex: ExerciseDraft): string {
+  const n = setSpecCount(ex);
+  return `${n} ${n === 1 ? "round" : "rounds"}`;
+}
+
 function formatForRule(
   rule: ProgressionRule,
   ex: ExerciseDraft,
   viewer: UnitSystem,
+  inRounds: boolean,
 ): string {
   if (rule.kind === "load") return formatLoads(ex, viewer);
   if (rule.kind === "reps") return formatReps(ex);
-  return formatSetCount(ex);
+  return inRounds ? formatRoundCount(ex) : formatSetCount(ex);
 }
 
 export function buildPreviewRows(
@@ -141,19 +148,21 @@ export function buildPreviewRows(
     const progressedSession = progressed.days[dayIndex]?.session;
     if (!slot.session || !progressedSession) return;
     // progressWeek keeps every group and exercise in place, so the two
-    // sessions' exercise orders pair up position by position.
-    const progressedExercises = sessionExercises(progressedSession);
-    const rows = sessionExercises(slot.session).map((before, i): ProgressionPreviewRow => {
-      const after = progressedExercises[i];
-      const changed = after != null && changedExerciseUids.has(after.uid);
-      return {
-        uid: after?.uid ?? before.uid,
-        scopeKey: exerciseScopeKey(before),
-        name: before.name,
-        changed,
-        before: formatForRule(rule, before, viewer),
-        after: changed ? formatForRule(rule, after, viewer) : null,
-      };
+    // sessions pair up group by group, exercise by exercise.
+    const rows = slot.session.groups.flatMap((group, g) => {
+      const inRounds = isSupersetOrCircuit(group);
+      return group.exercises.map((before, e): ProgressionPreviewRow => {
+        const after = progressedSession.groups[g]?.exercises[e];
+        const changed = after != null && changedExerciseUids.has(after.uid);
+        return {
+          uid: after?.uid ?? before.uid,
+          scopeKey: exerciseScopeKey(before),
+          name: before.name,
+          changed,
+          before: formatForRule(rule, before, viewer, inRounds),
+          after: changed ? formatForRule(rule, after, viewer, inRounds) : null,
+        };
+      });
     });
     days.push({ dayIndex, sessionName: slot.session.name, rows });
   });

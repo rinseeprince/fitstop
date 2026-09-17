@@ -555,7 +555,7 @@ WATCH FOR
 NOT IN THIS COMMIT: building groups (commit 4); AMRAP, EMOM and For time (commits 14–15).
 ```
 
-### Commit 4 — Groups in the builder
+### Commit 4 — Groups in the builder — SHIPPED 2026-09-17
 
 ```text
 Implement commit 4 of 22 — Groups in the builder — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

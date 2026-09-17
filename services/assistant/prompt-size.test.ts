@@ -8,6 +8,7 @@ import { buildReadTools } from "./draft-read-tools";
 import { buildWeekTools } from "./draft-week-tools";
 import { buildSessionTools } from "./draft-session-tools";
 import { buildExerciseTools } from "./draft-exercise-tools";
+import { buildGroupTools } from "./draft-group-tools";
 import { makeRestWeek } from "@/components/clients/training/program-builder/program-builder-types";
 import { normalizeDraft } from "@/components/clients/training/program-builder/program-builder-model";
 
@@ -44,6 +45,7 @@ function toolsWireChars(): number {
     ...buildWeekTools(ws),
     ...buildSessionTools(ws),
     ...buildExerciseTools(ws),
+    ...buildGroupTools(ws),
   ];
   // JSON.stringify drops the `run`/`parse` functions, leaving exactly what
   // goes over the wire: type + name + description + input_schema. (The schema
@@ -64,7 +66,7 @@ describe("assistant prompt cache floor", () => {
     }
   });
 
-  it("still ships all 18 tools (a dropped tool shrinks the prefix toward the floor)", () => {
+  it("still ships all 23 tools (a dropped tool shrinks the prefix toward the floor)", () => {
     expect(toolsWireChars()).toBeGreaterThan(9000);
   });
 });

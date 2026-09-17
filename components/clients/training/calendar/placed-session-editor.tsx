@@ -89,7 +89,11 @@ export function PlacedSessionEditor({
     addExercise,
     removeExercise,
     updateExercise,
-    reorderExercise,
+    linkExercises,
+    unlinkGroup,
+    moveExercise,
+    moveGroup,
+    updateGroup,
     editSetSpec,
   } = usePlacedSessionEditor(state, { onClose });
 
@@ -183,7 +187,11 @@ export function PlacedSessionEditor({
                 onAddExercise={addExercise}
                 onRemoveExercise={removeExercise}
                 onEditExercise={updateExercise}
-                onReorderExercise={reorderExercise}
+                onLinkExercises={linkExercises}
+                onUnlinkGroup={unlinkGroup}
+                onMoveExercise={moveExercise}
+                onMoveGroup={moveGroup}
+                onUpdateGroup={updateGroup}
                 onSpecEdit={editSetSpec}
               />
             ) : loadError && !isLoading ? (

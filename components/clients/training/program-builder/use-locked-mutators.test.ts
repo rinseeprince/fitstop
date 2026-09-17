@@ -74,7 +74,11 @@ function fakeState(draft: ProgramDraft) {
     addExercise: vi.fn(),
     removeExercise: vi.fn(),
     updateExercise: vi.fn(),
-    reorderExercise: vi.fn(),
+    linkExercises: vi.fn(),
+    unlinkGroup: vi.fn(),
+    moveExercise: vi.fn(),
+    moveGroup: vi.fn(),
+    updateGroup: vi.fn(),
     deleteWeek: vi.fn(),
     duplicateWeek: vi.fn(),
     insertWeekAfter: vi.fn(),
@@ -141,6 +145,31 @@ describe("useLockedMutators", () => {
     // A move onto a greyed day is refused whatever the session.
     m.moveSession("sess10", "s20");
     expect(calls.moveSession).not.toHaveBeenCalled();
+  });
+
+  it("refuses every group edit to a session on a locked day, and passes an editable one through", () => {
+    const { m, calls } = mutators();
+
+    m.linkExercises("sess2", ["a", "b"]);
+    m.unlinkGroup("sess2", "g");
+    m.moveExercise("sess2", "a", { kind: "session", index: 0 });
+    m.moveGroup("sess2", "g", 0);
+    m.updateGroup("sess2", "g", { rounds: 4 });
+    refusedWith(PAST_LOCKED);
+    for (const call of [calls.linkExercises, calls.unlinkGroup, calls.moveExercise, calls.moveGroup, calls.updateGroup]) {
+      expect(call).not.toHaveBeenCalled();
+    }
+
+    m.linkExercises("sess10", ["a", "b"]);
+    m.unlinkGroup("sess10", "g");
+    m.moveExercise("sess10", "a", { kind: "group", groupUid: "g", index: 1 });
+    m.moveGroup("sess10", "g", 2);
+    m.updateGroup("sess10", "g", { notes: null });
+    expect(calls.linkExercises).toHaveBeenCalledWith("sess10", ["a", "b"]);
+    expect(calls.unlinkGroup).toHaveBeenCalledWith("sess10", "g");
+    expect(calls.moveExercise).toHaveBeenCalledWith("sess10", "a", { kind: "group", groupUid: "g", index: 1 });
+    expect(calls.moveGroup).toHaveBeenCalledWith("sess10", "g", 2);
+    expect(calls.updateGroup).toHaveBeenCalledWith("sess10", "g", { notes: null });
   });
 
   it("refuses to delete a week holding history, and lets a later week go", () => {

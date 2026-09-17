@@ -41,12 +41,17 @@ const FIELD_LABELS: Record<PrescribedField, string> = {
 
 type SetColumnsMenuProps = {
   fields: ReadonlySet<PrescribedField>;
+  // Columns that don't apply where the exercise sits and so aren't offered —
+  // Rest in a superset or circuit, whose rests are the group's. Their stored
+  // choice is kept, not changed, by the columns ticked here.
+  hiddenFields?: readonly PrescribedField[];
   exerciseName: string;
   onChange: (next: PrescribedField[] | null) => void;
 };
 
 export function SetColumnsMenu({
   fields,
+  hiddenFields = [],
   exerciseName,
   onChange,
 }: SetColumnsMenuProps) {
@@ -82,11 +87,13 @@ export function SetColumnsMenu({
         <p className="px-2 pb-1.5 text-[11px] text-[#93b0b4]">
           What your client sees and fills in
         </p>
-        {PRESCRIBED_FIELDS.map((field) => {
+        {PRESCRIBED_FIELDS.filter((field) => !hiddenFields.includes(field)).map((field) => {
           const checked = fields.has(field);
           // The grid must always keep one column; an exercise prescribing
           // nothing is refused by the migration-149 CHECK too.
-          const isLastRemaining = checked && fields.size === 1;
+          const isLastRemaining =
+            checked &&
+            [...fields].filter((f) => !hiddenFields.includes(f)).length === 1;
           return (
             <DropdownMenuCheckboxItem
               key={field}

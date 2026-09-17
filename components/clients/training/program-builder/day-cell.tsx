@@ -1,12 +1,14 @@
 "use client";
 
+import { Fragment } from "react";
 import { Dumbbell, GripVertical, Lock, Plus, X } from "lucide-react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import type { DaySlotDraft } from "./program-builder-types";
 import type { SessionDragData, SlotDropData } from "./use-program-dnd";
 import { PAST_LOCKED } from "./program-builder-lock-model";
-import { setsRepsShort } from "./exercise-summary";
+import { roundsRepsShort, setsRepsShort } from "./exercise-summary";
+import { isSupersetOrCircuit } from "./program-builder-groups";
 import {
   FOCUS_RING,
   LABEL_CLASS,
@@ -18,7 +20,8 @@ import {
   THUMB_CLASS,
   TRAINING_CARD_BORDER,
 } from "./builder-tokens";
-import { countSessionExercises, sessionExercises } from "@/utils/exercise-groups";
+import { countSessionExercises } from "@/utils/exercise-groups";
+import type { ExerciseDraft, SessionDraft } from "./program-builder-types";
 
 // One positional day cell. Two states only (empty === rest): a session card
 // or a rest marker whose hover swaps to "Add session" (opens the add-session
@@ -47,6 +50,29 @@ type DayCellProps = {
   onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
   onClearSlot: (slotUid: string) => void;
 };
+
+const SHOWN_EXERCISES = 3;
+
+type ShownLine = { exercise: ExerciseDraft; ordinal: number; roundsAreRows: boolean };
+
+// The session's first exercises, in runs by group: a linked group's run is
+// joined by the rail the session editor draws, and an exercise in a superset
+// or circuit reads its rounds ("3×8-10", "21-15-9").
+function shownRuns(session: SessionDraft): Array<{ key: string; linked: boolean; lines: ShownLine[] }> {
+  const runs: Array<{ key: string; linked: boolean; lines: ShownLine[] }> = [];
+  let ordinal = 0;
+  for (const group of session.groups) {
+    if (ordinal >= SHOWN_EXERCISES) break;
+    const lines = group.exercises.slice(0, SHOWN_EXERCISES - ordinal).map((exercise, i) => ({
+      exercise,
+      ordinal: ordinal + i + 1,
+      roundsAreRows: isSupersetOrCircuit(group),
+    }));
+    ordinal += lines.length;
+    runs.push({ key: group.uid, linked: group.exercises.length > 1, lines });
+  }
+  return runs;
+}
 
 // The cell surfaces are divs (they contain buttons, so they can't be buttons
 // themselves) — this makes them keyboard-operable like every other affordance.
@@ -246,25 +272,39 @@ export function DayCell({
               )}
             </div>
 
-            {/* Ordered exercise list — name + sets×reps, first 3 + "+N more". */}
+            {/* Ordered exercise list — name + sets×reps, first 3 + "+N more";
+                a linked group's lines sit on the rail the session editor draws. */}
             {countSessionExercises(session) > 0 && (
               <div className="mt-1.5 min-w-0 flex-1 space-y-[3px] overflow-hidden">
-                {sessionExercises(session).slice(0, 3).map((ex, i) => (
-                  <div key={ex.uid} className="flex items-baseline gap-1.5">
-                    <span className={cn(MONO, "w-2 shrink-0 text-[9.5px] text-[#c2d0cc]")}>
-                      {i + 1}
-                    </span>
-                    <span className={cn("min-w-0 flex-1 truncate text-[11px]", TEXT_SECONDARY)}>
-                      {ex.name}
-                    </span>
-                    <span className={cn(MONO_META_CLASS, "shrink-0 text-[10px]")}>
-                      {setsRepsShort(ex)}
-                    </span>
-                  </div>
-                ))}
-                {countSessionExercises(session) > 3 && (
+                {shownRuns(session).map((run) => {
+                  const lines = run.lines.map(({ exercise, ordinal, roundsAreRows }) => (
+                    <div key={exercise.uid} className="flex items-baseline gap-1.5">
+                      <span className={cn(MONO, "w-2 shrink-0 text-[9.5px] text-[#c2d0cc]")}>
+                        {ordinal}
+                      </span>
+                      <span className={cn("min-w-0 flex-1 truncate text-[11px]", TEXT_SECONDARY)}>
+                        {exercise.name}
+                      </span>
+                      <span className={cn(MONO_META_CLASS, "shrink-0 text-[10px]")}>
+                        {roundsAreRows ? roundsRepsShort(exercise) : setsRepsShort(exercise)}
+                      </span>
+                    </div>
+                  ));
+                  return run.linked ? (
+                    <div
+                      key={run.key}
+                      data-testid="day-cell-group-rail"
+                      className="space-y-[3px] border-l-2 border-[rgba(13,148,136,0.15)] pl-1.5"
+                    >
+                      {lines}
+                    </div>
+                  ) : (
+                    <Fragment key={run.key}>{lines}</Fragment>
+                  );
+                })}
+                {countSessionExercises(session) > SHOWN_EXERCISES && (
                   <div className={cn(MONO_META_CLASS, "pl-[14px] text-[10px] text-[#c2d0cc]")}>
-                    +{countSessionExercises(session) - 3} more
+                    +{countSessionExercises(session) - SHOWN_EXERCISES} more
                   </div>
                 )}
               </div>

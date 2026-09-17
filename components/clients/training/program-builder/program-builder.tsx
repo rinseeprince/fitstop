@@ -108,7 +108,11 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     addExercise,
     removeExercise,
     updateExercise,
-    reorderExercise,
+    linkExercises,
+    unlinkGroup,
+    moveExercise,
+    moveGroup,
+    updateGroup,
     editSetSpec,
     insertWeekAfter,
     dayRules,
@@ -551,7 +555,11 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         onAddExercise={addExercise}
         onRemoveExercise={removeExercise}
         onEditExercise={updateExercise}
-        onReorderExercise={reorderExercise}
+        onLinkExercises={linkExercises}
+        onUnlinkGroup={unlinkGroup}
+        onMoveExercise={moveExercise}
+        onMoveGroup={moveGroup}
+        onUpdateGroup={updateGroup}
         onSpecEdit={editSetSpec}
         onSaveAsWorkout={(uid) => void saveDayAsWorkout(uid)}
         isSavingWorkout={isSavingWorkout}

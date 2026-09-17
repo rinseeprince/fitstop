@@ -13,7 +13,12 @@ import {
   type SessionDraft,
   type WeekDraft,
 } from "./program-builder-types";
-import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
+import { STRAIGHT_SETS } from "@/utils/exercise-groups";
+import {
+  isSupersetOrCircuit,
+  normalizeGroups,
+  progressGroupRounds,
+} from "./program-builder-groups";
 
 // Pure model helpers for the builder draft tree — normalization, cloning, and
 // lookups. Kept free of React so the state hook stays thin and these are unit
@@ -39,11 +44,12 @@ function normalizeExercise(e: ExerciseDraft): ExerciseDraft {
 function normalizeSession(session: SessionDraft): SessionDraft {
   return {
     ...session,
-    // Every exercise sits in a group and a group holds at least one: a group
-    // its last exercise left goes with it.
-    groups: session.groups
-      .filter((group) => group.exercises.length > 0)
-      .map((group) => ({ ...group, exercises: group.exercises.map(normalizeExercise) })),
+    // Every exercise sits in a group and a group holds at least one; a group of
+    // one is a plain exercise, and no group keeps a setting its format doesn't
+    // use (program-builder-groups.ts).
+    groups: normalizeGroups(
+      session.groups.map((group) => ({ ...group, exercises: group.exercises.map(normalizeExercise) })),
+    ),
   };
 }
 
@@ -135,13 +141,7 @@ export function progressWeek(
   let weekChanged = false;
   const days = week.days.map((slot) => {
     if (!slot.session) return slot;
-    const session = mapSessionExercises(slot.session, (ex) => {
-      if (!inScope(ex)) return ex;
-      const result = progressExercise(ex, rule);
-      if (!result) return ex;
-      changedExerciseUids.add(ex.uid);
-      return { ...ex, ...result };
-    });
+    const session = progressSession(slot.session, rule, inScope, changedExerciseUids);
     if (session === slot.session) return slot;
     weekChanged = true;
     return { ...slot, session };
@@ -150,6 +150,44 @@ export function progressWeek(
     week: weekChanged ? { ...week, days } : week,
     changedExerciseUids,
   };
+}
+
+// A group walk: in a superset or circuit the Sets rule changes the group's
+// rounds, every exercise together, when any of its exercises is in scope — so
+// its exercises stay one set per round. Every other rule, and every exercise
+// outside one, progresses exercise by exercise.
+function progressSession(
+  session: SessionDraft,
+  rule: ProgressionRule,
+  inScope: (ex: ExerciseDraft) => boolean,
+  changed: Set<string>,
+): SessionDraft {
+  let sessionChanged = false;
+  const groups = session.groups.map((group) => {
+    if (rule.kind === "sets" && isSupersetOrCircuit(group)) {
+      if (!group.exercises.some(inScope)) return group;
+      const next = progressGroupRounds(group, rule.amount);
+      if (!next) return group;
+      next.exercises.forEach((ex, i) => {
+        if (ex !== group.exercises[i]) changed.add(ex.uid);
+      });
+      sessionChanged = true;
+      return next;
+    }
+    let groupChanged = false;
+    const exercises = group.exercises.map((ex) => {
+      if (!inScope(ex)) return ex;
+      const result = progressExercise(ex, rule);
+      if (!result) return ex;
+      changed.add(ex.uid);
+      groupChanged = true;
+      return { ...ex, ...result };
+    });
+    if (!groupChanged) return group;
+    sessionChanged = true;
+    return { ...group, exercises };
+  });
+  return sessionChanged ? { ...session, groups } : session;
 }
 
 // =============================================================================
@@ -237,54 +275,6 @@ export function removeSessionExercise(session: SessionDraft, exerciseUid: string
     return exercises.length > 0 ? [{ ...group, exercises }] : [];
   });
   return found ? { ...session, groups } : session;
-}
-
-/**
- * Move an exercise to `toIndex` in the session's exercise order (group by
- * group, each group's exercises in turn), never splitting a group: a lone
- * exercise's group moves among the groups, to the first group boundary at or
- * after `toIndex` — for a session of lone exercises exactly an array move — and
- * an exercise that shares its group moves within that group. The same reference
- * when nothing moves or the exercise is absent.
- */
-export function moveSessionExercise(
-  session: SessionDraft,
-  exerciseUid: string,
-  toIndex: number,
-): SessionDraft {
-  const total = sessionExercises(session).length;
-  const groupIndex = session.groups.findIndex((g) => g.exercises.some((e) => e.uid === exerciseUid));
-  if (groupIndex < 0 || total === 0) return session;
-  const target = Math.max(0, Math.min(total - 1, toIndex));
-  const group = session.groups[groupIndex];
-
-  if (group.exercises.length > 1) {
-    const start = sessionExercises({ groups: session.groups.slice(0, groupIndex) }).length;
-    const from = group.exercises.findIndex((e) => e.uid === exerciseUid);
-    const to = Math.max(0, Math.min(group.exercises.length - 1, target - start));
-    if (from === to) return session;
-    const exercises = [...group.exercises];
-    const [moved] = exercises.splice(from, 1);
-    exercises.splice(to, 0, moved);
-    const groups = [...session.groups];
-    groups[groupIndex] = { ...group, exercises };
-    return { ...session, groups };
-  }
-
-  const rest = session.groups.filter((_, i) => i !== groupIndex);
-  let start = 0;
-  let insertAt = rest.length;
-  for (let i = 0; i < rest.length; i++) {
-    if (start >= target) {
-      insertAt = i;
-      break;
-    }
-    start += rest[i].exercises.length;
-  }
-  if (insertAt === groupIndex) return session;
-  const groups = [...rest];
-  groups.splice(insertAt, 0, group);
-  return { ...session, groups };
 }
 
 /** True when applying `patch` to `obj` would change at least one field. */

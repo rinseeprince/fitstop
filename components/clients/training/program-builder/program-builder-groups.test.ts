@@ -1,0 +1,437 @@
+import { describe, expect, it } from "vitest";
+import {
+  fitExerciseSets,
+  isSupersetOrCircuit,
+  linkExercises,
+  moveExercise,
+  moveGroup,
+  normalizeGroups,
+  progressGroupRounds,
+  unlinkGroup,
+  updateGroup,
+  type GroupEditResult,
+} from "./program-builder-groups";
+import { defaultExerciseDraftFromCatalog, straightSetsGroup } from "./program-builder-model";
+import type { ExerciseDraft, ExerciseGroupDraft, SessionDraft } from "./program-builder-types";
+import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
+import { expandSetSpecs, setSpecCount, type SetSpec } from "@/utils/exercise-set-specs";
+
+const exercise = (uid: string, overrides: Partial<ExerciseDraft> = {}): ExerciseDraft => ({
+  ...defaultExerciseDraftFromCatalog({ name: uid, exerciseId: null }),
+  uid,
+  ...overrides,
+});
+
+const spec = (n: number, overrides: Partial<SetSpec> = {}): SetSpec => ({
+  set_number: n,
+  set_type: "working",
+  reps_min: 10,
+  reps_max: 10,
+  ...overrides,
+});
+
+const lone = (uid: string, overrides: Partial<ExerciseDraft> = {}): ExerciseGroupDraft =>
+  straightSetsGroup(`grp-${uid}`, exercise(uid, overrides));
+
+const circuit = (
+  uid: string,
+  exercises: ExerciseDraft[],
+  overrides: Partial<ExerciseGroupDraft> = {},
+): ExerciseGroupDraft => ({
+  uid,
+  ...STRAIGHT_SETS,
+  format: "circuit",
+  rounds: 3,
+  restBetweenExercisesSeconds: 30,
+  restBetweenRoundsSeconds: 90,
+  notes: "Back to back",
+  exercises,
+  ...overrides,
+});
+
+const session = (groups: ExerciseGroupDraft[]): SessionDraft => ({
+  uid: "sess-1",
+  name: "Hybrid",
+  focus: null,
+  estimatedDurationMinutes: null,
+  calorieSurplusPercentage: null,
+  notes: null,
+  sessionType: "training",
+  groups,
+});
+
+const ok = (result: GroupEditResult): SessionDraft => {
+  if (!result.ok) throw new Error(`expected ok, got: ${result.reason}`);
+  return result.session;
+};
+const shape = (s: SessionDraft) => s.groups.map((g) => g.exercises.map((e) => e.uid));
+const order = (s: SessionDraft) => sessionExercises(s).map((e) => e.uid);
+
+describe("isSupersetOrCircuit", () => {
+  it("is a looped format with two or more exercises", () => {
+    expect(isSupersetOrCircuit(circuit("c", [exercise("a"), exercise("b")]))).toBe(true);
+    expect(isSupersetOrCircuit(circuit("c", [exercise("a")]))).toBe(false);
+    expect(
+      isSupersetOrCircuit({ ...circuit("c", [exercise("a"), exercise("b")]), format: "straight_sets" }),
+    ).toBe(false);
+  });
+});
+
+describe("normalizeGroups", () => {
+  it("drops an empty group and makes a group of one a plain exercise", () => {
+    const groups = normalizeGroups([
+      circuit("empty", []),
+      circuit("left-alone", [exercise("a")]),
+    ]);
+    expect(groups).toEqual([{ uid: "left-alone", ...STRAIGHT_SETS, exercises: [exercise("a")] }]);
+  });
+
+  it("keeps no setting a format doesn't use", () => {
+    const [straight, looped] = normalizeGroups([
+      circuit("s", [exercise("a"), exercise("b")], {
+        format: "straight_sets",
+        timeCapSeconds: 600,
+        intervalSeconds: 60,
+      }),
+      circuit("c", [exercise("c"), exercise("d")], { timeCapSeconds: 600, intervalSeconds: 60 }),
+    ]);
+    expect(straight).toMatchObject({
+      format: "straight_sets",
+      rounds: null,
+      restBetweenRoundsSeconds: null,
+      timeCapSeconds: null,
+      intervalSeconds: null,
+      restBetweenExercisesSeconds: 30,
+      notes: "Back to back",
+    });
+    expect(looped).toMatchObject({
+      rounds: 3,
+      restBetweenRoundsSeconds: 90,
+      timeCapSeconds: null,
+      intervalSeconds: null,
+    });
+  });
+});
+
+describe("fitExerciseSets", () => {
+  it("adds copies of the last set, and removes the last sets", () => {
+    const withSpecs = exercise("a", { setSpecs: [spec(1, { reps_min: 21, reps_max: 21 }), spec(2)] });
+    const grown = fitExerciseSets(withSpecs, 4);
+    if (!grown.ok) throw new Error(grown.reason);
+    expect(grown.exercise.setSpecs?.map((s) => [s.set_number, s.reps_min])).toEqual([
+      [1, 21],
+      [2, 10],
+      [3, 10],
+      [4, 10],
+    ]);
+    expect(grown.exercise.sets).toBe(4);
+
+    const shrunk = fitExerciseSets(grown.exercise, 1);
+    if (!shrunk.ok) throw new Error(shrunk.reason);
+    expect(shrunk.exercise.setSpecs?.map((s) => s.reps_min)).toEqual([21]);
+  });
+
+  it("returns the same exercise when it already has that many sets", () => {
+    const compact = exercise("a", { sets: 3 });
+    const result = fitExerciseSets(compact, 3);
+    expect(result.ok && result.exercise).toBe(compact);
+  });
+
+  it("refuses to leave an exercise with only warm-ups, and a count outside 1-30", () => {
+    const warmupsFirst = exercise("a", {
+      setSpecs: [spec(1, { set_type: "warmup" }), spec(2)],
+    });
+    expect(fitExerciseSets(warmupsFirst, 1)).toEqual({
+      ok: false,
+      reason: "a: At least one working set is required",
+    });
+    expect(fitExerciseSets(exercise("a"), 0).ok).toBe(false);
+    expect(fitExerciseSets(exercise("a"), 31).ok).toBe(false);
+  });
+});
+
+describe("linkExercises", () => {
+  it("makes a new superset where the first picked exercise was, in session order", () => {
+    const s = session([lone("a"), lone("b"), lone("c"), lone("d")]);
+    const linked = ok(linkExercises(s, ["d", "b"], "grp-new"));
+    expect(shape(linked)).toEqual([["a"], ["b", "d"], ["c"]]);
+    expect(linked.groups[1]).toMatchObject({
+      uid: "grp-new",
+      format: "circuit",
+      rounds: 3,
+      restBetweenExercisesSeconds: null,
+      restBetweenRoundsSeconds: null,
+      notes: null,
+    });
+  });
+
+  it("takes the rounds of the exercise with the most sets and gives the others copies of their last set", () => {
+    const s = session([lone("a", { sets: 3 }), lone("b", { sets: 5 })]);
+    const linked = ok(linkExercises(s, ["a", "b"], "grp-new"));
+    expect(linked.groups[0].rounds).toBe(5);
+    expect(linked.groups[0].exercises.map(setSpecCount)).toEqual([5, 5]);
+  });
+
+  it("takes an exercise out of its old group; a group left with one becomes a plain exercise", () => {
+    const s = session([circuit("grp-c", [exercise("a"), exercise("b")]), lone("x")]);
+    const linked = ok(linkExercises(s, ["b", "x"], "grp-new"));
+    expect(shape(linked)).toEqual([["a"], ["b", "x"]]);
+    expect(linked.groups[0]).toEqual({ uid: "grp-c", ...STRAIGHT_SETS, exercises: [exercise("a")] });
+  });
+
+  it("follows the exercises before the first picked one in its group", () => {
+    const s = session([circuit("grp-c", [exercise("a"), exercise("b"), exercise("c")]), lone("x")]);
+    const linked = ok(linkExercises(s, ["b", "x"], "grp-new"));
+    expect(shape(linked)).toEqual([["a", "c"], ["b", "x"]]);
+  });
+
+  it("takes the whole group's place when every exercise of it is picked", () => {
+    const s = session([lone("x"), circuit("grp-c", [exercise("a"), exercise("b")]), lone("y")]);
+    const linked = ok(linkExercises(s, ["a", "b", "y"], "grp-new"));
+    expect(shape(linked)).toEqual([["x"], ["a", "b", "y"]]);
+    expect(linked.groups.map((g) => g.uid)).toEqual(["grp-x", "grp-new"]);
+  });
+
+  it("refuses fewer than two exercises and one that no longer exists", () => {
+    const s = session([lone("a"), lone("b")]);
+    expect(linkExercises(s, ["a"], "g").ok).toBe(false);
+    expect(linkExercises(s, ["a", "gone"], "g").ok).toBe(false);
+  });
+});
+
+describe("unlinkGroup", () => {
+  it("makes every exercise a plain exercise in the same place, keeping its sets", () => {
+    const s = session([
+      lone("x"),
+      circuit("grp-c", [exercise("a", { sets: 4 }), exercise("b", { sets: 4 })], { rounds: 4 }),
+      lone("y"),
+    ]);
+    const unlinked = ok(unlinkGroup(s, "grp-c", ["g1", "g2"]));
+    expect(shape(unlinked)).toEqual([["x"], ["a"], ["b"], ["y"]]);
+    expect(unlinked.groups.slice(1, 3)).toEqual([
+      { uid: "g1", ...STRAIGHT_SETS, exercises: [exercise("a", { sets: 4 })] },
+      { uid: "g2", ...STRAIGHT_SETS, exercises: [exercise("b", { sets: 4 })] },
+    ]);
+  });
+
+  it("leaves a lone exercise as it is and refuses a group that no longer exists", () => {
+    const s = session([lone("a")]);
+    expect(ok(unlinkGroup(s, "grp-a", ["g"]))).toBe(s);
+    expect(unlinkGroup(s, "gone", []).ok).toBe(false);
+  });
+});
+
+describe("moveExercise", () => {
+  it("moves a standalone exercise among the session's groups, counting places before the move", () => {
+    const s = session([lone("a"), circuit("grp-c", [exercise("b"), exercise("c")]), lone("d")]);
+    expect(shape(ok(moveExercise(s, "a", { kind: "session", index: 2 }, "g")))).toEqual([
+      ["b", "c"],
+      ["a"],
+      ["d"],
+    ]);
+    expect(shape(ok(moveExercise(s, "d", { kind: "session", index: 0 }, "g")))).toEqual([
+      ["d"],
+      ["a"],
+      ["b", "c"],
+    ]);
+    // A standalone exercise keeps its own group.
+    expect(ok(moveExercise(s, "d", { kind: "session", index: 0 }, "g")).groups[0].uid).toBe("grp-d");
+  });
+
+  it("returns the same session when an exercise lands where it is", () => {
+    const s = session([lone("a"), lone("b"), circuit("grp-c", [exercise("c"), exercise("d")])]);
+    expect(ok(moveExercise(s, "a", { kind: "session", index: 0 }, "g"))).toBe(s);
+    expect(ok(moveExercise(s, "a", { kind: "session", index: 1 }, "g"))).toBe(s);
+    expect(ok(moveExercise(s, "c", { kind: "group", groupUid: "grp-c", index: 0 }, "g"))).toBe(s);
+    expect(ok(moveExercise(s, "c", { kind: "group", groupUid: "grp-c", index: 1 }, "g"))).toBe(s);
+  });
+
+  it("reorders within its own group", () => {
+    const s = session([circuit("grp-c", [exercise("a"), exercise("b"), exercise("c")])]);
+    expect(shape(ok(moveExercise(s, "a", { kind: "group", groupUid: "grp-c", index: 3 }, "g")))).toEqual([
+      ["b", "c", "a"],
+    ]);
+    expect(shape(ok(moveExercise(s, "c", { kind: "group", groupUid: "grp-c", index: 0 }, "g")))).toEqual([
+      ["c", "a", "b"],
+    ]);
+  });
+
+  it("joins a superset or circuit and takes its rounds", () => {
+    const s = session([
+      circuit("grp-c", [exercise("a", { sets: 3 }), exercise("b", { sets: 3 })]),
+      lone("x", { sets: 2 }),
+      lone("y", { sets: 5 }),
+    ]);
+    const grown = ok(moveExercise(s, "x", { kind: "group", groupUid: "grp-c", index: 1 }, "g"));
+    expect(shape(grown)).toEqual([["a", "x", "b"], ["y"]]);
+    expect(grown.groups[0].exercises.map(setSpecCount)).toEqual([3, 3, 3]);
+    expect(grown.groups[0]).toMatchObject({ rounds: 3, restBetweenRoundsSeconds: 90 });
+
+    const trimmed = ok(moveExercise(s, "y", { kind: "group", groupUid: "grp-c", index: 2 }, "g"));
+    expect(trimmed.groups[0].exercises.map(setSpecCount)).toEqual([3, 3, 3]);
+  });
+
+  it("keeps its sets when it joins linked straight sets", () => {
+    const s = session([
+      circuit("grp-s", [exercise("a", { sets: 3 }), exercise("b", { sets: 3 })], { format: "straight_sets", rounds: null }),
+      lone("x", { sets: 5 }),
+    ]);
+    const joined = ok(moveExercise(s, "x", { kind: "group", groupUid: "grp-s", index: 2 }, "g"));
+    expect(joined.groups[0].exercises.map(setSpecCount)).toEqual([3, 3, 5]);
+  });
+
+  it("stands alone in a new group when it leaves a linked group; a group left with one becomes plain", () => {
+    const s = session([circuit("grp-c", [exercise("a"), exercise("b")]), lone("x")]);
+    const out = ok(moveExercise(s, "a", { kind: "session", index: 2 }, "grp-new"));
+    expect(shape(out)).toEqual([["b"], ["x"], ["a"]]);
+    expect(out.groups[2]).toEqual({ uid: "grp-new", ...STRAIGHT_SETS, exercises: [exercise("a")] });
+    expect(out.groups[0]).toEqual({ uid: "grp-c", ...STRAIGHT_SETS, exercises: [exercise("b")] });
+  });
+
+  it("moves between two linked groups", () => {
+    const s = session([
+      circuit("grp-1", [exercise("a"), exercise("b"), exercise("c")]),
+      circuit("grp-2", [exercise("d"), exercise("e")], { rounds: 3 }),
+    ]);
+    const moved = ok(moveExercise(s, "c", { kind: "group", groupUid: "grp-2", index: 0 }, "g"));
+    expect(shape(moved)).toEqual([["a", "b"], ["c", "d", "e"]]);
+  });
+
+  it("refuses a target that isn't a linked group, and a fit that would leave only warm-ups", () => {
+    const s = session([
+      lone("a"),
+      lone("b"),
+      circuit("grp-c", [exercise("c", { sets: 1 }), exercise("d", { sets: 1 })], { rounds: 1 }),
+      lone("w", { setSpecs: [spec(1, { set_type: "warmup" }), spec(2)] }),
+    ]);
+    expect(moveExercise(s, "a", { kind: "group", groupUid: "grp-b", index: 0 }, "g").ok).toBe(false);
+    expect(moveExercise(s, "a", { kind: "group", groupUid: "gone", index: 0 }, "g").ok).toBe(false);
+    expect(moveExercise(s, "w", { kind: "group", groupUid: "grp-c", index: 0 }, "g")).toEqual({
+      ok: false,
+      reason: "w: At least one working set is required",
+    });
+    expect(moveExercise(s, "gone", { kind: "session", index: 0 }, "g").ok).toBe(false);
+  });
+});
+
+describe("moveGroup", () => {
+  it("moves a whole group, counting places before the move, and is the same session in place", () => {
+    const s = session([lone("a"), circuit("grp-c", [exercise("b"), exercise("c")]), lone("d")]);
+    expect(order(ok(moveGroup(s, "grp-c", 0)))).toEqual(["b", "c", "a", "d"]);
+    expect(order(ok(moveGroup(s, "grp-c", 3)))).toEqual(["a", "d", "b", "c"]);
+    expect(ok(moveGroup(s, "grp-c", 1))).toBe(s);
+    expect(ok(moveGroup(s, "grp-c", 2))).toBe(s);
+    expect(moveGroup(s, "gone", 0).ok).toBe(false);
+  });
+});
+
+describe("updateGroup", () => {
+  const superset = () =>
+    session([
+      circuit("grp-c", [
+        exercise("a", { setSpecs: [spec(1, { reps_min: 21, reps_max: 21 }), spec(2, { reps_min: 15, reps_max: 15 }), spec(3, { reps_min: 9, reps_max: 9 })] }),
+        exercise("b", { sets: 3 }),
+      ]),
+    ]);
+
+  it("changes rounds on every exercise together, adding copies of the last round or removing the last", () => {
+    const more = ok(updateGroup(superset(), "grp-c", { rounds: 4 }));
+    expect(more.groups[0].rounds).toBe(4);
+    expect(more.groups[0].exercises.map(setSpecCount)).toEqual([4, 4]);
+    expect(expandSetSpecs(more.groups[0].exercises[0]).map((s) => s.reps_min)).toEqual([21, 15, 9, 9]);
+
+    const fewer = ok(updateGroup(superset(), "grp-c", { rounds: 2 }));
+    expect(fewer.groups[0].exercises.map(setSpecCount)).toEqual([2, 2]);
+    expect(expandSetSpecs(fewer.groups[0].exercises[0]).map((s) => s.reps_min)).toEqual([21, 15]);
+  });
+
+  it("switches to straight sets keeping every set, and back to a superset taking the most sets", () => {
+    const straight = ok(updateGroup(superset(), "grp-c", { format: "straight_sets" }));
+    expect(straight.groups[0]).toMatchObject({
+      format: "straight_sets",
+      rounds: null,
+      restBetweenRoundsSeconds: null,
+      restBetweenExercisesSeconds: 30,
+      notes: "Back to back",
+    });
+    expect(straight.groups[0].exercises.map(setSpecCount)).toEqual([3, 3]);
+
+    const uneven = session([
+      circuit("grp-s", [exercise("a", { sets: 2 }), exercise("b", { sets: 4 })], {
+        format: "straight_sets",
+        rounds: null,
+        restBetweenRoundsSeconds: null,
+      }),
+    ]);
+    const looped = ok(updateGroup(uneven, "grp-s", { format: "circuit" }));
+    expect(looped.groups[0].rounds).toBe(4);
+    expect(looped.groups[0].exercises.map(setSpecCount)).toEqual([4, 4]);
+  });
+
+  it("sets and clears rests and notes", () => {
+    const changed = ok(
+      updateGroup(superset(), "grp-c", {
+        restBetweenExercisesSeconds: 0,
+        restBetweenRoundsSeconds: null,
+        notes: null,
+      }),
+    );
+    expect(changed.groups[0]).toMatchObject({
+      restBetweenExercisesSeconds: 0,
+      restBetweenRoundsSeconds: null,
+      notes: null,
+    });
+  });
+
+  it("returns the same session when nothing changes", () => {
+    const s = superset();
+    expect(ok(updateGroup(s, "grp-c", { rounds: 3, notes: "Back to back" }))).toBe(s);
+    expect(ok(updateGroup(s, "grp-c", {}))).toBe(s);
+  });
+
+  it("refuses what doesn't apply or can't hold", () => {
+    const s = superset();
+    expect(updateGroup(s, "grp-c", { format: "straight_sets", rounds: 3 }).ok).toBe(false);
+    expect(updateGroup(s, "grp-c", { rounds: 0 }).ok).toBe(false);
+    expect(updateGroup(s, "grp-c", { rounds: 31 }).ok).toBe(false);
+    expect(updateGroup(s, "grp-c", { restBetweenExercisesSeconds: 3601 }).ok).toBe(false);
+    expect(updateGroup(s, "grp-c", { notes: "x".repeat(1001) }).ok).toBe(false);
+    expect(updateGroup(session([lone("a")]), "grp-a", { notes: "x" }).ok).toBe(false);
+    expect(updateGroup(s, "gone", { rounds: 2 }).ok).toBe(false);
+  });
+});
+
+describe("progressGroupRounds", () => {
+  const group = (exercises: ExerciseDraft[], rounds = 3) => circuit("grp-c", exercises, { rounds });
+
+  it("adds rounds to every exercise, copying its last set", () => {
+    const next = progressGroupRounds(group([exercise("a", { sets: 3 }), exercise("b", { sets: 3 })]), 2);
+    expect(next?.rounds).toBe(5);
+    expect(next?.exercises.map(setSpecCount)).toEqual([5, 5]);
+  });
+
+  it("removes rounds from the end and keeps one round with a working set on every exercise", () => {
+    const next = progressGroupRounds(group([exercise("a", { sets: 3 }), exercise("b", { sets: 3 })]), -5);
+    expect(next?.rounds).toBe(1);
+
+    const warmupFirst = group([
+      exercise("a", { setSpecs: [spec(1, { set_type: "warmup" }), spec(2), spec(3)] }),
+      exercise("b", { sets: 3 }),
+    ]);
+    expect(progressGroupRounds(warmupFirst, -2)?.rounds).toBe(2);
+  });
+
+  it("stops where an exercise would pass 20 working sets", () => {
+    const next = progressGroupRounds(group([exercise("a", { sets: 19 }), exercise("b", { sets: 19 })], 19), 5);
+    expect(next?.rounds).toBe(20);
+    expect(progressGroupRounds(group([exercise("a", { sets: 20 }), exercise("b", { sets: 20 })], 20), 1)).toBeNull();
+  });
+
+  it("changes nothing for a zero amount, a lone exercise or linked straight sets", () => {
+    expect(progressGroupRounds(group([exercise("a"), exercise("b")]), 0)).toBeNull();
+    expect(progressGroupRounds(group([exercise("a")]), 1)).toBeNull();
+    expect(
+      progressGroupRounds({ ...group([exercise("a"), exercise("b")]), format: "straight_sets" }, 1),
+    ).toBeNull();
+  });
+});

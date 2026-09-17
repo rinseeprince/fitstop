@@ -587,17 +587,18 @@ describe('Training Validation Schemas', () => {
   })
 
   describe('session groups (migration 178)', () => {
-    // A superset/circuit group with every setting set. Zod strips any key its
-    // schema does not know, so a setting that survives parsing is a known one.
+    // A superset/circuit with every setting it stores set. Zod strips any key
+    // its schema does not know, so a setting that survives parsing is a known one.
     const CIRCUIT = {
       format: 'circuit',
       rounds: 3,
-      timeCapSeconds: 600,
-      intervalSeconds: 60,
       restBetweenExercisesSeconds: 15,
       restBetweenRoundsSeconds: 90,
       notes: 'A',
     }
+    // A timed group with every setting set: the group rules leave AMRAP, EMOM
+    // and For time to commits 14-15, so it bounds each setting on its own.
+    const EMOM = { ...CIRCUIT, format: 'emom', timeCapSeconds: 600, intervalSeconds: 60 }
     // Each exercise names its isWarmup (the PUT item defaults it), so a
     // parsed group is exactly the group sent.
     const squat = { name: 'Squat', sets: 3, isWarmup: false }
@@ -660,17 +661,17 @@ describe('Training Validation Schemas', () => {
       })
 
       it('refuses a group with no exercises', () => {
-        expect(parseGroups([{ ...CIRCUIT, exercises: [squat] }])).not.toBeNull()
+        expect(parseGroups([{ ...CIRCUIT, exercises: [squat, row] }])).not.toBeNull()
         expect(parseGroups([{ ...CIRCUIT, exercises: [] }])).toBeNull()
       })
 
       it('refuses a group with an unknown format', () => {
-        expect(parseGroups([{ ...CIRCUIT, format: 'tabata', exercises: [squat] }])).toBeNull()
+        expect(parseGroups([{ ...CIRCUIT, format: 'tabata', exercises: [squat, row] }])).toBeNull()
       })
 
       it('refuses a group missing its format', () => {
         const { format: _format, ...noFormat } = CIRCUIT
-        expect(parseGroups([{ ...noFormat, exercises: [squat] }])).toBeNull()
+        expect(parseGroups([{ ...noFormat, exercises: [squat, row] }])).toBeNull()
       })
 
       // Migration 178's CHECKs: the edge itself is accepted, one past it refused.
@@ -682,7 +683,7 @@ describe('Training Validation Schemas', () => {
         ['restBetweenRoundsSeconds', 0, 3_600],
       ])('bounds %s to [%i, %i] at both edges', (setting, min, max) => {
         const withSetting = (value: number) =>
-          parseGroups([{ ...CIRCUIT, [setting]: value, exercises: [squat] }])
+          parseGroups([{ ...EMOM, [setting]: value, exercises: [squat, row] }])
 
         expect(withSetting(min)).not.toBeNull()
         expect(withSetting(min - 1)).toBeNull()
@@ -691,7 +692,8 @@ describe('Training Validation Schemas', () => {
       })
 
       it("caps a group's notes at 1000 characters", () => {
-        const withNotes = (notes: string) => parseGroups([{ ...CIRCUIT, notes, exercises: [squat] }])
+        const withNotes = (notes: string) =>
+          parseGroups([{ ...CIRCUIT, notes, exercises: [squat, row] }])
 
         expect(withNotes('x'.repeat(1000))).not.toBeNull()
         expect(withNotes('x'.repeat(1001))).toBeNull()
@@ -700,6 +702,56 @@ describe('Training Validation Schemas', () => {
       it('refuses more than 50 exercises across the groups, though no one group holds 50', () => {
         expect(parseGroups([circuitOf(25), circuitOf(25)])).not.toBeNull()
         expect(parseGroups([circuitOf(25), circuitOf(26)])).toBeNull()
+      })
+
+      // The three rules the builder keeps (program-builder-groups.ts).
+      it('refuses a single exercise carrying any group setting', () => {
+        expect(parseGroups([lone(squat)])).not.toBeNull()
+        for (const setting of [
+          { format: 'circuit' },
+          { rounds: 3 },
+          { restBetweenExercisesSeconds: 30 },
+          { restBetweenRoundsSeconds: 90 },
+          { notes: 'Alone' },
+        ]) {
+          expect(parseGroups([{ ...lone(squat), ...setting }]), JSON.stringify(setting)).toBeNull()
+        }
+      })
+
+      it('refuses straight sets with rounds or a rest between rounds', () => {
+        const straight = { format: 'straight_sets', restBetweenExercisesSeconds: 60, notes: 'In turn' }
+        expect(parseGroups([{ ...straight, exercises: [squat, bench] }])).not.toBeNull()
+        expect(parseGroups([{ ...straight, rounds: 3, exercises: [squat, bench] }])).toBeNull()
+        expect(parseGroups([{ ...straight, restBetweenRoundsSeconds: 90, exercises: [squat, bench] }])).toBeNull()
+      })
+
+      it('refuses a superset or circuit without its rounds, or with an exercise whose sets are not one per round', () => {
+        const { rounds: _rounds, ...noRounds } = CIRCUIT
+        expect(parseGroups([{ ...noRounds, exercises: [squat, row] }])).toBeNull()
+        // Bench has 4 sets against 3 rounds.
+        expect(parseGroups([{ ...CIRCUIT, exercises: [squat, bench] }])).toBeNull()
+        // Per-set programming counts its sets, warm-ups included.
+        const scheme = {
+          ...squat,
+          setSpecs: [
+            { set_number: 1, set_type: 'warmup' },
+            { set_number: 2, set_type: 'working', reps_min: 15, reps_max: 15 },
+            { set_number: 3, set_type: 'working', reps_min: 9, reps_max: 9 },
+          ],
+        }
+        expect(parseGroups([{ ...CIRCUIT, exercises: [scheme, row] }])).not.toBeNull()
+        expect(parseGroups([{ ...CIRCUIT, rounds: 2, exercises: [scheme, { ...row, sets: 2 }] }])).toBeNull()
+      })
+
+      it('refuses a superset or circuit with a time cap or interval', () => {
+        expect(parseGroups([{ ...CIRCUIT, timeCapSeconds: 600, exercises: [squat, row] }])).toBeNull()
+        expect(parseGroups([{ ...CIRCUIT, intervalSeconds: 60, exercises: [squat, row] }])).toBeNull()
+      })
+
+      it('leaves AMRAP, EMOM and For time to their own commits', () => {
+        for (const format of ['amrap', 'emom', 'for_time']) {
+          expect(parseGroups([{ ...EMOM, format, exercises: [squat, bench] }]), format).not.toBeNull()
+        }
       })
     })
 

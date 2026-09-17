@@ -111,6 +111,48 @@ describe("DayCell — session state", () => {
     expect(handlers.onOpenSession).toHaveBeenCalledWith("sess-1");
   });
 
+  it("joins a group's exercises on a rail and reads a superset's rounds; numbers run on", () => {
+    const ex = (uid: string, name: string, overrides: Partial<ExerciseDraft> = {}) =>
+      ({ uid, name, sets: 3, repsMin: 10, repsMax: 10, setSpecs: null, ...overrides }) as ExerciseDraft;
+    renderCell({
+      slot: makeSlot({
+        isRest: false,
+        session: makeSession({
+          groups: [
+            lone(ex("ex-1", "Back Squat", { repsMin: 5, repsMax: 5 })),
+            {
+              uid: "grp-circuit",
+              ...STRAIGHT_SETS,
+              format: "circuit",
+              rounds: 3,
+              exercises: [
+                ex("ex-2", "Thruster", {
+                  setSpecs: [
+                    { set_number: 1, set_type: "working", reps_min: 21, reps_max: 21 },
+                    { set_number: 2, set_type: "working", reps_min: 15, reps_max: 15 },
+                    { set_number: 3, set_type: "working", reps_min: 9, reps_max: 9 },
+                  ],
+                }),
+                ex("ex-3", "Pull Up"),
+                ex("ex-4", "Burpee"),
+              ],
+            },
+          ],
+        }),
+      }),
+    });
+    const rail = screen.getByTestId("day-cell-group-rail");
+    // The first three exercises: the squat alone, then two of the circuit on its rail.
+    expect(rail).toHaveTextContent("Thruster");
+    expect(rail).toHaveTextContent("21-15-9");
+    expect(rail).toHaveTextContent("Pull Up");
+    expect(rail).toHaveTextContent("3×10");
+    expect(rail).not.toHaveTextContent("Back Squat");
+    expect(screen.getByText("3×5")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("+1 more")).toBeInTheDocument();
+  });
+
   it("inherits the program default surplus when the session has no override", () => {
     renderCell({
       slot: makeSlot({

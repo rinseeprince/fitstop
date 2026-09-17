@@ -131,6 +131,20 @@ export function compactFromSpecs(specs: SetSpec[]): {
 }
 
 /**
+ * How many sets an exercise prescribes, warm-ups and finishers included: its
+ * authored specs, else its compact set count — the length `expandSetSpecs`
+ * returns, without building the list. A drop set's drops belong to their set.
+ * In a superset or circuit this is the exercise's number of rounds.
+ */
+export function setSpecCount(ex: {
+  setSpecs?: readonly unknown[] | null;
+  sets: number;
+}): number {
+  if (Array.isArray(ex.setSpecs) && ex.setSpecs.length > 0) return ex.setSpecs.length;
+  return clamp(Math.floor(ex.sets ?? 1), 1, MAX_WORKING_SETS);
+}
+
+/**
  * Log-form / snapshot seeding (Phase 2). Returns the authored per-set list when
  * present; otherwise synthesizes N `working` specs from the compact columns so
  * every prescription yields per-set rows carrying a `set_type`. The client log
@@ -149,7 +163,7 @@ export function expandSetSpecs(ex: {
   restSeconds?: number | null;
 }): SetSpec[] {
   if (Array.isArray(ex.setSpecs) && ex.setSpecs.length > 0) return ex.setSpecs;
-  const n = clamp(Math.floor(ex.sets ?? 1), 1, MAX_WORKING_SETS);
+  const n = setSpecCount(ex);
   return Array.from({ length: n }, (_, i) => ({
     set_number: i + 1,
     set_type: "working" as const,

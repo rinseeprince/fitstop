@@ -3,14 +3,19 @@ import { newUid } from "@/components/clients/training/program-builder/program-bu
 import type { ExerciseDraft } from "@/components/clients/training/program-builder/program-builder-types";
 import {
   defaultExerciseDraftFromCatalog,
+  findSession,
   straightSetsGroup,
 } from "@/components/clients/training/program-builder/program-builder-model";
+import { isSupersetOrCircuit } from "@/components/clients/training/program-builder/program-builder-groups";
+import type { SessionDraft } from "@/components/clients/training/program-builder/program-builder-types";
 import { countSessionExercises } from "@/utils/exercise-groups";
+import { groupName } from "@/utils/exercise-group-display";
 import {
   compactFromSpecs,
   expandSetSpecs,
   MAX_SET_SPECS,
   MAX_WORKING_SETS,
+  setSpecCount,
   type SetSpec,
   type SetType,
 } from "@/utils/exercise-set-specs";
@@ -21,8 +26,10 @@ import {
 import type { DraftWorkspace } from "./draft-workspace";
 import {
   commitOp,
+  exerciseGroupAt,
   exercisePositionNow,
   linkedGroupNote,
+  reorderDestination,
   resolveExerciseRef,
   resolveSession,
 } from "./draft-tool-helpers";
@@ -59,6 +66,19 @@ function loadFields(input: LoadInput): { type: "absolute" | "pct_1rm"; value: nu
   if (input.loadKg != null) return { type: "absolute", value: input.loadKg };
   if (input.loadPercent1rm != null) return { type: "pct_1rm", value: input.loadPercent1rm };
   return null;
+}
+
+/**
+ * The refusal for a change to how many sets an exercise has when its sets are
+ * a superset's or circuit's rounds; null when it isn't in one or keeps them.
+ */
+function roundsRefusal(session: SessionDraft, exercise: ExerciseDraft, sets: number): string | null {
+  const group = exerciseGroupAt(session, exercise.uid)?.group;
+  if (!group || !isSupersetOrCircuit(group)) return null;
+  const rounds = setSpecCount(exercise);
+  if (sets === rounds) return null;
+  const name = groupName(group.format, group.exercises.length).toLowerCase();
+  return `"${exercise.name}" is in a ${rounds}-round ${name}: it has exactly one set per round, so send ${rounds} sets, or change the rounds with update_group.`;
 }
 
 export function buildExerciseTools(ws: DraftWorkspace) {
@@ -123,18 +143,23 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       });
       if (err) return err;
       if (input.position != null) {
-        // Clamp to the session's real length — an out-of-range toIndex is
-        // schema-invalid on the client and would discard the whole turn
-        // (including the add above) while this tool reported success.
+        // Clamp to the session's real length, and work the place out on the
+        // working copy as it now stands: the op carries the place itself, never
+        // a position the client would read again.
         const count = countSessionExercises(session.value) + 1;
         const target = Math.min(Math.max(input.position, 1), count);
-        const reorderErr = commitOp(ws, {
-          type: "reorder_exercise",
-          sessionUid: session.value.uid,
-          exerciseUid: exercise.uid,
-          toIndex: target - 1,
-          label: `W${input.week} D${input.day}: ${row.name} to position ${input.position}`,
-        });
+        const now = findSession(ws.draft, session.value.uid);
+        const to = now && reorderDestination(now, exercise.uid, target);
+        const reorderErr = to
+          ? commitOp(ws, {
+              type: "move_exercise",
+              sessionUid: session.value.uid,
+              exerciseUid: exercise.uid,
+              to,
+              groupUid: newUid("grp"),
+              label: `W${input.week} D${input.day}: ${row.name} to position ${input.position}`,
+            })
+          : "That exercise no longer exists";
         if (reorderErr) return `Added ${row.name}, but couldn't reposition it: ${reorderErr}`;
         const landed = exercisePositionNow(ws, session.value.uid, exercise.uid);
         if (landed !== target) {
@@ -189,6 +214,10 @@ export function buildExerciseTools(ws: DraftWorkspace) {
 
       if (exercise.setSpecs && compactTouch) {
         return `"${exercise.name}" has per-set programming (${exercise.setSpecs.length} sets) — read it with get_session and reshape it with set_exercise_sets; only notes and loadKg/loadPercent1rm apply here.`;
+      }
+      if (input.sets !== undefined) {
+        const refused = roundsRefusal(session.value, exercise, input.sets);
+        if (refused) return refused;
       }
 
       // ORDER IS LOAD-BEARING: compact fields land FIRST, then a load
@@ -248,7 +277,7 @@ export function buildExerciseTools(ws: DraftWorkspace) {
   const setExerciseSets = betaTool({
     name: "set_exercise_sets",
     description:
-      "Replace an exercise's full per-set list (set-by-set programming: warm-ups, working sets, AMRAP/drop/failure finishers, per-set reps/loads/RPE). At least one non-warmup set; max 30 sets, 20 working. Loads: loadKg (absolute) or loadPercent1rm, one per set.",
+      "Replace an exercise's full per-set list (set-by-set programming: warm-ups, working sets, AMRAP/drop/failure finishers, per-set reps/loads/RPE). At least one non-warmup set; max 30 sets, 20 working. Loads: loadKg (absolute) or loadPercent1rm, one per set. In a superset or circuit each set is one round: send exactly the group's rounds.",
     inputSchema: {
       type: "object",
       properties: {
@@ -287,6 +316,8 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       if (!ref.ok) return ref.error;
       const { exercise } = ref.value;
 
+      const refused = roundsRefusal(session.value, exercise, input.sets.length);
+      if (refused) return refused;
       const working = input.sets.filter((s) => s.setType !== "warmup").length;
       if (working === 0) return "At least one non-warmup set is required.";
       if (working > MAX_WORKING_SETS) {
@@ -357,7 +388,8 @@ export function buildExerciseTools(ws: DraftWorkspace) {
 
   const reorderExercise = betaTool({
     name: "reorder_exercise",
-    description: "Move an exercise to a different position within its session.",
+    description:
+      "Move an exercise to a different position within its session. An exercise in a superset, circuit or straight-sets group moves within its group (take it out with unlink_exercises); a standalone exercise never lands inside a group (put it in one with add_to_group).",
     inputSchema: {
       type: "object",
       properties: {
@@ -372,11 +404,14 @@ export function buildExerciseTools(ws: DraftWorkspace) {
       if (!session.ok) return session.error;
       const ref = resolveExerciseRef(session.value, input);
       if (!ref.ok) return ref.error;
+      const to = reorderDestination(session.value, ref.value.exercise.uid, input.toPosition);
+      if (!to) return "That exercise no longer exists.";
       const err = commitOp(ws, {
-        type: "reorder_exercise",
+        type: "move_exercise",
         sessionUid: session.value.uid,
         exerciseUid: ref.value.exercise.uid,
-        toIndex: input.toPosition - 1,
+        to,
+        groupUid: newUid("grp"),
         label: `W${input.week} D${input.day}: ${ref.value.exercise.name} to position ${input.toPosition}`,
       });
       if (err) return err;

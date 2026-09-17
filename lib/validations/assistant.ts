@@ -9,6 +9,7 @@ import {
   GROUP_TIME_CAP_SECONDS_MAX,
   MAX_EXERCISES_PER_SESSION,
 } from "@/utils/exercise-groups";
+import { MAX_SET_SPECS } from "@/utils/exercise-set-specs";
 import type { DraftOp } from "@/components/clients/training/program-builder/program-builder-ops";
 
 // AI draft-assistant wire schemas (builder S6a).
@@ -180,6 +181,32 @@ const aiAddedGroupSchema = groupDraftSnapshotSchema.extend({
   exercises: z.array(aiAddedExerciseSchema).min(1).max(MAX_EXERCISES_PER_SESSION),
 });
 
+// Where a moved exercise lands (program-builder-groups.ts ExerciseDestination):
+// places counted in the session as it stands before the move.
+const exerciseDestinationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("group"),
+    groupUid: uidSchema,
+    index: z.number().int().min(0).max(MAX_EXERCISES_PER_SESSION),
+  }),
+  z.object({
+    kind: z.literal("session"),
+    index: z.number().int().min(0).max(MAX_EXERCISES_PER_SESSION),
+  }),
+]);
+
+// The settings a coach edits on a linked group; rounds follow the set cap,
+// because in a superset or circuit every exercise has one set per round.
+const groupSettingsPatchSchema = z
+  .object({
+    format: z.enum(["straight_sets", "circuit"]).optional(),
+    rounds: z.number().int().min(1).max(MAX_SET_SPECS).optional(),
+    restBetweenExercisesSeconds: z.number().int().min(0).max(GROUP_REST_SECONDS_MAX).nullable().optional(),
+    restBetweenRoundsSeconds: z.number().int().min(0).max(GROUP_REST_SECONDS_MAX).nullable().optional(),
+    notes: z.string().max(GROUP_NOTES_MAX).nullable().optional(),
+  })
+  .strict();
+
 export const draftOpSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("set_program_meta"),
@@ -238,10 +265,32 @@ export const draftOpSchema = z.discriminatedUnion("type", [
     label: opLabel,
   }),
   z.object({
-    type: z.literal("reorder_exercise"),
+    type: z.literal("link_exercises"),
+    sessionUid: uidSchema,
+    exerciseUids: z.array(uidSchema).min(2).max(MAX_EXERCISES_PER_SESSION),
+    groupUid: uidSchema,
+    label: opLabel,
+  }),
+  z.object({
+    type: z.literal("move_exercise"),
     sessionUid: uidSchema,
     exerciseUid: uidSchema,
-    toIndex: z.number().int().min(0).max(49),
+    to: exerciseDestinationSchema,
+    groupUid: uidSchema,
+    label: opLabel,
+  }),
+  z.object({
+    type: z.literal("move_group"),
+    sessionUid: uidSchema,
+    groupUid: uidSchema,
+    toIndex: z.number().int().min(0).max(MAX_EXERCISES_PER_SESSION),
+    label: opLabel,
+  }),
+  z.object({
+    type: z.literal("update_group"),
+    sessionUid: uidSchema,
+    groupUid: uidSchema,
+    patch: groupSettingsPatchSchema,
     label: opLabel,
   }),
 ]);

@@ -1,3 +1,6 @@
+import { expandSetSpecs } from "@/utils/exercise-set-specs";
+import { buildPrescribedRows } from "@/utils/set-spec-rows";
+import { formatRoundRepsShort } from "@/utils/exercise-group-display";
 import type { ExerciseDraft } from "./program-builder-types";
 
 // Shared prescription summary for the builder. It prefers the maintained
@@ -24,4 +27,11 @@ export function setsRepsShort(e: ExerciseDraft): string {
       ? range ?? e.repsTarget
       : e.repsTarget ?? range;
   return reps ? `${e.sets}×${reps}` : `${e.sets} sets`;
+}
+
+// A week-grid line for an exercise in a superset or circuit, whose sets are the
+// group's rounds: "3×8-10", or "21-15-9" when the rounds differ. Empty when a
+// round asks no rep count.
+export function roundsRepsShort(e: ExerciseDraft): string {
+  return formatRoundRepsShort(buildPrescribedRows(expandSetSpecs(e))) ?? "";
 }

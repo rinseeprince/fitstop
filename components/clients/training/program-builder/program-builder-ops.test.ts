@@ -6,6 +6,7 @@ import {
   type DraftOp,
 } from "./program-builder-ops";
 import { normalizeDraft } from "./program-builder-model";
+import type { ExerciseDestination } from "./program-builder-groups";
 import { LIMIT_LOCKED, PAST_LOCKED } from "./program-builder-lock-model";
 import {
   DAYS_PER_WEEK,
@@ -195,7 +196,7 @@ describe("applyDraftOp", () => {
     expect(metaLib.draft.name).toBe("Renamed");
   });
 
-  it("moves a session (swap when occupied) and reorders exercises by index", () => {
+  it("moves a session (swap when occupied) and moves an exercise to a place", () => {
     const a = makeSession({ name: "A" });
     const b = makeSession({
       name: "B",
@@ -218,10 +219,11 @@ describe("applyDraftOp", () => {
     const reordered = applyDraftOp(
       draft,
       {
-        type: "reorder_exercise",
+        type: "move_exercise",
         sessionUid: b.uid,
         exerciseUid: sessionExercises(b)[1].uid,
-        toIndex: 0,
+        to: { kind: "session", index: 0 },
+        groupUid: newUid("grp"),
       },
       LIB,
     );
@@ -494,14 +496,14 @@ describe("exercise ops on a session holding a circuit", () => {
 
     const inCircuit = applyDraftOps(
       draft,
-      [{ type: "update_exercise", sessionUid, exerciseUid: row.uid, patch: { sets: 5 } }],
+      [{ type: "update_exercise", sessionUid, exerciseUid: row.uid, patch: { repsMin: 6 } }],
       LIB,
     );
     expect(inCircuit.skipped).toEqual([]);
     const [updatedCircuit, sameBench] = groupsOf(inCircuit.draft);
     expect(updatedCircuit.uid).toBe(circuit.uid);
     expect(groupSettingsOf(updatedCircuit)).toEqual(CIRCUIT);
-    expect(updatedCircuit.exercises).toEqual([circuit.exercises[0], { ...row, sets: 5 }]);
+    expect(updatedCircuit.exercises).toEqual([circuit.exercises[0], { ...row, repsMin: 6 }]);
     expect(sameBench).toEqual(benchGroup);
 
     const outOfCircuit = applyDraftOps(
@@ -516,7 +518,26 @@ describe("exercise ops on a session holding a circuit", () => {
     ]);
   });
 
-  it("remove_exercise of the circuit's second exercise leaves a group of one WITH its circuit settings", () => {
+  it("update_exercise refuses to change how many sets a circuit exercise has — its sets are the rounds", () => {
+    const { draft, sessionUid, row, bench } = makeFixture();
+    for (const patch of [{ sets: 5 }, { setSpecs: [
+      { set_number: 1, set_type: "working" as const },
+      { set_number: 2, set_type: "working" as const },
+    ] }]) {
+      const refused = applyDraftOp(draft, { type: "update_exercise", sessionUid, exerciseUid: row.uid, patch }, LIB);
+      expect(refused.skipped).toMatch(/superset or circuit/);
+      expect(refused.draft).toBe(draft);
+    }
+    // Keeping the count applies, and a lone exercise changes its sets freely.
+    expect(
+      applyDraftOp(draft, { type: "update_exercise", sessionUid, exerciseUid: row.uid, patch: { sets: 3, repsMin: 5 } }, LIB).skipped,
+    ).toBeUndefined();
+    expect(
+      applyDraftOp(draft, { type: "update_exercise", sessionUid, exerciseUid: bench.uid, patch: { sets: 5 } }, LIB).skipped,
+    ).toBeUndefined();
+  });
+
+  it("remove_exercise of the circuit's second exercise leaves the other a plain exercise", () => {
     const { draft, sessionUid, circuit, benchGroup, squat, row } = makeFixture();
     const result = applyDraftOps(
       draft,
@@ -526,9 +547,7 @@ describe("exercise ops on a session holding a circuit", () => {
     expect(result.skipped).toEqual([]);
     const groups = groupsOf(result.draft);
     expect(groups).toHaveLength(2);
-    expect(groups[0].uid).toBe(circuit.uid);
-    expect(groupSettingsOf(groups[0])).toEqual(CIRCUIT);
-    expect(groups[0].exercises).toEqual([squat]);
+    expect(groups[0]).toEqual({ uid: circuit.uid, ...STRAIGHT_SETS, exercises: [squat] });
     expect(groups[1]).toEqual(benchGroup);
   });
 
@@ -543,36 +562,74 @@ describe("exercise ops on a session holding a circuit", () => {
     expect(groupsOf(result.draft)).toEqual([circuit]);
   });
 
-  it("reorder_exercise never splits the circuit", () => {
-    const { draft, sessionUid, circuit, benchGroup, squat, row, bench } = makeFixture();
-    const reorder = (exerciseUid: string, toIndex: number) =>
-      applyDraftOp(draft, { type: "reorder_exercise", sessionUid, exerciseUid, toIndex }, LIB);
+  it("move_exercise lands where its place says: among the groups, inside the circuit, or out of it", () => {
+    const { draft, sessionUid, circuit, benchGroup, squat, bench } = makeFixture();
+    const move = (exerciseUid: string, to: ExerciseDestination, groupUid = "grp-out") =>
+      applyDraftOp(draft, { type: "move_exercise", sessionUid, exerciseUid, to, groupUid }, LIB);
 
-    // The lone exercise to the front: its group moves ahead of the circuit.
-    const benchFirst = reorder(bench.uid, 0);
+    // The lone exercise to the front: its own group moves ahead of the circuit.
+    const benchFirst = move(bench.uid, { kind: "session", index: 0 });
     expect(benchFirst.skipped).toBeUndefined();
     expect(namesOf(benchFirst.draft)).toEqual(["Bench Press", "Squat", "Row"]);
     expect(groupsOf(benchFirst.draft).map((g) => g.uid)).toEqual([benchGroup.uid, circuit.uid]);
     expectCircuitWhole(benchFirst.draft, circuit);
 
-    // Into the middle of the circuit: it does not land between Squat and Row.
-    const intoCircuit = reorder(bench.uid, 1);
+    // Into the circuit, between Squat and Row: it joins, keeping the circuit's settings.
+    const intoCircuit = move(bench.uid, { kind: "group", groupUid: circuit.uid, index: 1 });
     expect(intoCircuit.skipped).toBeUndefined();
-    expect(namesOf(intoCircuit.draft)).toEqual(["Squat", "Row", "Bench Press"]);
-    expectCircuitWhole(intoCircuit.draft, circuit);
+    expect(namesOf(intoCircuit.draft)).toEqual(["Squat", "Bench Press", "Row"]);
+    expect(groupsOf(intoCircuit.draft)).toHaveLength(1);
+    expect(groupSettingsOf(groupsOf(intoCircuit.draft)[0])).toEqual(CIRCUIT);
 
-    // A circuit exercise past the circuit's end moves within the circuit.
-    const squatLast = reorder(squat.uid, 2);
-    expect(squatLast.skipped).toBeUndefined();
-    expect(namesOf(squatLast.draft)).toEqual(["Row", "Squat", "Bench Press"]);
-    expect(groupsOf(squatLast.draft)[1]).toEqual(benchGroup);
-    expectCircuitWhole(squatLast.draft, circuit);
+    // Out of the circuit, to the end: it stands alone in the op's group, and the
+    // circuit it left with one exercise is a plain exercise.
+    const squatOut = move(squat.uid, { kind: "session", index: 2 });
+    expect(squatOut.skipped).toBeUndefined();
+    expect(namesOf(squatOut.draft)).toEqual(["Row", "Bench Press", "Squat"]);
+    expect(groupsOf(squatOut.draft)[2]).toEqual({ uid: "grp-out", ...STRAIGHT_SETS, exercises: [squat] });
+    expect(groupSettingsOf(groupsOf(squatOut.draft)[0])).toEqual(STRAIGHT_SETS);
 
-    // A circuit exercise to the front, within the circuit.
-    const rowFirst = reorder(row.uid, 0);
-    expect(rowFirst.skipped).toBeUndefined();
-    expect(namesOf(rowFirst.draft)).toEqual(["Row", "Squat", "Bench Press"]);
-    expectCircuitWhole(rowFirst.draft, circuit);
+    // A move to where it is changes nothing.
+    expect(move(bench.uid, { kind: "session", index: 1 }).draft).toBe(draft);
+    // The group uid it would take already exists: a replayed move skips.
+    expect(move(squat.uid, { kind: "session", index: 2 }, benchGroup.uid).skipped).toMatch(/already/);
+  });
+
+  it("link_exercises, move_group and update_group edit through the shared group module", () => {
+    const { draft, sessionUid, circuit, benchGroup, squat, row, bench } = makeFixture();
+    const result = applyDraftOps(
+      draft,
+      [
+        { type: "move_group", sessionUid, groupUid: benchGroup.uid, toIndex: 0 },
+        { type: "update_group", sessionUid, groupUid: circuit.uid, patch: { rounds: 4, notes: null } },
+        { type: "link_exercises", sessionUid, exerciseUids: [bench.uid, row.uid], groupUid: "grp-new" },
+      ],
+      LIB,
+    );
+    expect(result.skipped).toEqual([]);
+    expect(result.applied).toBe(3);
+    const groups = groupsOf(result.draft);
+    expect(groups.map((g) => g.exercises.map((e) => e.name))).toEqual([["Bench Press", "Row"], ["Squat"]]);
+    expect(groups[0]).toMatchObject({ uid: "grp-new", format: "circuit", rounds: 4 });
+    expect(groups[0].exercises.map((e) => e.sets)).toEqual([4, 4]);
+    expect(groups[1]).toEqual({ uid: circuit.uid, ...STRAIGHT_SETS, exercises: [expect.objectContaining({ uid: squat.uid })] });
+  });
+
+  it("a refused group edit is a skip with its reason, and a vanished session skips", () => {
+    const { draft, sessionUid, benchGroup, circuit } = makeFixture();
+    const refused = applyDraftOp(
+      draft,
+      { type: "update_group", sessionUid, groupUid: benchGroup.uid, patch: { rounds: 2 } },
+      LIB,
+    );
+    expect(refused.skipped).toBe("A single exercise has no group settings");
+    expect(refused.draft).toBe(draft);
+    expect(
+      applyDraftOp(draft, { type: "move_group", sessionUid: "gone", groupUid: circuit.uid, toIndex: 0 }, LIB).skipped,
+    ).toBe("That session no longer exists");
+    expect(
+      applyDraftOp(draft, { type: "link_exercises", sessionUid, exerciseUids: [], groupUid: circuit.uid }, LIB).skipped,
+    ).toMatch(/already/);
   });
 });
 
@@ -760,7 +817,14 @@ describe("applyDraftOp on the plan editor's days (placed-plan)", () => {
         { type: "add_exercise", sessionUid: session.uid, group: lone(makeExercise()) },
         { type: "update_exercise", sessionUid: session.uid, exerciseUid, patch: { sets: 5 } },
         { type: "remove_exercise", sessionUid: session.uid, exerciseUid },
-        { type: "reorder_exercise", sessionUid: session.uid, exerciseUid, toIndex: 0 },
+        {
+          type: "move_exercise",
+          sessionUid: session.uid,
+          exerciseUid,
+          to: { kind: "session", index: 0 },
+          groupUid: newUid("grp"),
+        },
+        { type: "move_group", sessionUid: session.uid, groupUid: session.groups[0].uid, toIndex: 0 },
       ];
     };
     for (const op of opsOn(past)) {

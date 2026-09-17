@@ -600,9 +600,11 @@ const SQUAT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ROW_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const BENCH_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
-// A circuit with every setting set, so a dropped setting shows.
-const CIRCUIT: GroupSettings = {
-  format: "circuit",
+// A timed group with every setting set, so a dropped setting shows. (An EMOM:
+// a superset or circuit stores no time cap or interval, and the write schemas
+// refuse one that does.)
+const EVERY_SETTING: GroupSettings = {
+  format: "emom",
   rounds: 3,
   timeCapSeconds: 900,
   intervalSeconds: 60,
@@ -619,7 +621,7 @@ const CIRCUIT: GroupSettings = {
 function makeGroupedSession(): SavedSession {
   return makeSession({
     groups: [
-      makeGroup("saved-group-circuit", 0, CIRCUIT, [
+      makeGroup("saved-group-circuit", 0, EVERY_SETTING, [
         makeExercise({
           id: "ex-squat",
           exerciseId: SQUAT_ID,
@@ -661,7 +663,7 @@ function makeGroupedSession(): SavedSession {
 /** The groups every write body must carry for makeGroupedSession, in order. */
 const GROUPED_INPUT = [
   {
-    ...CIRCUIT,
+    ...EVERY_SETTING,
     exercises: [
       {
         name: "Back Squat",
@@ -738,7 +740,7 @@ describe("groups through the serializers", () => {
 
     expect(session.groups).toHaveLength(2);
     const [circuit, bench] = session.groups;
-    expect(groupSettingsOf(circuit)).toEqual(CIRCUIT);
+    expect(groupSettingsOf(circuit)).toEqual(EVERY_SETTING);
     expect(groupSettingsOf(bench)).toEqual(STRAIGHT_SETS);
     expect(circuit.exercises.map((e) => e.name)).toEqual(["Back Squat", "Bent-over Row"]);
     expect(bench.exercises.map((e) => e.name)).toEqual(["Bench Press"]);

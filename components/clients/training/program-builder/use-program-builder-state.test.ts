@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { arrayMove } from "@dnd-kit/sortable";
+import { toast } from "sonner";
 import { STRAIGHT_SETS, sessionExercises, type GroupSettings } from "@/utils/exercise-groups";
+import { setSpecCount } from "@/utils/exercise-set-specs";
 import { useProgramBuilderState, findSession } from "./use-program-builder-state";
 import {
   DAYS_PER_WEEK,
@@ -12,6 +13,8 @@ import {
   type ProgramDraft,
   type SessionDraft,
 } from "./program-builder-types";
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 function makeDraft(weekCount = 1): ProgramDraft {
   return {
@@ -407,7 +410,7 @@ describe("useProgramBuilderState — exercises sit in groups", () => {
   // Settings a lone exercise never carries.
   const CIRCUIT: GroupSettings = {
     format: "circuit",
-    rounds: 3,
+    rounds: 4,
     timeCapSeconds: null,
     intervalSeconds: null,
     restBetweenExercisesSeconds: 15,
@@ -475,7 +478,7 @@ describe("useProgramBuilderState — exercises sit in groups", () => {
     expect(new Set(next.map((g) => g.uid)).size).toBe(3);
   });
 
-  it("removeExercise drops the group its last exercise leaves, and keeps a two-exercise group with its settings", () => {
+  it("removeExercise drops the group its last exercise leaves, and makes a group left with one a plain exercise", () => {
     const hook = seedSession(grouped());
 
     // Bench was alone: its group goes with it.
@@ -485,10 +488,10 @@ describe("useProgramBuilderState — exercises sit in groups", () => {
       lone(D),
     ]);
 
-    // One of the circuit's two leaves: the circuit stays, uid and settings and all.
+    // One of the circuit's two leaves: the other is a plain exercise, nothing set.
     act(() => hook.result.current.removeExercise(SESSION_UID, "ex-b"));
     expect(sessionOf(hook).groups).toEqual([
-      { uid: "grp-bc", ...CIRCUIT, exercises: [C] },
+      { uid: "grp-bc", ...STRAIGHT_SETS, exercises: [C] },
       lone(D),
     ]);
 
@@ -501,86 +504,98 @@ describe("useProgramBuilderState — exercises sit in groups", () => {
     const hook = seedSession(grouped());
 
     act(() =>
-      hook.result.current.updateExercise(SESSION_UID, "ex-c", { name: "Ring dip", sets: 5 }),
+      hook.result.current.updateExercise(SESSION_UID, "ex-c", { name: "Ring dip", repsMin: 5 }),
     );
     expect(sessionOf(hook).groups).toEqual([
       lone(A),
-      { uid: "grp-bc", ...CIRCUIT, exercises: [B, { ...C, name: "Ring dip", sets: 5 }] },
+      { uid: "grp-bc", ...CIRCUIT, exercises: [B, { ...C, name: "Ring dip", repsMin: 5 }] },
       lone(D),
     ]);
     expect(hook.result.current.isDirty).toBe(true);
   });
 
-  it("reorderExercise over lone exercises gives the order an array move gives, for every pair", () => {
-    const order = ["ex-a", "ex-b", "ex-c", "ex-d"];
-    order.forEach((active, from) => {
-      order.forEach((over, to) => {
-        if (from === to) return;
-        const hook = seedSession([lone(A), lone(B), lone(C), lone(D)]);
+  beforeEach(() => vi.mocked(toast.error).mockClear());
 
-        act(() => hook.result.current.reorderExercise(SESSION_UID, active, over));
-        const moved = arrayMove(order, from, to);
-        const session = sessionOf(hook);
-        expect(sessionExercises(session).map((e) => e.uid), `${active} over ${over}`).toEqual(moved);
-        // Each exercise moves with its own group of one.
-        expect(session.groups.map((g) => g.uid), `${active} over ${over}`).toEqual(
-          moved.map((uid) => `grp-${uid}`),
-        );
-        expect(session.groups.every((g) => g.exercises.length === 1)).toBe(true);
-        hook.unmount();
-      });
-    });
+  it("linkExercises makes a superset under a fresh group uid, where the first picked exercise was", () => {
+    const hook = seedSession([lone(A), lone(B), lone(C), lone(D)]);
+
+    act(() => hook.result.current.linkExercises(SESSION_UID, ["ex-d", "ex-b"]));
+    const groups = sessionOf(hook).groups;
+    expect(groups.map((g) => g.exercises.map((e) => e.uid))).toEqual([
+      ["ex-a"],
+      ["ex-b", "ex-d"],
+      ["ex-c"],
+    ]);
+    expect(groups[1]).toMatchObject({ format: "circuit", rounds: 4 });
+    expect(groups[1].uid).toMatch(/^grp-/);
+    expect(hook.result.current.isDirty).toBe(true);
   });
 
-  it("reorderExercise moves an exercise of a two-exercise group within its group only", () => {
-    const cases: Array<[active: string, over: string, circuit: ExerciseDraft[]]> = [
-      ["ex-b", "ex-c", [C, B]],
-      ["ex-c", "ex-b", [C, B]],
-      // Dropped past its group's edge, it stops at that edge.
-      ["ex-b", "ex-d", [C, B]],
-      ["ex-c", "ex-a", [C, B]],
-      // Already at the edge it was dropped past: nothing moves.
-      ["ex-b", "ex-a", [B, C]],
-      ["ex-c", "ex-d", [B, C]],
-    ];
-    for (const [active, over, circuit] of cases) {
-      const hook = seedSession(grouped());
+  it("a refused group edit toasts its reason and leaves the draft clean", () => {
+    const hook = seedSession([lone(A), lone(B)]);
+    const before = hook.result.current.draft;
 
-      act(() => hook.result.current.reorderExercise(SESSION_UID, active, over));
-      expect(sessionOf(hook).groups, `${active} over ${over}`).toEqual([
-        lone(A),
-        { uid: "grp-bc", ...CIRCUIT, exercises: circuit },
-        lone(D),
-      ]);
-      hook.unmount();
-    }
+    act(() => hook.result.current.linkExercises(SESSION_UID, ["ex-a"]));
+    expect(toast.error).toHaveBeenCalledWith("Pick at least two exercises to link");
+    expect(hook.result.current.draft).toBe(before);
+    expect(hook.result.current.isDirty).toBe(false);
   });
 
-  it("reorderExercise never splits a two-exercise group, whichever exercise moves over whichever", () => {
-    const order = ["ex-a", "ex-b", "ex-c", "ex-d"];
-    for (const active of order) {
-      for (const over of order) {
-        if (active === over) continue;
-        const hook = seedSession(grouped());
+  it("unlinkGroup makes every exercise a plain exercise in place, each in a group of its own", () => {
+    const hook = seedSession(grouped());
 
-        act(() => hook.result.current.reorderExercise(SESSION_UID, active, over));
-        const session = sessionOf(hook);
-        expect(session.groups, `${active} over ${over}`).toHaveLength(3);
-        // Every group still holds exactly the exercises it held.
-        expect(
-          Object.fromEntries(
-            session.groups.map((g) => [g.uid, g.exercises.map((e) => e.uid).sort()]),
-          ),
-          `${active} over ${over}`,
-        ).toEqual({
-          "grp-ex-a": ["ex-a"],
-          "grp-bc": ["ex-b", "ex-c"],
-          "grp-ex-d": ["ex-d"],
-        });
-        expect(session.groups.find((g) => g.uid === "grp-bc")).toMatchObject(CIRCUIT);
-        hook.unmount();
-      }
-    }
+    act(() => hook.result.current.unlinkGroup(SESSION_UID, "grp-bc"));
+    const groups = sessionOf(hook).groups;
+    expect(groups.map((g) => g.exercises.map((e) => e.uid))).toEqual([
+      ["ex-a"],
+      ["ex-b"],
+      ["ex-c"],
+      ["ex-d"],
+    ]);
+    expect(groups[1]).toEqual({ uid: expect.stringMatching(/^grp-/), ...STRAIGHT_SETS, exercises: [B] });
+    expect(new Set(groups.map((g) => g.uid)).size).toBe(4);
+  });
+
+  it("moveExercise joins a group and leaves one; a drop where it is doesn't dirty the draft", () => {
+    const hook = seedSession(grouped());
+
+    act(() => hook.result.current.moveExercise(SESSION_UID, "ex-a", { kind: "session", index: 1 }));
+    expect(hook.result.current.isDirty).toBe(false);
+
+    act(() =>
+      hook.result.current.moveExercise(SESSION_UID, "ex-d", { kind: "group", groupUid: "grp-bc", index: 0 }),
+    );
+    expect(sessionOf(hook).groups.map((g) => g.exercises.map((e) => e.uid))).toEqual([
+      ["ex-a"],
+      ["ex-d", "ex-b", "ex-c"],
+    ]);
+
+    act(() => hook.result.current.moveExercise(SESSION_UID, "ex-c", { kind: "session", index: 0 }));
+    const groups = sessionOf(hook).groups;
+    expect(groups.map((g) => g.exercises.map((e) => e.uid))).toEqual([
+      ["ex-c"],
+      ["ex-a"],
+      ["ex-d", "ex-b"],
+    ]);
+    expect(groups[0].uid).toMatch(/^grp-/);
+    expect(hook.result.current.isDirty).toBe(true);
+  });
+
+  it("moveGroup moves a whole group, and updateGroup changes its settings and every exercise's rounds", () => {
+    const hook = seedSession(grouped());
+
+    act(() => hook.result.current.moveGroup(SESSION_UID, "grp-bc", 3));
+    expect(sessionExercises(sessionOf(hook)).map((e) => e.uid)).toEqual(["ex-a", "ex-d", "ex-b", "ex-c"]);
+
+    act(() =>
+      hook.result.current.updateGroup(SESSION_UID, "grp-bc", {
+        rounds: 2,
+        restBetweenRoundsSeconds: 120,
+      }),
+    );
+    const circuit = sessionOf(hook).groups[2];
+    expect(circuit).toMatchObject({ uid: "grp-bc", rounds: 2, restBetweenRoundsSeconds: 120 });
+    expect(circuit.exercises.map(setSpecCount)).toEqual([2, 2]);
   });
 });
 

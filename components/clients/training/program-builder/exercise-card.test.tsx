@@ -3,8 +3,8 @@ import { useState } from "react";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DndContext } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { ExerciseCard } from "./exercise-card";
+import type { DropLineEdge } from "./drop-line";
 import { applySetSpecEdit, type SetSpecEdit } from "@/utils/set-spec-edits";
 import type { ExerciseDraft } from "./program-builder-types";
 
@@ -43,11 +43,17 @@ function Wrapper({
   mode = "edit",
   defaultExpanded,
   onRemove = () => undefined,
+  roundsAreRows = false,
+  pick = null,
+  dropLine = null,
 }: {
   exercise: ExerciseDraft;
   mode?: "view" | "edit";
   defaultExpanded?: boolean;
   onRemove?: () => void;
+  roundsAreRows?: boolean;
+  pick?: { picked: boolean; onToggle: () => void } | null;
+  dropLine?: DropLineEdge | null;
 }) {
   // Stateful harness standing in for the draft: applies spec edits through
   // the real kernel so the test exercises the re-projection round-trip.
@@ -61,18 +67,20 @@ function Wrapper({
   };
   return (
     <DndContext>
-      <SortableContext items={[current.uid]} strategy={verticalListSortingStrategy}>
-        <ExerciseCard
-          exercise={current}
-          ordinal={1}
-          mode={mode}
-          expanded={expanded}
-          onToggleExpanded={() => setExpanded((v) => !v)}
-          onEdit={(patch) => setCurrent((e) => ({ ...e, ...patch }))}
-          onSpecEdit={handleSpecEdit}
-          onRemove={onRemove}
-        />
-      </SortableContext>
+      <ExerciseCard
+        exercise={current}
+        ordinal={1}
+        mode={mode}
+        expanded={expanded}
+        onToggleExpanded={() => setExpanded((v) => !v)}
+        roundsAreRows={roundsAreRows}
+        drop={{ id: `item:grp-${current.uid}`, data: { type: "item", index: 0, linked: false } }}
+        dropLine={dropLine}
+        pick={pick}
+        onEdit={(patch) => setCurrent((e) => ({ ...e, ...patch }))}
+        onSpecEdit={handleSpecEdit}
+        onRemove={onRemove}
+      />
     </DndContext>
   );
 }
@@ -269,5 +277,117 @@ describe("ExerciseCard — prescription columns (migration 149)", () => {
       <Wrapper exercise={makeExercise()} mode="view" defaultExpanded />,
     );
     expect(screen.queryByLabelText(/^Columns for /)).toBeNull();
+  });
+});
+
+describe("ExerciseCard — in a superset or circuit (rows are rounds)", () => {
+  beforeEach(() => cleanup());
+
+  const scheme = () =>
+    makeExercise({
+      sets: 3,
+      restSeconds: 60,
+      setSpecs: [
+        { set_number: 1, set_type: "working", reps_min: 21, reps_max: 21, rest_seconds: 60 },
+        { set_number: 2, set_type: "working", reps_min: 15, reps_max: 15, rest_seconds: 60 },
+        { set_number: 3, set_type: "working", reps_min: 9, reps_max: 9, rest_seconds: 60 },
+      ],
+    });
+
+  it("reads its reps round by round, as the client sees them", () => {
+    render(<Wrapper exercise={scheme()} roundsAreRows />);
+    expect(screen.getByText("21-15-9 reps")).toBeInTheDocument();
+    expect(screen.queryByText("3×9-21")).toBeNull();
+  });
+
+  it("heads its rows Round, with no Rest column and no way to add or remove a row", async () => {
+    const user = userEvent.setup();
+    render(<Wrapper exercise={scheme()} roundsAreRows defaultExpanded />);
+    expect(screen.getByText("Round")).toBeInTheDocument();
+    expect(screen.queryByText("#")).toBeNull();
+    expect(screen.queryByText("Rest s")).toBeNull();
+    expect(screen.queryByLabelText("Set 1 rest seconds")).toBeNull();
+    expect(screen.queryByText("Add set")).toBeNull();
+    expect(screen.queryByLabelText("Duplicate set 1")).toBeNull();
+    expect(screen.queryByLabelText("Remove set 1")).toBeNull();
+    // Each round keeps its own targets.
+    expect(screen.getByLabelText("Set 2 reps")).toHaveValue("15");
+
+    await user.click(screen.getByLabelText(/^Columns for /));
+    expect(screen.queryByRole("menuitemcheckbox", { name: "Rest" })).toBeNull();
+    expect(screen.getByRole("menuitemcheckbox", { name: "Reps" })).toBeInTheDocument();
+  });
+
+  it("unticking a column there keeps the stored Rest choice", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    function Harness() {
+      const [exercise, setExercise] = useState(scheme());
+      return (
+        <DndContext>
+          <ExerciseCard
+            exercise={exercise}
+            ordinal={1}
+            mode="edit"
+            expanded
+            onToggleExpanded={() => undefined}
+            roundsAreRows
+            drop={{ id: "member:ex-1", data: { type: "member", groupUid: "grp-c", index: 0 } }}
+            dropLine={null}
+            pick={null}
+            onEdit={(patch) => {
+              onChange(patch);
+              setExercise((e) => ({ ...e, ...patch }));
+            }}
+            onSpecEdit={() => undefined}
+            onRemove={() => undefined}
+          />
+        </DndContext>
+      );
+    }
+    render(<Harness />);
+    await user.click(screen.getByLabelText(/^Columns for /));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "RPE" }));
+    expect(onChange).toHaveBeenCalledWith({ prescribedFields: ["set_type", "reps", "load", "rest"] });
+  });
+});
+
+describe("ExerciseCard — picking exercises to link", () => {
+  beforeEach(() => cleanup());
+
+  it("makes the whole row a checkbox that toggles the pick, with no grip, remove or expand", () => {
+    const onToggle = vi.fn();
+    const { rerender } = render(
+      <Wrapper exercise={makeExercise()} pick={{ picked: false, onToggle }} />,
+    );
+    const row = screen.getByRole("checkbox", { name: "Bench Press" });
+    expect(row).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByLabelText("Drag Bench Press")).toBeNull();
+    expect(screen.queryByLabelText("Remove Bench Press")).toBeNull();
+    expect(screen.queryByLabelText("Expand sets")).toBeNull();
+    fireEvent.click(row);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+
+    rerender(<Wrapper exercise={makeExercise()} pick={{ picked: true, onToggle }} />);
+    expect(screen.getByRole("checkbox", { name: "Bench Press" })).toHaveAttribute("aria-checked", "true");
+    // The number gives way to a tick.
+    expect(screen.queryByText("1")).toBeNull();
+  });
+
+  it("draws a drop line only when told where one goes", () => {
+    render(<Wrapper exercise={makeExercise()} />);
+    expect(screen.queryByTestId("drop-line")).toBeNull();
+    cleanup();
+    render(<Wrapper exercise={makeExercise()} dropLine="item-bottom" />);
+    expect(screen.getByTestId("drop-line")).toBeInTheDocument();
+  });
+
+  it("keeps Video & note open through collapsing and re-expanding", () => {
+    render(<Wrapper exercise={makeExercise()} defaultExpanded />);
+    fireEvent.click(screen.getByRole("button", { name: /Video & note/ }));
+    expect(screen.getByText("Video URL")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Collapse sets"));
+    fireEvent.click(screen.getByLabelText("Expand sets"));
+    expect(screen.getByText("Video URL")).toBeInTheDocument();
   });
 });

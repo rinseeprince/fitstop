@@ -7,6 +7,7 @@ import {
   exerciseGroupPlace,
   formatRestDuration,
   formatRoundReps,
+  formatRoundRepsShort,
   groupHeading,
   groupHeadingText,
   groupName,
@@ -226,5 +227,34 @@ describe("formatRoundReps", () => {
         ]),
       ),
     ).toBe("10 reps");
+  });
+});
+
+describe("formatRoundRepsShort", () => {
+  const rows = (reps: Array<[number | null, number | null]>) =>
+    buildPrescribedRows(reps.map(([min, max], i) => spec({ set_number: i + 1, reps_min: min, reps_max: max })));
+
+  it("reads rounds × reps when every round asks the same", () => {
+    expect(formatRoundRepsShort(rows([[8, 10], [8, 10], [8, 10]]))).toBe("3×8-10");
+    expect(formatRoundRepsShort(rows([[10, 10]]))).toBe("1×10");
+  });
+
+  it("reads the scheme alone when the rounds differ", () => {
+    expect(formatRoundRepsShort(rows([[21, 21], [15, 15], [9, 9]]))).toBe("21-15-9");
+    expect(formatRoundRepsShort(rows([[8, 10], [6, 8]]))).toBe("8-10, 6-8");
+  });
+
+  it("counts a drop set's round once and says nothing when a round asks no rep count", () => {
+    expect(
+      formatRoundRepsShort(
+        buildPrescribedRows([
+          spec({ set_number: 1, reps_min: 10, reps_max: 10 }),
+          spec({ set_number: 2, set_type: "drop", reps_min: 10, reps_max: 10, drops: [{ load_value: 40, reps: 6 }] }),
+        ]),
+      ),
+    ).toBe("2×10");
+    expect(
+      formatRoundRepsShort(buildPrescribedRows([spec({ set_number: 1, set_type: "failure" })])),
+    ).toBeNull();
   });
 });

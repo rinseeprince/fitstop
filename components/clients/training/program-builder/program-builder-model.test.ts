@@ -3,7 +3,6 @@ import {
   cloneWeek,
   defaultExerciseDraftFromCatalog,
   mapSessionExercises,
-  moveSessionExercise,
   normalizeDraft,
   progressWeek,
   removeSessionExercise,
@@ -18,6 +17,7 @@ import {
   type WeekDraft,
 } from "./program-builder-types";
 import { STRAIGHT_SETS, sessionExercises } from "@/utils/exercise-groups";
+import { setSpecCount } from "@/utils/exercise-set-specs";
 
 const exercise = (uid: string, overrides: Partial<ExerciseDraft> = {}): ExerciseDraft => ({
   ...defaultExerciseDraftFromCatalog({ name: uid, exerciseId: null }),
@@ -51,7 +51,6 @@ const session = (groups: ExerciseGroupDraft[]): SessionDraft => ({
 });
 
 const order = (s: SessionDraft) => sessionExercises(s).map((e) => e.uid);
-const groupShape = (s: SessionDraft) => s.groups.map((g) => g.exercises.map((e) => e.uid));
 
 function weekOf(s: SessionDraft): WeekDraft {
   return {
@@ -87,6 +86,22 @@ describe("normalizeDraft", () => {
     expect(normalized.groups).toHaveLength(1);
     expect(normalized.groups[0]).toMatchObject({ uid: "grp-c", format: "circuit", rounds: 3, notes: "A" });
   });
+
+  it("makes a group of one a plain exercise with nothing set", () => {
+    const draft: ProgramDraft = {
+      id: "p",
+      name: "P",
+      description: null,
+      status: "draft",
+      splitType: null,
+      programDurationWeeks: 1,
+      defaultSurplusPercentage: null,
+      weeks: [weekOf(session([circuit("grp-c", [exercise("a")])]))],
+    };
+    expect(normalizeDraft(draft).weeks[0].days[0].session!.groups).toEqual([
+      { uid: "grp-c", ...STRAIGHT_SETS, exercises: [exercise("a")] },
+    ]);
+  });
 });
 
 describe("cloneWeek", () => {
@@ -104,7 +119,7 @@ describe("cloneWeek", () => {
 });
 
 describe("progressWeek", () => {
-  it("progresses exercises inside a group and keeps the group's uid and settings", () => {
+  it("adds a round to a whole superset or circuit when any exercise in it is in scope", () => {
     const week = weekOf(
       session([circuit("grp-c", [exercise("a", { sets: 3 }), exercise("b", { sets: 3 })]), lone("c")]),
     );
@@ -114,11 +129,38 @@ describe("progressWeek", () => {
       (e) => e.uid === "b",
     );
     const s = next.days[0].session!;
-    expect([...changedExerciseUids]).toEqual(["b"]);
-    expect(s.groups[0]).toMatchObject({ uid: "grp-c", format: "circuit", rounds: 3, restBetweenRoundsSeconds: 90 });
-    expect(s.groups[0].exercises.map((e) => e.sets)).toEqual([3, 4]);
+    expect([...changedExerciseUids].sort()).toEqual(["a", "b"]);
+    expect(s.groups[0]).toMatchObject({ uid: "grp-c", format: "circuit", rounds: 4, restBetweenRoundsSeconds: 90 });
+    expect(s.groups[0].exercises.map(setSpecCount)).toEqual([4, 4]);
     // The group nothing changed in keeps its reference.
     expect(s.groups[1]).toBe(week.days[0].session!.groups[1]);
+  });
+
+  it("leaves a superset or circuit none of whose exercises is in scope", () => {
+    const week = weekOf(session([circuit("grp-c", [exercise("a"), exercise("b")]), lone("c")]));
+    const { week: next, changedExerciseUids } = progressWeek(
+      week,
+      { kind: "sets", amount: 1 },
+      (e) => e.uid === "c",
+    );
+    expect([...changedExerciseUids]).toEqual(["c"]);
+    expect(next.days[0].session!.groups[0]).toBe(week.days[0].session!.groups[0]);
+  });
+
+  it("progresses load and reps round by round, exercise by exercise, inside a group", () => {
+    const week = weekOf(
+      session([circuit("grp-c", [exercise("a", { sets: 3 }), exercise("b", { sets: 3 })])]),
+    );
+    const { week: next, changedExerciseUids } = progressWeek(
+      week,
+      { kind: "reps", amount: 1 },
+      (e) => e.uid === "a",
+    );
+    const [a, b] = next.days[0].session!.groups[0].exercises;
+    expect([...changedExerciseUids]).toEqual(["a"]);
+    expect(a.repsMin).toBe(9);
+    expect(setSpecCount(a)).toBe(3);
+    expect(b).toBe(week.days[0].session!.groups[0].exercises[1]);
   });
 
   it("returns the same week when the rule changes nothing", () => {
@@ -150,55 +192,5 @@ describe("removeSessionExercise", () => {
   it("returns the same session when the exercise is not there", () => {
     const s = session([lone("a")]);
     expect(removeSessionExercise(s, "zzz")).toBe(s);
-  });
-});
-
-describe("moveSessionExercise", () => {
-  const arrayMove = (items: string[], from: number, to: number) => {
-    const next = [...items];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    return next;
-  };
-
-  it("moves lone exercises exactly as an array move does, for every from and to", () => {
-    const uids = ["a", "b", "c", "d"];
-    for (let from = 0; from < uids.length; from++) {
-      for (let to = 0; to < uids.length; to++) {
-        const s = session(uids.map(lone));
-        const moved = moveSessionExercise(s, uids[from], to);
-        expect(order(moved)).toEqual(arrayMove(uids, from, to));
-        if (from === to) expect(moved).toBe(s);
-      }
-    }
-  });
-
-  it("moves an exercise that shares its group within that group only", () => {
-    const s = session([lone("x"), circuit("grp-c", [exercise("a"), exercise("b"), exercise("c")])]);
-    const moved = moveSessionExercise(s, "c", 1);
-    expect(groupShape(moved)).toEqual([["x"], ["c", "a", "b"]]);
-    expect(moved.groups[1]).toMatchObject({ uid: "grp-c", format: "circuit" });
-    // A target outside the group clamps to its edge — never out of it.
-    expect(groupShape(moveSessionExercise(s, "a", 0))).toEqual([["x"], ["a", "b", "c"]]);
-    expect(groupShape(moveSessionExercise(s, "a", 3))).toEqual([["x"], ["b", "c", "a"]]);
-  });
-
-  it("never lands a lone exercise inside another group: it goes to the first group boundary at or after the target", () => {
-    const after = session([circuit("grp-c", [exercise("a"), exercise("b")]), lone("x")]);
-    // Position 1 is inside the circuit; the boundary at or after it is the circuit's end.
-    expect(groupShape(moveSessionExercise(after, "x", 1))).toEqual([["a", "b"], ["x"]]);
-    expect(moveSessionExercise(after, "x", 1)).toBe(after);
-    expect(groupShape(moveSessionExercise(after, "x", 0))).toEqual([["x"], ["a", "b"]]);
-
-    const before = session([lone("x"), circuit("grp-c", [exercise("a"), exercise("b")])]);
-    expect(groupShape(moveSessionExercise(before, "x", 1))).toEqual([["a", "b"], ["x"]]);
-    expect(groupShape(moveSessionExercise(before, "x", 2))).toEqual([["a", "b"], ["x"]]);
-  });
-
-  it("clamps the target to the session and returns the same session for an absent exercise", () => {
-    const s = session([lone("a"), lone("b")]);
-    expect(order(moveSessionExercise(s, "a", 99))).toEqual(["b", "a"]);
-    expect(order(moveSessionExercise(s, "b", -5))).toEqual(["b", "a"]);
-    expect(moveSessionExercise(s, "zzz", 0)).toBe(s);
   });
 });
