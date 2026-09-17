@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useEffect, useState } from "react";
 import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -249,5 +249,84 @@ describe("Session editor — groups", () => {
     expect(screen.queryByRole("button", { name: "Superset settings" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Unlink superset" })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Drag / })).toBeNull();
+  });
+});
+
+describe("Session editor — dragging", () => {
+  // jsdom lays nothing out, so each exercise card stands 100px below the last
+  // and 90px tall, in document order, for the pointer to land on.
+  beforeEach(() => {
+    cleanup();
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const index = [...document.querySelectorAll(".group\\/ex")].indexOf(this);
+      const top = Math.max(index, 0) * 100;
+      const height = index === -1 ? 0 : 90;
+      return { x: 0, y: top, left: 0, top, width: 500, height, right: 500, bottom: top + height, toJSON: () => ({}) };
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const grip = (name: string) => screen.getByRole("button", { name: `Drag ${name}` });
+  const dragOrder = () =>
+    screen.getAllByRole("button", { name: /^Drag / }).map((button) => button.getAttribute("aria-label"));
+  // Past the 4px it takes to start a drag.
+  const pickUp = (button: HTMLElement, y: number) => {
+    fireEvent.pointerDown(button, { button: 0, isPrimary: true, clientX: 10, clientY: y });
+    fireEvent.pointerMove(document, { isPrimary: true, clientX: 10, clientY: y + 10 });
+  };
+  /** What follows the pointer: portaled to <body>, outside the editor. */
+  const dragCopy = (container: HTMLElement) =>
+    [...document.body.children].find(
+      (node) => node !== container && node.textContent !== "" && !node.id.startsWith("DndDescribedBy"),
+    ) as HTMLElement | undefined;
+
+  it("keeps a dragged exercise in its place, dimmed, while a copy of its top line follows the pointer", () => {
+    const { container } = render(<Host groups={[lone(SQUAT), lone(BENCH), lone(CRUNCH)]} />);
+    const card = grip("Bench Press").closest<HTMLElement>(".group\\/ex")!;
+    pickUp(grip("Bench Press"), 140);
+    fireEvent.pointerMove(document, { isPrimary: true, clientX: 10, clientY: 260 });
+
+    expect(card.style.transform).toBe("");
+    expect(card).toHaveClass("opacity-40");
+    expect(dragCopy(container)?.textContent).toBe("Bench Press3×10");
+    expect(dragOrder()).toEqual(["Drag Back Squat", "Drag Bench Press", "Drag Cable Crunch"]);
+  });
+
+  it("dropping moves the exercise and puts the copy away in the same update", () => {
+    const { container } = render(<Host groups={[lone(SQUAT), lone(BENCH), lone(CRUNCH)]} />);
+    pickUp(grip("Back Squat"), 40);
+    // The lower half of Cable Crunch: after it.
+    fireEvent.pointerMove(document, { isPrimary: true, clientX: 10, clientY: 260 });
+    expect(dragCopy(container)?.textContent).toBe("Back Squat3×10");
+
+    fireEvent.pointerUp(document, { isPrimary: true, clientX: 10, clientY: 260 });
+    expect(dragCopy(container)).toBeUndefined();
+    expect(dragOrder()).toEqual(["Drag Bench Press", "Drag Cable Crunch", "Drag Back Squat"]);
+  });
+
+  it("Escape puts the copy away and moves nothing", () => {
+    const { container } = render(<Host groups={[lone(SQUAT), lone(BENCH), lone(CRUNCH)]} />);
+    pickUp(grip("Back Squat"), 40);
+    fireEvent.pointerMove(document, { isPrimary: true, clientX: 10, clientY: 260 });
+
+    fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
+    expect(dragCopy(container)).toBeUndefined();
+    expect(grip("Back Squat").closest(".group\\/ex")).not.toHaveClass("opacity-40");
+    expect(dragOrder()).toEqual(["Drag Back Squat", "Drag Bench Press", "Drag Cable Crunch"]);
+  });
+
+  it("keeps a dragged superset in its place, dimmed, while its heading line follows the pointer", () => {
+    const { container } = render(<Host groups={[lone(SQUAT), superset(), lone(CRUNCH)]} />);
+    const block = screen.getByRole("region", { name: "Superset · 3 rounds" });
+    pickUp(grip("superset"), 140);
+
+    expect(block.style.transform).toBe("");
+    expect(block).toHaveClass("opacity-40");
+    expect(dragCopy(container)?.textContent).toBe("Superset·3 rounds");
   });
 });

@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import { GripVertical, Unlink2 } from "lucide-react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
 import { groupHeading, groupHeadingText, groupName } from "@/utils/exercise-group-display";
 import { GroupHeadingLines } from "@/components/clients/training/group-heading-lines";
@@ -58,7 +57,6 @@ export function ExerciseGroupBlock({
     setNodeRef: setDragRef,
     attributes,
     listeners,
-    transform,
     isDragging,
   } = useDraggable({ id: groupDragId(group.uid), data: dragData, disabled: !editable || picking });
   const itemData: ExerciseDropData = { type: "item", index, linked: true };
@@ -82,8 +80,8 @@ export function ExerciseGroupBlock({
         setDropRef(node);
       }}
       aria-label={title}
-      style={{ transform: CSS.Translate.toString(transform) }}
-      className={cn("group/grp relative flex flex-col gap-2", isDragging && "z-10 opacity-40")}
+      // Dragged, it stays put and dims; the copy under the pointer moves.
+      className={cn("group/grp relative flex flex-col gap-2", isDragging && "opacity-40")}
     >
       {dropLine && <DropLine edge={dropLine} />}
       <div className="flex items-start gap-2 px-1">

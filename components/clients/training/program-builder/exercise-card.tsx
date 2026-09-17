@@ -3,14 +3,10 @@
 import { useState } from "react";
 import { Check, ChevronDown, Dumbbell, GripVertical, Trash2 } from "lucide-react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
-import { expandSetSpecs } from "@/utils/exercise-set-specs";
-import { buildPrescribedRows } from "@/utils/set-spec-rows";
-import { formatRoundReps } from "@/utils/exercise-group-display";
 import type { ExerciseDraft } from "./program-builder-types";
 import type { SetSpecEdit } from "./use-set-spec-mutations";
-import { setsRepsShort } from "./exercise-summary";
+import { exerciseCardSummary } from "./exercise-summary";
 import { ExerciseCardBody } from "./exercise-card-body";
 import { DropLine, type DropLineEdge } from "./drop-line";
 import { exerciseDragId, type ExerciseDragData, type ExerciseDropData } from "./exercise-drop";
@@ -86,16 +82,11 @@ export function ExerciseCard({
     setNodeRef: setDragRef,
     attributes,
     listeners,
-    transform,
     isDragging,
   } = useDraggable({ id: exerciseDragId(exercise.uid), data: dragData, disabled: !editable || pick != null });
   const { setNodeRef: setDropRef } = useDroppable({ id: drop.id, data: drop.data, disabled: !editable });
 
-  // In a superset or circuit the reps read round by round, as the client sees
-  // them; a round that asks no rep count leaves nothing half-true on screen.
-  const summary = roundsAreRows
-    ? (formatRoundReps(buildPrescribedRows(expandSetSpecs(exercise))) ?? "")
-    : setsRepsShort(exercise);
+  const summary = exerciseCardSummary(exercise, roundsAreRows);
 
   const commitVideoUrl = (raw: string) => {
     const trimmed = raw.trim();
@@ -146,7 +137,6 @@ export function ExerciseCard({
         setDragRef(node);
         setDropRef(node);
       }}
-      style={{ transform: CSS.Translate.toString(transform) }}
       className={cn(
         "group/ex relative rounded-[6px] bg-white transition-shadow",
         // Borderless only where the body behind it is #f4f7f6 and spacing can
@@ -154,7 +144,8 @@ export function ExerciseCard({
         bordered && TRAINING_CARD_BORDER,
         !expanded && "hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]",
         pick?.picked && "ring-1 ring-inset ring-[#0d9488]",
-        isDragging && "z-10 opacity-40",
+        // Dragged, it stays put and dims; the copy under the pointer moves.
+        isDragging && "opacity-40",
       )}
     >
       {dropLine && <DropLine edge={dropLine} />}

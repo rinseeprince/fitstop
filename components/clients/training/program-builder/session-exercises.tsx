@@ -1,13 +1,16 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragMoveEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import { Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,6 +23,7 @@ import type { ExerciseDestination, GroupSettingsPatch } from "./program-builder-
 import { defaultExerciseDraftFromCatalog } from "./program-builder-model";
 import { AddExercisePopover } from "./add-exercise-popover";
 import { ExerciseCard } from "./exercise-card";
+import { ExerciseDragCopy } from "./exercise-drag-copy";
 import { ExerciseGroupBlock } from "./exercise-group-block";
 import type { DropLineEdge } from "./drop-line";
 import {
@@ -42,8 +46,10 @@ import { LABEL_CLASS, TEXT_MUTED } from "./builder-tokens";
 // Three local states, each owned here alone and each changed by one handler:
 // - the open card (one at a time);
 // - picking exercises to link, from the rail's Link button;
-// - a drag's landing place, drawn as a line (exercise-drop.ts). Nothing moves
-//   while a card is dragged; the drop is one edit of the draft.
+// - a drag: what is dragged and where it would land. A copy follows the
+//   pointer above the page while the card or group stays in its place, dimmed,
+//   so nothing in the scrolling list moves or grows; the landing place is drawn
+//   as a line (exercise-drop.ts), and the drop is one edit of the draft.
 // Every edit writes through to the host's draft.
 export type SessionExercisesProps = {
   session: SessionDraft;
@@ -60,7 +66,8 @@ export type SessionExercisesProps = {
   onUpdateGroup: (sessionUid: string, groupUid: string, patch: GroupSettingsPatch) => void;
 };
 
-type Drop = { drag: ExerciseDragData; destination: ExerciseDestination };
+// `destination` is null while the pointer is over nowhere that takes the drag.
+type Drop = { drag: ExerciseDragData; destination: ExerciseDestination | null };
 
 const dragKey = (drag: ExerciseDragData) =>
   drag.type === "exercise" ? `exercise:${drag.exerciseUid}` : `group:${drag.groupUid}`;
@@ -70,7 +77,10 @@ const sameDrop = (a: Drop | null, b: Drop | null) =>
   (a != null &&
     b != null &&
     dragKey(a.drag) === dragKey(b.drag) &&
-    sameDestination(a.destination, b.destination));
+    (a.destination === b.destination ||
+      (a.destination != null &&
+        b.destination != null &&
+        sameDestination(a.destination, b.destination))));
 
 const RAIL_TEXT_ACTION = cn(LABEL_CLASS, "text-[11px] transition-colors");
 
@@ -122,10 +132,14 @@ export function SessionExercises({
           : [...current, uid],
     );
 
+  const handleDragStart = (event: DragStartEvent) => {
+    const drag = event.active.data.current as ExerciseDragData | undefined;
+    setDrop(drag ? { drag, destination: null } : null);
+  };
+
   const handleDragMove = (event: DragMoveEvent) => {
     const drag = event.active.data.current as ExerciseDragData | undefined;
-    const destination = destinationOf(event.collisions);
-    const next = drag && destination ? { drag, destination } : null;
+    const next = drag ? { drag, destination: destinationOf(event.collisions) } : null;
     setDrop((current) => (sameDrop(current, next) ? current : next));
   };
 
@@ -143,7 +157,9 @@ export function SessionExercises({
 
   // Only a drop that does something draws its line.
   const line =
-    drop && dropChangesSession(session, drop.drag, drop.destination) ? drop.destination : null;
+    drop?.destination && dropChangesSession(session, drop.drag, drop.destination)
+      ? drop.destination
+      : null;
   const itemLine = (index: number): DropLineEdge | null => {
     if (line?.kind !== "session") return null;
     if (line.index === index) return index === 0 ? "first-item-top" : "item-top";
@@ -257,6 +273,7 @@ export function SessionExercises({
         <DndContext
           sensors={sensors}
           collisionDetection={exerciseDropCollision}
+          onDragStart={handleDragStart}
           onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
           onDragCancel={() => setDrop(null)}
@@ -295,6 +312,19 @@ export function SessionExercises({
               </ExerciseGroupBlock>
             );
           })}
+          {/* Portaled to <body>, like the week grid's: an animated or
+              transformed ancestor (the sheet, the tray) would become the
+              containing block for the copy's fixed position and offset it.
+              Mounted only during a drag, so the copy goes in the same render
+              the drop lands in: a DragOverlay left mounted keeps its last
+              frame until its drop animation resolves, even with none. */}
+          {drop &&
+            createPortal(
+              <DragOverlay>
+                <ExerciseDragCopy session={session} drag={drop.drag} />
+              </DragOverlay>,
+              document.body,
+            )}
         </DndContext>
         {exercises.length === 0 && (
           <p className="py-4 text-center text-xs text-[#93b0b4]">

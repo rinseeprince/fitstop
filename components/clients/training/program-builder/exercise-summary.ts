@@ -1,6 +1,6 @@
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
 import { buildPrescribedRows } from "@/utils/set-spec-rows";
-import { formatRoundRepsShort } from "@/utils/exercise-group-display";
+import { formatRoundReps, formatRoundRepsShort } from "@/utils/exercise-group-display";
 import type { ExerciseDraft } from "./program-builder-types";
 
 // Shared prescription summary for the builder. It prefers the maintained
@@ -27,6 +27,16 @@ export function setsRepsShort(e: ExerciseDraft): string {
       ? range ?? e.repsTarget
       : e.repsTarget ?? range;
   return reps ? `${e.sets}×${reps}` : `${e.sets} sets`;
+}
+
+// The session editor card's summary, and its drag copy's: sets×reps, or in a
+// superset or circuit the reps round by round as the client reads them,
+// "21-15-9 reps" — empty when a round asks no rep count, so nothing half-true
+// is on screen.
+export function exerciseCardSummary(e: ExerciseDraft, roundsAreRows: boolean): string {
+  return roundsAreRows
+    ? (formatRoundReps(buildPrescribedRows(expandSetSpecs(e))) ?? "")
+    : setsRepsShort(e);
 }
 
 // A week-grid line for an exercise in a superset or circuit, whose sets are the
