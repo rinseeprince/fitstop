@@ -179,12 +179,14 @@ describe("set_specs / video_url survival matrix", () => {
       ],
     });
 
-    expect((sessions.inserts[0] as Record<string, unknown>).week_index).toBe(0);
+    // The sessions go in as one batch, each under the id minted for it.
+    const [session] = sessions.inserts[0] as Record<string, unknown>[];
+    expect(session).toMatchObject({ week_index: 0, order_index: 0, day_order: 0 });
     // The session, then its groups, then the exercises that name them.
     expect(firstInsertAt(sessions)).toBeLessThan(firstInsertAt(groups));
     expect(firstInsertAt(groups)).toBeLessThan(firstInsertAt(exercises));
     const [group] = groups.inserts[0] as Record<string, unknown>[];
-    expect(group).toMatchObject({ saved_session_id: "s1", order_index: 0, format: "straight_sets" });
+    expect(group).toMatchObject({ saved_session_id: session.id, order_index: 0, format: "straight_sets" });
     const row = (exercises.inserts[0] as Record<string, unknown>[])[0];
     expect(row.group_id).toBe(group.id);
     expectInputProjection(row);

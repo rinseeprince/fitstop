@@ -10,8 +10,10 @@ import {
   concatSavedGroupRows,
   copySavedGroupRows,
   dedupeCopyName,
+  deleteSavedSessions,
   deriveFrequencyPerWeek,
   insertSavedGroupRows,
+  insertSavedSessionRows,
   savedGroupRowsFromInput,
   type SavedGroupRows,
   type SavedGroupWrite,
@@ -146,7 +148,9 @@ export async function promoteDraftToSaved(
       .select(`*, ${SAVED_SESSION_GROUPS_EMBED}`)
       .eq("saved_plan_id", planId)
       .eq("is_rest", false)
-      .order("order_index");
+      .order("week_index")
+      .order("order_index")
+      .order("day_order");
 
     for (const s of (sessions ?? []) as SavedSessionTreeRow[]) {
       // Check for existing standalone session with same name
@@ -215,10 +219,24 @@ type SavedPlanTreeRow = CoachSavedPlanRow & {
   coach_saved_sessions?: SavedSessionTreeRow[] | null;
 };
 
+// A program's rows in program order: by week, by day, then each day's sessions
+// in their order (migration 180), the id breaking any tie so every read agrees.
+type ProgramPositioned = {
+  id: string;
+  week_index: number;
+  order_index: number;
+  day_order: number;
+};
+const byProgramPosition = (a: ProgramPositioned, b: ProgramPositioned) =>
+  a.week_index - b.week_index ||
+  a.order_index - b.order_index ||
+  a.day_order - b.day_order ||
+  (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
 function mapSavedPlanTree(row: unknown): SavedPlan {
   const plan = row as SavedPlanTreeRow;
   const sessions = [...(plan.coach_saved_sessions ?? [])]
-    .sort((a, b) => a.order_index - b.order_index)
+    .sort(byProgramPosition)
     .map(mapSavedSessionTree);
   return mapSavedPlanRow(plan, sessions);
 }
@@ -283,6 +301,8 @@ export type OverwriteSavedPlanInput = {
     focus?: string | null;
     orderIndex: number;
     weekIndex?: number;
+    // The session's place among the sessions on its day; 0 when absent.
+    dayOrder?: number;
     isRest: boolean;
     estimatedDurationMinutes?: number | null;
     calorieSurplusPercentage?: number | null;
@@ -353,74 +373,62 @@ export async function overwriteSavedPlan(
   }
   const oldSessionIds = (oldRows ?? []).map((r) => r.id);
 
-  // Insert the new structure, tracking new ids so a mid-loop failure can be
-  // rolled back without touching the old sessions. The sessions go in one by
-  // one (each returns the id its groups hang off); every session's groups and
-  // exercises then go in together, a few chunked statements for the whole
-  // program rather than two per session.
+  // Insert the new structure. Every session's id is minted here, so its groups
+  // name it before anything is written: the sessions go in together, then every
+  // session's groups and exercises together — a few chunked statements for the
+  // whole program, however many sessions its days hold, never one per row. A
+  // day's sessions share its position and carry their place in it (day_order);
+  // a rest row is alone on its day.
   const newSessionIds: string[] = [];
   const groupRows: SavedGroupRows[] = [];
-  try {
-    for (const s of input.sessions) {
-      const sessionRow: CoachSavedSessionInsert = {
-        coach_id: coachId,
-        saved_plan_id: planId,
-        name: s.isRest ? "Rest" : s.name,
-        focus: s.isRest ? null : (s.focus ?? null),
-        order_index: s.orderIndex,
-        week_index: s.weekIndex ?? 0,
-        is_rest: s.isRest,
-        estimated_duration_minutes: s.estimatedDurationMinutes ?? null,
-        calorie_surplus_percentage: s.calorieSurplusPercentage ?? null,
-        notes: s.notes ?? null,
-        session_type: s.sessionType ?? "training",
-      };
-
-      const { data: newSession, error: sessionError } = await supabaseAdmin
-        .from("coach_saved_sessions")
-        .insert(sessionRow)
-        .select("id")
-        .single();
-      if (sessionError || !newSession) {
-        throw new Error(`Failed to insert session "${s.name}": ${sessionError?.message}`);
-      }
-      newSessionIds.push(newSession.id);
-
-      if (s.isRest || s.groups.length === 0) continue;
-      groupRows.push(savedGroupRowsFromInput(newSession.id, s.groups, exerciseIdMap));
+  const sessionRows = input.sessions.map((s): CoachSavedSessionInsert & { id: string } => {
+    const id = crypto.randomUUID();
+    newSessionIds.push(id);
+    if (!s.isRest && s.groups.length > 0) {
+      groupRows.push(savedGroupRowsFromInput(id, s.groups, exerciseIdMap));
     }
-
+    return {
+      id,
+      coach_id: coachId,
+      saved_plan_id: planId,
+      name: s.isRest ? "Rest" : s.name,
+      focus: s.isRest ? null : (s.focus ?? null),
+      order_index: s.orderIndex,
+      week_index: s.weekIndex ?? 0,
+      day_order: s.isRest ? 0 : (s.dayOrder ?? 0),
+      is_rest: s.isRest,
+      estimated_duration_minutes: s.estimatedDurationMinutes ?? null,
+      calorie_surplus_percentage: s.calorieSurplusPercentage ?? null,
+      notes: s.notes ?? null,
+      session_type: s.sessionType ?? "training",
+    };
+  });
+  try {
+    await insertSavedSessionRows(sessionRows);
     // The groups and exercise tables have no coach_id column — ownership is
     // inferred via saved_session_id → coach_saved_sessions → coach_id.
     await insertSavedGroupRows(concatSavedGroupRows(groupRows));
   } catch (err) {
     // Roll back the partially-inserted NEW sessions (cascades their groups and
-    // exercises) so the original program survives. Never shadow the root cause.
-    if (newSessionIds.length > 0) {
-      const { error: rbErr } = await supabaseAdmin
-        .from("coach_saved_sessions")
-        .delete()
-        .in("id", newSessionIds);
-      if (rbErr) {
-        const rootMsg = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `${rootMsg}; rollback of partial insert also failed: ${rbErr.message}`,
-        );
-      }
+    // exercises) so the original program survives. Deleting an id a failed
+    // chunk never wrote is a no-op. Never shadow the root cause.
+    try {
+      await deleteSavedSessions(newSessionIds);
+    } catch (rbErr) {
+      const rootMsg = err instanceof Error ? err.message : String(err);
+      const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
+      throw new Error(`${rootMsg}; rollback of partial insert also failed: ${rbMsg}`);
     }
     throw err;
   }
 
   // New tree committed — now remove the old sessions (cascade-deletes their
   // exercises). A failure here leaves duplicates, which a re-save resolves.
-  if (oldSessionIds.length > 0) {
-    const { error: deleteError } = await supabaseAdmin
-      .from("coach_saved_sessions")
-      .delete()
-      .in("id", oldSessionIds);
-    if (deleteError) {
-      throw new Error(`Failed to clear previous sessions: ${deleteError.message}`);
-    }
+  try {
+    await deleteSavedSessions(oldSessionIds);
+  } catch (deleteError) {
+    const detail = deleteError instanceof Error ? deleteError.message : String(deleteError);
+    throw new Error(`Failed to clear previous sessions: ${detail}`);
   }
 
   // Metadata + derived frequency LAST: if the structural swap failed above, the
@@ -509,35 +517,38 @@ export async function duplicateSavedPlan(
 
   try {
     const sessions = [...((plan as SavedPlanTreeRow).coach_saved_sessions ?? [])].sort(
-      (a, b) => (a.week_index ?? 0) - (b.week_index ?? 0) || a.order_index - b.order_index
+      byProgramPosition
     );
 
+    // Every copied session's id is minted here, so its groups name it up front
+    // and the whole program copies in a few chunked statements. Each keeps its
+    // day and its place in the day.
     const groupRows: SavedGroupRows[] = [];
-    for (const s of sessions) {
-      const sessionInsert: CoachSavedSessionInsert = {
+    const sessionRows = sessions.map((s): CoachSavedSessionInsert & { id: string } => {
+      const id = crypto.randomUUID();
+      groupRows.push(copySavedGroupRows(s.coach_saved_exercise_groups ?? [], id));
+      return {
+        id,
         coach_id: coachId,
         saved_plan_id: newPlan.id,
         name: s.name,
         focus: s.focus,
         order_index: s.order_index,
         week_index: s.week_index ?? 0,
+        day_order: s.day_order,
         is_rest: s.is_rest ?? false,
         estimated_duration_minutes: s.estimated_duration_minutes,
         calorie_surplus_percentage: s.calorie_surplus_percentage,
         notes: s.notes,
         session_type: s.session_type,
       };
-      const { data: newSession, error: sessionError } = await supabaseAdmin
-        .from("coach_saved_sessions")
-        .insert(sessionInsert)
-        .select("id")
-        .single();
-      if (sessionError || !newSession) {
-        throw new Error(
-          `Failed to copy session "${s.name}": ${sessionError?.message ?? "no row"}`
-        );
-      }
-      groupRows.push(copySavedGroupRows(s.coach_saved_exercise_groups ?? [], newSession.id));
+    });
+    try {
+      await insertSavedSessionRows(sessionRows);
+    } catch (copySessionsError) {
+      const detail =
+        copySessionsError instanceof Error ? copySessionsError.message : String(copySessionsError);
+      throw new Error(`Failed to copy sessions: ${detail}`);
     }
 
     try {
@@ -620,7 +631,7 @@ export async function getSavedPlanAssignments(coachId: string): Promise<{
 // (opt-in ?limit/?offset) + /summary route.
 // =============================================================================
 
-const SLOTS_PER_WEEK = 7; // every authored week is exactly 7 positional day-slots
+const DAYS_PER_WEEK = 7; // every authored week is exactly 7 positional days
 
 type SavedPlanListRow = {
   id: string;
@@ -633,13 +644,19 @@ type SavedPlanListRow = {
   created_at: string;
   program_duration_weeks: number | null;
   frequency_per_week: number | null;
-  coach_saved_sessions: Array<{ is_rest: boolean | null }> | null;
+  coach_saved_sessions: Array<{
+    is_rest: boolean | null;
+    week_index: number;
+    order_index: number;
+  }> | null;
 };
 
 function mapSavedPlanListRow(row: SavedPlanListRow): SavedPlanListItem {
-  const slots = row.coach_saved_sessions ?? [];
-  const totalSlots = slots.length;
-  const restCount = slots.filter((s) => s.is_rest === true).length;
+  const rows = row.coach_saved_sessions ?? [];
+  // A day's sessions share its position, so the days are the distinct
+  // positions; a rest day is its one rest row.
+  const totalSlots = new Set(rows.map((s) => `${s.week_index}:${s.order_index}`)).size;
+  const restCount = rows.filter((s) => s.is_rest === true).length;
   return {
     id: row.id,
     name: row.name,
@@ -648,14 +665,14 @@ function mapSavedPlanListRow(row: SavedPlanListRow): SavedPlanListItem {
     source: (row.source ?? "manual") as SavedPlanSource,
     status: (row.status ?? "draft") as SavedPlanStatus,
     frequencyPerWeek: row.frequency_per_week ?? null,
-    // Authored length is the truth; fall back to slots / 7 (every authored week
-    // is a full 7-slot row set) for rows that predate the duration PATCH.
+    // Authored length is the truth; fall back to days / 7 (every authored week
+    // is seven days) for rows that predate the duration PATCH.
     weekCount:
       row.program_duration_weeks ??
-      Math.max(1, Math.round(totalSlots / SLOTS_PER_WEEK)),
+      Math.max(1, Math.round(totalSlots / DAYS_PER_WEEK)),
     totalSlots,
     restCount,
-    trainingCount: totalSlots - restCount,
+    trainingCount: rows.length - restCount,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -684,7 +701,7 @@ export async function getSavedPlansPage(
   let filter = supabaseAdmin
     .from("coach_saved_plans")
     .select(
-      "id, name, description, split_type, source, status, updated_at, created_at, program_duration_weeks, frequency_per_week, coach_saved_sessions(is_rest)",
+      "id, name, description, split_type, source, status, updated_at, created_at, program_duration_weeks, frequency_per_week, coach_saved_sessions(is_rest, week_index, order_index)",
       { count: "exact" },
     )
     .eq("coach_id", coachId)

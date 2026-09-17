@@ -13,8 +13,10 @@ import {
 } from "./program-builder-types";
 import { toast } from "sonner";
 import {
+  addSessionToDay,
   cloneWeek,
   findSession,
+  findSlot,
   mapSession,
   mapSessionExercises,
   mapSlots,
@@ -23,6 +25,7 @@ import {
   patchChanges,
   removeSessionExercise,
   removeSessionFromDay,
+  reorderSessionInDay,
   straightSetsGroup,
 } from "./program-builder-model";
 import {
@@ -260,44 +263,44 @@ export function useProgramBuilderState() {
   );
 
   // --- day slots (slots never move; only the sessions they hold do) ---
-  // Adds a new session to a REST day; a day holding sessions is a no-op.
+  // The day rules are the model's (program-builder-model.ts): a session added
+  // to or moved onto a day joins it, last, and a full day refuses it — a same-
+  // reference no-op here, since the grid never offers a full day.
+
+  // Adds a new empty session to a day, after its sessions. Returns the new
+  // session's uid, or null when the day refused it. Worked out against the
+  // draft as it stands, OUT HERE rather than inside a reducer, so the answer is
+  // a return value and the reducer stays pure.
   const addSessionToSlot = useCallback(
-    (slotUid: string, name?: string) =>
-      apply((d) => {
-        let changed = false;
-        const next = mapSlots(d, (slot) => {
-          if (slot.uid !== slotUid || slot.sessions.length > 0) return slot;
-          changed = true;
-          const session: SessionDraft = {
-            uid: newUid("sess"),
-            name: name ?? `Day ${slot.orderIndex + 1}`,
-            focus: null,
-            estimatedDurationMinutes: null,
-            calorieSurplusPercentage: null,
-            notes: null,
-            sessionType: "training",
-            groups: [],
-          };
-          return { ...slot, sessions: [session] };
-        });
-        return changed ? next : d;
-      }),
+    (slotUid: string, name?: string): string | null => {
+      const current = draftRef.current;
+      const slot = findSlot(current, slotUid);
+      if (!current || !slot) return null;
+      const session: SessionDraft = {
+        uid: newUid("sess"),
+        name: name ?? `Day ${slot.orderIndex + 1}`,
+        focus: null,
+        estimatedDurationMinutes: null,
+        calorieSurplusPercentage: null,
+        notes: null,
+        sessionType: "training",
+        groups: [],
+      };
+      const result = addSessionToDay(current, slotUid, session);
+      if (!result.ok) return null;
+      apply(() => result.draft);
+      return session.uid;
+    },
     [apply],
   );
 
-  // Insert a pre-built SessionDraft (a clone of a library session) into a REST
-  // slot. A day holding sessions is a same-ref no-op — belt under the dnd
-  // collision filter that already keeps library drags off those days.
+  // Adds a pre-built SessionDraft (a clone of a library session, or a blank
+  // built by the caller) to a day, after its sessions.
   const placeSession = useCallback(
     (slotUid: string, session: SessionDraft) =>
       apply((d) => {
-        let changed = false;
-        const next = mapSlots(d, (slot) => {
-          if (slot.uid !== slotUid || slot.sessions.length > 0) return slot;
-          changed = true;
-          return { ...slot, sessions: [session] };
-        });
-        return changed ? next : d;
+        const result = addSessionToDay(d, slotUid, session);
+        return result.ok ? result.draft : d;
       }),
     [apply],
   );
@@ -323,15 +326,20 @@ export function useProgramBuilderState() {
     [apply],
   );
 
-  // The move rule is the model's (moveSessionToDay): onto a rest day it moves,
-  // onto a day holding one session a session alone on its day swaps, and a
-  // drop onto its own day or a day that refuses it is a no-op.
+  // Onto another day it joins that day, last; onto its own day it stays put.
   const moveSession = useCallback(
     (sessionUid: string, targetSlotUid: string) =>
       apply((d) => {
         const moved = moveSessionToDay(d, sessionUid, targetSlotUid);
         return moved.ok ? moved.draft : d;
       }),
+    [apply],
+  );
+
+  // A session's place among its day's sessions (0 first).
+  const reorderSession = useCallback(
+    (sessionUid: string, toIndex: number) =>
+      apply((d) => reorderSessionInDay(d, sessionUid, toIndex)),
     [apply],
   );
 
@@ -490,6 +498,7 @@ export function useProgramBuilderState() {
     clearSlot,
     removeSession,
     moveSession,
+    reorderSession,
     updateSession,
     addExercise,
     removeExercise,

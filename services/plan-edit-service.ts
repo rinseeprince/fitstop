@@ -17,7 +17,7 @@ import { addDaysToDateString } from "@/lib/date-helpers";
 import { daysBetween } from "@/utils/metric-points";
 import { toPrescribedFields } from "@/utils/prescribed-fields";
 import { groupSettingsToRow, sessionExercises } from "@/utils/exercise-groups";
-import { MAX_PLAN_EDIT_SESSIONS } from "@/lib/training-constants";
+import { MAX_PROGRAM_SESSIONS } from "@/lib/training-constants";
 import type { PlanEditSessionInput } from "@/lib/validations/training";
 import type { TrainingExerciseGroup } from "@/types/training";
 
@@ -156,10 +156,10 @@ const versionSchema = z.object({
         calorie_surplus_percentage: z.number().nullable(),
       }),
     )
-    .max(MAX_PLAN_EDIT_SESSIONS),
+    .max(MAX_PROGRAM_SESSIONS),
   sessions: z
     .array(z.object({ id: z.string().uuid(), updated_at: z.string().min(1).max(64) }))
-    .max(MAX_PLAN_EDIT_SESSIONS),
+    .max(MAX_PROGRAM_SESSIONS),
 });
 type PlanEditVersion = z.infer<typeof versionSchema>;
 

@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import type { DaySlotDraft, ProgramDraft } from "./program-builder-types";
 import { MAX_WEEKS } from "./program-builder-types";
 import type { PlanDayRules } from "./program-builder-lock-model";
+import type { DayReorder } from "./use-program-dnd";
 import { GRID_COLS, MONO_LABEL_CLASS, TEXT_SECONDARY } from "./builder-tokens";
 import { WeekRow } from "./week-row";
 
@@ -21,6 +22,8 @@ type ProgramGridProps = {
   // greyed days render inert, today carries its ring, and the week actions and
   // Add week follow the rules. Undefined = no rules (the other targets).
   dayRules?: PlanDayRules;
+  // Where a session dragged within its own day would land (use-program-dnd).
+  dayReorder?: DayReorder | null;
   collapsedWeeks: Set<string>;
   onToggleCollapse: (weekUid: string) => void;
   onDuplicateWeek: (weekUid: string) => void;
@@ -36,6 +39,7 @@ export function ProgramGrid({
   draft,
   mode,
   dayRules,
+  dayReorder = null,
   collapsedWeeks,
   onToggleCollapse,
   onDuplicateWeek,
@@ -77,6 +81,11 @@ export function ProgramGrid({
                 week={week}
                 mode={mode}
                 dayRules={dayRules}
+                dayReorder={
+                  dayReorder && week.days.some((slot) => slot.uid === dayReorder.slotUid)
+                    ? dayReorder
+                    : null
+                }
                 collapsed={collapsedWeeks.has(week.uid)}
                 canDelete={canDelete}
                 defaultSurplusPercentage={draft.defaultSurplusPercentage}

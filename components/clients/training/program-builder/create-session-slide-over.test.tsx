@@ -65,6 +65,7 @@ function makeSession(overrides: Partial<SavedSession>): SavedSession {
     focus: null,
     orderIndex: 0,
     weekIndex: 0,
+    dayOrder: 0,
     isRest: true,
     estimatedDurationMinutes: null,
     calorieSurplusPercentage: null,
@@ -103,14 +104,17 @@ function makePlan(day2Session = false): SavedPlan {
   };
 }
 
-// Probe: exposes the target slot's session + the dirty flag so tests can
-// assert the working tree without reaching into provider internals.
+// Probe: exposes the target slot's sessions, in the day's order, + the dirty
+// flag so tests can assert the working tree without reaching into provider
+// internals.
 function SlotProbe({ w, d }: { w: number; d: number }) {
   const { draft, isDirty } = useProgramDraft();
-  const session = draft?.weeks[w]?.days[d]?.sessions[0] ?? null;
+  const sessions = draft?.weeks[w]?.days[d]?.sessions ?? [];
   return (
     <>
-      <div data-testid="slot-probe">{session ? session.name : "(rest)"}</div>
+      <div data-testid="slot-probe">
+        {sessions.length > 0 ? sessions.map((s) => s.name).join(" + ") : "(rest)"}
+      </div>
       <div data-testid="dirty-probe">{isDirty ? "dirty" : "clean"}</div>
     </>
   );
@@ -201,18 +205,34 @@ describe("CreateSessionSlideOver", () => {
     expect(screen.getByTestId("slot-probe").textContent).toBe("Untitled session");
   });
 
-  it("re-entry onto an occupied slot edits in place and never discards it", async () => {
-    planFixture = makePlan(true); // day 2 already has "Existing"
+  it("on a day holding a session the new one joins it, last, and the sheet edits the new one", async () => {
+    planFixture = makePlan(true); // day 3 already has "Existing"
+    renderSlideOver();
+    await waitFor(() =>
+      expect(screen.getByTestId("slot-probe").textContent).toBe("Existing + Untitled session"),
+    );
+
+    fireEvent.click(screen.getByText("Save session"));
+    await waitFor(() => expect(backMock).toHaveBeenCalled());
+    const create = fetchCalls.find((c) => c.url === "/api/training/saved-sessions");
+    // It saves the session it created, never the day's existing one.
+    expect(create?.body).toMatchObject({ name: "Untitled session" });
+    expect(screen.getByTestId("slot-probe").textContent).toBe("Existing + Untitled session");
+  });
+
+  it("closing without save on a day holding a session removes only the new one", async () => {
+    planFixture = makePlan(true);
     const { closeSlideOver } = renderSlideOver();
     await waitFor(() =>
-      expect(screen.getByTestId("slot-probe").textContent).toBe("Existing"),
+      expect(screen.getByTestId("slot-probe").textContent).toBe("Existing + Untitled session"),
     );
 
     act(() => {
       closeSlideOver();
     });
-    // createdHere stayed false → the pre-existing session survives untouched.
+    // The pre-existing session survives untouched, and the tree is clean again.
     expect(screen.getByTestId("slot-probe").textContent).toBe("Existing");
+    expect(screen.getByTestId("dirty-probe").textContent).toBe("clean");
     expect(fetchCalls.find((c) => c.method === "POST")).toBeUndefined();
   });
 

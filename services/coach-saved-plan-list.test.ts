@@ -54,9 +54,11 @@ describe("getSavedPlansPage", () => {
           created_at: "2026-06-01T00:00:00Z",
           program_duration_weeks: 3,
           frequency_per_week: 4,
-          // 3 weeks × 7 slots, one rest slot per week.
+          // 3 weeks × 7 days, one rest day per week.
           coach_saved_sessions: Array.from({ length: 21 }, (_, i) => ({
             is_rest: i % 7 === 0,
+            week_index: Math.floor(i / 7),
+            order_index: i,
           })),
         },
       ],
@@ -83,6 +85,52 @@ describe("getSavedPlansPage", () => {
       restCount: 3,
       trainingCount: 18,
       frequencyPerWeek: 4,
+    });
+  });
+
+  it("counts days, not rows, where a day holds several sessions — the week fallback too", async () => {
+    // One week: day 1 holds a morning and an evening session, days 2-6 one
+    // each, day 7 rest. Eight rows, seven days, seven sessions.
+    const rows = [
+      { is_rest: false, week_index: 0, order_index: 0 },
+      { is_rest: false, week_index: 0, order_index: 0 },
+      ...Array.from({ length: 5 }, (_, i) => ({ is_rest: false, week_index: 0, order_index: i + 1 })),
+      { is_rest: true, week_index: 0, order_index: 6 },
+    ];
+    const q = mockQuery({
+      data: [
+        {
+          id: "p2",
+          name: "Two a day",
+          description: null,
+          split_type: null,
+          source: "manual",
+          status: "saved",
+          updated_at: "2026-07-01T00:00:00Z",
+          created_at: "2026-06-01T00:00:00Z",
+          // A row from before the duration PATCH: the length falls back to days / 7.
+          program_duration_weeks: null,
+          frequency_per_week: 7,
+          coach_saved_sessions: rows,
+        },
+      ],
+      error: null,
+      count: 1,
+    });
+    mockFrom.mockReturnValue(q as never);
+
+    const { plans } = await getSavedPlansPage("coach-1", { limit: 20, offset: 0 });
+
+    expect(q.select).toHaveBeenCalledWith(
+      expect.stringContaining("coach_saved_sessions(is_rest, week_index, order_index)"),
+      { count: "exact" },
+    );
+    expect(plans[0]).toMatchObject({
+      weekCount: 1,
+      totalSlots: 7,
+      restCount: 1,
+      trainingCount: 7,
+      frequencyPerWeek: 7,
     });
   });
 

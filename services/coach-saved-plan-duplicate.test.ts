@@ -111,6 +111,7 @@ const sourcePlan = {
       focus: "chest",
       order_index: 0,
       week_index: 0,
+      day_order: 0,
       is_rest: false,
       estimated_duration_minutes: 60,
       calorie_surplus_percentage: 10,
@@ -128,8 +129,29 @@ const sourcePlan = {
       focus: null,
       order_index: 1,
       week_index: 0,
+      day_order: 0,
       is_rest: true,
       estimated_duration_minutes: null,
+      calorie_surplus_percentage: null,
+      notes: null,
+      session_type: "training",
+      created_at: "2026-06-01T00:00:00Z",
+      updated_at: "2026-06-01T00:00:00Z",
+      coach_saved_exercise_groups: [],
+    },
+    // Push's day holds a second session, listed before it here: the copy keeps
+    // the day and each session's place in it, whatever order the read returns.
+    {
+      id: "s0",
+      coach_id: "coach-1",
+      saved_plan_id: "plan-1",
+      name: "Evening run",
+      focus: null,
+      order_index: 0,
+      week_index: 0,
+      day_order: 1,
+      is_rest: false,
+      estimated_duration_minutes: 30,
       calorie_surplus_percentage: null,
       notes: null,
       session_type: "training",
@@ -152,8 +174,7 @@ describe("duplicateSavedPlan", () => {
       error: null,
     });
     const planInsertQuery = createMockQuery({ data: { id: "plan-2" }, error: null });
-    const session1InsertQuery = createMockQuery({ data: { id: "ns1" }, error: null });
-    const session2InsertQuery = createMockQuery({ data: { id: "ns2" }, error: null });
+    const sessionsInsertQuery = createMockQuery({ data: null, error: null });
     const groupInsertQuery = createMockQuery({ data: null, error: null });
     const exerciseInsertQuery = createMockQuery({ data: null, error: null });
 
@@ -161,8 +182,7 @@ describe("duplicateSavedPlan", () => {
       .mockReturnValueOnce(sourceQuery as never)
       .mockReturnValueOnce(namesQuery as never)
       .mockReturnValueOnce(planInsertQuery as never)
-      .mockReturnValueOnce(session1InsertQuery as never)
-      .mockReturnValueOnce(session2InsertQuery as never)
+      .mockReturnValueOnce(sessionsInsertQuery as never)
       .mockReturnValueOnce(groupInsertQuery as never)
       .mockReturnValueOnce(exerciseInsertQuery as never);
 
@@ -178,16 +198,28 @@ describe("duplicateSavedPlan", () => {
     expect(planInsert.default_surplus_percentage).toBe(15);
     expect(planInsert.program_duration_weeks).toBe(2);
 
-    // Session rows carry week/order/rest/surplus
-    const s1Insert = session1InsertQuery.insert.mock.calls[0][0] as Record<string, unknown>;
-    expect(s1Insert.saved_plan_id).toBe("plan-2");
-    expect(s1Insert.calorie_surplus_percentage).toBe(10);
-    const s2Insert = session2InsertQuery.insert.mock.calls[0][0] as Record<string, unknown>;
-    expect(s2Insert.is_rest).toBe(true);
+    // Every session in ONE statement, in program order — by day, then each
+    // day's sessions in their order — each under a fresh id, keeping its day,
+    // its place in the day, rest and surplus.
+    expect(sessionsInsertQuery.insert).toHaveBeenCalledTimes(1);
+    const sessionRows = sessionsInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(
+      sessionRows.map((r) => [r.name, r.week_index, r.order_index, r.day_order, r.is_rest]),
+    ).toEqual([
+      ["Push", 0, 0, 0, false],
+      ["Evening run", 0, 0, 1, false],
+      ["Rest", 0, 1, 0, true],
+    ]);
+    expect(sessionRows.every((r) => r.saved_plan_id === "plan-2")).toBe(true);
+    expect(sessionRows[0].calorie_surplus_percentage).toBe(10);
+    expect(new Set(sessionRows.map((r) => r.id)).size).toBe(3);
+    expect(sessionRows.map((r) => r.id)).not.toContain("s1");
+    const pushId = sessionRows[0].id;
 
-    // The groups land first, in one batch: Push's circuit copied verbatim under
-    // the new session with a fresh id; the rest day has none.
-    expect(mockFrom.mock.calls.slice(5).map(([table]) => table)).toEqual([
+    // The groups land next, in one batch: Push's circuit copied verbatim under
+    // the new session with a fresh id; the run and the rest day have none.
+    expect(mockFrom.mock.calls.slice(3).map(([table]) => table)).toEqual([
+      "coach_saved_sessions",
       "coach_saved_exercise_groups",
       "coach_saved_exercises",
     ]);
@@ -195,7 +227,7 @@ describe("duplicateSavedPlan", () => {
     expect(groupRows).toEqual([
       {
         id: expect.any(String),
-        saved_session_id: "ns1",
+        saved_session_id: pushId,
         order_index: 0,
         format: "circuit",
         rounds: 3,
@@ -211,7 +243,7 @@ describe("duplicateSavedPlan", () => {
     // Exercise rows copied verbatim: set_specs, video_url, exercise_id intact
     const exRows = exerciseInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
     expect(exRows).toHaveLength(1);
-    expect(exRows[0].saved_session_id).toBe("ns1");
+    expect(exRows[0].saved_session_id).toBe(pushId);
     expect(exRows[0].group_id).toBe(groupRows[0].id);
     expect(exRows[0].order_index).toBe(0);
     expect(exRows[0].exercise_id).toBe("ex-9");
@@ -246,7 +278,7 @@ describe("duplicateSavedPlan", () => {
       .mockReturnValueOnce(cleanupQuery as never);
 
     await expect(duplicateSavedPlan("plan-1", "coach-1")).rejects.toThrow(
-      'Failed to copy session "Push"'
+      "Failed to copy sessions: Failed to insert saved sessions: boom"
     );
     expect(cleanupQuery.delete).toHaveBeenCalled();
     expect(cleanupQuery.eq).toHaveBeenCalledWith("id", "plan-2");
@@ -256,8 +288,7 @@ describe("duplicateSavedPlan", () => {
     const sourceQuery = createMockQuery({ data: sourcePlan, error: null });
     const namesQuery = createMockQuery({ data: [], error: null });
     const planInsertQuery = createMockQuery({ data: { id: "plan-2" }, error: null });
-    const session1InsertQuery = createMockQuery({ data: { id: "ns1" }, error: null });
-    const session2InsertQuery = createMockQuery({ data: { id: "ns2" }, error: null });
+    const sessionsInsertQuery = createMockQuery({ data: null, error: null });
     const groupFailQuery = createMockQuery({ data: null, error: { message: "boom" } });
     const cleanupQuery = createMockQuery({ data: null, error: null });
 
@@ -265,8 +296,7 @@ describe("duplicateSavedPlan", () => {
       .mockReturnValueOnce(sourceQuery as never)
       .mockReturnValueOnce(namesQuery as never)
       .mockReturnValueOnce(planInsertQuery as never)
-      .mockReturnValueOnce(session1InsertQuery as never)
-      .mockReturnValueOnce(session2InsertQuery as never)
+      .mockReturnValueOnce(sessionsInsertQuery as never)
       .mockReturnValueOnce(groupFailQuery as never)
       .mockReturnValueOnce(cleanupQuery as never);
 

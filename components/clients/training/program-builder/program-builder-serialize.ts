@@ -12,6 +12,7 @@ import type {
   SavedExerciseGroup,
 } from "@/types/training";
 import { groupSettingsOf } from "@/utils/exercise-groups";
+import { programDays, type ProgramDay } from "@/utils/program-days";
 import {
   DAYS_PER_WEEK,
   newUid,
@@ -28,10 +29,10 @@ import {
 // API. draftToOverwriteBody targets POST /api/training/saved-plans/[id]/overwrite
 // and draftToInlinePlanBody targets the client-apply inline placement — both
 // off the shared draftToSessionInputs, with a globally monotonic order_index
-// per day (weekIndex * 7 + dayPosition) so the library read — which sorts by
-// order_index ALONE — returns days in program order without a backend change.
-// This builder is the only editor for a client's draft, so weekIndex/setSpecs/
-// videoUrl must survive every path through here.
+// per day (weekIndex * 7 + dayPosition) shared by the day's sessions, each at
+// its place in the day (dayOrder). This builder is the only editor for a
+// client's draft, so weekIndex/dayOrder/setSpecs/videoUrl must survive every
+// path through here.
 
 type ProgramOverwriteBody = z.infer<typeof overwriteSavedPlanSchema>;
 
@@ -91,64 +92,63 @@ export function savedSessionToDraft(s: SavedSession): SessionDraft {
   return { ...sessionToDraft(s), calorieSurplusPercentage: null };
 }
 
-function slotFromSession(
-  session: SavedSession | null,
+// A day of the saved program as a builder slot: its sessions in the day's
+// order, or a rest slot when it holds none (or when there is no day to read).
+function slotFromDay(
+  day: ProgramDay<SavedSession> | null,
   orderIndex: number,
 ): DaySlotDraft {
-  if (!session) return makeRestSlot(orderIndex);
+  if (!day || day.sessions.length === 0) return makeRestSlot(orderIndex);
   return {
     uid: newUid("slot"),
     orderIndex,
     isRest: false,
-    sessions: [sessionToDraft(session)],
+    sessions: day.sessions.map(sessionToDraft),
   };
 }
 
 /**
- * Build the editable draft tree from a SavedPlan. Week-shaped plans (any
- * weekIndex > 0 or is_rest row, AND every week grouping to exactly 7 rows) map
- * positionally. Everything else is a flat plan and gets NORMALIZED into the
- * 7-slot week model: materialized rest rows become rest slots, tail padded with
- * rest to a whole week. Deliberate: the reshape only persists if the coach
- * saves (read-only view never writes).
+ * Build the editable draft tree from a SavedPlan, day by day
+ * (utils/program-days.ts — a day's rows share its position, in their
+ * dayOrder). Week-shaped plans (any weekIndex > 0 or is_rest row, AND every
+ * week holding exactly 7 days) map positionally. Everything else is a flat plan
+ * and gets NORMALIZED into the 7-slot week model: its days in order, rest days
+ * as rest slots, tail padded with rest to a whole week. Deliberate: the reshape
+ * only persists if the coach saves (read-only view never writes).
  */
 export function savedPlanToDraft(plan: SavedPlan): ProgramDraft {
-  const ordered = [...plan.sessions].sort(
-    (a, b) => a.weekIndex - b.weekIndex || a.orderIndex - b.orderIndex,
-  );
+  const days = programDays(plan.sessions);
 
   let weeks: WeekDraft[] = [];
-  const hasWeekModel = ordered.some((s) => s.weekIndex > 0 || s.isRest);
+  const hasWeekModel = plan.sessions.some((s) => s.weekIndex > 0 || s.isRest);
   if (hasWeekModel) {
-    const groups = new Map<number, SavedSession[]>();
-    for (const s of ordered) {
-      const group = groups.get(s.weekIndex);
-      if (group) group.push(s);
-      else groups.set(s.weekIndex, [s]);
+    const byWeek = new Map<number, ProgramDay<SavedSession>[]>();
+    for (const day of days) {
+      const week = byWeek.get(day.weekIndex);
+      if (week) week.push(day);
+      else byWeek.set(day.weekIndex, [day]);
     }
-    if ([...groups.values()].every((g) => g.length === DAYS_PER_WEEK)) {
-      weeks = [...groups.values()].map((group, w) => ({
+    if ([...byWeek.values()].every((week) => week.length === DAYS_PER_WEEK)) {
+      weeks = [...byWeek.values()].map((week, w) => ({
         uid: newUid("wk"),
         weekIndex: w,
-        days: group.map((s, i) => slotFromSession(s.isRest ? null : s, i)),
+        days: week.map((day, i) => slotFromDay(day, i)),
       }));
     }
   }
 
   if (weeks.length === 0) {
-    const slots: Array<SavedSession | null> = ordered.map((s) =>
-      s.isRest ? null : s,
-    );
-    while (slots.length % DAYS_PER_WEEK !== 0 || slots.length === 0) {
-      slots.push(null);
+    const flat: Array<ProgramDay<SavedSession> | null> = [...days];
+    while (flat.length % DAYS_PER_WEEK !== 0 || flat.length === 0) {
+      flat.push(null);
     }
-    for (let w = 0; w * DAYS_PER_WEEK < slots.length; w++) {
+    for (let w = 0; w * DAYS_PER_WEEK < flat.length; w++) {
       weeks.push({
         uid: newUid("wk"),
         weekIndex: w,
-        days: slots
+        days: flat
           .slice(w * DAYS_PER_WEEK, (w + 1) * DAYS_PER_WEEK)
-          .map((s, i) => slotFromSession(s, i)),
+          .map((day, i) => slotFromDay(day, i)),
       });
     }
   }
@@ -233,9 +233,10 @@ export function sessionDraftToStandalonePayload(
  * session of every day becomes a real session row, and every rest day one rest
  * row (the placement date-walk needs every day of every week or every later
  * date slides). A day's sessions share its globally-monotonic orderIndex
- * (weekIndex * 7 + dayPosition), in the day's order. Shared by BOTH write
- * paths — the library overwrite body and the client-apply inline body — so a
- * field missed on one side can't silently drop per-set data on the other.
+ * (weekIndex * 7 + dayPosition), each at its place in the day (dayOrder, 0
+ * first). Shared by BOTH write paths — the library overwrite body and the
+ * client-apply inline body — so a field missed on one side can't silently drop
+ * per-set data on the other.
  * Throws rather than emit an empty array (normalize's min-1-week invariant
  * makes this unreachable): overwrite is delete-then-reinsert and inline
  * placement of nothing is equally wrong.
@@ -250,6 +251,7 @@ function draftToSessionInputs(draft: ProgramDraft): ProgramOverwriteBody["sessio
             name: "Rest",
             focus: null,
             ...place,
+            dayOrder: 0,
             isRest: true,
             estimatedDurationMinutes: null,
             calorieSurplusPercentage: null,
@@ -259,10 +261,11 @@ function draftToSessionInputs(draft: ProgramDraft): ProgramOverwriteBody["sessio
           },
         ];
       }
-      return slot.sessions.map((session) => ({
+      return slot.sessions.map((session, dayOrder) => ({
         name: session.name,
         focus: session.focus,
         ...place,
+        dayOrder,
         isRest: false,
         estimatedDurationMinutes: session.estimatedDurationMinutes,
         calorieSurplusPercentage: session.calorieSurplusPercentage,

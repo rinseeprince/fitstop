@@ -157,13 +157,6 @@ The routes below change what a client's computed nutrition days are priced from 
 
 ---
 
-## Training builder week model — deferred tails (builder S2.5)
-
-Logged: 2026-07-01.
-
-- **`training_plans.frequency_per_week` CHECK (1..7) outlives the week model.** The column (migration 015) predates multi-week programs; a raw non-rest total across N weeks violates it at apply time. S2.5 clamps at derivation (`deriveFrequencyPerWeek` / `recomputePlanFrequency` store a per-week average clamped to 1..7) and defensively at the placement boundary (`library-placement-service.ts` `createTrainingPlanAtomic` call). **The CHECK is still live in migration 015 and both clamps must stay until it is dropped.** Its former nominated owner (CPEP 7.10a) was deleted with the roadmaps/phases removal (2026-07-25), so the entry currently has no owner. Treat as indefinitely open — do not drop it piecemeal, and do not remove either clamp on the assumption it is gone.
----
-
 ## Training builder progression — pre-existing read cap (builder S4)
 
 Logged: 2026-07-03.

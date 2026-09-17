@@ -202,8 +202,11 @@ export type SavedPlanListItem = {
   status: SavedPlanStatus;
   frequencyPerWeek: number | null;
   weekCount: number;
+  // Days of the program; a day can hold several sessions.
   totalSlots: number;
+  // Rest days.
   restCount: number;
+  // Sessions, across every day.
   trainingCount: number;
   createdAt: string;
   updatedAt: string;
@@ -231,6 +234,9 @@ export type SavedSession = {
   // program is the repeat unit at apply time; weekIndex carries no calendar-week
   // meaning. Defaults to 0 (single-week / legacy plans).
   weekIndex: number;
+  // The session's place among the sessions on its day (weekIndex, orderIndex),
+  // 0 first (migration 180). 0 for a standalone session and a rest row.
+  dayOrder: number;
   isRest: boolean;
   estimatedDurationMinutes: number | null;
   calorieSurplusPercentage: number | null;

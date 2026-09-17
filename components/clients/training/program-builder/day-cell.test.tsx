@@ -10,6 +10,7 @@ import type {
   SessionDraft,
 } from "./program-builder-types";
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
+import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
 
 function makeSession(overrides: Partial<SessionDraft> = {}): SessionDraft {
   return {
@@ -348,5 +349,86 @@ describe("DayCell — a day holding several sessions", () => {
     expect(screen.queryByLabelText("Remove session")).toBeNull();
     expect(screen.queryByLabelText("Drag session")).toBeNull();
     for (const card of cards()) expect(card).toHaveClass("ring-1", "ring-inset");
+  });
+});
+
+describe("DayCell — building a day's sessions", () => {
+  beforeEach(() => cleanup());
+
+  const threeADay = (count = 3) =>
+    makeSlot({
+      isRest: false,
+      sessions: Array.from({ length: count }, (_, i) =>
+        makeSession({ uid: `sess-${i}`, name: `Session ${i + 1}` }),
+      ),
+    });
+  const cards = () => screen.getAllByLabelText(/^Open session /);
+
+  it("every card offers Add session; it opens the day's popover anchored to the whole stack, not the card", () => {
+    const handlers = renderCell({ slot: threeADay(2) });
+    const adds = screen.getAllByLabelText("Add session to this day");
+    expect(adds).toHaveLength(2);
+
+    fireEvent.click(adds[1]);
+    expect(handlers.onRequestAddSession).toHaveBeenCalledTimes(1);
+    const [slot, anchor] = handlers.onRequestAddSession.mock.calls[0];
+    expect(slot.uid).toBe("slot-1");
+    expect((anchor as HTMLElement).hasAttribute("data-day-stack")).toBe(true);
+    expect(anchor).toContainElement(cards()[0]);
+    // Adding is not opening.
+    expect(handlers.onOpenSession).not.toHaveBeenCalled();
+  });
+
+  it("Add session is gone in view mode, on a locked day, collapsed, and on a full day", () => {
+    renderCell({ slot: threeADay(2), mode: "view" });
+    expect(screen.queryByLabelText("Add session to this day")).toBeNull();
+    cleanup();
+    renderCell({ slot: threeADay(2), locked: true });
+    expect(screen.queryByLabelText("Add session to this day")).toBeNull();
+    cleanup();
+    renderCell({ slot: threeADay(2), collapsed: true });
+    expect(screen.queryByLabelText("Add session to this day")).toBeNull();
+    cleanup();
+    renderCell({ slot: threeADay(MAX_SESSIONS_PER_DAY) });
+    expect(screen.queryByLabelText("Add session to this day")).toBeNull();
+    // One short of full still offers it.
+    cleanup();
+    renderCell({ slot: threeADay(MAX_SESSIONS_PER_DAY - 1) });
+    expect(screen.getAllByLabelText("Add session to this day")).toHaveLength(MAX_SESSIONS_PER_DAY - 1);
+  });
+
+  it("while one of its sessions is dragged over the day, the line sits where it would land", () => {
+    // Before the first card: inside its top edge.
+    renderCell({ slot: threeADay(), reorder: { slotUid: "slot-1", place: 0 } });
+    let lines = screen.getAllByTestId("drop-line");
+    expect(lines).toHaveLength(1);
+    expect(cards()[0]).toContainElement(lines[0]);
+    expect(lines[0]).toHaveClass("top-0");
+    cleanup();
+
+    // Between cards: in the gap above the card at the place.
+    renderCell({ slot: threeADay(), reorder: { slotUid: "slot-1", place: 2 } });
+    lines = screen.getAllByTestId("drop-line");
+    expect(lines).toHaveLength(1);
+    expect(cards()[2]).toContainElement(lines[0]);
+    expect(lines[0]).toHaveClass("-top-[5px]");
+    cleanup();
+
+    // After the last card: in the gap below it.
+    renderCell({ slot: threeADay(), reorder: { slotUid: "slot-1", place: 3 } });
+    lines = screen.getAllByTestId("drop-line");
+    expect(lines).toHaveLength(1);
+    expect(cards()[2]).toContainElement(lines[0]);
+    expect(lines[0]).toHaveClass("-bottom-[5px]");
+    cleanup();
+
+    // Over its own place: nothing to show.
+    renderCell({ slot: threeADay(), reorder: { slotUid: "slot-1", place: null } });
+    expect(screen.queryByTestId("drop-line")).toBeNull();
+    cleanup();
+
+    // No drag at all: no line.
+    renderCell({ slot: threeADay() });
+    expect(screen.queryByTestId("drop-line")).toBeNull();
   });
 });

@@ -62,7 +62,7 @@ export function buildSessionTools(ws: DraftWorkspace) {
   const addSession = betaTool({
     name: "add_session",
     description:
-      "Add a new empty training session to a REST day — only a rest day takes one. Add exercises to it afterwards with add_exercise.",
+      "Add a new empty training session to a day. On a rest day it is the day's session; on a day that already holds sessions it joins them, LAST (a morning run and an evening lift are two sessions on one day) — use reorder_session to put it earlier. Add exercises to it afterwards with add_exercise (session = its place in the day).",
     inputSchema: {
       type: "object",
       properties: {
@@ -87,13 +87,17 @@ export function buildSessionTools(ws: DraftWorkspace) {
         sessionType: "training",
         groups: [],
       };
+      const place = slot.value.sessions.length + 1;
       const err = commitOp(ws, {
         type: "place_session",
         slotUid: slot.value.uid,
         session,
         label: `W${week} D${day}: added "${name}"`,
       });
-      return err ?? `Added "${name}" on week ${week} day ${day}. It has no exercises yet.`;
+      if (err) return err;
+      return place > 1
+        ? `Added "${name}" on week ${week} day ${day} as session ${place} of the day. It has no exercises yet.`
+        : `Added "${name}" on week ${week} day ${day}. It has no exercises yet.`;
     },
   });
 
@@ -161,7 +165,7 @@ export function buildSessionTools(ws: DraftWorkspace) {
   const moveSession = betaTool({
     name: "move_session",
     description:
-      "Move a session to another day. Onto a rest day it moves there; onto a day holding one session, when the moving session is the only one on its own day, the two SWAP; any other move is refused.",
+      "Move a session to another day. It joins the sessions already on that day, LAST (a rest day simply takes it); the day it left keeps its other sessions. To swap two days' sessions, move each. To change a session's place within its own day, use reorder_session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -181,22 +185,67 @@ export function buildSessionTools(ws: DraftWorkspace) {
       if (!session.ok) return session.error;
       const target = resolveSlot(ws, toWeek, toDay);
       if (!target.ok) return target.error;
-      // The session the move swaps with, when it does (moveSessionToDay's rule).
-      const displaced =
-        target.value.uid !== from.value.uid &&
-        target.value.sessions.length === 1 &&
-        from.value.sessions.length === 1
-          ? target.value.sessions[0]
-          : null;
+      if (target.value.uid === from.value.uid) {
+        return `"${session.value.name}" is already on week ${toWeek} day ${toDay} — use reorder_session to change its place in the day.`;
+      }
+      const landing = target.value.sessions.length + 1;
       const err = commitOp(ws, {
         type: "move_session",
         sessionUid: session.value.uid,
         targetSlotUid: target.value.uid,
-        label: `Moved "${session.value.name}" to W${toWeek} D${toDay}${displaced ? " (swap)" : ""}`,
+        label: `Moved "${session.value.name}" to W${toWeek} D${toDay}`,
+      });
+      if (err) return err;
+      return landing > 1
+        ? `Moved "${session.value.name}" to week ${toWeek} day ${toDay}, after the day's other sessions (session ${landing} of the day).`
+        : `Moved "${session.value.name}" to week ${toWeek} day ${toDay}.`;
+    },
+  });
+
+  const reorderSession = betaTool({
+    name: "reorder_session",
+    description:
+      "Change a session's place within its day (1 = the day's first session); the day's other sessions keep their order around it. Only for a day holding several sessions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        week: { type: "integer", minimum: 1 },
+        day: { type: "integer", minimum: 1, maximum: 7 },
+        session: sessionPlaceProperty,
+        toSession: {
+          type: "integer",
+          minimum: 1,
+          description: "The 1-based place in the day the session should take",
+        },
+      },
+      required: ["week", "day", "toSession"],
+      additionalProperties: false,
+    } as const,
+    run: ({ week, day, session: place = 1, toSession }) => {
+      const slot = resolveSlot(ws, week, day);
+      if (!slot.ok) return slot.error;
+      const session = resolveSession(ws, week, day, place);
+      if (!session.ok) return session.error;
+      const count = slot.value.sessions.length;
+      if (count < 2) {
+        return `Week ${week} day ${day} holds one session — there is no order to change.`;
+      }
+      // Clamp HERE, not just in applyDraftOp: an out-of-range toIndex is
+      // schema-invalid on the client, which would discard the entire turn
+      // while this tool reported success.
+      const target = Math.min(Math.max(toSession, 1), count);
+      if (target === place) {
+        return `"${session.value.name}" is already session ${place} of week ${week} day ${day}.`;
+      }
+      const err = commitOp(ws, {
+        type: "reorder_session",
+        sessionUid: session.value.uid,
+        toIndex: target - 1,
+        label: `W${week} D${day}: "${session.value.name}" to session ${target}`,
       });
       return (
         err ??
-        `Moved "${session.value.name}" to week ${toWeek} day ${toDay}${displaced ? ` — it swapped places with "${displaced.name}".` : "."}`
+        `"${session.value.name}" is now session ${target} of week ${week} day ${day}.`
       );
     },
   });
@@ -242,5 +291,13 @@ export function buildSessionTools(ws: DraftWorkspace) {
     },
   });
 
-  return [updateProgram, addSession, clearDay, removeSession, moveSession, updateSessionDetails];
+  return [
+    updateProgram,
+    addSession,
+    clearDay,
+    removeSession,
+    moveSession,
+    reorderSession,
+    updateSessionDetails,
+  ];
 }

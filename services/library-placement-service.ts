@@ -7,6 +7,7 @@ import {
   generateProgramEvents,
   expandProgramToWindow,
   resolvePlacementWindowEnd,
+  type ProgramSession,
 } from "./program-event-walk";
 import {
   concatTrainingGroupRows,
@@ -18,7 +19,11 @@ import {
   mapSavedSessionTree,
   type SavedSessionTreeRow,
 } from "@/lib/coach-mappers";
-import type { TrainingEventInsert, TrainingEventRow } from "@/lib/database-helpers";
+import type {
+  TrainingEventInsert,
+  TrainingEventRow,
+  TrainingSessionInsert,
+} from "@/lib/database-helpers";
 import type { SavedSession, SavedExercise, SavedExerciseGroup } from "@/types/training";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import type { InlinePlanBody } from "@/lib/validations/training";
@@ -27,6 +32,7 @@ import type { InlinePlanBody } from "@/lib/validations/training";
 import { inclusiveDays, weeksSpanned } from "@/lib/blocks/block-chain";
 import { toPrescribedFields } from "@/utils/prescribed-fields";
 import { sessionExercises } from "@/utils/exercise-groups";
+import { programDays } from "@/utils/program-days";
 
 /** Rows per INSERT statement — the placement clone can now run to hundreds. */
 const INSERT_CHUNK = 500;
@@ -69,13 +75,13 @@ async function snapshotEarlierPlans(
 
 // --- Shape used by both DB-backed and inline (in-memory) placements ---
 
-// NOTE: no derived length metadata here. Placement derives its own ordered
-// `programSlots` from the session rows (see placePlaceablePlanOnCalendar) —
-// the session rows are the only truth about program shape.
+// NOTE: no derived length or frequency metadata here. Placement reads the
+// program's days and its sessions per week from the session rows (see
+// placePlaceablePlanOnCalendar) — the session rows are the only truth about
+// program shape.
 type PlaceablePlan = {
   name: string;
   splitType: string | null;
-  frequencyPerWeek: number | null;
   programDurationWeeks: number | null;
   defaultSurplusPercentage: number | null;
   sessions: SavedSession[];
@@ -112,8 +118,7 @@ export async function placePlanOnCalendar(params: {
  * client's calendar WITHOUT mutating the library template. Stamps
  * saved_plan_id = NULL — an edited copy is not a copy of any single template, so
  * it carries no template link (this is both IDOR-safe, since no body-supplied
- * template id is trusted, and semantically honest; see the Phase 1 plan).
- * frequency_per_week is re-derived from the edited structure, and any
+ * template id is trusted, and semantically honest; see the Phase 1 plan). Any
  * exercise_id from the (client-tampered) working copy that isn't in the coach's
  * own+global catalog is nulled before it is written.
  */
@@ -125,13 +130,6 @@ export async function placeInlineEditedPlanOnCalendar(params: {
 }): Promise<PlacementResult> {
   const { plan, coachId, clientId, startDate } = params;
 
-  const frequencyPerWeek = deriveFrequencyPerWeek(
-    plan.sessions.map((s) => ({
-      weekIndex: s.weekIndex,
-      isRest: s.isRest,
-    })),
-  );
-
   const referencedExerciseIds = plan.sessions.flatMap((s) =>
     sessionExercises(s)
       .map((e) => e.exerciseId)
@@ -142,7 +140,6 @@ export async function placeInlineEditedPlanOnCalendar(params: {
   const placeable: PlaceablePlan = {
     name: plan.name,
     splitType: plan.splitType ?? null,
-    frequencyPerWeek,
     programDurationWeeks: plan.programDurationWeeks ?? null,
     defaultSurplusPercentage: plan.defaultSurplusPercentage ?? null,
     sessions: plan.sessions.map((s) => inlineSessionToSaved(s, ownedExerciseIds)),
@@ -214,6 +211,7 @@ function inlineSessionToSaved(
     focus: s.focus ?? null,
     orderIndex: s.orderIndex,
     weekIndex: s.weekIndex ?? 0,
+    dayOrder: s.dayOrder,
     isRest: s.isRest,
     estimatedDurationMinutes: s.estimatedDurationMinutes ?? null,
     calorieSurplusPercentage: s.calorieSurplusPercentage ?? null,
@@ -383,13 +381,13 @@ async function placePlaceablePlanOnCalendar(params: {
     startDate,
   } = params;
 
-  // The whole authored program (every week, ordered by (week_index, order_index))
-  // placed exactly once. Rest slots are cloned too so the placed plan is
-  // self-describing about rest; the event generator below emits for non-rest slots
-  // only. Every slot is a real row — a missing rest row would collapse the week.
-  const programSlots = [...savedPlan.sessions].sort(
-    (a, b) => a.weekIndex - b.weekIndex || a.orderIndex - b.orderIndex,
-  );
+  // The whole authored program as its days (utils/program-days.ts): every
+  // week's days in order, each holding its sessions in the day's order, placed
+  // exactly once. A rest day holds none; it is cloned as its rest row so the
+  // placed plan is self-describing about rest, and the walk below emits events
+  // for sessions only. Every day is a real row or rows — a missing rest row
+  // would collapse the week.
+  const authoredDays = programDays(savedPlan.sessions);
 
   // 2. Compute the incoming plan's own window end FIRST (capped at the next
   //    coexisting plan's start). It bounds BOTH the RPC's additive delete and the
@@ -397,19 +395,19 @@ async function placePlaceablePlanOnCalendar(params: {
   //    window is idempotent and non-overlapping plans coexist untouched.
   //
   //    The LENGTH is the block covering the start date when there is one, else
-  //    the whole-program slot count. So the block is the length knob: a program
+  //    the program's own day count. So the block is the length knob: a program
   //    shorter than its block repeats to fill it, a longer one is cut at its end.
   const endDate = await resolvePlacementWindowEnd({
     clientId,
-    slotCount: programSlots.length,
+    dayCount: authoredDays.length,
     startDate,
   });
 
-  //    The slots actually placed: the authored program repeated until it covers
+  //    The days actually placed: the authored program repeated until it covers
   //    the window, then cut. Each cycle is CLONED below, never shared, so cycle
   //    three can be progressed past cycle one.
-  const windowSlots = expandProgramToWindow(
-    programSlots,
+  const windowDays = expandProgramToWindow(
+    authoredDays,
     inclusiveDays(startDate, endDate),
   );
 
@@ -432,9 +430,9 @@ async function placePlaceablePlanOnCalendar(params: {
     description: undefined,
     coachPrompt: "",
     splitType: savedPlan.splitType || "custom",
-    // training_plans.frequency_per_week has CHECK (>= 1 AND <= 7); a 0 fallback
-    // (or a stale unclamped multi-week total on an old plan row) fails the RPC.
-    frequencyPerWeek: Math.min(7, Math.max(1, savedPlan.frequencyPerWeek || 1)),
+    // Sessions per week, from the program's own rows — a day can hold several,
+    // so a week can hold more than seven.
+    frequencyPerWeek: deriveFrequencyPerWeek(savedPlan.sessions),
     // The PLACED length, not the authored one: with the block as the length knob
     // a 4-week program can occupy a 12-week window, and the Overview's plan chip
     // derives its "Ended" date from this column — left at the authored value it
@@ -450,106 +448,97 @@ async function placePlaceablePlanOnCalendar(params: {
   // Everything below runs OUTSIDE the RPC's committed transaction. On any
   // failure, undo the partial plan and restore the pre-RPC window snapshot (H3).
   try {
-  // 4. Clone EVERY slot (training + rest) in program order so the placed plan is
-  //    self-describing about rest. Rest rows carry is_rest = true, no exercises,
-  //    and null surplus. `clonedSlots` is the ordered program the event walk maps
-  //    onto calendar dates.
+  // 4. Clone EVERY day in program order: a rest day as its rest row (no
+  //    exercises, null surplus), a training day as one row per session at its
+  //    place in the day (day_order). Every row's id is minted here, so its
+  //    groups and its calendar entry name it before anything is written and
+  //    nothing is matched back from RETURNING (Postgres does not promise it
+  //    follows the VALUES order) — a day's sessions share its position, so no
+  //    coordinate could tell them apart. `placedDays` is the ordered program the
+  //    event walk maps onto calendar dates.
   //
-  //    BATCHED, not one insert per slot. With the block as the length knob a
+  //    BATCHED, not one insert per row. With the block as the length knob a
   //    short program repeats to fill a long block — a one-week program in a
-  //    52-week block is 364 slots — and a round trip each would take the
-  //    placement well past any request budget. Chunked because a single
-  //    statement of unbounded width is its own problem.
-  const sessionRows = windowSlots.map((slot) => ({
-    plan_id: newPlanId,
-    name: slot.isRest ? "Rest" : slot.name,
-    day_of_week: null,
-    order_index: slot.orderIndex,
-    week_index: slot.weekIndex,
-    is_rest: slot.isRest,
-    focus: slot.isRest ? null : slot.focus ?? null,
-    notes: null,
-    estimated_duration_minutes: slot.estimatedDurationMinutes ?? null,
-    calorie_surplus_percentage: slot.isRest
-      ? null
-      : slot.calorieSurplusPercentage ?? savedPlan.defaultSurplusPercentage ?? null,
-    is_active: true,
-  }));
-
-  // Keyed on (week_index, order_index) rather than on the returned row order:
-  // Postgres does not promise RETURNING follows the VALUES order, and matching
-  // an exercise to the wrong session would be silent rather than loud.
-  //
-  // That makes the pair load-bearing, so it is checked rather than assumed. The
-  // expander keeps every cycle's slots disjoint, so a collision can only come
-  // from a template that already carried two slots at one coordinate — in which
-  // case the map would quietly give one slot's row both slots' exercises and
-  // leave the other empty. Fail before writing anything instead; the caller's
-  // compensation removes the plan the RPC has already committed.
-  const sessionIdBySlot = new Map<string, string>();
-  const slotKey = (weekIndex: number, orderIndex: number) => `${weekIndex}:${orderIndex}`;
-
-  const distinctSlots = new Set(windowSlots.map((s) => slotKey(s.weekIndex, s.orderIndex)));
-  if (distinctSlots.size !== windowSlots.length) {
-    throw new Error(
-      "This program has two sessions at the same position in its week — re-save it in the builder before placing it.",
-    );
-  }
+  //    52-week block is 364 days, more rows when its days hold several sessions —
+  //    and a round trip each would take the placement past any request budget.
+  //    Chunked because a single statement of unbounded width is its own problem.
+  const sessionRows: TrainingSessionInsert[] = [];
+  const groupRows: ReturnType<typeof trainingGroupRowsFromCopy>[] = [];
+  const placedDays: ProgramSession[][] = windowDays.map((day) => {
+    const place = {
+      plan_id: newPlanId,
+      day_of_week: null,
+      order_index: day.orderIndex,
+      week_index: day.weekIndex,
+      notes: null,
+      is_active: true,
+    };
+    if (day.sessions.length === 0) {
+      sessionRows.push({
+        ...place,
+        id: crypto.randomUUID(),
+        name: "Rest",
+        day_order: 0,
+        is_rest: true,
+        focus: null,
+        estimated_duration_minutes: null,
+        calorie_surplus_percentage: null,
+      });
+      return [];
+    }
+    return day.sessions.map((session, dayOrder): ProgramSession => {
+      const id = crypto.randomUUID();
+      const surplus =
+        session.calorieSurplusPercentage ?? savedPlan.defaultSurplusPercentage ?? null;
+      sessionRows.push({
+        ...place,
+        id,
+        name: session.name,
+        day_order: dayOrder,
+        is_rest: false,
+        focus: session.focus ?? null,
+        estimated_duration_minutes: session.estimatedDurationMinutes ?? null,
+        calorie_surplus_percentage: surplus,
+      });
+      // Groups and their exercises, in their order. Splat the per-set model
+      // verbatim — the source row's compact columns are already the correct
+      // projection of its set_specs.
+      if (session.groups.length > 0) {
+        groupRows.push(trainingGroupRowsFromCopy(id, session.groups));
+      }
+      return {
+        id,
+        name: session.name,
+        focus: session.focus ?? null,
+        calorieSurplusPercentage: surplus,
+        estimatedCalories: null,
+      };
+    });
+  });
 
   for (let from = 0; from < sessionRows.length; from += INSERT_CHUNK) {
-    const chunk = sessionRows.slice(from, from + INSERT_CHUNK);
-    const { data: inserted, error: sessionError } = await supabaseAdmin
+    const { error: sessionError } = await supabaseAdmin
       .from("training_sessions")
-      .insert(chunk)
-      .select("id, week_index, order_index");
-
-    if (sessionError || !inserted || inserted.length !== chunk.length) {
-      throw new Error(
-        `Failed to clone the program's sessions: ${sessionError?.message ?? "row count mismatch"}`,
-      );
-    }
-    for (const row of inserted) {
-      sessionIdBySlot.set(slotKey(row.week_index, row.order_index), row.id);
+      .insert(sessionRows.slice(from, from + INSERT_CHUNK));
+    if (sessionError) {
+      throw new Error(`Failed to clone the program's sessions: ${sessionError.message}`);
     }
   }
 
-  // Groups and their exercises for training slots only (rest slots have
-  // none), in their order. Splat the per-set model verbatim — the source row's
-  // compact columns are already the correct projection of its set_specs.
-  const groupRows = concatTrainingGroupRows(
-    windowSlots.flatMap((slot) => {
-      if (slot.isRest || slot.groups.length === 0) return [];
-      const sessionId = sessionIdBySlot.get(slotKey(slot.weekIndex, slot.orderIndex));
-      if (!sessionId) {
-        throw new Error(`No cloned session for slot ${slot.weekIndex}/${slot.orderIndex}`);
-      }
-      return [trainingGroupRowsFromCopy(sessionId, slot.groups)];
-    }),
-  );
   try {
-    await insertTrainingGroupRows(groupRows);
+    await insertTrainingGroupRows(concatTrainingGroupRows(groupRows));
   } catch (cloneError) {
     const detail = cloneError instanceof Error ? cloneError.message : String(cloneError);
     throw new Error(`Failed to clone exercises: ${detail}`);
   }
 
-  const clonedSlots = windowSlots.map((slot) => ({
-    id: sessionIdBySlot.get(slotKey(slot.weekIndex, slot.orderIndex)) as string,
-    isRest: slot.isRest,
-    name: slot.isRest ? "Rest" : slot.name,
-    focus: slot.isRest ? null : slot.focus ?? null,
-    calorieSurplusPercentage: slot.isRest
-      ? null
-      : slot.calorieSurplusPercentage ?? savedPlan.defaultSurplusPercentage ?? null,
-    estimatedCalories: null,
-  }));
-
-  // 5. Generate the events (same window the RPC just cleared). Rest slots
-  //    advance the slot position but emit no event.
+  // 5. Generate the events (same window the RPC just cleared). A rest day
+  //    advances the walk but emits no event; a day's sessions land on its date
+  //    in the day's order.
   const eventsCreated = await generateProgramEvents({
     clientId,
     planId: newPlanId,
-    programSlots: clonedSlots,
+    programDays: placedDays,
     startDate,
     endDate,
   });
@@ -571,7 +560,7 @@ async function placePlaceablePlanOnCalendar(params: {
 
   return {
     planId: newPlanId,
-    sessionsCreated: clonedSlots.filter((s) => !s.isRest).length,
+    sessionsCreated: placedDays.reduce((sum, day) => sum + day.length, 0),
     eventsCreated,
   };
   } catch (err) {

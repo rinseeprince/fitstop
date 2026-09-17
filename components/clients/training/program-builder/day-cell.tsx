@@ -4,15 +4,21 @@ import { Plus } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import type { DaySlotDraft } from "./program-builder-types";
-import type { SlotDropData } from "./use-program-dnd";
+import type { DayReorder, SlotDropData } from "./use-program-dnd";
+import { dayHasRoom } from "./program-builder-model";
+import type { DropLineEdge } from "./drop-line";
 import { FOCUS_RING, LABEL_CLASS, TEXT_MUTED } from "./builder-tokens";
 import { DaySessionCard, pressable } from "./day-session-card";
 
 // One positional day cell. Two states only (empty === rest): the day's session
 // cards, one per session in the day's order, or a rest marker whose hover
 // swaps to "Add session" (opens the add-session popover anchored to the cell).
-// The cell is ALWAYS the droppable (use-program-dnd judges a drop by how many
-// sessions the day holds); each session card is draggable on its own.
+// A day holding sessions offers "Add session" on each card, and the session
+// added joins the day, last. The cell is ALWAYS the droppable (use-program-dnd
+// judges a drop by how many sessions the day holds): a session from another
+// day joins it, last, and every card of the day shows the teal border; a
+// session dragged over its own day shows, as a line between the cards, the
+// place it would take instead.
 type DayCellProps = {
   slot: DaySlotDraft;
   mode: "view" | "edit";
@@ -30,10 +36,22 @@ type DayCellProps = {
   // Program-level default surplus — the value a session inherits when it has no
   // per-day override. Drives the effective-surplus badge.
   defaultSurplusPercentage: number | null;
+  // Set while one of this day's sessions is dragged over the day: where it
+  // would land (use-program-dnd).
+  reorder?: DayReorder | null;
   onOpenSession: (sessionUid: string) => void;
   onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
   onRemoveSession: (sessionUid: string) => void;
 };
+
+// The line for a card: before the card at the place, or after the last card
+// when the place is past it. The first card draws its top line inside its own
+// edge, where the row above would otherwise hide it.
+function dropLineFor(place: number | null, index: number, count: number): DropLineEdge | null {
+  if (place == null) return null;
+  if (place === index) return index === 0 ? "first-item-top" : "item-top";
+  return place === count && index === count - 1 ? "item-bottom" : null;
+}
 
 export function DayCell({
   slot,
@@ -43,6 +61,7 @@ export function DayCell({
   isToday = false,
   collapsed,
   defaultSurplusPercentage,
+  reorder = null,
   onOpenSession,
   onRequestAddSession,
   onRemoveSession,
@@ -108,22 +127,28 @@ export function DayCell({
 
   // The stack fills the cell; each card grows with it, so a day's cards reach
   // the row's bottom edge as a single card always has.
+  const place = reorder?.place ?? null;
   return (
-    <div ref={setDropRef} className="flex h-full flex-col gap-2">
-      {slot.sessions.map((session) => (
+    <div ref={setDropRef} data-day-stack="" className="flex h-full flex-col gap-2">
+      {slot.sessions.map((session, index) => (
         <DaySessionCard
           key={session.uid}
           session={session}
           slotUid={slot.uid}
-          aloneOnDay={slot.sessions.length === 1}
+          index={index}
           editable={editable}
+          canAddSession={editable && dayHasRoom(slot)}
           locked={locked}
           isToday={isToday}
-          isOver={isOver}
+          // Over its own day a session changes its place, which the line
+          // shows; only a drag that would join the day lights its cards.
+          isOver={isOver && reorder == null}
+          dropLine={dropLineFor(place, index, slot.sessions.length)}
           collapsed={collapsed}
           defaultSurplusPercentage={defaultSurplusPercentage}
           onOpenSession={onOpenSession}
           onRemoveSession={onRemoveSession}
+          onAddSession={(anchor) => onRequestAddSession(slot, anchor)}
         />
       ))}
     </div>

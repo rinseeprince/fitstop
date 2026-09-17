@@ -10,6 +10,7 @@ import {
   MAX_EXERCISES_PER_SESSION,
 } from "@/utils/exercise-groups";
 import { MAX_SET_SPECS } from "@/utils/exercise-set-specs";
+import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
 import type { DraftOp } from "@/components/clients/training/program-builder/program-builder-ops";
 
 // AI draft-assistant wire schemas (builder S6a).
@@ -93,10 +94,6 @@ const sessionDraftSnapshotSchema = z.object({
       message: `A session holds at most ${MAX_EXERCISES_PER_SESSION} exercises`,
     }),
 });
-
-// A day on a client's calendar can hold several sessions (a morning run and
-// an evening lift); this is far above any real day and only bounds a request.
-const MAX_SESSIONS_PER_DAY = 20;
 
 const daySlotSnapshotSchema = z.object({
   uid: uidSchema,
@@ -243,6 +240,12 @@ export const draftOpSchema = z.discriminatedUnion("type", [
     type: z.literal("move_session"),
     sessionUid: uidSchema,
     targetSlotUid: uidSchema,
+    label: opLabel,
+  }),
+  z.object({
+    type: z.literal("reorder_session"),
+    sessionUid: uidSchema,
+    toIndex: z.number().int().min(0).max(MAX_SESSIONS_PER_DAY - 1),
     label: opLabel,
   }),
   z.object({

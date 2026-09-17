@@ -25,6 +25,7 @@ import {
   sessionDraftToStandalonePayload,
 } from "./program-builder-serialize";
 import { makeRestWeek, type ProgramDraft } from "./program-builder-types";
+import { programRowsIssue } from "@/utils/program-days";
 
 // =============================================================================
 // Fixtures
@@ -132,6 +133,7 @@ function makeSession(overrides: Partial<SavedSession> = {}): SavedSession {
     focus: "chest",
     orderIndex: 0,
     weekIndex: 0,
+    dayOrder: 0,
     isRest: false,
     estimatedDurationMinutes: 60,
     calorieSurplusPercentage: 10,
@@ -254,6 +256,7 @@ describe("savedPlanToDraft / draftToOverwriteBody parity (week-shaped)", () => {
       focus: "chest",
       orderIndex: 0,
       weekIndex: 0,
+      dayOrder: 0,
       isRest: false,
       estimatedDurationMinutes: 60,
       calorieSurplusPercentage: 10,
@@ -327,6 +330,38 @@ describe("savedPlanToDraft / draftToOverwriteBody parity (week-shaped)", () => {
     expect(compactOnly.setSpecs).toBeNull();
   });
 
+  it("reads a day's sessions in their dayOrder, whatever order the rows come in, and writes them back", () => {
+    const plan = makeWeekShapedPlan(1);
+    // Day 1 (Push W1) gains a morning run before it and a mobility session after
+    // it, listed out of order; the lift moves to place 1.
+    const push = plan.sessions[0];
+    const sessions = [
+      makeSession({ id: "mobility", name: "Mobility", orderIndex: 0, dayOrder: 2, calorieSurplusPercentage: null }),
+      { ...push, dayOrder: 1 },
+      ...plan.sessions.slice(1),
+      makeSession({ id: "am-run", name: "AM run", orderIndex: 0, dayOrder: 0, calorieSurplusPercentage: null }),
+    ];
+    const draft = savedPlanToDraft(makePlan({ sessions }));
+
+    // Still one week of seven days: the day's three rows are one day.
+    expect(draft.weeks).toHaveLength(1);
+    expect(draft.weeks[0].days).toHaveLength(7);
+    expect(draft.weeks[0].days[0].sessions.map((s) => s.name)).toEqual(["AM run", "Push W1", "Mobility"]);
+    expect(draft.weeks[0].days.map((d) => d.sessions.length)).toEqual([3, 0, 0, 1, 0, 0, 0]);
+
+    const body = draftToOverwriteBody(draft);
+    expect(body.sessions.slice(0, 4).map((s) => [s.name, s.orderIndex, s.dayOrder, s.isRest])).toEqual([
+      ["AM run", 0, 0, false],
+      ["Push W1", 0, 1, false],
+      ["Mobility", 0, 2, false],
+      ["Rest", 1, 0, true],
+    ]);
+    // The places are unambiguous: the save's own check finds nothing.
+    expect(
+      programRowsIssue(body.sessions.map((row) => ({ ...row, weekIndex: row.weekIndex ?? 0 }))),
+    ).toBeNull();
+  });
+
   it("treats a single-week plan with materialized rest as week-shaped (no padding)", () => {
     const plan = makeWeekShapedPlan(1);
     const draft = savedPlanToDraft(plan);
@@ -374,6 +409,24 @@ describe("savedPlanToDraft flat-plan normalization", () => {
     expect(nonRestNames(body)).toEqual(["A", "B", "C", "D"]);
   });
 
+  it("keeps a flat plan's shared-place rows on one day, in the order they were read", () => {
+    // Two rows at one place (from before a day's order was stored), then two more days.
+    const sessions = [
+      makeSession({ id: "s-a", name: "A", orderIndex: 0 }),
+      makeSession({ id: "s-b", name: "B", orderIndex: 0 }),
+      makeSession({ id: "s-c", name: "C", orderIndex: 1 }),
+    ];
+    const draft = savedPlanToDraft(makePlan({ sessions }));
+    expect(draft.weeks[0].days[0].sessions.map((s) => s.name)).toEqual(["A", "B"]);
+    expect(draft.weeks[0].days[1].sessions.map((s) => s.name)).toEqual(["C"]);
+    const body = draftToOverwriteBody(draft);
+    expect(body.sessions.slice(0, 3).map((s) => [s.name, s.dayOrder])).toEqual([
+      ["A", 0],
+      ["B", 1],
+      ["C", 0],
+    ]);
+  });
+
   it("yields one all-rest week for a plan with no sessions", () => {
     const draft = savedPlanToDraft(makePlan({ sessions: [] }));
     expect(draft.weeks).toHaveLength(1);
@@ -417,12 +470,13 @@ describe("draftToOverwriteBody guards", () => {
     for (const sessions of [draftToOverwriteBody(draft).sessions, draftToInlinePlanBody(draft).sessions]) {
       expect(sessions).toHaveLength(15);
       expect(sessions.slice(9, 12)).toEqual([
-        expect.objectContaining({ name: "Rest", orderIndex: 9, weekIndex: 1, isRest: true, groups: [] }),
-        expect.objectContaining({ name: "Pull W2", orderIndex: 10, weekIndex: 1, isRest: false }),
+        expect.objectContaining({ name: "Rest", orderIndex: 9, weekIndex: 1, dayOrder: 0, isRest: true, groups: [] }),
+        expect.objectContaining({ name: "Pull W2", orderIndex: 10, weekIndex: 1, dayOrder: 0, isRest: false }),
         expect.objectContaining({
           name: "PM run",
           orderIndex: 10,
           weekIndex: 1,
+          dayOrder: 1,
           isRest: false,
           notes: "Easy",
           focus: "chest",

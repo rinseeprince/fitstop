@@ -85,38 +85,27 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
   return mockQuery;
 }
 
-// A training_sessions insert mock. The clone is BATCHED, so `insert` takes an
-// ARRAY of slot rows and the awaited result echoes each row's grid coordinate
-// beside a distinct cloned id — the service keys exercises on that coordinate
-// rather than on the returned row order.
-function makeSessionInsertQuery(ids: string[]) {
-  let i = 0;
-  let rows: Array<Record<string, unknown>> = [];
-  const query: Record<string, unknown> = {
+// A training_sessions insert mock. The clone is BATCHED and every row's id is
+// minted by the service before the write, so `insert` takes an ARRAY of rows
+// that already carry their ids and nothing is read back.
+function makeSessionInsertQuery() {
+  const query = {
     ...createMockQuery({ data: null, error: null }),
-    insert: vi.fn((chunk: Array<Record<string, unknown>>) => {
-      rows = chunk;
-      return query;
-    }),
-    select: vi.fn(() => query),
+    insert: vi.fn(() => query),
   };
-  Object.defineProperty(query, "then", {
-    value: (resolve: (v: unknown) => void) =>
-      Promise.resolve({
-        data: rows.map((row) => ({
-          id: ids[i++] ?? `ts-${i}`,
-          week_index: row.week_index,
-          order_index: row.order_index,
-        })),
-        error: null,
-      }).then(resolve),
-  });
-  return query as ReturnType<typeof createMockQuery> & { insert: ReturnType<typeof vi.fn> };
+  return query;
 }
 
-/** The slot rows a batched session insert was handed, flattened in order. */
+/** The session rows a batched insert was handed, flattened in order. */
 function insertedSlots(q: { insert: ReturnType<typeof vi.fn> }) {
   return q.insert.mock.calls.flatMap((c) => c[0] as Array<Record<string, never>>);
+}
+
+/** The ids the service minted for the rows it wrote that are not rest. */
+function sessionIds(q: { insert: ReturnType<typeof vi.fn> }): string[] {
+  return insertedSlots(q)
+    .filter((row) => row.is_rest === false)
+    .map((row) => row.id as string);
 }
 
 // --- Test data factories ---
@@ -168,6 +157,7 @@ function makeSession(overrides?: Partial<SavedSession>): SavedSession {
     focus: "chest",
     orderIndex: 0,
     weekIndex: 0,
+    dayOrder: 0,
     isRest: false,
     estimatedDurationMinutes: 60,
     calorieSurplusPercentage: 15,
@@ -238,7 +228,7 @@ describe("library-placement-service", () => {
       mockGetSavedPlanById.mockResolvedValue(makeSavedPlan());
       mockCreateAtomic.mockResolvedValue("new-plan-id");
 
-      const sessionInsertQuery = makeSessionInsertQuery(["ts-1", "ts-2", "ts-3", "ts-rest"]);
+      const sessionInsertQuery = makeSessionInsertQuery();
       const groupInsertQuery = createMockQuery({ data: null, error: null });
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
@@ -274,7 +264,7 @@ describe("library-placement-service", () => {
       // carrying their exercises, each exercise naming its slot's group.
       expect(groupInsertQuery.insert).toHaveBeenCalledTimes(1);
       const groupRows = groupInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
-      expect(groupRows.map((g) => g.session_id)).toEqual(["ts-1", "ts-2", "ts-3"]);
+      expect(groupRows.map((g) => g.session_id)).toEqual(sessionIds(sessionInsertQuery));
       expect(groupInsertQuery.insert.mock.invocationCallOrder[0]).toBeLessThan(
         exerciseInsertQuery.insert.mock.invocationCallOrder[0],
       );
@@ -283,9 +273,16 @@ describe("library-placement-service", () => {
       expect(exerciseRows.map((e) => [e.session_id, e.group_id])).toEqual(
         groupRows.map((g) => [g.session_id, g.id]),
       );
-      // Window = 4 slots = 4 days → Push, Pull, Legs (rest skipped) = 3 events.
+      // Window = 4 days → Push, Pull, Legs (rest skipped) = 3 events, each
+      // naming the row minted for its session, alone on its day.
       const events = eventUpsertQuery.upsert.mock.calls[0][0];
       expect(events).toHaveLength(3);
+      expect(events.map((e: { training_session_id: string }) => e.training_session_id)).toEqual(
+        sessionIds(sessionInsertQuery),
+      );
+      expect(events.map((e: { day_order: number }) => e.day_order)).toEqual([0, 0, 0]);
+      // Sessions per week, from the program's own rows.
+      expect(mockCreateAtomic).toHaveBeenCalledWith(expect.objectContaining({ frequencyPerWeek: 3 }));
       for (const event of events) {
         expect(event.is_modified).toBe(false);
         expect(event.status).toBe("scheduled");
@@ -305,7 +302,7 @@ describe("library-placement-service", () => {
         }),
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-      const sessionInsertQuery = makeSessionInsertQuery(["ts-a", "ts-b", "ts-c"]);
+      const sessionInsertQuery = makeSessionInsertQuery();
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_sessions") return sessionInsertQuery as never;
@@ -331,7 +328,7 @@ describe("library-placement-service", () => {
         }),
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-      const sessionInsertQuery = makeSessionInsertQuery(["ts-1", "ts-2", "ts-r"]);
+      const sessionInsertQuery = makeSessionInsertQuery();
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_sessions") return sessionInsertQuery as never;
@@ -359,7 +356,7 @@ describe("library-placement-service", () => {
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
       mockGetNextPlanStartCap.mockResolvedValue("2026-04-30");
-      const sessionInsertQuery = makeSessionInsertQuery(Array.from({ length: 28 }, (_, i) => `ts-${i}`));
+      const sessionInsertQuery = makeSessionInsertQuery();
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_sessions") return sessionInsertQuery as never;
@@ -383,7 +380,7 @@ describe("library-placement-service", () => {
       mockCreateAtomic.mockResolvedValue("new-plan-id");
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_sessions") return makeSessionInsertQuery(["ts-1"]) as never;
+        if (table === "training_sessions") return makeSessionInsertQuery() as never;
         if (table === "training_events") return eventUpsertQuery as never;
         return createMockQuery({ data: null, error: null }) as never;
       });
@@ -416,7 +413,7 @@ describe("library-placement-service", () => {
       mockCreateAtomic.mockResolvedValue("new-plan-id");
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_sessions") return makeSessionInsertQuery(["ts-1", "ts-2", "ts-3"]) as never;
+        if (table === "training_sessions") return makeSessionInsertQuery() as never;
         if (table === "training_events") return eventUpsertQuery as never;
         return createMockQuery({ data: null, error: null }) as never;
       });
@@ -445,7 +442,7 @@ describe("library-placement-service", () => {
       mockCreateAtomic.mockResolvedValue("new-plan-id");
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_sessions") return makeSessionInsertQuery(["ts-1"]) as never;
+        if (table === "training_sessions") return makeSessionInsertQuery() as never;
         if (table === "training_exercises") return exerciseInsertQuery as never;
         if (table === "training_events") return createMockQuery({ data: [], error: null }) as never;
         return createMockQuery({ data: null, error: null }) as never;
@@ -477,7 +474,7 @@ describe("library-placement-service", () => {
       mockCreateAtomic.mockResolvedValue("new-plan-id");
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
       mockFrom.mockImplementation((table: string) => {
-        if (table === "training_sessions") return makeSessionInsertQuery(["ts-1"]) as never;
+        if (table === "training_sessions") return makeSessionInsertQuery() as never;
         if (table === "training_exercises") return exerciseInsertQuery as never;
         if (table === "training_events") return createMockQuery({ data: [], error: null }) as never;
         return createMockQuery({ data: null, error: null }) as never;
@@ -509,7 +506,7 @@ describe("library-placement-service", () => {
         }),
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-      const sessionInsertQuery = makeSessionInsertQuery(["ts-push", "ts-pull", "ts-legs", "ts-rest"]);
+      const sessionInsertQuery = makeSessionInsertQuery();
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_sessions") return sessionInsertQuery as never;
@@ -541,7 +538,7 @@ describe("library-placement-service", () => {
         }),
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-      const sessionInsertQuery = makeSessionInsertQuery(["ts-w0", "ts-r1", "ts-w2", "ts-r3", "ts-w4", "ts-r5"]);
+      const sessionInsertQuery = makeSessionInsertQuery();
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_sessions") return sessionInsertQuery as never;
@@ -553,7 +550,7 @@ describe("library-placement-service", () => {
 
       const events = eventUpsertQuery.upsert.mock.calls[0][0] as { training_session_id: string }[];
       expect(events).toHaveLength(3);
-      expect(events.map((e) => e.training_session_id)).toEqual(["ts-w0", "ts-w2", "ts-w4"]);
+      expect(events.map((e) => e.training_session_id)).toEqual(sessionIds(sessionInsertQuery));
     });
 
     it("multi-week program: all weeks place in (week_index, order_index) order", async () => {
@@ -569,7 +566,7 @@ describe("library-placement-service", () => {
         }),
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-      const sessionInsertQuery = makeSessionInsertQuery(["ts-a", "ts-b", "ts-c", "ts-d"]);
+      const sessionInsertQuery = makeSessionInsertQuery();
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_sessions") return sessionInsertQuery as never;
@@ -583,9 +580,7 @@ describe("library-placement-service", () => {
       expect(insertedSlots(sessionInsertQuery).map((r) => r.name)).toEqual(["A", "B", "C", "D"]);
       expect(insertedSlots(sessionInsertQuery).map((r) => r.week_index)).toEqual([0, 0, 1, 1]);
       const events = eventUpsertQuery.upsert.mock.calls[0][0] as { training_session_id: string }[];
-      expect(events.map((e) => e.training_session_id)).toEqual([
-        "ts-a", "ts-b", "ts-c", "ts-d",
-      ]);
+      expect(events.map((e) => e.training_session_id)).toEqual(sessionIds(sessionInsertQuery));
     });
 
     it("NO COMPRESSION: an all-rest week in the middle + a trailing rest still land dates correctly", async () => {
@@ -604,7 +599,7 @@ describe("library-placement-service", () => {
         }),
       );
       mockCreateAtomic.mockResolvedValue("new-plan-id");
-      const sessionInsertQuery = makeSessionInsertQuery(["ts-a", "ts-b", "ts-r1", "ts-r2", "ts-c", "ts-r3"]);
+      const sessionInsertQuery = makeSessionInsertQuery();
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockImplementation((table: string) => {
         if (table === "training_sessions") return sessionInsertQuery as never;
@@ -809,7 +804,7 @@ describe("library-placement-service", () => {
         defaultSurplusPercentage: 10,
         sessions: [
           {
-            name: "Push", focus: "chest", orderIndex: 0, isRest: false, estimatedDurationMinutes: 60,
+            name: "Push", focus: "chest", orderIndex: 0, dayOrder: 0, isRest: false, estimatedDurationMinutes: 60,
             calorieSurplusPercentage: 15, notes: null, sessionType: "training",
             groups: [{ ...STRAIGHT_SETS, exercises: [{ name: "Bench", exerciseId: "catalog-1", sets: 3 }] }],
           },
@@ -820,7 +815,7 @@ describe("library-placement-service", () => {
 
     function wireInlineMocks(exerciseCatalogIds: string[]) {
       const exercisesQuery = createMockQuery({ data: exerciseCatalogIds.map((id) => ({ id })), error: null });
-      const sessionInsertQuery = makeSessionInsertQuery(["ts-1", "ts-2", "ts-3"]);
+      const sessionInsertQuery = makeSessionInsertQuery();
       const exerciseInsertQuery = createMockQuery({ data: null, error: null });
       const eventUpsertQuery = createMockQuery({ data: [], error: null });
       const libraryQuery = createMockQuery({ data: null, error: null });
@@ -881,7 +876,7 @@ describe("library-placement-service", () => {
         plan: makeInlinePlan({
           sessions: [
             {
-              name: "Push", focus: null, orderIndex: 0, isRest: false, estimatedDurationMinutes: null,
+              name: "Push", focus: null, orderIndex: 0, dayOrder: 0, isRest: false, estimatedDurationMinutes: null,
               calorieSurplusPercentage: null, notes: null, sessionType: "training",
               groups: [
                 { ...STRAIGHT_SETS, exercises: [{ name: "Owned", exerciseId: "catalog-1", sets: 3 }] },
@@ -919,8 +914,7 @@ describe("library-placement-service", () => {
         [0, 1, 2, 3, 4, 5, 6].map((orderIndex) => ({
           weekIndex,
           // 4 training + 3 rest per week. Per-week AVERAGE, NOT the raw
-          // non-rest total — the total would fail training_plans' CHECK (1..7)
-          // at apply time.
+          // non-rest total — the total would read as 12 a week.
           isRest: orderIndex >= 4,
         })),
       );
@@ -935,13 +929,14 @@ describe("library-placement-service", () => {
       ).toBe(1);
     });
 
-    it("clamps a dense single-week program down to frequency 7", () => {
-      // 10 non-rest slots in one week: clamp to the CHECK's ceiling of 7.
+    it("counts every session of a week whose days hold several — more than seven", () => {
+      // Ten sessions in one week (two-a-days): a day can hold several, so the
+      // week's figure is ten, not a ceiling of seven.
       expect(
         deriveFrequencyPerWeek(
           Array.from({ length: 10 }, () => ({ isRest: false })),
         ),
-      ).toBe(7);
+      ).toBe(10);
     });
   });
 });
@@ -968,8 +963,8 @@ describe("library-placement-service: the block bounds the placement", () => {
     });
   }
 
-  function wire(ids: string[]) {
-    const sessionInsertQuery = makeSessionInsertQuery(ids);
+  function wire() {
+    const sessionInsertQuery = makeSessionInsertQuery();
     const exerciseInsertQuery = createMockQuery({ data: null, error: null });
     const eventUpsertQuery = createMockQuery({ data: [], error: null });
     mockFrom.mockImplementation((table: string) => {
@@ -987,7 +982,7 @@ describe("library-placement-service: the block bounds the placement", () => {
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
     mockGetBlockBound.mockRejectedValue(new Error(BLOCKS_UNREADABLE));
-    wire(["ts-1", "ts-2", "ts-3"]);
+    wire();
 
     await expect(
       placePlanOnCalendar({
@@ -1003,9 +998,7 @@ describe("library-placement-service: the block bounds the placement", () => {
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
     mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-15" });
-    const { sessionInsertQuery, eventUpsertQuery } = wire(
-      Array.from({ length: 9 }, (_, i) => `ts-${i + 1}`),
-    );
+    const { sessionInsertQuery, eventUpsertQuery } = wire();
 
     const result = await placePlanOnCalendar({
       savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
@@ -1030,7 +1023,7 @@ describe("library-placement-service: the block bounds the placement", () => {
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
     mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-08" });
-    const { sessionInsertQuery } = wire(["ts-1", "ts-2"]);
+    const { sessionInsertQuery } = wire();
 
     await placePlanOnCalendar({
       savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
@@ -1045,7 +1038,7 @@ describe("library-placement-service: the block bounds the placement", () => {
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
     mockGetBlockBound.mockResolvedValue({ kind: "next", startsOn: "2026-09-09" });
-    const { sessionInsertQuery } = wire(["ts-1", "ts-2"]);
+    const { sessionInsertQuery } = wire();
 
     await placePlanOnCalendar({
       savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
@@ -1060,7 +1053,7 @@ describe("library-placement-service: the block bounds the placement", () => {
   it("places one pass when no block covers the start date", async () => {
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
-    const { sessionInsertQuery } = wire(["ts-1", "ts-2", "ts-3"]);
+    const { sessionInsertQuery } = wire();
 
     await placePlanOnCalendar({
       savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
@@ -1076,7 +1069,7 @@ describe("library-placement-service: the block bounds the placement", () => {
     mockGetSavedPlanById.mockResolvedValue(threeSlotPlan());
     mockCreateAtomic.mockResolvedValue("new-plan-id");
     mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-15" });
-    wire(Array.from({ length: 9 }, (_, i) => `ts-${i + 1}`));
+    wire();
 
     await placePlanOnCalendar({
       savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
@@ -1087,25 +1080,142 @@ describe("library-placement-service: the block bounds the placement", () => {
     );
   });
 
-  it("refuses a template carrying two slots at one position rather than mis-linking exercises", async () => {
-    // The group batch is keyed on (week_index, order_index); a duplicate
-    // would hand one row both slots' groups and leave the other empty.
+  it("lays a day's sessions on its date in their order, each its own row, group and event", async () => {
+    // Day 1 holds a morning run and an evening lift (listed out of order here,
+    // placed by dayOrder); day 2 is rest. Two days, however many rows.
+    const groupInsertQuery = createMockQuery({ data: null, error: null });
     mockGetSavedPlanById.mockResolvedValue(
       makeSavedPlan({
         sessions: [
-          makeSession({ id: "d1", name: "One", orderIndex: 0, groups: loneGroups(makeExercise()) }),
-          makeSession({ id: "d2", name: "Two", orderIndex: 0, groups: loneGroups(makeExercise()) }),
+          makeSession({ id: "pm", name: "PM lift", orderIndex: 0, dayOrder: 1, groups: loneGroups(makeExercise({ name: "Squat" })) }),
+          makeSession({ id: "am", name: "AM run", orderIndex: 0, dayOrder: 0, groups: loneGroups(makeExercise({ name: "Run" })) }),
+          makeSession({ id: "rest", name: "Rest", orderIndex: 1, isRest: true, groups: [] }),
         ],
       }),
     );
     mockCreateAtomic.mockResolvedValue("new-plan-id");
-    wire(["ts-1", "ts-2"]);
+    const { sessionInsertQuery, exerciseInsertQuery, eventUpsertQuery } = wire();
+    const fallback = mockFrom.getMockImplementation()!;
+    mockFrom.mockImplementation(((table: string) =>
+      table === "training_exercise_groups"
+        ? groupInsertQuery
+        : fallback(table as Parameters<typeof fallback>[0])) as never);
 
-    await expect(
-      placePlanOnCalendar({
-        savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+    const result = await placePlanOnCalendar({
+      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+    });
+
+    // The window counts days: two, not three.
+    expect(mockCreateAtomic).toHaveBeenCalledWith(
+      expect.objectContaining({ windowEnd: "2026-09-08", frequencyPerWeek: 2 }),
+    );
+    const rows = insertedSlots(sessionInsertQuery);
+    expect(rows.map((r) => [r.name, r.week_index, r.order_index, r.day_order, r.is_rest])).toEqual([
+      ["AM run", 0, 0, 0, false],
+      ["PM lift", 0, 0, 1, false],
+      ["Rest", 0, 1, 0, true],
+    ]);
+    const [amId, pmId] = sessionIds(sessionInsertQuery);
+    expect(amId).not.toBe(pmId);
+    // Each session's groups and exercises under its own row.
+    const groups = groupInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(groups.map((g) => g.session_id)).toEqual([amId, pmId]);
+    const exercises = exerciseInsertQuery.insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(exercises.map((e) => [e.name, e.session_id])).toEqual([
+      ["Run", amId],
+      ["Squat", pmId],
+    ]);
+    // Both on the first date, in the day's order; the rest day emits nothing.
+    const events = eventUpsertQuery.upsert.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(events.map((e) => [e.training_session_id, e.date, e.day_order])).toEqual([
+      [amId, "2026-09-07", 0],
+      [pmId, "2026-09-07", 1],
+    ]);
+    expect(result.sessionsCreated).toBe(2);
+  });
+
+  it("records sessions per week, more than seven when the program's days hold several", async () => {
+    // One week: five days of two sessions, two rest days — ten sessions a week.
+    mockGetSavedPlanById.mockResolvedValue(
+      makeSavedPlan({
+        sessions: Array.from({ length: 7 }, (_, day) =>
+          day < 5
+            ? [0, 1].map((place) =>
+                makeSession({ id: `d${day}-${place}`, name: `D${day} S${place}`, orderIndex: day, dayOrder: place, groups: [] }),
+              )
+            : [makeSession({ id: `rest-${day}`, name: "Rest", orderIndex: day, isRest: true, groups: [] })],
+        ).flat(),
       }),
-    ).rejects.toThrow("two sessions at the same position");
+    );
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    const { eventUpsertQuery } = wire();
+
+    await placePlanOnCalendar({
+      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+    });
+
+    expect(mockCreateAtomic).toHaveBeenCalledWith(
+      expect.objectContaining({ frequencyPerWeek: 10, windowEnd: "2026-09-13" }),
+    );
+    expect(eventUpsertQuery.upsert.mock.calls[0][0]).toHaveLength(10);
+  });
+
+  it("repeats a two-a-day to fill its block, every cycle keeping the day's order on fresh rows", async () => {
+    // A 2-day program (a two-a-day, then rest) in a 4-day block: two cycles.
+    mockGetSavedPlanById.mockResolvedValue(
+      makeSavedPlan({
+        sessions: [
+          makeSession({ id: "am", name: "AM", orderIndex: 0, dayOrder: 0, groups: [] }),
+          makeSession({ id: "pm", name: "PM", orderIndex: 0, dayOrder: 1, groups: [] }),
+          makeSession({ id: "rest", name: "Rest", orderIndex: 1, isRest: true, groups: [] }),
+        ],
+      }),
+    );
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    mockGetBlockBound.mockResolvedValue({ kind: "covering", endsOn: "2026-09-10" });
+    const { sessionInsertQuery, eventUpsertQuery } = wire();
+
+    await placePlanOnCalendar({
+      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+    });
+
+    const rows = insertedSlots(sessionInsertQuery);
+    expect(rows.map((r) => [r.name, r.week_index, r.day_order])).toEqual([
+      ["AM", 0, 0], ["PM", 0, 1], ["Rest", 0, 0],
+      ["AM", 1, 0], ["PM", 1, 1], ["Rest", 1, 0],
+    ]);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(6);
+    const events = eventUpsertQuery.upsert.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(events.map((e) => [e.session_name, e.date, e.day_order])).toEqual([
+      ["AM", "2026-09-07", 0],
+      ["PM", "2026-09-07", 1],
+      ["AM", "2026-09-09", 0],
+      ["PM", "2026-09-09", 1],
+    ]);
+  });
+
+  it("reads rows sharing a place on a day in the order given, and places them unambiguously", async () => {
+    // Two sessions stored at one place (from before a day's order existed):
+    // the day holds both, in the order the read returned them, renumbered.
+    mockGetSavedPlanById.mockResolvedValue(
+      makeSavedPlan({
+        sessions: [
+          makeSession({ id: "d1", name: "One", orderIndex: 0, dayOrder: 0, groups: [] }),
+          makeSession({ id: "d2", name: "Two", orderIndex: 0, dayOrder: 0, groups: [] }),
+        ],
+      }),
+    );
+    mockCreateAtomic.mockResolvedValue("new-plan-id");
+    const { sessionInsertQuery } = wire();
+
+    await placePlanOnCalendar({
+      savedPlanId: "sp-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-09-07",
+    });
+
+    expect(insertedSlots(sessionInsertQuery).map((r) => [r.name, r.day_order])).toEqual([
+      ["One", 0],
+      ["Two", 1],
+    ]);
   });
 });
 
@@ -1118,7 +1228,7 @@ describe("library-placement-service: the placement supersedes the earlier progra
 
   function wire(opts: { plans?: unknown[]; exerciseError?: { message: string } | null } = {}) {
     const plansQuery = createMockQuery({ data: opts.plans ?? EARLIER, error: null });
-    const sessionInsertQuery = makeSessionInsertQuery(["ts-1", "ts-2", "ts-3", "ts-rest"]);
+    const sessionInsertQuery = makeSessionInsertQuery();
     const exerciseInsertQuery = createMockQuery({ data: null, error: opts.exerciseError ?? null });
     const eventUpsertQuery = createMockQuery({ data: [], error: null });
     mockFrom.mockImplementation((table: string) => {

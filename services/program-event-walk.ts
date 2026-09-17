@@ -4,9 +4,9 @@ import { getBlockBoundForDate } from "./client-blocks-service";
 import { getDateString } from "@/lib/date-helpers";
 import type { TrainingEventInsert } from "@/lib/database-helpers";
 
-// The ordered program the date-walk maps onto calendar dates. One entry per
-// authored slot (training AND rest), referencing the placed training_sessions
-// row id.
+/** Rows per upsert statement: a long block of several-session days runs to thousands of events. */
+const UPSERT_CHUNK = 500;
+
 /** `date + n` days, as a YYYY-MM-DD string. */
 function addDays(date: string, n: number): string {
   const d = new Date(date + "T00:00:00");
@@ -14,9 +14,9 @@ function addDays(date: string, n: number): string {
   return getDateString(d);
 }
 
-export type ProgramSlot = {
+/** One session of a placed program's day: its placed row and what its calendar entry carries. */
+export type ProgramSession = {
   id: string;
-  isRest: boolean;
   name: string;
   focus: string | null;
   calorieSurplusPercentage: number | null;
@@ -24,61 +24,65 @@ export type ProgramSlot = {
 };
 
 /**
- * Generate training events by walking calendar dates through the ordered program
- * slots — a sequential date-walk over the whole authored program. Each calendar
- * day maps to programSlots[slotPosition]; a rest slot advances the position but
- * emits NO event, so a rest day never spawns a training_event (it still consumes
- * its date). Each slot references a distinct cloned session id and the
- * (client, session, date) upsert is idempotent.
+ * Generate training events by walking calendar dates through the program's days
+ * — a sequential date-walk over the whole authored program. Each calendar day
+ * maps to programDays[position], the sessions of that day in order: each becomes
+ * an event on the date at its place in the day (`day_order`). A rest day holds
+ * none, so it spawns no training_event and still consumes its date. Every
+ * session references a distinct cloned session row and the (client, session,
+ * date) upsert is idempotent.
  */
 export async function generateProgramEvents(params: {
   clientId: string;
   planId: string;
-  programSlots: ProgramSlot[];
+  programDays: ProgramSession[][];
   startDate: string;
   endDate: string;
 }): Promise<number> {
-  const { clientId, planId, programSlots, startDate, endDate } = params;
+  const { clientId, planId, programDays, startDate, endDate } = params;
 
-  const slotCount = programSlots.length;
-  if (slotCount === 0) return 0;
+  const dayCount = programDays.length;
+  if (dayCount === 0) return 0;
 
   const rows: TrainingEventInsert[] = [];
   const start = new Date(startDate + "T00:00:00");
   const end = new Date(endDate + "T00:00:00");
-  let slotPosition = 0;
+  let position = 0;
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const slot = programSlots[slotPosition];
-    if (!slot.isRest) {
+    programDays[position].forEach((session, place) => {
       rows.push({
         client_id: clientId,
         training_plan_id: planId,
-        training_session_id: slot.id,
+        training_session_id: session.id,
         date: getDateString(d),
-        session_name: slot.name,
-        session_focus: slot.focus ?? null,
-        estimated_calories: slot.estimatedCalories ?? null,
-        calorie_surplus_percentage: slot.calorieSurplusPercentage ?? null,
+        day_order: place,
+        session_name: session.name,
+        session_focus: session.focus ?? null,
+        estimated_calories: session.estimatedCalories ?? null,
+        calorie_surplus_percentage: session.calorieSurplusPercentage ?? null,
         status: "scheduled",
         is_modified: false,
       });
-    }
-    // Every caller lays exactly as many slots as its window has days, so the
-    // walk cannot run off the end; the modulo is a cheap guard.
-    slotPosition = (slotPosition + 1) % slotCount;
+    });
+    // Every caller lays exactly as many days as its window has, so the walk
+    // cannot run off the end; the modulo is a cheap guard.
+    position = (position + 1) % dayCount;
   }
 
   if (rows.length === 0) return 0;
 
-  const { error } = await supabaseAdmin
-    .from("training_events")
-    .upsert(rows, {
-      onConflict: "client_id,training_session_id,date",
-      ignoreDuplicates: true,
-    });
-
-  if (error) throw new Error(`Failed to generate events: ${error.message}`);
+  // Chunked: 52 weeks of days holding several sessions each is thousands of
+  // rows, and one statement of unbounded width is its own problem.
+  for (let from = 0; from < rows.length; from += UPSERT_CHUNK) {
+    const { error } = await supabaseAdmin
+      .from("training_events")
+      .upsert(rows.slice(from, from + UPSERT_CHUNK), {
+        onConflict: "client_id,training_session_id,date",
+        ignoreDuplicates: true,
+      });
+    if (error) throw new Error(`Failed to generate events: ${error.message}`);
+  }
 
   return rows.length;
 }
@@ -141,27 +145,28 @@ export async function resolveWindowCap(
  */
 export async function resolvePlacementWindowEnd(params: {
   clientId: string;
-  slotCount: number;
+  /** The authored program's days — its length, however many sessions they hold. */
+  dayCount: number;
   startDate: string;
 }): Promise<string> {
-  const { clientId, slotCount, startDate } = params;
+  const { clientId, dayCount, startDate } = params;
   const { stretchesToCap, cap } = await resolveWindowCap(clientId, startDate);
-  const ownEnd = placementEndDate(startDate, slotCount);
+  const ownEnd = placementEndDate(startDate, dayCount);
   if (stretchesToCap && cap) return cap.endsOn;
   return cap && cap.endsOn < ownEnd ? cap.endsOn : ownEnd;
 }
 
 /**
- * Repeat the authored program until it covers `days`, then cut it there.
+ * Repeat the authored program's days until they cover `days`, then cut there.
  *
- * Cloning, never sharing: the caller gives every returned slot its OWN row, so a
- * coach can make cycle three heavier than cycle one. Sharing rows would make one
- * edit rewrite every cycle at once, which is the opposite of how a block is
- * programmed.
+ * Cloning, never sharing: the caller gives every returned day's sessions their
+ * OWN rows, so a coach can make cycle three heavier than cycle one. Sharing rows
+ * would make one edit rewrite every cycle at once, which is the opposite of how
+ * a block is programmed.
  *
  * Each cycle's `weekIndex` is offset by the authored program's own week span, so
  * `(weekIndex, orderIndex)` keeps climbing across cycles — that pair IS the
- * date-walk's slot position and the ordering every placed-plan reader uses.
+ * date-walk's day position and the ordering every placed-plan reader uses.
  * Cycle 0 is returned with the authored coordinates untouched, so a program
  * placed once is byte-identical to what placement produced before blocks bounded
  * anything. A final partial cycle is cut mid-program: the block ends when it ends.
@@ -176,19 +181,19 @@ export function expandProgramToWindow<T extends { weekIndex: number; orderIndex:
 
   const expanded: T[] = [];
   for (let i = 0; i < days; i += 1) {
-    const slot = authored[i % authored.length];
+    const day = authored[i % authored.length];
     const cycle = Math.floor(i / authored.length);
-    expanded.push({ ...slot, weekIndex: slot.weekIndex + cycle * weeksPerCycle });
+    expanded.push({ ...day, weekIndex: day.weekIndex + cycle * weeksPerCycle });
   }
   return expanded;
 }
 
 /**
- * The last day of one pass of a placed program: `startDate + max(1, slotCount) − 1`.
+ * The last day of one pass of a placed program: `startDate + max(1, dayCount) − 1`.
  * The length a placement asks for when no block stretches it. Nothing derives
  * an existing program's end from its rows any more — the end is on the row
  * (migration 167) and every reader takes it from there.
  */
-export function placementEndDate(startDate: string, slotCount: number): string {
-  return addDays(startDate, Math.max(1, slotCount) - 1);
+export function placementEndDate(startDate: string, dayCount: number): string {
+  return addDays(startDate, Math.max(1, dayCount) - 1);
 }

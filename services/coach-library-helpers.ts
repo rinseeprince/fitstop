@@ -4,7 +4,9 @@ import type {
   CoachSavedExerciseGroupRow,
   CoachSavedExerciseInsert,
   CoachSavedExerciseRow,
+  CoachSavedSessionInsert,
 } from "@/lib/database-helpers";
+import { chunkIds } from "@/lib/paged-fetch";
 import type { SetSpec } from "@/utils/exercise-set-specs";
 import { projectExerciseCompact } from "@/utils/exercise-set-specs";
 import { groupSettingsToRow, type GroupSettingsInput } from "@/utils/exercise-groups";
@@ -21,14 +23,14 @@ import { groupSettingsToRow, type GroupSettingsInput } from "@/utils/exercise-gr
 
 /**
  * Derive frequency_per_week from an in-memory session list. Shared by
- * overwriteSavedPlan (library save), recomputePlanFrequency, and the inline
- * placement path so they never drift.
+ * overwriteSavedPlan (library save), recomputePlanFrequency, placement and the
+ * plan editor's save so they never drift.
  *
- * frequency_per_week is a per-week AVERAGE clamped to 1..7: at apply time it is
- * inserted into training_plans.frequency_per_week, which carries
- * CHECK (frequency_per_week >= 1 AND <= 7) (migration 015) — a raw non-rest
- * total across a multi-week program (e.g. 12 for 3 weeks x 4/wk) would make the
- * placement RPC fail. All-rest programs clamp up to 1.
+ * frequency_per_week is the program's SESSIONS per week, averaged over its
+ * weeks: a day can hold several sessions, so a week can hold more than seven
+ * (migration 180 lifted the ceiling). A raw total across a multi-week program
+ * (12 for 3 weeks x 4/wk) would read as 12 a week. An all-rest program reads 1:
+ * training_plans.frequency_per_week is CHECK (>= 1).
  */
 export function deriveFrequencyPerWeek(
   sessions: Array<{ weekIndex?: number; isRest: boolean }>,
@@ -36,7 +38,7 @@ export function deriveFrequencyPerWeek(
   const weekCount =
     sessions.reduce((max, s) => Math.max(max, s.weekIndex ?? 0), 0) + 1;
   const nonRestCount = sessions.filter((s) => !s.isRest).length;
-  return Math.min(7, Math.max(1, Math.round(nonRestCount / weekCount)));
+  return Math.max(1, Math.round(nonRestCount / weekCount));
 }
 
 /**
@@ -228,6 +230,35 @@ export async function insertSavedGroupRows(rows: SavedGroupRows): Promise<void> 
   }
 }
 
+/**
+ * Write a program's session rows — ids minted by the caller, so each row's
+ * groups name it before anything is written and nothing is matched back from
+ * `RETURNING`. Chunked: a program's days can hold several sessions each, so a
+ * long program runs to a few thousand rows, a few statements rather than one
+ * round trip per row.
+ */
+export async function insertSavedSessionRows(
+  rows: readonly (CoachSavedSessionInsert & { id: string })[],
+): Promise<void> {
+  for (let from = 0; from < rows.length; from += INSERT_CHUNK) {
+    const { error } = await supabaseAdmin
+      .from("coach_saved_sessions")
+      .insert(rows.slice(from, from + INSERT_CHUNK));
+    if (error) throw new Error(`Failed to insert saved sessions: ${error.message}`);
+  }
+}
+
+/**
+ * Delete library sessions by id, in chunks that keep each `.in()` filter under
+ * the request-line ceiling; their groups and exercises cascade.
+ */
+export async function deleteSavedSessions(ids: readonly string[]): Promise<void> {
+  for (const chunk of chunkIds([...ids])) {
+    const { error } = await supabaseAdmin.from("coach_saved_sessions").delete().in("id", chunk);
+    if (error) throw new Error(`Failed to delete saved sessions: ${error.message}`);
+  }
+}
+
 /** Write `groups` into one library session. */
 export async function insertSavedGroups(
   sessionId: string,
@@ -253,9 +284,8 @@ export async function recomputePlanFrequency(
     .eq("saved_plan_id", planId);
   if (error) throw new Error(`Failed to read sessions for frequency recompute: ${error.message}`);
 
-  // Delegate to the shared derivation so the 1..7 frequency clamp (see
-  // deriveFrequencyPerWeek) applies here too — this value flows into the
-  // CHECK-constrained training_plans.frequency_per_week at apply time.
+  // Delegate to the shared derivation so this path counts sessions per week
+  // exactly as the save and placement do (see deriveFrequencyPerWeek).
   const frequencyPerWeek = deriveFrequencyPerWeek(
     (sessions ?? []).map((s) => ({
       weekIndex: s.week_index ?? 0,

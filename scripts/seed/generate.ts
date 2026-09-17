@@ -364,7 +364,7 @@ export function generateCoachBundle(coachIdx: number, ctx: SeedContext): Step[] 
           status: "active",
           coach_prompt: "Seeded programme block.", // NOT NULL, vestigial AI field
           split_type: planRng.pick(SPLIT_TYPES),
-          frequency_per_week: TRAIN_DAYS_PER_WEEK, // per-week average, CHECK 1..7
+          frequency_per_week: TRAIN_DAYS_PER_WEEK, // sessions per week, CHECK >= 1
           program_duration_weeks: Math.round(blockLen / 7),
           effective_from: effFrom,
           effective_until: addDays(effFrom, blockLen - 1),

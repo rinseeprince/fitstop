@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { STRAIGHT_SETS, sessionExercises, type GroupSettings } from "@/utils/exercise-groups";
 import { setSpecCount } from "@/utils/exercise-set-specs";
 import { useProgramBuilderState, findSession } from "./use-program-builder-state";
+import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
 import {
   DAYS_PER_WEEK,
   MAX_WEEKS,
@@ -65,7 +66,9 @@ describe("useProgramBuilderState — weeks", () => {
   it("duplicateWeek deep-clones with fresh uids and inserts after the source", () => {
     const { result } = setup(2);
     const first = result.current.draft!.weeks[0];
-    act(() => result.current.addSessionToSlot(first.days[0].uid));
+    act(() => {
+      result.current.addSessionToSlot(first.days[0].uid);
+    });
     const source = result.current.draft!.weeks[0];
 
     act(() => result.current.duplicateWeek(source.uid));
@@ -126,7 +129,9 @@ describe("useProgramBuilderState — weeks", () => {
   it("insertWeekAfter normalizes an incoming setSpecs: [] to null (backstop)", () => {
     const { result } = setup(1);
     const w0 = result.current.draft!.weeks[0];
-    act(() => result.current.addSessionToSlot(w0.days[0].uid));
+    act(() => {
+      result.current.addSessionToSlot(w0.days[0].uid);
+    });
     act(() => {
       const source = result.current.draft!.weeks[0];
       const incoming = makeRestWeek(0);
@@ -185,7 +190,9 @@ describe("useProgramBuilderState — weeks", () => {
   it("deleteWeek and reorderWeek renumber weekIndex", () => {
     const { result } = setup(3);
     const [w0, w1, w2] = result.current.draft!.weeks;
-    act(() => result.current.addSessionToSlot(w2.days[0].uid));
+    act(() => {
+      result.current.addSessionToSlot(w2.days[0].uid);
+    });
 
     act(() => result.current.reorderWeek(w2.uid, w0.uid));
     let draft = result.current.draft!;
@@ -201,19 +208,29 @@ describe("useProgramBuilderState — weeks", () => {
 });
 
 describe("useProgramBuilderState — day slots", () => {
-  it("addSessionToSlot fills a rest slot; clearSlot reverts it to rest", () => {
+  it("addSessionToSlot fills a rest slot, then adds a second session last; clearSlot reverts it to rest", () => {
     const { result } = setup(1);
     const slot = result.current.draft!.weeks[0].days[2];
 
-    act(() => result.current.addSessionToSlot(slot.uid));
+    let firstUid: string | null = null;
+    act(() => {
+      firstUid = result.current.addSessionToSlot(slot.uid);
+    });
     let updated = result.current.draft!.weeks[0].days[2];
     expect(updated.isRest).toBe(false);
     expect(updated.sessions.map((s) => s.name)).toEqual(["Day 3"]);
+    // It hands back the uid of the session it added.
+    expect(updated.sessions[0].uid).toBe(firstUid);
 
-    // Adding onto a day holding a session is a no-op.
-    const uid = updated.sessions[0].uid;
-    act(() => result.current.addSessionToSlot(slot.uid));
-    expect(result.current.draft!.weeks[0].days[2].sessions.map((s) => s.uid)).toEqual([uid]);
+    // Adding onto a day holding a session adds another, after it.
+    let secondUid: string | null = null;
+    act(() => {
+      secondUid = result.current.addSessionToSlot(slot.uid, "PM lift");
+    });
+    expect(result.current.draft!.weeks[0].days[2].sessions.map((s) => [s.uid, s.name])).toEqual([
+      [firstUid, "Day 3"],
+      [secondUid, "PM lift"],
+    ]);
 
     act(() => result.current.clearSlot(slot.uid));
     updated = result.current.draft!.weeks[0].days[2];
@@ -224,7 +241,9 @@ describe("useProgramBuilderState — day slots", () => {
   it("moveSession to a rest slot moves (source becomes rest)", () => {
     const { result } = setup(2);
     const source = result.current.draft!.weeks[0].days[0];
-    act(() => result.current.addSessionToSlot(source.uid));
+    act(() => {
+      result.current.addSessionToSlot(source.uid);
+    });
     const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
     const target = result.current.draft!.weeks[1].days[6];
 
@@ -236,25 +255,28 @@ describe("useProgramBuilderState — day slots", () => {
     expect(draft.weeks[1].days[6].isRest).toBe(false);
   });
 
-  it("moveSession onto an occupied slot swaps the two sessions", () => {
+  it("moveSession onto an occupied slot joins it, last — no swap", () => {
     const { result } = setup(1);
     const [a, b] = [
       result.current.draft!.weeks[0].days[0],
       result.current.draft!.weeks[0].days[3],
     ];
-    act(() => result.current.addSessionToSlot(a.uid));
-    act(() => result.current.addSessionToSlot(b.uid));
+    act(() => {
+      result.current.addSessionToSlot(a.uid);
+    });
+    act(() => {
+      result.current.addSessionToSlot(b.uid);
+    });
     const uidA = sessionAt(result.current.draft!, 0, 0)!.uid;
     const uidB = sessionAt(result.current.draft!, 0, 3)!.uid;
 
     act(() => result.current.moveSession(uidA, b.uid));
     const draft = result.current.draft!;
-    expect(sessionAt(draft, 0, 0)!.uid).toBe(uidB);
-    expect(sessionAt(draft, 0, 3)!.uid).toBe(uidA);
-    // Slots stayed put; orderIndex/isRest still consistent.
+    expect(draft.weeks[0].days[3].sessions.map((s) => s.uid)).toEqual([uidB, uidA]);
+    // Slots stayed put; orderIndex/isRest still consistent — day 1 is rest now.
     expect(draft.weeks[0].days.map((s) => s.orderIndex)).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(draft.weeks[0].days.map((s) => s.isRest)).toEqual([
-      false, true, true, false, true, true, true,
+      true, true, true, false, true, true, true,
     ]);
   });
 });
@@ -330,18 +352,59 @@ describe("useProgramBuilderState — a day holding several sessions", () => {
     expect(draft.weeks[0].days[0].isRest).toBe(false);
   });
 
-  it("moveSession refuses a day holding two, a swap for a session that isn't alone on its day, and its own day", () => {
+  it("moveSession joins a day holding two, last, and a session that shares its day joins a day holding one", () => {
+    const { result } = seedTwoADay();
+    const [dayOne, , , dayFour] = result.current.draft!.weeks[0].days;
+
+    act(() => result.current.moveSession("sess-upper", dayOne.uid));
+    expect(namesOn(result.current.draft!, 0)).toEqual(["AM run", "PM lift", "Upper"]);
+    expect(result.current.draft!.weeks[0].days[3]).toMatchObject({ isRest: true, sessions: [] });
+
+    act(() => result.current.moveSession("sess-run", dayFour.uid));
+    expect(namesOn(result.current.draft!, 3)).toEqual(["AM run"]);
+    expect(namesOn(result.current.draft!, 0)).toEqual(["PM lift", "Upper"]);
+    expect(result.current.isDirty).toBe(true);
+  });
+
+  it("moveSession onto its own day, and onto a full day, changes nothing and doesn't dirty", () => {
     const { result } = seedTwoADay();
     const before = result.current.draft;
-    const [dayOne, , , dayFour] = before!.weeks[0].days;
-
-    // Upper is alone on its day, but day 1 holds two: no swap, no join.
-    act(() => result.current.moveSession("sess-upper", dayOne.uid));
-    // The run shares its day: it can't swap with Upper.
-    act(() => result.current.moveSession("sess-run", dayFour.uid));
-    // Its own day holding two changes nothing.
+    const [dayOne, , , , , , daySeven] = before!.weeks[0].days;
     act(() => result.current.moveSession("sess-lift", dayOne.uid));
+    expect(result.current.draft).toBe(before);
+    expect(result.current.isDirty).toBe(false);
 
+    for (let i = 0; i < MAX_SESSIONS_PER_DAY; i++) {
+      act(() => result.current.placeSession(daySeven.uid, blank(`sess-full-${i}`, `Full ${i}`)));
+    }
+    act(() => {
+      result.current.markSaved(result.current.getRevision());
+    });
+    const full = result.current.draft;
+    act(() => result.current.moveSession("sess-upper", daySeven.uid));
+    // One more by any way in is refused the same way.
+    act(() => result.current.placeSession(daySeven.uid, blank("sess-extra", "Extra")));
+    let added: string | null = "unset";
+    act(() => {
+      added = result.current.addSessionToSlot(daySeven.uid);
+    });
+    expect(added).toBeNull();
+    expect(result.current.draft).toBe(full);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it("reorderSession changes a session's place in its day; already there is a clean no-op", () => {
+    const { result } = seedTwoADay();
+    act(() => result.current.reorderSession("sess-lift", 0));
+    expect(namesOn(result.current.draft!, 0)).toEqual(["PM lift", "AM run"]);
+    expect(result.current.isDirty).toBe(true);
+
+    act(() => {
+      result.current.markSaved(result.current.getRevision());
+    });
+    const before = result.current.draft;
+    act(() => result.current.reorderSession("sess-lift", 0));
+    act(() => result.current.reorderSession("sess-gone", 1));
     expect(result.current.draft).toBe(before);
     expect(result.current.isDirty).toBe(false);
   });
@@ -371,26 +434,31 @@ describe("useProgramBuilderState — placeSession (library insert)", () => {
     expect(result.current.isDirty).toBe(true);
   });
 
-  it("a day holding a session is a clean no-op (it takes a session only when rest)", () => {
+  it("on a day holding a session, the clone joins it, after the session already there", () => {
     const { result } = setup(1);
     const slot = result.current.draft!.weeks[0].days[0];
-    act(() => result.current.addSessionToSlot(slot.uid));
+    act(() => {
+      result.current.addSessionToSlot(slot.uid);
+    });
     const original = sessionAt(result.current.draft!, 0, 0);
 
-    // Reset dirty via a save snapshot so the no-op assertion is clean.
     act(() => {
       result.current.markSaved(result.current.getRevision());
     });
     act(() => result.current.placeSession(slot.uid, makeLibraryClone()));
 
-    expect(sessionAt(result.current.draft!, 0, 0)).toBe(original);
-    expect(result.current.isDirty).toBe(false);
+    const day = result.current.draft!.weeks[0].days[0];
+    expect(day.sessions.map((s) => s.name)).toEqual(["Day 1", "Push Day A"]);
+    expect(day.sessions[0]).toEqual(original);
+    expect(result.current.isDirty).toBe(true);
   });
 
   it("addSessionToSlot accepts a custom name (create-blank flow)", () => {
     const { result } = setup(1);
     const slot = result.current.draft!.weeks[0].days[4];
-    act(() => result.current.addSessionToSlot(slot.uid, "Untitled session"));
+    act(() => {
+      result.current.addSessionToSlot(slot.uid, "Untitled session");
+    });
     expect(sessionAt(result.current.draft!, 0, 4)?.name).toBe("Untitled session");
   });
 });
@@ -416,7 +484,9 @@ describe("useProgramBuilderState — exercises + normalize", () => {
 
   it("add/update/remove exercise via session uid", () => {
     const { result } = setup(1);
-    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
+    act(() => {
+      result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid);
+    });
     const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
 
     act(() => result.current.addExercise(sessionUid, baseExercise));
@@ -434,7 +504,9 @@ describe("useProgramBuilderState — exercises + normalize", () => {
 
   it("normalize reverts an empty setSpecs array to null (never serialize [])", () => {
     const { result } = setup(1);
-    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
+    act(() => {
+      result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid);
+    });
     const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
     act(() => result.current.addExercise(sessionUid, baseExercise));
     const exUid = sessionExercises(findSession(result.current.draft, sessionUid)!)[0].uid;
@@ -445,7 +517,9 @@ describe("useProgramBuilderState — exercises + normalize", () => {
 
   it("normalize renumbers set_number after spec updates", () => {
     const { result } = setup(1);
-    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
+    act(() => {
+      result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid);
+    });
     const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
     act(() => result.current.addExercise(sessionUid, baseExercise));
     const exUid = sessionExercises(findSession(result.current.draft, sessionUid)!)[0].uid;
@@ -702,7 +776,9 @@ describe("useProgramBuilderState — no-op mutations + revision tracking", () =>
 
     // Real edit dirties; markSaved at the current revision cleans.
     const slot = result.current.draft!.weeks[0].days[0];
-    act(() => result.current.addSessionToSlot(slot.uid));
+    act(() => {
+      result.current.addSessionToSlot(slot.uid);
+    });
     expect(result.current.isDirty).toBe(true);
     act(() => {
       result.current.markSaved(result.current.getRevision());
@@ -712,13 +788,13 @@ describe("useProgramBuilderState — no-op mutations + revision tracking", () =>
     const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
     // Self-drop (drag released over its own slot).
     act(() => result.current.moveSession(sessionUid, slot.uid));
+    // Its own place in its own day.
+    act(() => result.current.reorderSession(sessionUid, 0));
     // Blur-without-change commits.
     act(() => result.current.updateSession(sessionUid, { name: "Day 1" }));
     act(() => result.current.setName("P"));
     act(() => result.current.setDescription(null));
     act(() => result.current.setDefaultSurplus(null));
-    // Add onto an occupied slot.
-    act(() => result.current.addSessionToSlot(slot.uid));
     expect(result.current.isDirty).toBe(false);
   });
 
@@ -744,11 +820,15 @@ describe("useProgramBuilderState — no-op mutations + revision tracking", () =>
 
   it("markSaved clears dirty only when nothing mutated since the snapshot", () => {
     const { result } = setup(1);
-    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
+    act(() => {
+      result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid);
+    });
 
     // Snapshot taken at save time; an edit lands while the save is in flight.
     const revision = result.current.getRevision();
-    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[1].uid));
+    act(() => {
+      result.current.addSessionToSlot(result.current.draft!.weeks[0].days[1].uid);
+    });
 
     let clean = true;
     act(() => {
@@ -782,7 +862,9 @@ describe("useProgramBuilderState — assistant additions (builder S6a)", () => {
 
   it("applyAssistantOps applies a whole turn as ONE revision bump and surfaces skips", () => {
     const { result } = setup(1);
-    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
+    act(() => {
+      result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid);
+    });
     const sessionUid = sessionAt(result.current.draft!, 0, 0)!.uid;
 
     const before = result.current.getRevision();
@@ -803,11 +885,15 @@ describe("useProgramBuilderState — assistant additions (builder S6a)", () => {
 
   it("replaceDraft restores a snapshot THROUGH apply (revision moves — the markSaved race is closed)", () => {
     const { result } = setup(1);
-    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid));
+    act(() => {
+      result.current.addSessionToSlot(result.current.draft!.weeks[0].days[0].uid);
+    });
     const snapshot = result.current.getDraft()!;
     const wasDirty = result.current.getDirty();
 
-    act(() => result.current.addSessionToSlot(result.current.draft!.weeks[0].days[1].uid));
+    act(() => {
+      result.current.addSessionToSlot(result.current.draft!.weeks[0].days[1].uid);
+    });
     const saveRevision = result.current.getRevision();
 
     // Undo lands while a save is in flight…

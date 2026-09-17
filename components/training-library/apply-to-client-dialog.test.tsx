@@ -134,6 +134,25 @@ afterEach(() => vi.restoreAllMocks());
 // picker's `min` is the deletion floor, the dialog opens on a usable date, and
 // a greyed-out today is explained under the field. The server is the belt;
 // this is the affordance.
+describe("ApplyToClientDialog — the program's figures", () => {
+  it("counts training and rest DAYS, however many sessions a day holds", () => {
+    // Two days of two sessions, one of one, and four rest days: 3 training + 4 rest.
+    const at = (orderIndex: number, dayOrder: number, isRest = false) => ({
+      orderIndex,
+      dayOrder,
+      weekIndex: 0,
+      isRest,
+    });
+    renderDialog({
+      savedPlan: {
+        ...PLAN,
+        sessions: [at(0, 0), at(0, 1), at(1, 0), at(1, 1), at(2, 0), at(3, 0, true), at(4, 0, true), at(5, 0, true), at(6, 0, true)],
+      } as unknown as SavedPlan,
+    });
+    expect(screen.getByText("3 training + 4 rest")).toBeInTheDocument();
+  });
+});
+
 describe("ApplyToClientDialog — the start floor", () => {
   it("floors the picker at the server's floor, opens on it, and says why today is greyed", () => {
     state.planStartFloor = TOMORROW;

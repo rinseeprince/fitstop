@@ -9,12 +9,16 @@ import {
   rectIntersection,
   useSensor,
   useSensors,
+  type ClientRect,
+  type Collision,
   type CollisionDetection,
   type DragEndEvent,
+  type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type { Exercise, SavedSession } from "@/types/training";
+import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
 import type { SessionDraft, WeekDraft } from "./program-builder-types";
 import { findSession } from "./use-program-builder-state";
 import type { ProgramDraft } from "./program-builder-types";
@@ -24,10 +28,11 @@ import type { ProgramDraft } from "./program-builder-types";
 // it never highlights and a drop there is inert:
 // - "week": sortable week rows (vertical reorder)
 // - "session": one session card of a day cell, dropped on a "day-slot"
-//   droppable: onto a rest day it moves; onto a day holding one session, when
-//   it is the only session on its own day, the two swap
-// - "library-session": a library-panel session card, dropped on a REST
-//   day-slot only
+//   droppable: onto another day it joins that day, last; over its own day it
+//   changes its place in the day, where the line between the day's cards says
+//   (the cards are "day-session" droppables for that alone)
+// - "library-session": a library-panel session card, dropped on a day-slot
+//   with room — it joins the day, last
 // - "library-exercise": a library-panel exercise card, dropped on a day-slot
 //   holding exactly ONE session — it appends to that session (a rest day has
 //   none to append to; on a day holding several the coach adds it inside the
@@ -40,8 +45,8 @@ export type SessionDragData = {
   type: "session";
   sessionUid: string;
   fromSlotUid: string;
-  /** Whether the session is the only one on its day — only then may it swap. */
-  aloneOnDay: boolean;
+  /** The session's place in its day, 0 first. */
+  index: number;
 };
 export type LibrarySessionDragData = {
   type: "library-session";
@@ -58,6 +63,17 @@ export type SlotDropData = {
   // lookup: how many sessions it holds.
   sessionCount: number;
 };
+/** A session card in a day cell: where a session dragged within its own day can land. */
+export type DaySessionDropData = { type: "day-session"; slotUid: string; index: number };
+
+/**
+ * A session dragged over its own day: the place in the day, counted as it
+ * stands, before which it would land (the day's session count = after the last)
+ * — null while landing there would leave the day's order as it is.
+ */
+export type DayReorder = { slotUid: string; place: number | null };
+
+export const daySessionDropId = (sessionUid: string) => `day-session:${sessionUid}`;
 
 // A week is drag-locked when any of its slots is history (placed-plan target).
 function weekIsLocked(
@@ -77,23 +93,24 @@ type ActiveDrag =
   | { type: "library-exercise"; exercise: Exercise };
 
 // Which day-slot droppables a drag may collide with — pure so it's
-// unit-testable without dnd-kit geometry. A session hits a rest slot, or a
-// slot holding one session when it is alone on its own day (the swap); a
-// library-session only REST slots; a library-exercise only a slot holding
-// exactly one session. A locked slot (placed-plan history) accepts nothing.
+// unit-testable without dnd-kit geometry. A session hits any day with room, and
+// always its own day (to change its place there); a library-session any day
+// with room; a library-exercise only a slot holding exactly one session. A
+// locked slot (placed-plan history) accepts nothing.
 export function slotAcceptsDrag(
-  active: { type?: string; aloneOnDay?: boolean },
+  active: { type?: string; fromSlotUid?: string },
   slot: { type?: string; sessionCount?: number; slotUid?: string },
   lockedSlotUids?: ReadonlySet<string>,
 ): boolean {
   if (slot.type !== "day-slot") return false;
   if (slot.slotUid && lockedSlotUids?.has(slot.slotUid)) return false;
   const sessionCount = slot.sessionCount ?? 0;
+  const hasRoom = sessionCount < MAX_SESSIONS_PER_DAY;
   switch (active.type) {
     case "session":
-      return sessionCount === 0 || (sessionCount === 1 && active.aloneOnDay === true);
+      return hasRoom || (slot.slotUid != null && slot.slotUid === active.fromSlotUid);
     case "library-session":
-      return sessionCount === 0;
+      return hasRoom;
     case "library-exercise":
       return sessionCount === 1;
     default:
@@ -101,10 +118,46 @@ export function slotAcceptsDrag(
   }
 }
 
+/**
+ * Where a session dragged within its own day lands: before the first card whose
+ * middle is below `y`, else after the last — a place counted in the day as it
+ * stands. Null when that is the session's own place (before or right after
+ * itself), since landing there changes nothing.
+ */
+export function reorderPlace(
+  cards: ReadonlyArray<{ index: number; rect: Pick<ClientRect, "top" | "height"> }>,
+  y: number,
+  fromIndex: number,
+): number | null {
+  const sorted = [...cards].sort((a, b) => a.index - b.index);
+  const before = sorted.find((card) => y < card.rect.top + card.rect.height / 2);
+  const place = before ? before.index : sorted.length;
+  return place === fromIndex || place === fromIndex + 1 ? null : place;
+}
+
+/** The index a session takes when it lands before `place` in its own day. */
+export const reorderTarget = (place: number, fromIndex: number) =>
+  place > fromIndex ? place - 1 : place;
+
+/** The reorder a drag's collisions describe, or null when it isn't over its own day. */
+function dayReorderOf(
+  active: SessionDragData | undefined,
+  collisions: Collision[] | null,
+): DayReorder | null {
+  const hit = collisions?.[0];
+  if (active?.type !== "session" || !hit || hit.id !== active.fromSlotUid) return null;
+  const place = (hit.data as { place?: number | null } | undefined)?.place;
+  return { slotUid: active.fromSlotUid, place: place ?? null };
+}
+
+const sameReorder = (a: DayReorder | null, b: DayReorder | null) =>
+  a === b || (a != null && b != null && a.slotUid === b.slotUid && a.place === b.place);
+
 type UseProgramDndParams = {
   draft: ProgramDraft | null;
   reorderWeek: (activeUid: string, overUid: string) => void;
   moveSession: (sessionUid: string, targetSlotUid: string) => void;
+  reorderSession: (sessionUid: string, toIndex: number) => void;
   placeLibrarySession: (session: SavedSession, targetSlotUid: string) => void;
   placeLibraryExercise: (exercise: Exercise, targetSlotUid: string) => void;
   // Placed-plan target: locked slots never collide or accept drops, and weeks
@@ -116,11 +169,14 @@ export function useProgramDnd({
   draft,
   reorderWeek,
   moveSession,
+  reorderSession,
   placeLibrarySession,
   placeLibraryExercise,
   lockedSlotUids,
 }: UseProgramDndParams) {
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
+  // Set while a session drag hovers its own day: where it would land there.
+  const [dayReorder, setDayReorder] = useState<DayReorder | null>(null);
 
   const sensors = useSensors(
     // 4px activation distance so a plain click on a grip doesn't register as a
@@ -132,11 +188,15 @@ export function useProgramDnd({
   // Type-aware collision: a dragged session or library card only collides
   // with the day-slot droppables slotAcceptsDrag lets it land on
   // (pointerWithin feels right for cell targets, rectIntersection as fallback
-  // for keyboard/edge cases); a dragged week only collides with week rows.
+  // for keyboard/edge cases); a dragged week only collides with week rows. A
+  // session over its own day carries the place it would land at, read from
+  // that day's cards.
   const collisionDetection: CollisionDetection = useCallback(
     (args) => {
       const active =
-        (args.active.data.current as { type?: string; aloneOnDay?: boolean } | undefined) ?? {};
+        (args.active.data.current as
+          | { type?: string; fromSlotUid?: string; index?: number }
+          | undefined) ?? {};
       if (
         active.type === "session" ||
         active.type === "library-session" ||
@@ -150,9 +210,21 @@ export function useProgramDnd({
           ),
         );
         const within = pointerWithin({ ...args, droppableContainers });
-        return within.length > 0
-          ? within
-          : rectIntersection({ ...args, droppableContainers });
+        const hits = within.length > 0 ? within : rectIntersection({ ...args, droppableContainers });
+        const hit = hits[0];
+        if (active.type !== "session" || !hit || hit.id !== active.fromSlotUid) return hits;
+
+        const y =
+          args.pointerCoordinates?.y ?? args.collisionRect.top + args.collisionRect.height / 2;
+        const cards = args.droppableContainers.flatMap((c) => {
+          const data = c.data.current as DaySessionDropData | undefined;
+          const rect = args.droppableRects.get(c.id);
+          return data?.type === "day-session" && data.slotUid === active.fromSlotUid && rect
+            ? [{ index: data.index, rect }]
+            : [];
+        });
+        const place = reorderPlace(cards, y, active.index ?? 0);
+        return [{ ...hit, data: { ...hit.data, place } }];
       }
       const droppableContainers = args.droppableContainers.filter(
         (c) =>
@@ -193,11 +265,28 @@ export function useProgramDnd({
     [draft],
   );
 
-  const handleDragCancel = useCallback(() => setActiveDrag(null), []);
+  // Only a session over its own day has a place to show; every other move keeps
+  // the state as it is, so the grid re-renders only when the line moves.
+  const handleDragMove = useCallback((event: DragMoveEvent) => {
+    const next = dayReorderOf(
+      event.active.data.current as SessionDragData | undefined,
+      event.collisions,
+    );
+    setDayReorder((current) => (sameReorder(current, next) ? current : next));
+  }, []);
 
+  const handleDragCancel = useCallback(() => {
+    setActiveDrag(null);
+    setDayReorder(null);
+  }, []);
+
+  // The drop and the end of the drag are ONE render: the draft edit below and
+  // the cleared drag state batch together, so the card is in its new place the
+  // frame the line and the copy go.
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveDrag(null);
+      setDayReorder(null);
       const { active, over } = event;
       if (!over) return;
       const activeData = active.data.current as
@@ -237,16 +326,25 @@ export function useProgramDnd({
         return;
       }
       if (lockedSlotUids?.has(activeData.fromSlotUid)) return;
+      if (String(over.id) === activeData.fromSlotUid) {
+        const reorder = dayReorderOf(activeData, event.collisions);
+        if (reorder?.place != null) {
+          reorderSession(activeData.sessionUid, reorderTarget(reorder.place, activeData.index));
+        }
+        return;
+      }
       moveSession(activeData.sessionUid, String(over.id));
     },
-    [draft, lockedSlotUids, reorderWeek, moveSession, placeLibrarySession, placeLibraryExercise],
+    [draft, lockedSlotUids, reorderWeek, moveSession, reorderSession, placeLibrarySession, placeLibraryExercise],
   );
 
   return {
     sensors,
     collisionDetection,
     activeDrag,
+    dayReorder,
     handleDragStart,
+    handleDragMove,
     handleDragEnd,
     handleDragCancel,
   };

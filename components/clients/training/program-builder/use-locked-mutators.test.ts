@@ -74,6 +74,7 @@ function fakeState(draft: ProgramDraft) {
     clearSlot: vi.fn(),
     removeSession: vi.fn(),
     moveSession: vi.fn(),
+    reorderSession: vi.fn(),
     updateSession: vi.fn(),
     addExercise: vi.fn(),
     removeExercise: vi.fn(),
@@ -163,6 +164,19 @@ describe("useLockedMutators", () => {
     m.removeSession("sess10b");
     expect(calls.removeSession).toHaveBeenCalledWith("sess10b");
     expect(calls.removeSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("reorderSession is refused on a day of history, the day's second session too, and passes an editable day through", () => {
+    const { m, calls } = mutators();
+
+    m.reorderSession("sess2b", 0);
+    m.reorderSession("sess2", 1);
+    refusedWith(PAST_LOCKED);
+    expect(calls.reorderSession).not.toHaveBeenCalled();
+
+    m.reorderSession("sess10b", 0);
+    expect(calls.reorderSession).toHaveBeenCalledWith("sess10b", 0);
+    expect(calls.reorderSession).toHaveBeenCalledTimes(1);
   });
 
   it("refuses every group edit to a session on a locked day, and passes an editable one through", () => {

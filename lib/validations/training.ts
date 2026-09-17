@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { LOAD_KG_MAX } from "@/lib/constants";
-import { MAX_PLAN_EDIT_SESSIONS, MAX_WEEK_LAYOUT_MOVES } from "@/lib/training-constants";
+import {
+  MAX_PROGRAM_DAYS,
+  MAX_PROGRAM_SESSIONS,
+  MAX_SESSIONS_PER_DAY,
+  MAX_SESSIONS_PER_WEEK,
+  MAX_WEEK_LAYOUT_MOVES,
+} from "@/lib/training-constants";
 import { MAX_PRESCRIBED_ROWS } from "@/utils/set-spec-rows";
 import {
   GROUP_FORMATS,
@@ -12,6 +18,7 @@ import {
   MAX_EXERCISES_PER_SESSION,
 } from "@/utils/exercise-groups";
 import { setSpecCount } from "@/utils/exercise-set-specs";
+import { programDays, programRowsIssue } from "@/utils/program-days";
 import type { TrainingPlan } from "@/types/training";
 
 export const planStatusSchema = z.enum(["active", "archived", "draft", "planned"]);
@@ -37,7 +44,8 @@ export const updateTrainingPlanSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional().nullable(),
   status: planStatusSchema.optional(),
-  frequencyPerWeek: z.number().int().min(1).max(7).optional(),
+  // Sessions per week: a day can hold several, so a week can hold more than seven.
+  frequencyPerWeek: z.number().int().min(1).max(MAX_SESSIONS_PER_WEEK).optional(),
   programDurationWeeks: z.number().int().min(1).max(52).optional().nullable(),
 });
 
@@ -261,6 +269,9 @@ export const savedSessionInputSchema = z.object({
   // 0-based slot ordering within a multi-week program (whole program = repeat
   // unit). Defaults to 0 for single-week / legacy plans.
   weekIndex: z.number().int().min(0).max(52).optional(),
+  // The session's place among the sessions on its day (orderIndex), 0 first. A
+  // rest row is alone on its day at 0.
+  dayOrder: z.number().int().min(0).max(MAX_SESSIONS_PER_DAY - 1).default(0),
   isRest: z.boolean(),
   estimatedDurationMinutes: z.number().int().min(0).max(480).nullish(),
   calorieSurplusPercentage: z.number().min(0).max(100).nullish(),
@@ -268,6 +279,37 @@ export const savedSessionInputSchema = z.object({
   sessionType: z.string().max(50).nullish(),
   groups: savedExerciseGroupsSchema,
 });
+
+// A whole program's rows, on the library save and the inline placement: every
+// day of every week is its sessions or one rest row (utils/program-days.ts).
+// The builder's ceilings bound it — 52 weeks of seven days, each day's sessions
+// and the program's — because a program's day count drives the placement
+// window and its row count the inserts; without a bound a crafted body drives
+// an arbitrarily large window and insert loop. .min(1) rejects the empty
+// program that would clear a day and create nothing. Positions must be
+// unambiguous: two sessions never share a place on a day, and a rest row is a
+// day of its own.
+const programSessionsSchema = z
+  .array(savedSessionInputSchema)
+  .min(1)
+  .max(MAX_PROGRAM_DAYS + MAX_PROGRAM_SESSIONS)
+  .superRefine((sessions, ctx) => {
+    const rows = sessions.map((s) => ({ ...s, weekIndex: s.weekIndex ?? 0 }));
+    const issue = programRowsIssue(rows);
+    if (issue) ctx.addIssue({ code: z.ZodIssueCode.custom, message: issue });
+    if (programDays(rows).length > MAX_PROGRAM_DAYS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `A program holds at most ${MAX_PROGRAM_DAYS} days`,
+      });
+    }
+    if (sessions.filter((s) => !s.isRest).length > MAX_PROGRAM_SESSIONS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `A program holds at most ${MAX_PROGRAM_SESSIONS} sessions`,
+      });
+    }
+  });
 
 // One session of a day in the plan editor's save. `eventId` is the calendar
 // entry the editor opened it from, when it came from one: the save keeps that
@@ -291,12 +333,12 @@ export type PlanEditSessionInput = z.infer<typeof planEditSessionInputSchema>;
 // anything the editor was built from changed.
 export const planEditSaveSchema = z.object({
   days: z
-    .array(z.object({ sessions: z.array(planEditSessionInputSchema).max(MAX_PLAN_EDIT_SESSIONS) }))
+    .array(z.object({ sessions: z.array(planEditSessionInputSchema).max(MAX_PROGRAM_SESSIONS) }))
     .min(7)
-    .max(364)
+    .max(MAX_PROGRAM_DAYS)
     .refine(
-      (days) => days.reduce((sum, day) => sum + day.sessions.length, 0) <= MAX_PLAN_EDIT_SESSIONS,
-      { message: `A plan edit holds at most ${MAX_PLAN_EDIT_SESSIONS} sessions` },
+      (days) => days.reduce((sum, day) => sum + day.sessions.length, 0) <= MAX_PROGRAM_SESSIONS,
+      { message: `A plan edit holds at most ${MAX_PROGRAM_SESSIONS} sessions` },
     ),
   plan: z.object({
     name: z.string().min(1).max(100),
@@ -315,7 +357,7 @@ export const updateSavedPlanSchema = z.object({
   // focus can reach this PATCH path too, so accept the same free string as the
   // create/overwrite paths, not the legacy enum.
   splitType: z.string().max(100).nullish(),
-  frequencyPerWeek: z.number().int().min(1).max(7).nullish(),
+  frequencyPerWeek: z.number().int().min(1).max(MAX_SESSIONS_PER_WEEK).nullish(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
   programDurationWeeks: z.number().int().min(1).max(52).nullish(),
 });
@@ -330,14 +372,15 @@ export const createSavedPlanSchema = z.object({
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
   // Caps mirror the placement paths (H5): a saved plan is the source the
   // type:"plan" placement counts to derive its window, so bound it at creation.
-  // 52 weeks x 7 = 364 slots; 50 exercises/session (the builder ceiling).
+  // A created program's rows are its days, one each: 52 weeks x 7 = 364 days;
+  // 50 exercises/session (the builder ceiling).
   sessions: z.array(z.object({
     tempId: z.string().optional(),
     name: z.string().min(1).max(100),
     focus: z.string().max(200).optional(),
     isRest: z.boolean().optional(),
     groups: savedExerciseGroupsSchema,
-  })).max(364),
+  })).max(MAX_PROGRAM_DAYS),
 });
 export type CreateSavedPlanBody = z.infer<typeof createSavedPlanSchema>;
 
@@ -383,11 +426,7 @@ export const overwriteSavedPlanSchema = z.object({
   // builder header edits it. Free text like createSavedPlanSchema, NOT the enum.
   splitType: z.string().max(100).nullish(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
-  // Cap the slot count at the builder's own ceiling (52 weeks x 7 days). The
-  // placement window is driven by this length; without a bound a crafted body
-  // drives an arbitrarily large window/insert loop. .min(1) rejects the empty
-  // program that would clear a day and create nothing.
-  sessions: z.array(savedSessionInputSchema).min(1).max(364),
+  sessions: programSessionsSchema,
 });
 
 // Inline (edited working copy) placement body — the coach applies their local
@@ -404,10 +443,10 @@ export const inlinePlanBodySchema = z.object({
   splitType: z.string().max(100).nullish(),
   programDurationWeeks: z.number().int().min(1).max(52).nullish(),
   defaultSurplusPercentage: z.number().min(0).max(100).nullish(),
-  // Same cap as the overwrite path: 52 weeks x 7 days. This is the attacker-
-  // supplied placement body, so the bound must live here — the placement window
-  // is slot-count-driven. .min(1) rejects the rest-only/empty silent wipe.
-  sessions: z.array(savedSessionInputSchema).min(1).max(364),
+  // The same program rows as the overwrite path. This is the attacker-supplied
+  // placement body, so the bounds live here: the placement window is driven by
+  // the program's day count.
+  sessions: programSessionsSchema,
 });
 export type InlinePlanBody = z.infer<typeof inlinePlanBodySchema>;
 

@@ -57,6 +57,7 @@ import { buildSessionTools } from "./draft-session-tools";
 import { buildExerciseTools } from "./draft-exercise-tools";
 import { buildGroupTools } from "./draft-group-tools";
 import { setSpecCount } from "@/utils/exercise-set-specs";
+import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
 
 const SQUAT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const CURL_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -250,12 +251,25 @@ describe("delete_week / add_session belts", () => {
     expect(ws.ops).toHaveLength(0);
   });
 
-  it("refuses to add a session onto an occupied day", async () => {
+  it("adds a second session to an occupied day, last, and says which place it took", async () => {
     const ws = makeWs();
     const add = tool(buildSessionTools(ws), "add_session");
     const out = await add.run({ week: 1, day: 1, name: "Second" } as never);
-    expect(out).toMatch(/already has a session/);
-    expect(ws.ops).toHaveLength(0);
+    expect(out).toBe('Added "Second" on week 1 day 1 as session 2 of the day. It has no exercises yet.');
+    expect(ws.draft.weeks[0].days[0].sessions.map((s) => s.name)).toEqual(["Lower A", "Second"]);
+    expect(ws.ops.map((op) => op.type)).toEqual(["place_session"]);
+  });
+
+  it("refuses a full day, loudly", async () => {
+    const ws = makeWs();
+    const add = tool(buildSessionTools(ws), "add_session");
+    for (let i = 1; i < MAX_SESSIONS_PER_DAY; i++) {
+      await add.run({ week: 1, day: 1, name: `Extra ${i}` } as never);
+    }
+    expect(ws.draft.weeks[0].days[0].sessions).toHaveLength(MAX_SESSIONS_PER_DAY);
+    const out = await add.run({ week: 1, day: 1, name: "One too many" } as never);
+    expect(out).toBe(`A day holds at most ${MAX_SESSIONS_PER_DAY} sessions`);
+    expect(ws.ops).toHaveLength(MAX_SESSIONS_PER_DAY - 1);
   });
 });
 
@@ -1403,41 +1417,79 @@ describe("a day holding several sessions", () => {
     expect(ws.ops.map((op) => op.label)).toEqual(['W1 D1: removed "AM run", "PM lift" (now rest)']);
   });
 
-  it("move_session follows the coach's rule: onto a rest day it moves, a lone session swaps, anything else is refused", async () => {
+  it("move_session follows the coach's rule: onto another day it joins that day, last; the client replays it", async () => {
     const { coachDraft, ws } = twoADayWs();
     const move = tool(buildSessionTools(ws), "move_session");
-    // The lift shares day 1 with the run: it can't swap with Upper.
+    // The lift leaves the run and joins Upper on day 3, after it.
     expect(
       await move.run({ fromWeek: 1, fromDay: 1, session: 2, toWeek: 1, toDay: 3 } as never),
-    ).toBe("That day already has a session");
-    // Upper is alone on day 3, but day 1 holds two.
-    expect(await move.run({ fromWeek: 1, fromDay: 3, toWeek: 1, toDay: 1 } as never)).toBe(
-      "That day already has a session",
-    );
-    expect(ws.ops).toEqual([]);
-
-    expect(
-      await move.run({ fromWeek: 1, fromDay: 1, session: 2, toWeek: 1, toDay: 5 } as never),
-    ).toBe('Moved "PM lift" to week 1 day 5.');
+    ).toBe(`Moved "PM lift" to week 1 day 3, after the day's other sessions (session 2 of the day).`);
     expect(namesOn(ws.draft, 0)).toEqual(["AM run"]);
-    expect(namesOn(ws.draft, 4)).toEqual(["PM lift"]);
+    expect(namesOn(ws.draft, 2)).toEqual(["Upper", "PM lift"]);
 
-    // Alone on day 1 now, the run swaps with Upper.
-    expect(await move.run({ fromWeek: 1, fromDay: 1, toWeek: 1, toDay: 3 } as never)).toBe(
-      'Moved "AM run" to week 1 day 3 — it swapped places with "Upper".',
+    // Onto a rest day it simply moves.
+    expect(await move.run({ fromWeek: 1, fromDay: 1, toWeek: 1, toDay: 5 } as never)).toBe(
+      'Moved "AM run" to week 1 day 5.',
     );
-    expect(namesOn(ws.draft, 0)).toEqual(["Upper"]);
-    expect(namesOn(ws.draft, 2)).toEqual(["AM run"]);
+    expect(ws.draft.weeks[0].days[0]).toMatchObject({ isRest: true, sessions: [] });
+    expect(namesOn(ws.draft, 4)).toEqual(["AM run"]);
+
+    // Its own day is not a move: the tool points at reorder_session.
+    expect(await move.run({ fromWeek: 1, fromDay: 3, toWeek: 1, toDay: 3 } as never)).toMatch(
+      /already on week 1 day 3 — use reorder_session/,
+    );
+    expect(ws.ops.map((op) => op.type)).toEqual(["move_session", "move_session"]);
     expectReplayMatches(coachDraft, ws);
   });
 
-  it("add_session still takes only a rest day", async () => {
+  it("reorder_session changes a session's place in its day, the others keeping their order; the client replays it", async () => {
+    const { coachDraft, ws } = twoADayWs();
+    const reorder = tool(buildSessionTools(ws), "reorder_session");
+    expect(
+      await reorder.run({ week: 1, day: 1, session: 2, toSession: 1 } as never),
+    ).toBe('"PM lift" is now session 1 of week 1 day 1.');
+    expect(namesOn(ws.draft, 0)).toEqual(["PM lift", "AM run"]);
+    expect(ws.ops).toEqual([
+      expect.objectContaining({ type: "reorder_session", toIndex: 0, label: 'W1 D1: "PM lift" to session 1' }),
+    ]);
+
+    // A place past the day is clamped, so the op is always one the client accepts.
+    expect(await reorder.run({ week: 1, day: 1, session: 1, toSession: 9 } as never)).toBe(
+      '"PM lift" is now session 2 of week 1 day 1.',
+    );
+    expect(namesOn(ws.draft, 0)).toEqual(["AM run", "PM lift"]);
+    expectReplayMatches(coachDraft, ws);
+  });
+
+  it("reorder_session refuses a day of one session and a session already in place, writing nothing", async () => {
     const { ws } = twoADayWs();
+    const reorder = tool(buildSessionTools(ws), "reorder_session");
+    expect(await reorder.run({ week: 1, day: 3, toSession: 2 } as never)).toBe(
+      "Week 1 day 3 holds one session — there is no order to change.",
+    );
+    expect(await reorder.run({ week: 1, day: 1, session: 2, toSession: 2 } as never)).toBe(
+      '"PM lift" is already session 2 of week 1 day 1.',
+    );
+    expect(await reorder.run({ week: 1, day: 2, toSession: 1 } as never)).toMatch(/is a rest day/);
+    expect(ws.ops).toEqual([]);
+  });
+
+  it("add_session puts a second session on a day that holds two: it lands third", async () => {
+    const { coachDraft, ws } = twoADayWs();
     const add = tool(buildSessionTools(ws), "add_session");
     expect(await add.run({ week: 1, day: 1, name: "Mobility" } as never)).toBe(
-      "That day already has a session",
+      'Added "Mobility" on week 1 day 1 as session 3 of the day. It has no exercises yet.',
     );
-    expect(ws.ops).toEqual([]);
+    expect(namesOn(ws.draft, 0)).toEqual(["AM run", "PM lift", "Mobility"]);
+    // And the next tool can address it by that place.
+    const addExercise = tool(buildExerciseTools(ws), "add_exercise");
+    expect(await addExercise.run({ week: 1, day: 1, session: 3, name: "Leg Curl" } as never)).toMatch(
+      /Leg Curl/,
+    );
+    expect(sessionExercises(ws.draft.weeks[0].days[0].sessions[2]).map((e) => e.name)).toEqual([
+      "Leg Curl",
+    ]);
+    expectReplayMatches(coachDraft, ws);
   });
 
   it("the program state lists each session of a day with its place; a day's only session carries none", async () => {

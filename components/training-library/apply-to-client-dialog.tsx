@@ -46,6 +46,7 @@ import {
   getTodayDateStringInTimezone,
 } from "@/lib/date-helpers";
 import type { SavedPlan } from "@/types/training";
+import { programDays } from "@/utils/program-days";
 import type { InlinePlanBody } from "@/lib/validations/training";
 
 type ApplyToClientDialogProps = {
@@ -124,8 +125,10 @@ export function ApplyToClientDialog({
     }
   }, [open, preselectedClientId]);
 
-  const trainingDays = savedPlan.sessions.filter((s) => !s.isRest).length;
-  const restDays = savedPlan.sessions.length - trainingDays;
+  // Days, not rows: a day's sessions share its position (utils/program-days.ts).
+  const programDayList = programDays(savedPlan.sessions);
+  const trainingDays = programDayList.filter((day) => day.sessions.length > 0).length;
+  const restDays = programDayList.length - trainingDays;
   const weekCount =
     savedPlan.programDurationWeeks ??
     (savedPlan.sessions.length > 0

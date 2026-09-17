@@ -4,7 +4,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
 import type { DaySlotDraft, WeekDraft } from "./program-builder-types";
-import type { WeekDragData } from "./use-program-dnd";
+import type { DayReorder, WeekDragData } from "./use-program-dnd";
 import type { PlanDayRules } from "./program-builder-lock-model";
 import { GRID_COLS } from "./builder-tokens";
 import { WeekCard } from "./week-card";
@@ -25,6 +25,8 @@ type WeekRowProps = {
   collapsed: boolean;
   canDelete: boolean;
   defaultSurplusPercentage: number | null;
+  // Where a session dragged within its own day would land, when that day is here.
+  dayReorder?: DayReorder | null;
   onToggleCollapse: (weekUid: string) => void;
   onDuplicateWeek: (weekUid: string) => void;
   onDuplicateWeekWithProgression: (weekUid: string) => void;
@@ -41,6 +43,7 @@ export function WeekRow({
   collapsed,
   canDelete,
   defaultSurplusPercentage,
+  dayReorder = null,
   onToggleCollapse,
   onDuplicateWeek,
   onDuplicateWeekWithProgression,
@@ -99,6 +102,7 @@ export function WeekRow({
           isToday={dayRules?.todaySlotUid === slot.uid}
           collapsed={collapsed}
           defaultSurplusPercentage={defaultSurplusPercentage}
+          reorder={dayReorder?.slotUid === slot.uid ? dayReorder : null}
           onOpenSession={onOpenSession}
           onRequestAddSession={onRequestAddSession}
           onRemoveSession={onRemoveSession}

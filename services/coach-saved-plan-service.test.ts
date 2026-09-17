@@ -294,6 +294,64 @@ describe("coach-saved-plan-service", () => {
   // =========================================================================
 
   describe("getSavedPlans", () => {
+    it("lists a plan's sessions in program order: by week, by day, then each day's sessions by their place", async () => {
+      const row = (id: string, week_index: number, order_index: number, day_order: number) => ({
+        id,
+        coach_id: "coach-1",
+        saved_plan_id: "plan-1",
+        name: id,
+        focus: null,
+        order_index,
+        week_index,
+        day_order,
+        is_rest: false,
+        estimated_duration_minutes: null,
+        calorie_surplus_percentage: null,
+        notes: null,
+        session_type: "training",
+        created_at: "2026-04-15T12:00:00Z",
+        updated_at: "2026-04-15T12:00:00Z",
+        coach_saved_exercise_groups: [],
+      });
+      const plansQuery = createMockQuery({
+        data: [
+          {
+            id: "plan-1",
+            coach_id: "coach-1",
+            name: "Two a day",
+            description: null,
+            split_type: null,
+            frequency_per_week: 3,
+            status: "saved",
+            default_surplus_percentage: null,
+            source: "manual",
+            coach_prompt: null,
+            program_duration_weeks: 2,
+            created_at: "2026-04-15T12:00:00Z",
+            updated_at: "2026-04-15T12:00:00Z",
+            // Out of order on purpose; week 2's day 1 sorts after week 1's day 2.
+            coach_saved_sessions: [
+              row("w2-d1", 1, 7, 0),
+              row("w1-d1-pm", 0, 0, 1),
+              row("w1-d2", 0, 1, 0),
+              row("w1-d1-am", 0, 0, 0),
+            ],
+          },
+        ],
+        error: null,
+      });
+      mockFrom.mockReturnValue(plansQuery as never);
+
+      const [plan] = await getSavedPlans("coach-1");
+
+      expect(plan.sessions.map((s) => [s.id, s.dayOrder])).toEqual([
+        ["w1-d1-am", 0],
+        ["w1-d1-pm", 1],
+        ["w1-d2", 0],
+        ["w2-d1", 0],
+      ]);
+    });
+
     it("filters to status = saved only by default (excludes drafts)", async () => {
       const plansQuery = createMockQuery({ data: [], error: null });
       mockFrom.mockReturnValue(plansQuery as any);

@@ -109,6 +109,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     placeSession,
     removeSession,
     moveSession,
+    reorderSession,
     updateSession,
     addExercise,
     removeExercise,
@@ -159,8 +160,8 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const placeLibrarySession = (session: SavedSession, slotUid: string) => {
-    // Clone-by-value with fresh uids onto a rest day; a day holding sessions
-    // no-ops (collision already filters those days out).
+    // Clone-by-value with fresh uids; it joins the day, last (a full day is
+    // filtered out of collision, and the model refuses it too).
     placeSession(slotUid, savedSessionToDraft(session));
   };
 
@@ -184,6 +185,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
     draft,
     reorderWeek,
     moveSession,
+    reorderSession,
     placeLibrarySession,
     placeLibraryExercise,
     lockedSlotUids: dayRules?.locked,
@@ -277,6 +279,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
         sensors={dnd.sensors}
         collisionDetection={dnd.collisionDetection}
         onDragStart={dnd.handleDragStart}
+        onDragMove={dnd.handleDragMove}
         onDragEnd={dnd.handleDragEnd}
         onDragCancel={dnd.handleDragCancel}
       >
@@ -465,6 +468,7 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
                 draft={draft}
                 mode={mode}
                 dayRules={dayRules ?? undefined}
+                dayReorder={dnd.dayReorder}
                 collapsedWeeks={collapsedWeeks}
                 onToggleCollapse={(weekUid) =>
                   setCollapsedWeeks((prev) => {
@@ -486,10 +490,13 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           </div>
         </div>
 
-        {/* DragOverlay portaled to <body>:
-            an animated/transformed ancestor would become the containing block
-            for the overlay's fixed positioning and offset the drag preview. */}
-        {typeof document !== "undefined" &&
+        {/* DragOverlay portaled to <body>: an animated/transformed ancestor
+            would become the containing block for the overlay's fixed
+            positioning and offset the drag preview. Mounted only while a drag
+            lasts, so the copy goes in the same render the drop lands in: a
+            DragOverlay left mounted keeps its last frame until its drop
+            animation resolves, even with none. */}
+        {dnd.activeDrag &&
           createPortal(
             <DragOverlay dropAnimation={null}>
               {dnd.activeDrag?.type === "week" ? (
@@ -595,12 +602,13 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
           if (!isLibrary) {
             // No intercepted /dashboard/programs modal route exists in the
             // client drawer — build the blank session in-memory (uid held here,
-            // so we can open it) and place it. Library create-blank persists a
-            // standalone session; a client draft's stays in-memory, which is
-            // correct for a per-client edit.
+            // so we can open it) and place it: it joins the day, last. Library
+            // create-blank persists a standalone session; a client draft's
+            // stays in-memory, which is correct for a per-client edit.
+            const place = (findSlot(draft, t.slotUid)?.sessions.length ?? 0) + 1;
             const blank: SessionDraft = {
               uid: newUid("sess"),
-              name: `Day ${t.dayIndex + 1}`,
+              name: place > 1 ? `Day ${t.dayIndex + 1} · Session ${place}` : `Day ${t.dayIndex + 1}`,
               focus: null,
               estimatedDurationMinutes: null,
               calorieSurplusPercentage: null,

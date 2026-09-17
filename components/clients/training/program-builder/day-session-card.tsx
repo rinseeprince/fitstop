@@ -1,11 +1,16 @@
 "use client";
 
-import { Fragment } from "react";
-import { Dumbbell, GripVertical, Lock, X } from "lucide-react";
-import { useDraggable } from "@dnd-kit/core";
+import { Fragment, useCallback } from "react";
+import { Dumbbell, GripVertical, Lock, Plus, X } from "lucide-react";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import type { ExerciseDraft, SessionDraft } from "./program-builder-types";
-import type { SessionDragData } from "./use-program-dnd";
+import {
+  daySessionDropId,
+  type DaySessionDropData,
+  type SessionDragData,
+} from "./use-program-dnd";
+import { DropLine, type DropLineEdge } from "./drop-line";
 import { PAST_LOCKED } from "./program-builder-lock-model";
 import { roundsRepsShort, setsRepsShort } from "./exercise-summary";
 import { isSupersetOrCircuit } from "./program-builder-groups";
@@ -24,25 +29,33 @@ import { countSessionExercises } from "@/utils/exercise-groups";
 // One session's card in a day cell. A day holding several sessions stacks one
 // card per session; each card drags its own session (grip-only, so plain
 // clicks still open the editor) and opens its own session on click, while the
-// day cell around the stack is the drop target.
+// day cell around the stack is the drop target. The card is also where a
+// session dragged within its own day finds its place (a "day-session"
+// droppable), and draws the line that shows it.
 type DaySessionCardProps = {
   session: SessionDraft;
   slotUid: string;
-  // The only session on its day — the one kind that may swap onto another day.
-  aloneOnDay: boolean;
+  // The session's place in its day, 0 first.
+  index: number;
   // Edit mode on a day the coach can change: the card drags and removes.
   editable: boolean;
+  // Whether the card offers "Add session" — an editable day with room.
+  canAddSession: boolean;
   // The plan editor: a day the coach can't change. The card renders at reduced
   // opacity with a lock marker, and STAYS clickable — it opens the editor in
   // view mode.
   locked: boolean;
   isToday: boolean;
-  // A drag hovers the day this card sits on.
+  // A drag that would join this card's day hovers it.
   isOver: boolean;
+  // Where a session dragged within this day would land, drawn on this card.
+  dropLine: DropLineEdge | null;
   collapsed: boolean;
   defaultSurplusPercentage: number | null;
   onOpenSession: (sessionUid: string) => void;
   onRemoveSession: (sessionUid: string) => void;
+  // Opens the add-session popover for the card's day, anchored to `anchor`.
+  onAddSession: (anchor: HTMLElement) => void;
 };
 
 const SHOWN_EXERCISES = 3;
@@ -87,15 +100,18 @@ export const pressable = (action: (target: HTMLElement) => void) => ({
 export function DaySessionCard({
   session,
   slotUid,
-  aloneOnDay,
+  index,
   editable,
+  canAddSession,
   locked,
   isToday,
   isOver,
+  dropLine,
   collapsed,
   defaultSurplusPercentage,
   onOpenSession,
   onRemoveSession,
+  onAddSession,
 }: DaySessionCardProps) {
   // Effective surplus = this day's own value, or the program default it
   // inherits. A custom day (own value) reads in teal; an inherited day reads
@@ -109,13 +125,32 @@ export function DaySessionCard({
     type: "session",
     sessionUid: session.uid,
     fromSlotUid: slotUid,
-    aloneOnDay,
+    index,
   };
-  const { setNodeRef, attributes, listeners, isDragging } = useDraggable({
+  const {
+    setNodeRef: setDragRef,
+    attributes,
+    listeners,
+    isDragging,
+  } = useDraggable({
     id: session.uid,
     data: dragData,
     disabled: !editable,
   });
+  const dropData: DaySessionDropData = { type: "day-session", slotUid, index };
+  const { setNodeRef: setDropRef } = useDroppable({
+    id: daySessionDropId(session.uid),
+    data: dropData,
+    disabled: !editable,
+  });
+  // Both refs are stable, so the card's node is handed over once, not on every render.
+  const setNodeRef = useCallback(
+    (node: HTMLElement | null) => {
+      setDragRef(node);
+      setDropRef(node);
+    },
+    [setDragRef, setDropRef],
+  );
 
   return (
     <div
@@ -136,6 +171,7 @@ export function DaySessionCard({
       onClick={() => onOpenSession(session.uid)}
       {...pressable(() => onOpenSession(session.uid))}
     >
+      {dropLine && <DropLine edge={dropLine} />}
       {collapsed ? (
         <span className={cn("truncate text-xs font-medium", TEXT_PRIMARY)}>
           {session.name}
@@ -172,6 +208,22 @@ export function DaySessionCard({
             )}
             {editable && (
               <div className="-mr-1 flex shrink-0 items-center opacity-0 transition-opacity group-hover/cell:opacity-100">
+                {canAddSession && (
+                  <button
+                    type="button"
+                    aria-label="Add session to this day"
+                    title="Add session to this day"
+                    className={cn("rounded p-1 hover:bg-[rgba(13,148,136,0.08)] hover:text-[#0d9488]", TEXT_MUTED)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddSession(
+                        e.currentTarget.closest<HTMLElement>("[data-day-stack]") ?? e.currentTarget,
+                      );
+                    }}
+                  >
+                    <Plus className="h-3 w-3" strokeWidth={1.5} />
+                  </button>
+                )}
                 <button
                   type="button"
                   aria-label="Remove session"

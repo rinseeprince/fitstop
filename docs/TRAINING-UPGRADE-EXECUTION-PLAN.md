@@ -610,7 +610,7 @@ WATCH FOR
 NOT IN THIS COMMIT: adding a session to an occupied day in the builder, or placement laying several sessions a day (commit 6).
 ```
 
-### Commit 6 — Several sessions a day: building programs
+### Commit 6 — Several sessions a day: building programs — SHIPPED 2026-09-17
 
 ```text
 Implement commit 6 of 22 — Several sessions a day: building programs — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

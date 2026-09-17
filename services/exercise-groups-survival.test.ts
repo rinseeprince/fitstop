@@ -114,6 +114,14 @@ function installDb(respond: (call: Call) => Result) {
   return db;
 }
 
+/** The id a path minted for the one session row it wrote that matches `where`. */
+function writtenSessionId(rows: Row[], where: Row): string {
+  const matches = rows.filter((row) => Object.entries(where).every(([key, value]) => row[key] === value));
+  expect(matches).toHaveLength(1);
+  expect(typeof matches[0].id).toBe("string");
+  return matches[0].id as string;
+}
+
 // --- the session every path is handed ----------------------------------------
 
 const ROW_SPECS = [
@@ -283,6 +291,7 @@ function librarySessionRow(id: string, overrides: Row = {}) {
     focus: null,
     order_index: 0,
     week_index: 0,
+    day_order: 0,
     is_rest: false,
     estimated_duration_minutes: 45,
     calorie_surplus_percentage: null,
@@ -325,26 +334,34 @@ beforeEach(() => {
 
 describe("library writes carry groups", () => {
   it("the library save (overwriteSavedPlan) writes each session's groups and exercises in order", async () => {
-    let sessionCount = 0;
     const db = installDb((call) => {
       if (call.table === "coach_saved_plans" && call.op === "select") return ok({ id: "plan-1" });
       if (call.table === "coach_saved_sessions" && call.op === "select") return ok([{ id: "old-1" }]);
-      if (call.table === "coach_saved_sessions" && call.op === "insert") return ok({ id: `new-${++sessionCount}` });
       return ok();
     });
 
     await overwriteSavedPlan("plan-1", "coach-1", {
       name: "P",
       sessions: [
-        { name: "Hybrid", orderIndex: 0, weekIndex: 0, isRest: false, groups: INPUT_GROUPS },
+        { name: "Morning run", orderIndex: 0, weekIndex: 0, dayOrder: 0, isRest: false, groups: [] },
+        { name: "Hybrid", orderIndex: 0, weekIndex: 0, dayOrder: 1, isRest: false, groups: INPUT_GROUPS },
         { name: "Rest", orderIndex: 1, weekIndex: 0, isRest: true, groups: [] },
       ],
     });
 
+    // A day's sessions share its position, each at its place in the day.
+    const sessions = db.inserted("coach_saved_sessions");
+    expect(sessions.map((r) => [r.name, r.order_index, r.day_order])).toEqual([
+      ["Morning run", 0, 0],
+      ["Hybrid", 0, 1],
+      ["Rest", 1, 0],
+    ]);
+    const hybrid = writtenSessionId(sessions, { name: "Hybrid" });
     expect(
-      writtenShape(db.inserted("coach_saved_exercise_groups"), db.inserted("coach_saved_exercises"), "saved_session_id", "new-1"),
+      writtenShape(db.inserted("coach_saved_exercise_groups"), db.inserted("coach_saved_exercises"), "saved_session_id", hybrid),
     ).toEqual(EXPECTED_SHAPE);
-    expect(db.inserted("coach_saved_exercise_groups").filter((g) => g.saved_session_id === "new-2")).toEqual([]);
+    const rest = writtenSessionId(sessions, { name: "Rest" });
+    expect(db.inserted("coach_saved_exercise_groups").filter((g) => g.saved_session_id === rest)).toEqual([]);
     // The groups land before the exercises that name them.
     const order = db.calls.filter((c) => c.op === "insert").map((c) => c.table);
     expect(order.indexOf("coach_saved_exercise_groups")).toBeLessThan(order.indexOf("coach_saved_exercises"));
@@ -369,7 +386,6 @@ describe("library writes carry groups", () => {
   });
 
   it("duplicating a program copies every group and exercise verbatim under fresh group ids", async () => {
-    let sessionCount = 0;
     const db = installDb((call) => {
       if (call.table === "coach_saved_plans" && call.op === "select" && call.columns?.includes("coach_saved_sessions")) {
         return ok({
@@ -382,14 +398,14 @@ describe("library writes carry groups", () => {
       }
       if (call.table === "coach_saved_plans" && call.op === "select") return ok([{ name: "P" }]);
       if (call.table === "coach_saved_plans" && call.op === "insert") return ok({ id: "plan-copy" });
-      if (call.table === "coach_saved_sessions" && call.op === "insert") return ok({ id: `copy-${++sessionCount}` });
       return ok();
     });
 
     await duplicateSavedPlan("plan-1", "coach-1");
 
     const groups = db.inserted("coach_saved_exercise_groups");
-    expect(writtenShape(groups, db.inserted("coach_saved_exercises"), "saved_session_id", "copy-1")).toEqual(EXPECTED_SHAPE);
+    const copy = writtenSessionId(db.inserted("coach_saved_sessions"), { name: "Hybrid" });
+    expect(writtenShape(groups, db.inserted("coach_saved_exercises"), "saved_session_id", copy)).toEqual(EXPECTED_SHAPE);
     expect(groups.map((g) => g.id)).not.toContain("lg-circuit");
     const exercises = db.inserted("coach_saved_exercises");
     expect(exercises.find((e) => e.name === "Row")).toMatchObject({ exercise_id: "cat-row", sets: 2, reps_min: 8, reps_max: 12 });
@@ -526,15 +542,6 @@ function placementDb(extra: (call: Call) => Result | null = () => null) {
     if (answered) return answered;
     if (call.table === "training_events" && call.op === "select") return ok([]);
     if (call.table === "training_plans" && call.op === "select") return ok([]);
-    if (call.table === "training_sessions" && call.op === "insert") {
-      return ok(
-        (call.payload as Row[]).map((row) => ({
-          id: `ts-${String(row.week_index)}-${String(row.order_index)}`,
-          week_index: row.week_index,
-          order_index: row.order_index,
-        })),
-      );
-    }
     return ok();
   });
 }
@@ -554,8 +561,9 @@ describe("placement carries groups onto the client's calendar", () => {
 
     await placePlanOnCalendar({ savedPlanId: "plan-1", coachId: "coach-1", clientId: "client-1", startDate: "2026-10-05" });
 
+    const placed = writtenSessionId(db.inserted("training_sessions"), { name: "Hybrid" });
     expect(
-      writtenShape(db.inserted("training_exercise_groups"), db.inserted("training_exercises"), "session_id", "ts-0-0"),
+      writtenShape(db.inserted("training_exercise_groups"), db.inserted("training_exercises"), "session_id", placed),
     ).toEqual(EXPECTED_SHAPE);
     expect(db.inserted("training_exercises").every((e) => e.is_active === true)).toBe(true);
   });
@@ -567,15 +575,16 @@ describe("placement carries groups onto the client's calendar", () => {
     const plan: InlinePlanBody = {
       name: "P",
       sessions: [
-        { name: "Hybrid", orderIndex: 0, weekIndex: 0, isRest: false, groups: INPUT_GROUPS },
-        ...Array.from({ length: 6 }, (_, i) => ({ name: "Rest", orderIndex: i + 1, weekIndex: 0, isRest: true, groups: [] })),
+        { name: "Hybrid", orderIndex: 0, weekIndex: 0, dayOrder: 0, isRest: false, groups: INPUT_GROUPS },
+        ...Array.from({ length: 6 }, (_, i) => ({ name: "Rest", orderIndex: i + 1, weekIndex: 0, dayOrder: 0, isRest: true, groups: [] })),
       ],
     };
 
     await placeInlineEditedPlanOnCalendar({ plan, coachId: "coach-1", clientId: "client-1", startDate: "2026-10-05" });
 
+    const placed = writtenSessionId(db.inserted("training_sessions"), { name: "Hybrid" });
     expect(
-      writtenShape(db.inserted("training_exercise_groups"), db.inserted("training_exercises"), "session_id", "ts-0-0"),
+      writtenShape(db.inserted("training_exercise_groups"), db.inserted("training_exercises"), "session_id", placed),
     ).toEqual(EXPECTED_SHAPE);
     expect(db.inserted("training_exercises").find((e) => e.name === "Squat")).toMatchObject({ exercise_id: "cat-squat" });
   });

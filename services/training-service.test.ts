@@ -23,6 +23,7 @@ import {
   getActiveTrainingPlanId,
   getFurthestLiveProgramEnd,
   getNextFutureTrainingPlan,
+  getTrainingPlanForDate,
   getTrainingPlanIdForDate,
   getLiveProgramWindowsForClients,
 } from "./training-service";
@@ -351,5 +352,40 @@ describe("getFurthestLiveProgramEnd", () => {
     await expect(getFurthestLiveProgramEnd("client-1", ANCHOR)).resolves.toBeNull();
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+});
+
+describe("getTrainingPlanForDate — the plan's sessions in program order", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("orders the sessions by day, then each day's sessions by their place (migration 180), the id last", async () => {
+    const chain = (result: { data: unknown; error: unknown }) => {
+      const q: Record<string, unknown> = {};
+      for (const name of ["select", "eq", "neq", "is", "lte", "gte", "or", "order", "limit", "in", "range"]) {
+        q[name] = vi.fn(() => q);
+      }
+      q.maybeSingle = vi.fn().mockResolvedValue(result);
+      Object.defineProperty(q, "then", {
+        value: (resolve: (value: unknown) => void) => Promise.resolve(result).then(resolve),
+      });
+      return q as Record<string, ReturnType<typeof vi.fn>>;
+    };
+    const planQuery = chain({
+      data: { id: "plan-1", client_id: "client-1", name: "P", frequency_per_week: 10, created_at: "x", updated_at: "x" },
+      error: null,
+    });
+    const sessionsQuery = chain({ data: [], error: null });
+    vi.mocked(supabaseAdmin.from).mockImplementation(
+      ((table: string) => (table === "training_plans" ? planQuery : sessionsQuery)) as never,
+    );
+
+    await getTrainingPlanForDate("client-1", "2026-09-17");
+
+    expect(sessionsQuery.order.mock.calls.map(([column]) => column)).toEqual([
+      "week_index",
+      "order_index",
+      "day_order",
+      "id",
+    ]);
   });
 });

@@ -20,11 +20,12 @@ import {
 } from "./builder-tokens";
 import { countSessionExercises } from "@/utils/exercise-groups";
 
-// Rest-cell popover (mockup `pop`): pick a library session to clone into the
-// day, or hand off to the routed create-blank slide-over. Anchored to the
-// clicked cell via a virtual ref; Radix handles outside-click/Escape, and a
-// capture-phase scroll listener closes it like the mockup (the anchor cell
-// scrolls away under it otherwise).
+// A day's add-session popover (mockup `pop`), from a rest cell or a session
+// card's "Add session": pick a library session to clone into the day — it joins
+// the day, after any sessions already there — or hand off to create-blank.
+// Anchored to the clicked cell via a virtual ref; Radix handles
+// outside-click/Escape, and a capture-phase scroll listener closes it like the
+// mockup (the anchor cell scrolls away under it otherwise).
 export type AddSessionTarget = {
   slotUid: string;
   weekIndex: number;

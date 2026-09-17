@@ -28,7 +28,8 @@ import { countSessionExercises } from "@/utils/exercise-groups";
 
 // Sessions tab of the builder library panel (S4.5). Grew out of the old
 // Grip-only draggable card that inserts a
-// clone into a REST day-cell, now with full library CRUD reachable per card
+// clone into a day-cell — it joins the day, after any sessions already there —
+// now with full library CRUD reachable per card
 // (edit/duplicate/delete) plus a "New session" affordance — the standalone
 // Sessions page is retired, so this is the ONLY session-authoring surface.
 // The whole card is the draggable node; only the grip carries the pointer
@@ -167,7 +168,7 @@ export function LibrarySessionList({ editable }: { editable: boolean }) {
         ) : filtered.length === 0 ? (
           <p className={cn("px-1 py-4 text-center text-xs", TEXT_MUTED)}>
             {sessions.length === 0
-              ? "No saved sessions yet — create one below or from any rest day."
+              ? "No saved sessions yet — create one below or from any day in the grid."
               : "No sessions match your search."}
           </p>
         ) : (

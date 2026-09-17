@@ -16,18 +16,20 @@ import { toast } from "sonner";
 import { createStandaloneSessionSchema } from "@/lib/validations/training";
 import { useProgramDraft } from "./program-draft-provider";
 import { sessionDraftToStandalonePayload } from "./program-builder-serialize";
+import { findSession } from "./program-builder-model";
 import { SessionEditorBody } from "./session-editor-body";
 import { MONO_LABEL_CLASS } from "./builder-tokens";
 
 // The routed create-blank-session slide-over (@modal intercepted route).
 // Single-owner lifecycle: THIS component creates the optimistic "Untitled
-// session" card in the target slot on mount, so every close path can safely
-// discard it — Cancel/Escape/overlay call router.back(), and the unmount
-// cleanup (which browser-back also hits) clears the slot unless Save
-// succeeded. Slot context travels as positional ?w=&d= (uids regenerate on
-// every seed, so they can't be trusted in a URL). "Save session" persists a
-// standalone library session AND keeps the copy in the day; the program
-// itself still only persists via Save program (locked decision).
+// session" card on the target day on mount — after any sessions the day
+// already holds — so every close path can safely discard it: Cancel/Escape/
+// overlay call router.back(), and the unmount cleanup (which browser-back also
+// hits) removes that one session unless Save succeeded, leaving the day's
+// others as they were. Slot context travels as positional ?w=&d= (uids
+// regenerate on every seed, so they can't be trusted in a URL). "Save session"
+// persists a standalone library session AND keeps the copy in the day; the
+// program itself still only persists via Save program (locked decision).
 export function CreateSessionSlideOver() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -37,7 +39,7 @@ export function CreateSessionSlideOver() {
     mode,
     setMode,
     addSessionToSlot,
-    clearSlot,
+    removeSession,
     getDirty,
     restoreDirty,
     updateSession,
@@ -62,9 +64,10 @@ export function CreateSessionSlideOver() {
 
   const [isSaving, setIsSaving] = useState(false);
   const savedRef = useRef(false);
-  const createdHereRef = useRef(false);
+  // The session this flow created — its identity, so the flow edits and
+  // discards that one session and never the day's others.
+  const createdUidRef = useRef<string | null>(null);
   const baselineDirtyRef = useRef(false);
-  const slotUidRef = useRef<string | null>(null);
 
   // TWO lifecycle refs with deliberately DIFFERENT StrictMode semantics — do
   // not merge them back into one flag (that latch deadlocked the slide-over:
@@ -97,14 +100,14 @@ export function CreateSessionSlideOver() {
   // reorder while the overlay is up, so the indices are stable for the
   // flow's lifetime.
   const slot = hasTarget ? draft?.weeks[w]?.days[d] : undefined;
-  // A library program's day holds at most the one session this flow edits.
-  const session = slot?.sessions[0] ?? null;
+  // The session this flow edits: the one it created on that day.
+  const session = findSession(draft, createdUidRef.current);
 
   // Ensure-effect: force edit mode and create the optimistic card once the
-  // draft is ready. Re-runs on draft changes but only acts while the slot is
-  // empty and nothing was saved — StrictMode-safe: the simulated-unmount
-  // cleanup below discards the card, and this re-run recreates it (guarded
-  // by navigatedRef, which only trips when the flow genuinely left).
+  // draft is ready. Re-runs on draft changes but only acts while this flow has
+  // created nothing and nothing was saved — StrictMode-safe: the simulated-
+  // unmount cleanup below discards the card, and this re-run recreates it
+  // (guarded by navigatedRef, which only trips when the flow genuinely left).
   useEffect(() => {
     if (!draft || navigatedRef.current) return;
     if (!hasTarget || !slot) {
@@ -113,34 +116,39 @@ export function CreateSessionSlideOver() {
       close();
       return;
     }
-    slotUidRef.current = slot.uid;
     if (mode !== "edit") setMode("edit");
-    if (slot.sessions.length === 0 && !savedRef.current) {
+    if (createdUidRef.current === null && !savedRef.current) {
       // Snapshot the dirty flag BEFORE the optimistic card dirties the tree,
       // so a full unwind (cancel) can restore it — a previously-clean saved
       // program must not stay flagged dirty by a cancelled create.
       baselineDirtyRef.current = getDirty();
-      addSessionToSlot(slot.uid, "Untitled session");
-      createdHereRef.current = true;
+      const uid = addSessionToSlot(slot.uid, "Untitled session");
+      // A full day takes no more — nothing was created, so leave.
+      if (!uid) {
+        close();
+        return;
+      }
+      createdUidRef.current = uid;
     }
   }, [draft, hasTarget, slot, mode, setMode, addSessionToSlot, getDirty, close]);
 
   // Unmount cleanup — the ONE hook that catches every close path, including
   // browser back (which unmounts the modal slot without any event we can
-  // intercept). Only discards what this flow created. Under StrictMode the
-  // cleanup also runs on the simulated unmount; the discard is undone by the
-  // ensure-effect's re-run, and the setup re-arms unmountedRef.
+  // intercept). Only discards the session this flow created. Under StrictMode
+  // the cleanup also runs on the simulated unmount; the discard is undone by
+  // the ensure-effect's re-run, and the setup re-arms unmountedRef.
   useEffect(() => {
     unmountedRef.current = false;
     return () => {
       unmountedRef.current = true;
-      if (!savedRef.current && createdHereRef.current && slotUidRef.current) {
-        clearSlot(slotUidRef.current);
+      const created = createdUidRef.current;
+      if (!savedRef.current && created) {
+        removeSession(created);
         restoreDirty(baselineDirtyRef.current);
-        createdHereRef.current = false;
+        createdUidRef.current = null;
       }
     };
-  }, [clearSlot, restoreDirty]);
+  }, [removeSession, restoreDirty]);
 
   const handleSave = async () => {
     if (!session) return;

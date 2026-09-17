@@ -1353,6 +1353,7 @@ export type Database = {
           calorie_surplus_percentage: number | null
           coach_id: string
           created_at: string
+          day_order: number
           estimated_duration_minutes: number | null
           focus: string | null
           id: string
@@ -1369,6 +1370,7 @@ export type Database = {
           calorie_surplus_percentage?: number | null
           coach_id: string
           created_at?: string
+          day_order?: number
           estimated_duration_minutes?: number | null
           focus?: string | null
           id?: string
@@ -1385,6 +1387,7 @@ export type Database = {
           calorie_surplus_percentage?: number | null
           coach_id?: string
           created_at?: string
+          day_order?: number
           estimated_duration_minutes?: number | null
           focus?: string | null
           id?: string
@@ -2698,6 +2701,7 @@ export type Database = {
           calories_calculated_at: string | null
           created_at: string
           day_of_week: string | null
+          day_order: number
           estimated_calories: number | null
           estimated_duration_minutes: number | null
           focus: string | null
@@ -2716,6 +2720,7 @@ export type Database = {
           calories_calculated_at?: string | null
           created_at?: string
           day_of_week?: string | null
+          day_order?: number
           estimated_calories?: number | null
           estimated_duration_minutes?: number | null
           focus?: string | null
@@ -2734,6 +2739,7 @@ export type Database = {
           calories_calculated_at?: string | null
           created_at?: string
           day_of_week?: string | null
+          day_order?: number
           estimated_calories?: number | null
           estimated_duration_minutes?: number | null
           focus?: string | null

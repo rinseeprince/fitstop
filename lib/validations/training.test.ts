@@ -16,7 +16,13 @@ import {
   moveTrainingPlanSchema,
   clientLayoutSchema,
 } from './training'
-import { MAX_PLAN_EDIT_SESSIONS, MAX_WEEK_LAYOUT_MOVES } from '@/lib/training-constants'
+import {
+  MAX_PROGRAM_DAYS,
+  MAX_PROGRAM_SESSIONS,
+  MAX_SESSIONS_PER_DAY,
+  MAX_SESSIONS_PER_WEEK,
+  MAX_WEEK_LAYOUT_MOVES,
+} from '@/lib/training-constants'
 import { MAX_PRESCRIBED_ROWS } from '@/utils/set-spec-rows'
 import { STRAIGHT_SETS, sessionExercises } from '@/utils/exercise-groups'
 
@@ -165,8 +171,13 @@ describe('Training Validation Schemas', () => {
       expect(result.success).toBe(false)
     })
 
-    it('rejects frequency above 7', () => {
-      const data = { frequencyPerWeek: 8 }
+    it('accepts more than seven sessions a week — a day can hold several', () => {
+      expect(updateTrainingPlanSchema.safeParse({ frequencyPerWeek: 10 }).success).toBe(true)
+      expect(updateTrainingPlanSchema.safeParse({ frequencyPerWeek: MAX_SESSIONS_PER_WEEK }).success).toBe(true)
+    })
+
+    it('rejects frequency above a week of full days', () => {
+      const data = { frequencyPerWeek: MAX_SESSIONS_PER_WEEK + 1 }
       const result = updateTrainingPlanSchema.safeParse(data)
       expect(result.success).toBe(false)
     })
@@ -522,16 +533,62 @@ describe('Training Validation Schemas', () => {
 
   describe('placement/create session + exercise caps (H5)', () => {
     const savedSession = { name: 'Day', orderIndex: 0, isRest: false, groups: [] }
+    // One session on each of `days` days, a week of seven at a time.
+    const onDays = (days: number) =>
+      Array.from({ length: days }, (_, i) => ({ ...savedSession, weekIndex: Math.floor(i / 7), orderIndex: i }))
+    // `perDay` sessions on each of `days` days.
+    const stacked = (days: number, perDay: number) =>
+      Array.from({ length: days }, (_, d) =>
+        Array.from({ length: perDay }, (_, place) => ({
+          ...savedSession,
+          weekIndex: Math.floor(d / 7),
+          orderIndex: d,
+          dayOrder: place,
+        })),
+      ).flat()
+    const issues = (sessions: unknown[]) => {
+      const r = overwriteSavedPlanSchema.safeParse({ sessions })
+      return r.success ? [] : r.error.issues.map((issue) => issue.message)
+    }
 
-    it('overwriteSavedPlanSchema bounds sessions to [1, 364]', () => {
-      expect(overwriteSavedPlanSchema.safeParse({ sessions: Array(365).fill(savedSession) }).success).toBe(false)
+    it('overwriteSavedPlanSchema bounds a program to [1, 364] days', () => {
+      expect(issues(onDays(MAX_PROGRAM_DAYS + 1))).toContain(`A program holds at most ${MAX_PROGRAM_DAYS} days`)
+      expect(overwriteSavedPlanSchema.safeParse({ sessions: onDays(MAX_PROGRAM_DAYS) }).success).toBe(true)
       expect(overwriteSavedPlanSchema.safeParse({ sessions: [] }).success).toBe(false)
       expect(overwriteSavedPlanSchema.safeParse({ sessions: [savedSession] }).success).toBe(true)
     })
 
-    it('inlinePlanBodySchema bounds sessions to [1, 364]', () => {
-      expect(inlinePlanBodySchema.safeParse({ name: 'P', sessions: Array(365).fill(savedSession) }).success).toBe(false)
+    it('a day holds several sessions, each at its own place, and a program more rows than days', () => {
+      // A week of two-a-days: fourteen rows, seven days.
+      const r = overwriteSavedPlanSchema.safeParse({ sessions: stacked(7, 2) })
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.data.sessions.map((s) => s.dayOrder).slice(0, 4)).toEqual([0, 1, 0, 1])
+    })
+
+    it("refuses two sessions at one place on a day, and a rest row sharing a day with a session", () => {
+      expect(issues([savedSession, savedSession])).toContain('Two sessions share a place on the same day')
+      expect(issues([savedSession, { ...savedSession, dayOrder: 1, isRest: true }])).toContain(
+        'A rest day holds no sessions',
+      )
+      // dayOrder defaults to 0, so a lone session needs none.
+      const lone0 = savedSessionInputSchema.safeParse(savedSession)
+      expect(lone0.success && lone0.data.dayOrder).toBe(0)
+    })
+
+    it('caps a day at its most sessions and a program at its most sessions', () => {
+      expect(savedSessionInputSchema.safeParse({ ...savedSession, dayOrder: MAX_SESSIONS_PER_DAY - 1 }).success).toBe(true)
+      expect(savedSessionInputSchema.safeParse({ ...savedSession, dayOrder: MAX_SESSIONS_PER_DAY }).success).toBe(false)
+      const perDay = MAX_SESSIONS_PER_DAY
+      const days = Math.ceil((MAX_PROGRAM_SESSIONS + 1) / perDay)
+      expect(issues(stacked(days, perDay))).toContain(`A program holds at most ${MAX_PROGRAM_SESSIONS} sessions`)
+      expect(overwriteSavedPlanSchema.safeParse({ sessions: stacked(MAX_PROGRAM_SESSIONS / perDay, perDay) }).success).toBe(true)
+    })
+
+    it('inlinePlanBodySchema bounds the same program rows', () => {
+      expect(inlinePlanBodySchema.safeParse({ name: 'P', sessions: onDays(MAX_PROGRAM_DAYS + 1) }).success).toBe(false)
       expect(inlinePlanBodySchema.safeParse({ name: 'P', sessions: [] }).success).toBe(false)
+      expect(inlinePlanBodySchema.safeParse({ name: 'P', sessions: [savedSession, savedSession] }).success).toBe(false)
+      expect(inlinePlanBodySchema.safeParse({ name: 'P', sessions: stacked(7, 2) }).success).toBe(true)
     })
 
     it('createSavedPlanSchema caps sessions at 364 (the type:"plan" placement source)', () => {
@@ -803,7 +860,7 @@ describe('several sessions a day', () => {
     const parse = (perDay: number) =>
       planEditSaveSchema.safeParse({ days: days(perDay), plan: { name: 'Block A' }, version: 'v1' }).success
 
-    const most = Math.floor(MAX_PLAN_EDIT_SESSIONS / 14)
+    const most = Math.floor(MAX_PROGRAM_SESSIONS / 14)
     expect(parse(most)).toBe(true)
     expect(parse(most + 1)).toBe(false)
   })

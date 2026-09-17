@@ -50,6 +50,7 @@ const opFallbackLabel: Record<DraftOp["type"], string> = {
   clear_slot: "Clear a day to rest",
   remove_session: "Remove a session",
   move_session: "Move a session",
+  reorder_session: "Change a session's place in its day",
   update_session: "Update a session",
   add_exercise: "Add an exercise",
   update_exercise: "Update an exercise",

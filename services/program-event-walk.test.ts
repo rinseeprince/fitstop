@@ -24,7 +24,7 @@ import {
   expandProgramToWindow,
   resolvePlacementWindowEnd,
   resolveWindowCap,
-  type ProgramSlot,
+  type ProgramSession,
 } from "./program-event-walk";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
@@ -56,10 +56,9 @@ function createMockQuery<T = unknown>(result: { data: T | null; error: { message
   return mockQuery;
 }
 
-function makeSlot(overrides?: Partial<ProgramSlot>): ProgramSlot {
+function makeSession(overrides?: Partial<ProgramSession>): ProgramSession {
   return {
     id: "ts-1",
-    isRest: false,
     name: "Push",
     focus: "chest",
     calorieSurplusPercentage: 15,
@@ -88,16 +87,16 @@ describe("program-event-walk", () => {
       return eventUpsertQuery;
     }
 
-    it("walks the slots from the first date", async () => {
+    it("walks the days from the first date", async () => {
       const eventUpsertQuery = wireEventUpsert();
 
       const count = await generateProgramEvents({
         clientId: "client-1",
         planId: "plan-1",
-        programSlots: [
-          makeSlot({ id: "ts-a", name: "A" }),
-          makeSlot({ id: "ts-b", name: "B" }),
-          makeSlot({ id: "ts-r", name: "Rest", isRest: true }),
+        programDays: [
+          [makeSession({ id: "ts-a", name: "A" })],
+          [makeSession({ id: "ts-b", name: "B" })],
+          [],
         ],
         startDate: "2026-07-01",
         endDate: "2026-07-03",
@@ -115,18 +114,18 @@ describe("program-event-walk", () => {
       expect(count).toBe(2);
     });
 
-    it("a rest slot consumes its date without emitting an event", async () => {
+    it("a rest day consumes its date without emitting an event", async () => {
       const eventUpsertQuery = wireEventUpsert();
 
-      // The rest slot takes 07-05 silently and the next slot lands on 07-06:
+      // The rest day takes 07-05 silently and the next day lands on 07-06:
       // no compression.
       await generateProgramEvents({
         clientId: "client-1",
         planId: "plan-1",
-        programSlots: [
-          makeSlot({ id: "ts-0", name: "S0" }),
-          makeSlot({ id: "ts-r", name: "Rest", isRest: true }),
-          makeSlot({ id: "ts-2", name: "S2" }),
+        programDays: [
+          [makeSession({ id: "ts-0", name: "S0" })],
+          [],
+          [makeSession({ id: "ts-2", name: "S2" })],
         ],
         startDate: "2026-07-04",
         endDate: "2026-07-06",
@@ -142,15 +141,43 @@ describe("program-event-walk", () => {
       ]);
     });
 
+    it("lays a day's sessions on its date in the day's order, each at its place", async () => {
+      const eventUpsertQuery = wireEventUpsert();
+
+      const count = await generateProgramEvents({
+        clientId: "client-1",
+        planId: "plan-1",
+        programDays: [
+          [makeSession({ id: "ts-run", name: "AM run" }), makeSession({ id: "ts-lift", name: "PM lift" })],
+          [],
+          [makeSession({ id: "ts-solo", name: "Solo" })],
+        ],
+        startDate: "2026-07-01",
+        endDate: "2026-07-03",
+      });
+
+      const rows = eventUpsertQuery.upsert.mock.calls[0][0] as Array<{
+        training_session_id: string;
+        date: string;
+        day_order: number;
+      }>;
+      expect(rows.map((r) => [r.training_session_id, r.date, r.day_order])).toEqual([
+        ["ts-run", "2026-07-01", 0],
+        ["ts-lift", "2026-07-01", 1],
+        ["ts-solo", "2026-07-03", 0],
+      ]);
+      expect(count).toBe(3);
+    });
+
     it("INVARIANT: every emitted row carries the calorie_surplus_percentage key, even when null", async () => {
       const eventUpsertQuery = wireEventUpsert();
 
       await generateProgramEvents({
         clientId: "client-1",
         planId: "plan-1",
-        programSlots: [
-          makeSlot({ id: "ts-a", calorieSurplusPercentage: 20 }),
-          makeSlot({ id: "ts-b", calorieSurplusPercentage: null }),
+        programDays: [
+          [makeSession({ id: "ts-a", calorieSurplusPercentage: 20 })],
+          [makeSession({ id: "ts-b", calorieSurplusPercentage: null })],
         ],
         startDate: "2026-07-01",
         endDate: "2026-07-02",
@@ -169,7 +196,7 @@ describe("program-event-walk", () => {
 
       await generateProgramEvents({
         clientId: "client-1", planId: "plan-1",
-        programSlots: [makeSlot()],
+        programDays: [[makeSession()]],
         startDate: "2026-07-01", endDate: "2026-07-01",
       });
 
@@ -179,19 +206,40 @@ describe("program-event-walk", () => {
       });
     });
 
-    it("returns 0 with no DB write for an empty slot array or an all-rest window", async () => {
+    it("writes a long walk in chunks, every event exactly once", async () => {
+      const eventUpsertQuery = wireEventUpsert();
+
+      // 400 days of three sessions each: 1,200 events, three statements.
+      const days = Array.from({ length: 400 }, (_, d) =>
+        [0, 1, 2].map((place) => makeSession({ id: `ts-${d}-${place}` })),
+      );
+      const count = await generateProgramEvents({
+        clientId: "client-1", planId: "plan-1", programDays: days,
+        startDate: "2026-01-01", endDate: "2027-02-04",
+      });
+
+      expect(count).toBe(1200);
+      const chunks = eventUpsertQuery.upsert.mock.calls.map((call) => (call[0] as unknown[]).length);
+      expect(chunks).toEqual([500, 500, 200]);
+      const ids = eventUpsertQuery.upsert.mock.calls.flatMap((call) =>
+        (call[0] as Array<{ training_session_id: string }>).map((row) => row.training_session_id),
+      );
+      expect(new Set(ids).size).toBe(1200);
+    });
+
+    it("returns 0 with no DB write for an empty program or an all-rest window", async () => {
       const eventUpsertQuery = wireEventUpsert();
 
       expect(
         await generateProgramEvents({
-          clientId: "client-1", planId: "plan-1", programSlots: [],
+          clientId: "client-1", planId: "plan-1", programDays: [],
           startDate: "2026-07-01", endDate: "2026-07-07",
         }),
       ).toBe(0);
       expect(
         await generateProgramEvents({
           clientId: "client-1", planId: "plan-1",
-          programSlots: [makeSlot({ isRest: true })],
+          programDays: [[]],
           startDate: "2026-07-01", endDate: "2026-07-01",
         }),
       ).toBe(0);
@@ -206,7 +254,7 @@ describe("program-event-walk", () => {
       await expect(
         generateProgramEvents({
           clientId: "client-1", planId: "plan-1",
-          programSlots: [makeSlot()],
+          programDays: [[makeSession()]],
           startDate: "2026-07-01", endDate: "2026-07-01",
         }),
       ).rejects.toThrow("Failed to generate events: boom");
@@ -214,7 +262,7 @@ describe("program-event-walk", () => {
   });
 
   describe("placementEndDate", () => {
-    it("is start + max(1, slots) − 1, the length a placement asks for when no block stretches it", () => {
+    it("is start + max(1, days) − 1, the length a placement asks for when no block stretches it", () => {
       expect(placementEndDate("2026-01-05", 0)).toBe("2026-01-05");
       expect(placementEndDate("2026-01-05", 1)).toBe("2026-01-05");
       expect(placementEndDate("2026-01-05", 28)).toBe("2026-02-01");
@@ -244,7 +292,7 @@ describe("resolvePlacementWindowEnd", () => {
     expect(
       await resolvePlacementWindowEnd({
         clientId: "client-1",
-        slotCount: 28,
+        dayCount: 28,
         startDate: "2026-09-07",
       }),
     ).toBe("2026-11-26");
@@ -257,7 +305,7 @@ describe("resolvePlacementWindowEnd", () => {
     expect(
       await resolvePlacementWindowEnd({
         clientId: "client-1",
-        slotCount: 112,
+        dayCount: 112,
         startDate: "2026-09-07",
       }),
     ).toBe("2026-11-05");
@@ -268,7 +316,7 @@ describe("resolvePlacementWindowEnd", () => {
     expect(
       await resolvePlacementWindowEnd({
         clientId: "client-1",
-        slotCount: 35,
+        dayCount: 35,
         startDate: "2026-09-07",
       }),
     ).toBe("2026-10-11");
@@ -284,7 +332,7 @@ describe("resolvePlacementWindowEnd", () => {
     expect(
       await resolvePlacementWindowEnd({
         clientId: "client-1",
-        slotCount: 35,
+        dayCount: 35,
         startDate: "2026-09-07",
       }),
     ).toBe("2026-09-20");
@@ -297,7 +345,7 @@ describe("resolvePlacementWindowEnd", () => {
     expect(
       await resolvePlacementWindowEnd({
         clientId: "client-1",
-        slotCount: 21,
+        dayCount: 21,
         startDate: "2026-09-07",
       }),
     ).toBe("2026-09-27");
@@ -309,7 +357,7 @@ describe("resolvePlacementWindowEnd", () => {
     expect(
       await resolvePlacementWindowEnd({
         clientId: "client-1",
-        slotCount: 21,
+        dayCount: 21,
         startDate: "2026-09-07",
       }),
     ).toBe("2026-09-07");
@@ -323,7 +371,7 @@ describe("resolvePlacementWindowEnd", () => {
     expect(
       await resolvePlacementWindowEnd({
         clientId: "client-1",
-        slotCount: 21,
+        dayCount: 21,
         startDate: "2026-09-07",
       }),
     ).toBe("2026-10-18");
@@ -358,7 +406,7 @@ describe("expandProgramToWindow", () => {
   });
 
   it("keeps (weekIndex, orderIndex) climbing across cycles", () => {
-    // That pair IS the date-walk's slot position and the ordering every
+    // That pair IS the date-walk's day position and the ordering every
     // placed-plan reader uses, so cycle 2 day 1 has to sort after cycle 1 day 3.
     const out = expandProgramToWindow(authored, 6);
 

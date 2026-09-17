@@ -8,8 +8,9 @@ import {
   type WeekDraft,
 } from "./program-builder-types";
 import {
-  DAY_HAS_SESSION,
+  addSessionToDay,
   findSession,
+  findSessionPlace,
   mapSession,
   mapSessionExercises,
   mapSlots,
@@ -18,6 +19,7 @@ import {
   patchChanges,
   removeSessionExercise,
   removeSessionFromDay,
+  reorderSessionInDay,
 } from "./program-builder-model";
 import {
   isSupersetOrCircuit,
@@ -75,15 +77,17 @@ export type DraftOp =
     }
   | { type: "remove_week"; weekUid: string; label?: string }
   | { type: "move_week"; weekUid: string; toIndex: number; label?: string }
-  // Onto a rest day only.
+  // Joins the day, after any sessions already on it.
   | { type: "place_session"; slotUid: string; session: SessionDraft; label?: string }
   // Empties the whole day, every session on it.
   | { type: "clear_slot"; slotUid: string; label?: string }
   // One session off its day; the day is rest once it holds none.
   | { type: "remove_session"; sessionUid: string; label?: string }
-  // The coach's move rule (moveSessionToDay): onto a rest day it moves; onto a
-  // day holding one session, a session alone on its day swaps; else refused.
+  // The coach's move rule (moveSessionToDay): onto another day it joins that
+  // day, last.
   | { type: "move_session"; sessionUid: string; targetSlotUid: string; label?: string }
+  // A session's place among its day's sessions, 0 first (reorderSessionInDay).
+  | { type: "reorder_session"; sessionUid: string; toIndex: number; label?: string }
   | {
       type: "update_session";
       sessionUid: string;
@@ -253,20 +257,9 @@ export function applyDraftOp(
     case "place_session": {
       const refused = slotLocked(op.slotUid);
       if (refused) return { draft, skipped: refused };
-      let placed = false;
-      let occupied = false;
-      const next = mapSlots(draft, (slot) => {
-        if (slot.uid !== op.slotUid) return slot;
-        if (slot.sessions.length > 0) {
-          occupied = true;
-          return slot;
-        }
-        placed = true;
-        return { ...slot, sessions: [op.session] };
-      });
-      if (occupied) return { draft, skipped: DAY_HAS_SESSION };
-      if (!placed) return { draft, skipped: "That day no longer exists" };
-      return { draft: next };
+      if (hasUid(draft, op.session.uid)) return { draft, skipped: "Session already added" };
+      const placed = addSessionToDay(draft, op.slotUid, op.session);
+      return placed.ok ? { draft: placed.draft } : { draft, skipped: placed.reason };
     }
 
     case "clear_slot": {
@@ -295,6 +288,15 @@ export function applyDraftOp(
       if (refused) return { draft, skipped: refused };
       const moved = moveSessionToDay(draft, op.sessionUid, op.targetSlotUid);
       return moved.ok ? { draft: moved.draft } : { draft, skipped: moved.reason };
+    }
+
+    case "reorder_session": {
+      const refused = sessionLocked(op.sessionUid);
+      if (refused) return { draft, skipped: refused };
+      if (!findSessionPlace(draft, op.sessionUid)) {
+        return { draft, skipped: "That session no longer exists" };
+      }
+      return { draft: reorderSessionInDay(draft, op.sessionUid, op.toIndex) };
     }
 
     case "update_session": {

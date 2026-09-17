@@ -4,6 +4,7 @@ import type { Database } from "@/types/database";
 export type CheckInRow = Database["public"]["Tables"]["check_ins"]["Row"];
 export type TrainingPlanRow = Database["public"]["Tables"]["training_plans"]["Row"];
 export type TrainingSessionRow = Database["public"]["Tables"]["training_sessions"]["Row"];
+export type TrainingSessionInsert = Database["public"]["Tables"]["training_sessions"]["Insert"];
 export type TrainingExerciseRow = Database["public"]["Tables"]["training_exercises"]["Row"];
 export type TrainingExerciseInsert = Database["public"]["Tables"]["training_exercises"]["Insert"];
 export type TrainingExerciseGroupRow = Database["public"]["Tables"]["training_exercise_groups"]["Row"];

@@ -50,6 +50,7 @@ export function useLockedMutators({
       clearSlot: state.clearSlot,
       removeSession: state.removeSession,
       moveSession: state.moveSession,
+      reorderSession: state.reorderSession,
       updateSession: state.updateSession,
       addExercise: state.addExercise,
       removeExercise: state.removeExercise,
@@ -103,6 +104,10 @@ export function useLockedMutators({
     moveSession: (sessionUid: string, targetSlotUid: string) => {
       if (slotRefused(targetSlotUid) || sessionRefused(sessionUid)) return;
       state.moveSession(sessionUid, targetSlotUid);
+    },
+    reorderSession: (sessionUid: string, toIndex: number) => {
+      if (sessionRefused(sessionUid)) return;
+      state.reorderSession(sessionUid, toIndex);
     },
     updateSession: (
       sessionUid: string,

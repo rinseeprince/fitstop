@@ -77,6 +77,7 @@ function mapSavedSessionRow(
     focus: row.focus ?? null,
     orderIndex: row.order_index,
     weekIndex: row.week_index ?? 0,
+    dayOrder: row.day_order,
     isRest: row.is_rest ?? false,
     estimatedDurationMinutes: row.estimated_duration_minutes ?? null,
     calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,

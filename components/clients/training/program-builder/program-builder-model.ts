@@ -14,6 +14,7 @@ import {
   type WeekDraft,
 } from "./program-builder-types";
 import { STRAIGHT_SETS } from "@/utils/exercise-groups";
+import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
 import {
   isSupersetOrCircuit,
   normalizeGroups,
@@ -260,14 +261,40 @@ export function mapSession(
 }
 
 // =============================================================================
-// sessions between days — shared by the coach's gestures and the assistant's
-// ops, so both follow one rule
+// a day's sessions — shared by the coach's gestures and the assistant's ops, so
+// both follow one rule: a session added to or moved onto a day joins it, last;
+// its place within the day changes only by reordering the day
 // =============================================================================
 
-/** Why a day won't take a session moved or placed onto it. */
-export const DAY_HAS_SESSION = "That day already has a session";
+/** Why a day won't take another session. */
+export const DAY_IS_FULL = `A day holds at most ${MAX_SESSIONS_PER_DAY} sessions`;
 
-type SessionMove = { ok: true; draft: ProgramDraft } | { ok: false; reason: string };
+type DayEdit = { ok: true; draft: ProgramDraft } | { ok: false; reason: string };
+
+/** Whether a day has room for one more session. */
+export function dayHasRoom(slot: DaySlotDraft): boolean {
+  return slot.sessions.length < MAX_SESSIONS_PER_DAY;
+}
+
+/**
+ * Add a session to a day, after the sessions already on it; on a rest day it
+ * is the day's first. Refused when the day is full or gone.
+ */
+export function addSessionToDay(
+  draft: ProgramDraft,
+  slotUid: string,
+  session: SessionDraft,
+): DayEdit {
+  const slot = findSlot(draft, slotUid);
+  if (!slot) return { ok: false, reason: "That day no longer exists" };
+  if (!dayHasRoom(slot)) return { ok: false, reason: DAY_IS_FULL };
+  return {
+    ok: true,
+    draft: mapSlots(draft, (s) =>
+      s.uid === slotUid ? { ...s, sessions: [...s.sessions, session] } : s,
+    ),
+  };
+}
 
 /**
  * Remove one session from its day; a day left with none is a rest day. The
@@ -284,35 +311,51 @@ export function removeSessionFromDay(draft: ProgramDraft, sessionUid: string): P
 }
 
 /**
- * Move a session onto a day. Onto its own day nothing changes (the same
- * draft). Onto a rest day it moves, and the day it left keeps its other
- * sessions. Onto a day holding one session, when the moving session is the
- * only one on its own day, the two swap. Any other day refuses it.
+ * Move a session onto another day, where it joins the sessions already there,
+ * last; the day it left keeps its other sessions, in order. Onto its own day
+ * nothing changes (the same draft) — a day's order changes by reordering it.
+ * Refused when the other day is full.
  */
 export function moveSessionToDay(
   draft: ProgramDraft,
   sessionUid: string,
   targetSlotUid: string,
-): SessionMove {
+): DayEdit {
   const from = findSessionPlace(draft, sessionUid);
   if (!from) return { ok: false, reason: "That session no longer exists" };
   const target = findSlot(draft, targetSlotUid);
   if (!target) return { ok: false, reason: "The target day no longer exists" };
   if (target.uid === from.slot.uid) return { ok: true, draft };
-  const swap = target.sessions.length === 1 && from.slot.sessions.length === 1;
-  if (target.sessions.length > 0 && !swap) return { ok: false, reason: DAY_HAS_SESSION };
+  if (!dayHasRoom(target)) return { ok: false, reason: DAY_IS_FULL };
   const moving = from.slot.sessions[from.index];
   return {
     ok: true,
     draft: mapSlots(draft, (slot) => {
-      if (slot.uid === target.uid) return { ...slot, sessions: [moving] };
+      if (slot.uid === target.uid) return { ...slot, sessions: [...slot.sessions, moving] };
       if (slot.uid !== from.slot.uid) return slot;
-      return {
-        ...slot,
-        sessions: swap ? target.sessions : slot.sessions.filter((s) => s.uid !== sessionUid),
-      };
+      return { ...slot, sessions: slot.sessions.filter((s) => s.uid !== sessionUid) };
     }),
   };
+}
+
+/**
+ * Put a session at `toIndex` among its day's sessions (0 first; clamped to the
+ * day), the others keeping their order around it. The same draft when it is
+ * already there or no day holds it.
+ */
+export function reorderSessionInDay(
+  draft: ProgramDraft,
+  sessionUid: string,
+  toIndex: number,
+): ProgramDraft {
+  const at = findSessionPlace(draft, sessionUid);
+  if (!at) return draft;
+  const to = Math.max(0, Math.min(at.slot.sessions.length - 1, toIndex));
+  if (to === at.index) return draft;
+  const sessions = [...at.slot.sessions];
+  const [moving] = sessions.splice(at.index, 1);
+  sessions.splice(to, 0, moving);
+  return mapSlots(draft, (slot) => (slot.uid === at.slot.uid ? { ...slot, sessions } : slot));
 }
 
 // =============================================================================

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  DAY_HAS_SESSION,
+  DAY_IS_FULL,
+  addSessionToDay,
   cloneWeek,
+  dayHasRoom,
   defaultExerciseDraftFromCatalog,
   findSession,
   findSessionPlace,
@@ -13,9 +15,11 @@ import {
   progressWeek,
   removeSessionExercise,
   removeSessionFromDay,
+  reorderSessionInDay,
   straightSetsGroup,
   weekSessions,
 } from "./program-builder-model";
+import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
 import {
   makeRestSlot,
   type ExerciseDraft,
@@ -342,16 +346,41 @@ describe("moveSessionToDay", () => {
     expect(next.weeks[0].days[3]).toMatchObject({ isRest: true, sessions: [] });
   });
 
-  it("a session alone on its day swaps with a day holding one", () => {
+  it("onto a day holding one it joins that day, LAST — no swap", () => {
     const next = moved(moveSessionToDay(fixture(), "sess-four", "slot-4"));
-    expect(uidsOn(next, 4)).toEqual(["sess-four"]);
-    expect(uidsOn(next, 3)).toEqual(["sess-five"]);
+    expect(uidsOn(next, 4)).toEqual(["sess-five", "sess-four"]);
+    expect(next.weeks[0].days[3]).toMatchObject({ isRest: true, sessions: [] });
   });
 
-  it("refuses a day holding two, and refuses to swap a session that shares its day", () => {
+  it("onto a day holding two it joins after both; a session that shared its day leaves its partner", () => {
+    const next = moved(moveSessionToDay(fixture(), "sess-five", "slot-0"));
+    expect(uidsOn(next, 0)).toEqual(["sess-am", "sess-pm", "sess-five"]);
+    const back = moved(moveSessionToDay(fixture(), "sess-am", "slot-3"));
+    expect(uidsOn(back, 3)).toEqual(["sess-four", "sess-am"]);
+    expect(uidsOn(back, 0)).toEqual(["sess-pm"]);
+  });
+
+  it("refuses a full day, and nothing moves", () => {
     const draft = fixture();
-    expect(moveSessionToDay(draft, "sess-four", "slot-0")).toEqual({ ok: false, reason: DAY_HAS_SESSION });
-    expect(moveSessionToDay(draft, "sess-am", "slot-3")).toEqual({ ok: false, reason: DAY_HAS_SESSION });
+    const crowded: ProgramDraft = {
+      ...draft,
+      weeks: draft.weeks.map((w) => ({
+        ...w,
+        days: w.days.map((slot) =>
+          slot.uid === "slot-6"
+            ? {
+                ...slot,
+                isRest: false,
+                sessions: Array.from({ length: MAX_SESSIONS_PER_DAY }, (_, i) =>
+                  session([lone(`full-${i}`)], `sess-full-${i}`),
+                ),
+              }
+            : slot,
+        ),
+      })),
+    };
+    expect(moveSessionToDay(crowded, "sess-four", "slot-6")).toEqual({ ok: false, reason: DAY_IS_FULL });
+    expect(DAY_IS_FULL).toBe(`A day holds at most ${MAX_SESSIONS_PER_DAY} sessions`);
   });
 
   it("onto its own day changes nothing; a vanished session or day is a reason", () => {
@@ -366,5 +395,70 @@ describe("moveSessionToDay", () => {
       ok: false,
       reason: "The target day no longer exists",
     });
+  });
+});
+
+describe("addSessionToDay", () => {
+  const uidsOn = (draft: ProgramDraft, d: number) => draft.weeks[0].days[d].sessions.map((s) => s.uid);
+
+  it("on a rest day the session is the day's; on a day holding sessions it joins LAST", () => {
+    const draft = draftOf(weekOf(session([lone("a")], "sess-am")));
+    const onRest = addSessionToDay(draft, "slot-2", session([], "sess-new"));
+    if (!onRest.ok) throw new Error(onRest.reason);
+    expect(uidsOn(normalizeDraft(onRest.draft), 2)).toEqual(["sess-new"]);
+    expect(normalizeDraft(onRest.draft).weeks[0].days[2].isRest).toBe(false);
+
+    const second = addSessionToDay(draft, "slot-0", session([], "sess-pm"));
+    if (!second.ok) throw new Error(second.reason);
+    expect(uidsOn(second.draft, 0)).toEqual(["sess-am", "sess-pm"]);
+  });
+
+  it("refuses a full day and a vanished day; dayHasRoom says which days take one", () => {
+    const sessions = Array.from({ length: MAX_SESSIONS_PER_DAY }, (_, i) => session([], `sess-${i}`));
+    const draft = draftOf(weekOf(...sessions));
+    expect(dayHasRoom(draft.weeks[0].days[0])).toBe(false);
+    expect(dayHasRoom(draft.weeks[0].days[1])).toBe(true);
+    expect(addSessionToDay(draft, "slot-0", session([], "sess-extra"))).toEqual({
+      ok: false,
+      reason: DAY_IS_FULL,
+    });
+    expect(addSessionToDay(draft, "slot-gone", session([], "sess-extra"))).toEqual({
+      ok: false,
+      reason: "That day no longer exists",
+    });
+    // One short of full still takes one.
+    const nearlyFull = draftOf(weekOf(...sessions.slice(1)));
+    expect(addSessionToDay(nearlyFull, "slot-0", session([], "sess-extra")).ok).toBe(true);
+  });
+});
+
+describe("reorderSessionInDay", () => {
+  const three = () =>
+    draftOf(
+      weekOf(session([lone("a")], "sess-a"), session([lone("b")], "sess-b"), session([lone("c")], "sess-c")),
+    );
+  const uids = (draft: ProgramDraft) => draft.weeks[0].days[0].sessions.map((s) => s.uid);
+
+  it("puts the session at the place, the others keeping their order around it", () => {
+    expect(uids(reorderSessionInDay(three(), "sess-c", 0))).toEqual(["sess-c", "sess-a", "sess-b"]);
+    expect(uids(reorderSessionInDay(three(), "sess-a", 2))).toEqual(["sess-b", "sess-c", "sess-a"]);
+    expect(uids(reorderSessionInDay(three(), "sess-a", 1))).toEqual(["sess-b", "sess-a", "sess-c"]);
+  });
+
+  it("clamps the place to the day, and changes nothing when the session is already there or gone", () => {
+    expect(uids(reorderSessionInDay(three(), "sess-a", 99))).toEqual(["sess-b", "sess-c", "sess-a"]);
+    expect(uids(reorderSessionInDay(three(), "sess-c", -3))).toEqual(["sess-c", "sess-a", "sess-b"]);
+    const draft = three();
+    expect(reorderSessionInDay(draft, "sess-b", 1)).toBe(draft);
+    expect(reorderSessionInDay(draft, "sess-gone", 0)).toBe(draft);
+    // A place past either end of the day, for the session already at that end.
+    expect(reorderSessionInDay(draft, "sess-c", 99)).toBe(draft);
+    expect(reorderSessionInDay(draft, "sess-a", -3)).toBe(draft);
+  });
+
+  it("touches only the session's day", () => {
+    const draft = three();
+    const next = reorderSessionInDay(draft, "sess-c", 0);
+    expect(next.weeks[0].days[1]).toBe(draft.weeks[0].days[1]);
   });
 });

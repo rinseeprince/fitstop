@@ -103,9 +103,9 @@ export function systemPrompt(target: BuilderTarget): string {
 
 ## The program model
 - A program is an ordered list of weeks; each week has exactly 7 positional days (Day 1-7 — deliberately NOT weekdays; Day 1 lands on whatever date the program is applied).
-- A day holds its sessions in order, or holds none and is a rest day. There is no third state. Most days hold one session; a day on a client's calendar can hold several (a morning run and an evening lift), each its own workout.
+- A day holds its sessions in order, or holds none and is a rest day. There is no third state. A day can hold several sessions (a morning run and an evening lift), each its own workout — coaches program two-a-days this way.
 - On a day holding several sessions, name the one you mean by its place in the day with \`session\` (1 = the first) — every tool that works on a session takes it. The program state lists each session with its place.
-- add_session adds a session only to a rest day.
+- add_session adds a session to any day: a rest day takes it as its session, a day already holding sessions takes it LAST. move_session moves a session to another day, where it also lands LAST. reorder_session changes a session's place within its day.
 - Exercises carry either a compact prescription (sets × rep range) or full per-set programming (set types: warmup/working/amrap/drop/failure, per-set reps/loads/RPE).
 - "Working sets" are what progression and volume count; warm-ups and finishers are never auto-progressed.
 
@@ -151,6 +151,7 @@ export function systemPrompt(target: BuilderTarget): string {
 - "add a warm-up set to the squat" → set_exercise_sets with the full list (a warm-up changes the set list, so send every set, warm-up first).
 - "swap leg press for hack squat on day 3" → get_week to locate it, then remove_exercise + add_exercise (use position to keep the order).
 - "add an arms day on day 5 of week 1" → add_session, then one add_exercise per movement.
+- "add a morning run before the lift on day 2" → add_session{week, day:2, name:"Morning run"} (it lands last), then reorder_session{week, day:2, session:2, toSession:1}, then add_exercise with session:1.
 - "superset bench and rows on day 1, 3 rounds, 90 seconds between rounds" → ONE link_exercises{exercisePositions:[bench, row], rounds:3, restBetweenRoundsSeconds:90}.
 - "finish day 3 with a 21-15-9 of thrusters and pull-ups" → add_exercise for each if missing, link_exercises{rounds:3}, then set_exercise_sets on each with three working sets of 21, 15 and 9 reps.
 - "take the burpees out of the circuit" → unlink_exercises. "add face pulls to the superset" → add_to_group.
@@ -160,7 +161,7 @@ export function systemPrompt(target: BuilderTarget): string {
 - Estimated duration (minutes): planning metadata for the coach; it does not affect the prescription.
 - Session notes / exercise notes: free-text coaching cues shown to the client. Put technique cues here, not in the exercise name.
 - Focus: a short descriptive label for the session ("Upper — hypertrophy"). It is not a filter or a category the system reads.
-- Rest days: a day with no session IS a rest day — there is no separate "empty" state. clear_day removes every session on a day and makes it rest; remove_session removes one; adding a session to a rest day makes it a training day. Every week always has exactly 7 day slots.
+- Rest days: a day with no session IS a rest day — there is no separate "empty" state. clear_day removes every session on a day and makes it rest; remove_session removes one; adding a session to a rest day makes it a training day, and adding one to a training day gives it a second session. Every week always has exactly 7 day slots.
 - Set types: warmup (excluded from volume and progression), working (the default and what progression moves), amrap / failure (open-ended top sets), drop (carries drop-set entries). A set with no type counts as working.
 
 ## More examples

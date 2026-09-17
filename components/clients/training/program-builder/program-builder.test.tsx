@@ -194,6 +194,7 @@ function makeSession(overrides: Partial<SavedSession>): SavedSession {
     focus: null,
     orderIndex: 0,
     weekIndex: 0,
+    dayOrder: 0,
     isRest: true,
     estimatedDurationMinutes: null,
     calorieSurplusPercentage: null,

@@ -26,8 +26,12 @@ const fetchSessionsWithExercises = async (planId: string): Promise<TrainingSessi
     // Rest days are real rows on placed multi-week programs (migration 121); this
     // coach-facing workout list excludes them so counts stay workout-only.
     .eq("is_rest", false)
+    // Program order: by day, a day's sessions in their order (migration 180),
+    // the id breaking any tie so every read lists them the same way.
     .order("week_index", { ascending: true })
-    .order("order_index", { ascending: true });
+    .order("order_index", { ascending: true })
+    .order("day_order", { ascending: true })
+    .order("id", { ascending: true });
 
   if (sessionError) throw new Error(`Failed to fetch sessions: ${sessionError.message}`);
   const sessionList = sessionRows || [];
