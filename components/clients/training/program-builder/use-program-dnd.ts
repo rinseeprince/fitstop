@@ -67,9 +67,12 @@ export type SlotDropData = {
 export type DaySessionDropData = { type: "day-session"; slotUid: string; index: number };
 
 /**
- * A session dragged over its own day: the place in the day, counted as it
- * stands, before which it would land (the day's session count = after the last)
- * — null while landing there would leave the day's order as it is.
+ * A session drag, from its start to its drop: the day the session comes from,
+ * and the place in that day, counted as it stands, before which it would land
+ * (the day's session count = after the last) — null while the pointer is off
+ * the day or landing there would leave the day's order as it is. Set as the
+ * drag starts, so no frame shows the day as one the session could join — not
+ * even those before the pointer first moves.
  */
 export type DayReorder = { slotUid: string; place: number | null };
 
@@ -139,19 +142,15 @@ export function reorderPlace(
 export const reorderTarget = (place: number, fromIndex: number) =>
   place > fromIndex ? place - 1 : place;
 
-/** The reorder a drag's collisions describe, or null when it isn't over its own day. */
-function dayReorderOf(
+/** The place a session drag's collisions give it in its own day; null off the day. */
+function ownDayPlace(
   active: SessionDragData | undefined,
   collisions: Collision[] | null,
-): DayReorder | null {
+): number | null {
   const hit = collisions?.[0];
   if (active?.type !== "session" || !hit || hit.id !== active.fromSlotUid) return null;
-  const place = (hit.data as { place?: number | null } | undefined)?.place;
-  return { slotUid: active.fromSlotUid, place: place ?? null };
+  return (hit.data as { place?: number | null } | undefined)?.place ?? null;
 }
-
-const sameReorder = (a: DayReorder | null, b: DayReorder | null) =>
-  a === b || (a != null && b != null && a.slotUid === b.slotUid && a.place === b.place);
 
 type UseProgramDndParams = {
   draft: ProgramDraft | null;
@@ -175,7 +174,7 @@ export function useProgramDnd({
   lockedSlotUids,
 }: UseProgramDndParams) {
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
-  // Set while a session drag hovers its own day: where it would land there.
+  // A session drag's own day, and where the session would land in it.
   const [dayReorder, setDayReorder] = useState<DayReorder | null>(null);
 
   const sensors = useSensors(
@@ -260,19 +259,24 @@ export function useProgramDnd({
         return;
       }
       const session = findSession(draft, data.sessionUid);
-      if (session) setActiveDrag({ type: "session", session });
+      if (session) {
+        setActiveDrag({ type: "session", session });
+        setDayReorder({ slotUid: data.fromSlotUid, place: null });
+      }
     },
     [draft],
   );
 
-  // Only a session over its own day has a place to show; every other move keeps
-  // the state as it is, so the grid re-renders only when the line moves.
+  // A move changes only the place, and only a session drag has one; every other
+  // move keeps the state as it is, so the grid re-renders only when the line moves.
   const handleDragMove = useCallback((event: DragMoveEvent) => {
-    const next = dayReorderOf(
+    const place = ownDayPlace(
       event.active.data.current as SessionDragData | undefined,
       event.collisions,
     );
-    setDayReorder((current) => (sameReorder(current, next) ? current : next));
+    setDayReorder((current) =>
+      current == null || current.place === place ? current : { ...current, place },
+    );
   }, []);
 
   const handleDragCancel = useCallback(() => {
@@ -327,9 +331,9 @@ export function useProgramDnd({
       }
       if (lockedSlotUids?.has(activeData.fromSlotUid)) return;
       if (String(over.id) === activeData.fromSlotUid) {
-        const reorder = dayReorderOf(activeData, event.collisions);
-        if (reorder?.place != null) {
-          reorderSession(activeData.sessionUid, reorderTarget(reorder.place, activeData.index));
+        const place = ownDayPlace(activeData, event.collisions);
+        if (place != null) {
+          reorderSession(activeData.sessionUid, reorderTarget(place, activeData.index));
         }
         return;
       }

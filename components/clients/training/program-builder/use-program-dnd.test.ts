@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import type { DragEndEvent, DragMoveEvent } from "@dnd-kit/core";
+import type { DragEndEvent, DragMoveEvent, DragStartEvent } from "@dnd-kit/core";
 import type { SavedSession, Exercise } from "@/types/training";
 import { MAX_SESSIONS_PER_DAY } from "@/lib/training-constants";
+import type { ProgramDraft } from "./program-builder-types";
 import {
   reorderPlace,
   reorderTarget,
@@ -91,7 +92,7 @@ describe("reorderPlace / reorderTarget", () => {
 const session = { id: "s1", name: "Push", exercises: [] } as unknown as SavedSession;
 const exercise = { id: "e1", name: "Bench", coachId: null } as unknown as Exercise;
 
-function setup() {
+function setup(draft: ProgramDraft | null = null) {
   const reorderWeek = vi.fn();
   const moveSession = vi.fn();
   const reorderSession = vi.fn();
@@ -99,7 +100,7 @@ function setup() {
   const placeLibraryExercise = vi.fn();
   const { result } = renderHook(() =>
     useProgramDnd({
-      draft: null,
+      draft,
       reorderWeek,
       moveSession,
       reorderSession,
@@ -289,59 +290,101 @@ describe("useProgramDnd collisionDetection", () => {
   });
 });
 
-// -- handleDragMove: the line over the dragged session's own day ---------------
+// -- dayReorder: a session drag's own day, and its place there ------------------
 
-describe("useProgramDnd handleDragMove", () => {
+describe("useProgramDnd dayReorder", () => {
   const move = (active: unknown, collisions: unknown) =>
     ({ active, collisions } as unknown as DragMoveEvent);
+  const start = (active: unknown) => ({ active } as unknown as DragStartEvent);
+  const librarySessionDrag = { id: "lib-s1", data: { current: { type: "library-session", session } } };
 
-  it("tracks the place over the session's own day, and clears it anywhere else", () => {
-    const s = setup();
+  // Day 0 holds sess-1 then sess-2; day 4 is a rest day.
+  const draft = {
+    id: "p",
+    name: "P",
+    description: null,
+    status: "saved",
+    splitType: null,
+    programDurationWeeks: null,
+    defaultSurplusPercentage: null,
+    weeks: [
+      {
+        uid: "wk-0",
+        weekIndex: 0,
+        days: [
+          {
+            uid: "slot-0",
+            orderIndex: 0,
+            isRest: false,
+            sessions: [
+              { uid: "sess-1", name: "AM run", groups: [] },
+              { uid: "sess-2", name: "PM lift", groups: [] },
+            ],
+          },
+          { uid: "slot-4", orderIndex: 4, isRest: true, sessions: [] },
+        ],
+      },
+    ],
+  } as unknown as ProgramDraft;
+
+  function dragging() {
+    const s = setup(draft);
     act(() => {
-      s.result.current.handleDragMove(
-        move(sessionDrag("slot-0", 0), [{ id: "slot-0", data: { place: 2 } }]),
-      );
+      s.result.current.handleDragStart(start(sessionDrag("slot-0", 0)));
     });
+    return s;
+  }
+
+  const moveTo = (s: ReturnType<typeof setup>, collisions: unknown) =>
+    act(() => {
+      s.result.current.handleDragMove(move(sessionDrag("slot-0", 0), collisions));
+    });
+
+  it("holds the session's own day from the drag's start, before the pointer moves, with no place", () => {
+    const s = dragging();
+    expect(s.result.current.activeDrag).toMatchObject({ type: "session" });
+    expect(s.result.current.dayReorder).toEqual({ slotUid: "slot-0", place: null });
+  });
+
+  it("tracks the place over the session's own day, and keeps the day with no place anywhere else", () => {
+    const s = dragging();
+    moveTo(s, [{ id: "slot-0", data: { place: 2 } }]);
     expect(s.result.current.dayReorder).toEqual({ slotUid: "slot-0", place: 2 });
 
     // Hovering its own place: still its own day, but no line.
-    act(() => {
-      s.result.current.handleDragMove(
-        move(sessionDrag("slot-0", 0), [{ id: "slot-0", data: { place: null } }]),
-      );
-    });
+    moveTo(s, [{ id: "slot-0", data: { place: null } }]);
     expect(s.result.current.dayReorder).toEqual({ slotUid: "slot-0", place: null });
 
-    // Another day: the join, which the day's border shows.
+    // Another day: the join, which that day's border shows. The line goes; the
+    // session's own day is still never one it could join.
+    moveTo(s, [{ id: "slot-0", data: { place: 2 } }]);
+    moveTo(s, [{ id: "slot-4", data: {} }]);
+    expect(s.result.current.dayReorder).toEqual({ slotUid: "slot-0", place: null });
+  });
+
+  it("keeps the same state object while the place doesn't change, so the grid doesn't re-render", () => {
+    const s = dragging();
+    moveTo(s, [{ id: "slot-0", data: { place: 2 } }]);
+    const first = s.result.current.dayReorder;
+    moveTo(s, [{ id: "slot-0", data: { place: 2 } }]);
+    expect(s.result.current.dayReorder).toBe(first);
+  });
+
+  it("a library drag has no own day, before or after it moves", () => {
+    const s = setup(draft);
     act(() => {
-      s.result.current.handleDragMove(move(sessionDrag("slot-0", 0), [{ id: "slot-4", data: {} }]));
+      s.result.current.handleDragStart(start(librarySessionDrag));
+    });
+    expect(s.result.current.dayReorder).toBeNull();
+    act(() => {
+      s.result.current.handleDragMove(move(librarySessionDrag, [{ id: "slot-0", data: {} }]));
     });
     expect(s.result.current.dayReorder).toBeNull();
   });
 
-  it("keeps the same state object while the place doesn't change, so the grid doesn't re-render", () => {
-    const s = setup();
-    act(() => {
-      s.result.current.handleDragMove(
-        move(sessionDrag("slot-0", 0), [{ id: "slot-0", data: { place: 2 } }]),
-      );
-    });
-    const first = s.result.current.dayReorder;
-    act(() => {
-      s.result.current.handleDragMove(
-        move(sessionDrag("slot-0", 0), [{ id: "slot-0", data: { place: 2 } }]),
-      );
-    });
-    expect(s.result.current.dayReorder).toBe(first);
-  });
-
   it("a drop clears the line in the same update as the drag", () => {
-    const s = setup();
-    act(() => {
-      s.result.current.handleDragMove(
-        move(sessionDrag("slot-0", 0), [{ id: "slot-0", data: { place: 2 } }]),
-      );
-    });
+    const s = dragging();
+    moveTo(s, [{ id: "slot-0", data: { place: 2 } }]);
     act(() => {
       s.result.current.handleDragEnd(
         end(sessionDrag("slot-0", 0), daySlotOver("slot-0"), [{ id: "slot-0", data: { place: 2 } }]),
@@ -350,6 +393,16 @@ describe("useProgramDnd handleDragMove", () => {
     expect(s.result.current.dayReorder).toBeNull();
     expect(s.result.current.activeDrag).toBeNull();
     expect(s.reorderSession).toHaveBeenCalledWith("sess-1", 1);
+  });
+
+  it("a cancel clears the day and the drag together", () => {
+    const s = dragging();
+    moveTo(s, [{ id: "slot-0", data: { place: 2 } }]);
+    act(() => {
+      s.result.current.handleDragCancel();
+    });
+    expect(s.result.current.dayReorder).toBeNull();
+    expect(s.result.current.activeDrag).toBeNull();
   });
 });
 

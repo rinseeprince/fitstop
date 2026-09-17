@@ -36,8 +36,8 @@ type DayCellProps = {
   // Program-level default surplus — the value a session inherits when it has no
   // per-day override. Drives the effective-surplus badge.
   defaultSurplusPercentage: number | null;
-  // Set while one of this day's sessions is dragged over the day: where it
-  // would land (use-program-dnd).
+  // Set for the whole drag of one of this day's sessions: where it would land
+  // in the day (use-program-dnd). A session never joins its own day.
   reorder?: DayReorder | null;
   onOpenSession: (sessionUid: string) => void;
   onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
@@ -140,8 +140,8 @@ export function DayCell({
           canAddSession={editable && dayHasRoom(slot)}
           locked={locked}
           isToday={isToday}
-          // Over its own day a session changes its place, which the line
-          // shows; only a drag that would join the day lights its cards.
+          // A session dragged from this day changes its place here, which the
+          // line shows; only a drag from elsewhere joins, and lights the cards.
           isOver={isOver && reorder == null}
           dropLine={dropLineFor(place, index, slot.sessions.length)}
           collapsed={collapsed}
