@@ -54,8 +54,8 @@ type DaySessionCardProps = {
   defaultSurplusPercentage: number | null;
   onOpenSession: (sessionUid: string) => void;
   onRemoveSession: (sessionUid: string) => void;
-  // Opens the add-session popover for the card's day, anchored to `anchor`.
-  onAddSession: (anchor: HTMLElement) => void;
+  // Opens the add-session popover for the card's day, level with `control`.
+  onAddSession: (control: HTMLElement) => void;
 };
 
 const SHOWN_EXERCISES = 3;
@@ -216,9 +216,7 @@ export function DaySessionCard({
                     className={cn("rounded p-1 hover:bg-[rgba(13,148,136,0.08)] hover:text-[#0d9488]", TEXT_MUTED)}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onAddSession(
-                        e.currentTarget.closest<HTMLElement>("[data-day-stack]") ?? e.currentTarget,
-                      );
+                      onAddSession(e.currentTarget);
                     }}
                   >
                     <Plus className="h-3 w-3" strokeWidth={1.5} />

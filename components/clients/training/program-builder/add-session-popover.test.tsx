@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
-import { AddSessionPopover, type AddSessionTarget } from "./add-session-popover";
+import { AddSessionPopover, dayAnchor, type AddSessionTarget } from "./add-session-popover";
 import type { SavedSession } from "@/types/training";
 
 let mockSessions: SavedSession[] = [];
@@ -38,9 +38,41 @@ function makeTarget(): AddSessionTarget {
     slotUid: "slot-1",
     weekIndex: 1,
     dayIndex: 2,
-    anchorEl: document.createElement("div"),
+    anchor: { getBoundingClientRect: () => new DOMRect(0, 0, 100, 20) },
   };
 }
+
+// A stand-in whose rect the test sets.
+function boxAt(rect: DOMRect) {
+  const el = document.createElement("div");
+  el.getBoundingClientRect = () => rect;
+  return el;
+}
+
+describe("dayAnchor", () => {
+  it("opens level with the control the coach used, lined up with its day's left edge", () => {
+    // A day as tall as the screen; its Add session near the bottom.
+    const day = boxAt(new DOMRect(200, 60, 180, 900));
+    const control = boxAt(new DOMRect(340, 700, 20, 20));
+    const rect = dayAnchor(day, control).getBoundingClientRect();
+    expect({ left: rect.left, top: rect.top, width: rect.width, height: rect.height }).toEqual({
+      left: 200,
+      top: 700,
+      width: 180,
+      height: 20,
+    });
+  });
+
+  it("reads both boxes afresh each time the popover places itself", () => {
+    let top = 700;
+    const day = boxAt(new DOMRect(200, 60, 180, 900));
+    const control = document.createElement("button");
+    control.getBoundingClientRect = () => new DOMRect(340, top, 20, 20);
+    const anchor = dayAnchor(day, control);
+    top = 640;
+    expect(anchor.getBoundingClientRect().top).toBe(640);
+  });
+});
 
 describe("AddSessionPopover", () => {
   const onClose = vi.fn();

@@ -5,6 +5,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import type { DaySlotDraft } from "./program-builder-types";
 import type { DayReorder, SlotDropData } from "./use-program-dnd";
+import { dayAnchor, type AddSessionAnchor } from "./add-session-popover";
 import { dayHasRoom } from "./program-builder-model";
 import type { DropLineEdge } from "./drop-line";
 import { FOCUS_RING, LABEL_CLASS, TEXT_MUTED } from "./builder-tokens";
@@ -40,9 +41,14 @@ type DayCellProps = {
   // in the day (use-program-dnd). A session never joins its own day.
   reorder?: DayReorder | null;
   onOpenSession: (sessionUid: string) => void;
-  onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
+  onRequestAddSession: (slot: DaySlotDraft, anchor: AddSessionAnchor) => void;
   onRemoveSession: (sessionUid: string) => void;
 };
+
+// A rest cell stretches to its row, so its popover opens level with the label
+// in its middle ("Rest", or "Add session" under the pointer).
+const restAnchor = (cell: HTMLElement) =>
+  dayAnchor(cell, cell.querySelector<HTMLElement>("[data-add-anchor]") ?? cell);
 
 // The line for a card: before the card at the place, or after the last card
 // when the place is past it. The first card draws its top line inside its own
@@ -98,27 +104,31 @@ export function DayCell({
           aria-label={editable ? `Add session to day ${slot.orderIndex + 1}` : undefined}
           onClick={
             editable
-              ? (e) => onRequestAddSession(slot, e.currentTarget)
+              ? (e) => onRequestAddSession(slot, restAnchor(e.currentTarget))
               : undefined
           }
           {...(editable
-            ? pressable((target) => onRequestAddSession(slot, target))
+            ? pressable((target) => onRequestAddSession(slot, restAnchor(target)))
             : {})}
         >
-          {greyed ? null : collapsed ? (
-            <span className={cn("text-xs", TEXT_MUTED)}>—</span>
-          ) : (
-            <>
-              {/* Hover swaps the rest label for the add affordance (mockup). */}
-              <span className={cn(LABEL_CLASS, editable && "group-hover/rest:hidden")}>
-                Rest
-              </span>
-              {editable && (
-                <span className="hidden items-center gap-1 text-[11px] font-semibold text-[#0d9488] group-hover/rest:flex">
-                  <Plus className="h-3 w-3" strokeWidth={2} /> Add session
-                </span>
+          {greyed ? null : (
+            <span data-add-anchor="" className="flex flex-col items-center">
+              {collapsed ? (
+                <span className={cn("text-xs", TEXT_MUTED)}>—</span>
+              ) : (
+                <>
+                  {/* Hover swaps the rest label for the add affordance (mockup). */}
+                  <span className={cn(LABEL_CLASS, editable && "group-hover/rest:hidden")}>
+                    Rest
+                  </span>
+                  {editable && (
+                    <span className="hidden items-center gap-1 text-[11px] font-semibold text-[#0d9488] group-hover/rest:flex">
+                      <Plus className="h-3 w-3" strokeWidth={2} /> Add session
+                    </span>
+                  )}
+                </>
               )}
-            </>
+            </span>
           )}
         </div>
       </div>
@@ -148,7 +158,12 @@ export function DayCell({
           defaultSurplusPercentage={defaultSurplusPercentage}
           onOpenSession={onOpenSession}
           onRemoveSession={onRemoveSession}
-          onAddSession={(anchor) => onRequestAddSession(slot, anchor)}
+          onAddSession={(control) =>
+            onRequestAddSession(
+              slot,
+              dayAnchor(control.closest<HTMLElement>("[data-day-stack]") ?? control, control),
+            )
+          }
         />
       ))}
     </div>

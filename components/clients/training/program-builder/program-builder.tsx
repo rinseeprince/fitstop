@@ -42,7 +42,11 @@ import { ProgramGrid } from "./program-grid";
 import { DuplicateWeekDialog } from "./duplicate-week-dialog";
 import { SessionEditorSheet } from "./session-editor-sheet";
 import { BuilderLibraryPanel } from "./builder-library-panel";
-import { AddSessionPopover, type AddSessionTarget } from "./add-session-popover";
+import {
+  AddSessionPopover,
+  type AddSessionAnchor,
+  type AddSessionTarget,
+} from "./add-session-popover";
 import {
   CHIP_NEUTRAL_CLASS,
   MONO,
@@ -253,12 +257,12 @@ export function ProgramBuilder({ onExit }: ProgramBuilderProps) {
   // Sessions, not training days: a day can hold several.
   const trainingCount = draft.weeks.reduce((sum, w) => sum + weekSessions(w).length, 0);
 
-  const requestAddSession = (slot: DaySlotDraft, anchorEl: HTMLElement) => {
+  const requestAddSession = (slot: DaySlotDraft, anchor: AddSessionAnchor) => {
     const weekIndex = draft.weeks.findIndex((week) =>
       week.days.some((s) => s.uid === slot.uid),
     );
     if (weekIndex < 0) return;
-    setAddTarget({ slotUid: slot.uid, weekIndex, dayIndex: slot.orderIndex, anchorEl });
+    setAddTarget({ slotUid: slot.uid, weekIndex, dayIndex: slot.orderIndex, anchor });
   };
 
   return (

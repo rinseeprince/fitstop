@@ -9,6 +9,7 @@ import type { PlanDayRules } from "./program-builder-lock-model";
 import { GRID_COLS } from "./builder-tokens";
 import { WeekCard } from "./week-card";
 import { DayCell } from "./day-cell";
+import type { AddSessionAnchor } from "./add-session-popover";
 
 // One grid row = sticky week card + 7 day cells. The row is the sortable node
 // (vertical week reorder); the grip that activates it lives in WeekCard.
@@ -32,7 +33,7 @@ type WeekRowProps = {
   onDuplicateWeekWithProgression: (weekUid: string) => void;
   onDeleteWeek: (weekUid: string) => void;
   onOpenSession: (sessionUid: string) => void;
-  onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
+  onRequestAddSession: (slot: DaySlotDraft, anchor: AddSessionAnchor) => void;
   onRemoveSession: (sessionUid: string) => void;
 };
 

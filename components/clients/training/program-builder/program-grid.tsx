@@ -9,6 +9,7 @@ import type { PlanDayRules } from "./program-builder-lock-model";
 import type { DayReorder } from "./use-program-dnd";
 import { GRID_COLS, MONO_LABEL_CLASS, TEXT_SECONDARY } from "./builder-tokens";
 import { WeekRow } from "./week-row";
+import type { AddSessionAnchor } from "./add-session-popover";
 
 // The weeks × Day 1–7 grid. ONE dual-axis scroll container: the day-header
 // row is sticky on vertical scroll (top-0), each row's week-card cell is
@@ -31,7 +32,7 @@ type ProgramGridProps = {
   onDeleteWeek: (weekUid: string) => void;
   onAddWeek: () => void;
   onOpenSession: (sessionUid: string) => void;
-  onRequestAddSession: (slot: DaySlotDraft, anchorEl: HTMLElement) => void;
+  onRequestAddSession: (slot: DaySlotDraft, anchor: AddSessionAnchor) => void;
   onRemoveSession: (sessionUid: string) => void;
 };
 

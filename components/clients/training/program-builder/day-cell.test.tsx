@@ -59,14 +59,21 @@ function renderCell(props: Partial<Parameters<typeof DayCell>[0]> = {}) {
 describe("DayCell — rest state (empty === rest)", () => {
   beforeEach(() => cleanup());
 
-  it("requests the add-session popover with the slot + anchor on click", () => {
+  it("requests the add-session popover level with the label in the cell's middle, on the cell's left edge", () => {
     const handlers = renderCell();
     expect(screen.getByText("Rest")).toBeInTheDocument();
+    // The cell stretches to its row; the label sits in its middle.
+    const cell = screen.getByLabelText("Add session to day 1");
+    cell.getBoundingClientRect = () => new DOMRect(200, 60, 180, 900);
+    const label = cell.querySelector<HTMLElement>("[data-add-anchor]")!;
+    label.getBoundingClientRect = () => new DOMRect(260, 502, 60, 16);
+
     fireEvent.click(screen.getByText("Rest"));
     expect(handlers.onRequestAddSession).toHaveBeenCalledTimes(1);
     const [slot, anchor] = handlers.onRequestAddSession.mock.calls[0];
     expect(slot.uid).toBe("slot-1");
-    expect(anchor).toBeInstanceOf(HTMLElement);
+    const rect = anchor.getBoundingClientRect();
+    expect([rect.left, rect.top, rect.width, rect.height]).toEqual([200, 502, 180, 16]);
   });
 
   it("view mode shows the rest marker but no add affordance", () => {
@@ -364,17 +371,20 @@ describe("DayCell — building a day's sessions", () => {
     });
   const cards = () => screen.getAllByLabelText(/^Open session /);
 
-  it("every card offers Add session; it opens the day's popover anchored to the whole stack, not the card", () => {
+  it("every card offers Add session; it opens the day's popover level with that button, on the day's left edge — never under the whole stack", () => {
     const handlers = renderCell({ slot: threeADay(2) });
     const adds = screen.getAllByLabelText("Add session to this day");
     expect(adds).toHaveLength(2);
+    const stack = cards()[0].closest<HTMLElement>("[data-day-stack]")!;
+    stack.getBoundingClientRect = () => new DOMRect(200, 60, 180, 900);
+    adds[1].getBoundingClientRect = () => new DOMRect(340, 520, 20, 20);
 
     fireEvent.click(adds[1]);
     expect(handlers.onRequestAddSession).toHaveBeenCalledTimes(1);
     const [slot, anchor] = handlers.onRequestAddSession.mock.calls[0];
     expect(slot.uid).toBe("slot-1");
-    expect((anchor as HTMLElement).hasAttribute("data-day-stack")).toBe(true);
-    expect(anchor).toContainElement(cards()[0]);
+    const rect = anchor.getBoundingClientRect();
+    expect([rect.left, rect.top, rect.width, rect.height]).toEqual([200, 520, 180, 20]);
     // Adding is not opening.
     expect(handlers.onOpenSession).not.toHaveBeenCalled();
   });

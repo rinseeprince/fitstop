@@ -23,15 +23,37 @@ import { countSessionExercises } from "@/utils/exercise-groups";
 // A day's add-session popover (mockup `pop`), from a rest cell or a session
 // card's "Add session": pick a library session to clone into the day — it joins
 // the day, after any sessions already there — or hand off to create-blank.
-// Anchored to the clicked cell via a virtual ref; Radix handles
-// outside-click/Escape, and a capture-phase scroll listener closes it like the
-// mockup (the anchor cell scrolls away under it otherwise).
+// Anchored through a virtual ref (dayAnchor); Radix handles outside-click/Escape,
+// and a capture-phase scroll listener closes it like the mockup (the anchor
+// scrolls away under it otherwise). Its height gives way to the room the screen
+// has on its side: the session list shrinks and scrolls, the search and Create
+// blank session stay in view.
+
+/** What the popover opens against: a rect read fresh on every position update. */
+export type AddSessionAnchor = { getBoundingClientRect: () => DOMRect };
+
 export type AddSessionTarget = {
   slotUid: string;
   weekIndex: number;
   dayIndex: number;
-  anchorEl: HTMLElement;
+  anchor: AddSessionAnchor;
 };
+
+/**
+ * The popover's anchor: level with the control the coach used — a card's Add
+ * session, a rest cell's label — and lined up with its day's left edge. Never
+ * the whole day: sessions stack in a day, so a day can be as tall as the screen,
+ * and a popover over or under it has nowhere to open.
+ */
+export function dayAnchor(day: HTMLElement, control: HTMLElement): AddSessionAnchor {
+  return {
+    getBoundingClientRect: () => {
+      const column = day.getBoundingClientRect();
+      const row = control.getBoundingClientRect();
+      return new DOMRect(column.left, row.top, column.width, row.height);
+    },
+  };
+}
 
 type AddSessionPopoverProps = {
   target: AddSessionTarget | null;
@@ -90,14 +112,15 @@ export function AddSessionPopover({
         if (!open) onClose();
       }}
     >
-      <PopoverAnchor virtualRef={{ current: target.anchorEl }} />
+      <PopoverAnchor virtualRef={{ current: target.anchor }} />
       <PopoverContent
         ref={contentRef}
         align="start"
         sideOffset={6}
-        className="w-[320px] rounded-[6px] border-[rgba(13,148,136,0.08)] p-0"
+        collisionPadding={8}
+        className="flex max-h-(--radix-popover-content-available-height) w-[320px] flex-col rounded-[6px] border-[rgba(13,148,136,0.08)] p-0"
       >
-        <div className="flex items-start justify-between px-3.5 pb-2 pt-3">
+        <div className="flex shrink-0 items-start justify-between px-3.5 pb-2 pt-3">
           <div>
             <div className={cn("text-sm font-semibold", TEXT_PRIMARY)}>
               Add session
@@ -116,7 +139,7 @@ export function AddSessionPopover({
           </button>
         </div>
 
-        <div className="px-3.5 pb-2">
+        <div className="shrink-0 px-3.5 pb-2">
           <div className="relative">
             <Search
               className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#93b0b4]"
@@ -132,7 +155,7 @@ export function AddSessionPopover({
           </div>
         </div>
 
-        <div className="max-h-[260px] overflow-y-auto px-1.5 pb-1.5">
+        <div className="max-h-[260px] min-h-0 overflow-y-auto px-1.5 pb-1.5">
           {isLoading ? (
             <p className={cn("py-4 text-center text-xs", TEXT_MUTED)}>Loading…</p>
           ) : filtered.length === 0 ? (
@@ -169,7 +192,7 @@ export function AddSessionPopover({
           )}
         </div>
 
-        <div className="border-t border-[rgba(13,148,136,0.06)] p-1.5">
+        <div className="shrink-0 border-t border-[rgba(13,148,136,0.06)] p-1.5">
           <button
             type="button"
             className="flex w-full items-center gap-1.5 rounded-[6px] px-2 py-1.5 text-xs font-semibold text-[#0d9488] transition-colors hover:bg-[rgba(13,148,136,0.05)]"
