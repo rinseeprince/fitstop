@@ -1,30 +1,30 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
 import { createMockTrainingEvent } from "@/__tests__/helpers/mock-data-builders";
 
+// The caller's own calendar day — the coach's for the history table, the
+// client's for the week a check-in freezes. Wednesday 8 April 2026.
+const TODAY = "2026-04-08";
+
+const log = (
+  completionQuality: "full" | "partial" | "skipped",
+  performedSessionId: string | null = null
+) => ({ id: "log-1", completionQuality, performedSessionId, notes: null });
+
 describe("mapEventsToScheduleDays", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    // Fix "today" to Wednesday April 8, 2026
-    vi.setSystemTime(new Date("2026-04-08T12:00:00"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("maps a completed event correctly", () => {
-    const dates = ["2026-04-06"]; // Monday
+  it("maps a workout logged in full", () => {
     const events = [
       createMockTrainingEvent({
         date: "2026-04-06",
         sessionName: "Push Day",
         status: "completed",
+        sessionLogId: "log-1",
         trainingSessionId: "session-1",
+        log: log("full", "session-1"),
       }),
     ];
 
-    const result = mapEventsToScheduleDays(dates, events);
+    const result = mapEventsToScheduleDays(["2026-04-06"], events, TODAY);
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
@@ -35,52 +35,68 @@ describe("mapEventsToScheduleDays", () => {
       completionQuality: "full",
       loggedSessionName: "Push Day",
       isAlternative: false,
-      sessionLogId: null,
+      sessionLogId: "log-1",
     });
   });
 
-  it("maps a partial event correctly", () => {
-    const dates = ["2026-04-07"]; // Tuesday
-    const events = [
-      createMockTrainingEvent({
-        date: "2026-04-07",
-        sessionName: "Pull Day",
-        status: "partial",
-      }),
-    ];
+  it("reads PARTIAL off the log, whatever the status word says", () => {
+    // The commit-10 shape, read today: the event says only that it was logged.
+    const flipped = createMockTrainingEvent({
+      date: "2026-04-07",
+      sessionName: "Pull Day",
+      status: "completed",
+      sessionLogId: "log-1",
+      trainingSessionId: "session-1",
+      log: log("partial", "session-1"),
+    });
 
-    const result = mapEventsToScheduleDays(dates, events);
-
-    expect(result[0]).toMatchObject({
-      status: "partial",
+    expect(mapEventsToScheduleDays(["2026-04-07"], [flipped], TODAY)[0]).toMatchObject({
+      status: "completed",
       completionQuality: "partial",
       loggedSessionName: "Pull Day",
     });
+
+    // And the shape stored today reads the same, off the same log.
+    const stored = createMockTrainingEvent({
+      date: "2026-04-07",
+      sessionName: "Pull Day",
+      status: "partial",
+      sessionLogId: "log-1",
+      trainingSessionId: "session-1",
+      log: log("partial", "session-1"),
+    });
+
+    expect(mapEventsToScheduleDays(["2026-04-07"], [stored], TODAY)[0]).toMatchObject({
+      status: "completed",
+      completionQuality: "partial",
+    });
   });
 
-  it("treats a scheduled event in the past as missed", () => {
-    // 2026-04-06 is before today (2026-04-08)
-    const dates = ["2026-04-06"];
+  it("reads a workout logged before the link existed as full", () => {
+    // 209 such rows on dev: no log to carry a quality, so nobody recorded one.
     const events = [
-      createMockTrainingEvent({
-        date: "2026-04-06",
-        sessionName: "Leg Day",
-        status: "scheduled",
-      }),
+      createMockTrainingEvent({ date: "2026-04-06", status: "completed", sessionLogId: null }),
     ];
 
-    const result = mapEventsToScheduleDays(dates, events);
+    expect(mapEventsToScheduleDays(["2026-04-06"], events, TODAY)[0]).toMatchObject({
+      status: "completed",
+      completionQuality: "full",
+    });
+  });
 
-    expect(result[0]).toMatchObject({
+  it("treats a workout still scheduled on a day that has passed as missed", () => {
+    const events = [
+      createMockTrainingEvent({ date: "2026-04-06", sessionName: "Leg Day", status: "scheduled" }),
+    ];
+
+    expect(mapEventsToScheduleDays(["2026-04-06"], events, TODAY)[0]).toMatchObject({
       status: "missed",
       completionQuality: null,
       loggedSessionName: null,
     });
   });
 
-  it("treats a scheduled event in the future as rest with planned fields", () => {
-    // 2026-04-10 is after today (2026-04-08), it's a Friday
-    const dates = ["2026-04-10"];
+  it("treats a workout still to be done as scheduled, with its planned fields", () => {
     const events = [
       createMockTrainingEvent({
         date: "2026-04-10",
@@ -90,12 +106,10 @@ describe("mapEventsToScheduleDays", () => {
       }),
     ];
 
-    const result = mapEventsToScheduleDays(dates, events);
-
-    expect(result[0]).toMatchObject({
+    expect(mapEventsToScheduleDays(["2026-04-10"], events, TODAY)[0]).toMatchObject({
       date: "2026-04-10",
       dayOfWeek: "friday",
-      status: "rest",
+      status: "scheduled",
       plannedSessionId: "session-1",
       plannedSessionName: "Push Day",
       loggedSessionName: null,
@@ -103,13 +117,8 @@ describe("mapEventsToScheduleDays", () => {
     });
   });
 
-  it("returns rest for dates with no event", () => {
-    const dates = ["2026-04-09"]; // Thursday with no event
-    const events: ReturnType<typeof createMockTrainingEvent>[] = [];
-
-    const result = mapEventsToScheduleDays(dates, events);
-
-    expect(result[0]).toMatchObject({
+  it("returns rest for dates with no workout", () => {
+    expect(mapEventsToScheduleDays(["2026-04-09"], [], TODAY)[0]).toMatchObject({
       date: "2026-04-09",
       dayOfWeek: "thursday",
       status: "rest",
@@ -121,68 +130,66 @@ describe("mapEventsToScheduleDays", () => {
     });
   });
 
-  it("maps a skipped event as missed with skipped quality", () => {
-    const dates = ["2026-04-06"];
+  it("maps a skipped workout as missed with skipped quality", () => {
     const events = [
-      createMockTrainingEvent({
-        date: "2026-04-06",
-        sessionName: "Push Day",
-        status: "skipped",
-      }),
+      createMockTrainingEvent({ date: "2026-04-06", sessionName: "Push Day", status: "skipped" }),
     ];
 
-    const result = mapEventsToScheduleDays(dates, events);
-
-    expect(result[0]).toMatchObject({
+    expect(mapEventsToScheduleDays(["2026-04-06"], events, TODAY)[0]).toMatchObject({
       status: "missed",
       completionQuality: "skipped",
       loggedSessionName: null,
     });
   });
 
-  it("handles a full week with mixed event types", () => {
+  it("handles a full week with mixed workouts", () => {
     const dates = [
-      "2026-04-06", // Mon - completed
+      "2026-04-06", // Mon - logged
       "2026-04-07", // Tue - rest
-      "2026-04-08", // Wed (today) - scheduled
+      "2026-04-08", // Wed (today) - still to be done
       "2026-04-09", // Thu - rest
-      "2026-04-10", // Fri - scheduled (future)
+      "2026-04-10", // Fri - still to be done
       "2026-04-11", // Sat - rest
       "2026-04-12", // Sun - rest
     ];
 
     const events = [
-      createMockTrainingEvent({ date: "2026-04-06", sessionName: "Push", status: "completed" }),
+      createMockTrainingEvent({
+        date: "2026-04-06",
+        sessionName: "Push",
+        status: "completed",
+        sessionLogId: "log-1",
+        log: log("full"),
+      }),
       createMockTrainingEvent({ date: "2026-04-08", sessionName: "Pull", status: "scheduled" }),
       createMockTrainingEvent({ date: "2026-04-10", sessionName: "Legs", status: "scheduled" }),
     ];
 
-    const result = mapEventsToScheduleDays(dates, events);
+    const result = mapEventsToScheduleDays(dates, events, TODAY);
 
     expect(result.map((d) => d.status)).toEqual([
       "completed", // Mon
       "rest",      // Tue
-      "rest",      // Wed (today, scheduled → rest with planned)
+      "scheduled", // Wed (today — not missed, the client can still train)
       "rest",      // Thu
-      "rest",      // Fri (future scheduled → rest with planned)
+      "scheduled", // Fri
       "rest",      // Sat
       "rest",      // Sun
     ]);
-
-    // Wednesday and Friday should have planned session names
     expect(result[2].plannedSessionName).toBe("Pull");
     expect(result[4].plannedSessionName).toBe("Legs");
   });
 
   it("gives each workout on a date its own row, in the day's order", () => {
-    const dates = ["2026-04-06", "2026-04-07"];
     const events = [
       createMockTrainingEvent({
         id: "ev-am",
         date: "2026-04-06",
         sessionName: "Morning run",
         status: "completed",
+        sessionLogId: "log-1",
         trainingSessionId: "run-1",
+        log: log("full", "run-1"),
       }),
       createMockTrainingEvent({
         id: "ev-pm",
@@ -193,7 +200,7 @@ describe("mapEventsToScheduleDays", () => {
       }),
     ];
 
-    const result = mapEventsToScheduleDays(dates, events);
+    const result = mapEventsToScheduleDays(["2026-04-06", "2026-04-07"], events, TODAY);
 
     expect(result.map((row) => [row.date, row.plannedSessionName, row.status])).toEqual([
       ["2026-04-06", "Morning run", "completed"],
@@ -203,70 +210,23 @@ describe("mapEventsToScheduleDays", () => {
     ]);
   });
 
-  it("threads sessionLogId from a completed event", () => {
-    const dates = ["2026-04-06"];
+  it("carries the log's own note onto the row", () => {
     const events = [
       createMockTrainingEvent({
         date: "2026-04-06",
-        sessionName: "Push Day",
         status: "completed",
-        sessionLogId: "log-123",
+        sessionLogId: "log-1",
+        trainingSessionId: "session-1",
+        log: { ...log("partial", "session-1"), notes: "Shoulder was sore" },
       }),
     ];
 
-    const result = mapEventsToScheduleDays(dates, events);
-
-    expect(result[0].sessionLogId).toBe("log-123");
+    expect(mapEventsToScheduleDays(["2026-04-06"], events, TODAY)[0].notes).toBe(
+      "Shoulder was sore"
+    );
   });
 
-  it("sets sessionLogId from unlinked log when merged into missed day", () => {
-    const dates = ["2026-04-06"];
-    const events = [
-      createMockTrainingEvent({
-        date: "2026-04-06",
-        sessionName: "Push Day",
-        status: "missed",
-      }),
-    ];
-    const unlinkedLogs = [
-      {
-        id: "unlinked-log-1",
-        training_session_id: "other-session",
-        completed_at: "2026-04-06",
-        completion_quality: "full",
-        notes: null,
-        prescribed_session_snapshot: { name: "Alt Session" },
-      },
-    ];
-
-    const result = mapEventsToScheduleDays(dates, events, unlinkedLogs);
-
-    expect(result[0].sessionLogId).toBe("unlinked-log-1");
-    expect(result[0].status).toBe("completed_swap");
-  });
-
-  it("sets sessionLogId from unlinked log when merged into rest day", () => {
-    const dates = ["2026-04-06"];
-    const events: ReturnType<typeof createMockTrainingEvent>[] = [];
-    const unlinkedLogs = [
-      {
-        id: "rest-log-1",
-        training_session_id: null,
-        completed_at: "2026-04-06",
-        completion_quality: "full",
-        notes: null,
-        prescribed_session_snapshot: { name: "Extra Session" },
-      },
-    ];
-
-    const result = mapEventsToScheduleDays(dates, events, unlinkedLogs);
-
-    expect(result[0].sessionLogId).toBe("rest-log-1");
-    expect(result[0].status).toBe("rest_trained");
-  });
-
-  it("event-linked swap shows the PERFORMED session name, not the prescribed snapshot", () => {
-    const dates = ["2026-04-06"];
+  it("a swap shows the PERFORMED session name, not the prescribed one", () => {
     const events = [
       createMockTrainingEvent({
         date: "2026-04-06",
@@ -274,39 +234,24 @@ describe("mapEventsToScheduleDays", () => {
         status: "completed",
         trainingSessionId: "chest",
         sessionLogId: "log-1",
+        log: log("full", "back"),
       }),
     ];
-    const sessionLogMap = new Map([
-      [
-        "log-1",
-        {
-          id: "log-1",
-          training_session_id: "back", // performed differs from prescribed (chest)
-          completed_at: "2026-04-06",
-          completion_quality: "full" as const,
-          notes: null,
-          prescribed_session_snapshot: { name: "Chest Day" }, // prescribed snapshot
-        },
-      ],
-    ]);
-    const performedSessionNames = new Map([["back", "Back Day"]]);
 
     const result = mapEventsToScheduleDays(
-      dates,
+      ["2026-04-06"],
       events,
-      [],
-      sessionLogMap,
-      performedSessionNames
+      TODAY,
+      new Map([["back", "Back Day"]])
     );
 
-    expect(result[0].status).toBe("completed_swap");
+    expect(result[0].status).toBe("completed");
     expect(result[0].isAlternative).toBe(true);
     expect(result[0].loggedSessionName).toBe("Back Day"); // performed, not "Chest Day"
     expect(result[0].plannedSessionName).toBe("Chest Day"); // prescribed still surfaced
   });
 
-  it("event-linked swap falls back to the snapshot name when no performed name is provided", () => {
-    const dates = ["2026-04-06"];
+  it("a swap falls back to the prescribed name when no performed name is provided", () => {
     const events = [
       createMockTrainingEvent({
         date: "2026-04-06",
@@ -314,50 +259,13 @@ describe("mapEventsToScheduleDays", () => {
         status: "completed",
         trainingSessionId: "chest",
         sessionLogId: "log-1",
+        log: log("full", "back"),
       }),
     ];
-    const sessionLogMap = new Map([
-      [
-        "log-1",
-        {
-          id: "log-1",
-          training_session_id: "back",
-          completed_at: "2026-04-06",
-          completion_quality: "full" as const,
-          notes: null,
-          prescribed_session_snapshot: { name: "Chest Day" },
-        },
-      ],
-    ]);
 
-    const result = mapEventsToScheduleDays(dates, events, [], sessionLogMap);
+    const result = mapEventsToScheduleDays(["2026-04-06"], events, TODAY);
 
     expect(result[0].isAlternative).toBe(true);
-    expect(result[0].loggedSessionName).toBe("Chest Day"); // snapshot fallback
-  });
-
-  it("merges an unlinked log onto the date's first missed workout, leaving the logged one alone", () => {
-    const dates = ["2026-04-06"];
-    const events = [
-      createMockTrainingEvent({ id: "ev-1", date: "2026-04-06", sessionName: "Legs", status: "partial" }),
-      createMockTrainingEvent({ id: "ev-2", date: "2026-04-06", sessionName: "Legs v2", status: "scheduled" }),
-    ];
-    const unlinked = [
-      {
-        id: "log-extra",
-        training_session_id: "other",
-        completed_at: "2026-04-06T18:00:00Z",
-        completion_quality: "full",
-        notes: null,
-        prescribed_session_snapshot: { name: "Arms" },
-      },
-    ];
-
-    const result = mapEventsToScheduleDays(dates, events, unlinked);
-
-    expect(result.map((row) => [row.plannedSessionName, row.status, row.sessionLogId])).toEqual([
-      ["Legs", "partial", null],
-      ["Legs v2", "completed_swap", "log-extra"],
-    ]);
+    expect(result[0].loggedSessionName).toBe("Chest Day");
   });
 });

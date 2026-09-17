@@ -53,25 +53,37 @@ vi.mock("@/components/programs/shared/divider-pager", () => ({
 
 vi.mock("@/components/clients/history-table/history-table", () => ({
   HistoryTable: ({
+    columns,
     data,
     onColumnClick,
     onRowClick,
   }: {
+    columns: {
+      key: string;
+      render: (value: unknown, row: TrainingHistoryRow) => ReactNode;
+    }[];
     data: TrainingHistoryRow[];
     onColumnClick: (key: string) => void;
     onRowClick: (row: TrainingHistoryRow) => void;
-  }) => (
-    <div>
-      <button type="button" onClick={() => onColumnClick("completion_quality")}>
-        Status chart
-      </button>
-      {data.map((row) => (
-        <button type="button" key={row.date} onClick={() => onRowClick(row)}>
-          {row.session_name}
+  }) => {
+    // The Status column's own cell, so the chip a coach reads is what is asserted.
+    const status = columns.find((column) => column.key === "completion_quality");
+    return (
+      <div>
+        <button type="button" onClick={() => onColumnClick("completion_quality")}>
+          Status chart
         </button>
-      ))}
-    </div>
-  ),
+        {data.map((row) => (
+          <div key={row.date}>
+            <button type="button" onClick={() => onRowClick(row)}>
+              {row.session_name}
+            </button>
+            {status?.render(row.completion_quality, row)}
+          </div>
+        ))}
+      </div>
+    );
+  },
 }));
 
 vi.mock("@/components/clients/history-table/history-chart-dialog", () => ({
@@ -178,5 +190,17 @@ describe("TrainingHistoryTable", () => {
       expect(chartDialog()).toHaveAttribute("data-open", "false");
       expect(chartDialog()).toHaveAttribute("data-points", String(rows.length));
     });
+  });
+});
+
+describe("the Status chip", () => {
+  it("reads the quality on the workout's LOG — a partial log is Partial", () => {
+    // `completion_quality` reaches the row off the log (mapEventsToScheduleDays),
+    // never off the event's status word, so the same chip renders before and
+    // after the status word's meaning widens in commit 10.
+    render(<TrainingHistoryTable clientId="client-1" onTabChange={vi.fn()} />);
+
+    expect(screen.getByText("Completed")).toBeInTheDocument(); // the full row
+    expect(screen.getByText("Partial")).toBeInTheDocument(); // the partial row
   });
 });

@@ -87,6 +87,10 @@ export const getCheckInPeriodAdherence = async (
   const summary = await getClientAdherenceForRange(
     checkIn.clientId,
     period.periodStart,
+    period.periodEnd,
+    // The week's own last day stands in for "today" here: it only decides which
+    // still-scheduled workouts read as missed, and the training half of this
+    // summary is deliberately not on this wire.
     period.periodEnd
   );
 

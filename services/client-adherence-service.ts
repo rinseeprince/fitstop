@@ -19,10 +19,17 @@ import {
   loggedDays,
 } from "@/lib/logged-days";
 import type { AdherenceSummary, DotState } from "@/types/coach-overview";
+import type { SessionCompletionQuality } from "@/types/check-in";
+import {
+  trainingDisplayState,
+  type TrainingDisplayState,
+} from "@/lib/training-display-state";
 
 /**
  * The Overview's three-rail adherence card (AdherenceSummary contract).
- * Reuses shipped semantics only — training from training_events.status,
+ * Reuses shipped semantics only — training from each workout's display state
+ * (`lib/training-display-state.ts`: the event says whether it was logged, its
+ * log says how it went),
  * nutrition from the ONE kernel (`utils/nutrition-period-summary.ts`: what the
  * client ate against each day's COMPUTED target, the food log stores no
  * verdict), habits from the weekly-service eligibility rule (active habits
@@ -30,18 +37,19 @@ import type { AdherenceSummary, DotState } from "@/types/coach-overview";
  */
 
 /**
- * One dot per date from that date's event statuses — the rail reads a
- * fortnight in one glance, so a day holding several sessions is still one dot,
- * while the counts beside the rail count every session. A day's sessions
- * collapse deterministically: all completed → complete, any progress →
- * partial, any missed/skipped → missed, else (still scheduled, date ≤ today) →
- * no_log.
+ * One dot per date from that date's workouts, each read as its display state —
+ * the rail reads a fortnight in one glance, so a day holding several sessions
+ * is still one dot, while the counts beside the rail count every session. A
+ * day's workouts collapse deterministically: every one done in full →
+ * complete, any of them done at all → partial, any missed or skipped →
+ * missed, else (still to be done today) → no_log.
  */
-export function classifyTrainingDay(statuses: string[]): DotState {
-  if (!statuses.length) return "none";
-  if (statuses.every((status) => status === "completed")) return "complete";
-  if (statuses.some((status) => status === "completed" || status === "partial")) return "partial";
-  if (statuses.some((status) => status === "missed" || status === "skipped")) return "missed";
+export function classifyTrainingDay(states: TrainingDisplayState[]): DotState {
+  if (!states.length) return "none";
+  if (states.every((state) => state === "completed_full")) return "complete";
+  if (states.some((state) => state === "completed_full" || state === "completed_partial"))
+    return "partial";
+  if (states.some((state) => state === "missed" || state === "skipped")) return "missed";
   return "no_log";
 }
 
@@ -78,7 +86,16 @@ export function classifyHabitDay(input: {
 
 export type AdherenceSourceRows = {
   dates: string[];
-  trainingEvents: { date: string; status: string }[];
+  /**
+   * The day the surface's calendar is on — the client's today. It decides which
+   * still-scheduled workouts have been missed; nothing else reads it.
+   */
+  today: string;
+  /**
+   * The window's calendar workouts: each one's attendance word and the quality
+   * on its own log (null when the client has not logged it).
+   */
+  trainingEvents: { date: string; status: string; completionQuality: SessionCompletionQuality | null }[];
   /** What the client ate — the log carries no target and no verdict. */
   nutritionLogs: {
     date: string;
@@ -133,16 +150,22 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
     { from: dates[0] ?? "", to: dates[dates.length - 1] ?? "" }
   );
 
-  // Training
-  const eventsByDate = new Map<string, string[]>();
+  // Training. Every workout is read as its display state once — how it went
+  // comes off its log, and a workout still scheduled on a day that has passed
+  // is missed.
+  const today = rows.today;
+  const statesByDate = new Map<string, TrainingDisplayState[]>();
+  const states: TrainingDisplayState[] = [];
   for (const event of rows.trainingEvents) {
-    const list = eventsByDate.get(event.date) ?? [];
-    list.push(event.status);
-    eventsByDate.set(event.date, list);
+    const state = trainingDisplayState(event, today);
+    states.push(state);
+    const list = statesByDate.get(event.date) ?? [];
+    list.push(state);
+    statesByDate.set(event.date, list);
   }
-  const trainingRail = dates.map((date) => classifyTrainingDay(eventsByDate.get(date) ?? []));
+  const trainingRail = dates.map((date) => classifyTrainingDay(statesByDate.get(date) ?? []));
   const planned = rows.trainingEvents.length;
-  const completed = rows.trainingEvents.filter((event) => event.status === "completed").length;
+  const completed = states.filter((state) => state === "completed_full").length;
   // Full completions only, matching the Training-tab hero — partial shows on
   // the dot but not in the numerator (deliberate).
   const trainingPct = planned > 0 ? Math.round((completed / planned) * 100) : null;
@@ -242,7 +265,8 @@ export function buildAdherenceSummary(rows: AdherenceSourceRows): AdherenceSumma
 export const getClientAdherenceForRange = async (
   clientId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  today: string
 ): Promise<AdherenceSummary> => {
   const dates: string[] = [];
   for (let date = startDate; date <= endDate; date = addDaysToDateString(date, 1)) {
@@ -251,9 +275,13 @@ export const getClientAdherenceForRange = async (
 
   const [events, nutritionLogs, habits, habitLogs, wellnessLogs, clientLogs, nutritionTargets] =
     await Promise.all([
+    // The workouts with their logs embedded by the named foreign key: the rail
+    // reads how each one went off its log, never off the status word.
     supabaseAdmin
       .from("training_events")
-      .select("date, status")
+      .select(
+        "date, status, session_log:session_logs!training_events_session_log_id_fkey(completion_quality)"
+      )
       .eq("client_id", clientId)
       .gte("date", startDate)
       .lte("date", endDate),
@@ -305,7 +333,14 @@ export const getClientAdherenceForRange = async (
 
   return buildAdherenceSummary({
     dates,
-    trainingEvents: events.data ?? [],
+    today,
+    trainingEvents: (events.data ?? []).map((row) => ({
+      date: row.date,
+      status: row.status,
+      completionQuality:
+        (row.session_log as { completion_quality: string | null } | null)
+          ?.completion_quality as SessionCompletionQuality | null ?? null,
+    })),
     nutritionLogs: nutritionLogs.data ?? [],
     nutritionTargets: [...nutritionTargets.values()],
     habits: habits.data ?? [],
@@ -328,5 +363,10 @@ export const getClientAdherence = async (
   days: number
 ): Promise<AdherenceSummary> => {
   const today = await getClientTodayString(clientId);
-  return getClientAdherenceForRange(clientId, addDaysToDateString(today, -(days - 1)), today);
+  return getClientAdherenceForRange(
+    clientId,
+    addDaysToDateString(today, -(days - 1)),
+    today,
+    today
+  );
 };

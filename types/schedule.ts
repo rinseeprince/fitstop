@@ -8,13 +8,21 @@ import type { DayOfWeek } from "@/types/check-in";
 
 // --- Training schedule types ---
 
+/**
+ * ATTENDANCE only — whether the workout was logged, never how it went.
+ * `completionQuality` below carries that, off the workout's log, and
+ * `isAlternative` says whether the client did a different session.
+ *
+ * A row written before this vocabulary (a check-in's frozen `period_snapshot`)
+ * can carry `partial`, `completed_swap` or `rest_trained`. Those words are
+ * gone from the product, and nothing switches exhaustively on this type, so a
+ * frozen row still renders exactly as it was stored.
+ */
 export type TrainingDayStatus =
-  | "completed"        // prescribed session done as planned
-  | "completed_swap"   // prescribed session existed, client did a different one
-  | "partial"          // prescribed session partially done
-  | "missed"           // prescribed session not logged
-  | "rest"             // rest day, no training
-  | "rest_trained";    // rest day, but client trained anyway
+  | "scheduled"        // prescribed workout, still to be done
+  | "completed"        // the client logged it (at any quality)
+  | "missed"           // prescribed workout the day passed without
+  | "rest";            // no workout on the day
 
 export type ScheduleDay = {
   date: string;                    // YYYY-MM-DD
@@ -23,6 +31,7 @@ export type ScheduleDay = {
   plannedSessionId: string | null;
   plannedSessionName: string | null;
   loggedSessionName: string | null;
+  /** How the workout went, off its log. Null when it was not logged. */
   completionQuality: "full" | "partial" | "skipped" | null;
   isAlternative: boolean;
   notes: string | null;

@@ -9,6 +9,17 @@ import {
   PARTIAL_TRAINING_THRESHOLD,
 } from "@/lib/constants"
 import { getDateString, getTrainingWeekStart } from "@/lib/date-helpers"
+import { loggedDisplayQuality } from "@/lib/training-display-state"
+import type { SessionCompletionQuality } from "@/types/check-in"
+
+/** How a workout went, off its own log. Null when the client has not logged it. */
+function eventQuality(event: TrainingEventRow): SessionCompletionQuality | null {
+  return loggedDisplayQuality({
+    status: event.status,
+    completionQuality:
+      (event.session_log?.completion_quality as SessionCompletionQuality | null) ?? null,
+  })
+}
 
 /**
  * Evaluates if there's a gap in daily logging.
@@ -156,10 +167,12 @@ export function evaluateTrainingMisses(
 export function evaluatePartialTrainingPattern(
   events: TrainingEventRow[]
 ): TriggerResult | null {
-  // Only consider resolved events (exclude future/today scheduled events)
+  // Only workouts the client has LOGGED, newest first — a session still to be
+  // done says nothing about how the ones they did went.
   const resolved = events
-    .filter(e => e.status === "completed" || e.status === "partial" || e.status === "missed" || e.status === "skipped")
-    .sort((a, b) => b.date.localeCompare(a.date))
+    .map(event => ({ event, quality: eventQuality(event) }))
+    .filter(row => row.quality !== null)
+    .sort((a, b) => b.event.date.localeCompare(a.event.date))
 
   // Sparse data guard — need enough events to evaluate
   if (resolved.length < PARTIAL_TRAINING_LOOKBACK_EVENTS) {
@@ -167,7 +180,8 @@ export function evaluatePartialTrainingPattern(
   }
 
   const lookback = resolved.slice(0, PARTIAL_TRAINING_LOOKBACK_EVENTS)
-  const partialEvents = lookback.filter(e => e.status === "partial")
+  // How a workout went is on its LOG, never on the event's status word.
+  const partialEvents = lookback.filter(row => row.quality === "partial").map(row => row.event)
 
   if (partialEvents.length >= PARTIAL_TRAINING_THRESHOLD) {
     return {

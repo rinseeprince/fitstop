@@ -657,17 +657,32 @@ describe('attention-triggers', () => {
   })
 
   describe('evaluatePartialTrainingPattern', () => {
-    it('should detect 3+ partials in last 9 resolved events', () => {
+    // How a workout went is on its LOG. The status word says only that the
+    // client logged it, so every logged fixture carries the log the product
+    // writes beside it.
+    const workout = (
+      date: string,
+      quality: 'full' | 'partial' | 'skipped' | null,
+      status = quality === null ? 'scheduled' : quality === 'partial' ? 'partial' : 'completed'
+    ): TrainingEventRow => ({
+      client_id: 'c1',
+      date,
+      status,
+      estimated_calories: 300,
+      session_log: quality === null ? null : { completion_quality: quality },
+    })
+
+    it('should detect 3+ partials in last 9 logged workouts', () => {
       const events: TrainingEventRow[] = [
-        { client_id: 'c1', date: '2026-03-20', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-21', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-22', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-23', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-24', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-25', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-26', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-27', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-28', status: 'completed', estimated_calories: 300 },
+        workout('2026-03-20', 'full'),
+        workout('2026-03-21', 'partial'),
+        workout('2026-03-22', 'full'),
+        workout('2026-03-23', 'partial'),
+        workout('2026-03-24', 'full'),
+        workout('2026-03-25', 'full'),
+        workout('2026-03-26', 'full'),
+        workout('2026-03-27', 'partial'),
+        workout('2026-03-28', 'full'),
       ]
 
       const result = evaluatePartialTrainingPattern(events)
@@ -678,69 +693,87 @@ describe('attention-triggers', () => {
       expect(result?.affectedDays).toHaveLength(3)
     })
 
+    it('reads partial off the LOG, whatever the status word says', () => {
+      // The commit-10 shape: every workout is `completed` and the log carries
+      // the quality. The alert must fire on exactly the same three days.
+      const events: TrainingEventRow[] = [
+        workout('2026-03-20', 'full', 'completed'),
+        workout('2026-03-21', 'partial', 'completed'),
+        workout('2026-03-22', 'full', 'completed'),
+        workout('2026-03-23', 'partial', 'completed'),
+        workout('2026-03-24', 'full', 'completed'),
+        workout('2026-03-25', 'full', 'completed'),
+        workout('2026-03-26', 'full', 'completed'),
+        workout('2026-03-27', 'partial', 'completed'),
+        workout('2026-03-28', 'full', 'completed'),
+      ]
+
+      const result = evaluatePartialTrainingPattern(events)
+
+      expect(result?.affectedDays).toEqual(['2026-03-27', '2026-03-23', '2026-03-21'])
+    })
+
     it('should not fire for 2 partials (below threshold)', () => {
       const events: TrainingEventRow[] = [
-        { client_id: 'c1', date: '2026-03-20', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-21', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-22', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-23', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-24', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-25', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-26', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-27', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-28', status: 'completed', estimated_calories: 300 },
+        workout('2026-03-20', 'full'),
+        workout('2026-03-21', 'partial'),
+        workout('2026-03-22', 'full'),
+        workout('2026-03-23', 'full'),
+        workout('2026-03-24', 'full'),
+        workout('2026-03-25', 'full'),
+        workout('2026-03-26', 'full'),
+        workout('2026-03-27', 'partial'),
+        workout('2026-03-28', 'full'),
       ]
 
       const result = evaluatePartialTrainingPattern(events)
       expect(result).toBeNull()
     })
 
-    it('should not fire with fewer than 9 resolved events (sparse data guard)', () => {
+    it('should not fire with fewer than 9 logged workouts (sparse data guard)', () => {
       const events: TrainingEventRow[] = [
-        { client_id: 'c1', date: '2026-03-20', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-21', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-22', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-23', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-24', status: 'completed', estimated_calories: 300 },
+        workout('2026-03-20', 'partial'),
+        workout('2026-03-21', 'partial'),
+        workout('2026-03-22', 'partial'),
+        workout('2026-03-23', 'full'),
+        workout('2026-03-24', 'full'),
       ]
 
       const result = evaluatePartialTrainingPattern(events)
       expect(result).toBeNull()
     })
 
-    it('should not fire when no partial events exist', () => {
+    it('should not fire when no workout was logged partially', () => {
       const events: TrainingEventRow[] = [
-        { client_id: 'c1', date: '2026-03-20', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-21', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-22', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-23', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-24', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-25', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-26', status: 'missed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-27', status: 'skipped', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-28', status: 'completed', estimated_calories: 300 },
+        workout('2026-03-20', 'full'),
+        workout('2026-03-21', 'full'),
+        workout('2026-03-22', 'full'),
+        workout('2026-03-23', 'full'),
+        workout('2026-03-24', 'full'),
+        workout('2026-03-25', 'full'),
+        workout('2026-03-26', 'full'),
+        workout('2026-03-27', 'skipped', 'skipped'),
+        workout('2026-03-28', 'full'),
       ]
 
       const result = evaluatePartialTrainingPattern(events)
       expect(result).toBeNull()
     })
 
-    it('should exclude future/today scheduled events from lookback', () => {
-      // 7 resolved + 2 scheduled = only 7 resolved, below 9 threshold
+    it('leaves out workouts the client has not logged', () => {
+      // 7 logged + 2 still scheduled = 7, below the 9-workout guard.
       const events: TrainingEventRow[] = [
-        { client_id: 'c1', date: '2026-03-20', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-21', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-22', status: 'partial', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-23', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-24', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-25', status: 'completed', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-03-26', status: 'completed', estimated_calories: 300 },
-        // These are scheduled (future/today) — should be excluded from resolved count
-        { client_id: 'c1', date: '2026-05-10', status: 'scheduled', estimated_calories: 300 },
-        { client_id: 'c1', date: '2026-05-11', status: 'scheduled', estimated_calories: 300 },
+        workout('2026-03-20', 'partial'),
+        workout('2026-03-21', 'partial'),
+        workout('2026-03-22', 'partial'),
+        workout('2026-03-23', 'full'),
+        workout('2026-03-24', 'full'),
+        workout('2026-03-25', 'full'),
+        workout('2026-03-26', 'full'),
+        workout('2026-05-10', null),
+        workout('2026-05-11', null),
       ]
 
-      // Only 7 resolved events, below 9 threshold — should not fire
       const result = evaluatePartialTrainingPattern(events)
       expect(result).toBeNull()
     })

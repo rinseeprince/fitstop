@@ -13,7 +13,10 @@ import type { TrainingEvent } from "@/types/training";
 // (gated by the same isFutureScheduled flag). We query the `button` tag rather
 // than role=button: when the event IS draggable, dnd-kit also stamps
 // role="button" onto the card's root <div>, so a role query would match both.
-function makeEvent(date: string): TrainingEvent {
+function makeEvent(
+  date: string,
+  overrides: Partial<TrainingEvent> = {}
+): TrainingEvent {
   return {
     id: "evt-1",
     clientId: "client-1",
@@ -25,11 +28,28 @@ function makeEvent(date: string): TrainingEvent {
     estimatedCalories: 400,
     status: "scheduled",
     sessionLogId: null,
+    log: null,
     isModified: false,
     calorieSurplusPercentage: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
   };
+}
+
+/** The card's status thumb, as its lucide icon's own class names. */
+function thumbIcon(event: TrainingEvent, clientToday: string): string {
+  const { container } = render(
+    <DndContext>
+      <CalendarEventCard
+        event={event}
+        editMode={false}
+        clientToday={clientToday}
+        onEventClick={() => {}}
+      />
+    </DndContext>
+  );
+  return container.querySelector("svg")?.getAttribute("class") ?? "";
 }
 
 function menuTrigger(eventDate: string, clientToday: string): HTMLButtonElement | null {
@@ -59,5 +79,53 @@ describe("CalendarEventCard gating (Session 7.86)", () => {
 
   it("allows an event on (or after) the client's today", () => {
     expect(menuTrigger("2026-06-17", "2026-06-17")).not.toBeNull();
+  });
+});
+
+describe("CalendarEventCard status thumb", () => {
+  const LOG = {
+    id: "log-1",
+    performedSessionId: "session-1",
+    notes: null,
+  };
+
+  it("shows a workout whose LOG is partial as partial, whatever its status word says", () => {
+    // The commit-10 shape, today: the event says only that it was logged.
+    const flipped = makeEvent("2026-06-15", {
+      status: "completed",
+      sessionLogId: "log-1",
+      log: { ...LOG, completionQuality: "partial" },
+    });
+    expect(thumbIcon(flipped, "2026-06-17")).toContain("lucide-minus");
+
+    // And the shape stored today reads the same, off the same log.
+    const stored = makeEvent("2026-06-15", {
+      status: "partial",
+      sessionLogId: "log-1",
+      log: { ...LOG, completionQuality: "partial" },
+    });
+    expect(thumbIcon(stored, "2026-06-17")).toContain("lucide-minus");
+  });
+
+  it("shows a workout logged in full as complete", () => {
+    const event = makeEvent("2026-06-15", {
+      status: "completed",
+      sessionLogId: "log-1",
+      log: { ...LOG, completionQuality: "full" },
+    });
+    expect(thumbIcon(event, "2026-06-17")).toContain("lucide-check");
+  });
+
+  it("shows a completed workout with no log at all as complete", () => {
+    // 209 such rows on dev: logged before the link existed, so no quality was
+    // ever recorded. They are complete workouts, not missing ones.
+    const event = makeEvent("2026-06-15", { status: "completed" });
+    expect(thumbIcon(event, "2026-06-17")).toContain("lucide-check");
+  });
+
+  it("derives missed for a workout still scheduled on a day that has passed", () => {
+    expect(thumbIcon(makeEvent("2026-06-15"), "2026-06-17")).toContain("lucide-x");
+    // Today is not missed — the client can still train later.
+    expect(thumbIcon(makeEvent("2026-06-17"), "2026-06-17")).toContain("lucide-dumbbell");
   });
 });

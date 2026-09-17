@@ -110,6 +110,7 @@ function baseFixture(): TrainingEventDetail {
       estimatedCalories: null,
       status: "scheduled",
       sessionLogId: null,
+      log: null,
       isModified: false,
       calorieSurplusPercentage: null,
       createdAt: ISO,

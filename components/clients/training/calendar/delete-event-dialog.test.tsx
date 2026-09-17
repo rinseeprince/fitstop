@@ -18,6 +18,7 @@ const EVENT: TrainingEvent = {
   estimatedCalories: null,
   status: "scheduled",
   sessionLogId: null,
+  log: null,
   isModified: false,
   calorieSurplusPercentage: null,
   createdAt: "2026-01-01T00:00:00Z",

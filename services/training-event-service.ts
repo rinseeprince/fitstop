@@ -1,13 +1,64 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { TrainingEvent, TrainingEventStatus, TrainingEventSummary } from "@/types/training";
+import type {
+  TrainingEvent,
+  TrainingEventLog,
+  TrainingEventStatus,
+  TrainingEventSummary,
+} from "@/types/training";
 import type { SessionCompletionQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
 import { fetchAllByChunkedIds, chunkIds } from "@/lib/paged-fetch";
+import { eventWorkoutRead, loggedDisplayQuality } from "@/lib/training-display-state";
 
 // --- Row mapper ---
 
-function mapEventRow(row: TrainingEventRow): TrainingEvent {
+/**
+ * The columns every read of calendar workouts selects: the event row and the
+ * workout's log, through the NAMED foreign key. Naming it is not style — two
+ * relationships exist between `training_events` and `session_logs` (the event's
+ * link and the log's back-reference), so an unnamed embed is a PGRST201.
+ *
+ * The log rides along on every read because every screen that shows how a
+ * workout went reads its quality here, and a read that forgot the embed would
+ * quietly show a partial workout as a full one.
+ */
+export const EVENT_WITH_LOG_COLUMNS =
+  "*, session_log:session_logs!training_events_session_log_id_fkey(id, completion_quality, training_session_id, notes)";
+
+/** The embedded half of `EVENT_WITH_LOG_COLUMNS` — one row, or null when nothing is linked. */
+export type EmbeddedSessionLogRow = {
+  id: string;
+  completion_quality: string | null;
+  training_session_id: string | null;
+  notes: string | null;
+} | null;
+
+/** A `training_events` row read with `EVENT_WITH_LOG_COLUMNS`. */
+export type TrainingEventWithLogRow = TrainingEventRow & {
+  session_log: EmbeddedSessionLogRow;
+};
+
+/** The workout's log as the calendar carries it. */
+function mapEventLogRow(row: EmbeddedSessionLogRow): TrainingEventLog | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    // The column is nullable; a log row that never recorded one is a full workout,
+    // which is what the log writer's own default has always meant.
+    completionQuality: (row.completion_quality ??
+      "full") as TrainingEventLog["completionQuality"],
+    performedSessionId: row.training_session_id,
+    notes: row.notes,
+  };
+}
+
+/**
+ * The ONE event-row mapper. A second copy lived in `training-log-service.ts`
+ * and drifted from this one; the row type now requires the log embed, so no
+ * caller can read an event without the quality its screens need.
+ */
+export function mapEventRow(row: TrainingEventWithLogRow): TrainingEvent {
   return {
     id: row.id,
     clientId: row.client_id,
@@ -19,6 +70,7 @@ function mapEventRow(row: TrainingEventRow): TrainingEvent {
     estimatedCalories: row.estimated_calories,
     status: row.status as TrainingEventStatus,
     sessionLogId: row.session_log_id,
+    log: mapEventLogRow(row.session_log),
     isModified: row.is_modified,
     calorieSurplusPercentage: row.calorie_surplus_percentage ?? null,
     createdAt: row.created_at,
@@ -252,7 +304,7 @@ export async function getEventsForDateRange(
 ): Promise<TrainingEvent[]> {
   const { data, error } = await supabaseAdmin
     .from("training_events")
-    .select("*")
+    .select(EVENT_WITH_LOG_COLUMNS)
     .eq("client_id", clientId)
     .gte("date", startDate)
     .lte("date", endDate)
@@ -261,7 +313,7 @@ export async function getEventsForDateRange(
     .order("id", { ascending: true });
 
   if (error) throw error;
-  return (data ?? []).map(mapEventRow);
+  return ((data ?? []) as unknown as TrainingEventWithLogRow[]).map(mapEventRow);
 }
 
 /**
@@ -275,7 +327,7 @@ export async function getFirstEventForDate(
 ): Promise<TrainingEvent | null> {
   const { data, error } = await supabaseAdmin
     .from("training_events")
-    .select("*")
+    .select(EVENT_WITH_LOG_COLUMNS)
     .eq("client_id", clientId)
     .eq("date", date)
     .order("day_order", { ascending: true })
@@ -284,7 +336,7 @@ export async function getFirstEventForDate(
     .maybeSingle();
 
   if (error) throw error;
-  return data ? mapEventRow(data) : null;
+  return data ? mapEventRow(data as unknown as TrainingEventWithLogRow) : null;
 }
 
 /**
@@ -350,15 +402,6 @@ export async function linkSessionLogToEvent(
 
 // --- Day-summary helper ---
 
-function mapStatusToCompletionQuality(
-  status: TrainingEventStatus
-): "full" | "partial" | "skipped" | null {
-  if (status === "completed") return "full";
-  if (status === "partial") return "partial";
-  if (status === "skipped") return "skipped";
-  return null;
-}
-
 /**
  * Lightweight summaries for the client day-summary endpoint.
  * Returns enriched training events with exercise counts and completion quality.
@@ -375,31 +418,20 @@ export async function getEventSummariesForDate(
     .map((e) => e.sessionLogId)
     .filter((id): id is string => id !== null);
 
-  // Logged-exercise count per session_log_id, and the PERFORMED session of each
-  // linked log (its training_session_id) — for planned-day swaps.
+  // Logged-exercise count per session_log_id. The log's own facts — its quality
+  // and the session it was performed against — came with the event read.
   const loggedCountMap = new Map<string, number>();
-  const performedByLogId = new Map<string, string | null>();
   if (sessionLogIds.length > 0) {
-    const [logCountsRes, logRowsRes] = await Promise.all([
-      supabaseAdmin
-        .from("exercise_logs")
-        .select("session_log_id")
-        .in("session_log_id", sessionLogIds),
-      supabaseAdmin
-        .from("session_logs")
-        .select("id, training_session_id")
-        .in("id", sessionLogIds),
-    ]);
-    if (logCountsRes.error) throw logCountsRes.error;
-    if (logRowsRes.error) throw logRowsRes.error;
-    for (const row of logCountsRes.data ?? []) {
+    const { data, error } = await supabaseAdmin
+      .from("exercise_logs")
+      .select("session_log_id")
+      .in("session_log_id", sessionLogIds);
+    if (error) throw error;
+    for (const row of data ?? []) {
       loggedCountMap.set(
         row.session_log_id,
         (loggedCountMap.get(row.session_log_id) ?? 0) + 1
       );
-    }
-    for (const row of logRowsRes.data ?? []) {
-      performedByLogId.set(row.id, row.training_session_id);
     }
   }
 
@@ -407,10 +439,10 @@ export async function getEventSummariesForDate(
   // is for a different session (swap), else the prescribed one.
   const displaySessionIdByEvent = new Map<string, string | null>();
   for (const e of events) {
-    const performed = e.sessionLogId
-      ? performedByLogId.get(e.sessionLogId) ?? null
-      : null;
-    displaySessionIdByEvent.set(e.id, performed ?? e.trainingSessionId);
+    displaySessionIdByEvent.set(
+      e.id,
+      e.log?.performedSessionId ?? e.trainingSessionId
+    );
   }
 
   // Prescribed-exercise count + live name keyed on the DISPLAY session id, so a
@@ -473,7 +505,8 @@ export async function getEventSummariesForDate(
       sessionName:
         (displayId ? sessionNameById.get(displayId) : null) ?? e.sessionName,
       sessionFocus: e.sessionFocus,
-      completionQuality: mapStatusToCompletionQuality(e.status),
+      // How the workout went comes off its log, never off the status word.
+      completionQuality: loggedDisplayQuality(eventWorkoutRead(e)),
       isAlternative,
       loggedExerciseCount: e.sessionLogId
         ? (loggedCountMap.get(e.sessionLogId) ?? 0)

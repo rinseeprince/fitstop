@@ -4,9 +4,9 @@
  */
 
 import { generateUUID, generateISODate } from './test-utils'
-import type { TrainingEventRow } from '@/lib/database-helpers'
+import type { TrainingEventWithLogRow } from '@/services/training-event-service'
 import type { ClientGoalRow } from '@/types/client-goals'
-import type { TrainingEvent, TrainingEventStatus } from '@/types/training'
+import type { TrainingEvent, TrainingEventLog, TrainingEventStatus } from '@/types/training'
 
 // =============================================================================
 // Client Builders
@@ -97,6 +97,8 @@ interface MockTrainingEventOptions {
   estimatedCalories?: number | null
   status?: TrainingEventStatus
   sessionLogId?: string | null
+  /** The workout's log — where its quality lives. Null when it isn't logged. */
+  log?: TrainingEventLog | null
   createdAt?: string
   updatedAt?: string
 }
@@ -115,6 +117,7 @@ export function createMockTrainingEvent(options: MockTrainingEventOptions = {}):
     estimatedCalories: options.estimatedCalories !== undefined ? options.estimatedCalories : 350,
     status: options.status ?? 'scheduled',
     sessionLogId: options.sessionLogId ?? null,
+    log: options.log ?? null,
     isModified: false,
     calorieSurplusPercentage: null,
     createdAt: options.createdAt ?? now,
@@ -122,10 +125,21 @@ export function createMockTrainingEvent(options: MockTrainingEventOptions = {}):
   }
 }
 
-export function createMockTrainingEventRow(options: MockTrainingEventOptions = {}): TrainingEventRow {
+export function createMockTrainingEventRow(
+  options: MockTrainingEventOptions = {}
+): TrainingEventWithLogRow {
   const event = createMockTrainingEvent(options)
 
   return {
+    // The workout's log, as every calendar read embeds it.
+    session_log: event.log
+      ? {
+          id: event.log.id,
+          completion_quality: event.log.completionQuality,
+          training_session_id: event.log.performedSessionId,
+          notes: event.log.notes,
+        }
+      : null,
     id: event.id,
     client_id: event.clientId,
     training_plan_id: event.trainingPlanId,

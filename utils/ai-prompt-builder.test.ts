@@ -77,16 +77,63 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
 
     // 1 of 3 events is status === 'completed'.
     expect(training).toContain("- Sessions: 1/3 completed");
-    // Completed renders "(completed)" and its note on the next line.
-    expect(training).toContain("Push Day: (completed)");
+    // A logged session renders the quality on its LOG, and its note on the
+    // next line.
+    expect(training).toContain("Push Day: (full)");
     expect(training).toContain("Note: felt strong");
     // Skip renders the reason inline, NOT "(skipped)".
     expect(training).toContain("Leg Day: Skipped (reason: sick)");
     expect(training).not.toContain("Leg Day: (skipped)");
-    // Unlogged event is flagged "not logged".
-    expect(training).toContain("Pull Day: (scheduled, not logged)");
+    // A session the client never logged says exactly that.
+    expect(training).toContain("Pull Day: (not logged)");
     // The legacy workout-count fallback is suppressed when details are present.
     expect(training).not.toContain("Workouts Completed: 99");
+  });
+
+  it("reads each session's quality off the LOG, whatever the status word says", () => {
+    // The commit-10 shape: both sessions are `completed` on the event, and the
+    // log is what separates them.
+    const details: CheckInTrainingEventDetail[] = [
+      {
+        eventId: "ev-1",
+        date: "2026-04-07",
+        sessionName: "Push Day",
+        status: "completed",
+        logStatus: "logged",
+        completionQuality: "partial",
+        trainingSessionId: "sess-1",
+        sessionLogId: "log-1",
+      },
+      {
+        eventId: "ev-2",
+        date: "2026-04-09",
+        sessionName: "Pull Day",
+        status: "completed",
+        logStatus: "logged",
+        completionQuality: "full",
+        trainingSessionId: "sess-2",
+        sessionLogId: "log-2",
+      },
+    ];
+
+    const prompt = buildCheckInAnalysisPrompt(
+      checkIn(),
+      [],
+      "Jane",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      null,
+      null,
+      details,
+    );
+    const training = trainingSection(prompt);
+
+    expect(training).toContain("Push Day: (partial)");
+    expect(training).toContain("Pull Day: (full)");
+    // Both were done, so the count is 2 of 2 with one of them partial.
+    expect(training).toContain("- Sessions: 2/2 completed (1 partial)");
   });
 
   it("renders a bare 'Skipped' when a skipped event has no notes", () => {
@@ -224,7 +271,7 @@ describe("buildCheckInAnalysisPrompt — exercise enrichment (Session 6.3)", () 
 
     const training = build(details, summaries);
 
-    expect(training).toContain("Push Day: (completed)");
+    expect(training).toContain("Push Day: (full)");
     expect(training).toContain("Bench Press — 4 sets, top 100x5 @ RPE 8");
     expect(training).toContain("Overhead Press — 3 sets, top 60x6");
   });
@@ -317,7 +364,7 @@ describe("buildCheckInAnalysisPrompt — exercise enrichment (Session 6.3)", () 
     const training = build(details, new Map());
 
     expect(training).toContain("- Sessions: 1/1 completed");
-    expect(training).toContain("Push Day: (completed)");
+    expect(training).toContain("Push Day: (full)");
     // No exercise lines and no swap header.
     expect(training).not.toContain("top ");
     expect(training).not.toContain("Prescribed");

@@ -156,7 +156,9 @@ export async function evaluateAllClientTriggers(coachId: string): Promise<{ clie
     fetchAllByChunkedIds(clientIds, (chunk, from, to) =>
       supabaseAdmin
         .from("training_events")
-        .select("client_id, date, status, estimated_calories, id")
+        .select(
+          "client_id, date, status, estimated_calories, id, session_log:session_logs!training_events_session_log_id_fkey(completion_quality)"
+        )
         .in("client_id", chunk)
         .gte("date", startDate)
         .lte("date", endDate)
@@ -357,7 +359,9 @@ export async function evaluateSingleClientAlerts(
         .lte("date", endDate),
       supabaseAdmin
         .from("training_events")
-        .select("client_id, date, status, estimated_calories")
+        .select(
+          "client_id, date, status, estimated_calories, session_log:session_logs!training_events_session_log_id_fkey(completion_quality)"
+        )
         .eq("client_id", clientId)
         .gte("date", startDate)
         .lte("date", endDate),

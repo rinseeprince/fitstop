@@ -15,6 +15,10 @@ import {
   MONO_LABEL_CLASS,
 } from "@/components/clients/training/program-builder/builder-tokens";
 import { STATUS_THUMB } from "./calendar-tokens";
+import {
+  eventWorkoutRead,
+  trainingDisplayState,
+} from "@/lib/training-display-state";
 import type { TrainingEvent } from "@/types/training";
 
 type CalendarEventCardProps = {
@@ -62,7 +66,10 @@ export const CalendarEventCard = memo(function CalendarEventCard({
     : undefined;
 
   const dragging = isDragging || localIsDragging;
-  const thumb = STATUS_THUMB[event.status];
+  // The card's thumb keys on the workout's display state — its log says how it
+  // went, and the client's today says whether a still-scheduled one was missed.
+  const thumb =
+    STATUS_THUMB[trainingDisplayState({ ...eventWorkoutRead(event), date: event.date }, clientToday)];
   const ThumbIcon = thumb.icon;
   const surplus = event.calorieSurplusPercentage;
   const hasMetaRow = Boolean(event.sessionFocus) || surplus != null;

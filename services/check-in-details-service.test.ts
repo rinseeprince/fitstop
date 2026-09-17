@@ -318,6 +318,9 @@ describe("getCheckInPeriodAdherence", () => {
       "c1",
       "2026-05-08",
       "2026-05-14",
+      // The week's own last day stands in for today: it only decides which
+      // still-scheduled workouts read as missed, and training is not on this wire.
+      "2026-05-14",
     );
   });
 

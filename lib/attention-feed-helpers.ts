@@ -61,8 +61,11 @@ export type DailyLogRow = {
 export type TrainingEventRow = {
   client_id: string
   date: string
+  /** Whether the client logged the workout — never how it went. */
   status: string
   estimated_calories: number | null
+  /** The workout's log, embedded by the named foreign key: where its quality lives. */
+  session_log?: { completion_quality: string | null } | null
 }
 
 /** A measurement the client logged themselves: `client_measurements_live`, `source = 'client_log'`. */

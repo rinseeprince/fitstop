@@ -129,6 +129,68 @@ describe("TrainingSessionChecklist (Session 6.4)", () => {
     expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
 
+  it("reads a locked row's quality off the LOG, whatever the status word says", () => {
+    canEditDayMock.mockReturnValue(false);
+    // The commit-10 shape: the event says only that the workout was logged.
+    render(
+      <TrainingSessionChecklist
+        events={[
+          detail({
+            eventId: "e-flipped",
+            sessionName: "Half a session",
+            status: "completed",
+            logStatus: "logged",
+            completionQuality: "partial",
+            sessionLogId: "l1",
+          }),
+        ]}
+        clientTimezone="UTC"
+        logsOpenFrom={null}
+        onLogEvent={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("partial")).toBeInTheDocument();
+    expect(screen.queryByText("full")).not.toBeInTheDocument();
+  });
+
+  it("reads a workout logged before the link existed as full, not as unlogged", () => {
+    // 209 such rows on dev: completed, with no log to carry a quality.
+    canEditDayMock.mockReturnValue(false);
+    render(
+      <TrainingSessionChecklist
+        events={[
+          detail({
+            eventId: "e-legacy",
+            sessionName: "Old session",
+            status: "completed",
+            logStatus: "not_logged",
+          }),
+        ]}
+        clientTimezone="UTC"
+        logsOpenFrom={null}
+        onLogEvent={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("full")).toBeInTheDocument();
+    expect(screen.queryByText("Not logged")).not.toBeInTheDocument();
+  });
+
+  it("shows a workout the client has not logged as Not logged", () => {
+    canEditDayMock.mockReturnValue(false);
+    render(
+      <TrainingSessionChecklist
+        events={[detail({ eventId: "e-open", sessionName: "Open Pull" })]}
+        clientTimezone="UTC"
+        logsOpenFrom={null}
+        onLogEvent={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Not logged")).toBeInTheDocument();
+  });
+
   it("editing an unlogged day POSTs via onLogEvent (per-event log endpoint), not a check-in write", async () => {
     canEditDayMock.mockReturnValue(true);
     const onLogEvent = vi.fn().mockResolvedValue(undefined);

@@ -124,6 +124,24 @@ export type TrainingPlan = {
 // Training event status
 export type TrainingEventStatus = 'scheduled' | 'completed' | 'partial' | 'missed' | 'skipped';
 
+/**
+ * The workout's log, as much of it as a calendar read needs: read through the
+ * NAMED foreign key on every event read (`training_events_session_log_id_fkey`
+ * — two relationships exist between the tables, so an unnamed embed is a
+ * PGRST201). `null` when the client has not logged the workout.
+ *
+ * `completionQuality` is where a screen reads how the workout went; the event's
+ * `status` says only whether it was logged (`lib/training-display-state.ts`).
+ */
+export type TrainingEventLog = {
+  id: string;
+  /** The same union as `SessionLog.completionQuality`, spelled as that type spells it. */
+  completionQuality: 'full' | 'partial' | 'skipped';
+  /** The session the client PERFORMED — different from the event's when they swapped. */
+  performedSessionId: string | null;
+  notes: string | null;
+};
+
 // Concrete calendar event for a training session on a specific date
 export type TrainingEvent = {
   id: string;
@@ -136,8 +154,11 @@ export type TrainingEvent = {
   sessionName: string;
   sessionFocus: string | null;
   estimatedCalories: number | null;
+  /** Whether the client has logged this workout — never how it went (`log` says that). */
   status: TrainingEventStatus;
   sessionLogId: string | null;
+  /** The workout's log, embedded on every event read. Null when it isn't logged. */
+  log: TrainingEventLog | null;
   isModified: boolean;
   calorieSurplusPercentage: number | null;
   createdAt: string;

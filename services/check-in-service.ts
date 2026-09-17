@@ -143,7 +143,13 @@ export const submitCheckIn = async (
     // check-in never exists without its snapshot and no second read of the
     // period — or of the stored window — is needed to freeze it.
     periodSnapshot = buildPeriodSnapshot(
-      mapEventsToScheduleDays(expandDateRange(periodStart, periodEnd), events),
+      mapEventsToScheduleDays(
+        expandDateRange(periodStart, periodEnd),
+        events,
+        // The client's own day: this is their week, and it decides which of its
+        // still-scheduled workouts the frozen rows record as missed.
+        getTodayDateStringInTimezone(client?.timezone ?? "UTC")
+      ),
       nutrition.days
     );
 

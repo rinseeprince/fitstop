@@ -11,6 +11,7 @@ import type { PeriodSnapshot } from "@/types/schedule";
 import { buildDailyContextForAI } from "@/utils/ai-daily-context-builder";
 import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
 import { summariseSessions } from "@/lib/check-in/adherence";
+import { loggedDisplayQuality } from "@/lib/training-display-state";
 import { buildAnalysisTaskPrompt } from "@/utils/ai-analysis-format";
 import {
   DEFAULT_UNIT_SYSTEM,
@@ -94,25 +95,32 @@ export function buildCheckInAnalysisPrompt(
       detail.length ? ` (${detail.join(", ")})` : ""
     }\n`;
     trainingEventDetails.forEach((d) => {
+      // How each session went is read off its LOG (`loggedDisplayQuality`), not
+      // off the event's status word, so the line under the count cannot
+      // contradict it.
+      const quality = loggedDisplayQuality({
+        status: d.status,
+        completionQuality: d.completionQuality ?? null,
+      });
       let status: string;
-      if (d.status === "skipped") {
+      if (quality === "skipped") {
         status = d.notes
           ? `Skipped (reason: ${sanitizeForAIPrompt(d.notes)})`
           : "Skipped";
-      } else if (d.logStatus === "not_logged") {
-        status = `(${d.status}, not logged)`;
+      } else if (quality === null) {
+        status = "(not logged)";
       } else {
-        status = `(${d.status})`;
+        status = `(${quality})`;
       }
       prompt += `  - ${sanitizeForAIPrompt(d.sessionName)}: ${status}\n`;
-      if (d.status !== "skipped" && d.notes) {
+      if (quality !== "skipped" && d.notes) {
         prompt += `    Note: ${sanitizeForAIPrompt(d.notes)}\n`;
       }
 
       // Session 6.3 enrichment: per-exercise top-set lines + alt-session swap
-      // signal. Only logged completed/partial events carry an exercise block;
-      // skipped / not-logged events keep their 6.2 line only.
-      if (d.status === "completed" || d.status === "partial") {
+      // signal. Only workouts the client LOGGED carry an exercise block;
+      // skipped / not-logged sessions keep their 6.2 line only.
+      if (quality === "full" || quality === "partial") {
         const exerciseLines = d.sessionLogId
           ? exerciseSummaries?.get(d.sessionLogId)
           : undefined;

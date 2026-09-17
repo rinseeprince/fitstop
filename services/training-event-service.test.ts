@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockTrainingEventRow } from "@/__tests__/helpers/mock-data-builders";
 
 // Mock supabase-admin before importing the service
@@ -365,16 +365,18 @@ describe("training-event-service", () => {
         date: "2026-05-08",
         status: "completed",
         sessionLogId: "log-1",
+        // The log rides on the event read: the session performed, and how it went.
+        log: {
+          id: "log-1",
+          completionQuality: "full",
+          performedSessionId: "back",
+          notes: null,
+        },
       });
       routeByTable({
         training_events: createMockQuery({ data: [eventRow], error: null }),
         exercise_logs: createMockQuery({
           data: [{ session_log_id: "log-1" }, { session_log_id: "log-1" }],
-          error: null,
-        }),
-        session_logs: createMockQuery({
-          // Logged three days before the event's date (an alternative session).
-          data: [{ id: "log-1", training_session_id: "back", completed_at: "2026-05-05T00:00:00+00:00" }],
           error: null,
         }),
         training_exercises: createMockQuery({
@@ -406,14 +408,16 @@ describe("training-event-service", () => {
         date: "2026-05-08",
         status: "completed",
         sessionLogId: "log-1",
+        log: {
+          id: "log-1",
+          completionQuality: "full",
+          performedSessionId: "chest", // same as prescribed
+          notes: null,
+        },
       });
       routeByTable({
         training_events: createMockQuery({ data: [eventRow], error: null }),
         exercise_logs: createMockQuery({ data: [{ session_log_id: "log-1" }], error: null }),
-        session_logs: createMockQuery({
-          data: [{ id: "log-1", training_session_id: "chest" }], // same as prescribed
-          error: null,
-        }),
         training_exercises: createMockQuery({ data: [{ session_id: "chest" }], error: null }),
         training_sessions: createMockQuery({
           data: [{ id: "chest", name: "Chest Day" }],
@@ -425,6 +429,85 @@ describe("training-event-service", () => {
 
       expect(result[0].isAlternative).toBe(false);
       expect(result[0].sessionName).toBe("Chest Day");
+    });
+
+    it("reads the day card's quality off the LOG, whatever the status word says", async () => {
+      const partialLog = {
+        id: "log-1",
+        completionQuality: "partial" as const,
+        performedSessionId: "chest",
+        notes: null,
+      };
+
+      // The commit-10 shape, and the shape stored today: one answer, partial.
+      for (const status of ["completed", "partial"] as const) {
+        const eventRow = createMockTrainingEventRow({
+          id: "ev-1",
+          trainingSessionId: "chest",
+          sessionName: "Chest Day",
+          date: "2026-05-08",
+          status,
+          sessionLogId: "log-1",
+          log: partialLog,
+        });
+        routeByTable({
+          training_events: createMockQuery({ data: [eventRow], error: null }),
+          exercise_logs: createMockQuery({ data: [], error: null }),
+          training_exercises: createMockQuery({ data: [{ session_id: "chest" }], error: null }),
+          training_sessions: createMockQuery({
+            data: [{ id: "chest", name: "Chest Day" }],
+            error: null,
+          }),
+        });
+
+        const result = await getEventSummariesForDate("c1", "2026-05-08");
+        expect(result[0].completionQuality).toBe("partial");
+      }
+    });
+
+    it("reads a workout logged before the link existed as full, not as unlogged", async () => {
+      // 209 such rows on dev: completed, with no log to carry a quality.
+      const eventRow = createMockTrainingEventRow({
+        id: "ev-1",
+        trainingSessionId: "chest",
+        sessionName: "Chest Day",
+        date: "2026-05-08",
+        status: "completed",
+        sessionLogId: null,
+      });
+      routeByTable({
+        training_events: createMockQuery({ data: [eventRow], error: null }),
+        training_exercises: createMockQuery({ data: [{ session_id: "chest" }], error: null }),
+        training_sessions: createMockQuery({
+          data: [{ id: "chest", name: "Chest Day" }],
+          error: null,
+        }),
+      });
+
+      const result = await getEventSummariesForDate("c1", "2026-05-08");
+      expect(result[0].completionQuality).toBe("full");
+    });
+
+    it("leaves a workout the client has not logged without a quality", async () => {
+      const eventRow = createMockTrainingEventRow({
+        id: "ev-1",
+        trainingSessionId: "chest",
+        sessionName: "Chest Day",
+        date: "2026-05-08",
+        status: "scheduled",
+        sessionLogId: null,
+      });
+      routeByTable({
+        training_events: createMockQuery({ data: [eventRow], error: null }),
+        training_exercises: createMockQuery({ data: [{ session_id: "chest" }], error: null }),
+        training_sessions: createMockQuery({
+          data: [{ id: "chest", name: "Chest Day" }],
+          error: null,
+        }),
+      });
+
+      const result = await getEventSummariesForDate("c1", "2026-05-08");
+      expect(result[0].completionQuality).toBeNull();
     });
   });
 });

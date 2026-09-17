@@ -1,6 +1,6 @@
 import { Ban, Check, Dumbbell, Minus, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { TrainingEventStatus } from "@/types/training";
+import type { TrainingDisplayState } from "@/lib/training-display-state";
 
 // Teal-Summit tokens for the Plans-subtab month calendar. Same role as
 // program-builder/builder-tokens.ts, scoped to the real-date calendar: the
@@ -22,20 +22,26 @@ type StatusThumbSpec = {
   cardClass?: string;
 };
 
-export const STATUS_THUMB: Record<TrainingEventStatus, StatusThumbSpec> = {
+/**
+ * One thumb per DISPLAY state, not per stored word: whether the client logged
+ * the workout is the event's to say, how it went is its log's, and a workout
+ * still scheduled on a day that has passed was missed
+ * (`lib/training-display-state.ts`).
+ */
+export const STATUS_THUMB: Record<TrainingDisplayState, StatusThumbSpec> = {
   scheduled: {
     bg: "bg-[rgba(13,148,136,0.08)]",
     icon: Dumbbell,
     iconClass: "text-[#0d9488]",
     strokeWidth: 1.5,
   },
-  completed: {
+  completed_full: {
     bg: "bg-[rgba(13,148,136,0.08)]",
     icon: Check,
     iconClass: "text-[#0d9488]",
     strokeWidth: 2,
   },
-  partial: {
+  completed_partial: {
     bg: "bg-[rgba(245,158,11,0.07)]",
     icon: Minus,
     iconClass: "text-[#d97706]",

@@ -114,7 +114,7 @@ describe("ai-service — generateCheckInSummary (Session 6.3)", () => {
     const [request] = mockCreate.mock.calls[0];
     const userMessage = request.messages.find((m: { role: string }) => m.role === "user");
     // Per-event 6.2 detail still present; no exercise lines.
-    expect(userMessage.content).toContain("Push Day: (completed)");
+    expect(userMessage.content).toContain("Push Day: (full)");
     expect(userMessage.content).not.toContain("top ");
   });
 });

@@ -38,18 +38,18 @@ const target = (date: string, calories: number) => ({
 });
 
 describe("classifyTrainingDay", () => {
-  it("follows the classification table for single-event days", () => {
+  it("follows the classification table for single-workout days", () => {
     expect(classifyTrainingDay([])).toBe("none");
-    expect(classifyTrainingDay(["completed"])).toBe("complete");
-    expect(classifyTrainingDay(["partial"])).toBe("partial");
+    expect(classifyTrainingDay(["completed_full"])).toBe("complete");
+    expect(classifyTrainingDay(["completed_partial"])).toBe("partial");
     expect(classifyTrainingDay(["missed"])).toBe("missed");
     expect(classifyTrainingDay(["skipped"])).toBe("missed");
     expect(classifyTrainingDay(["scheduled"])).toBe("no_log");
   });
 
-  it("collapses multi-event days deterministically", () => {
-    expect(classifyTrainingDay(["completed", "completed"])).toBe("complete");
-    expect(classifyTrainingDay(["completed", "missed"])).toBe("partial");
+  it("collapses multi-workout days deterministically", () => {
+    expect(classifyTrainingDay(["completed_full", "completed_full"])).toBe("complete");
+    expect(classifyTrainingDay(["completed_full", "missed"])).toBe("partial");
     expect(classifyTrainingDay(["scheduled", "missed"])).toBe("missed");
     expect(classifyTrainingDay(["scheduled", "scheduled"])).toBe("no_log");
   });
@@ -86,11 +86,14 @@ describe("buildAdherenceSummary", () => {
 
   const fixture: AdherenceSourceRows = {
     dates,
+    // The window ends on the 23rd, so a workout still scheduled before it was
+    // missed and one on the 23rd itself is still to be done.
+    today: "2026-07-23",
     trainingEvents: [
-      { date: "2026-07-20", status: "completed" },
-      { date: "2026-07-21", status: "missed" },
+      { date: "2026-07-20", status: "completed", completionQuality: "full" },
+      { date: "2026-07-21", status: "missed", completionQuality: null },
       // no event on the 22nd → 'none'
-      { date: "2026-07-23", status: "scheduled" },
+      { date: "2026-07-23", status: "scheduled", completionQuality: null },
     ],
     nutritionLogs: [
       nut("2026-07-20", 2000), // against 2000 → hit
@@ -145,7 +148,9 @@ describe("buildAdherenceSummary", () => {
       ...fixture,
       nutritionLogs: [],
       habitLogs: [],
-      trainingEvents: [{ date: "2026-07-23", status: "completed" }],
+      trainingEvents: [
+        { date: "2026-07-23", status: "completed", completionQuality: "full" },
+      ],
     });
 
     expect(summary.loggedDates).toEqual(["2026-07-23"]);
@@ -157,7 +162,9 @@ describe("buildAdherenceSummary", () => {
       ...fixture,
       nutritionLogs: [],
       habitLogs: [],
-      trainingEvents: [{ date: "2026-07-23", status: "scheduled" }],
+      trainingEvents: [
+        { date: "2026-07-23", status: "scheduled", completionQuality: null },
+      ],
       wellnessLogs: [
         { date: "2026-07-22", mood: null, energy: null, sleep: null, stress: null, soreness: null },
       ],
@@ -185,6 +192,46 @@ describe("buildAdherenceSummary", () => {
   it("computes the training numbers over events (full completions only)", () => {
     const summary = buildAdherenceSummary(fixture);
     expect(summary.training).toMatchObject({ completed: 1, planned: 3, pct: 33 });
+  });
+
+  it("reads a workout whose LOG is partial as partial, whatever its status word says", () => {
+    const partialDay = (status: string) =>
+      buildAdherenceSummary({
+        ...fixture,
+        trainingEvents: [{ date: "2026-07-20", status, completionQuality: "partial" }],
+      });
+
+    // The commit-10 shape, read today, and the shape stored today: one dot.
+    for (const status of ["completed", "partial"]) {
+      const summary = partialDay(status);
+      expect(summary.training.rail[0]).toBe("partial");
+      // The count is full completions only and does not change here.
+      expect(summary.training).toMatchObject({ completed: 0, planned: 1, pct: 0 });
+    }
+  });
+
+  it("reads a workout logged before the link existed as a full completion", () => {
+    const summary = buildAdherenceSummary({
+      ...fixture,
+      trainingEvents: [{ date: "2026-07-20", status: "completed", completionQuality: null }],
+    });
+
+    expect(summary.training.rail[0]).toBe("complete");
+    expect(summary.training).toMatchObject({ completed: 1, planned: 1, pct: 100 });
+  });
+
+  it("derives missed for a workout still scheduled on a day that has passed", () => {
+    const summary = buildAdherenceSummary({
+      ...fixture,
+      trainingEvents: [
+        { date: "2026-07-20", status: "scheduled", completionQuality: null },
+        { date: "2026-07-23", status: "scheduled", completionQuality: null },
+      ],
+    });
+
+    // The 20th has passed; the 23rd is today, and the client can still train.
+    expect(summary.training.rail[0]).toBe("missed");
+    expect(summary.training.rail[3]).toBe("no_log");
   });
 
   it("computes the nutrition figures with the kernel: on target over the TARGETED days", () => {
@@ -233,6 +280,7 @@ describe("buildAdherenceSummary", () => {
   it("returns null percentages when a rail has no signal", () => {
     const empty = buildAdherenceSummary({
       dates,
+      today: "2026-07-23",
       trainingEvents: [],
       nutritionLogs: [],
       nutritionTargets: [],
@@ -318,6 +366,7 @@ describe("the nutrition denominator", () => {
     nutritionTargets: AdherenceSourceRows["nutritionTargets"]
   ): AdherenceSourceRows => ({
     dates,
+    today: dates[dates.length - 1],
     trainingEvents: [],
     nutritionLogs,
     nutritionTargets,
@@ -406,7 +455,7 @@ describe("getClientAdherenceForRange — the reads", () => {
   });
 
   it("reads the five client sources and never the daily_logs spine", async () => {
-    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23");
+    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23", "2026-07-23");
 
     expect([...calls.keys()].sort()).toEqual(
       [
@@ -422,7 +471,7 @@ describe("getClientAdherenceForRange — the reads", () => {
   });
 
   it("reads the log for what was eaten and the targets in ONE batched lookup over the window — never a verdict off the row", async () => {
-    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23");
+    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23", "2026-07-23");
 
     const selected = calls.get("nutrition_logs")!.find(([method]) => method === "select")?.[1] as string;
     expect(selected).toBe("date, calories_consumed, protein_g, carbs_g, fat_g");
@@ -430,10 +479,18 @@ describe("getClientAdherenceForRange — the reads", () => {
     expect(getNutritionTargetsForDateRange).toHaveBeenCalledWith("client-1", "2026-07-20", "2026-07-23");
   });
 
+  it("embeds each workout's log by the NAMED foreign key, so the rail reads its quality", async () => {
+    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23", "2026-07-23");
+
+    const selected = calls.get("training_events")!.find(([method]) => method === "select")?.[1] as string;
+    // Named because two relationships exist between the tables (PGRST201).
+    expect(selected).toContain("session_logs!training_events_session_log_id_fkey(completion_quality)");
+  });
+
   it("counts only the measurements the client logged themselves", async () => {
     // A coach entry, an intake reading or a check-in's stamped row is the
     // coach's work or the weekly report, and neither is a logged day.
-    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23");
+    await getClientAdherenceForRange("client-1", "2026-07-20", "2026-07-23", "2026-07-23");
 
     expect(calls.get("client_measurements_live")).toContainEqual(["eq", "source", "client_log"]);
     expect(calls.get("client_measurements_live")).toContainEqual(["eq", "client_id", "client-1"]);

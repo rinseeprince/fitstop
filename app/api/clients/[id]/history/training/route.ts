@@ -24,7 +24,8 @@ function generateDateRange(start: string, end: string): string[] {
 }
 
 function mapScheduleDayToRow(day: ScheduleDay): TrainingHistoryRow {
-  const isLogged = !["missed", "rest"].includes(day.status);
+  // Logged is the attendance word; the chip beside it reads the quality.
+  const isLogged = day.status === "completed";
   return {
     date: day.date,
     session_name: day.loggedSessionName ?? day.plannedSessionName ?? "",
@@ -37,33 +38,20 @@ function mapScheduleDayToRow(day: ScheduleDay): TrainingHistoryRow {
 }
 
 /**
- * Earliest date the client has any training activity — the earliest of their
- * first training_event and first session_log. Bounds the history range.
- * Returns null when the client has no events and no logs.
+ * The client's first day on the calendar — the table is one row per workout on
+ * a date, so its range starts at their earliest training_event. Null when they
+ * have none.
  */
-async function getEarliestActivityDate(clientId: string): Promise<string | null> {
-  const [eventRes, logRes] = await Promise.all([
-    supabaseAdmin
-      .from("training_events")
-      .select("date")
-      .eq("client_id", clientId)
-      .order("date", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-    supabaseAdmin
-      .from("session_logs")
-      .select("completed_at")
-      .eq("client_id", clientId)
-      .order("completed_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+async function getEarliestEventDate(clientId: string): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from("training_events")
+    .select("date")
+    .eq("client_id", clientId)
+    .order("date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
-  const candidates: string[] = [];
-  if (eventRes.data?.date) candidates.push(eventRes.data.date.substring(0, 10));
-  if (logRes.data?.completed_at) candidates.push(logRes.data.completed_at.substring(0, 10));
-  if (candidates.length === 0) return null;
-  return candidates.sort()[0];
+  return data?.date ? data.date.substring(0, 10) : null;
 }
 
 export async function GET(
@@ -90,51 +78,29 @@ export async function GET(
 
     const { limit, offset } = pagination;
 
-    // The history range starts at the client's earliest training_event /
-    // session_log. The schedule is built from events + session_logs (real
-    // calendar dates / completed_at), never the legacy daily_logs +
-    // week_start_date derivation.
-    const rangeStart = await getEarliestActivityDate(clientId);
+    // The history range starts at the client's earliest training_event. The
+    // schedule is built from the calendar's own workouts — each with its log
+    // embedded — never the legacy daily_logs + week_start_date derivation.
+    const rangeStart = await getEarliestEventDate(clientId);
 
-    // No activity at all → nothing to show.
+    // Nothing on the calendar → nothing to show.
     if (!rangeStart) {
       return NextResponse.json({ rows: [], total: 0 }, { status: 200 });
     }
 
-    // Coach-local today bounds the history range (coach's view).
+    // Coach-local today bounds the history range (coach's view) and is the day
+    // a still-scheduled workout is judged missed against.
     const today = await getCoachTodayString(auth.coachId);
     const dates = generateDateRange(rangeStart, today);
 
-    // Fetch training events and session_logs for the full range
-    const [events, { data: sessionLogs }] = await Promise.all([
-      getEventsForDateRange(clientId, rangeStart, today),
-      supabaseAdmin
-        .from("session_logs")
-        .select("id, training_session_id, completed_at, completion_quality, notes, prescribed_session_snapshot")
-        .eq("client_id", clientId)
-        .gte("completed_at", rangeStart)
-        .lte("completed_at", today),
-    ]);
-
-    // Build lookup map of ALL session_logs by id (for swap detection)
-    const sessionLogMap = new Map(
-      (sessionLogs ?? []).map((log) => [log.id, log])
-    );
-
-    // Find session_logs not linked to any event
-    const linkedLogIds = new Set(
-      events.filter((e) => e.sessionLogId).map((e) => e.sessionLogId)
-    );
-    const unlinkedLogs = (sessionLogs ?? []).filter(
-      (log) => !linkedLogIds.has(log.id)
-    );
+    const events = await getEventsForDateRange(clientId, rangeStart, today);
 
     // Resolve performed session names so a swap shows what the client actually
-    // did (the log's training_session_id), not the prescribed snapshot.
+    // did (the log's own training_session_id), not the prescribed snapshot.
     const performedSessionIds = [
       ...new Set(
-        (sessionLogs ?? [])
-          .map((l) => l.training_session_id)
+        events
+          .map((event) => event.log?.performedSessionId ?? null)
           .filter((id): id is string => id !== null)
       ),
     ];
@@ -152,8 +118,7 @@ export async function GET(
     const schedule = mapEventsToScheduleDays(
       dates,
       events,
-      unlinkedLogs,
-      sessionLogMap,
+      today,
       performedSessionNames
     );
 

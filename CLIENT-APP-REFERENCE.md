@@ -397,9 +397,17 @@ type ClientTrainingExercise = {
 ### TrainingEventDetail (the workout read)
 Source of truth: `types/training.ts`. Returned by `GET /api/client/training/events/{eventId}`.
 
+> **RN contract — how a workout went is on its LOG, never on `event.status`.** The event's `status`
+> says only whether the client has logged the workout (it has left `scheduled`); the quality —
+> `full` or `partial` — is `sessionLog.completionQuality`, and `event.log` carries the same quality
+> (with the log's id, its performed session and its note) on every event read, so a list of workouts
+> needs no second fetch. A workout that left `scheduled` with no log at all reads as `full`: it was
+> logged before the link existed and no quality was ever recorded. `missed` is never stored — derive
+> it: still `scheduled` on a day before the client's today.
+
 ```typescript
 type TrainingEventDetail = {
-  event: TrainingEvent
+  event: TrainingEvent // `event.log`: the workout's log — { id, completionQuality, performedSessionId, notes } or null
   session:
     | { source: "live"; session: TrainingSessionHeader } // the session without its groups
     | { source: "snapshot"; snapshot: Record<string, unknown> } // prescribed_session_snapshot

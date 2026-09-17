@@ -1,7 +1,10 @@
 import { supabaseAdmin } from "./supabase-admin";
 import {
+  EVENT_WITH_LOG_COLUMNS,
   linkSessionLogToEvent,
   mapCompletionQualityToEventStatus,
+  mapEventRow,
+  type TrainingEventWithLogRow,
 } from "./training-event-service";
 import { getTrainingWeekStart } from "@/lib/date-helpers";
 import { getClientWeekAnchor } from "./check-in-week-service";
@@ -14,7 +17,6 @@ import type {
   SessionLogUpdate,
   SetLogInsert,
   SetLogRow,
-  TrainingEventRow,
 } from "@/lib/database-helpers";
 import type { Json } from "@/types/database";
 import type { SetType } from "@/utils/exercise-set-specs";
@@ -41,9 +43,7 @@ import type {
   SessionLogDetail,
   SessionLogPrescribedGroup,
   SetLog,
-  TrainingEvent,
   TrainingEventDetail,
-  TrainingEventStatus,
   TrainingExerciseGroup,
   TrainingSessionHeader,
 } from "@/types/training";
@@ -387,25 +387,6 @@ async function attachSetLogs(logs: ExerciseLog[]): Promise<ExerciseLog[]> {
     byExercise.set(row.exercise_log_id, list);
   }
   return logs.map((log) => ({ ...log, sets: byExercise.get(log.id) ?? [] }));
-}
-
-function mapEventRow(row: TrainingEventRow): TrainingEvent {
-  return {
-    id: row.id,
-    clientId: row.client_id,
-    trainingPlanId: row.training_plan_id,
-    trainingSessionId: row.training_session_id,
-    date: row.date,
-    sessionName: row.session_name,
-    sessionFocus: row.session_focus,
-    estimatedCalories: row.estimated_calories,
-    status: row.status as TrainingEventStatus,
-    sessionLogId: row.session_log_id,
-    isModified: row.is_modified,
-    calorieSurplusPercentage: row.calorie_surplus_percentage,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
 }
 
 // =============================================================================
@@ -882,7 +863,7 @@ export async function getTrainingEventDetail(
 ): Promise<TrainingEventDetail | null> {
   const { data: eventRow, error: eventErr } = await supabaseAdmin
     .from("training_events")
-    .select("*")
+    .select(EVENT_WITH_LOG_COLUMNS)
     .eq("id", eventId)
     .eq("client_id", clientId)
     .maybeSingle();
@@ -891,7 +872,7 @@ export async function getTrainingEventDetail(
   }
   if (!eventRow) return null;
 
-  const event = mapEventRow(eventRow as TrainingEventRow);
+  const event = mapEventRow(eventRow as unknown as TrainingEventWithLogRow);
 
   // Live session (with active exercises, in their groups).
   // is_active filter IS appropriate here — we don't want a soft-deleted

@@ -12,19 +12,22 @@ import {
 } from "@/components/ui/select";
 import { Dumbbell, Calendar, Lock } from "lucide-react";
 import { canEditDay } from "@/lib/daily-log-permissions";
+import { loggedDisplayQuality } from "@/lib/training-display-state";
 import type {
   CheckInTrainingEventDetail,
   SessionCompletionQuality,
 } from "@/types/check-in";
 
-// Map a completionQuality back to its UI status label. A completed event with no
-// logged quality (e.g. marked complete elsewhere) shows as "full".
+// How the row reads: the quality on the workout's LOG, never its status word.
+// A workout logged before the link existed has no quality recorded and shows as
+// "full"; one with no log at all has not been logged.
 const statusLabel = (
   detail: CheckInTrainingEventDetail
-): "full" | "partial" | "skipped" | "not_logged" => {
-  if (detail.logStatus === "not_logged") return "not_logged";
-  return detail.completionQuality ?? "full";
-};
+): "full" | "partial" | "skipped" | "not_logged" =>
+  loggedDisplayQuality({
+    status: detail.status,
+    completionQuality: detail.completionQuality ?? null,
+  }) ?? "not_logged";
 
 const QUALITY_OPTIONS: { value: SessionCompletionQuality; label: string }[] = [
   { value: "full", label: "Completed" },
@@ -129,7 +132,9 @@ export const TrainingSessionChecklist = ({
           {events.map((event) => {
             const editable = canEditDay(event.date, logsOpenFrom, clientTimezone);
             const label = statusLabel(event);
-            const isCompleted = event.status === "completed";
+            // Tinted once the client has logged the workout, at any quality —
+            // the label beside it says whether it was full or partial.
+            const isCompleted = label === "full" || label === "partial";
             const local = rowState[event.eventId];
             const displayName = event.performedSessionName ?? event.sessionName;
 

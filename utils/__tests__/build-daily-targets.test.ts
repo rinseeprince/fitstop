@@ -28,6 +28,7 @@ function tev(overrides: Partial<TrainingEvent>): TrainingEvent {
     estimatedCalories: 200,
     status: "scheduled",
     sessionLogId: null,
+    log: null,
     isModified: false,
     calorieSurplusPercentage: 10,
     createdAt: "",
