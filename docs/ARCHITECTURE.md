@@ -1555,19 +1555,13 @@ period cannot be resolved) — and `summariseTraining`
 that counts them. There is no stored per-session table and no second
 per-check-in shape: the review's KPI ribbon and its pills, the wizard's Training
 Summary, the AI prompt and the figure the submit freezes all come out of that
-one summariser.
-
-**Two numerators, one derivation.** The coach's surfaces read `completed` (full +
-partial, so 3 of 5 can hold a partial); the client's wizard and the stored
-`check_ins.workouts_completed` read `full`, with `sessionsPartial` beside it on
-the wire (`CheckInTrainingPeriodStats` on `GET /api/client/check-in-context`) so
-the client's figure and its breakdown come from the same run. What is forbidden
-is a SECOND definition, and `lib/training-adherence-ownership.test.ts` scans
-every check-in surface to keep it so: no read of the stored
-`check_ins.workouts_completed` column (that column is the client's — their own
-surfaces read it back legitimately) and no hand-rolled count over a status or a
-quality. Both shapes have shipped, and the first put "3/5" on the ribbon above
-an AI summary saying "completed only 2 out of 5" for the same week.
+one summariser. A SECOND definition is what is forbidden, and
+`lib/training-adherence-ownership.test.ts` scans every check-in surface to keep
+it so: no read of the stored `check_ins.workouts_completed` column (that column
+is the client's — their own surfaces read it back legitimately) and no
+hand-rolled count over a status or a quality. Both shapes have shipped, and the
+first put "3/5" on the ribbon above an AI summary saying "completed only 2 out
+of 5" for the same week.
 
 **Three day sets, and every figure names its own** (owner decision
 2026-09-11). LOGGED days are coverage, over the period. TARGETED days — the

@@ -657,8 +657,6 @@ These are **absolute calorie deltas from `lib/constants.ts`, not percentages.**
 - `CheckIn.workoutsCompleted`, stored at submit, is the workouts done in FULL.
   A partly completed workout is not in it: `trainingPeriodStats.sessionsPartial`
   on `check-in-context` is how many there were
-- The coach's review counts full AND partial over the same denominator, so the
-  two surfaces can legitimately read 3/5 and 4/5 for one week
 
 ### Habit Streaks
 ```typescript
