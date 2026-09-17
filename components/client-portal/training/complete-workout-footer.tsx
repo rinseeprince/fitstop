@@ -9,9 +9,10 @@ import {
   type UseFormRegister,
   type UseFormSetValue,
 } from "react-hook-form";
-import type { SessionCompletionQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/check-in";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { EMPTY_TRAINING_LOG_MESSAGE } from "@/lib/training-log-content";
 import {
   resolveLogOutcome,
   type LogFormValues,
@@ -24,6 +25,10 @@ import {
 // It replaces the quick-log card, whose complete/partial/skipped buttons asked
 // the client to claim an outcome the ticks now answer. What survives from it is
 // the session notes field, unchanged.
+//
+// With nothing ticked there is no outcome to promise and nothing to save: the
+// line says so and the button waits. A client who did not train logs nothing,
+// and one who saved by mistake clears the log.
 type CompleteWorkoutFooterProps = {
   control: Control<LogFormValues>;
   register: UseFormRegister<LogFormValues>;
@@ -37,10 +42,9 @@ type CompleteWorkoutFooterProps = {
 
 // Named for the client, not the column. `full` is "complete" in every other
 // sentence they read.
-const OUTCOME_LABEL: Record<SessionCompletionQuality, string> = {
+const OUTCOME_LABEL: Record<LoggedQuality, string> = {
   full: "complete",
   partial: "partial",
-  skipped: "skipped",
 };
 
 export function CompleteWorkoutFooter({
@@ -72,11 +76,13 @@ export function CompleteWorkoutFooter({
     });
   };
 
-  const label = OUTCOME_LABEL[outcome.quality];
+  const label = outcome.quality === null ? null : OUTCOME_LABEL[outcome.quality];
   const sentence =
-    outcome.prescribedWorkingSets === 0
-      ? `No working sets prescribed. Will be recorded as ${label}.`
-      : `${outcome.completedWorkingSets} of ${outcome.prescribedWorkingSets} working sets logged. Will be recorded as ${label}.`;
+    label === null
+      ? EMPTY_TRAINING_LOG_MESSAGE
+      : outcome.prescribedWorkingSets === 0
+        ? `No working sets prescribed. Will be recorded as ${label}.`
+        : `${outcome.completedWorkingSets} of ${outcome.prescribedWorkingSets} working sets logged. Will be recorded as ${label}.`;
 
   return (
     <section className="space-y-3 rounded-[6px] bg-white p-4">
@@ -136,7 +142,7 @@ export function CompleteWorkoutFooter({
       <Button
         type="submit"
         size="lg"
-        disabled={!editable || isSubmitting}
+        disabled={!editable || isSubmitting || label === null}
         data-testid="save-button"
         className="w-full"
       >

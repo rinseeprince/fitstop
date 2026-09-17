@@ -1,5 +1,5 @@
 import type { LogTrainingEventInput } from "@/lib/validations/training";
-import type { SessionCompletionQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/check-in";
 import type { ExerciseLog, SessionLog } from "@/types/training";
 import type { PrescribedExerciseView } from "./exercise-tracker-block";
 import { expandSetSpecs } from "@/utils/exercise-set-specs";
@@ -12,6 +12,7 @@ import {
   summariseCompletion,
   type ScoredExercise,
 } from "@/utils/completion-quality";
+import { trainingLogRecordsWork } from "@/lib/training-log-content";
 import { parseWeightToKg, type UnitSystem } from "@/utils/unit-conversions";
 import { displayLoad } from "@/components/clients/training/program-builder/commit-input";
 
@@ -134,7 +135,8 @@ function scoreFormExercises(
 type LogOutcome = {
   completedWorkingSets: number;
   prescribedWorkingSets: number;
-  quality: SessionCompletionQuality;
+  /** What this form would be recorded as, or null when it records nothing. */
+  quality: LoggedQuality | null;
 };
 
 /**
@@ -145,11 +147,15 @@ type LogOutcome = {
  * buildLogPayload puts on the wire. Two derivations could disagree, and the
  * client would be the one telling the lie.
  *
- * The fallback covers a session with nothing scorable prescribed — no exercises
- * at all, or only warm-ups. `summariseCompletion` returns null there, and the
- * server does the same and defers to this value, so it has to be decided
- * somewhere: a client who ticked anything did everything there was to do
- * (`full`), one who ticked nothing skipped it.
+ * `null` means the form records nothing — no set ticked — and the save is
+ * refused, on this screen and on the server, by the one rule
+ * (`lib/training-log-content.ts`). A client who did not train logs nothing;
+ * one who saved by mistake clears the log.
+ *
+ * The `full` fallback covers a session with nothing scorable prescribed — no
+ * exercises at all, or only warm-ups — where `summariseCompletion` returns null
+ * and the server defers to this value: a client who ticked anything there did
+ * everything there was to do.
  */
 export function resolveLogOutcome(
   exercises: ExerciseFormValues[],
@@ -158,21 +164,21 @@ export function resolveLogOutcome(
   const summary = summariseCompletion(
     scoreFormExercises(exercises, prescribedRows),
   );
-  const quality =
-    summary.quality ??
-    (exercises.some((ex) => ex.sets.some((set) => set.completed))
-      ? "full"
-      : "skipped");
+  const ticked = exercises.some((ex) => ex.sets.some((set) => set.completed));
   return {
     completedWorkingSets: summary.completedWorkingSets,
     prescribedWorkingSets: summary.prescribedWorkingSets,
-    quality,
+    quality: ticked ? (summary.quality ?? "full") : null,
   };
 }
 
 /**
  * Build the wire payload, converting to canonical kilograms HERE rather than
  * sending the client's display unit and a tag for the server to apply.
+ *
+ * `null` when the form records no work — nothing ticked. The save is refused
+ * rather than stored as a skip, and the server refuses the same payload through
+ * the same rule, so the screen and the wire agree.
  *
  * The conversion is evaluated PER WEIGHT FIELD, never per row. A set row is
  * dirty the moment the client edits its reps — under a row-level rule its
@@ -189,7 +195,7 @@ export function buildLogPayload(
   viewer: UnitSystem,
   isWeightDirty: (exerciseIndex: number, setIndex: number) => boolean,
   prescribedRows: PrescribedRowsByIndex,
-): LogTrainingEventInput {
+): LogTrainingEventInput | null {
   const detailed = values.exercises
     .map((ex, exIndex) => {
       // Exactly the ticked sets. The tick is the claim; an unticked row says
@@ -241,6 +247,9 @@ export function buildLogPayload(
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
+  const quality = resolveLogOutcome(values.exercises, prescribedRows).quality;
+  if (quality === null) return null;
+
   const trimmedNotes = values.notes.trim();
   const base: LogTrainingEventInput = {
     // The client no longer selects this. The server ignores it whenever the
@@ -248,11 +257,13 @@ export function buildLogPayload(
     // is required by the schema and IS honoured for an exercise-less payload —
     // so sending the outcome the client was shown keeps the two agreeing on the
     // one path where the client's value still decides.
-    completionQuality: resolveLogOutcome(values.exercises, prescribedRows)
-      .quality,
+    completionQuality: quality,
     ...(trimmedNotes && { notes: trimmedNotes }),
   };
-  return detailed.length > 0 ? { ...base, exercises: detailed } : base;
+  const payload = detailed.length > 0 ? { ...base, exercises: detailed } : base;
+  // The belt: the outcome above and the rule below answer the same question,
+  // and the server asks the rule.
+  return trainingLogRecordsWork(payload) ? payload : null;
 }
 
 /** `count` empty, unticked rows — never fewer than one to type into. */

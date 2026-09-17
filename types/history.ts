@@ -27,7 +27,8 @@ export type TrainingHistoryRow = {
   date: string;
   session_name: string;
   is_alternative: boolean;
-  completion_quality: "full" | "partial" | "skipped" | null;
+  /** How the workout went, off its log (`loggedDisplayQuality`); null when unlogged. */
+  completion_quality: "full" | "partial" | null;
   notes: string | null;
   is_logged?: boolean;
   session_log_id?: string | null;

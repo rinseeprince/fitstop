@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("./supabase-admin", () => ({
   supabaseAdmin: {
     from: vi.fn(),
+    rpc: vi.fn(),
   },
 }));
 
@@ -49,7 +50,9 @@ function createMockQuery<T = unknown>(result: {
 import { supabaseAdmin } from "./supabase-admin";
 import { assertCanEdit } from "./daily-log-permissions-service";
 import { DayLockedError } from "@/lib/daily-log-permissions";
+import { EmptyTrainingLogError } from "@/lib/training-log-content";
 import {
+  clearTrainingEventLog,
   logTrainingEvent,
   getTrainingEventDetail,
   getSessionLogDetail,
@@ -223,7 +226,7 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 1. Quick log (no exercises)
   // -------------------------------------------------------------------------
-  it("[1] quick log: writes session_log + snapshot, clears exercise_logs (full replace), links event with mapped status", async () => {
+  it("[1] quick log: writes session_log + snapshot, touches no exercise_log, links event with mapped status", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { next_check_in_due: "2026-05-03" },
@@ -266,9 +269,10 @@ describe("logTrainingEvent", () => {
       prescribed_session_snapshot: SESSION_PRESCRIPTION,
     });
 
-    // Full replace: exercise_logs are cleared (DELETE), nothing inserted for a
-    // quick log, no set_logs written.
-    expect(exQ.delete).toHaveBeenCalledTimes(1);
+    // A save replaces exactly what it carries: a quick log carries no
+    // exercises, so it neither deletes nor inserts one. This is what keeps the
+    // check-in's fill-gap row from erasing sets the client already logged.
+    expect(exQ.delete).not.toHaveBeenCalled();
     expect(exQ.insert).not.toHaveBeenCalled();
     expect(mockFrom).not.toHaveBeenCalledWith("set_logs");
 
@@ -283,7 +287,7 @@ describe("logTrainingEvent", () => {
   // -------------------------------------------------------------------------
   // 2. Quick log with exercises: []
   // -------------------------------------------------------------------------
-  it("[2] empty exercises array is a quick-log: clears exercise_logs, inserts none", async () => {
+  it("[2] empty exercises array is a quick-log: touches no exercise_log", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { next_check_in_due: "2026-05-03" },
@@ -311,12 +315,60 @@ describe("logTrainingEvent", () => {
       payload: { completionQuality: "partial", exercises: [] },
     });
 
-    // Full replace: cleared, nothing inserted, no set_logs.
-    expect(exQ.delete).toHaveBeenCalledTimes(1);
+    // Nothing carried, nothing replaced.
+    expect(exQ.delete).not.toHaveBeenCalled();
     expect(exQ.insert).not.toHaveBeenCalled();
     expect(mockFrom).not.toHaveBeenCalledWith("set_logs");
     // Status maps from quick-log completionQuality.
     expect(linkQ.update.mock.calls[0][0].status).toBe("partial");
+  });
+
+  // -------------------------------------------------------------------------
+  // 2b. Amendment 5: changing a logged workout's status from the check-in
+  //     never erases its logged sets. The check-in's fill-gap row posts
+  //     `{completionQuality, notes}` and nothing else; the save used to
+  //     full-replace on every path, so the replace had nothing to put back.
+  // -------------------------------------------------------------------------
+  it("[2b] a quick save over a DETAILED log keeps its exercise rows", async () => {
+    const eventQ = createMockQuery({
+      data: eventRow({ session_log_id: SESSION_LOG_ID }),
+      error: null,
+    });
+    const clientQ = createMockQuery({
+      data: { next_check_in_due: null },
+      error: null,
+    });
+    const sessionSnapQ = createMockQuery({
+      data: SESSION_PRESCRIPTION,
+      error: null,
+    });
+    const updateQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
+    const exQ = createMockQuery({ data: null, error: null });
+    const linkQ = createMockQuery({ data: null, error: null });
+
+    installRouter({
+      training_events: [eventQ, linkQ],
+      clients: clientQ,
+      training_sessions: sessionSnapQ,
+      session_logs: updateQ,
+      exercise_logs: exQ,
+    });
+
+    await logTrainingEvent({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+      payload: { completionQuality: "full", notes: "Did it after all" },
+    });
+
+    // The log's own row takes the outcome and the note (the second UPDATE is
+    // linkSessionLogToEvent stamping the back-reference)…
+    expect(updateQ.update.mock.calls[0][0]).toMatchObject({
+      completion_quality: "full",
+      notes: "Did it after all",
+    });
+    // …and every exercise_log the client had already written stands.
+    expect(exQ.delete).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalledWith("set_logs");
   });
 
   // -------------------------------------------------------------------------
@@ -517,59 +569,47 @@ describe("logTrainingEvent", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 5. Detailed all-skipped, payload completionQuality='skipped'
+  // 5. A save that records nothing is refused — there is no skip to store.
   // -------------------------------------------------------------------------
-  it("[5] detailed all-skipped + payload 'skipped' → status='skipped'", async () => {
+  it("[5] every exercise skipped → refused, nothing written", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { next_check_in_due: null },
       error: null,
     });
-    const sessionSnapQ = createMockQuery({
-      data: SESSION_PRESCRIPTION,
-      error: null,
-    });
-    const exerciseSnapQ = createMockQuery({ data: [], error: null });
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
-    const existingExLogsQ = createMockQuery({ data: [], error: null });
-    const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = insertExerciseLogsReturning(["el-a", "el-b"]);
-    const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
     installRouter({
       training_events: [eventQ, linkQ],
       clients: clientQ,
-      training_sessions: sessionSnapQ,
-      training_exercises: exerciseSnapQ,
       session_logs: upsertQ,
-      exercise_logs: [existingExLogsQ, deleteExQ, insertExQ],
-      set_logs: setLogsInsertQ,
     });
 
-    await logTrainingEvent({
-      eventId: EVENT_ID,
-      clientId: CLIENT_ID,
-      payload: {
-        completionQuality: "skipped",
-        exercises: [
-          { exerciseName: "A", sets: [{ setNumber: 1 }], weightUnit: "lbs", skipped: true },
-          { exerciseName: "B", sets: [{ setNumber: 1 }], weightUnit: "lbs", skipped: true },
-        ],
-      },
-    });
+    await expect(
+      logTrainingEvent({
+        eventId: EVENT_ID,
+        clientId: CLIENT_ID,
+        payload: {
+          completionQuality: "full",
+          exercises: [
+            { exerciseName: "A", sets: [], weightUnit: "lbs", skipped: true },
+            { exerciseName: "B", sets: [], weightUnit: "lbs", skipped: true },
+          ],
+        },
+      }),
+    ).rejects.toBeInstanceOf(EmptyTrainingLogError);
 
-    expect(upsertQ.insert.mock.calls[0][0].completion_quality).toBe("skipped");
-    expect(linkQ.update.mock.calls[0][0].status).toBe("skipped");
-    // All-skipped: no set_logs rows written.
-    expect(setLogsInsertQ.insert).not.toHaveBeenCalled();
+    expect(upsertQ.insert).not.toHaveBeenCalled();
+    expect(upsertQ.update).not.toHaveBeenCalled();
+    expect(linkQ.update).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
   // 5b. All-skipped free-form exercises, payload 'full'. Nothing is scorable
   //     (no prescription behind them), so the fallback keeps the client's claim.
   // -------------------------------------------------------------------------
-  it("[5b] all-skipped free-form + payload 'full' → 'full' via the nothing-scorable fallback", async () => {
+  it("[5b] free-form exercises only + payload 'full' → 'full' via the nothing-scorable fallback", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { next_check_in_due: null },
@@ -603,8 +643,8 @@ describe("logTrainingEvent", () => {
       payload: {
         completionQuality: "full",
         exercises: [
-          { exerciseName: "A", sets: [{ setNumber: 1 }], weightUnit: "lbs", skipped: true },
-          { exerciseName: "B", sets: [{ setNumber: 1 }], weightUnit: "lbs", skipped: true },
+          { exerciseName: "A", sets: [{ setNumber: 1 }], weightUnit: "lbs" },
+          { exerciseName: "B", sets: [{ setNumber: 1 }], weightUnit: "lbs" },
         ],
       },
     });
@@ -789,9 +829,10 @@ describe("logTrainingEvent", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 8. Skipped exercise: completed=false, actuals null
+  // 8. One exercise skipped inside a save that records work elsewhere:
+  //    completed=false, and no set_logs row of its own.
   // -------------------------------------------------------------------------
-  it("[8] skipped exercise: completed=false; no set_logs rows written", async () => {
+  it("[8] skipped exercise: completed=false; no set_logs row for it", async () => {
     const eventQ = createMockQuery({ data: eventRow(), error: null });
     const clientQ = createMockQuery({
       data: { next_check_in_due: null },
@@ -808,7 +849,7 @@ describe("logTrainingEvent", () => {
     const upsertQ = createMockQuery({ data: { id: SESSION_LOG_ID }, error: null });
     const existingExLogsQ = createMockQuery({ data: [], error: null });
     const deleteExQ = createMockQuery({ data: null, error: null });
-    const insertExQ = insertExerciseLogsReturning(["el-skip"]);
+    const insertExQ = insertExerciseLogsReturning(["el-skip", "el-done"]);
     const setLogsInsertQ = createMockQuery({ data: null, error: null });
     const linkQ = createMockQuery({ data: null, error: null });
 
@@ -831,17 +872,24 @@ describe("logTrainingEvent", () => {
           {
             trainingExerciseId: EXERCISE_A,
             exerciseName: "Bench",
-            sets: [{ setNumber: 1 }],
+            sets: [],
             weightUnit: "lbs",
             skipped: true,
           },
+          // The save records work, so it is not refused; the skipped exercise
+          // beside it is still written as not done.
+          { exerciseName: "Extra", sets: [{ setNumber: 1 }], weightUnit: "lbs" },
         ],
       },
     });
 
-    const inserted = insertExQ.insert.mock.calls[0][0][0];
-    expect(inserted.completed).toBe(false);
-    expect(setLogsInsertQ.insert).not.toHaveBeenCalled();
+    const inserted = insertExQ.insert.mock.calls[0][0];
+    expect(inserted[0].completed).toBe(false);
+    expect(inserted[1].completed).toBe(true);
+    const setRows = setLogsInsertQ.insert.mock.calls[0][0] as {
+      exercise_log_id: string;
+    }[];
+    expect(setRows.every((r) => r.exercise_log_id === "el-done")).toBe(true);
   });
 
   // -------------------------------------------------------------------------
@@ -3125,5 +3173,75 @@ describe("getSessionLogDetail", () => {
     });
 
     expect(await getSessionLogDetail(SESSION_LOG_ID)).toBeNull();
+  });
+});
+
+// ===========================================================================
+// clearTrainingEventLog — "I did not do this after all".
+// ===========================================================================
+
+describe("clearTrainingEventLog", () => {
+  const mockRpc = vi.mocked(supabaseAdmin.rpc);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRpc.mockResolvedValue({ data: { cleared: true }, error: null } as never);
+  });
+
+  it("clears the workout's log through the atomic function, scoped to the client", async () => {
+    installRouter({ training_events: createMockQuery({ data: eventRow(), error: null }) });
+
+    const result = await clearTrainingEventLog({
+      eventId: EVENT_ID,
+      clientId: CLIENT_ID,
+    });
+
+    expect(result).toEqual({ cleared: true });
+    expect(mockRpc).toHaveBeenCalledWith("clear_training_event_log", {
+      p_client_id: CLIENT_ID,
+      p_event_id: EVENT_ID,
+    });
+  });
+
+  it("asks the same day rule the log write obeys, before clearing anything", async () => {
+    installRouter({ training_events: createMockQuery({ data: eventRow(), error: null }) });
+    vi.mocked(assertCanEdit).mockRejectedValueOnce(
+      new DayLockedError("2026-05-04", "training"),
+    );
+
+    await expect(
+      clearTrainingEventLog({ eventId: EVENT_ID, clientId: CLIENT_ID }),
+    ).rejects.toBeInstanceOf(DayLockedError);
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("reads a workout that is not this client's as not found, and clears nothing", async () => {
+    installRouter({ training_events: createMockQuery({ data: null, error: null }) });
+
+    await expect(
+      clearTrainingEventLog({ eventId: EVENT_ID, clientId: CLIENT_ID }),
+    ).rejects.toThrow("Training event not found");
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("maps the function's own not_found refusal onto the same sentence", async () => {
+    installRouter({ training_events: createMockQuery({ data: eventRow(), error: null }) });
+    mockRpc.mockResolvedValue({
+      data: null,
+      error: { message: `not_found:${EVENT_ID}` },
+    } as never);
+
+    await expect(
+      clearTrainingEventLog({ eventId: EVENT_ID, clientId: CLIENT_ID }),
+    ).rejects.toThrow("Training event not found");
+  });
+
+  it("reports a workout that carried no log as cleared nothing, not as an error", async () => {
+    installRouter({ training_events: createMockQuery({ data: eventRow(), error: null }) });
+    mockRpc.mockResolvedValue({ data: { cleared: false }, error: null } as never);
+
+    expect(
+      await clearTrainingEventLog({ eventId: EVENT_ID, clientId: CLIENT_ID }),
+    ).toEqual({ cleared: false });
   });
 });

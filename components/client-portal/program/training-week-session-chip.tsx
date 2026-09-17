@@ -50,8 +50,8 @@ export function SessionChip({
     isSelected ? "border-[#0d9488] bg-[rgba(13,148,136,0.05)]" : "border-[rgba(13,148,136,0.08)]",
   );
 
-  // Only a still-scheduled session can be picked up: a logged or skipped day is
-  // pinned (the server refuses it too).
+  // Only a still-scheduled session can be picked up: a logged day is pinned
+  // (the server refuses it too). Clearing its log unpins it.
   if (selectable && session.isScheduled) {
     return (
       <button

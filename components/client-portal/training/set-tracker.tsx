@@ -4,8 +4,9 @@ import { useMemo, useState } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { useRouter } from "next/navigation";
 import { useFieldArray, useForm } from "react-hook-form";
-import { ChevronDown, Repeat } from "lucide-react";
+import { ChevronDown, Repeat, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Collapsible,
@@ -18,6 +19,7 @@ import { getTodayDateString } from "@/lib/date-helpers";
 import { canEditDay } from "@/lib/daily-log-permissions";
 import { toast } from "sonner";
 import { logTrainingEventSchema } from "@/lib/validations/training";
+import { EMPTY_TRAINING_LOG_MESSAGE } from "@/lib/training-log-content";
 import type { Client } from "@/types/check-in";
 import type {
   ResolvedExercise,
@@ -259,11 +261,14 @@ function TrainingLogForm({
 }) {
   const { preference } = useUnits();
   const router = useRouter();
-  // Open by default: the ticks ARE the log now. A collapsed list plus one
-  // primary button would let a client who did the whole workout tap Complete
-  // and record `skipped`. Still foldable for anyone who only wants to bank it.
+  // Open by default: the ticks ARE the log now, and a collapsed list plus one
+  // primary button would leave a client who did the whole workout nothing to
+  // tick and nothing to save. Still foldable for anyone who only wants to bank
+  // it with "Mark all complete".
   const [detailOpen, setDetailOpen] = useState(true);
   const [leaving, setLeaving] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const header = normalizeSessionHeader(detail.session, detail.event);
   const formattedDate = formatTrainingDate(date ?? detail.event.date);
@@ -326,6 +331,14 @@ function TrainingLogForm({
         Boolean(dirtyFields.exercises?.[exIndex]?.sets?.[setIndex]?.weight),
       prescribedRowsByIndex,
     );
+    if (base === null) {
+      // The footer already says this and holds the button; the toast is the
+      // belt for a submit that reached here another way.
+      toast.error("Couldn't save workout", {
+        description: EMPTY_TRAINING_LOG_MESSAGE,
+      });
+      return;
+    }
     const parsed = logTrainingEventSchema.safeParse(base);
     if (!parsed.success) {
       toast.error("Couldn't save workout", {
@@ -373,12 +386,54 @@ function TrainingLogForm({
     }
   };
 
+  // "I did not do this after all". The one way to un-log a workout, and the
+  // reason a save may record nothing: it deletes the log and puts the workout
+  // back to scheduled, so the client can log it again or leave it.
+  const clearLog = async () => {
+    const loggedDate = date ?? detail.event.date;
+    setClearing(true);
+    try {
+      const res = await fetch(
+        `/api/client/training/events/${save.eventId}/log`,
+        { method: "DELETE", credentials: "include" },
+      );
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        toast.error("Couldn't clear this log", {
+          description: errBody?.error ?? "Please try again in a moment.",
+        });
+        return;
+      }
+      toast.success("Log cleared");
+      setClearOpen(false);
+      setLeaving(true);
+      void globalMutate(`/api/client/day-summary?date=${loggedDate}`);
+      router.push(
+        loggedDate === getTodayDateString()
+          ? "/client"
+          : `/client?date=${loggedDate}`,
+      );
+    } catch {
+      toast.error("Couldn't clear this log", {
+        description: "Network error. Please try again.",
+      });
+    } finally {
+      setClearing(false);
+    }
+  };
+
   const handleAddUnplanned = (exercise: ExerciseFormValues) => {
     append(exercise);
     setDetailOpen(true);
   };
 
   const swapped = save.kind === "event" && save.performedSessionId != null;
+  // Whether the WORKOUT carries a log — the event's own link, not the bound
+  // session's, so Clear log is offered while the client is looking at a swap
+  // they have not saved.
+  const logged = detail.event.sessionLogId !== null;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -405,18 +460,20 @@ function TrainingLogForm({
             This day is locked.
           </p>
         )}
-        {onChangeSession && editable && (
-          <div className="flex items-center gap-3 pt-1">
-            <button
-              type="button"
-              onClick={onChangeSession}
-              data-testid="change-session"
-              className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7c72]"
-            >
-              <Repeat className="h-3.5 w-3.5" />
-              Do a different session
-            </button>
-            {swapped && onResetSwap && (
+        {editable && (onChangeSession || logged) && (
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            {onChangeSession && (
+              <button
+                type="button"
+                onClick={onChangeSession}
+                data-testid="change-session"
+                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#0d9488] transition-colors hover:text-[#0b7c72]"
+              >
+                <Repeat className="h-3.5 w-3.5" />
+                Do a different session
+              </button>
+            )}
+            {onChangeSession && swapped && onResetSwap && (
               <button
                 type="button"
                 onClick={onResetSwap}
@@ -425,9 +482,33 @@ function TrainingLogForm({
                 Back to prescribed
               </button>
             )}
+            {logged && (
+              <button
+                type="button"
+                onClick={() => setClearOpen(true)}
+                disabled={clearing || leaving}
+                data-testid="clear-log"
+                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#c06060] transition-colors hover:text-[#a34e4e] disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear log
+              </button>
+            )}
           </div>
         )}
       </header>
+
+      <ConfirmDialog
+        open={clearOpen}
+        onOpenChange={(next) => {
+          if (!clearing) setClearOpen(next);
+        }}
+        title="Clear this log?"
+        description="Removes the sets and notes you logged for this workout. It goes back to not logged, and you can log it again."
+        confirmLabel={clearing ? "Clearing…" : "Clear log"}
+        onConfirm={() => void clearLog()}
+        destructive
+      />
 
       <CompleteWorkoutFooter
         control={control}

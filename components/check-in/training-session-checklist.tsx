@@ -15,7 +15,7 @@ import { canEditDay } from "@/lib/daily-log-permissions";
 import { loggedDisplayQuality } from "@/lib/training-display-state";
 import type {
   CheckInTrainingEventDetail,
-  SessionCompletionQuality,
+  LoggedQuality,
 } from "@/types/check-in";
 
 // How the row reads: the quality on the workout's LOG, never its status word.
@@ -23,13 +23,14 @@ import type {
 // "full"; one with no log at all has not been logged.
 const statusLabel = (
   detail: CheckInTrainingEventDetail
-): "full" | "partial" | "skipped" | "not_logged" =>
+): LoggedQuality | "not_logged" =>
   loggedDisplayQuality(detail) ?? "not_logged";
 
-const QUALITY_OPTIONS: { value: SessionCompletionQuality; label: string }[] = [
+// Completed or Partial. A workout the client did not do is left alone — it
+// reads missed once its day has passed — and there is no skip to record.
+const QUALITY_OPTIONS: { value: LoggedQuality; label: string }[] = [
   { value: "full", label: "Completed" },
   { value: "partial", label: "Partial" },
-  { value: "skipped", label: "Skipped" },
 ];
 
 const formatDay = (date: string) => {
@@ -51,7 +52,7 @@ type TrainingSessionChecklistProps = {
    */
   onLogEvent: (
     eventId: string,
-    payload: { completionQuality: SessionCompletionQuality; notes?: string }
+    payload: { completionQuality: LoggedQuality; notes?: string }
   ) => Promise<void>;
 };
 
@@ -62,8 +63,10 @@ type TrainingSessionChecklistProps = {
  * training_events. Each row is either:
  *   - locked (display-only) when canEditDay says so — a future day, or a day in
  *     a week a check-in has already closed; OR
- *   - editable (quick mark complete/partial/skipped + optional notes) which
- *     POSTs to /api/client/training/events/[eventId]/log via onLogEvent.
+ *   - editable (quick mark complete/partial + optional notes) which POSTs to
+ *     /api/client/training/events/[eventId]/log via onLogEvent. That save
+ *     records an outcome and leaves the workout's logged sets exactly as they
+ *     are (services/training-log-service.ts).
  *
  * canEditDay is the ONLY lock rule, and the row's own log state is not one of
  * its inputs: every row of the week being reported on is editable until the
@@ -77,12 +80,12 @@ export const TrainingSessionChecklist = ({
 }: TrainingSessionChecklistProps) => {
   // Local optimistic state per editable row (status + notes + saving/error).
   const [rowState, setRowState] = useState<
-    Record<string, { quality?: SessionCompletionQuality; notes: string; saving: boolean; error?: string }>
+    Record<string, { quality?: LoggedQuality; notes: string; saving: boolean; error?: string }>
   >({});
 
   const setRow = (
     eventId: string,
-    patch: Partial<{ quality: SessionCompletionQuality; notes: string; saving: boolean; error?: string }>
+    patch: Partial<{ quality: LoggedQuality; notes: string; saving: boolean; error?: string }>
   ) =>
     setRowState((prev) => {
       const base = prev[eventId] ?? { notes: "", saving: false };
@@ -94,7 +97,7 @@ export const TrainingSessionChecklist = ({
 
   const saveRow = async (
     eventId: string,
-    quality: SessionCompletionQuality,
+    quality: LoggedQuality,
     notes: string
   ) => {
     setRow(eventId, { quality, notes, saving: true, error: undefined });
@@ -179,7 +182,7 @@ export const TrainingSessionChecklist = ({
                           onValueChange={(v) =>
                             saveRow(
                               event.eventId,
-                              v as SessionCompletionQuality,
+                              v as LoggedQuality,
                               local?.notes ?? event.notes ?? ""
                             )
                           }

@@ -31,11 +31,16 @@ describe("loggedDisplayQuality", () => {
     expect(loggedDisplayQuality({ status: "missed", completionQuality: null })).toBeNull();
   });
 
-  it("keeps a skipped workout skipped", () => {
-    expect(loggedDisplayQuality({ status: "skipped", completionQuality: null })).toBe("skipped");
-    expect(loggedDisplayQuality({ status: "skipped", completionQuality: "skipped" })).toBe(
-      "skipped"
-    );
+  // Nothing produces a skip any more, and a row written before that rule is a
+  // workout the client did not log — never a third quality on screen.
+  it("reads a stored skip as not logged, on the event and on its log", () => {
+    expect(loggedDisplayQuality({ status: "skipped", completionQuality: null })).toBeNull();
+    expect(
+      loggedDisplayQuality({ status: "skipped", completionQuality: "skipped" })
+    ).toBeNull();
+    expect(
+      loggedDisplayQuality({ status: "completed", completionQuality: "skipped" })
+    ).toBeNull();
   });
 });
 
@@ -53,12 +58,14 @@ describe("trainingDisplayState", () => {
         TODAY
       )
     ).toBe("completed_partial");
-    expect(
-      trainingDisplayState(
-        { status: "skipped", completionQuality: "skipped", date: "2026-09-15" },
-        TODAY
-      )
-    ).toBe("skipped");
+  });
+
+  // A stored skip has no state of its own: it is a workout that was not logged,
+  // so a day that has passed reads missed and a day still ahead reads scheduled.
+  it("reads a stored skip as missed once its day has passed", () => {
+    const skipped = { status: "skipped", completionQuality: "skipped" } as const;
+    expect(trainingDisplayState({ ...skipped, date: "2026-09-15" }, TODAY)).toBe("missed");
+    expect(trainingDisplayState({ ...skipped, date: "2026-09-18" }, TODAY)).toBe("scheduled");
   });
 
   it("derives missed from the caller's own today, and never for today itself", () => {

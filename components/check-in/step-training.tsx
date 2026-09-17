@@ -11,7 +11,7 @@ import type {
   CheckInTrainingContext,
   CheckInTrainingEventDetail,
   CheckInTrainingPeriodStats,
-  SessionCompletionQuality,
+  LoggedQuality,
 } from "@/types/check-in";
 import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 
@@ -27,7 +27,7 @@ type StepTrainingProps = {
   // Fill-gap log writer (registers an in-flight POST the page flushes pre-submit).
   onLogEvent: (
     eventId: string,
-    payload: { completionQuality: SessionCompletionQuality; notes?: string }
+    payload: { completionQuality: LoggedQuality; notes?: string }
   ) => Promise<void>;
   /** The period's training figures from the one summariser, off the context wire. */
   trainingPeriodStats?: CheckInTrainingPeriodStats;

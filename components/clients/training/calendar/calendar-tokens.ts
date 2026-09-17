@@ -1,4 +1,4 @@
-import { Ban, Check, Dumbbell, Minus, X } from "lucide-react";
+import { Check, Dumbbell, Minus, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { TrainingDisplayState } from "@/lib/training-display-state";
 
@@ -18,8 +18,6 @@ type StatusThumbSpec = {
   icon: LucideIcon;
   iconClass: string;
   strokeWidth: number;
-  /** Extra classes on the whole event card (e.g. skipped dims it). */
-  cardClass?: string;
 };
 
 /**
@@ -52,12 +50,5 @@ export const STATUS_THUMB: Record<TrainingDisplayState, StatusThumbSpec> = {
     icon: X,
     iconClass: "text-[#c06060]",
     strokeWidth: 1.5,
-  },
-  skipped: {
-    bg: "bg-[rgba(0,0,0,0.03)]",
-    icon: Ban,
-    iconClass: "text-[#93b0b4]",
-    strokeWidth: 1.5,
-    cardClass: "opacity-70",
   },
 };

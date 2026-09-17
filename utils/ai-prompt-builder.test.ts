@@ -26,7 +26,7 @@ function trainingSection(prompt: string): string {
 }
 
 describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
-  it("renders N/M completed and distinguishes completed / skipped(reason) / not logged", () => {
+  it("renders N/M completed and distinguishes a logged session from one never logged", () => {
     const details: CheckInTrainingEventDetail[] = [
       {
         eventId: "ev-1",
@@ -82,9 +82,10 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
     // next line.
     expect(training).toContain("Push Day: (full)");
     expect(training).toContain("Note: felt strong");
-    // Skip renders the reason inline, NOT "(skipped)".
-    expect(training).toContain("Leg Day: Skipped (reason: sick)");
-    expect(training).not.toContain("Leg Day: (skipped)");
+    // A stored skip is a session the client did not log; its note still rides
+    // the next line, because the reason is the client's own words.
+    expect(training).toContain("Leg Day: (not logged)");
+    expect(training).not.toContain("Skipped");
     // A session the client never logged says exactly that.
     expect(training).toContain("Pull Day: (not logged)");
     // The legacy workout-count fallback is suppressed when details are present.
@@ -137,7 +138,7 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
     expect(training).toContain("- Sessions: 2/2 completed (1 partial)");
   });
 
-  it("renders a bare 'Skipped' when a skipped event has no notes", () => {
+  it("reads a stored skip as a session that was not logged", () => {
     const details: CheckInTrainingEventDetail[] = [
       {
         eventId: "ev-1",
@@ -166,8 +167,8 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
     const training = trainingSection(prompt);
 
     expect(training).toContain("- Sessions: 0/1 completed");
-    expect(training).toContain("Leg Day: Skipped");
-    expect(training).not.toContain("reason:");
+    expect(training).toContain("Leg Day: (not logged)");
+    expect(training).not.toContain("Skipped");
   });
 
   // The period's workouts are the ONE source of a training figure: there is no
@@ -312,7 +313,7 @@ describe("buildCheckInAnalysisPrompt — exercise enrichment (Session 6.3)", () 
     expect(training).toContain("Bench — 3 sets, top 100x5");
   });
 
-  it("renders the skip reason and NO exercise block for a skipped event", () => {
+  it("renders no exercise block for a session that was not logged", () => {
     const details: CheckInTrainingEventDetail[] = [
       {
         eventId: "ev-1",
@@ -326,14 +327,14 @@ describe("buildCheckInAnalysisPrompt — exercise enrichment (Session 6.3)", () 
         sessionLogId: "log-1",
       },
     ];
-    // A Map entry exists for the skipped session, but it must be ignored.
+    // A Map entry exists for the stored skip's log, but it must be ignored.
     const summaries = new Map<string, string[]>([
       ["log-1", ["Squat — 5 sets, top 140x5"]],
     ]);
 
     const training = build(details, summaries);
 
-    expect(training).toContain("Leg Day: Skipped (reason: sick)");
+    expect(training).toContain("Leg Day: (not logged)");
     expect(training).not.toContain("Squat — 5 sets, top 140x5");
   });
 

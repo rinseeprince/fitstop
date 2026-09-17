@@ -1,4 +1,4 @@
-import type { SessionCompletionQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/check-in";
 import type { PrescribedRow } from "./set-spec-rows";
 
 // How much of a prescribed session the client completed.
@@ -7,6 +7,10 @@ import type { PrescribedRow } from "./set-spec-rows";
 // counts SETS SENT, never sets with numbers in them: a set the client did but
 // recorded nothing for still counts. Warm-ups are recorded but never scored
 // (decision 5) — they are excluded from both halves of the ratio.
+//
+// It scores a session that recorded SOMETHING: a save with nothing logged is
+// refused before it gets here (`lib/training-log-content.ts`), so the verdict
+// is full or partial and never a skip.
 //
 // It lives in utils/ rather than inside the write path because the client's
 // pre-commit outcome line ("9 of 12 working sets logged") has to agree with what
@@ -34,10 +38,10 @@ type CompletionSummary = {
   prescribedWorkingSets: number;
   /**
    * The verdict. Null when nothing prescribed is scorable, so the caller can
-   * fall back to the client's own claim rather than report `skipped` for a
-   * session that prescribed nothing measurable.
+   * fall back to the client's own claim rather than judge a session that
+   * prescribed nothing measurable.
    */
-  quality: SessionCompletionQuality | null;
+  quality: LoggedQuality | null;
 };
 
 /**
@@ -67,7 +71,6 @@ export function summariseCompletion(
   exercises: ScoredExercise[],
 ): CompletionSummary {
   let scorable = 0;
-  let anyCompleted = false;
   let allComplete = true;
   let completedWorkingSets = 0;
   let prescribedWorkingSets = 0;
@@ -90,18 +93,14 @@ export function summariseCompletion(
     }
     completedWorkingSets += completed;
 
-    if (completed > 0) anyCompleted = true;
     if (completed < prescribed) allComplete = false;
   }
 
-  const quality =
-    scorable === 0
-      ? null
-      : !anyCompleted
-        ? "skipped"
-        : allComplete
-          ? "full"
-          : "partial";
+  // Partial covers everything short of complete, a session whose only ticks
+  // landed on warm-ups included: the client did some of this workout, and the
+  // save would have been refused if they had done none of it.
+  const quality: LoggedQuality | null =
+    scorable === 0 ? null : allComplete ? "full" : "partial";
 
   return { completedWorkingSets, prescribedWorkingSets, quality };
 }
@@ -113,6 +112,6 @@ export function summariseCompletion(
  */
 export function deriveCompletionQuality(
   exercises: ScoredExercise[],
-): SessionCompletionQuality | null {
+): LoggedQuality | null {
   return summariseCompletion(exercises).quality;
 }

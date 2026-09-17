@@ -81,7 +81,6 @@ export const CalendarEventCard = memo(function CalendarEventCard({
       {...(editMode && isFutureScheduled ? { ...attributes, ...listeners } : {})}
       className={cn(
         "group flex cursor-pointer flex-col gap-1 rounded-[6px] border border-[rgba(13,148,136,0.08)] bg-white px-1.5 py-1.5 transition-all hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(13,148,136,0.08)]",
-        thumb.cardClass,
         dragging && "z-50 opacity-50",
         editMode && isFutureScheduled && "cursor-grab active:cursor-grabbing"
       )}

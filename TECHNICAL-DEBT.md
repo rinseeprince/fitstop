@@ -1,5 +1,32 @@
 # Technical Debt Tracker
 
+## A moved workout leaves its log's stored date behind
+
+Logged: 2026-09-17 (training upgrade, commit 9).
+
+`session_logs.completed_at` is the **attribution date** — `event.date` at the moment the workout was
+logged (`docs/ARCHITECTURE.md` → "Event-keyed identity"). Nothing rewrites it when the workout
+afterwards moves: the client's week layout and the coach's drag both go through
+`move_training_events_atomic`, which changes `training_events.date` and touches no log, and a
+program's start-date move does the same for every day it carries. So a workout logged on the 26th
+and then moved to the 27th has an event dated the 27th and a log stamped the 26th. That exact pair
+exists on dev.
+
+**Nothing reads it any more, which is why this is debt rather than a bug.** Every adherence figure
+now counts calendar workouts by their own date — the check-in's derivation, the Overview's rail and
+its plan card, and the Training-tab hero, which was the last reader and moved off `completed_at` in
+commit 9 (`services/training-week-summary-service.ts`). What still reads the column is the coach's
+activity feed, where it labels an entry with the day the workout was prescribed for, and the
+per-exercise analytics series, where it dates a set. Both are descriptions of one workout rather
+than counts over a window, so a stale day is visible but not load-bearing.
+
+**Fixing it means the move functions rewriting the log's `completed_at` alongside the event's date**,
+in the same transaction — a small addition to two SQL functions and a backfill for the rows that
+already drifted. Until then: **add no figure that divides by `completed_at`**, and do not "restore"
+the hero's old read.
+
+---
+
 ## Computed nutrition days — residue after migration 170
 
 Logged: 2026-09-10 (block-as-program N3). A nutrition day is computed from the version covering it (`docs/ARCHITECTURE.md` → "The window is the row"); the day table is gone. What the switch left behind, none of it a defect:

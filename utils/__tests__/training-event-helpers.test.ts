@@ -130,14 +130,16 @@ describe("mapEventsToScheduleDays", () => {
     });
   });
 
-  it("maps a skipped workout as missed with skipped quality", () => {
+  // Nothing produces a skip. A row written before that rule is a workout the
+  // client did not log, so a day that has passed reads missed with no quality.
+  it("maps a stored skip as missed with no quality", () => {
     const events = [
       createMockTrainingEvent({ date: "2026-04-06", sessionName: "Push Day", status: "skipped" }),
     ];
 
     expect(mapEventsToScheduleDays(["2026-04-06"], events, TODAY)[0]).toMatchObject({
       status: "missed",
-      completionQuality: "skipped",
+      completionQuality: null,
       loggedSessionName: null,
     });
   });

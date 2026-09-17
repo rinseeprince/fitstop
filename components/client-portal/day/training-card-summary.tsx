@@ -61,9 +61,9 @@ function formatEventState(e: TrainingEventSummary): string {
     return `${e.loggedExerciseCount}/${e.prescribedExerciseCount} exercises logged`;
   }
   if (e.completionQuality === null) return "Not logged yet";
-  if (e.completionQuality === "full") return "Logged as complete";
-  if (e.completionQuality === "partial") return "Logged as partial";
-  return "Logged as skipped";
+  return e.completionQuality === "full"
+    ? "Logged as complete"
+    : "Logged as partial";
 }
 
 function hintFor(e: TrainingEventSummary): string {

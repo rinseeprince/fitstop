@@ -135,7 +135,11 @@ export type TrainingEventStatus = 'scheduled' | 'completed' | 'partial' | 'misse
  */
 export type TrainingEventLog = {
   id: string;
-  /** The same union as `SessionLog.completionQuality`, spelled as that type spells it. */
+  /**
+   * The STORED value, so it is read as `SessionLog.completionQuality` is: a row
+   * written before commit 9 can still carry `skipped`, which every screen reads
+   * through `loggedDisplayQuality` as a workout the client did not log.
+   */
   completionQuality: 'full' | 'partial' | 'skipped';
   /** The session the client PERFORMED — different from the event's when they swapped. */
   performedSessionId: string | null;
@@ -172,7 +176,8 @@ export type TrainingEventSummary = {
   // swapped). isAlternative is true when it differs from the prescribed session.
   sessionName: string;
   sessionFocus: string | null;
-  completionQuality: "full" | "partial" | "skipped" | null;
+  /** How the workout went, off its log (`loggedDisplayQuality`); null when unlogged. */
+  completionQuality: "full" | "partial" | null;
   isAlternative: boolean;
   loggedExerciseCount: number;
   prescribedExerciseCount: number;
@@ -323,6 +328,7 @@ export type SessionLog = {
   // rest-day training that found no matching prescribed event.
   trainingEventId: string | null;
   completedAt: string;
+  /** The STORED value: a row written before commit 9 can still carry `skipped`. */
   completionQuality: 'full' | 'partial' | 'skipped';
   notes: string | null;
   weekStartDate: string;

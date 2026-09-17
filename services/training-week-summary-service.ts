@@ -1,19 +1,27 @@
-import { supabaseAdmin } from "./supabase-admin";
-import { countEventsInRange } from "./training-event-service";
+import { getEventsForDateRange } from "./training-event-service";
 import { getCoachTodayString } from "./today-service";
 import { getClientWeekAnchor } from "./check-in-week-service";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
+import { eventWorkoutRead } from "@/lib/training-display-state";
+import { summariseTraining } from "@/lib/training-adherence";
 import type { TrainingWeekSummary } from "@/types/history";
 
 /**
- * The coach's current-week training summary — extracted VERBATIM from the
- * /history/training/summary route so the Overview plan-summary endpoint reuses
- * the exact same math (Overview redesign Session 1). Both callers consume this;
- * do not fork the calculation.
+ * The coach's current-week training summary, shared by the Training tab's hero
+ * (`/history/training/summary`) and the Overview's plan card
+ * (`overview-plan-summary-service`). Both consume this; do not fork the
+ * calculation.
+ *
+ * **It counts CALENDAR WORKOUTS, by their date.** A workout is on the week its
+ * event is dated to, and how it went is read off that workout's own log through
+ * the one summariser (`lib/training-adherence.ts`). The count used to come from
+ * `session_logs.completed_at`, which does not move when a workout moves — a
+ * workout dragged to the 27th kept a log stamped the 26th and was counted in
+ * the wrong week. No adherence figure reads `completed_at` now.
  *
  * Semantics (unchanged): coach-local "current week" anchored on the client's
- * check-in day; completed counts FULL session-log completions only; planned
- * counts training events up to today (can't miss a future session).
+ * check-in day; `completed` counts FULL workouts only; `planned` counts the
+ * week's workouts up to today (you cannot miss a future session).
  */
 export type TrainingWeekSummaryWithWindow = TrainingWeekSummary & {
   weekStart: string;
@@ -32,29 +40,25 @@ export const getTrainingWeekSummary = async (
   const weekStart = getTrainingWeekStart(today, checkInDay);
   const weekEnd = getTrainingWeekEnd(today, checkInDay);
 
-  // completed_at is TIMESTAMPTZ, so use time boundaries to include full days
-  const { data: weekLogs, error: weekError } = await supabaseAdmin
-    .from("session_logs")
-    .select("completion_quality")
-    .eq("client_id", clientId)
-    .gte("completed_at", weekStart + "T00:00:00")
-    .lte("completed_at", weekEnd + "T23:59:59");
-
-  if (weekError) {
-    console.error("Error fetching training week logs:", weekError);
-    throw new Error("Failed to fetch training summary");
-  }
-
-  const completed = (weekLogs || []).filter(
-    (r) => r.completion_quality === "full"
-  ).length;
-
-  // Count planned sessions from training events (cap at today — can't miss a future session)
+  // Capped at today — a session still to be done later in the week is neither
+  // planned-against nor missed yet. The week is the one CONTAINING today, so
+  // the cap is always inside it.
   const effectiveEnd = today < weekEnd ? today : weekEnd;
-  const plannedUpToToday = await countEventsInRange(clientId, weekStart, effectiveEnd);
-  const totalPlanned = plannedUpToToday;
+  const events = await getEventsForDateRange(clientId, weekStart, effectiveEnd);
 
-  const missed = Math.max(0, plannedUpToToday - completed);
+  const summary = summariseTraining(events.map(eventWorkoutRead));
 
-  return { completed, totalPlanned, plannedUpToToday, missed, weekStart, weekEnd };
+  // FULL completions only, as this hero has always read. Partials join the
+  // numerator in commit 10, where every done-count changes together.
+  const completed = summary.full;
+  const plannedUpToToday = summary.planned;
+
+  return {
+    completed,
+    totalPlanned: plannedUpToToday,
+    plannedUpToToday,
+    missed: Math.max(0, plannedUpToToday - completed),
+    weekStart,
+    weekEnd,
+  };
 };

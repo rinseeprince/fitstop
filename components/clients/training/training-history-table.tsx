@@ -60,12 +60,6 @@ function renderStatus(row: TrainingHistoryRow) {
           Partial
         </span>
       );
-    case "skipped":
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[rgba(192,96,96,0.08)] text-[#c06060]">
-          Missed
-        </span>
-      );
     default:
       return (
         <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-xs font-medium bg-[#e6edec] text-[#93b0b4]">
@@ -78,7 +72,6 @@ function renderStatus(row: TrainingHistoryRow) {
 const QUALITY_VALUES: Record<string, number> = {
   full: 3,
   partial: 2,
-  skipped: 1,
 };
 
 type Props = {

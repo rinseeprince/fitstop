@@ -41,15 +41,15 @@ import {
  * the rail reads a fortnight in one glance, so a day holding several sessions
  * is still one dot, while the counts beside the rail count every session. A
  * day's workouts collapse deterministically: every one done in full →
- * complete, any of them done at all → partial, any missed or skipped →
- * missed, else (still to be done today) → no_log.
+ * complete, any of them done at all → partial, any missed → missed, else
+ * (still to be done today) → no_log.
  */
 export function classifyTrainingDay(states: TrainingDisplayState[]): DotState {
   if (!states.length) return "none";
   if (states.every((state) => state === "completed_full")) return "complete";
   if (states.some((state) => state === "completed_full" || state === "completed_partial"))
     return "partial";
-  if (states.some((state) => state === "missed" || state === "skipped")) return "missed";
+  if (states.some((state) => state === "missed")) return "missed";
   return "no_log";
 }
 

@@ -28,7 +28,7 @@ import {
   stepsForFields,
 } from "@/lib/check-in/form-fields";
 import { toast } from "sonner";
-import type { SessionCompletionQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/check-in";
 
 function formatNextDueDate(iso: string): string {
   return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
@@ -76,7 +76,7 @@ export default function ClientCheckInPage() {
 
   const logTrainingEvent = async (
     eventId: string,
-    payload: { completionQuality: SessionCompletionQuality; notes?: string }
+    payload: { completionQuality: LoggedQuality; notes?: string }
   ): Promise<void> => {
     const post = (async () => {
       const response = await fetch(`/api/client/training/events/${eventId}/log`, {

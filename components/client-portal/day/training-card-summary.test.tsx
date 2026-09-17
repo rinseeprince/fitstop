@@ -80,17 +80,6 @@ describe("TrainingCardSummary", () => {
     expect(screen.getByText("Logged as partial")).toBeInTheDocument();
   });
 
-  it("renders a quick-logged-skipped event with the right copy", () => {
-    render(
-      <TrainingCardSummary
-        events={[event({ completionQuality: "skipped" })]}
-        date={DATE}
-      />,
-    );
-
-    expect(screen.getByText("Logged as skipped")).toBeInTheDocument();
-  });
-
   it("renders a detailed-logged event with N/M exercises logged + Tap to view", () => {
     render(
       <TrainingCardSummary

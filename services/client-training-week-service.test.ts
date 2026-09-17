@@ -61,7 +61,7 @@ describe("getClientTrainingWeek", () => {
         row("tue", "2026-08-25", "scheduled"), // past, never logged → missed
         row("wed", "2026-08-26", "scheduled"), // today
         row("thu", "2026-08-27", "scheduled"), // upcoming
-        row("fri", "2026-08-28", "skipped"),
+        row("fri", "2026-08-28", "partial"), // logged partial → done
       ],
       error: null,
     });
@@ -95,7 +95,7 @@ describe("getClientTrainingWeek", () => {
       ["tue", "missed"],
       ["wed", "today"],
       ["thu", "upcoming"],
-      ["fri", "missed"],
+      ["fri", "done"],
     ]);
     expect(week.sessions[0]).toMatchObject({
       sessionId: "s-mon",
@@ -105,7 +105,7 @@ describe("getClientTrainingWeek", () => {
       isScheduled: false,
     });
     // "missed" alone cannot say whether a day can still be moved: a past
-    // scheduled day can, a skipped one cannot.
+    // scheduled day can, a logged one cannot.
     expect(week.sessions.map((s) => [s.eventId, s.isScheduled])).toEqual([
       ["mon", false],
       ["tue", true],

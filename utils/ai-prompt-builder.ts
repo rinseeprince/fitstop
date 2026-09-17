@@ -92,24 +92,15 @@ export function buildCheckInAnalysisPrompt(
       // off the event's status word, so the line under the count cannot
       // contradict it.
       const quality = loggedDisplayQuality(d);
-      let status: string;
-      if (quality === "skipped") {
-        status = d.notes
-          ? `Skipped (reason: ${sanitizeForAIPrompt(d.notes)})`
-          : "Skipped";
-      } else if (quality === null) {
-        status = "(not logged)";
-      } else {
-        status = `(${quality})`;
-      }
+      const status = quality === null ? "(not logged)" : `(${quality})`;
       prompt += `  - ${sanitizeForAIPrompt(d.sessionName)}: ${status}\n`;
-      if (quality !== "skipped" && d.notes) {
+      if (d.notes) {
         prompt += `    Note: ${sanitizeForAIPrompt(d.notes)}\n`;
       }
 
       // Session 6.3 enrichment: per-exercise top-set lines + alt-session swap
-      // signal. Only workouts the client LOGGED carry an exercise block;
-      // skipped / not-logged sessions keep their 6.2 line only.
+      // signal. Only workouts the client LOGGED carry an exercise block; a
+      // session they never logged keeps its 6.2 line only.
       if (quality === "full" || quality === "partial") {
         const exerciseLines = d.sessionLogId
           ? exerciseSummaries?.get(d.sessionLogId)

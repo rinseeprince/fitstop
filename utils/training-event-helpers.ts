@@ -98,22 +98,19 @@ export function mapEventsToScheduleDays(
   });
 }
 
-/** Whether the client logged the workout — a skipped one is an empty log, not a workout done. */
+/** Whether the client logged the workout. */
 function isLogged(state: TrainingDisplayState): boolean {
   return state === "completed_full" || state === "completed_partial";
 }
 
 function scheduleStatus(state: TrainingDisplayState): TrainingDayStatus {
   if (isLogged(state)) return "completed";
-  // A skipped workout is the client saying they did not do it: the same row a
-  // missed one writes, with `skipped` as its quality. Both leave in commit 9.
-  if (state === "skipped" || state === "missed") return "missed";
+  if (state === "missed") return "missed";
   return "scheduled";
 }
 
 function qualityOf(state: TrainingDisplayState): ScheduleDay["completionQuality"] {
   if (state === "completed_full") return "full";
   if (state === "completed_partial") return "partial";
-  if (state === "skipped") return "skipped";
   return null;
 }

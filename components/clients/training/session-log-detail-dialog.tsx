@@ -88,8 +88,6 @@ function qualityLabel(quality: SessionLog["completionQuality"]) {
       );
     case "partial":
       return <span className="text-[#d97706]">Partial</span>;
-    case "skipped":
-      return <span className="text-[#c06060]">Missed</span>;
     default:
       return null;
   }

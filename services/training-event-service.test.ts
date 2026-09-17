@@ -54,7 +54,6 @@ import {
   generateTrainingEvents,
   getEventsForDateRange,
   getFirstEventForDate,
-  countEventsInRange,
   linkSessionLogToEvent,
   getEventSummariesForDate,
   cancelFutureEventsForPlan,
@@ -223,27 +222,6 @@ describe("training-event-service", () => {
       expect(result).not.toBeNull();
       expect(result!.sessionName).toBe("Push");
       expect(result!.date).toBe("2026-04-08");
-    });
-  });
-
-  // =========================================================================
-  // countEventsInRange
-  // =========================================================================
-
-  describe("countEventsInRange", () => {
-    it("returns correct count", async () => {
-      const mockQuery = createMockQuery({ data: null, error: null });
-      // Override to add count property
-      Object.defineProperty(mockQuery, "then", {
-        value: (resolve: (v: any) => void) =>
-          Promise.resolve({ count: 5, data: null, error: null }).then(resolve),
-      });
-      mockFrom.mockReturnValue(mockQuery as any);
-
-      const result = await countEventsInRange("client-1", "2026-04-06", "2026-04-12");
-
-      expect(result).toBe(5);
-      expect(mockQuery.select).toHaveBeenCalledWith("*", { count: "exact", head: true });
     });
   });
 

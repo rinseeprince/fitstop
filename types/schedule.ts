@@ -14,9 +14,10 @@ import type { DayOfWeek } from "@/types/check-in";
  * `isAlternative` says whether the client did a different session.
  *
  * A row written before this vocabulary (a check-in's frozen `period_snapshot`)
- * can carry `partial`, `completed_swap` or `rest_trained`. Those words are
- * gone from the product, and nothing switches exhaustively on this type, so a
- * frozen row still renders exactly as it was stored.
+ * can carry `partial`, `completed_swap` or `rest_trained`, and its
+ * `completionQuality` a `skipped`. Those words are gone from the product, and
+ * nothing switches exhaustively on either field, so a frozen row still renders
+ * exactly as it was stored.
  */
 export type TrainingDayStatus =
   | "scheduled"        // prescribed workout, still to be done
@@ -32,7 +33,7 @@ export type ScheduleDay = {
   plannedSessionName: string | null;
   loggedSessionName: string | null;
   /** How the workout went, off its log. Null when it was not logged. */
-  completionQuality: "full" | "partial" | "skipped" | null;
+  completionQuality: "full" | "partial" | null;
   isAlternative: boolean;
   notes: string | null;
   sessionLogId: string | null;

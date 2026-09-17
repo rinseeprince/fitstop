@@ -9,6 +9,10 @@ import {
 import { getTrainingWeekStart } from "@/lib/date-helpers";
 import { getClientWeekAnchor } from "./check-in-week-service";
 import { assertCanEdit } from "./daily-log-permissions-service";
+import {
+  EmptyTrainingLogError,
+  trainingLogRecordsWork,
+} from "@/lib/training-log-content";
 import type {
   ExerciseLogInsert,
   ExerciseLogRow,
@@ -47,7 +51,7 @@ import type {
   TrainingExerciseGroup,
   TrainingSessionHeader,
 } from "@/types/training";
-import type { SessionCompletionQuality } from "@/types/check-in";
+import type { LoggedQuality, SessionCompletionQuality } from "@/types/check-in";
 import { toCanonicalWeightKg } from "@/utils/unit-conversions";
 // The shared mapper, deliberately. A local copy of this function lived here and
 // silently omitted set_specs and video_url, so every read through
@@ -528,7 +532,7 @@ async function writeSessionLog(params: {
   //
   // This reverses the previous rule ("the tap is authoritative"), which let a
   // client who logged one set of six record the session as complete.
-  let derivedQuality: SessionCompletionQuality = payload.completionQuality;
+  let derivedQuality: LoggedQuality = payload.completionQuality;
   if (isDetailedMode) {
     const completedByExerciseId = new Map<string, number[]>();
     for (const ex of payload.exercises ?? []) {
@@ -640,11 +644,16 @@ async function writeSessionLog(params: {
     }
   }
 
-  // 6. Reconcile exercise_logs. Every save FULLY REPLACES the log's
-  // exercise_logs (and set_logs via FK CASCADE): the DELETE always runs, so a
-  // quick re-log (no exercises) clears any prior detailed/swapped rows instead
-  // of leaving them stale. The snapshot-preservation SELECT and the INSERT run
-  // only when the payload carries exercises.
+  // 6. Reconcile exercise_logs. A save REPLACES EXACTLY WHAT IT CARRIES: a
+  // payload with exercises full-replaces the log's exercise_logs (and its
+  // set_logs via FK CASCADE), and a payload without them — the quick path, and
+  // the check-in's fill-gap row — records an outcome and touches no exercise
+  // row at all.
+  //
+  // The DELETE used to run unconditionally, which is how marking a workout from
+  // the check-in erased the sets the client had already logged for it: the row
+  // posts `{completionQuality, notes}` and nothing else, so the replace had
+  // nothing to put back. Removing a log is its own act now — Clear log, below.
   // STRICT ORDER: SELECT existing → build map → DELETE → INSERT.
   const existingSnapshotMap = new Map<string, Record<string, unknown>>();
   if (isDetailedMode) {
@@ -668,21 +677,19 @@ async function writeSessionLog(params: {
         );
       }
     }
-  }
 
-  // 6b. Delete existing exercise_logs — ALWAYS (full replace). set_logs are
-  // removed via FK CASCADE.
-  const { error: deleteErr } = await supabaseAdmin
-    .from("exercise_logs")
-    .delete()
-    .eq("session_log_id", sessionLogId);
-  if (deleteErr) {
-    throw new Error(
-      `Failed to clear exercise logs before re-insert: ${deleteErr.message}`,
-    );
-  }
+    // 6b. Delete existing exercise_logs before the re-insert. set_logs are
+    // removed via FK CASCADE.
+    const { error: deleteErr } = await supabaseAdmin
+      .from("exercise_logs")
+      .delete()
+      .eq("session_log_id", sessionLogId);
+    if (deleteErr) {
+      throw new Error(
+        `Failed to clear exercise logs before re-insert: ${deleteErr.message}`,
+      );
+    }
 
-  if (isDetailedMode) {
     // 6c. Insert with fresh-or-preserved snapshots.
     // For free-form exercises (no trainingExerciseId, no prior snapshot),
     // capture the user-supplied name into prescribed_exercise_snapshot so
@@ -831,6 +838,13 @@ export async function logTrainingEvent(params: {
     resourceType: "training",
   });
 
+  // A save has to record something (lib/training-log-content.ts). Nothing
+  // produces a skip: a client who did not train logs nothing, and one who saved
+  // by mistake clears the log.
+  if (!trainingLogRecordsWork(payload)) {
+    throw new EmptyTrainingLogError();
+  }
+
   const { weekday: checkInDay } = await getClientWeekAnchor(clientId);
   const weekStartDate = getTrainingWeekStart(eventRow.date, checkInDay);
 
@@ -851,6 +865,64 @@ export async function logTrainingEvent(params: {
   });
 
   return { sessionLogId };
+}
+
+// =============================================================================
+// clearTrainingEventLog — "I did not do this after all".
+// =============================================================================
+
+/**
+ * Remove a workout's log and put the workout back to scheduled.
+ *
+ * The one act that un-logs a workout, and the reason a save may record nothing:
+ * a client who did not train logs nothing at all, and one who saved by mistake
+ * clears it here. Both tables move in one transaction
+ * (`clear_training_event_log`, migration 181) so a workout can never be left
+ * half-linked, and the day rule is the same one the log write obeys — a client
+ * clears a log exactly where they may edit the day.
+ *
+ * Clearing a workout also unfreezes its day for the coach: `assertSessionUnlogged`
+ * keys on the event's status, so its session can be edited again.
+ */
+export async function clearTrainingEventLog(params: {
+  eventId: string;
+  clientId: string;
+}): Promise<{ cleared: boolean }> {
+  const { eventId, clientId } = params;
+
+  const { data: eventRow, error: eventErr } = await supabaseAdmin
+    .from("training_events")
+    .select("id, date")
+    .eq("id", eventId)
+    .eq("client_id", clientId)
+    .maybeSingle();
+  if (eventErr) {
+    throw new Error(`Failed to load training event: ${eventErr.message}`);
+  }
+  if (!eventRow) {
+    throw new Error(`Training event not found: ${eventId}`);
+  }
+
+  await assertCanEdit({
+    clientId,
+    date: eventRow.date,
+    resourceType: "training",
+  });
+
+  const { data, error } = await supabaseAdmin.rpc("clear_training_event_log", {
+    p_client_id: clientId,
+    p_event_id: eventId,
+  });
+  if (error) {
+    // The function's own refusal, spelled as the log read's is so the route
+    // answers 404 for a foreign or missing workout either way.
+    if (error.message.includes("not_found:")) {
+      throw new Error(`Training event not found: ${eventId}`);
+    }
+    throw new Error(`Failed to clear training log: ${error.message}`);
+  }
+
+  return { cleared: Boolean((data as { cleared?: boolean } | null)?.cleared) };
 }
 
 // =============================================================================

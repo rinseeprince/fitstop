@@ -458,7 +458,11 @@ export type InlinePlanBody = z.infer<typeof inlinePlanBodySchema>;
 // the storage path.
 // =============================================================================
 
-const completionQualitySchema = z.enum(["full", "partial", "skipped"]);
+// Full or partial, and nothing else. A skip is not an outcome any more: a
+// client who did not train logs nothing, and one who saved a log by mistake
+// clears it (DELETE on this route). `lib/training-log-content.ts` is the rule
+// that refuses a save recording no work; this is its wire half.
+const completionQualitySchema = z.enum(["full", "partial"]);
 
 const setPerformanceSchema = z.object({
   // 1-based index into the FLATTENED prescription (buildPrescribedRows output),

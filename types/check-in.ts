@@ -76,7 +76,23 @@ type TrainingMetrics = {
 
 // Enhanced check-in tracking types
 
+/**
+ * The values `session_logs.completion_quality` can HOLD. `skipped` survives
+ * here because rows written before commit 9 still carry it; the CHECK drops it
+ * in commit 10. Read it where a stored value is read, never where one is
+ * written or shown — that is `LoggedQuality`.
+ */
 export type SessionCompletionQuality = "full" | "partial" | "skipped";
+
+/**
+ * How a workout went — the only two words the product writes or shows.
+ *
+ * Nothing produces a skip: a save with nothing logged is refused
+ * (`lib/training-log-content.ts`), so every quality the writer derives and
+ * every quality a screen renders is one of these. A stored `skipped` reads as
+ * not-logged (`loggedDisplayQuality`, `lib/training-display-state.ts`).
+ */
+export type LoggedQuality = Exclude<SessionCompletionQuality, "skipped">;
 
 // Whether a training_event has an associated session_log (Session 6.2).
 // Single-source per-event detail keyed on training_events (the SOT for

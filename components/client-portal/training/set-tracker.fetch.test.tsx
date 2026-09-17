@@ -219,7 +219,9 @@ describe("SetTracker through real SWR", () => {
     const user = userEvent.setup();
     render(tree(cache, true));
 
-    await user.click(await screen.findByTestId("save-button"));
+    // A save has to record something, so bank the workout first, as a client does.
+    await user.click(await screen.findByTestId("mark-all-complete"));
+    await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/client?date=2026-05-06"));
     await new Promise((r) => setTimeout(r, 0));
 

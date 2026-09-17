@@ -43,7 +43,6 @@ describe("classifyTrainingDay", () => {
     expect(classifyTrainingDay(["completed_full"])).toBe("complete");
     expect(classifyTrainingDay(["completed_partial"])).toBe("partial");
     expect(classifyTrainingDay(["missed"])).toBe("missed");
-    expect(classifyTrainingDay(["skipped"])).toBe("missed");
     expect(classifyTrainingDay(["scheduled"])).toBe("no_log");
   });
 

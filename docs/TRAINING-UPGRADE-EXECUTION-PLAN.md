@@ -689,7 +689,7 @@ WATCH FOR: check every consumer of both check-in wires before changing a shape (
 NOT IN THIS COMMIT: the hero or removing skipped (commit 9); any count change (commit 10).
 ```
 
-### Commit 9 — Completion 3: attendance lives on the calendar workout
+### Commit 9 — Completion 3: attendance lives on the calendar workout — SHIPPED 2026-09-17
 
 ```text
 Implement commit 9 of 22 — Completion 3: attendance lives on the calendar workout — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

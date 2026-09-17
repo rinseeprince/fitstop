@@ -178,7 +178,8 @@ All client API endpoints require authentication except where noted.
 - `GET /api/client/training-plan` - The active plan, self-describing (`ClientTrainingPlan | null`)
 - `GET /api/client/day-summary?date={YYYY-MM-DD}` - The one read the day view needs: `training: TrainingEventSummary[]`, nutrition, wellness, habits. `training` lists every session on the day, in the day's order. **`nutrition` is always present** — `hasLog`, `caloriesConsumed`, `targetCalories` (null when no nutrition plan covers the day) and the coach's `note` — because a day with no target still takes a log: only the future and a closed week refuse one. **A rest day returns `training: []`** — rest slots are real DB rows but emit no event
 - `GET /api/client/training/events/{eventId}` - Event detail: `{ event, session, groups, sessionLog, exerciseLogs }` (`TrainingEventDetail`, below). `session` is the session's header — live, its name, focus and duration with no groups of its own; or the log's `prescribed_session_snapshot` once the session is gone. `groups` is the workout in order, each group with its settings and its exercises in order, each exercise live or read off its log's snapshot: the live session's groups first, then any logged exercise the live session no longer holds (all of them when the session is gone), in the group its snapshot records — a snapshot logged before groups existed reads as a straight-sets group of one whose `id` is the exercise's own. Each `exerciseLogs[].prescribedExerciseSnapshot` records the prescription as logged, including `order_index` (its place in its group) and `group` (`id`, `order_index`, `format` and every setting in snake_case). Render it group by group — see "RN contract — how a group reads" and "RN contract — logging a group"
-- `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `403` day locked, body `"This day is locked."` (outside `logsOpenFrom`…today) · `404` not found / not this client
+- `POST /api/client/training/events/{eventId}/log` - Log a prescribed event. `201 {sessionLogId}` · `400` the save records nothing, body `"Tick at least one set to log this workout."` (see "RN contract — a save records something") · `403` day locked, body `"This day is locked."` (outside `logsOpenFrom`…today) · `404` not found / not this client
+- `DELETE /api/client/training/events/{eventId}/log` - **Clear log**: "I did not do this after all". Deletes the workout's log and everything under it — its exercise logs and their sets — and puts the workout back to `scheduled` with nothing recorded, in one transaction. `200 { cleared: boolean }` — `false` when the workout carried no log, which is **not** an error · `403` day locked, body `"This day is locked."` — allowed exactly where a log write is · `404` not found / not this client. Refresh the day after it: the workout is loggable again
 - `GET /api/client/training/sessions/{sessionId}` - Session + its groups of exercises; 404 unless the session belongs to the client's ACTIVE plan. Powers the rest-day picker
 - `GET /api/client/training/week?date={YYYY-MM-DD}` - The training week containing `date` (`ClientTrainingWeek`, `types/client-training-week.ts`): `{ weekStart, weekEnd, today, sessions[] }`, each session `{ eventId, sessionId, name, focus, date, state }` with `state` = `done | today | upcoming | missed` derived against the client's today. Sessions come by date, each day's in the day's order; a day can hold several, so a week can hold more than seven. `no-store`. The session picker and the week view list THIS — it is exactly the set a layout write may touch
 - `POST /api/client/training/events/layout` - **Move / swap / rearrange the client's own week.** Body `{ moves: [{ eventId, fromDate, toDate }] }` (1–50). One transaction for the whole list (`move_training_events_atomic`, migrations 150 and 179), so a swap is two entries and a rotation never half-applies. Rules: only a still-scheduled session moves (a logged day is pinned); a session moves only within the training week it currently sits in; neither `fromDate` nor `toDate` may fall before `logsOpenFrom` (a week a check-in has closed keeps its shape). **A session moved onto a day that already holds sessions joins it, after them; several moved onto one day land in the order the list gives them** — so list them in the order the client moved them. `fromDate` is the day the client SAW the session on — if it has moved since (a coach edit), `409` "Your week changed since you opened it — reload and try again". Other answers: `400` a rule of the client's own calendar, with the sentence · `404` not this client's. Returns `{ moved: [...] }`. Nutrition follows the moved sessions (a day's target is computed from the sessions on it, so the next read re-prices it); a day the client has already logged shows the refreshed target at their next food save. The **rest-day "Log a session" picker** is a one-entry layout (move here, then open the event); "Do a different session" on a prescribed day with a still-scheduled pick from another day is a two-entry swap, and a pick already on the same day simply opens it. The **Program tab's week view** is the third caller and the general case: the app applies moves locally over `training/week` (`lib/week-layout.ts`) — a day lists the sessions staying on it, then the ones moved onto it in the order they were moved — and sends every changed session with the day it was read on, day by day in that order; a `409` means reload the week and start over
@@ -414,8 +415,10 @@ Source of truth: `types/training.ts`. Returned by `GET /api/client/training/even
 > `full` or `partial` — is `sessionLog.completionQuality`, and `event.log` carries the same quality
 > (with the log's id, its performed session and its note) on every event read, so a list of workouts
 > needs no second fetch. A workout that left `scheduled` with no log at all reads as `full`: it was
-> logged before the link existed and no quality was ever recorded. `missed` is never stored — derive
-> it: still `scheduled` on a day before the client's today.
+> logged before the link existed and no quality was ever recorded. A stored `skipped`, on the event
+> or on its log, reads as **not logged** — nothing produces one, and a row written before that rule is
+> a workout the client did not do. `missed` is never stored — derive it: still `scheduled` on a day
+> before the client's today.
 
 ```typescript
 type TrainingEventDetail = {
@@ -474,7 +477,7 @@ Invariants RN must respect:
 
 ```typescript
 type LogTrainingEventInput = {
-  completionQuality: "full" | "partial" | "skipped"
+  completionQuality: "full" | "partial"   // no third value — see below
   notes?: string              // <= 1000
   performedSessionId?: string // only when the client swapped sessions
   exercises?: Array<{
@@ -489,9 +492,23 @@ type LogTrainingEventInput = {
 }
 ```
 
-> **RN contract — `setType` is coach-prescribed, never client-chosen.** The schema accepts a `setType` per set and the server **ignores it**: `set_logs.set_type` is seeded from the prescription snapshot. Do not build a set-type picker.
+> **RN contract — a save records something, and there is no skip.** `completionQuality`
+> is `full` or `partial`; `"skipped"` is rejected (400). A save that records no
+> work — every exercise skipped, or every one sent with no sets — is refused with
+> `400 "Tick at least one set to log this workout."` A client who did not train
+> logs nothing: the workout stays `scheduled` and reads as missed once its day
+> has passed. Show that sentence before the tap rather than after it — hold the
+> save button while nothing is recorded — so the app and the server say one
+> thing.
 
-> **RN contract — every save FULLY REPLACES the log's exercises.** The writer deletes all `exercise_logs` for the log (set_logs cascade) and re-inserts. Send the complete list, never a delta.
+> **RN contract — a save replaces exactly what it carries.** A payload WITH
+> `exercises` full-replaces the log's exercise logs and their sets: send the
+> complete list, never a delta. A payload WITHOUT `exercises` — the quick path —
+> records `completionQuality` and `notes` and **touches no exercise row**, so
+> marking a workout the client already logged in detail never erases what they
+> logged. To remove a log, call `DELETE` on the same path.
+
+> **RN contract — `setType` is coach-prescribed, never client-chosen.** The schema accepts a `setType` per set and the server **ignores it**: `set_logs.set_type` is seeded from the prescription snapshot. Do not build a set-type picker.
 
 ### CheckIn
 ```typescript
@@ -523,6 +540,9 @@ type CheckIn = {
     eventId: string
     date: string            // YYYY-MM-DD, the day the workout was on
     sessionName: string
+    // The STORED words. Nothing writes `skipped` or `missed` any more; rows
+    // written before that rule still carry `skipped`, and they read as a
+    // workout the client did not log.
     status: "scheduled" | "completed" | "partial" | "skipped" | "missed"
     logStatus: "logged" | "not_logged"
     completionQuality: "full" | "partial" | "skipped" | null
@@ -651,9 +671,10 @@ These are **absolute calorie deltas from `lib/constants.ts`, not percentages.**
   check-ins submitted before carry the older figures and were not backfilled
 
 **Training Adherence**:
-- Counted over every calendar workout in the period, from the quality on each
-  workout's own LOG — one server-side summariser, so the client's figure and the
-  coach's review cannot disagree about a week
+- Counted over every calendar workout in the period, **by the workout's own
+  date**, from the quality on its LOG — one server-side summariser, so the
+  client's figure and the coach's review cannot disagree about a week. A log's
+  stored date is not read by any figure: it does not move when its workout does
 - `CheckIn.workoutsCompleted`, stored at submit, is the workouts done in FULL.
   A partly completed workout is not in it: `trainingPeriodStats.sessionsPartial`
   on `check-in-context` is how many there were

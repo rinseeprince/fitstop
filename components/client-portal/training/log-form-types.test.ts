@@ -48,8 +48,13 @@ function working(n: number): PrescribedRowsByIndex {
 
 const NOTHING_DIRTY = () => false;
 const ALL_DIRTY = () => true;
+/** The payload a save that records work produces. Null is its own test, below. */
+const saved = (payload: ReturnType<typeof buildLogPayload>) => {
+  expect(payload).not.toBeNull();
+  return payload!;
+};
 const setsOf = (payload: ReturnType<typeof buildLogPayload>) =>
-  payload.exercises![0].sets;
+  saved(payload).exercises![0].sets;
 
 // The form seeds its weight field from canonical kilograms, rounded for
 // legibility, and submits in the client's unit. Both halves of that round trip
@@ -63,7 +68,7 @@ describe("buildLogPayload", () => {
       ALL_DIRTY,
       working(1),
     );
-    expect(payload.exercises![0].weightUnit).toBe("kg");
+    expect(saved(payload).exercises![0].weightUnit).toBe("kg");
   });
 
   it("converts an edited weight from the client's unit to kilograms", () => {
@@ -141,14 +146,16 @@ describe("buildLogPayload", () => {
 
   // ---- The tick decides what is sent (locked decisions 1 and 3) ------------
 
-  it("drops an exercise with nothing ticked", () => {
+  // Nothing ticked is nothing to save. The form refuses it — and so does the
+  // server, through the same rule — rather than storing an empty log.
+  it("returns null when nothing is ticked", () => {
     const payload = buildLogPayload(
       values([emptySet()]),
       "metric",
       ALL_DIRTY,
       working(1),
     );
-    expect(payload.exercises).toBeUndefined();
+    expect(payload).toBeNull();
   });
 
   // Decision 3: doing the work is the claim; recording numbers is a bonus.
@@ -227,7 +234,7 @@ describe("buildLogPayload", () => {
       ALL_DIRTY,
       working(3),
     );
-    expect(payload.completionQuality).toBe("full");
+    expect(saved(payload).completionQuality).toBe("full");
   });
 
   it("derives partial when some are ticked", () => {
@@ -237,17 +244,17 @@ describe("buildLogPayload", () => {
       ALL_DIRTY,
       working(3),
     );
-    expect(payload.completionQuality).toBe("partial");
+    expect(saved(payload).completionQuality).toBe("partial");
   });
 
-  it("derives skipped, with no exercises, when nothing is ticked", () => {
+  it("refuses the save when nothing is ticked", () => {
     const payload = buildLogPayload(
       values([emptySet(), emptySet(), emptySet()]),
       "metric",
       ALL_DIRTY,
       working(3),
     );
-    expect(payload).toEqual({ completionQuality: "skipped" });
+    expect(payload).toBeNull();
   });
 
   // Decision 5: warm-ups are recorded but never scored. Ticking the warm-up and
@@ -272,11 +279,13 @@ describe("buildLogPayload", () => {
       ALL_DIRTY,
       rows,
     );
-    expect(payload.completionQuality).toBe("full");
+    expect(saved(payload).completionQuality).toBe("full");
     expect(setsOf(payload).map((s) => s.setNumber)).toEqual([1, 2, 3]);
   });
 
-  it("is skipped when only the warm-up is ticked", () => {
+  // A warm-up scores nothing, so ticking only it is short of complete —
+  // partial, never a skip. The client did some of this workout.
+  it("is partial when only the warm-up is ticked", () => {
     const rows = [
       prescribedRowsForView({
         id: EX_A,
@@ -296,7 +305,7 @@ describe("buildLogPayload", () => {
       ALL_DIRTY,
       rows,
     );
-    expect(payload.completionQuality).toBe("skipped");
+    expect(saved(payload).completionQuality).toBe("partial");
     // Recorded even though it scores nothing — a coach investigating a niggle
     // needs to see it.
     expect(setsOf(payload)).toEqual([{ setNumber: 1 }]);
@@ -396,7 +405,7 @@ describe("seedDefaultValues — reopening a logged session", () => {
       working(6),
     );
     expect(setsOf(payload).map((s) => s.setNumber)).toEqual([3, 4, 5]);
-    expect(payload.completionQuality).toBe("partial");
+    expect(saved(payload).completionQuality).toBe("partial");
   });
 
   // A logged set past the prescription is real and reachable — the client

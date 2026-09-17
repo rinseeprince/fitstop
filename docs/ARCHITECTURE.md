@@ -287,7 +287,7 @@ On the training track, plans are **templates/provenance** — the events carry t
 - `calorie_surplus_percentage` (NUMERIC, nullable, migration 085) - the per-date training surplus, denormalized onto the event at generation from `training_sessions.calorie_surplus_percentage`. A nutrition day reads it directly off the events — every session's surplus on the date added, as a share of the covering version's baseline (see "The window is the row"). NULL on rest days
 - `day_order` (INTEGER NOT NULL DEFAULT 0, migration 179) - the session's place among the client's sessions on its date, 0 first; every reader orders a day by `(day_order, id)`. See "Several sessions a day"
 - `is_modified` - true when a coach moved the event on the calendar, or edited its surplus — or when the **client** moved it (the same badge, deliberately: no who-moved-it provenance is stored, owner decision 2026-08-26). Both moves go through `move_training_events_atomic` (migration 150), each side keeping its own rules in its own service (the coach's drag in `services/training-event-calendar-service.ts`, the client's week in `services/training-event-layout-service.ts`); the function refuses a move whose event is no longer on the date the caller saw, so a coach's drag on a calendar loaded before the session moved is refused (409), and the coach's calendar refetches when the coach comes back to the page. It drives the calendar card's edited badge; the plan editor's save keeps it on a session saved as it was laid and clears it on every session the coach changed (see "Edit plan"), and a program's start-date move carries every session to its new day with its mark as it was (see "Moving a program's start"). It is **not a write predicate**. (An earlier `force = false` / override-after-warning regeneration flow is described in older revisions of this file; no such parameter exists in the code.)
-- `status` — whether the client has **logged** the workout, and nothing else. `scheduled` is the word every write guard keys on (`assertSessionUnlogged`, the plan editor's save, the move function, placement's window-delete). The CHECK still allows `partial` (written beside a partial log), `skipped` (an empty log) and `missed` (never stored — every screen derives it). **How a workout went is never read off this column**: see "How a workout reads" below
+- `status` — whether the client has **logged** the workout, and nothing else. `scheduled` is the word every write guard keys on (`assertSessionUnlogged`, the plan editor's save, the move function, placement's window-delete). The CHECK still allows `partial` (written beside a partial log), `skipped` and `missed`; nothing writes either of the last two — a skip is not an outcome any more (see "Logging a workout") and `missed` is derived by every screen — and the CHECK loses them with the type change. **How a workout went is never read off this column**: see "How a workout reads" below
 - Unique constraint: `(client_id, training_session_id, date)` partial index where `training_session_id IS NOT NULL`
 
 `training_sessions.calorie_surplus_percentage` (NUMERIC, nullable) is the **origin** of the surplus: it is copied onto each `training_events.calorie_surplus_percentage` at event generation, and a nutrition day then reads it from the event (not from the session). Rest-day sessions have NULL.
@@ -454,18 +454,24 @@ Two facts, kept in two places, and one pure helper that puts them together —
 `lib/training-display-state.ts`:
 
 - **Did the client log it?** `training_events.status`. A workout that has left `scheduled` is logged.
-- **How did it go?** `session_logs.completion_quality` (`full` / `partial` / `skipped`), on the log
-  alone. There is no copy on the event, and no screen reads the status word as quality — that copy is
-  what made one week read 4/5 on the client's check-in and 5/5 on the coach's review.
+- **How did it go?** `session_logs.completion_quality`, on the log alone — `full` or `partial`, the
+  two words `LoggedQuality` (`types/check-in.ts`) holds. There is no copy on the event, and no screen
+  reads the status word as quality — that copy is what made one week read 4/5 on the client's
+  check-in and 5/5 on the coach's review.
 
 `trainingDisplayState(workout, today)` returns the one vocabulary every tick, dash, chip and pill
-keys on — `scheduled`, `completed_full`, `completed_partial`, `skipped`, `missed` — and
-`loggedDisplayQuality(workout)` is its quality half for surfaces that show only that. Three rules it
+keys on — `scheduled`, `completed_full`, `completed_partial`, `missed` — and
+`loggedDisplayQuality(workout)` is its quality half for surfaces that show only that. Four rules it
 owns:
 
 - **The log wins** whenever there is one, whatever the status word says.
 - **A workout logged before the link existed reads `full`** — 209 such rows on dev (September 2026):
   completed, with no log to have recorded a quality.
+- **A stored `skipped`, on the event or on its log, reads as NOT LOGGED.** Nothing produces one (see
+  "Logging a workout"); a row written before that rule is a workout the client did not do, which is
+  what a day that has passed already says. `SessionCompletionQuality` still spells the value because
+  those rows exist; `LoggedQuality` is what the product writes and shows, and no screen renders a
+  third word.
 - **`missed` is derived, never stored** — still scheduled on a day that has passed — and the day is
   the caller's own: the client's today on their screens, the coach's on the coach's.
 
@@ -481,18 +487,29 @@ What keys on it: the coach calendar card's thumb, the client's day card, the coa
 (through the per-day schedule shape above), the check-in wizard's training rows, the check-in
 review's pills, the check-in AI prompt's per-session lines, the attention feed's partial-workout
 alert, and the Overview's training rail — where a day is classified from its own workouts (every one
-full → complete, any done at all → partial, any missed or skipped → missed) while the figure beside
-it counts full completions.
+full → complete, any done at all → partial, any missed → missed) while the figure beside it counts
+full completions.
 
 **Counting them is one function too.** `summariseTraining` (`lib/training-adherence.ts`) takes any
 rows carrying a status and a log quality — calendar events through `eventWorkoutRead`, or the
 per-workout detail a check-in read carries — classifies each through `loggedDisplayQuality` above,
 and returns `{ planned, completed, full, partial, missed, pct }`: `completed` is full + partial,
-`missed` is everything not done (skipped, still scheduled, never logged), and `pct` is
+`missed` is everything not done (still scheduled, never logged), and `pct` is
 `completed / planned`, null when nothing was planned. Every training figure on a check-in comes out
 of it — see "The figures, and what they divide by". The Overview's adherence kernel keeps its own
 full-only `completed / planned` pair beside the rail it is index-aligned with
 (`services/client-adherence-service.ts`).
+
+**The Training-tab hero and the Overview's plan card count CALENDAR WORKOUTS, by their date.**
+`getTrainingWeekSummary` (`services/training-week-summary-service.ts`) reads the client's current
+week — anchored on their check-in day, on the COACH's today, capped at today because a session still
+to be done later in the week is neither planned-against nor missed — and puts those workouts through
+`summariseTraining`. It serves `GET /api/clients/[id]/history/training/summary` (the hero) and
+`GET …/overview-plan-summary` (`thisWeek`), so the two cannot disagree. Its `completed` is `full`
+alone, as this pair has always read; partials join it in the flip, where every done-count moves
+together. **No adherence figure reads `session_logs.completed_at`**: a log's stored date does not
+move when its workout does, so a moved workout used to be counted in the week it left
+(`TECHNICAL-DEBT.md` → "A moved workout leaves its log's stored date behind").
 
 ### The coach's logged-workout readout
 
@@ -548,7 +565,7 @@ row list, not the log.**
 - `set_logs.set_type` (migration 119) — `TEXT NOT NULL DEFAULT 'working' CHECK (set_type IN ('warmup','working','amrap','drop','failure'))`. The per-set type of a logged set. It is **coach-prescribed** (seeded from the prescription's `set_specs` at log time), not client-chosen — the log schema accepts-but-ignores any client value, and the writer seeds each row from the prescription snapshot's per-set specs. Warm-up / AMRAP / drop rows are written today. The analytics RPCs (`get_exercise_progression_window` returns it; `get_exercise_prs` filters on it — migration 120) exclude warm-up sets from volume/compliance/PRs; `services/exercise-analytics-service.ts` counts only non-warmup sets and reads the prescribed working-set count from the snapshot's `set_specs`.
 - `exercise_logs.exercise_id` (added in 090) is a nullable FK to the global `exercises` catalog. Populated when the client picked an exercise from the typeahead picker (Add unplanned, Swap). NULL for prescribed-without-swap (catalog identity is reachable via `training_exercise_id → training_exercises.exercise_id`) and for freehand entries.
 - `exercise_logs.performed_name` (added in 090) is the canonical display name for the logged exercise. Differs from `prescribed_exercise_snapshot.name` when the client swapped a prescribed exercise or added a freehand unplanned one. Display rule: `performed_name ?? prescribed_exercise_snapshot?.name ?? "Unknown exercise"`. This is the per-**exercise** swap (Session 1.5), independent of the per-**session** swap above.
-- Session-level status: the log WRITE stamps `training_events.status` from `session_logs.completion_quality` via `mapCompletionQualityToEventStatus` (full→completed / partial / skipped), in the same statement as the link, so the two cannot drift. **No reader inverts that map** — every screen reads the quality off the log (see "How a workout reads"). **Where the quality itself comes from:** It is **server-derived** whenever the payload carries `exercises`: `deriveCompletionQuality` (`utils/completion-quality.ts`) counts the sets the client sent against the session's own prescription and **ignores any client-supplied value**. `full` means every prescribed WORKING set on EVERY exercise (each exercise judged against its own prescription, so a surplus on one cannot mask a deficit on another); some → `partial`, none → `skipped`; warm-ups are excluded from both halves. The denominator therefore needs a read of its own (`loadSessionPrescription`), because an exercise the client never touched is absent from the payload entirely and must still count against them. A payload with **no** `exercises` — any future RN quick path — still uses the client's explicit `completionQuality`, and that is the only case where it is honoured.
+- Session-level status: the log WRITE stamps `training_events.status` from `session_logs.completion_quality` via `mapCompletionQualityToEventStatus` (full→completed / partial→partial), in the same statement as the link, so the two cannot drift. **No reader inverts that map** — every screen reads the quality off the log (see "How a workout reads"). **Where the quality itself comes from:** It is **server-derived** whenever the payload carries `exercises`: `deriveCompletionQuality` (`utils/completion-quality.ts`) counts the sets the client sent against the session's own prescription and **ignores any client-supplied value**. `full` means every prescribed WORKING set on EVERY exercise (each exercise judged against its own prescription, so a surplus on one cannot mask a deficit on another); anything short of that is `partial`, a save whose only ticks landed on warm-ups included — warm-ups are excluded from both halves of the ratio, and the save would have been refused if the client had recorded nothing at all. The denominator therefore needs a read of its own (`loadSessionPrescription`), because an exercise the client never touched is absent from the payload entirely and must still count against them. A payload with **no** `exercises` — the check-in's fill-gap row, and any RN quick path — still uses the client's explicit `completionQuality`, and that is the only case where it is honoured.
 
 ---
 
@@ -777,13 +794,13 @@ The one exception is `getClientForCurrentUser` (`services/client-portal-service.
 
 **Reads:** `GET /api/client/day-summary?date=` (home payload `{ training[], nutrition, wellness, habits }`, `no-store`) · `GET /api/client/training/week?date=` (`ClientTrainingWeek`, `types/client-training-week.ts` — every session in the check-in-anchored week containing `date`, by date and each day's sessions in the day's order, each with a `state` of done / today / upcoming / missed derived against the client's today; a day can hold several, so a week can hold more than seven; `no-store`. Powers the session picker and the week view, and is exactly the set a layout write may touch) · `GET /api/client/training/events/[eventId]` · `GET /api/client/daily-logs/[date]/{wellness,nutrition}` · `GET /api/client/habits` + `GET /api/client/habits/logs` (habits are **not** under `/daily-logs/[date]`) · `GET /api/client/training-plan` (date-resolved; carries `state`/`startsOn`/`endsOn` — see "Client-side plan tier") + `GET /api/client/nutrition-plan` (Program tab) · `GET /api/client/journey` (Program tab's blocks; carries `currentBlockNotes: { blockId, notes[] } | null` — the coach-note visibility policy is enforced **here on the wire**, not in the renderer, so RN inherits it rather than re-deriving it; see "The two notes" above) · `GET /api/client/training/exercise-history` (bounded full return) · `GET /api/client/check-ins` (**keyset-default**, opaque base64url `{createdAt,id}` cursor via `lib/cursor.ts`; legacy `?offset=` opt-in).
 
-**Writes:** `POST /api/client/training/events/[eventId]/log` (bulk-replace `session_logs` + `exercise_logs` with snapshots; updates `training_events.status`) · `POST /api/client/training/events/layout` (**client week layout** — `{ moves: [{ eventId, fromDate, toDate }] }`, 1–`MAX_WEEK_LAYOUT_MOVES` entries; a single move, a two-day swap and a whole-week rearrangement are the same request at different sizes, applied in one transaction by `move_training_events_atomic` (migrations 150, 179). Policy lives in `services/training-event-layout-service.ts`: only still-`scheduled` sessions move; each stays inside the training week it currently sits in; neither end of a move may fall in a week a check-in has closed (the same day rule the log writes obey). A session moved onto a day that holds some joins it after them, and several moved onto one day land in the order the list gives them (see "Several sessions a day"). `fromDate` is the drift check — a concurrent coach move answers 409 "your week changed", never a half-applied week. Nutrition follows the moved sessions on the next read: a day's target is computed from the sessions on it) · `PATCH /api/client/daily-logs/[date]/{wellness,nutrition}` (both ungated: a meal is refused only by the day rule, and a day no version covers saves with no stamp) · `POST /api/client/habits/log` (per-habit toggle for a date; ungated) · `PATCH /api/client/settings` (`unitPreference`, `timezone` — IANA-validated; `lib/validations/client.ts`. No `weight_unit`: that column is gone and was never accepted here anyway. `reminder_preferences` is a different endpoint. Reachable pre-activation — `getAuthenticatedClientId` gates on `clients.active`, not `onboarding_status` — which is what lets the intake form set a client's units before their coach activates them).
+**Writes:** `POST /api/client/training/events/[eventId]/log` (replaces the log's `exercise_logs` and their snapshots when the payload carries exercises, records the outcome alone when it does not; updates `training_events.status`; **400** when the payload records no work) · `DELETE` the same path (**Clear log** — one transaction, the log and its rows gone and the workout back to `scheduled`; see "Logging a workout") · `POST /api/client/training/events/layout` (**client week layout** — `{ moves: [{ eventId, fromDate, toDate }] }`, 1–`MAX_WEEK_LAYOUT_MOVES` entries; a single move, a two-day swap and a whole-week rearrangement are the same request at different sizes, applied in one transaction by `move_training_events_atomic` (migrations 150, 179). Policy lives in `services/training-event-layout-service.ts`: only still-`scheduled` sessions move; each stays inside the training week it currently sits in; neither end of a move may fall in a week a check-in has closed (the same day rule the log writes obey). A session moved onto a day that holds some joins it after them, and several moved onto one day land in the order the list gives them (see "Several sessions a day"). `fromDate` is the drift check — a concurrent coach move answers 409 "your week changed", never a half-applied week. Nutrition follows the moved sessions on the next read: a day's target is computed from the sessions on it) · `PATCH /api/client/daily-logs/[date]/{wellness,nutrition}` (both ungated: a meal is refused only by the day rule, and a day no version covers saves with no stamp) · `POST /api/client/habits/log` (per-habit toggle for a date; ungated) · `PATCH /api/client/settings` (`unitPreference`, `timezone` — IANA-validated; `lib/validations/client.ts`. No `weight_unit`: that column is gone and was never accepted here anyway. `reminder_preferences` is a different endpoint. Reachable pre-activation — `getAuthenticatedClientId` gates on `clients.active`, not `onboarding_status` — which is what lets the intake form set a client's units before their coach activates them).
 
 Every write resolves plan context once via `resolvePlanContextForDate(clientId, date)` to stamp the `*_plan_id` links, and enforces the closed-period lock server-side (see "Date-edit permissions").
 
 ### Workout logging (per-set completion)
 
-**A tick means "I did this set", and it is the only thing that decides completion.** One mode, one primary button — the complete/partial/skipped selector and the per-exercise Skip toggle are gone, because an unticked row already says "not done" and the ticks answer the question the selector used to ask (`components/client-portal/training/`):
+**A tick means "I did this set", and it is the only thing that decides completion.** One mode, one primary button, and no outcome selector anywhere: an unticked row already says "not done", and the ticks answer what a selector would have asked (`components/client-portal/training/`):
 
 - **The row list mirrors the flattened prescription.** `seedDefaultValues` builds it from `buildPrescribedRows`, reopening a logged session restores the FULL prescription with the logged rows ticked, and a **prescribed row cannot be deleted** — only rows the client appended past it. That is what makes a row's position its `setNumber` end to end. Sizing keeps both ends: a logged set past the prescription (an appended row, or a prescription the coach later shrank) survives the round trip, because the write path full-replaces and a row missing from the form is deleted on the next save.
 - **Groups lay the blocks out and change nothing underneath** (`components/client-portal/training/tracker-exercise-list.tsx`). The form stays one flat list — the prescription group by group, then anything unplanned — so an exercise in a superset logs to its own entry and a round is that exercise's row: `setNumber` is still the row's place in the exercise's own flattened prescription, and completion counts its rows as it counts any exercise's. A group changes only what is on screen: a linked group's heading, Round for Set where its rows are rounds, and the rest timers (see "Groups" → "How a group reads").
@@ -792,6 +809,15 @@ Every write resolves plan context once via `resolvePlanContextForDate(clientId, 
 - **Warm-ups are recorded but never scored.** They render, are tickable, and are written to `set_logs` with `set_type: 'warmup'` so a coach investigating an injury can see them — and they are excluded from `full`, from the client's own outcome line, and from every performance metric.
 - **The client is told what will be recorded before it is**, on one line above the button ("9 of 12 working sets logged. Will be recorded as partial."). It and the server's verdict come from one module (`utils/completion-quality.ts`), because that sentence is a promise about the coach's adherence number.
 - Save is a single bulk-replace (no per-set auto-save, no draft persistence, no `localStorage`). The web form is the harness; the RN app keeps the in-progress workout in device storage and POSTs once. **Live coach visibility mid-workout is explicitly not a feature.**
+
+### Logging a workout: a save records something, and Clear log undoes it
+
+**There is no skip.** A workout is logged or it is not, and a client who did not train logs nothing — the workout reads missed once its day has passed. Two rules carry that, and both are the client's to see before the server says it:
+
+- **A save that records no work is refused**, with one sentence: *"Tick at least one set to log this workout."* The rule is `trainingLogRecordsWork` (`lib/training-log-content.ts`, pure and client-safe): the form holds its button and prints the sentence in place of the outcome line, and `logTrainingEvent` throws `EmptyTrainingLogError` → **400** carrying the same words. Its sources are a LIST — a set today; a set carrying a distance or a duration when measurement columns land; a timed group's score when scores land — so a later commit joins the list rather than rewriting the rule. `POST /api/client/training/events/[eventId]/log` accepts `completionQuality` of `full` or `partial` and nothing else, on every path including the React Native quick one.
+- **Clear log** is "I did not do this after all": `DELETE /api/client/training/events/[eventId]/log` → `clearTrainingEventLog` → `clear_training_event_log` (migration 181), ONE transaction that deletes the log keyed to the workout — its `exercise_logs` cascade, their `set_logs` with them — and puts the event back to `scheduled` with no link. It is allowed **exactly where the day-edit rule allows editing** (see "Date-edit permissions"), the same `assertCanEdit` the log write obeys, so a week a check-in has closed keeps its shape; a foreign or missing workout is 404, and clearing a workout that carries no log is `{ cleared: false }`, not an error. Clearing also unfreezes the day for the coach, because `assertSessionUnlogged` keys on the event's status. On the web the action is on the workout screen, behind a destructive confirm, whenever the workout has a log and its day is open.
+
+**A save replaces exactly what it carries.** A payload with `exercises` full-replaces the log's exercise rows; a payload without them records the outcome and the note and touches no exercise row. That is what keeps the check-in's fill-gap row — which posts `{completionQuality, notes}` alone — from erasing sets the client already logged; the replace had nothing to put back, and the unconditional DELETE wiped them.
 
 ### Alternative-session handling
 
@@ -1319,8 +1345,9 @@ sliders, and `submitCheckIn` derives all five from `wellness_logs` over the
 period, so a key there would promise a toggle over a field nobody fills in. The
 Feeling step's weekly summary and the Training step's session checklist are
 read-only viewers of the client's own week — and the checklist is a fill-gap
-LOGGER writing to `training_events` — so they carry no key either, and the two
-steps are unconditional. With every key off a client still gets a two-step
+LOGGER writing to `training_events`, offering Completed or Partial and nothing
+else, whose save records an outcome and leaves the workout's logged sets exactly
+as they are — so they carry no key either, and the two steps are unconditional. With every key off a client still gets a two-step
 "here is your week, confirm it" check-in. (Making those two viewers suppressible
 is a 16th/15th key and a different feature; `TECHNICAL-DEBT.md` records it.)
 

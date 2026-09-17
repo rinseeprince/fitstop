@@ -15,7 +15,7 @@ const WEEK_COLUMNS = "id, training_session_id, date, session_name, session_focus
 
 function deriveState(status: string, date: string, today: string): ClientTrainingWeekSessionState {
   if (status === "completed" || status === "partial") return "done";
-  if (status === "skipped" || status === "missed") return "missed";
+  if (status === "missed") return "missed";
   // scheduled
   if (date === today) return "today";
   return date > today ? "upcoming" : "missed";

@@ -15,9 +15,11 @@ export type ClientTrainingWeekSession = {
   focus: string | null;
   date: string; // YYYY-MM-DD
   state: ClientTrainingWeekSessionState;
-  // Whether a layout write may move it: `status === 'scheduled'`. Not derivable
-  // from `state` — a past scheduled day and a skipped day both read "missed",
-  // and only the first can be moved.
+  // Whether a layout write may move it: `status === 'scheduled'`. `state` says
+  // where the session stands on the calendar and cannot answer this — a session
+  // never logged on a day that has passed reads "missed" and CAN still be
+  // moved, while one that has left `scheduled` cannot, whatever its state
+  // reads. Clearing its log puts it back to scheduled and movable.
   isScheduled: boolean;
 };
 

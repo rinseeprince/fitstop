@@ -3021,6 +3021,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      clear_training_event_log: {
+        Args: { p_client_id: string; p_event_id: string }
+        Returns: Json
+      }
       create_check_in_form_template_atomic: {
         Args: {
           p_coach_id: string

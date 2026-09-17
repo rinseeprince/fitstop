@@ -5,7 +5,7 @@ import type {
   TrainingEventStatus,
   TrainingEventSummary,
 } from "@/types/training";
-import type { SessionCompletionQuality } from "@/types/check-in";
+import type { LoggedQuality } from "@/types/check-in";
 import type { TrainingEventRow, TrainingEventInsert } from "@/lib/database-helpers";
 import { getTodayDateString, getDateString, DAY_NUM } from "@/lib/date-helpers";
 import { fetchAllByChunkedIds, chunkIds } from "@/lib/paged-fetch";
@@ -340,33 +340,13 @@ export async function getFirstEventForDate(
 }
 
 /**
- * Map completion quality ("full"/"partial"/"skipped") to event status.
+ * Map a logged workout's quality to its event status. Only two qualities can be
+ * written, so only two statuses can be, and a skip is neither.
  */
 export function mapCompletionQualityToEventStatus(
-  quality: SessionCompletionQuality
-): "completed" | "partial" | "skipped" {
-  if (quality === "full") return "completed";
-  if (quality === "partial") return "partial";
-  return "skipped";
-}
-
-/**
- * Count events for a client within a date range.
- */
-export async function countEventsInRange(
-  clientId: string,
-  startDate: string,
-  endDate: string
-): Promise<number> {
-  const { count, error } = await supabaseAdmin
-    .from("training_events")
-    .select("*", { count: "exact", head: true })
-    .eq("client_id", clientId)
-    .gte("date", startDate)
-    .lte("date", endDate);
-
-  if (error) throw error;
-  return count ?? 0;
+  quality: LoggedQuality
+): "completed" | "partial" {
+  return quality === "full" ? "completed" : "partial";
 }
 
 /**
@@ -379,7 +359,7 @@ export async function countEventsInRange(
 export async function linkSessionLogToEvent(
   eventId: string,
   sessionLogId: string,
-  status: "completed" | "partial" | "skipped"
+  status: "completed" | "partial"
 ): Promise<void> {
   const now = new Date().toISOString();
 

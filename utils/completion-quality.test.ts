@@ -40,21 +40,24 @@ describe("deriveCompletionQuality", () => {
     ).toBe("partial");
   });
 
-  it("returns skipped when none were sent", () => {
+  // A save that records nothing is refused before it reaches here
+  // (lib/training-log-content.ts), so the only verdicts left are full and
+  // partial: this exercise's sets are the ones the client did not do.
+  it("returns partial when none of this exercise's sets were sent", () => {
     expect(
       deriveCompletionQuality([
         { prescribedRows: WORKING_3, completedSetNumbers: [] },
       ]),
-    ).toBe("skipped");
+    ).toBe("partial");
   });
 
   // Locked decision 5: warm-ups are recorded but never scored.
-  it("excludes warm-ups from the numerator — ticking only the warm-up is skipped", () => {
+  it("excludes warm-ups from the numerator — ticking only the warm-up is partial", () => {
     expect(
       deriveCompletionQuality([
         { prescribedRows: WARMUP_THEN_2, completedSetNumbers: [1] },
       ]),
-    ).toBe("skipped");
+    ).toBe("partial");
   });
 
   it("excludes warm-ups from the denominator — the working sets alone make it full", () => {
