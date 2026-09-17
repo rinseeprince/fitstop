@@ -746,6 +746,8 @@ fetch(url, { cache: 'no-store' })
 'Cache-Control': 'no-store, max-age=0'
 ```
 
+**Edit screens load their record fresh on every open.** Logging a workout, wellness or nutrition fills its form once from the record, and that record changes without the screen's own save: the check-in's training checklist logs workouts, the coach changes a workout, the client logs on another device. So when online, fetch the record each time the screen opens and fill the form only from that response, never from a copy kept from an earlier visit. Keeping an in-progress, unsaved workout on the device is a separate matter; offline, follow Offline Considerations below.
+
 **Loading Patterns**:
 1. Show skeleton/spinner
 2. Fetch data

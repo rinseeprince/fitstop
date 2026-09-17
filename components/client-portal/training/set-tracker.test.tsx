@@ -39,14 +39,21 @@ const mockEvent = vi.fn();
 const mockMe = vi.fn();
 const mockSession = vi.fn();
 const mockGlobalMutate = vi.fn();
+// The workout and a swapped-in session load through the visit read
+// (set-tracker.fetch.test.tsx runs it through real SWR).
+vi.mock("@/hooks/use-visit-read", () => ({
+  useVisitRead: (url: string | null) => {
+    if (url === null)
+      return { data: undefined, error: undefined, isLoading: false };
+    if (url.startsWith("/api/client/training/events/")) return mockEvent();
+    if (url.startsWith("/api/client/training/sessions/")) return mockSession();
+    throw new Error(`Unmocked visit read: ${url}`);
+  },
+}));
 vi.mock("swr", () => ({
   default: (key: string | null) => {
     if (key === null)
       return { data: undefined, error: undefined, isLoading: false };
-    if (typeof key === "string" && key.startsWith("/api/client/training/events/"))
-      return mockEvent();
-    if (typeof key === "string" && key.startsWith("/api/client/training/sessions/"))
-      return mockSession();
     if (key === "/api/client/me") return mockMe();
     // The session picker reads the week; no test opens it, so an empty week
     // is enough to keep the key mocked (the mock throws on unknown keys).
@@ -65,8 +72,9 @@ const { mockToast } = vi.hoisted(() => ({
 }));
 vi.mock("sonner", () => ({ toast: mockToast }));
 
+const { mockPush } = vi.hoisted(() => ({ mockPush: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: mockPush, replace: vi.fn() }),
 }));
 
 // Required, not optional: this hook imports auth-context, which constructs the
@@ -314,6 +322,7 @@ describe("SetTracker", () => {
     mockToast.success.mockReset();
     mockToast.error.mockReset();
     mockGlobalMutate.mockReset();
+    mockPush.mockReset();
     setMe("lbs");
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -372,15 +381,6 @@ describe("SetTracker", () => {
     await user.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(getLastFetchPayload()).toEqual({ completionQuality: "skipped" });
-    // The event detail cache is dropped so re-entering refetches the logged
-    // status and the logged sets (the form seeds defaultValues once per mount).
-    await waitFor(() =>
-      expect(mockGlobalMutate).toHaveBeenCalledWith(
-        "/api/client/training/events/evt-1",
-        undefined,
-        { revalidate: false },
-      ),
-    );
   });
 
   // ---- 2. Session-level bank ------------------------------------------------
@@ -601,6 +601,36 @@ describe("SetTracker", () => {
       ok: true,
       json: () => Promise.resolve({ success: true }),
     });
+  });
+
+  it("[leaving] after a successful save the button keeps its spinner until Home replaces the page", async () => {
+    setEventReady();
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" date="2026-05-06" />);
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/client?date=2026-05-06"));
+    expect(mockToast.success).toHaveBeenCalledWith("Workout logged");
+    expect(mockGlobalMutate).toHaveBeenCalledWith("/api/client/day-summary?date=2026-05-06");
+    // Past the save's own handler: react-hook-form has ended its submit.
+    await new Promise((r) => setTimeout(r, 0));
+    const btn = screen.getByTestId("save-button");
+    expect(btn).toBeDisabled();
+    expect(btn.querySelector("svg.animate-spin")).not.toBeNull();
+  });
+
+  it("[save-refused] a refused save gives the button back", async () => {
+    setEventReady();
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: "server boom" }),
+    }) as unknown as typeof fetch;
+    const user = userEvent.setup();
+    render(<SetTracker eventId="evt-1" />);
+    await user.click(screen.getByTestId("save-button"));
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("save-button")).toBeEnabled());
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   // ---- 9. Error toast on failure ------------------------------------------

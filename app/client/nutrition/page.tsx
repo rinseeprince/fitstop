@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import useSWR, { mutate as globalMutate } from "swr";
+import { mutate as globalMutate } from "swr";
 import {
   Beef,
   Droplets,
@@ -19,10 +19,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClientProfile } from "@/hooks/use-client-profile";
+import { useVisitRead } from "@/hooks/use-visit-read";
 import { toast } from "sonner";
 import { canEditDay } from "@/lib/daily-log-permissions";
 import { getTodayDateString, parseDateParamOrToday } from "@/lib/date-helpers";
-import { swrFetcher } from "@/lib/swr-fetcher";
 
 type NutrientValues = {
   calories: number | null;
@@ -107,9 +107,10 @@ function NutritionLogInner() {
   const { client } = useClientProfile();
   const timezone = client?.timezone ?? "UTC";
 
-  const { data, error, isLoading, mutate } = useSWR<NutritionResponse>(
+  // The form fills once from this read, so it loads fresh on every visit
+  // (hooks/use-visit-read).
+  const { data, error, mutate } = useVisitRead<NutritionResponse>(
     `/api/client/daily-logs/${date}/nutrition`,
-    swrFetcher,
     {
       revalidateOnFocus: false,
       errorRetryCount: 3,
@@ -127,7 +128,7 @@ function NutritionLogInner() {
   const [saving, setSaving] = useState(false);
 
   // Seed the form once per date when data first arrives; a background revalidation
-  // must not clobber in-progress edits. After a save we reset the ref so the fresh
+  // must not clobber in-progress edits. On a 403 we reset the ref so the fresh
   // server snapshot re-seeds (and a backfilled past day flips to locked).
   const seededDate = useRef<string | null>(null);
   useEffect(() => {
@@ -168,6 +169,7 @@ function NutritionLogInner() {
         | null;
 
       if (!res.ok || !json?.success) {
+        setSaving(false);
         toast.error("Couldn't save nutrition", {
           description: json?.error ?? "Please try again.",
         });
@@ -180,21 +182,17 @@ function NutritionLogInner() {
       }
 
       toast.success("Nutrition saved");
-      // Drop the stale detail cache so re-entering the page refetches the saved values — the
-      // once-per-mount form seed would otherwise show the pre-save snapshot. Then refresh the
-      // home day-summary so its nutrition card reflects the new log, and return home.
-      void globalMutate(`/api/client/daily-logs/${date}/nutrition`, undefined, {
-        revalidate: false,
-      });
+      // Refresh the home day-summary so its nutrition card reflects the new log, and return
+      // home. `saving` stays on: the log is saved, so the button keeps its spinner until Home
+      // replaces this page rather than offering the save again.
       void globalMutate(`/api/client/day-summary?date=${date}`);
       router.push(date === getTodayDateString() ? "/client" : `/client?date=${date}`);
     } catch (err) {
       console.error("[nutrition-log] save failed:", err);
+      setSaving(false);
       toast.error("Couldn't save nutrition", {
         description: "Network error. Please try again.",
       });
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -213,7 +211,7 @@ function NutritionLogInner() {
     );
   }
 
-  if (isLoading || !nutrition) {
+  if (!nutrition) {
     return <NutritionLogSkeleton />;
   }
 

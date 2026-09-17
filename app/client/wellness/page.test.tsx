@@ -43,10 +43,14 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
+// The page reads its log through the visit read (page.fetch.test.tsx runs it
+// through real SWR). Lazy wrappers: a direct reference would run at hoist time,
+// before the const exists.
+vi.mock("@/hooks/use-visit-read", () => ({
+  useVisitRead: (url: unknown) => swrCall(url),
+}));
 vi.mock("swr", () => ({
   __esModule: true,
-  default: (key: unknown, _fetcher: unknown, _opts: unknown) => swrCall(key),
-  // Lazy wrapper: a direct reference would run at hoist time, before the const exists.
   mutate: (...args: unknown[]) => globalMutateMock(...args),
 }));
 
@@ -192,15 +196,13 @@ describe("Wellness log page", () => {
     // Returns home and refreshes the day-summary so the home card updates.
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
     expect(pushMock.mock.calls[0][0]).toMatch(/^\/client/);
-    // The stale detail cache is dropped so re-entering refetches the saved values.
-    expect(globalMutateMock).toHaveBeenCalledWith(
-      `/api/client/daily-logs/${TODAY}/wellness`,
-      undefined,
-      { revalidate: false },
-    );
     expect(globalMutateMock).toHaveBeenCalledWith(
       `/api/client/day-summary?date=${TODAY}`,
     );
+    // The log is saved, so the button keeps its spinner until Home replaces the page.
+    const saving = screen.getByRole("button", { name: /saving/i });
+    expect(saving).toBeDisabled();
+    expect(saving.querySelector("svg.animate-spin")).not.toBeNull();
   });
 
   it("locks a day before the boundary: inputs disabled, notice shown, no save", () => {
@@ -242,6 +244,9 @@ describe("Wellness log page", () => {
       }),
     );
     expect(pushMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^save$/i })).toBeEnabled(),
+    );
   });
 
   it("renders a loading skeleton while SWR is loading", () => {

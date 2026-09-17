@@ -33,6 +33,7 @@ import { AddExerciseRow } from "./add-exercise-row";
 import { SessionPicker } from "./session-picker";
 import { useApplyClientLayout } from "@/hooks/use-client-training-data";
 import { CLIENT_PROFILE_KEY } from "@/hooks/use-client-profile";
+import { useVisitRead } from "@/hooks/use-visit-read";
 import { resolveSessionPick } from "@/lib/session-pick";
 import type { ClientTrainingWeekSession } from "@/types/client-training-week";
 import { useUnits } from "@/contexts/units-context";
@@ -94,19 +95,14 @@ function EventModeTracker({
   const router = useRouter();
   const applyLayout = useApplyClientLayout();
 
-  const {
-    data: eventData,
-    error: eventError,
-    isLoading: eventLoading,
-  } = useSWR<EventDetailResponse>(
-    `/api/client/training/events/${eventId}`,
-    swrFetcher,
-    {
+  // The workout and a swapped-in session fill the form once, so both load fresh
+  // on every visit (hooks/use-visit-read).
+  const { data: eventData, error: eventError } =
+    useVisitRead<EventDetailResponse>(`/api/client/training/events/${eventId}`, {
       ...SWR_OPTS,
       onError: (err) =>
         console.error("[set-tracker] event detail fetch failed:", err),
-    },
-  );
+    });
 
   const { data: meData, isLoading: meLoading } = useSWR<ClientMeResponse>(
     CLIENT_PROFILE_KEY,
@@ -127,12 +123,11 @@ function EventModeTracker({
 
   // When bound to a non-prescribed session (logged swap or user pick), fetch
   // that session's exercises (active-plan scoped).
-  const { data: swapData, isLoading: swapLoading } =
-    useSWR<SessionDetailResponse>(
+  const { data: swapData, error: swapError } =
+    useVisitRead<SessionDetailResponse>(
       boundSessionId
         ? `/api/client/training/sessions/${boundSessionId}`
         : null,
-      swrFetcher,
       SWR_OPTS,
     );
 
@@ -194,10 +189,11 @@ function EventModeTracker({
     );
   }
 
-  if (eventLoading || meLoading || (boundSessionId && swapLoading)) {
+  // Only a failed load is a failure; anything not yet loaded is still loading.
+  if (eventError) return <LoadFailed />;
+  if (!eventData || meLoading || (boundSessionId && !swapData && !swapError)) {
     return <TrackerSkeleton />;
   }
-  if (eventError || !eventData) return <LoadFailed />;
 
   const sessionLog = eventData.data.sessionLog;
   const timezone = meData?.data?.timezone ?? "UTC";
@@ -267,6 +263,7 @@ function TrainingLogForm({
   // primary button would let a client who did the whole workout tap Complete
   // and record `skipped`. Still foldable for anyone who only wants to bank it.
   const [detailOpen, setDetailOpen] = useState(true);
+  const [leaving, setLeaving] = useState(false);
 
   const header = normalizeSessionHeader(detail.session, detail.event);
   const formattedDate = formatTrainingDate(date ?? detail.event.date);
@@ -360,16 +357,9 @@ function TrainingLogForm({
         return;
       }
       toast.success("Workout logged");
-      // Drop the stale event-detail cache so re-entering refetches logged
-      // sets/status (the form seeds defaultValues once per mount). Event mode
-      // only — there's no event-detail cache in event-less mode.
-      if (save.kind === "event") {
-        void globalMutate(
-          `/api/client/training/events/${save.eventId}`,
-          undefined,
-          { revalidate: false },
-        );
-      }
+      // The workout is saved: the button keeps its spinner until Home replaces
+      // this page, rather than offering the save again.
+      setLeaving(true);
       void globalMutate(`/api/client/day-summary?date=${loggedDate}`);
       router.push(
         loggedDate === getTodayDateString()
@@ -446,7 +436,7 @@ function TrainingLogForm({
         getValues={getValues}
         prescribedRows={prescribedRowsByIndex}
         editable={editable}
-        isSubmitting={isSubmitting}
+        isSubmitting={isSubmitting || leaving}
       />
 
       {exerciseFields.length === 0 ? (
