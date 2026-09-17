@@ -20,14 +20,15 @@ import { SPLIT_TYPE_LABELS } from "@/lib/training-constants";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import type { TrainingWeekSummary } from "@/types/history";
 
-// The accurate week-scoped training summary hero — Sessions Completed /
-// Adherence / Missed from /api/clients/[id]/history/training/summary
-// (session_logs vs planned events for the current week). Shared by the Data tab
-// (TrainingHistoryTable) and the Plans tab (TrainingBuilderRightPanel). The
-// Plans tab previously derived "This Week" from session.dayOfWeek — which
-// placement never sets — so it always read a wrong 0-training / 7-rest count;
-// this endpoint is the truthful source. Reads `plan` from TrainingBuilderContext
-// for the program-info row (both mount sites live inside TrainingBuilderProvider).
+// The week-scoped training summary hero — Sessions Completed / Adherence /
+// Missed over the client's current week, from
+// /api/clients/[id]/history/training/summary: the week's CALENDAR workouts,
+// capped at today, counted by the one summariser (see ARCHITECTURE → "How a
+// workout reads"). It is mounted on the **Data** tab alone
+// (`training-history-table.tsx`) — the Plans tab shows the plan hero
+// (`training-plan-hero.tsx`), a different component. Reads `plan` from
+// TrainingBuilderContext for the program-info row, so it must stay inside
+// TrainingBuilderProvider.
 export function TrainingSummaryHero({ clientId }: { clientId: string }) {
   const { plan, isPending: planLoading } = useTrainingBuilderContext();
 
