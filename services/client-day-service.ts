@@ -28,19 +28,18 @@ export async function getDaySummary(
 
   return {
     training: trainingEvents,
-    // Log-authoritative: a nutrition_logs row (source "log") means logged, even if the
-    // nutrition_event status was never flipped. consumed/target drive the home card numbers.
-    nutrition:
-      nutrition.source !== null
-        ? {
-            hasLog: nutrition.source === "log",
-            caloriesConsumed: nutrition.consumed?.calories ?? null,
-            targetCalories: nutrition.target?.calories ?? null,
-            // Coach per-day note (event source only — logged days have no note).
-            // Surfaced on the home card since future days aren't openable.
-            note: nutrition.target?.note ?? null,
-          }
-        : null,
+    // Every day has a nutrition section: any day the day rule leaves open takes a
+    // log, with a target or without one. Log-authoritative: a nutrition_logs row
+    // (source "log") means logged. consumed/target drive the home card numbers;
+    // targetCalories is null when no nutrition plan covers the day.
+    nutrition: {
+      hasLog: nutrition.source === "log",
+      caloriesConsumed: nutrition.consumed?.calories ?? null,
+      targetCalories: nutrition.target?.calories ?? null,
+      // The coach's per-day note rides on the day's target. Surfaced on the
+      // home card since future days aren't openable.
+      note: nutrition.target?.note ?? null,
+    },
     wellness: {
       hasLog:
         dailyLog != null &&

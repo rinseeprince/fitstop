@@ -54,7 +54,7 @@ describe("client-day-service", () => {
 
     expect(result).toEqual({
       training: [],
-      nutrition: null,
+      nutrition: { hasLog: false, caloriesConsumed: null, targetCalories: null, note: null },
       wellness: { hasLog: false },
       habits: { totalCount: 0, loggedCount: 0 },
     });
@@ -206,14 +206,36 @@ describe("client-day-service", () => {
     });
   });
 
-  // ---- Nutrition: no log and no event ----
+  // ---- Nutrition: no plan covers the day ----
 
-  it("returns null when there is no nutrition log or event", async () => {
+  it("keeps the nutrition section, with no target, on a day no plan covers and nothing is logged", async () => {
     mockNutrition.mockResolvedValue({ consumed: null, target: null, source: null });
 
     const result = await getDaySummary(CLIENT_ID, DATE);
 
-    expect(result.nutrition).toBeNull();
+    expect(result.nutrition).toEqual({
+      hasLog: false,
+      caloriesConsumed: null,
+      targetCalories: null,
+      note: null,
+    });
+  });
+
+  it("reports a log with no target on a day no plan covers", async () => {
+    mockNutrition.mockResolvedValue({
+      consumed: { calories: 1850, proteinG: null, carbsG: null, fatG: null },
+      target: null,
+      source: "log",
+    });
+
+    const result = await getDaySummary(CLIENT_ID, DATE);
+
+    expect(result.nutrition).toEqual({
+      hasLog: true,
+      caloriesConsumed: 1850,
+      targetCalories: null,
+      note: null,
+    });
   });
 
   // ---- Wellness: spine exists but no wellness fields ----

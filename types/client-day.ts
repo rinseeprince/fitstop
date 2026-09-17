@@ -6,12 +6,14 @@ export type DaySummary = {
   // "trained for another day" list that used to sit here was retired with the
   // receipt model (2026-08-26).
   training: TrainingEventSummary[];
+  // Always present: a day with no target still takes a log (only the future and
+  // a closed week refuse one — lib/daily-log-permissions.ts).
   nutrition: {
     hasLog: boolean;
     caloriesConsumed: number | null;
-    targetCalories: number | null;
-    note: string | null; // coach per-day note (event source only)
-  } | null; // null = no nutrition target (log or event) for this day
+    targetCalories: number | null; // null = no nutrition plan covers this day
+    note: string | null; // the coach's per-day note, on the day's target
+  };
   wellness: { hasLog: boolean };
   habits: { totalCount: number; loggedCount: number };
 };

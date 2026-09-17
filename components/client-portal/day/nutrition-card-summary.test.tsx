@@ -13,11 +13,49 @@ const FUTURE_DATE = getDateDaysFrom(
 describe("NutritionCardSummary", () => {
   beforeEach(() => cleanup());
 
-  it("renders 'No nutrition target today' with no link when nutrition is null", () => {
-    render(<NutritionCardSummary nutrition={null} date={DATE} />);
+  it("opens the log on a day with no target: No target + Tap to log + link", () => {
+    render(
+      <NutritionCardSummary
+        nutrition={{ hasLog: false, caloriesConsumed: null, targetCalories: null, note: null }}
+        date={DATE}
+      />,
+    );
 
-    expect(screen.getByText("No nutrition target today")).toBeInTheDocument();
+    expect(screen.getByText("No target")).toBeInTheDocument();
+    expect(screen.getByText("Tap to log")).toBeInTheDocument();
+    expect(screen.getByRole("link")).toHaveAttribute(
+      "href",
+      `/client/nutrition?date=${DATE}`,
+    );
+  });
+
+  it("shows the calories alone + Tap to view + link when a day with no target is logged", () => {
+    render(
+      <NutritionCardSummary
+        nutrition={{ hasLog: true, caloriesConsumed: 1850, targetCalories: null, note: null }}
+        date={DATE}
+      />,
+    );
+
+    expect(screen.getByText("1,850 kcal")).toBeInTheDocument();
+    expect(screen.getByText("Tap to view")).toBeInTheDocument();
+    expect(screen.getByRole("link")).toHaveAttribute(
+      "href",
+      `/client/nutrition?date=${DATE}`,
+    );
+  });
+
+  it("keeps a future day with no target info-only", () => {
+    render(
+      <NutritionCardSummary
+        nutrition={{ hasLog: false, caloriesConsumed: null, targetCalories: null, note: null }}
+        date={FUTURE_DATE}
+      />,
+    );
+
+    expect(screen.getByText("No target")).toBeInTheDocument();
     expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByText("Tap to log")).toBeNull();
   });
 
   it("shows the target calories + Tap to log + link when not logged", () => {
