@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getActiveTrainingPlan } from "./training-service";
 import { getNutritionPlanForDate } from "./nutrition-plan-service";
-import { countEventsInRange, getEventsForDateRange } from "./training-event-service";
+import { getEventsForDateRange } from "./training-event-service";
 import { getNutritionEventsForDateRange } from "./nutrition-days-service";
 import { mapNutritionEventToDisplayTarget } from "@/utils/nutrition-event-helpers";
 import { getTrainingWeekStart, getTrainingWeekEnd } from "@/lib/date-helpers";
@@ -12,7 +12,6 @@ import type {
   CheckInTrainingContext,
   CheckInNutritionContext,
   CheckInTrainingEventDetail,
-  SessionCompletionQuality,
   DayOfWeek,
 } from "@/types/check-in";
 import { sessionExercises } from "@/utils/exercise-groups";
@@ -132,61 +131,20 @@ export const getCheckInNutritionContext = async (
   };
 };
 
-type CheckInTrainingPeriodStats = {
-  sessionsCompleted: number;
-  sessionsPlanned: number;
-};
-
 /**
- * Get training session stats for the check-in period using training_events
- * (the source of truth for completion — same as the coach-side adherence count).
- * Only events with status='completed' count toward sessionsCompleted; partial,
- * skipped and missed do not. sessionsPlanned is every event in the window.
- */
-export const getCheckInTrainingPeriodStats = async (
-  clientId: string,
-  periodStart: string,
-  periodEnd: string
-): Promise<CheckInTrainingPeriodStats> => {
-  // Count completed events and planned events in parallel
-  const [{ count, error }, sessionsPlanned] = await Promise.all([
-    // date is the prescribed event date (YYYY-MM-DD)
-    // supabaseAdmin: client portal reading own training_events (RLS exception 3)
-    supabaseAdmin
-      .from("training_events")
-      .select("id", { count: "exact", head: true })
-      .eq("client_id", clientId)
-      .eq("status", "completed")
-      .gte("date", periodStart)
-      .lte("date", periodEnd),
-    countEventsInRange(clientId, periodStart, periodEnd),
-  ]);
-
-  if (error) {
-    console.error("Error fetching training_events for check-in:", error.message);
-  }
-
-  const sessionsCompleted = count ?? 0;
-
-  return { sessionsCompleted, sessionsPlanned };
-};
-
-/**
- * Single-source per-event training detail for the check-in period (Session 6.2).
+ * Single-source per-workout training detail for the check-in period
+ * (Session 6.2). Every check-in surface that shows or counts the period's
+ * training reads THIS — the wizard's rows and stats, both single check-in
+ * reads, and the AI prompt.
  *
- * `training_events` is the source of truth for completion; each event is
- * LEFT-JOINed (in JS) to its linked `session_log` for notes + completion
- * quality. This MUST be the only place check-in code derives per-event training
- * detail — later sessions (6.3/6.4) reuse it and enrich it.
+ * `training_events` says whether each workout was logged; its own log, embedded
+ * on the range read through the named foreign key, says how it went. The
+ * quality is therefore always on the row — null when the client has not logged
+ * it — and no reader derives it from the status word.
  *
- * Session 6.3 enrichment: each detail now carries `sessionLogId` (so per-exercise
- * lines, keyed by session_log_id, can be joined to the event) and resolves
- * `performedSessionName` when the linked log's performed session differs from the
- * event's prescribed session (an alt-session swap).
- *
- * At most three queries regardless of event count: one range read of events, one
- * batched read of the referenced session_logs, and (only when at least one swap
- * is detected) one batched read of the performed training_sessions' names.
+ * Two queries regardless of workout count: one range read of the events with
+ * their logs, and (only when at least one swap is detected) one batched read of
+ * the performed `training_sessions`' names.
  */
 export async function getTrainingEventDetailsForPeriod(
   clientId: string,
@@ -196,50 +154,19 @@ export async function getTrainingEventDetailsForPeriod(
   const events = await getEventsForDateRange(clientId, periodStart, periodEnd);
   if (events.length === 0) return [];
 
-  const sessionLogIds = events
-    .map((e) => e.sessionLogId)
-    .filter((id): id is string => id !== null);
-
-  // LEFT-JOIN map: session_log_id -> { notes, completion_quality, performed session id }
-  const logById = new Map<
-    string,
-    {
-      notes: string | null;
-      completionQuality: SessionCompletionQuality;
-      trainingSessionId: string | null;
-    }
-  >();
-  if (sessionLogIds.length > 0) {
-    // supabaseAdmin: client portal reading own session_logs (RLS exception 3)
-    const { data, error } = await supabaseAdmin
-      .from("session_logs")
-      .select("id, notes, completion_quality, training_session_id")
-      .in("id", sessionLogIds);
-    if (error) {
-      console.error("Error fetching session_logs for check-in detail:", error.message);
-    }
-    for (const row of data ?? []) {
-      logById.set(row.id, {
-        notes: row.notes,
-        completionQuality: row.completion_quality as SessionCompletionQuality,
-        trainingSessionId: row.training_session_id,
-      });
-    }
-  }
-
   // Swap detection: a logged session whose PERFORMED session differs from the
   // event's PRESCRIBED session. Batch-resolve the performed session names.
+  const performedSessionIdOf = (event: (typeof events)[number]): string | null => {
+    const performedId = event.log?.performedSessionId ?? null;
+    if (!performedId || !event.trainingSessionId) return null;
+    return performedId === event.trainingSessionId ? null : performedId;
+  };
+
   const performedNameBySessionId = new Map<string, string>();
   const swappedPerformedIds = new Set<string>();
   for (const e of events) {
-    const log = e.sessionLogId ? logById.get(e.sessionLogId) : undefined;
-    if (
-      log?.trainingSessionId &&
-      e.trainingSessionId &&
-      log.trainingSessionId !== e.trainingSessionId
-    ) {
-      swappedPerformedIds.add(log.trainingSessionId);
-    }
+    const performedId = performedSessionIdOf(e);
+    if (performedId) swappedPerformedIds.add(performedId);
   }
   if (swappedPerformedIds.size > 0) {
     // supabaseAdmin: client portal reading own training_sessions (RLS exception 3)
@@ -258,28 +185,24 @@ export async function getTrainingEventDetailsForPeriod(
   // Events are already in calendar order — by date, a day's sessions in the
   // day's order (getEventsForDateRange) — so a day holding several lists each.
   return events.map((e) => {
-    const log = e.sessionLogId ? logById.get(e.sessionLogId) : undefined;
     const detail: CheckInTrainingEventDetail = {
       eventId: e.id,
       date: e.date,
       sessionName: e.sessionName,
       status: e.status,
       logStatus: e.sessionLogId ? "logged" : "not_logged",
+      // Always set, so the row itself is a `TrainingWorkoutRead`: null is "the
+      // client has not logged this", and every reader — the wizard's rows, the
+      // review's pills, the AI prompt and `summariseTraining` — reads how the
+      // workout went from here rather than from `status`.
+      completionQuality: e.log?.completionQuality ?? null,
       trainingSessionId: e.trainingSessionId,
       sessionLogId: e.sessionLogId,
     };
-    if (log) {
-      if (log.notes) detail.notes = log.notes;
-      detail.completionQuality = log.completionQuality;
-      // Resolve the performed session name only on an actual swap.
-      if (
-        log.trainingSessionId &&
-        e.trainingSessionId &&
-        log.trainingSessionId !== e.trainingSessionId
-      ) {
-        detail.performedSessionName =
-          performedNameBySessionId.get(log.trainingSessionId) ?? null;
-      }
+    if (e.log?.notes) detail.notes = e.log.notes;
+    const performedId = performedSessionIdOf(e);
+    if (performedId) {
+      detail.performedSessionName = performedNameBySessionId.get(performedId) ?? null;
     }
     return detail;
   });

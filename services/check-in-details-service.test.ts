@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { CheckIn, CheckInTrainingEventDetail } from "@/types/check-in";
 
 // Mock the spine reader + the legacy-fallback dependencies. These let us assert
-// that the derivation uses the STORED period (never a today-relative window) and
-// maps to the preserved CheckInSessionCompletion shape.
+// that the read uses the STORED period, never a today-relative window.
 const getTrainingEventDetailsForPeriodMock = vi.fn();
 const getClientByIdMock = vi.fn();
 const calculateCheckInPeriodMock = vi.fn();
@@ -33,7 +32,7 @@ vi.mock("./client-adherence-service", () => ({
 
 import { supabaseAdmin } from "./supabase-admin";
 import {
-  deriveSessionCompletionsForCheckIn,
+  getTrainingEventDetailsForCheckIn,
   getCheckInAnswers,
   getCheckInPeriodAdherence,
   insertCheckInAnswers,
@@ -58,21 +57,22 @@ const detail = (overrides: Partial<CheckInTrainingEventDetail>): CheckInTraining
   sessionName: "Push Day",
   status: "scheduled",
   logStatus: "not_logged",
+  completionQuality: null,
   trainingSessionId: "ts-1",
   sessionLogId: null,
   ...overrides,
 });
 
-describe("deriveSessionCompletionsForCheckIn", () => {
+describe("getTrainingEventDetailsForCheckIn", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("uses the STORED period window and maps to the preserved completion shape", async () => {
-    getTrainingEventDetailsForPeriodMock.mockResolvedValue([
+  it("uses the STORED period window and hands back the period's own workouts", async () => {
+    const workouts = [
       detail({
         eventId: "e-1",
-        date: "2026-05-11", // Monday
+        date: "2026-05-11",
         sessionName: "Push Day",
         status: "completed",
         logStatus: "logged",
@@ -82,14 +82,15 @@ describe("deriveSessionCompletionsForCheckIn", () => {
       }),
       detail({
         eventId: "e-2",
-        date: "2026-05-13", // Wednesday
+        date: "2026-05-13",
         sessionName: "Pull Day",
         status: "scheduled",
         logStatus: "not_logged",
       }),
-    ]);
+    ];
+    getTrainingEventDetailsForPeriodMock.mockResolvedValue(workouts);
 
-    const result = await deriveSessionCompletionsForCheckIn(baseCheckIn());
+    const result = await getTrainingEventDetailsForCheckIn(baseCheckIn());
 
     // Window comes from the STORED period — NOT a today-relative recompute.
     expect(getTrainingEventDetailsForPeriodMock).toHaveBeenCalledWith(
@@ -100,64 +101,9 @@ describe("deriveSessionCompletionsForCheckIn", () => {
     expect(calculateCheckInPeriodMock).not.toHaveBeenCalled();
     expect(getClientByIdMock).not.toHaveBeenCalled();
 
-    // Exactly the preserved keys.
-    expect(Object.keys(result[0]).sort()).toEqual(
-      ["checkInId", "completed", "completionQuality", "dayOfWeek", "id", "notes", "sessionName", "trainingSessionId"].sort()
-    );
-
-    expect(result[0]).toMatchObject({
-      id: "e-1",
-      checkInId: "ci-1",
-      trainingSessionId: "ts-1",
-      sessionName: "Push Day",
-      dayOfWeek: "monday",
-      completed: true,
-      completionQuality: "full",
-      notes: "felt strong",
-    });
-    // Mixed period: completed event counts, unlogged event does not.
-    expect(result.map((r) => r.completed)).toEqual([true, false]);
-    expect(result[1].dayOfWeek).toBe("wednesday");
-  });
-
-  it("fully-unlogged period → all completed=false", async () => {
-    getTrainingEventDetailsForPeriodMock.mockResolvedValue([
-      detail({ eventId: "e-1", status: "scheduled", logStatus: "not_logged" }),
-      detail({ eventId: "e-2", status: "missed", logStatus: "not_logged" }),
-    ]);
-
-    const result = await deriveSessionCompletionsForCheckIn(baseCheckIn());
-    expect(result.every((r) => r.completed === false)).toBe(true);
-  });
-
-  it("fully-logged period → real statuses surface", async () => {
-    getTrainingEventDetailsForPeriodMock.mockResolvedValue([
-      detail({ eventId: "e-1", status: "completed", logStatus: "logged", completionQuality: "full", sessionLogId: "l1" }),
-      detail({ eventId: "e-2", status: "completed", logStatus: "logged", completionQuality: "partial", sessionLogId: "l2" }),
-    ]);
-
-    const result = await deriveSessionCompletionsForCheckIn(baseCheckIn());
-    expect(result.map((r) => r.completed)).toEqual([true, true]);
-    expect(result.map((r) => r.completionQuality)).toEqual(["full", "partial"]);
-  });
-
-  it("tolerates a null trainingSessionId (alt-session swap / unlinked event)", async () => {
-    getTrainingEventDetailsForPeriodMock.mockResolvedValue([
-      detail({
-        eventId: "e-1",
-        trainingSessionId: null,
-        performedSessionName: "Improvised Conditioning",
-        status: "completed",
-        logStatus: "logged",
-        sessionLogId: "l1",
-      }),
-    ]);
-
-    const result = await deriveSessionCompletionsForCheckIn(baseCheckIn());
-    expect(result[0].trainingSessionId).toBeNull();
-    expect(result[0].id).toBe("e-1"); // React key falls back to eventId
-    // performedSessionName takes precedence on a swap.
-    expect(result[0].sessionName).toBe("Improvised Conditioning");
+    // Handed back as they are: no second per-check-in shape to keep in step
+    // with the one the wizard already receives.
+    expect(result).toBe(workouts);
   });
 
   it("legacy pre-038 rows (null stored period) fall back to the check-in's OWN createdAt date, never today", async () => {
@@ -173,7 +119,7 @@ describe("deriveSessionCompletionsForCheckIn", () => {
       periodEnd: undefined,
       createdAt: "2025-01-11T12:00:00Z",
     });
-    await deriveSessionCompletionsForCheckIn(legacy);
+    await getTrainingEventDetailsForCheckIn(legacy);
 
     // The period is computed from the check-in's createdAt date — not a fresh
     // `new Date()` "today" window.
@@ -184,6 +130,17 @@ describe("deriveSessionCompletionsForCheckIn", () => {
       "2025-01-05",
       "2025-01-11"
     );
+  });
+
+  it("returns nothing when the period cannot be resolved at all", async () => {
+    getClientByIdMock.mockResolvedValue({ nextCheckInDue: null });
+
+    const result = await getTrainingEventDetailsForCheckIn(
+      baseCheckIn({ periodStart: undefined, periodEnd: undefined })
+    );
+
+    expect(result).toEqual([]);
+    expect(getTrainingEventDetailsForPeriodMock).not.toHaveBeenCalled();
   });
 });
 
@@ -325,9 +282,10 @@ describe("getCheckInPeriodAdherence", () => {
   });
 
   it("does NOT carry training — the page derives its own, differently", async () => {
-    // The kernel counts full completions; the page's `summariseSessions` counts
-    // full AND partial. Both on one screen is the two-conventions problem this
-    // commit removes, so only what it replaces crosses the wire.
+    // The kernel's training half counts full completions; the page reads
+    // `summariseTraining`'s `completed` — full AND partial — over the workouts
+    // it already carries. Both on one screen is the two-conventions problem, so
+    // only what this wire replaces crosses it.
     getClientAdherenceForRangeMock.mockResolvedValue(summary);
 
     const result = await getCheckInPeriodAdherence(stored);

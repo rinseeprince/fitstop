@@ -25,9 +25,10 @@ import {
   insertCheckInAnswers,
   insertExerciseHighlights,
 } from "./check-in-details-service";
-import { getCheckInTrainingPeriodStats } from "./check-in-context-service";
 import { getNutritionPeriod } from "./nutrition-period-service";
 import { getEventsForDateRange } from "./training-event-service";
+import { eventWorkoutRead } from "@/lib/training-display-state";
+import { summariseTraining } from "@/lib/training-adherence";
 import { getDailyLogs } from "./daily-logs-service";
 import { mapEventsToScheduleDays } from "@/utils/training-event-helpers";
 import { buildPeriodSnapshot } from "@/lib/check-in/period-snapshot";
@@ -37,11 +38,11 @@ import { getClientById } from "./client-service";
 
 // Re-export split modules so existing imports continue to work
 export {
-  deriveSessionCompletionsForCheckIn,
   getCheckInAnswers,
   getCheckInExerciseHighlights,
   getCheckInPeriodAdherence,
   getCheckInWithDetails,
+  getTrainingEventDetailsForCheckIn,
   mapExerciseHighlight,
 } from "./check-in-details-service";
 
@@ -79,9 +80,9 @@ export async function foldCheckInMeasurements(rows: CheckInRow[]): Promise<Check
 // from the form body — in ONE computation: the nutrition columns and the
 // frozen nutrition rows come from the same kernel run, so they cannot
 // disagree. The columns stay populated so the AI's previous-check-in trend
-// (utils/ai-prompt-builder.ts) keeps working. The form no longer sends
-// sessionCompletions / nutritionAdherence / mood…stress; any such fields on
-// formData are ignored.
+// (utils/ai-prompt-builder.ts) keeps working. The form no longer sends the
+// training or nutrition figures, nor mood…stress; any such fields on formData
+// are ignored.
 export const submitCheckIn = async (
   clientId: string,
   formData: CheckInFormData
@@ -119,14 +120,18 @@ export const submitCheckIn = async (
   let soreness: number | undefined;
 
   if (periodStart && periodEnd) {
-    const [trainingStats, nutrition, wellnessLogs, events] = await Promise.all([
-      getCheckInTrainingPeriodStats(clientId, periodStart, periodEnd),
+    const [nutrition, wellnessLogs, events] = await Promise.all([
       getNutritionPeriod(clientId, periodStart, periodEnd),
       getDailyLogs(clientId, periodStart, periodEnd),
       getEventsForDateRange(clientId, periodStart, periodEnd),
     ]);
 
-    workoutsCompleted = trainingStats.sessionsCompleted;
+    // The stored count is FULL completions, through the one summariser
+    // (`lib/training-adherence.ts`) over the same workouts the snapshot below
+    // freezes — so the column, the frozen rows, the client's card and the
+    // coach's review cannot disagree about the week. How each workout went
+    // comes off its own log, embedded on the read.
+    workoutsCompleted = summariseTraining(events.map(eventWorkoutRead)).full;
 
     // On target over the TARGETED days: a period the coach prescribed nothing
     // for has no count to store — a day with no target is in no ratio.
@@ -182,7 +187,7 @@ export const submitCheckIn = async (
       photo_front: formData.photoFront,
       photo_side: formData.photoSide,
       photo_back: formData.photoBack,
-      // Training metrics (DERIVED from training_events.status='completed')
+      // Training metrics (DERIVED — full completions over the period's workouts)
       workouts_completed: workoutsCompleted,
       adherence_percentage: adherencePercentage,
       prs: formData.prs,

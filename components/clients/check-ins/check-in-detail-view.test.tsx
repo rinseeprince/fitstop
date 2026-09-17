@@ -48,7 +48,6 @@ const loaded = {
       status: "ai_processed",
       createdAt: "2026-08-28T10:00:00Z",
       updatedAt: "2026-08-28T10:00:00Z",
-      sessionCompletions: [],
     },
     client: { id: "client-1", name: "Jane Doe" },
   },
@@ -61,6 +60,9 @@ const loaded = {
     goalProgress: { goalIsCurrent: true },
   },
   isLoadingComparison: false,
+  // The period's workouts, beside the check-in — the review counts these, and
+  // the hook answers [] when the period cannot be resolved.
+  trainingEventDetails: [],
   // One day-form row only: the header's count must NOT come from here, since a
   // day the client only trained or only ticked a habit has no such row.
   dailyLogs: [{ date: "2026-08-22" }],

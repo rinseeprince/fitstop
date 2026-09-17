@@ -232,6 +232,18 @@ All client API endpoints require authentication except where noted.
 - `GET /api/client/check-ins/{id}` - Get specific check-in
 - `GET /api/client/check-in-context` - Get context for check-in form
 
+**The period's training.** `check-in-context` carries `trainingEventDetails`
+— one entry per workout in the period, in calendar order — and
+`trainingPeriodStats`: `{ sessionsCompleted, sessionsPartial, sessionsPlanned }`.
+`sessionsCompleted` is the workouts done in FULL, `sessionsPartial` is the rest
+of what was done (additive, 2026-09-17) and `sessionsPlanned` is every workout in
+the period. Render these; never recount them from `trainingEventDetails`. How a
+workout went is `completionQuality`, off its LOG, and `null` means the client has
+not logged it — never read it off `status` (see "RN contract — how a workout went
+is on its LOG"). `GET /api/client/check-ins/{id}` carries the same
+`trainingEventDetails` for a submitted check-in's own period, beside the stored
+`workoutsCompleted` (full completions, frozen at submit).
+
 **The nutrition summary.** `check-in-context` carries `nutritionSummary`
 (additive, 2026-09-11) — the period's nutrition figures from the server's one
 kernel: `loggedDays` / `periodDays` (coverage), `onTarget` / `targetedDays`
@@ -505,12 +517,19 @@ type CheckIn = {
     thighs?: number
   }
   
-  // Training Data
-  sessionCompletions?: Array<{
-    trainingSessionId: string
+  // Training — the period's own workouts, on the single-check-in read only
+  // (`GET /api/client/check-ins/{id}`), never on the history LIST.
+  trainingEventDetails?: Array<{
+    eventId: string
+    date: string            // YYYY-MM-DD, the day the workout was on
     sessionName: string
-    completed: boolean
-    completionQuality?: "full" | "partial" | "skipped"
+    status: "scheduled" | "completed" | "partial" | "skipped" | "missed"
+    logStatus: "logged" | "not_logged"
+    completionQuality: "full" | "partial" | "skipped" | null
+    trainingSessionId: string | null
+    sessionLogId: string | null
+    notes?: string
+    performedSessionName?: string | null  // set only on a session swap
   }>
   
   // Photos
@@ -632,8 +651,14 @@ These are **absolute calorie deltas from `lib/constants.ts`, not percentages.**
   check-ins submitted before carry the older figures and were not backfilled
 
 **Training Adherence**:
-- Based on sessions completed / sessions planned
-- Calculated weekly for check-ins
+- Counted over every calendar workout in the period, from the quality on each
+  workout's own LOG — one server-side summariser, so the client's figure and the
+  coach's review cannot disagree about a week
+- `CheckIn.workoutsCompleted`, stored at submit, is the workouts done in FULL.
+  A partly completed workout is not in it: `trainingPeriodStats.sessionsPartial`
+  on `check-in-context` is how many there were
+- The coach's review counts full AND partial over the same denominator, so the
+  two surfaces can legitimately read 3/5 and 4/5 for one week
 
 ### Habit Streaks
 ```typescript

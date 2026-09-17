@@ -8,7 +8,7 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 import type { CheckIn, GetCheckInComparisonResponse } from "@/types/check-in";
 import { formatDeltaValue, type DeltaInfo } from "./delta-format";
-import type { SessionSummary } from "@/lib/check-in/adherence";
+import type { TrainingAdherence } from "@/lib/training-adherence";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 import { useUnits } from "@/contexts/units-context";
 import { formatWeight } from "@/utils/unit-conversions";
@@ -22,7 +22,7 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 type KPIRibbonProps = {
   checkIn: CheckIn;
   comparisonData: GetCheckInComparisonResponse | null;
-  adherence: SessionSummary;
+  adherence: TrainingAdherence;
   /**
    * The period's nutrition figures, server-computed. `null` on a legacy row
    * whose reporting period cannot be resolved — the cell then reads its empty
@@ -120,25 +120,26 @@ export const KPIRibbon = ({
     nutritionPct >= 80 ? "success" :
     nutritionPct >= 50 ? "warning" : "destructive";
 
-  // Training comes from `summariseSessions` — completed (full + PARTIAL) over
-  // prescribed. One derivation feeds this cell, the training section and the AI
-  // prompt; the stored `check_ins.workouts_completed` counts full only and is
-  // deliberately not read here. It is the RN wire's column, and rendering it
-  // beside a derived figure is what put "3/5" on this strip above an AI summary
-  // saying "completed only 2 out of 5".
+  // Training comes from `summariseTraining` (`lib/training-adherence.ts`) —
+  // completed (full + PARTIAL) over planned. One derivation feeds this cell, the
+  // training section and the AI prompt; the stored
+  // `check_ins.workouts_completed` counts full only and is deliberately not read
+  // here. It is the RN wire's column, and rendering it beside a derived figure
+  // is what put "3/5" on this strip above an AI summary saying "completed only
+  // 2 out of 5".
   //
   // No fallback to that column when nothing was prescribed: a bare count with no
   // denominator, computed a different way, is not the same statistic.
   const trainingPct = adherence.pct;
   const trainingValue =
-    adherence.prescribed > 0 ? `${adherence.completed}/${adherence.prescribed}` : "--";
+    adherence.planned > 0 ? `${adherence.completed}/${adherence.planned}` : "--";
 
   // The fraction already says how many of the prescribed sessions were done. What
   // it cannot say is that one of those was only partly completed — so the
   // sub-line qualifies the numerator, names what was skipped, and never reads
   // "All complete" over a missed session.
   const trainingSubText =
-    adherence.prescribed === 0
+    adherence.planned === 0
       ? "No sessions prescribed"
       : [
           adherence.partial > 0 ? `${adherence.partial} partial` : null,

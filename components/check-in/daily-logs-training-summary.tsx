@@ -1,40 +1,32 @@
 "use client";
 
-import { useMemo } from "react";
 import { CheckCircle2, Activity, Utensils, Flame, TrendingUp, TrendingDown } from "lucide-react";
-import type { DailyLog } from "@/types/daily-log";
+import type { CheckInTrainingPeriodStats } from "@/types/check-in";
 import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
-import { aggregateDailyLogs } from "@/utils/daily-logs-aggregation";
-
-type TrainingPeriodStats = {
-  sessionsCompleted: number;
-  sessionsPlanned: number;
-};
 
 type DailyLogsTrainingSummaryProps = {
-  dailyLogs: DailyLog[];
-  trainingPeriodStats?: TrainingPeriodStats;
+  /**
+   * The period's training, counted server-side by the ONE summariser
+   * (`lib/training-adherence.ts`). Nothing is counted here: this block used to
+   * fall back to an aggregation over `training_logs`, a table nothing has
+   * written since the Daily Pulse was retired, so the fallback could only ever
+   * report zero. `null` on a wire that carries no stats — the figures then read
+   * as a dash rather than as nothing done.
+   */
+  trainingPeriodStats: CheckInTrainingPeriodStats | null;
   /**
    * The period's nutrition figures from the ONE kernel, off the context wire.
    * Rendered as they come: the food log carries no target, so nothing about
-   * nutrition can be counted from `dailyLogs` here. Absent on a wire that
+   * nutrition can be counted from the client's logs here. Absent on a wire that
    * predates the key — the block is then not shown at all.
    */
   nutritionSummary?: NutritionPeriodSummary | null;
 };
 
 export const DailyLogsTrainingSummary = ({
-  dailyLogs,
   trainingPeriodStats,
   nutritionSummary = null,
 }: DailyLogsTrainingSummaryProps) => {
-  const aggregated = useMemo(() => aggregateDailyLogs(dailyLogs), [dailyLogs]);
-
-  // Use session_logs-based stats when available (same source as coach-side hero),
-  // fall back to daily_logs aggregation for backward compatibility
-  const sessionsCompleted = trainingPeriodStats?.sessionsCompleted ?? aggregated.sessionsCompleted;
-  const totalPlannedTrainingSessions = trainingPeriodStats?.sessionsPlanned ?? aggregated.totalPlannedSessions;
-
   const getSessionCompletionColor = (completed: number, total: number) => {
     if (total === 0) return "text-muted-foreground";
     const percentage = completed / total;
@@ -77,25 +69,23 @@ export const DailyLogsTrainingSummary = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Sessions Completed</span>
-            <span className={`text-sm font-semibold ${getSessionCompletionColor(sessionsCompleted, totalPlannedTrainingSessions)}`}>
-              {sessionsCompleted}/{totalPlannedTrainingSessions}
-            </span>
+            {trainingPeriodStats ? (
+              <span className={`text-sm font-semibold ${getSessionCompletionColor(trainingPeriodStats.sessionsCompleted, trainingPeriodStats.sessionsPlanned)}`}>
+                {trainingPeriodStats.sessionsCompleted}/{trainingPeriodStats.sessionsPlanned}
+              </span>
+            ) : (
+              <span className="text-sm text-muted-foreground">--</span>
+            )}
           </div>
 
-          {aggregated.totalPlannedActivities > 0 && (
+          {/* The figure above counts the sessions done in FULL, so a partly
+              completed one is missing from it. Saying how many there were is
+              what keeps the number honest — the rows above already show which. */}
+          {trainingPeriodStats && trainingPeriodStats.sessionsPartial > 0 && (
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Planned Activities</span>
-              <span className="text-sm font-semibold">
-                {aggregated.plannedActivitiesCompleted}/{aggregated.totalPlannedActivities} completed
-              </span>
-            </div>
-          )}
-
-          {aggregated.unplannedActivitiesCount > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Extra Activities</span>
-              <span className="text-sm font-semibold text-success">
-                +{aggregated.unplannedActivitiesCount} added
+              <span className="text-sm text-muted-foreground">Partly Completed</span>
+              <span className="text-sm font-semibold text-warning">
+                {trainingPeriodStats.sessionsPartial}
               </span>
             </div>
           )}

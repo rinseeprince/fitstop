@@ -8,56 +8,41 @@ vi.mock("./supabase-admin", () => ({
   },
 }));
 
-// Mock the training-event-service: we exercise getCheckInTrainingPeriodStats /
-// getTrainingEventDetailsForPeriod, which call getEventsForDateRange and
-// countEventsInRange — stub those so the only real query is the session_logs
-// batch read (and the completed-events count) against the mocked supabaseAdmin.
+// Mock the training-event-service: we exercise getTrainingEventDetailsForPeriod,
+// which calls getEventsForDateRange — the events arrive with their logs already
+// embedded, so the only query left in the function is the performed-session
+// name lookup on a swap.
 vi.mock("./training-event-service", () => ({
   getEventsForDateRange: vi.fn(),
-  countEventsInRange: vi.fn(),
 }));
 
 import { supabaseAdmin } from "./supabase-admin";
-import { getEventsForDateRange, countEventsInRange } from "./training-event-service";
+import { getEventsForDateRange } from "./training-event-service";
 import {
-  getCheckInTrainingPeriodStats,
   getExerciseSummariesForPeriod,
   getTrainingEventDetailsForPeriod,
 } from "./check-in-context-service";
 
 const mockFrom = vi.mocked(supabaseAdmin.from);
 const mockGetEvents = vi.mocked(getEventsForDateRange);
-const mockCountEvents = vi.mocked(countEventsInRange);
+
+/** The log a calendar read embeds on a workout. */
+const log = (overrides: {
+  id?: string;
+  completionQuality?: "full" | "partial" | "skipped";
+  performedSessionId?: string | null;
+  notes?: string | null;
+}) => ({
+  id: overrides.id ?? "log-1",
+  completionQuality: overrides.completionQuality ?? "full",
+  performedSessionId:
+    overrides.performedSessionId === undefined ? null : overrides.performedSessionId,
+  notes: overrides.notes ?? null,
+});
 
 const PERIOD_START = "2026-04-06";
 const PERIOD_END = "2026-04-12";
 const CLIENT = "client-1";
-
-// Build a chained query whose terminal (.lte) resolves to `{ count }`. Used for
-// the completed-events count head query in getCheckInTrainingPeriodStats.
-function countQuery(count: number | null, error: { message: string } | null = null) {
-  const q: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "gte"]) q[m] = vi.fn(() => q);
-  q.lte = vi.fn(() => Promise.resolve({ count, error }));
-  return q;
-}
-
-// Build a chained query whose terminal (.in) resolves to `{ data }`. Used for
-// the batched session_logs read in getTrainingEventDetailsForPeriod.
-function logsQuery(
-  data: Array<{
-    id: string;
-    notes: string | null;
-    completion_quality: string;
-    training_session_id: string | null;
-  }> | null,
-  error: { message: string } | null = null,
-) {
-  const q: Record<string, unknown> = {};
-  q.select = vi.fn(() => q);
-  q.in = vi.fn(() => Promise.resolve({ data, error }));
-  return q;
-}
 
 // Build a chained query whose terminal (.in) resolves to `{ data }`. Used for
 // the batched training_sessions name read on a swap.
@@ -110,45 +95,10 @@ describe("check-in-context-service", () => {
   });
 
   // =========================================================================
-  // getCheckInTrainingPeriodStats — counts training_events.status='completed'
-  // =========================================================================
-  describe("getCheckInTrainingPeriodStats", () => {
-    it("counts only completed events and preserves { sessionsCompleted, sessionsPlanned }", async () => {
-      mockFrom.mockReturnValue(countQuery(2) as never);
-      mockCountEvents.mockResolvedValue(4);
-
-      const result = await getCheckInTrainingPeriodStats(CLIENT, PERIOD_START, PERIOD_END);
-
-      expect(result).toEqual({ sessionsCompleted: 2, sessionsPlanned: 4 });
-      // Queries training_events, filtered to status='completed' over the period.
-      expect(mockFrom).toHaveBeenCalledWith("training_events");
-      expect(mockCountEvents).toHaveBeenCalledWith(CLIENT, PERIOD_START, PERIOD_END);
-    });
-
-    it("returns zero completed when there are no completed events", async () => {
-      mockFrom.mockReturnValue(countQuery(0) as never);
-      mockCountEvents.mockResolvedValue(3);
-
-      const result = await getCheckInTrainingPeriodStats(CLIENT, PERIOD_START, PERIOD_END);
-
-      expect(result).toEqual({ sessionsCompleted: 0, sessionsPlanned: 3 });
-    });
-
-    it("treats a null count as zero", async () => {
-      mockFrom.mockReturnValue(countQuery(null) as never);
-      mockCountEvents.mockResolvedValue(0);
-
-      const result = await getCheckInTrainingPeriodStats(CLIENT, PERIOD_START, PERIOD_END);
-
-      expect(result).toEqual({ sessionsCompleted: 0, sessionsPlanned: 0 });
-    });
-  });
-
-  // =========================================================================
-  // getTrainingEventDetailsForPeriod — single-source per-event detail
+  // getTrainingEventDetailsForPeriod — single-source per-workout detail
   // =========================================================================
   describe("getTrainingEventDetailsForPeriod", () => {
-    it("returns [] and does not query session_logs when there are no events", async () => {
+    it("returns [] and queries nothing else when there are no events", async () => {
       mockGetEvents.mockResolvedValue([]);
 
       const result = await getTrainingEventDetailsForPeriod(CLIENT, PERIOD_START, PERIOD_END);
@@ -157,7 +107,7 @@ describe("check-in-context-service", () => {
       expect(mockFrom).not.toHaveBeenCalled();
     });
 
-    it("emits status + name for a completed event with a linked log", async () => {
+    it("emits status + name + the log's quality for a logged workout", async () => {
       const ev = createMockTrainingEvent({
         id: "ev-1",
         date: "2026-04-08",
@@ -165,16 +115,14 @@ describe("check-in-context-service", () => {
         status: "completed",
         sessionLogId: "log-1",
         trainingSessionId: "sess-1",
+        log: log({ performedSessionId: "sess-1", notes: "felt strong" }),
       });
       mockGetEvents.mockResolvedValue([ev]);
-      mockFrom.mockReturnValue(
-        logsQuery([
-          { id: "log-1", notes: "felt strong", completion_quality: "full", training_session_id: "sess-1" },
-        ]) as never,
-      );
 
       const result = await getTrainingEventDetailsForPeriod(CLIENT, PERIOD_START, PERIOD_END);
 
+      // The quality rides the events read — no second query for the logs.
+      expect(mockFrom).not.toHaveBeenCalled();
       expect(result).toEqual([
         {
           eventId: "ev-1",
@@ -198,13 +146,14 @@ describe("check-in-context-service", () => {
         status: "skipped",
         sessionLogId: "log-2",
         trainingSessionId: "sess-2",
+        log: log({
+          id: "log-2",
+          completionQuality: "skipped",
+          performedSessionId: "sess-2",
+          notes: "sick",
+        }),
       });
       mockGetEvents.mockResolvedValue([ev]);
-      mockFrom.mockReturnValue(
-        logsQuery([
-          { id: "log-2", notes: "sick", completion_quality: "skipped", training_session_id: "sess-2" },
-        ]) as never,
-      );
 
       const result = await getTrainingEventDetailsForPeriod(CLIENT, PERIOD_START, PERIOD_END);
 
@@ -217,7 +166,7 @@ describe("check-in-context-service", () => {
       });
     });
 
-    it("marks an event with no session_log as not_logged with no notes/quality", async () => {
+    it("marks a workout with no log as not_logged, with a null quality and no notes", async () => {
       const ev = createMockTrainingEvent({
         id: "ev-3",
         date: "2026-04-10",
@@ -230,7 +179,6 @@ describe("check-in-context-service", () => {
 
       const result = await getTrainingEventDetailsForPeriod(CLIENT, PERIOD_START, PERIOD_END);
 
-      // No log ids → no session_logs read at all.
       expect(mockFrom).not.toHaveBeenCalled();
       expect(result[0]).toEqual({
         eventId: "ev-3",
@@ -240,12 +188,13 @@ describe("check-in-context-service", () => {
         logStatus: "not_logged",
         trainingSessionId: "sess-3",
         sessionLogId: null,
+        // Always present, so the row itself is a workout read.
+        completionQuality: null,
       });
       expect(result[0]).not.toHaveProperty("notes");
-      expect(result[0]).not.toHaveProperty("completionQuality");
     });
 
-    it("returns details in date order, left-joining only the events that have logs", async () => {
+    it("returns details in calendar order, each carrying its own log's quality", async () => {
       const evA = createMockTrainingEvent({
         id: "ev-a",
         date: "2026-04-06",
@@ -253,6 +202,7 @@ describe("check-in-context-service", () => {
         status: "completed",
         sessionLogId: "log-a",
         trainingSessionId: "sess-a",
+        log: log({ id: "log-a", performedSessionId: "sess-a" }),
       });
       const evB = createMockTrainingEvent({
         id: "ev-b",
@@ -269,27 +219,34 @@ describe("check-in-context-service", () => {
         status: "partial",
         sessionLogId: "log-c",
         trainingSessionId: "sess-c",
+        log: log({
+          id: "log-c",
+          completionQuality: "partial",
+          performedSessionId: "sess-c",
+          notes: "tired",
+        }),
       });
       // getEventsForDateRange already returns ordered-by-date events.
       mockGetEvents.mockResolvedValue([evA, evB, evC]);
-      const logsQ = logsQuery([
-        { id: "log-a", notes: null, completion_quality: "full", training_session_id: "sess-a" },
-        { id: "log-c", notes: "tired", completion_quality: "partial", training_session_id: "sess-c" },
-      ]);
-      mockFrom.mockReturnValue(logsQ as never);
 
       const result = await getTrainingEventDetailsForPeriod(CLIENT, PERIOD_START, PERIOD_END);
 
       expect(result.map((d) => d.eventId)).toEqual(["ev-a", "ev-b", "ev-c"]);
-      // Only the two events with logs were batched in the IN clause.
-      expect(logsQ.in).toHaveBeenCalledWith("id", ["log-a", "log-c"]);
-      // Completed-with-log but null notes → completionQuality set, no notes key.
+      // Logged with null notes → quality set, no notes key.
       expect(result[0]).toMatchObject({ logStatus: "logged", completionQuality: "full" });
       expect(result[0]).not.toHaveProperty("notes");
-      // Unlogged middle event.
-      expect(result[1]).toMatchObject({ logStatus: "not_logged", status: "scheduled" });
+      // Unlogged middle workout.
+      expect(result[1]).toMatchObject({
+        logStatus: "not_logged",
+        status: "scheduled",
+        completionQuality: null,
+      });
       // Partial-with-log.
-      expect(result[2]).toMatchObject({ logStatus: "logged", completionQuality: "partial", notes: "tired" });
+      expect(result[2]).toMatchObject({
+        logStatus: "logged",
+        completionQuality: "partial",
+        notes: "tired",
+      });
     });
 
     it("resolves performedSessionName on a swap (performed session ≠ prescribed)", async () => {
@@ -300,24 +257,17 @@ describe("check-in-context-service", () => {
         status: "completed",
         sessionLogId: "log-1",
         trainingSessionId: "sess-prescribed",
+        log: log({ performedSessionId: "sess-performed" }),
       });
       mockGetEvents.mockResolvedValue([ev]);
-      // First .from → session_logs (performed session = sess-performed, a swap).
-      // Second .from → training_sessions name lookup for the performed session.
-      mockFrom
-        .mockReturnValueOnce(
-          logsQuery([
-            { id: "log-1", notes: null, completion_quality: "full", training_session_id: "sess-performed" },
-          ]) as never,
-        )
-        .mockReturnValueOnce(
-          sessionNamesQuery([{ id: "sess-performed", name: "Pull Day" }]) as never,
-        );
+      mockFrom.mockReturnValue(
+        sessionNamesQuery([{ id: "sess-performed", name: "Pull Day" }]) as never,
+      );
 
       const result = await getTrainingEventDetailsForPeriod(CLIENT, PERIOD_START, PERIOD_END);
 
-      expect(mockFrom).toHaveBeenNthCalledWith(1, "session_logs");
-      expect(mockFrom).toHaveBeenNthCalledWith(2, "training_sessions");
+      expect(mockFrom).toHaveBeenCalledTimes(1);
+      expect(mockFrom).toHaveBeenCalledWith("training_sessions");
       expect(result[0]).toMatchObject({
         sessionLogId: "log-1",
         trainingSessionId: "sess-prescribed",
@@ -333,19 +283,13 @@ describe("check-in-context-service", () => {
         status: "completed",
         sessionLogId: "log-1",
         trainingSessionId: "sess-1",
+        log: log({ performedSessionId: "sess-1" }),
       });
       mockGetEvents.mockResolvedValue([ev]);
-      mockFrom.mockReturnValue(
-        logsQuery([
-          { id: "log-1", notes: null, completion_quality: "full", training_session_id: "sess-1" },
-        ]) as never,
-      );
 
       const result = await getTrainingEventDetailsForPeriod(CLIENT, PERIOD_START, PERIOD_END);
 
-      // Only the session_logs read — no training_sessions name lookup.
-      expect(mockFrom).toHaveBeenCalledTimes(1);
-      expect(mockFrom).toHaveBeenCalledWith("session_logs");
+      expect(mockFrom).not.toHaveBeenCalled();
       expect(result[0]).not.toHaveProperty("performedSessionName");
     });
   });

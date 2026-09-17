@@ -31,9 +31,47 @@ function summary(overrides: Partial<NutritionPeriodSummary> = {}): NutritionPeri
 
 afterEach(cleanup);
 
+describe("the wizard's training summary renders the server's figures", () => {
+  it("states the full completions over the week's workouts, and the partials beside them", () => {
+    render(
+      <DailyLogsTrainingSummary
+        trainingPeriodStats={{ sessionsCompleted: 3, sessionsPartial: 1, sessionsPlanned: 5 }}
+        nutritionSummary={null}
+      />
+    );
+
+    expect(screen.getByText("3/5")).toBeInTheDocument();
+    expect(screen.getByText("Partly Completed")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("omits the partial line when every workout done was done in full", () => {
+    render(
+      <DailyLogsTrainingSummary
+        trainingPeriodStats={{ sessionsCompleted: 5, sessionsPartial: 0, sessionsPlanned: 5 }}
+        nutritionSummary={null}
+      />
+    );
+
+    expect(screen.getByText("5/5")).toBeInTheDocument();
+    expect(screen.queryByText("Partly Completed")).not.toBeInTheDocument();
+  });
+
+  // The fallback this block used to carry read `training_logs`, which nothing
+  // has written since the Daily Pulse was retired, so it could only ever report
+  // zero of zero under a week the client had actually trained.
+  it("counts nothing of its own — with no figures it shows a dash, not zero", () => {
+    render(<DailyLogsTrainingSummary trainingPeriodStats={null} nutritionSummary={null} />);
+
+    expect(screen.getByText("Training Summary")).toBeInTheDocument();
+    expect(screen.getByText("--")).toBeInTheDocument();
+    expect(screen.queryByText("0/0")).not.toBeInTheDocument();
+  });
+});
+
 describe("the wizard's nutrition summary renders the kernel's figures", () => {
   it("days logged over the period, days on target over the targeted days, the averages over their own days", () => {
-    render(<DailyLogsTrainingSummary dailyLogs={[]} nutritionSummary={summary()} />);
+    render(<DailyLogsTrainingSummary trainingPeriodStats={null} nutritionSummary={summary()} />);
 
     expect(screen.getByText("7/7 days")).toBeInTheDocument();
     expect(screen.getByText("6/6 days")).toBeInTheDocument();
@@ -45,7 +83,7 @@ describe("the wizard's nutrition summary renders the kernel's figures", () => {
   it("says No targets set when the coach prescribed nothing — never 0/7 in red", () => {
     render(
       <DailyLogsTrainingSummary
-        dailyLogs={[]}
+        trainingPeriodStats={null}
         nutritionSummary={summary({
           loggedDays: 1, targetedDays: 0, judgedDays: 0, loggedNoTargetDays: 1, onTarget: 0,
           daysOnTargetPct: null, targetTotals: null, consumedOnTargetedDays: null,
@@ -64,11 +102,11 @@ describe("the wizard's nutrition summary renders the kernel's figures", () => {
   });
 
   it("shows the net only over the judged days, and no nutrition block without the wire's figures", () => {
-    const net = render(<DailyLogsTrainingSummary dailyLogs={[]} nutritionSummary={summary({ netCaloriesOnJudgedDays: 650 })} />);
+    const net = render(<DailyLogsTrainingSummary trainingPeriodStats={null} nutritionSummary={summary({ netCaloriesOnJudgedDays: 650 })} />);
     expect(screen.getByText(/\+650 cal/)).toBeInTheDocument();
     net.unmount();
 
-    render(<DailyLogsTrainingSummary dailyLogs={[]} nutritionSummary={null} />);
+    render(<DailyLogsTrainingSummary trainingPeriodStats={null} nutritionSummary={null} />);
     expect(screen.queryByText("Nutrition Summary")).not.toBeInTheDocument();
     expect(screen.getByText("Training Summary")).toBeInTheDocument();
   });

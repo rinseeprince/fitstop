@@ -90,7 +90,14 @@ export type CheckInTrainingEventDetail = {
   status: TrainingEventStatus;
   logStatus: TrainingEventLogStatus;
   notes?: string;
-  completionQuality?: SessionCompletionQuality;
+  /**
+   * How the workout went, off its LOG — `null` when the client has not logged
+   * it. Always present so the row IS a `TrainingWorkoutRead`
+   * (`lib/training-display-state.ts`): every reader of it — the wizard's rows,
+   * the review's pills, the AI prompt's lines and the one summariser — takes
+   * the quality from here and never from `status`.
+   */
+  completionQuality: SessionCompletionQuality | null;
   trainingSessionId: string | null;
   // The linked session_log id (null when the event was never logged). Used by
   // the AI prompt to join per-exercise top-set lines (keyed by session_log_id)
@@ -99,15 +106,18 @@ export type CheckInTrainingEventDetail = {
   performedSessionName?: string | null;
 };
 
-export type CheckInSessionCompletion = {
-  id?: string;
-  checkInId?: string;
-  trainingSessionId: string | null; // API/UI shape; DERIVED from training_events.status + session_logs (no backing table)
-  sessionName: string;
-  dayOfWeek?: DayOfWeek;
-  completed: boolean;
-  completionQuality?: SessionCompletionQuality;
-  notes?: string;
+/**
+ * The check-in period's training, counted once by `summariseTraining`
+ * (`lib/training-adherence.ts`) over the per-workout detail above.
+ *
+ * `sessionsCompleted` is FULL completions; `sessionsPartial` is the rest of
+ * what was done, beside it rather than inside it, so the client's figure and
+ * its breakdown come out of one run.
+ */
+export type CheckInTrainingPeriodStats = {
+  sessionsCompleted: number;
+  sessionsPartial: number;
+  sessionsPlanned: number;
 };
 
 export type ExerciseHighlightType = "pr" | "struggle" | "note";
@@ -171,7 +181,6 @@ export type CheckInNutritionContext = {
 
 // Enhanced training metrics including new structured data
 export type EnhancedTrainingMetrics = TrainingMetrics & {
-  sessionCompletions?: CheckInSessionCompletion[];
   exerciseHighlights?: CheckInExerciseHighlight[];
   nutritionAdherence?: NutritionAdherence;
 };
@@ -630,7 +639,7 @@ export type CheckInContextResponse = {
   periodStart?: string;
   periodEnd?: string;
   periodDays?: number;
-  trainingPeriodStats?: { sessionsCompleted: number; sessionsPlanned: number };
+  trainingPeriodStats?: CheckInTrainingPeriodStats;
   /**
    * Additive (2026-09-11): the period's nutrition figures from the ONE kernel
    * (`utils/nutrition-period-summary.ts`) — days logged over the period, days
@@ -639,7 +648,7 @@ export type CheckInContextResponse = {
    * no target.
    */
   nutritionSummary?: NutritionPeriodSummary;
-  /** Additive (Session 6.2): per-event training detail from `training_events`. */
+  /** Additive (Session 6.2): per-workout training detail from `training_events`. */
   trainingEventDetails?: CheckInTrainingEventDetail[];
   /**
    * Additive (C6a): the coach's per-client form. `fields` is resolved and never
@@ -884,7 +893,6 @@ export type GetCheckInComparisonResponse = {
 
 // Check-in with all related details for AI processing
 export type CheckInWithDetails = CheckIn & {
-  sessionCompletions?: CheckInSessionCompletion[];
   exerciseHighlights?: CheckInExerciseHighlight[];
   /**
    * Answers to the coach's custom questions, joined to their prompts. On

@@ -2,9 +2,12 @@
 
 import { CheckCircle2, CircleDashed, XCircle, Trophy } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { CheckInWithDetails } from "@/types/check-in";
-import type { SessionStatus } from "@/lib/check-in/adherence";
-import { classifySession } from "@/lib/check-in/adherence";
+import type {
+  CheckInExerciseHighlight,
+  CheckInTrainingEventDetail,
+} from "@/types/check-in";
+import type { TrainingAdherenceStatus } from "@/lib/training-adherence";
+import { trainingAdherenceStatus } from "@/lib/training-adherence";
 import { cn } from "@/lib/utils";
 import { useUnits } from "@/contexts/units-context";
 import { formatLoad } from "@/utils/unit-conversions";
@@ -15,34 +18,28 @@ import {
 } from "@/components/clients/training/program-builder/builder-tokens";
 
 type TrainingSectionProps = {
-  checkIn: CheckInWithDetails;
+  /** The period's workouts, in calendar order — the review read's own rows. */
+  workouts: CheckInTrainingEventDetail[];
+  highlights: CheckInExerciseHighlight[];
 };
 
-const DAY_LABEL: Record<string, string> = {
-  monday: "Mon",
-  tuesday: "Tue",
-  wednesday: "Wed",
-  thursday: "Thu",
-  friday: "Fri",
-  saturday: "Sat",
-  sunday: "Sun",
-};
+// The workout's day, from its own date. Parsed at local noon so the weekday is
+// stable across a DST boundary.
+const dayLabel = (date: string) =>
+  new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" });
 
 // Teal Summit two-colour status: teal completed, amber partial, muted missed (no red).
-const STATUS_META: Record<SessionStatus, { label: string; icon: LucideIcon; pill: string }> = {
-  completed: { label: "Completed", icon: CheckCircle2, pill: "bg-[rgba(13,148,136,0.08)] text-[#0d9488]" },
+const STATUS_META: Record<TrainingAdherenceStatus, { label: string; icon: LucideIcon; pill: string }> = {
+  full: { label: "Completed", icon: CheckCircle2, pill: "bg-[rgba(13,148,136,0.08)] text-[#0d9488]" },
   partial: { label: "Partial", icon: CircleDashed, pill: "bg-[rgba(245,158,11,0.07)] text-[#d97706]" },
   missed: { label: "Missed", icon: XCircle, pill: "bg-[rgba(13,148,136,0.04)] text-[#93b0b4]" },
 };
 
-export const TrainingSection = ({ checkIn }: TrainingSectionProps) => {
+export const TrainingSection = ({ workouts, highlights }: TrainingSectionProps) => {
   const { preference } = useUnits();
-  const sessions = checkIn.sessionCompletions ?? [];
-  const prHighlights = (checkIn.exerciseHighlights ?? []).filter(
-    (h) => h.highlightType === "pr"
-  );
+  const prHighlights = highlights.filter((h) => h.highlightType === "pr");
 
-  if (sessions.length === 0 && prHighlights.length === 0) return null;
+  if (workouts.length === 0 && prHighlights.length === 0) return null;
 
   return (
     // A flex ITEM, not a grid cell: the page puts this beside its sibling, and
@@ -54,28 +51,28 @@ export const TrainingSection = ({ checkIn }: TrainingSectionProps) => {
           completed-over-prescribed figure once (owner, 2026-09-04). */}
       <SectionLabel label="Training" />
       <div className="flex-1 rounded-[6px] bg-white p-5">
-        {sessions.length > 0 && (
+        {workouts.length > 0 && (
           <div className="flex flex-col gap-2">
-            {sessions.map((session, i) => {
-              const status = classifySession(session);
-              const meta = STATUS_META[status];
+            {workouts.map((workout) => {
+              // The pill reads the quality off the workout's LOG, through the
+              // same classifier the count above it is summed from.
+              const meta = STATUS_META[trainingAdherenceStatus(workout)];
               const Icon = meta.icon;
-              const day = session.dayOfWeek ? DAY_LABEL[session.dayOfWeek] : undefined;
               return (
                 <div
-                  key={session.id ?? `${session.sessionName}-${i}`}
+                  key={workout.eventId}
                   className="flex items-center gap-3 px-3 py-2.5 bg-[rgba(13,148,136,0.03)] rounded-[6px]"
                 >
-                  {day && (
-                    <span className={cn(LABEL_CLASS, "w-8 shrink-0")}>
-                      {day}
-                    </span>
-                  )}
+                  <span className={cn(LABEL_CLASS, "w-8 shrink-0")}>
+                    {dayLabel(workout.date)}
+                  </span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium truncate text-[#0c1a1e]">{session.sessionName}</div>
-                    {session.notes && (
+                    <div className="text-[13px] font-medium truncate text-[#0c1a1e]">
+                      {workout.performedSessionName ?? workout.sessionName}
+                    </div>
+                    {workout.notes && (
                       <div className="text-xs text-[#93b0b4] italic truncate">
-                        &ldquo;{session.notes}&rdquo;
+                        &ldquo;{workout.notes}&rdquo;
                       </div>
                     )}
                   </div>

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildCheckInAnalysisPrompt } from "./ai-prompt-builder";
-import { summariseSessions } from "@/lib/check-in/adherence";
+import { summariseTraining } from "@/lib/training-adherence";
 import type { CheckInWithDetails, CheckInTrainingEventDetail } from "@/types/check-in";
 
 // Minimal current check-in: only the fields the Training block / header read.
@@ -56,6 +56,7 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
         sessionName: "Pull Day",
         status: "scheduled",
         logStatus: "not_logged",
+        completionQuality: null,
         trainingSessionId: "sess-3",
         sessionLogId: null,
       },
@@ -169,23 +170,14 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
     expect(training).not.toContain("reason:");
   });
 
-  // The count is DERIVED from the period's own sessions (full + PARTIAL over
-  // prescribed) — the same figure the KPI ribbon and the comparison pane render.
-  // It used to print `current.workoutsCompleted`, the stored full-only column,
-  // which is how the summary came to say "completed only 2 out of 5" beneath a
+  // The period's workouts are the ONE source of a training figure: there is no
+  // second branch off the check-in row to fall back to. The stored column is
+  // full-only and a different statistic, and printing it beside the derived
+  // figure is how the summary came to say "completed only 2 out of 5" beneath a
   // strip reading 3/5 for the same week.
-  it("derives the count from the period's sessions when trainingEventDetails is empty", () => {
+  it("has no second source — an empty week prints no count and never the stored column", () => {
     const prompt = buildCheckInAnalysisPrompt(
-      checkIn({
-        workoutsCompleted: 2,
-        sessionCompletions: [
-          { completionQuality: "full" },
-          { completionQuality: "full" },
-          { completionQuality: "partial" },
-          { completionQuality: "skipped" },
-          { completionQuality: "skipped" },
-        ] as never,
-      }),
+      checkIn({ workoutsCompleted: 2 }),
       [],
       "Jane",
       undefined,
@@ -196,11 +188,9 @@ describe("buildCheckInAnalysisPrompt — training block (Session 6.2)", () => {
       null,
       [],
     );
-    const training = trainingSection(prompt);
 
-    expect(training).toContain("- Workouts completed: 3/5 (1 partial, 2 missed)");
-    // The stored full-only column must not appear beside it.
-    expect(training).not.toContain("Workouts Completed: 2");
+    expect(prompt).not.toContain("Workouts completed");
+    expect(prompt).not.toContain("Workouts Completed: 2");
   });
 
   it("prints no count at all when the period has no sessions", () => {
@@ -614,23 +604,18 @@ describe("the prompt's session count agrees with every other surface", () => {
     expect(trainingSection(prompt)).toContain("- Sessions: 3/5 completed (1 partial, 2 missed)");
   });
 
-  it("matches summariseSessions exactly — one kernel, not a second spelling", () => {
-    const kernel = summariseSessions(
-      week.map((d) => ({
-        completed: d.status === "completed",
-        completionQuality: d.completionQuality,
-      })) as never,
-    );
+  it("matches summariseTraining exactly — one summariser, not a second spelling", () => {
+    const summary = summariseTraining(week);
     const prompt = buildCheckInAnalysisPrompt(
       checkIn(), [], "Jane",
       undefined, undefined, undefined, undefined, null, null, week,
     );
 
-    // The ribbon renders `${completed}/${prescribed}` from this same kernel.
+    // The ribbon renders `${completed}/${planned}` from this same summariser.
     expect(trainingSection(prompt)).toContain(
-      `- Sessions: ${kernel.completed}/${kernel.prescribed} completed`,
+      `- Sessions: ${summary.completed}/${summary.planned} completed`,
     );
-    expect(kernel.completed).toBe(3);
+    expect(summary.completed).toBe(3);
   });
 
   it("omits the breakdown when every prescribed session was fully completed", () => {

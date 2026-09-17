@@ -5,7 +5,11 @@ import useSWR, { useSWRConfig } from "swr";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { getDateString } from "@/lib/date-helpers";
 import { useWellnessData, type DailyLogRange } from "@/hooks/use-wellness-data";
-import type { CheckInWithDetails, GetCheckInComparisonResponse } from "@/types/check-in";
+import type {
+  CheckInTrainingEventDetail,
+  CheckInWithDetails,
+  GetCheckInComparisonResponse,
+} from "@/types/check-in";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 
 // GET /api/check-in/[id] answers this bare pair — a pre-existing deviation from
@@ -18,6 +22,13 @@ type CheckInWithClient = {
     email?: string;
     avatar_url?: string;
   } | null;
+  /**
+   * The period's own workouts, each with the quality on its log. Beside the
+   * check-in rather than on it: they describe the PERIOD it reported on, read
+   * live from the calendar, not columns of the row. Empty on a legacy row whose
+   * period cannot be resolved.
+   */
+  trainingEventDetails: CheckInTrainingEventDetail[];
   /**
    * The nutrition + habit figures for the period this check-in reported on,
    * computed server-side. `null` on a legacy row whose period cannot be
@@ -163,6 +174,7 @@ export function useCheckInDetailData({ checkInId, clientId }: UseCheckInDetailDa
     comparisonData: comparison.data,
     isLoadingComparison: comparison.isLoading,
     dailyLogs,
+    trainingEventDetails: detail.data?.trainingEventDetails ?? [],
     periodAdherence: detail.data?.periodAdherence ?? null,
     dailyContextLoading: period !== null && logsLoading,
     contextStartDate: period?.start ?? null,

@@ -638,7 +638,7 @@ WATCH FOR
 NOT IN THIS COMMIT: anything commit 5 already did.
 ```
 
-### Commit 7 — Completion 1: quality reads from the log
+### Commit 7 — Completion 1: quality reads from the log — SHIPPED 2026-09-17
 
 ```text
 Implement commit 7 of 22 — Completion 1: quality reads from the log — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.
@@ -665,7 +665,7 @@ WATCH FOR: completed sessions with no linked log (209 on DEV in September — re
 NOT IN THIS COMMIT: any count change, stored value or label (commit 10); removing skipped (commit 9); the legacy check-in shape (commit 8).
 ```
 
-### Commit 8 — Completion 2: one check-in derivation
+### Commit 8 — Completion 2: one check-in derivation — SHIPPED 2026-09-17
 
 ```text
 Implement commit 8 of 22 — Completion 2: one per-workout shape, one check-in derivation — from docs/TRAINING-UPGRADE-EXECUTION-PLAN.md.

@@ -18,7 +18,7 @@ vi.mock("@/services/supabase-admin", () => ({
 // this list omits arrives as undefined and the route 500s at call time, not at
 // import. Grow this list whenever the route's import list grows.
 vi.mock("@/services/check-in-service", () => ({
-  deriveSessionCompletionsForCheckIn: vi.fn(),
+  getTrainingEventDetailsForCheckIn: vi.fn(),
   // The domain object with the check-in's readings folded in from the
   // measurement log — the route reads the fold, never the bare row mapper.
   // Shaped like mapCheckInRow's output for the fields the route hands on.
@@ -41,7 +41,7 @@ vi.mock("@/services/check-in-service", () => ({
 import { GET } from "./route";
 import { requireCoachOwnsCheckIn } from "@/lib/require-coach-auth";
 import {
-  deriveSessionCompletionsForCheckIn,
+  getTrainingEventDetailsForCheckIn,
   foldCheckInMeasurements,
   getCheckInAnswers,
   getCheckInExerciseHighlights,
@@ -71,14 +71,16 @@ describe("GET /api/check-in/[id] (coach)", () => {
     } as any);
     vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([]);
     vi.mocked(getCheckInAnswers).mockResolvedValue([]);
-    vi.mocked(deriveSessionCompletionsForCheckIn).mockResolvedValue([
+    vi.mocked(getTrainingEventDetailsForCheckIn).mockResolvedValue([
       {
-        id: "e-1",
-        checkInId: "ci-1",
-        trainingSessionId: null,
+        eventId: "e-1",
+        date: "2026-05-12",
         sessionName: "Improvised",
-        dayOfWeek: "tuesday",
-        completed: false,
+        status: "scheduled",
+        logStatus: "not_logged",
+        completionQuality: null,
+        trainingSessionId: null,
+        sessionLogId: null,
       },
     ]);
   });
@@ -132,7 +134,7 @@ describe("GET /api/check-in/[id] (coach)", () => {
     ]);
   });
 
-  it("returns derived sessionCompletions for a historical check-in without a 500", async () => {
+  it("carries the period's own workouts for a historical check-in without a 500", async () => {
     mockCheckInRow({
       data: {
         id: "ci-1",
@@ -148,15 +150,17 @@ describe("GET /api/check-in/[id] (coach)", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.checkIn.sessionCompletions).toHaveLength(1);
-    expect(body.checkIn.sessionCompletions[0]).toMatchObject({
-      id: "e-1",
+    // Beside the check-in, not on it: the workouts describe the PERIOD.
+    expect(body.checkIn.sessionCompletions).toBeUndefined();
+    expect(body.trainingEventDetails).toHaveLength(1);
+    expect(body.trainingEventDetails[0]).toMatchObject({
+      eventId: "e-1",
       trainingSessionId: null, // tolerated
       sessionName: "Improvised",
-      completed: false,
+      completionQuality: null,
     });
-    // Derivation got the mapped check-in (with stored period).
-    expect(deriveSessionCompletionsForCheckIn).toHaveBeenCalledWith(
+    // The read got the mapped check-in (with stored period).
+    expect(getTrainingEventDetailsForCheckIn).toHaveBeenCalledWith(
       expect.objectContaining({ id: "ci-1", clientId: "client-1", periodStart: "2026-05-08" })
     );
   });
@@ -169,7 +173,7 @@ describe("GET /api/check-in/[id] (coach)", () => {
 
     const res = await GET(req(), params("ci-1"));
     expect(res.status).toBe(403);
-    expect(deriveSessionCompletionsForCheckIn).not.toHaveBeenCalled();
+    expect(getTrainingEventDetailsForCheckIn).not.toHaveBeenCalled();
   });
 
   it("404 when the check-in row is missing", async () => {

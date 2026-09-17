@@ -25,7 +25,7 @@ export type TrainingDisplayState =
   | "missed";
 
 /** A calendar workout as a display reads it: its attendance word and its log's quality. */
-type TrainingWorkoutRead = {
+export type TrainingWorkoutRead = {
   /** `training_events.status` — whether the client has logged this workout. */
   status: string;
   /** `session_logs.completion_quality` through the linked log; null when none is linked. */

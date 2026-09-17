@@ -52,6 +52,7 @@ const detail = (overrides: Partial<CheckInTrainingEventDetail>): CheckInTraining
   sessionName: "Push Day",
   status: "scheduled",
   logStatus: "not_logged",
+  completionQuality: null,
   trainingSessionId: "ts-1",
   sessionLogId: null,
   ...overrides,
@@ -189,6 +190,27 @@ describe("TrainingSessionChecklist (Session 6.4)", () => {
     );
 
     expect(screen.getByText("Not logged")).toBeInTheDocument();
+  });
+
+  // The week's figure is stated once on this step, by the Training Summary from
+  // the server's own derivation. This list counting its rows was a second
+  // definition of it — and it excluded partials.
+  it("states no count of its own", () => {
+    canEditDayMock.mockReturnValue(false);
+    render(
+      <TrainingSessionChecklist
+        events={[
+          detail({ eventId: "a", status: "completed", logStatus: "logged", completionQuality: "full", sessionLogId: "l1" }),
+          detail({ eventId: "b" }),
+        ]}
+        clientTimezone="UTC"
+        logsOpenFrom={null}
+        onLogEvent={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Training Sessions")).toBeInTheDocument();
+    expect(screen.queryByText(/\d+\/\d+ completed/)).not.toBeInTheDocument();
   });
 
   it("editing an unlogged day POSTs via onLogEvent (per-event log endpoint), not a check-in write", async () => {

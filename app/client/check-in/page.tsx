@@ -117,8 +117,9 @@ export default function ClientCheckInPage() {
       // server runs the same strip after its own gate — that one is the
       // authority; this one is courtesy.
       //
-      // The server DERIVES sessionCompletions / nutrition adherence / mood…stress
-      // from the spine — the form only sends the qualitative fields it owns.
+      // The server DERIVES the week's training and nutrition figures and
+      // mood…stress from the spine — the form only sends the qualitative
+      // fields it owns.
       //
       // The form holds the client's OWN display units while it is being filled
       // in; this is the single point where it becomes canonical kg/cm. It also
@@ -260,7 +261,6 @@ export default function ClientCheckInPage() {
                   onLogEvent={logTrainingEvent}
                   trainingPeriodStats={contextData.trainingPeriodStats}
                   nutritionSummary={contextData.nutritionSummary ?? null}
-                  dailyLogs={contextData.dailyLogs}
                   fields={fields}
                 />
               )}

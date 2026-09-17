@@ -10,15 +10,10 @@ import type {
   EnhancedTrainingMetrics,
   CheckInTrainingContext,
   CheckInTrainingEventDetail,
+  CheckInTrainingPeriodStats,
   SessionCompletionQuality,
 } from "@/types/check-in";
-import type { DailyLog } from "@/types/daily-log";
 import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
-
-type TrainingPeriodStats = {
-  sessionsCompleted: number;
-  sessionsPlanned: number;
-};
 
 type StepTrainingProps = {
   data: Partial<EnhancedTrainingMetrics>;
@@ -34,10 +29,10 @@ type StepTrainingProps = {
     eventId: string,
     payload: { completionQuality: SessionCompletionQuality; notes?: string }
   ) => Promise<void>;
-  trainingPeriodStats?: TrainingPeriodStats;
+  /** The period's training figures from the one summariser, off the context wire. */
+  trainingPeriodStats?: CheckInTrainingPeriodStats;
   /** The period's nutrition figures from the kernel, off the context wire. */
   nutritionSummary?: NutritionPeriodSummary | null;
-  dailyLogs?: DailyLog[];
   /** The coach's enabled field keys for this client (C6b). */
   fields: readonly string[];
 };
@@ -52,7 +47,6 @@ export const StepTraining = ({
   onLogEvent,
   trainingPeriodStats,
   nutritionSummary = null,
-  dailyLogs = [],
   fields,
 }: StepTrainingProps) => {
   const asks = new Set(fields);
@@ -79,10 +73,9 @@ export const StepTraining = ({
 
       <Separator />
 
-      {/* Nutrition — read-only summary derived from daily logs. */}
+      {/* Training and nutrition — read-only figures, both server-derived. */}
       <DailyLogsTrainingSummary
-        dailyLogs={dailyLogs}
-        trainingPeriodStats={trainingPeriodStats}
+        trainingPeriodStats={trainingPeriodStats ?? null}
         nutritionSummary={nutritionSummary}
       />
 

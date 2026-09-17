@@ -466,7 +466,9 @@
   key inside the blob needs a stable identity, an edit, or a reference, it is a table.
 
   **Denormalisation is allowed only when named and documented.** Submit-time snapshot columns
-  (`check_ins.workouts_completed`), the per-event `training_events.calorie_surplus_percentage`
+  (`check_ins.workouts_completed` — full completions over the period's workouts, written once by
+  `submitCheckIn` through `summariseTraining` and never updated after), the per-event
+  `training_events.calorie_surplus_percentage`
   and the copy-based library placement are sanctioned because
   `docs/ARCHITECTURE.md` says who the single writer is and what the copy is a copy *of*. A
   new one needs the same paragraph in the same commit. An undocumented denormalisation found
@@ -627,7 +629,7 @@
   Date-specific TRAINING targets live on **events** (`training_events`), one row per session per date. Plans and their slot rows (`training_sessions`) are **the placed program that generates events + provenance for analytics/reapply** — not the live read path for a given day, and never embedded via a live join to a deletable plan. Historical reads resolve from immutable snapshots (`session_logs`, `nutrition_logs`), never from re-layable events. When you add a date-specific training feature, write it onto the event, not the plan. **A NUTRITION day is computed, never stored**: the target on a date is resolved when asked from the version covering it (`nutrition_plans` — a window plus its weekday grid), the session on the date and the coach's per-day edit (`nutrition_day_edits`). No writer keeps days in sync — there is no cascade, sweep or regenerate — and a day table, a day-sync writer or a nutrition-day deletion floor must not be reintroduced. A version's grid is never edited in place once its first day has passed; that is what keeps a derived past stable, so a feature that adjusts a running plan's numbers mints a version. Full model: `docs/ARCHITECTURE.md → Nutrition & Training Events`.
 
   **Two things an events-SOT edit must not break:**
-  - **Adherence math is its own decision.** On the coach's check-in surfaces a completion count has one source, `summariseSessions` (`lib/check-in/adherence.ts`), and `lib/check-in/adherence-ownership.test.ts` fails on a second definition — do not change adherence math under the guise of an events-SOT edit.
+  - **Adherence math is its own decision.** A training count has ONE source, `summariseTraining` (`lib/training-adherence.ts`), over rows carrying a workout's status and the quality on its log; every check-in figure reads it, and `lib/training-adherence-ownership.test.ts` fails on a second definition — neither a read of the stored `check_ins.workouts_completed` on a coach surface nor a hand-rolled count over a status or a quality. It is read with two numerators, deliberately: `completed` (full + partial) on the coach's check-in review, `full` on the client's wizard, the stored column and the Overview's adherence kernel. Do not change adherence math under the guise of an events-SOT edit.
   - **Prescribed denormalization.** `training_events.calorie_surplus_percentage` is denormalized from the session so a nutrition day can read it per date; **every** training event-write path must keep populating it. One dropped write silently misprices that day: the day resolver falls back to the sessions' flat `estimated_calories`, zero when none is set, so the day is priced as a rest day while the TRAIN badge still renders.
 
   ### Training prescription model (migrations 119-121)

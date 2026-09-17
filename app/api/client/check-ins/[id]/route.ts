@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import {
-  deriveSessionCompletionsForCheckIn,
   getCheckInAnswers,
   getCheckInExerciseHighlights,
+  getTrainingEventDetailsForCheckIn,
   mapExerciseHighlight,
 } from "@/services/check-in-service";
 import { mapCheckInRow } from "@/lib/mappers";
@@ -41,12 +41,13 @@ export async function GET(
       throw error;
     }
 
-    // Fetch related data. Session completions are DERIVED from the spine
-    // (training_events + session_logs) for the check-in's stored period — there
-    // is no backing table. The IDOR guard above (eq client_id) already scoped
-    // this row to the authenticated client.
-    const [sessionCompletions, highlightRows, customAnswers, stamped] = await Promise.all([
-      deriveSessionCompletionsForCheckIn(mapCheckInRow(checkIn)),
+    // Fetch related data. The period's workouts are read from the spine
+    // (`training_events` with their logs) for the check-in's stored period —
+    // there is no stored per-session table, and they are the same rows the
+    // wizard was given when the client filled this check-in in. The IDOR guard
+    // above (eq client_id) already scoped this row to the authenticated client.
+    const [trainingEventDetails, highlightRows, customAnswers, stamped] = await Promise.all([
+      getTrainingEventDetailsForCheckIn(mapCheckInRow(checkIn)),
       getCheckInExerciseHighlights(id),
       // The client's own answers to the coach's custom questions, read back
       // with their prompts. On the single-check-in read only: the history LIST
@@ -109,8 +110,8 @@ export async function GET(
         responseSentAt: checkIn.response_sent_at,
         createdAt: checkIn.created_at,
         updatedAt: checkIn.updated_at,
-        // Enhanced training data
-        sessionCompletions,
+        // The period's own workouts, each with the quality on its log.
+        trainingEventDetails,
         exerciseHighlights,
         customAnswers,
       },

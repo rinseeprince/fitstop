@@ -14,7 +14,7 @@ import { CheckInReviewHeader } from "./check-in-review-header";
 import { CheckInReplyBlock } from "./check-in-reply-block";
 import { CheckInGoalStrip } from "./check-in-goal-strip";
 import { useCheckInDetailData } from "@/hooks/use-check-in-detail-data";
-import { summariseSessions } from "@/lib/check-in/adherence";
+import { summariseTraining } from "@/lib/training-adherence";
 import { toCheckInReview } from "@/lib/check-in/to-review";
 import { OPEN_PROFILE_EDITOR_PARAM, type ClientTab } from "@/lib/client-tabs";
 import type { Client } from "@/types/check-in";
@@ -78,6 +78,7 @@ export const CheckInDetailView = ({
     comparisonData,
     isLoadingComparison,
     dailyLogs,
+    trainingEventDetails,
     periodAdherence,
     dailyContextLoading,
     contextStartDate,
@@ -85,10 +86,10 @@ export const CheckInDetailView = ({
     refreshDetail,
   } = useCheckInDetailData({ checkInId, clientId: client.id });
 
-  // Single source of training adherence (completed / prescribed) derived from the
-  // check-in's session completions. Shared by the band, the training section
-  // and the comparison so the figure is identical everywhere.
-  const adherence = summariseSessions(data?.checkIn.sessionCompletions ?? []);
+  // The one training derivation for this surface: completed (full + PARTIAL)
+  // over planned, from the period's own workouts with each one's quality read
+  // off its log. The ribbon and the pills beside it come out of this one run.
+  const adherence = summariseTraining(trainingEventDetails);
   const clientName = data?.client?.name || client.name;
   // Both the Review section and the Reply block read it; narrowing on it below
   // is what lets them share one call.
@@ -140,7 +141,10 @@ export const CheckInDetailView = ({
               Both carry `flex-1`, so a lone survivor takes the whole row and
               this page never has to ask which of them rendered. */}
           <div className="flex flex-col gap-5 lg:flex-row">
-            <TrainingSection checkIn={data.checkIn} />
+            <TrainingSection
+              workouts={trainingEventDetails}
+              highlights={data.checkIn.exerciseHighlights ?? []}
+            />
 
             {/* The kernel's figures off the detail wire — the card counts
                 nothing from the logs, so a day with no target can never be

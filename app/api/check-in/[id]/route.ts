@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/services/supabase-admin";
 import type { CheckInRow } from "@/lib/database-helpers";
 import {
-  deriveSessionCompletionsForCheckIn,
   foldCheckInMeasurements,
   getCheckInAnswers,
   getCheckInExerciseHighlights,
   getCheckInPeriodAdherence,
+  getTrainingEventDetailsForCheckIn,
   mapExerciseHighlight,
 } from "@/services/check-in-service";
 import { apiRateLimit } from "@/lib/rate-limit";
@@ -66,10 +66,16 @@ export async function GET(
     // measurement log rows carrying its stamp.
     const [checkIn] = await foldCheckInMeasurements([checkInData]);
 
-    // Fetch related data. Session completions are DERIVED from the spine
-    // (training_events + session_logs) for the check-in's stored period — there
-    // is no backing table. Pass the mapped check-in (carries clientId, period,
-    // createdAt) so the derivation resolves the correct historical window.
+    // Fetch related data.
+    //
+    // `trainingEventDetails` is the period's own workouts, read from the spine
+    // (`training_events` with their logs) for the check-in's stored period —
+    // there is no stored per-session table. Pass the mapped check-in (carries
+    // clientId, period, createdAt) so the derivation resolves the correct
+    // historical window. It sits beside the check-in rather than on it, like
+    // `periodAdherence`: both describe the PERIOD the check-in reported on,
+    // read live, not columns of the row.
+    //
     // `periodAdherence` carries the nutrition + habit figures for the check-in's
     // OWN period, computed server-side by the shared Overview kernel. It is here
     // rather than in the renderer because the denominators are the point: the
@@ -77,8 +83,8 @@ export async function GET(
     // target, without the rows this reads. `null` for a legacy row whose period
     // cannot be resolved — the renderers show their empty states rather than
     // fall back to a second, client-side definition.
-    const [sessionCompletions, highlightRows, periodAdherence, customAnswers] = await Promise.all([
-      deriveSessionCompletionsForCheckIn(checkIn),
+    const [trainingEventDetails, highlightRows, periodAdherence, customAnswers] = await Promise.all([
+      getTrainingEventDetailsForCheckIn(checkIn),
       getCheckInExerciseHighlights(id),
       getCheckInPeriodAdherence(checkIn),
       // Answers to the coach's custom questions, with their prompts joined
@@ -89,13 +95,13 @@ export async function GET(
     return NextResponse.json({
       checkIn: {
         ...checkIn,
-        sessionCompletions,
         // Map to the camelCase domain type so the payload matches the declared
         // CheckInWithDetails shape (and getCheckInWithDetails), not raw DB rows.
         exerciseHighlights: highlightRows.map(mapExerciseHighlight),
         customAnswers,
       },
       client: checkInData.clients || null,
+      trainingEventDetails,
       periodAdherence,
     });
   } catch (error) {

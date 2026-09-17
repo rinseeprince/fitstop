@@ -2,7 +2,6 @@ import type {
   CheckInWithDetails,
   CheckIn,
   CheckInTrainingEventDetail,
-  CheckInSessionCompletion,
 } from "@/types/check-in";
 import type { DailyLog } from "@/types/daily-log";
 import type { HabitLogWithDetails } from "@/types/daily-habit";
@@ -10,7 +9,7 @@ import type { NutritionPeriodSummary } from "@/utils/nutrition-period-summary";
 import type { PeriodSnapshot } from "@/types/schedule";
 import { buildDailyContextForAI } from "@/utils/ai-daily-context-builder";
 import { sanitizeForAIPrompt } from "@/utils/ai-prompt-sanitizer";
-import { summariseSessions } from "@/lib/check-in/adherence";
+import { summariseTraining } from "@/lib/training-adherence";
 import { loggedDisplayQuality } from "@/lib/training-display-state";
 import { buildAnalysisTaskPrompt } from "@/utils/ai-analysis-format";
 import {
@@ -72,36 +71,27 @@ export function buildCheckInAnalysisPrompt(
   }
 
   prompt += "\nTraining:\n";
-  // Source of truth (Session 6.2): per-event detail derived from training_events
-  // (status) left-joined to session_logs (notes/quality).
+  // Source of truth (Session 6.2): per-workout detail from training_events,
+  // each carrying the quality on its own log.
   if (trainingEventDetails?.length) {
-    // Through `summariseSessions`, exactly like the KPI ribbon and the
-    // comparison pane — a PARTIAL session counts towards the numerator. This
-    // line used to filter `status === "completed"` itself, which is a third
-    // spelling of the count and excluded partials: it told the model "2 out of
-    // 5" beneath a strip reading 3/5 for the same week. The kernel takes the
-    // same mapping `deriveSessionCompletionsForCheckIn` applies.
-    const summary = summariseSessions(
-      trainingEventDetails.map((d) => ({
-        completed: d.status === "completed",
-        completionQuality: d.completionQuality,
-      })) as CheckInSessionCompletion[]
-    );
+    // Through `summariseTraining`, exactly like the KPI ribbon and the pills
+    // beside it — a PARTIAL session counts towards the numerator. This line used
+    // to filter `status === "completed"` itself, which is a third spelling of
+    // the count and excluded partials: it told the model "2 out of 5" beneath a
+    // strip reading 3/5 for the same week.
+    const summary = summariseTraining(trainingEventDetails);
     const detail = [
       summary.partial > 0 ? `${summary.partial} partial` : null,
       summary.missed > 0 ? `${summary.missed} missed` : null,
     ].filter(Boolean);
-    prompt += `- Sessions: ${summary.completed}/${summary.prescribed} completed${
+    prompt += `- Sessions: ${summary.completed}/${summary.planned} completed${
       detail.length ? ` (${detail.join(", ")})` : ""
     }\n`;
     trainingEventDetails.forEach((d) => {
       // How each session went is read off its LOG (`loggedDisplayQuality`), not
       // off the event's status word, so the line under the count cannot
       // contradict it.
-      const quality = loggedDisplayQuality({
-        status: d.status,
-        completionQuality: d.completionQuality ?? null,
-      });
+      const quality = loggedDisplayQuality(d);
       let status: string;
       if (quality === "skipped") {
         status = d.notes
@@ -141,20 +131,11 @@ export function buildCheckInAnalysisPrompt(
         }
       }
     });
-  } else if (current.sessionCompletions?.length) {
-    // Derived from the period's own sessions (full + PARTIAL over prescribed),
-    // the same figure the KPI ribbon and the comparison pane render. It used to
-    // read `current.workoutsCompleted`, the stored full-only column, which is
-    // how the summary came to say "completed only 2 out of 5" under a strip
-    // reading 3/5 for the same week.
-    const summary = summariseSessions(current.sessionCompletions);
-    prompt += `- Workouts completed: ${summary.completed}/${summary.prescribed}`;
-    const detail = [
-      summary.partial > 0 ? `${summary.partial} partial` : null,
-      summary.missed > 0 ? `${summary.missed} missed` : null,
-    ].filter(Boolean);
-    prompt += detail.length ? ` (${detail.join(", ")})\n` : "\n";
   }
+  // No second branch: the period's workouts are the only source of a training
+  // figure, and both callers read them for the window they resolved. A week with
+  // no workouts leaves the section empty rather than printing a 0/0 count, and
+  // the day-by-day schedule block below describes it.
 
   if (current.exerciseHighlights?.length) {
     prompt += "\nExercise Highlights:\n";

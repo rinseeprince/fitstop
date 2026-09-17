@@ -478,10 +478,21 @@ read and the attention feed's two cross-client reads carry the same embed on the
 lists. A read that dropped it would quietly show every partial workout as a full one.
 
 What keys on it: the coach calendar card's thumb, the client's day card, the coach's Data table
-(through the per-day schedule shape above), the check-in wizard's training rows, the check-in AI
-prompt's per-session lines, the attention feed's partial-workout alert, and the Overview's training
-rail — where a day is classified from its own workouts (every one full → complete, any done at all →
-partial, any missed or skipped → missed) while the figure beside it counts full completions.
+(through the per-day schedule shape above), the check-in wizard's training rows, the check-in
+review's pills, the check-in AI prompt's per-session lines, the attention feed's partial-workout
+alert, and the Overview's training rail — where a day is classified from its own workouts (every one
+full → complete, any done at all → partial, any missed or skipped → missed) while the figure beside
+it counts full completions.
+
+**Counting them is one function too.** `summariseTraining` (`lib/training-adherence.ts`) takes any
+rows carrying a status and a log quality — calendar events through `eventWorkoutRead`, or the
+per-workout detail a check-in read carries — classifies each through `loggedDisplayQuality` above,
+and returns `{ planned, completed, full, partial, missed, pct }`: `completed` is full + partial,
+`missed` is everything not done (skipped, still scheduled, never logged), and `pct` is
+`completed / planned`, null when nothing was planned. Every training figure on a check-in comes out
+of it — see "The figures, and what they divide by". The Overview's adherence kernel keeps its own
+full-only `completed / planned` pair beside the rail it is index-aligned with
+(`services/client-adherence-service.ts`).
 
 ### The coach's logged-workout readout
 
@@ -1459,10 +1470,11 @@ that unlogged days are unknown rather than zero, and forbids characterising inta
 figure at all. A client who logs two of seven days and hits target on both is 34% adherent and 100%
 on target: only the first number describes anything, and what it describes is a logging problem.
 
-**The session count is derived** through `summariseSessions` on the live event-detail branch, so it
-matches the KPI ribbon. Previous check-ins in the trend block carry no count at all — they are bare
-`CheckIn` rows, so the only figure available on them is the stored full-only column, and deriving
-one per row would be a query per check-in.
+**The session count is derived** through `summariseTraining` over the period's own workouts — the
+same run the KPI ribbon and the pills beside it read, so the three cannot disagree. Previous
+check-ins in the trend block carry no count at all: they are bare `CheckIn` rows, so the only figure
+available on them is the stored full-only column, and deriving one per row would be a query per
+check-in.
 
 **The task asks for a read, not a recap**: the week's story and what drove it, observations that
 carry what they connect to, and co-occurrence across metrics and across days. An uncertain
@@ -1495,8 +1507,8 @@ page draws goes through one rule
 beside it, coloured by its direction, neutral only at 0.0. **There is no chart series
 at all**: the band shows a value and a delta, and a trend line behind them read as chart junk on a
 dark strip. Girths, `workoutsCompleted` and `adherencePercentage` are not on it either, and neither
-is the current check-in (the caller fetched it by id). `workoutsCompleted` is why: deriving it cost two
-`deriveSessionCompletionsForCheckIn` calls per request, one for each side, purely to render a
+is the current check-in (the caller fetched it by id). `workoutsCompleted` is why: deriving it cost a
+second read of the period's workouts per request, one for each side, purely to render a
 delta — the KPI ribbon's fraction and its `N partial · N missed` breakdown answer the same
 question from data already in hand.
 
@@ -1507,7 +1519,8 @@ is the detail and everything under it). The window's daily and habit logs come t
 two keys have one builder. The window is the stored `period_start`/`period_end`, else the six
 days up to `created_at` (pre-Session-6.4 rows). Two stages — the detail and its comparison, then
 the window's logs; SWR dedupes re-opens. The nutrition figures ride the detail wire from the
-kernel; the browser folds no target and no figure of its own.
+kernel and the period's workouts ride beside the check-in; the browser folds no target of its own and
+counts nothing but that one `summariseTraining` run.
 
 **The figures, and what they divide by.** The review's nutrition and habit
 numbers are computed SERVER-side over the check-in's own reporting period and
@@ -1526,17 +1539,35 @@ computes nothing — it takes no log rows (`nutrition-section.test.tsx` scans
 for it). Habits come from `perHabit`, built from the HABIT list, so a
 habit the client ignored all week reads 0/7 instead of vanishing — `logHabit`
 writes a row only when they act, and the old grid read `/habits/logs`. **Training
-is deliberately NOT on that wire**: this surface counts full AND partial
-completions through `summariseSessions`, while the Overview kernel counts full
-only. ONE derivation serves the whole surface — the KPI ribbon and the AI prompt — and `lib/check-in/adherence-ownership.test.ts` scans the
-coach tree to keep it so, forbidding both a read of the stored
-`check_ins.workouts_completed` column (that column is the RN wire's, and the
-client's own surfaces read it) and a hand-rolled count over event statuses.
-`components/check-in/training-session-checklist.tsx` is excluded by name: it is
-the client's wizard step, not a coach surface. Unifying the two conventions is
-deferred debt (CONVENTIONS §8). `periodAdherence` is `null` when a legacy row's period cannot
+is deliberately NOT on that wire**: this surface reads `completed` — full AND
+partial — while the Overview kernel's training half counts full only.
+`periodAdherence` is `null` when a legacy row's period cannot
 be resolved (pre-038 and no schedule to anchor a week to), and the cells render
 their empty states rather than fall back to a second definition.
+
+**Training comes from the period's own workouts, counted once.** Both single
+check-in reads carry them beside the check-in as `trainingEventDetails` — the
+same per-workout rows the client's wizard is given
+(`getTrainingEventDetailsForCheckIn` over `getTrainingEventDetailsForPeriod`,
+each row its attendance word plus the quality on its own log, and empty when the
+period cannot be resolved) — and `summariseTraining`
+(`lib/training-adherence.ts`, see "How a workout reads") is the ONE function
+that counts them. There is no stored per-session table and no second
+per-check-in shape: the review's KPI ribbon and its pills, the wizard's Training
+Summary, the AI prompt and the figure the submit freezes all come out of that
+one summariser.
+
+**Two numerators, one derivation.** The coach's surfaces read `completed` (full +
+partial, so 3 of 5 can hold a partial); the client's wizard and the stored
+`check_ins.workouts_completed` read `full`, with `sessionsPartial` beside it on
+the wire (`CheckInTrainingPeriodStats` on `GET /api/client/check-in-context`) so
+the client's figure and its breakdown come from the same run. What is forbidden
+is a SECOND definition, and `lib/training-adherence-ownership.test.ts` scans
+every check-in surface to keep it so: no read of the stored
+`check_ins.workouts_completed` column (that column is the client's — their own
+surfaces read it back legitimately) and no hand-rolled count over a status or a
+quality. Both shapes have shipped, and the first put "3/5" on the ribbon above
+an AI summary saying "completed only 2 out of 5" for the same week.
 
 **Three day sets, and every figure names its own** (owner decision
 2026-09-11). LOGGED days are coverage, over the period. TARGETED days — the

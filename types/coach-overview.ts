@@ -114,8 +114,10 @@ export type HabitBreakdown = {
  * What `GET /api/check-in/[id]` carries for the check-in's own reporting period.
  *
  * Training is deliberately absent: the review page derives its training figure
- * from `summariseSessions` (full + partial), and the kernel's is full-only.
- * Both are defensible; both on one screen is not.
+ * from `summariseTraining` (`lib/training-adherence.ts`) over the period's own
+ * workouts, which it already carries, and it reads `completed` — full +
+ * PARTIAL — where this kernel's training half is full-only. Both are
+ * defensible; both on one screen is not.
  */
 export type CheckInPeriodAdherence = Pick<
   AdherenceSummary,

@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { MAX_CHECK_IN_QUESTIONS } from '@/lib/constants'
 import {
   submitCheckInSchema,
-  sessionCompletionSchema,
   exerciseHighlightSchema,
   nutritionAdherenceSchema,
 } from './check-in'
@@ -174,7 +173,11 @@ describe('Check-in Validation Schemas', () => {
       expect(result.success).toBe(false)
     })
 
-    it('validates sessionCompletions array', () => {
+    // The client no longer sends its own per-session list: the server derives
+    // the week's training from the calendar. An older app still sending one is
+    // STRIPPED rather than refused — z.object drops unknown keys — so a stale
+    // payload still submits.
+    it('strips a legacy sessionCompletions payload rather than refusing it', () => {
       const data = {
         sessionCompletions: [
           {
@@ -188,19 +191,9 @@ describe('Check-in Validation Schemas', () => {
 
       const result = submitCheckInSchema.safeParse(data)
       expect(result.success).toBe(true)
-    })
-
-    it('rejects more than 20 session completions', () => {
-      const sessionCompletions = Array.from({ length: 25 }, (_, i) => ({
-        trainingSessionId: `session-${i}`,
-        sessionName: `Session ${i}`,
-        completed: true,
-      }))
-
-      const data = { sessionCompletions }
-      const result = submitCheckInSchema.safeParse(data)
-
-      expect(result.success).toBe(false)
+      if (result.success) {
+        expect('sessionCompletions' in result.data).toBe(false)
+      }
     })
 
     it('validates exerciseHighlights array', () => {
@@ -220,68 +213,6 @@ describe('Check-in Validation Schemas', () => {
       expect(result.success).toBe(true)
     })
 
-  })
-
-  describe('sessionCompletionSchema', () => {
-    it('validates a complete session completion', () => {
-      const data = {
-        trainingSessionId: 'session-123',
-        sessionName: 'Push Day',
-        completed: true,
-        completionQuality: 'full',
-        dayOfWeek: 'monday',
-        notes: 'Great workout!',
-      }
-
-      const result = sessionCompletionSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
-
-    it('converts string "true" to boolean', () => {
-      const data = {
-        trainingSessionId: 'session-123',
-        sessionName: 'Push Day',
-        completed: 'true',
-      }
-
-      const result = sessionCompletionSchema.safeParse(data)
-      expect(result.success).toBe(true)
-      if (result.success) {
-        expect(result.data.completed).toBe(true)
-      }
-    })
-
-    it('rejects invalid day of week', () => {
-      const data = {
-        trainingSessionId: 'session-123',
-        sessionName: 'Push Day',
-        completed: true,
-        dayOfWeek: 'notaday',
-      }
-
-      const result = sessionCompletionSchema.safeParse(data)
-      // Invalid day should be converted to undefined due to preprocessing
-      expect(result.success).toBe(true)
-      if (result.success) {
-        expect(result.data.dayOfWeek).toBeUndefined()
-      }
-    })
-
-    it('validates all completion qualities', () => {
-      const qualities = ['full', 'partial', 'skipped'] as const
-
-      qualities.forEach((quality) => {
-        const data = {
-          trainingSessionId: 'session-123',
-          sessionName: 'Push Day',
-          completed: true,
-          completionQuality: quality,
-        }
-
-        const result = sessionCompletionSchema.safeParse(data)
-        expect(result.success).toBe(true)
-      })
-    })
   })
 
   describe('exerciseHighlightSchema', () => {

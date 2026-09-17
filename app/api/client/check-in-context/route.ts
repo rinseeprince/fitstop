@@ -3,9 +3,9 @@ import { requireClientAuth } from "@/lib/require-client-auth";
 import {
   getCheckInTrainingContext,
   getCheckInNutritionContext,
-  getCheckInTrainingPeriodStats,
   getTrainingEventDetailsForPeriod,
 } from "@/services/check-in-context-service";
+import { summariseTraining } from "@/lib/training-adherence";
 import { getNutritionPeriod } from "@/services/nutrition-period-service";
 import { getClientById } from "@/services/client-service";
 import { getDailyLogs } from "@/services/daily-logs-service";
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
     // serial round-trip. (Runs only after gating, so a gated request never reaches
     // getCheckInNutritionContext and its plan-promotion side effect.)
     // supabaseAdmin required: no client-facing SELECT RLS policy exists on coaches table
-    const [coachResult, trainingContext, nutritionContext, trainingPeriodStats, dailyLogs, trainingEventDetails, form, lastSubmittedPeriodEnd, nutritionPeriod] = await Promise.all([
+    const [coachResult, trainingContext, nutritionContext, dailyLogs, trainingEventDetails, form, lastSubmittedPeriodEnd, nutritionPeriod] = await Promise.all([
       supabaseAdmin
         .from("coaches")
         .select("name")
@@ -110,7 +110,6 @@ export async function GET(request: NextRequest) {
         .single(),
       getCheckInTrainingContext(client.id),
       getCheckInNutritionContext(client.id),
-      getCheckInTrainingPeriodStats(client.id, periodStart, periodEnd),
       getDailyLogs(client.id, periodStart, periodEnd),
       getTrainingEventDetailsForPeriod(client.id, periodStart, periodEnd),
       // The coach's per-client form (C6a). Joined to the existing fan-out, so
@@ -130,6 +129,14 @@ export async function GET(request: NextRequest) {
 
     const coach = coachResult.data;
 
+    // The period's training, counted ONCE from the workouts above rather than
+    // by a second pair of queries of its own — the one summariser
+    // (`lib/training-adherence.ts`), reading each workout's quality off its own
+    // log. `sessionsCompleted` is FULL completions and `sessionsPartial` is the
+    // rest of what was done, so the client's figure and its breakdown come out
+    // of one run.
+    const training = summariseTraining(trainingEventDetails);
+
     // CheckInContextResponse describes the WHOLE payload — it is the RN
     // contract (ARCHITECTURE -> "The React Native contract"), and it used to
     // describe five of eleven keys while a local intersection here added the
@@ -148,7 +155,11 @@ export async function GET(request: NextRequest) {
       },
       trainingContext,
       nutritionContext,
-      trainingPeriodStats,
+      trainingPeriodStats: {
+        sessionsCompleted: training.full,
+        sessionsPartial: training.partial,
+        sessionsPlanned: training.planned,
+      },
       dailyLogs,
       nutritionSummary: nutritionPeriod.summary,
       trainingEventDetails,

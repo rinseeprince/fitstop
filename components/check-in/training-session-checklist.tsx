@@ -24,10 +24,7 @@ import type {
 const statusLabel = (
   detail: CheckInTrainingEventDetail
 ): "full" | "partial" | "skipped" | "not_logged" =>
-  loggedDisplayQuality({
-    status: detail.status,
-    completionQuality: detail.completionQuality ?? null,
-  }) ?? "not_logged";
+  loggedDisplayQuality(detail) ?? "not_logged";
 
 const QUALITY_OPTIONS: { value: SessionCompletionQuality; label: string }[] = [
   { value: "full", label: "Completed" },
@@ -83,8 +80,6 @@ export const TrainingSessionChecklist = ({
     Record<string, { quality?: SessionCompletionQuality; notes: string; saving: boolean; error?: string }>
   >({});
 
-  const completedCount = events.filter((e) => e.status === "completed").length;
-
   const setRow = (
     eventId: string,
     patch: Partial<{ quality: SessionCompletionQuality; notes: string; saving: boolean; error?: string }>
@@ -116,12 +111,11 @@ export const TrainingSessionChecklist = ({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Label className="text-base font-medium">Training Sessions</Label>
-        <span className="text-sm text-muted-foreground">
-          {completedCount}/{events.length} completed
-        </span>
-      </div>
+      {/* No count here: the week's figure is stated once on this step, in the
+          Training Summary below, from the server's own derivation. This list
+          counting its rows was a second definition of it, and it excluded
+          partials. */}
+      <Label className="text-base font-medium">Training Sessions</Label>
 
       {events.length === 0 ? (
         <p className="text-sm text-muted-foreground">

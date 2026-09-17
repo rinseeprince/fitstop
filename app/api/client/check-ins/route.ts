@@ -102,8 +102,9 @@ export async function GET(request: NextRequest) {
  * POST /api/client/check-ins
  * 
  * Submits a comprehensive check-in for an authenticated client. This endpoint
- * processes all check-in data including subjective metrics, body measurements,
- * progress photos, training sessions, and nutrition adherence.
+ * takes what the client typed — their notes, their readings and their photos —
+ * and the server derives the week's training, nutrition and wellness figures
+ * from the spine (see `submitCheckIn`).
  * 
  * @param request - The Next.js request object with JSON body containing check-in data
  * @returns Promise<NextResponse> - JSON response with submission result
@@ -122,14 +123,6 @@ export async function GET(request: NextRequest) {
  *   bodyFatPercentage: 15,
  *   waist: 32,
  *   // ... other measurements and photos
- *   sessionCompletions: [
- *     {
- *       trainingSessionId: "session-123",
- *       sessionName: "Push Day",
- *       completed: true,
- *       completionQuality: "full"
- *     }
- *   ],
  *   exerciseHighlights: [...],
  *   nutritionAdherence: { daysOnTarget: 6 }
  * }
@@ -299,7 +292,6 @@ export async function POST(request: NextRequest) {
       challenges: shaped.challenges,
 
       // Enhanced tracking
-      sessionCompletions: shaped.sessionCompletions ?? [],
       exerciseHighlights: canonical.exerciseHighlights ?? [],
       nutritionAdherence: shaped.nutritionAdherence,
 

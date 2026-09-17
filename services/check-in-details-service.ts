@@ -3,10 +3,9 @@ import type {
   CheckIn,
   CheckInCustomAnswer,
   CheckInCustomAnswerInput,
-  CheckInSessionCompletion,
   CheckInExerciseHighlight,
+  CheckInTrainingEventDetail,
   CheckInWithDetails,
-  DayOfWeek,
 } from "@/types/check-in";
 import type { CheckInExerciseHighlightRow } from "@/lib/database-helpers";
 import { getCheckInById } from "./check-in-service";
@@ -16,24 +15,6 @@ import { checkInWeekday } from "@/lib/check-in-week";
 import { getClientById } from "./client-service";
 import { getClientAdherenceForRange } from "./client-adherence-service";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
-
-const DAY_OF_WEEK_BY_INDEX: DayOfWeek[] = [
-  "sunday",
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-];
-
-// Derive the day-of-week label from a YYYY-MM-DD date string. Parsed at local
-// noon so the day is stable across DST boundaries (the same convention used
-// elsewhere in the check-in UI for period day rendering).
-const dayOfWeekFromDate = (date: string): DayOfWeek => {
-  const d = new Date(`${date}T12:00:00`);
-  return DAY_OF_WEEK_BY_INDEX[d.getDay()];
-};
 
 /**
  * The window a check-in REPORTED on: the stored `period_start`/`period_end`
@@ -72,11 +53,12 @@ export const resolveCheckInReportingPeriod = async (
  * Overview kernel — one definition of "on target" and "eligible" across both
  * surfaces rather than a second one written into the review's renderers.
  *
- * **Training is deliberately NOT on this wire.** The review page's training
- * figure is `summariseSessions` (full + partial completions); the kernel's is
- * full-only. Both are defensible, but shipping both onto one screen is exactly
- * the two-live-conventions problem this commit exists to remove — so the page
- * keeps its own training number and this returns only what it is replacing.
+ * **Training is deliberately NOT on this wire.** The review page counts the
+ * period's training itself, from the per-workout detail it already carries,
+ * through `summariseTraining` (`lib/training-adherence.ts`) — completed is
+ * full + PARTIAL there, while this kernel's training half is full-only. Two
+ * numbers from two definitions on one screen is the defect; so the page keeps
+ * its own training figure and this returns only what it is replacing.
  */
 export const getCheckInPeriodAdherence = async (
   checkIn: CheckIn
@@ -103,40 +85,30 @@ export const getCheckInPeriodAdherence = async (
 };
 
 /**
- * Derive per-session training completions for a check-in directly from the spine
- * (`training_events` + `session_logs`) — the legacy completions table was dropped
- * in Session 6.4 (migration 098); there is no backing table anymore. The window
- * comes from `resolveCheckInReportingPeriod`, which is also what the adherence
- * figures use, so the two cannot describe different weeks.
+ * The per-workout training detail for a check-in's own reporting period — the
+ * same rows the client's wizard receives, read back for one submitted
+ * check-in. There is no stored per-session table: the legacy completions table
+ * was dropped in Session 6.4 (migration 098), and the spine
+ * (`training_events` + its logs) is the only source.
  *
- * The returned shape is the PRESERVED `CheckInSessionCompletion` (camelCase) the
- * UI already reads. `trainingSessionId` may be null (an alt-session swap or an
- * event without a linked session); React keys use `id`/`eventId` instead.
+ * The window comes from `resolveCheckInReportingPeriod`, which is also what the
+ * adherence figures use, so the two cannot describe different weeks. Empty when
+ * the period cannot be resolved (a legacy row with no stored period and no
+ * schedule to anchor a week to).
  */
-export const deriveSessionCompletionsForCheckIn = async (
+export const getTrainingEventDetailsForCheckIn = async (
   checkIn: CheckIn
-): Promise<CheckInSessionCompletion[]> => {
+): Promise<CheckInTrainingEventDetail[]> => {
   const period = await resolveCheckInReportingPeriod(checkIn);
   if (!period) {
     return [];
   }
 
-  const details = await getTrainingEventDetailsForPeriod(
+  return getTrainingEventDetailsForPeriod(
     checkIn.clientId,
     period.periodStart,
     period.periodEnd
   );
-
-  return details.map((d) => ({
-    id: d.eventId,
-    checkInId: checkIn.id,
-    trainingSessionId: d.trainingSessionId,
-    sessionName: d.performedSessionName ?? d.sessionName,
-    dayOfWeek: dayOfWeekFromDate(d.date),
-    completed: d.status === "completed",
-    completionQuality: d.completionQuality,
-    notes: d.notes,
-  }));
 };
 
 // Get exercise highlights for a check-in (public)
@@ -272,15 +244,13 @@ export const getCheckInWithDetails = async (
   const checkIn = await getCheckInById(checkInId);
   if (!checkIn) return null;
 
-  const [sessionCompletions, highlightRows, customAnswers] = await Promise.all([
-    deriveSessionCompletionsForCheckIn(checkIn),
+  const [highlightRows, customAnswers] = await Promise.all([
     getCheckInExerciseHighlights(checkInId),
     getCheckInAnswers(checkInId),
   ]);
 
   return {
     ...checkIn,
-    sessionCompletions,
     exerciseHighlights: highlightRows.map(mapExerciseHighlight),
     customAnswers,
   };

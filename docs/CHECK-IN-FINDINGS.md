@@ -128,11 +128,13 @@ remove the second assembly and the drift between the two paths.
 
 ### 4. Training has its own two conventions
 
-Already recorded in `CONVENTIONS.md` ("Adherence is not unified"): the review
-page's training figure counts full and partial completions
-(`summariseSessions`), the adherence kernel counts full only, and the stored
-`workouts_completed` counts full only. The nutrition kernel is the shape to
-follow: one function over the events, every surface renders it.
+Already recorded in `CONVENTIONS.md` §8 ("Adherence math is its own
+decision"). One
+summariser now serves every check-in figure (`summariseTraining`,
+`lib/training-adherence.ts`), but it is read with two numerators: the review
+page takes `completed` — full AND partial — while the Overview's adherence
+kernel and the stored `workouts_completed` take `full`. Unifying the numerator
+is what is left.
 
 ## Found on the client's check-in detail — 2026-09-11 smoke (bugs, not yet fixed)
 

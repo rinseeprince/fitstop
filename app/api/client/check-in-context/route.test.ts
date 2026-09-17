@@ -12,7 +12,6 @@ vi.mock('@/services/client-service', () => ({
 vi.mock('@/services/check-in-context-service', () => ({
   getCheckInTrainingContext: vi.fn(),
   getCheckInNutritionContext: vi.fn(),
-  getCheckInTrainingPeriodStats: vi.fn(),
   getTrainingEventDetailsForPeriod: vi.fn(),
 }));
 
@@ -57,7 +56,6 @@ import { getClientById } from '@/services/client-service';
 import {
   getCheckInTrainingContext,
   getCheckInNutritionContext,
-  getCheckInTrainingPeriodStats,
   getTrainingEventDetailsForPeriod,
 } from '@/services/check-in-context-service';
 import { getDailyLogs } from '@/services/daily-logs-service';
@@ -110,7 +108,6 @@ describe('GET /api/client/check-in-context', () => {
     vi.mocked(requireClientAuth).mockResolvedValue({ ok: true, clientId: 'client-123' } as any);
     vi.mocked(getCheckInTrainingContext).mockResolvedValue({ hasActivePlan: false, sessions: [] } as any);
     vi.mocked(getCheckInNutritionContext).mockResolvedValue({ hasNutritionPlan: false } as any);
-    vi.mocked(getCheckInTrainingPeriodStats).mockResolvedValue({ sessionsCompleted: 1, sessionsPlanned: 3 } as any);
     vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([] as any);
     vi.mocked(getDailyLogs).mockResolvedValue([] as any);
     vi.mocked(getNutritionPeriod).mockResolvedValue({ days: [], summary: NUTRITION_SUMMARY } as any);
@@ -188,6 +185,42 @@ describe('GET /api/client/check-in-context', () => {
     expect(getDailyLogs).toHaveBeenCalledTimes(1);
   });
 
+  // The wizard's figure and its breakdown come out of ONE summariser run over
+  // the workouts already on the wire — there is no second pair of queries, and
+  // nothing in the browser counts them again.
+  it('derives the training stats from the workouts it already carries', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-14T12:00:00Z'));
+    vi.mocked(getClientById).mockResolvedValue({
+      ...baseClient,
+      nextCheckInDue: '2026-06-14',
+      checkInFrequency: 'weekly',
+    } as any);
+    mockServerSupabase(null);
+    const workout = (over: Record<string, unknown>) => ({
+      eventId: 'e', date: '2026-06-10', sessionName: 'S', status: 'scheduled',
+      logStatus: 'not_logged', completionQuality: null, trainingSessionId: 'ts',
+      sessionLogId: null, ...over,
+    });
+    vi.mocked(getTrainingEventDetailsForPeriod).mockResolvedValue([
+      workout({ eventId: 'e-1', status: 'completed', logStatus: 'logged', completionQuality: 'full', sessionLogId: 'l1' }),
+      workout({ eventId: 'e-2', status: 'partial', logStatus: 'logged', completionQuality: 'partial', sessionLogId: 'l2' }),
+      // The one row on dev that drifted: the event says completed, its log says
+      // partial. The log decides, here as on every other screen.
+      workout({ eventId: 'e-3', status: 'completed', logStatus: 'logged', completionQuality: 'partial', sessionLogId: 'l3' }),
+      workout({ eventId: 'e-4' }),
+    ] as any);
+
+    const body = await (await GET(req())).json();
+
+    expect(body.data.trainingPeriodStats).toEqual({
+      sessionsCompleted: 1,
+      sessionsPartial: 2,
+      sessionsPlanned: 4,
+    });
+    vi.useRealTimers();
+  });
+
   it('unscheduled → 403 and no fan-out', async () => {
     // A client whose coach has set no date has nothing to check in FOR: no due
     // date to report against, and no period for the submission to cover.
@@ -228,7 +261,6 @@ describe('GET /api/client/check-in-context', () => {
     // (which performs the plan-promotion side effect) never runs.
     expect(getCheckInTrainingContext).not.toHaveBeenCalled();
     expect(getCheckInNutritionContext).not.toHaveBeenCalled();
-    expect(getCheckInTrainingPeriodStats).not.toHaveBeenCalled();
     expect(getTrainingEventDetailsForPeriod).not.toHaveBeenCalled();
     expect(getDailyLogs).not.toHaveBeenCalled();
     vi.useRealTimers();

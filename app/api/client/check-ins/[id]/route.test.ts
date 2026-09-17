@@ -17,7 +17,7 @@ vi.mock("@/services/supabase-admin", () => ({
 // route maps at all rather than serving the raw row.
 const mapExerciseHighlightMock = vi.fn();
 vi.mock("@/services/check-in-service", () => ({
-  deriveSessionCompletionsForCheckIn: vi.fn(),
+  getTrainingEventDetailsForCheckIn: vi.fn(),
   getCheckInAnswers: vi.fn(),
   getCheckInExerciseHighlights: vi.fn(),
   mapExerciseHighlight: (...args: unknown[]) => mapExerciseHighlightMock(...args),
@@ -43,7 +43,7 @@ vi.mock("@/lib/mappers", () => ({
 import { GET } from "./route";
 import { requireClientAuth } from "@/lib/require-client-auth";
 import {
-  deriveSessionCompletionsForCheckIn,
+  getTrainingEventDetailsForCheckIn,
   getCheckInAnswers,
   getCheckInExerciseHighlights,
 } from "@/services/check-in-service";
@@ -70,20 +70,21 @@ describe("GET /api/client/check-ins/[id]", () => {
     vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([]);
     vi.mocked(getCheckInAnswers).mockResolvedValue([]);
     vi.mocked(getMeasurementsForCheckIns).mockResolvedValue(new Map());
-    vi.mocked(deriveSessionCompletionsForCheckIn).mockResolvedValue([
+    vi.mocked(getTrainingEventDetailsForCheckIn).mockResolvedValue([
       {
-        id: "e-1",
-        checkInId: "ci-1",
-        trainingSessionId: "ts-1",
+        eventId: "e-1",
+        date: "2026-05-11",
         sessionName: "Push Day",
-        dayOfWeek: "monday",
-        completed: true,
+        status: "completed",
+        logStatus: "logged",
         completionQuality: "full",
+        trainingSessionId: "ts-1",
+        sessionLogId: "log-1",
       },
     ]);
   });
 
-  it("returns derived sessionCompletions in the preserved camelCase shape", async () => {
+  it("carries the period's own workouts, each with the quality on its log", async () => {
     mockCheckInRow({
       data: { id: "ci-1", client_id: "client-1", status: "pending", created_at: "2026-05-14T12:00:00Z" },
       error: null,
@@ -94,15 +95,17 @@ describe("GET /api/client/check-ins/[id]", () => {
 
     expect(res.status).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.data.sessionCompletions).toHaveLength(1);
-    expect(body.data.sessionCompletions[0]).toMatchObject({
-      id: "e-1",
+    // The legacy per-session shape is gone from the wire, not renamed onto it.
+    expect(body.data.sessionCompletions).toBeUndefined();
+    expect(body.data.trainingEventDetails).toHaveLength(1);
+    expect(body.data.trainingEventDetails[0]).toMatchObject({
+      eventId: "e-1",
       sessionName: "Push Day",
-      completed: true,
+      status: "completed",
       completionQuality: "full",
     });
-    // Derivation received the mapped check-in (with period + clientId).
-    expect(deriveSessionCompletionsForCheckIn).toHaveBeenCalledWith(
+    // The read received the mapped check-in (with period + clientId).
+    expect(getTrainingEventDetailsForCheckIn).toHaveBeenCalledWith(
       expect.objectContaining({ id: "ci-1", clientId: "client-1", periodStart: "2026-05-08" })
     );
   });
@@ -161,7 +164,7 @@ describe("GET /api/client/check-ins/[id]", () => {
     expect(res.status).toBe(404);
     // The query filtered on client_id (IDOR guard).
     expect(q.eq).toHaveBeenCalledWith("client_id", "client-1");
-    expect(deriveSessionCompletionsForCheckIn).not.toHaveBeenCalled();
+    expect(getTrainingEventDetailsForCheckIn).not.toHaveBeenCalled();
   });
 
   it("401 when unauthenticated", async () => {
@@ -236,7 +239,7 @@ describe("the stored on-target count's denominator", () => {
     vi.mocked(getCheckInExerciseHighlights).mockResolvedValue([]);
     vi.mocked(getCheckInAnswers).mockResolvedValue([]);
     vi.mocked(getMeasurementsForCheckIns).mockResolvedValue(new Map());
-    vi.mocked(deriveSessionCompletionsForCheckIn).mockResolvedValue([]);
+    vi.mocked(getTrainingEventDetailsForCheckIn).mockResolvedValue([]);
   });
 
   it("is the frozen rows that carried a target — a day with no target is in no ratio", async () => {

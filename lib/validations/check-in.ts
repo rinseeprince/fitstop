@@ -8,22 +8,6 @@ import {
   WEIGHT_KG_MIN,
 } from "@/lib/constants";
 
-const VALID_DAYS =["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
-
-const dayOfWeekSchema = z.enum(VALID_DAYS);
-
-// Helper to handle dayOfWeek with preprocessing for optional fields
-const optionalDayOfWeek = z.preprocess(
-  (val) => {
-    if (val === null || val === undefined || val === "") return undefined;
-    if (typeof val === "string" && VALID_DAYS.includes(val as typeof VALID_DAYS[number])) {
-      return val;
-    }
-    return undefined;
-  },
-  dayOfWeekSchema.optional()
-);
-
 // Helper to handle null/undefined/empty string as undefined
 const optionalString = (maxLength: number) =>
   z.preprocess(
@@ -52,16 +36,6 @@ const optionalInt = (schema: z.ZodNumber) =>
     },
     schema.optional()
   );
-
-// Session completion schema
-export const sessionCompletionSchema = z.object({
-  trainingSessionId: z.string().min(1).max(100),
-  sessionName: z.string().min(1).max(100),
-  dayOfWeek: optionalDayOfWeek,
-  completed: z.preprocess((val) => val === true || val === "true", z.boolean()),
-  completionQuality: z.enum(["full", "partial", "skipped"]).optional().nullable().transform((v) => v ?? undefined),
-  notes: optionalString(500),
-});
 
 // Exercise highlight schema
 export const exerciseHighlightSchema = z.object({
@@ -134,7 +108,6 @@ export const submitCheckInSchema = z.object({
   challenges: optionalString(1000),
 
   // Enhanced training tracking
-  sessionCompletions: z.array(sessionCompletionSchema).max(20).optional().nullable().transform((v) => v ?? undefined),
   exerciseHighlights: z.array(exerciseHighlightSchema).max(10).optional().nullable().transform((v) => v ?? undefined),
   nutritionAdherence: nutritionAdherenceSchema.optional().nullable().transform((v) => v ?? undefined),
 

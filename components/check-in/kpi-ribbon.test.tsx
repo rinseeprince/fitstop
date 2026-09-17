@@ -12,10 +12,10 @@ import type { CheckIn } from "@/types/check-in";
 import type { CheckInPeriodAdherence } from "@/types/coach-overview";
 
 const checkIn = { id: "ci-1", weight: 80, workoutsCompleted: 3 } as unknown as CheckIn;
-const adherence = { completed: 3, prescribed: 4, full: 3, partial: 0, missed: 1, pct: 75 } as never;
+const adherence = { completed: 3, planned: 4, full: 3, partial: 0, missed: 1, pct: 75 } as never;
 
-// A ribbon over an arbitrary session summary, for the training-cell cases.
-function renderTraining(summary: Record<string, number>) {
+// A ribbon over an arbitrary training summary, for the training-cell cases.
+function renderTraining(summary: Record<string, number | null>) {
   return render(
     <KPIRibbon
       checkIn={checkIn}
@@ -126,8 +126,8 @@ describe("the nutrition cell", () => {
   });
 
   it("leaves the training cell's fraction alone", () => {
-    // Training is deliberately NOT on the new wire: the page's figure counts
-    // full AND partial completions, the kernel's counts full only.
+    // Training is deliberately NOT on the nutrition/habit wire: the page's
+    // figure counts full AND partial completions, the kernel's full only.
     renderRibbon(nutrition());
 
     expect(screen.getByText("Training")).toBeInTheDocument();
@@ -140,7 +140,7 @@ describe("the training cell", () => {
   // which says something the fraction cannot: that one of the three "completed"
   // sessions was only partly done.
   it("names the partial and missed counts instead of the percentage", () => {
-    renderTraining({ completed: 3, prescribed: 5, full: 2, partial: 1, missed: 2, pct: 60 });
+    renderTraining({ completed: 3, planned: 5, full: 2, partial: 1, missed: 2, pct: 60 });
 
     expect(screen.getByText("3/5")).toBeInTheDocument();
     expect(screen.getByText("1 partial · 2 missed")).toBeInTheDocument();
@@ -150,7 +150,7 @@ describe("the training cell", () => {
 
   it("still goes amber at 60% — the percentage drives the accent, it is just not printed", () => {
     const { container } = renderTraining({
-      completed: 3, prescribed: 5, full: 2, partial: 1, missed: 2, pct: 60,
+      completed: 3, planned: 5, full: 2, partial: 1, missed: 2, pct: 60,
     });
 
     // The dot is the accent. Amber (#d97706) is "attention"; teal is good.
@@ -160,14 +160,14 @@ describe("the training cell", () => {
   });
 
   it("says 'All complete' only when nothing was partial OR missed", () => {
-    renderTraining({ completed: 5, prescribed: 5, full: 5, partial: 0, missed: 0, pct: 100 });
+    renderTraining({ completed: 5, planned: 5, full: 5, partial: 0, missed: 0, pct: 100 });
 
     expect(screen.getByText("5/5")).toBeInTheDocument();
     expect(screen.getByText("All complete")).toBeInTheDocument();
   });
 
   it("never says 'All complete' over a skipped session", () => {
-    renderTraining({ completed: 3, prescribed: 5, full: 3, partial: 0, missed: 2, pct: 60 });
+    renderTraining({ completed: 3, planned: 5, full: 3, partial: 0, missed: 2, pct: 60 });
 
     expect(screen.getByText("2 missed")).toBeInTheDocument();
     expect(screen.queryByText("All complete")).not.toBeInTheDocument();
@@ -177,7 +177,7 @@ describe("the training cell", () => {
     // That column counts full completions only. With nothing prescribed there is
     // no fraction to show, and a bare count computed a different way is not the
     // same statistic — the check-in fixture carries workoutsCompleted: 3.
-    renderTraining({ completed: 0, prescribed: 0, full: 0, partial: 0, missed: 0, pct: null as never });
+    renderTraining({ completed: 0, planned: 0, full: 0, partial: 0, missed: 0, pct: null });
 
     expect(screen.getByText("No sessions prescribed")).toBeInTheDocument();
     expect(screen.queryByText("3")).not.toBeInTheDocument();
